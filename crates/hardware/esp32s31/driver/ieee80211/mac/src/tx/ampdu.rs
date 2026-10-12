@@ -196,9 +196,9 @@ impl HtAmpduTxCompletion {
     /// and status-five completions with stale nonzero bitmap words but a clear
     /// BlockAck-received result.
     ///
-    /// SOURCE: complete `libpp.a[lmac.o]::lmacEndFrameExchangeSequence`
-    /// status-five A-MPDU branch calls `hal_mac_tx_get_blockack`, publishes the
-    /// result through `ppTxqUpdateBitmap`, and then enters `ppResortTxAMPDU`.
+    /// SOURCE: complete `libpp[lmac.o]::lmacEndFrameExchangeSequence`
+    /// status-five A-MPDU branch calls `libpp[hal_mac_tx.o]::hal_mac_tx_get_blockack`, publishes the
+    /// result through `libpp[pp.o]::ppTxqUpdateBitmap`, and then enters `libpp[pp.o]::ppResortTxAMPDU`.
     pub const fn acknowledges(self, sequence: SequenceNumber) -> bool {
         match self.valid_block_ack() {
             Some(block_ack) => block_ack.acknowledges(sequence),
@@ -370,7 +370,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             return Err(HtAmpduTxError::Stale);
         }
         // Both HT and HE can retain a one-subframe A-MPDU. Complete
-        // `libpp.a[pp.o]::ppAssembleAMPDU` starts from the supplied
+        // `libpp[pp.o]::ppAssembleAMPDU` starts from the supplied
         // chain head and iterates until its next pointer is null; it has no
         // minimum-two branch.
         if self.count == 0 {

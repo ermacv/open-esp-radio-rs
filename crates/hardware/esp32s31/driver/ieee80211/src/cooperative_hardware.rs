@@ -59,7 +59,7 @@ use oer_esp32s31_ieee80211_mac::{
 /// synchronous register transactions. This type neither steals peripherals
 /// nor creates another runtime owner.
 ///
-/// SOURCE: complete `libpp.a[wdev.o]::wDev_ProcessFiq` handles
+/// SOURCE: complete `libpp[wdev.o]::wDev_ProcessFiq` handles
 /// RX-success bit `0x4000` before TX-complete bit `0x80`.
 pub struct CooperativeRadioHardware<'arena> {
     registers: PublishedRadioOwner<'arena>,

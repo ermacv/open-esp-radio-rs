@@ -105,10 +105,10 @@ where
         if unaggregating.remaining == 0 {
             self.release_completed()?;
         }
-        // SOURCE: `libpp.a[pp.o]::ppResortTxAMPDU` hands a missing MPDU of an
-        // ended agreement to `ppHEAMPDU2Normal`, which clears the MPDU, short
+        // SOURCE: `libpp[pp.o]::ppResortTxAMPDU` hands a missing MPDU of an
+        // ended agreement to `libpp[pp_he.o]::ppHEAMPDU2Normal`, which clears the MPDU, short
         // and long retry counters and reselects the ordinary data schedule
-        // through `rcGetSched`: the MPDU starts a fresh ordinary exchange.
+        // through `libpp[trc.o]::rcGetSched`: the MPDU starts a fresh ordinary exchange.
         let selection = self.data_tx_selection();
         let access_category = unaggregating.aggregate.traffic.selected.access_category;
         let progress = self.ordinary.start_prepared_encoded_retry_for_category(

@@ -154,11 +154,11 @@ pub struct MacTxControlFrame {
 /// Response the MAC awaits after one legacy PPDU, published as the PLCP0
 /// format selector.
 ///
-/// SOURCE: complete `libpp.a[hal_mac_tx.o]::mac_tx_set_plcp0` derives
+/// SOURCE: complete `libpp[hal_mac_tx.o]::mac_tx_set_plcp0` derives
 /// the selector from descriptor flags: a group-addressed frame (flag
 /// `0x2`) keeps format zero; an individually addressed frame selects
 /// `1 + bit19`, bit 19 marking the BlockAckReq built by
-/// `libpp.a[pp.o]::ppFillAMPDUBar` (blobray BAR answer). HT A-MPDUs,
+/// `libpp[pp.o]::ppFillAMPDUBar` (blobray BAR answer). HT A-MPDUs,
 /// which are answered by a BlockAck as well, use format two.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum MacLegacyTxResponse {
@@ -590,9 +590,8 @@ pub struct MacTxCompletionObservation {
     detail: u8,
     /// This queue completed as part of a hardware Trigger-based transmit flow.
     ///
-    /// SOURCE: complete `libpp.a[hal_mac_tx.o]::
-    /// hal_mac_get_txq_in_trig_flow_state` and
-    /// `libpp.a[lmac.o]::lmacProcessTxComplete`. The HAL returns
+    /// SOURCE: complete `libpp[hal_mac_tx.o]::hal_mac_get_txq_in_trig_flow_state` and
+    /// `libpp[lmac.o]::lmacProcessTxComplete`. The HAL returns
     /// `QUEUE_STATE[31:24]` as one bitmap; the completion dispatcher selects
     /// the completed queue's bit.
     trigger_flow: bool,
@@ -1001,7 +1000,7 @@ impl WifiRadioRegisters {
         }
 
         // SOURCE: complete hal_mac_tx_config_timeout. This precedes every
-        // vector write in the recovered lmacSetTxFrame parent.
+        // vector write in the recovered libpp[lmac.o]::lmacSetTxFrame parent.
         control_bank
             .config(bank)
             .modify(|_, w| w.timeout().set(parameters.timeout));
@@ -1019,7 +1018,7 @@ impl WifiRadioRegisters {
     }
 
     /// Publish the complete legacy responsibility of vendor
-    /// `hal_mac_tx_set_ppdu` for one already-idle ordinary queue.
+    /// `libpp[hal_mac_tx.o]::hal_mac_tx_set_ppdu` for one already-idle ordinary queue.
     ///
     /// Queue readiness, timeout, EDCA and the final ENABLE|VALID ownership
     /// edge belong to the surrounding production transaction, as for
@@ -1091,8 +1090,8 @@ impl WifiRadioRegisters {
         );
 
         // SOURCE: complete
-        // `libpp.a[hal_mac.o]::mac_tx_set_pti` and
-        // `libpp.a[hal_coex.o]::hal_set_tx_pti`. The scheduler
+        // `libpp[hal_mac.o]::mac_tx_set_pti` and
+        // `libpp[hal_coex.o]::hal_set_tx_pti`. The scheduler
         // priority in CONFIG is the unsigned minimum of the packet PTI and
         // coexistence event-one PTI. The four packet lanes retain the original
         // packet PTI, so these values must not be collapsed into one field.
@@ -1130,7 +1129,7 @@ impl WifiRadioRegisters {
             }
 
             // SOURCE: complete hal_mac_tx_config_timeout, followed by the
-            // hal_mac_tx_set_ppdu non-HE HT branch.
+            // libpp[hal_mac_tx.o]::hal_mac_tx_set_ppdu non-HE HT branch.
             control_bank
                 .config(bank)
                 .modify(|_, w| w.timeout().set(parameters.timeout));
@@ -1149,7 +1148,7 @@ impl WifiRadioRegisters {
     }
 
     /// Publish the complete non-HE HT responsibility of vendor
-    /// `hal_mac_tx_set_ppdu` for one already-idle ordinary queue.
+    /// `libpp[hal_mac_tx.o]::hal_mac_tx_set_ppdu` for one already-idle ordinary queue.
     ///
     /// Queue readiness, timeout, EDCA and the final ENABLE|VALID ownership
     /// edge belong to the surrounding production transaction. Keeping this
@@ -1323,7 +1322,7 @@ impl WifiRadioRegisters {
     }
 
     /// Publish the complete HE SU responsibility of vendor
-    /// `hal_mac_tx_set_ppdu` for one already-idle ordinary queue.
+    /// `libpp[hal_mac_tx.o]::hal_mac_tx_set_ppdu` for one already-idle ordinary queue.
     ///
     /// Queue readiness, timeout, EDCA and the final ENABLE|VALID ownership
     /// edge belong to the surrounding production transaction, as for
@@ -1379,7 +1378,7 @@ impl WifiRadioRegisters {
         let pti = vectors.pti(bank);
         pti.modify(|_, writer| writer.txop().clear_bit());
 
-        // SOURCE: complete mac_tx_set_hesig stores A1 then A2/length before
+        // SOURCE: complete libpp[hal_mac_tx.o]::mac_tx_set_hesig stores A1 then A2/length before
         // publishing the descriptor counts.
         crate::svd::zero_based_field_write::publish_mac_tx_he_signal_a1_fields(
             vectors,
@@ -1417,7 +1416,7 @@ impl WifiRadioRegisters {
             parameters.descriptor_count,
             parameters.descriptor_count,
         );
-        // SOURCE: complete mac_tx_set_hesig then replaces the three finite
+        // SOURCE: complete libpp[hal_mac_tx.o]::mac_tx_set_hesig then replaces the three finite
         // channel-width minimum-MPDU lanes and clears software CTS in one
         // fresh-read update that keeps only software RTS.
         control_bank.protection(bank).modify(|_, w| {
@@ -1440,10 +1439,9 @@ impl WifiRadioRegisters {
             parameters.control.rate.register_value(),
             1,
         );
-        // SOURCE: complete `libpp.a[hal_mac_tx.o]::
-        // hal_mac_tx_set_ppdu` calls complete
-        // `libpp.a[hal_mac_ctl.o]::hal_he_set_htc` immediately after
-        // `mac_tx_set_hesig`. That leaf always publishes the complete word,
+        // SOURCE: complete `libpp[hal_mac_tx.o]::hal_mac_tx_set_ppdu` calls complete
+        // `libpp[hal_mac_ctl.o]::hal_he_set_htc` immediately after
+        // `libpp[hal_mac_tx.o]::mac_tx_set_hesig`. That leaf always publishes the complete word,
         // then sets or clears bit 28 through a fresh-read RMW. A missing
         // software image is not "no HE-Control": it deliberately leaves the
         // hardware-generated BSR path selected.
@@ -1481,8 +1479,7 @@ impl WifiRadioRegisters {
     pub(crate) fn start_prepared_mac_tx(&mut self, queue: u8) {
         assert!(queue < ORDINARY_QUEUE_COUNT);
         device_fence();
-        // SOURCE: publication prefix of `libpp.a[hal_mac_tx.o]::
-        // hal_mac_txq_enable` offsets 0x00..0x1e, before GetAccess. It reads the
+        // SOURCE: publication prefix of `libpp[hal_mac_tx.o]::hal_mac_txq_enable` offsets 0x00..0x1e, before libpp[lmac.o]::GetAccess. It reads the
         // already prepared CONTROL word and ORs only ENABLE|VALID before
         // writing it back. In particular, it does not reconstruct PLCP0 from
         // the caller's earlier software image: formatter leaves may have
@@ -1566,8 +1563,7 @@ impl WifiRadioRegisters {
     /// Sample the BlockAck solicited by an A-MPDU or a BlockAckReq before
     /// acknowledging its TX-complete edge.
     ///
-    /// SOURCE: complete `libpp.a[hal_mac_tx.o]::
-    /// hal_mac_tx_get_blockack` and the recovered event-23 completion order.
+    /// SOURCE: complete `libpp[hal_mac_tx.o]::hal_mac_tx_get_blockack` and the recovered event-23 completion order.
     /// The three BlockAck words belong to the completed queue and must be read
     /// while that completion edge still owns the result registers.
     pub fn take_mac_block_ack_completion(
@@ -1623,7 +1619,7 @@ impl WifiRadioRegisters {
                 if !queue::collision_pending(common, queue) {
                     return MacTxDetachOutcome::NoEvent;
                 }
-                // SOURCE: complete `libpp.a[lmac.o]::lmacProcessCollisions`
+                // SOURCE: complete `libpp[lmac.o]::lmacProcessCollisions`
                 // reaches disable before clearing the collision edge.
                 let _ = queue::disable_queue(queue_control, queue_index);
                 device_fence();

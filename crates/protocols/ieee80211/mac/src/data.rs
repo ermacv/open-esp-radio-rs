@@ -40,11 +40,9 @@ pub use duplicate::RxDuplicateFilter;
 /// this choice explicit prevents an ordinary HT QoS frame from accidentally
 /// advertising a field that is absent on air.
 ///
-/// SOURCE(esp32s31): complete `libnet80211.a[ieee80211_he.o]::
-/// ieee80211_encap_esfbuf_htc` sets Order and descriptor HTC metadata;
-/// `libpp.a[hal_mac_ctl.o]::hal_he_set_htc` writes the per-queue HTC
-/// word and its software-select bit. Complete `libpp.a[pp_he.o]::
-/// ppCalSubFrameLength` adds four bytes when DMA metadata byte seven bit zero
+/// SOURCE(esp32s31): complete `libnet80211[ieee80211_he.o]::ieee80211_encap_esfbuf_htc` sets Order and descriptor HTC metadata;
+/// `libpp[hal_mac_ctl.o]::hal_he_set_htc` writes the per-queue HTC
+/// word and its software-select bit. Complete `libpp[pp_he.o]::ppCalSubFrameLength` adds four bytes when DMA metadata byte seven bit zero
 /// is set. `HIL_VENDOR_HE_CONTROL_INSERTION_2026_07_30` captured vendor DMA
 /// with no placeholder, metadata byte seven equal to one, and an intact CCMP
 /// header following the hardware-inserted HE-Control field on air.
@@ -295,9 +293,9 @@ pub const fn plan_data_encapsulation(
 /// Plan one data MPDU whose HE-Control bytes are inserted by MAC hardware.
 ///
 /// SOURCE(esp32s31): complete
-/// `libnet80211.a[ieee80211_he.o]::ieee80211_encap_esfbuf_htc`
+/// `libnet80211[ieee80211_he.o]::ieee80211_encap_esfbuf_htc`
 /// sets byte-one bit seven but does not extend or move the DMA header.
-/// Complete `libpp.a[pp_he.o]::ppCalSubFrameLength` accounts for the
+/// Complete `libpp[pp_he.o]::ppCalSubFrameLength` accounts for the
 /// inserted bytes through DMA metadata byte seven bit zero; that chip-specific
 /// metadata remains outside this IEEE 802.11 encoder.
 #[allow(clippy::too_many_arguments)]

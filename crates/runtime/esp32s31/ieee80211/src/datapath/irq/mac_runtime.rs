@@ -15,9 +15,9 @@ use oer_esp32s31_ieee80211_mac::irq::{IrqSink, IrqState, IrqWork, next_irq_work}
 /// worker latch. Descriptor and completion rings remain the durable source of
 /// multiplicity.
 ///
-/// SOURCE: complete `libpp.a[wdev.o]::wDev_ProcessFiq` services
+/// SOURCE: complete `libpp[wdev.o]::wDev_ProcessFiq` services
 /// `RX_SUCCESS` before `TX_COMPLETE`, `TX_TIMEOUT` and `COLLISION`. Complete
-/// `libpp.a[pp.o]::{pp_post,ppTask}` coalesces the corresponding
+/// `libpp[pp.o]::pp_post,libpp[pp.o]::ppTask` coalesces the corresponding
 /// worker wake while the descriptor/completion state remains hardware-owned.
 // CAPABILITY: wifi-interrupt-epoch-owners
 pub struct EmbassyMacIrqRuntime<M: RawMutex> {

@@ -6,7 +6,7 @@ use crate::{SharedRadioRegisters, WifiRadioRegisters};
 
 /// One hardware TX MPDU-length link-table entry.
 ///
-/// SOURCE: complete `libpp.a[hal_debug.o]::dbg_read_tx_mplen`.
+/// SOURCE: complete `libpp[hal_debug.o]::dbg_read_tx_mplen`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacHeTxMpduLengthLink {
     pub mpdu_length: u16,
@@ -73,7 +73,7 @@ impl WifiRadioRegisters {
     /// Apply the raw ER-SU-Disable bit parsed from the BSS's HE Operation.
     ///
     /// SOURCE: complete pinned `libpp.a[hal_mac_ctl.o]`
-    /// `hal_he_set_ersu` and
+    /// `libpp[hal_mac_ctl.o]::hal_he_set_ersu` and
     /// `libnet80211.a[ieee80211_he.o]`
     /// `ieee80211_parse_heopr`, whose format string names complete-IE byte
     /// five bit zero `ER-SU-Disable`. A true argument clears the blob-named

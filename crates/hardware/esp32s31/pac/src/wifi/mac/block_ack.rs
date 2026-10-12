@@ -9,7 +9,7 @@ use crate::{
 
 /// Result sampled for one completed TX hardware queue.
 ///
-/// SOURCE: complete `libpp.a[hal_debug.o]::dbg_read_rx_ba`.
+/// SOURCE: complete `libpp[hal_debug.o]::dbg_read_rx_ba`.
 /// The hot TX completion path samples the three BlockAck payload words plus
 /// the independent hardware result bit. Use [`TxBlockAckDiagnosticSnapshot`]
 /// when the transmitter address and queues four through seven are needed for
@@ -24,7 +24,7 @@ pub(crate) struct TxBlockAckObservation {
 
 /// Semantic TX BlockAck payload sampled without adjacent validity state.
 ///
-/// SOURCE: complete `libpp.a[hal_mac_tx.o]::hal_mac_tx_get_blockack`.
+/// SOURCE: complete `libpp[hal_mac_tx.o]::hal_mac_tx_get_blockack`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TxBlockAckPayload {
     control: u8,
@@ -58,7 +58,7 @@ impl TxBlockAckPayload {
 
 /// Semantic `WDEVTXQBA` result plus adjacent TX queue information.
 ///
-/// SOURCE: complete `libpp.a[hal_debug.o]::dbg_read_rx_ba`.
+/// SOURCE: complete `libpp[hal_debug.o]::dbg_read_rx_ba`.
 /// Despite the function name, its strings identify eight reverse-addressed
 /// TX BlockAck result banks.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -140,7 +140,7 @@ impl InternalTxBlockAckSnapshot {
 
 /// Live image of one ordinary receive BlockAck hardware bank.
 ///
-/// SOURCE: complete `libpp.a[hal_ampdu.o]::hal_ba_session_store`.
+/// SOURCE: complete `libpp[hal_ampdu.o]::hal_ba_session_store`.
 /// The status and load words are deliberately exposed separately: the blob
 /// snapshots the hardware-maintained words and restores them through their
 /// adjacent software-load words.
@@ -162,8 +162,7 @@ pub struct RxBlockAckEntrySnapshot {
 
 /// Latched projection of one indirect extra-SoftAP receive BlockAck bank.
 ///
-/// SOURCE: complete `libpp.a[hal_ampdu.o]::
-/// hal_debug_read_extra_softap_rx_ba` selects each logical index through
+/// SOURCE: complete `libpp[hal_ampdu.o]::hal_debug_read_extra_softap_rx_ba` selects each logical index through
 /// control bits 5..9, asserts agreement-update bit nine, reads the control,
 /// peer, policy and starting-sequence staging words, then releases the latch.
 /// The two bitmap words are the adjacent raw staging words used by complete
@@ -258,8 +257,7 @@ impl WifiRadioRegisters {
 
     /// Program one ordinary receive BlockAck entry.
     ///
-    /// SOURCE: complete `libpp.a[hal_ampdu.o]::
-    /// hal_agreement_add_rx_ba`, size `0x12e`.
+    /// SOURCE: complete `libpp[hal_ampdu.o]::hal_agreement_add_rx_ba`, size `0x12e`.
     ///
     /// The eight entries are direct reverse-addressed banks, not the shared
     /// extra-SoftAP staging window at `0x2010_4ea4`. Logical index zero lives
@@ -311,8 +309,7 @@ impl WifiRadioRegisters {
 
     /// Delete one ordinary receive BlockAck entry.
     ///
-    /// SOURCE: complete `libpp.a[hal_ampdu.o]::
-    /// hal_agreement_del_rx_ba`, size `0x72`.
+    /// SOURCE: complete `libpp[hal_ampdu.o]::hal_agreement_del_rx_ba`, size `0x72`.
     pub fn delete_rx_block_ack_entry(&mut self, hardware_index: MacRxBlockAckEntryIndex) {
         let block = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
         let register_index = rx_block_ack_register_index(hardware_index);
@@ -330,8 +327,7 @@ impl WifiRadioRegisters {
 
     /// Move one live ordinary receive BlockAck entry to a new window.
     ///
-    /// SOURCE: complete `libpp.a[hal_ampdu.o]::
-    /// hal_agreement_clr_rx_ba`, size `0x92`.
+    /// SOURCE: complete `libpp[hal_ampdu.o]::hal_agreement_clr_rx_ba`, size `0x92`.
     ///
     /// The vendor clears validity with a full-word zero, reloads the starting
     /// sequence and physical window, clears both bitmap load words, publishes
@@ -370,8 +366,7 @@ impl WifiRadioRegisters {
     /// Program one extra-SoftAP receive BlockAck entry through the shared
     /// staging window.
     ///
-    /// SOURCE: complete `libpp.a[hal_ampdu.o]::
-    /// hal_agreement_add_extra_softap_rx_ba`, size `0x130`.
+    /// SOURCE: complete `libpp[hal_ampdu.o]::hal_agreement_add_extra_softap_rx_ba`, size `0x130`.
     ///
     /// This transaction is distinct from the eight direct ordinary banks.
     /// The selected entry is staged, committed through update bit eight,
@@ -468,8 +463,7 @@ impl WifiRadioRegisters {
 
     /// Move one live extra-SoftAP receive BlockAck entry to a new window.
     ///
-    /// SOURCE: complete `libpp.a[hal_ampdu.o]::
-    /// hal_agreement_clr_extra_softap_rx_ba`, size `0xc6`.
+    /// SOURCE: complete `libpp[hal_ampdu.o]::hal_agreement_clr_extra_softap_rx_ba`, size `0xc6`.
     ///
     /// Despite the vendor leaf's `clr` name, this does not delete the entry.
     /// It preserves peer, interface, TID and validity, replaces the starting
@@ -587,8 +581,7 @@ impl WifiRadioRegisters {
 
     /// Delete one extra-SoftAP receive BlockAck entry.
     ///
-    /// SOURCE: complete `libpp.a[hal_ampdu.o]::
-    /// hal_agreement_del_extra_softap_rx_ba`, size `0x94`.
+    /// SOURCE: complete `libpp[hal_ampdu.o]::hal_agreement_del_extra_softap_rx_ba`, size `0x94`.
     pub fn delete_extra_softap_rx_block_ack_entry(
         &mut self,
         hardware_index: MacExtraSoftApRxBlockAckEntryIndex,
@@ -736,7 +729,7 @@ impl WifiRadioRegisters {
 
     /// Sample one complete TX BlockAck result and its queue-information word.
     ///
-    /// SOURCE: complete `libpp.a[hal_debug.o]::dbg_read_rx_ba`.
+    /// SOURCE: complete `libpp[hal_debug.o]::dbg_read_rx_ba`.
     /// Queue zero occupies `0x2010_5528..0x2010_5538`; logical queues descend
     /// by `0x7c` through queue seven at `0x2010_51c4..0x2010_51d4`.
     pub fn tx_block_ack_diagnostic_snapshot(
@@ -850,8 +843,7 @@ impl WifiRadioRegisters {
 
     /// Sample the standalone internal WDEVTXBA result.
     ///
-    /// SOURCE: complete `libpp.a[hal_debug.o]::
-    /// dbg_read_internal_txba`; the bitmap and control fields are exact. The
+    /// SOURCE: complete `libpp[hal_debug.o]::dbg_read_internal_txba`; the bitmap and control fields are exact. The
     /// two unqualified transmitter-address words remain evidence-only until
     /// their byte ordering is established and are not exposed by production.
     pub fn internal_tx_block_ack_snapshot(&self) -> InternalTxBlockAckSnapshot {

@@ -281,8 +281,8 @@ pub trait RadioCoexPriorities {
     /// priority, and the lesser of it and the slice event's as the
     /// scheduler priority.
     ///
-    /// SOURCE(esp32s31): complete pinned `libpp.a[pp.o]::pp_coex_tx_request`
-    /// and `libpp.a[hal_mac.o]::mac_tx_set_pti`.
+    /// SOURCE(esp32s31): complete pinned `libpp[pp.o]::pp_coex_tx_request`
+    /// and `libpp[hal_mac.o]::mac_tx_set_pti`.
     fn connection_frame_priorities(&self) -> ConnectionFramePriorities;
 }
 
@@ -1450,7 +1450,7 @@ where
         Ok(())
     }
 
-    // SOURCE(esp32s31): complete pinned `libpp.a[pm_coex.o]::pm_coex_update_rx_beacon_pti`
+    // SOURCE(esp32s31): complete pinned `libpp[pm_coex.o]::pm_coex_update_rx_beacon_pti`
     // passes `coex_pti_get(0)`, or zero, as both arguments of
     // `hal_set_rx_beacon_pti`.
     fn set_rx_beacon_priority<H: RxBeaconPriorityHardware>(

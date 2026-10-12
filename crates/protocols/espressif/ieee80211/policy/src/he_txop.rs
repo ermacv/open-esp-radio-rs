@@ -7,9 +7,9 @@ use oer_ieee80211_upper_mac::{HePacketPadding, HeTxopDurationRtsThreshold, HeTxo
 /// The nominal packet padding code the vendor stores from the peer's HE
 /// Capabilities.
 ///
-/// SOURCE(esp32s31): complete `libnet80211.a[ieee80211_he.o]::ieee80211_parse_hecap`
+/// SOURCE(esp32s31): complete `libnet80211[ieee80211_he.o]::ieee80211_parse_hecap`
 /// stores this code at node offset `0x354`; complete
-/// `libpp.a[if_hwctrl.o]::ic_set_he_rts_threshold_bytes_tab` subtracts 8 µs
+/// `libpp[if_hwctrl.o]::ic_set_he_rts_threshold_bytes_tab` subtracts 8 µs
 /// for code one, 16 µs for code two and nothing for any other code.
 pub const fn packet_padding_from_code(code: u8) -> HePacketPadding {
     match code {
@@ -23,7 +23,7 @@ pub const fn packet_padding_from_code(code: u8) -> HePacketPadding {
 /// Capabilities element is `he_capability_ie` (the complete element, ID and
 /// length included): zero, one or two.
 ///
-/// SOURCE(esp32s31): complete `libnet80211.a[ieee80211_he.o]::ieee80211_parse_hecap`.
+/// SOURCE(esp32s31): complete `libnet80211[ieee80211_he.o]::ieee80211_parse_hecap`.
 /// HE PHY Capabilities byte six (PPE Thresholds Present, bit seven) is
 /// element byte 15 and byte nine is element byte 18. Without PPE Thresholds
 /// the vendor stores Nominal Packet Padding (byte 18 bits 7:6). With PPE
@@ -57,17 +57,17 @@ pub fn packet_padding(he_capability_ie: &[u8]) -> HePacketPadding {
 
 /// The largest HE SU APEP length whose TXOP stays below the threshold.
 ///
-/// SOURCE(esp32s31): complete `libpp.a[if_hwctrl.o]::ic_set_he_rts_threshold_bytes_tab`
+/// SOURCE(esp32s31): complete `libpp[if_hwctrl.o]::ic_set_he_rts_threshold_bytes_tab`
 /// and its `.data` tables in `libpp.a[hal_mac_ctl.o]` (`he_preamble_su`,
 /// `he_time_per_sym`, `he_data_bits_per_sym`), plus complete
-/// `libpp.a[pp_he.o]::get_estimated_batime`. The vendor evaluates, in single
+/// `libpp[pp_he.o]::get_estimated_batime`. The vendor evaluates, in single
 /// precision, `threshold * 32 - 20 - preamble - 16 - padding`, subtracts the
 /// BlockAck estimate, divides by the symbol duration, floors, multiplies by
 /// the RU242 data bits per symbol, subtracts the 22 SERVICE/tail bits and
 /// shifts right by three. DCM halves the data bits for MCS 0, 1, 3 and 4.
 /// The halfword table stores the arithmetic result modulo 2^16; a budget no
 /// larger than the BlockAck estimate stores zero. Complete
-/// `ic_get_he_rts_threshold_bytes` selects row one for both 0.8 µs
+/// `libpp[if_hwctrl.o]::ic_get_he_rts_threshold_bytes` selects row one for both 0.8 µs
 /// guard-interval configurations.
 ///
 /// The vendor tables hold HE20 MCS 0-9; a rate beyond them gets a budget of

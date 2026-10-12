@@ -229,9 +229,9 @@ pub fn schedule_state(schedule: RateScheduleRef) -> RateScheduleRecordState {
 /// Return the complete ordinary-MPDU publication budget carried by one
 /// vendor rate record.
 ///
-/// SOURCE(esp32s31): complete `libpp.a[trc.o]::rcReachRetryLimit`. Outside the mesh
+/// SOURCE(esp32s31): complete `libpp[trc.o]::rcReachRetryLimit`. Outside the mesh
 /// special case it compares the MPDU retry counter with record byte `0x08`;
-/// this is independent of byte `0x01`, which `rcTxUpdatePer` consumes as its
+/// this is independent of byte `0x01`, which `libpp[trc.o]::rcTxUpdatePer` consumes as its
 /// PER/rate-control threshold.
 pub fn schedule_publication_limit(schedule: RateScheduleRef) -> u8 {
     schedule_bytes(schedule)[0x08]
@@ -244,12 +244,12 @@ pub fn schedule_publication_limit(schedule: RateScheduleRef) -> u8 {
 /// `failed_attempts < cumulative_count`. Returning `None` means that the
 /// record's complete retry budget has been consumed.
 ///
-/// SOURCE(esp32s31): complete pinned `libpp.a[trc.o]::rcGetRate` (`0xf6` bytes),
+/// SOURCE(esp32s31): complete pinned `libpp[trc.o]::rcGetRate` (`0xf6` bytes),
 /// especially the bounded four-iteration loop at offsets `0xa8..0xf4`;
 /// cross-checked against `SOURCE(esp32s31)[PROMOTED_LMAC_TX]`. After the loop the
 /// pinned body replaces a selected code of `0x24` or above with `0x10` when
 /// descriptor byte `+0x32` bit zero marks an HT-Control MPDU (set only by
-/// `ieee80211_encap_esfbuf_htc`). No record this driver selects through the
+/// `libnet80211[ieee80211_he.o]::ieee80211_encap_esfbuf_htc`). No record this driver selects through the
 /// loop holds such a code together with that flag, so the rewrite never
 /// applies here.
 pub fn schedule_rate_after_failures(schedule: RateScheduleRef, failed_attempts: u8) -> Option<u8> {

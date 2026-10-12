@@ -7831,12 +7831,12 @@ pub mod wifi_phy_rate_oracle {
     pub mod noise_floor_measurement {
         #[doc = "Register `NOISE_FLOOR_MEASUREMENT` reader"]
         pub type R = crate::R<NoiseFloorMeasurementSpec>;
-        #[doc = "Field `SIGNED_SIXTEENTH_DB_CODE` reader - Project-assigned name. Signed twelve-bit noise-floor measurement in sixteenth-dB units. The complete ROM arithmetic shift produces quarter-dB and wDev_GetNoiseFloor applies rounded division by four once more before retaining a signed byte; open rev0 HIL observed -92 dBm."]
+        #[doc = "Field `SIGNED_SIXTEENTH_DB_CODE` reader - Project-assigned name. Signed twelve-bit noise-floor measurement in sixteenth-dB units. The complete ROM arithmetic shift produces quarter-dB and libpp\\[wdev.o\\]::wDev_GetNoiseFloor applies rounded division by four once more before retaining a signed byte; open rev0 HIL observed -92 dBm."]
         pub type SignedSixteenthDbCodeR = crate::FieldReader<u16>;
         #[doc = "Field `BITS_12_18_OPAQUE` reader - Opaque: meaning not established. Seven-bit receive status field. Complete librftest get_rfrx_sat counts how many of one hundred reads have the value 49 and returns that count as its RF receive saturation result; phy_rx_sat_test samples it after forcing receive gain. Neither body assigns a unit to the value."]
         pub type Bits12_18OpaqueR = crate::FieldReader;
         impl R {
-            #[doc = "Bits 0:11 - Project-assigned name. Signed twelve-bit noise-floor measurement in sixteenth-dB units. The complete ROM arithmetic shift produces quarter-dB and wDev_GetNoiseFloor applies rounded division by four once more before retaining a signed byte; open rev0 HIL observed -92 dBm."]
+            #[doc = "Bits 0:11 - Project-assigned name. Signed twelve-bit noise-floor measurement in sixteenth-dB units. The complete ROM arithmetic shift produces quarter-dB and libpp\\[wdev.o\\]::wDev_GetNoiseFloor applies rounded division by four once more before retaining a signed byte; open rev0 HIL observed -92 dBm."]
             #[inline(always)]
             pub fn signed_sixteenth_db_code(&self) -> SignedSixteenthDbCodeR {
                 SignedSixteenthDbCodeR::new((self.bits & 0x0fff) as u16)
@@ -12464,14 +12464,14 @@ pub mod phy_rx_dco_oracle {
         }
     }
 }
-#[doc = "Free-running Wi-Fi MAC local-time counter, read-only and without read side effects. Complete lmacAdjustTimestamp subtracts the receive timestamp a received frame carries from this word as the frame's age and, while the station slept, rewrites that timestamp as this word minus a TU-scaled sleep interval; pm_twt_set_target_wdev_time, pm_get_null_max_tx_time and pm_coex_recalculate_wifi_time_slice read it as the MAC's current time. The PHY SDM deadline samples the same word. Its unit and rate against the system timer are not established."]
+#[doc = "Free-running Wi-Fi MAC local-time counter, read-only and without read side effects. Complete libpp\\[lmac.o\\]::lmacAdjustTimestamp subtracts the receive timestamp a received frame carries from this word as the frame's age and, while the station slept, rewrites that timestamp as this word minus a TU-scaled sleep interval; libpp\\[pm_twt.o\\]::pm_twt_set_target_wdev_time, libpp\\[pm_coex.o\\]::pm_get_null_max_tx_time and libpp\\[pm_coex.o\\]::pm_coex_recalculate_wifi_time_slice read it as the MAC's current time. The PHY SDM deadline samples the same word. Its unit and rate against the system timer are not established."]
 pub type WifiMacLocalTime = crate::Periph<wifi_mac_local_time::RegisterBlock, 0x2010_d800>;
 impl core::fmt::Debug for WifiMacLocalTime {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("WifiMacLocalTime").finish()
     }
 }
-#[doc = "Free-running Wi-Fi MAC local-time counter, read-only and without read side effects. Complete lmacAdjustTimestamp subtracts the receive timestamp a received frame carries from this word as the frame's age and, while the station slept, rewrites that timestamp as this word minus a TU-scaled sleep interval; pm_twt_set_target_wdev_time, pm_get_null_max_tx_time and pm_coex_recalculate_wifi_time_slice read it as the MAC's current time. The PHY SDM deadline samples the same word. Its unit and rate against the system timer are not established."]
+#[doc = "Free-running Wi-Fi MAC local-time counter, read-only and without read side effects. Complete libpp\\[lmac.o\\]::lmacAdjustTimestamp subtracts the receive timestamp a received frame carries from this word as the frame's age and, while the station slept, rewrites that timestamp as this word minus a TU-scaled sleep interval; libpp\\[pm_twt.o\\]::pm_twt_set_target_wdev_time, libpp\\[pm_coex.o\\]::pm_get_null_max_tx_time and libpp\\[pm_coex.o\\]::pm_coex_recalculate_wifi_time_slice read it as the MAC's current time. The PHY SDM deadline samples the same word. Its unit and rate against the system timer are not established."]
 pub mod wifi_mac_local_time {
     #[repr(C)]
     #[doc = "Register block"]
@@ -16699,16 +16699,16 @@ pub mod wifi_mac_control {
         control: Control,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - Project-assigned name. Cold promiscuous initialization writes zero. hal_mac_deinit records bits 13 and 14 as TX/RX activity and sets bit 12 plus bits 23:16; hal_mac_init with WIFI_PS_NONE clears that same stop-request mask."]
+        #[doc = "0x00 - Project-assigned name. Cold promiscuous initialization writes zero. libpp\\[hal_mac.o\\]::hal_mac_deinit records bits 13 and 14 as TX/RX activity and sets bit 12 plus bits 23:16; hal_mac_init with WIFI_PS_NONE clears that same stop-request mask."]
         #[inline(always)]
         pub const fn control(&self) -> &Control {
             &self.control
         }
     }
-    #[doc = "CONTROL (rw) register accessor: Project-assigned name. Cold promiscuous initialization writes zero. hal_mac_deinit records bits 13 and 14 as TX/RX activity and sets bit 12 plus bits 23:16; hal_mac_init with WIFI_PS_NONE clears that same stop-request mask.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc = "CONTROL (rw) register accessor: Project-assigned name. Cold promiscuous initialization writes zero. libpp\\[hal_mac.o\\]::hal_mac_deinit records bits 13 and 14 as TX/RX activity and sets bit 12 plus bits 23:16; hal_mac_init with WIFI_PS_NONE clears that same stop-request mask.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
     #[doc(alias = "CONTROL")]
     pub type Control = crate::Reg<control::ControlSpec>;
-    #[doc = "Project-assigned name. Cold promiscuous initialization writes zero. hal_mac_deinit records bits 13 and 14 as TX/RX activity and sets bit 12 plus bits 23:16; hal_mac_init with WIFI_PS_NONE clears that same stop-request mask."]
+    #[doc = "Project-assigned name. Cold promiscuous initialization writes zero. libpp\\[hal_mac.o\\]::hal_mac_deinit records bits 13 and 14 as TX/RX activity and sets bit 12 plus bits 23:16; hal_mac_init with WIFI_PS_NONE clears that same stop-request mask."]
     pub mod control {
         #[doc = "Register `CONTROL` reader"]
         pub type R = crate::R<ControlSpec>;
@@ -16722,11 +16722,11 @@ pub mod wifi_mac_control {
         pub type NoRetentionStopRequestR = crate::BitReader;
         #[doc = "Field `NO_RETENTION_STOP_REQUEST` writer - Project-assigned name. Included in the MAC stop request and cleared by hal_mac_init for the WIFI_PS_NONE all-ones retention mask."]
         pub type NoRetentionStopRequestW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `ACTIVE_STATE` reader - Project-assigned name. Three-bit activity state polled until zero before PHY retuning. hal_mac_deinit independently records bit 13 as TX active and bit 14 as RX active; bit 15 remains unnamed."]
+        #[doc = "Field `ACTIVE_STATE` reader - Project-assigned name. Three-bit activity state polled until zero before PHY retuning. libpp\\[hal_mac.o\\]::hal_mac_deinit independently records bit 13 as TX active and bit 14 as RX active; bit 15 remains unnamed."]
         pub type ActiveStateR = crate::FieldReader;
-        #[doc = "Field `TX_BLOCK_STOP_REQUEST_LOW` reader - Project-assigned name. Bit 16 of the eight stop-request bits hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
+        #[doc = "Field `TX_BLOCK_STOP_REQUEST_LOW` reader - Project-assigned name. Bit 16 of the eight stop-request bits libpp\\[hal_mac.o\\]::hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
         pub type TxBlockStopRequestLowR = crate::BitReader;
-        #[doc = "Field `TX_BLOCK_STOP_REQUEST_LOW` writer - Project-assigned name. Bit 16 of the eight stop-request bits hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
+        #[doc = "Field `TX_BLOCK_STOP_REQUEST_LOW` writer - Project-assigned name. Bit 16 of the eight stop-request bits libpp\\[hal_mac.o\\]::hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
         pub type TxBlockStopRequestLowW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Project-assigned name. Bits 19:17 of the stop-request bits. The vendor power manager sets all three to block the TX queues when its coexistence slice ends and clears them to unblock; its retention mask keeps them out of the MAC deinit and init requests while an associated station runs power management."]
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -16788,9 +16788,9 @@ pub mod wifi_mac_control {
                 self.variant(PowerSaveTxBlock::Blocked)
             }
         }
-        #[doc = "Field `TX_BLOCK_STOP_REQUEST_HIGH` reader - Project-assigned name. Bits 23:20 of the eight stop-request bits hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
+        #[doc = "Field `TX_BLOCK_STOP_REQUEST_HIGH` reader - Project-assigned name. Bits 23:20 of the eight stop-request bits libpp\\[hal_mac.o\\]::hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
         pub type TxBlockStopRequestHighR = crate::FieldReader;
-        #[doc = "Field `TX_BLOCK_STOP_REQUEST_HIGH` writer - Project-assigned name. Bits 23:20 of the eight stop-request bits hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
+        #[doc = "Field `TX_BLOCK_STOP_REQUEST_HIGH` writer - Project-assigned name. Bits 23:20 of the eight stop-request bits libpp\\[hal_mac.o\\]::hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
         pub type TxBlockStopRequestHighW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `BITS_24_31_OPAQUE` reader - Opaque: meaning not established."]
         pub type Bits24_31OpaqueR = crate::FieldReader;
@@ -16807,12 +16807,12 @@ pub mod wifi_mac_control {
             pub fn no_retention_stop_request(&self) -> NoRetentionStopRequestR {
                 NoRetentionStopRequestR::new(((self.bits >> 12) & 1) != 0)
             }
-            #[doc = "Bits 13:15 - Project-assigned name. Three-bit activity state polled until zero before PHY retuning. hal_mac_deinit independently records bit 13 as TX active and bit 14 as RX active; bit 15 remains unnamed."]
+            #[doc = "Bits 13:15 - Project-assigned name. Three-bit activity state polled until zero before PHY retuning. libpp\\[hal_mac.o\\]::hal_mac_deinit independently records bit 13 as TX active and bit 14 as RX active; bit 15 remains unnamed."]
             #[inline(always)]
             pub fn active_state(&self) -> ActiveStateR {
                 ActiveStateR::new(((self.bits >> 13) & 7) as u8)
             }
-            #[doc = "Bit 16 - Project-assigned name. Bit 16 of the eight stop-request bits hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
+            #[doc = "Bit 16 - Project-assigned name. Bit 16 of the eight stop-request bits libpp\\[hal_mac.o\\]::hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
             #[inline(always)]
             pub fn tx_block_stop_request_low(&self) -> TxBlockStopRequestLowR {
                 TxBlockStopRequestLowR::new(((self.bits >> 16) & 1) != 0)
@@ -16822,7 +16822,7 @@ pub mod wifi_mac_control {
             pub fn power_save_tx_block(&self) -> PowerSaveTxBlockR {
                 PowerSaveTxBlockR::new(((self.bits >> 17) & 7) as u8)
             }
-            #[doc = "Bits 20:23 - Project-assigned name. Bits 23:20 of the eight stop-request bits hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
+            #[doc = "Bits 20:23 - Project-assigned name. Bits 23:20 of the eight stop-request bits libpp\\[hal_mac.o\\]::hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
             #[inline(always)]
             pub fn tx_block_stop_request_high(&self) -> TxBlockStopRequestHighR {
                 TxBlockStopRequestHighR::new(((self.bits >> 20) & 0x0f) as u8)
@@ -16846,7 +16846,7 @@ pub mod wifi_mac_control {
             ) -> NoRetentionStopRequestW<'_, ControlSpec> {
                 NoRetentionStopRequestW::new(self, 12)
             }
-            #[doc = "Bit 16 - Project-assigned name. Bit 16 of the eight stop-request bits hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
+            #[doc = "Bit 16 - Project-assigned name. Bit 16 of the eight stop-request bits libpp\\[hal_mac.o\\]::hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
             #[inline(always)]
             pub fn tx_block_stop_request_low(&mut self) -> TxBlockStopRequestLowW<'_, ControlSpec> {
                 TxBlockStopRequestLowW::new(self, 16)
@@ -16856,7 +16856,7 @@ pub mod wifi_mac_control {
             pub fn power_save_tx_block(&mut self) -> PowerSaveTxBlockW<'_, ControlSpec> {
                 PowerSaveTxBlockW::new(self, 17)
             }
-            #[doc = "Bits 20:23 - Project-assigned name. Bits 23:20 of the eight stop-request bits hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
+            #[doc = "Bits 20:23 - Project-assigned name. Bits 23:20 of the eight stop-request bits libpp\\[hal_mac.o\\]::hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."]
             #[inline(always)]
             pub fn tx_block_stop_request_high(
                 &mut self,
@@ -16869,7 +16869,7 @@ pub mod wifi_mac_control {
                 Bits24_31OpaqueW::new(self, 24)
             }
         }
-        #[doc = "Project-assigned name. Cold promiscuous initialization writes zero. hal_mac_deinit records bits 13 and 14 as TX/RX activity and sets bit 12 plus bits 23:16; hal_mac_init with WIFI_PS_NONE clears that same stop-request mask.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Cold promiscuous initialization writes zero. libpp\\[hal_mac.o\\]::hal_mac_deinit records bits 13 and 14 as TX/RX activity and sets bit 12 plus bits 23:16; hal_mac_init with WIFI_PS_NONE clears that same stop-request mask.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ControlSpec;
         impl crate::RegisterSpec for ControlSpec {
             type Ux = u32;
@@ -16912,9 +16912,9 @@ pub mod wifi_mac_regdma_control {
         pub type R = crate::R<ControlSpec>;
         #[doc = "Register `CONTROL` writer"]
         pub type W = crate::W<ControlSpec>;
-        #[doc = "Field `MODEM_WAKEUP_PROTECT_EARLY_TIME` reader - Project-assigned name. pwr_hal_set_mac_modem_state_wakeup_protect_early_time replaces the low sixteen bits."]
+        #[doc = "Field `MODEM_WAKEUP_PROTECT_EARLY_TIME` reader - Project-assigned name. libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_state_wakeup_protect_early_time replaces the low sixteen bits."]
         pub type ModemWakeupProtectEarlyTimeR = crate::FieldReader<u16>;
-        #[doc = "Field `MODEM_WAKEUP_PROTECT_EARLY_TIME` writer - Project-assigned name. pwr_hal_set_mac_modem_state_wakeup_protect_early_time replaces the low sixteen bits."]
+        #[doc = "Field `MODEM_WAKEUP_PROTECT_EARLY_TIME` writer - Project-assigned name. libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_state_wakeup_protect_early_time replaces the low sixteen bits."]
         pub type ModemWakeupProtectEarlyTimeW<'a, REG> =
             crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
         #[doc = "Field `BIT_16_OPAQUE` reader - Opaque: meaning not established."]
@@ -16968,9 +16968,9 @@ pub mod wifi_mac_regdma_control {
                 self.variant(ActiveLink::WifiNoPowerSave)
             }
         }
-        #[doc = "Field `MODEM_TBTT_AUTO_PERIOD_INTERVAL` reader - Project-assigned name. pwr_hal_set_mac_modem_tbtt_auto_period_interval replaces bits 30:21 from the low ten argument bits."]
+        #[doc = "Field `MODEM_TBTT_AUTO_PERIOD_INTERVAL` reader - Project-assigned name. libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_tbtt_auto_period_interval replaces bits 30:21 from the low ten argument bits."]
         pub type ModemTbttAutoPeriodIntervalR = crate::FieldReader<u16>;
-        #[doc = "Field `MODEM_TBTT_AUTO_PERIOD_INTERVAL` writer - Project-assigned name. pwr_hal_set_mac_modem_tbtt_auto_period_interval replaces bits 30:21 from the low ten argument bits."]
+        #[doc = "Field `MODEM_TBTT_AUTO_PERIOD_INTERVAL` writer - Project-assigned name. libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_tbtt_auto_period_interval replaces bits 30:21 from the low ten argument bits."]
         pub type ModemTbttAutoPeriodIntervalW<'a, REG> =
             crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
         #[doc = "Field `MODEM_TBTT_AUTO_PERIOD_ENABLE` reader - Project-assigned name. The dedicated enable and disable leaves set or clear bit 31."]
@@ -16978,7 +16978,7 @@ pub mod wifi_mac_regdma_control {
         #[doc = "Field `MODEM_TBTT_AUTO_PERIOD_ENABLE` writer - Project-assigned name. The dedicated enable and disable leaves set or clear bit 31."]
         pub type ModemTbttAutoPeriodEnableW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bits 0:15 - Project-assigned name. pwr_hal_set_mac_modem_state_wakeup_protect_early_time replaces the low sixteen bits."]
+            #[doc = "Bits 0:15 - Project-assigned name. libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_state_wakeup_protect_early_time replaces the low sixteen bits."]
             #[inline(always)]
             pub fn modem_wakeup_protect_early_time(&self) -> ModemWakeupProtectEarlyTimeR {
                 ModemWakeupProtectEarlyTimeR::new((self.bits & 0xffff) as u16)
@@ -16993,7 +16993,7 @@ pub mod wifi_mac_regdma_control {
             pub fn active_link(&self) -> ActiveLinkR {
                 ActiveLinkR::new(((self.bits >> 17) & 0x0f) as u8)
             }
-            #[doc = "Bits 21:30 - Project-assigned name. pwr_hal_set_mac_modem_tbtt_auto_period_interval replaces bits 30:21 from the low ten argument bits."]
+            #[doc = "Bits 21:30 - Project-assigned name. libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_tbtt_auto_period_interval replaces bits 30:21 from the low ten argument bits."]
             #[inline(always)]
             pub fn modem_tbtt_auto_period_interval(&self) -> ModemTbttAutoPeriodIntervalR {
                 ModemTbttAutoPeriodIntervalR::new(((self.bits >> 21) & 0x03ff) as u16)
@@ -17005,7 +17005,7 @@ pub mod wifi_mac_regdma_control {
             }
         }
         impl W {
-            #[doc = "Bits 0:15 - Project-assigned name. pwr_hal_set_mac_modem_state_wakeup_protect_early_time replaces the low sixteen bits."]
+            #[doc = "Bits 0:15 - Project-assigned name. libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_state_wakeup_protect_early_time replaces the low sixteen bits."]
             #[inline(always)]
             pub fn modem_wakeup_protect_early_time(
                 &mut self,
@@ -17022,7 +17022,7 @@ pub mod wifi_mac_regdma_control {
             pub fn active_link(&mut self) -> ActiveLinkW<'_, ControlSpec> {
                 ActiveLinkW::new(self, 17)
             }
-            #[doc = "Bits 21:30 - Project-assigned name. pwr_hal_set_mac_modem_tbtt_auto_period_interval replaces bits 30:21 from the low ten argument bits."]
+            #[doc = "Bits 21:30 - Project-assigned name. libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_tbtt_auto_period_interval replaces bits 30:21 from the low ten argument bits."]
             #[inline(always)]
             pub fn modem_tbtt_auto_period_interval(
                 &mut self,
@@ -18198,7 +18198,7 @@ pub mod wifi_mac_tx_queue_control {
         control: (),
     }
     impl RegisterBlock {
-        #[doc = "0x00..0x10 - Project-assigned name. Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_CTS at bit 30 and SW_RTS at bit 31. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears only SW_CTS in this same word, preserving SW_RTS and all three spacing lanes. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."]
+        #[doc = "0x00..0x10 - Project-assigned name. Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_CTS at bit 30 and SW_RTS at bit 31. For HT, complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete libpp\\[pp_he.o\\]::ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears only SW_CTS in this same word, preserving SW_RTS and all three spacing lanes. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."]
         #[inline(always)]
         pub const fn protection(&self, n: usize) -> &Protection {
             #[allow(clippy::no_effect)]
@@ -18206,7 +18206,7 @@ pub mod wifi_mac_tx_queue_control {
             unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(16 * n).cast() }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x00..0x10 - Project-assigned name. Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_CTS at bit 30 and SW_RTS at bit 31. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears only SW_CTS in this same word, preserving SW_RTS and all three spacing lanes. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."]
+        #[doc = "0x00..0x10 - Project-assigned name. Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_CTS at bit 30 and SW_RTS at bit 31. For HT, complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete libpp\\[pp_he.o\\]::ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears only SW_CTS in this same word, preserving SW_RTS and all three spacing lanes. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."]
         #[inline(always)]
         pub fn protection_iter(&self) -> impl Iterator<Item = &Protection> {
             (0..4).map(move |n| unsafe {
@@ -18264,10 +18264,10 @@ pub mod wifi_mac_tx_queue_control {
             })
         }
     }
-    #[doc = "PROTECTION (rw) register accessor: Project-assigned name. Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_CTS at bit 30 and SW_RTS at bit 31. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears only SW_CTS in this same word, preserving SW_RTS and all three spacing lanes. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c.\n\nYou can [`read`](crate::Reg::read) this register and get [`protection::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`protection::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@protection`] module"]
+    #[doc = "PROTECTION (rw) register accessor: Project-assigned name. Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_CTS at bit 30 and SW_RTS at bit 31. For HT, complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete libpp\\[pp_he.o\\]::ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears only SW_CTS in this same word, preserving SW_RTS and all three spacing lanes. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c.\n\nYou can [`read`](crate::Reg::read) this register and get [`protection::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`protection::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@protection`] module"]
     #[doc(alias = "PROTECTION")]
     pub type Protection = crate::Reg<protection::ProtectionSpec>;
-    #[doc = "Project-assigned name. Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_CTS at bit 30 and SW_RTS at bit 31. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears only SW_CTS in this same word, preserving SW_RTS and all three spacing lanes. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."]
+    #[doc = "Project-assigned name. Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_CTS at bit 30 and SW_RTS at bit 31. For HT, complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete libpp\\[pp_he.o\\]::ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears only SW_CTS in this same word, preserving SW_RTS and all three spacing lanes. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."]
     pub mod protection {
         #[doc = "Register `PROTECTION%s` reader"]
         pub type R = crate::R<ProtectionSpec>;
@@ -18356,7 +18356,7 @@ pub mod wifi_mac_tx_queue_control {
                 SoftwareRtsW::new(self, 31)
             }
         }
-        #[doc = "Project-assigned name. Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_CTS at bit 30 and SW_RTS at bit 31. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears only SW_CTS in this same word, preserving SW_RTS and all three spacing lanes. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c.\n\nYou can [`read`](crate::Reg::read) this register and get [`protection::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`protection::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_CTS at bit 30 and SW_RTS at bit 31. For HT, complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete libpp\\[pp_he.o\\]::ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears only SW_CTS in this same word, preserving SW_RTS and all three spacing lanes. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c.\n\nYou can [`read`](crate::Reg::read) this register and get [`protection::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`protection::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ProtectionSpec;
         impl crate::RegisterSpec for ProtectionSpec {
             type Ux = u32;
@@ -18393,9 +18393,9 @@ pub mod wifi_mac_tx_queue_control {
         pub type AifsnR = crate::FieldReader;
         #[doc = "Field `AIFSN` writer - Project-assigned name."]
         pub type AifsnW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
-        #[doc = "Field `SCHEDULER_PRIORITY` reader - Project-assigned name. Complete mac_tx_set_pti writes the unsigned minimum of packet PTI and coexistence event-one PTI here. This scheduler value is independent of the four original packet-PTI lanes in the vector bank; for Authentication and Association both values resolve to one. Open HIL read scheduler one in five reset-to-connect repetitions."]
+        #[doc = "Field `SCHEDULER_PRIORITY` reader - Project-assigned name. Complete libpp\\[hal_mac.o\\]::mac_tx_set_pti writes the unsigned minimum of packet PTI and coexistence event-one PTI here. This scheduler value is independent of the four original packet-PTI lanes in the vector bank; for Authentication and Association both values resolve to one. Open HIL read scheduler one in five reset-to-connect repetitions."]
         pub type SchedulerPriorityR = crate::FieldReader;
-        #[doc = "Field `SCHEDULER_PRIORITY` writer - Project-assigned name. Complete mac_tx_set_pti writes the unsigned minimum of packet PTI and coexistence event-one PTI here. This scheduler value is independent of the four original packet-PTI lanes in the vector bank; for Authentication and Association both values resolve to one. Open HIL read scheduler one in five reset-to-connect repetitions."]
+        #[doc = "Field `SCHEDULER_PRIORITY` writer - Project-assigned name. Complete libpp\\[hal_mac.o\\]::mac_tx_set_pti writes the unsigned minimum of packet PTI and coexistence event-one PTI here. This scheduler value is independent of the four original packet-PTI lanes in the vector bank; for Authentication and Association both values resolve to one. Open HIL read scheduler one in five reset-to-connect repetitions."]
         pub type SchedulerPriorityW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:11 - Project-assigned name."]
@@ -18418,7 +18418,7 @@ pub mod wifi_mac_tx_queue_control {
             pub fn aifsn(&self) -> AifsnR {
                 AifsnR::new(((self.bits >> 24) & 0x0f) as u8)
             }
-            #[doc = "Bits 28:31 - Project-assigned name. Complete mac_tx_set_pti writes the unsigned minimum of packet PTI and coexistence event-one PTI here. This scheduler value is independent of the four original packet-PTI lanes in the vector bank; for Authentication and Association both values resolve to one. Open HIL read scheduler one in five reset-to-connect repetitions."]
+            #[doc = "Bits 28:31 - Project-assigned name. Complete libpp\\[hal_mac.o\\]::mac_tx_set_pti writes the unsigned minimum of packet PTI and coexistence event-one PTI here. This scheduler value is independent of the four original packet-PTI lanes in the vector bank; for Authentication and Association both values resolve to one. Open HIL read scheduler one in five reset-to-connect repetitions."]
             #[inline(always)]
             pub fn scheduler_priority(&self) -> SchedulerPriorityR {
                 SchedulerPriorityR::new(((self.bits >> 28) & 0x0f) as u8)
@@ -18445,7 +18445,7 @@ pub mod wifi_mac_tx_queue_control {
             pub fn aifsn(&mut self) -> AifsnW<'_, ConfigSpec> {
                 AifsnW::new(self, 24)
             }
-            #[doc = "Bits 28:31 - Project-assigned name. Complete mac_tx_set_pti writes the unsigned minimum of packet PTI and coexistence event-one PTI here. This scheduler value is independent of the four original packet-PTI lanes in the vector bank; for Authentication and Association both values resolve to one. Open HIL read scheduler one in five reset-to-connect repetitions."]
+            #[doc = "Bits 28:31 - Project-assigned name. Complete libpp\\[hal_mac.o\\]::mac_tx_set_pti writes the unsigned minimum of packet PTI and coexistence event-one PTI here. This scheduler value is independent of the four original packet-PTI lanes in the vector bank; for Authentication and Association both values resolve to one. Open HIL read scheduler one in five reset-to-connect repetitions."]
             #[inline(always)]
             pub fn scheduler_priority(&mut self) -> SchedulerPriorityW<'_, ConfigSpec> {
                 SchedulerPriorityW::new(self, 28)
@@ -18476,21 +18476,21 @@ pub mod wifi_mac_tx_queue_control {
         pub type DescriptorAddressLowR = crate::FieldReader<u32>;
         #[doc = "Field `DESCRIPTOR_ADDRESS_LOW` writer - Project-assigned name. Low twenty bits of the owned TX descriptor address; the DMA window supplies the high address bits."]
         pub type DescriptorAddressLowW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32, crate::Safe>;
-        #[doc = "Field `BITS_20_21_OPAQUE` reader - Opaque: meaning not established. Recovered PLCP0 control image; mac_tx_set_plcp0 initializes these two bits to binary 10 for the ordinary direct legacy path."]
+        #[doc = "Field `BITS_20_21_OPAQUE` reader - Opaque: meaning not established. Recovered PLCP0 control image; libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp0 initializes these two bits to binary 10 for the ordinary direct legacy path."]
         pub type Bits20_21OpaqueR = crate::FieldReader;
-        #[doc = "Field `BITS_20_21_OPAQUE` writer - Opaque: meaning not established. Recovered PLCP0 control image; mac_tx_set_plcp0 initializes these two bits to binary 10 for the ordinary direct legacy path."]
+        #[doc = "Field `BITS_20_21_OPAQUE` writer - Opaque: meaning not established. Recovered PLCP0 control image; libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp0 initializes these two bits to binary 10 for the ordinary direct legacy path."]
         pub type Bits20_21OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
-        #[doc = "Field `BIT_22_OPAQUE` reader - Opaque: meaning not established. Complete pp.o ppTxFragmentProc reaches its common legacy setup at offsets 0x8e..0xa8 from the CCMP selector-three branch at 0x22a and sets descriptor bit seven. Complete hal_mac_tx.o mac_tx_set_txop_q offsets 0x86..0xaa then sets this queue-control bit exactly when descriptor flag bits 7:6 equal binary 10 and clears it otherwise. Thus the bounded ordinary individual/group CCMP path sets this bit after mac_tx_set_plcp0. A 2026-07-29 open HIL A/B clearing the bit increased raw ACK timeouts from the prior roughly 28 percent to 1395/2325 attempts (60 percent), so the exact set mapping is retained while the electrical meaning remains unknown."]
+        #[doc = "Field `BIT_22_OPAQUE` reader - Opaque: meaning not established. Complete pp.o ppTxFragmentProc reaches its common legacy setup at offsets 0x8e..0xa8 from the CCMP selector-three branch at 0x22a and sets descriptor bit seven. Complete hal_mac_tx.o libpp\\[hal_mac_tx.o\\]::mac_tx_set_txop_q offsets 0x86..0xaa then sets this queue-control bit exactly when descriptor flag bits 7:6 equal binary 10 and clears it otherwise. Thus the bounded ordinary individual/group CCMP path sets this bit after libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp0. A 2026-07-29 open HIL A/B clearing the bit increased raw ACK timeouts from the prior roughly 28 percent to 1395/2325 attempts (60 percent), so the exact set mapping is retained while the electrical meaning remains unknown."]
         pub type Bit22OpaqueR = crate::BitReader;
-        #[doc = "Field `BIT_22_OPAQUE` writer - Opaque: meaning not established. Complete pp.o ppTxFragmentProc reaches its common legacy setup at offsets 0x8e..0xa8 from the CCMP selector-three branch at 0x22a and sets descriptor bit seven. Complete hal_mac_tx.o mac_tx_set_txop_q offsets 0x86..0xaa then sets this queue-control bit exactly when descriptor flag bits 7:6 equal binary 10 and clears it otherwise. Thus the bounded ordinary individual/group CCMP path sets this bit after mac_tx_set_plcp0. A 2026-07-29 open HIL A/B clearing the bit increased raw ACK timeouts from the prior roughly 28 percent to 1395/2325 attempts (60 percent), so the exact set mapping is retained while the electrical meaning remains unknown."]
+        #[doc = "Field `BIT_22_OPAQUE` writer - Opaque: meaning not established. Complete pp.o ppTxFragmentProc reaches its common legacy setup at offsets 0x8e..0xa8 from the CCMP selector-three branch at 0x22a and sets descriptor bit seven. Complete hal_mac_tx.o libpp\\[hal_mac_tx.o\\]::mac_tx_set_txop_q offsets 0x86..0xaa then sets this queue-control bit exactly when descriptor flag bits 7:6 equal binary 10 and clears it otherwise. Thus the bounded ordinary individual/group CCMP path sets this bit after libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp0. A 2026-07-29 open HIL A/B clearing the bit increased raw ACK timeouts from the prior roughly 28 percent to 1395/2325 attempts (60 percent), so the exact set mapping is retained while the electrical meaning remains unknown."]
         pub type Bit22OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `BIT_23_OPAQUE` reader - Opaque: meaning not established. Recovered PLCP0 control image; mac_tx_set_plcp0 initializes this bit to zero for the ordinary direct legacy path."]
+        #[doc = "Field `BIT_23_OPAQUE` reader - Opaque: meaning not established. Recovered PLCP0 control image; libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp0 initializes this bit to zero for the ordinary direct legacy path."]
         pub type Bit23OpaqueR = crate::BitReader;
-        #[doc = "Field `BIT_23_OPAQUE` writer - Opaque: meaning not established. Recovered PLCP0 control image; mac_tx_set_plcp0 initializes this bit to zero for the ordinary direct legacy path."]
+        #[doc = "Field `BIT_23_OPAQUE` writer - Opaque: meaning not established. Recovered PLCP0 control image; libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp0 initializes this bit to zero for the ordinary direct legacy path."]
         pub type Bit23OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `PLCP_FORMAT` reader - Project-assigned name. Three-bit format selector derived by complete mac_tx_set_plcp0 from vendor descriptor flags. For the bounded plain legacy roots, ppTxProtoProc maps the address-one I/G bit to descriptor flag 0x2: group traffic retains format zero, while an ordinary individual-address descriptor with zero flags selects format one. Exact vendor callback images select format one for both non-A-MPDU HT20 MCS0 and HE20 MCS0 DCM S-MPDU frames; the owned open paths receive ACK at the same format. Independently captured HT and HE A-MPDU images select aggregate format two or five respectively. Format three has an instruction-exact descriptor branch but its higher-level meaning remains open. A legacy-only single-variable A/B temporarily correlated format one with status five and format zero with one authentication response, but format-zero repetitions failed; that experiment is retained as evidence that completion status alone is not a protocol-success oracle, not as an override of the complete blob mapping."]
+        #[doc = "Field `PLCP_FORMAT` reader - Project-assigned name. Three-bit format selector derived by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp0 from vendor descriptor flags. For the bounded plain legacy roots, libpp\\[pp.o\\]::ppTxProtoProc maps the address-one I/G bit to descriptor flag 0x2: group traffic retains format zero, while an ordinary individual-address descriptor with zero flags selects format one. Exact vendor callback images select format one for both non-A-MPDU HT20 MCS0 and HE20 MCS0 DCM S-MPDU frames; the owned open paths receive ACK at the same format. Independently captured HT and HE A-MPDU images select aggregate format two or five respectively. Format three has an instruction-exact descriptor branch but its higher-level meaning remains open. A legacy-only single-variable A/B temporarily correlated format one with status five and format zero with one authentication response, but format-zero repetitions failed; that experiment is retained as evidence that completion status alone is not a protocol-success oracle, not as an override of the complete blob mapping."]
         pub type PlcpFormatR = crate::FieldReader;
-        #[doc = "Field `PLCP_FORMAT` writer - Project-assigned name. Three-bit format selector derived by complete mac_tx_set_plcp0 from vendor descriptor flags. For the bounded plain legacy roots, ppTxProtoProc maps the address-one I/G bit to descriptor flag 0x2: group traffic retains format zero, while an ordinary individual-address descriptor with zero flags selects format one. Exact vendor callback images select format one for both non-A-MPDU HT20 MCS0 and HE20 MCS0 DCM S-MPDU frames; the owned open paths receive ACK at the same format. Independently captured HT and HE A-MPDU images select aggregate format two or five respectively. Format three has an instruction-exact descriptor branch but its higher-level meaning remains open. A legacy-only single-variable A/B temporarily correlated format one with status five and format zero with one authentication response, but format-zero repetitions failed; that experiment is retained as evidence that completion status alone is not a protocol-success oracle, not as an override of the complete blob mapping."]
+        #[doc = "Field `PLCP_FORMAT` writer - Project-assigned name. Three-bit format selector derived by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp0 from vendor descriptor flags. For the bounded plain legacy roots, libpp\\[pp.o\\]::ppTxProtoProc maps the address-one I/G bit to descriptor flag 0x2: group traffic retains format zero, while an ordinary individual-address descriptor with zero flags selects format one. Exact vendor callback images select format one for both non-A-MPDU HT20 MCS0 and HE20 MCS0 DCM S-MPDU frames; the owned open paths receive ACK at the same format. Independently captured HT and HE A-MPDU images select aggregate format two or five respectively. Format three has an instruction-exact descriptor branch but its higher-level meaning remains open. A legacy-only single-variable A/B temporarily correlated format one with status five and format zero with one authentication response, but format-zero repetitions failed; that experiment is retained as evidence that completion status alone is not a protocol-success oracle, not as an override of the complete blob mapping."]
         pub type PlcpFormatW<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
         #[doc = "Field `BITS_27_29_OPAQUE` reader - Opaque: meaning not established. Remaining low control bits before ownership publication."]
         pub type Bits27_29OpaqueR = crate::FieldReader;
@@ -18510,22 +18510,22 @@ pub mod wifi_mac_tx_queue_control {
             pub fn descriptor_address_low(&self) -> DescriptorAddressLowR {
                 DescriptorAddressLowR::new(self.bits & 0x000f_ffff)
             }
-            #[doc = "Bits 20:21 - Opaque: meaning not established. Recovered PLCP0 control image; mac_tx_set_plcp0 initializes these two bits to binary 10 for the ordinary direct legacy path."]
+            #[doc = "Bits 20:21 - Opaque: meaning not established. Recovered PLCP0 control image; libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp0 initializes these two bits to binary 10 for the ordinary direct legacy path."]
             #[inline(always)]
             pub fn bits_20_21_opaque(&self) -> Bits20_21OpaqueR {
                 Bits20_21OpaqueR::new(((self.bits >> 20) & 3) as u8)
             }
-            #[doc = "Bit 22 - Opaque: meaning not established. Complete pp.o ppTxFragmentProc reaches its common legacy setup at offsets 0x8e..0xa8 from the CCMP selector-three branch at 0x22a and sets descriptor bit seven. Complete hal_mac_tx.o mac_tx_set_txop_q offsets 0x86..0xaa then sets this queue-control bit exactly when descriptor flag bits 7:6 equal binary 10 and clears it otherwise. Thus the bounded ordinary individual/group CCMP path sets this bit after mac_tx_set_plcp0. A 2026-07-29 open HIL A/B clearing the bit increased raw ACK timeouts from the prior roughly 28 percent to 1395/2325 attempts (60 percent), so the exact set mapping is retained while the electrical meaning remains unknown."]
+            #[doc = "Bit 22 - Opaque: meaning not established. Complete pp.o ppTxFragmentProc reaches its common legacy setup at offsets 0x8e..0xa8 from the CCMP selector-three branch at 0x22a and sets descriptor bit seven. Complete hal_mac_tx.o libpp\\[hal_mac_tx.o\\]::mac_tx_set_txop_q offsets 0x86..0xaa then sets this queue-control bit exactly when descriptor flag bits 7:6 equal binary 10 and clears it otherwise. Thus the bounded ordinary individual/group CCMP path sets this bit after libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp0. A 2026-07-29 open HIL A/B clearing the bit increased raw ACK timeouts from the prior roughly 28 percent to 1395/2325 attempts (60 percent), so the exact set mapping is retained while the electrical meaning remains unknown."]
             #[inline(always)]
             pub fn bit_22_opaque(&self) -> Bit22OpaqueR {
                 Bit22OpaqueR::new(((self.bits >> 22) & 1) != 0)
             }
-            #[doc = "Bit 23 - Opaque: meaning not established. Recovered PLCP0 control image; mac_tx_set_plcp0 initializes this bit to zero for the ordinary direct legacy path."]
+            #[doc = "Bit 23 - Opaque: meaning not established. Recovered PLCP0 control image; libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp0 initializes this bit to zero for the ordinary direct legacy path."]
             #[inline(always)]
             pub fn bit_23_opaque(&self) -> Bit23OpaqueR {
                 Bit23OpaqueR::new(((self.bits >> 23) & 1) != 0)
             }
-            #[doc = "Bits 24:26 - Project-assigned name. Three-bit format selector derived by complete mac_tx_set_plcp0 from vendor descriptor flags. For the bounded plain legacy roots, ppTxProtoProc maps the address-one I/G bit to descriptor flag 0x2: group traffic retains format zero, while an ordinary individual-address descriptor with zero flags selects format one. Exact vendor callback images select format one for both non-A-MPDU HT20 MCS0 and HE20 MCS0 DCM S-MPDU frames; the owned open paths receive ACK at the same format. Independently captured HT and HE A-MPDU images select aggregate format two or five respectively. Format three has an instruction-exact descriptor branch but its higher-level meaning remains open. A legacy-only single-variable A/B temporarily correlated format one with status five and format zero with one authentication response, but format-zero repetitions failed; that experiment is retained as evidence that completion status alone is not a protocol-success oracle, not as an override of the complete blob mapping."]
+            #[doc = "Bits 24:26 - Project-assigned name. Three-bit format selector derived by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp0 from vendor descriptor flags. For the bounded plain legacy roots, libpp\\[pp.o\\]::ppTxProtoProc maps the address-one I/G bit to descriptor flag 0x2: group traffic retains format zero, while an ordinary individual-address descriptor with zero flags selects format one. Exact vendor callback images select format one for both non-A-MPDU HT20 MCS0 and HE20 MCS0 DCM S-MPDU frames; the owned open paths receive ACK at the same format. Independently captured HT and HE A-MPDU images select aggregate format two or five respectively. Format three has an instruction-exact descriptor branch but its higher-level meaning remains open. A legacy-only single-variable A/B temporarily correlated format one with status five and format zero with one authentication response, but format-zero repetitions failed; that experiment is retained as evidence that completion status alone is not a protocol-success oracle, not as an override of the complete blob mapping."]
             #[inline(always)]
             pub fn plcp_format(&self) -> PlcpFormatR {
                 PlcpFormatR::new(((self.bits >> 24) & 7) as u8)
@@ -18552,22 +18552,22 @@ pub mod wifi_mac_tx_queue_control {
             pub fn descriptor_address_low(&mut self) -> DescriptorAddressLowW<'_, ControlSpec> {
                 DescriptorAddressLowW::new(self, 0)
             }
-            #[doc = "Bits 20:21 - Opaque: meaning not established. Recovered PLCP0 control image; mac_tx_set_plcp0 initializes these two bits to binary 10 for the ordinary direct legacy path."]
+            #[doc = "Bits 20:21 - Opaque: meaning not established. Recovered PLCP0 control image; libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp0 initializes these two bits to binary 10 for the ordinary direct legacy path."]
             #[inline(always)]
             pub fn bits_20_21_opaque(&mut self) -> Bits20_21OpaqueW<'_, ControlSpec> {
                 Bits20_21OpaqueW::new(self, 20)
             }
-            #[doc = "Bit 22 - Opaque: meaning not established. Complete pp.o ppTxFragmentProc reaches its common legacy setup at offsets 0x8e..0xa8 from the CCMP selector-three branch at 0x22a and sets descriptor bit seven. Complete hal_mac_tx.o mac_tx_set_txop_q offsets 0x86..0xaa then sets this queue-control bit exactly when descriptor flag bits 7:6 equal binary 10 and clears it otherwise. Thus the bounded ordinary individual/group CCMP path sets this bit after mac_tx_set_plcp0. A 2026-07-29 open HIL A/B clearing the bit increased raw ACK timeouts from the prior roughly 28 percent to 1395/2325 attempts (60 percent), so the exact set mapping is retained while the electrical meaning remains unknown."]
+            #[doc = "Bit 22 - Opaque: meaning not established. Complete pp.o ppTxFragmentProc reaches its common legacy setup at offsets 0x8e..0xa8 from the CCMP selector-three branch at 0x22a and sets descriptor bit seven. Complete hal_mac_tx.o libpp\\[hal_mac_tx.o\\]::mac_tx_set_txop_q offsets 0x86..0xaa then sets this queue-control bit exactly when descriptor flag bits 7:6 equal binary 10 and clears it otherwise. Thus the bounded ordinary individual/group CCMP path sets this bit after libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp0. A 2026-07-29 open HIL A/B clearing the bit increased raw ACK timeouts from the prior roughly 28 percent to 1395/2325 attempts (60 percent), so the exact set mapping is retained while the electrical meaning remains unknown."]
             #[inline(always)]
             pub fn bit_22_opaque(&mut self) -> Bit22OpaqueW<'_, ControlSpec> {
                 Bit22OpaqueW::new(self, 22)
             }
-            #[doc = "Bit 23 - Opaque: meaning not established. Recovered PLCP0 control image; mac_tx_set_plcp0 initializes this bit to zero for the ordinary direct legacy path."]
+            #[doc = "Bit 23 - Opaque: meaning not established. Recovered PLCP0 control image; libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp0 initializes this bit to zero for the ordinary direct legacy path."]
             #[inline(always)]
             pub fn bit_23_opaque(&mut self) -> Bit23OpaqueW<'_, ControlSpec> {
                 Bit23OpaqueW::new(self, 23)
             }
-            #[doc = "Bits 24:26 - Project-assigned name. Three-bit format selector derived by complete mac_tx_set_plcp0 from vendor descriptor flags. For the bounded plain legacy roots, ppTxProtoProc maps the address-one I/G bit to descriptor flag 0x2: group traffic retains format zero, while an ordinary individual-address descriptor with zero flags selects format one. Exact vendor callback images select format one for both non-A-MPDU HT20 MCS0 and HE20 MCS0 DCM S-MPDU frames; the owned open paths receive ACK at the same format. Independently captured HT and HE A-MPDU images select aggregate format two or five respectively. Format three has an instruction-exact descriptor branch but its higher-level meaning remains open. A legacy-only single-variable A/B temporarily correlated format one with status five and format zero with one authentication response, but format-zero repetitions failed; that experiment is retained as evidence that completion status alone is not a protocol-success oracle, not as an override of the complete blob mapping."]
+            #[doc = "Bits 24:26 - Project-assigned name. Three-bit format selector derived by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp0 from vendor descriptor flags. For the bounded plain legacy roots, libpp\\[pp.o\\]::ppTxProtoProc maps the address-one I/G bit to descriptor flag 0x2: group traffic retains format zero, while an ordinary individual-address descriptor with zero flags selects format one. Exact vendor callback images select format one for both non-A-MPDU HT20 MCS0 and HE20 MCS0 DCM S-MPDU frames; the owned open paths receive ACK at the same format. Independently captured HT and HE A-MPDU images select aggregate format two or five respectively. Format three has an instruction-exact descriptor branch but its higher-level meaning remains open. A legacy-only single-variable A/B temporarily correlated format one with status five and format zero with one authentication response, but format-zero repetitions failed; that experiment is retained as evidence that completion status alone is not a protocol-success oracle, not as an override of the complete blob mapping."]
             #[inline(always)]
             pub fn plcp_format(&mut self) -> PlcpFormatW<'_, ControlSpec> {
                 PlcpFormatW::new(self, 24)
@@ -18644,7 +18644,7 @@ pub mod wifi_mac_tx_queue_vector {
         he_control_config: (),
     }
     impl RegisterBlock {
-        #[doc = "0x00..0x10 - Project-assigned name. Per-queue second PLCP/vector word. Complete dbg_read_key_entry independently names bits 22:17 as KEY_ENTRY_INDEX and bits 24:23 as BSSID_SELECT. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain."]
+        #[doc = "0x00..0x10 - Project-assigned name. Per-queue second PLCP/vector word. Complete dbg_read_key_entry independently names bits 22:17 as KEY_ENTRY_INDEX and bits 24:23 as BSSID_SELECT. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain."]
         #[inline(always)]
         pub const fn plcp1(&self, n: usize) -> &Plcp1 {
             #[allow(clippy::no_effect)]
@@ -18652,7 +18652,7 @@ pub mod wifi_mac_tx_queue_vector {
             unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(124 * n).cast() }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x00..0x10 - Project-assigned name. Per-queue second PLCP/vector word. Complete dbg_read_key_entry independently names bits 22:17 as KEY_ENTRY_INDEX and bits 24:23 as BSSID_SELECT. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain."]
+        #[doc = "0x00..0x10 - Project-assigned name. Per-queue second PLCP/vector word. Complete dbg_read_key_entry independently names bits 22:17 as KEY_ENTRY_INDEX and bits 24:23 as BSSID_SELECT. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain."]
         #[inline(always)]
         pub fn plcp1_iter(&self) -> impl Iterator<Item = &Plcp1> {
             (0..4).map(move |n| unsafe {
@@ -18684,7 +18684,7 @@ pub mod wifi_mac_tx_queue_vector {
                     .cast()
             })
         }
-        #[doc = "0x08..0x18 - Project-assigned name. Complete mac_tx_set_pti publishes the original packet PTI independently into four lanes, then loads descriptor byte offset 0x22 once and passes it as argument six to hal_set_tx_pti, which publishes it as COUNT bits 31:20. This count is independent of the A-MPDU descriptor count written by mac_tx_set_mplen to HT_DESCRIPTOR_COUNTS. For vendor Authentication and Association, ieee80211_set_tx_pti event six maps through coex_pti_tab to packet PTI one; the independent scheduler field also resolves to one through the unsigned-minimum clamp against event-one PTI five. Vendor and open HIL both used 0x00111110, including the hardware-qualified 32-MPDU open profile."]
+        #[doc = "0x08..0x18 - Project-assigned name. Complete libpp\\[hal_mac.o\\]::mac_tx_set_pti publishes the original packet PTI independently into four lanes, then loads descriptor byte offset 0x22 once and passes it as argument six to hal_set_tx_pti, which publishes it as COUNT bits 31:20. This count is independent of the A-MPDU descriptor count written by libpp\\[hal_mac_tx.o\\]::mac_tx_set_mplen to HT_DESCRIPTOR_COUNTS. For vendor Authentication and Association, libnet80211\\[ieee80211_output.o\\]::ieee80211_set_tx_pti event six maps through coex_pti_tab to packet PTI one; the independent scheduler field also resolves to one through the unsigned-minimum clamp against event-one PTI five. Vendor and open HIL both used 0x00111110, including the hardware-qualified 32-MPDU open profile."]
         #[inline(always)]
         pub const fn pti(&self, n: usize) -> &Pti {
             #[allow(clippy::no_effect)]
@@ -18698,7 +18698,7 @@ pub mod wifi_mac_tx_queue_vector {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x08..0x18 - Project-assigned name. Complete mac_tx_set_pti publishes the original packet PTI independently into four lanes, then loads descriptor byte offset 0x22 once and passes it as argument six to hal_set_tx_pti, which publishes it as COUNT bits 31:20. This count is independent of the A-MPDU descriptor count written by mac_tx_set_mplen to HT_DESCRIPTOR_COUNTS. For vendor Authentication and Association, ieee80211_set_tx_pti event six maps through coex_pti_tab to packet PTI one; the independent scheduler field also resolves to one through the unsigned-minimum clamp against event-one PTI five. Vendor and open HIL both used 0x00111110, including the hardware-qualified 32-MPDU open profile."]
+        #[doc = "0x08..0x18 - Project-assigned name. Complete libpp\\[hal_mac.o\\]::mac_tx_set_pti publishes the original packet PTI independently into four lanes, then loads descriptor byte offset 0x22 once and passes it as argument six to hal_set_tx_pti, which publishes it as COUNT bits 31:20. This count is independent of the A-MPDU descriptor count written by libpp\\[hal_mac_tx.o\\]::mac_tx_set_mplen to HT_DESCRIPTOR_COUNTS. For vendor Authentication and Association, libnet80211\\[ieee80211_output.o\\]::ieee80211_set_tx_pti event six maps through coex_pti_tab to packet PTI one; the independent scheduler field also resolves to one through the unsigned-minimum clamp against event-one PTI five. Vendor and open HIL both used 0x00111110, including the hardware-qualified 32-MPDU open profile."]
         #[inline(always)]
         pub fn pti_iter(&self) -> impl Iterator<Item = &Pti> {
             (0..4).map(move |n| unsafe {
@@ -18709,7 +18709,7 @@ pub mod wifi_mac_tx_queue_vector {
                     .cast()
             })
         }
-        #[doc = "0x0c..0x1c - Project-assigned name. Per-queue four-byte HT-Control/HE-Control image at 0x201054e4-logical_queue*0x7c. Complete hal_he_get_htc reads the whole word. Complete hal_he_set_htc writes the supplied word before independently selecting whether this software image overrides the hardware-generated HE-Control value."]
+        #[doc = "0x0c..0x1c - Project-assigned name. Per-queue four-byte HT-Control/HE-Control image at 0x201054e4-logical_queue*0x7c. Complete hal_he_get_htc reads the whole word. Complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_htc writes the supplied word before independently selecting whether this software image overrides the hardware-generated HE-Control value."]
         #[inline(always)]
         pub const fn he_control(&self, n: usize) -> &HeControl {
             #[allow(clippy::no_effect)]
@@ -18723,7 +18723,7 @@ pub mod wifi_mac_tx_queue_vector {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x0c..0x1c - Project-assigned name. Per-queue four-byte HT-Control/HE-Control image at 0x201054e4-logical_queue*0x7c. Complete hal_he_get_htc reads the whole word. Complete hal_he_set_htc writes the supplied word before independently selecting whether this software image overrides the hardware-generated HE-Control value."]
+        #[doc = "0x0c..0x1c - Project-assigned name. Per-queue four-byte HT-Control/HE-Control image at 0x201054e4-logical_queue*0x7c. Complete hal_he_get_htc reads the whole word. Complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_htc writes the supplied word before independently selecting whether this software image overrides the hardware-generated HE-Control value."]
         #[inline(always)]
         pub fn he_control_iter(&self) -> impl Iterator<Item = &HeControl> {
             (0..4).map(move |n| unsafe {
@@ -18734,7 +18734,7 @@ pub mod wifi_mac_tx_queue_vector {
                     .cast()
             })
         }
-        #[doc = "0x10..0x20 - Project-assigned name. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. Complete dbg_read_tx_sig independently prints the low MCS nibble and sixteen-bit length. The formatter copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions."]
+        #[doc = "0x10..0x20 - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. Complete dbg_read_tx_sig independently prints the low MCS nibble and sixteen-bit length. The formatter copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions."]
         #[inline(always)]
         pub const fn ht_signal(&self, n: usize) -> &HtSignal {
             #[allow(clippy::no_effect)]
@@ -18748,7 +18748,7 @@ pub mod wifi_mac_tx_queue_vector {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x10..0x20 - Project-assigned name. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. Complete dbg_read_tx_sig independently prints the low MCS nibble and sixteen-bit length. The formatter copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions."]
+        #[doc = "0x10..0x20 - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. Complete dbg_read_tx_sig independently prints the low MCS nibble and sixteen-bit length. The formatter copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions."]
         #[inline(always)]
         pub fn ht_signal_iter(&self) -> impl Iterator<Item = &HtSignal> {
             (0..4).map(move |n| unsafe {
@@ -18809,7 +18809,7 @@ pub mod wifi_mac_tx_queue_vector {
                     .cast()
             })
         }
-        #[doc = "0x1c..0x2c - Project-assigned name. Complete mac_tx_set_hesig writes this HE SU vector word at 0x201054f4-q*0x7c. Live vendor MCS9 uplink images 0xfc205b4f and 0xfc605b4f independently qualify MCS nine, BSS color 27, HE20 and GI/LTF selectors one and three. A separate explicit MCS0 DCM vendor frame published 0xfc204087. Replaying the selector-one MCS9 image through the owned open DMA path received a complete 32-MPDU BlockAck on the first attempt and remained stable for more than 13,800 aggregates. Bits 31:26 are a TX-vector-required all-ones image and are not presented as on-air HE-SIG-A1 payload bits."]
+        #[doc = "0x1c..0x2c - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig writes this HE SU vector word at 0x201054f4-q*0x7c. Live vendor MCS9 uplink images 0xfc205b4f and 0xfc605b4f independently qualify MCS nine, BSS color 27, HE20 and GI/LTF selectors one and three. A separate explicit MCS0 DCM vendor frame published 0xfc204087. Replaying the selector-one MCS9 image through the owned open DMA path received a complete 32-MPDU BlockAck on the first attempt and remained stable for more than 13,800 aggregates. Bits 31:26 are a TX-vector-required all-ones image and are not presented as on-air HE-SIG-A1 payload bits."]
         #[inline(always)]
         pub const fn he_su_signal_a1(&self, n: usize) -> &HeSuSignalA1 {
             #[allow(clippy::no_effect)]
@@ -18823,7 +18823,7 @@ pub mod wifi_mac_tx_queue_vector {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x1c..0x2c - Project-assigned name. Complete mac_tx_set_hesig writes this HE SU vector word at 0x201054f4-q*0x7c. Live vendor MCS9 uplink images 0xfc205b4f and 0xfc605b4f independently qualify MCS nine, BSS color 27, HE20 and GI/LTF selectors one and three. A separate explicit MCS0 DCM vendor frame published 0xfc204087. Replaying the selector-one MCS9 image through the owned open DMA path received a complete 32-MPDU BlockAck on the first attempt and remained stable for more than 13,800 aggregates. Bits 31:26 are a TX-vector-required all-ones image and are not presented as on-air HE-SIG-A1 payload bits."]
+        #[doc = "0x1c..0x2c - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig writes this HE SU vector word at 0x201054f4-q*0x7c. Live vendor MCS9 uplink images 0xfc205b4f and 0xfc605b4f independently qualify MCS nine, BSS color 27, HE20 and GI/LTF selectors one and three. A separate explicit MCS0 DCM vendor frame published 0xfc204087. Replaying the selector-one MCS9 image through the owned open DMA path received a complete 32-MPDU BlockAck on the first attempt and remained stable for more than 13,800 aggregates. Bits 31:26 are a TX-vector-required all-ones image and are not presented as on-air HE-SIG-A1 payload bits."]
         #[inline(always)]
         pub fn he_su_signal_a1_iter(&self) -> impl Iterator<Item = &HeSuSignalA1> {
             (0..4).map(move |n| unsafe {
@@ -18834,7 +18834,7 @@ pub mod wifi_mac_tx_queue_vector {
                     .cast()
             })
         }
-        #[doc = "0x20..0x30 - Project-assigned name. Complete mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE APEP byte length shifted by eleven and a frame-class bit copied to bit 28. A-MPDU length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105. Complete ppCalSubFrameLength adds four to APEP when DMA metadata byte seven bit zero selects hardware HE-Control insertion, while leaving the low fourteen-bit MPDU length and DMA CCMP position unchanged. The vendor and open 24-byte raw S-MPDU paths both use APEP length 32, producing 0x00010105 with bit 28 clear."]
+        #[doc = "0x20..0x30 - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE APEP byte length shifted by eleven and a frame-class bit copied to bit 28. A-MPDU length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105. Complete libpp\\[pp_he.o\\]::ppCalSubFrameLength adds four to APEP when DMA metadata byte seven bit zero selects hardware HE-Control insertion, while leaving the low fourteen-bit MPDU length and DMA CCMP position unchanged. The vendor and open 24-byte raw S-MPDU paths both use APEP length 32, producing 0x00010105 with bit 28 clear."]
         #[inline(always)]
         pub const fn he_su_signal_a2_length(&self, n: usize) -> &HeSuSignalA2Length {
             #[allow(clippy::no_effect)]
@@ -18848,7 +18848,7 @@ pub mod wifi_mac_tx_queue_vector {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x20..0x30 - Project-assigned name. Complete mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE APEP byte length shifted by eleven and a frame-class bit copied to bit 28. A-MPDU length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105. Complete ppCalSubFrameLength adds four to APEP when DMA metadata byte seven bit zero selects hardware HE-Control insertion, while leaving the low fourteen-bit MPDU length and DMA CCMP position unchanged. The vendor and open 24-byte raw S-MPDU paths both use APEP length 32, producing 0x00010105 with bit 28 clear."]
+        #[doc = "0x20..0x30 - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE APEP byte length shifted by eleven and a frame-class bit copied to bit 28. A-MPDU length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105. Complete libpp\\[pp_he.o\\]::ppCalSubFrameLength adds four to APEP when DMA metadata byte seven bit zero selects hardware HE-Control insertion, while leaving the low fourteen-bit MPDU length and DMA CCMP position unchanged. The vendor and open 24-byte raw S-MPDU paths both use APEP length 32, producing 0x00010105 with bit 28 clear."]
         #[inline(always)]
         pub fn he_su_signal_a2_length_iter(&self) -> impl Iterator<Item = &HeSuSignalA2Length> {
             (0..4).map(move |n| unsafe {
@@ -18859,7 +18859,7 @@ pub mod wifi_mac_tx_queue_vector {
                     .cast()
             })
         }
-        #[doc = "0x24..0x34 - Project-assigned name. Complete mac_tx_set_mplen writes the final allocated seven-bit HE MPDU-length link index at 0x201054fc-q*0x7c when it reaches the DMA descriptor whose word zero bit 30 marks the tail. Bits 31:7 are preserved. Complete mac_tx_set_tb calls that leaf for every frame before making the queue Trigger-eligible."]
+        #[doc = "0x24..0x34 - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_mplen writes the final allocated seven-bit HE MPDU-length link index at 0x201054fc-q*0x7c when it reaches the DMA descriptor whose word zero bit 30 marks the tail. Bits 31:7 are preserved. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb calls that leaf for every frame before making the queue Trigger-eligible."]
         #[inline(always)]
         pub const fn he_mpdu_length_tail(&self, n: usize) -> &HeMpduLengthTail {
             #[allow(clippy::no_effect)]
@@ -18873,7 +18873,7 @@ pub mod wifi_mac_tx_queue_vector {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x24..0x34 - Project-assigned name. Complete mac_tx_set_mplen writes the final allocated seven-bit HE MPDU-length link index at 0x201054fc-q*0x7c when it reaches the DMA descriptor whose word zero bit 30 marks the tail. Bits 31:7 are preserved. Complete mac_tx_set_tb calls that leaf for every frame before making the queue Trigger-eligible."]
+        #[doc = "0x24..0x34 - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_mplen writes the final allocated seven-bit HE MPDU-length link index at 0x201054fc-q*0x7c when it reaches the DMA descriptor whose word zero bit 30 marks the tail. Bits 31:7 are preserved. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb calls that leaf for every frame before making the queue Trigger-eligible."]
         #[inline(always)]
         pub fn he_mpdu_length_tail_iter(&self) -> impl Iterator<Item = &HeMpduLengthTail> {
             (0..4).map(move |n| unsafe {
@@ -18909,7 +18909,7 @@ pub mod wifi_mac_tx_queue_vector {
                     .cast()
             })
         }
-        #[doc = "0x2c..0x3c - Project-assigned name. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig constructs the base address 0x20105504-q*0x7c, then copies descriptor byte 0x2a into bits 6:0 and 20:14 and descriptor byte 0x2e into bits 13:7 through three fresh-read RMW edges. The vendor oracle read 0x00004081 for idle ordinary queues, consistent with one descriptor in all three fields. Open direct-DMA HIL first qualified two in all three lanes, then qualified the full negotiated 32-frame window with a 48,448-byte A-MPDU and complete BlockAck."]
+        #[doc = "0x2c..0x3c - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig constructs the base address 0x20105504-q*0x7c, then copies descriptor byte 0x2a into bits 6:0 and 20:14 and descriptor byte 0x2e into bits 13:7 through three fresh-read RMW edges. The vendor oracle read 0x00004081 for idle ordinary queues, consistent with one descriptor in all three fields. Open direct-DMA HIL first qualified two in all three lanes, then qualified the full negotiated 32-frame window with a 48,448-byte A-MPDU and complete BlockAck."]
         #[inline(always)]
         pub const fn ht_descriptor_counts(&self, n: usize) -> &HtDescriptorCounts {
             #[allow(clippy::no_effect)]
@@ -18923,7 +18923,7 @@ pub mod wifi_mac_tx_queue_vector {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x2c..0x3c - Project-assigned name. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig constructs the base address 0x20105504-q*0x7c, then copies descriptor byte 0x2a into bits 6:0 and 20:14 and descriptor byte 0x2e into bits 13:7 through three fresh-read RMW edges. The vendor oracle read 0x00004081 for idle ordinary queues, consistent with one descriptor in all three fields. Open direct-DMA HIL first qualified two in all three lanes, then qualified the full negotiated 32-frame window with a 48,448-byte A-MPDU and complete BlockAck."]
+        #[doc = "0x2c..0x3c - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig constructs the base address 0x20105504-q*0x7c, then copies descriptor byte 0x2a into bits 6:0 and 20:14 and descriptor byte 0x2e into bits 13:7 through three fresh-read RMW edges. The vendor oracle read 0x00004081 for idle ordinary queues, consistent with one descriptor in all three fields. Open direct-DMA HIL first qualified two in all three lanes, then qualified the full negotiated 32-frame window with a 48,448-byte A-MPDU and complete BlockAck."]
         #[inline(always)]
         pub fn ht_descriptor_counts_iter(&self) -> impl Iterator<Item = &HtDescriptorCounts> {
             (0..4).map(move |n| unsafe {
@@ -18934,7 +18934,7 @@ pub mod wifi_mac_tx_queue_vector {
                     .cast()
             })
         }
-        #[doc = "0x34..0x44 - Project-assigned name. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. Complete dbg_read_tx_sig names the fields as the HT40 length, MCS, EOF count and TXOP count. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word."]
+        #[doc = "0x34..0x44 - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. Complete dbg_read_tx_sig names the fields as the HT40 length, MCS, EOF count and TXOP count. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word."]
         #[inline(always)]
         pub const fn data_length(&self, n: usize) -> &DataLength {
             #[allow(clippy::no_effect)]
@@ -18948,7 +18948,7 @@ pub mod wifi_mac_tx_queue_vector {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x34..0x44 - Project-assigned name. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. Complete dbg_read_tx_sig names the fields as the HT40 length, MCS, EOF count and TXOP count. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word."]
+        #[doc = "0x34..0x44 - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. Complete dbg_read_tx_sig names the fields as the HT40 length, MCS, EOF count and TXOP count. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word."]
         #[inline(always)]
         pub fn data_length_iter(&self) -> impl Iterator<Item = &DataLength> {
             (0..4).map(move |n| unsafe {
@@ -18959,7 +18959,7 @@ pub mod wifi_mac_tx_queue_vector {
                     .cast()
             })
         }
-        #[doc = "0x38..0x48 - Project-assigned name. Canonical queue-vector length/rate/antenna image. Complete dbg_read_tx_sig names the low antenna-selection flags, RTS rate, HT20 EOF count and HT20 TXOP count. The upper four words of complete hal_attenna_init's eight-word traversal are these same queue-vector registers; its bit operations therefore use the canonical antenna fields below rather than a second BANK_CONTROL identity. Complete mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. Counterintuitively, the acknowledged HE20 DCM S-MPDU also requires entry class one and carries 0x004002c4. The open direct-DMA HIL qualified both the HT aggregate and HE S-MPDU images. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M."]
+        #[doc = "0x38..0x48 - Project-assigned name. Canonical queue-vector length/rate/antenna image. Complete dbg_read_tx_sig names the low antenna-selection flags, RTS rate, HT20 EOF count and HT20 TXOP count. The upper four words of complete hal_attenna_init's eight-word traversal are these same queue-vector registers; its bit operations therefore use the canonical antenna fields below rather than a second BANK_CONTROL identity. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. Counterintuitively, the acknowledged HE20 DCM S-MPDU also requires entry class one and carries 0x004002c4. The open direct-DMA HIL qualified both the HT aggregate and HE S-MPDU images. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M."]
         #[inline(always)]
         pub const fn length_control(&self, n: usize) -> &LengthControl {
             #[allow(clippy::no_effect)]
@@ -18973,7 +18973,7 @@ pub mod wifi_mac_tx_queue_vector {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x38..0x48 - Project-assigned name. Canonical queue-vector length/rate/antenna image. Complete dbg_read_tx_sig names the low antenna-selection flags, RTS rate, HT20 EOF count and HT20 TXOP count. The upper four words of complete hal_attenna_init's eight-word traversal are these same queue-vector registers; its bit operations therefore use the canonical antenna fields below rather than a second BANK_CONTROL identity. Complete mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. Counterintuitively, the acknowledged HE20 DCM S-MPDU also requires entry class one and carries 0x004002c4. The open direct-DMA HIL qualified both the HT aggregate and HE S-MPDU images. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M."]
+        #[doc = "0x38..0x48 - Project-assigned name. Canonical queue-vector length/rate/antenna image. Complete dbg_read_tx_sig names the low antenna-selection flags, RTS rate, HT20 EOF count and HT20 TXOP count. The upper four words of complete hal_attenna_init's eight-word traversal are these same queue-vector registers; its bit operations therefore use the canonical antenna fields below rather than a second BANK_CONTROL identity. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. Counterintuitively, the acknowledged HE20 DCM S-MPDU also requires entry class one and carries 0x004002c4. The open direct-DMA HIL qualified both the HT aggregate and HE S-MPDU images. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M."]
         #[inline(always)]
         pub fn length_control_iter(&self) -> impl Iterator<Item = &LengthControl> {
             (0..4).map(move |n| unsafe {
@@ -18984,7 +18984,7 @@ pub mod wifi_mac_tx_queue_vector {
                     .cast()
             })
         }
-        #[doc = "0x40..0x50 - Project-assigned name. Per-queue control word at 0x20105518-logical_queue*0x7c. Complete hal_he_set_htc performs a fresh-read RMW of bit 28 after publishing HE_CONTROL: nonzero enable sets the bit and zero clears it. The vendor descriptor path supplies descriptor state bit 16, which is set only for an explicit software HE-Control image such as OMC; leaving it clear permits the hardware-generated BSR path selected by the QoS frame Order bit and Trigger-eligible TID state. Vendor DMA/air HIL proves that hardware inserts the four-byte HE-Control field between QoS Control and CCMP. The DMA buffer contains no placeholder; complete ppCalSubFrameLength accounts for the insertion through metadata byte seven bit zero. Open-driver HIL independently qualifies the same contract through WPA2, decrypted ARP and ICMP traffic."]
+        #[doc = "0x40..0x50 - Project-assigned name. Per-queue control word at 0x20105518-logical_queue*0x7c. Complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_htc performs a fresh-read RMW of bit 28 after publishing HE_CONTROL: nonzero enable sets the bit and zero clears it. The vendor descriptor path supplies descriptor state bit 16, which is set only for an explicit software HE-Control image such as OMC; leaving it clear permits the hardware-generated BSR path selected by the QoS frame Order bit and Trigger-eligible TID state. Vendor DMA/air HIL proves that hardware inserts the four-byte HE-Control field between QoS Control and CCMP. The DMA buffer contains no placeholder; complete libpp\\[pp_he.o\\]::ppCalSubFrameLength accounts for the insertion through metadata byte seven bit zero. Open-driver HIL independently qualifies the same contract through WPA2, decrypted ARP and ICMP traffic."]
         #[inline(always)]
         pub const fn he_control_config(&self, n: usize) -> &HeControlConfig {
             #[allow(clippy::no_effect)]
@@ -18998,7 +18998,7 @@ pub mod wifi_mac_tx_queue_vector {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x40..0x50 - Project-assigned name. Per-queue control word at 0x20105518-logical_queue*0x7c. Complete hal_he_set_htc performs a fresh-read RMW of bit 28 after publishing HE_CONTROL: nonzero enable sets the bit and zero clears it. The vendor descriptor path supplies descriptor state bit 16, which is set only for an explicit software HE-Control image such as OMC; leaving it clear permits the hardware-generated BSR path selected by the QoS frame Order bit and Trigger-eligible TID state. Vendor DMA/air HIL proves that hardware inserts the four-byte HE-Control field between QoS Control and CCMP. The DMA buffer contains no placeholder; complete ppCalSubFrameLength accounts for the insertion through metadata byte seven bit zero. Open-driver HIL independently qualifies the same contract through WPA2, decrypted ARP and ICMP traffic."]
+        #[doc = "0x40..0x50 - Project-assigned name. Per-queue control word at 0x20105518-logical_queue*0x7c. Complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_htc performs a fresh-read RMW of bit 28 after publishing HE_CONTROL: nonzero enable sets the bit and zero clears it. The vendor descriptor path supplies descriptor state bit 16, which is set only for an explicit software HE-Control image such as OMC; leaving it clear permits the hardware-generated BSR path selected by the QoS frame Order bit and Trigger-eligible TID state. Vendor DMA/air HIL proves that hardware inserts the four-byte HE-Control field between QoS Control and CCMP. The DMA buffer contains no placeholder; complete libpp\\[pp_he.o\\]::ppCalSubFrameLength accounts for the insertion through metadata byte seven bit zero. Open-driver HIL independently qualifies the same contract through WPA2, decrypted ARP and ICMP traffic."]
         #[inline(always)]
         pub fn he_control_config_iter(&self) -> impl Iterator<Item = &HeControlConfig> {
             (0..4).map(move |n| unsafe {
@@ -19010,10 +19010,10 @@ pub mod wifi_mac_tx_queue_vector {
             })
         }
     }
-    #[doc = "PLCP1 (rw) register accessor: Project-assigned name. Per-queue second PLCP/vector word. Complete dbg_read_key_entry independently names bits 22:17 as KEY_ENTRY_INDEX and bits 24:23 as BSSID_SELECT. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain.\n\nYou can [`read`](crate::Reg::read) this register and get [`plcp1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`plcp1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@plcp1`] module"]
+    #[doc = "PLCP1 (rw) register accessor: Project-assigned name. Per-queue second PLCP/vector word. Complete dbg_read_key_entry independently names bits 22:17 as KEY_ENTRY_INDEX and bits 24:23 as BSSID_SELECT. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain.\n\nYou can [`read`](crate::Reg::read) this register and get [`plcp1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`plcp1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@plcp1`] module"]
     #[doc(alias = "PLCP1")]
     pub type Plcp1 = crate::Reg<plcp1::Plcp1Spec>;
-    #[doc = "Project-assigned name. Per-queue second PLCP/vector word. Complete dbg_read_key_entry independently names bits 22:17 as KEY_ENTRY_INDEX and bits 24:23 as BSSID_SELECT. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain."]
+    #[doc = "Project-assigned name. Per-queue second PLCP/vector word. Complete dbg_read_key_entry independently names bits 22:17 as KEY_ENTRY_INDEX and bits 24:23 as BSSID_SELECT. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain."]
     pub mod plcp1 {
         #[doc = "Register `PLCP1%s` reader"]
         pub type R = crate::R<Plcp1Spec>;
@@ -19023,9 +19023,9 @@ pub mod wifi_mac_tx_queue_vector {
         pub type LegacySignalR = crate::FieldReader<u16>;
         #[doc = "Field `LEGACY_SIGNAL` writer - Project-assigned name. Twelve-bit legacy PLCP SIGNAL/length value. Non-legacy formatters leave this field zero."]
         pub type LegacySignalW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16, crate::Safe>;
-        #[doc = "Field `RATE` reader - Project-assigned name. Five-bit MAC rate selector published by complete mac_tx_set_plcp1."]
+        #[doc = "Field `RATE` reader - Project-assigned name. Five-bit MAC rate selector published by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp1."]
         pub type RateR = crate::FieldReader;
-        #[doc = "Field `RATE` writer - Project-assigned name. Five-bit MAC rate selector published by complete mac_tx_set_plcp1."]
+        #[doc = "Field `RATE` writer - Project-assigned name. Five-bit MAC rate selector published by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp1."]
         pub type RateW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         #[doc = "Field `KEY_ENTRY_INDEX` reader - Project-assigned name."]
         pub type KeyEntryIndexR = crate::FieldReader;
@@ -19043,9 +19043,9 @@ pub mod wifi_mac_tx_queue_vector {
         pub type HighControl28R = crate::BitReader;
         #[doc = "Field `HIGH_CONTROL_28` writer - Project-assigned name."]
         pub type HighControl28W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CBW40` reader - Project-assigned name. Complete mac_tx_set_plcp1 sets this bit for the guarded non-HE HT40 branch."]
+        #[doc = "Field `CBW40` reader - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp1 sets this bit for the guarded non-HE HT40 branch."]
         pub type Cbw40R = crate::BitReader;
-        #[doc = "Field `CBW40` writer - Project-assigned name. Complete mac_tx_set_plcp1 sets this bit for the guarded non-HE HT40 branch."]
+        #[doc = "Field `CBW40` writer - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp1 sets this bit for the guarded non-HE HT40 branch."]
         pub type Cbw40W<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `HIGH_CONTROL_31_30` reader - Project-assigned name."]
         pub type HighControl31_30R = crate::FieldReader;
@@ -19057,7 +19057,7 @@ pub mod wifi_mac_tx_queue_vector {
             pub fn legacy_signal(&self) -> LegacySignalR {
                 LegacySignalR::new((self.bits & 0x0fff) as u16)
             }
-            #[doc = "Bits 12:16 - Project-assigned name. Five-bit MAC rate selector published by complete mac_tx_set_plcp1."]
+            #[doc = "Bits 12:16 - Project-assigned name. Five-bit MAC rate selector published by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp1."]
             #[inline(always)]
             pub fn rate(&self) -> RateR {
                 RateR::new(((self.bits >> 12) & 0x1f) as u8)
@@ -19082,7 +19082,7 @@ pub mod wifi_mac_tx_queue_vector {
             pub fn high_control_28(&self) -> HighControl28R {
                 HighControl28R::new(((self.bits >> 28) & 1) != 0)
             }
-            #[doc = "Bit 29 - Project-assigned name. Complete mac_tx_set_plcp1 sets this bit for the guarded non-HE HT40 branch."]
+            #[doc = "Bit 29 - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp1 sets this bit for the guarded non-HE HT40 branch."]
             #[inline(always)]
             pub fn cbw40(&self) -> Cbw40R {
                 Cbw40R::new(((self.bits >> 29) & 1) != 0)
@@ -19099,7 +19099,7 @@ pub mod wifi_mac_tx_queue_vector {
             pub fn legacy_signal(&mut self) -> LegacySignalW<'_, Plcp1Spec> {
                 LegacySignalW::new(self, 0)
             }
-            #[doc = "Bits 12:16 - Project-assigned name. Five-bit MAC rate selector published by complete mac_tx_set_plcp1."]
+            #[doc = "Bits 12:16 - Project-assigned name. Five-bit MAC rate selector published by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp1."]
             #[inline(always)]
             pub fn rate(&mut self) -> RateW<'_, Plcp1Spec> {
                 RateW::new(self, 12)
@@ -19124,7 +19124,7 @@ pub mod wifi_mac_tx_queue_vector {
             pub fn high_control_28(&mut self) -> HighControl28W<'_, Plcp1Spec> {
                 HighControl28W::new(self, 28)
             }
-            #[doc = "Bit 29 - Project-assigned name. Complete mac_tx_set_plcp1 sets this bit for the guarded non-HE HT40 branch."]
+            #[doc = "Bit 29 - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp1 sets this bit for the guarded non-HE HT40 branch."]
             #[inline(always)]
             pub fn cbw40(&mut self) -> Cbw40W<'_, Plcp1Spec> {
                 Cbw40W::new(self, 29)
@@ -19135,7 +19135,7 @@ pub mod wifi_mac_tx_queue_vector {
                 HighControl31_30W::new(self, 30)
             }
         }
-        #[doc = "Project-assigned name. Per-queue second PLCP/vector word. Complete dbg_read_key_entry independently names bits 22:17 as KEY_ENTRY_INDEX and bits 24:23 as BSSID_SELECT. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain.\n\nYou can [`read`](crate::Reg::read) this register and get [`plcp1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`plcp1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Per-queue second PLCP/vector word. Complete dbg_read_key_entry independently names bits 22:17 as KEY_ENTRY_INDEX and bits 24:23 as BSSID_SELECT. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain.\n\nYou can [`read`](crate::Reg::read) this register and get [`plcp1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`plcp1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct Plcp1Spec;
         impl crate::RegisterSpec for Plcp1Spec {
             type Ux = u32;
@@ -19156,9 +19156,9 @@ pub mod wifi_mac_tx_queue_vector {
         pub type R = crate::R<HeRtsControlSpec>;
         #[doc = "Register `HE_RTS_CONTROL%s` writer"]
         pub type W = crate::W<HeRtsControlSpec>;
-        #[doc = "Field `RTS_THRESHOLD_BYTES` reader - Project-assigned name. Low sixteen bits of hal_he_set_tx_protection argument a4. Complete ppCalTxHEAMPDULength stores the ic_get_he_rts_threshold_bytes result at descriptor offset 0x34; mac_tx_set_plcp0 loads the same word into a4. This is a PHY-specific length threshold in bytes, not a frame Duration/NAV value."]
+        #[doc = "Field `RTS_THRESHOLD_BYTES` reader - Project-assigned name. Low sixteen bits of hal_he_set_tx_protection argument a4. Complete libpp\\[pp_he.o\\]::ppCalTxHEAMPDULength stores the libpp\\[if_hwctrl.o\\]::ic_get_he_rts_threshold_bytes result at descriptor offset 0x34; libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp0 loads the same word into a4. This is a PHY-specific length threshold in bytes, not a frame Duration/NAV value."]
         pub type RtsThresholdBytesR = crate::FieldReader<u16>;
-        #[doc = "Field `RTS_THRESHOLD_BYTES` writer - Project-assigned name. Low sixteen bits of hal_he_set_tx_protection argument a4. Complete ppCalTxHEAMPDULength stores the ic_get_he_rts_threshold_bytes result at descriptor offset 0x34; mac_tx_set_plcp0 loads the same word into a4. This is a PHY-specific length threshold in bytes, not a frame Duration/NAV value."]
+        #[doc = "Field `RTS_THRESHOLD_BYTES` writer - Project-assigned name. Low sixteen bits of hal_he_set_tx_protection argument a4. Complete libpp\\[pp_he.o\\]::ppCalTxHEAMPDULength stores the libpp\\[if_hwctrl.o\\]::ic_get_he_rts_threshold_bytes result at descriptor offset 0x34; libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp0 loads the same word into a4. This is a PHY-specific length threshold in bytes, not a frame Duration/NAV value."]
         pub type RtsThresholdBytesW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
         #[doc = "Field `RTS_THRESHOLD_VALID` reader - Project-assigned name. Set by the complete whole-word byte-threshold publication when argument a3 is nonzero."]
         pub type RtsThresholdValidR = crate::BitReader;
@@ -19169,7 +19169,7 @@ pub mod wifi_mac_tx_queue_vector {
         #[doc = "Field `HE_RTS_DISABLED` writer - Project-assigned name."]
         pub type HeRtsDisabledW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bits 0:15 - Project-assigned name. Low sixteen bits of hal_he_set_tx_protection argument a4. Complete ppCalTxHEAMPDULength stores the ic_get_he_rts_threshold_bytes result at descriptor offset 0x34; mac_tx_set_plcp0 loads the same word into a4. This is a PHY-specific length threshold in bytes, not a frame Duration/NAV value."]
+            #[doc = "Bits 0:15 - Project-assigned name. Low sixteen bits of hal_he_set_tx_protection argument a4. Complete libpp\\[pp_he.o\\]::ppCalTxHEAMPDULength stores the libpp\\[if_hwctrl.o\\]::ic_get_he_rts_threshold_bytes result at descriptor offset 0x34; libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp0 loads the same word into a4. This is a PHY-specific length threshold in bytes, not a frame Duration/NAV value."]
             #[inline(always)]
             pub fn rts_threshold_bytes(&self) -> RtsThresholdBytesR {
                 RtsThresholdBytesR::new((self.bits & 0xffff) as u16)
@@ -19186,7 +19186,7 @@ pub mod wifi_mac_tx_queue_vector {
             }
         }
         impl W {
-            #[doc = "Bits 0:15 - Project-assigned name. Low sixteen bits of hal_he_set_tx_protection argument a4. Complete ppCalTxHEAMPDULength stores the ic_get_he_rts_threshold_bytes result at descriptor offset 0x34; mac_tx_set_plcp0 loads the same word into a4. This is a PHY-specific length threshold in bytes, not a frame Duration/NAV value."]
+            #[doc = "Bits 0:15 - Project-assigned name. Low sixteen bits of hal_he_set_tx_protection argument a4. Complete libpp\\[pp_he.o\\]::ppCalTxHEAMPDULength stores the libpp\\[if_hwctrl.o\\]::ic_get_he_rts_threshold_bytes result at descriptor offset 0x34; libpp\\[hal_mac_tx.o\\]::mac_tx_set_plcp0 loads the same word into a4. This is a PHY-specific length threshold in bytes, not a frame Duration/NAV value."]
             #[inline(always)]
             pub fn rts_threshold_bytes(&mut self) -> RtsThresholdBytesW<'_, HeRtsControlSpec> {
                 RtsThresholdBytesW::new(self, 0)
@@ -19214,18 +19214,18 @@ pub mod wifi_mac_tx_queue_vector {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "PTI (rw) register accessor: Project-assigned name. Complete mac_tx_set_pti publishes the original packet PTI independently into four lanes, then loads descriptor byte offset 0x22 once and passes it as argument six to hal_set_tx_pti, which publishes it as COUNT bits 31:20. This count is independent of the A-MPDU descriptor count written by mac_tx_set_mplen to HT_DESCRIPTOR_COUNTS. For vendor Authentication and Association, ieee80211_set_tx_pti event six maps through coex_pti_tab to packet PTI one; the independent scheduler field also resolves to one through the unsigned-minimum clamp against event-one PTI five. Vendor and open HIL both used 0x00111110, including the hardware-qualified 32-MPDU open profile.\n\nYou can [`read`](crate::Reg::read) this register and get [`pti::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`pti::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@pti`] module"]
+    #[doc = "PTI (rw) register accessor: Project-assigned name. Complete libpp\\[hal_mac.o\\]::mac_tx_set_pti publishes the original packet PTI independently into four lanes, then loads descriptor byte offset 0x22 once and passes it as argument six to hal_set_tx_pti, which publishes it as COUNT bits 31:20. This count is independent of the A-MPDU descriptor count written by libpp\\[hal_mac_tx.o\\]::mac_tx_set_mplen to HT_DESCRIPTOR_COUNTS. For vendor Authentication and Association, libnet80211\\[ieee80211_output.o\\]::ieee80211_set_tx_pti event six maps through coex_pti_tab to packet PTI one; the independent scheduler field also resolves to one through the unsigned-minimum clamp against event-one PTI five. Vendor and open HIL both used 0x00111110, including the hardware-qualified 32-MPDU open profile.\n\nYou can [`read`](crate::Reg::read) this register and get [`pti::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`pti::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@pti`] module"]
     #[doc(alias = "PTI")]
     pub type Pti = crate::Reg<pti::PtiSpec>;
-    #[doc = "Project-assigned name. Complete mac_tx_set_pti publishes the original packet PTI independently into four lanes, then loads descriptor byte offset 0x22 once and passes it as argument six to hal_set_tx_pti, which publishes it as COUNT bits 31:20. This count is independent of the A-MPDU descriptor count written by mac_tx_set_mplen to HT_DESCRIPTOR_COUNTS. For vendor Authentication and Association, ieee80211_set_tx_pti event six maps through coex_pti_tab to packet PTI one; the independent scheduler field also resolves to one through the unsigned-minimum clamp against event-one PTI five. Vendor and open HIL both used 0x00111110, including the hardware-qualified 32-MPDU open profile."]
+    #[doc = "Project-assigned name. Complete libpp\\[hal_mac.o\\]::mac_tx_set_pti publishes the original packet PTI independently into four lanes, then loads descriptor byte offset 0x22 once and passes it as argument six to hal_set_tx_pti, which publishes it as COUNT bits 31:20. This count is independent of the A-MPDU descriptor count written by libpp\\[hal_mac_tx.o\\]::mac_tx_set_mplen to HT_DESCRIPTOR_COUNTS. For vendor Authentication and Association, libnet80211\\[ieee80211_output.o\\]::ieee80211_set_tx_pti event six maps through coex_pti_tab to packet PTI one; the independent scheduler field also resolves to one through the unsigned-minimum clamp against event-one PTI five. Vendor and open HIL both used 0x00111110, including the hardware-qualified 32-MPDU open profile."]
     pub mod pti {
         #[doc = "Register `PTI%s` reader"]
         pub type R = crate::R<PtiSpec>;
         #[doc = "Register `PTI%s` writer"]
         pub type W = crate::W<PtiSpec>;
-        #[doc = "Field `TXOP` reader - Project-assigned name. Complete hal_mac_tx_set_ppdu sets or clears this bit from descriptor word-zero bit 29 before mac_tx_set_pti publishes the four coexistence lanes. The bit is independent of those lanes and must not retain the preceding queue transaction's value."]
+        #[doc = "Field `TXOP` reader - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::hal_mac_tx_set_ppdu sets or clears this bit from descriptor word-zero bit 29 before libpp\\[hal_mac.o\\]::mac_tx_set_pti publishes the four coexistence lanes. The bit is independent of those lanes and must not retain the preceding queue transaction's value."]
         pub type TxopR = crate::BitReader;
-        #[doc = "Field `TXOP` writer - Project-assigned name. Complete hal_mac_tx_set_ppdu sets or clears this bit from descriptor word-zero bit 29 before mac_tx_set_pti publishes the four coexistence lanes. The bit is independent of those lanes and must not retain the preceding queue transaction's value."]
+        #[doc = "Field `TXOP` writer - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::hal_mac_tx_set_ppdu sets or clears this bit from descriptor word-zero bit 29 before libpp\\[hal_mac.o\\]::mac_tx_set_pti publishes the four coexistence lanes. The bit is independent of those lanes and must not retain the preceding queue transaction's value."]
         pub type TxopW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `BITS_1_3_OPAQUE` reader - Opaque: meaning not established."]
         pub type Bits1_3OpaqueR = crate::FieldReader;
@@ -19252,7 +19252,7 @@ pub mod wifi_mac_tx_queue_vector {
         #[doc = "Field `COUNT` writer - Project-assigned name. Descriptor metadata byte 0x22 passed to hal_set_tx_pti; not the A-MPDU MPDU/descriptor count."]
         pub type CountW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16, crate::Safe>;
         impl R {
-            #[doc = "Bit 0 - Project-assigned name. Complete hal_mac_tx_set_ppdu sets or clears this bit from descriptor word-zero bit 29 before mac_tx_set_pti publishes the four coexistence lanes. The bit is independent of those lanes and must not retain the preceding queue transaction's value."]
+            #[doc = "Bit 0 - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::hal_mac_tx_set_ppdu sets or clears this bit from descriptor word-zero bit 29 before libpp\\[hal_mac.o\\]::mac_tx_set_pti publishes the four coexistence lanes. The bit is independent of those lanes and must not retain the preceding queue transaction's value."]
             #[inline(always)]
             pub fn txop(&self) -> TxopR {
                 TxopR::new((self.bits & 1) != 0)
@@ -19289,7 +19289,7 @@ pub mod wifi_mac_tx_queue_vector {
             }
         }
         impl W {
-            #[doc = "Bit 0 - Project-assigned name. Complete hal_mac_tx_set_ppdu sets or clears this bit from descriptor word-zero bit 29 before mac_tx_set_pti publishes the four coexistence lanes. The bit is independent of those lanes and must not retain the preceding queue transaction's value."]
+            #[doc = "Bit 0 - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::hal_mac_tx_set_ppdu sets or clears this bit from descriptor word-zero bit 29 before libpp\\[hal_mac.o\\]::mac_tx_set_pti publishes the four coexistence lanes. The bit is independent of those lanes and must not retain the preceding queue transaction's value."]
             #[inline(always)]
             pub fn txop(&mut self) -> TxopW<'_, PtiSpec> {
                 TxopW::new(self, 0)
@@ -19325,7 +19325,7 @@ pub mod wifi_mac_tx_queue_vector {
                 CountW::new(self, 20)
             }
         }
-        #[doc = "Project-assigned name. Complete mac_tx_set_pti publishes the original packet PTI independently into four lanes, then loads descriptor byte offset 0x22 once and passes it as argument six to hal_set_tx_pti, which publishes it as COUNT bits 31:20. This count is independent of the A-MPDU descriptor count written by mac_tx_set_mplen to HT_DESCRIPTOR_COUNTS. For vendor Authentication and Association, ieee80211_set_tx_pti event six maps through coex_pti_tab to packet PTI one; the independent scheduler field also resolves to one through the unsigned-minimum clamp against event-one PTI five. Vendor and open HIL both used 0x00111110, including the hardware-qualified 32-MPDU open profile.\n\nYou can [`read`](crate::Reg::read) this register and get [`pti::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`pti::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Complete libpp\\[hal_mac.o\\]::mac_tx_set_pti publishes the original packet PTI independently into four lanes, then loads descriptor byte offset 0x22 once and passes it as argument six to hal_set_tx_pti, which publishes it as COUNT bits 31:20. This count is independent of the A-MPDU descriptor count written by libpp\\[hal_mac_tx.o\\]::mac_tx_set_mplen to HT_DESCRIPTOR_COUNTS. For vendor Authentication and Association, libnet80211\\[ieee80211_output.o\\]::ieee80211_set_tx_pti event six maps through coex_pti_tab to packet PTI one; the independent scheduler field also resolves to one through the unsigned-minimum clamp against event-one PTI five. Vendor and open HIL both used 0x00111110, including the hardware-qualified 32-MPDU open profile.\n\nYou can [`read`](crate::Reg::read) this register and get [`pti::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`pti::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct PtiSpec;
         impl crate::RegisterSpec for PtiSpec {
             type Ux = u32;
@@ -19337,10 +19337,10 @@ pub mod wifi_mac_tx_queue_vector {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "HE_CONTROL (rw) register accessor: Project-assigned name. Per-queue four-byte HT-Control/HE-Control image at 0x201054e4-logical_queue*0x7c. Complete hal_he_get_htc reads the whole word. Complete hal_he_set_htc writes the supplied word before independently selecting whether this software image overrides the hardware-generated HE-Control value.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_control`] module"]
+    #[doc = "HE_CONTROL (rw) register accessor: Project-assigned name. Per-queue four-byte HT-Control/HE-Control image at 0x201054e4-logical_queue*0x7c. Complete hal_he_get_htc reads the whole word. Complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_htc writes the supplied word before independently selecting whether this software image overrides the hardware-generated HE-Control value.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_control`] module"]
     #[doc(alias = "HE_CONTROL")]
     pub type HeControl = crate::Reg<he_control::HeControlSpec>;
-    #[doc = "Project-assigned name. Per-queue four-byte HT-Control/HE-Control image at 0x201054e4-logical_queue*0x7c. Complete hal_he_get_htc reads the whole word. Complete hal_he_set_htc writes the supplied word before independently selecting whether this software image overrides the hardware-generated HE-Control value."]
+    #[doc = "Project-assigned name. Per-queue four-byte HT-Control/HE-Control image at 0x201054e4-logical_queue*0x7c. Complete hal_he_get_htc reads the whole word. Complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_htc writes the supplied word before independently selecting whether this software image overrides the hardware-generated HE-Control value."]
     pub mod he_control {
         #[doc = "Register `HE_CONTROL%s` reader"]
         pub type R = crate::R<HeControlSpec>;
@@ -19364,7 +19364,7 @@ pub mod wifi_mac_tx_queue_vector {
                 ValueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Per-queue four-byte HT-Control/HE-Control image at 0x201054e4-logical_queue*0x7c. Complete hal_he_get_htc reads the whole word. Complete hal_he_set_htc writes the supplied word before independently selecting whether this software image overrides the hardware-generated HE-Control value.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Per-queue four-byte HT-Control/HE-Control image at 0x201054e4-logical_queue*0x7c. Complete hal_he_get_htc reads the whole word. Complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_htc writes the supplied word before independently selecting whether this software image overrides the hardware-generated HE-Control value.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct HeControlSpec;
         impl crate::RegisterSpec for HeControlSpec {
             type Ux = u32;
@@ -19376,10 +19376,10 @@ pub mod wifi_mac_tx_queue_vector {
             type Safety = crate::Safe;
         }
     }
-    #[doc = "HT_SIGNAL (rw) register accessor: Project-assigned name. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. Complete dbg_read_tx_sig independently prints the low MCS nibble and sixteen-bit length. The formatter copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions.\n\nYou can [`read`](crate::Reg::read) this register and get [`ht_signal::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ht_signal::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ht_signal`] module"]
+    #[doc = "HT_SIGNAL (rw) register accessor: Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. Complete dbg_read_tx_sig independently prints the low MCS nibble and sixteen-bit length. The formatter copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions.\n\nYou can [`read`](crate::Reg::read) this register and get [`ht_signal::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ht_signal::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ht_signal`] module"]
     #[doc(alias = "HT_SIGNAL")]
     pub type HtSignal = crate::Reg<ht_signal::HtSignalSpec>;
-    #[doc = "Project-assigned name. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. Complete dbg_read_tx_sig independently prints the low MCS nibble and sixteen-bit length. The formatter copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions."]
+    #[doc = "Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. Complete dbg_read_tx_sig independently prints the low MCS nibble and sixteen-bit length. The formatter copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions."]
     pub mod ht_signal {
         #[doc = "Register `HT_SIGNAL%s` reader"]
         pub type R = crate::R<HtSignalSpec>;
@@ -19529,7 +19529,7 @@ pub mod wifi_mac_tx_queue_vector {
                 ShortGiW::new(self, 31)
             }
         }
-        #[doc = "Project-assigned name. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. Complete dbg_read_tx_sig independently prints the low MCS nibble and sixteen-bit length. The formatter copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions.\n\nYou can [`read`](crate::Reg::read) this register and get [`ht_signal::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ht_signal::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. Complete dbg_read_tx_sig independently prints the low MCS nibble and sixteen-bit length. The formatter copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions.\n\nYou can [`read`](crate::Reg::read) this register and get [`ht_signal::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ht_signal::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct HtSignalSpec;
         impl crate::RegisterSpec for HtSignalSpec {
             type Ux = u32;
@@ -19793,10 +19793,10 @@ pub mod wifi_mac_tx_queue_vector {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "HE_SU_SIGNAL_A1 (rw) register accessor: Project-assigned name. Complete mac_tx_set_hesig writes this HE SU vector word at 0x201054f4-q*0x7c. Live vendor MCS9 uplink images 0xfc205b4f and 0xfc605b4f independently qualify MCS nine, BSS color 27, HE20 and GI/LTF selectors one and three. A separate explicit MCS0 DCM vendor frame published 0xfc204087. Replaying the selector-one MCS9 image through the owned open DMA path received a complete 32-MPDU BlockAck on the first attempt and remained stable for more than 13,800 aggregates. Bits 31:26 are a TX-vector-required all-ones image and are not presented as on-air HE-SIG-A1 payload bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_su_signal_a1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_su_signal_a1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_su_signal_a1`] module"]
+    #[doc = "HE_SU_SIGNAL_A1 (rw) register accessor: Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig writes this HE SU vector word at 0x201054f4-q*0x7c. Live vendor MCS9 uplink images 0xfc205b4f and 0xfc605b4f independently qualify MCS nine, BSS color 27, HE20 and GI/LTF selectors one and three. A separate explicit MCS0 DCM vendor frame published 0xfc204087. Replaying the selector-one MCS9 image through the owned open DMA path received a complete 32-MPDU BlockAck on the first attempt and remained stable for more than 13,800 aggregates. Bits 31:26 are a TX-vector-required all-ones image and are not presented as on-air HE-SIG-A1 payload bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_su_signal_a1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_su_signal_a1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_su_signal_a1`] module"]
     #[doc(alias = "HE_SU_SIGNAL_A1")]
     pub type HeSuSignalA1 = crate::Reg<he_su_signal_a1::HeSuSignalA1Spec>;
-    #[doc = "Project-assigned name. Complete mac_tx_set_hesig writes this HE SU vector word at 0x201054f4-q*0x7c. Live vendor MCS9 uplink images 0xfc205b4f and 0xfc605b4f independently qualify MCS nine, BSS color 27, HE20 and GI/LTF selectors one and three. A separate explicit MCS0 DCM vendor frame published 0xfc204087. Replaying the selector-one MCS9 image through the owned open DMA path received a complete 32-MPDU BlockAck on the first attempt and remained stable for more than 13,800 aggregates. Bits 31:26 are a TX-vector-required all-ones image and are not presented as on-air HE-SIG-A1 payload bits."]
+    #[doc = "Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig writes this HE SU vector word at 0x201054f4-q*0x7c. Live vendor MCS9 uplink images 0xfc205b4f and 0xfc605b4f independently qualify MCS nine, BSS color 27, HE20 and GI/LTF selectors one and three. A separate explicit MCS0 DCM vendor frame published 0xfc204087. Replaying the selector-one MCS9 image through the owned open DMA path received a complete 32-MPDU BlockAck on the first attempt and remained stable for more than 13,800 aggregates. Bits 31:26 are a TX-vector-required all-ones image and are not presented as on-air HE-SIG-A1 payload bits."]
     pub mod he_su_signal_a1 {
         #[doc = "Register `HE_SU_SIGNAL_A1%s` reader"]
         pub type R = crate::R<HeSuSignalA1Spec>;
@@ -19818,17 +19818,17 @@ pub mod wifi_mac_tx_queue_vector {
         pub type McsR = crate::FieldReader;
         #[doc = "Field `MCS` writer - Project-assigned name."]
         pub type McsW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
-        #[doc = "Field `DCM` reader - Project-assigned name. Complete mac_tx_set_hesig copies descriptor-state word at offset 0x30 bit 15 into HE-SIG-A1 bit 7. Complete rcGetDCMMaxRate bounds the ordinary BCC DCM rate family to MCS0, MCS1 and MCS3 according to the peer DCM receive constellation. The vendor raw-TX configuration path independently set descriptor byte +0x31 bit 7 while retaining descriptor rate 0x1a, and the live formatter published HE-SIG-A1 0xfc204087. The owned open S-MPDU path reproduced that word and received an ordinary ACK with completion status zero. Rate-bounded open A-MPDUs with 30, 29 and 26 MPDUs then received BlockAck at MCS0 for the three qualified GI/LTF selectors. Explicit DCM and rate-control fallback therefore use distinct descriptor-code domains; BPSK DCM TX is hardware-qualified for both S-MPDU and multi-subframe A-MPDU, while QPSK and 16-QAM still require a capable peer."]
+        #[doc = "Field `DCM` reader - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig copies descriptor-state word at offset 0x30 bit 15 into HE-SIG-A1 bit 7. Complete libpp\\[trc.o\\]::rcGetDCMMaxRate bounds the ordinary BCC DCM rate family to MCS0, MCS1 and MCS3 according to the peer DCM receive constellation. The vendor raw-TX configuration path independently set descriptor byte +0x31 bit 7 while retaining descriptor rate 0x1a, and the live formatter published HE-SIG-A1 0xfc204087. The owned open S-MPDU path reproduced that word and received an ordinary ACK with completion status zero. Rate-bounded open A-MPDUs with 30, 29 and 26 MPDUs then received BlockAck at MCS0 for the three qualified GI/LTF selectors. Explicit DCM and rate-control fallback therefore use distinct descriptor-code domains; BPSK DCM TX is hardware-qualified for both S-MPDU and multi-subframe A-MPDU, while QPSK and 16-QAM still require a capable peer."]
         pub type DcmR = crate::BitReader;
-        #[doc = "Field `DCM` writer - Project-assigned name. Complete mac_tx_set_hesig copies descriptor-state word at offset 0x30 bit 15 into HE-SIG-A1 bit 7. Complete rcGetDCMMaxRate bounds the ordinary BCC DCM rate family to MCS0, MCS1 and MCS3 according to the peer DCM receive constellation. The vendor raw-TX configuration path independently set descriptor byte +0x31 bit 7 while retaining descriptor rate 0x1a, and the live formatter published HE-SIG-A1 0xfc204087. The owned open S-MPDU path reproduced that word and received an ordinary ACK with completion status zero. Rate-bounded open A-MPDUs with 30, 29 and 26 MPDUs then received BlockAck at MCS0 for the three qualified GI/LTF selectors. Explicit DCM and rate-control fallback therefore use distinct descriptor-code domains; BPSK DCM TX is hardware-qualified for both S-MPDU and multi-subframe A-MPDU, while QPSK and 16-QAM still require a capable peer."]
+        #[doc = "Field `DCM` writer - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig copies descriptor-state word at offset 0x30 bit 15 into HE-SIG-A1 bit 7. Complete libpp\\[trc.o\\]::rcGetDCMMaxRate bounds the ordinary BCC DCM rate family to MCS0, MCS1 and MCS3 according to the peer DCM receive constellation. The vendor raw-TX configuration path independently set descriptor byte +0x31 bit 7 while retaining descriptor rate 0x1a, and the live formatter published HE-SIG-A1 0xfc204087. The owned open S-MPDU path reproduced that word and received an ordinary ACK with completion status zero. Rate-bounded open A-MPDUs with 30, 29 and 26 MPDUs then received BlockAck at MCS0 for the three qualified GI/LTF selectors. Explicit DCM and rate-control fallback therefore use distinct descriptor-code domains; BPSK DCM TX is hardware-qualified for both S-MPDU and multi-subframe A-MPDU, while QPSK and 16-QAM still require a capable peer."]
         pub type DcmW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `BSS_COLOR` reader - Project-assigned name."]
         pub type BssColorR = crate::FieldReader;
         #[doc = "Field `BSS_COLOR` writer - Project-assigned name."]
         pub type BssColorW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
-        #[doc = "Field `VECTOR_REQUIRED_14` reader - Project-assigned name. Complete mac_tx_set_hesig ORs 0x40 into the second output byte before publication; both synchronous MCS9 vendor captures retained this otherwise non-payload vector bit."]
+        #[doc = "Field `VECTOR_REQUIRED_14` reader - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig ORs 0x40 into the second output byte before publication; both synchronous MCS9 vendor captures retained this otherwise non-payload vector bit."]
         pub type VectorRequired14R = crate::BitReader;
-        #[doc = "Field `VECTOR_REQUIRED_14` writer - Project-assigned name. Complete mac_tx_set_hesig ORs 0x40 into the second output byte before publication; both synchronous MCS9 vendor captures retained this otherwise non-payload vector bit."]
+        #[doc = "Field `VECTOR_REQUIRED_14` writer - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig ORs 0x40 into the second output byte before publication; both synchronous MCS9 vendor captures retained this otherwise non-payload vector bit."]
         pub type VectorRequired14W<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `SPATIAL_REUSE` reader - Project-assigned name."]
         pub type SpatialReuseR = crate::FieldReader;
@@ -19872,7 +19872,7 @@ pub mod wifi_mac_tx_queue_vector {
             pub fn mcs(&self) -> McsR {
                 McsR::new(((self.bits >> 3) & 0x0f) as u8)
             }
-            #[doc = "Bit 7 - Project-assigned name. Complete mac_tx_set_hesig copies descriptor-state word at offset 0x30 bit 15 into HE-SIG-A1 bit 7. Complete rcGetDCMMaxRate bounds the ordinary BCC DCM rate family to MCS0, MCS1 and MCS3 according to the peer DCM receive constellation. The vendor raw-TX configuration path independently set descriptor byte +0x31 bit 7 while retaining descriptor rate 0x1a, and the live formatter published HE-SIG-A1 0xfc204087. The owned open S-MPDU path reproduced that word and received an ordinary ACK with completion status zero. Rate-bounded open A-MPDUs with 30, 29 and 26 MPDUs then received BlockAck at MCS0 for the three qualified GI/LTF selectors. Explicit DCM and rate-control fallback therefore use distinct descriptor-code domains; BPSK DCM TX is hardware-qualified for both S-MPDU and multi-subframe A-MPDU, while QPSK and 16-QAM still require a capable peer."]
+            #[doc = "Bit 7 - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig copies descriptor-state word at offset 0x30 bit 15 into HE-SIG-A1 bit 7. Complete libpp\\[trc.o\\]::rcGetDCMMaxRate bounds the ordinary BCC DCM rate family to MCS0, MCS1 and MCS3 according to the peer DCM receive constellation. The vendor raw-TX configuration path independently set descriptor byte +0x31 bit 7 while retaining descriptor rate 0x1a, and the live formatter published HE-SIG-A1 0xfc204087. The owned open S-MPDU path reproduced that word and received an ordinary ACK with completion status zero. Rate-bounded open A-MPDUs with 30, 29 and 26 MPDUs then received BlockAck at MCS0 for the three qualified GI/LTF selectors. Explicit DCM and rate-control fallback therefore use distinct descriptor-code domains; BPSK DCM TX is hardware-qualified for both S-MPDU and multi-subframe A-MPDU, while QPSK and 16-QAM still require a capable peer."]
             #[inline(always)]
             pub fn dcm(&self) -> DcmR {
                 DcmR::new(((self.bits >> 7) & 1) != 0)
@@ -19882,7 +19882,7 @@ pub mod wifi_mac_tx_queue_vector {
             pub fn bss_color(&self) -> BssColorR {
                 BssColorR::new(((self.bits >> 8) & 0x3f) as u8)
             }
-            #[doc = "Bit 14 - Project-assigned name. Complete mac_tx_set_hesig ORs 0x40 into the second output byte before publication; both synchronous MCS9 vendor captures retained this otherwise non-payload vector bit."]
+            #[doc = "Bit 14 - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig ORs 0x40 into the second output byte before publication; both synchronous MCS9 vendor captures retained this otherwise non-payload vector bit."]
             #[inline(always)]
             pub fn vector_required_14(&self) -> VectorRequired14R {
                 VectorRequired14R::new(((self.bits >> 14) & 1) != 0)
@@ -19934,7 +19934,7 @@ pub mod wifi_mac_tx_queue_vector {
             pub fn mcs(&mut self) -> McsW<'_, HeSuSignalA1Spec> {
                 McsW::new(self, 3)
             }
-            #[doc = "Bit 7 - Project-assigned name. Complete mac_tx_set_hesig copies descriptor-state word at offset 0x30 bit 15 into HE-SIG-A1 bit 7. Complete rcGetDCMMaxRate bounds the ordinary BCC DCM rate family to MCS0, MCS1 and MCS3 according to the peer DCM receive constellation. The vendor raw-TX configuration path independently set descriptor byte +0x31 bit 7 while retaining descriptor rate 0x1a, and the live formatter published HE-SIG-A1 0xfc204087. The owned open S-MPDU path reproduced that word and received an ordinary ACK with completion status zero. Rate-bounded open A-MPDUs with 30, 29 and 26 MPDUs then received BlockAck at MCS0 for the three qualified GI/LTF selectors. Explicit DCM and rate-control fallback therefore use distinct descriptor-code domains; BPSK DCM TX is hardware-qualified for both S-MPDU and multi-subframe A-MPDU, while QPSK and 16-QAM still require a capable peer."]
+            #[doc = "Bit 7 - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig copies descriptor-state word at offset 0x30 bit 15 into HE-SIG-A1 bit 7. Complete libpp\\[trc.o\\]::rcGetDCMMaxRate bounds the ordinary BCC DCM rate family to MCS0, MCS1 and MCS3 according to the peer DCM receive constellation. The vendor raw-TX configuration path independently set descriptor byte +0x31 bit 7 while retaining descriptor rate 0x1a, and the live formatter published HE-SIG-A1 0xfc204087. The owned open S-MPDU path reproduced that word and received an ordinary ACK with completion status zero. Rate-bounded open A-MPDUs with 30, 29 and 26 MPDUs then received BlockAck at MCS0 for the three qualified GI/LTF selectors. Explicit DCM and rate-control fallback therefore use distinct descriptor-code domains; BPSK DCM TX is hardware-qualified for both S-MPDU and multi-subframe A-MPDU, while QPSK and 16-QAM still require a capable peer."]
             #[inline(always)]
             pub fn dcm(&mut self) -> DcmW<'_, HeSuSignalA1Spec> {
                 DcmW::new(self, 7)
@@ -19944,7 +19944,7 @@ pub mod wifi_mac_tx_queue_vector {
             pub fn bss_color(&mut self) -> BssColorW<'_, HeSuSignalA1Spec> {
                 BssColorW::new(self, 8)
             }
-            #[doc = "Bit 14 - Project-assigned name. Complete mac_tx_set_hesig ORs 0x40 into the second output byte before publication; both synchronous MCS9 vendor captures retained this otherwise non-payload vector bit."]
+            #[doc = "Bit 14 - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig ORs 0x40 into the second output byte before publication; both synchronous MCS9 vendor captures retained this otherwise non-payload vector bit."]
             #[inline(always)]
             pub fn vector_required_14(&mut self) -> VectorRequired14W<'_, HeSuSignalA1Spec> {
                 VectorRequired14W::new(self, 14)
@@ -19977,7 +19977,7 @@ pub mod wifi_mac_tx_queue_vector {
                 VectorRequiredHighW::new(self, 26)
             }
         }
-        #[doc = "Project-assigned name. Complete mac_tx_set_hesig writes this HE SU vector word at 0x201054f4-q*0x7c. Live vendor MCS9 uplink images 0xfc205b4f and 0xfc605b4f independently qualify MCS nine, BSS color 27, HE20 and GI/LTF selectors one and three. A separate explicit MCS0 DCM vendor frame published 0xfc204087. Replaying the selector-one MCS9 image through the owned open DMA path received a complete 32-MPDU BlockAck on the first attempt and remained stable for more than 13,800 aggregates. Bits 31:26 are a TX-vector-required all-ones image and are not presented as on-air HE-SIG-A1 payload bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_su_signal_a1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_su_signal_a1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig writes this HE SU vector word at 0x201054f4-q*0x7c. Live vendor MCS9 uplink images 0xfc205b4f and 0xfc605b4f independently qualify MCS nine, BSS color 27, HE20 and GI/LTF selectors one and three. A separate explicit MCS0 DCM vendor frame published 0xfc204087. Replaying the selector-one MCS9 image through the owned open DMA path received a complete 32-MPDU BlockAck on the first attempt and remained stable for more than 13,800 aggregates. Bits 31:26 are a TX-vector-required all-ones image and are not presented as on-air HE-SIG-A1 payload bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_su_signal_a1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_su_signal_a1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct HeSuSignalA1Spec;
         impl crate::RegisterSpec for HeSuSignalA1Spec {
             type Ux = u32;
@@ -19989,10 +19989,10 @@ pub mod wifi_mac_tx_queue_vector {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "HE_SU_SIGNAL_A2_LENGTH (rw) register accessor: Project-assigned name. Complete mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE APEP byte length shifted by eleven and a frame-class bit copied to bit 28. A-MPDU length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105. Complete ppCalSubFrameLength adds four to APEP when DMA metadata byte seven bit zero selects hardware HE-Control insertion, while leaving the low fourteen-bit MPDU length and DMA CCMP position unchanged. The vendor and open 24-byte raw S-MPDU paths both use APEP length 32, producing 0x00010105 with bit 28 clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_su_signal_a2_length::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_su_signal_a2_length::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_su_signal_a2_length`] module"]
+    #[doc = "HE_SU_SIGNAL_A2_LENGTH (rw) register accessor: Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE APEP byte length shifted by eleven and a frame-class bit copied to bit 28. A-MPDU length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105. Complete libpp\\[pp_he.o\\]::ppCalSubFrameLength adds four to APEP when DMA metadata byte seven bit zero selects hardware HE-Control insertion, while leaving the low fourteen-bit MPDU length and DMA CCMP position unchanged. The vendor and open 24-byte raw S-MPDU paths both use APEP length 32, producing 0x00010105 with bit 28 clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_su_signal_a2_length::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_su_signal_a2_length::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_su_signal_a2_length`] module"]
     #[doc(alias = "HE_SU_SIGNAL_A2_LENGTH")]
     pub type HeSuSignalA2Length = crate::Reg<he_su_signal_a2_length::HeSuSignalA2LengthSpec>;
-    #[doc = "Project-assigned name. Complete mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE APEP byte length shifted by eleven and a frame-class bit copied to bit 28. A-MPDU length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105. Complete ppCalSubFrameLength adds four to APEP when DMA metadata byte seven bit zero selects hardware HE-Control insertion, while leaving the low fourteen-bit MPDU length and DMA CCMP position unchanged. The vendor and open 24-byte raw S-MPDU paths both use APEP length 32, producing 0x00010105 with bit 28 clear."]
+    #[doc = "Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE APEP byte length shifted by eleven and a frame-class bit copied to bit 28. A-MPDU length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105. Complete libpp\\[pp_he.o\\]::ppCalSubFrameLength adds four to APEP when DMA metadata byte seven bit zero selects hardware HE-Control insertion, while leaving the low fourteen-bit MPDU length and DMA CCMP position unchanged. The vendor and open 24-byte raw S-MPDU paths both use APEP length 32, producing 0x00010105 with bit 28 clear."]
     pub mod he_su_signal_a2_length {
         #[doc = "Register `HE_SU_SIGNAL_A2_LENGTH%s` reader"]
         pub type R = crate::R<HeSuSignalA2LengthSpec>;
@@ -20026,9 +20026,9 @@ pub mod wifi_mac_tx_queue_vector {
         pub type DescriptorClassMatchR = crate::BitReader;
         #[doc = "Field `DESCRIPTOR_CLASS_MATCH` writer - Project-assigned name. Set exactly when descriptor byte 0x2f bits 6:3 equal seven."]
         pub type DescriptorClassMatchW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `APEP_LENGTH` reader - Project-assigned name. Sixteen-bit assembled HE APEP byte count produced by ppCalTxHEAMPDULength or ppCalTxHESMPDULength and copied by mac_tx_set_hesig. For A-MPDU, DMA metadata byte seven bit zero contributes the four-byte hardware HE-Control insertion without changing the low fourteen-bit MPDU length. The qualified S-MPDU value is 32 bytes: four-byte delimiter plus 24-byte MPDU, four-byte hardware FCS slot and alignment."]
+        #[doc = "Field `APEP_LENGTH` reader - Project-assigned name. Sixteen-bit assembled HE APEP byte count produced by libpp\\[pp_he.o\\]::ppCalTxHEAMPDULength or libpp\\[pp_he.o\\]::ppCalTxHESMPDULength and copied by libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig. For A-MPDU, DMA metadata byte seven bit zero contributes the four-byte hardware HE-Control insertion without changing the low fourteen-bit MPDU length. The qualified S-MPDU value is 32 bytes: four-byte delimiter plus 24-byte MPDU, four-byte hardware FCS slot and alignment."]
         pub type ApepLengthR = crate::FieldReader<u16>;
-        #[doc = "Field `APEP_LENGTH` writer - Project-assigned name. Sixteen-bit assembled HE APEP byte count produced by ppCalTxHEAMPDULength or ppCalTxHESMPDULength and copied by mac_tx_set_hesig. For A-MPDU, DMA metadata byte seven bit zero contributes the four-byte hardware HE-Control insertion without changing the low fourteen-bit MPDU length. The qualified S-MPDU value is 32 bytes: four-byte delimiter plus 24-byte MPDU, four-byte hardware FCS slot and alignment."]
+        #[doc = "Field `APEP_LENGTH` writer - Project-assigned name. Sixteen-bit assembled HE APEP byte count produced by libpp\\[pp_he.o\\]::ppCalTxHEAMPDULength or libpp\\[pp_he.o\\]::ppCalTxHESMPDULength and copied by libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig. For A-MPDU, DMA metadata byte seven bit zero contributes the four-byte hardware HE-Control insertion without changing the low fourteen-bit MPDU length. The qualified S-MPDU value is 32 bytes: four-byte delimiter plus 24-byte MPDU, four-byte hardware FCS slot and alignment."]
         pub type ApepLengthW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
         #[doc = "Field `AMPDU_LENGTH_VALID` reader - Project-assigned name. Copy of frame-state bit 12; set in live HE A-MPDU images and clear in the acknowledged HE S-MPDU image."]
         pub type AmpduLengthValidR = crate::BitReader;
@@ -20070,7 +20070,7 @@ pub mod wifi_mac_tx_queue_vector {
             pub fn descriptor_class_match(&self) -> DescriptorClassMatchR {
                 DescriptorClassMatchR::new(((self.bits >> 10) & 1) != 0)
             }
-            #[doc = "Bits 11:26 - Project-assigned name. Sixteen-bit assembled HE APEP byte count produced by ppCalTxHEAMPDULength or ppCalTxHESMPDULength and copied by mac_tx_set_hesig. For A-MPDU, DMA metadata byte seven bit zero contributes the four-byte hardware HE-Control insertion without changing the low fourteen-bit MPDU length. The qualified S-MPDU value is 32 bytes: four-byte delimiter plus 24-byte MPDU, four-byte hardware FCS slot and alignment."]
+            #[doc = "Bits 11:26 - Project-assigned name. Sixteen-bit assembled HE APEP byte count produced by libpp\\[pp_he.o\\]::ppCalTxHEAMPDULength or libpp\\[pp_he.o\\]::ppCalTxHESMPDULength and copied by libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig. For A-MPDU, DMA metadata byte seven bit zero contributes the four-byte hardware HE-Control insertion without changing the low fourteen-bit MPDU length. The qualified S-MPDU value is 32 bytes: four-byte delimiter plus 24-byte MPDU, four-byte hardware FCS slot and alignment."]
             #[inline(always)]
             pub fn apep_length(&self) -> ApepLengthR {
                 ApepLengthR::new(((self.bits >> 11) & 0xffff) as u16)
@@ -20119,7 +20119,7 @@ pub mod wifi_mac_tx_queue_vector {
             ) -> DescriptorClassMatchW<'_, HeSuSignalA2LengthSpec> {
                 DescriptorClassMatchW::new(self, 10)
             }
-            #[doc = "Bits 11:26 - Project-assigned name. Sixteen-bit assembled HE APEP byte count produced by ppCalTxHEAMPDULength or ppCalTxHESMPDULength and copied by mac_tx_set_hesig. For A-MPDU, DMA metadata byte seven bit zero contributes the four-byte hardware HE-Control insertion without changing the low fourteen-bit MPDU length. The qualified S-MPDU value is 32 bytes: four-byte delimiter plus 24-byte MPDU, four-byte hardware FCS slot and alignment."]
+            #[doc = "Bits 11:26 - Project-assigned name. Sixteen-bit assembled HE APEP byte count produced by libpp\\[pp_he.o\\]::ppCalTxHEAMPDULength or libpp\\[pp_he.o\\]::ppCalTxHESMPDULength and copied by libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig. For A-MPDU, DMA metadata byte seven bit zero contributes the four-byte hardware HE-Control insertion without changing the low fourteen-bit MPDU length. The qualified S-MPDU value is 32 bytes: four-byte delimiter plus 24-byte MPDU, four-byte hardware FCS slot and alignment."]
             #[inline(always)]
             pub fn apep_length(&mut self) -> ApepLengthW<'_, HeSuSignalA2LengthSpec> {
                 ApepLengthW::new(self, 11)
@@ -20130,7 +20130,7 @@ pub mod wifi_mac_tx_queue_vector {
                 AmpduLengthValidW::new(self, 28)
             }
         }
-        #[doc = "Project-assigned name. Complete mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE APEP byte length shifted by eleven and a frame-class bit copied to bit 28. A-MPDU length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105. Complete ppCalSubFrameLength adds four to APEP when DMA metadata byte seven bit zero selects hardware HE-Control insertion, while leaving the low fourteen-bit MPDU length and DMA CCMP position unchanged. The vendor and open 24-byte raw S-MPDU paths both use APEP length 32, producing 0x00010105 with bit 28 clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_su_signal_a2_length::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_su_signal_a2_length::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_hesig writes this second HE SU vector word at 0x201054f8-q*0x7c. It combines a bounded low control image with the complete HE APEP byte length shifted by eleven and a frame-class bit copied to bit 28. A-MPDU length 0x76 produced 0x1003b105; the live vendor throughput path independently reported length 0x061a in 0x1030d105. Complete libpp\\[pp_he.o\\]::ppCalSubFrameLength adds four to APEP when DMA metadata byte seven bit zero selects hardware HE-Control insertion, while leaving the low fourteen-bit MPDU length and DMA CCMP position unchanged. The vendor and open 24-byte raw S-MPDU paths both use APEP length 32, producing 0x00010105 with bit 28 clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_su_signal_a2_length::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_su_signal_a2_length::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct HeSuSignalA2LengthSpec;
         impl crate::RegisterSpec for HeSuSignalA2LengthSpec {
             type Ux = u32;
@@ -20142,10 +20142,10 @@ pub mod wifi_mac_tx_queue_vector {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "HE_MPDU_LENGTH_TAIL (rw) register accessor: Project-assigned name. Complete mac_tx_set_mplen writes the final allocated seven-bit HE MPDU-length link index at 0x201054fc-q*0x7c when it reaches the DMA descriptor whose word zero bit 30 marks the tail. Bits 31:7 are preserved. Complete mac_tx_set_tb calls that leaf for every frame before making the queue Trigger-eligible.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_mpdu_length_tail::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_mpdu_length_tail::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_mpdu_length_tail`] module"]
+    #[doc = "HE_MPDU_LENGTH_TAIL (rw) register accessor: Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_mplen writes the final allocated seven-bit HE MPDU-length link index at 0x201054fc-q*0x7c when it reaches the DMA descriptor whose word zero bit 30 marks the tail. Bits 31:7 are preserved. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb calls that leaf for every frame before making the queue Trigger-eligible.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_mpdu_length_tail::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_mpdu_length_tail::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_mpdu_length_tail`] module"]
     #[doc(alias = "HE_MPDU_LENGTH_TAIL")]
     pub type HeMpduLengthTail = crate::Reg<he_mpdu_length_tail::HeMpduLengthTailSpec>;
-    #[doc = "Project-assigned name. Complete mac_tx_set_mplen writes the final allocated seven-bit HE MPDU-length link index at 0x201054fc-q*0x7c when it reaches the DMA descriptor whose word zero bit 30 marks the tail. Bits 31:7 are preserved. Complete mac_tx_set_tb calls that leaf for every frame before making the queue Trigger-eligible."]
+    #[doc = "Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_mplen writes the final allocated seven-bit HE MPDU-length link index at 0x201054fc-q*0x7c when it reaches the DMA descriptor whose word zero bit 30 marks the tail. Bits 31:7 are preserved. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb calls that leaf for every frame before making the queue Trigger-eligible."]
     pub mod he_mpdu_length_tail {
         #[doc = "Register `HE_MPDU_LENGTH_TAIL%s` reader"]
         pub type R = crate::R<HeMpduLengthTailSpec>;
@@ -20169,7 +20169,7 @@ pub mod wifi_mac_tx_queue_vector {
                 LinkIndexW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Complete mac_tx_set_mplen writes the final allocated seven-bit HE MPDU-length link index at 0x201054fc-q*0x7c when it reaches the DMA descriptor whose word zero bit 30 marks the tail. Bits 31:7 are preserved. Complete mac_tx_set_tb calls that leaf for every frame before making the queue Trigger-eligible.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_mpdu_length_tail::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_mpdu_length_tail::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_mplen writes the final allocated seven-bit HE MPDU-length link index at 0x201054fc-q*0x7c when it reaches the DMA descriptor whose word zero bit 30 marks the tail. Bits 31:7 are preserved. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb calls that leaf for every frame before making the queue Trigger-eligible.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_mpdu_length_tail::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_mpdu_length_tail::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct HeMpduLengthTailSpec;
         impl crate::RegisterSpec for HeMpduLengthTailSpec {
             type Ux = u32;
@@ -20262,43 +20262,43 @@ pub mod wifi_mac_tx_queue_vector {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "HT_DESCRIPTOR_COUNTS (rw) register accessor: Project-assigned name. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig constructs the base address 0x20105504-q*0x7c, then copies descriptor byte 0x2a into bits 6:0 and 20:14 and descriptor byte 0x2e into bits 13:7 through three fresh-read RMW edges. The vendor oracle read 0x00004081 for idle ordinary queues, consistent with one descriptor in all three fields. Open direct-DMA HIL first qualified two in all three lanes, then qualified the full negotiated 32-frame window with a 48,448-byte A-MPDU and complete BlockAck.\n\nYou can [`read`](crate::Reg::read) this register and get [`ht_descriptor_counts::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ht_descriptor_counts::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ht_descriptor_counts`] module"]
+    #[doc = "HT_DESCRIPTOR_COUNTS (rw) register accessor: Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig constructs the base address 0x20105504-q*0x7c, then copies descriptor byte 0x2a into bits 6:0 and 20:14 and descriptor byte 0x2e into bits 13:7 through three fresh-read RMW edges. The vendor oracle read 0x00004081 for idle ordinary queues, consistent with one descriptor in all three fields. Open direct-DMA HIL first qualified two in all three lanes, then qualified the full negotiated 32-frame window with a 48,448-byte A-MPDU and complete BlockAck.\n\nYou can [`read`](crate::Reg::read) this register and get [`ht_descriptor_counts::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ht_descriptor_counts::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ht_descriptor_counts`] module"]
     #[doc(alias = "HT_DESCRIPTOR_COUNTS")]
     pub type HtDescriptorCounts = crate::Reg<ht_descriptor_counts::HtDescriptorCountsSpec>;
-    #[doc = "Project-assigned name. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig constructs the base address 0x20105504-q*0x7c, then copies descriptor byte 0x2a into bits 6:0 and 20:14 and descriptor byte 0x2e into bits 13:7 through three fresh-read RMW edges. The vendor oracle read 0x00004081 for idle ordinary queues, consistent with one descriptor in all three fields. Open direct-DMA HIL first qualified two in all three lanes, then qualified the full negotiated 32-frame window with a 48,448-byte A-MPDU and complete BlockAck."]
+    #[doc = "Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig constructs the base address 0x20105504-q*0x7c, then copies descriptor byte 0x2a into bits 6:0 and 20:14 and descriptor byte 0x2e into bits 13:7 through three fresh-read RMW edges. The vendor oracle read 0x00004081 for idle ordinary queues, consistent with one descriptor in all three fields. Open direct-DMA HIL first qualified two in all three lanes, then qualified the full negotiated 32-frame window with a 48,448-byte A-MPDU and complete BlockAck."]
     pub mod ht_descriptor_counts {
         #[doc = "Register `HT_DESCRIPTOR_COUNTS%s` reader"]
         pub type R = crate::R<HtDescriptorCountsSpec>;
         #[doc = "Register `HT_DESCRIPTOR_COUNTS%s` writer"]
         pub type W = crate::W<HtDescriptorCountsSpec>;
-        #[doc = "Field `DESCRIPTOR_COUNT_A` reader - Project-assigned name. Seven-bit descriptor byte 0x2a copied by complete mac_tx_set_htsig."]
+        #[doc = "Field `DESCRIPTOR_COUNT_A` reader - Project-assigned name. Seven-bit descriptor byte 0x2a copied by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig."]
         pub type DescriptorCountAR = crate::FieldReader;
-        #[doc = "Field `DESCRIPTOR_COUNT_A` writer - Project-assigned name. Seven-bit descriptor byte 0x2a copied by complete mac_tx_set_htsig."]
+        #[doc = "Field `DESCRIPTOR_COUNT_A` writer - Project-assigned name. Seven-bit descriptor byte 0x2a copied by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig."]
         pub type DescriptorCountAW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
-        #[doc = "Field `DESCRIPTOR_COUNT_B` reader - Project-assigned name. Seven-bit descriptor byte 0x2e copied by complete mac_tx_set_htsig."]
+        #[doc = "Field `DESCRIPTOR_COUNT_B` reader - Project-assigned name. Seven-bit descriptor byte 0x2e copied by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig."]
         pub type DescriptorCountBR = crate::FieldReader;
-        #[doc = "Field `DESCRIPTOR_COUNT_B` writer - Project-assigned name. Seven-bit descriptor byte 0x2e copied by complete mac_tx_set_htsig."]
+        #[doc = "Field `DESCRIPTOR_COUNT_B` writer - Project-assigned name. Seven-bit descriptor byte 0x2e copied by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig."]
         pub type DescriptorCountBW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
-        #[doc = "Field `DESCRIPTOR_COUNT_A_COPY` reader - Project-assigned name. Second copy of descriptor byte 0x2a written by complete mac_tx_set_htsig."]
+        #[doc = "Field `DESCRIPTOR_COUNT_A_COPY` reader - Project-assigned name. Second copy of descriptor byte 0x2a written by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig."]
         pub type DescriptorCountACopyR = crate::FieldReader;
-        #[doc = "Field `DESCRIPTOR_COUNT_A_COPY` writer - Project-assigned name. Second copy of descriptor byte 0x2a written by complete mac_tx_set_htsig."]
+        #[doc = "Field `DESCRIPTOR_COUNT_A_COPY` writer - Project-assigned name. Second copy of descriptor byte 0x2a written by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig."]
         pub type DescriptorCountACopyW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         #[doc = "Field `BITS_21_31_OPAQUE` reader - Opaque: meaning not established."]
         pub type Bits21_31OpaqueR = crate::FieldReader<u16>;
         #[doc = "Field `BITS_21_31_OPAQUE` writer - Opaque: meaning not established."]
         pub type Bits21_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16>;
         impl R {
-            #[doc = "Bits 0:6 - Project-assigned name. Seven-bit descriptor byte 0x2a copied by complete mac_tx_set_htsig."]
+            #[doc = "Bits 0:6 - Project-assigned name. Seven-bit descriptor byte 0x2a copied by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig."]
             #[inline(always)]
             pub fn descriptor_count_a(&self) -> DescriptorCountAR {
                 DescriptorCountAR::new((self.bits & 0x7f) as u8)
             }
-            #[doc = "Bits 7:13 - Project-assigned name. Seven-bit descriptor byte 0x2e copied by complete mac_tx_set_htsig."]
+            #[doc = "Bits 7:13 - Project-assigned name. Seven-bit descriptor byte 0x2e copied by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig."]
             #[inline(always)]
             pub fn descriptor_count_b(&self) -> DescriptorCountBR {
                 DescriptorCountBR::new(((self.bits >> 7) & 0x7f) as u8)
             }
-            #[doc = "Bits 14:20 - Project-assigned name. Second copy of descriptor byte 0x2a written by complete mac_tx_set_htsig."]
+            #[doc = "Bits 14:20 - Project-assigned name. Second copy of descriptor byte 0x2a written by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig."]
             #[inline(always)]
             pub fn descriptor_count_a_copy(&self) -> DescriptorCountACopyR {
                 DescriptorCountACopyR::new(((self.bits >> 14) & 0x7f) as u8)
@@ -20310,17 +20310,17 @@ pub mod wifi_mac_tx_queue_vector {
             }
         }
         impl W {
-            #[doc = "Bits 0:6 - Project-assigned name. Seven-bit descriptor byte 0x2a copied by complete mac_tx_set_htsig."]
+            #[doc = "Bits 0:6 - Project-assigned name. Seven-bit descriptor byte 0x2a copied by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig."]
             #[inline(always)]
             pub fn descriptor_count_a(&mut self) -> DescriptorCountAW<'_, HtDescriptorCountsSpec> {
                 DescriptorCountAW::new(self, 0)
             }
-            #[doc = "Bits 7:13 - Project-assigned name. Seven-bit descriptor byte 0x2e copied by complete mac_tx_set_htsig."]
+            #[doc = "Bits 7:13 - Project-assigned name. Seven-bit descriptor byte 0x2e copied by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig."]
             #[inline(always)]
             pub fn descriptor_count_b(&mut self) -> DescriptorCountBW<'_, HtDescriptorCountsSpec> {
                 DescriptorCountBW::new(self, 7)
             }
-            #[doc = "Bits 14:20 - Project-assigned name. Second copy of descriptor byte 0x2a written by complete mac_tx_set_htsig."]
+            #[doc = "Bits 14:20 - Project-assigned name. Second copy of descriptor byte 0x2a written by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig."]
             #[inline(always)]
             pub fn descriptor_count_a_copy(
                 &mut self,
@@ -20333,7 +20333,7 @@ pub mod wifi_mac_tx_queue_vector {
                 Bits21_31OpaqueW::new(self, 21)
             }
         }
-        #[doc = "Project-assigned name. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig constructs the base address 0x20105504-q*0x7c, then copies descriptor byte 0x2a into bits 6:0 and 20:14 and descriptor byte 0x2e into bits 13:7 through three fresh-read RMW edges. The vendor oracle read 0x00004081 for idle ordinary queues, consistent with one descriptor in all three fields. Open direct-DMA HIL first qualified two in all three lanes, then qualified the full negotiated 32-frame window with a 48,448-byte A-MPDU and complete BlockAck.\n\nYou can [`read`](crate::Reg::read) this register and get [`ht_descriptor_counts::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ht_descriptor_counts::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_htsig constructs the base address 0x20105504-q*0x7c, then copies descriptor byte 0x2a into bits 6:0 and 20:14 and descriptor byte 0x2e into bits 13:7 through three fresh-read RMW edges. The vendor oracle read 0x00004081 for idle ordinary queues, consistent with one descriptor in all three fields. Open direct-DMA HIL first qualified two in all three lanes, then qualified the full negotiated 32-frame window with a 48,448-byte A-MPDU and complete BlockAck.\n\nYou can [`read`](crate::Reg::read) this register and get [`ht_descriptor_counts::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ht_descriptor_counts::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct HtDescriptorCountsSpec;
         impl crate::RegisterSpec for HtDescriptorCountsSpec {
             type Ux = u32;
@@ -20345,10 +20345,10 @@ pub mod wifi_mac_tx_queue_vector {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "DATA_LENGTH (rw) register accessor: Project-assigned name. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. Complete dbg_read_tx_sig names the fields as the HT40 length, MCS, EOF count and TXOP count. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word.\n\nYou can [`read`](crate::Reg::read) this register and get [`data_length::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`data_length::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@data_length`] module"]
+    #[doc = "DATA_LENGTH (rw) register accessor: Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. Complete dbg_read_tx_sig names the fields as the HT40 length, MCS, EOF count and TXOP count. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word.\n\nYou can [`read`](crate::Reg::read) this register and get [`data_length::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`data_length::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@data_length`] module"]
     #[doc(alias = "DATA_LENGTH")]
     pub type DataLength = crate::Reg<data_length::DataLengthSpec>;
-    #[doc = "Project-assigned name. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. Complete dbg_read_tx_sig names the fields as the HT40 length, MCS, EOF count and TXOP count. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word."]
+    #[doc = "Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. Complete dbg_read_tx_sig names the fields as the HT40 length, MCS, EOF count and TXOP count. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word."]
     pub mod data_length {
         #[doc = "Register `DATA_LENGTH%s` reader"]
         pub type R = crate::R<DataLengthSpec>;
@@ -20428,7 +20428,7 @@ pub mod wifi_mac_tx_queue_vector {
                 Ht40McsW::new(self, 28)
             }
         }
-        #[doc = "Project-assigned name. Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. Complete dbg_read_tx_sig names the fields as the HT40 length, MCS, EOF count and TXOP count. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word.\n\nYou can [`read`](crate::Reg::read) this register and get [`data_length::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`data_length::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_len (size 0x128) writes the packed non-HE HT data length, MCS index and entry class here. Complete dbg_read_tx_sig names the fields as the HT40 length, MCS, EOF count and TXOP count. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x0000006e for length 0x6e, proving entry class zero. The independent two-MPDU MCS7 capture carried 0x70400c2e for aggregate length 0x0c2e, proving entry class one for A-MPDU. The open direct-DMA A-MPDU HIL qualified the same entry class through complete BlockAck results. Legacy formatting does not consume this queue word.\n\nYou can [`read`](crate::Reg::read) this register and get [`data_length::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`data_length::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct DataLengthSpec;
         impl crate::RegisterSpec for DataLengthSpec {
             type Ux = u32;
@@ -20440,10 +20440,10 @@ pub mod wifi_mac_tx_queue_vector {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "LENGTH_CONTROL (rw) register accessor: Project-assigned name. Canonical queue-vector length/rate/antenna image. Complete dbg_read_tx_sig names the low antenna-selection flags, RTS rate, HT20 EOF count and HT20 TXOP count. The upper four words of complete hal_attenna_init's eight-word traversal are these same queue-vector registers; its bit operations therefore use the canonical antenna fields below rather than a second BANK_CONTROL identity. Complete mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. Counterintuitively, the acknowledged HE20 DCM S-MPDU also requires entry class one and carries 0x004002c4. The open direct-DMA HIL qualified both the HT aggregate and HE S-MPDU images. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M.\n\nYou can [`read`](crate::Reg::read) this register and get [`length_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`length_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@length_control`] module"]
+    #[doc = "LENGTH_CONTROL (rw) register accessor: Project-assigned name. Canonical queue-vector length/rate/antenna image. Complete dbg_read_tx_sig names the low antenna-selection flags, RTS rate, HT20 EOF count and HT20 TXOP count. The upper four words of complete hal_attenna_init's eight-word traversal are these same queue-vector registers; its bit operations therefore use the canonical antenna fields below rather than a second BANK_CONTROL identity. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. Counterintuitively, the acknowledged HE20 DCM S-MPDU also requires entry class one and carries 0x004002c4. The open direct-DMA HIL qualified both the HT aggregate and HE S-MPDU images. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M.\n\nYou can [`read`](crate::Reg::read) this register and get [`length_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`length_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@length_control`] module"]
     #[doc(alias = "LENGTH_CONTROL")]
     pub type LengthControl = crate::Reg<length_control::LengthControlSpec>;
-    #[doc = "Project-assigned name. Canonical queue-vector length/rate/antenna image. Complete dbg_read_tx_sig names the low antenna-selection flags, RTS rate, HT20 EOF count and HT20 TXOP count. The upper four words of complete hal_attenna_init's eight-word traversal are these same queue-vector registers; its bit operations therefore use the canonical antenna fields below rather than a second BANK_CONTROL identity. Complete mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. Counterintuitively, the acknowledged HE20 DCM S-MPDU also requires entry class one and carries 0x004002c4. The open direct-DMA HIL qualified both the HT aggregate and HE S-MPDU images. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M."]
+    #[doc = "Project-assigned name. Canonical queue-vector length/rate/antenna image. Complete dbg_read_tx_sig names the low antenna-selection flags, RTS rate, HT20 EOF count and HT20 TXOP count. The upper four words of complete hal_attenna_init's eight-word traversal are these same queue-vector registers; its bit operations therefore use the canonical antenna fields below rather than a second BANK_CONTROL identity. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. Counterintuitively, the acknowledged HE20 DCM S-MPDU also requires entry class one and carries 0x004002c4. The open direct-DMA HIL qualified both the HT aggregate and HE S-MPDU images. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M."]
     pub mod length_control {
         #[doc = "Register `LENGTH_CONTROL%s` reader"]
         pub type R = crate::R<LengthControlSpec>;
@@ -20617,7 +20617,7 @@ pub mod wifi_mac_tx_queue_vector {
                 Bits28_31OpaqueW::new(self, 28)
             }
         }
-        #[doc = "Project-assigned name. Canonical queue-vector length/rate/antenna image. Complete dbg_read_tx_sig names the low antenna-selection flags, RTS rate, HT20 EOF count and HT20 TXOP count. The upper four words of complete hal_attenna_init's eight-word traversal are these same queue-vector registers; its bit operations therefore use the canonical antenna fields below rather than a second BANK_CONTROL identity. Complete mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. Counterintuitively, the acknowledged HE20 DCM S-MPDU also requires entry class one and carries 0x004002c4. The open direct-DMA HIL qualified both the HT aggregate and HE S-MPDU images. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M.\n\nYou can [`read`](crate::Reg::read) this register and get [`length_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`length_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Canonical queue-vector length/rate/antenna image. Complete dbg_read_tx_sig names the low antenna-selection flags, RTS rate, HT20 EOF count and HT20 TXOP count. The upper four words of complete hal_attenna_init's eight-word traversal are these same queue-vector registers; its bit operations therefore use the canonical antenna fields below rather than a second BANK_CONTROL identity. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_len always publishes the mac_tx_get_rts_rate result in bits 13:6, including PPDUs without explicit RTS/CTS. The exact vendor single-MPDU HT20 MCS0 callback image carried 0x000002c4, proving entry class zero; the independent two-MPDU MCS7 capture carried 0x00400244, proving entry class one. Counterintuitively, the acknowledged HE20 DCM S-MPDU also requires entry class one and carries 0x004002c4. The open direct-DMA HIL qualified both the HT aggregate and HE S-MPDU images. Complete mac_tx_get_rts_rate maps legacy OFDM 48/24/54/36 Mbit/s to basic rate 24M, 12/18M to 12M, and 6/9M to 6M.\n\nYou can [`read`](crate::Reg::read) this register and get [`length_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`length_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct LengthControlSpec;
         impl crate::RegisterSpec for LengthControlSpec {
             type Ux = u32;
@@ -20629,10 +20629,10 @@ pub mod wifi_mac_tx_queue_vector {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "HE_CONTROL_CONFIG (rw) register accessor: Project-assigned name. Per-queue control word at 0x20105518-logical_queue*0x7c. Complete hal_he_set_htc performs a fresh-read RMW of bit 28 after publishing HE_CONTROL: nonzero enable sets the bit and zero clears it. The vendor descriptor path supplies descriptor state bit 16, which is set only for an explicit software HE-Control image such as OMC; leaving it clear permits the hardware-generated BSR path selected by the QoS frame Order bit and Trigger-eligible TID state. Vendor DMA/air HIL proves that hardware inserts the four-byte HE-Control field between QoS Control and CCMP. The DMA buffer contains no placeholder; complete ppCalSubFrameLength accounts for the insertion through metadata byte seven bit zero. Open-driver HIL independently qualifies the same contract through WPA2, decrypted ARP and ICMP traffic.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_control_config::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_control_config::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_control_config`] module"]
+    #[doc = "HE_CONTROL_CONFIG (rw) register accessor: Project-assigned name. Per-queue control word at 0x20105518-logical_queue*0x7c. Complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_htc performs a fresh-read RMW of bit 28 after publishing HE_CONTROL: nonzero enable sets the bit and zero clears it. The vendor descriptor path supplies descriptor state bit 16, which is set only for an explicit software HE-Control image such as OMC; leaving it clear permits the hardware-generated BSR path selected by the QoS frame Order bit and Trigger-eligible TID state. Vendor DMA/air HIL proves that hardware inserts the four-byte HE-Control field between QoS Control and CCMP. The DMA buffer contains no placeholder; complete libpp\\[pp_he.o\\]::ppCalSubFrameLength accounts for the insertion through metadata byte seven bit zero. Open-driver HIL independently qualifies the same contract through WPA2, decrypted ARP and ICMP traffic.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_control_config::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_control_config::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_control_config`] module"]
     #[doc(alias = "HE_CONTROL_CONFIG")]
     pub type HeControlConfig = crate::Reg<he_control_config::HeControlConfigSpec>;
-    #[doc = "Project-assigned name. Per-queue control word at 0x20105518-logical_queue*0x7c. Complete hal_he_set_htc performs a fresh-read RMW of bit 28 after publishing HE_CONTROL: nonzero enable sets the bit and zero clears it. The vendor descriptor path supplies descriptor state bit 16, which is set only for an explicit software HE-Control image such as OMC; leaving it clear permits the hardware-generated BSR path selected by the QoS frame Order bit and Trigger-eligible TID state. Vendor DMA/air HIL proves that hardware inserts the four-byte HE-Control field between QoS Control and CCMP. The DMA buffer contains no placeholder; complete ppCalSubFrameLength accounts for the insertion through metadata byte seven bit zero. Open-driver HIL independently qualifies the same contract through WPA2, decrypted ARP and ICMP traffic."]
+    #[doc = "Project-assigned name. Per-queue control word at 0x20105518-logical_queue*0x7c. Complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_htc performs a fresh-read RMW of bit 28 after publishing HE_CONTROL: nonzero enable sets the bit and zero clears it. The vendor descriptor path supplies descriptor state bit 16, which is set only for an explicit software HE-Control image such as OMC; leaving it clear permits the hardware-generated BSR path selected by the QoS frame Order bit and Trigger-eligible TID state. Vendor DMA/air HIL proves that hardware inserts the four-byte HE-Control field between QoS Control and CCMP. The DMA buffer contains no placeholder; complete libpp\\[pp_he.o\\]::ppCalSubFrameLength accounts for the insertion through metadata byte seven bit zero. Open-driver HIL independently qualifies the same contract through WPA2, decrypted ARP and ICMP traffic."]
     pub mod he_control_config {
         #[doc = "Register `HE_CONTROL_CONFIG%s` reader"]
         pub type R = crate::R<HeControlConfigSpec>;
@@ -20658,7 +20658,7 @@ pub mod wifi_mac_tx_queue_vector {
                 SoftwareHeControlEnableW::new(self, 28)
             }
         }
-        #[doc = "Project-assigned name. Per-queue control word at 0x20105518-logical_queue*0x7c. Complete hal_he_set_htc performs a fresh-read RMW of bit 28 after publishing HE_CONTROL: nonzero enable sets the bit and zero clears it. The vendor descriptor path supplies descriptor state bit 16, which is set only for an explicit software HE-Control image such as OMC; leaving it clear permits the hardware-generated BSR path selected by the QoS frame Order bit and Trigger-eligible TID state. Vendor DMA/air HIL proves that hardware inserts the four-byte HE-Control field between QoS Control and CCMP. The DMA buffer contains no placeholder; complete ppCalSubFrameLength accounts for the insertion through metadata byte seven bit zero. Open-driver HIL independently qualifies the same contract through WPA2, decrypted ARP and ICMP traffic.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_control_config::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_control_config::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Per-queue control word at 0x20105518-logical_queue*0x7c. Complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_htc performs a fresh-read RMW of bit 28 after publishing HE_CONTROL: nonzero enable sets the bit and zero clears it. The vendor descriptor path supplies descriptor state bit 16, which is set only for an explicit software HE-Control image such as OMC; leaving it clear permits the hardware-generated BSR path selected by the QoS frame Order bit and Trigger-eligible TID state. Vendor DMA/air HIL proves that hardware inserts the four-byte HE-Control field between QoS Control and CCMP. The DMA buffer contains no placeholder; complete libpp\\[pp_he.o\\]::ppCalSubFrameLength accounts for the insertion through metadata byte seven bit zero. Open-driver HIL independently qualifies the same contract through WPA2, decrypted ARP and ICMP traffic.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_control_config::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_control_config::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct HeControlConfigSpec;
         impl crate::RegisterSpec for HeControlConfigSpec {
             type Ux = u32;
@@ -20745,7 +20745,7 @@ pub mod wifi_mac_tx_completion {
         aux_c: (),
     }
     impl RegisterBlock {
-        #[doc = "0x18..0x28 - Project-assigned name. Primary completion/status word. Complete hal_mac_get_txq_complete copies bits 23:16 to result byte two independently of the primary/alternate status selector; complete lmacProcessTxSuccess stores that byte as encoded ACK SNR."]
+        #[doc = "0x18..0x28 - Project-assigned name. Primary completion/status word. Complete libpp\\[hal_mac_tx.o\\]::hal_mac_get_txq_complete copies bits 23:16 to result byte two independently of the primary/alternate status selector; complete libpp\\[lmac.o\\]::lmacProcessTxSuccess stores that byte as encoded ACK SNR."]
         #[inline(always)]
         pub const fn primary(&self, n: usize) -> &Primary {
             #[allow(clippy::no_effect)]
@@ -20759,7 +20759,7 @@ pub mod wifi_mac_tx_completion {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x18..0x28 - Project-assigned name. Primary completion/status word. Complete hal_mac_get_txq_complete copies bits 23:16 to result byte two independently of the primary/alternate status selector; complete lmacProcessTxSuccess stores that byte as encoded ACK SNR."]
+        #[doc = "0x18..0x28 - Project-assigned name. Primary completion/status word. Complete libpp\\[hal_mac_tx.o\\]::hal_mac_get_txq_complete copies bits 23:16 to result byte two independently of the primary/alternate status selector; complete libpp\\[lmac.o\\]::lmacProcessTxSuccess stores that byte as encoded ACK SNR."]
         #[inline(always)]
         pub fn primary_iter(&self) -> impl Iterator<Item = &Primary> {
             (0..4).map(move |n| unsafe {
@@ -20821,37 +20821,37 @@ pub mod wifi_mac_tx_completion {
             })
         }
     }
-    #[doc = "PRIMARY (r) register accessor: Project-assigned name. Primary completion/status word. Complete hal_mac_get_txq_complete copies bits 23:16 to result byte two independently of the primary/alternate status selector; complete lmacProcessTxSuccess stores that byte as encoded ACK SNR.\n\nYou can [`read`](crate::Reg::read) this register and get [`primary::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@primary`] module"]
+    #[doc = "PRIMARY (r) register accessor: Project-assigned name. Primary completion/status word. Complete libpp\\[hal_mac_tx.o\\]::hal_mac_get_txq_complete copies bits 23:16 to result byte two independently of the primary/alternate status selector; complete libpp\\[lmac.o\\]::lmacProcessTxSuccess stores that byte as encoded ACK SNR.\n\nYou can [`read`](crate::Reg::read) this register and get [`primary::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@primary`] module"]
     #[doc(alias = "PRIMARY")]
     pub type Primary = crate::Reg<primary::PrimarySpec>;
-    #[doc = "Project-assigned name. Primary completion/status word. Complete hal_mac_get_txq_complete copies bits 23:16 to result byte two independently of the primary/alternate status selector; complete lmacProcessTxSuccess stores that byte as encoded ACK SNR."]
+    #[doc = "Project-assigned name. Primary completion/status word. Complete libpp\\[hal_mac_tx.o\\]::hal_mac_get_txq_complete copies bits 23:16 to result byte two independently of the primary/alternate status selector; complete libpp\\[lmac.o\\]::lmacProcessTxSuccess stores that byte as encoded ACK SNR."]
     pub mod primary {
         #[doc = "Register `PRIMARY%s` reader"]
         pub type R = crate::R<PrimarySpec>;
-        #[doc = "Field `DETAIL` reader - Project-assigned name. Low completion detail byte passed by complete lmacProcessTxComplete to the status-one/status-four secondary dispatchers when PRIMARY is selected."]
+        #[doc = "Field `DETAIL` reader - Project-assigned name. Low completion detail byte passed by complete libpp\\[lmac.o\\]::lmacProcessTxComplete to the status-one/status-four secondary dispatchers when PRIMARY is selected."]
         pub type DetailR = crate::FieldReader;
-        #[doc = "Field `STATUS` reader - Project-assigned name. Four-bit top-level completion status selected by complete hal_mac_get_txq_complete and dispatched by complete lmacProcessTxComplete."]
+        #[doc = "Field `STATUS` reader - Project-assigned name. Four-bit top-level completion status selected by complete libpp\\[hal_mac_tx.o\\]::hal_mac_get_txq_complete and dispatched by complete libpp\\[lmac.o\\]::lmacProcessTxComplete."]
         pub type StatusR = crate::FieldReader;
-        #[doc = "Field `ACK_SNR_ENCODED` reader - Project-assigned name. Complete hal_mac_get_txq_complete copies PRIMARY bits 23:16 to result byte two. Complete lmacProcessTxSuccess passes that byte into the descriptor ACK-SNR slot. Complete rcUpdateTxDone adds the pinned wDevCtrl byte 0x60 and narrows to a signed byte before rcUpdateAckSnr. This field is meaningful only for a successful completion."]
+        #[doc = "Field `ACK_SNR_ENCODED` reader - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::hal_mac_get_txq_complete copies PRIMARY bits 23:16 to result byte two. Complete libpp\\[lmac.o\\]::lmacProcessTxSuccess passes that byte into the descriptor ACK-SNR slot. Complete libpp\\[trc.o\\]::rcUpdateTxDone adds the pinned wDevCtrl byte 0x60 and narrows to a signed byte before libpp\\[trc.o\\]::rcUpdateAckSnr. This field is meaningful only for a successful completion."]
         pub type AckSnrEncodedR = crate::FieldReader;
         impl R {
-            #[doc = "Bits 0:7 - Project-assigned name. Low completion detail byte passed by complete lmacProcessTxComplete to the status-one/status-four secondary dispatchers when PRIMARY is selected."]
+            #[doc = "Bits 0:7 - Project-assigned name. Low completion detail byte passed by complete libpp\\[lmac.o\\]::lmacProcessTxComplete to the status-one/status-four secondary dispatchers when PRIMARY is selected."]
             #[inline(always)]
             pub fn detail(&self) -> DetailR {
                 DetailR::new((self.bits & 0xff) as u8)
             }
-            #[doc = "Bits 12:15 - Project-assigned name. Four-bit top-level completion status selected by complete hal_mac_get_txq_complete and dispatched by complete lmacProcessTxComplete."]
+            #[doc = "Bits 12:15 - Project-assigned name. Four-bit top-level completion status selected by complete libpp\\[hal_mac_tx.o\\]::hal_mac_get_txq_complete and dispatched by complete libpp\\[lmac.o\\]::lmacProcessTxComplete."]
             #[inline(always)]
             pub fn status(&self) -> StatusR {
                 StatusR::new(((self.bits >> 12) & 0x0f) as u8)
             }
-            #[doc = "Bits 16:23 - Project-assigned name. Complete hal_mac_get_txq_complete copies PRIMARY bits 23:16 to result byte two. Complete lmacProcessTxSuccess passes that byte into the descriptor ACK-SNR slot. Complete rcUpdateTxDone adds the pinned wDevCtrl byte 0x60 and narrows to a signed byte before rcUpdateAckSnr. This field is meaningful only for a successful completion."]
+            #[doc = "Bits 16:23 - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::hal_mac_get_txq_complete copies PRIMARY bits 23:16 to result byte two. Complete libpp\\[lmac.o\\]::lmacProcessTxSuccess passes that byte into the descriptor ACK-SNR slot. Complete libpp\\[trc.o\\]::rcUpdateTxDone adds the pinned wDevCtrl byte 0x60 and narrows to a signed byte before libpp\\[trc.o\\]::rcUpdateAckSnr. This field is meaningful only for a successful completion."]
             #[inline(always)]
             pub fn ack_snr_encoded(&self) -> AckSnrEncodedR {
                 AckSnrEncodedR::new(((self.bits >> 16) & 0xff) as u8)
             }
         }
-        #[doc = "Project-assigned name. Primary completion/status word. Complete hal_mac_get_txq_complete copies bits 23:16 to result byte two independently of the primary/alternate status selector; complete lmacProcessTxSuccess stores that byte as encoded ACK SNR.\n\nYou can [`read`](crate::Reg::read) this register and get [`primary::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Primary completion/status word. Complete libpp\\[hal_mac_tx.o\\]::hal_mac_get_txq_complete copies bits 23:16 to result byte two independently of the primary/alternate status selector; complete libpp\\[lmac.o\\]::lmacProcessTxSuccess stores that byte as encoded ACK SNR.\n\nYou can [`read`](crate::Reg::read) this register and get [`primary::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct PrimarySpec;
         impl crate::RegisterSpec for PrimarySpec {
             type Ux = u32;
@@ -20897,10 +20897,10 @@ pub mod wifi_mac_tx_completion {
     pub mod aux_c {
         #[doc = "Register `AUX_C%s` reader"]
         pub type R = crate::R<AuxCSpec>;
-        #[doc = "Field `SECONDARY_TRIGGER_BASED_PACKET_COUNT` reader - Project-assigned name. Complete hal_mac_get_txq_complete contributes AUX_C bits 13:7 to reconstructed extension word one; complete lmacProcessTxComplete shifts that image right by two before storing the seven-bit secondary Trigger-based packet count."]
+        #[doc = "Field `SECONDARY_TRIGGER_BASED_PACKET_COUNT` reader - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::hal_mac_get_txq_complete contributes AUX_C bits 13:7 to reconstructed extension word one; complete libpp\\[lmac.o\\]::lmacProcessTxComplete shifts that image right by two before storing the seven-bit secondary Trigger-based packet count."]
         pub type SecondaryTriggerBasedPacketCountR = crate::FieldReader;
         impl R {
-            #[doc = "Bits 7:13 - Project-assigned name. Complete hal_mac_get_txq_complete contributes AUX_C bits 13:7 to reconstructed extension word one; complete lmacProcessTxComplete shifts that image right by two before storing the seven-bit secondary Trigger-based packet count."]
+            #[doc = "Bits 7:13 - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::hal_mac_get_txq_complete contributes AUX_C bits 13:7 to reconstructed extension word one; complete libpp\\[lmac.o\\]::lmacProcessTxComplete shifts that image right by two before storing the seven-bit secondary Trigger-based packet count."]
             #[inline(always)]
             pub fn secondary_trigger_based_packet_count(
                 &self,
@@ -20960,7 +20960,7 @@ pub mod wifi_mac_he_init_prefix {
         pub const fn bf_mode_control(&self) -> &BfModeControl {
             &self.bf_mode_control
         }
-        #[doc = "0x41c - Project-assigned name. Three independently published beamforming-report profiles selected for BPSK, QPSK and 16-QAM. Complete hal_he_set_bf_report_rate(1,0x10,0,0) writes signal mode one, normalized rate zero, DCM false and ER-SU false into the 16-QAM, QPSK and BPSK profiles in that order."]
+        #[doc = "0x41c - Project-assigned name. Three independently published beamforming-report profiles selected for BPSK, QPSK and 16-QAM. Complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_bf_report_rate(1,0x10,0,0) writes signal mode one, normalized rate zero, DCM false and ER-SU false into the 16-QAM, QPSK and BPSK profiles in that order."]
         #[inline(always)]
         pub const fn bf_report_rate(&self) -> &BfReportRate {
             &self.bf_report_rate
@@ -20990,7 +20990,7 @@ pub mod wifi_mac_he_init_prefix {
         pub const fn interrupt_1_status(&self) -> &Interrupt1Status {
             &self.interrupt_1_status
         }
-        #[doc = "0xbf0 - Project-assigned name. Complete hal_mac_interrupt_clr_bsscolor sets bit 12 through a fresh-read RMW to acknowledge the secondary BSS-color event."]
+        #[doc = "0xbf0 - Project-assigned name. Complete libpp\\[hal_mac_ctl.o\\]::hal_mac_interrupt_clr_bsscolor sets bit 12 through a fresh-read RMW to acknowledge the secondary BSS-color event."]
         #[inline(always)]
         pub const fn interrupt_1_clear(&self) -> &Interrupt1Clear {
             &self.interrupt_1_clear
@@ -21145,10 +21145,10 @@ pub mod wifi_mac_he_init_prefix {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BF_REPORT_RATE (rw) register accessor: Project-assigned name. Three independently published beamforming-report profiles selected for BPSK, QPSK and 16-QAM. Complete hal_he_set_bf_report_rate(1,0x10,0,0) writes signal mode one, normalized rate zero, DCM false and ER-SU false into the 16-QAM, QPSK and BPSK profiles in that order.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_report_rate::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_report_rate::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bf_report_rate`] module"]
+    #[doc = "BF_REPORT_RATE (rw) register accessor: Project-assigned name. Three independently published beamforming-report profiles selected for BPSK, QPSK and 16-QAM. Complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_bf_report_rate(1,0x10,0,0) writes signal mode one, normalized rate zero, DCM false and ER-SU false into the 16-QAM, QPSK and BPSK profiles in that order.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_report_rate::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_report_rate::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bf_report_rate`] module"]
     #[doc(alias = "BF_REPORT_RATE")]
     pub type BfReportRate = crate::Reg<bf_report_rate::BfReportRateSpec>;
-    #[doc = "Project-assigned name. Three independently published beamforming-report profiles selected for BPSK, QPSK and 16-QAM. Complete hal_he_set_bf_report_rate(1,0x10,0,0) writes signal mode one, normalized rate zero, DCM false and ER-SU false into the 16-QAM, QPSK and BPSK profiles in that order."]
+    #[doc = "Project-assigned name. Three independently published beamforming-report profiles selected for BPSK, QPSK and 16-QAM. Complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_bf_report_rate(1,0x10,0,0) writes signal mode one, normalized rate zero, DCM false and ER-SU false into the 16-QAM, QPSK and BPSK profiles in that order."]
     pub mod bf_report_rate {
         #[doc = "Register `BF_REPORT_RATE` reader"]
         pub type R = crate::R<BfReportRateSpec>;
@@ -21326,7 +21326,7 @@ pub mod wifi_mac_he_init_prefix {
                 Qam16ErsuW::new(self, 26)
             }
         }
-        #[doc = "Project-assigned name. Three independently published beamforming-report profiles selected for BPSK, QPSK and 16-QAM. Complete hal_he_set_bf_report_rate(1,0x10,0,0) writes signal mode one, normalized rate zero, DCM false and ER-SU false into the 16-QAM, QPSK and BPSK profiles in that order.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_report_rate::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_report_rate::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Three independently published beamforming-report profiles selected for BPSK, QPSK and 16-QAM. Complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_bf_report_rate(1,0x10,0,0) writes signal mode one, normalized rate zero, DCM false and ER-SU false into the 16-QAM, QPSK and BPSK profiles in that order.\n\nYou can [`read`](crate::Reg::read) this register and get [`bf_report_rate::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bf_report_rate::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct BfReportRateSpec;
         impl crate::RegisterSpec for BfReportRateSpec {
             type Ux = u32;
@@ -21518,10 +21518,10 @@ pub mod wifi_mac_he_init_prefix {
         #[doc = "`read()` method returns [`interrupt_1_status::R`](R) reader structure"]
         impl crate::Readable for Interrupt1StatusSpec {}
     }
-    #[doc = "INTERRUPT_1_CLEAR (rw) register accessor: Project-assigned name. Complete hal_mac_interrupt_clr_bsscolor sets bit 12 through a fresh-read RMW to acknowledge the secondary BSS-color event.\n\nYou can [`read`](crate::Reg::read) this register and get [`interrupt_1_clear::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`interrupt_1_clear::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@interrupt_1_clear`] module"]
+    #[doc = "INTERRUPT_1_CLEAR (rw) register accessor: Project-assigned name. Complete libpp\\[hal_mac_ctl.o\\]::hal_mac_interrupt_clr_bsscolor sets bit 12 through a fresh-read RMW to acknowledge the secondary BSS-color event.\n\nYou can [`read`](crate::Reg::read) this register and get [`interrupt_1_clear::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`interrupt_1_clear::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@interrupt_1_clear`] module"]
     #[doc(alias = "INTERRUPT_1_CLEAR")]
     pub type Interrupt1Clear = crate::Reg<interrupt_1_clear::Interrupt1ClearSpec>;
-    #[doc = "Project-assigned name. Complete hal_mac_interrupt_clr_bsscolor sets bit 12 through a fresh-read RMW to acknowledge the secondary BSS-color event."]
+    #[doc = "Project-assigned name. Complete libpp\\[hal_mac_ctl.o\\]::hal_mac_interrupt_clr_bsscolor sets bit 12 through a fresh-read RMW to acknowledge the secondary BSS-color event."]
     pub mod interrupt_1_clear {
         #[doc = "Register `INTERRUPT_1_CLEAR` reader"]
         pub type R = crate::R<Interrupt1ClearSpec>;
@@ -21545,7 +21545,7 @@ pub mod wifi_mac_he_init_prefix {
                 BssColorW::new(self, 12)
             }
         }
-        #[doc = "Project-assigned name. Complete hal_mac_interrupt_clr_bsscolor sets bit 12 through a fresh-read RMW to acknowledge the secondary BSS-color event.\n\nYou can [`read`](crate::Reg::read) this register and get [`interrupt_1_clear::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`interrupt_1_clear::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Complete libpp\\[hal_mac_ctl.o\\]::hal_mac_interrupt_clr_bsscolor sets bit 12 through a fresh-read RMW to acknowledge the secondary BSS-color event.\n\nYou can [`read`](crate::Reg::read) this register and get [`interrupt_1_clear::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`interrupt_1_clear::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct Interrupt1ClearSpec;
         impl crate::RegisterSpec for Interrupt1ClearSpec {
             type Ux = u32;
@@ -22155,7 +22155,7 @@ pub mod wifi_mac_he_tb_diagnostics {
         impl crate::Readable for UserSpec {}
     }
 }
-#[doc = "Eight interleaved hardware/software Buffer Status Report values and their shared control. Complete dbg_read_bsr_info names every exposed field. Complete hal_he_get_hw_txq_bsr independently proves the eight-byte stride and low twenty-bit hardware value. The independent blob and ROM mac_tx_set_tb bodies prove the write-side scheduler interpretation: for logical queues zero through three they replace the corresponding software BSR low twenty bits with the sum of every linked frame-state halfword at offset 0x22, then OR the queue bit into CONTROL\\[7:0\\]. Complete dbg_read_tx_ppdu independently names that exact halfword msdu_len, proving that this is an original-MSDU byte sum rather than MPDU, PSDU or encoded A-MPDU length. Complete HE BlockAck response/deletion paths separately select and clear TID_BITMAP bits through hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap. Open HE HIL observed TID_BITMAP=1 immediately after the successful TID0 AddBA transition while sustained DCM A-MPDU remained clean. A later rev0 HIL reproduced the complete ROM write order with a 47104-byte TID0 queue: CONTROL validity read back one while SOFTWARE_BSR already read zero. This qualifies the write-side address and validity edge but leaves the zero as a live-update/read-latch ambiguity until a real AP Trigger is observed."]
+#[doc = "Eight interleaved hardware/software Buffer Status Report values and their shared control. Complete dbg_read_bsr_info names every exposed field. Complete hal_he_get_hw_txq_bsr independently proves the eight-byte stride and low twenty-bit hardware value. The independent blob and ROM libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb and rom\\[\\]::mac_tx_set_tb bodies prove the write-side scheduler interpretation: for logical queues zero through three they replace the corresponding software BSR low twenty bits with the sum of every linked frame-state halfword at offset 0x22, then OR the queue bit into CONTROL\\[7:0\\]. Complete dbg_read_tx_ppdu independently names that exact halfword msdu_len, proving that this is an original-MSDU byte sum rather than MPDU, PSDU or encoded A-MPDU length. Complete HE BlockAck response/deletion paths separately select and clear TID_BITMAP bits through hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap. Open HE HIL observed TID_BITMAP=1 immediately after the successful TID0 AddBA transition while sustained DCM A-MPDU remained clean. A later rev0 HIL reproduced the complete ROM write order with a 47104-byte TID0 queue: CONTROL validity read back one while SOFTWARE_BSR already read zero. This qualifies the write-side address and validity edge but leaves the zero as a live-update/read-latch ambiguity until a real AP Trigger is observed."]
 pub type WifiMacHeBufferStatus =
     crate::Periph<wifi_mac_he_buffer_status::RegisterBlock, 0x2010_4d74>;
 impl core::fmt::Debug for WifiMacHeBufferStatus {
@@ -22163,7 +22163,7 @@ impl core::fmt::Debug for WifiMacHeBufferStatus {
         f.debug_struct("WifiMacHeBufferStatus").finish()
     }
 }
-#[doc = "Eight interleaved hardware/software Buffer Status Report values and their shared control. Complete dbg_read_bsr_info names every exposed field. Complete hal_he_get_hw_txq_bsr independently proves the eight-byte stride and low twenty-bit hardware value. The independent blob and ROM mac_tx_set_tb bodies prove the write-side scheduler interpretation: for logical queues zero through three they replace the corresponding software BSR low twenty bits with the sum of every linked frame-state halfword at offset 0x22, then OR the queue bit into CONTROL\\[7:0\\]. Complete dbg_read_tx_ppdu independently names that exact halfword msdu_len, proving that this is an original-MSDU byte sum rather than MPDU, PSDU or encoded A-MPDU length. Complete HE BlockAck response/deletion paths separately select and clear TID_BITMAP bits through hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap. Open HE HIL observed TID_BITMAP=1 immediately after the successful TID0 AddBA transition while sustained DCM A-MPDU remained clean. A later rev0 HIL reproduced the complete ROM write order with a 47104-byte TID0 queue: CONTROL validity read back one while SOFTWARE_BSR already read zero. This qualifies the write-side address and validity edge but leaves the zero as a live-update/read-latch ambiguity until a real AP Trigger is observed."]
+#[doc = "Eight interleaved hardware/software Buffer Status Report values and their shared control. Complete dbg_read_bsr_info names every exposed field. Complete hal_he_get_hw_txq_bsr independently proves the eight-byte stride and low twenty-bit hardware value. The independent blob and ROM libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb and rom\\[\\]::mac_tx_set_tb bodies prove the write-side scheduler interpretation: for logical queues zero through three they replace the corresponding software BSR low twenty bits with the sum of every linked frame-state halfword at offset 0x22, then OR the queue bit into CONTROL\\[7:0\\]. Complete dbg_read_tx_ppdu independently names that exact halfword msdu_len, proving that this is an original-MSDU byte sum rather than MPDU, PSDU or encoded A-MPDU length. Complete HE BlockAck response/deletion paths separately select and clear TID_BITMAP bits through hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap. Open HE HIL observed TID_BITMAP=1 immediately after the successful TID0 AddBA transition while sustained DCM A-MPDU remained clean. A later rev0 HIL reproduced the complete ROM write order with a 47104-byte TID0 queue: CONTROL validity read back one while SOFTWARE_BSR already read zero. This qualifies the write-side address and validity edge but leaves the zero as a live-update/read-latch ambiguity until a real AP Trigger is observed."]
 pub mod wifi_mac_he_buffer_status {
     #[repr(C)]
     #[doc = "Register block"]
@@ -22189,7 +22189,7 @@ pub mod wifi_mac_he_buffer_status {
             (0..8)
                 .map(move |n| unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(8 * n).cast() })
         }
-        #[doc = "0x04..0x24 - Project-assigned name. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the sum of linked frame-state +0x22 halfwords before publishing the queue-ready bit. Complete dbg_read_tx_ppdu names that halfword msdu_len. Rev0 open HIL programmed 47104 for logical queue two with the exact ROM sequence, then observed VALUE zero immediately after validity became visible. Treat reads as live hardware state rather than durable software-write readback until a Trigger HIL resolves whether the value was consumed or rejected."]
+        #[doc = "0x04..0x24 - Project-assigned name. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb and rom\\[\\]::mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the sum of linked frame-state +0x22 halfwords before publishing the queue-ready bit. Complete dbg_read_tx_ppdu names that halfword msdu_len. Rev0 open HIL programmed 47104 for logical queue two with the exact ROM sequence, then observed VALUE zero immediately after validity became visible. Treat reads as live hardware state rather than durable software-write readback until a Trigger HIL resolves whether the value was consumed or rejected."]
         #[inline(always)]
         pub const fn software_bsr(&self, n: usize) -> &SoftwareBsr {
             #[allow(clippy::no_effect)]
@@ -22203,7 +22203,7 @@ pub mod wifi_mac_he_buffer_status {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x04..0x24 - Project-assigned name. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the sum of linked frame-state +0x22 halfwords before publishing the queue-ready bit. Complete dbg_read_tx_ppdu names that halfword msdu_len. Rev0 open HIL programmed 47104 for logical queue two with the exact ROM sequence, then observed VALUE zero immediately after validity became visible. Treat reads as live hardware state rather than durable software-write readback until a Trigger HIL resolves whether the value was consumed or rejected."]
+        #[doc = "0x04..0x24 - Project-assigned name. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb and rom\\[\\]::mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the sum of linked frame-state +0x22 halfwords before publishing the queue-ready bit. Complete dbg_read_tx_ppdu names that halfword msdu_len. Rev0 open HIL programmed 47104 for logical queue two with the exact ROM sequence, then observed VALUE zero immediately after validity became visible. Treat reads as live hardware state rather than durable software-write readback until a Trigger HIL resolves whether the value was consumed or rejected."]
         #[inline(always)]
         pub fn software_bsr_iter(&self) -> impl Iterator<Item = &SoftwareBsr> {
             (0..8).map(move |n| unsafe {
@@ -22214,7 +22214,7 @@ pub mod wifi_mac_he_buffer_status {
                     .cast()
             })
         }
-        #[doc = "0x44 - Project-assigned name. WDEVTXQBSR_CTRL. Complete dbg_read_bsr_info decodes all fields below. Complete blob and ROM mac_tx_set_tb perform a fresh-read RMW that ORs 1<<logical_queue into bits 7:0 after the queue configuration and software BSR value are visible; the debug function names these bits WDEVTXQBSR_VD\\[0-7\\], so the neutral validity name is retained. Complete hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap independently update TID_BITMAP through two fresh reads followed by one write. Open HE HIL qualified the TID0 set edge after successful AddBA and later read back logical queue two validity immediately after the exact ROM publication sequence."]
+        #[doc = "0x44 - Project-assigned name. WDEVTXQBSR_CTRL. Complete dbg_read_bsr_info decodes all fields below. Complete blob and ROM libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb and rom\\[\\]::mac_tx_set_tb perform a fresh-read RMW that ORs 1<<logical_queue into bits 7:0 after the queue configuration and software BSR value are visible; the debug function names these bits WDEVTXQBSR_VD\\[0-7\\], so the neutral validity name is retained. Complete hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap independently update TID_BITMAP through two fresh reads followed by one write. Open HE HIL qualified the TID0 set edge after successful AddBA and later read back logical queue two validity immediately after the exact ROM publication sequence."]
         #[inline(always)]
         pub const fn control(&self) -> &Control {
             &self.control
@@ -22251,10 +22251,10 @@ pub mod wifi_mac_he_buffer_status {
         #[doc = "`read()` method returns [`hardware_bsr::R`](R) reader structure"]
         impl crate::Readable for HardwareBsrSpec {}
     }
-    #[doc = "SOFTWARE_BSR (rw) register accessor: Project-assigned name. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the sum of linked frame-state +0x22 halfwords before publishing the queue-ready bit. Complete dbg_read_tx_ppdu names that halfword msdu_len. Rev0 open HIL programmed 47104 for logical queue two with the exact ROM sequence, then observed VALUE zero immediately after validity became visible. Treat reads as live hardware state rather than durable software-write readback until a Trigger HIL resolves whether the value was consumed or rejected.\n\nYou can [`read`](crate::Reg::read) this register and get [`software_bsr::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`software_bsr::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@software_bsr`] module"]
+    #[doc = "SOFTWARE_BSR (rw) register accessor: Project-assigned name. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb and rom\\[\\]::mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the sum of linked frame-state +0x22 halfwords before publishing the queue-ready bit. Complete dbg_read_tx_ppdu names that halfword msdu_len. Rev0 open HIL programmed 47104 for logical queue two with the exact ROM sequence, then observed VALUE zero immediately after validity became visible. Treat reads as live hardware state rather than durable software-write readback until a Trigger HIL resolves whether the value was consumed or rejected.\n\nYou can [`read`](crate::Reg::read) this register and get [`software_bsr::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`software_bsr::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@software_bsr`] module"]
     #[doc(alias = "SOFTWARE_BSR")]
     pub type SoftwareBsr = crate::Reg<software_bsr::SoftwareBsrSpec>;
-    #[doc = "Project-assigned name. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the sum of linked frame-state +0x22 halfwords before publishing the queue-ready bit. Complete dbg_read_tx_ppdu names that halfword msdu_len. Rev0 open HIL programmed 47104 for logical queue two with the exact ROM sequence, then observed VALUE zero immediately after validity became visible. Treat reads as live hardware state rather than durable software-write readback until a Trigger HIL resolves whether the value was consumed or rejected."]
+    #[doc = "Project-assigned name. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb and rom\\[\\]::mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the sum of linked frame-state +0x22 halfwords before publishing the queue-ready bit. Complete dbg_read_tx_ppdu names that halfword msdu_len. Rev0 open HIL programmed 47104 for logical queue two with the exact ROM sequence, then observed VALUE zero immediately after validity became visible. Treat reads as live hardware state rather than durable software-write readback until a Trigger HIL resolves whether the value was consumed or rejected."]
     pub mod software_bsr {
         #[doc = "Register `SOFTWARE_BSR%s` reader"]
         pub type R = crate::R<SoftwareBsrSpec>;
@@ -22292,7 +22292,7 @@ pub mod wifi_mac_he_buffer_status {
                 Bits20_31OpaqueW::new(self, 20)
             }
         }
-        #[doc = "Project-assigned name. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the sum of linked frame-state +0x22 halfwords before publishing the queue-ready bit. Complete dbg_read_tx_ppdu names that halfword msdu_len. Rev0 open HIL programmed 47104 for logical queue two with the exact ROM sequence, then observed VALUE zero immediately after validity became visible. Treat reads as live hardware state rather than durable software-write readback until a Trigger HIL resolves whether the value was consumed or rejected.\n\nYou can [`read`](crate::Reg::read) this register and get [`software_bsr::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`software_bsr::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. WDEVTXQBSR_SW\\[0-7\\]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb and rom\\[\\]::mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the sum of linked frame-state +0x22 halfwords before publishing the queue-ready bit. Complete dbg_read_tx_ppdu names that halfword msdu_len. Rev0 open HIL programmed 47104 for logical queue two with the exact ROM sequence, then observed VALUE zero immediately after validity became visible. Treat reads as live hardware state rather than durable software-write readback until a Trigger HIL resolves whether the value was consumed or rejected.\n\nYou can [`read`](crate::Reg::read) this register and get [`software_bsr::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`software_bsr::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SoftwareBsrSpec;
         impl crate::RegisterSpec for SoftwareBsrSpec {
             type Ux = u32;
@@ -22304,30 +22304,30 @@ pub mod wifi_mac_he_buffer_status {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "CONTROL (rw) register accessor: Project-assigned name. WDEVTXQBSR_CTRL. Complete dbg_read_bsr_info decodes all fields below. Complete blob and ROM mac_tx_set_tb perform a fresh-read RMW that ORs 1<<logical_queue into bits 7:0 after the queue configuration and software BSR value are visible; the debug function names these bits WDEVTXQBSR_VD\\[0-7\\], so the neutral validity name is retained. Complete hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap independently update TID_BITMAP through two fresh reads followed by one write. Open HE HIL qualified the TID0 set edge after successful AddBA and later read back logical queue two validity immediately after the exact ROM publication sequence.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc = "CONTROL (rw) register accessor: Project-assigned name. WDEVTXQBSR_CTRL. Complete dbg_read_bsr_info decodes all fields below. Complete blob and ROM libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb and rom\\[\\]::mac_tx_set_tb perform a fresh-read RMW that ORs 1<<logical_queue into bits 7:0 after the queue configuration and software BSR value are visible; the debug function names these bits WDEVTXQBSR_VD\\[0-7\\], so the neutral validity name is retained. Complete hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap independently update TID_BITMAP through two fresh reads followed by one write. Open HE HIL qualified the TID0 set edge after successful AddBA and later read back logical queue two validity immediately after the exact ROM publication sequence.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
     #[doc(alias = "CONTROL")]
     pub type Control = crate::Reg<control::ControlSpec>;
-    #[doc = "Project-assigned name. WDEVTXQBSR_CTRL. Complete dbg_read_bsr_info decodes all fields below. Complete blob and ROM mac_tx_set_tb perform a fresh-read RMW that ORs 1<<logical_queue into bits 7:0 after the queue configuration and software BSR value are visible; the debug function names these bits WDEVTXQBSR_VD\\[0-7\\], so the neutral validity name is retained. Complete hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap independently update TID_BITMAP through two fresh reads followed by one write. Open HE HIL qualified the TID0 set edge after successful AddBA and later read back logical queue two validity immediately after the exact ROM publication sequence."]
+    #[doc = "Project-assigned name. WDEVTXQBSR_CTRL. Complete dbg_read_bsr_info decodes all fields below. Complete blob and ROM libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb and rom\\[\\]::mac_tx_set_tb perform a fresh-read RMW that ORs 1<<logical_queue into bits 7:0 after the queue configuration and software BSR value are visible; the debug function names these bits WDEVTXQBSR_VD\\[0-7\\], so the neutral validity name is retained. Complete hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap independently update TID_BITMAP through two fresh reads followed by one write. Open HE HIL qualified the TID0 set edge after successful AddBA and later read back logical queue two validity immediately after the exact ROM publication sequence."]
     pub mod control {
         #[doc = "Register `CONTROL` reader"]
         pub type R = crate::R<ControlSpec>;
         #[doc = "Register `CONTROL` writer"]
         pub type W = crate::W<ControlSpec>;
-        #[doc = "Field `VALID_0` reader - Project-assigned name. WDEVTXQBSR_VD\\[0\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue zero."]
+        #[doc = "Field `VALID_0` reader - Project-assigned name. WDEVTXQBSR_VD\\[0\\]. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue zero."]
         pub type Valid0R = crate::BitReader;
-        #[doc = "Field `VALID_0` writer - Project-assigned name. WDEVTXQBSR_VD\\[0\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue zero."]
+        #[doc = "Field `VALID_0` writer - Project-assigned name. WDEVTXQBSR_VD\\[0\\]. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue zero."]
         pub type Valid0W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `VALID_1` reader - Project-assigned name. WDEVTXQBSR_VD\\[1\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue one."]
+        #[doc = "Field `VALID_1` reader - Project-assigned name. WDEVTXQBSR_VD\\[1\\]. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue one."]
         pub type Valid1R = crate::BitReader;
-        #[doc = "Field `VALID_1` writer - Project-assigned name. WDEVTXQBSR_VD\\[1\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue one."]
+        #[doc = "Field `VALID_1` writer - Project-assigned name. WDEVTXQBSR_VD\\[1\\]. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue one."]
         pub type Valid1W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `VALID_2` reader - Project-assigned name. WDEVTXQBSR_VD\\[2\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue two."]
+        #[doc = "Field `VALID_2` reader - Project-assigned name. WDEVTXQBSR_VD\\[2\\]. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue two."]
         pub type Valid2R = crate::BitReader;
-        #[doc = "Field `VALID_2` writer - Project-assigned name. WDEVTXQBSR_VD\\[2\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue two."]
+        #[doc = "Field `VALID_2` writer - Project-assigned name. WDEVTXQBSR_VD\\[2\\]. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue two."]
         pub type Valid2W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `VALID_3` reader - Project-assigned name. WDEVTXQBSR_VD\\[3\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue three."]
+        #[doc = "Field `VALID_3` reader - Project-assigned name. WDEVTXQBSR_VD\\[3\\]. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue three."]
         pub type Valid3R = crate::BitReader;
-        #[doc = "Field `VALID_3` writer - Project-assigned name. WDEVTXQBSR_VD\\[3\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue three."]
+        #[doc = "Field `VALID_3` writer - Project-assigned name. WDEVTXQBSR_VD\\[3\\]. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue three."]
         pub type Valid3W<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `VALID_4` reader - Project-assigned name. WDEVTXQBSR_VD\\[4\\]. No write-side queue interpretation is currently claimed."]
         pub type Valid4R = crate::BitReader;
@@ -22398,22 +22398,22 @@ pub mod wifi_mac_he_buffer_status {
         #[doc = "Field `BITS_23_31_OPAQUE` writer - Opaque: meaning not established."]
         pub type Bits23_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 9, u16>;
         impl R {
-            #[doc = "Bit 0 - Project-assigned name. WDEVTXQBSR_VD\\[0\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue zero."]
+            #[doc = "Bit 0 - Project-assigned name. WDEVTXQBSR_VD\\[0\\]. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue zero."]
             #[inline(always)]
             pub fn valid_0(&self) -> Valid0R {
                 Valid0R::new((self.bits & 1) != 0)
             }
-            #[doc = "Bit 1 - Project-assigned name. WDEVTXQBSR_VD\\[1\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue one."]
+            #[doc = "Bit 1 - Project-assigned name. WDEVTXQBSR_VD\\[1\\]. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue one."]
             #[inline(always)]
             pub fn valid_1(&self) -> Valid1R {
                 Valid1R::new(((self.bits >> 1) & 1) != 0)
             }
-            #[doc = "Bit 2 - Project-assigned name. WDEVTXQBSR_VD\\[2\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue two."]
+            #[doc = "Bit 2 - Project-assigned name. WDEVTXQBSR_VD\\[2\\]. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue two."]
             #[inline(always)]
             pub fn valid_2(&self) -> Valid2R {
                 Valid2R::new(((self.bits >> 2) & 1) != 0)
             }
-            #[doc = "Bit 3 - Project-assigned name. WDEVTXQBSR_VD\\[3\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue three."]
+            #[doc = "Bit 3 - Project-assigned name. WDEVTXQBSR_VD\\[3\\]. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue three."]
             #[inline(always)]
             pub fn valid_3(&self) -> Valid3R {
                 Valid3R::new(((self.bits >> 3) & 1) != 0)
@@ -22505,22 +22505,22 @@ pub mod wifi_mac_he_buffer_status {
             }
         }
         impl W {
-            #[doc = "Bit 0 - Project-assigned name. WDEVTXQBSR_VD\\[0\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue zero."]
+            #[doc = "Bit 0 - Project-assigned name. WDEVTXQBSR_VD\\[0\\]. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue zero."]
             #[inline(always)]
             pub fn valid_0(&mut self) -> Valid0W<'_, ControlSpec> {
                 Valid0W::new(self, 0)
             }
-            #[doc = "Bit 1 - Project-assigned name. WDEVTXQBSR_VD\\[1\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue one."]
+            #[doc = "Bit 1 - Project-assigned name. WDEVTXQBSR_VD\\[1\\]. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue one."]
             #[inline(always)]
             pub fn valid_1(&mut self) -> Valid1W<'_, ControlSpec> {
                 Valid1W::new(self, 1)
             }
-            #[doc = "Bit 2 - Project-assigned name. WDEVTXQBSR_VD\\[2\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue two."]
+            #[doc = "Bit 2 - Project-assigned name. WDEVTXQBSR_VD\\[2\\]. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue two."]
             #[inline(always)]
             pub fn valid_2(&mut self) -> Valid2W<'_, ControlSpec> {
                 Valid2W::new(self, 2)
             }
-            #[doc = "Bit 3 - Project-assigned name. WDEVTXQBSR_VD\\[3\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue three."]
+            #[doc = "Bit 3 - Project-assigned name. WDEVTXQBSR_VD\\[3\\]. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue three."]
             #[inline(always)]
             pub fn valid_3(&mut self) -> Valid3W<'_, ControlSpec> {
                 Valid3W::new(self, 3)
@@ -22631,7 +22631,7 @@ pub mod wifi_mac_he_buffer_status {
                 Bits23_31OpaqueW::new(self, 23)
             }
         }
-        #[doc = "Project-assigned name. WDEVTXQBSR_CTRL. Complete dbg_read_bsr_info decodes all fields below. Complete blob and ROM mac_tx_set_tb perform a fresh-read RMW that ORs 1<<logical_queue into bits 7:0 after the queue configuration and software BSR value are visible; the debug function names these bits WDEVTXQBSR_VD\\[0-7\\], so the neutral validity name is retained. Complete hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap independently update TID_BITMAP through two fresh reads followed by one write. Open HE HIL qualified the TID0 set edge after successful AddBA and later read back logical queue two validity immediately after the exact ROM publication sequence.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. WDEVTXQBSR_CTRL. Complete dbg_read_bsr_info decodes all fields below. Complete blob and ROM libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb and rom\\[\\]::mac_tx_set_tb perform a fresh-read RMW that ORs 1<<logical_queue into bits 7:0 after the queue configuration and software BSR value are visible; the debug function names these bits WDEVTXQBSR_VD\\[0-7\\], so the neutral validity name is retained. Complete hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap independently update TID_BITMAP through two fresh reads followed by one write. Open HE HIL qualified the TID0 set edge after successful AddBA and later read back logical queue two validity immediately after the exact ROM publication sequence.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ControlSpec;
         impl crate::RegisterSpec for ControlSpec {
             type Ux = u32;
@@ -22644,7 +22644,7 @@ pub mod wifi_mac_he_buffer_status {
         }
     }
 }
-#[doc = "Four MU-EDCA timer words decoded by complete dbg_read_muedca_timer. Durations are reported by the blob in eight-TU units. Complete blob and ROM mac_tx_set_tb set ENABLE in the timer selected by the logical TX queue before publishing the Trigger queue configuration. After open HE association and TID0 AddBA, all four ordinary-SU baseline words had ENABLE=0, TIMER/CURRENT/AIFS=0 and REACHED=1; that pre-port baseline AP emitted no Trigger frame."]
+#[doc = "Four MU-EDCA timer words decoded by complete dbg_read_muedca_timer. Durations are reported by the blob in eight-TU units. Complete blob and ROM libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb and rom\\[\\]::mac_tx_set_tb set ENABLE in the timer selected by the logical TX queue before publishing the Trigger queue configuration. After open HE association and TID0 AddBA, all four ordinary-SU baseline words had ENABLE=0, TIMER/CURRENT/AIFS=0 and REACHED=1; that pre-port baseline AP emitted no Trigger frame."]
 pub type WifiMacHeMuEdcaTimer =
     crate::Periph<wifi_mac_he_mu_edca_timer::RegisterBlock, 0x2010_4dbc>;
 impl core::fmt::Debug for WifiMacHeMuEdcaTimer {
@@ -22652,7 +22652,7 @@ impl core::fmt::Debug for WifiMacHeMuEdcaTimer {
         f.debug_struct("WifiMacHeMuEdcaTimer").finish()
     }
 }
-#[doc = "Four MU-EDCA timer words decoded by complete dbg_read_muedca_timer. Durations are reported by the blob in eight-TU units. Complete blob and ROM mac_tx_set_tb set ENABLE in the timer selected by the logical TX queue before publishing the Trigger queue configuration. After open HE association and TID0 AddBA, all four ordinary-SU baseline words had ENABLE=0, TIMER/CURRENT/AIFS=0 and REACHED=1; that pre-port baseline AP emitted no Trigger frame."]
+#[doc = "Four MU-EDCA timer words decoded by complete dbg_read_muedca_timer. Durations are reported by the blob in eight-TU units. Complete blob and ROM libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb and rom\\[\\]::mac_tx_set_tb set ENABLE in the timer selected by the logical TX queue before publishing the Trigger queue configuration. After open HE association and TID0 AddBA, all four ordinary-SU baseline words had ENABLE=0, TIMER/CURRENT/AIFS=0 and REACHED=1; that pre-port baseline AP emitted no Trigger frame."]
 pub mod wifi_mac_he_mu_edca_timer {
     #[repr(C)]
     #[doc = "Register block"]
@@ -24210,7 +24210,7 @@ pub mod wifi_mac_he_init_suffix {
         pub const fn multi_bssid_high(&self) -> &MultiBssidHigh {
             &self.multi_bssid_high
         }
-        #[doc = "0x0c - Project-assigned name. When hal_he_get_bss_color selects interface one, BSS_COLOR_ENABLE gates the returned six-bit BSS color from this word. Other fields remain unnamed."]
+        #[doc = "0x0c - Project-assigned name. When libpp\\[hal_mac_ctl.o\\]::hal_he_get_bss_color selects interface one, BSS_COLOR_ENABLE gates the returned six-bit BSS color from this word. Other fields remain unnamed."]
         #[inline(always)]
         pub const fn multi_bssid_control_interface_1(&self) -> &MultiBssidControlInterface1 {
             &self.multi_bssid_control_interface_1
@@ -24235,12 +24235,12 @@ pub mod wifi_mac_he_init_suffix {
         pub const fn tx_mode_control(&self) -> &TxModeControl {
             &self.tx_mode_control
         }
-        #[doc = "0x3e4 - Project-assigned name. Complete hal_he_set_ersu_ack_rate writes the same byte through four separate fresh-read RMWs: argument zero selects 0x80 and nonzero selects 0xa0. Complete trc_set_bf_report_rate calls this leaf after publishing BF_REPORT_RATE, selecting 0xa0 only for its low-link-metric DCM plus ER-SU branch."]
+        #[doc = "0x3e4 - Project-assigned name. Complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu_ack_rate writes the same byte through four separate fresh-read RMWs: argument zero selects 0x80 and nonzero selects 0xa0. Complete libpp\\[trc.o\\]::trc_set_bf_report_rate calls this leaf after publishing BF_REPORT_RATE, selecting 0xa0 only for its low-link-metric DCM plus ER-SU branch."]
         #[inline(always)]
         pub const fn ersu_ack_rate(&self) -> &ErsuAckRate {
             &self.ersu_ack_rate
         }
-        #[doc = "0xc5c - Project-assigned name. Complete dbg_read_bsr_info names bits 8:2 and the comparison method. Complete dbg_read_rx_misc names bits 9:11. Complete dbg_tb_ignore_cca_enable proves that bit 12 set means TB respects CCA and NAV, while clearing it enables the debug ignore mode. Complete hal_he_bsr_init initializes the BSR comparison method and control bits. The HE Operation ER-SU-Disable bit at complete-IE byte five bit zero controls bit 10 through complete hal_he_set_ersu. VHT bandwidth-signaling RTS disable later clears bit 22."]
+        #[doc = "0xc5c - Project-assigned name. Complete dbg_read_bsr_info names bits 8:2 and the comparison method. Complete dbg_read_rx_misc names bits 9:11. Complete dbg_tb_ignore_cca_enable proves that bit 12 set means TB respects CCA and NAV, while clearing it enables the debug ignore mode. Complete hal_he_bsr_init initializes the BSR comparison method and control bits. The HE Operation ER-SU-Disable bit at complete-IE byte five bit zero controls bit 10 through complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu. VHT bandwidth-signaling RTS disable later clears bit 22."]
         #[inline(always)]
         pub const fn ersu_and_vht_control(&self) -> &ErsuAndVhtControl {
             &self.ersu_and_vht_control
@@ -24297,7 +24297,7 @@ pub mod wifi_mac_he_init_suffix {
                     .cast()
             })
         }
-        #[doc = "0xcd8..0xcf8 - Project-assigned name. Canonical WDEVTXQ_CONF1. Eight physical queue words are addressed in reverse logical order: physical array index seven is logical queue zero. Complete multi-BSSID clear independently clears bit two. Complete blob and ROM mac_tx_set_tb construct the logical-queue-zero-through-three word from only the preserved bit two, TB_ENA, logical queue as MU-EDCA selection, first MPDU-link index and frame TID; all other bits are cleared. The legacy PPDU formatter clears bit 3 of physical entries four through seven, which is the same TB_ENA field rather than an independent PPDU-control register. An open ordinary-SU HE pre-port baseline read all eight logical queues with TB_ENA=0 and the decoded TID, MU-EDCA selection, MPDU-length-link and minimum-power fields zero; Trigger/TB hardware counters also remained zero."]
+        #[doc = "0xcd8..0xcf8 - Project-assigned name. Canonical WDEVTXQ_CONF1. Eight physical queue words are addressed in reverse logical order: physical array index seven is logical queue zero. Complete multi-BSSID clear independently clears bit two. Complete blob and ROM libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb and rom\\[\\]::mac_tx_set_tb construct the logical-queue-zero-through-three word from only the preserved bit two, TB_ENA, logical queue as MU-EDCA selection, first MPDU-link index and frame TID; all other bits are cleared. The legacy PPDU formatter clears bit 3 of physical entries four through seven, which is the same TB_ENA field rather than an independent PPDU-control register. An open ordinary-SU HE pre-port baseline read all eight logical queues with TB_ENA=0 and the decoded TID, MU-EDCA selection, MPDU-length-link and minimum-power fields zero; Trigger/TB hardware counters also remained zero."]
         #[inline(always)]
         pub const fn queue_control(&self, n: usize) -> &QueueControl {
             #[allow(clippy::no_effect)]
@@ -24311,7 +24311,7 @@ pub mod wifi_mac_he_init_suffix {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0xcd8..0xcf8 - Project-assigned name. Canonical WDEVTXQ_CONF1. Eight physical queue words are addressed in reverse logical order: physical array index seven is logical queue zero. Complete multi-BSSID clear independently clears bit two. Complete blob and ROM mac_tx_set_tb construct the logical-queue-zero-through-three word from only the preserved bit two, TB_ENA, logical queue as MU-EDCA selection, first MPDU-link index and frame TID; all other bits are cleared. The legacy PPDU formatter clears bit 3 of physical entries four through seven, which is the same TB_ENA field rather than an independent PPDU-control register. An open ordinary-SU HE pre-port baseline read all eight logical queues with TB_ENA=0 and the decoded TID, MU-EDCA selection, MPDU-length-link and minimum-power fields zero; Trigger/TB hardware counters also remained zero."]
+        #[doc = "0xcd8..0xcf8 - Project-assigned name. Canonical WDEVTXQ_CONF1. Eight physical queue words are addressed in reverse logical order: physical array index seven is logical queue zero. Complete multi-BSSID clear independently clears bit two. Complete blob and ROM libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb and rom\\[\\]::mac_tx_set_tb construct the logical-queue-zero-through-three word from only the preserved bit two, TB_ENA, logical queue as MU-EDCA selection, first MPDU-link index and frame TID; all other bits are cleared. The legacy PPDU formatter clears bit 3 of physical entries four through seven, which is the same TB_ENA field rather than an independent PPDU-control register. An open ordinary-SU HE pre-port baseline read all eight logical queues with TB_ENA=0 and the decoded TID, MU-EDCA selection, MPDU-length-link and minimum-power fields zero; Trigger/TB hardware counters also remained zero."]
         #[inline(always)]
         pub fn queue_control_iter(&self) -> impl Iterator<Item = &QueueControl> {
             (0..8).map(move |n| unsafe {
@@ -24322,13 +24322,13 @@ pub mod wifi_mac_he_init_suffix {
                     .cast()
             })
         }
-        #[doc = "0x15d0..0x17b0 - Project-assigned name. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT. Complete mac_tx_set_mplen preserves bits 31:21, writes the fourteen-bit DMA metadata length (plus four when metadata word one bit 28 is set), and links contiguous allocated entries; the terminal entry uses NEXT=0x7f."]
+        #[doc = "0x15d0..0x17b0 - Project-assigned name. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_mplen preserves bits 31:21, writes the fourteen-bit DMA metadata length (plus four when metadata word one bit 28 is set), and links contiguous allocated entries; the terminal entry uses NEXT=0x7f."]
         #[inline(always)]
         pub const fn he_scratch(&self, n: usize) -> &HeScratch {
             &self.he_scratch[n]
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x15d0..0x17b0 - Project-assigned name. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT. Complete mac_tx_set_mplen preserves bits 31:21, writes the fourteen-bit DMA metadata length (plus four when metadata word one bit 28 is set), and links contiguous allocated entries; the terminal entry uses NEXT=0x7f."]
+        #[doc = "0x15d0..0x17b0 - Project-assigned name. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_mplen preserves bits 31:21, writes the fourteen-bit DMA metadata length (plus four when metadata word one bit 28 is set), and links contiguous allocated entries; the terminal entry uses NEXT=0x7f."]
         #[inline(always)]
         pub fn he_scratch_iter(&self) -> impl Iterator<Item = &HeScratch> {
             self.he_scratch.iter()
@@ -24542,11 +24542,11 @@ pub mod wifi_mac_he_init_suffix {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "MULTI_BSSID_CONTROL_INTERFACE_1 (r) register accessor: Project-assigned name. When hal_he_get_bss_color selects interface one, BSS_COLOR_ENABLE gates the returned six-bit BSS color from this word. Other fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`multi_bssid_control_interface_1::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@multi_bssid_control_interface_1`] module"]
+    #[doc = "MULTI_BSSID_CONTROL_INTERFACE_1 (r) register accessor: Project-assigned name. When libpp\\[hal_mac_ctl.o\\]::hal_he_get_bss_color selects interface one, BSS_COLOR_ENABLE gates the returned six-bit BSS color from this word. Other fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`multi_bssid_control_interface_1::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@multi_bssid_control_interface_1`] module"]
     #[doc(alias = "MULTI_BSSID_CONTROL_INTERFACE_1")]
     pub type MultiBssidControlInterface1 =
         crate::Reg<multi_bssid_control_interface_1::MultiBssidControlInterface1Spec>;
-    #[doc = "Project-assigned name. When hal_he_get_bss_color selects interface one, BSS_COLOR_ENABLE gates the returned six-bit BSS color from this word. Other fields remain unnamed."]
+    #[doc = "Project-assigned name. When libpp\\[hal_mac_ctl.o\\]::hal_he_get_bss_color selects interface one, BSS_COLOR_ENABLE gates the returned six-bit BSS color from this word. Other fields remain unnamed."]
     pub mod multi_bssid_control_interface_1 {
         #[doc = "Register `MULTI_BSSID_CONTROL_INTERFACE_1` reader"]
         pub type R = crate::R<MultiBssidControlInterface1Spec>;
@@ -24566,7 +24566,7 @@ pub mod wifi_mac_he_init_suffix {
                 BssColorEnableR::new(((self.bits >> 27) & 1) != 0)
             }
         }
-        #[doc = "Project-assigned name. When hal_he_get_bss_color selects interface one, BSS_COLOR_ENABLE gates the returned six-bit BSS color from this word. Other fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`multi_bssid_control_interface_1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. When libpp\\[hal_mac_ctl.o\\]::hal_he_get_bss_color selects interface one, BSS_COLOR_ENABLE gates the returned six-bit BSS color from this word. Other fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`multi_bssid_control_interface_1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct MultiBssidControlInterface1Spec;
         impl crate::RegisterSpec for MultiBssidControlInterface1Spec {
             type Ux = u32;
@@ -24803,76 +24803,76 @@ pub mod wifi_mac_he_init_suffix {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "ERSU_ACK_RATE (rw) register accessor: Project-assigned name. Complete hal_he_set_ersu_ack_rate writes the same byte through four separate fresh-read RMWs: argument zero selects 0x80 and nonzero selects 0xa0. Complete trc_set_bf_report_rate calls this leaf after publishing BF_REPORT_RATE, selecting 0xa0 only for its low-link-metric DCM plus ER-SU branch.\n\nYou can [`read`](crate::Reg::read) this register and get [`ersu_ack_rate::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ersu_ack_rate::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ersu_ack_rate`] module"]
+    #[doc = "ERSU_ACK_RATE (rw) register accessor: Project-assigned name. Complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu_ack_rate writes the same byte through four separate fresh-read RMWs: argument zero selects 0x80 and nonzero selects 0xa0. Complete libpp\\[trc.o\\]::trc_set_bf_report_rate calls this leaf after publishing BF_REPORT_RATE, selecting 0xa0 only for its low-link-metric DCM plus ER-SU branch.\n\nYou can [`read`](crate::Reg::read) this register and get [`ersu_ack_rate::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ersu_ack_rate::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ersu_ack_rate`] module"]
     #[doc(alias = "ERSU_ACK_RATE")]
     pub type ErsuAckRate = crate::Reg<ersu_ack_rate::ErsuAckRateSpec>;
-    #[doc = "Project-assigned name. Complete hal_he_set_ersu_ack_rate writes the same byte through four separate fresh-read RMWs: argument zero selects 0x80 and nonzero selects 0xa0. Complete trc_set_bf_report_rate calls this leaf after publishing BF_REPORT_RATE, selecting 0xa0 only for its low-link-metric DCM plus ER-SU branch."]
+    #[doc = "Project-assigned name. Complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu_ack_rate writes the same byte through four separate fresh-read RMWs: argument zero selects 0x80 and nonzero selects 0xa0. Complete libpp\\[trc.o\\]::trc_set_bf_report_rate calls this leaf after publishing BF_REPORT_RATE, selecting 0xa0 only for its low-link-metric DCM plus ER-SU branch."]
     pub mod ersu_ack_rate {
         #[doc = "Register `ERSU_ACK_RATE` reader"]
         pub type R = crate::R<ErsuAckRateSpec>;
         #[doc = "Register `ERSU_ACK_RATE` writer"]
         pub type W = crate::W<ErsuAckRateSpec>;
-        #[doc = "Field `RATE_0` reader - Project-assigned name. First byte written by hal_he_set_ersu_ack_rate."]
+        #[doc = "Field `RATE_0` reader - Project-assigned name. First byte written by libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu_ack_rate."]
         pub type Rate0R = crate::FieldReader;
-        #[doc = "Field `RATE_0` writer - Project-assigned name. First byte written by hal_he_set_ersu_ack_rate."]
+        #[doc = "Field `RATE_0` writer - Project-assigned name. First byte written by libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu_ack_rate."]
         pub type Rate0W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
-        #[doc = "Field `RATE_1` reader - Project-assigned name. Second byte written by hal_he_set_ersu_ack_rate."]
+        #[doc = "Field `RATE_1` reader - Project-assigned name. Second byte written by libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu_ack_rate."]
         pub type Rate1R = crate::FieldReader;
-        #[doc = "Field `RATE_1` writer - Project-assigned name. Second byte written by hal_he_set_ersu_ack_rate."]
+        #[doc = "Field `RATE_1` writer - Project-assigned name. Second byte written by libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu_ack_rate."]
         pub type Rate1W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
-        #[doc = "Field `RATE_2` reader - Project-assigned name. Third byte written by hal_he_set_ersu_ack_rate."]
+        #[doc = "Field `RATE_2` reader - Project-assigned name. Third byte written by libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu_ack_rate."]
         pub type Rate2R = crate::FieldReader;
-        #[doc = "Field `RATE_2` writer - Project-assigned name. Third byte written by hal_he_set_ersu_ack_rate."]
+        #[doc = "Field `RATE_2` writer - Project-assigned name. Third byte written by libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu_ack_rate."]
         pub type Rate2W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
-        #[doc = "Field `RATE_3` reader - Project-assigned name. Fourth byte written by hal_he_set_ersu_ack_rate."]
+        #[doc = "Field `RATE_3` reader - Project-assigned name. Fourth byte written by libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu_ack_rate."]
         pub type Rate3R = crate::FieldReader;
-        #[doc = "Field `RATE_3` writer - Project-assigned name. Fourth byte written by hal_he_set_ersu_ack_rate."]
+        #[doc = "Field `RATE_3` writer - Project-assigned name. Fourth byte written by libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu_ack_rate."]
         pub type Rate3W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:7 - Project-assigned name. First byte written by hal_he_set_ersu_ack_rate."]
+            #[doc = "Bits 0:7 - Project-assigned name. First byte written by libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu_ack_rate."]
             #[inline(always)]
             pub fn rate_0(&self) -> Rate0R {
                 Rate0R::new((self.bits & 0xff) as u8)
             }
-            #[doc = "Bits 8:15 - Project-assigned name. Second byte written by hal_he_set_ersu_ack_rate."]
+            #[doc = "Bits 8:15 - Project-assigned name. Second byte written by libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu_ack_rate."]
             #[inline(always)]
             pub fn rate_1(&self) -> Rate1R {
                 Rate1R::new(((self.bits >> 8) & 0xff) as u8)
             }
-            #[doc = "Bits 16:23 - Project-assigned name. Third byte written by hal_he_set_ersu_ack_rate."]
+            #[doc = "Bits 16:23 - Project-assigned name. Third byte written by libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu_ack_rate."]
             #[inline(always)]
             pub fn rate_2(&self) -> Rate2R {
                 Rate2R::new(((self.bits >> 16) & 0xff) as u8)
             }
-            #[doc = "Bits 24:31 - Project-assigned name. Fourth byte written by hal_he_set_ersu_ack_rate."]
+            #[doc = "Bits 24:31 - Project-assigned name. Fourth byte written by libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu_ack_rate."]
             #[inline(always)]
             pub fn rate_3(&self) -> Rate3R {
                 Rate3R::new(((self.bits >> 24) & 0xff) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 0:7 - Project-assigned name. First byte written by hal_he_set_ersu_ack_rate."]
+            #[doc = "Bits 0:7 - Project-assigned name. First byte written by libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu_ack_rate."]
             #[inline(always)]
             pub fn rate_0(&mut self) -> Rate0W<'_, ErsuAckRateSpec> {
                 Rate0W::new(self, 0)
             }
-            #[doc = "Bits 8:15 - Project-assigned name. Second byte written by hal_he_set_ersu_ack_rate."]
+            #[doc = "Bits 8:15 - Project-assigned name. Second byte written by libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu_ack_rate."]
             #[inline(always)]
             pub fn rate_1(&mut self) -> Rate1W<'_, ErsuAckRateSpec> {
                 Rate1W::new(self, 8)
             }
-            #[doc = "Bits 16:23 - Project-assigned name. Third byte written by hal_he_set_ersu_ack_rate."]
+            #[doc = "Bits 16:23 - Project-assigned name. Third byte written by libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu_ack_rate."]
             #[inline(always)]
             pub fn rate_2(&mut self) -> Rate2W<'_, ErsuAckRateSpec> {
                 Rate2W::new(self, 16)
             }
-            #[doc = "Bits 24:31 - Project-assigned name. Fourth byte written by hal_he_set_ersu_ack_rate."]
+            #[doc = "Bits 24:31 - Project-assigned name. Fourth byte written by libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu_ack_rate."]
             #[inline(always)]
             pub fn rate_3(&mut self) -> Rate3W<'_, ErsuAckRateSpec> {
                 Rate3W::new(self, 24)
             }
         }
-        #[doc = "Project-assigned name. Complete hal_he_set_ersu_ack_rate writes the same byte through four separate fresh-read RMWs: argument zero selects 0x80 and nonzero selects 0xa0. Complete trc_set_bf_report_rate calls this leaf after publishing BF_REPORT_RATE, selecting 0xa0 only for its low-link-metric DCM plus ER-SU branch.\n\nYou can [`read`](crate::Reg::read) this register and get [`ersu_ack_rate::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ersu_ack_rate::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu_ack_rate writes the same byte through four separate fresh-read RMWs: argument zero selects 0x80 and nonzero selects 0xa0. Complete libpp\\[trc.o\\]::trc_set_bf_report_rate calls this leaf after publishing BF_REPORT_RATE, selecting 0xa0 only for its low-link-metric DCM plus ER-SU branch.\n\nYou can [`read`](crate::Reg::read) this register and get [`ersu_ack_rate::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ersu_ack_rate::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ErsuAckRateSpec;
         impl crate::RegisterSpec for ErsuAckRateSpec {
             type Ux = u32;
@@ -24884,10 +24884,10 @@ pub mod wifi_mac_he_init_suffix {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "ERSU_AND_VHT_CONTROL (rw) register accessor: Project-assigned name. Complete dbg_read_bsr_info names bits 8:2 and the comparison method. Complete dbg_read_rx_misc names bits 9:11. Complete dbg_tb_ignore_cca_enable proves that bit 12 set means TB respects CCA and NAV, while clearing it enables the debug ignore mode. Complete hal_he_bsr_init initializes the BSR comparison method and control bits. The HE Operation ER-SU-Disable bit at complete-IE byte five bit zero controls bit 10 through complete hal_he_set_ersu. VHT bandwidth-signaling RTS disable later clears bit 22.\n\nYou can [`read`](crate::Reg::read) this register and get [`ersu_and_vht_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ersu_and_vht_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ersu_and_vht_control`] module"]
+    #[doc = "ERSU_AND_VHT_CONTROL (rw) register accessor: Project-assigned name. Complete dbg_read_bsr_info names bits 8:2 and the comparison method. Complete dbg_read_rx_misc names bits 9:11. Complete dbg_tb_ignore_cca_enable proves that bit 12 set means TB respects CCA and NAV, while clearing it enables the debug ignore mode. Complete hal_he_bsr_init initializes the BSR comparison method and control bits. The HE Operation ER-SU-Disable bit at complete-IE byte five bit zero controls bit 10 through complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu. VHT bandwidth-signaling RTS disable later clears bit 22.\n\nYou can [`read`](crate::Reg::read) this register and get [`ersu_and_vht_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ersu_and_vht_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ersu_and_vht_control`] module"]
     #[doc(alias = "ERSU_AND_VHT_CONTROL")]
     pub type ErsuAndVhtControl = crate::Reg<ersu_and_vht_control::ErsuAndVhtControlSpec>;
-    #[doc = "Project-assigned name. Complete dbg_read_bsr_info names bits 8:2 and the comparison method. Complete dbg_read_rx_misc names bits 9:11. Complete dbg_tb_ignore_cca_enable proves that bit 12 set means TB respects CCA and NAV, while clearing it enables the debug ignore mode. Complete hal_he_bsr_init initializes the BSR comparison method and control bits. The HE Operation ER-SU-Disable bit at complete-IE byte five bit zero controls bit 10 through complete hal_he_set_ersu. VHT bandwidth-signaling RTS disable later clears bit 22."]
+    #[doc = "Project-assigned name. Complete dbg_read_bsr_info names bits 8:2 and the comparison method. Complete dbg_read_rx_misc names bits 9:11. Complete dbg_tb_ignore_cca_enable proves that bit 12 set means TB respects CCA and NAV, while clearing it enables the debug ignore mode. Complete hal_he_bsr_init initializes the BSR comparison method and control bits. The HE Operation ER-SU-Disable bit at complete-IE byte five bit zero controls bit 10 through complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu. VHT bandwidth-signaling RTS disable later clears bit 22."]
     pub mod ersu_and_vht_control {
         #[doc = "Register `ERSU_AND_VHT_CONTROL` reader"]
         pub type R = crate::R<ErsuAndVhtControlSpec>;
@@ -24930,9 +24930,9 @@ pub mod wifi_mac_he_init_suffix {
         pub type TbNoResourceContinueTxR = crate::BitReader;
         #[doc = "Field `TB_NO_RESOURCE_CONTINUE_TX` writer - Project-assigned name."]
         pub type TbNoResourceContinueTxW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `AUTO_ACK_ALLOW_ERSU` reader - Project-assigned name. Complete dbg_read_rx_misc names the bit AUTOACK_ALLOW_ERSU. Complete hal_he_set_ersu clears it for a nonzero HE Operation ER-SU argument and sets it for zero; the PAC preserves that counterintuitive instruction-exact polarity."]
+        #[doc = "Field `AUTO_ACK_ALLOW_ERSU` reader - Project-assigned name. Complete dbg_read_rx_misc names the bit AUTOACK_ALLOW_ERSU. Complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu clears it for a nonzero HE Operation ER-SU argument and sets it for zero; the PAC preserves that counterintuitive instruction-exact polarity."]
         pub type AutoAckAllowErsuR = crate::BitReader;
-        #[doc = "Field `AUTO_ACK_ALLOW_ERSU` writer - Project-assigned name. Complete dbg_read_rx_misc names the bit AUTOACK_ALLOW_ERSU. Complete hal_he_set_ersu clears it for a nonzero HE Operation ER-SU argument and sets it for zero; the PAC preserves that counterintuitive instruction-exact polarity."]
+        #[doc = "Field `AUTO_ACK_ALLOW_ERSU` writer - Project-assigned name. Complete dbg_read_rx_misc names the bit AUTOACK_ALLOW_ERSU. Complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu clears it for a nonzero HE Operation ER-SU argument and sets it for zero; the PAC preserves that counterintuitive instruction-exact polarity."]
         pub type AutoAckAllowErsuW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `HE_RESPONSE_ACK` reader - Project-assigned name."]
         pub type HeResponseAckR = crate::BitReader;
@@ -24998,7 +24998,7 @@ pub mod wifi_mac_he_init_suffix {
             pub fn tb_no_resource_continue_tx(&self) -> TbNoResourceContinueTxR {
                 TbNoResourceContinueTxR::new(((self.bits >> 9) & 1) != 0)
             }
-            #[doc = "Bit 10 - Project-assigned name. Complete dbg_read_rx_misc names the bit AUTOACK_ALLOW_ERSU. Complete hal_he_set_ersu clears it for a nonzero HE Operation ER-SU argument and sets it for zero; the PAC preserves that counterintuitive instruction-exact polarity."]
+            #[doc = "Bit 10 - Project-assigned name. Complete dbg_read_rx_misc names the bit AUTOACK_ALLOW_ERSU. Complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu clears it for a nonzero HE Operation ER-SU argument and sets it for zero; the PAC preserves that counterintuitive instruction-exact polarity."]
             #[inline(always)]
             pub fn auto_ack_allow_ersu(&self) -> AutoAckAllowErsuR {
                 AutoAckAllowErsuR::new(((self.bits >> 10) & 1) != 0)
@@ -25080,7 +25080,7 @@ pub mod wifi_mac_he_init_suffix {
             ) -> TbNoResourceContinueTxW<'_, ErsuAndVhtControlSpec> {
                 TbNoResourceContinueTxW::new(self, 9)
             }
-            #[doc = "Bit 10 - Project-assigned name. Complete dbg_read_rx_misc names the bit AUTOACK_ALLOW_ERSU. Complete hal_he_set_ersu clears it for a nonzero HE Operation ER-SU argument and sets it for zero; the PAC preserves that counterintuitive instruction-exact polarity."]
+            #[doc = "Bit 10 - Project-assigned name. Complete dbg_read_rx_misc names the bit AUTOACK_ALLOW_ERSU. Complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu clears it for a nonzero HE Operation ER-SU argument and sets it for zero; the PAC preserves that counterintuitive instruction-exact polarity."]
             #[inline(always)]
             pub fn auto_ack_allow_ersu(&mut self) -> AutoAckAllowErsuW<'_, ErsuAndVhtControlSpec> {
                 AutoAckAllowErsuW::new(self, 10)
@@ -25108,7 +25108,7 @@ pub mod wifi_mac_he_init_suffix {
                 VhtBwSignalingRtsW::new(self, 22)
             }
         }
-        #[doc = "Project-assigned name. Complete dbg_read_bsr_info names bits 8:2 and the comparison method. Complete dbg_read_rx_misc names bits 9:11. Complete dbg_tb_ignore_cca_enable proves that bit 12 set means TB respects CCA and NAV, while clearing it enables the debug ignore mode. Complete hal_he_bsr_init initializes the BSR comparison method and control bits. The HE Operation ER-SU-Disable bit at complete-IE byte five bit zero controls bit 10 through complete hal_he_set_ersu. VHT bandwidth-signaling RTS disable later clears bit 22.\n\nYou can [`read`](crate::Reg::read) this register and get [`ersu_and_vht_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ersu_and_vht_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Complete dbg_read_bsr_info names bits 8:2 and the comparison method. Complete dbg_read_rx_misc names bits 9:11. Complete dbg_tb_ignore_cca_enable proves that bit 12 set means TB respects CCA and NAV, while clearing it enables the debug ignore mode. Complete hal_he_bsr_init initializes the BSR comparison method and control bits. The HE Operation ER-SU-Disable bit at complete-IE byte five bit zero controls bit 10 through complete libpp\\[hal_mac_ctl.o\\]::hal_he_set_ersu. VHT bandwidth-signaling RTS disable later clears bit 22.\n\nYou can [`read`](crate::Reg::read) this register and get [`ersu_and_vht_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ersu_and_vht_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ErsuAndVhtControlSpec;
         impl crate::RegisterSpec for ErsuAndVhtControlSpec {
             type Ux = u32;
@@ -25585,132 +25585,132 @@ pub mod wifi_mac_he_init_suffix {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "QUEUE_CONTROL (rw) register accessor: Project-assigned name. Canonical WDEVTXQ_CONF1. Eight physical queue words are addressed in reverse logical order: physical array index seven is logical queue zero. Complete multi-BSSID clear independently clears bit two. Complete blob and ROM mac_tx_set_tb construct the logical-queue-zero-through-three word from only the preserved bit two, TB_ENA, logical queue as MU-EDCA selection, first MPDU-link index and frame TID; all other bits are cleared. The legacy PPDU formatter clears bit 3 of physical entries four through seven, which is the same TB_ENA field rather than an independent PPDU-control register. An open ordinary-SU HE pre-port baseline read all eight logical queues with TB_ENA=0 and the decoded TID, MU-EDCA selection, MPDU-length-link and minimum-power fields zero; Trigger/TB hardware counters also remained zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`queue_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`queue_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@queue_control`] module"]
+    #[doc = "QUEUE_CONTROL (rw) register accessor: Project-assigned name. Canonical WDEVTXQ_CONF1. Eight physical queue words are addressed in reverse logical order: physical array index seven is logical queue zero. Complete multi-BSSID clear independently clears bit two. Complete blob and ROM libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb and rom\\[\\]::mac_tx_set_tb construct the logical-queue-zero-through-three word from only the preserved bit two, TB_ENA, logical queue as MU-EDCA selection, first MPDU-link index and frame TID; all other bits are cleared. The legacy PPDU formatter clears bit 3 of physical entries four through seven, which is the same TB_ENA field rather than an independent PPDU-control register. An open ordinary-SU HE pre-port baseline read all eight logical queues with TB_ENA=0 and the decoded TID, MU-EDCA selection, MPDU-length-link and minimum-power fields zero; Trigger/TB hardware counters also remained zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`queue_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`queue_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@queue_control`] module"]
     #[doc(alias = "QUEUE_CONTROL")]
     pub type QueueControl = crate::Reg<queue_control::QueueControlSpec>;
-    #[doc = "Project-assigned name. Canonical WDEVTXQ_CONF1. Eight physical queue words are addressed in reverse logical order: physical array index seven is logical queue zero. Complete multi-BSSID clear independently clears bit two. Complete blob and ROM mac_tx_set_tb construct the logical-queue-zero-through-three word from only the preserved bit two, TB_ENA, logical queue as MU-EDCA selection, first MPDU-link index and frame TID; all other bits are cleared. The legacy PPDU formatter clears bit 3 of physical entries four through seven, which is the same TB_ENA field rather than an independent PPDU-control register. An open ordinary-SU HE pre-port baseline read all eight logical queues with TB_ENA=0 and the decoded TID, MU-EDCA selection, MPDU-length-link and minimum-power fields zero; Trigger/TB hardware counters also remained zero."]
+    #[doc = "Project-assigned name. Canonical WDEVTXQ_CONF1. Eight physical queue words are addressed in reverse logical order: physical array index seven is logical queue zero. Complete multi-BSSID clear independently clears bit two. Complete blob and ROM libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb and rom\\[\\]::mac_tx_set_tb construct the logical-queue-zero-through-three word from only the preserved bit two, TB_ENA, logical queue as MU-EDCA selection, first MPDU-link index and frame TID; all other bits are cleared. The legacy PPDU formatter clears bit 3 of physical entries four through seven, which is the same TB_ENA field rather than an independent PPDU-control register. An open ordinary-SU HE pre-port baseline read all eight logical queues with TB_ENA=0 and the decoded TID, MU-EDCA selection, MPDU-length-link and minimum-power fields zero; Trigger/TB hardware counters also remained zero."]
     pub mod queue_control {
         #[doc = "Register `QUEUE_CONTROL%s` reader"]
         pub type R = crate::R<QueueControlSpec>;
         #[doc = "Register `QUEUE_CONTROL%s` writer"]
         pub type W = crate::W<QueueControlSpec>;
-        #[doc = "Field `LOW_CLEARED_BY_TB_SETUP` reader - Project-assigned name. Bits zero and one are cleared by complete mac_tx_set_tb."]
+        #[doc = "Field `LOW_CLEARED_BY_TB_SETUP` reader - Project-assigned name. Bits zero and one are cleared by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb."]
         pub type LowClearedByTbSetupR = crate::FieldReader;
-        #[doc = "Field `LOW_CLEARED_BY_TB_SETUP` writer - Project-assigned name. Bits zero and one are cleared by complete mac_tx_set_tb."]
+        #[doc = "Field `LOW_CLEARED_BY_TB_SETUP` writer - Project-assigned name. Bits zero and one are cleared by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb."]
         pub type LowClearedByTbSetupW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
-        #[doc = "Field `QOS_NULL_TO_TRANSLATED_BSS` reader - Project-assigned name. The sole pre-existing bit preserved by complete mac_tx_set_tb."]
+        #[doc = "Field `QOS_NULL_TO_TRANSLATED_BSS` reader - Project-assigned name. The sole pre-existing bit preserved by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb."]
         pub type QosNullToTranslatedBssR = crate::BitReader;
-        #[doc = "Field `QOS_NULL_TO_TRANSLATED_BSS` writer - Project-assigned name. The sole pre-existing bit preserved by complete mac_tx_set_tb."]
+        #[doc = "Field `QOS_NULL_TO_TRANSLATED_BSS` writer - Project-assigned name. The sole pre-existing bit preserved by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb."]
         pub type QosNullToTranslatedBssW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `TRIGGER_BASED_ENABLE` reader - Project-assigned name. Complete dbg_read_txq_conf1 names bit 3 TB_ENA; complete mac_tx_set_tb sets it."]
+        #[doc = "Field `TRIGGER_BASED_ENABLE` reader - Project-assigned name. Complete dbg_read_txq_conf1 names bit 3 TB_ENA; complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb sets it."]
         pub type TriggerBasedEnableR = crate::BitReader;
-        #[doc = "Field `TRIGGER_BASED_ENABLE` writer - Project-assigned name. Complete dbg_read_txq_conf1 names bit 3 TB_ENA; complete mac_tx_set_tb sets it."]
+        #[doc = "Field `TRIGGER_BASED_ENABLE` writer - Project-assigned name. Complete dbg_read_txq_conf1 names bit 3 TB_ENA; complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb sets it."]
         pub type TriggerBasedEnableW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `MU_EDCA_TIMER_SELECT` reader - Project-assigned name. Complete mac_tx_set_tb copies the two-bit logical queue number here."]
+        #[doc = "Field `MU_EDCA_TIMER_SELECT` reader - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb copies the two-bit logical queue number here."]
         pub type MuEdcaTimerSelectR = crate::FieldReader;
-        #[doc = "Field `MU_EDCA_TIMER_SELECT` writer - Project-assigned name. Complete mac_tx_set_tb copies the two-bit logical queue number here."]
+        #[doc = "Field `MU_EDCA_TIMER_SELECT` writer - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb copies the two-bit logical queue number here."]
         pub type MuEdcaTimerSelectW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
-        #[doc = "Field `MPDU_LENGTH_LINK_ADDRESS` reader - Project-assigned name. First seven-bit link returned by complete mac_tx_set_mplen."]
+        #[doc = "Field `MPDU_LENGTH_LINK_ADDRESS` reader - Project-assigned name. First seven-bit link returned by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_mplen."]
         pub type MpduLengthLinkAddressR = crate::FieldReader;
-        #[doc = "Field `MPDU_LENGTH_LINK_ADDRESS` writer - Project-assigned name. First seven-bit link returned by complete mac_tx_set_mplen."]
+        #[doc = "Field `MPDU_LENGTH_LINK_ADDRESS` writer - Project-assigned name. First seven-bit link returned by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_mplen."]
         pub type MpduLengthLinkAddressW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
-        #[doc = "Field `TID` reader - Project-assigned name. Low four bits of the QoS descriptor state selected by complete mac_tx_set_tb."]
+        #[doc = "Field `TID` reader - Project-assigned name. Low four bits of the QoS descriptor state selected by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb."]
         pub type TidR = crate::FieldReader;
-        #[doc = "Field `TID` writer - Project-assigned name. Low four bits of the QoS descriptor state selected by complete mac_tx_set_tb."]
+        #[doc = "Field `TID` writer - Project-assigned name. Low four bits of the QoS descriptor state selected by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb."]
         pub type TidW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
-        #[doc = "Field `MINIMUM_TX_POWER` reader - Project-assigned name. Cleared by complete mac_tx_set_tb; the earlier debug decoder supplies the field name."]
+        #[doc = "Field `MINIMUM_TX_POWER` reader - Project-assigned name. Cleared by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb; the earlier debug decoder supplies the field name."]
         pub type MinimumTxPowerR = crate::FieldReader;
-        #[doc = "Field `MINIMUM_TX_POWER` writer - Project-assigned name. Cleared by complete mac_tx_set_tb; the earlier debug decoder supplies the field name."]
+        #[doc = "Field `MINIMUM_TX_POWER` writer - Project-assigned name. Cleared by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb; the earlier debug decoder supplies the field name."]
         pub type MinimumTxPowerW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
-        #[doc = "Field `HIGH_CLEARED_BY_TB_SETUP` reader - Project-assigned name. Bits 31:22 are cleared by complete mac_tx_set_tb."]
+        #[doc = "Field `HIGH_CLEARED_BY_TB_SETUP` reader - Project-assigned name. Bits 31:22 are cleared by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb."]
         pub type HighClearedByTbSetupR = crate::FieldReader<u16>;
-        #[doc = "Field `HIGH_CLEARED_BY_TB_SETUP` writer - Project-assigned name. Bits 31:22 are cleared by complete mac_tx_set_tb."]
+        #[doc = "Field `HIGH_CLEARED_BY_TB_SETUP` writer - Project-assigned name. Bits 31:22 are cleared by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb."]
         pub type HighClearedByTbSetupW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
         impl R {
-            #[doc = "Bits 0:1 - Project-assigned name. Bits zero and one are cleared by complete mac_tx_set_tb."]
+            #[doc = "Bits 0:1 - Project-assigned name. Bits zero and one are cleared by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb."]
             #[inline(always)]
             pub fn low_cleared_by_tb_setup(&self) -> LowClearedByTbSetupR {
                 LowClearedByTbSetupR::new((self.bits & 3) as u8)
             }
-            #[doc = "Bit 2 - Project-assigned name. The sole pre-existing bit preserved by complete mac_tx_set_tb."]
+            #[doc = "Bit 2 - Project-assigned name. The sole pre-existing bit preserved by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb."]
             #[inline(always)]
             pub fn qos_null_to_translated_bss(&self) -> QosNullToTranslatedBssR {
                 QosNullToTranslatedBssR::new(((self.bits >> 2) & 1) != 0)
             }
-            #[doc = "Bit 3 - Project-assigned name. Complete dbg_read_txq_conf1 names bit 3 TB_ENA; complete mac_tx_set_tb sets it."]
+            #[doc = "Bit 3 - Project-assigned name. Complete dbg_read_txq_conf1 names bit 3 TB_ENA; complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb sets it."]
             #[inline(always)]
             pub fn trigger_based_enable(&self) -> TriggerBasedEnableR {
                 TriggerBasedEnableR::new(((self.bits >> 3) & 1) != 0)
             }
-            #[doc = "Bits 4:5 - Project-assigned name. Complete mac_tx_set_tb copies the two-bit logical queue number here."]
+            #[doc = "Bits 4:5 - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb copies the two-bit logical queue number here."]
             #[inline(always)]
             pub fn mu_edca_timer_select(&self) -> MuEdcaTimerSelectR {
                 MuEdcaTimerSelectR::new(((self.bits >> 4) & 3) as u8)
             }
-            #[doc = "Bits 6:12 - Project-assigned name. First seven-bit link returned by complete mac_tx_set_mplen."]
+            #[doc = "Bits 6:12 - Project-assigned name. First seven-bit link returned by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_mplen."]
             #[inline(always)]
             pub fn mpdu_length_link_address(&self) -> MpduLengthLinkAddressR {
                 MpduLengthLinkAddressR::new(((self.bits >> 6) & 0x7f) as u8)
             }
-            #[doc = "Bits 13:16 - Project-assigned name. Low four bits of the QoS descriptor state selected by complete mac_tx_set_tb."]
+            #[doc = "Bits 13:16 - Project-assigned name. Low four bits of the QoS descriptor state selected by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb."]
             #[inline(always)]
             pub fn tid(&self) -> TidR {
                 TidR::new(((self.bits >> 13) & 0x0f) as u8)
             }
-            #[doc = "Bits 17:21 - Project-assigned name. Cleared by complete mac_tx_set_tb; the earlier debug decoder supplies the field name."]
+            #[doc = "Bits 17:21 - Project-assigned name. Cleared by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb; the earlier debug decoder supplies the field name."]
             #[inline(always)]
             pub fn minimum_tx_power(&self) -> MinimumTxPowerR {
                 MinimumTxPowerR::new(((self.bits >> 17) & 0x1f) as u8)
             }
-            #[doc = "Bits 22:31 - Project-assigned name. Bits 31:22 are cleared by complete mac_tx_set_tb."]
+            #[doc = "Bits 22:31 - Project-assigned name. Bits 31:22 are cleared by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb."]
             #[inline(always)]
             pub fn high_cleared_by_tb_setup(&self) -> HighClearedByTbSetupR {
                 HighClearedByTbSetupR::new(((self.bits >> 22) & 0x03ff) as u16)
             }
         }
         impl W {
-            #[doc = "Bits 0:1 - Project-assigned name. Bits zero and one are cleared by complete mac_tx_set_tb."]
+            #[doc = "Bits 0:1 - Project-assigned name. Bits zero and one are cleared by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb."]
             #[inline(always)]
             pub fn low_cleared_by_tb_setup(
                 &mut self,
             ) -> LowClearedByTbSetupW<'_, QueueControlSpec> {
                 LowClearedByTbSetupW::new(self, 0)
             }
-            #[doc = "Bit 2 - Project-assigned name. The sole pre-existing bit preserved by complete mac_tx_set_tb."]
+            #[doc = "Bit 2 - Project-assigned name. The sole pre-existing bit preserved by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb."]
             #[inline(always)]
             pub fn qos_null_to_translated_bss(
                 &mut self,
             ) -> QosNullToTranslatedBssW<'_, QueueControlSpec> {
                 QosNullToTranslatedBssW::new(self, 2)
             }
-            #[doc = "Bit 3 - Project-assigned name. Complete dbg_read_txq_conf1 names bit 3 TB_ENA; complete mac_tx_set_tb sets it."]
+            #[doc = "Bit 3 - Project-assigned name. Complete dbg_read_txq_conf1 names bit 3 TB_ENA; complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb sets it."]
             #[inline(always)]
             pub fn trigger_based_enable(&mut self) -> TriggerBasedEnableW<'_, QueueControlSpec> {
                 TriggerBasedEnableW::new(self, 3)
             }
-            #[doc = "Bits 4:5 - Project-assigned name. Complete mac_tx_set_tb copies the two-bit logical queue number here."]
+            #[doc = "Bits 4:5 - Project-assigned name. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb copies the two-bit logical queue number here."]
             #[inline(always)]
             pub fn mu_edca_timer_select(&mut self) -> MuEdcaTimerSelectW<'_, QueueControlSpec> {
                 MuEdcaTimerSelectW::new(self, 4)
             }
-            #[doc = "Bits 6:12 - Project-assigned name. First seven-bit link returned by complete mac_tx_set_mplen."]
+            #[doc = "Bits 6:12 - Project-assigned name. First seven-bit link returned by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_mplen."]
             #[inline(always)]
             pub fn mpdu_length_link_address(
                 &mut self,
             ) -> MpduLengthLinkAddressW<'_, QueueControlSpec> {
                 MpduLengthLinkAddressW::new(self, 6)
             }
-            #[doc = "Bits 13:16 - Project-assigned name. Low four bits of the QoS descriptor state selected by complete mac_tx_set_tb."]
+            #[doc = "Bits 13:16 - Project-assigned name. Low four bits of the QoS descriptor state selected by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb."]
             #[inline(always)]
             pub fn tid(&mut self) -> TidW<'_, QueueControlSpec> {
                 TidW::new(self, 13)
             }
-            #[doc = "Bits 17:21 - Project-assigned name. Cleared by complete mac_tx_set_tb; the earlier debug decoder supplies the field name."]
+            #[doc = "Bits 17:21 - Project-assigned name. Cleared by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb; the earlier debug decoder supplies the field name."]
             #[inline(always)]
             pub fn minimum_tx_power(&mut self) -> MinimumTxPowerW<'_, QueueControlSpec> {
                 MinimumTxPowerW::new(self, 17)
             }
-            #[doc = "Bits 22:31 - Project-assigned name. Bits 31:22 are cleared by complete mac_tx_set_tb."]
+            #[doc = "Bits 22:31 - Project-assigned name. Bits 31:22 are cleared by complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb/rom\\[\\]::mac_tx_set_tb."]
             #[inline(always)]
             pub fn high_cleared_by_tb_setup(
                 &mut self,
@@ -25718,7 +25718,7 @@ pub mod wifi_mac_he_init_suffix {
                 HighClearedByTbSetupW::new(self, 22)
             }
         }
-        #[doc = "Project-assigned name. Canonical WDEVTXQ_CONF1. Eight physical queue words are addressed in reverse logical order: physical array index seven is logical queue zero. Complete multi-BSSID clear independently clears bit two. Complete blob and ROM mac_tx_set_tb construct the logical-queue-zero-through-three word from only the preserved bit two, TB_ENA, logical queue as MU-EDCA selection, first MPDU-link index and frame TID; all other bits are cleared. The legacy PPDU formatter clears bit 3 of physical entries four through seven, which is the same TB_ENA field rather than an independent PPDU-control register. An open ordinary-SU HE pre-port baseline read all eight logical queues with TB_ENA=0 and the decoded TID, MU-EDCA selection, MPDU-length-link and minimum-power fields zero; Trigger/TB hardware counters also remained zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`queue_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`queue_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Canonical WDEVTXQ_CONF1. Eight physical queue words are addressed in reverse logical order: physical array index seven is logical queue zero. Complete multi-BSSID clear independently clears bit two. Complete blob and ROM libpp\\[hal_mac_tx.o\\]::mac_tx_set_tb and rom\\[\\]::mac_tx_set_tb construct the logical-queue-zero-through-three word from only the preserved bit two, TB_ENA, logical queue as MU-EDCA selection, first MPDU-link index and frame TID; all other bits are cleared. The legacy PPDU formatter clears bit 3 of physical entries four through seven, which is the same TB_ENA field rather than an independent PPDU-control register. An open ordinary-SU HE pre-port baseline read all eight logical queues with TB_ENA=0 and the decoded TID, MU-EDCA selection, MPDU-length-link and minimum-power fields zero; Trigger/TB hardware counters also remained zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`queue_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`queue_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct QueueControlSpec;
         impl crate::RegisterSpec for QueueControlSpec {
             type Ux = u32;
@@ -25730,10 +25730,10 @@ pub mod wifi_mac_he_init_suffix {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "HE_SCRATCH (rw) register accessor: Project-assigned name. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT. Complete mac_tx_set_mplen preserves bits 31:21, writes the fourteen-bit DMA metadata length (plus four when metadata word one bit 28 is set), and links contiguous allocated entries; the terminal entry uses NEXT=0x7f.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_scratch::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_scratch::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_scratch`] module"]
+    #[doc = "HE_SCRATCH (rw) register accessor: Project-assigned name. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_mplen preserves bits 31:21, writes the fourteen-bit DMA metadata length (plus four when metadata word one bit 28 is set), and links contiguous allocated entries; the terminal entry uses NEXT=0x7f.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_scratch::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_scratch::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@he_scratch`] module"]
     #[doc(alias = "HE_SCRATCH")]
     pub type HeScratch = crate::Reg<he_scratch::HeScratchSpec>;
-    #[doc = "Project-assigned name. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT. Complete mac_tx_set_mplen preserves bits 31:21, writes the fourteen-bit DMA metadata length (plus four when metadata word one bit 28 is set), and links contiguous allocated entries; the terminal entry uses NEXT=0x7f."]
+    #[doc = "Project-assigned name. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_mplen preserves bits 31:21, writes the fourteen-bit DMA metadata length (plus four when metadata word one bit 28 is set), and links contiguous allocated entries; the terminal entry uses NEXT=0x7f."]
     pub mod he_scratch {
         #[doc = "Register `HE_SCRATCH%s` reader"]
         pub type R = crate::R<HeScratchSpec>;
@@ -25785,7 +25785,7 @@ pub mod wifi_mac_he_init_suffix {
                 Bits21_31OpaqueW::new(self, 21)
             }
         }
-        #[doc = "Project-assigned name. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT. Complete mac_tx_set_mplen preserves bits 31:21, writes the fourteen-bit DMA metadata length (plus four when metadata word one bit 28 is set), and links contiguous allocated entries; the terminal entry uses NEXT=0x7f.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_scratch::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_scratch::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT. Complete libpp\\[hal_mac_tx.o\\]::mac_tx_set_mplen preserves bits 31:21, writes the fourteen-bit DMA metadata length (plus four when metadata word one bit 28 is set), and links contiguous allocated entries; the terminal entry uses NEXT=0x7f.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_scratch::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_scratch::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct HeScratchSpec;
         impl crate::RegisterSpec for HeScratchSpec {
             type Ux = u32;
@@ -26382,7 +26382,7 @@ pub mod wifi_mac_tsf_status {
         pub const fn status(&self) -> &Status {
             &self.status
         }
-        #[doc = "0x04 - Project-assigned name. Complete pm_clear_wakeup_signal sets bit zero before invoking two externally supplied synchronization callbacks; hardware clear behavior remains unknown."]
+        #[doc = "0x04 - Project-assigned name. Complete libpp\\[pm.o\\]::pm_clear_wakeup_signal sets bit zero before invoking two externally supplied synchronization callbacks; hardware clear behavior remains unknown."]
         #[inline(always)]
         pub const fn wakeup_signal_clear(&self) -> &WakeupSignalClear {
             &self.wakeup_signal_clear
@@ -26412,10 +26412,10 @@ pub mod wifi_mac_tsf_status {
         #[doc = "`read()` method returns [`status::R`](R) reader structure"]
         impl crate::Readable for StatusSpec {}
     }
-    #[doc = "WAKEUP_SIGNAL_CLEAR (rw) register accessor: Project-assigned name. Complete pm_clear_wakeup_signal sets bit zero before invoking two externally supplied synchronization callbacks; hardware clear behavior remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`wakeup_signal_clear::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wakeup_signal_clear::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@wakeup_signal_clear`] module"]
+    #[doc = "WAKEUP_SIGNAL_CLEAR (rw) register accessor: Project-assigned name. Complete libpp\\[pm.o\\]::pm_clear_wakeup_signal sets bit zero before invoking two externally supplied synchronization callbacks; hardware clear behavior remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`wakeup_signal_clear::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wakeup_signal_clear::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@wakeup_signal_clear`] module"]
     #[doc(alias = "WAKEUP_SIGNAL_CLEAR")]
     pub type WakeupSignalClear = crate::Reg<wakeup_signal_clear::WakeupSignalClearSpec>;
-    #[doc = "Project-assigned name. Complete pm_clear_wakeup_signal sets bit zero before invoking two externally supplied synchronization callbacks; hardware clear behavior remains unknown."]
+    #[doc = "Project-assigned name. Complete libpp\\[pm.o\\]::pm_clear_wakeup_signal sets bit zero before invoking two externally supplied synchronization callbacks; hardware clear behavior remains unknown."]
     pub mod wakeup_signal_clear {
         #[doc = "Register `WAKEUP_SIGNAL_CLEAR` reader"]
         pub type R = crate::R<WakeupSignalClearSpec>;
@@ -26439,7 +26439,7 @@ pub mod wifi_mac_tsf_status {
                 ClearW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Complete pm_clear_wakeup_signal sets bit zero before invoking two externally supplied synchronization callbacks; hardware clear behavior remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`wakeup_signal_clear::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wakeup_signal_clear::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Complete libpp\\[pm.o\\]::pm_clear_wakeup_signal sets bit zero before invoking two externally supplied synchronization callbacks; hardware clear behavior remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`wakeup_signal_clear::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wakeup_signal_clear::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct WakeupSignalClearSpec;
         impl crate::RegisterSpec for WakeupSignalClearSpec {
             type Ux = u32;
@@ -26533,7 +26533,7 @@ pub mod wifi_mac_sta_tsf_load {
         tsf_deviation_control: TsfDeviationControl,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads."]
+        #[doc = "0x00 - Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets then clears bit zero around its snapshot reads."]
         #[inline(always)]
         pub const fn control(&self) -> &Control {
             &self.control
@@ -26548,12 +26548,12 @@ pub mod wifi_mac_sta_tsf_load {
         pub const fn value_high(&self) -> &ValueHigh {
             &self.value_high
         }
-        #[doc = "0x0c - Project-assigned name. Coherently latched low 32 bits conditionally read by complete hal_get_sta_tsf."]
+        #[doc = "0x0c - Project-assigned name. Coherently latched low 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf."]
         #[inline(always)]
         pub const fn snapshot_low(&self) -> &SnapshotLow {
             &self.snapshot_low
         }
-        #[doc = "0x10 - Project-assigned name. Coherently latched high 32 bits conditionally read by complete hal_get_sta_tsf."]
+        #[doc = "0x10 - Project-assigned name. Coherently latched high 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf."]
         #[inline(always)]
         pub const fn snapshot_high(&self) -> &SnapshotHigh {
             &self.snapshot_high
@@ -26564,18 +26564,18 @@ pub mod wifi_mac_sta_tsf_load {
             &self.tsf_deviation_control
         }
     }
-    #[doc = "CONTROL (rw) register accessor: Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc = "CONTROL (rw) register accessor: Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets then clears bit zero around its snapshot reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
     #[doc(alias = "CONTROL")]
     pub type Control = crate::Reg<control::ControlSpec>;
-    #[doc = "Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads."]
+    #[doc = "Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets then clears bit zero around its snapshot reads."]
     pub mod control {
         #[doc = "Register `CONTROL` reader"]
         pub type R = crate::R<ControlSpec>;
         #[doc = "Register `CONTROL` writer"]
         pub type W = crate::W<ControlSpec>;
-        #[doc = "Field `SNAPSHOT_STATION_TSF` reader - Project-assigned name. Complete hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
+        #[doc = "Field `SNAPSHOT_STATION_TSF` reader - Project-assigned name. Complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
         pub type SnapshotStationTsfR = crate::BitReader;
-        #[doc = "Field `SNAPSHOT_STATION_TSF` writer - Project-assigned name. Complete hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
+        #[doc = "Field `SNAPSHOT_STATION_TSF` writer - Project-assigned name. Complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
         pub type SnapshotStationTsfW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `LOAD_STATION_TSF` reader - Project-assigned name. Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf."]
         pub type LoadStationTsfR = crate::BitReader;
@@ -26590,7 +26590,7 @@ pub mod wifi_mac_sta_tsf_load {
         #[doc = "Field `LOAD_STATION_TBTT_TARGET` writer - Project-assigned name. Complete hal_set_sta_tbtt and the index-0 TBTT start-time leaf set this bit after writing the station TBTT target."]
         pub type LoadStationTbttTargetW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bit 0 - Project-assigned name. Complete hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
+            #[doc = "Bit 0 - Project-assigned name. Complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
             #[inline(always)]
             pub fn snapshot_station_tsf(&self) -> SnapshotStationTsfR {
                 SnapshotStationTsfR::new((self.bits & 1) != 0)
@@ -26612,7 +26612,7 @@ pub mod wifi_mac_sta_tsf_load {
             }
         }
         impl W {
-            #[doc = "Bit 0 - Project-assigned name. Complete hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
+            #[doc = "Bit 0 - Project-assigned name. Complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
             #[inline(always)]
             pub fn snapshot_station_tsf(&mut self) -> SnapshotStationTsfW<'_, ControlSpec> {
                 SnapshotStationTsfW::new(self, 0)
@@ -26633,7 +26633,7 @@ pub mod wifi_mac_sta_tsf_load {
                 LoadStationTbttTargetW::new(self, 8)
             }
         }
-        #[doc = "Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets then clears bit zero around its snapshot reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ControlSpec;
         impl crate::RegisterSpec for ControlSpec {
             type Ux = u32;
@@ -26697,10 +26697,10 @@ pub mod wifi_mac_sta_tsf_load {
             type Safety = crate::Safe;
         }
     }
-    #[doc = "SNAPSHOT_LOW (r) register accessor: Project-assigned name. Coherently latched low 32 bits conditionally read by complete hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_low::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@snapshot_low`] module"]
+    #[doc = "SNAPSHOT_LOW (r) register accessor: Project-assigned name. Coherently latched low 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_low::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@snapshot_low`] module"]
     #[doc(alias = "SNAPSHOT_LOW")]
     pub type SnapshotLow = crate::Reg<snapshot_low::SnapshotLowSpec>;
-    #[doc = "Project-assigned name. Coherently latched low 32 bits conditionally read by complete hal_get_sta_tsf."]
+    #[doc = "Project-assigned name. Coherently latched low 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf."]
     pub mod snapshot_low {
         #[doc = "Register `SNAPSHOT_LOW` reader"]
         pub type R = crate::R<SnapshotLowSpec>;
@@ -26713,7 +26713,7 @@ pub mod wifi_mac_sta_tsf_load {
                 ValueR::new(self.bits)
             }
         }
-        #[doc = "Project-assigned name. Coherently latched low 32 bits conditionally read by complete hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_low::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Coherently latched low 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_low::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SnapshotLowSpec;
         impl crate::RegisterSpec for SnapshotLowSpec {
             type Ux = u32;
@@ -26721,10 +26721,10 @@ pub mod wifi_mac_sta_tsf_load {
         #[doc = "`read()` method returns [`snapshot_low::R`](R) reader structure"]
         impl crate::Readable for SnapshotLowSpec {}
     }
-    #[doc = "SNAPSHOT_HIGH (r) register accessor: Project-assigned name. Coherently latched high 32 bits conditionally read by complete hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_high::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@snapshot_high`] module"]
+    #[doc = "SNAPSHOT_HIGH (r) register accessor: Project-assigned name. Coherently latched high 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_high::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@snapshot_high`] module"]
     #[doc(alias = "SNAPSHOT_HIGH")]
     pub type SnapshotHigh = crate::Reg<snapshot_high::SnapshotHighSpec>;
-    #[doc = "Project-assigned name. Coherently latched high 32 bits conditionally read by complete hal_get_sta_tsf."]
+    #[doc = "Project-assigned name. Coherently latched high 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf."]
     pub mod snapshot_high {
         #[doc = "Register `SNAPSHOT_HIGH` reader"]
         pub type R = crate::R<SnapshotHighSpec>;
@@ -26737,7 +26737,7 @@ pub mod wifi_mac_sta_tsf_load {
                 ValueR::new(self.bits)
             }
         }
-        #[doc = "Project-assigned name. Coherently latched high 32 bits conditionally read by complete hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_high::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Coherently latched high 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_high::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SnapshotHighSpec;
         impl crate::RegisterSpec for SnapshotHighSpec {
             type Ux = u32;
@@ -26849,7 +26849,7 @@ pub mod wifi_mac_rtc_timer_update {
         pub const fn control(&self) -> &Control {
             &self.control
         }
-        #[doc = "0x04 - Project-assigned name. Complete hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred."]
+        #[doc = "0x04 - Project-assigned name. Complete libpp\\[hal_tsf.o\\]::hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred."]
         #[inline(always)]
         pub const fn soc_wakeup_clear(&self) -> &SocWakeupClear {
             &self.soc_wakeup_clear
@@ -26864,12 +26864,12 @@ pub mod wifi_mac_rtc_timer_update {
         pub const fn sta_light_sleep_wake_ahead(&self) -> &StaLightSleepWakeAhead {
             &self.sta_light_sleep_wake_ahead
         }
-        #[doc = "0x14 - Project-assigned name. Complete tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown."]
+        #[doc = "0x14 - Project-assigned name. Complete libpp\\[hal_tsf.o\\]::tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown."]
         #[inline(always)]
         pub const fn tbtt_rf_control_wait_cycles(&self) -> &TbttRfControlWaitCycles {
             &self.tbtt_rf_control_wait_cycles
         }
-        #[doc = "0x24 - Project-assigned name. Complete hal_set_rx_beacon_time and pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred."]
+        #[doc = "0x24 - Project-assigned name. Complete hal_set_rx_beacon_time and libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred."]
         #[inline(always)]
         pub const fn rx_beacon_time_low(&self) -> &RxBeaconTimeLow {
             &self.rx_beacon_time_low
@@ -26943,10 +26943,10 @@ pub mod wifi_mac_rtc_timer_update {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SOC_WAKEUP_CLEAR (rw) register accessor: Project-assigned name. Complete hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`soc_wakeup_clear::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`soc_wakeup_clear::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@soc_wakeup_clear`] module"]
+    #[doc = "SOC_WAKEUP_CLEAR (rw) register accessor: Project-assigned name. Complete libpp\\[hal_tsf.o\\]::hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`soc_wakeup_clear::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`soc_wakeup_clear::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@soc_wakeup_clear`] module"]
     #[doc(alias = "SOC_WAKEUP_CLEAR")]
     pub type SocWakeupClear = crate::Reg<soc_wakeup_clear::SocWakeupClearSpec>;
-    #[doc = "Project-assigned name. Complete hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred."]
+    #[doc = "Project-assigned name. Complete libpp\\[hal_tsf.o\\]::hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred."]
     pub mod soc_wakeup_clear {
         #[doc = "Register `SOC_WAKEUP_CLEAR` reader"]
         pub type R = crate::R<SocWakeupClearSpec>;
@@ -27080,7 +27080,7 @@ pub mod wifi_mac_rtc_timer_update {
                 ClearBeaconInfoW::new(self, 31)
             }
         }
-        #[doc = "Project-assigned name. Complete hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`soc_wakeup_clear::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`soc_wakeup_clear::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Complete libpp\\[hal_tsf.o\\]::hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`soc_wakeup_clear::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`soc_wakeup_clear::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SocWakeupClearSpec;
         impl crate::RegisterSpec for SocWakeupClearSpec {
             type Ux = u32;
@@ -27102,24 +27102,24 @@ pub mod wifi_mac_rtc_timer_update {
         pub type R = crate::R<ModemSleepLimitControlSpec>;
         #[doc = "Register `MODEM_SLEEP_LIMIT_CONTROL` writer"]
         pub type W = crate::W<ModemSleepLimitControlSpec>;
-        #[doc = "Field `BEACON_MISS_LIMIT` reader - Project-assigned name. Low four argument bits published by pwr_hal_set_mac_modem_beacon_miss_limit."]
+        #[doc = "Field `BEACON_MISS_LIMIT` reader - Project-assigned name. Low four argument bits published by libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_beacon_miss_limit."]
         pub type BeaconMissLimitR = crate::FieldReader;
-        #[doc = "Field `BEACON_MISS_LIMIT` writer - Project-assigned name. Low four argument bits published by pwr_hal_set_mac_modem_beacon_miss_limit."]
+        #[doc = "Field `BEACON_MISS_LIMIT` writer - Project-assigned name. Low four argument bits published by libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_beacon_miss_limit."]
         pub type BeaconMissLimitW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `BEACON_MISS_LIMIT_WAKEUP_ENABLE` reader - Project-assigned name. Dedicated enable/disable leaves set or clear bit four."]
         pub type BeaconMissLimitWakeupEnableR = crate::BitReader;
         #[doc = "Field `BEACON_MISS_LIMIT_WAKEUP_ENABLE` writer - Project-assigned name. Dedicated enable/disable leaves set or clear bit four."]
         pub type BeaconMissLimitWakeupEnableW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `MODEM_STATE_SLEEP_LIMIT` reader - Project-assigned name. Low ten argument bits published in bits 14:5 by pwr_hal_set_mac_modem_state_sleep_limit."]
+        #[doc = "Field `MODEM_STATE_SLEEP_LIMIT` reader - Project-assigned name. Low ten argument bits published in bits 14:5 by libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_state_sleep_limit."]
         pub type ModemStateSleepLimitR = crate::FieldReader<u16>;
-        #[doc = "Field `MODEM_STATE_SLEEP_LIMIT` writer - Project-assigned name. Low ten argument bits published in bits 14:5 by pwr_hal_set_mac_modem_state_sleep_limit."]
+        #[doc = "Field `MODEM_STATE_SLEEP_LIMIT` writer - Project-assigned name. Low ten argument bits published in bits 14:5 by libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_state_sleep_limit."]
         pub type ModemStateSleepLimitW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
         #[doc = "Field `MODEM_STATE_SLEEP_LIMIT_WAKEUP_ENABLE` reader - Project-assigned name. Dedicated enable/disable leaves set or clear bit fifteen."]
         pub type ModemStateSleepLimitWakeupEnableR = crate::BitReader;
         #[doc = "Field `MODEM_STATE_SLEEP_LIMIT_WAKEUP_ENABLE` writer - Project-assigned name. Dedicated enable/disable leaves set or clear bit fifteen."]
         pub type ModemStateSleepLimitWakeupEnableW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bits 0:3 - Project-assigned name. Low four argument bits published by pwr_hal_set_mac_modem_beacon_miss_limit."]
+            #[doc = "Bits 0:3 - Project-assigned name. Low four argument bits published by libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_beacon_miss_limit."]
             #[inline(always)]
             pub fn beacon_miss_limit(&self) -> BeaconMissLimitR {
                 BeaconMissLimitR::new((self.bits & 0x0f) as u8)
@@ -27129,7 +27129,7 @@ pub mod wifi_mac_rtc_timer_update {
             pub fn beacon_miss_limit_wakeup_enable(&self) -> BeaconMissLimitWakeupEnableR {
                 BeaconMissLimitWakeupEnableR::new(((self.bits >> 4) & 1) != 0)
             }
-            #[doc = "Bits 5:14 - Project-assigned name. Low ten argument bits published in bits 14:5 by pwr_hal_set_mac_modem_state_sleep_limit."]
+            #[doc = "Bits 5:14 - Project-assigned name. Low ten argument bits published in bits 14:5 by libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_state_sleep_limit."]
             #[inline(always)]
             pub fn modem_state_sleep_limit(&self) -> ModemStateSleepLimitR {
                 ModemStateSleepLimitR::new(((self.bits >> 5) & 0x03ff) as u16)
@@ -27143,7 +27143,7 @@ pub mod wifi_mac_rtc_timer_update {
             }
         }
         impl W {
-            #[doc = "Bits 0:3 - Project-assigned name. Low four argument bits published by pwr_hal_set_mac_modem_beacon_miss_limit."]
+            #[doc = "Bits 0:3 - Project-assigned name. Low four argument bits published by libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_beacon_miss_limit."]
             #[inline(always)]
             pub fn beacon_miss_limit(
                 &mut self,
@@ -27157,7 +27157,7 @@ pub mod wifi_mac_rtc_timer_update {
             ) -> BeaconMissLimitWakeupEnableW<'_, ModemSleepLimitControlSpec> {
                 BeaconMissLimitWakeupEnableW::new(self, 4)
             }
-            #[doc = "Bits 5:14 - Project-assigned name. Low ten argument bits published in bits 14:5 by pwr_hal_set_mac_modem_state_sleep_limit."]
+            #[doc = "Bits 5:14 - Project-assigned name. Low ten argument bits published in bits 14:5 by libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_state_sleep_limit."]
             #[inline(always)]
             pub fn modem_state_sleep_limit(
                 &mut self,
@@ -27224,11 +27224,11 @@ pub mod wifi_mac_rtc_timer_update {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "TBTT_RF_CONTROL_WAIT_CYCLES (rw) register accessor: Project-assigned name. Complete tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`tbtt_rf_control_wait_cycles::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tbtt_rf_control_wait_cycles::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tbtt_rf_control_wait_cycles`] module"]
+    #[doc = "TBTT_RF_CONTROL_WAIT_CYCLES (rw) register accessor: Project-assigned name. Complete libpp\\[hal_tsf.o\\]::tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`tbtt_rf_control_wait_cycles::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tbtt_rf_control_wait_cycles::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tbtt_rf_control_wait_cycles`] module"]
     #[doc(alias = "TBTT_RF_CONTROL_WAIT_CYCLES")]
     pub type TbttRfControlWaitCycles =
         crate::Reg<tbtt_rf_control_wait_cycles::TbttRfControlWaitCyclesSpec>;
-    #[doc = "Project-assigned name. Complete tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown."]
+    #[doc = "Project-assigned name. Complete libpp\\[hal_tsf.o\\]::tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown."]
     pub mod tbtt_rf_control_wait_cycles {
         #[doc = "Register `TBTT_RF_CONTROL_WAIT_CYCLES` reader"]
         pub type R = crate::R<TbttRfControlWaitCyclesSpec>;
@@ -27252,7 +27252,7 @@ pub mod wifi_mac_rtc_timer_update {
                 WaitCyclesW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Complete tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`tbtt_rf_control_wait_cycles::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tbtt_rf_control_wait_cycles::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Complete libpp\\[hal_tsf.o\\]::tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`tbtt_rf_control_wait_cycles::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tbtt_rf_control_wait_cycles::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TbttRfControlWaitCyclesSpec;
         impl crate::RegisterSpec for TbttRfControlWaitCyclesSpec {
             type Ux = u32;
@@ -27264,10 +27264,10 @@ pub mod wifi_mac_rtc_timer_update {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_BEACON_TIME_LOW (rw) register accessor: Project-assigned name. Complete hal_set_rx_beacon_time and pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_beacon_time_low::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_beacon_time_low::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_beacon_time_low`] module"]
+    #[doc = "RX_BEACON_TIME_LOW (rw) register accessor: Project-assigned name. Complete hal_set_rx_beacon_time and libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_beacon_time_low::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_beacon_time_low::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_beacon_time_low`] module"]
     #[doc(alias = "RX_BEACON_TIME_LOW")]
     pub type RxBeaconTimeLow = crate::Reg<rx_beacon_time_low::RxBeaconTimeLowSpec>;
-    #[doc = "Project-assigned name. Complete hal_set_rx_beacon_time and pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred."]
+    #[doc = "Project-assigned name. Complete hal_set_rx_beacon_time and libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred."]
     pub mod rx_beacon_time_low {
         #[doc = "Register `RX_BEACON_TIME_LOW` reader"]
         pub type R = crate::R<RxBeaconTimeLowSpec>;
@@ -27291,7 +27291,7 @@ pub mod wifi_mac_rtc_timer_update {
                 ValueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Complete hal_set_rx_beacon_time and pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_beacon_time_low::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_beacon_time_low::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Complete hal_set_rx_beacon_time and libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_beacon_time_low::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_beacon_time_low::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxBeaconTimeLowSpec;
         impl crate::RegisterSpec for RxBeaconTimeLowSpec {
             type Ux = u32;
@@ -27376,9 +27376,9 @@ pub mod wifi_mac_rtc_timer_update {
                 self.variant(StaTsfMode::Enabled)
             }
         }
-        #[doc = "Field `MODEM_STATE_WAKEUP_PROTECT_ENABLE` reader - Project-assigned name. pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."]
+        #[doc = "Field `MODEM_STATE_WAKEUP_PROTECT_ENABLE` reader - Project-assigned name. libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."]
         pub type ModemStateWakeupProtectEnableR = crate::BitReader;
-        #[doc = "Field `MODEM_STATE_WAKEUP_PROTECT_ENABLE` writer - Project-assigned name. pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."]
+        #[doc = "Field `MODEM_STATE_WAKEUP_PROTECT_ENABLE` writer - Project-assigned name. libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."]
         pub type ModemStateWakeupProtectEnableW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `STA_TBTT_ENABLE` reader - Project-assigned name. hal_enable_sta_tbtt sets bit 26 and hal_disable_sta_tbtt clears only this bit."]
         pub type StaTbttEnableR = crate::BitReader;
@@ -27407,7 +27407,7 @@ pub mod wifi_mac_rtc_timer_update {
             pub fn sta_tsf_mode(&self) -> StaTsfModeR {
                 StaTsfModeR::new(((self.bits >> 19) & 0x0f) as u8)
             }
-            #[doc = "Bit 24 - Project-assigned name. pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."]
+            #[doc = "Bit 24 - Project-assigned name. libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."]
             #[inline(always)]
             pub fn modem_state_wakeup_protect_enable(&self) -> ModemStateWakeupProtectEnableR {
                 ModemStateWakeupProtectEnableR::new(((self.bits >> 24) & 1) != 0)
@@ -27444,7 +27444,7 @@ pub mod wifi_mac_rtc_timer_update {
             pub fn sta_tsf_mode(&mut self) -> StaTsfModeW<'_, StaTsfControlSpec> {
                 StaTsfModeW::new(self, 19)
             }
-            #[doc = "Bit 24 - Project-assigned name. pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."]
+            #[doc = "Bit 24 - Project-assigned name. libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."]
             #[inline(always)]
             pub fn modem_state_wakeup_protect_enable(
                 &mut self,
@@ -30241,7 +30241,7 @@ pub mod wifi_mac_interrupt {
         pub type R = crate::R<StatusSpec>;
         #[doc = "Field `BITS_0_4_OPAQUE` reader - Opaque: meaning not established. Masked event bits whose identities remain unknown."]
         pub type Bits0_4OpaqueR = crate::FieldReader;
-        #[doc = "Field `RX_ASSOCIATED_AUXILIARY_5` reader - Project-assigned name. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
+        #[doc = "Field `RX_ASSOCIATED_AUXILIARY_5` reader - Project-assigned name. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete libpp\\[wdev.o\\]::wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
         pub type RxAssociatedAuxiliary5R = crate::BitReader;
         #[doc = "Field `BIT_6_OPAQUE` reader - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
         pub type Bit6OpaqueR = crate::BitReader;
@@ -30273,7 +30273,7 @@ pub mod wifi_mac_interrupt {
         pub type Bit22OpaqueR = crate::BitReader;
         #[doc = "Field `BIT_23_OPAQUE` reader - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
         pub type Bit23OpaqueR = crate::BitReader;
-        #[doc = "Field `RX_ASSOCIATED_AUXILIARY_24` reader - Project-assigned name. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
+        #[doc = "Field `RX_ASSOCIATED_AUXILIARY_24` reader - Project-assigned name. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete libpp\\[wdev.o\\]::wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
         pub type RxAssociatedAuxiliary24R = crate::BitReader;
         #[doc = "Field `BITS_25_26_OPAQUE` reader - Opaque: meaning not established. Masked event bits whose identities remain unknown."]
         pub type Bits25_26OpaqueR = crate::FieldReader;
@@ -30289,7 +30289,7 @@ pub mod wifi_mac_interrupt {
             pub fn bits_0_4_opaque(&self) -> Bits0_4OpaqueR {
                 Bits0_4OpaqueR::new((self.bits & 0x1f) as u8)
             }
-            #[doc = "Bit 5 - Project-assigned name. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
+            #[doc = "Bit 5 - Project-assigned name. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete libpp\\[wdev.o\\]::wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
             #[inline(always)]
             pub fn rx_associated_auxiliary_5(&self) -> RxAssociatedAuxiliary5R {
                 RxAssociatedAuxiliary5R::new(((self.bits >> 5) & 1) != 0)
@@ -30369,7 +30369,7 @@ pub mod wifi_mac_interrupt {
             pub fn bit_23_opaque(&self) -> Bit23OpaqueR {
                 Bit23OpaqueR::new(((self.bits >> 23) & 1) != 0)
             }
-            #[doc = "Bit 24 - Project-assigned name. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
+            #[doc = "Bit 24 - Project-assigned name. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete libpp\\[wdev.o\\]::wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
             #[inline(always)]
             pub fn rx_associated_auxiliary_24(&self) -> RxAssociatedAuxiliary24R {
                 RxAssociatedAuxiliary24R::new(((self.bits >> 24) & 1) != 0)
@@ -30462,7 +30462,7 @@ pub mod wifi_mac_tsf_timer {
             (0..4)
                 .map(move |n| unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(8 * n).cast() })
         }
-        #[doc = "0x04..0x14 - Project-assigned name. Full 32-bit timer target written by hal_tsf_timer_set_target and returned through the first output pointer by hal_tsf_timer_get_target."]
+        #[doc = "0x04..0x14 - Project-assigned name. Full 32-bit timer target written by libpp\\[hal_tsf.o\\]::hal_tsf_timer_set_target and returned through the first output pointer by hal_tsf_timer_get_target."]
         #[inline(always)]
         pub const fn target(&self, n: usize) -> &Target {
             #[allow(clippy::no_effect)]
@@ -30476,7 +30476,7 @@ pub mod wifi_mac_tsf_timer {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x04..0x14 - Project-assigned name. Full 32-bit timer target written by hal_tsf_timer_set_target and returned through the first output pointer by hal_tsf_timer_get_target."]
+        #[doc = "0x04..0x14 - Project-assigned name. Full 32-bit timer target written by libpp\\[hal_tsf.o\\]::hal_tsf_timer_set_target and returned through the first output pointer by hal_tsf_timer_get_target."]
         #[inline(always)]
         pub fn target_iter(&self) -> impl Iterator<Item = &Target> {
             (0..4).map(move |n| unsafe {
@@ -30497,20 +30497,20 @@ pub mod wifi_mac_tsf_timer {
         pub type R = crate::R<ControlSpec>;
         #[doc = "Register `CONTROL%s` writer"]
         pub type W = crate::W<ControlSpec>;
-        #[doc = "Field `TARGET_HIGH` reader - Project-assigned name. Bits 34:32 of the 64-bit TSF target. Complete hal_tsf_timer_set_target replaces them from its third argument and hal_tsf_timer_get_target returns them through its second output pointer; pm_on_isr_twt_wake passes the high word of the stored 64-bit wake TSF there, and pm_twt_set_target_tsf parks a timer with an all-ones low word and seven."]
+        #[doc = "Field `TARGET_HIGH` reader - Project-assigned name. Bits 34:32 of the 64-bit TSF target. Complete libpp\\[hal_tsf.o\\]::hal_tsf_timer_set_target replaces them from its third argument and hal_tsf_timer_get_target returns them through its second output pointer; libpp\\[pm_twt.o\\]::pm_on_isr_twt_wake passes the high word of the stored 64-bit wake TSF there, and libpp\\[pm_twt.o\\]::pm_twt_set_target_tsf parks a timer with an all-ones low word and seven."]
         pub type TargetHighR = crate::FieldReader;
-        #[doc = "Field `TARGET_HIGH` writer - Project-assigned name. Bits 34:32 of the 64-bit TSF target. Complete hal_tsf_timer_set_target replaces them from its third argument and hal_tsf_timer_get_target returns them through its second output pointer; pm_on_isr_twt_wake passes the high word of the stored 64-bit wake TSF there, and pm_twt_set_target_tsf parks a timer with an all-ones low word and seven."]
+        #[doc = "Field `TARGET_HIGH` writer - Project-assigned name. Bits 34:32 of the 64-bit TSF target. Complete libpp\\[hal_tsf.o\\]::hal_tsf_timer_set_target replaces them from its third argument and hal_tsf_timer_get_target returns them through its second output pointer; libpp\\[pm_twt.o\\]::pm_on_isr_twt_wake passes the high word of the stored 64-bit wake TSF there, and libpp\\[pm_twt.o\\]::pm_twt_set_target_tsf parks a timer with an all-ones low word and seven."]
         pub type TargetHighW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
         #[doc = "Field `WAKEUP_ENABLE` reader - Project-assigned name. Set by hal_enable_tsf_timer_wakeup and cleared by hal_disable_tsf_timer_wakeup."]
         pub type WakeupEnableR = crate::BitReader;
         #[doc = "Field `WAKEUP_ENABLE` writer - Project-assigned name. Set by hal_enable_tsf_timer_wakeup and cleared by hal_disable_tsf_timer_wakeup."]
         pub type WakeupEnableW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `TIMER_ENABLE` reader - Project-assigned name. Set by hal_enable_tsf_timer and cleared by hal_disable_tsf_timer."]
+        #[doc = "Field `TIMER_ENABLE` reader - Project-assigned name. Set by libpp\\[hal_tsf.o\\]::hal_enable_tsf_timer and cleared by hal_disable_tsf_timer."]
         pub type TimerEnableR = crate::BitReader;
-        #[doc = "Field `TIMER_ENABLE` writer - Project-assigned name. Set by hal_enable_tsf_timer and cleared by hal_disable_tsf_timer."]
+        #[doc = "Field `TIMER_ENABLE` writer - Project-assigned name. Set by libpp\\[hal_tsf.o\\]::hal_enable_tsf_timer and cleared by hal_disable_tsf_timer."]
         pub type TimerEnableW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bits 0:2 - Project-assigned name. Bits 34:32 of the 64-bit TSF target. Complete hal_tsf_timer_set_target replaces them from its third argument and hal_tsf_timer_get_target returns them through its second output pointer; pm_on_isr_twt_wake passes the high word of the stored 64-bit wake TSF there, and pm_twt_set_target_tsf parks a timer with an all-ones low word and seven."]
+            #[doc = "Bits 0:2 - Project-assigned name. Bits 34:32 of the 64-bit TSF target. Complete libpp\\[hal_tsf.o\\]::hal_tsf_timer_set_target replaces them from its third argument and hal_tsf_timer_get_target returns them through its second output pointer; libpp\\[pm_twt.o\\]::pm_on_isr_twt_wake passes the high word of the stored 64-bit wake TSF there, and libpp\\[pm_twt.o\\]::pm_twt_set_target_tsf parks a timer with an all-ones low word and seven."]
             #[inline(always)]
             pub fn target_high(&self) -> TargetHighR {
                 TargetHighR::new((self.bits & 7) as u8)
@@ -30520,14 +30520,14 @@ pub mod wifi_mac_tsf_timer {
             pub fn wakeup_enable(&self) -> WakeupEnableR {
                 WakeupEnableR::new(((self.bits >> 30) & 1) != 0)
             }
-            #[doc = "Bit 31 - Project-assigned name. Set by hal_enable_tsf_timer and cleared by hal_disable_tsf_timer."]
+            #[doc = "Bit 31 - Project-assigned name. Set by libpp\\[hal_tsf.o\\]::hal_enable_tsf_timer and cleared by hal_disable_tsf_timer."]
             #[inline(always)]
             pub fn timer_enable(&self) -> TimerEnableR {
                 TimerEnableR::new(((self.bits >> 31) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bits 0:2 - Project-assigned name. Bits 34:32 of the 64-bit TSF target. Complete hal_tsf_timer_set_target replaces them from its third argument and hal_tsf_timer_get_target returns them through its second output pointer; pm_on_isr_twt_wake passes the high word of the stored 64-bit wake TSF there, and pm_twt_set_target_tsf parks a timer with an all-ones low word and seven."]
+            #[doc = "Bits 0:2 - Project-assigned name. Bits 34:32 of the 64-bit TSF target. Complete libpp\\[hal_tsf.o\\]::hal_tsf_timer_set_target replaces them from its third argument and hal_tsf_timer_get_target returns them through its second output pointer; libpp\\[pm_twt.o\\]::pm_on_isr_twt_wake passes the high word of the stored 64-bit wake TSF there, and libpp\\[pm_twt.o\\]::pm_twt_set_target_tsf parks a timer with an all-ones low word and seven."]
             #[inline(always)]
             pub fn target_high(&mut self) -> TargetHighW<'_, ControlSpec> {
                 TargetHighW::new(self, 0)
@@ -30537,7 +30537,7 @@ pub mod wifi_mac_tsf_timer {
             pub fn wakeup_enable(&mut self) -> WakeupEnableW<'_, ControlSpec> {
                 WakeupEnableW::new(self, 30)
             }
-            #[doc = "Bit 31 - Project-assigned name. Set by hal_enable_tsf_timer and cleared by hal_disable_tsf_timer."]
+            #[doc = "Bit 31 - Project-assigned name. Set by libpp\\[hal_tsf.o\\]::hal_enable_tsf_timer and cleared by hal_disable_tsf_timer."]
             #[inline(always)]
             pub fn timer_enable(&mut self) -> TimerEnableW<'_, ControlSpec> {
                 TimerEnableW::new(self, 31)
@@ -30555,10 +30555,10 @@ pub mod wifi_mac_tsf_timer {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "TARGET (rw) register accessor: Project-assigned name. Full 32-bit timer target written by hal_tsf_timer_set_target and returned through the first output pointer by hal_tsf_timer_get_target.\n\nYou can [`read`](crate::Reg::read) this register and get [`target::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`target::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@target`] module"]
+    #[doc = "TARGET (rw) register accessor: Project-assigned name. Full 32-bit timer target written by libpp\\[hal_tsf.o\\]::hal_tsf_timer_set_target and returned through the first output pointer by hal_tsf_timer_get_target.\n\nYou can [`read`](crate::Reg::read) this register and get [`target::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`target::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@target`] module"]
     #[doc(alias = "TARGET")]
     pub type Target = crate::Reg<target::TargetSpec>;
-    #[doc = "Project-assigned name. Full 32-bit timer target written by hal_tsf_timer_set_target and returned through the first output pointer by hal_tsf_timer_get_target."]
+    #[doc = "Project-assigned name. Full 32-bit timer target written by libpp\\[hal_tsf.o\\]::hal_tsf_timer_set_target and returned through the first output pointer by hal_tsf_timer_get_target."]
     pub mod target {
         #[doc = "Register `TARGET%s` reader"]
         pub type R = crate::R<TargetSpec>;
@@ -30582,7 +30582,7 @@ pub mod wifi_mac_tsf_timer {
                 ValueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Full 32-bit timer target written by hal_tsf_timer_set_target and returned through the first output pointer by hal_tsf_timer_get_target.\n\nYou can [`read`](crate::Reg::read) this register and get [`target::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`target::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Full 32-bit timer target written by libpp\\[hal_tsf.o\\]::hal_tsf_timer_set_target and returned through the first output pointer by hal_tsf_timer_get_target.\n\nYou can [`read`](crate::Reg::read) this register and get [`target::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`target::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TargetSpec;
         impl crate::RegisterSpec for TargetSpec {
             type Ux = u32;
@@ -30595,14 +30595,14 @@ pub mod wifi_mac_tsf_timer {
         }
     }
 }
-#[doc = "Six-entry coexistence timer bank. Complete libcoexist leaves address entry index as 0x2010f400 + index*0x10. The 48-event coex_core_timer_idx_get table of the pinned archive returns timer indices zero through five or 0xff; index five is used only by the PHY grant-protect event 48."]
+#[doc = "Six-entry coexistence timer bank. Complete libcoexist leaves address entry index as 0x2010f400 + index*0x10. The 48-event libcoexist\\[coexist_core.o\\]::coex_core_timer_idx_get table of the pinned archive returns timer indices zero through five or 0xff; index five is used only by the PHY grant-protect event 48."]
 pub type CoexHwTimer = crate::Periph<coex_hw_timer::RegisterBlock, 0x2010_f400>;
 impl core::fmt::Debug for CoexHwTimer {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("CoexHwTimer").finish()
     }
 }
-#[doc = "Six-entry coexistence timer bank. Complete libcoexist leaves address entry index as 0x2010f400 + index*0x10. The 48-event coex_core_timer_idx_get table of the pinned archive returns timer indices zero through five or 0xff; index five is used only by the PHY grant-protect event 48."]
+#[doc = "Six-entry coexistence timer bank. Complete libcoexist leaves address entry index as 0x2010f400 + index*0x10. The 48-event libcoexist\\[coexist_core.o\\]::coex_core_timer_idx_get table of the pinned archive returns timer indices zero through five or 0xff; index five is used only by the PHY grant-protect event 48."]
 pub mod coex_hw_timer {
     #[repr(C)]
     #[doc = "Register block"]
@@ -30616,7 +30616,7 @@ pub mod coex_hw_timer {
         disable_control: (),
     }
     impl RegisterBlock {
-        #[doc = "0x00..0x18 - Project-assigned name. Primary timer word. coex_hw_timer_set replaces both high nibbles and the low 24-bit tick image through separate fresh-read RMW operations. coex_hw_timer_force clears the low 24 bits; coex_hw_timer_unforce replaces them with 1000."]
+        #[doc = "0x00..0x18 - Project-assigned name. Primary timer word. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_set replaces both high nibbles and the low 24-bit tick image through separate fresh-read RMW operations. coex_hw_timer_force clears the low 24 bits; coex_hw_timer_unforce replaces them with 1000."]
         #[inline(always)]
         pub const fn configuration(&self, n: usize) -> &Configuration {
             #[allow(clippy::no_effect)]
@@ -30624,14 +30624,14 @@ pub mod coex_hw_timer {
             unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(16 * n).cast() }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x00..0x18 - Project-assigned name. Primary timer word. coex_hw_timer_set replaces both high nibbles and the low 24-bit tick image through separate fresh-read RMW operations. coex_hw_timer_force clears the low 24 bits; coex_hw_timer_unforce replaces them with 1000."]
+        #[doc = "0x00..0x18 - Project-assigned name. Primary timer word. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_set replaces both high nibbles and the low 24-bit tick image through separate fresh-read RMW operations. coex_hw_timer_force clears the low 24 bits; coex_hw_timer_unforce replaces them with 1000."]
         #[inline(always)]
         pub fn configuration_iter(&self) -> impl Iterator<Item = &Configuration> {
             (0..6).map(move |n| unsafe {
                 &*core::ptr::from_ref(self).cast::<u8>().add(16 * n).cast()
             })
         }
-        #[doc = "0x04..0x1c - Project-assigned name. Secondary timer word. coex_hw_timer_set preserves the high byte and replaces the low 24 bits with the converted fourth timer-value argument."]
+        #[doc = "0x04..0x1c - Project-assigned name. Secondary timer word. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_set preserves the high byte and replaces the low 24 bits with the converted fourth timer-value argument."]
         #[inline(always)]
         pub const fn secondary_target(&self, n: usize) -> &SecondaryTarget {
             #[allow(clippy::no_effect)]
@@ -30645,7 +30645,7 @@ pub mod coex_hw_timer {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x04..0x1c - Project-assigned name. Secondary timer word. coex_hw_timer_set preserves the high byte and replaces the low 24 bits with the converted fourth timer-value argument."]
+        #[doc = "0x04..0x1c - Project-assigned name. Secondary timer word. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_set preserves the high byte and replaces the low 24 bits with the converted fourth timer-value argument."]
         #[inline(always)]
         pub fn secondary_target_iter(&self) -> impl Iterator<Item = &SecondaryTarget> {
             (0..6).map(move |n| unsafe {
@@ -30656,7 +30656,7 @@ pub mod coex_hw_timer {
                     .cast()
             })
         }
-        #[doc = "0x08..0x20 - Project-assigned name. coex_hw_timer_enable sets bit zero here after clearing bit zero in the paired disable-control word. coex_hw_timer_disable performs the inverse transaction."]
+        #[doc = "0x08..0x20 - Project-assigned name. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_enable sets bit zero here after clearing bit zero in the paired disable-control word. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_disable performs the inverse transaction."]
         #[inline(always)]
         pub const fn enable_control(&self, n: usize) -> &EnableControl {
             #[allow(clippy::no_effect)]
@@ -30670,7 +30670,7 @@ pub mod coex_hw_timer {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x08..0x20 - Project-assigned name. coex_hw_timer_enable sets bit zero here after clearing bit zero in the paired disable-control word. coex_hw_timer_disable performs the inverse transaction."]
+        #[doc = "0x08..0x20 - Project-assigned name. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_enable sets bit zero here after clearing bit zero in the paired disable-control word. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_disable performs the inverse transaction."]
         #[inline(always)]
         pub fn enable_control_iter(&self) -> impl Iterator<Item = &EnableControl> {
             (0..6).map(move |n| unsafe {
@@ -30681,7 +30681,7 @@ pub mod coex_hw_timer {
                     .cast()
             })
         }
-        #[doc = "0x0c..0x24 - Project-assigned name. coex_hw_timer_disable sets bit zero here after clearing bit zero in the paired enable-control word. coex_hw_timer_enable performs the inverse transaction."]
+        #[doc = "0x0c..0x24 - Project-assigned name. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_disable sets bit zero here after clearing bit zero in the paired enable-control word. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_enable performs the inverse transaction."]
         #[inline(always)]
         pub const fn disable_control(&self, n: usize) -> &DisableControl {
             #[allow(clippy::no_effect)]
@@ -30695,7 +30695,7 @@ pub mod coex_hw_timer {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x0c..0x24 - Project-assigned name. coex_hw_timer_disable sets bit zero here after clearing bit zero in the paired enable-control word. coex_hw_timer_enable performs the inverse transaction."]
+        #[doc = "0x0c..0x24 - Project-assigned name. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_disable sets bit zero here after clearing bit zero in the paired enable-control word. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_enable performs the inverse transaction."]
         #[inline(always)]
         pub fn disable_control_iter(&self) -> impl Iterator<Item = &DisableControl> {
             (0..6).map(move |n| unsafe {
@@ -30707,10 +30707,10 @@ pub mod coex_hw_timer {
             })
         }
     }
-    #[doc = "CONFIGURATION (rw) register accessor: Project-assigned name. Primary timer word. coex_hw_timer_set replaces both high nibbles and the low 24-bit tick image through separate fresh-read RMW operations. coex_hw_timer_force clears the low 24 bits; coex_hw_timer_unforce replaces them with 1000.\n\nYou can [`read`](crate::Reg::read) this register and get [`configuration::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`configuration::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@configuration`] module"]
+    #[doc = "CONFIGURATION (rw) register accessor: Project-assigned name. Primary timer word. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_set replaces both high nibbles and the low 24-bit tick image through separate fresh-read RMW operations. coex_hw_timer_force clears the low 24 bits; coex_hw_timer_unforce replaces them with 1000.\n\nYou can [`read`](crate::Reg::read) this register and get [`configuration::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`configuration::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@configuration`] module"]
     #[doc(alias = "CONFIGURATION")]
     pub type Configuration = crate::Reg<configuration::ConfigurationSpec>;
-    #[doc = "Project-assigned name. Primary timer word. coex_hw_timer_set replaces both high nibbles and the low 24-bit tick image through separate fresh-read RMW operations. coex_hw_timer_force clears the low 24 bits; coex_hw_timer_unforce replaces them with 1000."]
+    #[doc = "Project-assigned name. Primary timer word. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_set replaces both high nibbles and the low 24-bit tick image through separate fresh-read RMW operations. coex_hw_timer_force clears the low 24 bits; coex_hw_timer_unforce replaces them with 1000."]
     pub mod configuration {
         #[doc = "Register `CONFIGURATION%s` reader"]
         pub type R = crate::R<ConfigurationSpec>;
@@ -30720,17 +30720,17 @@ pub mod coex_hw_timer {
         pub type PrimaryTickImageR = crate::FieldReader<u32>;
         #[doc = "Field `PRIMARY_TICK_IMAGE` writer - Project-assigned name. Low 24 bits returned by coex_hw_timer_tick_get for the first timer value. The exact counter epoch and units remain part of the reviewed timer conversion rather than the register geometry."]
         pub type PrimaryTickImageW<'a, REG> = crate::FieldWriter<'a, REG, 24, u32, crate::Safe>;
-        #[doc = "Field `PARAMETER_2` reader - Project-assigned name. Low nibble of the third coex_hw_timer_set argument."]
+        #[doc = "Field `PARAMETER_2` reader - Project-assigned name. Low nibble of the third libcoexist\\[coexist_hw.o\\]::coex_hw_timer_set argument."]
         pub type Parameter2R = crate::FieldReader;
-        #[doc = "Field `PARAMETER_2` writer - Project-assigned name. Low nibble of the third coex_hw_timer_set argument."]
+        #[doc = "Field `PARAMETER_2` writer - Project-assigned name. Low nibble of the third libcoexist\\[coexist_hw.o\\]::coex_hw_timer_set argument."]
         pub type Parameter2W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
-        #[doc = "Field `PARAMETER_1` reader - Project-assigned name. Low two bits of the second coex_hw_timer_set argument. Bits 31:30 are preserved by the complete vendor RMW."]
+        #[doc = "Field `PARAMETER_1` reader - Project-assigned name. Low two bits of the second libcoexist\\[coexist_hw.o\\]::coex_hw_timer_set argument. Bits 31:30 are preserved by the complete vendor RMW."]
         pub type Parameter1R = crate::FieldReader;
-        #[doc = "Field `PARAMETER_1` writer - Project-assigned name. Low two bits of the second coex_hw_timer_set argument. Bits 31:30 are preserved by the complete vendor RMW."]
+        #[doc = "Field `PARAMETER_1` writer - Project-assigned name. Low two bits of the second libcoexist\\[coexist_hw.o\\]::coex_hw_timer_set argument. Bits 31:30 are preserved by the complete vendor RMW."]
         pub type Parameter1W<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
-        #[doc = "Field `BITS_30_31_OPAQUE` reader - Opaque: meaning not established. Bits preserved by coex_hw_timer_set while PARAMETER_1 is replaced."]
+        #[doc = "Field `BITS_30_31_OPAQUE` reader - Opaque: meaning not established. Bits preserved by libcoexist\\[coexist_hw.o\\]::coex_hw_timer_set while PARAMETER_1 is replaced."]
         pub type Bits30_31OpaqueR = crate::FieldReader;
-        #[doc = "Field `BITS_30_31_OPAQUE` writer - Opaque: meaning not established. Bits preserved by coex_hw_timer_set while PARAMETER_1 is replaced."]
+        #[doc = "Field `BITS_30_31_OPAQUE` writer - Opaque: meaning not established. Bits preserved by libcoexist\\[coexist_hw.o\\]::coex_hw_timer_set while PARAMETER_1 is replaced."]
         pub type Bits30_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
         impl R {
             #[doc = "Bits 0:23 - Project-assigned name. Low 24 bits returned by coex_hw_timer_tick_get for the first timer value. The exact counter epoch and units remain part of the reviewed timer conversion rather than the register geometry."]
@@ -30738,17 +30738,17 @@ pub mod coex_hw_timer {
             pub fn primary_tick_image(&self) -> PrimaryTickImageR {
                 PrimaryTickImageR::new(self.bits & 0x00ff_ffff)
             }
-            #[doc = "Bits 24:27 - Project-assigned name. Low nibble of the third coex_hw_timer_set argument."]
+            #[doc = "Bits 24:27 - Project-assigned name. Low nibble of the third libcoexist\\[coexist_hw.o\\]::coex_hw_timer_set argument."]
             #[inline(always)]
             pub fn parameter_2(&self) -> Parameter2R {
                 Parameter2R::new(((self.bits >> 24) & 0x0f) as u8)
             }
-            #[doc = "Bits 28:29 - Project-assigned name. Low two bits of the second coex_hw_timer_set argument. Bits 31:30 are preserved by the complete vendor RMW."]
+            #[doc = "Bits 28:29 - Project-assigned name. Low two bits of the second libcoexist\\[coexist_hw.o\\]::coex_hw_timer_set argument. Bits 31:30 are preserved by the complete vendor RMW."]
             #[inline(always)]
             pub fn parameter_1(&self) -> Parameter1R {
                 Parameter1R::new(((self.bits >> 28) & 3) as u8)
             }
-            #[doc = "Bits 30:31 - Opaque: meaning not established. Bits preserved by coex_hw_timer_set while PARAMETER_1 is replaced."]
+            #[doc = "Bits 30:31 - Opaque: meaning not established. Bits preserved by libcoexist\\[coexist_hw.o\\]::coex_hw_timer_set while PARAMETER_1 is replaced."]
             #[inline(always)]
             pub fn bits_30_31_opaque(&self) -> Bits30_31OpaqueR {
                 Bits30_31OpaqueR::new(((self.bits >> 30) & 3) as u8)
@@ -30760,23 +30760,23 @@ pub mod coex_hw_timer {
             pub fn primary_tick_image(&mut self) -> PrimaryTickImageW<'_, ConfigurationSpec> {
                 PrimaryTickImageW::new(self, 0)
             }
-            #[doc = "Bits 24:27 - Project-assigned name. Low nibble of the third coex_hw_timer_set argument."]
+            #[doc = "Bits 24:27 - Project-assigned name. Low nibble of the third libcoexist\\[coexist_hw.o\\]::coex_hw_timer_set argument."]
             #[inline(always)]
             pub fn parameter_2(&mut self) -> Parameter2W<'_, ConfigurationSpec> {
                 Parameter2W::new(self, 24)
             }
-            #[doc = "Bits 28:29 - Project-assigned name. Low two bits of the second coex_hw_timer_set argument. Bits 31:30 are preserved by the complete vendor RMW."]
+            #[doc = "Bits 28:29 - Project-assigned name. Low two bits of the second libcoexist\\[coexist_hw.o\\]::coex_hw_timer_set argument. Bits 31:30 are preserved by the complete vendor RMW."]
             #[inline(always)]
             pub fn parameter_1(&mut self) -> Parameter1W<'_, ConfigurationSpec> {
                 Parameter1W::new(self, 28)
             }
-            #[doc = "Bits 30:31 - Opaque: meaning not established. Bits preserved by coex_hw_timer_set while PARAMETER_1 is replaced."]
+            #[doc = "Bits 30:31 - Opaque: meaning not established. Bits preserved by libcoexist\\[coexist_hw.o\\]::coex_hw_timer_set while PARAMETER_1 is replaced."]
             #[inline(always)]
             pub fn bits_30_31_opaque(&mut self) -> Bits30_31OpaqueW<'_, ConfigurationSpec> {
                 Bits30_31OpaqueW::new(self, 30)
             }
         }
-        #[doc = "Project-assigned name. Primary timer word. coex_hw_timer_set replaces both high nibbles and the low 24-bit tick image through separate fresh-read RMW operations. coex_hw_timer_force clears the low 24 bits; coex_hw_timer_unforce replaces them with 1000.\n\nYou can [`read`](crate::Reg::read) this register and get [`configuration::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`configuration::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Primary timer word. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_set replaces both high nibbles and the low 24-bit tick image through separate fresh-read RMW operations. coex_hw_timer_force clears the low 24 bits; coex_hw_timer_unforce replaces them with 1000.\n\nYou can [`read`](crate::Reg::read) this register and get [`configuration::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`configuration::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ConfigurationSpec;
         impl crate::RegisterSpec for ConfigurationSpec {
             type Ux = u32;
@@ -30788,10 +30788,10 @@ pub mod coex_hw_timer {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SECONDARY_TARGET (rw) register accessor: Project-assigned name. Secondary timer word. coex_hw_timer_set preserves the high byte and replaces the low 24 bits with the converted fourth timer-value argument.\n\nYou can [`read`](crate::Reg::read) this register and get [`secondary_target::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`secondary_target::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@secondary_target`] module"]
+    #[doc = "SECONDARY_TARGET (rw) register accessor: Project-assigned name. Secondary timer word. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_set preserves the high byte and replaces the low 24 bits with the converted fourth timer-value argument.\n\nYou can [`read`](crate::Reg::read) this register and get [`secondary_target::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`secondary_target::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@secondary_target`] module"]
     #[doc(alias = "SECONDARY_TARGET")]
     pub type SecondaryTarget = crate::Reg<secondary_target::SecondaryTargetSpec>;
-    #[doc = "Project-assigned name. Secondary timer word. coex_hw_timer_set preserves the high byte and replaces the low 24 bits with the converted fourth timer-value argument."]
+    #[doc = "Project-assigned name. Secondary timer word. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_set preserves the high byte and replaces the low 24 bits with the converted fourth timer-value argument."]
     pub mod secondary_target {
         #[doc = "Register `SECONDARY_TARGET%s` reader"]
         pub type R = crate::R<SecondaryTargetSpec>;
@@ -30829,7 +30829,7 @@ pub mod coex_hw_timer {
                 Bits24_31OpaqueW::new(self, 24)
             }
         }
-        #[doc = "Project-assigned name. Secondary timer word. coex_hw_timer_set preserves the high byte and replaces the low 24 bits with the converted fourth timer-value argument.\n\nYou can [`read`](crate::Reg::read) this register and get [`secondary_target::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`secondary_target::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Secondary timer word. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_set preserves the high byte and replaces the low 24 bits with the converted fourth timer-value argument.\n\nYou can [`read`](crate::Reg::read) this register and get [`secondary_target::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`secondary_target::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SecondaryTargetSpec;
         impl crate::RegisterSpec for SecondaryTargetSpec {
             type Ux = u32;
@@ -30841,10 +30841,10 @@ pub mod coex_hw_timer {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "ENABLE_CONTROL (rw) register accessor: Project-assigned name. coex_hw_timer_enable sets bit zero here after clearing bit zero in the paired disable-control word. coex_hw_timer_disable performs the inverse transaction.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@enable_control`] module"]
+    #[doc = "ENABLE_CONTROL (rw) register accessor: Project-assigned name. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_enable sets bit zero here after clearing bit zero in the paired disable-control word. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_disable performs the inverse transaction.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@enable_control`] module"]
     #[doc(alias = "ENABLE_CONTROL")]
     pub type EnableControl = crate::Reg<enable_control::EnableControlSpec>;
-    #[doc = "Project-assigned name. coex_hw_timer_enable sets bit zero here after clearing bit zero in the paired disable-control word. coex_hw_timer_disable performs the inverse transaction."]
+    #[doc = "Project-assigned name. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_enable sets bit zero here after clearing bit zero in the paired disable-control word. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_disable performs the inverse transaction."]
     pub mod enable_control {
         #[doc = "Register `ENABLE_CONTROL%s` reader"]
         pub type R = crate::R<EnableControlSpec>;
@@ -30882,7 +30882,7 @@ pub mod coex_hw_timer {
                 Bits1_31OpaqueW::new(self, 1)
             }
         }
-        #[doc = "Project-assigned name. coex_hw_timer_enable sets bit zero here after clearing bit zero in the paired disable-control word. coex_hw_timer_disable performs the inverse transaction.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_enable sets bit zero here after clearing bit zero in the paired disable-control word. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_disable performs the inverse transaction.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct EnableControlSpec;
         impl crate::RegisterSpec for EnableControlSpec {
             type Ux = u32;
@@ -30894,10 +30894,10 @@ pub mod coex_hw_timer {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "DISABLE_CONTROL (rw) register accessor: Project-assigned name. coex_hw_timer_disable sets bit zero here after clearing bit zero in the paired enable-control word. coex_hw_timer_enable performs the inverse transaction.\n\nYou can [`read`](crate::Reg::read) this register and get [`disable_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`disable_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@disable_control`] module"]
+    #[doc = "DISABLE_CONTROL (rw) register accessor: Project-assigned name. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_disable sets bit zero here after clearing bit zero in the paired enable-control word. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_enable performs the inverse transaction.\n\nYou can [`read`](crate::Reg::read) this register and get [`disable_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`disable_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@disable_control`] module"]
     #[doc(alias = "DISABLE_CONTROL")]
     pub type DisableControl = crate::Reg<disable_control::DisableControlSpec>;
-    #[doc = "Project-assigned name. coex_hw_timer_disable sets bit zero here after clearing bit zero in the paired enable-control word. coex_hw_timer_enable performs the inverse transaction."]
+    #[doc = "Project-assigned name. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_disable sets bit zero here after clearing bit zero in the paired enable-control word. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_enable performs the inverse transaction."]
     pub mod disable_control {
         #[doc = "Register `DISABLE_CONTROL%s` reader"]
         pub type R = crate::R<DisableControlSpec>;
@@ -30935,7 +30935,7 @@ pub mod coex_hw_timer {
                 Bits1_31OpaqueW::new(self, 1)
             }
         }
-        #[doc = "Project-assigned name. coex_hw_timer_disable sets bit zero here after clearing bit zero in the paired enable-control word. coex_hw_timer_enable performs the inverse transaction.\n\nYou can [`read`](crate::Reg::read) this register and get [`disable_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`disable_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_disable sets bit zero here after clearing bit zero in the paired enable-control word. libcoexist\\[coexist_hw.o\\]::coex_hw_timer_enable performs the inverse transaction.\n\nYou can [`read`](crate::Reg::read) this register and get [`disable_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`disable_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct DisableControlSpec;
         impl crate::RegisterSpec for DisableControlSpec {
             type Ux = u32;
@@ -32185,22 +32185,22 @@ pub mod wifi_mac_cold_handshake {
         pub const fn control(&self) -> &Control {
             &self.control
         }
-        #[doc = "0x10 - Project-assigned name. hal_wdev_timer_target_enable selects timer zero with argument zero and replaces enable bit zero."]
+        #[doc = "0x10 - Project-assigned name. libpp\\[hal_tsf.o\\]::hal_wdev_timer_target_enable selects timer zero with argument zero and replaces enable bit zero."]
         #[inline(always)]
         pub const fn wdev_timer_target_0_control(&self) -> &WdevTimerTarget0Control {
             &self.wdev_timer_target_0_control
         }
-        #[doc = "0x14 - Project-assigned name. hal_wdev_timer_set_target selects timer zero with argument zero and writes the supplied 32-bit target."]
+        #[doc = "0x14 - Project-assigned name. libpp\\[hal_tsf.o\\]::hal_wdev_timer_set_target selects timer zero with argument zero and writes the supplied 32-bit target."]
         #[inline(always)]
         pub const fn wdev_timer_target_0_value(&self) -> &WdevTimerTarget0Value {
             &self.wdev_timer_target_0_value
         }
-        #[doc = "0x18 - Project-assigned name. hal_wdev_timer_target_enable selects timer one with argument one and replaces enable bit zero."]
+        #[doc = "0x18 - Project-assigned name. libpp\\[hal_tsf.o\\]::hal_wdev_timer_target_enable selects timer one with argument one and replaces enable bit zero."]
         #[inline(always)]
         pub const fn wdev_timer_target_1_control(&self) -> &WdevTimerTarget1Control {
             &self.wdev_timer_target_1_control
         }
-        #[doc = "0x1c - Project-assigned name. hal_wdev_timer_set_target selects timer one with argument one and writes the supplied 32-bit target."]
+        #[doc = "0x1c - Project-assigned name. libpp\\[hal_tsf.o\\]::hal_wdev_timer_set_target selects timer one with argument one and writes the supplied 32-bit target."]
         #[inline(always)]
         pub const fn wdev_timer_target_1_value(&self) -> &WdevTimerTarget1Value {
             &self.wdev_timer_target_1_value
@@ -32266,11 +32266,11 @@ pub mod wifi_mac_cold_handshake {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "WDEV_TIMER_TARGET_0_CONTROL (rw) register accessor: Project-assigned name. hal_wdev_timer_target_enable selects timer zero with argument zero and replaces enable bit zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`wdev_timer_target_0_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wdev_timer_target_0_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@wdev_timer_target_0_control`] module"]
+    #[doc = "WDEV_TIMER_TARGET_0_CONTROL (rw) register accessor: Project-assigned name. libpp\\[hal_tsf.o\\]::hal_wdev_timer_target_enable selects timer zero with argument zero and replaces enable bit zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`wdev_timer_target_0_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wdev_timer_target_0_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@wdev_timer_target_0_control`] module"]
     #[doc(alias = "WDEV_TIMER_TARGET_0_CONTROL")]
     pub type WdevTimerTarget0Control =
         crate::Reg<wdev_timer_target_0_control::WdevTimerTarget0ControlSpec>;
-    #[doc = "Project-assigned name. hal_wdev_timer_target_enable selects timer zero with argument zero and replaces enable bit zero."]
+    #[doc = "Project-assigned name. libpp\\[hal_tsf.o\\]::hal_wdev_timer_target_enable selects timer zero with argument zero and replaces enable bit zero."]
     pub mod wdev_timer_target_0_control {
         #[doc = "Register `WDEV_TIMER_TARGET_0_CONTROL` reader"]
         pub type R = crate::R<WdevTimerTarget0ControlSpec>;
@@ -32294,7 +32294,7 @@ pub mod wifi_mac_cold_handshake {
                 EnableW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. hal_wdev_timer_target_enable selects timer zero with argument zero and replaces enable bit zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`wdev_timer_target_0_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wdev_timer_target_0_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. libpp\\[hal_tsf.o\\]::hal_wdev_timer_target_enable selects timer zero with argument zero and replaces enable bit zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`wdev_timer_target_0_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wdev_timer_target_0_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct WdevTimerTarget0ControlSpec;
         impl crate::RegisterSpec for WdevTimerTarget0ControlSpec {
             type Ux = u32;
@@ -32306,11 +32306,11 @@ pub mod wifi_mac_cold_handshake {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "WDEV_TIMER_TARGET_0_VALUE (w) register accessor: Project-assigned name. hal_wdev_timer_set_target selects timer zero with argument zero and writes the supplied 32-bit target.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wdev_timer_target_0_value::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@wdev_timer_target_0_value`] module"]
+    #[doc = "WDEV_TIMER_TARGET_0_VALUE (w) register accessor: Project-assigned name. libpp\\[hal_tsf.o\\]::hal_wdev_timer_set_target selects timer zero with argument zero and writes the supplied 32-bit target.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wdev_timer_target_0_value::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@wdev_timer_target_0_value`] module"]
     #[doc(alias = "WDEV_TIMER_TARGET_0_VALUE")]
     pub type WdevTimerTarget0Value =
         crate::Reg<wdev_timer_target_0_value::WdevTimerTarget0ValueSpec>;
-    #[doc = "Project-assigned name. hal_wdev_timer_set_target selects timer zero with argument zero and writes the supplied 32-bit target."]
+    #[doc = "Project-assigned name. libpp\\[hal_tsf.o\\]::hal_wdev_timer_set_target selects timer zero with argument zero and writes the supplied 32-bit target."]
     pub mod wdev_timer_target_0_value {
         #[doc = "Register `WDEV_TIMER_TARGET_0_VALUE` writer"]
         pub type W = crate::W<WdevTimerTarget0ValueSpec>;
@@ -32323,7 +32323,7 @@ pub mod wifi_mac_cold_handshake {
                 ValueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. hal_wdev_timer_set_target selects timer zero with argument zero and writes the supplied 32-bit target.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wdev_timer_target_0_value::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. libpp\\[hal_tsf.o\\]::hal_wdev_timer_set_target selects timer zero with argument zero and writes the supplied 32-bit target.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wdev_timer_target_0_value::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct WdevTimerTarget0ValueSpec;
         impl crate::RegisterSpec for WdevTimerTarget0ValueSpec {
             type Ux = u32;
@@ -32333,11 +32333,11 @@ pub mod wifi_mac_cold_handshake {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "WDEV_TIMER_TARGET_1_CONTROL (rw) register accessor: Project-assigned name. hal_wdev_timer_target_enable selects timer one with argument one and replaces enable bit zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`wdev_timer_target_1_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wdev_timer_target_1_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@wdev_timer_target_1_control`] module"]
+    #[doc = "WDEV_TIMER_TARGET_1_CONTROL (rw) register accessor: Project-assigned name. libpp\\[hal_tsf.o\\]::hal_wdev_timer_target_enable selects timer one with argument one and replaces enable bit zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`wdev_timer_target_1_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wdev_timer_target_1_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@wdev_timer_target_1_control`] module"]
     #[doc(alias = "WDEV_TIMER_TARGET_1_CONTROL")]
     pub type WdevTimerTarget1Control =
         crate::Reg<wdev_timer_target_1_control::WdevTimerTarget1ControlSpec>;
-    #[doc = "Project-assigned name. hal_wdev_timer_target_enable selects timer one with argument one and replaces enable bit zero."]
+    #[doc = "Project-assigned name. libpp\\[hal_tsf.o\\]::hal_wdev_timer_target_enable selects timer one with argument one and replaces enable bit zero."]
     pub mod wdev_timer_target_1_control {
         #[doc = "Register `WDEV_TIMER_TARGET_1_CONTROL` reader"]
         pub type R = crate::R<WdevTimerTarget1ControlSpec>;
@@ -32361,7 +32361,7 @@ pub mod wifi_mac_cold_handshake {
                 EnableW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. hal_wdev_timer_target_enable selects timer one with argument one and replaces enable bit zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`wdev_timer_target_1_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wdev_timer_target_1_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. libpp\\[hal_tsf.o\\]::hal_wdev_timer_target_enable selects timer one with argument one and replaces enable bit zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`wdev_timer_target_1_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wdev_timer_target_1_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct WdevTimerTarget1ControlSpec;
         impl crate::RegisterSpec for WdevTimerTarget1ControlSpec {
             type Ux = u32;
@@ -32373,11 +32373,11 @@ pub mod wifi_mac_cold_handshake {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "WDEV_TIMER_TARGET_1_VALUE (w) register accessor: Project-assigned name. hal_wdev_timer_set_target selects timer one with argument one and writes the supplied 32-bit target.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wdev_timer_target_1_value::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@wdev_timer_target_1_value`] module"]
+    #[doc = "WDEV_TIMER_TARGET_1_VALUE (w) register accessor: Project-assigned name. libpp\\[hal_tsf.o\\]::hal_wdev_timer_set_target selects timer one with argument one and writes the supplied 32-bit target.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wdev_timer_target_1_value::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@wdev_timer_target_1_value`] module"]
     #[doc(alias = "WDEV_TIMER_TARGET_1_VALUE")]
     pub type WdevTimerTarget1Value =
         crate::Reg<wdev_timer_target_1_value::WdevTimerTarget1ValueSpec>;
-    #[doc = "Project-assigned name. hal_wdev_timer_set_target selects timer one with argument one and writes the supplied 32-bit target."]
+    #[doc = "Project-assigned name. libpp\\[hal_tsf.o\\]::hal_wdev_timer_set_target selects timer one with argument one and writes the supplied 32-bit target."]
     pub mod wdev_timer_target_1_value {
         #[doc = "Register `WDEV_TIMER_TARGET_1_VALUE` writer"]
         pub type W = crate::W<WdevTimerTarget1ValueSpec>;
@@ -32390,7 +32390,7 @@ pub mod wifi_mac_cold_handshake {
                 ValueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. hal_wdev_timer_set_target selects timer one with argument one and writes the supplied 32-bit target.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wdev_timer_target_1_value::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. libpp\\[hal_tsf.o\\]::hal_wdev_timer_set_target selects timer one with argument one and writes the supplied 32-bit target.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wdev_timer_target_1_value::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct WdevTimerTarget1ValueSpec;
         impl crate::RegisterSpec for WdevTimerTarget1ValueSpec {
             type Ux = u32;
@@ -32525,7 +32525,7 @@ pub mod wifi_mac_rx_dma {
         pub const fn rx_descriptor_base(&self) -> &RxDescriptorBase {
             &self.rx_descriptor_base
         }
-        #[doc = "0x88 - Project-assigned name. Complete hardware current/next descriptor word. The low 20 bits are the reviewed address projection; meanings of bits 31:20 remain unknown. Complete ROM wDev_AppendRxBlocks compares the entire 32-bit word with zero after reload completion, not only ADDRESS_LOW, before it may read LAST and repair RX_DESCRIPTOR_BASE."]
+        #[doc = "0x88 - Project-assigned name. Complete hardware current/next descriptor word. The low 20 bits are the reviewed address projection; meanings of bits 31:20 remain unknown. Complete ROM rom\\[\\]::wDev_AppendRxBlocks compares the entire 32-bit word with zero after reload completion, not only ADDRESS_LOW, before it may read LAST and repair RX_DESCRIPTOR_BASE."]
         #[inline(always)]
         pub const fn rx_next_descriptor(&self) -> &RxNextDescriptor {
             &self.rx_next_descriptor
@@ -32766,7 +32766,7 @@ pub mod wifi_mac_rx_dma {
         pub const fn rx_block_ack_entry0_peer_head(&self) -> &RxBlockAckEntryPeerHead {
             self.rx_block_ack_entry_peer_head(7)
         }
-        #[doc = "0x184..0x1a4 - Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
+        #[doc = "0x184..0x1a4 - Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and complete libpp\\[hal_ampdu.o\\]::hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
         #[doc = ""]
         #[doc = "<div class=\"warning\">`n` is the index of register in the array. `n == 0` corresponds to `RX_BLOCK_ACK_ENTRY7_CURRENT_SEQUENCE` register.</div>"]
         #[inline(always)]
@@ -32785,7 +32785,7 @@ pub mod wifi_mac_rx_dma {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x184..0x1a4 - Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
+        #[doc = "0x184..0x1a4 - Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and complete libpp\\[hal_ampdu.o\\]::hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
         #[inline(always)]
         pub fn rx_block_ack_entry_current_sequence_iter(
             &self,
@@ -32798,56 +32798,56 @@ pub mod wifi_mac_rx_dma {
                     .cast()
             })
         }
-        #[doc = "0x184 - Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
+        #[doc = "0x184 - Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and complete libpp\\[hal_ampdu.o\\]::hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
         #[inline(always)]
         pub const fn rx_block_ack_entry7_current_sequence(
             &self,
         ) -> &RxBlockAckEntryCurrentSequence {
             self.rx_block_ack_entry_current_sequence(0)
         }
-        #[doc = "0x1a8 - Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
+        #[doc = "0x1a8 - Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and complete libpp\\[hal_ampdu.o\\]::hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
         #[inline(always)]
         pub const fn rx_block_ack_entry6_current_sequence(
             &self,
         ) -> &RxBlockAckEntryCurrentSequence {
             self.rx_block_ack_entry_current_sequence(1)
         }
-        #[doc = "0x1cc - Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
+        #[doc = "0x1cc - Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and complete libpp\\[hal_ampdu.o\\]::hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
         #[inline(always)]
         pub const fn rx_block_ack_entry5_current_sequence(
             &self,
         ) -> &RxBlockAckEntryCurrentSequence {
             self.rx_block_ack_entry_current_sequence(2)
         }
-        #[doc = "0x1f0 - Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
+        #[doc = "0x1f0 - Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and complete libpp\\[hal_ampdu.o\\]::hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
         #[inline(always)]
         pub const fn rx_block_ack_entry4_current_sequence(
             &self,
         ) -> &RxBlockAckEntryCurrentSequence {
             self.rx_block_ack_entry_current_sequence(3)
         }
-        #[doc = "0x214 - Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
+        #[doc = "0x214 - Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and complete libpp\\[hal_ampdu.o\\]::hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
         #[inline(always)]
         pub const fn rx_block_ack_entry3_current_sequence(
             &self,
         ) -> &RxBlockAckEntryCurrentSequence {
             self.rx_block_ack_entry_current_sequence(4)
         }
-        #[doc = "0x238 - Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
+        #[doc = "0x238 - Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and complete libpp\\[hal_ampdu.o\\]::hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
         #[inline(always)]
         pub const fn rx_block_ack_entry2_current_sequence(
             &self,
         ) -> &RxBlockAckEntryCurrentSequence {
             self.rx_block_ack_entry_current_sequence(5)
         }
-        #[doc = "0x25c - Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
+        #[doc = "0x25c - Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and complete libpp\\[hal_ampdu.o\\]::hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
         #[inline(always)]
         pub const fn rx_block_ack_entry1_current_sequence(
             &self,
         ) -> &RxBlockAckEntryCurrentSequence {
             self.rx_block_ack_entry_current_sequence(6)
         }
-        #[doc = "0x280 - Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
+        #[doc = "0x280 - Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and complete libpp\\[hal_ampdu.o\\]::hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
         #[inline(always)]
         pub const fn rx_block_ack_entry0_current_sequence(
             &self,
@@ -32942,7 +32942,7 @@ pub mod wifi_mac_rx_dma {
         ) -> &RxBlockAckEntryStartSequenceLoad {
             self.rx_block_ack_entry_start_sequence_load(7)
         }
-        #[doc = "0x18c..0x1ac - Project-assigned name. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
+        #[doc = "0x18c..0x1ac - Project-assigned name. Hardware-maintained low reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
         #[doc = ""]
         #[doc = "<div class=\"warning\">`n` is the index of register in the array. `n == 0` corresponds to `RX_BLOCK_ACK_ENTRY7_BITMAP_LOW_STATUS` register.</div>"]
         #[inline(always)]
@@ -32961,7 +32961,7 @@ pub mod wifi_mac_rx_dma {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x18c..0x1ac - Project-assigned name. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
+        #[doc = "0x18c..0x1ac - Project-assigned name. Hardware-maintained low reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
         #[inline(always)]
         pub fn rx_block_ack_entry_bitmap_low_status_iter(
             &self,
@@ -32974,56 +32974,56 @@ pub mod wifi_mac_rx_dma {
                     .cast()
             })
         }
-        #[doc = "0x18c - Project-assigned name. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
+        #[doc = "0x18c - Project-assigned name. Hardware-maintained low reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
         #[inline(always)]
         pub const fn rx_block_ack_entry7_bitmap_low_status(
             &self,
         ) -> &RxBlockAckEntryBitmapLowStatus {
             self.rx_block_ack_entry_bitmap_low_status(0)
         }
-        #[doc = "0x1b0 - Project-assigned name. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
+        #[doc = "0x1b0 - Project-assigned name. Hardware-maintained low reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
         #[inline(always)]
         pub const fn rx_block_ack_entry6_bitmap_low_status(
             &self,
         ) -> &RxBlockAckEntryBitmapLowStatus {
             self.rx_block_ack_entry_bitmap_low_status(1)
         }
-        #[doc = "0x1d4 - Project-assigned name. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
+        #[doc = "0x1d4 - Project-assigned name. Hardware-maintained low reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
         #[inline(always)]
         pub const fn rx_block_ack_entry5_bitmap_low_status(
             &self,
         ) -> &RxBlockAckEntryBitmapLowStatus {
             self.rx_block_ack_entry_bitmap_low_status(2)
         }
-        #[doc = "0x1f8 - Project-assigned name. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
+        #[doc = "0x1f8 - Project-assigned name. Hardware-maintained low reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
         #[inline(always)]
         pub const fn rx_block_ack_entry4_bitmap_low_status(
             &self,
         ) -> &RxBlockAckEntryBitmapLowStatus {
             self.rx_block_ack_entry_bitmap_low_status(3)
         }
-        #[doc = "0x21c - Project-assigned name. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
+        #[doc = "0x21c - Project-assigned name. Hardware-maintained low reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
         #[inline(always)]
         pub const fn rx_block_ack_entry3_bitmap_low_status(
             &self,
         ) -> &RxBlockAckEntryBitmapLowStatus {
             self.rx_block_ack_entry_bitmap_low_status(4)
         }
-        #[doc = "0x240 - Project-assigned name. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
+        #[doc = "0x240 - Project-assigned name. Hardware-maintained low reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
         #[inline(always)]
         pub const fn rx_block_ack_entry2_bitmap_low_status(
             &self,
         ) -> &RxBlockAckEntryBitmapLowStatus {
             self.rx_block_ack_entry_bitmap_low_status(5)
         }
-        #[doc = "0x264 - Project-assigned name. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
+        #[doc = "0x264 - Project-assigned name. Hardware-maintained low reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
         #[inline(always)]
         pub const fn rx_block_ack_entry1_bitmap_low_status(
             &self,
         ) -> &RxBlockAckEntryBitmapLowStatus {
             self.rx_block_ack_entry_bitmap_low_status(6)
         }
-        #[doc = "0x288 - Project-assigned name. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
+        #[doc = "0x288 - Project-assigned name. Hardware-maintained low reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
         #[inline(always)]
         pub const fn rx_block_ack_entry0_bitmap_low_status(
             &self,
@@ -33102,7 +33102,7 @@ pub mod wifi_mac_rx_dma {
         pub const fn rx_block_ack_entry0_bitmap_low_load(&self) -> &RxBlockAckEntryBitmapLowLoad {
             self.rx_block_ack_entry_bitmap_low_load(7)
         }
-        #[doc = "0x194..0x1b4 - Project-assigned name. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
+        #[doc = "0x194..0x1b4 - Project-assigned name. Hardware-maintained high reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
         #[doc = ""]
         #[doc = "<div class=\"warning\">`n` is the index of register in the array. `n == 0` corresponds to `RX_BLOCK_ACK_ENTRY7_BITMAP_HIGH_STATUS` register.</div>"]
         #[inline(always)]
@@ -33121,7 +33121,7 @@ pub mod wifi_mac_rx_dma {
             }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x194..0x1b4 - Project-assigned name. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
+        #[doc = "0x194..0x1b4 - Project-assigned name. Hardware-maintained high reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
         #[inline(always)]
         pub fn rx_block_ack_entry_bitmap_high_status_iter(
             &self,
@@ -33134,56 +33134,56 @@ pub mod wifi_mac_rx_dma {
                     .cast()
             })
         }
-        #[doc = "0x194 - Project-assigned name. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
+        #[doc = "0x194 - Project-assigned name. Hardware-maintained high reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
         #[inline(always)]
         pub const fn rx_block_ack_entry7_bitmap_high_status(
             &self,
         ) -> &RxBlockAckEntryBitmapHighStatus {
             self.rx_block_ack_entry_bitmap_high_status(0)
         }
-        #[doc = "0x1b8 - Project-assigned name. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
+        #[doc = "0x1b8 - Project-assigned name. Hardware-maintained high reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
         #[inline(always)]
         pub const fn rx_block_ack_entry6_bitmap_high_status(
             &self,
         ) -> &RxBlockAckEntryBitmapHighStatus {
             self.rx_block_ack_entry_bitmap_high_status(1)
         }
-        #[doc = "0x1dc - Project-assigned name. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
+        #[doc = "0x1dc - Project-assigned name. Hardware-maintained high reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
         #[inline(always)]
         pub const fn rx_block_ack_entry5_bitmap_high_status(
             &self,
         ) -> &RxBlockAckEntryBitmapHighStatus {
             self.rx_block_ack_entry_bitmap_high_status(2)
         }
-        #[doc = "0x200 - Project-assigned name. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
+        #[doc = "0x200 - Project-assigned name. Hardware-maintained high reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
         #[inline(always)]
         pub const fn rx_block_ack_entry4_bitmap_high_status(
             &self,
         ) -> &RxBlockAckEntryBitmapHighStatus {
             self.rx_block_ack_entry_bitmap_high_status(3)
         }
-        #[doc = "0x224 - Project-assigned name. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
+        #[doc = "0x224 - Project-assigned name. Hardware-maintained high reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
         #[inline(always)]
         pub const fn rx_block_ack_entry3_bitmap_high_status(
             &self,
         ) -> &RxBlockAckEntryBitmapHighStatus {
             self.rx_block_ack_entry_bitmap_high_status(4)
         }
-        #[doc = "0x248 - Project-assigned name. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
+        #[doc = "0x248 - Project-assigned name. Hardware-maintained high reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
         #[inline(always)]
         pub const fn rx_block_ack_entry2_bitmap_high_status(
             &self,
         ) -> &RxBlockAckEntryBitmapHighStatus {
             self.rx_block_ack_entry_bitmap_high_status(5)
         }
-        #[doc = "0x26c - Project-assigned name. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
+        #[doc = "0x26c - Project-assigned name. Hardware-maintained high reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
         #[inline(always)]
         pub const fn rx_block_ack_entry1_bitmap_high_status(
             &self,
         ) -> &RxBlockAckEntryBitmapHighStatus {
             self.rx_block_ack_entry_bitmap_high_status(6)
         }
-        #[doc = "0x290 - Project-assigned name. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
+        #[doc = "0x290 - Project-assigned name. Hardware-maintained high reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
         #[inline(always)]
         pub const fn rx_block_ack_entry0_bitmap_high_status(
             &self,
@@ -33649,9 +33649,9 @@ pub mod wifi_mac_rx_dma {
         pub type Bit27OpaqueR = crate::BitReader;
         #[doc = "Field `BIT_27_OPAQUE` writer - Opaque: meaning not established. Complete hal_mac_set_rxbuf_reload_use_hw_beacon_enable sets bit 27 through one fresh-read RMW."]
         pub type Bit27OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `WALKER_ENABLE` reader - Project-assigned name. Set by hal_mac_rx_enable and cleared by hal_mac_rx_disable; gates the RX descriptor walker."]
+        #[doc = "Field `WALKER_ENABLE` reader - Project-assigned name. Set by libpp\\[hal_mac.o\\]::hal_mac_rx_enable and cleared by libpp\\[hal_mac.o\\]::hal_mac_rx_disable; gates the RX descriptor walker."]
         pub type WalkerEnableR = crate::BitReader;
-        #[doc = "Field `WALKER_ENABLE` writer - Project-assigned name. Set by hal_mac_rx_enable and cleared by hal_mac_rx_disable; gates the RX descriptor walker."]
+        #[doc = "Field `WALKER_ENABLE` writer - Project-assigned name. Set by libpp\\[hal_mac.o\\]::hal_mac_rx_enable and cleared by libpp\\[hal_mac.o\\]::hal_mac_rx_disable; gates the RX descriptor walker."]
         pub type WalkerEnableW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bit 0 - Project-assigned name. Write one after publishing old_tail.next to make a prepared live-list append visible. Hardware clears the bit after accepting the append."]
@@ -33664,7 +33664,7 @@ pub mod wifi_mac_rx_dma {
             pub fn bit_27_opaque(&self) -> Bit27OpaqueR {
                 Bit27OpaqueR::new(((self.bits >> 27) & 1) != 0)
             }
-            #[doc = "Bit 31 - Project-assigned name. Set by hal_mac_rx_enable and cleared by hal_mac_rx_disable; gates the RX descriptor walker."]
+            #[doc = "Bit 31 - Project-assigned name. Set by libpp\\[hal_mac.o\\]::hal_mac_rx_enable and cleared by libpp\\[hal_mac.o\\]::hal_mac_rx_disable; gates the RX descriptor walker."]
             #[inline(always)]
             pub fn walker_enable(&self) -> WalkerEnableR {
                 WalkerEnableR::new(((self.bits >> 31) & 1) != 0)
@@ -33683,7 +33683,7 @@ pub mod wifi_mac_rx_dma {
             pub fn bit_27_opaque(&mut self) -> Bit27OpaqueW<'_, RxControlSpec> {
                 Bit27OpaqueW::new(self, 27)
             }
-            #[doc = "Bit 31 - Project-assigned name. Set by hal_mac_rx_enable and cleared by hal_mac_rx_disable; gates the RX descriptor walker."]
+            #[doc = "Bit 31 - Project-assigned name. Set by libpp\\[hal_mac.o\\]::hal_mac_rx_enable and cleared by libpp\\[hal_mac.o\\]::hal_mac_rx_disable; gates the RX descriptor walker."]
             #[inline(always)]
             pub fn walker_enable(&mut self) -> WalkerEnableW<'_, RxControlSpec> {
                 WalkerEnableW::new(self, 31)
@@ -33740,16 +33740,16 @@ pub mod wifi_mac_rx_dma {
             type Safety = crate::Safe;
         }
     }
-    #[doc = "RX_NEXT_DESCRIPTOR (r) register accessor: Project-assigned name. Complete hardware current/next descriptor word. The low 20 bits are the reviewed address projection; meanings of bits 31:20 remain unknown. Complete ROM wDev_AppendRxBlocks compares the entire 32-bit word with zero after reload completion, not only ADDRESS_LOW, before it may read LAST and repair RX_DESCRIPTOR_BASE.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_next_descriptor::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_next_descriptor`] module"]
+    #[doc = "RX_NEXT_DESCRIPTOR (r) register accessor: Project-assigned name. Complete hardware current/next descriptor word. The low 20 bits are the reviewed address projection; meanings of bits 31:20 remain unknown. Complete ROM rom\\[\\]::wDev_AppendRxBlocks compares the entire 32-bit word with zero after reload completion, not only ADDRESS_LOW, before it may read LAST and repair RX_DESCRIPTOR_BASE.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_next_descriptor::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_next_descriptor`] module"]
     #[doc(alias = "RX_NEXT_DESCRIPTOR")]
     pub type RxNextDescriptor = crate::Reg<rx_next_descriptor::RxNextDescriptorSpec>;
-    #[doc = "Project-assigned name. Complete hardware current/next descriptor word. The low 20 bits are the reviewed address projection; meanings of bits 31:20 remain unknown. Complete ROM wDev_AppendRxBlocks compares the entire 32-bit word with zero after reload completion, not only ADDRESS_LOW, before it may read LAST and repair RX_DESCRIPTOR_BASE."]
+    #[doc = "Project-assigned name. Complete hardware current/next descriptor word. The low 20 bits are the reviewed address projection; meanings of bits 31:20 remain unknown. Complete ROM rom\\[\\]::wDev_AppendRxBlocks compares the entire 32-bit word with zero after reload completion, not only ADDRESS_LOW, before it may read LAST and repair RX_DESCRIPTOR_BASE."]
     pub mod rx_next_descriptor {
         #[doc = "Register `RX_NEXT_DESCRIPTOR` reader"]
         pub type R = crate::R<RxNextDescriptorSpec>;
         #[doc = "Field `ADDRESS_LOW` reader - Project-assigned name."]
         pub type AddressLowR = crate::FieldReader<u32>;
-        #[doc = "Field `BITS_20_31_OPAQUE` reader - Opaque: meaning not established. Unassigned upper state retained by the complete-word zero predicate in wDev_AppendRxBlocks. This is deliberately exposed separately from ADDRESS_LOW so production code never reconstructs or masks a register image."]
+        #[doc = "Field `BITS_20_31_OPAQUE` reader - Opaque: meaning not established. Unassigned upper state retained by the complete-word zero predicate in rom\\[\\]::wDev_AppendRxBlocks. This is deliberately exposed separately from ADDRESS_LOW so production code never reconstructs or masks a register image."]
         pub type Bits20_31OpaqueR = crate::FieldReader<u16>;
         impl R {
             #[doc = "Bits 0:19 - Project-assigned name."]
@@ -33757,13 +33757,13 @@ pub mod wifi_mac_rx_dma {
             pub fn address_low(&self) -> AddressLowR {
                 AddressLowR::new(self.bits & 0x000f_ffff)
             }
-            #[doc = "Bits 20:31 - Opaque: meaning not established. Unassigned upper state retained by the complete-word zero predicate in wDev_AppendRxBlocks. This is deliberately exposed separately from ADDRESS_LOW so production code never reconstructs or masks a register image."]
+            #[doc = "Bits 20:31 - Opaque: meaning not established. Unassigned upper state retained by the complete-word zero predicate in rom\\[\\]::wDev_AppendRxBlocks. This is deliberately exposed separately from ADDRESS_LOW so production code never reconstructs or masks a register image."]
             #[inline(always)]
             pub fn bits_20_31_opaque(&self) -> Bits20_31OpaqueR {
                 Bits20_31OpaqueR::new(((self.bits >> 20) & 0x0fff) as u16)
             }
         }
-        #[doc = "Project-assigned name. Complete hardware current/next descriptor word. The low 20 bits are the reviewed address projection; meanings of bits 31:20 remain unknown. Complete ROM wDev_AppendRxBlocks compares the entire 32-bit word with zero after reload completion, not only ADDRESS_LOW, before it may read LAST and repair RX_DESCRIPTOR_BASE.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_next_descriptor::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Complete hardware current/next descriptor word. The low 20 bits are the reviewed address projection; meanings of bits 31:20 remain unknown. Complete ROM rom\\[\\]::wDev_AppendRxBlocks compares the entire 32-bit word with zero after reload completion, not only ADDRESS_LOW, before it may read LAST and repair RX_DESCRIPTOR_BASE.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_next_descriptor::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxNextDescriptorSpec;
         impl crate::RegisterSpec for RxNextDescriptorSpec {
             type Ux = u32;
@@ -35980,11 +35980,11 @@ pub mod wifi_mac_rx_dma {
             type Safety = crate::Safe;
         }
     }
-    #[doc = "RX_BLOCK_ACK_ENTRY_CURRENT_SEQUENCE (r) register accessor: Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_current_sequence::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_entry_current_sequence`] module"]
+    #[doc = "RX_BLOCK_ACK_ENTRY_CURRENT_SEQUENCE (r) register accessor: Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and complete libpp\\[hal_ampdu.o\\]::hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_current_sequence::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_entry_current_sequence`] module"]
     #[doc(alias = "RX_BLOCK_ACK_ENTRY_CURRENT_SEQUENCE")]
     pub type RxBlockAckEntryCurrentSequence =
         crate::Reg<rx_block_ack_entry_current_sequence::RxBlockAckEntryCurrentSequenceSpec>;
-    #[doc = "Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
+    #[doc = "Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and complete libpp\\[hal_ampdu.o\\]::hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."]
     pub mod rx_block_ack_entry_current_sequence {
         #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_CURRENT_SEQUENCE` reader"]
         pub type R = crate::R<RxBlockAckEntryCurrentSequenceSpec>;
@@ -35997,7 +35997,7 @@ pub mod wifi_mac_rx_dma {
                 SequenceR::new((self.bits & 0x0fff) as u16)
             }
         }
-        #[doc = "Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_current_sequence::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Hardware-maintained twelve-bit receive/reorder sequence state. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and complete libpp\\[hal_ampdu.o\\]::hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_current_sequence::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxBlockAckEntryCurrentSequenceSpec;
         impl crate::RegisterSpec for RxBlockAckEntryCurrentSequenceSpec {
             type Ux = u32;
@@ -36045,11 +36045,11 @@ pub mod wifi_mac_rx_dma {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_BLOCK_ACK_ENTRY_BITMAP_LOW_STATUS (r) register accessor: Project-assigned name. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_bitmap_low_status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_entry_bitmap_low_status`] module"]
+    #[doc = "RX_BLOCK_ACK_ENTRY_BITMAP_LOW_STATUS (r) register accessor: Project-assigned name. Hardware-maintained low reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_bitmap_low_status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_entry_bitmap_low_status`] module"]
     #[doc(alias = "RX_BLOCK_ACK_ENTRY_BITMAP_LOW_STATUS")]
     pub type RxBlockAckEntryBitmapLowStatus =
         crate::Reg<rx_block_ack_entry_bitmap_low_status::RxBlockAckEntryBitmapLowStatusSpec>;
-    #[doc = "Project-assigned name. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
+    #[doc = "Project-assigned name. Hardware-maintained low reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."]
     pub mod rx_block_ack_entry_bitmap_low_status {
         #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_BITMAP_LOW_STATUS` reader"]
         pub type R = crate::R<RxBlockAckEntryBitmapLowStatusSpec>;
@@ -36062,7 +36062,7 @@ pub mod wifi_mac_rx_dma {
                 BitmapR::new(self.bits)
             }
         }
-        #[doc = "Project-assigned name. Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_bitmap_low_status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Hardware-maintained low reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_bitmap_low_status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxBlockAckEntryBitmapLowStatusSpec;
         impl crate::RegisterSpec for RxBlockAckEntryBitmapLowStatusSpec {
             type Ux = u32;
@@ -36110,11 +36110,11 @@ pub mod wifi_mac_rx_dma {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_BLOCK_ACK_ENTRY_BITMAP_HIGH_STATUS (r) register accessor: Project-assigned name. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_bitmap_high_status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_entry_bitmap_high_status`] module"]
+    #[doc = "RX_BLOCK_ACK_ENTRY_BITMAP_HIGH_STATUS (r) register accessor: Project-assigned name. Hardware-maintained high reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_bitmap_high_status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_entry_bitmap_high_status`] module"]
     #[doc(alias = "RX_BLOCK_ACK_ENTRY_BITMAP_HIGH_STATUS")]
     pub type RxBlockAckEntryBitmapHighStatus =
         crate::Reg<rx_block_ack_entry_bitmap_high_status::RxBlockAckEntryBitmapHighStatusSpec>;
-    #[doc = "Project-assigned name. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
+    #[doc = "Project-assigned name. Hardware-maintained high reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."]
     pub mod rx_block_ack_entry_bitmap_high_status {
         #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_BITMAP_HIGH_STATUS` reader"]
         pub type R = crate::R<RxBlockAckEntryBitmapHighStatusSpec>;
@@ -36127,7 +36127,7 @@ pub mod wifi_mac_rx_dma {
                 BitmapR::new(self.bits)
             }
         }
-        #[doc = "Project-assigned name. Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_bitmap_high_status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Hardware-maintained high reorder bitmap. Complete libpp\\[hal_ampdu.o\\]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_bitmap_high_status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxBlockAckEntryBitmapHighStatusSpec;
         impl crate::RegisterSpec for RxBlockAckEntryBitmapHighStatusSpec {
             type Ux = u32;

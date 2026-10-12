@@ -6,8 +6,8 @@
 //! observation so an outer owner can wait and inspect the host once.
 //!
 //! SOURCE: reviewed evidence `C5_BLOB_LIBPHY_PHY_I2C` (ESP32-C5
-//! `libphy.a[phy_i2c.o]`: `phy_chip_i2c_readReg`, `phy_chip_i2c_readReg_org`,
-//! `phy_chip_i2c_writeReg`, `phy_get_i2c_hostid_`, `phy_get_i2c_read_mask_`),
+//! `libphy.a[phy_i2c.o]`: `libphy[phy_i2c.o]::phy_chip_i2c_readReg`, `libphy[phy_i2c.o]::phy_chip_i2c_readReg_org`,
+//! `libphy[phy_i2c.o]::phy_chip_i2c_writeReg`, `libphy[phy_i2c.o]::phy_get_i2c_hostid_`, `libphy[phy_i2c.o]::phy_get_i2c_read_mask_`),
 //! corroborated by `ESP_IDF_4D59230D_C5_I2C_ANA_MST`.
 
 #![forbid(unsafe_code)]
@@ -239,8 +239,8 @@ pub enum PhyI2cConfigurationCommand {
 /// analog registers.
 ///
 /// SOURCE: reviewed evidence `C5_BLOB_LIBPHY_RF_INIT_LEAVES` and
-/// `C5_BLOB_LIBPHY_RF_INIT_LEAVES_3` (`phy_i2c_rc_cal_set`,
-/// `phy_filter_dcap_set`, `phy_i2c_pkdet_set`, `phy_i2c_sar2_init_code`).
+/// `C5_BLOB_LIBPHY_RF_INIT_LEAVES_3` (`libphy[phy_i2c.o]::phy_i2c_rc_cal_set`,
+/// `libphy[phy_i2c.o]::phy_filter_dcap_set`, `libphy[phy_i2c.o]::phy_i2c_pkdet_set`, `libphy[phy_i2c.o]::phy_i2c_sar2_init_code`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyI2cConfiguration {
     /// `phy_band_i2c_set`.

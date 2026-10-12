@@ -169,7 +169,7 @@ fn disable_sta_beacon_filter(
     control: &svd::WifiMacStaBeaconFilter,
     interrupt: &svd::WifiMacInterrupt,
 ) {
-    // Complete libpp.a[hal_mac.o]::hal_disable_sta_beacon_filter. Preserve
+    // Complete libpp[hal_mac.o]::hal_disable_sta_beacon_filter. Preserve
     // the two independent fresh-read RMW edges and their order: hardware
     // filtering is disabled before its matching interrupt source is masked.
     control
@@ -230,7 +230,7 @@ impl MacInterruptActivationBackend for MacInterruptSetup {
 
     /// Enable the station TBTT event for the whole route epoch.
     ///
-    /// SOURCE: complete pinned `libpp.a[hal_tsf.o]::hal_enable_sta_tbtt`
+    /// SOURCE: complete pinned `libpp[hal_tsf.o]::hal_enable_sta_tbtt`
     /// enables the station TBTT event at bit 3 of `0x2010_d8b4`. One route
     /// serves every Wi-Fi role in turn, so the mask stays enabled and the
     /// station TBTT enable, which only a connected station sets, gates it.
@@ -355,8 +355,7 @@ impl MacPowerInterruptRegisters {
 
     /// Sample the complete masked WDEVPWR event image.
     ///
-    /// SOURCE: complete `libpp.a[hal_tsf.o]::
-    /// hal_pwr_interrupt_get_event` reads `0x2010_d8bc`.
+    /// SOURCE: complete `libpp[hal_tsf.o]::hal_pwr_interrupt_get_event` reads `0x2010_d8bc`.
     pub fn power_interrupt_status(&self) -> MacPowerInterruptSnapshot {
         MacPowerInterruptSnapshot(interrupt_snapshot::sample_mac_power_interrupt(
             &self.peripheral,
@@ -365,8 +364,7 @@ impl MacPowerInterruptRegisters {
 
     /// Acknowledge the complete sampled WDEVPWR event image.
     ///
-    /// SOURCE: complete `libpp.a[hal_tsf.o]::
-    /// hal_pwr_interrupt_clr_event` stores its argument to `0x2010_d8c0`.
+    /// SOURCE: complete `libpp[hal_tsf.o]::hal_pwr_interrupt_clr_event` stores its argument to `0x2010_d8c0`.
     pub fn acknowledge_power_interrupts(&mut self, snapshot: MacPowerInterruptSnapshot) {
         interrupt_snapshot::acknowledge_mac_power_interrupt(&self.peripheral, snapshot.0);
         device_fence();
@@ -409,7 +407,7 @@ impl MacInterruptRegisters {
     /// Sample the complete MAC interrupt status image.
     ///
     /// SOURCE: complete `libpp.a::hal_mac_interrupt_get_event` proves the
-    /// status address and complete `wDev_ProcessFiq` consumes exactly this
+    /// status address and complete `libpp[wdev.o]::wDev_ProcessFiq` consumes exactly this
     /// status image. The runtime mask is configured before IRQ activation and
     /// is not sampled by the vendor FIQ transaction.
     pub fn mac_interrupt_status(&self) -> MacInterruptSnapshot {

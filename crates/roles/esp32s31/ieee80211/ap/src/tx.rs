@@ -371,8 +371,8 @@ where
 
     /// Publish one encoded BlockAckReq on the access category of its TID.
     ///
-    /// SOURCE: `libpp.a[pp.o]::ppFillAMPDUBar` queues the request on the
-    /// access category of its TID; `rcGetSched` selects row three of
+    /// SOURCE: `libpp[pp.o]::ppFillAMPDUBar` queues the request on the
+    /// access category of its TID; `libpp[trc.o]::rcGetSched` selects row three of
     /// `rc11BSchedTbl`, the 1 Mbit/s long-preamble schedule with 32
     /// publications, and the descriptor solicits a BlockAck (blobray
     /// 7a0f2090f).

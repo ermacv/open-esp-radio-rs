@@ -7,7 +7,7 @@
 //! control, which opens it here and continues with the plaintext as the
 //! vendor's `sta_recv_mgmt` and Action handlers do.
 //!
-//! SOURCE: complete pinned `libnet80211.a[ieee80211_sta.o]::sta_input`
+//! SOURCE: complete pinned `libnet80211[ieee80211_sta.o]::sta_input`
 //! (`sta_bip_check`) and `sta_recv_mgmt`.
 
 use oer_esp32s31_ieee80211_mac::tx::ampdu::parse_block_ack_action;

@@ -22,7 +22,7 @@ pub enum HeResourceUnit {
 /// One decoded 21-bit non-MU-MIMO HE-SIG-B user field.
 ///
 /// SOURCE(esp32s31)\[BLOB_LIBPP_DBG_DUMP_MUSIGB_NON_MIMO]: complete
-/// `libpp.a[hal_debug.o]::dbg_dump_musigb_non_mimo`, size `0x6e`.
+/// `libpp[hal_debug.o]::dbg_dump_musigb_non_mimo`, size `0x6e`.
 /// The blob loads one caller-owned word and names bits 10:0 STA-ID, 13:11
 /// NSTS, 14 beamformed, 18:15 MCS, 19 DCM and 20 coding. STA-ID `0x7fe`
 /// takes a terminal special branch and none of the remaining bits are read.
@@ -60,7 +60,7 @@ impl HeMuSigBNonMimoUser {
 /// One decoded 21-bit MU-MIMO HE-SIG-B user field.
 ///
 /// SOURCE(esp32s31)\[BLOB_LIBPP_DBG_DUMP_MUSIGB_MIMO]: complete
-/// `libpp.a[hal_debug.o]::dbg_dump_musigb_mimo`, size `0x4a`.
+/// `libpp[hal_debug.o]::dbg_dump_musigb_mimo`, size `0x4a`.
 /// The blob names bits 10:0 STA-ID, 14:11 spatial configuration, 18:15 MCS,
 /// bit 19 reserved and bit 20 coding. The reserved bit is deliberately not
 /// exposed as a writable semantic field.
@@ -149,8 +149,8 @@ const HE_MU_MIMO_NSTS_8: [[u8; 8]; 1] = [[1, 1, 1, 1, 1, 1, 1, 1]];
 /// A validated HE MU-MIMO spatial-configuration encoding.
 ///
 /// SOURCE(esp32s31)\[BLOB_LIBPP_MUMIMO_SPATIAL_CFG_GET_NSTS]: complete
-/// `libpp.a[test_hal_rx_mu.o]::{mumimo_spatial_cfg_get_nsts,
-/// mumimo_spatial_cfg_get_nsts_tot}`, sizes `0x10e` and `0x44`. The first
+/// `libpp[test_hal_rx_mu.o]::mumimo_spatial_cfg_get_nsts,
+/// libpp[test_hal_rx_mu.o]::mumimo_spatial_cfg_get_nsts_tot`, sizes `0x10e` and `0x44`. The first
 /// function selects one of the seven ROM tables above with an eight-byte
 /// stride; the second sums exactly `user_count` entries.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -272,7 +272,7 @@ pub struct He20MuSigBRuUser {
 ///
 /// SOURCE(esp32s31)\[BLOB_LIBPP_GET_USER_NUM]: complete `libpp.a
 /// [test_hal_rx_mu.o]::get_user_num`, size `0x2e2`.
-/// Complete caller `test_nonmimo_update_user_info` passes the RU Allocation
+/// Complete caller `libpp[test_hal_rx_mu.o]::test_nonmimo_update_user_info` passes the RU Allocation
 /// byte and zero-based user position, then logs the two output bytes as
 /// `ru_size` and `multiplexed`. The helper indexes the two exact ROM objects
 /// above only for encodings 0 through 15 and computes every other class with
@@ -473,10 +473,9 @@ pub struct He20MuSigBNonMimoEntry {
 /// Allocation-free iterator over an HE20 non-MU-MIMO complete HE-SIG-B stream.
 ///
 /// SOURCE(esp32s31)\[BLOB_LIBPP_TEST_RX_PARSE_NONMUMIMO_COMPLETE_SIGB]: complete
-/// `libpp.a[test_hal_rx_mu_sigb.o]::
-/// test_rx_parse_nonmumimo_complete_sigb`, size `0x3e4`.
+/// `libpp[test_hal_rx_mu_sigb.o]::test_rx_parse_nonmumimo_complete_sigb`, size `0x3e4`.
 /// The RISC-V body copies the complete bytes from RX offset `0x38`, calls
-/// `test_get_nonmumimo_common`, and extracts the tested HE20 user words at
+/// `libpp[test_hal_rx_mu_sigb.o]::test_get_nonmumimo_common`, and extracts the tested HE20 user words at
 /// absolute bit offsets `18,39,70,91,122,143,174,195,226`. These are exactly
 /// `18 + pair * 52 + {0,21}`. Its user-count expression is
 /// `(remaining / 52) * 2 + (remaining % 52 != 0)`, and the unrolled body stops
@@ -484,7 +483,7 @@ pub struct He20MuSigBNonMimoEntry {
 ///
 /// This type intentionally says HE20 and non-MU-MIMO. The same oracle proves
 /// different common lengths for wider bandwidth selectors, while
-/// `test_rx_parse_mumimo_complete_sigb` uses a configuration-dependent layout.
+/// `libpp[test_hal_rx_mu_sigb.o]::test_rx_parse_mumimo_complete_sigb` uses a configuration-dependent layout.
 /// Neither is silently folded onto this iterator.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct He20MuSigBNonMimoUsers<'a> {
@@ -540,8 +539,7 @@ impl<'a> He20MuSigBNonMimoUsers<'a> {
     /// requires it to describe the same number of users as this stream.
     ///
     /// SOURCE(esp32s31)\[BLOB_LIBPP_TEST_GET_NONMUMIMO_COMMON]: complete
-    /// `libpp.a[test_hal_rx_mu_sigb.o]::
-    /// test_get_nonmumimo_common`, size `0xf6`.
+    /// `libpp[test_hal_rx_mu_sigb.o]::test_get_nonmumimo_common`, size `0xf6`.
     /// Bandwidth selector zero loads byte zero as the sole RU Allocation and
     /// returns an 18-bit common prefix.
     pub fn ru_allocation(self) -> Result<He20MuSigBRuAllocation, He20MuSigBRuStreamError> {
@@ -623,8 +621,7 @@ pub struct He20MuSigBMimoEntry {
 /// Allocation-free iterator over the blob's HE20 compressed/MU-MIMO layout.
 ///
 /// SOURCE(esp32s31)\[BLOB_LIBPP_TEST_RX_PARSE_MUMIMO_COMPLETE_SIGB]: complete
-/// `libpp.a[test_hal_rx_mu_sigb.o]::
-/// test_rx_parse_mumimo_complete_sigb`, size `0x20c`.
+/// `libpp[test_hal_rx_mu_sigb.o]::test_rx_parse_mumimo_complete_sigb`, size `0x20c`.
 /// The body derives a one-based user count from HE-SIG-A1 bits 21:18, copies
 /// 16 complete-SIG-B bytes and extracts at most four 21-bit words at exact
 /// bit offsets `0,21,52,105`. The third and fourth paths require total bit
@@ -794,14 +791,14 @@ pub struct He20Capabilities {
     /// SOURCE(esp32s31)\[LINUX_IEEE80211_HE_PHY_CAP1_GI_2026_07_29]: Linux v6.12
     /// `include/linux/ieee80211.h` names HE PHY capability byte 1 bit `0x40`
     /// `HE_LTF_AND_GI_FOR_HE_PPDUS_0_8US`. The S31 oracle's ordinary
-    /// `ppSelectTxFormat` never emits GI/LTF selector zero, while HIL against a
+    /// `libpp[pp_he.o]::ppSelectTxFormat` never emits GI/LTF selector zero, while HIL against a
     /// peer with this bit clear rejected selector zero for MCS0 through MCS9
     /// and accepted selectors one through three.
     pub one_ltf_800ns_gi: bool,
     /// The peer can decode LDPC coding in an HE payload.
     ///
     /// SOURCE(esp32s31)\[BLOB_LIBNET80211_HE_CAP_LDPC]: complete
-    /// `libnet80211.a[ieee80211_he.o]::ieee80211_parse_hecap`
+    /// `libnet80211[ieee80211_he.o]::ieee80211_parse_hecap`
     /// (size `0x2d8`) reads HE PHY capability byte one at element offset ten,
     /// shifts it by five and masks one before publishing the decoded field in
     /// its complete capability diagnostic. The same function subsequently
@@ -817,7 +814,7 @@ pub struct He20Capabilities {
     /// The peer can receive HE STBC below 80 MHz.
     ///
     /// SOURCE(esp32s31)\[BLOB_LIBNET80211_HE_CAP_STBC]: complete
-    /// `libnet80211.a[ieee80211_he.o]::ieee80211_add_hecap` copies
+    /// `libnet80211[ieee80211_he.o]::ieee80211_add_hecap` copies
     /// `g_phy_cap_rx_stbc` into HE PHY capability byte 2 bit 3. Complete
     /// `esp_wifi_enable_rx_stbc` owns that one-byte capability flag and the
     /// corresponding interface-state bits.
@@ -831,7 +828,7 @@ pub struct He20Capabilities {
     ///
     /// SOURCE(esp32s31)\[LINUX_IEEE80211_HE_PHY_CAP3_DCM_2026_07_29]: Linux
     /// `include/linux/ieee80211-he.h` names HE PHY capability byte 3 bits
-    /// 4:3 `DCM_MAX_CONST_RX`. `libpp.a[trc.o]::rcGetDCMMaxRate`
+    /// 4:3 `DCM_MAX_CONST_RX`. `libpp[trc.o]::rcGetDCMMaxRate`
     /// independently maps the same four capability levels to disabled,
     /// BPSK/MCS0, QPSK/MCS1 and 16-QAM/MCS3 for the vendor BCC path.
     pub dcm_receive: HeDcmConstellation,
@@ -879,11 +876,10 @@ pub struct He20Operation {
 impl He20Operation {
     /// Return the BSS color published in an HE-SIG-A1 transmit vector.
     ///
-    /// SOURCE(esp32s31): complete `libnet80211.a[ieee80211_he.o]::
-    /// ieee80211_parse_heopr` passes HE Operation byte-six bit seven inverted
+    /// SOURCE(esp32s31): complete `libnet80211[ieee80211_he.o]::ieee80211_parse_heopr` passes HE Operation byte-six bit seven inverted
     /// as the enable argument, bit six as the partial-color argument and bits
     /// 5:0 as the color to `hal_he_set_bss_color`. Complete
-    /// `libpp.a[hal_mac_ctl.o]::hal_he_get_bss_color` returns zero
+    /// `libpp[hal_mac_ctl.o]::hal_he_get_bss_color` returns zero
     /// whenever that enable bit is clear. Keeping the advertised numeric
     /// color separate from this effective transmit value prevents a disabled
     /// BSS color such as `0xae` from becoming active color 46.
@@ -911,9 +907,9 @@ pub struct He20PeerState {
     /// Raw HE Operation `ER-SU-Disable` bit.
     ///
     /// SOURCE(esp32s31): complete
-    /// `libnet80211.a[ieee80211_he.o]::ieee80211_parse_heopr`
+    /// `libnet80211[ieee80211_he.o]::ieee80211_parse_heopr`
     /// logs complete-IE byte five bit zero as `ER-SU-Disable`, stores it at
-    /// peer-state bit 10 and passes it unchanged to `hal_he_set_ersu`.
+    /// peer-state bit 10 and passes it unchanged to `libpp[hal_mac_ctl.o]::hal_he_set_ersu`.
     pub extended_range_single_user_disabled: bool,
 }
 
@@ -995,8 +991,8 @@ pub fn parse_he20_operation(element: &[u8]) -> Result<He20Operation, HeElementEr
 /// operation parsers.
 ///
 /// Primary evidence: complete pinned
-/// `libnet80211.a[ieee80211_he.o]::{ieee80211_parse_hecap,
-/// ieee80211_parse_heopr}` bodies and their format strings. This function is
+/// `libnet80211[ieee80211_he.o]::ieee80211_parse_hecap,
+/// libnet80211[ieee80211_he.o]::ieee80211_parse_heopr` bodies and their format strings. This function is
 /// deliberately pure; corresponding MMIO transforms are tracked separately
 /// in the S31 MAC.
 pub fn parse_he20_peer_state(

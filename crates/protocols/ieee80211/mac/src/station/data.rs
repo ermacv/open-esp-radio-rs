@@ -138,8 +138,7 @@ impl StaProtectedDataFrame<'_> {
         // full 32-MPDU aggregate that redundant pass wrote roughly 48 KiB to
         // PSRAM before immediately overwriting it with the real payload.
         //
-        // SOURCE(esp32s31): complete `libnet80211.a[ieee80211_output.o]::
-        // ieee80211_encap_esfbuf` mutates the ESF header/headroom and retains
+        // SOURCE(esp32s31): complete `libnet80211[ieee80211_output.o]::ieee80211_encap_esfbuf` mutates the ESF header/headroom and retains
         // the existing payload; it does not clear the complete MPDU.
         frame[..header_len].copy_from_slice(&plan.header[..header_len]);
         frame[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
@@ -164,10 +163,9 @@ impl StaProtectedDataFrame<'_> {
 /// Retaining the allocation until TX/BlockAck completion remains the
 /// responsibility of the chip-specific DMA owner.
 ///
-/// SOURCE(esp32s31): complete `libnet80211.a[ieee80211_output.o]::
-/// ieee80211_alloc_tx_buf` type-nine branch stores the referenced netstack
+/// SOURCE(esp32s31): complete `libnet80211[ieee80211_output.o]::ieee80211_alloc_tx_buf` type-nine branch stores the referenced netstack
 /// data pointer in the ESF DMA descriptor and calls `s_netstack_ref`.
-/// Complete `ieee80211_encap_esfbuf` mutates the ESF data boundary and writes
+/// Complete `libnet80211[ieee80211_output.o]::ieee80211_encap_esfbuf` mutates the ESF data boundary and writes
 /// the 802.11/LLC prefix without copying the retained payload.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaProtectedEthernetFrame {
@@ -295,10 +293,9 @@ impl StaProtectedEthernetFrame {
     /// immediately before it. The caller may release the second frame as soon
     /// as this method returns successfully.
     ///
-    /// SOURCE(esp32s31): complete `libnet80211.a[ieee80211_output.o]::
-    /// ieee80211_encap_amsdu`. Its `.L940` branch uses `memmove` to grow the
+    /// SOURCE(esp32s31): complete `libnet80211[ieee80211_output.o]::ieee80211_encap_amsdu`. Its `.L940` branch uses `memmove` to grow the
     /// first cache ESF in place; `.L950` copies the following ESF body into
-    /// that allocation and calls `ieee80211_recycle_cache_eb` immediately.
+    /// that allocation and calls `libnet80211[ieee80211_output.o]::ieee80211_recycle_cache_eb` immediately.
     /// Thus vendor A-MSDU construction copies between netstack owners; only
     /// the resulting MPDU remains referenced through A-MPDU/DMA completion.
     pub fn encode_amsdu_pair_in_place(

@@ -36,8 +36,7 @@ impl MacHeTid {
 
 /// Configured maximum number of TIDs eligible for HE trigger-based TX.
 ///
-/// SOURCE: complete `libpp.a[if_hecfg.o]::
-/// wifi_he_get_hetb_tid_bitmap` and its four-byte table. The enum is the
+/// SOURCE: complete `libpp[if_hecfg.o]::wifi_he_get_hetb_tid_bitmap` and its four-byte table. The enum is the
 /// Rust-owned replacement for `g_wifi_menuconfig + 0x5c`; callers cannot
 /// manufacture the blob's invalid configuration values.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -81,8 +80,8 @@ pub struct MacHeTbLinkReservation {
 impl MacHeTbLinkReservation {
     /// Reserve the beginning of the exact range selected by the blob.
     ///
-    /// SOURCE: complete `libpp.a[hal_he_common.o]::{
-    /// hal_he_get_mplen_addr_start,hal_he_get_mplen_addr_end}` and the
+    /// SOURCE: complete
+    /// `libpp[hal_he_common.o]::hal_he_get_mplen_addr_start,libpp[hal_he_common.o]::hal_he_get_mplen_addr_end` and the
     /// corresponding ROM leaves. The single-TID layout differs from all
     /// other policies.
     pub const fn for_queue(policy: MacHeTbTidLimit, queue: u8, count: u8) -> Option<Self> {
@@ -372,8 +371,7 @@ pub struct MacHeReceiveConfigurationSnapshot {
 impl WifiRadioRegisters {
     /// Read the beamforming-report average SNR without using floating point.
     ///
-    /// SOURCE: complete `libpp.a[hal_debug.o]::
-    /// esp_test_get_bfr_avgsnr`, size `0x86`. The blob reads
+    /// SOURCE: complete `libpp[hal_debug.o]::esp_test_get_bfr_avgsnr`, size `0x86`. The blob reads
     /// `0x20105f94[7:0]` and computes `(code + 88.0) * 0.25` dB. Code `0x7f`
     /// uses a `>=` prefix, so the typed value retains that saturation state.
     pub fn beamforming_average_snr(&self) -> MacBeamformingAverageSnr {
@@ -391,9 +389,9 @@ impl WifiRadioRegisters {
     /// Program the complete write-side HE Trigger-eligible queue transition.
     ///
     /// SOURCE: instruction-equivalent complete
-    /// `libpp.a[hal_mac_tx.o]::{mac_tx_set_tb,
-    /// mac_tx_set_mplen}` and rev0 ROM bodies `mac_tx_set_tb` at
-    /// `0x2f834f82` and `mac_tx_set_mplen` at `0x2f836b1a`.
+    /// `libpp[hal_mac_tx.o]::mac_tx_set_tb,
+    /// libpp[hal_mac_tx.o]::mac_tx_set_mplen` and rev0 ROM bodies `rom[]::mac_tx_set_tb` at
+    /// `0x2f834f82` and `rom[]::mac_tx_set_mplen` at `0x2f836b1a`.
     ///
     /// `reservation` represents exclusive software ownership of this
     /// hardware queue's disjoint MPDU-link range. The final validity RMW is
@@ -499,8 +497,7 @@ impl WifiRadioRegisters {
 
     /// Remove Trigger eligibility after the queue has returned to software.
     ///
-    /// SOURCE: complete `libpp.a[hal_mac_tx.o]::
-    /// hal_mac_tx_clr_mplen`, size `0x1aa`. The hardware-visible cleanup
+    /// SOURCE: complete `libpp[hal_mac_tx.o]::hal_mac_tx_clr_mplen`, size `0x1aa`. The hardware-visible cleanup
     /// clears only `TB_ENA`; software-owned allocation bookkeeping is
     /// unnecessary for the deterministic disjoint reservation.
     pub fn clear_he_trigger_based_queue(&mut self, reservation: MacHeTbLinkReservation) {
@@ -515,8 +512,8 @@ impl WifiRadioRegisters {
     /// Read back the exact queue-control, MPLEN and BSR state just published
     /// by [`Self::prepare_he_trigger_based_queue`].
     ///
-    /// SOURCE: complete `libpp.a[hal_mac_tx.o]::{mac_tx_set_tb,
-    /// mac_tx_set_mplen}`, `hal_debug.o::{dbg_read_txq_conf1,
+    /// SOURCE: complete `libpp[hal_mac_tx.o]::mac_tx_set_tb,
+    /// libpp[hal_mac_tx.o]::mac_tx_set_mplen`, `hal_debug.o::{dbg_read_txq_conf1,
     /// dbg_read_tx_mplen,dbg_read_bsr_info,dbg_read_muedca_timer}` and their
     /// rev0 ROM equivalents. The reservation supplies the only indices; no
     /// raw address or unchecked queue number escapes this API.
@@ -847,8 +844,8 @@ impl WifiRadioRegisters {
     /// SOURCE: complete pinned `libpp.a[hal_debug.o]`
     /// `dbg_read_ax_diag`, size `0x466`, and its exact `WDEVAXDIAG0` and
     /// `WDEVAXDIAG3` format strings. Complete
-    /// `libpp.a[wdev.o]::wDev_ProcessRxSucData`, size `0x6ca`, only
-    /// logs the result of `is_ndpa_to_dut`; it does not call a software
+    /// `libpp[wdev.o]::wDev_ProcessRxSucData`, size `0x6ca`, only
+    /// logs the result of `libpp[wdev.o]::is_ndpa_to_dut`; it does not call a software
     /// feedback producer. These diagnostic bits therefore observe the
     /// hardware sequence configured by `hal_init_bf`.
     pub fn he_beamforming_diagnostics(&self) -> MacHeBeamformingDiagnostics {

@@ -55,7 +55,7 @@ impl WifiRadioRegisters {
     /// SOURCE: complete rev0 ROM `phy_read_hw_noisefloor` at
     /// `0x2f82_7d72`, size `0x1a`, reads `0x2010_708c[11:0]` and performs the
     /// first arithmetic divide by four. Complete
-    /// `libpp.a[wdev.o]::wDev_GetNoiseFloor`, size `0x36`, applies
+    /// `libpp[wdev.o]::wDev_GetNoiseFloor`, size `0x36`, applies
     /// `(quarter_db + 2) >> 2` and retains the result as a signed byte.
     pub fn read_noise_floor_dbm(&self) -> i8 {
         crate::phy::baseband::quarter_db_to_dbm(self.read_noise_floor_quarter_db())

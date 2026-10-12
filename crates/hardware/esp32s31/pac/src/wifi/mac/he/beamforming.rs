@@ -109,9 +109,9 @@ impl WifiRadioRegisters {
     /// Publish one report profile to 16-QAM, QPSK and BPSK selectors.
     ///
     /// SOURCE: complete pinned `libpp.a[hal_mac_ctl.o]`
-    /// `hal_he_set_bf_report_rate`, `libpp.a[hal_debug.o]`
+    /// `libpp[hal_mac_ctl.o]::hal_he_set_bf_report_rate`, `libpp.a[hal_debug.o]`
     /// `dbg_read_bfr_rate`, and `libpp.a[trc.o]`
-    /// `trc_set_bf_report_rate`. The three fresh-read RMWs and their
+    /// `libpp[trc.o]::trc_set_bf_report_rate`. The three fresh-read RMWs and their
     /// high-to-low order are preserved.
     pub fn set_he_beamforming_report_profile(&mut self, profile: MacHeBeamformingReportProfile) {
         let report = self
@@ -155,8 +155,8 @@ impl WifiRadioRegisters {
     /// Publish the ER-SU ACK-rate profile selected alongside the report rate.
     ///
     /// SOURCE: complete pinned `libpp.a[hal_mac_ctl.o]`
-    /// `hal_he_set_ersu_ack_rate`, size `0x4e`, reached from complete
-    /// `libpp.a[trc.o]::trc_set_bf_report_rate`, size `0x52`.
+    /// `libpp[hal_mac_ctl.o]::hal_he_set_ersu_ack_rate`, size `0x4e`, reached from complete
+    /// `libpp[trc.o]::trc_set_bf_report_rate`, size `0x52`.
     /// The four fresh-read byte RMWs and their low-to-high order are
     /// instruction-exact.
     pub fn set_he_ersu_ack_rate_profile(&mut self, profile: MacHeErSuAckRateProfile) {

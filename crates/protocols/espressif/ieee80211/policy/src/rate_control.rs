@@ -44,7 +44,7 @@ pub struct RateScheduleState {
 /// - the weighted average uses signed division, and therefore truncates
 ///   toward zero.
 ///
-/// SOURCE(esp32s31): complete `libpp.a[trc.o]::rcUpdateAckSnr` (`0x42`
+/// SOURCE(esp32s31): complete `libpp[trc.o]::rcUpdateAckSnr` (`0x42`
 /// bytes). The body has no MMIO, callback or global-state access.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AckSnrFilter {
@@ -439,7 +439,7 @@ impl RateControlState {
     const REEVALUATE_AFTER_US: u32 = 500_000;
 
     /// Apply the complete scalar state transition from the pinned
-    /// `libpp.a[trc.o]::rcTxUpdatePer` body.
+    /// `libpp[trc.o]::rcTxUpdatePer` body.
     ///
     /// Arithmetic intentionally follows the RISC-V body: the per-result
     /// penalty is truncated to a byte before it is accumulated, retry pressure
@@ -554,13 +554,13 @@ pub enum StaRateControlPhy {
 
 /// Exact HE peer capabilities consumed by the low-link-metric report branch.
 ///
-/// SOURCE(esp32s31): complete `libnet80211.a[wl_cnx.o]::ic_set_sta` copies
+/// SOURCE(esp32s31): complete `libnet80211[wl_cnx.o]::ic_set_sta` copies
 /// `!node[0x35c].bit(10)` and `node[0x348].bits(4:3)` into the scalar TRC
 /// input. Complete `ieee80211_parse_heopr` names the former source
 /// `ER-SU-Disable`; complete `ieee80211_parse_hecap` names the latter
 /// `dcm rx constellation`. Complete
-/// `libpp.a[if_hwctrl.o]::ic_set_trc` stores those values at vendor
-/// record offsets `0x8f` and `0x90`, where `trc_set_bf_report_rate` tests
+/// `libpp[if_hwctrl.o]::ic_set_trc` stores those values at vendor
+/// record offsets `0x8f` and `0x90`, where `libpp[trc.o]::trc_set_bf_report_rate` tests
 /// them for nonzero.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct HeLowMetricReportFeatures {
@@ -584,8 +584,8 @@ impl StaRateControlPeerHighestRate {
     /// A peer maximum above MCS 9 takes the MCS 9 value, the highest the
     /// recovered table encodes. The finite values below are the
     /// rounded half-megabit encodings accepted by complete
-    /// `libpp.a[trc.o]::{rcGetHighestRateIdx,
-    /// rc11AXRate2SchedIdx}`: `17,34,51,68,104,137,154,172,206,229`.
+    /// `libpp[trc.o]::rcGetHighestRateIdx` and
+    /// `libpp[trc.o]::rc11AXRate2SchedIdx`: `17,34,51,68,104,137,154,172,206,229`.
     pub const fn he20_one_spatial_stream(maximum_mcs: HeMcs) -> Self {
         Self(match maximum_mcs.index() {
             0 => 17,
@@ -632,7 +632,7 @@ pub struct StaLinkMetric(i8);
 
 impl StaLinkMetric {
     /// Reproduce the narrowing subtraction performed by complete
-    /// `libpp.a[if_hwctrl.o]::ic_set_trc` at instructions
+    /// `libpp[if_hwctrl.o]::ic_set_trc` at instructions
     /// 0xca..0xce. The complete `wl_cnx.o::ic_set_sta` log string names the
     /// two source bytes `rssi` and `nf`.
     pub const fn from_rssi_and_noise_floor(rssi_dbm: i8, noise_floor_dbm: i8) -> Self {
@@ -651,12 +651,12 @@ impl StaLinkMetric {
 
 /// Rust-owned result of the vendor post-association rate-control transition.
 ///
-/// SOURCE(esp32s31): complete `libnet80211.a[wl_cnx.o]::ic_set_sta`
+/// SOURCE(esp32s31): complete `libnet80211[wl_cnx.o]::ic_set_sta`
 /// constructs the per-peer input and calls
-/// `libpp.a[if_hwctrl.o]::ic_set_trc`. Complete `ic_set_trc`
+/// `libpp[if_hwctrl.o]::ic_set_trc`. Complete `ic_set_trc`
 /// invokes `rcUpdatePhyMode` after copying only scalar peer state, and
-/// complete `libpp.a[trc.o]::rcUpdatePhyMode` selects the schedule
-/// references before calling `trc_set_bf_report_rate` at instruction 0x26c.
+/// complete `libpp[trc.o]::rcUpdatePhyMode` selects the schedule
+/// references before calling `libpp[trc.o]::trc_set_bf_report_rate` at instruction 0x26c.
 /// This owner preserves that value and hardware-programming order without the
 /// vendor 0x98-byte record or its C offsets.
 #[derive(Debug, Eq, PartialEq)]
@@ -865,7 +865,7 @@ pub(crate) struct PhyModeSelection {
 /// Non-data schedule of an interface whose association has not selected
 /// one: `rc11BSchedTbl` record 3, 1 Mbit/s with a 32-publication budget.
 ///
-/// SOURCE(esp32s31): `libpp.a[trc.o]::trc_init` stores this record at trc `+0x68`
+/// SOURCE(esp32s31): `libpp[trc.o]::trc_init` stores this record at trc `+0x68`
 /// (and `+0x64`, `+0x6c`) of the interface's default trc, which every frame
 /// uses until `ic_set_sta` enables the association's own trc; station
 /// authentication and association frames therefore use it.
@@ -877,7 +877,7 @@ pub const DEFAULT_CONTROL_SCHEDULE: RateScheduleRef = schedule(RateScheduleKind:
 /// (descriptor word 0 bit 3 clear or bit 25 set): management, BlockAck
 /// control, power-management Null and EAPOL, whose classification sets bit 25.
 ///
-/// SOURCE(esp32s31): `libpp.a[trc.o]::rcUpdatePhyMode` and `rcGetSched`, and
+/// SOURCE(esp32s31): `libpp[trc.o]::rcUpdatePhyMode` and `libpp[trc.o]::rcGetSched`, and
 /// `libnet80211.a::ic_set_vif`, whose flag is set only by
 /// `esp_wifi_config_11b_rate`: an 802.11b-only association keeps
 /// `rc11BSchedTbl` record 3, 802.11g/n/ax use `BasicOFDMSched`, the flagged
@@ -1013,7 +1013,7 @@ const fn ht_metric_index(metric: i32) -> u8 {
     }
 }
 
-/// Safe schedule selector recovered from `libpp.a[trc.o]::rcUpdatePhyMode`.
+/// Safe schedule selector recovered from `libpp[trc.o]::rcUpdatePhyMode`.
 ///
 /// The result contains values only and is retained directly by the
 /// Rust-owned association; no vendor record projection remains.

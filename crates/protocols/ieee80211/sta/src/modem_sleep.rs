@@ -220,8 +220,7 @@ pub enum PmAction {
     /// Publish the beacon-window event's priority as the beacon receive
     /// priority (`true`), or priority zero (`false`).
     ///
-    /// SOURCE(esp32s31): complete pinned `libpp.a[pm_coex.o]::
-    /// pm_coex_update_rx_beacon_pti` passes `coex_pti_get(0)`, or zero, as
+    /// SOURCE(esp32s31): complete pinned `libpp[pm_coex.o]::pm_coex_update_rx_beacon_pti` passes `coex_pti_get(0)`, or zero, as
     /// both arguments of `hal_set_rx_beacon_pti`. It selects event 1 only
     /// under the hardware beacon monitor, which this model leaves out.
     RxBeaconPriority(bool),
@@ -998,8 +997,7 @@ impl ModemSleep {
         // SOURCE(esp32s31): complete pinned `libpp[pm.o]::pm_tbtt_process`
         // stores the MAC local time (`WIFI_MAC_LOCAL_TIME`, 32 bits) read
         // while it handles the TBTT event as the 64-bit anchor at `g_pm[96]`
-        // (high word zero); `libpp.a[pm_coex.o]::
-        // pm_coex_recalculate_wifi_time_slice` places the station at
+        // (high word zero); `libpp[pm_coex.o]::pm_coex_recalculate_wifi_time_slice` places the station at
         // `(WIFI_MAC_LOCAL_TIME - anchor) % (overall period * interval * 100)`.
         // The anchor is the handling of the event, not the TBTT itself.
         // The ROM's copy of the TBTT handler is not reviewed.

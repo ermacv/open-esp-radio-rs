@@ -290,7 +290,7 @@ impl<const WINDOW_CAPACITY: usize, const SLOT_CAPACITY: usize>
     /// sequence space) is ignored and returns `None`.
     ///
     /// SOURCE(esp32s31): `libnet80211.a::ieee80211_process_bar_info` ignores those two
-    /// cases and otherwise calls `ampdu_dispatch_upto(ni, rx, ssn)` (blobray
+    /// cases and otherwise calls `libnet80211[ieee80211_ht.o]::ampdu_dispatch_upto(ni, rx, ssn)` (blobray
     /// RX BlockAckReq answer). The contiguous release after the move is the
     /// recipient behaviour of IEEE Std 802.11-2020 10.25.6.6.
     pub fn move_window_to(

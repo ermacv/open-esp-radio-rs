@@ -92,8 +92,8 @@ pub const BLOCK_ACK_REQUEST_LEN: usize = 20;
 /// BAR Control carries normal Ack Policy, no Multi-TID, a compressed bitmap
 /// and the TID; the Starting Sequence Control has fragment number zero.
 ///
-/// SOURCE(esp32s31): `libpp.a[pp.o]::ppPrepareBarFrame` writes Frame Control 0x0084
-/// once and never a Duration; `ppFillAMPDUBar(tid, ra, ta, ssn)` copies RA
+/// SOURCE(esp32s31): `libpp[pp.o]::ppPrepareBarFrame` writes Frame Control 0x0084
+/// once and never a Duration; `libpp[pp.o]::ppFillAMPDUBar(tid, ra, ta, ssn)` copies RA
 /// and TA, writes BAR Control `(tid << 12) | 0x0004` and Starting Sequence
 /// Control `ssn << 4`, and clears the Retry bit (blobray BAR answer).
 pub fn encode_block_ack_request(

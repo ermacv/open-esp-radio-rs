@@ -1,6 +1,6 @@
 //! The Espressif LMAC's retry limits, lifetimes and default contention.
 //!
-//! The values are those `libpp.a[lmac.o]::lmacInit` installs in the pinned
+//! The values are those `libpp[lmac.o]::lmacInit` installs in the pinned
 //! ESP32-S31 library. They parameterize the portable algorithms of
 //! `oer-ieee80211-upper-mac`, which a backend running the Espressif policy
 //! instantiates with them.
@@ -21,10 +21,10 @@ pub const RTS_THRESHOLD_BYTES: u16 = 0x092a;
 
 /// The LMAC's retry counting.
 ///
-/// SOURCE(esp32s31): `libpp.a[lmac.o]::lmacProcessAckTimeout`. Only a frame inside a
-/// granted TXOP (descriptor word-0 bit 8) reaches `lmacProcessLongRetryFail`;
+/// SOURCE(esp32s31): `libpp[lmac.o]::lmacProcessAckTimeout`. Only a frame inside a
+/// granted TXOP (descriptor word-0 bit 8) reaches `libpp[lmac.o]::lmacProcessLongRetryFail`;
 /// every other frame, whatever its length, reaches
-/// `lmacProcessShortRetryFail(context, 0, 0, _)`, which counts the MPDU and
+/// `libpp[lmac.o]::lmacProcessShortRetryFail(context, 0, 0, _)`, which counts the MPDU and
 /// short retries against the short limit. A policy that requests no TXOP
 /// therefore counts every ACK timeout as short.
 pub const RETRY_LIMITS: RetryLimits = RetryLimits {
@@ -36,7 +36,7 @@ pub const RETRY_LIMITS: RetryLimits = RetryLimits {
 /// Lifetime of an A-MPDU member MSDU, in microseconds: 1536 lifetime units
 /// of 1024 µs.
 ///
-/// SOURCE(esp32s31): `libpp.a[lmac.o]::lmacMSDUAged` compares the time since the
+/// SOURCE(esp32s31): `libpp[lmac.o]::lmacMSDUAged` compares the time since the
 /// MSDU's enqueue timestamp with the `lmacConfMib` lifetime that `lmacInit`
 /// installs, 1536 units for an aggregate member (descriptor bit 22) and 1024
 /// for an ordinary MPDU, each unit `<< 10` microseconds; executed in the
@@ -45,22 +45,22 @@ pub const AMPDU_MSDU_LIFETIME_MICROS: u32 = 1536 << 10;
 
 /// An MSDU with less than one lifetime unit left is aged.
 ///
-/// SOURCE(esp32s31): `libpp.a[lmac.o]::lmacMSDUAged`, as for
+/// SOURCE(esp32s31): `libpp[lmac.o]::lmacMSDUAged`, as for
 /// [`AMPDU_MSDU_LIFETIME_MICROS`].
 pub const MSDU_AGED_MARGIN_MICROS: u32 = 1 << 10;
 
 /// The A-MPDU retry policy of the LMAC with a caller-chosen lifetime.
 ///
-/// SOURCE(esp32s31): `libpp.a[pp.o]::ppResortTxAMPDU` keeps a partial BlockAck's
+/// SOURCE(esp32s31): `libpp[pp.o]::ppResortTxAMPDU` keeps a partial BlockAck's
 /// missing MPDUs in the aggregate without counting publications; only their
-/// MSDU lifetime bounds those retries. `libpp.a[lmac.o]::lmacProcessAckTimeout`
-/// enters `lmacProcessShortRetryFail`/`lmacProcessLongRetryFail`, which
+/// MSDU lifetime bounds those retries. `libpp[lmac.o]::lmacProcessAckTimeout`
+/// enters `libpp[lmac.o]::lmacProcessShortRetryFail`/`libpp[lmac.o]::lmacProcessLongRetryFail`, which
 /// republish an aggregate without any BlockAck until the `lmacConfMib` retry
 /// limit; executed, both descriptor lengths end on the 32nd timeout through
-/// `lmacEndFrameExchangeSequence` (blobray 156c54e0e). The `rcReachRetryLimit`
+/// `libpp[lmac.o]::lmacEndFrameExchangeSequence` (blobray 156c54e0e). The `libpp[trc.o]::rcReachRetryLimit`
 /// cap of 11 attempts applies only while ESP-WIFI-MESH runs
-/// (`g_mesh_is_started`). `lmacProcessCtsTimeout` counts a failed protection
-/// exchange against the same short limit, and `lmacEndRetryAMPDUFail` then
+/// (`g_mesh_is_started`). `libpp[lmac.o]::lmacProcessCtsTimeout` counts a failed protection
+/// exchange against the same short limit, and `libpp[lmac.o]::lmacEndRetryAMPDUFail` then
 /// keeps the aggregate and sends a BlockAckReq (blobray 7a0f2090f).
 pub const fn ampdu_retry_policy(
     lifetime: Ieee80211Duration,
@@ -85,7 +85,7 @@ pub struct DefaultContention {
 /// The contention an access category starts with before a BSS advertises
 /// EDCA parameters.
 ///
-/// SOURCE(esp32s31): complete `libpp.a[lmac.o]::lmacInit` and `lmacInitAc`. The five
+/// SOURCE(esp32s31): complete `libpp[lmac.o]::lmacInit` and `lmacInitAc`. The five
 /// arguments are queue, AIFSN, ECWmin, ECWmax, and TXOP. Ordinary queues
 /// are VO=(2,2,3), VI=(2,3,4), BE=(3,4,10), and BK=(7,4,10).
 pub const fn default_contention(access_category: WmmAccessCategory) -> DefaultContention {

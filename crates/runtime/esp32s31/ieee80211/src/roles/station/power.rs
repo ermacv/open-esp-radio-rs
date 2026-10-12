@@ -57,8 +57,7 @@ pub fn apply_coex_action(
         // `ESP_ERR_INVALID_ARG`, which power management ignores. On the S31
         // that leaves the slice request as the only effective one.
         //
-        // SOURCE: complete pinned `libcoexist.a[coexist_core.o]::
-        // coex_core_request` and `coex_core_timer_idx_get`.
+        // SOURCE: complete pinned `libcoexist[coexist_core.o]::coex_core_request` and `libcoexist[coexist_core.o]::coex_core_timer_idx_get`.
         PmCoexAction::Request { event, .. } | PmCoexAction::Release(event)
             if timer_index(coex_event(event)).is_none() =>
         {

@@ -65,9 +65,9 @@ impl BeamformingReportHardware for RadioRuntimeOwner {
 /// writes between the report profile and its matching ACK profile.
 ///
 /// SOURCE: complete pinned `libpp.a[trc.o]`
-/// `trc_set_bf_report_rate`, size `0x52`, and its complete
+/// `libpp[trc.o]::trc_set_bf_report_rate`, size `0x52`, and its complete
 /// `libpp.a[hal_mac_ctl.o]` children
-/// `hal_he_set_bf_report_rate` and `hal_he_set_ersu_ack_rate`.
+/// `libpp[hal_mac_ctl.o]::hal_he_set_bf_report_rate` and `libpp[hal_mac_ctl.o]::hal_he_set_ersu_ack_rate`.
 pub fn program_beamforming_report<H: BeamformingReportHardware>(
     rate: BeamformingReportRate,
     hardware: &mut H,

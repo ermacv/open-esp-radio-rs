@@ -2,15 +2,16 @@
 //! infrastructure station, from its scan to its disconnect ([owner
 //! decision on #563]).
 //!
-//! The machine takes the port's events, its commands and time as
-//! [`StaInput`] values, and leaves what the port must do as [`StaAction`]
-//! values, in the port's own terms (`oer-ieee80211-lower-mac`): a thin
-//! service loop over the port feeds it and carries its actions out, and
-//! holds no logic of its own:
+//! The machine takes the port's events, the channel arbiter's answers and
+//! notices, its commands and time as [`StaInput`] values, and leaves what
+//! the port and the arbiter must do as [`StaAction`] values, in their own
+//! terms (`oer-ieee80211-lower-mac`, `oer-ieee80211-arbiter`): a thin
+//! service loop feeds it and carries its actions out, and holds no logic
+//! of its own:
 //!
 //! ```text
 //! loop {
-//!     select(phase.next_event(), timer(station.poll_deadline()), commands)
+//!     select(phase.next_event(), timer(deadline), commands)
 //!     station.input(now, input)
 //!     while let Some(action) = station.poll_action(now) { carry it out }
 //! }
@@ -19,10 +20,21 @@
 //! # Tokens
 //!
 //! The machine is generic over its tokens ([`StaTokens`]): the transmit
-//! tickets and buffers and the key slots the composition hands it at its
-//! start, minted by the port. A token leaves in an action by value and
-//! comes back in an input, so what the machine holds is what it may do,
-//! and a host test plays the port with tokens of its own.
+//! tickets and buffers the composition hands it at its start, minted by
+//! the port, and the arbiter's [`LeasePlace`]. A token leaves in an action
+//! by value and comes back in an input, so what the machine holds is what
+//! it may do, and a host test plays the port and the arbiter with tokens
+//! of its own. The station encodes each frame straight into the memory of
+//! its buffer token ([`TxBufferMemory`]).
+//!
+//! # Channels
+//!
+//! The station never changes the port's channel: it asks the arbiter for a
+//! lease of each channel it needs ([`StaAction::RequestChannel`]), listens
+//! and transmits there only between the lease's start and its end, and
+//! gives it back. Beside an access point, its scan goes in absences. A
+//! scan the application asked for ends with a partial result after
+//! [`StaConfig::skipped_absences`] consecutive cancelled leases.
 //!
 //! # States
 //!
@@ -34,9 +46,14 @@
 //!
 //! [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6128926225
 
+use oer_ieee80211_arbiter::{
+    Answer, CancelReason, ChannelRequest, Lease, LeasePlace, LeaveReason, Purpose, StationNotice,
+    UpstreamFact,
+};
 use oer_ieee80211_lower_mac::{
-    Ieee80211Capabilities, ReceiveFilter, RxEvidence, RxMeta, Station as StationRole, StationReceive,
-    SupportedChannel, SupportedFilter, TxCompletion, TxStatus,
+    AckHeader, GroupAddress, HeaderSpec, Ieee80211Capabilities, IndividualAddress, MpduLength,
+    ReceiveFilter, RxEvidence, RxMeta, SizedFrame, Station as StationRole, StationReceive,
+    SupportedChannel, SupportedFilter, TxBufferMemory, TxCompletion, TxStatus,
 };
 use oer_ieee80211_mac::{
     management::ProbeRequest,
@@ -44,9 +61,8 @@ use oer_ieee80211_mac::{
     security::StaSecurityPolicy,
     sequence::SequenceNumber,
     station::{
-        AssociationCapabilities, AssociationRequest, OpenAuthenticationRequest,
-        association::PhyMode,
-        SelectedRsn, StaManagementFrame, StaManagementSubtype, StaSequenceCounter,
+        AssociationCapabilities, AssociationRequest, OpenAuthenticationRequest, SelectedRsn,
+        StaManagementFrame, StaManagementSubtype, StaSequenceCounter, association::PhyMode,
         select_association_rsn,
     },
 };
@@ -61,8 +77,9 @@ use crate::join::{
 pub trait StaTokens {
     /// A transmit ticket: a place in flight and a place for its terminal.
     type Ticket;
-    /// A transmit buffer of the small class, for management frames.
-    type SmallBuffer;
+    /// A transmit buffer of the small class, for management frames: its
+    /// memory, which the station encodes into.
+    type SmallBuffer: TxBufferMemory;
 }
 
 /// What the application asks of the station.
@@ -96,41 +113,51 @@ pub enum StaInput<'f, T: StaTokens, K> {
         /// How it ended.
         completion: TxCompletion,
     },
-    /// The port now runs on the channel the station asked for.
-    ChannelGranted(SupportedChannel<K>),
-    /// The channel the station asked for is not granted: the radio's
-    /// arbiter keeps another.
-    ChannelRefused,
+    /// The arbiter's answer to the station's request.
+    Answer(Answer<K>),
+    /// A notice of the arbiter.
+    Arbiter(StationNotice<K>),
     /// The receive configuration the station set took effect.
     Configured,
 }
 
 /// One action of the station, which the service carries out at once.
-pub enum StaAction<'a, T: StaTokens, K> {
-    /// Ask for the port to run on `channel`: in a station beside an access
-    /// point, the radio's channel arbiter decides
-    /// ([`StaInput::ChannelGranted`], [`StaInput::ChannelRefused`]).
-    RequestChannel(SupportedChannel<K>),
+pub enum StaAction<T: StaTokens, K> {
+    /// Ask the arbiter for a channel, with the station's place; the service
+    /// hands the answer back ([`StaInput::Answer`]) in the same step.
+    RequestChannel(ChannelRequest<K>, LeasePlace),
+    /// Give a lease back to the arbiter.
+    ReleaseChannel(Lease<K>),
+    /// Tell the arbiter a fact about the station's upstream.
+    Upstream(UpstreamFact<K>),
     /// Set what the station's interface receives ([`StaInput::Configured`]
     /// follows).
     Configure(StationReceive<K>),
     /// Transmit one MPDU ([`StaInput::TxDone`] follows).
-    Transmit(StaTransmit<'a, T>),
+    Transmit(StaTransmit<T, K>),
     /// Tell the application what happened.
     Notify(StaNotice),
 }
 
-/// One MPDU to transmit: its ticket and buffer, its octets and how it goes.
-pub struct StaTransmit<'a, T: StaTokens> {
+/// One MPDU to transmit: its ticket, the buffer the station encoded it in,
+/// its kind and its rates.
+pub struct StaTransmit<T: StaTokens, K> {
     /// Its ticket.
     pub ticket: T::Ticket,
-    /// The buffer it goes in.
+    /// The buffer holding the frame, from its header on.
     pub buffer: T::SmallBuffer,
-    /// The MPDU as its encoder wrote it, from its header to the end of its
-    /// body, without the FCS.
-    pub frame: &'a [u8],
+    /// The frame's kind: its receiver, header and length.
+    pub frame: StaFrame<K>,
     /// Its rate and retry plan.
     pub plan: StaRatePlan,
+}
+
+/// The kind of a station frame, as the port's frame kinds take it.
+pub enum StaFrame<K> {
+    /// An individual frame that solicits an ACK.
+    Individual(SizedFrame<AckHeader, K>),
+    /// A group frame.
+    Group(SizedFrame<HeaderSpec<GroupAddress>, K>),
 }
 
 /// The rates a station frame goes at, which the service turns into the
@@ -164,10 +191,14 @@ pub enum StaNotice {
 pub enum StaDisconnectReason {
     /// The application asked it to leave.
     Requested,
-    /// No access point of the network answered the scan.
-    NotFound,
-    /// The arbiter refused the network's channel.
-    ChannelRefused,
+    /// No access point of the network answered the scan; `partial` when
+    /// the scan ended early after cancelled absences.
+    NotFound {
+        /// The scan ended early.
+        partial: bool,
+    },
+    /// The arbiter did not let the station on its network's channel.
+    Arbiter(LeaveReason),
     /// The access point refused or never answered the authentication.
     AuthenticationFailed,
     /// The access point refused or never answered the association.
@@ -187,15 +218,10 @@ const SSID_CAPACITY: usize = 32;
 const CHANNEL_CAPACITY: usize = 16;
 /// The BSSs a scan keeps at most.
 const SCAN_CAPACITY: usize = 16;
-/// The longest frame the station encodes itself.
-const FRAME_CAPACITY: usize = 512;
 /// The tokens of one kind the station holds at most.
 const POOL_CAPACITY: usize = 8;
 /// The reason a leaving station's Deauthentication gives: it leaves.
 const DEAUTHENTICATION_LEAVING: u16 = 3;
-/// How long the station waits for a probe's terminal before it dwells
-/// without it: the port's terminal arrives well within it.
-const TX_TERMINAL_TIMEOUT: Duration = Duration::from_millis(250);
 
 /// What the station connects to and how.
 pub struct StaConfig<K> {
@@ -209,6 +235,9 @@ pub struct StaConfig<K> {
     pub channels: [Option<SupportedChannel<K>>; CHANNEL_CAPACITY],
     /// How long the scan listens on each channel.
     pub dwell: Duration,
+    /// The consecutive cancelled leases after which a scan ends with a
+    /// partial result.
+    pub skipped_absences: u8,
     /// The rates the Probe Request offers.
     pub supported_rates: [u8; 8],
     /// The capabilities the Association Request offers.
@@ -223,9 +252,32 @@ pub struct Station<T: StaTokens, K: Ieee80211Capabilities> {
     state: State<K>,
     tickets: Pool<T::Ticket>,
     buffers: Pool<T::SmallBuffer>,
+    /// The station's place for a lease, while it holds none.
+    place: Option<LeasePlace>,
+    /// The lease the station holds, or gave back and awaits the end of.
+    lease: Held<K>,
     sequence: StaSequenceCounter,
     scan: ScanTable<SCAN_CAPACITY>,
-    frame: [u8; FRAME_CAPACITY],
+}
+
+/// The station's lease.
+enum Held<K> {
+    /// None: the station holds its place.
+    None,
+    /// Held, from the arbiter's answer to its end.
+    Lease(Lease<K>),
+    /// Given back; its end's notice names it.
+    Released(oer_ieee80211_arbiter::LeaseId),
+}
+
+impl<K> Held<K> {
+    fn id(&self) -> Option<oer_ieee80211_arbiter::LeaseId> {
+        match self {
+            Self::None => None,
+            Self::Lease(lease) => Some(lease.id()),
+            Self::Released(id) => Some(*id),
+        }
+    }
 }
 
 /// The station's state; each variant holds its own type.
@@ -233,11 +285,11 @@ enum State<K> {
     /// Not connected and not trying.
     Idle,
     /// Visiting the scan list.
-    Scan(Scan<K>),
+    Scan(Scan),
     /// Joining the chosen access point.
     Join(Join<K>),
     /// Connected.
-    Connected(Connected),
+    Connected(Connected<K>),
     /// Leaving the network.
     Leave(Leave),
     /// Telling the application why it is not connected, then idle.
@@ -245,36 +297,45 @@ enum State<K> {
 }
 
 /// A visit of one scan channel.
-struct Scan<K> {
+struct Scan {
     visit: usize,
-    step: ScanStep<K>,
+    /// Consecutive cancelled leases.
+    skipped: u8,
+    step: ScanStep,
 }
 
-enum ScanStep<K> {
-    NeedChannel(SupportedChannel<K>),
-    AwaitChannel,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ScanStep {
+    /// Ask the arbiter for the visit's channel.
+    NeedLease,
+    /// The arbiter answers in the same step.
+    AwaitAnswer,
+    /// The lease is granted; the port moves at its start.
+    AwaitStart,
     NeedConfigure,
     AwaitConfigured,
     NeedProbe,
-    AwaitProbe { until: Instant },
-    Dwell { until: Instant },
+    /// Listening until the lease's end.
+    Listen,
 }
 
 /// The join of one access point.
 struct Join<K> {
     access_point: ScanRecord,
     rsn: SelectedRsn,
-    step: JoinStep<K>,
+    channel: SupportedChannel<K>,
+    step: JoinStep,
 }
 
-enum JoinStep<K> {
-    NeedChannel(SupportedChannel<K>),
-    AwaitChannel,
+enum JoinStep {
+    NeedLease,
+    AwaitAnswer,
+    AwaitStart,
     NeedConfigure,
     AwaitConfigured,
     Authenticate(Authenticate),
-    Associate(Associate),
-    Report { channel: u8 },
+    Associate(StaAssociationRuntime),
+    Report,
 }
 
 struct Authenticate {
@@ -282,20 +343,19 @@ struct Authenticate {
     stage: AuthStage,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AuthStage {
     NeedSend,
     AwaitSent { response_timeout: Duration },
     AwaitResponse { until: Instant },
 }
 
-struct Associate {
-    runtime: StaAssociationRuntime,
-    pending: Option<SequenceNumber>,
-}
-
 /// The connected station.
-struct Connected {
+struct Connected<K> {
     bssid: [u8; 6],
+    channel: SupportedChannel<K>,
+    /// The upstream fact the arbiter has yet to hear.
+    report: Option<UpstreamFact<K>>,
 }
 
 /// The station leaving its network, and why.
@@ -304,11 +364,15 @@ struct Leave {
     step: LeaveStep,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LeaveStep {
     NeedDeauthentication { bssid: [u8; 6] },
-    AwaitDeauthentication { until: Instant },
+    AwaitDeauthentication,
     NeedConfigure,
     AwaitConfigured,
+    NeedRelease,
+    /// The lease ends with its notice, which gives the place back.
+    AwaitEnd,
 }
 
 impl Leave {
@@ -341,7 +405,10 @@ impl<X> Pool<X> {
     /// granted, which [`POOL_CAPACITY`] bounds.
     fn put(&mut self, item: X) {
         let slot = self.items.iter_mut().find(|slot| slot.is_none());
-        debug_assert!(slot.is_some(), "a station holds at most POOL_CAPACITY tokens of a kind");
+        debug_assert!(
+            slot.is_some(),
+            "a station holds at most POOL_CAPACITY tokens of a kind"
+        );
         if let Some(slot) = slot {
             *slot = Some(item);
         }
@@ -364,22 +431,45 @@ fn peer_disconnect(frame: &[u8], bssid: [u8; 6]) -> Option<u16> {
     Some(u16::from_le_bytes(frame.get(24..26)?.try_into().ok()?))
 }
 
+/// What ended in the station's world.
+enum Done {
+    Command(StaCommand),
+    Tick,
+    /// A transmission ended: acknowledged, or not.
+    Tx {
+        delivered: bool,
+    },
+    Configured,
+}
+
+/// An action a state owes.
+enum Owed<T: StaTokens, K> {
+    Request(ChannelRequest<K>),
+    Release,
+    Upstream(UpstreamFact<K>),
+    Configure(StationReceive<K>),
+    Transmit(StaTransmit<T, K>),
+    Notify(StaNotice),
+}
+
 impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     /// An idle station of `config`, with the tickets and small buffers the
-    /// composition granted it.
+    /// composition granted it and the arbiter's place.
     pub fn new(
         config: StaConfig<K>,
         tickets: impl IntoIterator<Item = T::Ticket>,
         buffers: impl IntoIterator<Item = T::SmallBuffer>,
+        place: LeasePlace,
     ) -> Self {
         Self {
             config,
             state: State::Idle,
             tickets: Pool::new(tickets),
             buffers: Pool::new(buffers),
+            place: Some(place),
+            lease: Held::None,
             sequence: StaSequenceCounter::new(SequenceNumber::ZERO),
             scan: ScanTable::new(),
-            frame: [0; FRAME_CAPACITY],
         }
     }
 
@@ -398,32 +488,164 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
 
     /// Take one input at `now`.
     pub fn input(&mut self, now: Instant, input: StaInput<'_, T, K>) {
-        // A transmission's tokens come back whatever the state.
-        let input = match input {
+        let done = match input {
             StaInput::TxDone {
                 ticket,
                 buffer,
                 completion,
             } => {
+                // A transmission's tokens come back whatever the state.
                 self.tickets.put(ticket);
                 self.buffers.put(buffer);
-                Some(Done::Tx {
+                Done::Tx {
                     delivered: matches!(completion.status, TxStatus::Success),
-                })
+                }
             }
-            StaInput::Command(command) => Some(Done::Command(command)),
-            StaInput::Tick => Some(Done::Tick),
+            StaInput::Command(command) => Done::Command(command),
+            StaInput::Tick => Done::Tick,
+            StaInput::Configured => Done::Configured,
             StaInput::Received { frame, meta } => {
                 self.received(now, frame, meta);
-                None
+                return;
             }
-            StaInput::ChannelGranted(_) => Some(Done::ChannelGranted),
-            StaInput::ChannelRefused => Some(Done::ChannelRefused),
-            StaInput::Configured => Some(Done::Configured),
+            StaInput::Answer(answer) => {
+                self.answered(answer);
+                return;
+            }
+            StaInput::Arbiter(notice) => {
+                self.noticed(notice);
+                return;
+            }
         };
-        if let Some(done) = input {
-            let state = core::mem::replace(&mut self.state, State::Idle);
-            self.state = self.step(state, now, done);
+        let state = core::mem::replace(&mut self.state, State::Idle);
+        self.state = self.step(state, now, done);
+    }
+
+    /// The arbiter's answer.
+    fn answered(&mut self, answer: Answer<K>) {
+        let state = core::mem::replace(&mut self.state, State::Idle);
+        self.state = match answer {
+            Answer::Lease(lease) => {
+                self.lease = Held::Lease(lease);
+                match state {
+                    State::Scan(mut scan) => {
+                        scan.step = ScanStep::AwaitStart;
+                        State::Scan(scan)
+                    }
+                    State::Join(mut join) => {
+                        join.step = JoinStep::AwaitStart;
+                        State::Join(join)
+                    }
+                    state => state,
+                }
+            }
+            Answer::Leave(reason, place) => {
+                self.place = Some(place);
+                State::Report(StaDisconnectReason::Arbiter(reason))
+            }
+        };
+    }
+
+    /// A notice of the arbiter.
+    fn noticed(&mut self, notice: StationNotice<K>) {
+        let state = core::mem::replace(&mut self.state, State::Idle);
+        self.state = match notice {
+            StationNotice::LeaseStarted(id) => {
+                if self.lease.id() != Some(id) {
+                    state
+                } else {
+                    match state {
+                        State::Scan(mut scan) if scan.step == ScanStep::AwaitStart => {
+                            scan.skipped = 0;
+                            scan.step = ScanStep::NeedConfigure;
+                            State::Scan(scan)
+                        }
+                        State::Join(mut join) if matches!(join.step, JoinStep::AwaitStart) => {
+                            join.step = JoinStep::NeedConfigure;
+                            State::Join(join)
+                        }
+                        state => state,
+                    }
+                }
+            }
+            StationNotice::LeaseEnded(id, place) | StationNotice::LeaseCancelled(id, _, place)
+                if self.lease.id() != Some(id) =>
+            {
+                // A notice of an earlier lease: its place came back long
+                // ago, so this one is the arbiter's mistake.
+                debug_assert!(false, "a notice names a lease the station does not hold");
+                drop(place);
+                state
+            }
+            StationNotice::LeaseEnded(_, place) => {
+                self.lease = Held::None;
+                self.place = Some(place);
+                self.lease_ended(state)
+            }
+            StationNotice::LeaseCancelled(_, reason, place) => {
+                self.lease = Held::None;
+                self.place = Some(place);
+                self.lease_cancelled(state, reason)
+            }
+            StationNotice::Moved(channel) => match state {
+                State::Connected(mut connected) => {
+                    connected.channel = channel;
+                    State::Connected(connected)
+                }
+                state => state,
+            },
+            StationNotice::Leave(reason) => match state {
+                State::Connected(_) | State::Join(_) | State::Scan(_) => State::Leave(Leave::new(
+                    StaDisconnectReason::Arbiter(reason),
+                    LeaveStep::NeedConfigure,
+                )),
+                state => state,
+            },
+        };
+    }
+
+    /// The state after the lease ended at its own end.
+    fn lease_ended(&mut self, state: State<K>) -> State<K> {
+        match state {
+            // The visit's listening is over: the next channel.
+            State::Scan(scan) => self.visit(scan.visit + 1, 0),
+            State::Leave(leave) => State::Report(leave.reason),
+            // The connected lease ended without the station's release: the
+            // port left; the station leaves.
+            State::Connected(_) | State::Join(_) => State::Leave(Leave::new(
+                StaDisconnectReason::Arbiter(LeaveReason::PortFailed),
+                LeaveStep::NeedConfigure,
+            )),
+            state => state,
+        }
+    }
+
+    /// The state after the lease was cancelled.
+    fn lease_cancelled(&mut self, state: State<K>, reason: CancelReason) -> State<K> {
+        match state {
+            // A skipped absence: the same channel again, until too many in
+            // a row end the scan with what it found.
+            State::Scan(scan) => {
+                let skipped = scan.skipped.saturating_add(1);
+                if skipped >= self.config.skipped_absences {
+                    self.select(true)
+                } else {
+                    State::Scan(Scan {
+                        visit: scan.visit,
+                        skipped,
+                        step: ScanStep::NeedLease,
+                    })
+                }
+            }
+            State::Leave(leave) => State::Report(leave.reason),
+            State::Join(_) | State::Connected(_) => {
+                let _ = reason;
+                State::Leave(Leave::new(
+                    StaDisconnectReason::Arbiter(LeaveReason::PortFailed),
+                    LeaveStep::NeedConfigure,
+                ))
+            }
+            state => state,
         }
     }
 
@@ -432,7 +654,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         match (state, done) {
             (State::Idle | State::Report(_), Done::Command(StaCommand::Connect)) => {
                 self.scan.clear();
-                self.visit(0)
+                self.visit(0, 0)
             }
             (State::Connected(connected), Done::Command(StaCommand::Disconnect)) => {
                 State::Leave(Leave::new(
@@ -442,19 +664,24 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                     },
                 ))
             }
-            (State::Scan(_) | State::Join(_), Done::Command(StaCommand::Disconnect)) => State::Leave(
-                Leave::new(StaDisconnectReason::Requested, LeaveStep::NeedConfigure),
-            ),
-            (State::Scan(scan), done) => self.scan_step(scan, now, done),
+            (State::Scan(_) | State::Join(_), Done::Command(StaCommand::Disconnect)) => {
+                State::Leave(Leave::new(
+                    StaDisconnectReason::Requested,
+                    LeaveStep::NeedConfigure,
+                ))
+            }
+            (State::Scan(mut scan), Done::Configured) if scan.step == ScanStep::AwaitConfigured => {
+                scan.step = ScanStep::NeedProbe;
+                State::Scan(scan)
+            }
             (State::Join(join), done) => self.join_step(join, now, done),
             (State::Leave(Leave { reason, step }), done) => match (step, done) {
-                (LeaveStep::AwaitDeauthentication { .. }, Done::Tx { .. }) => {
+                (LeaveStep::AwaitDeauthentication, Done::Tx { .. }) => {
                     State::Leave(Leave::new(reason, LeaveStep::NeedConfigure))
                 }
-                (LeaveStep::AwaitDeauthentication { until }, Done::Tick) if now >= until => {
-                    State::Leave(Leave::new(reason, LeaveStep::NeedConfigure))
+                (LeaveStep::AwaitConfigured, Done::Configured) => {
+                    State::Leave(Leave::new(reason, LeaveStep::NeedRelease))
                 }
-                (LeaveStep::AwaitConfigured, Done::Configured) => State::Report(reason),
                 (step, _) => State::Leave(Leave::new(reason, step)),
             },
             (state, _) => state,
@@ -462,18 +689,20 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     }
 
     /// The scan's visit of the channel at `visit`, or its end.
-    fn visit(&mut self, visit: usize) -> State<K> {
+    fn visit(&mut self, visit: usize, skipped: u8) -> State<K> {
         match self.channel(visit) {
-            Some(channel) => State::Scan(Scan {
+            Some(_) => State::Scan(Scan {
                 visit,
-                step: ScanStep::NeedChannel(channel),
+                skipped,
+                step: ScanStep::NeedLease,
             }),
-            None => self.select(),
+            None => self.select(false),
         }
     }
 
     /// The join of the best access point of the network the scan found.
-    fn select(&mut self) -> State<K> {
+    fn select(&mut self, partial: bool) -> State<K> {
+        let not_found = State::Report(StaDisconnectReason::NotFound { partial });
         let ssid = self.ssid();
         let Some(access_point) = self
             .scan
@@ -484,65 +713,41 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             .max_by_key(|record| record.rssi)
             .copied()
         else {
-            return State::Report(StaDisconnectReason::NotFound);
+            return not_found;
         };
         let Ok(rsn) = select_association_rsn(&access_point, StaSecurityPolicy::Open) else {
-            return State::Report(StaDisconnectReason::NotFound);
+            return not_found;
         };
-        let channel = self.config.channels.iter().flatten().copied().find(|channel| {
-            channel.channel().number() == access_point.channel
-        });
-        let Some(channel) = channel else {
-            return State::Report(StaDisconnectReason::NotFound);
+        let Some(channel) = self
+            .config
+            .channels
+            .iter()
+            .flatten()
+            .copied()
+            .find(|channel| channel.channel().number() == access_point.channel)
+        else {
+            return not_found;
         };
         State::Join(Join {
             access_point,
             rsn,
-            step: JoinStep::NeedChannel(channel),
+            channel,
+            step: JoinStep::NeedLease,
         })
-    }
-
-    fn scan_step(&mut self, scan: Scan<K>, now: Instant, done: Done) -> State<K> {
-        let Scan { visit, step } = scan;
-        let step = match (step, done) {
-            (ScanStep::AwaitChannel, Done::ChannelGranted) => ScanStep::NeedConfigure,
-            // The arbiter keeps another channel: skip this one.
-            (ScanStep::AwaitChannel, Done::ChannelRefused) => return self.visit(visit + 1),
-            (ScanStep::AwaitConfigured, Done::Configured) => ScanStep::NeedProbe,
-            (ScanStep::AwaitProbe { .. }, Done::Tx { .. }) => ScanStep::Dwell {
-                until: now.checked_add(self.config.dwell).unwrap_or(now),
-            },
-            (ScanStep::AwaitProbe { until }, Done::Tick) if now >= until => ScanStep::Dwell {
-                until: now.checked_add(self.config.dwell).unwrap_or(now),
-            },
-            (ScanStep::Dwell { until }, Done::Tick) if now >= until => {
-                return self.visit(visit + 1);
-            }
-            (step, _) => step,
-        };
-        State::Scan(Scan { visit, step })
     }
 
     fn join_step(&mut self, join: Join<K>, now: Instant, done: Done) -> State<K> {
         let Join {
             access_point,
             rsn,
+            channel,
             step,
         } = join;
         let step = match (step, done) {
-            (JoinStep::AwaitChannel, Done::ChannelGranted) => JoinStep::NeedConfigure,
-            (JoinStep::AwaitChannel, Done::ChannelRefused) => {
-                return State::Report(StaDisconnectReason::ChannelRefused);
-            }
-            (JoinStep::AwaitConfigured, Done::Configured) => {
-                JoinStep::Authenticate(Authenticate {
-                    runtime: StaAuthenticationRuntime::new(
-                        self.config.address,
-                        access_point.bssid,
-                    ),
-                    stage: AuthStage::NeedSend,
-                })
-            }
+            (JoinStep::AwaitConfigured, Done::Configured) => JoinStep::Authenticate(Authenticate {
+                runtime: StaAuthenticationRuntime::new(self.config.address, access_point.bssid),
+                stage: AuthStage::NeedSend,
+            }),
             (JoinStep::Authenticate(mut auth), done) => {
                 auth.stage = match (auth.stage, done) {
                     (AuthStage::AwaitSent { response_timeout }, Done::Tx { delivered: true }) => {
@@ -550,32 +755,46 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                             until: now.checked_add(response_timeout).unwrap_or(now),
                         }
                     }
-                    // The access point never acknowledged the request: as
-                    // unanswered.
+                    // Unacknowledged or unanswered: as a timeout.
                     (AuthStage::AwaitSent { .. }, Done::Tx { delivered: false }) => {
-                        match auth.runtime.response_timed_out() {
-                            Ok(StaAuthenticationEvent::Retry { .. }) => AuthStage::NeedSend,
-                            _ => return State::Report(StaDisconnectReason::AuthenticationFailed),
+                        match self.auth_timed_out(&mut auth) {
+                            Ok(stage) => stage,
+                            Err(state) => return state,
                         }
                     }
                     (AuthStage::AwaitResponse { until }, Done::Tick) if now >= until => {
-                        match auth.runtime.response_timed_out() {
-                            Ok(StaAuthenticationEvent::Retry { .. }) => AuthStage::NeedSend,
-                            _ => return State::Report(StaDisconnectReason::AuthenticationFailed),
+                        match self.auth_timed_out(&mut auth) {
+                            Ok(stage) => stage,
+                            Err(state) => return state,
                         }
                     }
                     (stage, _) => stage,
                 };
                 JoinStep::Authenticate(auth)
             }
-            (JoinStep::Associate(associate), Done::Tx { .. }) => JoinStep::Associate(associate),
             (step, _) => step,
         };
         State::Join(Join {
             access_point,
             rsn,
+            channel,
             step,
         })
+    }
+
+    /// The authentication's next stage after a timeout, or the report of
+    /// its failure.
+    fn auth_timed_out(&mut self, auth: &mut Authenticate) -> Result<AuthStage, State<K>> {
+        match auth.runtime.response_timed_out() {
+            Ok(StaAuthenticationEvent::Retry { .. }) => Ok(AuthStage::NeedSend),
+            _ => Err(self.leave_joined(StaDisconnectReason::AuthenticationFailed)),
+        }
+    }
+
+    /// Leave the access point the join reached: receive off, the lease
+    /// back.
+    fn leave_joined(&mut self, reason: StaDisconnectReason) -> State<K> {
+        State::Leave(Leave::new(reason, LeaveStep::NeedConfigure))
     }
 
     /// Take a received frame.
@@ -586,60 +805,50 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         };
         let state = core::mem::replace(&mut self.state, State::Idle);
         self.state = match state {
-            State::Scan(scan) => {
+            State::Scan(scan) if scan.step == ScanStep::Listen || scan.step == ScanStep::NeedProbe => {
                 let channel = self
                     .channel(scan.visit)
                     .map_or(0, |channel| channel.channel().number());
-                self.scan
-                    .observe_management(frame, channel, rssi, Some(now));
+                self.scan.observe_management(frame, channel, rssi, Some(now));
                 State::Scan(scan)
             }
-            State::Join(mut join) => {
-                let next = match &mut join.step {
-                    JoinStep::Authenticate(auth) => {
-                        let _ = auth.runtime.observe_received_frame();
-                        match auth.runtime.observe_management_frame(frame) {
-                            Ok(StaAuthenticationEvent::Authenticated { .. }) => {
-                                Some(JoinStep::Associate(Associate {
-                                    runtime: StaAssociationRuntime::new(
-                                        self.config.address,
-                                        join.access_point.bssid,
-                                        oer_ieee80211_mac::security::LinkProtection::Open,
-                                    ),
-                                    pending: None,
-                                }))
-                            }
-                            Ok(StaAuthenticationEvent::Retry { .. }) => {
-                                auth.stage = AuthStage::NeedSend;
-                                None
-                            }
-                            Ok(StaAuthenticationEvent::Failed { .. }) | Err(_) => {
-                                self.state = State::Report(StaDisconnectReason::AuthenticationFailed);
-                                return;
-                            }
-                            Ok(StaAuthenticationEvent::Irrelevant) => None,
+            State::Join(mut join) => match &mut join.step {
+                JoinStep::Authenticate(auth) => {
+                    let _ = auth.runtime.observe_received_frame();
+                    match auth.runtime.observe_management_frame(frame) {
+                        Ok(StaAuthenticationEvent::Authenticated { .. }) => {
+                            join.step = JoinStep::Associate(StaAssociationRuntime::new(
+                                self.config.address,
+                                join.access_point.bssid,
+                                oer_ieee80211_mac::security::LinkProtection::Open,
+                            ));
+                            State::Join(join)
                         }
-                    }
-                    JoinStep::Associate(associate) => {
-                        let _ = associate.runtime.observe_received_frame();
-                        match associate.runtime.observe_management_frame(frame, now) {
-                            Ok(StaAssociationEvent::Associated { .. }) => Some(JoinStep::Report {
-                                channel: join.access_point.channel,
-                            }),
-                            Ok(StaAssociationEvent::Failed { .. }) | Err(_) => {
-                                self.state = State::Report(StaDisconnectReason::AssociationFailed);
-                                return;
-                            }
-                            Ok(StaAssociationEvent::Irrelevant) => None,
+                        Ok(StaAuthenticationEvent::Retry { .. }) => {
+                            auth.stage = AuthStage::NeedSend;
+                            State::Join(join)
                         }
+                        Ok(StaAuthenticationEvent::Failed { .. }) | Err(_) => {
+                            self.leave_joined(StaDisconnectReason::AuthenticationFailed)
+                        }
+                        Ok(StaAuthenticationEvent::Irrelevant) => State::Join(join),
                     }
-                    _ => None,
-                };
-                if let Some(next) = next {
-                    join.step = next;
                 }
-                State::Join(join)
-            }
+                JoinStep::Associate(runtime) => {
+                    let _ = runtime.observe_received_frame();
+                    match runtime.observe_management_frame(frame, now) {
+                        Ok(StaAssociationEvent::Associated { .. }) => {
+                            join.step = JoinStep::Report;
+                            State::Join(join)
+                        }
+                        Ok(StaAssociationEvent::Failed { .. }) | Err(_) => {
+                            self.leave_joined(StaDisconnectReason::AssociationFailed)
+                        }
+                        Ok(StaAssociationEvent::Irrelevant) => State::Join(join),
+                    }
+                }
+                _ => State::Join(join),
+            },
             State::Connected(connected) => match peer_disconnect(frame, connected.bssid) {
                 Some(reason_code) => State::Leave(Leave::new(
                     StaDisconnectReason::Peer { reason_code },
@@ -653,25 +862,29 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
 
     /// The next action to carry out at `now`, if any. The service takes
     /// every action before it waits again.
-    pub fn poll_action(&mut self, now: Instant) -> Option<StaAction<'_, T, K>> {
+    pub fn poll_action(&mut self, now: Instant) -> Option<StaAction<T, K>> {
         let state = core::mem::replace(&mut self.state, State::Idle);
         let (state, owed) = self.owe(state, now);
         self.state = state;
         Some(match owed? {
-            Owed::RequestChannel(channel) => StaAction::RequestChannel(channel),
+            Owed::Request(request) => {
+                let place = self.place.take().expect("a request holds the place");
+                StaAction::RequestChannel(request, place)
+            }
+            Owed::Release => match core::mem::replace(&mut self.lease, Held::None) {
+                Held::Lease(lease) => {
+                    self.lease = Held::Released(lease.id());
+                    StaAction::ReleaseChannel(lease)
+                }
+                held => {
+                    self.lease = held;
+                    unreachable!("a release holds the lease")
+                }
+            },
+            Owed::Upstream(fact) => StaAction::Upstream(fact),
             Owed::Configure(receive) => StaAction::Configure(receive),
+            Owed::Transmit(transmit) => StaAction::Transmit(transmit),
             Owed::Notify(notice) => StaAction::Notify(notice),
-            Owed::Transmit {
-                ticket,
-                buffer,
-                len,
-                plan,
-            } => StaAction::Transmit(StaTransmit {
-                ticket,
-                buffer,
-                frame: &self.frame[..len],
-                plan,
-            }),
         })
     }
 
@@ -682,40 +895,50 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 State::Idle,
                 Some(Owed::Notify(StaNotice::Disconnected(reason))),
             ),
-            State::Scan(Scan { visit, step }) => {
+            State::Scan(Scan {
+                visit,
+                skipped,
+                step,
+            }) => {
                 let (step, owed) = match step {
-                    ScanStep::NeedChannel(channel) => {
-                        (ScanStep::AwaitChannel, Some(Owed::RequestChannel(channel)))
+                    ScanStep::NeedLease if self.place.is_some() => {
+                        let channel = self.channel(visit).expect("a visit names a channel");
+                        (
+                            ScanStep::AwaitAnswer,
+                            Some(Owed::Request(ChannelRequest {
+                                channel,
+                                purpose: Purpose::Scan {
+                                    dwell: self.config.dwell,
+                                },
+                                announces_absence: false,
+                            })),
+                        )
                     }
                     ScanStep::NeedConfigure => (
                         ScanStep::AwaitConfigured,
                         Some(Owed::Configure(StationReceive::OtherBssManagement)),
                     ),
-                    ScanStep::NeedProbe => match self.encode_probe() {
-                        Some((ticket, buffer, len)) => (
-                            ScanStep::AwaitProbe {
-                                until: now.checked_add(TX_TERMINAL_TIMEOUT).unwrap_or(now),
-                            },
-                            Some(Owed::Transmit {
-                                ticket,
-                                buffer,
-                                len,
-                                plan: StaRatePlan::Group,
-                            }),
-                        ),
-                        // No token or no encoding: listen passively.
-                        None => (
-                            ScanStep::Dwell {
-                                until: now.checked_add(self.config.dwell).unwrap_or(now),
-                            },
-                            None,
-                        ),
-                    },
+                    // No token or no encoding: listen passively.
+                    ScanStep::NeedProbe => (
+                        ScanStep::Listen,
+                        self.encode_probe().map(Owed::Transmit),
+                    ),
                     step => (step, None),
                 };
-                (State::Scan(Scan { visit, step }), owed)
+                (
+                    State::Scan(Scan {
+                        visit,
+                        skipped,
+                        step,
+                    }),
+                    owed,
+                )
             }
             State::Join(join) => self.owe_join(join, now),
+            State::Connected(mut connected) => {
+                let owed = connected.report.take().map(Owed::Upstream);
+                (State::Connected(connected), owed)
+            }
             State::Leave(Leave { reason, step }) => {
                 let (step, owed) = match step {
                     LeaveStep::NeedDeauthentication { bssid } => match self.encode_management(
@@ -723,16 +946,9 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                         bssid,
                         &DEAUTHENTICATION_LEAVING.to_le_bytes(),
                     ) {
-                        Some((ticket, buffer, len)) => (
-                            LeaveStep::AwaitDeauthentication {
-                                until: now.checked_add(TX_TERMINAL_TIMEOUT).unwrap_or(now),
-                            },
-                            Some(Owed::Transmit {
-                                ticket,
-                                buffer,
-                                len,
-                                plan: StaRatePlan::Management,
-                            }),
+                        Some(transmit) => (
+                            LeaveStep::AwaitDeauthentication,
+                            Some(Owed::Transmit(transmit)),
                         ),
                         None => (LeaveStep::NeedConfigure, None),
                     },
@@ -740,6 +956,11 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                         LeaveStep::AwaitConfigured,
                         Some(Owed::Configure(StationReceive::Off)),
                     ),
+                    // No lease to give back: done.
+                    LeaveStep::NeedRelease if !matches!(self.lease, Held::Lease(_)) => {
+                        return (State::Report(reason), None);
+                    }
+                    LeaveStep::NeedRelease => (LeaveStep::AwaitEnd, Some(Owed::Release)),
                     step => (step, None),
                 };
                 (State::Leave(Leave::new(reason, step)), owed)
@@ -752,111 +973,105 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         let Join {
             access_point,
             rsn,
+            channel,
             step,
         } = join;
         let (step, owed) = match step {
-            JoinStep::NeedChannel(channel) => {
-                (JoinStep::AwaitChannel, Some(Owed::RequestChannel(channel)))
-            }
+            JoinStep::NeedLease if self.place.is_some() => (
+                JoinStep::AwaitAnswer,
+                Some(Owed::Request(ChannelRequest {
+                    channel,
+                    purpose: Purpose::Connect,
+                    announces_absence: false,
+                })),
+            ),
             JoinStep::NeedConfigure => {
                 let receive = SupportedFilter::<K, StationRole>::new(ReceiveFilter::BSS_MEMBER)
                     .and_then(|filter| {
                         Some(StationReceive::Bss {
-                            bssid: oer_ieee80211_lower_mac::IndividualAddress::new(
-                                access_point.bssid,
-                            )?,
+                            bssid: IndividualAddress::new(access_point.bssid)?,
                             filter,
                         })
                     });
                 match receive {
                     Some(receive) => (JoinStep::AwaitConfigured, Some(Owed::Configure(receive))),
-                    None => {
-                        return (State::Report(StaDisconnectReason::Encode), None);
-                    }
+                    None => return (self.leave_joined(StaDisconnectReason::Encode), None),
                 }
             }
-            JoinStep::Authenticate(mut auth) => match auth.stage {
-                AuthStage::NeedSend => {
-                    let Ok(attempt) = auth.runtime.begin_attempt(&mut self.sequence) else {
-                        return (State::Report(StaDisconnectReason::AuthenticationFailed), None);
-                    };
-                    let Some((ticket, buffer)) = self.tokens() else {
-                        return (State::Join(Join { access_point, rsn, step: JoinStep::Authenticate(auth) }), None);
-                    };
-                    let encoded = OpenAuthenticationRequest {
-                        source: self.config.address,
+            JoinStep::Authenticate(mut auth) if auth.stage == AuthStage::NeedSend => {
+                let Ok(attempt) = auth.runtime.begin_attempt(&mut self.sequence) else {
+                    return (
+                        self.leave_joined(StaDisconnectReason::AuthenticationFailed),
+                        None,
+                    );
+                };
+                let encoded = self.encode_individual(|frame| {
+                    OpenAuthenticationRequest {
+                        source: access_point.bssid,
                         bssid: access_point.bssid,
                         sequence_number: attempt.sequence_number,
                     }
-                    .encode(&mut self.frame);
-                    match encoded {
-                        Ok(len) => {
-                            auth.stage = AuthStage::AwaitSent {
-                                response_timeout: attempt.response_timeout,
-                            };
-                            (
-                                JoinStep::Authenticate(auth),
-                                Some(Owed::Transmit {
-                                    ticket,
-                                    buffer,
-                                    len,
-                                    plan: StaRatePlan::Management,
-                                }),
-                            )
-                        }
-                        Err(_) => {
-                            self.give_back(ticket, buffer);
-                            return (State::Report(StaDisconnectReason::Encode), None);
-                        }
+                    .encode(frame)
+                    .ok()
+                }, self.config.address);
+                match encoded {
+                    Ok(transmit) => {
+                        auth.stage = AuthStage::AwaitSent {
+                            response_timeout: attempt.response_timeout,
+                        };
+                        (JoinStep::Authenticate(auth), Some(Owed::Transmit(transmit)))
+                    }
+                    // No token now: the next poll tries again.
+                    Err(Unsent::NoTokens) => (JoinStep::Authenticate(auth), None),
+                    Err(Unsent::Encode) => {
+                        return (self.leave_joined(StaDisconnectReason::Encode), None);
                     }
                 }
-                _ => (JoinStep::Authenticate(auth), None),
-            },
-            JoinStep::Associate(mut associate) => {
-                match associate.runtime.poll(now, &mut self.sequence) {
-                    Ok(StaAssociationPoll::Transmit(attempt)) => {
-                        associate.pending = Some(attempt.sequence_number);
-                        let Some((ticket, buffer)) = self.tokens() else {
-                            return (State::Join(Join { access_point, rsn, step: JoinStep::Associate(associate) }), None);
-                        };
-                        let encoded = AssociationRequest {
-                            source: self.config.address,
+            }
+            JoinStep::Associate(mut runtime) => match runtime.poll(now, &mut self.sequence) {
+                Ok(StaAssociationPoll::Transmit(attempt)) => {
+                    let capabilities = self.config.association;
+                    let phy = self.config.phy;
+                    let address = self.config.address;
+                    let encoded = self.encode_individual(|frame| {
+                        AssociationRequest {
+                            source: address,
                             access_point: &access_point,
                             sequence_number: attempt.sequence_number,
                             listen_interval: 10,
-                            phy: self.config.phy,
+                            phy,
                             security: &rsn,
                             power_capability: None,
                             he_ul_mu_power: None,
                         }
-                        .encode(&mut self.frame, self.config.association);
-                        match encoded {
-                            Ok(len) => (
-                                JoinStep::Associate(associate),
-                                Some(Owed::Transmit {
-                                    ticket,
-                                    buffer,
-                                    len,
-                                    plan: StaRatePlan::Management,
-                                }),
-                            ),
-                            Err(_) => {
-                                self.give_back(ticket, buffer);
-                                return (State::Report(StaDisconnectReason::Encode), None);
-                            }
+                        .encode(frame, capabilities)
+                        .ok()
+                    }, address);
+                    match encoded {
+                        Ok(transmit) => (JoinStep::Associate(runtime), Some(Owed::Transmit(transmit))),
+                        Err(Unsent::NoTokens) => (JoinStep::Associate(runtime), None),
+                        Err(Unsent::Encode) => {
+                            return (self.leave_joined(StaDisconnectReason::Encode), None);
                         }
                     }
-                    Ok(StaAssociationPoll::Idle) => (JoinStep::Associate(associate), None),
-                    Ok(StaAssociationPoll::Failed { .. }) | Err(_) => {
-                        return (State::Report(StaDisconnectReason::AssociationFailed), None);
-                    }
                 }
-            }
-            JoinStep::Report { channel } => {
+                Ok(StaAssociationPoll::Idle) => (JoinStep::Associate(runtime), None),
+                Ok(StaAssociationPoll::Failed { .. }) | Err(_) => {
+                    return (self.leave_joined(StaDisconnectReason::AssociationFailed), None);
+                }
+            },
+            JoinStep::Report => {
                 let bssid = access_point.bssid;
                 return (
-                    State::Connected(Connected { bssid }),
-                    Some(Owed::Notify(StaNotice::Connected { bssid, channel })),
+                    State::Connected(Connected {
+                        bssid,
+                        channel,
+                        report: Some(UpstreamFact::Connected(channel)),
+                    }),
+                    Some(Owed::Notify(StaNotice::Connected {
+                        bssid,
+                        channel: channel.channel().number(),
+                    })),
                 );
             }
             step => (step, None),
@@ -865,6 +1080,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             State::Join(Join {
                 access_point,
                 rsn,
+                channel,
                 step,
             }),
             owed,
@@ -883,17 +1099,42 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         }
     }
 
-    fn give_back(&mut self, ticket: T::Ticket, buffer: T::SmallBuffer) {
-        self.tickets.put(ticket);
-        self.buffers.put(buffer);
+    /// The frame `encode` writes into a buffer, as an individual frame
+    /// from `source`.
+    fn encode_individual(
+        &mut self,
+        encode: impl FnOnce(&mut [u8]) -> Option<usize>,
+        source: [u8; 6],
+    ) -> Result<StaTransmit<T, K>, Unsent> {
+        let _ = source;
+        let (ticket, mut buffer) = self.tokens().ok_or(Unsent::NoTokens)?;
+        let frame = encode(buffer.bytes_mut()).and_then(|len| {
+            let header =
+                HeaderSpec::decode(&buffer.bytes_mut()[..len], IndividualAddress::new)?;
+            SizedFrame::new(AckHeader::new(header)?, MpduLength::new(len)?)
+        });
+        match frame {
+            Some(frame) => Ok(StaTransmit {
+                ticket,
+                buffer,
+                frame: StaFrame::Individual(frame),
+                plan: StaRatePlan::Management,
+            }),
+            None => {
+                self.tickets.put(ticket);
+                self.buffers.put(buffer);
+                Err(Unsent::Encode)
+            }
+        }
     }
 
-    /// A broadcast Probe Request in the frame, with its tokens.
-    fn encode_probe(&mut self) -> Option<(T::Ticket, T::SmallBuffer, usize)> {
-        let (ticket, buffer) = self.tokens()?;
+    /// A broadcast Probe Request in a buffer, if the station holds tokens
+    /// and it encodes.
+    fn encode_probe(&mut self) -> Option<StaTransmit<T, K>> {
+        let (ticket, mut buffer) = self.tokens()?;
         let sequence_number = self.sequence.take();
         let rates = self.config.supported_rates;
-        let encoded = ProbeRequest {
+        let len = ProbeRequest {
             destination: [0xff; 6],
             source: self.config.address,
             bssid: [0xff; 6],
@@ -901,92 +1142,80 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             ssid: &self.config.ssid[..usize::from(self.config.ssid_len)],
             supported_rates: &rates,
         }
-        .encode(&mut self.frame);
-        match encoded {
-            Ok(len) => Some((ticket, buffer, len)),
-            Err(_) => {
-                self.give_back(ticket, buffer);
+        .encode(buffer.bytes_mut())
+        .ok();
+        let frame = len.and_then(|len| {
+            let header = HeaderSpec::decode(&buffer.bytes_mut()[..len], GroupAddress::new)?;
+            SizedFrame::new(header, MpduLength::new(len)?)
+        });
+        match frame {
+            Some(frame) => Some(StaTransmit {
+                ticket,
+                buffer,
+                frame: StaFrame::Group(frame),
+                plan: StaRatePlan::Group,
+            }),
+            None => {
+                self.tickets.put(ticket);
+                self.buffers.put(buffer);
                 None
             }
         }
     }
 
-    /// A management frame of `subtype` to `bssid` in the frame, with its
-    /// tokens.
+    /// A management frame of `subtype` to `bssid` in a buffer.
     fn encode_management(
         &mut self,
         subtype: StaManagementSubtype,
         bssid: [u8; 6],
         body: &[u8],
-    ) -> Option<(T::Ticket, T::SmallBuffer, usize)> {
-        let (ticket, buffer) = self.tokens()?;
-        let encoded = StaManagementFrame {
-            subtype,
-            source: self.config.address,
-            bssid,
-            sequence_number: self.sequence.take(),
-            body,
-        }
-        .encode(&mut self.frame);
-        match encoded {
-            Ok(len) => Some((ticket, buffer, len)),
-            Err(_) => {
-                self.give_back(ticket, buffer);
-                None
-            }
-        }
+    ) -> Option<StaTransmit<T, K>> {
+        let address = self.config.address;
+        let sequence_number = self.sequence.take();
+        self.encode_individual(
+            |frame| {
+                StaManagementFrame {
+                    subtype,
+                    source: address,
+                    bssid,
+                    sequence_number,
+                    body,
+                }
+                .encode(frame)
+                .ok()
+            },
+            address,
+        )
+        .ok()
     }
 
     /// When the station next needs a [`StaInput::Tick`], even without an
     /// event.
     pub fn poll_deadline(&self) -> Option<Instant> {
         match &self.state {
-            State::Scan(Scan {
-                step: ScanStep::AwaitProbe { until } | ScanStep::Dwell { until },
+            State::Join(Join {
+                step:
+                    JoinStep::Authenticate(Authenticate {
+                        stage: AuthStage::AwaitResponse { until },
+                        ..
+                    }),
                 ..
             }) => Some(*until),
             State::Join(Join {
-                step: JoinStep::Authenticate(Authenticate {
-                    stage: AuthStage::AwaitResponse { until },
-                    ..
-                }),
+                step: JoinStep::Associate(runtime),
                 ..
-            }) => Some(*until),
-            State::Join(Join {
-                step: JoinStep::Associate(associate),
-                ..
-            }) => associate.runtime.next_deadline(),
-            State::Leave(Leave {
-                step: LeaveStep::AwaitDeauthentication { until },
-                ..
-            }) => Some(*until),
+            }) => runtime.next_deadline(),
             _ => None,
         }
     }
 }
 
-/// What ended in the station's world.
-enum Done {
-    Command(StaCommand),
-    Tick,
-    /// A transmission ended: acknowledged, or not.
-    Tx { delivered: bool },
-    ChannelGranted,
-    ChannelRefused,
-    Configured,
-}
-
-/// An action a state owes, before it borrows the frame.
-enum Owed<T: StaTokens, K> {
-    RequestChannel(SupportedChannel<K>),
-    Configure(StationReceive<K>),
-    Transmit {
-        ticket: T::Ticket,
-        buffer: T::SmallBuffer,
-        len: usize,
-        plan: StaRatePlan,
-    },
-    Notify(StaNotice),
+/// Why a frame was not handed out.
+enum Unsent {
+    /// The station holds no ticket or buffer now.
+    NoTokens,
+    /// The frame did not encode.
+    Encode,
 }
 
 #[cfg(test)]

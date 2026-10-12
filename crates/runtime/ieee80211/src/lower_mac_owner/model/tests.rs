@@ -862,7 +862,7 @@ impl Work for AggregateRetransmission<'_> {
         self.report.set(report);
         // The second again, from its numbered buffer, beside a new one.
         let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::numbered(buffers.remove(1))
-            .ok()
+            .map_err(|_| ())
             .expect("a protected subframe comes back numbered");
         let rate = phase.rate(PhyRate::Ht(ht)).unwrap();
         let mut station = phase.station();

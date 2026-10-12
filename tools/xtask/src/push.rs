@@ -6,24 +6,32 @@
 //!    read, refuses the push, since the gate would check what is not pushed.
 //! 2. The branch is not `main`: `main` changes only through pull requests,
 //!    which CI checks and merges.
-//! 3. The registry's fast checks ([`crate::registry`]) check what `HEAD`'s
-//!    commits change against the merge base with `origin/main`.
-//! 4. Unless the pull request is a draft, the local Claude review
+//! 3. The branch contains the current `origin/main`: the push fetches it
+//!    first and refuses a branch that lacks any of its commits, naming them
+//!    and the rebase that brings them in ([`current_main`]), so auto-merge
+//!    never merges a branch built against a stale `main`. A failed fetch
+//!    refuses the push too. A draft is checked the same way.
+//! 4. The registry's fast checks ([`crate::registry`]) check what `HEAD`'s
+//!    commits change against `origin/main`, their merge base.
+//! 5. Unless the pull request is a draft, the local Claude review
 //!    ([`crate::review`]) of the same diff has no blocking finding: it is the
 //!    only review that blocks; the one in CI reviews the pull request once
 //!    and only files its findings as issues. `--skip-review REASON` pushes
 //!    without it and records the reason on the pull request, so nothing
 //!    reviewed the push before it merges.
-//! 5. Push the branch, open its pull request when it has none, and enable
+//! 6. Push the branch, open its pull request when it has none, and enable
 //!    auto-merge: GitHub rebases it onto `main` once CI passes. With
 //!    `--draft` the pull request is a draft and nothing merges it.
 //!
-//! The push never waits for CI and never rebases: a branch that `main`
-//! outran merges as it is, and CI on `main` checks the result. A branch the
-//! developer rebased replaces its remote copy with `--force-with-lease`
+//! The push never waits for CI and never rebases: the developer rebases a
+//! branch that `main` outran and pushes again. A `main` that moves while
+//! the gate runs is not checked again; CI on `main` checks the merged
+//! result. A branch the developer rebased replaces its remote copy with `--force-with-lease`
 //! bound to the copy this push saw ([`Update::Rewrite`]), so a commit pushed
 //! there by anyone else in the meantime refuses the push instead of being
 //! lost.
+
+use std::path::Path;
 
 use oer_process::{self as process, git};
 
@@ -94,6 +102,53 @@ pub fn update(remote: Option<&str>, descends: bool) -> Update {
     }
 }
 
+/// How many of the commits a branch lacks a refusal names one by one.
+const NAMED_MISSING: usize = 20;
+
+/// Why a branch that lacks the `missing` commits of `origin/main` (one
+/// `<hash> <subject>` line each, newest first) cannot be pushed, if it lacks
+/// any.
+pub fn behind(missing: &[String]) -> Option<String> {
+    if missing.is_empty() {
+        return None;
+    }
+    let mut named: String = missing
+        .iter()
+        .take(NAMED_MISSING)
+        .map(|commit| format!("\n  {commit}"))
+        .collect();
+    if missing.len() > NAMED_MISSING {
+        named.push_str(&format!("\n  … and {} more", missing.len() - NAMED_MISSING));
+    }
+    Some(format!(
+        "the branch is behind origin/{MAIN} by {} commit(s); nothing pushed. \
+         Run `git rebase origin/{MAIN}`, then push again. It lacks:{named}",
+        missing.len()
+    ))
+}
+
+/// Fetch `main` from `origin` into `origin/main` and return its commit when
+/// `HEAD` contains it. A failed fetch, or a `HEAD` that lacks a commit of it
+/// ([`behind`]), is an error: the push never builds on a stale `main`.
+pub fn current_main(root: &Path) -> Result<String> {
+    let refspec = format!("+refs/heads/{MAIN}:refs/remotes/origin/{MAIN}");
+    git::output(root, ["fetch", "--quiet", "origin", &refspec])
+        .map_err(|error| format!("push: fetching origin/{MAIN} failed; nothing pushed: {error}"))?;
+    let main = git::text(
+        root,
+        [
+            "rev-parse",
+            "--verify",
+            &format!("refs/remotes/origin/{MAIN}^{{commit}}"),
+        ],
+    )?;
+    let missing = git::lines(root, ["log", "--format=%h %s", &format!("HEAD..{main}")])?;
+    match behind(&missing) {
+        Some(reason) => Err(format!("push: {reason}").into()),
+        None => Ok(main),
+    }
+}
+
 fn gh(ctx: &Checkout, arguments: &[&str]) -> Result<String> {
     let output = process::capture(ctx.command("gh").args(arguments))?;
     Ok(String::from_utf8(output.stdout)?.trim().to_owned())
@@ -115,8 +170,8 @@ pub fn run(ctx: &Checkout, draft: bool, skip_review: Option<&str>) -> Result<()>
     if let Some(reason) = unreviewable(&branch) {
         return Err(format!("push: {reason}").into());
     }
-    git::output(&ctx.root, ["fetch", "--quiet", "origin", MAIN])?;
-    let base = git::text(&ctx.root, ["merge-base", "HEAD", &format!("origin/{MAIN}")])?;
+    // `HEAD` contains `origin/main`, so that is their merge base.
+    let base = current_main(&ctx.root)?;
     let head = git::text(&ctx.root, ["rev-parse", "HEAD"])?;
     if head == base {
         println!("push: nothing to push; HEAD is in origin/{MAIN}");
@@ -289,6 +344,114 @@ mod tests {
                 seen: String::from("abc")
             }
         );
+    }
+
+    /// `git -C directory arguments…` with a fixed identity, its output.
+    fn git_in(directory: &Path, arguments: &[&str]) -> String {
+        git::text(
+            directory,
+            [
+                &[
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@t",
+                    "-c",
+                    "commit.gpgsign=false",
+                ],
+                arguments,
+            ]
+            .concat(),
+        )
+        .unwrap()
+    }
+
+    fn commit(directory: &Path, subject: &str) -> String {
+        git_in(
+            directory,
+            &["commit", "--quiet", "--allow-empty", "-m", subject],
+        );
+        git_in(directory, &["rev-parse", "HEAD"])
+    }
+
+    /// A bare `origin` whose `main` has one commit, and a clone of it on
+    /// branch `change`.
+    fn repositories() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+        let directory = tempfile::tempdir().unwrap();
+        let origin = directory.path().join("origin.git");
+        let seed = directory.path().join("seed");
+        let clone = directory.path().join("clone");
+        std::fs::create_dir_all(&seed).unwrap();
+        git_in(&seed, &["init", "--quiet", "--initial-branch", MAIN]);
+        commit(&seed, "base");
+        git_in(
+            directory.path(),
+            &["clone", "--quiet", "--bare", "seed", "origin.git"],
+        );
+        git_in(
+            directory.path(),
+            &["clone", "--quiet", "origin.git", "clone"],
+        );
+        git_in(&clone, &["switch", "--quiet", "-c", "change"]);
+        git_in(
+            &seed,
+            &["remote", "add", "origin", origin.to_str().unwrap()],
+        );
+        (directory, seed, clone)
+    }
+
+    #[test]
+    fn a_branch_on_the_current_main_passes() {
+        let (_directory, seed, clone) = repositories();
+        commit(&clone, "the change");
+        let main = git_in(&seed, &["rev-parse", "HEAD"]);
+        assert_eq!(current_main(&clone).unwrap(), main);
+        // `main` moved and the branch was rebased onto it.
+        let moved = commit(&seed, "upstream");
+        git_in(&seed, &["push", "--quiet", "origin", MAIN]);
+        git_in(&clone, &["fetch", "--quiet", "origin"]);
+        git_in(&clone, &["rebase", "--quiet", "origin/main"]);
+        assert_eq!(current_main(&clone).unwrap(), moved);
+    }
+
+    #[test]
+    fn a_branch_behind_main_is_refused_naming_what_it_lacks() {
+        let (_directory, seed, clone) = repositories();
+        commit(&clone, "the change");
+        commit(&seed, "first upstream");
+        commit(&seed, "second upstream");
+        git_in(&seed, &["push", "--quiet", "origin", MAIN]);
+        // The clone has not fetched: the push must fetch to see them.
+        let error = current_main(&clone).unwrap_err().to_string();
+        assert!(
+            error.contains("behind origin/main by 2 commit(s)"),
+            "{error}"
+        );
+        assert!(error.contains("git rebase origin/main"), "{error}");
+        assert!(
+            error.find("second upstream").unwrap() < error.find("first upstream").unwrap(),
+            "{error}"
+        );
+        assert!(!error.contains("the change"), "{error}");
+    }
+
+    #[test]
+    fn a_failed_fetch_refuses_the_push() {
+        let (directory, _seed, clone) = repositories();
+        commit(&clone, "the change");
+        std::fs::remove_dir_all(directory.path().join("origin.git")).unwrap();
+        let error = current_main(&clone).unwrap_err().to_string();
+        assert!(error.contains("fetching origin/main failed"), "{error}");
+    }
+
+    #[test]
+    fn a_long_list_of_missing_commits_is_cut() {
+        let missing: Vec<String> = (0..25).map(|n| format!("abc{n} commit {n}")).collect();
+        let reason = behind(&missing).unwrap();
+        assert!(reason.contains("abc19 commit 19"), "{reason}");
+        assert!(!reason.contains("abc20"), "{reason}");
+        assert!(reason.contains("and 5 more"), "{reason}");
+        assert_eq!(behind(&[]), None);
     }
 
     #[test]

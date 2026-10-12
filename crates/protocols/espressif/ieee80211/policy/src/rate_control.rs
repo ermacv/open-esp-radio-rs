@@ -12,13 +12,13 @@
 //! report-rate registers.
 
 use crate::rate_schedule::{RateScheduleKind, RateScheduleRef, schedule_state};
+use oer_ieee80211_lower_mac::LinkMetric;
 use oer_ieee80211_mac::{
     channel::WifiChannelWidth,
     he::{He20Capabilities, He20PeerState, HeDcmConstellation, HeMcsNssSupport},
     phy::{FecCoding, HeGiLtf, HeMcs, HeRate, HtMcs, HtRate, LegacyRate, PhyRate, PpduBandwidth},
     station::association::PhyMode,
 };
-use oer_ieee80211_lower_mac::LinkMetric;
 use oer_ieee80211_upper_mac::rate_control::{RateControl, RatePeer};
 use oer_time::Instant;
 
@@ -861,6 +861,9 @@ pub(crate) struct PhyModeSelection {
     pub index_map: RateIndexMap,
     /// The rate byte used to derive the initial AMPDU limit for HT/HE.
     pub ampdu_limit_rate: Option<u8>,
+    /// A computed index fell beyond its table and took the table's slowest
+    /// record: a test over the whole input domain proves it never does.
+    pub clamped: bool,
 }
 
 /// Non-data schedule of an interface whose association has not selected
@@ -879,6 +882,46 @@ const P2P_DOT11G_7: RateScheduleRef = schedule(RateScheduleKind::P2pDot11G, 7);
 const BASIC_OFDM_0: RateScheduleRef = schedule(RateScheduleKind::BasicOfdm, 0);
 const DOT11B_3: RateScheduleRef = DEFAULT_CONTROL_SCHEDULE;
 const DOT11B_0: RateScheduleRef = schedule(RateScheduleKind::Dot11B, 0);
+
+/// The record `index` of `kind`'s table, which the vendor's selection
+/// computes. Beyond the table it is the table's last record, its slowest
+/// (a higher index is a slower rate), and `clamped` says so.
+const fn record(kind: RateScheduleKind, index: u8, clamped: &mut bool) -> RateScheduleRef {
+    match RateScheduleRef::new(kind, index) {
+        Some(reference) => reference,
+        None => {
+            *clamped = true;
+            slowest(kind)
+        }
+    }
+}
+
+/// The last record of `kind`'s table, checked at build.
+const fn slowest(kind: RateScheduleKind) -> RateScheduleRef {
+    const fn last(kind: RateScheduleKind) -> RateScheduleRef {
+        schedule(kind, (kind.record_count() - 1) as u8)
+    }
+    const BAR_OFDM: RateScheduleRef = last(RateScheduleKind::BarOfdm);
+    const BASIC_OFDM: RateScheduleRef = last(RateScheduleKind::BasicOfdm);
+    const DOT11AX: RateScheduleRef = last(RateScheduleKind::Dot11Ax);
+    const DOT11B: RateScheduleRef = last(RateScheduleKind::Dot11B);
+    const DOT11G: RateScheduleRef = last(RateScheduleKind::Dot11G);
+    const DOT11N: RateScheduleRef = last(RateScheduleKind::Dot11N);
+    const LORA: RateScheduleRef = last(RateScheduleKind::Lora);
+    const P2P_DOT11G: RateScheduleRef = last(RateScheduleKind::P2pDot11G);
+    const P2P_DOT11N: RateScheduleRef = last(RateScheduleKind::P2pDot11N);
+    match kind {
+        RateScheduleKind::BarOfdm => BAR_OFDM,
+        RateScheduleKind::BasicOfdm => BASIC_OFDM,
+        RateScheduleKind::Dot11Ax => DOT11AX,
+        RateScheduleKind::Dot11B => DOT11B,
+        RateScheduleKind::Dot11G => DOT11G,
+        RateScheduleKind::Dot11N => DOT11N,
+        RateScheduleKind::Lora => LORA,
+        RateScheduleKind::P2pDot11G => P2P_DOT11G,
+        RateScheduleKind::P2pDot11N => P2P_DOT11N,
+    }
+}
 
 /// Non-data schedule `rcUpdatePhyMode` stores at trc `+0x68`.
 ///
@@ -904,10 +947,9 @@ const fn control_schedule(phy: StaRateControlPhy, flagged: bool) -> RateSchedule
     }
 }
 
+/// A literal record, for constants only: an index beyond its table fails
+/// the build. A computed index goes through [`record`].
 const fn schedule(kind: RateScheduleKind, index: u8) -> RateScheduleRef {
-    // Every index used by this recovered finite policy is statically within
-    // its corresponding arena. Avoiding Option in the branch code also makes
-    // accidental unchecked pointer arithmetic impossible.
     match RateScheduleRef::new(kind, index) {
         Some(reference) => reference,
         None => panic!("invalid recovered rate schedule"),
@@ -1035,6 +1077,7 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
         input.use_supplied_highest_rate,
     );
     let lora_fallback = LORA_1;
+    let mut clamped = false;
 
     let (current, secondary, legacy, maximum_index, schedule_count, index_map, ampdu_limit_rate) =
         match input.phy_type {
@@ -1045,7 +1088,7 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
                     3
                 };
                 (
-                    schedule(RateScheduleKind::Dot11B, current_index),
+                    record(RateScheduleKind::Dot11B, current_index, &mut clamped),
                     DOT11B_3,
                     DOT11B_0,
                     if input.long_range_rates_present { 5 } else { 3 },
@@ -1075,13 +1118,13 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
                     current_index = highest;
                 }
                 (
-                    schedule(kind, current_index),
+                    record(kind, current_index, &mut clamped),
                     if input.p2p {
                         P2P_DOT11G_7
                     } else {
                         BASIC_OFDM_0
                     },
-                    schedule(kind, 0),
+                    record(kind, 0, &mut clamped),
                     if input.p2p {
                         7
                     } else if input.long_range_rates_present {
@@ -1115,15 +1158,15 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
                     current_index = highest;
                 }
                 let limit_index = if current_index > 8 { 8 } else { current_index };
-                let limit_schedule = schedule(kind, limit_index);
+                let limit_schedule = record(kind, limit_index, &mut clamped);
                 (
-                    schedule(kind, current_index),
+                    record(kind, current_index, &mut clamped),
                     if input.p2p {
                         P2P_DOT11G_7
                     } else {
                         BASIC_OFDM_0
                     },
-                    schedule(kind, 0),
+                    record(kind, 0, &mut clamped),
                     if input.long_range_rates_present {
                         if he { 15 } else { 13 }
                     } else if he {
@@ -1140,15 +1183,7 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
                     Some(schedule_state(limit_schedule).rate),
                 )
             }
-            6 => (
-                LORA_0,
-                LORA_0,
-                LORA_0,
-                1,
-                2,
-                RateIndexMap::Lora,
-                None,
-            ),
+            6 => (LORA_0, LORA_0, LORA_0, 1, 2, RateIndexMap::Lora, None),
             _ => (
                 DOT11B_3,
                 DOT11B_3,
@@ -1174,6 +1209,7 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
         schedule_count,
         index_map,
         ampdu_limit_rate,
+        clamped,
     }
 }
 

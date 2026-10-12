@@ -509,12 +509,12 @@ fn non_data_frames_use_the_association_control_schedule() {
 }
 
 mod seam {
+    use oer_ieee80211_lower_mac::LinkMetric;
     use oer_ieee80211_mac::{
         ht::ht_peer_capabilities,
         phy::{HtMcs, HtRate, PhyRate, PpduBandwidth},
         station::association::PhyMode,
     };
-    use oer_ieee80211_lower_mac::LinkMetric;
     use oer_ieee80211_upper_mac::rate_control::{RateControl, RatePeer};
 
     use super::super::{EspressifRateControl, RateScheduleKind, RateScheduleRef, schedule_state};
@@ -594,4 +594,96 @@ mod seam {
         control.observe_ampdu(oer_time::Instant::from_micros(1_000), 4, 4, Some(30));
         assert!(control.association().filtered_ack_snr().is_some());
     }
+}
+
+/// Every input `select_phy_mode` can meet computes indices inside their
+/// tables, so the clamp toward the slowest record never acts: every link
+/// metric, every PHY type the selection distinguishes (each arm, and the
+/// default arm's first and last values) with and without HE, P2P and long
+/// range, and every peer highest rate the vendor tables name, with a value
+/// they do not.
+#[test]
+fn phy_mode_selection_indices_stay_inside_their_tables() {
+    const RATES: [u32; 35] = [
+        0,
+        2,
+        4,
+        11,
+        22,
+        12,
+        18,
+        24,
+        36,
+        48,
+        72,
+        96,
+        108,
+        13,
+        26,
+        39,
+        52,
+        78,
+        104,
+        117,
+        130,
+        144,
+        17,
+        34,
+        51,
+        68,
+        137,
+        154,
+        172,
+        206,
+        229,
+        1,
+        3,
+        255,
+        u32::MAX,
+    ];
+    let mut inputs = 0_u32;
+    for phy_type in (0..=7).chain([u8::MAX]) {
+        for he_type in [0, 7, u8::MAX] {
+            for metric in i8::MIN..=i8::MAX {
+                for flags in 0..8_u8 {
+                    for supplied_highest_rate in RATES {
+                        let selection = select_phy_mode(PhyModeSelectionInput {
+                            phy_type,
+                            he_type,
+                            metric: i32::from(metric),
+                            p2p: flags & 1 != 0,
+                            supplied_highest_rate,
+                            use_supplied_highest_rate: flags & 2 != 0,
+                            long_range_rates_present: flags & 4 != 0,
+                        });
+                        assert!(
+                            !selection.clamped,
+                            "phy {phy_type} he {he_type} metric {metric} flags {flags} rate {supplied_highest_rate}"
+                        );
+                        inputs += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(inputs, 9 * 3 * 256 * 8 * 35);
+}
+
+/// An index beyond its table takes the table's last record, its slowest.
+#[test]
+fn a_record_beyond_its_table_is_the_slowest() {
+    let mut clamped = false;
+    let inside = record(RateScheduleKind::Dot11N, 13, &mut clamped);
+    assert!(!clamped);
+    assert_eq!(
+        inside,
+        RateScheduleRef::new(RateScheduleKind::Dot11N, 13).unwrap()
+    );
+    let beyond = record(RateScheduleKind::Dot11N, 14, &mut clamped);
+    assert!(clamped);
+    assert_eq!(beyond, inside);
+    assert_eq!(
+        slowest(RateScheduleKind::Dot11B),
+        RateScheduleRef::new(RateScheduleKind::Dot11B, 5).unwrap()
+    );
 }

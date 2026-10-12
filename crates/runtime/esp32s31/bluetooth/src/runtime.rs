@@ -521,6 +521,26 @@ pub(crate) enum Request<K: LeCapabilities> {
     Disable,
 }
 
+/// A call's request the driver has not taken yet: a call dropped before
+/// its reply withdraws it, so nothing happens. A request the driver took is
+/// no longer there to withdraw; the driver serves it to the end.
+struct Withdraw<'a, M: RawMutex, T> {
+    request: &'a Signal<M, (u32, T)>,
+    ticket: u32,
+}
+
+impl<M: RawMutex, T> Drop for Withdraw<'_, M, T> {
+    fn drop(&mut self) {
+        if let Some((ticket, request)) = self.request.try_take()
+            && ticket != self.ticket
+        {
+            // Not this call's: callers never overlap, so this cannot
+            // happen; put it back rather than lose it.
+            self.request.signal((ticket, request));
+        }
+    }
+}
+
 /// The driver's reply to one [`Request`].
 pub(crate) enum Reply<F> {
     Submit(PortResult<(), RequestError, F>),
@@ -606,26 +626,32 @@ pub struct BluetoothRuntime<
     /// The waiting readers' waker: they share the port's task with the
     /// driver.
     now_waker: BlockingMutex<M, RefCell<WakerRegistration>>,
-    /// The one request in flight: the phase client takes its calls by
-    /// `&mut` and the owner its transitions by value, and the two never run
-    /// together, so no second request meets it.
+    /// The last call's ticket: each call numbers its request, and a reply
+    /// reaches only the call of its ticket.
+    tickets: AtomicU32,
+    /// The one request in flight, with its call's ticket: the phase client
+    /// takes its calls by `&mut` and the owner its transitions by value, and
+    /// the two never run together, so no second request meets it.
     request: Signal<
         M,
-        Request<
-            BluetoothCapabilities<
-                C,
-                LEGACY,
-                CONNECTABLE,
-                SCANNERS,
-                CONNECTIONS,
-                SCAN_PACKETS,
-                RX_PACKETS,
-                ITEMS,
+        (
+            u32,
+            Request<
+                BluetoothCapabilities<
+                    C,
+                    LEGACY,
+                    CONNECTABLE,
+                    SCANNERS,
+                    CONNECTIONS,
+                    SCAN_PACKETS,
+                    RX_PACKETS,
+                    ITEMS,
+                >,
             >,
-        >,
+        ),
     >,
-    /// The driver's reply to it.
-    reply: Signal<M, Reply<BluetoothFault<H::StartError>>>,
+    /// The driver's reply, with the ticket of the call it answers.
+    reply: Signal<M, (u32, Reply<BluetoothFault<H::StartError>>)>,
     /// Raised when the consumer must look again without a new outcome.
     changed: Signal<M, ()>,
     /// The scheduler policy and sleep-clock accuracy the timing is for.
@@ -734,6 +760,7 @@ impl<
             now_asked: AtomicU32::new(0),
             now_answered: BlockingMutex::new(Cell::new((0, None))),
             now_waker: BlockingMutex::new(RefCell::new(WakerRegistration::new())),
+            tickets: AtomicU32::new(0),
             request: Signal::new(),
             reply: Signal::new(),
             changed: Signal::new(),
@@ -896,6 +923,12 @@ impl<
 
     /// Send `request` to the driver and wait for its reply; a poisoned
     /// runtime answers at once.
+    ///
+    /// Cancel-safe: dropped before the driver took the request, the call
+    /// withdraws it and nothing happens; dropped after, the driver serves
+    /// it to the end, its effects stand (an admitted event's end reaches the
+    /// event consumer), and its reply, numbered with the call's ticket, is
+    /// discarded by the next call.
     async fn call(
         &self,
         request: Request<
@@ -918,9 +951,23 @@ impl<
             !self.request.signaled(),
             "the client and the owner never send two requests at once"
         );
-        self.request.signal(request);
+        let ticket = self.tickets.fetch_add(1, Ordering::AcqRel).wrapping_add(1);
+        self.request.signal((ticket, request));
         self.work.signal(());
-        match self.reply.wait().await {
+        // Dropped before the driver takes the request, this withdraws it;
+        // once taken, nothing is left to withdraw.
+        let _withdraw = Withdraw {
+            request: &self.request,
+            ticket,
+        };
+        let reply = loop {
+            let (answered, reply) = self.reply.wait().await;
+            // The reply of an earlier, dropped call: its effects stand.
+            if answered == ticket {
+                break reply;
+            }
+        };
+        match reply {
             Reply::Poisoned(poisoned) => Err(poisoned),
             reply => Ok(reply),
         }
@@ -1250,9 +1297,9 @@ impl<
                 embassy_futures::yield_now().await;
                 continue;
             }
-            if let Some(request) = runtime.request.try_take() {
+            if let Some((ticket, request)) = runtime.request.try_take() {
                 let reply = self.serve(request).await;
-                runtime.reply.signal(reply);
+                runtime.reply.signal((ticket, reply));
                 // The requester goes on first.
                 budget.refill();
                 embassy_futures::yield_now().await;
@@ -1329,9 +1376,11 @@ impl<
     ) -> BluetoothRuntimeFault<H::StartError> {
         self.fault = Some(fault);
         self.installed.fault();
-        if self.runtime.request.try_take().is_some() {
+        if let Some((ticket, _)) = self.runtime.request.try_take() {
             let poisoned = self.runtime.poisoned().expect("the runtime is poisoned");
-            self.runtime.reply.signal(Reply::Poisoned(poisoned));
+            self.runtime
+                .reply
+                .signal((ticket, Reply::Poisoned(poisoned)));
         }
         self.runtime.wake_readers();
         fault

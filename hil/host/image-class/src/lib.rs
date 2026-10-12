@@ -7,7 +7,9 @@
 
 mod keys;
 
-pub use keys::{agent_chips, classify_flashed, declares, enabled_features_on, image_keys_on};
+pub use keys::{
+    agent_chips, classify_flashed, declares, enabled_features_on, image_keys_on, image_keys_with,
+};
 
 use oer_hil_schema::image::ImageClass;
 

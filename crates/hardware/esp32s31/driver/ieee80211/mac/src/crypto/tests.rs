@@ -117,6 +117,17 @@ fn first_ap_peer_and_gtk_own_the_evidenced_disjoint_slots() {
 }
 
 #[test]
+fn an_ap_group_key_id_zero_is_refused_before_it_touches_the_station_group_entry() {
+    let mut hardware = Hardware::default();
+    assert_eq!(
+        install_ap_group_ccmp(&mut hardware, 0, &[9; 16]).err(),
+        Some(CryptoKeyError::InvalidGroupKeyId)
+    );
+    assert_eq!(hardware.installs, 0);
+    assert_eq!(hardware.last_index, None);
+}
+
+#[test]
 fn group_rekey_reuses_one_authority_and_clears_the_replacement_once() {
     let mut hardware = Hardware::default();
     let mut slot = install_sta_group_ccmp(&mut hardware, 1, &[1; 16]).unwrap();

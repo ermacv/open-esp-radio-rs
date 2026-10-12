@@ -3940,6 +3940,8 @@ dependencies = [
  "oer-espressif-ieee802154-engine",
  "oer-espressif-ieee802154-runtime",
  "oer-ieee802154",
+ "oer-ieee802154-port",
+ "oer-radio-port",
  "oer-time",
  "oer-time-virtual",
  "openthread-radio",

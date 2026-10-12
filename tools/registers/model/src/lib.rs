@@ -20,6 +20,7 @@ use svd_rs::{
 mod descriptions;
 mod draft;
 mod geometry;
+pub mod memory;
 pub use descriptions::{description_directories, descriptions};
 pub use draft::{ModelDraft, ModelInit, PeripheralInit};
 mod model_validation;

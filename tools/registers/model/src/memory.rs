@@ -1,10 +1,17 @@
-use crate::Result;
-use oer_register_model::{RegisterEvidenceSet, RegisterModel};
+//! A chip register model's memory map (`registers/<chip>/model/memory.toml`):
+//! its address spaces and named regions, among them the MMIO windows.
+use crate::{Error, RegisterEvidenceSet, RegisterModel, Result};
 use serde::Deserialize;
 use std::{collections::BTreeSet, path::Path};
+
+fn invalid(message: impl Into<String>) -> Error {
+    Error::Invalid(message.into())
+}
+
+/// A memory map: address spaces and named, non-overlapping regions.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
-pub(crate) struct Memory {
+pub struct Memory {
     schema: u32,
     default_address_space: String,
     address_spaces: Vec<Space>,
@@ -39,6 +46,20 @@ impl Memory {
             .map(|region| (region.start, region.end_exclusive))
     }
 
+    /// Every MMIO region of the default address space that is no alias, as
+    /// `(name, start, end)`, in map order.
+    pub fn mmio_regions(&self) -> Vec<(&str, u64, u64)> {
+        self.regions
+            .iter()
+            .filter(|r| {
+                r.kind == "mmio"
+                    && r.address_space == self.default_address_space
+                    && r.alias_of.is_none()
+            })
+            .map(|r| (r.name.as_str(), r.start, r.end_exclusive))
+            .collect()
+    }
+
     pub fn load(path: &Path) -> Result<Self> {
         Ok(toml_edit::de::from_str(&std::fs::read_to_string(path)?)?)
     }
@@ -49,7 +70,7 @@ impl Memory {
         evidence: &RegisterEvidenceSet,
     ) -> Result<()> {
         if self.schema != 1 || self.default_address_space != model.address_space() {
-            return Err("invalid memory map schema/address space".into());
+            return Err(invalid("invalid memory map schema/address space"));
         }
         let mut ids = BTreeSet::new();
         for space in &self.address_spaces {
@@ -58,11 +79,11 @@ impl Memory {
                 || !(1..=64).contains(&space.address_width)
                 || !matches!(space.endianness.as_str(), "little" | "big")
             {
-                return Err("invalid memory address space".into());
+                return Err(invalid("invalid memory address space"));
             }
         }
         if !ids.contains(&self.default_address_space) {
-            return Err("default memory address space is absent".into());
+            return Err(invalid("default memory address space is absent"));
         }
         let mut names = BTreeSet::new();
         for region in &self.regions {
@@ -70,7 +91,7 @@ impl Memory {
                 .address_spaces
                 .iter()
                 .find(|s| s.id == region.address_space)
-                .ok_or("unknown region address space")?;
+                .ok_or_else(|| invalid("unknown region address space"))?;
             if !valid_id(&region.name)
                 || !names.insert(&region.name)
                 || region.start >= region.end_exclusive
@@ -85,7 +106,7 @@ impl Memory {
                     .any(|p| region.permissions.matches(p).count() > 1)
                 || region.permissions.chars().any(|c| !"rwx".contains(c))
             {
-                return Err(format!("invalid memory region {}", region.name).into());
+                return Err(invalid(format!("invalid memory region {}", region.name)));
             }
             if let Some(alias) = &region.alias_of
                 && (alias == &region.name
@@ -96,7 +117,7 @@ impl Memory {
                             && r.end_exclusive == region.end_exclusive
                     }))
             {
-                return Err("invalid memory alias".into());
+                return Err(invalid("invalid memory alias"));
             }
         }
         for (index, left) in self.regions.iter().enumerate() {
@@ -107,7 +128,7 @@ impl Memory {
                     && left.alias_of.as_deref() != Some(right.name.as_str())
                     && right.alias_of.as_deref() != Some(left.name.as_str())
                 {
-                    return Err("memory regions overlap without explicit alias".into());
+                    return Err(invalid("memory regions overlap without explicit alias"));
                 }
             }
         }
@@ -121,18 +142,20 @@ impl Memory {
         let mut selected = BTreeSet::new();
         for name in owned {
             if !selected.insert(name) || !ranges.iter().any(|r| &r.name == name) {
-                return Err(format!("invalid owned MMIO range {name}").into());
+                return Err(invalid(format!("invalid owned MMIO range {name}")));
             }
         }
         for ((address, width), name) in model.register_identities()? {
             let end = address
                 .checked_add(u64::from(width).div_ceil(8))
-                .ok_or("register range overflow")?;
+                .ok_or_else(|| invalid("register range overflow"))?;
             if !ranges
                 .iter()
                 .any(|r| selected.contains(&r.name) && r.start <= address && end <= r.end_exclusive)
             {
-                return Err(format!("register {name} is outside owned MMIO ranges").into());
+                return Err(invalid(format!(
+                    "register {name} is outside owned MMIO ranges"
+                )));
             }
         }
         for range in &evidence.ranges {
@@ -140,7 +163,10 @@ impl Memory {
                 .iter()
                 .any(|r| r.start <= range.start && range.end_exclusive <= r.end_exclusive)
             {
-                return Err(format!("evidence range {} is outside MMIO map", range.name).into());
+                return Err(invalid(format!(
+                    "evidence range {} is outside MMIO map",
+                    range.name
+                )));
             }
         }
         Ok(())
@@ -151,4 +177,64 @@ fn valid_id(s: &str) -> bool {
     !s.is_empty()
         && s.bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_mmio_windows_are_the_default_space_s_mmio_regions_but_aliases() {
+        let memory: Memory = toml_edit::de::from_str(
+            r#"
+schema = 1
+default-address-space = "cpu"
+
+[[address-spaces]]
+id = "cpu"
+address-width = 32
+endianness = "little"
+
+[[address-spaces]]
+id = "dma"
+address-width = 32
+endianness = "little"
+
+[[regions]]
+name = "modem"
+address-space = "cpu"
+kind = "mmio"
+start = 0x20000000
+end-exclusive = 0x20001000
+permissions = "rw"
+
+[[regions]]
+name = "modem-alias"
+address-space = "cpu"
+kind = "mmio"
+start = 0x20000000
+end-exclusive = 0x20001000
+permissions = "rw"
+alias-of = "modem"
+
+[[regions]]
+name = "sram"
+address-space = "cpu"
+kind = "ram"
+start = 0x30000000
+end-exclusive = 0x30001000
+permissions = "rwx"
+
+[[regions]]
+name = "dma-window"
+address-space = "dma"
+kind = "mmio"
+start = 0x0
+end-exclusive = 0x1000
+permissions = "rw"
+"#,
+        )
+        .unwrap();
+        assert_eq!(memory.mmio_regions(), [("modem", 0x2000_0000, 0x2000_1000)]);
+    }
 }

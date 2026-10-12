@@ -62,8 +62,9 @@ use embassy_sync::{
 use oer_esp32s31_hal::types::MacPowerInterruptObservation;
 use oer_esp32s31_ieee80211::{
     lower_mac::{
-        CheckedKeyScope, Esp32s31TxBuffer, LifecycleStart, LowerMacCore, LowerMacFault,
-        LowerMacHardware, LowerMacSink, MpduValues, esp32s31_lower_mac_capabilities,
+        AmpduBacking, AmpduBackingSource, CheckedKeyScope, Esp32s31AmpduBuffer, Esp32s31TxBuffer,
+        LifecycleStart, LowerMacCore, LowerMacFault, LowerMacHardware, LowerMacSink, MpduValues,
+        NoAmpdu, esp32s31_lower_mac_capabilities,
     },
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile},
     tx::WifiTxWake,
@@ -75,15 +76,17 @@ use oer_esp32s31_ieee80211_mac::{
     tx::TxPhyRate,
 };
 use oer_ieee80211_lower_mac::{
-    AccessPoint, AccessPointClient, AttemptKey, Backoff, BssColor, CancelError, Ccmp128Key,
-    ClockError, EventsLost, GroupKeyId, Ieee80211Capabilities, Ieee80211Instant, Ieee80211Radio,
-    IndividualAddress, InterfaceRole, KeyHandle, LifecycleEvent, LowerMacBackend,
-    LowerMacCapabilities, LowerMacClient, LowerMacControl, LowerMacEvent, LowerMacEvents,
-    LowerMacSetting, LowerMacSetup, MacAddress, PhaseAttempt, Poisoned, PortResult, ReceiveFilter,
-    RxBeaconPriority, RxBlockAckAgreement, RxBuffer, RxEvidence, RxMeta, Station, StationClient,
-    StationReceive, SupportedBlockAck, SupportedChannel, SupportedEdca, SupportedFilter, TbttEvent,
-    Tid, TxBody, TxBuffer, TxCompletion, TxFrame, TxFrameBody, TxGated, TxId, TxPower, TxSeats,
-    VifConfig, VifId, VifRole,
+    AccessPoint, AccessPointClient, AckHeader, AmpduClient, AmpduRate, AttemptKey, Backoff,
+    BeaconTimingClient, BssColor, CancelError, Ccmp128Key, ClockError, EventsLost, GroupKeyId,
+    Ieee80211Capabilities, Ieee80211Instant, Ieee80211Radio, IndividualAddress, InterfaceRole,
+    KeyHandle, LifecycleEvent, LowerMacBackend, LowerMacCapabilities, LowerMacClient,
+    LowerMacControl, LowerMacEvent, LowerMacEvents, LowerMacSetting, LowerMacSetup, MacAddress,
+    MonitorControl, PhaseAmpdu, PhaseAmpduBuffer, PhaseAttempt, Poisoned, PortResult,
+    ReceiveFilter, RxBeaconPriority, RxBlockAckAgreement, RxBuffer, RxEvidence, RxMeta, SizedFrame,
+    Station, StationClient, StationReceive, SupportedBlockAck, SupportedChannel, SupportedEdca,
+    SupportedFilter, TbttEvent, TbttPlan, TbttSchedule, Tid, TsfSample, TxBody, TxBuffer,
+    TxCompletion, TxFrame, TxFrameBody, TxGated, TxId, TxPower, TxSeats, VifConfig, VifId, VifRole,
+    VifTsf,
 };
 use oer_ieee80211_port::{
     EnableResult, Lent, PhaseParts, PortBackend, RadioPortClient, RadioPortEvents, RadioWork,
@@ -93,7 +96,7 @@ use oer_ieee80211_runtime::lower_mac_owner::{
     BufferPermit, QueuePermit, TxBufferKind, TxPermits, TxQueueKind,
 };
 use oer_radio_permit_pool::FifoPermitPool;
-use oer_radio_port::{Mint, Seat, Slot};
+use oer_radio_port::{Mint, Permit, PermitPool, Seat, Slot};
 use oer_time::Duration;
 
 use crate::mac_clock::ReceptionClock;
@@ -239,15 +242,52 @@ impl<U: LowerMacRxUnit> RxBuffer for Esp32s31RxBuffer<U> {
 /// One owned event of the port. An attempt's completion owns the body of
 /// its attempt.
 #[derive(Debug)]
-pub enum Esp32s31LowerMacEvent<U, O> {
+pub enum Esp32s31LowerMacEvent<U, O, const SUBFRAMES: usize> {
     /// A received MPDU.
     Received {
         frame: Esp32s31RxBuffer<U>,
         meta: RxMeta,
     },
-    TxCompleted(TxCompletion, Option<O>),
+    TxCompleted(TxCompletion, Option<Esp32s31TxBodies<O, SUBFRAMES>>),
     /// A station TBTT.
     Tbtt(TbttEvent),
+}
+
+/// The bodies of one attempt: an MPDU's, or an aggregate's by subframe.
+/// The port holds them from the attempt's admission; its completion event
+/// carries them back.
+#[derive(Debug)]
+pub struct Esp32s31TxBodies<O, const SUBFRAMES: usize> {
+    mpdu: Option<O>,
+    subframes: [Option<O>; SUBFRAMES],
+}
+
+impl<O, const SUBFRAMES: usize> Esp32s31TxBodies<O, SUBFRAMES> {
+    const NONE: Self = Self {
+        mpdu: None,
+        subframes: [const { None }; SUBFRAMES],
+    };
+}
+
+impl<O, const SUBFRAMES: usize> IntoIterator for Esp32s31TxBodies<O, SUBFRAMES> {
+    type Item = (usize, O);
+    type IntoIter = core::iter::Chain<
+        core::option::IntoIter<(usize, O)>,
+        core::iter::FilterMap<
+            core::iter::Enumerate<core::array::IntoIter<Option<O>, SUBFRAMES>>,
+            fn((usize, Option<O>)) -> Option<(usize, O)>,
+        >,
+    >;
+
+    /// The bodies with their subframe index (0 for an MPDU's).
+    fn into_iter(self) -> Self::IntoIter {
+        let subframe: fn((usize, Option<O>)) -> Option<(usize, O)> =
+            |(index, body)| body.map(|body| (index, body));
+        self.mpdu
+            .map(|body| (0, body))
+            .into_iter()
+            .chain(self.subframes.into_iter().enumerate().filter_map(subframe))
+    }
 }
 
 /// A bounded queue whose overflow is reported in its order: a loss marker
@@ -459,8 +499,19 @@ impl<M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> Queues<M, EVENTS, U> {
 }
 
 /// The installed core and its register owner.
-struct Installed<'slot, P, E, T, H, const BUFFER_SIZE: usize, const TX_BUFFERS: usize> {
-    core: LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS>,
+struct Installed<
+    'slot,
+    P,
+    E,
+    T,
+    H,
+    const BUFFER_SIZE: usize,
+    const TX_BUFFERS: usize,
+    S: AmpduBacking,
+    const AMPDU_SLOTS: usize,
+    const AMPDU_BUFFERS: usize,
+> {
+    core: LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
     /// `None` while lent to the retune of an `Enable`.
     hardware: Option<H>,
     /// The access point's address, which the install gave.
@@ -538,9 +589,30 @@ pub struct Esp32s31LowerMac<
     const TX_BUFFERS: usize,
     const EVENTS: usize,
     U: LowerMacRxUnit,
+    S: AmpduBacking = NoAmpdu,
+    const AMPDU_SLOTS: usize = 2,
+    const AMPDU_BUFFERS: usize = 0,
     O = Infallible,
 > {
-    installed: Mutex<M, RefCell<Option<Installed<'slot, P, E, T, H, BUFFER_SIZE, TX_BUFFERS>>>>,
+    installed: Mutex<
+        M,
+        RefCell<
+            Option<
+                Installed<
+                    'slot,
+                    P,
+                    E,
+                    T,
+                    H,
+                    BUFFER_SIZE,
+                    TX_BUFFERS,
+                    S,
+                    AMPDU_SLOTS,
+                    AMPDU_BUFFERS,
+                >,
+            >,
+        >,
+    >,
     retune: Mutex<M, RefCell<Option<R>>>,
     deferred: Mutex<M, Cell<Deferred>>,
     fault: Mutex<M, Cell<Option<LowerMacFault>>>,
@@ -555,7 +627,9 @@ pub struct Esp32s31LowerMac<
     timer: T,
     /// The bodies of admitted attempts until their completion events carry
     /// them.
-    bodies: Mutex<M, RefCell<[Option<(TxId, O)>; COMPLETION_CAPACITY]>>,
+    #[allow(clippy::type_complexity, reason = "one entry per owed attempt")]
+    bodies:
+        Mutex<M, RefCell<[Option<(TxId, Esp32s31TxBodies<O, AMPDU_SLOTS>)>; COMPLETION_CAPACITY]>>,
     next_id: Mutex<M, Cell<u32>>,
 }
 
@@ -569,8 +643,11 @@ pub struct Esp32s31LowerMacParts<
     R,
     const BUFFER_SIZE: usize,
     const TX_BUFFERS: usize,
+    S: AmpduBacking = NoAmpdu,
+    const AMPDU_SLOTS: usize = 2,
+    const AMPDU_BUFFERS: usize = 0,
 > {
-    pub core: LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS>,
+    pub core: LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
     pub hardware: H,
     pub retune: R,
 }
@@ -587,8 +664,28 @@ impl<
     const TX_BUFFERS: usize,
     const EVENTS: usize,
     U: LowerMacRxUnit,
+    S: AmpduBacking,
+    const AMPDU_SLOTS: usize,
+    const AMPDU_BUFFERS: usize,
     O: TxBody,
-> Esp32s31LowerMac<'slot, M, P, E, T, H, R, BUFFER_SIZE, TX_BUFFERS, EVENTS, U, O>
+>
+    Esp32s31LowerMac<
+        'slot,
+        M,
+        P,
+        E,
+        T,
+        H,
+        R,
+        BUFFER_SIZE,
+        TX_BUFFERS,
+        EVENTS,
+        U,
+        S,
+        AMPDU_SLOTS,
+        AMPDU_BUFFERS,
+        O,
+    >
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
@@ -630,12 +727,53 @@ where
     )]
     pub fn install(
         &self,
-        parts: Esp32s31LowerMacParts<'slot, P, E, T, H, R, BUFFER_SIZE, TX_BUFFERS>,
+        parts: Esp32s31LowerMacParts<
+            'slot,
+            P,
+            E,
+            T,
+            H,
+            R,
+            BUFFER_SIZE,
+            TX_BUFFERS,
+            S,
+            AMPDU_SLOTS,
+            AMPDU_BUFFERS,
+        >,
         channel: SupportedChannel<Esp32s31Caps<BUFFER_SIZE>>,
         access_point: IndividualAddress,
     ) -> Result<
-        Esp32s31Backend<'_, 'slot, M, P, E, T, H, R, BUFFER_SIZE, TX_BUFFERS, EVENTS, U, O>,
-        Esp32s31LowerMacParts<'slot, P, E, T, H, R, BUFFER_SIZE, TX_BUFFERS>,
+        Esp32s31Backend<
+            '_,
+            'slot,
+            M,
+            P,
+            E,
+            T,
+            H,
+            R,
+            BUFFER_SIZE,
+            TX_BUFFERS,
+            EVENTS,
+            U,
+            S,
+            AMPDU_SLOTS,
+            AMPDU_BUFFERS,
+            O,
+        >,
+        Esp32s31LowerMacParts<
+            'slot,
+            P,
+            E,
+            T,
+            H,
+            R,
+            BUFFER_SIZE,
+            TX_BUFFERS,
+            S,
+            AMPDU_SLOTS,
+            AMPDU_BUFFERS,
+        >,
     > {
         let Esp32s31LowerMacParts {
             mut core,
@@ -676,7 +814,12 @@ where
         clippy::type_complexity,
         reason = "the uninstalled owners are returned as they were installed"
     )]
-    fn uninstall(&self) -> Option<(LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS>, H)> {
+    fn uninstall(
+        &self,
+    ) -> Option<(
+        LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
+        H,
+    )> {
         let (core, hardware) = self.installed.lock(|installed| {
             let mut installed = installed.borrow_mut();
             let stopped = installed.as_ref()?;
@@ -709,7 +852,17 @@ where
     fn with_installed<V>(
         &self,
         entry: impl FnOnce(
-            &mut LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS>,
+            &mut LowerMacCore<
+                'slot,
+                P,
+                E,
+                T,
+                BUFFER_SIZE,
+                TX_BUFFERS,
+                S,
+                AMPDU_SLOTS,
+                AMPDU_BUFFERS,
+            >,
             &mut H,
             MacAddress,
             &mut QueueSink<'_, M, EVENTS, U>,
@@ -748,7 +901,17 @@ where
     fn with_phase<V>(
         &self,
         entry: impl FnOnce(
-            &mut LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS>,
+            &mut LowerMacCore<
+                'slot,
+                P,
+                E,
+                T,
+                BUFFER_SIZE,
+                TX_BUFFERS,
+                S,
+                AMPDU_SLOTS,
+                AMPDU_BUFFERS,
+            >,
             &mut H,
             MacAddress,
             &mut QueueSink<'_, M, EVENTS, U>,
@@ -873,20 +1036,31 @@ where
         })
     }
 
-    /// Hold attempt `id`'s body until its completion carries it.
-    fn hold_body(&self, id: TxId, body: O) {
+    /// Hold attempt `id`'s bodies until its completion carries them.
+    fn hold_bodies(&self, id: TxId, held: Esp32s31TxBodies<O, AMPDU_SLOTS>) {
         self.bodies.lock(|bodies| {
             let mut bodies = bodies.borrow_mut();
             let free = bodies
                 .iter_mut()
                 .find(|held| held.is_none())
-                .expect("a body for each queue's attempt in flight");
-            *free = Some((id, body));
+                .expect("bodies for each queue's attempt in flight");
+            *free = Some((id, held));
         });
     }
 
-    /// Take back the body of attempt `id`, whose completion is taken.
-    fn unhold_body(&self, id: TxId) -> Option<O> {
+    /// Hold attempt `id`'s one body until its completion carries it.
+    fn hold_body(&self, id: TxId, body: O) {
+        self.hold_bodies(
+            id,
+            Esp32s31TxBodies {
+                mpdu: Some(body),
+                subframes: [const { None }; AMPDU_SLOTS],
+            },
+        );
+    }
+
+    /// Take back the bodies of attempt `id`, whose completion is taken.
+    fn unhold_body(&self, id: TxId) -> Option<Esp32s31TxBodies<O, AMPDU_SLOTS>> {
         self.bodies.lock(|bodies| {
             bodies
                 .borrow_mut()
@@ -1005,17 +1179,43 @@ struct InFlight {
 
 /// The backend's held part of one install: its transmit permits, the
 /// attempts in flight and the receive Block Ack agreements.
-pub struct Esp32s31Held<'id, const BUFFER_SIZE: usize, const TX_BUFFERS: usize> {
+pub struct Esp32s31Held<
+    'id,
+    const BUFFER_SIZE: usize,
+    const TX_BUFFERS: usize,
+    const AMPDU_BUFFERS: usize,
+> {
     tx: Esp32s31TxPermits<'id, BUFFER_SIZE, TX_BUFFERS>,
+    /// The aggregate buffers' pool and the permits of the aggregates in
+    /// flight.
+    ampdu: FifoPermitPool<'id, Esp32s31AmpduKind, AMPDU_BUFFERS, AMPDU_SEATS>,
+    ampdu_in_flight: RefCell<[Option<(TxId, Permit<'id, Esp32s31AmpduKind>)>; TX_QUEUES]>,
     in_flight: RefCell<[Option<InFlight>; TX_QUEUES]>,
     agreements: RefCell<[Option<Agreement<'id>>; RX_BLOCK_ACK_SLOTS]>,
 }
 
-impl<const BUFFER_SIZE: usize, const TX_BUFFERS: usize> Esp32s31Held<'_, BUFFER_SIZE, TX_BUFFERS> {
+/// The permit kind of the backend's aggregate buffers.
+pub enum Esp32s31AmpduKind {}
+
+/// The seats of the aggregate buffers' line: one per interface role.
+pub const AMPDU_SEATS: usize = 2;
+
+impl<const BUFFER_SIZE: usize, const TX_BUFFERS: usize, const AMPDU_BUFFERS: usize>
+    Esp32s31Held<'_, BUFFER_SIZE, TX_BUFFERS, AMPDU_BUFFERS>
+{
     /// Give back the permits of every attempt in `ended`.
     fn complete(&self, ended: Ended) {
         for id in ended.into_iter().flatten() {
             self.tx.complete(id);
+            let permit = self
+                .ampdu_in_flight
+                .borrow_mut()
+                .iter_mut()
+                .find(|entry| entry.as_ref().is_some_and(|(held, _)| *held == id))
+                .and_then(Option::take);
+            if let Some((_, permit)) = permit {
+                self.ampdu.release(permit);
+            }
             for entry in self.in_flight.borrow_mut().iter_mut() {
                 if entry.is_some_and(|in_flight| in_flight.id == id) {
                     *entry = None;
@@ -1041,6 +1241,9 @@ pub struct Esp32s31Resources<'id> {
     pub access_point_group_keys:
         [Slot<'id, Esp32s31GroupKeys<AccessPoint>>; ACCESS_POINT_GROUP_KEYS],
     pub block_acks: [Slot<'id, Esp32s31BlockAcks>; RX_BLOCK_ACK_SLOTS],
+    /// Each role's seat on the aggregate buffers' line.
+    pub station_ampdu: Seat<'id, Esp32s31AmpduKind>,
+    pub access_point_ampdu: Seat<'id, Esp32s31AmpduKind>,
 }
 
 /// The ESP32-S31 backend of one install; only
@@ -1058,9 +1261,28 @@ pub struct Esp32s31Backend<
     const TX_BUFFERS: usize,
     const EVENTS: usize,
     U: LowerMacRxUnit,
+    S: AmpduBacking,
+    const AMPDU_SLOTS: usize,
+    const AMPDU_BUFFERS: usize,
     O,
 > {
-    runtime: &'r Esp32s31LowerMac<'slot, M, P, E, T, H, R, BUFFER_SIZE, TX_BUFFERS, EVENTS, U, O>,
+    runtime: &'r Esp32s31LowerMac<
+        'slot,
+        M,
+        P,
+        E,
+        T,
+        H,
+        R,
+        BUFFER_SIZE,
+        TX_BUFFERS,
+        EVENTS,
+        U,
+        S,
+        AMPDU_SLOTS,
+        AMPDU_BUFFERS,
+        O,
+    >,
 }
 
 /// The backend's disabled-only settings.
@@ -1107,22 +1329,45 @@ impl<L: GateOwner> Drop for Esp32s31Gated<'_, L> {
 
 /// The backend's event consumer: the driver gave each attempt's permits
 /// back before the consumer hands its completion out.
-pub struct Esp32s31Events<'a, 'id, L, const BUFFER_SIZE: usize, const TX_BUFFERS: usize> {
+pub struct Esp32s31Events<
+    'a,
+    'id,
+    L,
+    const BUFFER_SIZE: usize,
+    const TX_BUFFERS: usize,
+    const AMPDU_BUFFERS: usize,
+> {
     runtime: &'a L,
-    held: &'a Esp32s31Held<'id, BUFFER_SIZE, TX_BUFFERS>,
+    held: &'a Esp32s31Held<'id, BUFFER_SIZE, TX_BUFFERS, AMPDU_BUFFERS>,
 }
 
 /// The backend's client of the interface of role `Role`.
-pub struct Esp32s31Client<'a, 'id, L, Role, const BUFFER_SIZE: usize, const TX_BUFFERS: usize> {
+pub struct Esp32s31Client<
+    'a,
+    'id,
+    L,
+    Role,
+    const BUFFER_SIZE: usize,
+    const TX_BUFFERS: usize,
+    const AMPDU_BUFFERS: usize,
+> {
     runtime: &'a L,
-    held: &'a Esp32s31Held<'id, BUFFER_SIZE, TX_BUFFERS>,
+    held: &'a Esp32s31Held<'id, BUFFER_SIZE, TX_BUFFERS, AMPDU_BUFFERS>,
     role: PhantomData<fn() -> Role>,
 }
 
 /// The backend's clients: one per interface role.
-pub struct Esp32s31Clients<'a, 'id, L, const BUFFER_SIZE: usize, const TX_BUFFERS: usize> {
-    pub station: Esp32s31Client<'a, 'id, L, Station, BUFFER_SIZE, TX_BUFFERS>,
-    pub access_point: Esp32s31Client<'a, 'id, L, AccessPoint, BUFFER_SIZE, TX_BUFFERS>,
+pub struct Esp32s31Clients<
+    'a,
+    'id,
+    L,
+    const BUFFER_SIZE: usize,
+    const TX_BUFFERS: usize,
+    const AMPDU_BUFFERS: usize,
+> {
+    pub station: Esp32s31Client<'a, 'id, L, Station, BUFFER_SIZE, TX_BUFFERS, AMPDU_BUFFERS>,
+    pub access_point:
+        Esp32s31Client<'a, 'id, L, AccessPoint, BUFFER_SIZE, TX_BUFFERS, AMPDU_BUFFERS>,
 }
 
 /// The token of one admitted attempt.
@@ -1198,8 +1443,23 @@ pub struct Esp32s31GroupKey<'id, Role> {
 }
 
 /// The installed runtime type of one backend.
-type Runtime<'slot, M, P, E, T, H, R, const B: usize, const N: usize, const EV: usize, U, O> =
-    Esp32s31LowerMac<'slot, M, P, E, T, H, R, B, N, EV, U, O>;
+type Runtime<
+    'slot,
+    M,
+    P,
+    E,
+    T,
+    H,
+    R,
+    const B: usize,
+    const N: usize,
+    const EV: usize,
+    U,
+    S,
+    const AS: usize,
+    const AB: usize,
+    O,
+> = Esp32s31LowerMac<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>;
 
 impl<
     'slot,
@@ -1213,8 +1473,11 @@ impl<
     const N: usize,
     const EV: usize,
     U: LowerMacRxUnit,
+    S: AmpduBacking,
+    const AS: usize,
+    const AB: usize,
     O: TxBody,
-> SlotOwner<'slot, B> for Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, O>
+> SlotOwner<'slot, B> for Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
@@ -1242,8 +1505,11 @@ impl<
     const N: usize,
     const EV: usize,
     U: LowerMacRxUnit,
+    S: AmpduBacking,
+    const AS: usize,
+    const AB: usize,
     O: TxBody,
-> GateOwner for Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, O>
+> GateOwner for Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
@@ -1278,8 +1544,11 @@ impl<
     const N: usize,
     const EV: usize,
     U: LowerMacRxUnit,
+    S: AmpduBacking,
+    const AS: usize,
+    const AB: usize,
     O: TxBody,
-> LowerMacSetup for Esp32s31Setup<'_, Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, O>>
+> LowerMacSetup for Esp32s31Setup<'_, Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>>
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
@@ -1311,8 +1580,12 @@ impl<
     const N: usize,
     const EV: usize,
     U: LowerMacRxUnit,
+    S: AmpduBacking,
+    const AS: usize,
+    const AB: usize,
     O: TxBody,
-> LowerMacControl for Esp32s31Control<'_, Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, O>>
+> LowerMacControl
+    for Esp32s31Control<'_, Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>>
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
@@ -1322,7 +1595,7 @@ where
 {
     type Caps = Esp32s31Caps<B>;
     type Gated<'g>
-        = Esp32s31Gated<'g, Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, O>>
+        = Esp32s31Gated<'g, Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>>
     where
         Self: 'g;
 
@@ -1382,9 +1655,19 @@ impl<
     const N: usize,
     const EV: usize,
     U: LowerMacRxUnit,
+    S: AmpduBacking,
+    const AS: usize,
+    const AB: usize,
     O: TxBody,
 > RadioPortEvents
-    for Esp32s31Events<'a, 'id, Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, O>, B, N>
+    for Esp32s31Events<
+        'a,
+        'id,
+        Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>,
+        B,
+        N,
+        AB,
+    >
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
@@ -1392,12 +1675,12 @@ where
     H: LowerMacHardware,
     R: LowerMacRetune<H>,
 {
-    type Event = Esp32s31LowerMacEvent<U, O>;
+    type Event = Esp32s31LowerMacEvent<U, O, AS>;
     type Fault = LowerMacFault;
 
     async fn next_event(
         &mut self,
-    ) -> PortResult<Esp32s31LowerMacEvent<U, O>, EventsLost, LowerMacFault> {
+    ) -> PortResult<Esp32s31LowerMacEvent<U, O, AS>, EventsLost, LowerMacFault> {
         let runtime = self.runtime;
         loop {
             // The permits of every ended attempt are back before its
@@ -1437,8 +1720,19 @@ impl<
     const N: usize,
     const EV: usize,
     U: LowerMacRxUnit,
+    S: AmpduBacking,
+    const AS: usize,
+    const AB: usize,
     O: TxBody,
-> LowerMacEvents for Esp32s31Events<'a, 'id, Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, O>, B, N>
+> LowerMacEvents
+    for Esp32s31Events<
+        'a,
+        'id,
+        Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>,
+        B,
+        N,
+        AB,
+    >
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
@@ -1447,9 +1741,9 @@ where
     R: LowerMacRetune<H>,
 {
     type RxBuffer = Esp32s31RxBuffer<U>;
-    type TxBodies = Option<O>;
+    type TxBodies = Esp32s31TxBodies<O, AS>;
 
-    fn view(event: &Esp32s31LowerMacEvent<U, O>) -> LowerMacEvent<'_> {
+    fn view(event: &Esp32s31LowerMacEvent<U, O, AS>) -> LowerMacEvent<'_> {
         match event {
             Esp32s31LowerMacEvent::Received { frame, meta } => LowerMacEvent::Received {
                 frame: frame.bytes(),
@@ -1466,8 +1760,8 @@ where
     }
 
     fn into_received(
-        event: Esp32s31LowerMacEvent<U, O>,
-    ) -> Result<(Esp32s31RxBuffer<U>, RxMeta), Esp32s31LowerMacEvent<U, O>> {
+        event: Esp32s31LowerMacEvent<U, O, AS>,
+    ) -> Result<(Esp32s31RxBuffer<U>, RxMeta), Esp32s31LowerMacEvent<U, O, AS>> {
         match event {
             Esp32s31LowerMacEvent::Received { frame, meta } => Ok((frame, meta)),
             event => Err(event),
@@ -1475,11 +1769,20 @@ where
     }
 
     fn into_completed(
-        event: Esp32s31LowerMacEvent<U, O>,
-    ) -> Result<(TxCompletion, Option<O>), Esp32s31LowerMacEvent<U, O>> {
+        event: Esp32s31LowerMacEvent<U, O, AS>,
+    ) -> Result<(TxCompletion, Esp32s31TxBodies<O, AS>), Esp32s31LowerMacEvent<U, O, AS>> {
         match event {
-            Esp32s31LowerMacEvent::TxCompleted(completion, body) => Ok((completion, body)),
+            Esp32s31LowerMacEvent::TxCompleted(completion, bodies) => {
+                Ok((completion, bodies.unwrap_or(Esp32s31TxBodies::NONE)))
+            }
             event => Err(event),
+        }
+    }
+
+    fn tbtt(event: &Esp32s31LowerMacEvent<U, O, AS>) -> Option<TbttEvent> {
+        match event {
+            Esp32s31LowerMacEvent::Tbtt(event) => Some(*event),
+            _ => None,
         }
     }
 }
@@ -1499,9 +1802,20 @@ impl<
     const N: usize,
     const EV: usize,
     U: LowerMacRxUnit,
+    S: AmpduBacking,
+    const AS: usize,
+    const AB: usize,
     O: TxBody,
 > RadioPortClient
-    for Esp32s31Client<'a, 'id, Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, O>, Role, B, N>
+    for Esp32s31Client<
+        'a,
+        'id,
+        Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>,
+        Role,
+        B,
+        N,
+        AB,
+    >
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
@@ -1583,8 +1897,20 @@ impl<
     const N: usize,
     const EV: usize,
     U: LowerMacRxUnit,
+    S: AmpduBacking,
+    const AS: usize,
+    const AB: usize,
     O: TxBody,
-> Esp32s31Client<'a, 'id, Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, O>, Role, B, N>
+>
+    Esp32s31Client<
+        'a,
+        'id,
+        Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>,
+        Role,
+        B,
+        N,
+        AB,
+    >
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
@@ -1643,9 +1969,20 @@ impl<
     const N: usize,
     const EV: usize,
     U: LowerMacRxUnit,
+    S: AmpduBacking,
+    const AS: usize,
+    const AB: usize,
     O: TxBody,
 > LowerMacClient<'id>
-    for Esp32s31Client<'a, 'id, Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, O>, Role, B, N>
+    for Esp32s31Client<
+        'a,
+        'id,
+        Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>,
+        Role,
+        B,
+        N,
+        AB,
+    >
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
@@ -1662,7 +1999,13 @@ where
         Self: 'c,
         'id: 'c;
     type TxBuffer<'c>
-        = Esp32s31PhaseBuffer<'c, 'id, 'slot, Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, O>, B>
+        = Esp32s31PhaseBuffer<
+        'c,
+        'id,
+        'slot,
+        Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>,
+        B,
+    >
     where
         Self: 'c,
         'id: 'c;
@@ -1969,9 +2312,20 @@ impl<
     const N: usize,
     const EV: usize,
     U: LowerMacRxUnit,
+    S: AmpduBacking,
+    const AS: usize,
+    const AB: usize,
     O: TxBody,
 > StationClient<'id>
-    for Esp32s31Client<'a, 'id, Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, O>, Station, B, N>
+    for Esp32s31Client<
+        'a,
+        'id,
+        Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>,
+        Station,
+        B,
+        N,
+        AB,
+    >
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
@@ -2025,9 +2379,20 @@ impl<
     const N: usize,
     const EV: usize,
     U: LowerMacRxUnit,
+    S: AmpduBacking,
+    const AS: usize,
+    const AB: usize,
     O: TxBody,
 > AccessPointClient<'id>
-    for Esp32s31Client<'a, 'id, Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, O>, AccessPoint, B, N>
+    for Esp32s31Client<
+        'a,
+        'id,
+        Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>,
+        AccessPoint,
+        B,
+        N,
+        AB,
+    >
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
@@ -2054,6 +2419,476 @@ where
     }
 }
 
+/// What lends and takes back the core's aggregate buffers.
+pub trait AggregateOwner<'slot, S: AmpduBacking, const AMPDU_SLOTS: usize> {
+    #[doc(hidden)]
+    fn release_aggregate(&self, buffer: Esp32s31AmpduBuffer<'slot, S, AMPDU_SLOTS>);
+}
+
+impl<
+    'slot,
+    M: RawMutex,
+    P,
+    E,
+    T,
+    H,
+    R,
+    const B: usize,
+    const N: usize,
+    const EV: usize,
+    U: LowerMacRxUnit,
+    S: AmpduBacking,
+    const AS: usize,
+    const AB: usize,
+    O: TxBody,
+> AggregateOwner<'slot, S, AS> for Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>
+where
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: oer_time::Timer + ReceptionClock,
+    H: LowerMacHardware,
+    R: LowerMacRetune<H>,
+{
+    fn release_aggregate(&self, buffer: Esp32s31AmpduBuffer<'slot, S, AS>) {
+        let _ = self.with_installed(|core, _, _, _| {
+            core.release_ampdu_buffer(buffer);
+            Ok(())
+        });
+    }
+}
+
+/// One aggregate a client lends: the core's aggregate buffer, the bodies
+/// its subframes end with, its TID and rate, and its permit.
+pub struct Esp32s31PhaseAmpdu<
+    'c,
+    'id,
+    'slot,
+    L: AggregateOwner<'slot, S, AMPDU_SLOTS>,
+    S: AmpduBacking,
+    const AMPDU_SLOTS: usize,
+    const BUFFER_SIZE: usize,
+    O,
+    Pool: oer_radio_port::PermitPool<'id, Esp32s31AmpduKind>,
+> {
+    /// `None` once a submission moved it in.
+    inner: Option<Esp32s31AmpduBuffer<'slot, S, AMPDU_SLOTS>>,
+    bodies: [Option<O>; AMPDU_SLOTS],
+    tid: Tid,
+    rate: oer_ieee80211_lower_mac::PhyRate,
+    /// `None` once a submission moved it in.
+    permit: Option<Permit<'id, Esp32s31AmpduKind>>,
+    pool: &'c Pool,
+    runtime: &'c L,
+    caps: PhantomData<fn() -> Esp32s31Caps<BUFFER_SIZE>>,
+}
+
+impl<'id, 'slot, L, S, const AMPDU_SLOTS: usize, const BUFFER_SIZE: usize, O, Pool> PhaseAmpduBuffer
+    for Esp32s31PhaseAmpdu<'_, 'id, 'slot, L, S, AMPDU_SLOTS, BUFFER_SIZE, O, Pool>
+where
+    Pool: oer_radio_port::PermitPool<'id, Esp32s31AmpduKind>,
+    L: AggregateOwner<'slot, S, AMPDU_SLOTS>,
+    S: AmpduBackingSource,
+    O: TxBody,
+{
+    type Body = O;
+    type Caps = Esp32s31Caps<BUFFER_SIZE>;
+
+    fn push(
+        &mut self,
+        frame: SizedFrame<AckHeader, Esp32s31Caps<BUFFER_SIZE>>,
+        body: Option<O>,
+    ) -> Result<&mut [u8], (SizedFrame<AckHeader, Esp32s31Caps<BUFFER_SIZE>>, Option<O>)> {
+        let inner = self
+            .inner
+            .as_mut()
+            .expect("a lent aggregate holds its buffer");
+        let index = oer_ieee80211_lower_mac::AmpduBuffer::subframes(inner);
+        let len = frame.len().get();
+        let body_len = body.as_ref().map_or(0, |body| body.bytes().len());
+        let Some(header_room) = len.checked_sub(body_len) else {
+            return Err((frame, body));
+        };
+        let Ok(mpdu) = oer_ieee80211_lower_mac::AmpduBuffer::push_mpdu(inner, len, None) else {
+            return Err((frame, body));
+        };
+        let header = frame.header().header().encode(mpdu, false);
+        if let Some(body) = &body {
+            mpdu[header_room..].copy_from_slice(body.bytes());
+        }
+        if let Some(slot) = self.bodies.get_mut(index) {
+            *slot = body;
+        }
+        Ok(&mut mpdu[header..header_room])
+    }
+
+    fn subframes(&self) -> usize {
+        self.inner
+            .as_ref()
+            .map_or(0, oer_ieee80211_lower_mac::AmpduBuffer::subframes)
+    }
+}
+
+impl<'id, 'slot, L, S, const AMPDU_SLOTS: usize, const BUFFER_SIZE: usize, O, Pool> Drop
+    for Esp32s31PhaseAmpdu<'_, 'id, 'slot, L, S, AMPDU_SLOTS, BUFFER_SIZE, O, Pool>
+where
+    Pool: oer_radio_port::PermitPool<'id, Esp32s31AmpduKind>,
+    L: AggregateOwner<'slot, S, AMPDU_SLOTS>,
+    S: AmpduBacking,
+{
+    fn drop(&mut self) {
+        // An aggregate dropped before its submission gives its buffer and
+        // permit back; its bodies drop with it.
+        if let Some(inner) = self.inner.take() {
+            self.runtime.release_aggregate(inner);
+        }
+        if let Some(permit) = self.permit.take() {
+            self.pool.release(permit);
+        }
+    }
+}
+
+impl<
+    'a,
+    'id,
+    'slot,
+    M: RawMutex,
+    P,
+    E,
+    T,
+    H,
+    R,
+    const B: usize,
+    const N: usize,
+    const EV: usize,
+    U: LowerMacRxUnit,
+    S: AmpduBacking,
+    const AS: usize,
+    const AB: usize,
+    O: TxBody,
+    Role: Esp32s31Role,
+> AmpduClient<'id>
+    for Esp32s31Client<
+        'a,
+        'id,
+        Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>,
+        Role,
+        B,
+        N,
+        AB,
+    >
+where
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: oer_time::Timer + ReceptionClock,
+    H: LowerMacHardware,
+    R: LowerMacRetune<H>,
+    S: AmpduBackingSource,
+{
+    type AmpduKind = Esp32s31AmpduKind;
+    type AmpduBuffer<'c>
+        = Esp32s31PhaseAmpdu<
+        'c,
+        'id,
+        'slot,
+        Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>,
+        S,
+        AS,
+        B,
+        O,
+        FifoPermitPool<'id, Esp32s31AmpduKind, AB, AMPDU_SEATS>,
+    >
+    where
+        Self: 'c,
+        'id: 'c;
+
+    fn ampdu_capabilities(&self) -> oer_ieee80211_lower_mac::AmpduCapabilities {
+        oer_esp32s31_ieee80211::lower_mac::esp32s31_ampdu_capabilities(AS)
+    }
+
+    async fn ampdu_buffer<'c, 's>(
+        &'c self,
+        tid: Tid,
+        rate: AmpduRate<'c>,
+        seat: &'s mut Seat<'id, Esp32s31AmpduKind>,
+    ) -> Self::AmpduBuffer<'c>
+    where
+        'id: 'c,
+        'c: 's,
+    {
+        let held = self.held;
+        let permit = held.ampdu.take(seat).await;
+        // An aggregate permit stands for one of the core's idle aggregate
+        // owners.
+        let inner = self
+            .runtime
+            .with_phase(|core, _, _, _| Ok(core.ampdu_buffer()))
+            .ok()
+            .flatten()
+            .expect("an aggregate permit stands for an idle aggregate owner");
+        Esp32s31PhaseAmpdu {
+            inner: Some(inner),
+            bodies: [const { None }; AS],
+            tid,
+            rate: rate.rate().get(),
+            permit: Some(permit),
+            pool: &held.ampdu,
+            runtime: self.runtime,
+            caps: PhantomData,
+        }
+    }
+
+    fn submit_ampdu<'p>(
+        &'p self,
+        attempt: PhaseAmpdu<'p, 'id, Self>,
+    ) -> Result<Work<'p, Self>, Poisoned<LowerMacFault>>
+    where
+        'id: 'p,
+    {
+        let runtime = self.runtime;
+        if let Some(poisoned) = runtime.poisoned() {
+            return Err(poisoned);
+        }
+        let PhaseAmpdu {
+            queue,
+            mut aggregate,
+            protection,
+            key,
+            power,
+            backoff,
+            coex,
+            min_mpdu_start_spacing,
+        } = attempt;
+        let key = key.and_then(|key| key.handle);
+        let id = runtime.next_id();
+        let buffer = aggregate
+            .inner
+            .take()
+            .expect("a lent aggregate holds its buffer");
+        let bodies = core::mem::replace(&mut aggregate.bodies, [const { None }; AS]);
+        runtime.hold_bodies(
+            id,
+            Esp32s31TxBodies {
+                mpdu: None,
+                subframes: bodies,
+            },
+        );
+        let attempt = oer_ieee80211_lower_mac::TxAttempt {
+            id,
+            vif: vif_of(Role::ROLE),
+            access_category: oer_ieee80211_lower_mac::QueueGrant::access_category(&queue),
+            payload: oer_ieee80211_lower_mac::AmpduPayload {
+                subframes: buffer,
+                tid: aggregate.tid.get(),
+                min_mpdu_start_spacing: min_mpdu_start_spacing.get(),
+            },
+            rate: aggregate.rate,
+            protection,
+            key: key.map_or(
+                oer_ieee80211_lower_mac::KeySelector::Plaintext,
+                oer_ieee80211_lower_mac::KeySelector::Key,
+            ),
+            power: power.get(),
+            backoff: backoff.get(),
+            coex: coex.get(),
+        };
+        // A checked aggregate is never refused: its rate, TID, size and key
+        // are its types'.
+        runtime.with_phase(|core, hardware, _, _| {
+            core.submit_ampdu(hardware, attempt).map(|admitted| {
+                debug_assert!(admitted.is_ok(), "a checked aggregate is admitted");
+            })
+        })?;
+        runtime.wake.signal(());
+        let in_flight = InFlight {
+            id,
+            role: Role::ROLE,
+            key,
+        };
+        if let Some(free) = self
+            .held
+            .in_flight
+            .borrow_mut()
+            .iter_mut()
+            .find(|entry| entry.is_none())
+        {
+            *free = Some(in_flight);
+        }
+        let permit = aggregate
+            .permit
+            .take()
+            .expect("a lent aggregate holds its permit");
+        if let Some(free) = self
+            .held
+            .ampdu_in_flight
+            .borrow_mut()
+            .iter_mut()
+            .find(|entry| entry.is_none())
+        {
+            *free = Some((id, permit));
+        }
+        drop(aggregate);
+        self.held.tx.admit_queue(id, queue);
+        Ok(Work::new(self, Esp32s31Token(id)))
+    }
+}
+
+impl<
+    'a,
+    'id,
+    'slot,
+    M: RawMutex,
+    P,
+    E,
+    T,
+    H,
+    R,
+    const B: usize,
+    const N: usize,
+    const EV: usize,
+    U: LowerMacRxUnit,
+    S: AmpduBacking,
+    const AS: usize,
+    const AB: usize,
+    O: TxBody,
+> BeaconTimingClient<'id>
+    for Esp32s31Client<
+        'a,
+        'id,
+        Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>,
+        Station,
+        B,
+        N,
+        AB,
+    >
+where
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: oer_time::Timer + ReceptionClock,
+    H: LowerMacHardware,
+    R: LowerMacRetune<H>,
+{
+    fn tsf(&self) -> PortResult<oer_ieee80211_mac::tsf::TsfInstant, ClockError, LowerMacFault> {
+        Ok(self
+            .runtime
+            .with_phase(|core, hardware, _, _| Ok(core.tsf(hardware, vif_of(VifRole::Station))))?
+            .map(|tsf| tsf.at)
+            .map_err(|_| ClockError::Unavailable))
+    }
+
+    /// The TSF read between two MAC-clock readings of one generation: the
+    /// sample's radio stamp is the first, its uncertainty the distance to
+    /// the second plus the counter's microsecond.
+    fn tsf_sample(&self) -> PortResult<TsfSample, ClockError, LowerMacFault> {
+        let runtime = self.runtime;
+        let (before, reading, after) = runtime.with_phase(|core, hardware, _, _| {
+            let before = runtime.timer.snapshot();
+            let reading = core.tsf_reading(hardware, vif_of(VifRole::Station));
+            Ok((before, reading, runtime.timer.snapshot()))
+        })?;
+        let Some((before, uncertainty)) = before
+            .zip(after)
+            .map(|(before, after)| (before.sample(), after.sample()))
+            .filter(|(before, after)| before.generation == after.generation)
+            .and_then(|(before, after)| {
+                after
+                    .source
+                    .checked_duration_since(before.source)
+                    .and_then(|elapsed| {
+                        elapsed.checked_add(oer_time::RadioDuration::from_micros(1))
+                    })
+                    .map(|uncertainty| (before, uncertainty))
+            })
+        else {
+            return Ok(Err(ClockError::Unavailable));
+        };
+        Ok(reading
+            .map(|(tsf, generation)| TsfSample {
+                tsf,
+                local: oer_ieee80211_lower_mac::Ieee80211Stamp {
+                    at: before.source,
+                    generation: before.generation,
+                },
+                uncertainty,
+                generation,
+            })
+            .map_err(|_| ClockError::Unavailable))
+    }
+
+    fn set_tsf(
+        &self,
+        at: oer_ieee80211_mac::tsf::TsfInstant,
+    ) -> Result<(), Poisoned<LowerMacFault>> {
+        self.runtime.with_phase(|core, hardware, _, _| {
+            let set = core.set_tsf(hardware, VifTsf::new(vif_of(VifRole::Station), at));
+            debug_assert!(set.is_ok(), "a configured station sets its TSF");
+            Ok(())
+        })
+    }
+
+    fn set_tbtt(&self, plan: TbttPlan) -> Result<(), Poisoned<LowerMacFault>> {
+        self.runtime.with_phase(|core, hardware, _, _| {
+            let set = core.set_tbtt(
+                hardware,
+                TbttSchedule {
+                    next: VifTsf::new(vif_of(VifRole::Station), plan.next),
+                    beacon_interval: plan.beacon_interval,
+                    lead: plan.lead,
+                },
+            );
+            debug_assert!(set.is_ok(), "a configured station schedules its TBTTs");
+            Ok(())
+        })
+    }
+
+    fn stop_tbtt(&self) -> Result<(), Poisoned<LowerMacFault>> {
+        self.runtime.with_phase(|core, hardware, _, _| {
+            let _ = core.stop_tbtt(hardware, vif_of(VifRole::Station));
+            Ok(())
+        })
+    }
+}
+
+impl<
+    'slot,
+    M: RawMutex,
+    P,
+    E,
+    T,
+    H,
+    R,
+    const B: usize,
+    const N: usize,
+    const EV: usize,
+    U: LowerMacRxUnit,
+    S: AmpduBacking,
+    const AS: usize,
+    const AB: usize,
+    O: TxBody,
+> MonitorControl
+    for Esp32s31Control<'_, Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>>
+where
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: oer_time::Timer + ReceptionClock,
+    H: LowerMacHardware,
+    R: LowerMacRetune<H>,
+{
+    type Fault = LowerMacFault;
+
+    /// Monitor reception runs only while no interface receives, which the
+    /// caller arranges first.
+    fn set_monitor(&mut self, enabled: bool) -> Result<(), Poisoned<LowerMacFault>> {
+        self.runtime.with_phase(|core, hardware, _, _| {
+            let set = core.set_monitor(hardware, enabled);
+            debug_assert!(
+                set.is_ok(),
+                "monitor reception runs with no interface receiving"
+            );
+            Ok(())
+        })
+    }
+}
+
 impl<
     'r,
     'slot,
@@ -2067,8 +2902,11 @@ impl<
     const N: usize,
     const EV: usize,
     U: LowerMacRxUnit,
+    S: AmpduBacking,
+    const AS: usize,
+    const AB: usize,
     O: TxBody,
-> PortBackend for Esp32s31Backend<'r, 'slot, M, P, E, T, H, R, B, N, EV, U, O>
+> PortBackend for Esp32s31Backend<'r, 'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
@@ -2076,34 +2914,48 @@ where
     H: LowerMacHardware,
     R: LowerMacRetune<H>,
 {
-    type Event = Esp32s31LowerMacEvent<U, O>;
+    type Event = Esp32s31LowerMacEvent<U, O, AS>;
     type Domain = Ieee80211Radio;
     type Fault = LowerMacFault;
     type Refusal = RetuneRefused;
     type Setup<'a, 'id>
-        = Esp32s31Setup<'r, Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, O>>
+        = Esp32s31Setup<'r, Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>>
     where
         Self: 'a;
     type Events<'a, 'id>
-        = Esp32s31Events<'a, 'id, Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, O>, B, N>
+        = Esp32s31Events<
+        'a,
+        'id,
+        Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>,
+        B,
+        N,
+        AB,
+    >
     where
         Self: 'a,
         'id: 'a;
     type Control<'a, 'id>
-        = Esp32s31Control<'r, Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, O>>
+        = Esp32s31Control<'r, Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>>
     where
         Self: 'a,
         'id: 'a;
     type Clients<'a, 'id>
-        = Esp32s31Clients<'a, 'id, Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, O>, B, N>
+        = Esp32s31Clients<
+        'a,
+        'id,
+        Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>,
+        B,
+        N,
+        AB,
+    >
     where
         Self: 'a,
         'id: 'a;
     type Resources<'id> = Esp32s31Resources<'id>;
-    type Held<'id> = Esp32s31Held<'id, B, N>;
+    type Held<'id> = Esp32s31Held<'id, B, N, AB>;
     type State = ();
     type Uninstall = ();
-    type Uninstalled = (LowerMacCore<'slot, P, E, T, B, N>, H);
+    type Uninstalled = (LowerMacCore<'slot, P, E, T, B, N, S, AS, AB>, H);
 
     async fn enable(&mut self) -> EnableResult<RetuneRefused, LowerMacFault> {
         let runtime = self.runtime;
@@ -2144,8 +2996,8 @@ where
 
     async fn disable<'a, 'id>(
         &'a mut self,
-        held: &'a Esp32s31Held<'id, B, N>,
-        sink: &'a mut dyn FnMut(Esp32s31LowerMacEvent<U, O>),
+        held: &'a Esp32s31Held<'id, B, N, AB>,
+        sink: &'a mut dyn FnMut(Esp32s31LowerMacEvent<U, O, AS>),
     ) -> Result<(), Poisoned<LowerMacFault>>
     where
         'id: 'a,
@@ -2187,11 +3039,15 @@ where
     fn resources<'id>(
         &mut self,
         mut mint: Mint<'id>,
-    ) -> (Esp32s31Held<'id, B, N>, Esp32s31Resources<'id>) {
+    ) -> (Esp32s31Held<'id, B, N, AB>, Esp32s31Resources<'id>) {
         let (queue_line, buffer_line, [station_tx, access_point_tx]) = TxSeats::mint(&mut mint);
         let buffers = FifoPermitPool::new(mint.permits(), buffer_line);
+        let (ampdu_line, [station_ampdu, access_point_ampdu]) =
+            mint.seats::<Esp32s31AmpduKind, AMPDU_SEATS>();
         let held = Esp32s31Held {
             tx: TxPermits::new(&mut mint, queue_line, buffers),
+            ampdu: FifoPermitPool::new(mint.permits(), ampdu_line),
+            ampdu_in_flight: RefCell::new([const { None }; TX_QUEUES]),
             in_flight: RefCell::new([None; TX_QUEUES]),
             agreements: RefCell::new([const { None }; RX_BLOCK_ACK_SLOTS]),
         };
@@ -2203,6 +3059,8 @@ where
             access_point_pairwise_keys: mint.slots(),
             access_point_group_keys: mint.slots(),
             block_acks: mint.slots(),
+            station_ampdu,
+            access_point_ampdu,
         };
         (held, resources)
     }
@@ -2215,7 +3073,7 @@ where
 
     fn split<'a, 'id>(
         &'a mut self,
-        held: &'a Esp32s31Held<'id, B, N>,
+        held: &'a Esp32s31Held<'id, B, N, AB>,
     ) -> PhaseParts<'a, Self::Events<'a, 'id>, Self::Control<'a, 'id>, Self::Clients<'a, 'id>>
     where
         'id: 'a,
@@ -2243,7 +3101,8 @@ where
         &mut self,
         held: &'p Self::Held<'id>,
         retire: Retire<'p>,
-    ) -> impl Future<Output = ()> + use<'p, 'id, 'r, 'slot, M, P, E, T, H, R, B, N, EV, U, O> {
+    ) -> impl Future<Output = ()> + use<'p, 'id, 'r, 'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>
+    {
         let runtime = self.runtime;
         async move {
             // The deadline serviced last, which the core may keep until an
@@ -2296,17 +3155,17 @@ where
         let _ = self.runtime.timer.wait_for(RETIRE_BOUND).await;
     }
 
-    fn detach<'id>(&mut self, _: &Esp32s31Held<'id, B, N>) {
+    fn detach<'id>(&mut self, _: &Esp32s31Held<'id, B, N, AB>) {
         // The interrupt entries reach the runtime, which keeps no core once
         // it is uninstalled: they post nothing to this install again.
     }
 
     fn uninstall<'id>(
         self,
-        _: Esp32s31Held<'id, B, N>,
+        _: Esp32s31Held<'id, B, N, AB>,
         (): (),
         (): (),
-    ) -> (LowerMacCore<'slot, P, E, T, B, N>, H) {
+    ) -> (LowerMacCore<'slot, P, E, T, B, N, S, AS, AB>, H) {
         self.runtime
             .uninstall()
             .expect("a disabled port's core is idle with its registers home")
@@ -2339,8 +3198,11 @@ impl<
     const N: usize,
     const EV: usize,
     U: LowerMacRxUnit,
+    S: AmpduBacking,
+    const AS: usize,
+    const AB: usize,
     O: TxBody,
-> LowerMacBackend for Esp32s31Backend<'r, 'slot, M, P, E, T, H, R, B, N, EV, U, O>
+> LowerMacBackend for Esp32s31Backend<'r, 'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
@@ -2363,8 +3225,11 @@ impl<
     const N: usize,
     const EV: usize,
     U: LowerMacRxUnit,
+    S: AmpduBacking,
+    const AS: usize,
+    const AB: usize,
     O: TxBody,
-> PortRxSink<U> for Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, O>
+> PortRxSink<U> for Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,

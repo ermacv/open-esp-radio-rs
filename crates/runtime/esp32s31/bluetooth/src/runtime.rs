@@ -212,7 +212,6 @@ struct Installed<
     faulted: bool,
 }
 
-/// What one locked pass left to do.
 impl<
     H: BluetoothRadioHardware,
     const LEGACY: usize,
@@ -238,6 +237,7 @@ impl<
     }
 }
 
+/// What one pass of the driver left to do.
 enum Pass {
     /// The radio asked for a scheduler stop.
     Stop,
@@ -480,7 +480,7 @@ fn trace_loss_reported() {
     });
 }
 
-/// The sink of one locked entry: outcomes go to the queue, and a fault
+/// The sink of one driver step: outcomes go to the queue, and a fault
 /// poisons the runtime.
 struct QueueSink<'a, M: RawMutex, E, const EVENTS: usize, const CONNECTIONS: usize> {
     outcomes: &'a OutcomeQueue<M, EVENTS, CONNECTIONS>,

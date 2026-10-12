@@ -8,6 +8,8 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
+
+mod copies;
 use oer_process::Checkout;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -48,6 +50,15 @@ enum Command {
         /// Also list unchanged functions.
         #[arg(long)]
         all: bool,
+    },
+    /// Compare the MMIO behavior of every function the chip's pinned ROM
+    /// and a pinned library both define, against a built vendor firmware
+    /// image where one links it; writes `target/verification/<chip>/copies.json`.
+    Copies {
+        #[arg(long)]
+        chip: String,
+        #[command(flatten)]
+        budget: copies::Budget,
     },
     /// Record reviewed code fingerprints of cited vendor functions.
     Provenance {
@@ -198,6 +209,7 @@ fn run() -> Result<ExitCode> {
             baseline,
             all,
         } => oer_vendor_provenance::diff::run(&ctx.root, &chip, old, new, baseline, all)?,
+        Command::Copies { chip, budget } => copies::run(&ctx.root, &chip, &budget)?,
         Command::Provenance {
             chip,
             accept,

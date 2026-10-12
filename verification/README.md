@@ -54,6 +54,24 @@ were reviewed; `cargo verification diff --chip esp32s31` shows what changed betw
 and `tools/symbol-lineage` pairs obfuscated names across releases. See the
 [source policy](../docs/source-policy.md).
 
+A function both a pinned ROM and a pinned library define has two copies,
+which can handle the same register bits differently, and a fingerprint check
+of each copy does not see it. `cargo verification copies --chip <chip>`
+compares every such pair by its MMIO behavior inside the register model's
+MMIO windows, each ROM revision on its own: against a built vendor firmware
+that links the function (every library address resolved there, with the
+chip's flash as read-only), else against the archives. Each pair gets a
+verdict, strongest first: `differs` (both analyses complete and a write
+differs), `stored-value-unknown` (the same words written, one side's bits
+unresolved), `several-copies` (a side holds several copies of the name, whose
+accesses compare only as one multiset), `reads-differ` (only loads or read
+bits, which equivalent code can describe differently), `differs-incomplete`,
+`unresolved-differs`, `unknown` (a copy blocked, or in code the analysis
+skips) and `no-difference-seen`, which is no proof of equality; each pair
+says whether each side's analysis of it is complete. The report lists the copies our facts cite and is written to
+`target/verification/<chip>/copies.json`; unbuilt vendor firmware is named,
+since its functions fall back to the noisier archive comparison.
+
 **L2.** A typed scenario runs the pinned vendor function and the compiled
 production probe in one [Blobray](../tools/blobray/README.md) session and
 fails closed with MATCH, DIFF or INCOMPLETE. Each scenario writes its shard

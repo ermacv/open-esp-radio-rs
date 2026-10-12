@@ -232,6 +232,12 @@ pub fn pinned(root: &Path, chip: &str) -> Result<Vec<Pinned>> {
     }
 }
 
+/// The pinned firmware outputs of `chip` not built in this checkout, by
+/// artifact id: [`pinned`] skips them.
+pub fn unbuilt_firmware(root: &Path, chip: &str) -> Result<Vec<String>> {
+    Ok(resolve(root, chip)?.unbuilt)
+}
+
 /// Fetches every pinned vendor artifact of `chip` into the shared store,
 /// leaving firmware outputs alone; fails when one cannot be fetched as pinned.
 pub fn fetch_vendor_sources(root: &Path, chip: &str) -> Result<()> {
@@ -295,6 +301,8 @@ pub fn unfetched(root: &Path, chip: &str) -> Result<Vec<String>> {
 struct Resolved {
     pinned: Vec<Pinned>,
     unfetched: Vec<String>,
+    /// Firmware outputs not built in this checkout, by artifact id.
+    unbuilt: Vec<String>,
 }
 
 fn resolve(root: &Path, chip: &str) -> Result<Resolved> {
@@ -305,12 +313,14 @@ fn resolve_manifest(root: &Path, manifest: &Manifest) -> Result<Resolved> {
     let mut resolved = Resolved {
         pinned: vec![],
         unfetched: vec![],
+        unbuilt: vec![],
     };
     for artifact in manifest.artifact.iter().cloned() {
         let firmware = manifest.source_of(&artifact).kind == SourceKind::Firmware;
         let path = manifest.location(root, &artifact)?;
         if firmware {
             if !path.is_file() {
+                resolved.unbuilt.push(artifact.id);
                 continue;
             }
         } else if !verified(&path, pinned_sha256(&artifact)?)? {
@@ -497,6 +507,30 @@ mod tests {
         )
         .unwrap();
         assert_eq!(images(manifest), ["second", "first"]);
+    }
+
+    #[test]
+    fn an_unbuilt_firmware_output_is_listed_and_a_built_one_pinned() {
+        let dir = tempfile::tempdir().unwrap();
+        let manifest = Manifest::parse(
+            "schema = 1\n\
+             [[source]]\nid = \"reference\"\nkind = \"firmware\"\nimage = \"reference\"\n\
+             [[artifact]]\nid = \"image\"\nsource = \"reference\"\npath = \"out/image.elf\"\n\
+             [[artifact]]\nid = \"hal\"\nsource = \"reference\"\npath = \"out/libhal.a\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(dir.path().join("out")).unwrap();
+        std::fs::write(dir.path().join("out/image.elf"), b"elf").unwrap();
+        let resolved = resolve_manifest(dir.path(), &manifest).unwrap();
+        assert_eq!(
+            resolved
+                .pinned
+                .iter()
+                .map(|p| p.id.as_str())
+                .collect::<Vec<_>>(),
+            ["image"]
+        );
+        assert_eq!(resolved.unbuilt, ["hal"]);
     }
 
     #[test]

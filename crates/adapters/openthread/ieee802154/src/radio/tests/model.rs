@@ -92,6 +92,7 @@ const PORT_CAPABILITIES: Ieee802154Capabilities = Ieee802154Capabilities {
         accuracy_ppm: 20,
         uncertainty_10us: 7,
     }),
+    enhanced_ack_header_ies: 16,
 };
 
 impl ModelPort {

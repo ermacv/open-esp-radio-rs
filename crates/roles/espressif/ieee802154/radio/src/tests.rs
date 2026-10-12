@@ -461,7 +461,7 @@ fn configuration_and_settings_reach_the_identity_and_the_pib() {
 
 /// The radio publishes the engine's transmit-power levels, starting at the
 /// highest, the Kconfig CCA threshold range starting from the PIB defaults,
-/// and the chip's receive sensitivity.
+/// the chip's receive sensitivity and the enhanced-ACK IE bytes it holds.
 #[test]
 fn the_radio_publishes_its_power_cca_and_sensitivity() {
     let bench = Bench::enabled();
@@ -478,6 +478,10 @@ fn the_radio_publishes_its_power_cca_and_sensitivity() {
         })
     );
     assert_eq!(capabilities.receive_sensitivity_dbm, -104);
+    assert_eq!(
+        usize::from(capabilities.enhanced_ack_header_ies),
+        IEEE802154_ENHANCED_ACK_IE_CAPACITY
+    );
 }
 
 /// A transmit power or CCA threshold outside the published capability is

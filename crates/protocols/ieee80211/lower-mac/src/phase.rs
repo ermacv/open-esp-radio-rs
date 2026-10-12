@@ -50,6 +50,14 @@
 //! published after that key's install, and a key's removal ends after
 //! every attempt that names it. A backend's conformance tests check both.
 //!
+//! The queue is strictly first in, first out: no command replaces another.
+//! Its capacity is the tokens' ([owner decision]): one attempt per ticket,
+//! and two commands per key slot, Block Ack slot and the gate, since each
+//! token's install, addition or closing and its removal or opening may
+//! wait at once — `tickets + 2 × (key slots + Block Ack slots + 1)`.
+//!
+//! [owner decision]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6130970169
+//!
 //! # Compile-fail tests
 //!
 //! No caller mints a token: a gate, a ticket or a buffer comes only from

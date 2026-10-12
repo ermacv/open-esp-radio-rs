@@ -111,12 +111,12 @@ pub const MODEL_BLOCK_ACK_SLOTS: usize = 2;
 /// The key slots of both roles, of both kinds.
 const MODEL_ALL_KEY_SLOTS: usize = 4 * MODEL_KEY_SLOTS;
 
-/// The commands the queue from the handle to the driver holds: what the
-/// contract promises, one per token that can name one (a ticket, a key
-/// slot, a Block Ack slot, the gate). A key's removal while its install
-/// still waits takes the install's entry.
+/// The commands the queue from the handle to the driver holds, first in,
+/// first out: what the contract promises, an attempt per ticket and two
+/// commands per key slot, Block Ack slot and the gate, whose install,
+/// addition or closing and removal or opening may wait at once.
 pub const MODEL_COMMANDS: usize =
-    MODEL_TICKETS + MODEL_ALL_KEY_SLOTS + MODEL_BLOCK_ACK_SLOTS + 1;
+    MODEL_TICKETS + 2 * (MODEL_ALL_KEY_SLOTS + MODEL_BLOCK_ACK_SLOTS + 1);
 /// The events the queue from the driver to the body holds: a terminal per
 /// ticket, a removal per key slot, the gate's closing, one confirmation of
 /// each interface's settings (they coalesce, as the settings do) and the
@@ -491,24 +491,6 @@ impl<'id> ModelHeld<'id> {
     fn command(&self, command: Command<'id>) {
         self.commands.push(command);
         self.air.wake_driver();
-    }
-
-    /// Remove the key `index`: a removal while its install still waits
-    /// takes the install's entry.
-    fn remove_key(&self, index: u8, removed: ModelRemovedKey<'id>) {
-        {
-            let mut commands = self.commands.items.borrow_mut();
-            if let Some(command) = commands
-                .iter_mut()
-                .find(|command| matches!(command, Command::InstallKey { index: queued } if *queued == index))
-            {
-                *command = Command::RemoveKey { index, removed };
-                drop(commands);
-                self.air.wake_driver();
-                return;
-            }
-        }
-        self.command(Command::RemoveKey { index, removed });
     }
 
     fn post(&self, event: LowerMacEvent<'id, ModelTypes>) {
@@ -1195,11 +1177,17 @@ impl<'p, 'v, 'id: 'p, R: ModelRole> InterfacePhase<'p, 'id> for ModelInterface<'
     }
 
     fn remove_pairwise_key(&mut self, key: ModelPairwiseKey<'id, R>) {
-        self.held.remove_key(key.index, R::pairwise(key.slot));
+        self.held.command(Command::RemoveKey {
+            index: key.index,
+            removed: R::pairwise(key.slot),
+        });
     }
 
     fn remove_group_key(&mut self, key: ModelGroupKey<'id, R>) {
-        self.held.remove_key(key.index, R::group(key.slot));
+        self.held.command(Command::RemoveKey {
+            index: key.index,
+            removed: R::group(key.slot),
+        });
     }
 
     fn add_block_ack(

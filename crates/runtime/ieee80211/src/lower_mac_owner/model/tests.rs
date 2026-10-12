@@ -239,6 +239,53 @@ fn an_attempt_naming_a_key_goes_after_the_keys_install() {
     assert_eq!(sent[0].key, Some((0, true)));
 }
 
+/// Install a key, submit an attempt that names it and remove the key, all
+/// before the driver runs and without reading an event.
+struct KeyAttemptRemoval;
+
+impl Work for KeyAttemptRemoval {
+    async fn work<'p, 'id: 'p>(self, phase: &mut ModelPhase<'p, 'id>, resources: ModelResources<'id>) {
+        let ModelResources {
+            mut tickets,
+            mut small,
+            station_pairwise: [slot, _],
+            ..
+        } = resources;
+        let key = phase.station().install_pairwise_key(
+            slot,
+            IndividualAddress::new(PEER).unwrap(),
+            Ccmp128Key([7; 16]),
+        );
+        submit(phase, tickets.remove(0), small.remove(0), Some(&key));
+        phase.station().remove_pairwise_key(key);
+        let mut events = Vec::new();
+        while events.len() < 2 {
+            yield_now().await;
+            let event = {
+                let event = core::pin::pin!(phase.next_event());
+                let mut context = core::task::Context::from_waker(Waker::noop());
+                Future::poll(event, &mut context)
+            };
+            match event {
+                Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted { .. }))) => events.push("completed"),
+                Poll::Ready(Ok(Ok(LowerMacEvent::KeyRemoved(_)))) => events.push("removed"),
+                _ => {}
+            }
+        }
+        assert_eq!(events, ["completed", "removed"]);
+    }
+}
+
+#[test]
+fn an_attempt_between_a_keys_install_and_removal_goes_under_the_key() {
+    let (backend, air) = backend();
+    block_on(run_port(backend, Body(KeyAttemptRemoval)));
+    let sent = air.sent();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].key, Some((0, true)));
+    assert_eq!(air.commands(), 3);
+}
+
 /// Submit every ticket's attempt, then wait for `open` before reading.
 struct WaitForever<'t> {
     open: &'t Cell<bool>,

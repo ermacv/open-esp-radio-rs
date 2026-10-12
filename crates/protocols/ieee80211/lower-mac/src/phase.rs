@@ -734,15 +734,19 @@ pub struct RetryStage<R> {
 /// there ([`HardwareServices::RETRY_POLICY`](crate::HardwareServices::RETRY_POLICY)).
 #[derive(Debug)]
 pub struct RetryPlan<R> {
-    stages: [Option<RetryStage<R>>; RETRY_STAGES],
+    /// The first stage: a plan always has one.
+    first: RetryStage<R>,
+    /// The stages after it, in order, the empty ones last.
+    rest: [Option<RetryStage<R>>; RETRY_STAGES - 1],
 }
 
 impl<R> RetryPlan<R> {
     /// The plan of `first` alone.
     pub fn new(first: RetryStage<R>) -> Self {
-        let mut stages = [const { None }; RETRY_STAGES];
-        stages[0] = Some(first);
-        Self { stages }
+        Self {
+            first,
+            rest: [const { None }; RETRY_STAGES - 1],
+        }
     }
 
     /// The plan with `stage` after its last.
@@ -751,7 +755,7 @@ impl<R> RetryPlan<R> {
     ///
     /// The plan and the stage, when the plan holds [`RETRY_STAGES`].
     pub fn then(mut self, stage: RetryStage<R>) -> Result<Self, (Self, RetryStage<R>)> {
-        match self.stages.iter_mut().find(|slot| slot.is_none()) {
+        match self.rest.iter_mut().find(|slot| slot.is_none()) {
             Some(slot) => {
                 *slot = Some(stage);
                 Ok(self)
@@ -760,9 +764,19 @@ impl<R> RetryPlan<R> {
         }
     }
 
+    /// The first stage.
+    pub const fn first(&self) -> &RetryStage<R> {
+        &self.first
+    }
+
+    /// The first stage, by value: a frame of one rate takes it.
+    pub fn into_first(self) -> RetryStage<R> {
+        self.first
+    }
+
     /// The stages in order.
     pub fn stages(&self) -> impl Iterator<Item = &RetryStage<R>> {
-        self.stages.iter().map_while(Option::as_ref)
+        core::iter::once(&self.first).chain(self.rest.iter().map_while(Option::as_ref))
     }
 
     /// The transmissions the plan makes at most.
@@ -796,17 +810,19 @@ impl<R> RetryPlan<R> {
     /// assert_eq!(refused.err(), Some(b'b'));
     /// ```
     pub fn limit(mut self, transmissions: core::num::NonZeroU8) -> Self {
-        let mut left = transmissions.get();
-        for slot in &mut self.stages {
-            match slot {
-                Some(_) if left == 0 => *slot = None,
-                Some(stage) => {
-                    let taken = stage.transmissions.get().min(left);
-                    left -= taken;
-                    stage.transmissions = core::num::NonZeroU8::new(taken)
-                        .unwrap_or(core::num::NonZeroU8::MIN);
+        let first = self.first.transmissions.min(transmissions);
+        let mut left = transmissions.get() - first.get();
+        self.first.transmissions = first;
+        for slot in &mut self.rest {
+            let Some(stage) = slot else {
+                break;
+            };
+            match core::num::NonZeroU8::new(stage.transmissions.get().min(left)) {
+                Some(taken) => {
+                    left -= taken.get();
+                    stage.transmissions = taken;
                 }
-                None => {}
+                None => *slot = None,
             }
         }
         self
@@ -822,22 +838,20 @@ impl<R> RetryPlan<R> {
         self,
         mut rate: impl FnMut(R) -> Result<S, E>,
     ) -> Result<RetryPlan<S>, E> {
-        let mut stages = [const { None }; RETRY_STAGES];
-        for (slot, stage) in stages.iter_mut().zip(self.stages) {
-            let Some(RetryStage {
-                rate: from,
-                transmissions,
-                protection,
-            }) = stage
-            else {
+        let mut turn = |stage: RetryStage<R>| {
+            Ok(RetryStage {
+                rate: rate(stage.rate)?,
+                transmissions: stage.transmissions,
+                protection: stage.protection,
+            })
+        };
+        let mut plan = RetryPlan::new(turn(self.first)?);
+        for (slot, stage) in plan.rest.iter_mut().zip(self.rest) {
+            let Some(stage) = stage else {
                 break;
             };
-            *slot = Some(RetryStage {
-                rate: rate(from)?,
-                transmissions,
-                protection,
-            });
+            *slot = Some(turn(stage)?);
         }
-        Ok(RetryPlan { stages })
+        Ok(plan)
     }
 }

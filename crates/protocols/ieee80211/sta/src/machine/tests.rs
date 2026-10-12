@@ -200,6 +200,8 @@ struct World {
     eapol: Vec<(bool, bool)>,
     /// Every frame the station sent, in its buffer.
     frames: Vec<Vec<u8>>,
+    /// The next frame does not go: the service hands its tokens back.
+    unsend_next: bool,
     /// The frames sent before the station said it associated, and its peer.
     associated: Option<(usize, Peer<RxMeta>)>,
     /// The signal of the frames the world delivers.
@@ -267,6 +269,7 @@ impl World {
             deauthentications: Vec::new(),
             eapol: Vec::new(),
             frames: Vec::new(),
+            unsend_next: false,
             associated: None,
             rssi: i8::MIN,
         }
@@ -301,8 +304,13 @@ impl World {
                     }
                     StaAction::InstallGroupKey { slot, key_id, .. } => {
                         self.seen.push(Seen::InstallGroup(key_id.get()));
-                        self.station
-                            .input(now, StaInput::GroupKeyInstalled(Key(slot)));
+                        self.station.input(
+                            now,
+                            StaInput::GroupKeyInstalled {
+                                key: Key(slot),
+                                key_id,
+                            },
+                        );
                     }
                     StaAction::RemovePairwiseKey(Key(slot)) => {
                         self.seen.push(Seen::RemoveKey);
@@ -382,6 +390,11 @@ impl World {
 
     fn end_transmissions(&mut self, now: Instant) {
         for (ticket, buffer) in self.in_flight.drain(..).collect::<Vec<_>>() {
+            // The service did not send it: its tokens come back unsent.
+            if core::mem::take(&mut self.unsend_next) {
+                self.station.input(now, StaInput::Unsent { ticket, buffer });
+                continue;
+            }
             self.station.input(
                 now,
                 StaInput::TxDone {
@@ -864,6 +877,27 @@ fn an_undelivered_sleep_null_cancels_the_absence_and_the_station_stays() {
         subtype: NULL_ACTIVE,
         on: 6
     }));
+}
+
+#[test]
+fn an_unsent_sleep_null_is_undelivered_and_the_station_stays() {
+    let mut world = connected_world();
+    // The service cannot send the Null (no rate of its plan on the
+    // channel): the station hears it as undelivered.
+    world.unsend_next = true;
+    world
+        .station
+        .input(at(40), StaInput::Command(StaCommand::BackgroundScan));
+    world.run(at(40));
+    world.take();
+    world.advance();
+    let seen = world.take();
+    assert!(!seen.iter().any(|seen| matches!(seen, Seen::Retune(_))));
+    assert!(seen.contains(&Seen::Transmit {
+        subtype: NULL_ACTIVE,
+        on: 6
+    }));
+    assert!(world.in_flight.is_empty());
 }
 
 #[test]

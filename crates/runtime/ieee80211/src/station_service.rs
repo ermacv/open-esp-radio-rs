@@ -30,18 +30,17 @@ use oer_ieee80211_arbiter::{
 };
 use oer_ieee80211_lower_mac::{
     AttemptKey, Ccmp128Key, ClassFrame, CoexPriority, GateClosed, GateOpen, Ieee80211Capabilities,
-    InterfacePhase, KeyTypes, LowerMacBackend, LowerMacEvent, LowerMacPhase, PhaseRate, PhaseTypes,
-    Protection, Removed, RemovedKey, RetryPlan, RxBuffer, RxMetadata, StationPhase,
+    InterfacePhase, KeyTypes, LowerMacBackend, LowerMacEvent, LowerMacPhase,  PhaseTypes,
+    Protection, Removed, RemovedKey, RxBuffer, RxMetadata, StationPhase,
     SupportedChannel, SupportedCoex, SupportedPower, TxBufferClass, TxBufferPool, TxCompletion,
     TxFrame, TxPower, VifRole,
 };
 use oer_ieee80211_mac::{
-    phy::PhyRate,
     qos::{WmmAccessCategory, WmmUserPriority},
 };
 use oer_ieee80211_port::{Disabled, Enabled, Failed, Owner, PoisonedOwner, PortBackend};
 use oer_ieee80211_sta::{
-    data::{self, DataAction, DataInput, Msdu, StaData, StaDataTokens},
+    data::{self, DataAction, DataInput, DataRefusal, Msdu, StaData, StaDataTokens},
     machine::{
         LinkProtection, Peer, StaAction, StaCommand, StaFrame, StaFrameClass, StaInput, StaNotice,
         StaRatePlan, StaTokens, StaTransmit, Station,
@@ -80,8 +79,48 @@ pub trait StationPort<'id>: LowerMacBackend {
     /// Tune the disabled port to `channel`.
     fn tune(setup: &mut Self::Setup<'_, 'id>, channel: SupportedChannel<Self::Caps>);
 
+    /// The received buffers the port lends at most at once: a disable
+    /// returns no more, and the service holds that many for the next phase.
+    const RX_BUFFERS: usize;
+
     /// One event of the port, as the contract's.
     fn event(event: Self::Event<'id>) -> LowerMacEvent<'id, Self::Types>;
+
+    /// A completed attempt's buffer, by the service's class: every buffer
+    /// of the port is one of them.
+    fn sort(buffer: <Self::Types as PhaseTypes<'id>>::AnyTxBuffer) -> Sorted<'id, Self>;
+}
+
+/// A completed buffer of the service's port `B`, by its class: fresh, or
+/// numbered by a protected attempt.
+pub enum Sorted<'id, B: StationPort<'id>> {
+    /// The station's.
+    Small(<B::Types as TxBufferPool<'id, B::Small>>::Buffer),
+    /// The station's, numbered.
+    SmallNumbered(<B::Types as TxBufferPool<'id, B::Small>>::Numbered),
+    /// The data machine's.
+    Large(<B::Types as TxBufferPool<'id, B::Large>>::Buffer),
+    /// The data machine's, numbered.
+    LargeNumbered(<B::Types as TxBufferPool<'id, B::Large>>::Numbered),
+}
+
+/// What the service dropped or could not send, counted.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ServiceCounters {
+    /// Frames not sent: no rate of their plan is on the port's channel, or
+    /// they do not fit their buffer class. Their tokens came back.
+    pub unsent_frames: u32,
+    /// MSDUs the network stack sent that do not fit a buffer.
+    pub tx_msdus_too_long: u32,
+    /// Received MSDUs the network stack's full queue could not take.
+    pub rx_msdus_queue_full: u32,
+    /// Terminals that carried a buffer more, or none, than their one MPDU:
+    /// their tokens came back alone.
+    pub stray_terminals: u32,
+    /// Received buffers a disable returned beyond the port's
+    /// [`StationPort::RX_BUFFERS`]: dropped, reception is that much smaller
+    /// until the next install.
+    pub rx_buffers_lost: u32,
 }
 
 /// A marker of the install `'id` and two types.
@@ -250,6 +289,8 @@ pub struct StationService<'a, 'id, B: StationPort<'id>, S, const RX: usize> {
     pub arbiter: PortArbiter<'a, 'id, B>,
     /// The rates of the station's frames and data.
     pub rates: S,
+    /// What the service dropped or could not send.
+    pub counters: ServiceCounters,
     held: [Option<<B::Types as PhaseTypes<'id>>::RxBuffer>; RX],
 }
 
@@ -274,6 +315,13 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
         arbiter: PortArbiter<'a, 'id, B>,
         rates: S,
     ) -> Self {
+        // The port's received buffers fit the held ones.
+        const {
+            assert!(
+                RX >= B::RX_BUFFERS,
+                "the service holds every received buffer its port lends"
+            );
+        };
         // The port's levels, checked as the type is built.
         let _ = (
             Levels::<B::Caps>::CONNECTION,
@@ -285,6 +333,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
             data,
             arbiter,
             rates,
+            counters: ServiceCounters::default(),
             held: [const { None }; RX],
         }
     }
@@ -407,12 +456,12 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
         let mut sink = |event: B::Event<'id>| {
             let now = timer.now();
             if let Some(buffer) = self.event(now, B::event(event), io) {
-                let slot = self
-                    .held
-                    .iter_mut()
-                    .find(|slot| slot.is_none())
-                    .expect("the service holds every receive buffer of its port");
-                *slot = Some(buffer);
+                match self.held.iter_mut().find(|slot| slot.is_none()) {
+                    Some(slot) => *slot = Some(buffer),
+                    // More than the port said it lends: the buffer is lost
+                    // to reception until the next install.
+                    None => self.counters.rx_buffers_lost += 1,
+                }
             }
         };
         owner.disable(&mut sink).await
@@ -515,15 +564,18 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                 priority: msdu.priority,
                 payload: &frame[ETHERNET_HEADER..],
             };
-            // The machine took it, or it can never go (too long): either
-            // way it leaves the queue.
-            let _ = self.data.input(
+            // The machine took it, or it can never go (too long, counted):
+            // either way it leaves the queue.
+            let taken = self.data.input(
                 now,
                 DataInput::Msdu {
                     msdu,
                     link: &mut link,
                 },
             );
+            if let Err(DataRefusal::TooLong) = taken {
+                self.counters.tx_msdus_too_long += 1;
+            }
         }
         io.transmit.receive_done();
     }
@@ -587,15 +639,31 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                     (LinkProtection::Ccmp { key, .. }, true) => Some(AttemptKey::Pairwise(*key)),
                     _ => None,
                 };
-                let plan = phase_plan(phase, self.rates.plan(FrameRates::Data));
-                let frame = TxFrame::Individual {
-                    frame: transmit.frame,
-                    plan,
+                // A data MPDU no rate of the channel carries, or one that
+                // does not fit its class, does not go: its tokens come back
+                // and it is counted.
+                let frame = self
+                    .rates
+                    .plan(FrameRates::Data, |rate| phase.rate(rate))
+                    .and_then(|plan| {
+                        ClassFrame::<B::Large, B::Caps>::new(TxFrame::Individual {
+                            frame: transmit.frame,
+                            plan,
+                        })
+                        .ok()
+                    });
+                let Some(frame) = frame else {
+                    self.counters.unsent_frames += 1;
+                    let _ = self.data.input::<PortStaTokens<'id, B::Types, B::Small>>(
+                        now,
+                        DataInput::Returned {
+                            ticket: Some(transmit.ticket),
+                            buffer: Some(transmit.buffer),
+                        },
+                    );
+                    continue;
                 };
                 let mut station = phase.station();
-                let Ok(frame) = ClassFrame::<B::Large, B::Caps>::new(frame) else {
-                    unreachable!("an MPDU encoded into its buffer fits its class");
-                };
                 let frame = station.tx_buffer::<B::Large>(transmit.buffer, frame);
                 let submitted = station.submit(oer_ieee80211_lower_mac::Attempt {
                     ticket: transmit.ticket,
@@ -631,6 +699,10 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                     .associated(&peer.associated.rate_peer(), &peer.response);
             }
             Follow::Disconnected => self.rates.disconnected(),
+            Follow::Unsent { ticket, buffer } => {
+                self.counters.unsent_frames += 1;
+                self.station.input(now, StaInput::Unsent { ticket, buffer });
+            }
         }
     }
 
@@ -679,8 +751,9 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                 {
                     for parts in msdus {
                         // A full queue drops the MSDU, as an Ethernet
-                        // receiver does.
+                        // receiver does, counted.
                         let Some(slot) = io.receive.try_send() else {
+                            self.counters.rx_msdus_queue_full += 1;
                             continue;
                         };
                         if let Ok(len) = parts.copy_to(&mut slot.frame) {
@@ -734,35 +807,90 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
         buffers: <B::Types as PhaseTypes<'id>>::TxBuffers,
         completion: TxCompletion,
     ) {
+        // The station and data send one MPDU an attempt: its ticket goes
+        // with its buffer. A terminal that carries a buffer more, or none,
+        // gives its tokens back alone, counted.
         let mut ticket = Some(ticket);
         for buffer in buffers {
-            let Some(owner) = ticket.take() else {
-                unreachable!("the station and data send one MPDU an attempt");
-            };
-            match Buffer::<'id, B>::of(buffer) {
-                Buffer::Small(buffer) => {
-                    self.rates.completed(now, FrameRates::Control, &completion);
-                    self.station.input(
-                        now,
-                        StaInput::TxDone {
-                            ticket: owner,
-                            buffer,
-                            completion,
-                        },
-                    );
-                }
-                Buffer::Large(buffer) => {
-                    self.rates.completed(now, FrameRates::Data, &completion);
-                    let _ = self.data.input::<PortStaTokens<'id, B::Types, B::Small>>(
-                        now,
-                        DataInput::TxDone {
-                            ticket: owner,
-                            buffer,
-                        },
-                    );
-                }
+            let owner = ticket.take();
+            if owner.is_none() {
+                self.counters.stray_terminals += 1;
+            }
+            match B::sort(buffer) {
+                Sorted::Small(buffer) => self.station_done(now, owner, buffer, completion),
+                Sorted::SmallNumbered(buffer) => self.station_done(
+                    now,
+                    owner,
+                    <B::Types as TxBufferPool<'id, B::Small>>::renew(buffer),
+                    completion,
+                ),
+                Sorted::Large(buffer) => self.data_done(now, owner, buffer, completion),
+                Sorted::LargeNumbered(buffer) => self.data_done(
+                    now,
+                    owner,
+                    <B::Types as TxBufferPool<'id, B::Large>>::renew(buffer),
+                    completion,
+                ),
             }
         }
+        if let Some(ticket) = ticket {
+            self.counters.stray_terminals += 1;
+            let _ = self.data.input::<PortStaTokens<'id, B::Types, B::Small>>(
+                now,
+                DataInput::Returned {
+                    ticket: Some(ticket),
+                    buffer: None,
+                },
+            );
+        }
+    }
+
+    /// A station frame's end, or its buffer back alone.
+    fn station_done(
+        &mut self,
+        now: Instant,
+        ticket: Option<Slot<'id, <B::Types as PhaseTypes<'id>>::TicketKind>>,
+        buffer: <B::Types as TxBufferPool<'id, B::Small>>::Buffer,
+        completion: TxCompletion,
+    ) {
+        let input = match ticket {
+            Some(ticket) => {
+                self.rates.completed(now, FrameRates::Control, &completion);
+                StaInput::TxDone {
+                    ticket,
+                    buffer,
+                    completion,
+                }
+            }
+            None => StaInput::Returned {
+                ticket: None,
+                buffer: Some(buffer),
+            },
+        };
+        self.station.input(now, input);
+    }
+
+    /// A data MPDU's end, or its buffer back alone.
+    fn data_done(
+        &mut self,
+        now: Instant,
+        ticket: Option<Slot<'id, <B::Types as PhaseTypes<'id>>::TicketKind>>,
+        buffer: <B::Types as TxBufferPool<'id, B::Large>>::Buffer,
+        completion: TxCompletion,
+    ) {
+        let input = match ticket {
+            Some(ticket) => {
+                self.rates.completed(now, FrameRates::Data, &completion);
+                DataInput::TxDone { ticket, buffer }
+            }
+            None => DataInput::Returned {
+                ticket: None,
+                buffer: Some(buffer),
+            },
+        };
+        let _ = self
+            .data
+            .input::<PortStaTokens<'id, B::Types, B::Small>>(now, input);
     }
 }
 
@@ -773,61 +901,73 @@ enum Follow<'id, B: StationPort<'id>> {
     Input(StaInput<'static, PortStaTokens<'id, B::Types, B::Small>, B::Caps>),
     /// The station associated: the rates start from its peer.
     Associated(Peer<PortRxMeta<'id, B>>),
+    /// A frame of the station did not go.
+    Unsent {
+        ticket: <PortStaTokens<'id, B::Types, B::Small> as StaTokens>::Ticket,
+        buffer: <PortStaTokens<'id, B::Types, B::Small> as StaTokens>::SmallBuffer,
+    },
     /// The station left: the rates leave its peer.
     Disconnected,
 }
 
 /// Submit a frame of the station at the rates `rates` selects, under `key`
-/// when it names one.
+/// when it names one. A frame no rate of the channel carries, or one that
+/// does not fit its class, does not go: the station hears so.
 fn submit_station<'p, 'id: 'p, B, P, S>(
     phase: &mut P,
     rates: &S,
     key: Option<&<<B::Types as PhaseTypes<'id>>::StationKeys as KeyTypes<'id>>::PairwiseKey>,
     transmit: StaTransmit<PortStaTokens<'id, B::Types, B::Small>, B::Caps>,
-) -> Result<(), ()>
+) -> Result<Follow<'id, B>, ()>
 where
     B: StationPort<'id>,
     P: LowerMacPhase<'p, 'id, Caps = B::Caps, Types = B::Types>,
     S: RateSelection<PortRxMeta<'id, B>>,
 {
-    let frame = match transmit.frame {
-        StaFrame::Individual(frame) => {
-            let plan = match transmit.plan {
-                // A Null's retries are its plan's
-                // ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6130033259)).
-                StaRatePlan::Null => rates
-                    .plan(FrameRates::Control)
-                    .limit(Levels::<B::Caps>::NULL),
-                StaRatePlan::Management | StaRatePlan::Group => rates.plan(FrameRates::Control),
-            };
-            TxFrame::Individual {
-                frame,
-                plan: phase_plan(phase, plan),
+    let StaTransmit {
+        ticket,
+        buffer,
+        frame,
+        class,
+        plan,
+    } = transmit;
+    let frame = {
+        let carried = |rate| phase.rate(rate);
+        match frame {
+            StaFrame::Individual(frame) => {
+                let plan = match plan {
+                    // A Null's retries are its plan's
+                    // ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6130033259)).
+                    StaRatePlan::Null => rates
+                        .plan(FrameRates::Control, carried)
+                        .map(|plan| plan.limit(Levels::<B::Caps>::NULL)),
+                    StaRatePlan::Management | StaRatePlan::Group => {
+                        rates.plan(FrameRates::Control, carried)
+                    }
+                };
+                plan.map(|plan| TxFrame::Individual { frame, plan })
             }
-        }
-        StaFrame::Group(frame) => {
-            let plan = rates.plan(FrameRates::Probe);
-            let Some(first) = plan.stages().next() else {
-                unreachable!("a plan has a first stage");
-            };
-            let Some(rate) = phase.rate(first.rate) else {
-                unreachable!("a rate selection is built for its port's capabilities");
-            };
-            TxFrame::Group { frame, rate }
+            StaFrame::Group(frame) => rates
+                .plan(FrameRates::Probe, carried)
+                .map(|plan| TxFrame::Group {
+                    frame,
+                    rate: plan.into_first().rate,
+                }),
         }
     };
-    let coex = match transmit.class {
+    let Some(frame) = frame.and_then(|frame| ClassFrame::<B::Small, B::Caps>::new(frame).ok())
+    else {
+        return Ok(Follow::Unsent { ticket, buffer });
+    };
+    let coex = match class {
         StaFrameClass::Connection => Levels::<B::Caps>::CONNECTION,
         StaFrameClass::Normal => Levels::<B::Caps>::NORMAL,
     };
     let mut station = phase.station();
-    let Ok(frame) = ClassFrame::<B::Small, B::Caps>::new(frame) else {
-        unreachable!("a frame encoded into its buffer fits its class");
-    };
-    let frame = station.tx_buffer::<B::Small>(transmit.buffer, frame);
+    let frame = station.tx_buffer::<B::Small>(buffer, frame);
     station
         .submit(oer_ieee80211_lower_mac::Attempt {
-            ticket: transmit.ticket,
+            ticket,
             frame,
             body: None,
             access_category: WmmAccessCategory::Voice,
@@ -836,6 +976,7 @@ where
             power: Levels::<B::Caps>::POWER,
             coex,
         })
+        .map(|()| Follow::Nothing)
         .map_err(|_| ())
 }
 
@@ -886,11 +1027,12 @@ where
                 .station()
                 .install_pairwise_key(slot, peer, Ccmp128Key(key)),
         ),
-        StaAction::InstallGroupKey { slot, key_id, key } => StaInput::GroupKeyInstalled(
-            phase
+        StaAction::InstallGroupKey { slot, key_id, key } => StaInput::GroupKeyInstalled {
+            key: phase
                 .station()
                 .install_group_key(slot, key_id, Ccmp128Key(key)),
-        ),
+            key_id,
+        },
         StaAction::RemovePairwiseKey(key) => {
             phase.station().remove_pairwise_key(key);
             return Ok(Follow::Nothing);
@@ -900,12 +1042,10 @@ where
             return Ok(Follow::Nothing);
         }
         StaAction::Transmit(transmit) => {
-            return submit_station::<B, P, S>(phase, rates, None, transmit)
-                .map(|()| Follow::Nothing);
+            return submit_station::<B, P, S>(phase, rates, None, transmit);
         }
         StaAction::TransmitProtected { transmit, key } => {
-            return submit_station::<B, P, S>(phase, rates, Some(key), transmit)
-                .map(|()| Follow::Nothing);
+            return submit_station::<B, P, S>(phase, rates, Some(key), transmit);
         }
         StaAction::Notify(notice) => {
             (io.output)(ServiceOutput::Notice(notice));
@@ -923,52 +1063,11 @@ where
     Ok(Follow::Input(input))
 }
 
-/// A selected plan in the phase's rates.
-fn phase_plan<'p, 'id: 'p, P: LowerMacPhase<'p, 'id>>(
-    phase: &P,
-    plan: RetryPlan<PhyRate>,
-) -> RetryPlan<PhaseRate<'p>> {
-    match plan.try_map(|rate| phase.rate(rate).ok_or(rate)) {
-        Ok(plan) => plan,
-        Err(_) => unreachable!("a rate selection is built for its port's capabilities"),
-    }
-}
-
 /// What serving a phase ended with.
 enum Served<K> {
     Stop,
     Retune(SupportedChannel<K>),
     Poisoned,
-}
-
-/// A completed buffer, by the machine whose class it is.
-enum Buffer<'id, B: StationPort<'id>> {
-    Small(<B::Types as TxBufferPool<'id, B::Small>>::Buffer),
-    Large(<B::Types as TxBufferPool<'id, B::Large>>::Buffer),
-}
-
-impl<'id, B: StationPort<'id>> Buffer<'id, B> {
-    /// `buffer`'s class, a numbered one renewed.
-    fn of(buffer: <B::Types as PhaseTypes<'id>>::AnyTxBuffer) -> Self {
-        let buffer = match <B::Types as TxBufferPool<'id, B::Small>>::class(buffer) {
-            Ok(buffer) => return Self::Small(buffer),
-            Err(buffer) => buffer,
-        };
-        let buffer = match <B::Types as TxBufferPool<'id, B::Large>>::class(buffer) {
-            Ok(buffer) => return Self::Large(buffer),
-            Err(buffer) => buffer,
-        };
-        let buffer = match <B::Types as TxBufferPool<'id, B::Large>>::numbered(buffer) {
-            Ok(buffer) => {
-                return Self::Large(<B::Types as TxBufferPool<'id, B::Large>>::renew(buffer));
-            }
-            Err(buffer) => buffer,
-        };
-        match <B::Types as TxBufferPool<'id, B::Small>>::numbered(buffer) {
-            Ok(buffer) => Self::Small(<B::Types as TxBufferPool<'id, B::Small>>::renew(buffer)),
-            Err(_) => unreachable!("the service's buffers are of its two classes"),
-        }
-    }
 }
 
 #[cfg(test)]

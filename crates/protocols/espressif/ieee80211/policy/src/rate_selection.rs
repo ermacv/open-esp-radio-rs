@@ -177,60 +177,54 @@ impl<K: Ieee80211Capabilities> Default for EspressifRateSelection<K> {
 
 /// The plan of `limit` transmissions, the first at `initial` and each
 /// after `failures` failures at `rate(failures)`, the last rate where it
-/// has none.
+/// has none. A record holds four `(rate, count)` pairs, so its walk makes
+/// at most four stages; were a fifth rate to come, the plan would end with
+/// the fourth stage.
 fn walk(initial: PhyRate, limit: u8, rate: impl Fn(u8) -> Option<PhyRate>) -> RetryPlan<PhyRate> {
-    let stage = |rate, transmissions| RetryStage {
+    let stage = |(rate, transmissions): (PhyRate, NonZeroU8)| RetryStage {
         rate,
         transmissions,
         protection: Protection::None,
     };
-    let mut stages: [Option<(PhyRate, NonZeroU8)>; RETRY_STAGES] = [None; RETRY_STAGES];
-    let mut count = 0;
+    let mut first = (initial, NonZeroU8::MIN);
+    let mut rest: [Option<(PhyRate, NonZeroU8)>; RETRY_STAGES - 1] = [None; RETRY_STAGES - 1];
     let mut current = initial;
-    for failures in 0..limit.max(1) {
-        let next = if failures == 0 {
-            initial
-        } else {
-            rate(failures).unwrap_or(current)
-        };
+    for failures in 1..limit {
+        let next = rate(failures).unwrap_or(current);
         current = next;
-        match stages[..count].last_mut().and_then(Option::as_mut) {
-            Some((last, transmissions)) if *last == next => {
+        let last = rest.iter_mut().rev().find_map(Option::as_mut);
+        match last {
+            Some((rate, transmissions)) if *rate == next => {
                 *transmissions = transmissions.saturating_add(1);
             }
-            // A record holds four pairs; a fifth rate never comes.
-            _ if count == RETRY_STAGES => break,
-            _ => {
-                stages[count] = Some((next, NonZeroU8::MIN));
-                count += 1;
-            }
+            None if first.0 == next => first.1 = first.1.saturating_add(1),
+            _ => match rest.iter_mut().find(|slot| slot.is_none()) {
+                Some(slot) => *slot = Some((next, NonZeroU8::MIN)),
+                None => break,
+            },
         }
     }
-    let mut stages = stages.into_iter().flatten();
-    let Some((rate, transmissions)) = stages.next() else {
-        unreachable!("a walk makes at least one transmission");
-    };
-    let mut plan = RetryPlan::new(stage(rate, transmissions));
-    for (rate, transmissions) in stages {
-        plan = match plan.then(stage(rate, transmissions)) {
+    let mut plan = RetryPlan::new(stage(first));
+    for next in rest.into_iter().flatten() {
+        plan = match plan.then(stage(next)) {
             Ok(plan) => plan,
-            Err(_) => unreachable!("a walk keeps at most the plan's stages"),
+            // The walk keeps at most the plan's stages.
+            Err((plan, _)) => plan,
         };
     }
     plan
 }
 
-/// The plan of a control schedule record: its rates, its budget.
-fn control_plan(schedule: RateScheduleRef) -> RetryPlan<PhyRate> {
+/// The plan of a control schedule record: its rates, its budget; `None`
+/// for a record whose first rate is no legacy rate (none the station uses:
+/// a test pins it), and the frame does not go.
+fn control_plan(schedule: RateScheduleRef) -> Option<RetryPlan<PhyRate>> {
     let rate = |failures| {
         schedule_rate_after_failures(schedule, failures)
             .and_then(legacy_rate)
             .map(PhyRate::Legacy)
     };
-    let Some(initial) = rate(0) else {
-        unreachable!("every recovered control schedule starts with a legacy rate");
-    };
-    walk(initial, schedule_publication_limit(schedule), rate)
+    Some(walk(rate(0)?, schedule_publication_limit(schedule), rate))
 }
 
 /// The selection for a port whose metadata measures every received frame's
@@ -307,25 +301,12 @@ fn control_plan(schedule: RateScheduleRef) -> RetryPlan<PhyRate> {
 /// for_port::<Measured>(EspressifRateSelection::<Caps>::new());
 /// ```
 impl<K: Ieee80211Capabilities, M: SignalMetadata> RateSelection<M> for EspressifRateSelection<K> {
-    fn plan(&self, frame: FrameRates) -> RetryPlan<PhyRate> {
-        match (frame, &self.control) {
-            // The vendor station's probe: once, at 1 Mb/s.
-            (FrameRates::Probe, _) => RetryPlan::new(RetryStage {
-                rate: PhyRate::Legacy(LegacyRate::Dsss1M),
-                transmissions: NonZeroU8::MIN,
-                protection: Protection::None,
-            }),
-            (FrameRates::Data, Some(control)) => {
-                let initial = control.mpdu_rate();
-                walk(
-                    initial,
-                    schedule_publication_limit(control.association().current_schedule()),
-                    |failures| ordinary_retry_rate(initial, failures),
-                )
-            }
-            // No data goes before an association; it would go as control.
-            (FrameRates::Control | FrameRates::Data, _) => control_plan(self.control_schedule()),
-        }
+    fn plan<R>(
+        &self,
+        frame: FrameRates,
+        carried: impl Fn(PhyRate) -> Option<R>,
+    ) -> Option<RetryPlan<R>> {
+        on_channel(self.vendor_plan(frame)?, carried)
     }
 
     fn associated(&mut self, peer: &RatePeer, response: &M) {
@@ -351,6 +332,57 @@ impl<K: Ieee80211Capabilities, M: SignalMetadata> RateSelection<M> for Espressif
             );
         }
     }
+}
+
+impl<K: Ieee80211Capabilities> EspressifRateSelection<K> {
+    /// The vendor's plan for `frame`, before the channel's rule.
+    fn vendor_plan(&self, frame: FrameRates) -> Option<RetryPlan<PhyRate>> {
+        match (frame, &self.control) {
+            // The vendor station's probe: once, at 1 Mb/s.
+            (FrameRates::Probe, _) => Some(RetryPlan::new(RetryStage {
+                rate: PhyRate::Legacy(LegacyRate::Dsss1M),
+                transmissions: NonZeroU8::MIN,
+                protection: Protection::None,
+            })),
+            (FrameRates::Data, Some(control)) => {
+                let initial = control.mpdu_rate();
+                Some(walk(
+                    initial,
+                    schedule_publication_limit(control.association().current_schedule()),
+                    |failures| ordinary_retry_rate(initial, failures),
+                ))
+            }
+            // No data goes before an association; it would go as control.
+            (FrameRates::Control | FrameRates::Data, _) => control_plan(self.control_schedule()),
+        }
+    }
+}
+
+/// The vendor's plan on the port's channel: a stage whose rate the channel
+/// does not carry (an HT40 rate on a 20 MHz channel) is left out with its
+/// transmissions, and the plan is what remains in order; `None` when no
+/// stage is left. The vendor's station never meets this: its records are
+/// for its own channel, and the rule only keeps a plan within the port's.
+fn on_channel<R>(
+    plan: RetryPlan<PhyRate>,
+    carried: impl Fn(PhyRate) -> Option<R>,
+) -> Option<RetryPlan<R>> {
+    let mut stages = plan.stages().filter_map(|stage| {
+        Some(RetryStage {
+            rate: carried(stage.rate)?,
+            transmissions: stage.transmissions,
+            protection: stage.protection,
+        })
+    });
+    let mut on_channel = RetryPlan::new(stages.next()?);
+    for stage in stages {
+        on_channel = match on_channel.then(stage) {
+            Ok(plan) => plan,
+            // Never more stages than the vendor's plan held.
+            Err((plan, _)) => plan,
+        };
+    }
+    Some(on_channel)
 }
 
 #[cfg(test)]

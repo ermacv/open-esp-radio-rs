@@ -33,8 +33,12 @@ pub enum FrameRates {
 /// carry the metadata `M`: a selection that needs what `M` does not
 /// guarantee (a signal measurement) is not one for that port.
 pub trait RateSelection<M: RxMetadata> {
-    /// The retry plan of the next frame for `frame`.
-    fn plan(&self, frame: FrameRates) -> RetryPlan<PhyRate>;
+    /// The retry plan of the next frame for `frame`, in the rates the
+    /// port's channel carries: `carried` turns a rate into the phase's, or
+    /// refuses it. The selection's own rule decides what a refused stage
+    /// becomes; `None` when no stage is left, and the frame does not go.
+    fn plan<R>(&self, frame: FrameRates, carried: impl Fn(PhyRate) -> Option<R>)
+    -> Option<RetryPlan<R>>;
 
     /// The interface associated with `peer`, whose frame that made the link
     /// (the station's Association Response) arrived with `response`: from

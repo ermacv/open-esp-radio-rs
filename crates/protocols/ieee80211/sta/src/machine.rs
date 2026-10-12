@@ -176,6 +176,23 @@ pub enum StaInput<'f, T: StaTokens, K> {
         /// How it ended.
         completion: TxCompletion,
     },
+    /// A frame the service did not send (no rate of its plan is on the
+    /// port's channel, or it does not fit its buffer class): its ticket and
+    /// buffer come back, and it counts as undelivered.
+    Unsent {
+        /// The frame's ticket.
+        ticket: T::Ticket,
+        /// The frame's buffer.
+        buffer: T::SmallBuffer,
+    },
+    /// Tokens of the station that came back without a frame's end: a
+    /// terminal that carried a buffer more or none.
+    Returned {
+        /// A ticket, if one came back.
+        ticket: Option<T::Ticket>,
+        /// A buffer, if one came back.
+        buffer: Option<T::SmallBuffer>,
+    },
     /// The arbiter's answer to the station's request.
     Answer(Answer<K>),
     /// The arbiter's answer to the station's absence.
@@ -189,8 +206,14 @@ pub enum StaInput<'f, T: StaTokens, K> {
     Configured,
     /// The pairwise key the station asked to install, installed.
     PairwiseKeyInstalled(T::PairwiseKey),
-    /// The group key the station asked to install, installed.
-    GroupKeyInstalled(T::GroupKey),
+    /// The group key the station asked to install, installed under the
+    /// index its action named.
+    GroupKeyInstalled {
+        /// The installed key.
+        key: T::GroupKey,
+        /// Its index.
+        key_id: GroupKeyId,
+    },
     /// A removed pairwise key's slot.
     PairwiseKeyRemoved(T::PairwiseSlot),
     /// A removed group key's slot.
@@ -548,8 +571,6 @@ struct Keys<T: StaTokens> {
     group: Option<(GroupKeyId, T::GroupKey)>,
     /// The group keys a rekey replaced, until their removal.
     retiring: Pool<(GroupKeyId, T::GroupKey)>,
-    /// The index of the group key being installed.
-    installing: Option<GroupKeyId>,
     /// The group installs and removals that have not ended.
     group_busy: u8,
 }
@@ -561,7 +582,6 @@ impl<T: StaTokens> Keys<T> {
             free_groups: Pool::new(groups),
             group: None,
             retiring: Pool::new([]),
-            installing: None,
             group_busy: 0,
         }
     }
@@ -586,21 +606,17 @@ impl<T: StaTokens> Keys<T> {
         }
     }
 
-    /// A free slot for the group key `key_id`.
-    fn take_group_slot(&mut self, key_id: GroupKeyId) -> Option<T::GroupSlot> {
+    /// A free group slot.
+    fn take_group_slot(&mut self) -> Option<T::GroupSlot> {
         let slot = self.free_groups.take()?;
         self.group_busy += 1;
-        self.installing = Some(key_id);
         Some(slot)
     }
 
-    /// A group key is installed: it is the one in use, and the one it
-    /// replaces retires.
-    fn group_installed(&mut self, key: T::GroupKey) {
+    /// The group key `key_id` is installed: it is the one in use, and the
+    /// one it replaces retires.
+    fn group_installed(&mut self, key_id: GroupKeyId, key: T::GroupKey) {
         self.group_busy = self.group_busy.saturating_sub(1);
-        let Some(key_id) = self.installing.take() else {
-            unreachable!("a group key is installed into a slot taken for it");
-        };
         if let Some(old) = self.group.replace((key_id, key)) {
             self.retiring.put(old);
         }
@@ -1029,11 +1045,15 @@ enum Owed<T: StaTokens, K> {
     },
     RemovePairwise(T::PairwiseKey),
     RemoveGroup(T::GroupKey),
-    Request(ChannelRequest<K>),
-    Absence(ChannelRequest<K>),
+    /// A request, with the place it takes.
+    Request(ChannelRequest<K>, LeasePlace),
+    /// An absence, with the place it takes.
+    Absence(ChannelRequest<K>, AbsencePlace),
     Ready(LeaseId),
-    Exchange,
-    Release,
+    /// The primary lease to exchange.
+    Exchange(Lease<K>),
+    /// The primary lease to give back.
+    Release(Lease<K>),
     Upstream(UpstreamFact<K>),
     Configure(StationReceive<K>),
     Transmit(StaTransmit<T, K>),
@@ -1203,6 +1223,20 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                     delivered: matches!(completion.status, TxStatus::Success),
                 }
             }
+            StaInput::Unsent { ticket, buffer } => {
+                self.tickets.put(ticket);
+                self.buffers.put(buffer);
+                Done::Tx { delivered: false }
+            }
+            StaInput::Returned { ticket, buffer } => {
+                if let Some(ticket) = ticket {
+                    self.tickets.put(ticket);
+                }
+                if let Some(buffer) = buffer {
+                    self.buffers.put(buffer);
+                }
+                return;
+            }
             StaInput::Command(command) => Done::Command(command),
             StaInput::Tick => Done::Tick,
             StaInput::Configured => Done::Configured,
@@ -1229,9 +1263,9 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 self.keys_changed();
                 return;
             }
-            StaInput::GroupKeyInstalled(key) => {
+            StaInput::GroupKeyInstalled { key, key_id } => {
                 if let Some(keys) = self.state.keys_mut() {
-                    keys.group_installed(key);
+                    keys.group_installed(key_id, key);
                 }
                 self.group_installed();
                 return;
@@ -2071,17 +2105,19 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         let (state, owed) = self.owe(state, now);
         self.state = state;
         Some(match owed? {
-            Owed::Absence(request) => {
-                let (Some(place), Held::Lease(home)) = (self.absence_place.take(), &self.lease)
-                else {
-                    unreachable!("an absence holds its place and names the primary lease")
-                };
-                StaAction::RequestAbsence {
+            // Owed only while the station holds its primary lease; without
+            // it the place stays, and nothing is asked.
+            Owed::Absence(request, place) => match &self.lease {
+                Held::Lease(home) => StaAction::RequestAbsence {
                     request,
                     home,
                     place,
+                },
+                _ => {
+                    self.absence_place = Some(place);
+                    return None;
                 }
-            }
+            },
             Owed::Ready(id) => StaAction::Ready(id),
             Owed::InstallPairwise { slot, peer, key } => {
                 StaAction::InstallPairwiseKey { slot, peer, key }
@@ -2091,29 +2127,9 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             }
             Owed::RemovePairwise(key) => StaAction::RemovePairwiseKey(key),
             Owed::RemoveGroup(key) => StaAction::RemoveGroupKey(key),
-            Owed::Exchange => match core::mem::replace(&mut self.lease, Held::None) {
-                Held::Lease(lease) => StaAction::ExchangeLease(lease),
-                held => {
-                    self.lease = held;
-                    unreachable!("an exchange holds the lease")
-                }
-            },
-            Owed::Request(request) => {
-                let Some(place) = self.place.take() else {
-                    unreachable!("a request holds the place")
-                };
-                StaAction::RequestChannel(request, place)
-            }
-            Owed::Release => match core::mem::replace(&mut self.lease, Held::None) {
-                Held::Lease(lease) => {
-                    self.lease = Held::Released(lease.id());
-                    StaAction::ReleaseChannel(lease)
-                }
-                held => {
-                    self.lease = held;
-                    unreachable!("a release holds the lease")
-                }
-            },
+            Owed::Exchange(lease) => StaAction::ExchangeLease(lease),
+            Owed::Request(request, place) => StaAction::RequestChannel(request, place),
+            Owed::Release(lease) => StaAction::ReleaseChannel(lease),
             Owed::Upstream(fact) => StaAction::Upstream(fact),
             Owed::Configure(receive) => StaAction::Configure(receive),
             Owed::Transmit(transmit) => StaAction::Transmit(transmit),
@@ -2149,15 +2165,24 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             State::Scan(mut scan) => {
                 let owed = match scan.step {
                     ScanStep::NeedLease if self.place.is_some() => {
-                        self.channel(scan.visit).map(|channel| {
-                            scan.step = ScanStep::AwaitAnswer;
-                            Owed::Request(ChannelRequest {
-                                channel,
-                                purpose: Purpose::Scan {
-                                    dwell: self.config.dwell,
-                                },
-                            })
-                        })
+                        match (self.channel(scan.visit), self.place.take()) {
+                            (Some(channel), Some(place)) => {
+                                scan.step = ScanStep::AwaitAnswer;
+                                Some(Owed::Request(
+                                    ChannelRequest {
+                                        channel,
+                                        purpose: Purpose::Scan {
+                                            dwell: self.config.dwell,
+                                        },
+                                    },
+                                    place,
+                                ))
+                            }
+                            (_, place) => {
+                                self.place = place;
+                                None
+                            }
+                        }
                     }
                     ScanStep::NeedConfigure => {
                         scan.step = ScanStep::AwaitConfigured;
@@ -2219,14 +2244,18 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 leave.step = LeaveStep::AwaitConfigured;
                 Some(Owed::Configure(StationReceive::Off))
             }
-            // No lease to give back: done.
-            LeaveStep::NeedRelease if !matches!(self.lease, Held::Lease(_)) => {
-                return (self.report(leave), None);
-            }
-            LeaveStep::NeedRelease => {
-                leave.step = LeaveStep::AwaitEnd;
-                Some(Owed::Release)
-            }
+            LeaveStep::NeedRelease => match core::mem::replace(&mut self.lease, Held::None) {
+                Held::Lease(lease) => {
+                    self.lease = Held::Released(lease.id());
+                    leave.step = LeaveStep::AwaitEnd;
+                    Some(Owed::Release(lease))
+                }
+                // No lease to give back: done.
+                held => {
+                    self.lease = held;
+                    return (self.report(leave), None);
+                }
+            },
             _ => None,
         };
         (State::Leave(leave), owed)
@@ -2325,7 +2354,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 let Some((key_id, key)) = group_key(request.group()) else {
                     return (leave_handshake(handshake, REASON_UNSPECIFIED), None);
                 };
-                match handshake.keys.take_group_slot(key_id) {
+                match handshake.keys.take_group_slot() {
                     Some(slot) => (
                         HandshakeStep::AwaitInstalled(request),
                         Some(Owed::InstallGroup { slot, key_id, key }),
@@ -2388,9 +2417,14 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         if let Some(fact) = connected.report.take() {
             return (State::Connected(connected), Some(Owed::Upstream(fact)));
         }
-        if connected.exchange && matches!(self.lease, Held::Lease(_)) {
-            connected.exchange = false;
-            return (State::Connected(connected), Some(Owed::Exchange));
+        if connected.exchange {
+            match core::mem::replace(&mut self.lease, Held::None) {
+                Held::Lease(lease) => {
+                    connected.exchange = false;
+                    return (State::Connected(connected), Some(Owed::Exchange(lease)));
+                }
+                held => self.lease = held,
+            }
         }
         if let Some(owed) = self.owe_rekey(&mut connected) {
             return match owed {
@@ -2417,7 +2451,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 let Some((key_id, key)) = group_key(request.group()) else {
                     return Some(Err(StaDisconnectReason::HandshakeFailed));
                 };
-                if let Some(slot) = connected.keys.take_group_slot(key_id) {
+                if let Some(slot) = connected.keys.take_group_slot() {
                     (
                         Rekey::AwaitInstalled(request),
                         Some(Owed::InstallGroup { slot, key_id, key }),
@@ -2481,12 +2515,17 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                     Some(channel)
                         if self.absence_place.is_some() && matches!(self.lease, Held::Lease(_)) =>
                     {
-                        owed = Some(Owed::Absence(ChannelRequest {
-                            channel,
-                            purpose: Purpose::Scan {
-                                dwell: self.config.dwell,
-                            },
-                        }));
+                        owed = self.absence_place.take().map(|place| {
+                            Owed::Absence(
+                                ChannelRequest {
+                                    channel,
+                                    purpose: Purpose::Scan {
+                                        dwell: self.config.dwell,
+                                    },
+                                },
+                                place,
+                            )
+                        });
                         BackgroundStep::AwaitAnswer
                     }
                     _ => step,
@@ -2597,12 +2636,14 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             purpose: Purpose::Connect,
         };
         let (step, owed) = match core::mem::replace(&mut join.step, JoinStep::NeedLease) {
-            JoinStep::RetryAt(at) if now >= at && self.place.is_some() => {
-                (JoinStep::AwaitAnswer, Some(Owed::Request(connect)))
-            }
-            JoinStep::NeedLease if self.place.is_some() => {
-                (JoinStep::AwaitAnswer, Some(Owed::Request(connect)))
-            }
+            JoinStep::RetryAt(at) if now >= at => match self.place.take() {
+                Some(place) => (JoinStep::AwaitAnswer, Some(Owed::Request(connect, place))),
+                None => (JoinStep::RetryAt(at), None),
+            },
+            JoinStep::NeedLease => match self.place.take() {
+                Some(place) => (JoinStep::AwaitAnswer, Some(Owed::Request(connect, place))),
+                None => (JoinStep::NeedLease, None),
+            },
             JoinStep::NeedConfigure => match bss_rules(join.access_point.bssid, Rules::<K>::MEMBER)
             {
                 Some(receive) => (JoinStep::AwaitConfigured, Some(Owed::Configure(receive))),

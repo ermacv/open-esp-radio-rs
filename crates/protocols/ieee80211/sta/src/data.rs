@@ -77,6 +77,15 @@ pub enum DataInput<'a, 'l, 'v, D: StaDataTokens, T: StaTokens> {
         /// Its buffer.
         buffer: D::Buffer,
     },
+    /// Tokens that came back without an MPDU's terminal: an MPDU the
+    /// service did not send, or a terminal that carried a buffer more or
+    /// none. Its MSDU, if any, is gone; the service counts it.
+    Returned {
+        /// A ticket, if one came back.
+        ticket: Option<D::Ticket>,
+        /// A buffer, if one came back.
+        buffer: Option<D::Buffer>,
+    },
 }
 
 /// One action of the data machine.
@@ -152,6 +161,15 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities> StaDat
             DataInput::TxDone { ticket, buffer } => {
                 self.tickets.put(ticket);
                 self.buffers.put(buffer);
+                Ok(())
+            }
+            DataInput::Returned { ticket, buffer } => {
+                if let Some(ticket) = ticket {
+                    self.tickets.put(ticket);
+                }
+                if let Some(buffer) = buffer {
+                    self.buffers.put(buffer);
+                }
                 Ok(())
             }
             DataInput::Msdu { msdu, link } => {

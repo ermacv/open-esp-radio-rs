@@ -20,6 +20,7 @@ use oer_ieee80211_lower_mac::{
     Channel, ChannelWidth, IndividualAddress, LowerMacSetup, SignalMetadata,
 };
 use oer_ieee80211_mac::{
+    phy::PhyRate,
     phy::LegacyRate,
     security::rsn::Akm,
     station::{AssociationCapabilities, association::PhyMode},
@@ -36,6 +37,7 @@ use std::vec::Vec;
 
 use super::*;
 use crate::lower_mac_owner::model::{
+    MODEL_RX_EVENTS, ModelAnyBuffer,
     AirFrame, ModelAir, ModelBackend, ModelCaps24, ModelLarge, ModelPhase, ModelResources,
     ModelRxMeta, ModelSetup, ModelSmall, ModelTypes,
 };
@@ -70,8 +72,19 @@ impl<'id> StationPort<'id> for ModelBackend<ModelCaps24> {
         setup.set_channel(channel);
     }
 
+    const RX_BUFFERS: usize = MODEL_RX_EVENTS;
+
     fn event(event: LowerMacEvent<'id, ModelTypes>) -> LowerMacEvent<'id, ModelTypes> {
         event
+    }
+
+    fn sort(buffer: ModelAnyBuffer<'id>) -> Sorted<'id, Self> {
+        match buffer {
+            ModelAnyBuffer::Small(buffer) => Sorted::Small(buffer),
+            ModelAnyBuffer::SmallNumbered(buffer) => Sorted::SmallNumbered(buffer),
+            ModelAnyBuffer::Large(buffer) => Sorted::Large(buffer),
+            ModelAnyBuffer::LargeNumbered(buffer) => Sorted::LargeNumbered(buffer),
+        }
     }
 }
 

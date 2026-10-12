@@ -29,7 +29,7 @@ use oer_ieee80211_mac::{
     data::{DataInterfaceRole, EthernetFrameParts, decapsulate_data_frames},
     qos::{WmmAccessCategory, WmmUserPriority},
     sequence::SequenceNumber,
-    station::{StaProtectedDataFrame, StaSequenceCounter},
+    station::StaProtectedDataFrame,
 };
 use oer_time::Instant;
 
@@ -116,8 +116,6 @@ pub struct StaData<D: StaDataTokens, K> {
     buffers: Pool<D::Buffer>,
     /// The attempts owed, in their order.
     owed: Fifo<DataTransmit<D, K>>,
-    /// The QoS sequence spaces, one per TID.
-    sequences: [StaSequenceCounter; 8],
 }
 
 impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities> StaData<D, K> {
@@ -131,7 +129,6 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities> StaDat
             tickets: Pool::new(tickets),
             buffers: Pool::new(buffers),
             owed: Fifo::new(),
-            sequences: [StaSequenceCounter::new(SequenceNumber::ZERO); 8],
         }
     }
 
@@ -164,7 +161,7 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities> StaDat
                     return Err(DataRefusal::NoTokens);
                 };
                 let tid = msdu.priority.value();
-                let qos = matches!(link.mode, LinkMode::Qos);
+                let qos = matches!(link.mode, LinkMode::Qos(_));
                 let protected = matches!(link.protection, LinkProtection::Ccmp { .. });
                 // A frame that does not fit its buffer takes no sequence
                 // number.
@@ -174,7 +171,7 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities> StaDat
                     return Err(DataRefusal::TooLong);
                 }
                 let sequence_number = match &mut link.mode {
-                    LinkMode::Qos => self.sequences[usize::from(tid)].take(),
+                    LinkMode::Qos(counters) => counters[usize::from(tid)].take(),
                     LinkMode::NonQos(counter) => counter.take(),
                 };
                 let frame = encode_frame(

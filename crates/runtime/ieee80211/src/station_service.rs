@@ -45,8 +45,8 @@ use oer_radio_port::Slot;
 use oer_ieee80211_sta::{
     data::{self, DataAction, DataInput, Msdu, StaData, StaDataTokens},
     machine::{
-        LinkProtection, StaAction, StaCommand, StaFrame, StaFrameClass, StaInput, StaNotice,
-        StaRatePlan, StaTokens, Station,
+        LinkProtection, LinkView, StaAction, StaCommand, StaFrame, StaFrameClass, StaInput,
+        StaNotice, StaRatePlan, StaTokens, StaTransmit, StaTxKey, Station,
     },
     power_save::NULL_TRANSMISSIONS,
 };
@@ -550,14 +550,33 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection, const RX: usize>
             }
             while let Some(action) = self.station.poll_action(now) {
                 progress = true;
-                let Ok(follow) =
-                    station_action(now, phase, io, &mut self.arbiter, &self.rates, action)
-                else {
+                let submitted = match station_action(now, phase, io, &mut self.arbiter, action) {
+                    Ok(Follow::Transmit(transmit)) => {
+                        let key = match transmit.key {
+                            StaTxKey::None => None,
+                            StaTxKey::Pairwise => match self.station.link() {
+                                Some(LinkView {
+                                    protection: LinkProtection::Ccmp { key, .. },
+                                    ..
+                                }) => Some(key),
+                                _ => unreachable!(
+                                    "the station sends under its key only while its link is up"
+                                ),
+                            },
+                        };
+                        submit_station::<B, P, S>(phase, &self.rates, key, transmit)
+                    }
+                    Ok(follow) => {
+                        self.follow(now, follow);
+                        Ok(())
+                    }
+                    Err(()) => Err(()),
+                };
+                if submitted.is_err() {
                     self.arbiter.poisoned();
                     self.settle(now, io);
                     return Next::Poisoned;
-                };
-                self.follow(now, follow);
+                }
             }
             while let Some(DataAction::Transmit(transmit)) = self.data.poll_action(now) {
                 progress = true;
@@ -624,6 +643,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection, const RX: usize>
                 }
             }
             Follow::Disconnected => self.rates.disconnected(),
+            Follow::Transmit(_) => unreachable!("the step submits the station's frames"),
         }
     }
 
@@ -773,23 +793,85 @@ enum Follow<'id, B: StationPort<'id>> {
     Connected,
     /// The station left: the rates leave its peer.
     Disconnected,
+    /// A frame of the station to submit.
+    Transmit(StaTransmit<PortStaTokens<'id, B::Types, B::Small>, B::Caps>),
+}
+
+/// Submit a frame of the station at the rates `rates` selects, under `key`
+/// when it names one.
+fn submit_station<'p, 'id: 'p, B, P, S>(
+    phase: &mut P,
+    rates: &S,
+    key: Option<&<<B::Types as PhaseTypes<'id>>::StationKeys as KeyTypes<'id>>::PairwiseKey>,
+    transmit: StaTransmit<PortStaTokens<'id, B::Types, B::Small>, B::Caps>,
+) -> Result<(), ()>
+where
+    B: StationPort<'id>,
+    P: LowerMacPhase<'p, 'id, Caps = B::Caps, Types = B::Types>,
+    S: RateSelection,
+{
+    let frame = match transmit.frame {
+        StaFrame::Individual(frame) => {
+            let plan = match transmit.plan {
+                // A Null's retries are its plan's
+                // ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6130033259)).
+                StaRatePlan::Null => rates
+                    .plan(FrameRates::Control)
+                    .limit(Levels::<B::Caps>::NULL),
+                StaRatePlan::Management | StaRatePlan::Group => rates.plan(FrameRates::Control),
+            };
+            TxFrame::Individual {
+                frame,
+                plan: phase_plan(phase, plan),
+            }
+        }
+        StaFrame::Group(frame) => {
+            let plan = rates.plan(FrameRates::Probe);
+            let Some(first) = plan.stages().next() else {
+                unreachable!("a plan has a first stage");
+            };
+            let Some(rate) = phase.rate(first.rate) else {
+                unreachable!("a rate selection is built for its port's capabilities");
+            };
+            TxFrame::Group { frame, rate }
+        }
+    };
+    let coex = match transmit.class {
+        StaFrameClass::Connection => Levels::<B::Caps>::CONNECTION,
+        StaFrameClass::Normal => Levels::<B::Caps>::NORMAL,
+    };
+    let mut station = phase.station();
+    let Ok(frame) = ClassFrame::<B::Small, B::Caps>::new(frame) else {
+        unreachable!("a frame encoded into its buffer fits its class");
+    };
+    let frame = station.tx_buffer::<B::Small>(transmit.buffer, frame);
+    station
+        .submit(oer_ieee80211_lower_mac::Attempt {
+            ticket: transmit.ticket,
+            frame,
+            body: None,
+            access_category: WmmAccessCategory::Voice,
+            protection: Protection::None,
+            key: key.map(AttemptKey::Pairwise),
+            power: Levels::<B::Caps>::POWER,
+            coex,
+        })
+        .map_err(|_| ())
 }
 
 /// Carry out one action of the station; an arbiter's answer goes back to
 /// it at once.
-fn station_action<'p, 'id: 'p, B, P, M, S>(
+fn station_action<'p, 'id: 'p, B, P, M>(
     now: Instant,
     phase: &mut P,
     io: &mut ServiceIo<'_, M, B::Caps>,
     arbiter: &mut PortArbiter<'_, 'id, B>,
-    rates: &S,
     action: StaAction<'_, PortStaTokens<'id, B::Types, B::Small>, B::Caps>,
 ) -> Result<Follow<'id, B>, ()>
 where
     B: StationPort<'id>,
     P: LowerMacPhase<'p, 'id, Caps = B::Caps, Types = B::Types>,
     M: RawMutex,
-    S: RateSelection,
 {
     let input = match action {
         StaAction::RequestChannel(request, place) => {
@@ -835,58 +917,9 @@ where
             phase.station().remove_group_key(key);
             return Ok(Follow::Nothing);
         }
-        StaAction::Transmit(transmit) => {
-            let frame = match transmit.frame {
-                StaFrame::Individual(frame) => {
-                    let plan = match transmit.plan {
-                        // A Null's retries are its plan's
-                        // ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6130033259)).
-                        StaRatePlan::Null => rates
-                            .plan(FrameRates::Control)
-                            .limit(Levels::<B::Caps>::NULL),
-                        StaRatePlan::Management | StaRatePlan::Group => {
-                            rates.plan(FrameRates::Control)
-                        }
-                    };
-                    TxFrame::Individual {
-                        frame,
-                        plan: phase_plan(phase, plan),
-                    }
-                }
-                StaFrame::Group(frame) => {
-                    let plan = rates.plan(FrameRates::Probe);
-                    let Some(first) = plan.stages().next() else {
-                        unreachable!("a plan has a first stage");
-                    };
-                    let Some(rate) = phase.rate(first.rate) else {
-                        unreachable!("a rate selection is built for its port's capabilities");
-                    };
-                    TxFrame::Group { frame, rate }
-                }
-            };
-            let coex = match transmit.class {
-                StaFrameClass::Connection => Levels::<B::Caps>::CONNECTION,
-                StaFrameClass::Normal => Levels::<B::Caps>::NORMAL,
-            };
-            let mut station = phase.station();
-            let Ok(frame) = ClassFrame::<B::Small, B::Caps>::new(frame) else {
-                unreachable!("a frame encoded into its buffer fits its class");
-            };
-            let frame = station.tx_buffer::<B::Small>(transmit.buffer, frame);
-            return station
-                .submit(oer_ieee80211_lower_mac::Attempt {
-                    ticket: transmit.ticket,
-                    frame,
-                    body: None,
-                    access_category: WmmAccessCategory::Voice,
-                    protection: Protection::None,
-                    key: None,
-                    power: Levels::<B::Caps>::POWER,
-                    coex,
-                })
-                .map(|()| Follow::Nothing)
-                .map_err(|_| ());
-        }
+        // The service submits it once the action no longer borrows the
+        // station: a frame under the pairwise key takes the link's.
+        StaAction::Transmit(transmit) => return Ok(Follow::Transmit(transmit)),
         StaAction::Notify(notice) => {
             (io.output)(ServiceOutput::Notice(notice));
             return Ok(match notice {

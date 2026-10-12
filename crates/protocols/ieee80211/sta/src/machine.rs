@@ -266,6 +266,18 @@ pub struct StaTransmit<T: StaTokens, K> {
     pub class: StaFrameClass,
     /// Its rate and retry plan.
     pub plan: StaRatePlan,
+    /// The key it goes under.
+    pub key: StaTxKey,
+}
+
+/// The key a station frame goes under.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaTxKey {
+    /// None: management frames and the four-way handshake's EAPOL.
+    None,
+    /// The pairwise key the link lends ([`Station::link`]): EAPOL after the
+    /// handshake, only while the link is up. The service names the key.
+    Pairwise,
 }
 
 /// What a station frame is for.
@@ -318,10 +330,11 @@ pub struct LinkView<'a, T: StaTokens> {
     pub protection: LinkProtection<'a, T>,
 }
 
-/// How data is sequenced on a link.
+/// How data is sequenced on a link: in the station's sequence spaces,
+/// which its own frames share.
 pub enum LinkMode<'a> {
     /// A QoS BSS: QoS Data, a sequence space per TID.
-    Qos,
+    Qos(&'a mut [StaSequenceCounter; 8]),
     /// A non-QoS BSS: Data in the station's sequence space, which its
     /// management frames share.
     NonQos(&'a mut StaSequenceCounter),
@@ -480,6 +493,9 @@ pub struct Station<T: StaTokens, K: Ieee80211Capabilities> {
     /// steps.
     notice_owed: Option<StaNotice>,
     sequence: StaSequenceCounter,
+    /// The QoS sequence spaces, one per TID, which data shares through the
+    /// link.
+    qos_sequences: [StaSequenceCounter; 8],
     scan: ScanTable<SCAN_CAPACITY>,
 }
 
@@ -1086,6 +1102,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             absence: None,
             notice_owed: None,
             sequence: StaSequenceCounter::new(SequenceNumber::ZERO),
+            qos_sequences: [StaSequenceCounter::new(SequenceNumber::ZERO); 8],
             scan: ScanTable::new(),
         }
     }
@@ -1135,7 +1152,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             bssid: connected.bssid,
             association_id: connected.association_id,
             mode: if connected.qos {
-                LinkMode::Qos
+                LinkMode::Qos(&mut self.qos_sequences)
             } else {
                 LinkMode::NonQos(&mut self.sequence)
             },
@@ -2383,8 +2400,15 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                     (Rekey::Install(request), None)
                 }
             }
-            Rekey::Send(message) if connected.sending.is_none() => {
-                match self.encode_eapol(connected.bssid, message.as_bytes()) {
+            // After the handshake, EAPOL goes under the pairwise key, as in
+            // the old ESP32-S31 path (`transmit_protected_data`): only while
+            // the link is up.
+            Rekey::Send(message)
+                if connected.sending.is_none()
+                    && self.link_up(&connected.power, &connected.keys) =>
+            {
+                match self.encode_protected_eapol(connected.bssid, connected.qos, message.as_bytes())
+                {
                     Ok(transmit) => {
                         connected.sending = Some(Sending::GroupResponse);
                         (Rekey::AwaitSent, Some(Owed::Transmit(transmit)))
@@ -2736,6 +2760,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 frame: StaFrame::Individual(frame),
                 class,
                 plan: StaRatePlan::Management,
+                key: StaTxKey::None,
             }),
             None => {
                 self.tickets.put(ticket);
@@ -2743,6 +2768,47 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 Err(Unsent::Encode)
             }
         }
+    }
+
+    /// Whether the connected link is up: the station is home and awake,
+    /// and holds its pairwise key ([`Self::link`]'s rule).
+    fn link_up(&self, power: &PowerSaveView, keys: &Keys<T>) -> bool {
+        self.absence.is_none()
+            && !power.asleep()
+            && matches!(keys.pairwise, KeyCell::Installed(_))
+    }
+
+    /// An EAPOL frame of the connected station under its pairwise key: the
+    /// Protected bit and the CCMP header's room, which the backend fills;
+    /// QoS Data at user priority 7 on a QoS BSS, as the old ESP32-S31 path
+    /// sent it.
+    fn encode_protected_eapol(
+        &mut self,
+        bssid: [u8; 6],
+        qos: bool,
+        eapol: &[u8],
+    ) -> Result<StaTransmit<T, K>, Unsent> {
+        const PRIORITY: u8 = 7;
+        let sequence_number = if qos {
+            self.qos_sequences[usize::from(PRIORITY)].take()
+        } else {
+            self.sequence.take()
+        };
+        let frame = oer_ieee80211_mac::station::StaProtectedDataFrame {
+            source: self.config.address,
+            bssid,
+            destination: bssid,
+            sequence_number,
+            user_priority: PRIORITY,
+            peer_qos: qos,
+            ccmp_header: [0; 8],
+            ether_type: EAPOL_ETHER_TYPE,
+            payload: eapol,
+        };
+        let mut transmit =
+            self.encode_individual(|buffer| frame.encode(buffer).ok(), StaFrameClass::Connection)?;
+        transmit.key = StaTxKey::Pairwise;
+        Ok(transmit)
     }
 
     /// A broadcast Probe Request in a buffer, if the station holds tokens
@@ -2772,6 +2838,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 frame: StaFrame::Group(frame),
                 class: StaFrameClass::Normal,
                 plan: StaRatePlan::Group,
+                key: StaTxKey::None,
             }),
             None => {
                 self.tickets.put(ticket);

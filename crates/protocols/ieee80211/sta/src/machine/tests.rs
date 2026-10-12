@@ -189,6 +189,8 @@ struct World {
     outcomes: std::collections::VecDeque<bool>,
     /// The reason codes of the Deauthentications sent.
     deauthentications: Vec<u16>,
+    /// Each EAPOL frame's Protected bit and key.
+    eapol: Vec<(bool, StaTxKey)>,
     /// The signal of the frames the world delivers.
     rssi: i8,
 }
@@ -252,6 +254,7 @@ impl World {
             hold_configured: false,
             outcomes: std::collections::VecDeque::new(),
             deauthentications: Vec::new(),
+            eapol: Vec::new(),
             rssi: i8::MIN,
         }
     }
@@ -323,7 +326,14 @@ impl World {
                         let subtype = u16::from_le_bytes([frame[0], frame[1]]) & 0x10fc;
                         // Authentication, Association and EAPOL are the
                         // connection's frames.
-                        let eapol = subtype == 0x0008 && frame[30..32] == [0x88, 0x8e];
+                        // A protected frame carries the CCMP header's room.
+                        let protected = frame[1] & 0x40 != 0;
+                        let ether_type = if protected { 38 } else { 30 };
+                        let eapol = subtype == 0x0008
+                            && frame[ether_type..ether_type + 2] == [0x88, 0x8e];
+                        if eapol {
+                            self.eapol.push((protected, transmit.key));
+                        }
                         let connection = matches!(subtype, 0x00b0 | 0x0000) || eapol;
                         assert_eq!(
                             transmit.class,
@@ -1080,6 +1090,17 @@ fn a_new_group_key_goes_in_beside_the_old_one_which_is_removed_after_group_messa
         ]
     );
     assert!(world.station.is_connected());
+}
+
+#[test]
+fn the_handshakes_eapol_goes_unprotected_and_group_message_2_under_the_pairwise_key() {
+    let (mut world, ptk) = wpa2_connected(2);
+    // Messages 2 and 4 of the four-way handshake: no key, no Protected bit.
+    assert_eq!(world.eapol, [(false, StaTxKey::None), (false, StaTxKey::None)]);
+    world.receive(at(50), &group_message1(&ptk, 3, 2));
+    // Group Message 2, once connected: under the pairwise key, with the
+    // Protected bit and the CCMP header's room.
+    assert_eq!(world.eapol[2..], [(true, StaTxKey::Pairwise)]);
 }
 
 #[test]

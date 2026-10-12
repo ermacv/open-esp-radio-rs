@@ -9,6 +9,7 @@ use oer_ieee80211_lower_mac::{
 use oer_ieee80211_mac::ccmp::{CcmpRxReplayEpoch, GroupKeyId};
 use oer_ieee80211_mac::phy::{HeMcs, HtMcs};
 use oer_ieee80211_mac::sequence::SequenceNumber;
+use oer_ieee80211_mac::station::StaSequenceCounter;
 use std::vec::Vec;
 
 struct Caps;
@@ -82,7 +83,10 @@ fn qos_link<'a>(key: &'a (), replay: &'a mut CcmpRxReplayEpoch) -> LinkView<'a, 
         address: LOCAL,
         bssid: BSSID,
         association_id: 1,
-        mode: LinkMode::Qos,
+        // The station's QoS sequence spaces, which the link lends.
+        mode: LinkMode::Qos(std::boxed::Box::leak(std::boxed::Box::new(
+            [StaSequenceCounter::new(SequenceNumber::ZERO); 8],
+        ))),
         protection: LinkProtection::Ccmp { key, replay },
     }
 }

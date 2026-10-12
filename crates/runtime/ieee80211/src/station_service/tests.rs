@@ -167,6 +167,20 @@ fn eapol_frame(eapol: &[u8]) -> Vec<u8> {
     frame
 }
 
+/// Group Message 1 of key `key_id` with replay counter `replay`.
+fn group_message1(ptk: &oer_ieee80211_rsn::Ptk, replay: u64, key_id: u8) -> Vec<u8> {
+    let mut plain = Vec::new();
+    plain.extend_from_slice(&[0xdd, 22, 0x00, 0x0f, 0xac, 0x01, key_id, 0x00]);
+    plain.extend_from_slice(&[0x77; 16]);
+    plain.extend_from_slice(&[0xdd, 0, 0, 0, 0, 0, 0, 0]);
+    let wrapped = oer_ieee80211_rsn::aes::software_aes128_key_wrap(ptk.kek(), &plain).unwrap();
+    let message =
+        RsnTxFrame::<512>::group_message1(Akm::Psk, LOCAL, replay, [0; 8], wrapped.as_bytes())
+            .unwrap()
+            .authenticate(ptk);
+    eapol_frame(message.as_bytes())
+}
+
 /// What the port reported of a frame the access point sent: its signal
 /// over the noise floor, 55 dB.
 fn meta() -> RxMeta {
@@ -463,7 +477,7 @@ fn on_an_open_network_control_frames_switch_to_the_association_record_once_assoc
 }
 
 #[test]
-fn on_wpa2_the_handshake_goes_on_the_default_record_and_the_switch_follows_message_4() {
+fn on_wpa2_the_handshake_goes_unprotected_on_the_default_record_and_group_message_2_under_the_key() {
     run(
         StaSecurity::Wpa2Personal {
             pmk: Pmk::from_bytes(PMK),
@@ -505,15 +519,27 @@ fn on_wpa2_the_handshake_goes_on_the_default_record_and_the_switch_follows_messa
             .unwrap()
             .authenticate(&ptk);
             world.air.receive(&eapol_frame(message3.as_bytes()), meta());
-            // Message 4 is the handshake's: still the default record.
+            // Message 4 is the handshake's: still the default record, and
+            // unprotected.
             let message4 = world.sent(&mut seen, DATA).await;
             assert_eq!(message4.rate, dsss1());
+            assert_eq!(message4.key, None);
+            assert_eq!(message4.frame[1] & 0x40, 0);
             world
                 .notice(StaNotice::Connected {
                     bssid: BSSID,
                     channel: 6,
                 })
                 .await;
+            // Connected: Group Message 2 goes under the pairwise key the
+            // link lends, with the Protected bit, on the association's
+            // record.
+            world.air.receive(&group_message1(&ptk, 3, 2), meta());
+            let group_message2 = world.sent(&mut seen, DATA).await;
+            assert!(matches!(group_message2.key, Some((_, true))), "{group_message2:?}");
+            assert_ne!(group_message2.frame[1] & 0x40, 0);
+            assert!(group_message2.packet_number.is_some());
+            assert_eq!(group_message2.rate, ofdm6());
             // Connected: the association's record, 6 Mb/s OFDM first.
             world
                 .command(ServiceCommand::Station(StaCommand::Disconnect))

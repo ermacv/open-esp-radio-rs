@@ -156,6 +156,9 @@ struct World {
     in_flight: Vec<(Ticket, Buffer)>,
     /// The receive configurations the port has yet to confirm.
     configuring: u32,
+    /// The outcomes of the next transmissions; delivered once none is
+    /// queued.
+    outcomes: std::collections::VecDeque<bool>,
 }
 
 impl World {
@@ -165,7 +168,7 @@ impl World {
         let mut channels = [None; 16];
         channels[0] = Some(channel(1));
         channels[1] = Some(channel(6));
-        let (arbiter, place) = Arbiter::new(ArbiterPolicy::DEFAULT, channel(1), Open);
+        let (arbiter, place, absence) = Arbiter::new(ArbiterPolicy::DEFAULT, channel(1), Open);
         let station = Station::new(
             StaConfig {
                 address: LOCAL,
@@ -181,6 +184,7 @@ impl World {
             [Ticket(0), Ticket(1)],
             [Buffer([0; 512]), Buffer([0; 512])],
             place,
+            absence,
         );
         Self {
             station,
@@ -188,6 +192,7 @@ impl World {
             seen: Vec::new(),
             in_flight: Vec::new(),
             configuring: 0,
+            outcomes: std::collections::VecDeque::new(),
         }
     }
 
@@ -204,6 +209,19 @@ impl World {
                         self.station.input(now, StaInput::Answer(answer));
                     }
                     StaAction::ReleaseChannel(lease) => self.arbiter.release(lease),
+                    StaAction::RequestAbsence {
+                        request,
+                        home,
+                        place,
+                    } => {
+                        let answer = self.arbiter.request_absence(now, request, home, place);
+                        self.station.input(now, StaInput::AbsenceAnswer(answer));
+                    }
+                    StaAction::Ready(id) => self.arbiter.ready(id),
+                    StaAction::ExchangeLease(old) => {
+                        let new = self.arbiter.exchange(old);
+                        self.station.input(now, StaInput::Exchanged(new));
+                    }
                     StaAction::Upstream(fact) => {
                         self.seen.push(Seen::Upstream(fact));
                         self.arbiter.upstream(now, fact);
@@ -218,7 +236,8 @@ impl World {
                     }
                     StaAction::Transmit(mut transmit) => {
                         let frame = transmit.buffer.bytes_mut();
-                        let subtype = u16::from_le_bytes([frame[0], frame[1]]);
+                        // A Null's PM bit tells its power state apart.
+                        let subtype = u16::from_le_bytes([frame[0], frame[1]]) & 0x10fc;
                         let on = self.arbiter.channel().map_or(0, |c| c.channel().number());
                         self.seen.push(Seen::Transmit { subtype, on });
                         self.in_flight.push((transmit.ticket, transmit.buffer));
@@ -270,7 +289,11 @@ impl World {
                     ticket,
                     buffer,
                     completion: TxCompletion {
-                        status: TxStatus::Success,
+                        status: if self.outcomes.pop_front().unwrap_or(true) {
+                            TxStatus::Success
+                        } else {
+                            TxStatus::AckTimeout
+                        },
                         ack_rssi_dbm: None,
                         ack_snr_db: None,
                         block_ack: None,
@@ -472,3 +495,117 @@ fn a_scan_ends_with_a_partial_result_after_skipped_absences() {
         StaDisconnectReason::NotFound { partial: true }
     ))));
 }
+
+/// The Null data frame's subtype in the seen frames, with and without PM.
+const NULL_ACTIVE: u16 = 0x0048;
+const NULL_POWER_SAVE: u16 = 0x1048;
+
+/// A world whose station is connected to the open network on channel 6,
+/// alone on the port.
+fn connected_world() -> World {
+    let mut world = World::new(3);
+    world.station.input(at(0), StaInput::Command(StaCommand::Connect));
+    world.run(at(0));
+    world.advance();
+    world.receive(at(13), &beacon());
+    world.advance();
+    world.receive(at(30), &authentication_response(0));
+    world.receive(at(31), &open_association_response());
+    assert!(world.station.is_connected());
+    world.take();
+    world
+}
+
+#[test]
+fn a_connected_station_scans_in_an_absence_announced_with_nulls() {
+    let mut world = connected_world();
+    world
+        .station
+        .input(at(40), StaInput::Command(StaCommand::BackgroundScan));
+    world.run(at(40));
+    // PM=1 first; the absence waits for its readiness and the window.
+    assert_eq!(
+        world.take(),
+        [Seen::Transmit {
+            subtype: NULL_POWER_SAVE,
+            on: 6
+        }]
+    );
+    // Its start: the port on channel 1, a scan there; then home, the
+    // network's receive rules and PM=0.
+    world.advance();
+    assert_eq!(
+        world.take(),
+        [
+            Seen::Retune(1),
+            Seen::Configure("scan"),
+            Seen::Transmit {
+                subtype: 0x0040,
+                on: 1
+            },
+        ]
+    );
+    world.advance();
+    assert_eq!(
+        world.take(),
+        [
+            Seen::Retune(6),
+            Seen::Configure("bss"),
+            Seen::Transmit {
+                subtype: NULL_ACTIVE,
+                on: 6
+            },
+            // Channel 6 is the network's own: the scan is done.
+            Seen::Notify(StaNotice::BackgroundScanDone { partial: false }),
+        ]
+    );
+}
+
+#[test]
+fn an_undelivered_sleep_null_cancels_the_absence_and_the_station_stays() {
+    let mut world = connected_world();
+    world.outcomes.push_back(false);
+    world
+        .station
+        .input(at(40), StaInput::Command(StaCommand::BackgroundScan));
+    world.run(at(40));
+    world.take();
+    // No readiness: the arbiter cancels the absence at its start; the port
+    // stays on channel 6, and the station wakes its access point again.
+    world.advance();
+    let seen = world.take();
+    assert!(!seen.iter().any(|seen| matches!(seen, Seen::Retune(_))));
+    assert!(seen.contains(&Seen::Transmit {
+        subtype: NULL_ACTIVE,
+        on: 6
+    }));
+}
+
+#[test]
+fn an_undelivered_wake_null_is_sent_again_when_the_tim_shows_buffered_frames() {
+    let mut world = connected_world();
+    world
+        .station
+        .input(at(40), StaInput::Command(StaCommand::BackgroundScan));
+    world.run(at(40));
+    world.advance();
+    // Back home, the PM=0 Null is not delivered.
+    world.outcomes.push_back(false);
+    world.advance();
+    world.take();
+    // The access point's beacon shows the station's association identifier
+    // (0xc02a & 0x3fff = 42: octet 5, bit 2) in its TIM, a partial virtual
+    // bitmap from octet 4: PM=0 again.
+    let mut tim_beacon = [0_u8; 62];
+    tim_beacon[..55].copy_from_slice(&beacon());
+    tim_beacon[55..62].copy_from_slice(&[5, 5, 0, 1, 4, 0, 0b100]);
+    world.receive(at(200), &tim_beacon);
+    assert_eq!(
+        world.take(),
+        [Seen::Transmit {
+            subtype: NULL_ACTIVE,
+            on: 6
+        }]
+    );
+}
+

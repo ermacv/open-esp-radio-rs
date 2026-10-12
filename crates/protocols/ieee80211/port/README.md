@@ -5,11 +5,13 @@
 `PortBody` over a just-installed backend joined with the backend's driver
 and takes the backend apart after the body's uninstall; the `Owner` in its
 `Disabled` and `Enabled` states, `Failed`, `PoisonedOwner` and `Ended`;
-a running phase's `PhaseParts`, each a `Lent` of the owner's borrow;
-`Work` and the `RadioPortEvents`/`RadioPortClient` traits; `CancelError`
-and `ClockError`. The block's lifecycle enums and correlation identities
-live here too. Every rule a caller controls is a type, each with a
-compile-fail test in the crate documentation.
+the running phase, one object under `&mut` (`PortPhase`) lent as a `Lent`
+of the owner's borrow; and `ClockError`. The driver is the one owner of
+the backend's hardware state, and the phase is the body's handle over
+single-producer single-consumer queues to it
+([owner decisions on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129037560)).
+Every rule a caller controls is a type, each with a compile-fail test in
+the crate documentation.
 
 The vocabulary the blocks share (the brand and `Mint`, slots, permits and
 seats, `PortResult`, `Poisoned`, `EventsLost` and the clock relation)

@@ -24,16 +24,6 @@ use crate::control::{KeyHandle, VifId};
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct TxId(pub u32);
 
-impl oer_ieee80211_port::Correlation for TxId {
-    fn from_raw(raw: u32) -> Self {
-        Self(raw)
-    }
-
-    fn raw(self) -> u32 {
-        self.0
-    }
-}
-
 /// Memory for one MPDU, lent by the backend.
 ///
 /// The buffer holds exactly the MPDU length it was requested with, without
@@ -285,6 +275,12 @@ pub struct TxCompletion {
     pub ack_snr_db: Option<i8>,
     /// The BlockAck of a successful A-MPDU or BlockAckReq attempt.
     pub block_ack: Option<BlockAckReport>,
+    /// The transmissions the attempt made by its retry plan, the first
+    /// included; 0 when it ended before its first.
+    pub transmissions: u8,
+    /// The rate of its last transmission, for the rate control above the
+    /// port; `None` when it made none.
+    pub rate: Option<crate::PhyRate>,
 }
 
 /// Why the backend refused an attempt; nothing was sent or changed.

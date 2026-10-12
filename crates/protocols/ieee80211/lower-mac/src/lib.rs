@@ -31,6 +31,7 @@ pub mod capabilities;
 pub mod control;
 pub mod extensions;
 pub mod owner;
+pub mod phase;
 pub mod port;
 pub mod rx;
 pub mod tx;
@@ -74,26 +75,29 @@ pub use extensions::{
     TsfGeneration, TsfProjectionError, TsfRelation, TsfSample, TsfSetKind, TsfTimingError,
     TsfVifMismatch, VifTsf,
 };
-pub use oer_ieee80211_port::{CancelError, ClockError};
-pub use oer_ieee80211_port::{
-    Correlation, CorrelationIds, LifecycleCommand, LifecycleError, LifecycleEvent,
-};
+pub use oer_ieee80211_port::ClockError;
 pub use oer_radio_port::{
     ClockInfo, ClockRelation, EventsLost, Generation, GenerationSource, Poisoned, PortResult,
     Projected, ProjectionError, RelationRate,
 };
 pub use owner::{
-    AccessPoint, AccessPointClient, AckHeader, AddressSetup, AmpduClient, AmpduRate, AttemptKey,
-    BeaconTimingClient, BssColor, Ccmp128Key, FrameControl, FrameHeader, GroupAddress, GroupKeyId,
-    HeaderSpec, Ieee80211Capabilities, IndividualAddress, InterfaceRole, LegacyPhaseRate,
-    LowerMacBackend, LowerMacClient, LowerMacControl, LowerMacEvents, LowerMacSetup,
-    MonitorControl, MpduLength, MpduStartSpacing, NoAckHeader, PhaseAmpdu, PhaseAmpduBuffer,
-    PhaseAttempt, PhaseRate, QosControl, QueueGrant, ReceiverAddress, SizedFrame, Station,
-    StationClient, StationReceive, SupportedBackoff, SupportedBlockAck, SupportedChannel,
-    SupportedCoex, SupportedEdca, SupportedFilter, SupportedNoAck, SupportedPower, TX_SEATS,
-    TbttPlan, Tid, TxFrame, TxFrameBody, TxGated, TxSeats, seat_access_category,
+    AccessPoint, AckHeader, AddressSetup, BssColor, Ccmp128Key, FrameControl, FrameHeader,
+    GroupAddress, GroupKeyId, HeaderSpec, Ieee80211Capabilities, IndividualAddress,
+    InterfaceRole, LegacyPhaseRate, LowerMacBackend, LowerMacSetup, MpduLength, NoAckHeader,
+    PhaseRate, QosControl, ReceiverAddress, SizedFrame, Station, StationReceive,
+    SupportedBackoff, SupportedBlockAck, SupportedChannel, SupportedCoex, SupportedEdca,
+    SupportedFilter, SupportedNoAck, SupportedPower, Tid, TxFrame, TxFrameBody,
 };
-pub use port::{ExtensionKind, LowerMacEvent, MpduAttempt};
+pub use owner::{
+    AggregateAttempt, AggregateKey, AmpduPhase, AmpduRate, BeaconTimingPhase, MonitorPhase,
+    MpduStartSpacing, PhaseAggregate, TbttPlan,
+};
+pub use phase::{
+    AccessPointPhase, Attempt, AttemptKey, ClassFrame, GateClosed, GateClosedKind, GateOpen,
+    GateOpenKind, InterfaceAttempt, InterfacePhase, LowerMacEvent, LowerMacPhase, PhaseTypes,
+    RETRY_STAGES, RetryPlan, RetryStage, StationPhase, TxBufferClass, TxBufferPool,
+};
+pub use port::MpduAttempt;
 pub use rx::{RxBuffer, RxCryptoStatus, RxEvidence, RxMeta};
 pub use tx::{
     Backoff, BlockAckReport, KeySelector, Protection, Refused, SubmitError, TxAttempt, TxBody,

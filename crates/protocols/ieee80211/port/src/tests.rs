@@ -19,7 +19,7 @@ struct Model {
     /// `disable` answers `Pending` once before it ends.
     slow_disable: core::cell::Cell<bool>,
     lifecycle: core::cell::RefCell<std::vec::Vec<&'static str>>,
-    /// The install's held part as the last split or disable left it.
+    /// The install's held part as the last phase or disable left it.
     held: core::cell::Cell<(u32, u32)>,
     /// How often `run_port` polled the driver.
     driver_polls: core::cell::Cell<u32>,
@@ -39,44 +39,34 @@ struct ModelCaps;
 /// The model's backend; only `run_port` wraps it.
 struct Backend<'m>(&'m Model);
 
-struct Events<'m>(&'m Model);
-struct Control(());
-struct Client<'m> {
-    model: &'m Model,
-    interface: u8,
-}
+/// The model's running phase: the body's handle, which reaches the model
+/// as a phase reaches its queues.
+struct Phase<'m>(&'m Model);
 struct Setup(());
 
-/// One admitted operation's token: only the model mints it.
-struct Token(u32);
-
-impl RadioWork for Token {
-    type Id = u32;
-
-    fn id(&self) -> u32 {
-        self.0
+impl Phase<'_> {
+    /// Admit one operation of `interface`; its terminal is queued when it
+    /// ends.
+    fn admit(&mut self, interface: u8) -> u32 {
+        let slot = self.0.next_slot.get();
+        self.0.next_slot.set(slot + 1);
+        self.0.running.borrow_mut().push((slot, interface));
+        slot
     }
-}
 
-impl Client<'_> {
-    fn admit(&self) -> Work<'_, Self> {
-        let slot = self.model.next_slot.get();
-        self.model.next_slot.set(slot + 1);
-        self.model.running.borrow_mut().push((slot, self.interface));
-        Work::new(self, Token(slot))
+    /// End one admitted operation by its slot.
+    fn end(&mut self, slot: u32) {
+        end(self.0, slot);
     }
 }
 
 /// End one admitted operation by its slot; its terminal is queued.
-fn end(model: &Model, slot: u32) -> Result<(), CancelError> {
+fn end(model: &Model, slot: u32) {
     let mut running = model.running.borrow_mut();
-    let index = running
-        .iter()
-        .position(|(running, _)| *running == slot)
-        .ok_or(CancelError::NotRunning)?;
-    running.remove(index);
-    model.events.borrow_mut().push_back(slot);
-    Ok(())
+    if let Some(index) = running.iter().position(|(running, _)| *running == slot) {
+        running.remove(index);
+        model.events.borrow_mut().push_back(slot);
+    }
 }
 
 impl<'m> PortBackend for Backend<'m> {
@@ -88,18 +78,8 @@ impl<'m> PortBackend for Backend<'m> {
         = Setup
     where
         Self: 'a;
-    type Events<'a, 'id>
-        = Events<'m>
-    where
-        Self: 'a,
-        'id: 'a;
-    type Control<'a, 'id>
-        = Control
-    where
-        Self: 'a,
-        'id: 'a;
-    type Clients<'a, 'id>
-        = [Client<'m>; 2]
+    type Phase<'a, 'id>
+        = Phase<'m>
     where
         Self: 'a,
         'id: 'a;
@@ -162,7 +142,7 @@ impl<'m> PortBackend for Backend<'m> {
                     .map(|(slot, _)| *slot)
                     .collect();
                 for slot in slots {
-                    let _ = end(model, slot);
+                    end(model, slot);
                 }
                 while let Some(event) = model.events.borrow_mut().pop_front() {
                     sink(event);
@@ -183,14 +163,11 @@ impl<'m> PortBackend for Backend<'m> {
         (core::cell::Cell::new((0, 0)), mint.slots())
     }
 
-    fn setup<'a, 'id>(&'a mut self) -> Lent<'a, Self::Setup<'a, 'id>> {
-        Lent::new(Setup(()))
+    fn setup<'a, 'id>(&'a mut self) -> Self::Setup<'a, 'id> {
+        Setup(())
     }
 
-    fn split<'a, 'id>(
-        &'a mut self,
-        held: &'a Self::Held<'id>,
-    ) -> PhaseParts<'a, Self::Events<'a, 'id>, Self::Control<'a, 'id>, Self::Clients<'a, 'id>>
+    fn phase<'a, 'id>(&'a mut self, held: &'a Self::Held<'id>) -> Phase<'m>
     where
         'id: 'a,
     {
@@ -198,12 +175,7 @@ impl<'m> PortBackend for Backend<'m> {
         let (phases, disables) = held.get();
         held.set((phases + 1, disables));
         model.held.set(held.get());
-        let client = |interface| Client { model, interface };
-        PhaseParts {
-            events: Lent::new(Events(model)),
-            control: Lent::new(Control(())),
-            clients: Lent::new([client(0), client(1)]),
-        }
+        Phase(model)
     }
 
     fn drive<'p, 'id>(
@@ -251,7 +223,7 @@ impl<'m> PortBackend for Backend<'m> {
     }
 }
 
-impl RadioPortEvents for Events<'_> {
+impl PortPhase for Phase<'_> {
     type Event = u32;
     type Fault = ();
 
@@ -260,20 +232,6 @@ impl RadioPortEvents for Events<'_> {
             Some(event) => Ok(Ok(event)),
             None => Ok(Err(EventsLost)),
         })
-    }
-}
-
-impl RadioPortClient for Client<'_> {
-    type Token = Token;
-    type Domain = Port;
-    type Fault = ();
-
-    fn now(&self) -> impl Future<Output = PortResult<RadioInstant<Port>, ClockError, ()>> + '_ {
-        core::future::ready(Ok(Err(ClockError::Unavailable)))
-    }
-
-    fn end(&self, token: Token) -> impl Future<Output = PortResult<(), CancelError, ()>> + '_ {
-        core::future::ready(Ok(end(self.model, token.0)))
     }
 }
 
@@ -307,19 +265,13 @@ impl<'m> PortBody<Backend<'m>> for OnePhase<'_> {
             Err(failed) => return failed.fail_stop(),
         };
         {
-            let PhaseParts {
-                mut events,
-                clients,
-                ..
-            } = enabled.split();
-            let [station, access_point] = &*clients;
-            let joined = station.admit();
-            let joined_id = joined.id();
-            let _served = access_point.admit();
-            // A client ends its own work by its token, once.
-            assert_eq!(joined.cancel().await, Ok(Ok(())));
-            assert_eq!(events.next_event().await, Ok(Ok(joined_id)));
-            self.cancelled.set(Some(joined_id));
+            // The phase's operations and its event stream are one object.
+            let mut phase = enabled.phase();
+            let joined = phase.admit(0);
+            let _served = phase.admit(1);
+            phase.end(joined);
+            assert_eq!(phase.next_event().await, Ok(Ok(joined)));
+            self.cancelled.set(Some(joined));
         }
         // The access point's work is left in flight: `disable` ends it and
         // hands its terminal to the sink.
@@ -368,7 +320,7 @@ impl<'m> PortBody<Backend<'m>> for TwoPhases {
             let Ok(mut enabled) = owner.enable().await else {
                 panic!("the model enables");
             };
-            let _ = enabled.split();
+            let _ = enabled.phase();
             owner = match enabled.disable(&mut |_| {}).await {
                 Ok(disabled) => disabled,
                 Err(poisoned) => return poisoned.fail_stop(),

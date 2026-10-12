@@ -204,16 +204,14 @@
 //!
 //! [ownership and refusals]: https://github.com/ermacv/open-esp-radio-rs/blob/main/docs/architecture.md#ownership-and-refusals
 
-use core::{future::Future, marker::PhantomData};
+use core::marker::PhantomData;
 
-use oer_ieee80211_mac::qos::WmmAccessCategory;
 use oer_ieee80211_mac::{extensions::wmm::WmmParameterSet, sequence::SequenceNumber};
-use oer_ieee80211_port::{PortBackend, RadioPortClient, RadioPortEvents, Work};
-use oer_radio_port::{Line, Mint, Poisoned, Seat, Slot};
+use oer_ieee80211_port::PortBackend;
 
 use crate::{
     Backoff, Channel, CoexPriority, LowerMacCapabilities, MacAddress, PhyRate, ReceiveFilter,
-    RxBeaconPriority, TxBody, TxPower, VifRole,
+    TxPower, VifRole,
 };
 
 /// What a lower-MAC backend type supports, the same for every instance: the
@@ -603,7 +601,7 @@ pub struct PhaseRate<'p> {
 
 impl<'p> PhaseRate<'p> {
     /// A rate [`LowerMacClient::rate`] checked; nothing else mints one.
-    const fn checked(rate: PhyRate) -> Self {
+    pub(crate) const fn checked(rate: PhyRate) -> Self {
         Self {
             rate,
             loan: PhantomData,
@@ -865,7 +863,7 @@ impl<A: ReceiverAddress> HeaderSpec<A> {
 /// as the capabilities' individual no-ACK formats state:
 /// [`LowerMacClient::no_ack`] checks it.
 #[derive(Debug)]
-pub struct SupportedNoAck<'p>(PhaseRate<'p>);
+pub struct SupportedNoAck<'p>(pub(crate) PhaseRate<'p>);
 
 impl<'p> SupportedNoAck<'p> {
     /// The rate.
@@ -936,7 +934,7 @@ pub enum TxFrame<'p, K> {
     /// An individual data or management frame, which solicits an ACK.
     Individual {
         frame: SizedFrame<AckHeader, K>,
-        rate: PhaseRate<'p>,
+        plan: crate::RetryPlan<PhaseRate<'p>>,
     },
     /// An individual frame that solicits no ACK and says so, at a rate that
     /// carries one without it.
@@ -955,8 +953,22 @@ pub enum TxFrame<'p, K> {
         transmitter: MacAddress,
         tid: Tid,
         starting_sequence: SequenceNumber,
-        rate: LegacyPhaseRate<'p>,
+        plan: crate::RetryPlan<LegacyPhaseRate<'p>>,
     },
+}
+
+impl<K> TxFrame<'_, K> {
+    /// The MPDU's length without its FCS: the length its buffer holds.
+    pub const fn mpdu_len(&self) -> usize {
+        match self {
+            Self::Individual { frame, .. } => frame.len.len as usize,
+            Self::IndividualNoAck { frame, .. } => frame.len.len as usize,
+            Self::Group { frame, .. } => frame.len.len as usize,
+            // Frame Control, Duration, RA, TA, BAR Control and the
+            // Starting Sequence Control.
+            Self::BlockAckRequest { .. } => 20,
+        }
+    }
 }
 
 /// A header that knows its length: [`HeaderSpec`], [`AckHeader`] and
@@ -1016,116 +1028,10 @@ pub trait TxFrameBody {
     fn body_mut(&mut self) -> &mut [u8];
 }
 
-/// The grant of the queue an attempt of one access category occupies: a
-/// backend's guard over the queue's one permit, which the backend hands out
-/// and takes back. The queue it names is the one the capabilities assign
-/// its access category. Dropped before a submission, it gives the queue
-/// back; a submission moves it into the backend. The backend owns its
-/// type, keeps its constructor private and proves with compile-fail tests
-/// that no caller forges one.
-pub trait QueueGrant {
-    /// The queue the attempt occupies.
-    fn queue(&self) -> u8;
-
-    /// The access category the attempt contends as.
-    fn access_category(&self) -> WmmAccessCategory;
-}
-
-/// The seats of one line of transmit permits: one per interface role and
-/// access category.
-pub const TX_SEATS: usize = 8;
-
-/// The access category of the transmit seat at `index` of its line: an
-/// interface's four seats follow the access category index (ACI), the
-/// station's seats first, then the access point's ([`TxSeats::mint`]).
-pub const fn seat_access_category(index: u8) -> WmmAccessCategory {
-    match index % 4 {
-        0 => WmmAccessCategory::BestEffort,
-        1 => WmmAccessCategory::Background,
-        2 => WmmAccessCategory::Video,
-        _ => WmmAccessCategory::Voice,
-    }
-}
-
-/// The transmit seats of one interface: for each access category, its
-/// seat on the queue line (of the kind `Q`) and on the buffer line (of the
-/// kind `B`), indexed by the access category index. The caller lends a
-/// seat to each take and keeps it across takes.
-pub struct TxSeats<'id, Q, B> {
-    queue: [Seat<'id, Q>; 4],
-    buffer: [Seat<'id, B>; 4],
-}
-
-impl<'id, Q, B> TxSeats<'id, Q, B> {
-    /// The [`TX_SEATS`] seats of the queue line of the kind `Q` and of the
-    /// buffer line of the kind `B`, with the lines that size their pools,
-    /// and the seats of each interface: the station's, then the access
-    /// point's.
-    #[allow(
-        clippy::type_complexity,
-        reason = "the two lines and the seats of each role, minted together"
-    )]
-    pub fn mint(
-        mint: &mut Mint<'id>,
-    ) -> (Line<'id, Q, TX_SEATS>, Line<'id, B, TX_SEATS>, [Self; 2]) {
-        let (queue_line, [q0, q1, q2, q3, q4, q5, q6, q7]) = mint.seats::<Q, TX_SEATS>();
-        let (buffer_line, [b0, b1, b2, b3, b4, b5, b6, b7]) = mint.seats::<B, TX_SEATS>();
-        (
-            queue_line,
-            buffer_line,
-            [
-                Self {
-                    queue: [q0, q1, q2, q3],
-                    buffer: [b0, b1, b2, b3],
-                },
-                Self {
-                    queue: [q4, q5, q6, q7],
-                    buffer: [b4, b5, b6, b7],
-                },
-            ],
-        )
-    }
-
-    /// The seat on the queue line of `access_category`.
-    pub fn queue(&mut self, access_category: WmmAccessCategory) -> &mut Seat<'id, Q> {
-        &mut self.queue[access_category as usize]
-    }
-
-    /// The seat on the buffer line of `access_category`.
-    pub fn buffer(&mut self, access_category: WmmAccessCategory) -> &mut Seat<'id, B> {
-        &mut self.buffer[access_category as usize]
-    }
-}
-
-/// One attempt of a running phase, every value of it checked: the queue it
-/// occupies, its MPDU in a buffer bound to a buffer permit, its body, its
-/// protection, key, power, backoff and coexistence level. The frame's kind,
-/// fixed when the buffer was lent, sets its rate and response.
-pub struct PhaseAttempt<'p, 'id: 'p, C: LowerMacClient<'id> + 'p> {
-    pub queue: C::Queue<'p>,
-    /// The frame, whose kind fixes its rate and response.
-    pub frame: C::TxBuffer<'p>,
-    pub body: Option<C::TxBody>,
-    pub protection: crate::Protection,
-    /// The installed key that protects the frame, or none.
-    pub key: Option<AttemptKey<'p, 'id, C>>,
-    pub power: SupportedPower<C::Caps>,
-    pub backoff: SupportedBackoff<C::Caps>,
-    pub coex: SupportedCoex<C::Caps>,
-}
-
-/// The installed key an attempt borrows.
-pub enum AttemptKey<'p, 'id: 'p, C: LowerMacClient<'id> + 'p> {
-    Pairwise(&'p C::PairwiseKey),
-    Group(&'p C::GroupKey),
-}
-
 /// A lower-MAC backend on the owner shape. Its disabled-only settings are a
-/// [`LowerMacSetup`], its phase control a [`LowerMacControl`], its clients
-/// [`LowerMacClient`]s and its events a [`LowerMacEvents`]; its
-/// held part of the install keeps the transmit permits,
-/// and the body's resources give each role's key and Block Ack slots
-/// once.
+/// [`LowerMacSetup`] and its running phase a
+/// [`LowerMacPhase`](crate::LowerMacPhase); the body's resources give its
+/// transmit tickets, buffers, key and Block Ack slots and its gate once.
 pub trait LowerMacBackend: PortBackend {
     /// The backend's capabilities marker.
     type Caps: Ieee80211Capabilities;
@@ -1152,280 +1058,11 @@ pub trait AddressSetup: LowerMacSetup {
     fn set_address(&mut self, role: VifRole, address: IndividualAddress);
 }
 
-/// The guard of a closed transmit gate: it proves this port publishes no
-/// attempt, not that the air is quiet; reception runs, and other radios and
-/// peers still transmit. Dropping it opens the gate, a synchronous register
-/// write that cannot fail, which a poisoned port ignores. An operation that
-/// needs no attempt on the air (a retune that keeps the port enabled) is a
-/// method of the guard, so it cannot meet a published attempt.
-pub trait TxGated {}
-
-/// The control of a running lower-MAC phase: the radio-wide operations that
-/// only gate or tune admission, with one holder. None refuses as busy.
-pub trait LowerMacControl {
-    /// The backend's capabilities marker.
-    type Caps: Ieee80211Capabilities;
-    /// The guard of the closed transmit gate.
-    type Gated<'g>: TxGated
-    where
-        Self: 'g;
-
-    /// Close the transmit gate of every queue: admission of new attempts
-    /// stops at once, and the future ends once no attempt is published,
-    /// with the guard that keeps the gate closed. A future dropped before
-    /// it yields the guard opens the gate again, so no gate stays closed
-    /// without its guard.
-    fn close_gate(&mut self) -> impl Future<Output = Self::Gated<'_>>;
-
-    /// The EDCA parameters every queue's attempts contend with.
-    fn set_edca(&mut self, parameters: SupportedEdca<Self::Caps>);
-
-    /// The coexistence priority beacons are received with.
-    fn set_rx_beacon_priority(&mut self, priority: RxBeaconPriority);
-}
-
-/// What a lower-MAC client of one interface does in a running phase of the
-/// install `'id`.
-///
-/// A client exists for each interface the backend serves, each with the
-/// address the install or [`AddressSetup::set_address`] gave it; its type is
-/// its role, so a backend gives a role's client only the operations
-/// that role has. Its key and Block Ack slots are of its own kinds, so a
-/// key or agreement of one role's client is not another role's, by type.
-pub trait LowerMacClient<'id>:
-    RadioPortClient<Token: oer_ieee80211_port::RadioWork<Id = crate::TxId>> + Sized
-{
-    /// The backend's capabilities marker.
-    type Caps: Ieee80211Capabilities;
-    /// The kind of the queue line's seats.
-    type QueueKind;
-    /// The kind of the buffer line's seats.
-    type BufferKind;
-    /// The grant of one queue, which [`Self::queue`] awaits.
-    type Queue<'c>: QueueGrant
-    where
-        Self: 'c,
-        'id: 'c;
-    /// One frame's memory, bound to a buffer permit it holds, with its
-    /// header, kind, rate and response written by the request.
-    type TxBuffer<'c>: TxFrameBody
-    where
-        Self: 'c,
-        'id: 'c;
-    /// The owner of an MPDU's body.
-    type TxBody: TxBody;
-    /// The kind of the client's pairwise key slots (an access point's:
-    /// its association identifiers).
-    type PairwiseKeyKind;
-    /// The kind of the client's group key slots.
-    type GroupKeyKind;
-    /// An installed pairwise key; removing it gives its slot back.
-    type PairwiseKey;
-    /// An installed group key; removing it gives its slot back.
-    type GroupKey;
-    /// The kind of the receive Block Ack slots: one pool the backend's
-    /// hardware shares between its roles, so every client of a backend
-    /// names the same kind and a slot one role gives back serves the other
-    /// (owner decision, Claude Code chat with common, 2026-10-12).
-    type BlockAckKind;
-
-    /// The channel the phase runs on.
-    fn channel(&self) -> Channel;
-
-    /// The interface's own address, which the install gave it.
-    fn address(&self) -> IndividualAddress;
-
-    /// The rate on the phase's channel, when the capabilities send it
-    /// there. Only this check mints a [`PhaseRate`].
-    fn rate(&self, rate: PhyRate) -> Option<PhaseRate<'_>> {
-        if Self::Caps::CAPS.supports_rate(rate, self.channel()) {
-            Some(PhaseRate::checked(rate))
-        } else {
-            None
-        }
-    }
-
-    /// The permit of the queue the access category of `seat` occupies
-    /// ([`seat_access_category`]), once no attempt holds it: an occupied
-    /// queue is waited for in its line with `seat`, never refused. The
-    /// seat is lent only while the take waits.
-    fn queue<'c, 's>(
-        &'c self,
-        seat: &'s mut Seat<'id, Self::QueueKind>,
-    ) -> impl Future<Output = Self::Queue<'c>> + 's
-    where
-        'id: 'c,
-        'c: 's;
-
-    /// The rate, when the capabilities carry an individual frame without
-    /// an ACK at it.
-    ///
-    /// # Errors
-    ///
-    /// The rate, when they do not.
-    fn no_ack<'p>(&self, rate: PhaseRate<'p>) -> Result<SupportedNoAck<'p>, PhaseRate<'p>> {
-        if Self::Caps::CAPS.individual_no_ack.contains_rate(rate.get()) {
-            Ok(SupportedNoAck(rate))
-        } else {
-            Err(rate)
-        }
-    }
-
-    /// A buffer holding `frame`'s header, once one of the pool is free: a
-    /// lent pool is waited for in its line with `seat`, never refused. Its
-    /// kind fixes its rate and response; the caller writes its body. The
-    /// seat is lent only while the take waits, so an A-MPDU takes its
-    /// buffers one after another with one seat. Dropped before a
-    /// submission, the buffer gives its permit back.
-    fn tx_buffer<'c, 's>(
-        &'c self,
-        frame: TxFrame<'c, Self::Caps>,
-        seat: &'s mut Seat<'id, Self::BufferKind>,
-    ) -> impl Future<Output = Self::TxBuffer<'c>> + 's
-    where
-        'id: 'c,
-        'c: 's;
-
-    /// Admit `attempt`; its queue and buffer permits stay with the backend
-    /// until it takes the attempt's terminal.
-    ///
-    /// # Errors
-    ///
-    /// A poisoned backend, which keeps the attempt.
-    fn submit<'p>(
-        &'p self,
-        attempt: PhaseAttempt<'p, 'id, Self>,
-    ) -> Result<Work<'p, Self>, Poisoned<Self::Fault>>
-    where
-        'id: 'p;
-
-    /// Install `key` for frames with `peer` in `slot`.
-    fn install_pairwise_key(
-        &self,
-        slot: Slot<'id, Self::PairwiseKeyKind>,
-        peer: IndividualAddress,
-        key: Ccmp128Key,
-    ) -> Self::PairwiseKey;
-
-    /// Install `key` for group frames under `key_id` in `slot`.
-    fn install_group_key(
-        &self,
-        slot: Slot<'id, Self::GroupKeyKind>,
-        key_id: GroupKeyId,
-        key: Ccmp128Key,
-    ) -> Self::GroupKey;
-
-    /// Remove `key` once no attempt in flight uses it, giving its slot
-    /// back.
-    /// An attempt that uses it and that the closed transmit gate holds ends
-    /// as aborted at once; a published one is waited for, never refused,
-    /// so the wait ends also under the gate's guard. Dropped before it
-    /// ends, the removal leaves the key installed, and its slot is lost
-    /// until the next install.
-    fn remove_pairwise_key(
-        &self,
-        key: Self::PairwiseKey,
-    ) -> impl Future<Output = Slot<'id, Self::PairwiseKeyKind>> + '_;
-
-    /// Remove `key` once no attempt in flight uses it, giving its slot
-    /// back.
-    /// An attempt that uses it and that the closed transmit gate holds ends
-    /// as aborted at once; a published one is waited for, never refused,
-    /// so the wait ends also under the gate's guard. Dropped before it
-    /// ends, the removal leaves the key installed, and its slot is lost
-    /// until the next install.
-    fn remove_group_key(
-        &self,
-        key: Self::GroupKey,
-    ) -> impl Future<Output = Slot<'id, Self::GroupKeyKind>> + '_;
-
-    /// Start acknowledging A-MPDUs of `agreement` in `slot`. The client
-    /// keeps one agreement per peer and TID: one that replaces an earlier
-    /// agreement of the pair gives that agreement's slot back.
-    #[must_use = "a replaced agreement's slot is capacity; dropping it loses it until the next install"]
-    fn add_block_ack(
-        &self,
-        slot: Slot<'id, Self::BlockAckKind>,
-        agreement: SupportedBlockAck<Self::Caps>,
-    ) -> Option<Slot<'id, Self::BlockAckKind>>;
-
-    /// End the agreement with `peer` on `tid`, giving its slot back; `None`
-    /// when the client keeps none for the pair.
-    #[must_use = "an ended agreement's slot is capacity; dropping it loses it until the next install"]
-    fn remove_block_ack(
-        &self,
-        peer: IndividualAddress,
-        tid: Tid,
-    ) -> Option<Slot<'id, Self::BlockAckKind>>;
-}
-
-/// The client of a station interface.
-pub trait StationClient<'id>: LowerMacClient<'id> {
-    /// Set what the station receives, once none of its frames is in
-    /// flight: a frame the closed transmit gate holds ends as aborted at
-    /// once, a published one is waited for, never refused.
-    fn configure(&self, receive: StationReceive<Self::Caps>) -> impl Future<Output = ()> + '_;
-
-    /// The BSS color of the station's HE BSS.
-    fn set_bss_color(&self, color: BssColor);
-}
-
-/// The client of an access-point interface, whose BSSID is its address.
-pub trait AccessPointClient<'id>: LowerMacClient<'id> {
-    /// Set the access point's receive rules, once none of its frames is in
-    /// flight: a frame the closed transmit gate holds ends as aborted at
-    /// once, a published one is waited for.
-    fn configure(
-        &self,
-        receive: SupportedFilter<Self::Caps, AccessPoint>,
-    ) -> impl Future<Output = ()> + '_;
-}
-
-/// The one consumer of a running lower-MAC phase's events: received frames,
-/// the completions of admitted work with their bodies, and extension
-/// events, read through the portable view.
-pub trait LowerMacEvents: RadioPortEvents {
-    /// The memory of one received MPDU.
-    type RxBuffer: crate::RxBuffer;
-    /// The bodies a completion carries, each with its subframe index.
-    type TxBodies: IntoIterator;
-
-    /// The portable view of an owned event.
-    fn view(event: &Self::Event) -> crate::LowerMacEvent<'_>;
-
-    /// Take a received frame out of its event, with its metadata.
-    ///
-    /// # Errors
-    ///
-    /// The event, when it is another kind.
-    fn into_received(event: Self::Event) -> Result<(Self::RxBuffer, crate::RxMeta), Self::Event>;
-
-    /// Take a completion out of its event, with the bodies of its work;
-    /// its [`TxCompletion::id`](crate::TxCompletion::id) is the
-    /// [`Work::id`] of the work it ends, whose permits the backend gave
-    /// back before the event was handed out.
-    ///
-    /// # Errors
-    ///
-    /// The event, when it is another kind.
-    fn into_completed(
-        event: Self::Event,
-    ) -> Result<(crate::TxCompletion, Self::TxBodies), Self::Event>;
-
-    /// The TBTT an event announces, of a client's
-    /// [`BeaconTimingClient`] schedule; `None` for another kind, and on a
-    /// backend without beacon timing.
-    fn tbtt(event: &Self::Event) -> Option<crate::TbttEvent> {
-        let _ = event;
-        None
-    }
-}
-
 mod extensions;
 
 pub use extensions::{
-    AmpduClient, AmpduRate, BeaconTimingClient, MonitorControl, MpduStartSpacing, PhaseAmpdu,
-    PhaseAmpduBuffer, TbttPlan,
+    AggregateAttempt, AggregateKey, AmpduPhase, AmpduRate, BeaconTimingPhase, MonitorPhase,
+    MpduStartSpacing, PhaseAggregate, TbttPlan,
 };
 
 #[cfg(test)]

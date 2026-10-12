@@ -359,8 +359,10 @@ checkouts that replace pinned dependencies (`override:esp-hal=`,
 `EMBASSY_ROOT` and `OPEN_RADIO_XARXA_ROOT` name). A variant may also add or remove
 runtime features of every image class it builds, `features=+trace,-psram-stack`:
 its runs build with `cargo hil run --features`, which only an experiment
-accepts, the build record keeps the delta, `report verify` checks the image's
-features against it, and qualification never counts such an image as its
+accepts, the build record keeps the delta, the preflight accepts the flashed
+image by the image keys of its class's features with the delta applied (an arm
+without an instrument reports fewer keys than its class), `report verify`
+checks the image's features against it, and qualification never counts such an image as its
 class's. Each arm's revision is
 checked out in a worktree below `target/hil/ab/<id>/` and captured with its
 overrides into a source snapshot; this checkout's runner builds and runs
@@ -395,7 +397,12 @@ zero and the difference is at least 2 % of A's mean) with the better arm,
 measurement without one complete pair is reported as `no-pairs`.
 A measurement's direction is the `better` (`higher` or `lower`) its
 producer declares, or its gate's; a significant difference of one without a
-direction is reported as `changed` with the higher arm, never as better. `ab-report.json` beside the worktrees
+direction is reported as `changed` with the higher arm, never as better.
+Performance and correctness images measure each core's CPU load over the
+traffic window (`cpu.core0.load`, `cpu.core1.load`, lower is better), so a
+change that keeps the throughput but costs more CPU shows as a significant
+load difference; `features=-cpu-load` on one arm compares an image without
+the instrument. `ab-report.json` beside the worktrees
 holds the variants, every run and every comparison; the command prints a
 summary.
 

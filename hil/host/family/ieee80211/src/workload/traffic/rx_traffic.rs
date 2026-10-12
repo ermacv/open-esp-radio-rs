@@ -329,6 +329,9 @@ pub fn run(
             return capture.finish_with(Err(error));
         }
     };
+    if let Some(load) = &structured.cpu_load {
+        context.measurements.cpu_load(load);
+    }
     if let Err(error) = capture.acknowledge_session(session) {
         return capture.finish_with(Err(error));
     }

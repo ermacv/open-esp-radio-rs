@@ -28,6 +28,9 @@ crate::messages! {
     property Core0RxCycles = "telemetry/core0-rx-cycles";
     /// MAC interrupt publication timestamps sampled in the hard ISR.
     property MacIrq = "telemetry/mac-irq";
+    /// Each core's CPU load over a session's traffic window
+    /// (`network::CpuLoadEvidence`).
+    property CpuLoad = "telemetry/cpu-load";
     endpoint ControlTrace = "telemetry/trace/control" => crate::telemetry::TraceState;
     topic TraceState = "telemetry/trace/state";
     endpoint GetTraceEntries = "telemetry/trace/entries/get" => crate::telemetry::TraceEntriesPage;

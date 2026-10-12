@@ -134,6 +134,7 @@ pub fn image_keys(enabled: &dyn Fn(&str) -> bool) -> ImageKeys {
         enabled("core0-rx-cycle-telemetry") || enabled("core0-rx-coarse-telemetry"),
     );
     add(telemetry::MacIrq::KEY, enabled("mac-irq-telemetry"));
+    add(telemetry::CpuLoad::KEY, enabled("cpu-load") && traffic);
     add(system::TimebaseProbe::KEY, true);
     add(system::IpcCall::KEY, enabled("open-radio-hil"));
     add(
@@ -193,6 +194,7 @@ pub const READ_FEATURES: &[&str] = &[
     "core0-rx-cycle-telemetry",
     "core0-rx-coarse-telemetry",
     "mac-irq-telemetry",
+    "cpu-load",
     "ieee802154-event-status-probe",
     "ieee802154-ed-event-probe",
     "ieee802154-radio",
@@ -271,6 +273,14 @@ mod tests {
             "station-exit-evidence",
             "driver-observation"
         ]));
+    }
+
+    #[test]
+    fn a_traffic_image_with_idle_accounting_reports_cpu_load() {
+        let load = |features: &[&str]| has::<telemetry::CpuLoad>(&with(features));
+        assert!(load(&["open-radio-hil", "cpu-load"]));
+        assert!(!load(&["open-radio-hil"]));
+        assert!(!load(&["open-radio-hil", "cpu-load", "memory-benchmark"]));
     }
 
     #[test]

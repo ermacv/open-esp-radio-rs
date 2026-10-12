@@ -103,7 +103,11 @@ fn image_classes_are_stable_and_do_not_use_workload_environment() {
     );
     assert_eq!(
         oer_hil_schema::image::ImageClass::Correctness.runtime_features(),
-        "open-radio-hil,driver-observation"
+        "open-radio-hil,driver-observation,cpu-load"
+    );
+    assert_eq!(
+        oer_hil_schema::image::ImageClass::Performance.runtime_features(),
+        "open-radio-hil,cpu-load"
     );
     assert_eq!(
         oer_hil_schema::image::ImageClass::DiagnosticMacIrq.runtime_features(),

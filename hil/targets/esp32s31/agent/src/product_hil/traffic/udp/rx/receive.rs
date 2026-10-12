@@ -6,15 +6,15 @@ use oer_hil_agent::traffic::payload::PayloadFillCheck;
 use oer_hil_esp32s31_telemetry::task_poll::{TaskPollSet, TaskPollSetSnapshot};
 use oer_hil_esp32s31_telemetry::udp_rx_window::RxWindow;
 use oer_hil_protocol::{
-    network::Completion, network::FlowTransportEvidence, network::SESSION_FLOW_CAPACITY,
-    network::UdpSessionPayloadIdentity,
+    network::Completion, network::CpuLoadEvidence, network::FlowTransportEvidence,
+    network::SESSION_FLOW_CAPACITY, network::UdpSessionPayloadIdentity,
 };
 
 use crate::{
     console::{ActiveSession, runtime_log_reliably},
     product_hil::{
         network::sockets::{Ipv4Addr, SocketAddr, UdpSocket, recv_from_with},
-        traffic::{UdpSequenceEvidence, iperf2_udp_sequence},
+        traffic::{CpuLoadWindow, UdpSequenceEvidence, iperf2_udp_sequence},
     },
 };
 
@@ -30,6 +30,9 @@ pub(super) struct Outcome {
     pub flow_evidence: [Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY],
     pub elapsed_us: u64,
     pub task_poll_end: TaskPollSetSnapshot,
+    /// Over the measurement window: from its first datagram (from arming
+    /// when none arrives) to its end.
+    pub cpu_load: Option<CpuLoadEvidence>,
 }
 
 struct Flow {
@@ -79,6 +82,9 @@ pub(super) async fn run(
     });
     let payload_fill =
         PayloadFillCheck::for_flows(flows.iter().flatten().map(|flow| flow.payload_identity));
+    let mut cpu_window = Some(CpuLoadWindow::begin());
+    let mut cpu_window_at_data = false;
+    let mut cpu_load = None;
     let mut window = RxWindow::new(
         Instant::now().as_micros(),
         elapsed_us,
@@ -98,6 +104,7 @@ pub(super) async fn run(
         let now = Instant::now().as_micros();
         if now >= window.end() && task_poll_end.is_none() {
             task_poll_end = Some(task_polls.snapshot());
+            cpu_load = cpu_window.take().and_then(CpuLoadWindow::finish);
             #[cfg(feature = "pc-profile")]
             crate::pc_profile::window_end();
         }
@@ -186,6 +193,11 @@ pub(super) async fn run(
             }
             continue;
         }
+        if !cpu_window_at_data {
+            // The measurement window starts at its first datagram.
+            cpu_window_at_data = true;
+            cpu_window = Some(CpuLoadWindow::begin());
+        }
         flow.evidence.rx_bytes = flow.evidence.rx_bytes.saturating_add(length as u64);
         flow.evidence.rx_units = flow.evidence.rx_units.saturating_add(1);
         if single_flow && delivery_start.observe(length == flow.payload, packet_sequence) {
@@ -267,5 +279,6 @@ pub(super) async fn run(
         flow_evidence,
         elapsed_us,
         task_poll_end: task_poll_end.expect("completed RX window closes task observation"),
+        cpu_load,
     }
 }

@@ -888,3 +888,68 @@ fn a_disconnection_during_an_absence_leaves_no_old_frame_to_go_after_the_reconne
         })
     });
 }
+
+/// Beside an access point on the upstream's channel, a background scan's
+/// absence starts after one of its TBTTs; MSDUs the stack sends during the
+/// absence do not go while the station is away and all go once it is back,
+/// none lost (owner decision on #563, comment 6131495971).
+#[test]
+fn beside_an_access_point_msdus_survive_an_absence() {
+    use oer_time::Clock as _;
+    let mut config = config(StaSecurity::Open);
+    config.channels[1] = SupportedChannel::new(Channel::ghz2_4(1, ChannelWidth::Mhz20).unwrap());
+    run_with(config, |world| {
+        Box::pin(async move {
+            let mut seen = 0;
+            world.associate(&mut seen, false).await;
+            world
+                .notice(StaNotice::Connected {
+                    bssid: BSSID,
+                    channel: 6,
+                })
+                .await;
+            let tbtt = world.clock.now().saturating_add(Duration::from_millis(5));
+            world
+                .command(ServiceCommand::AccessPoint(AccessPointFact::Running {
+                    channel: SupportedChannel::new(channel6()).unwrap(),
+                    next_tbtt: tbtt,
+                    beacon_interval: Duration::from_micros(102_400),
+                }))
+                .await;
+            world
+                .command(ServiceCommand::Station(StaCommand::BackgroundScan))
+                .await;
+            let away = world.sent(&mut seen, NULL).await;
+            assert_ne!(away.frame[1] & 0x10, 0, "PM=1 before the absence");
+            assert!(world.clock.now() >= tbtt, "the absence follows a TBTT");
+            let left = seen;
+            let destinations = [[0x02, 0, 0, 0, 0, 0x0c], [0x02, 0, 0, 0, 0, 0x0d]];
+            for destination in destinations {
+                world.send_msdu(destination);
+            }
+            let back = world.sent(&mut seen, NULL).await;
+            assert_eq!(back.frame[1] & 0x10, 0, "PM=0 once back");
+            let returned = seen;
+            assert!(
+                world.air.sent()[left..returned]
+                    .iter()
+                    .all(|frame| kind(frame) != DATA),
+                "no data while away"
+            );
+            for _ in destinations {
+                world.sent(&mut seen, DATA).await;
+            }
+            let air = world.air.sent();
+            for destination in destinations {
+                assert_eq!(
+                    air[returned..]
+                        .iter()
+                        .filter(|frame| kind(frame) == DATA && frame.frame[16..22] == destination)
+                        .count(),
+                    1,
+                    "{destination:02x?} went once"
+                );
+            }
+        })
+    });
+}

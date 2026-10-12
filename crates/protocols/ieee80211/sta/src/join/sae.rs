@@ -79,6 +79,8 @@ pub enum StaSaeFailure {
     Protocol(SaeError),
     /// The anti-clogging token exceeds what the station repeats.
     TokenTooLong,
+    /// The peer confirmed before the station did.
+    UnexpectedConfirm,
 }
 
 /// Result of observing a frame or completing a millisecond.
@@ -150,20 +152,24 @@ impl StaSaeAuthentication {
     }
 
     /// The commit to send, with the current anti-clogging token.
-    pub fn commit(&self) -> StaSaeTransmission {
+    ///
+    /// # Errors
+    ///
+    /// The commit did not encode in the body's capacity.
+    pub fn commit(&self) -> Result<StaSaeTransmission, StaSaeFailure> {
         let mut body = [0; STA_SAE_BODY_CAPACITY];
         let token = (self.token_length != 0).then_some(&self.token[..self.token_length]);
         let length = self
             .commit
             .values()
             .encode(token, self.hash_to_element(), &mut body)
-            .expect("the body capacity holds a commit with the largest token");
-        StaSaeTransmission {
+            .map_err(StaSaeFailure::Protocol)?;
+        Ok(StaSaeTransmission {
             transaction: SAE_COMMIT_TRANSACTION,
             status_code: self.commit_status(),
             body,
             length,
-        }
+        })
     }
 
     const fn commit_status(&self) -> u16 {
@@ -210,7 +216,10 @@ impl StaSaeAuthentication {
             }
             self.token[..token.len()].copy_from_slice(token);
             self.token_length = token.len();
-            return StaSaeEvent::Transmit(self.commit());
+            return match self.commit() {
+                Ok(commit) => StaSaeEvent::Transmit(commit),
+                Err(failure) => self.fail(failure),
+            };
         }
         if status_code != self.commit_status() {
             return self.fail(
@@ -248,8 +257,9 @@ impl StaSaeAuthentication {
         if status_code != STATUS_SUCCESS {
             return self.fail(StaSaeFailure::Rejected { status_code });
         }
+        // A confirm before the station's own is the peer's error.
         let StaSaePhase::Confirmed(keys) = &self.phase else {
-            unreachable!("confirms are received only after this station confirmed");
+            return self.fail(StaSaeFailure::UnexpectedConfirm);
         };
         match keys.verify_peer_confirm(body) {
             Ok(_) => {

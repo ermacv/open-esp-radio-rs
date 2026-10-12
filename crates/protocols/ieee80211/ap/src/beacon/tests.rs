@@ -9,13 +9,13 @@ use oer_ieee80211_mac::{
 use super::*;
 
 /// An advertisement of one-stream HT with the ordinary legacy rates.
-const ADVERTISEMENT: Advertisement = Advertisement::new(
+const ADVERTISEMENT: Advertisement = match Advertisement::new(
     LegacyRates::new(
         [0x8b, 0x96, 0x82, 0x84, 0x0c, 0x18, 0x30, 0x60],
         [0x6c, 0x12, 0x24, 0x48],
     ),
     HtLocalCapabilities::new(0x100c, 0x03, 0xff, 0x01),
-    WmmParameters::new(
+    match WmmParameters::new(
         4,
         false,
         [WmmAcParameters {
@@ -25,9 +25,15 @@ const ADVERTISEMENT: Advertisement = Advertisement::new(
             ecw_max: 10,
             txop_limit_units_32_us: 0,
         }; 4],
-    ),
+    ) {
+        Some(value) => value,
+        None => panic!("the WMM parameters fit their fields"),
+    },
     0x0421,
-);
+) {
+        Some(value) => value,
+        None => panic!("the advertisement leaves Privacy to the security mode"),
+    };
 
 const fn at(micros: u64) -> Instant {
     Instant::from_micros(micros)

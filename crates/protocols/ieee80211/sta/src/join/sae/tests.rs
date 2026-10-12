@@ -49,7 +49,7 @@ fn a_full_exchange_yields_the_access_point_pmk() {
         commit(LOCAL, BSSID, 0x20),
         SaePwe::HuntingAndPecking,
     );
-    let sent = station.commit();
+    let sent = station.commit().unwrap();
     assert_eq!((sent.transaction, sent.status_code), (1, 0));
     let station_values = SaeCommitValues::parse(sent.body(), false).unwrap();
 
@@ -81,7 +81,7 @@ fn an_anti_clogging_refusal_repeats_the_commit_with_the_token() {
         commit(LOCAL, BSSID, 0x20),
         SaePwe::HuntingAndPecking,
     );
-    let first = station.commit();
+    let first = station.commit().unwrap();
     let StaSaeEvent::Transmit(again) = station.observe_management_frame(
         &from_access_point(1, 76, &[19, 0, 7, 8, 9]),
         oer_time::Instant::EPOCH,
@@ -149,7 +149,7 @@ fn a_wrong_password_or_a_refusal_fails() {
         [0x41; 32],
     )
     .unwrap();
-    let sent = SaeCommitValues::parse(station.commit().body(), false).unwrap();
+    let sent = SaeCommitValues::parse(station.commit().unwrap().body(), false).unwrap();
     assert!(matches!(
         station.observe_management_frame(&access_point_commit(&impostor), oer_time::Instant::EPOCH),
         StaSaeEvent::Transmit(_)
@@ -183,7 +183,7 @@ fn a_wrong_password_or_a_refusal_fails() {
         commit(LOCAL, BSSID, 0x20),
         SaePwe::HashToElement,
     );
-    assert_eq!(h2e.commit().status_code, 126);
+    assert_eq!(h2e.commit().unwrap().status_code, 126);
     assert_eq!(
         h2e.observe_management_frame(
             &access_point_commit(&commit(BSSID, LOCAL, 0x40)),

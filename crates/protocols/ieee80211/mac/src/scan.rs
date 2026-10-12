@@ -442,11 +442,8 @@ pub fn parse_management(frame: &[u8], fallback_channel: u8, rssi: i8) -> Option<
     record.bssid.copy_from_slice(&frame[16..22]);
     record.channel = fallback_channel;
     record.rssi = rssi;
-    record.timestamp = crate::tsf::TsfInstant::from_micros(u64::from_le_bytes(
-        frame[24..32]
-            .try_into()
-            .expect("a management body has an eight-byte timestamp"),
-    ));
+    record.timestamp =
+        crate::tsf::TsfInstant::from_micros(u64::from_le_bytes(*frame[24..].first_chunk::<8>()?));
     record.beacon_interval_tu = u16::from_le_bytes([frame[32], frame[33]]);
     record.capability_info = u16::from_le_bytes([frame[34], frame[35]]);
     record.privacy = record.capability_info & 0x0010 != 0;

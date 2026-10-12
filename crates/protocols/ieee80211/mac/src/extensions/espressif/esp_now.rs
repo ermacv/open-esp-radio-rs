@@ -626,10 +626,13 @@ impl<'frame> EspNowProtectedV1Envelope<'frame> {
             ));
         }
 
-        let ccmp_header: &[u8; ESP_NOW_CCMP_HEADER_LEN] = input[ESP_NOW_MANAGEMENT_HEADER_LEN
-            ..ESP_NOW_MANAGEMENT_HEADER_LEN + ESP_NOW_CCMP_HEADER_LEN]
-            .try_into()
-            .expect("validated protected ESP-NOW header extent");
+        let Some(ccmp_header) = input[ESP_NOW_MANAGEMENT_HEADER_LEN..]
+            .first_chunk::<ESP_NOW_CCMP_HEADER_LEN>()
+        else {
+            return Err(EspNowProtectedV1WireError::FrameTooShort {
+                minimum: ESP_NOW_MANAGEMENT_HEADER_LEN + ESP_NOW_CCMP_HEADER_LEN + ESP_NOW_CCMP_MIC_LEN,
+            });
+        };
         if ccmp_header[2] != 0 || ccmp_header[3] & CCMP_RESERVED_CONTROL_MASK != 0 {
             return Err(EspNowProtectedV1WireError::ReservedCcmpBitsSet {
                 reserved_byte: ccmp_header[2],
@@ -649,16 +652,18 @@ impl<'frame> EspNowProtectedV1Envelope<'frame> {
             .map_err(EspNowProtectedV1WireError::InvalidPacketNumber)?;
 
         let protected_body = &input[ESP_NOW_MANAGEMENT_HEADER_LEN + ESP_NOW_CCMP_HEADER_LEN..];
-        let ciphertext_length = protected_body.len() - ESP_NOW_CCMP_MIC_LEN;
-        let (ciphertext, mic) = protected_body.split_at(ciphertext_length);
-        // The outer length bounds imply this conversion and preserve a fixed
-        // MIC extent for a future authenticated decoder.
-        let mic: &[u8; ESP_NOW_CCMP_MIC_LEN] = mic
-            .try_into()
-            .expect("validated protected ESP-NOW MIC extent");
-        let management_header = input[..ESP_NOW_MANAGEMENT_HEADER_LEN]
-            .try_into()
-            .expect("validated protected ESP-NOW management header extent");
+        // A fixed MIC extent for a future authenticated decoder.
+        let Some((ciphertext, mic)) = protected_body.split_last_chunk::<ESP_NOW_CCMP_MIC_LEN>()
+        else {
+            return Err(EspNowProtectedV1WireError::FrameTooShort {
+                minimum: ESP_NOW_MANAGEMENT_HEADER_LEN + ESP_NOW_CCMP_HEADER_LEN + ESP_NOW_CCMP_MIC_LEN,
+            });
+        };
+        let Some(management_header) = input.first_chunk::<ESP_NOW_MANAGEMENT_HEADER_LEN>() else {
+            return Err(EspNowProtectedV1WireError::FrameTooShort {
+                minimum: ESP_NOW_MANAGEMENT_HEADER_LEN + ESP_NOW_CCMP_HEADER_LEN + ESP_NOW_CCMP_MIC_LEN,
+            });
+        };
 
         Ok(Self {
             management_header,

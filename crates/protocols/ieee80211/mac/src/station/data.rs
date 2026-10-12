@@ -34,7 +34,7 @@ impl StaDataFrame<'_> {
             false,
             false,
         )
-        .expect("priority seven is a valid recovered queue class");
+        .ok_or(StationFrameError::UserPriorityOutOfRange)?;
         let header_len = usize::from(plan.header_len);
         let required = header_len
             .checked_add(plan.llc_snap.len())
@@ -226,12 +226,12 @@ impl StaProtectedEthernetFrame {
 
         // Preserve the bytes that the new CCMP/LLC prefix overlaps before
         // mutating the shared allocation.
-        let destination = storage[ethernet_offset..ethernet_offset + 6]
-            .try_into()
-            .expect("six-byte Ethernet destination");
-        let source = storage[ethernet_offset + 6..ethernet_offset + 12]
-            .try_into()
-            .expect("six-byte Ethernet source");
+        let (Some(&destination), Some(&source)) = (
+            storage[ethernet_offset..].first_chunk::<6>(),
+            storage[ethernet_offset + 6..].first_chunk::<6>(),
+        ) else {
+            return Err(StationFrameError::EthernetFrameTooShort);
+        };
         let ether_type =
             u16::from_be_bytes([storage[ethernet_offset + 12], storage[ethernet_offset + 13]]);
         let ethernet = ethernet_header(destination, source, ether_type);
@@ -326,13 +326,11 @@ impl StaProtectedEthernetFrame {
             });
         }
 
-        let first_header: [u8; ETHERNET_HEADER_LEN] = storage
-            [ethernet_offset..ethernet_offset + ETHERNET_HEADER_LEN]
-            .try_into()
-            .expect("Ethernet length checked above");
-        let source: [u8; 6] = first_header[6..12]
-            .try_into()
-            .expect("six-byte Ethernet source");
+        let Some(&first_header) = storage[ethernet_offset..].first_chunk::<ETHERNET_HEADER_LEN>()
+        else {
+            return Err(StationFrameError::EthernetFrameTooShort);
+        };
+        let [_, _, _, _, _, _, source @ .., _, _] = first_header;
         let required =
             sta_protected_amsdu_pair_frame_length(ethernet_length, second_ethernet.len())?;
         let frame_offset = ethernet_offset

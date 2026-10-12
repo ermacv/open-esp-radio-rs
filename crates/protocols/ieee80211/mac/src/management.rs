@@ -100,7 +100,8 @@ impl ProbeRequest<'_> {
         }
 
         debug_assert_eq!(offset, required);
-        Ok(required)
+        // The length written, which the layout makes `required`.
+        Ok(offset)
     }
 }
 

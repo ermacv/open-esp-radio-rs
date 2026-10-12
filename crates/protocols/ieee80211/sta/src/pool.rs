@@ -6,6 +6,8 @@ pub(crate) const POOL_CAPACITY: usize = 8;
 /// A bounded pool of tokens of one kind.
 pub(crate) struct Pool<X> {
     items: [Option<X>; POOL_CAPACITY],
+    /// Tokens given back to a full pool: dropped, counted.
+    lost: u32,
 }
 
 impl<X> Pool<X> {
@@ -20,6 +22,7 @@ impl<X> Pool<X> {
         };
         let mut pool = Self {
             items: [const { None }; POOL_CAPACITY],
+            lost: 0,
         };
         for (slot, item) in pool.items.iter_mut().zip(items) {
             *slot = Some(item);
@@ -35,59 +38,69 @@ impl<X> Pool<X> {
         self.items.iter().all(Option::is_none)
     }
 
-    /// Keep `item`, a token of its kind the station was granted and gave
+    /// Keep `item`, a token of its kind the machine was granted and gave
     /// out: the tokens are unique and their number checked at the pool's
-    /// creation, so a free entry always waits for it.
+    /// creation, so a free entry waits for it. A token beyond them (not
+    /// one of the machine's) is dropped and counted.
     pub(crate) fn put(&mut self, item: X) {
-        let slot = self.items.iter_mut().find(|slot| slot.is_none());
-        debug_assert!(
-            slot.is_some(),
-            "a station holds at most POOL_CAPACITY tokens of a kind"
-        );
-        if let Some(slot) = slot {
-            *slot = Some(item);
+        match self.items.iter_mut().find(|slot| slot.is_none()) {
+            Some(slot) => *slot = Some(item),
+            None => self.lost = self.lost.saturating_add(1),
         }
+    }
+
+    /// The tokens dropped because the pool was full.
+    pub(crate) const fn lost(&self) -> u32 {
+        self.lost
     }
 }
 
-/// A first-in, first-out queue of at most [`POOL_CAPACITY`] items: it holds
-/// what a machine owes for tokens it took from a [`Pool`] of that size, so
-/// it never fills beyond them.
-pub(crate) struct Fifo<X> {
-    items: [Option<X>; POOL_CAPACITY],
+/// A first-in, first-out queue of at most `N` items. A machine sizes it by
+/// a const parameter checked at build against the tokens its items hold;
+/// an item beyond `N` comes back to the caller.
+pub(crate) struct Fifo<X, const N: usize> {
+    items: [Option<X>; N],
     head: usize,
     len: usize,
 }
 
-impl<X> Fifo<X> {
+impl<X, const N: usize> Fifo<X, N> {
     pub(crate) const fn new() -> Self {
         Self {
-            items: [const { None }; POOL_CAPACITY],
+            items: [const { None }; N],
             head: 0,
             len: 0,
         }
     }
 
     /// Queue `item` at the back.
-    pub(crate) fn push(&mut self, item: X) {
-        assert!(
-            self.len < POOL_CAPACITY,
-            "a queue holds at most its pool's tokens"
-        );
-        let at = (self.head + self.len) % POOL_CAPACITY;
+    ///
+    /// # Errors
+    ///
+    /// The item, when the queue holds `N`.
+    pub(crate) fn push(&mut self, item: X) -> Result<(), X> {
+        if self.len >= N {
+            return Err(item);
+        }
+        let at = (self.head + self.len) % N;
         self.items[at] = Some(item);
         self.len += 1;
+        Ok(())
     }
 
     /// Queue `item` at the front.
-    pub(crate) fn push_front(&mut self, item: X) {
-        assert!(
-            self.len < POOL_CAPACITY,
-            "a queue holds at most its pool's tokens"
-        );
-        self.head = (self.head + POOL_CAPACITY - 1) % POOL_CAPACITY;
+    ///
+    /// # Errors
+    ///
+    /// The item, when the queue holds `N`.
+    pub(crate) fn push_front(&mut self, item: X) -> Result<(), X> {
+        if self.len >= N {
+            return Err(item);
+        }
+        self.head = (self.head + N - 1) % N;
         self.items[self.head] = Some(item);
         self.len += 1;
+        Ok(())
     }
 
     /// The front item, in place.
@@ -104,7 +117,7 @@ impl<X> Fifo<X> {
             return None;
         }
         let item = self.items[self.head].take();
-        self.head = (self.head + 1) % POOL_CAPACITY;
+        self.head = (self.head + 1) % N;
         self.len -= 1;
         item
     }

@@ -94,16 +94,14 @@ impl StaPmksaCache {
     /// access point; a full cache drops its oldest entry first.
     pub fn insert(&mut self, entry: StaPmksa) {
         self.remove(entry.bssid);
-        if self.entries.iter().all(Option::is_some) {
-            self.entries.rotate_left(1);
-            self.entries[STA_PMKSA_CAPACITY - 1] = None;
+        match self.entries.iter_mut().find(|slot| slot.is_none()) {
+            Some(slot) => *slot = Some(entry),
+            // Full: the oldest goes, the new entry takes the last place.
+            None => {
+                self.entries.rotate_left(1);
+                self.entries[STA_PMKSA_CAPACITY - 1] = Some(entry);
+            }
         }
-        let slot = self
-            .entries
-            .iter_mut()
-            .find(|slot| slot.is_none())
-            .expect("a slot is free after dropping the oldest entry");
-        *slot = Some(entry);
     }
 
     /// Forget the association with `bssid`, keeping the others in order.

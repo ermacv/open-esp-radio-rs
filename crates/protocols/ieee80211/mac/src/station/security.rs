@@ -54,19 +54,15 @@ impl SelectedRsn {
 
     /// The same selection naming `pmkid`: an SAE association that resumes a
     /// cached PMKSA lists its PMKID after the RSN capabilities, as the
-    /// vendor's `wpa_gen_wpa_ie_rsn` does for the current PMKSA.
-    ///
-    /// # Panics
-    ///
-    /// The selection is not SAE: only SAE associations are cached.
-    pub fn with_pmkid(self, pmkid: Pmkid) -> Self {
+    /// vendor's `wpa_gen_wpa_ie_rsn` does for the current PMKSA. `None` for
+    /// a selection that is not SAE: only SAE associations are cached.
+    pub fn with_pmkid(self, pmkid: Pmkid) -> Option<Self> {
         let AssociationSecurity::Rsn(mut association) = self.security else {
-            panic!("only an SAE association resumes a cached PMKSA");
+            return None;
         };
-        assert!(
-            matches!(association.akm, AssociationAkm::Sae(_)),
-            "only an SAE association resumes a cached PMKSA"
-        );
+        if !matches!(association.akm, AssociationAkm::Sae(_)) {
+            return None;
+        }
         association.pmkid = Some(pmkid);
         let mut resumed = self;
         resumed.security = AssociationSecurity::Rsn(association);
@@ -79,7 +75,7 @@ impl SelectedRsn {
         let rsnxe_start = SELECTED_RSN_IE_LEN + PMKID_LIST_LEN;
         resumed.bytes[rsnxe_start..rsnxe_start + rsnxe.len()].copy_from_slice(rsnxe);
         resumed.length = (rsnxe_start + rsnxe.len()) as u8;
-        resumed
+        Some(resumed)
     }
 }
 

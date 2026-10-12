@@ -293,6 +293,8 @@ pub enum FtmRequesterError {
     InitialRetransmissionMismatch,
     UnsupportedNegotiation,
     TooManyMeasurements,
+    /// The initial request did not encode in its Action body.
+    RequestEncode,
     DialogTokenReused,
     DialogTokenOutOfSequence {
         expected: u8,
@@ -415,6 +417,12 @@ struct OwnedInformationElements {
 }
 
 impl OwnedInformationElements {
+    /// No element.
+    const EMPTY: Self = Self {
+        bytes: [0; MAX_TRACKED_INFORMATION_ELEMENTS_LEN],
+        len: 0,
+    };
+
     fn new(bytes: &[u8]) -> Result<Self, FtmRequesterError> {
         if bytes.len() > MAX_TRACKED_INFORMATION_ELEMENTS_LEN {
             return Err(FtmRequesterError::InformationElementsTooLong {
@@ -567,7 +575,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             .ok_or(FtmRequesterError::GenerationExhausted)?;
         let mut body = [0_u8; FTM_INITIAL_REQUEST_BODY_LEN];
         encode_initial_request(self.config.parameters, &mut body)
-            .expect("validated FTM parameters always fit the fixed Action body");
+            .map_err(|_| FtmRequesterError::RequestEncode)?;
         let attempt = self.config.request_attempt_limit - attempts_remaining + 1;
         let attempts_remaining = attempts_remaining - 1;
         let transmission = FtmRequestTransmission {
@@ -807,7 +815,9 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             if local_timing.is_some() {
                 return self.protocol_error(FtmRequesterError::UnexpectedLocalTiming);
             }
-            self.complete_with_terminal(measurement, negotiated);
+            if let Err(error) = self.complete_with_terminal(measurement, negotiated) {
+                return self.protocol_error(error);
+            }
             return Ok(FtmMeasurementDisposition::Complete {
                 samples: self.sample_count,
             });
@@ -840,7 +850,9 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
                 return self.protocol_error(FtmRequesterError::TooManyMeasurements);
             }
             self.push_sample(sample)?;
-            self.complete_with_terminal(measurement, negotiated);
+            if let Err(error) = self.complete_with_terminal(measurement, negotiated) {
+                return self.protocol_error(error);
+            }
             return Ok(FtmMeasurementDisposition::Complete {
                 samples: self.sample_count,
             });
@@ -871,8 +883,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         self.last_measurement = Some(LastMeasurement {
             fields: measurement.fields,
             parameters: None,
-            information_elements: OwnedInformationElements::new(&[])
-                .expect("an empty information-element sequence fits"),
+            information_elements: OwnedInformationElements::EMPTY,
         });
         Ok(disposition)
     }
@@ -917,22 +928,28 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         })
     }
 
+    /// The session's end on its terminal frame.
+    ///
+    /// # Errors
+    ///
+    /// Information elements longer than the session keeps.
     fn complete_with_terminal(
         &mut self,
         measurement: FtmMeasurement<'_>,
         negotiated: FtmResponseParameters,
-    ) {
+    ) -> Result<(), FtmRequesterError> {
+        let information_elements = OwnedInformationElements::new(measurement.information_elements)?;
         self.pending = None;
         self.last_measurement = Some(LastMeasurement {
             fields: measurement.fields,
             parameters: measurement.parameters,
-            information_elements: OwnedInformationElements::new(measurement.information_elements)
-                .expect("validated terminal information elements fit"),
+            information_elements,
         });
         self.phase = FtmRequesterPhase::Complete {
             negotiated,
             termination: FtmSessionTermination::PeerTerminalFrame,
         };
+        Ok(())
     }
 
     fn validate_negotiation(

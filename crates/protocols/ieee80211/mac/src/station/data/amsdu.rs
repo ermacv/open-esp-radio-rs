@@ -150,12 +150,9 @@ impl StaProtectedAmsduFrame<'_> {
         let Some(first) = self.ethernet_frames.first().copied() else {
             return Err(StationFrameError::NoAmsduFrames);
         };
-        if first.len() < ETHERNET_HEADER_LEN {
+        let Some(&first_header) = first.first_chunk::<ETHERNET_HEADER_LEN>() else {
             return Err(StationFrameError::EthernetFrameTooShort);
-        }
-        let first_header: [u8; ETHERNET_HEADER_LEN] = first[..ETHERNET_HEADER_LEN]
-            .try_into()
-            .expect("length checked above");
+        };
         let mut plan = plan_data_encapsulation(
             DataInterfaceRole::Station,
             self.bssid,
@@ -244,6 +241,7 @@ impl StaProtectedAmsduFrame<'_> {
             }
         }
         debug_assert_eq!(offset, required);
-        Ok(required)
+        // The length written, which the layout makes `required`.
+        Ok(offset)
     }
 }

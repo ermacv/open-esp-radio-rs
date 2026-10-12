@@ -142,34 +142,72 @@ struct InFlight {
     order: u32,
 }
 
-/// The connected station's data machine.
-pub struct StaData<D: StaDataTokens, K> {
+/// What the data machine dropped, counted.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DataCounters {
+    /// MPDUs a full queue could not hold: their tokens came back, their
+    /// MSDUs are gone.
+    pub overflows: u32,
+    /// Tokens given back beyond the machine's own: dropped.
+    pub lost_tokens: u32,
+}
+
+/// The connected station's data machine. `CAP` sizes each TID's queues of
+/// owed and submitted MPDUs: each holds a ticket, so the machine's tickets
+/// fit (checked at build).
+pub struct StaData<D: StaDataTokens, K, const CAP: usize = 8> {
     tickets: Pool<D::Ticket>,
     buffers: Pool<D::Buffer>,
     /// The attempts owed, by TID (a non-QoS link's in the first), each in
     /// its order.
-    owed: [Fifo<Owed<D, K>>; 8],
+    owed: [Fifo<Owed<D, K>, CAP>; 8],
     /// The submitted MPDUs, by TID, in their order: a port ends a queue's
     /// attempts in order.
-    in_flight: [Fifo<InFlight>; 8],
+    in_flight: [Fifo<InFlight, CAP>; 8],
     /// The order of the next MSDU.
     next_order: u32,
+    overflows: u32,
 }
 
-impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities> StaData<D, K> {
+impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const CAP: usize>
+    StaData<D, K, CAP>
+{
     /// The machine with the tickets and buffers the composition granted it,
-    /// at most eight of a kind, checked at compile time.
+    /// at most eight of a kind and no more tickets than its queues hold,
+    /// checked at compile time.
     pub fn new<const TICKETS: usize, const BUFFERS: usize>(
         tickets: [D::Ticket; TICKETS],
         buffers: [D::Buffer; BUFFERS],
     ) -> Self {
+        const {
+            assert!(
+                TICKETS <= CAP,
+                "each MPDU a data queue holds takes a ticket: the queues hold every ticket"
+            );
+        };
         Self {
             tickets: Pool::new(tickets),
             buffers: Pool::new(buffers),
             owed: [const { Fifo::new() }; 8],
             in_flight: [const { Fifo::new() }; 8],
             next_order: 0,
+            overflows: 0,
         }
+    }
+
+    /// What the machine dropped.
+    pub const fn counters(&self) -> DataCounters {
+        DataCounters {
+            overflows: self.overflows,
+            lost_tokens: self.tickets.lost().saturating_add(self.buffers.lost()),
+        }
+    }
+
+    /// An MPDU a full queue did not take: its tokens come back, counted.
+    fn overflowed(&mut self, transmit: DataTransmit<D, K>) {
+        self.overflows = self.overflows.saturating_add(1);
+        self.tickets.put(transmit.ticket);
+        self.buffers.put(transmit.buffer);
     }
 
     /// Whether the machine takes one more MSDU now.
@@ -201,7 +239,7 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities> StaDat
                     && let Some(in_flight) = in_flight
                     && let Some(frame) = sized::<K>(&buffer.bytes_mut()[..in_flight.len])
                 {
-                    self.owed[tid].push_front(Owed {
+                    let again = Owed {
                         transmit: DataTransmit {
                             ticket,
                             buffer,
@@ -210,7 +248,10 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities> StaDat
                             protected: in_flight.protected,
                         },
                         order: in_flight.order,
-                    });
+                    };
+                    if let Err(again) = self.owed[tid].push_front(again) {
+                        self.overflowed(again.transmit);
+                    }
                     return Ok(());
                 }
                 self.tickets.put(ticket);
@@ -264,7 +305,7 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities> StaDat
                     Some(frame) => {
                         let order = self.next_order;
                         self.next_order = self.next_order.wrapping_add(1);
-                        self.owed[slot].push(Owed {
+                        let owed = Owed {
                             transmit: DataTransmit {
                                 ticket,
                                 buffer,
@@ -273,7 +314,10 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities> StaDat
                                 protected,
                             },
                             order,
-                        });
+                        };
+                        if let Err(owed) = self.owed[slot].push(owed) {
+                            self.overflowed(owed.transmit);
+                        }
                         Ok(())
                     }
                     None => {
@@ -295,12 +339,17 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities> StaDat
             .min_by_key(|&(order, _)| order.wrapping_sub(self.next_order))?
             .1;
         let Owed { transmit, order } = self.owed[tid].pop()?;
-        self.in_flight[tid].push(InFlight {
+        let in_flight = InFlight {
             len: transmit.frame.len().get(),
             access_category: transmit.access_category,
             protected: transmit.protected,
             order,
-        });
+        };
+        // Untracked, an MPDU could not go again: it does not go.
+        if self.in_flight[tid].push(in_flight).is_err() {
+            self.overflowed(transmit);
+            return None;
+        }
         Some(DataAction::Transmit(transmit))
     }
 

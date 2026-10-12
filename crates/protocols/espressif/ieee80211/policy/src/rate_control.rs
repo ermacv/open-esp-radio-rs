@@ -872,6 +872,14 @@ pub(crate) struct PhyModeSelection {
 /// authentication and association frames therefore use it.
 pub const DEFAULT_CONTROL_SCHEDULE: RateScheduleRef = schedule(RateScheduleKind::Dot11B, 3);
 
+/// The literal schedule records the selection names, checked at build.
+const LORA_0: RateScheduleRef = schedule(RateScheduleKind::Lora, 0);
+const LORA_1: RateScheduleRef = schedule(RateScheduleKind::Lora, 1);
+const P2P_DOT11G_7: RateScheduleRef = schedule(RateScheduleKind::P2pDot11G, 7);
+const BASIC_OFDM_0: RateScheduleRef = schedule(RateScheduleKind::BasicOfdm, 0);
+const DOT11B_3: RateScheduleRef = DEFAULT_CONTROL_SCHEDULE;
+const DOT11B_0: RateScheduleRef = schedule(RateScheduleKind::Dot11B, 0);
+
 /// Non-data schedule `rcUpdatePhyMode` stores at trc `+0x68`.
 ///
 /// `rcGetSched` selects it for every frame that is not ordinary data
@@ -887,11 +895,11 @@ pub const DEFAULT_CONTROL_SCHEDULE: RateScheduleRef = schedule(RateScheduleKind:
 const fn control_schedule(phy: StaRateControlPhy, flagged: bool) -> RateScheduleRef {
     match (phy, flagged) {
         (StaRateControlPhy::Dot11B, _) => DEFAULT_CONTROL_SCHEDULE,
-        (StaRateControlPhy::Lora, _) => schedule(RateScheduleKind::Lora, 0),
-        (StaRateControlPhy::Dot11G, true) => schedule(RateScheduleKind::P2pDot11G, 7),
+        (StaRateControlPhy::Lora, _) => LORA_0,
+        (StaRateControlPhy::Dot11G, true) => P2P_DOT11G_7,
         (StaRateControlPhy::Ht | StaRateControlPhy::He, true) => DEFAULT_CONTROL_SCHEDULE,
         (StaRateControlPhy::Dot11G | StaRateControlPhy::Ht | StaRateControlPhy::He, false) => {
-            schedule(RateScheduleKind::BasicOfdm, 0)
+            BASIC_OFDM_0
         }
     }
 }
@@ -1026,7 +1034,7 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
         input.supplied_highest_rate,
         input.use_supplied_highest_rate,
     );
-    let lora_fallback = schedule(RateScheduleKind::Lora, 1);
+    let lora_fallback = LORA_1;
 
     let (current, secondary, legacy, maximum_index, schedule_count, index_map, ampdu_limit_rate) =
         match input.phy_type {
@@ -1038,8 +1046,8 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
                 };
                 (
                     schedule(RateScheduleKind::Dot11B, current_index),
-                    schedule(RateScheduleKind::Dot11B, 3),
-                    schedule(RateScheduleKind::Dot11B, 0),
+                    DOT11B_3,
+                    DOT11B_0,
                     if input.long_range_rates_present { 5 } else { 3 },
                     6,
                     RateIndexMap::Dot11B,
@@ -1069,9 +1077,9 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
                 (
                     schedule(kind, current_index),
                     if input.p2p {
-                        schedule(RateScheduleKind::P2pDot11G, 7)
+                        P2P_DOT11G_7
                     } else {
-                        schedule(RateScheduleKind::BasicOfdm, 0)
+                        BASIC_OFDM_0
                     },
                     schedule(kind, 0),
                     if input.p2p {
@@ -1111,9 +1119,9 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
                 (
                     schedule(kind, current_index),
                     if input.p2p {
-                        schedule(RateScheduleKind::P2pDot11G, 7)
+                        P2P_DOT11G_7
                     } else {
-                        schedule(RateScheduleKind::BasicOfdm, 0)
+                        BASIC_OFDM_0
                     },
                     schedule(kind, 0),
                     if input.long_range_rates_present {
@@ -1133,18 +1141,18 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
                 )
             }
             6 => (
-                schedule(RateScheduleKind::Lora, 0),
-                schedule(RateScheduleKind::Lora, 0),
-                schedule(RateScheduleKind::Lora, 0),
+                LORA_0,
+                LORA_0,
+                LORA_0,
                 1,
                 2,
                 RateIndexMap::Lora,
                 None,
             ),
             _ => (
-                schedule(RateScheduleKind::Dot11B, 3),
-                schedule(RateScheduleKind::Dot11B, 3),
-                schedule(RateScheduleKind::Dot11B, 0),
+                DOT11B_3,
+                DOT11B_3,
+                DOT11B_0,
                 if input.long_range_rates_present { 5 } else { 3 },
                 6,
                 RateIndexMap::Dot11B,
@@ -1255,27 +1263,37 @@ impl RateDecode {
             self.ht_bandwidth,
             self.he_800ns_gi_ltf,
         ) {
-            Some(PhyRate::Ht(rate)) if rate.short_gi() && !self.ht_short_gi => PhyRate::Ht(
+            // A schedule rate the peer's capabilities cannot carry as is
+            // goes at the vendor station's fallback, as one without a
+            // portable rate does.
+            Some(PhyRate::Ht(rate)) if rate.short_gi() && !self.ht_short_gi => {
                 HtRate::new(rate.mcs(), rate.bandwidth(), false)
-                    .expect("an HT rate at its own width"),
-            ),
-            Some(PhyRate::He(rate)) if self.he_ldpc => PhyRate::He(
-                HeRate::new(
-                    rate.mcs(),
-                    rate.spatial_streams(),
-                    rate.bandwidth(),
-                    rate.gi_ltf(),
-                    FecCoding::Ldpc,
-                    rate.dcm(),
-                )
-                .expect("an HE rate with LDPC"),
-            ),
+                    .map_or_else(|| self.fallback(), PhyRate::Ht)
+            }
+            Some(PhyRate::He(rate)) if self.he_ldpc => HeRate::new(
+                rate.mcs(),
+                rate.spatial_streams(),
+                rate.bandwidth(),
+                rate.gi_ltf(),
+                FecCoding::Ldpc,
+                rate.dcm(),
+            )
+            .map_or_else(|| self.fallback(), PhyRate::He),
             Some(rate) => rate,
-            None if self.high_throughput => PhyRate::Ht(
-                HtRate::new(HtMcs::new(7).expect("HT MCS 7"), self.ht_bandwidth, false)
-                    .expect("HT MCS 7 at the association's width"),
-            ),
-            None => PhyRate::Legacy(LegacyRate::Ofdm54M),
+            None => self.fallback(),
+        }
+    }
+
+    /// The vendor station's fallback: HT MCS 7 with the long guard interval
+    /// on an HT association, at its width, or 54 Mb/s.
+    fn fallback(self) -> PhyRate {
+        const MCS_7: HtMcs = match HtMcs::new(7) {
+            Some(mcs) => mcs,
+            None => panic!("HT MCS 7 exists"),
+        };
+        match HtRate::new(MCS_7, self.ht_bandwidth, false) {
+            Some(rate) if self.high_throughput => PhyRate::Ht(rate),
+            _ => PhyRate::Legacy(LegacyRate::Ofdm54M),
         }
     }
 }

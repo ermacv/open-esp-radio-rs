@@ -61,6 +61,8 @@ pub struct RxReorderRelease<const WINDOW_CAPACITY: usize> {
     pub rejected: Option<RxReorderMpdu>,
     /// Whether the received MPDU stays buffered after the operation.
     pub buffered: bool,
+    /// Frames beyond the release's capacity, dropped.
+    dropped: u8,
 }
 
 impl<const WINDOW_CAPACITY: usize> RxReorderRelease<WINDOW_CAPACITY> {
@@ -71,6 +73,7 @@ impl<const WINDOW_CAPACITY: usize> RxReorderRelease<WINDOW_CAPACITY> {
             missing: 0,
             rejected: None,
             buffered: false,
+            dropped: 0,
         }
     }
 
@@ -82,11 +85,21 @@ impl<const WINDOW_CAPACITY: usize> RxReorderRelease<WINDOW_CAPACITY> {
             .flatten()
     }
 
+    /// Release `frame`; one beyond the window's frames is dropped and
+    /// counted (the window never holds more).
     fn push(&mut self, frame: RxReorderMpdu) {
-        let index = usize::from(self.count);
-        debug_assert!(index < self.frames.len());
-        self.frames[index] = Some(frame);
-        self.count += 1;
+        match self.frames.get_mut(usize::from(self.count)) {
+            Some(slot) => {
+                *slot = Some(frame);
+                self.count += 1;
+            }
+            None => self.dropped = self.dropped.saturating_add(1),
+        }
+    }
+
+    /// Frames dropped because the release held its window's frames.
+    pub const fn dropped(&self) -> u8 {
+        self.dropped
     }
 }
 
@@ -108,10 +121,12 @@ impl<const WINDOW_CAPACITY: usize, const SLOT_CAPACITY: usize>
         starting_sequence: SequenceNumber,
         window: u16,
     ) -> Result<Self, RxReorderError> {
-        assert!(
-            WINDOW_CAPACITY != 0 && WINDOW_CAPACITY <= MAX_RX_REORDER_WINDOW as usize,
-            "the occupancy bitmap holds at most 64 window positions"
-        );
+        const {
+            assert!(
+                WINDOW_CAPACITY != 0 && WINDOW_CAPACITY <= MAX_RX_REORDER_WINDOW as usize,
+                "the occupancy bitmap holds at most 64 window positions"
+            );
+        };
         if window == 0 || window as usize > WINDOW_CAPACITY {
             return Err(RxReorderError::InvalidWindow(window));
         }

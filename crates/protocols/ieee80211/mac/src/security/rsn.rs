@@ -191,7 +191,7 @@ impl<'a> RsnElement<'a> {
         self.pmkids
             .unwrap_or(&[])
             .chunks_exact(RSN_PMKID_LEN)
-            .map(|pmkid| pmkid.try_into().expect("a PMKID chunk has its length"))
+            .filter_map(|pmkid| pmkid.try_into().ok())
     }
 
     pub const fn group_management_cipher(&self) -> Option<[u8; 4]> {

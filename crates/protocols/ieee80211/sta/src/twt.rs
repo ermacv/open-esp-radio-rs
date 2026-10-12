@@ -25,6 +25,24 @@ pub enum IndividualTwtRequesterConfigError {
     ZeroTeardownAttemptLimit,
 }
 
+/// The flow identifier of each entry of the flow array, checked at build:
+/// the array holds only representable flows.
+const FLOW_IDS: [IndividualTwtFlowId; INDIVIDUAL_TWT_FLOW_CAPACITY] = {
+    let mut ids = [match IndividualTwtFlowId::new(0) {
+        Some(id) => id,
+        None => panic!("flow 0 is representable"),
+    }; INDIVIDUAL_TWT_FLOW_CAPACITY];
+    let mut index = 0;
+    while index < INDIVIDUAL_TWT_FLOW_CAPACITY {
+        ids[index] = match IndividualTwtFlowId::new(index as u8) {
+            Some(id) => id,
+            None => panic!("the flow array holds only representable flow IDs"),
+        };
+        index += 1;
+    }
+    ids
+};
+
 /// Association-scoped retry and deadline policy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IndividualTwtRequesterConfig {
@@ -452,7 +470,7 @@ impl IndividualTwtRequester {
         &mut self,
         now: Instant,
     ) -> Result<IndividualTwtService, IndividualTwtRequesterError> {
-        for index in 0..INDIVIDUAL_TWT_FLOW_CAPACITY {
+        for (index, &flow_id) in FLOW_IDS.iter().enumerate() {
             let FlowPhase::AwaitingResponse {
                 proposal,
                 attempts_remaining,
@@ -465,8 +483,6 @@ impl IndividualTwtRequester {
             if now < deadline {
                 continue;
             }
-            let flow_id = IndividualTwtFlowId::new(index as u8)
-                .expect("the fixed flow array only contains representable flow IDs");
             if attempts_remaining == 0 {
                 self.flows[index] = FlowPhase::Idle;
                 return Ok(IndividualTwtService::Event(
@@ -486,9 +502,7 @@ impl IndividualTwtRequester {
             ));
         }
 
-        for index in 0..INDIVIDUAL_TWT_FLOW_CAPACITY {
-            let flow_id = IndividualTwtFlowId::new(index as u8)
-                .expect("the fixed flow array only contains representable flow IDs");
+        for (index, &flow_id) in FLOW_IDS.iter().enumerate() {
             match self.flows[index] {
                 FlowPhase::SetupQueued {
                     proposal,

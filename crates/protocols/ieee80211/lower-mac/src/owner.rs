@@ -44,10 +44,13 @@
 //! # use oer_ieee80211_lower_mac::{Channel, ChannelWidth, Ieee80211Capabilities, SupportedChannel};
 //! fn tune<K: Ieee80211Capabilities>() -> SupportedChannel<K> {
 //!     const {
-//!         SupportedChannel::<K>::from_const(match Channel::ghz2_4(6, ChannelWidth::Mhz20) {
+//!         match SupportedChannel::<K>::new(match Channel::ghz2_4(6, ChannelWidth::Mhz20) {
 //!             Ok(channel) => channel,
 //!             Err(_) => panic!("channel 6 is a 2.4 GHz channel"),
-//!         })
+//!         }) {
+//!         Some(channel) => channel,
+//!         None => panic!("the backend does not tune to this channel"),
+//!     }
 //!     }
 //! }
 //! ```
@@ -93,10 +96,13 @@
 //! #     };
 //! # }
 //! const FIVE: SupportedChannel<TwoFourOnly> =
-//!     SupportedChannel::from_const(match Channel::ghz5(36, ChannelWidth::Mhz20) {
+//!     match SupportedChannel::new(match Channel::ghz5(36, ChannelWidth::Mhz20) {
 //!         Ok(channel) => channel,
 //!         Err(_) => panic!(),
-//!     });
+//!     }) {
+//!         Some(channel) => channel,
+//!         None => panic!("the backend does not tune to this channel"),
+//!     };
 //! # fn main() { let _ = FIVE; }
 //! ```
 //!
@@ -139,10 +145,13 @@
 //! #     };
 //! # }
 //! const SIX: SupportedChannel<TwoFourOnly> =
-//!     SupportedChannel::from_const(match Channel::ghz2_4(6, ChannelWidth::Mhz20) {
+//!     match SupportedChannel::new(match Channel::ghz2_4(6, ChannelWidth::Mhz20) {
 //!         Ok(channel) => channel,
 //!         Err(_) => panic!(),
-//!     });
+//!     }) {
+//!         Some(channel) => channel,
+//!         None => panic!("the backend does not tune to this channel"),
+//!     };
 //! # fn main() { let _ = SIX; }
 //! ```
 //!
@@ -208,20 +217,6 @@ impl<K: Ieee80211Capabilities> SupportedChannel<K> {
             })
         } else {
             None
-        }
-    }
-
-    /// `channel`, checked when the image is built: an unsupported channel
-    /// does not compile in a constant.
-    ///
-    /// # Panics
-    ///
-    /// At compile time in a constant, and at run time otherwise, when `K`
-    /// does not tune to `channel`.
-    pub const fn from_const(channel: Channel) -> Self {
-        match Self::new(channel) {
-            Some(supported) => supported,
-            None => panic!("the backend does not tune to this channel"),
         }
     }
 

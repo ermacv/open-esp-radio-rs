@@ -543,13 +543,15 @@ impl<const CONTEXTS: usize, const CAPACITY: usize> OpenDataDefragmenter<CONTEXTS
             self.slots[index].clear();
             (index, None)
         } else {
-            let index = self
+            let Some(index) = self
                 .slots
                 .iter()
                 .enumerate()
                 .min_by_key(|(index, slot)| (slot.started_at, *index))
                 .map(|(index, _)| index)
-                .expect("nonzero context count has an oldest slot");
+            else {
+                return Err(OpenDataFragmentError::NoReassemblyContexts);
+            };
             let evicted = self.slots[index].identity;
             self.slots[index].clear();
             (index, evicted)

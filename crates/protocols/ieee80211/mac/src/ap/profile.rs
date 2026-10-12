@@ -49,23 +49,29 @@ pub struct WmmParameters {
 }
 
 impl WmmParameters {
+    /// The parameters, when each field fits its four bits: `None`
+    /// otherwise. A `const` caller checks them at build.
     pub const fn new(
         parameter_set_count: u8,
         uapsd: bool,
         access_categories: [WmmAcParameters; 4],
-    ) -> Self {
-        assert!(parameter_set_count <= 15);
+    ) -> Option<Self> {
+        if parameter_set_count > 15 {
+            return None;
+        }
         let mut index = 0;
         while index < access_categories.len() {
             let category = access_categories[index];
-            assert!(category.aifsn <= 15 && category.ecw_min <= 15 && category.ecw_max <= 15);
+            if category.aifsn > 15 || category.ecw_min > 15 || category.ecw_max > 15 {
+                return None;
+            }
             index += 1;
         }
-        Self {
+        Some(Self {
             parameter_set_count,
             uapsd,
             access_categories,
-        }
+        })
     }
 
     /// The advertised parameters of `category`, which the access point's
@@ -122,14 +128,17 @@ impl Advertisement {
         ht: HtLocalCapabilities,
         wmm: WmmParameters,
         capability_information: u16,
-    ) -> Self {
-        assert!(capability_information & 0x0010 == 0);
-        Self {
+    ) -> Option<Self> {
+        // Privacy belongs to the security mode: `None` when it is set.
+        if capability_information & 0x0010 != 0 {
+            return None;
+        }
+        Some(Self {
             legacy_rates,
             ht,
             wmm,
             capability_information,
-        }
+        })
     }
 
     pub const fn capabilities(&self, security: LinkProtection) -> u16 {

@@ -176,18 +176,16 @@ fn parse_data_header(
         None
     };
     let sequence_control = u16::from_le_bytes([mpdu[22], mpdu[23]]);
-    let receiver_address = mpdu[4..10]
-        .try_into()
-        .expect("validated receiver-address width");
-    let transmitter_address: [u8; 6] = mpdu[10..16]
-        .try_into()
-        .expect("validated transmitter-address width");
+    let (Some(&receiver_address), Some(&transmitter_address), Some(&address3)) = (
+        mpdu[4..].first_chunk::<6>(),
+        mpdu[10..].first_chunk::<6>(),
+        mpdu[16..].first_chunk::<6>(),
+    ) else {
+        return Err(OpenDataFragmentError::Truncated);
+    };
     if transmitter_address == [0; 6] || transmitter_address[0] & 1 != 0 {
         return Err(OpenDataFragmentError::InvalidTransmitter);
     }
-    let address3 = mpdu[16..22]
-        .try_into()
-        .expect("validated third-address width");
     Ok(ParsedOpenDataHeader {
         identity: OpenDataFragmentIdentity {
             role,

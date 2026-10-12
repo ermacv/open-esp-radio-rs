@@ -112,17 +112,14 @@ impl<const OCTETS: usize> TimVirtualBitmap<OCTETS> {
     /// Derive canonical N1/N2 bounds for the Partial Virtual Bitmap field.
     /// N1 is even, so a set bit in odd octet 1 still retains octet 0.
     pub fn partial(&self) -> TimPartialVirtualBitmap<'_> {
-        let Some(first) = self.octets.iter().position(|octet| *octet != 0) else {
+        let first = self.octets.iter().position(|octet| *octet != 0);
+        let last = self.octets.iter().rposition(|octet| *octet != 0);
+        let (Some(first), Some(last)) = (first, last) else {
             return TimPartialVirtualBitmap {
                 bitmap_offset: 0,
                 octets: &self.octets[..1],
             };
         };
-        let last = self
-            .octets
-            .iter()
-            .rposition(|octet| *octet != 0)
-            .expect("a first nonzero TIM octet has a last nonzero octet");
         let first = first & !1;
         TimPartialVirtualBitmap {
             bitmap_offset: first as u8,
@@ -261,7 +258,8 @@ pub fn write_ht_beacon(
         copy_record(frame, &mut offset, rsnx);
     }
     debug_assert_eq!(offset, required);
-    Ok(required)
+    // The length written, which the layout makes `required`.
+    Ok(offset)
 }
 
 const ERP_ELEMENT_ID: u8 = 42;

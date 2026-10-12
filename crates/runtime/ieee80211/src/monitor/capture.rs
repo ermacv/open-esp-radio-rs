@@ -99,12 +99,14 @@ pub struct MonitorCapturePool<const CAPACITY: usize, const SLOTS: usize> {
 
 impl<const CAPACITY: usize, const SLOTS: usize> MonitorCapturePool<CAPACITY, SLOTS> {
     pub const fn new() -> Self {
-        assert!(CAPACITY != 0, "monitor capture slots must not be empty");
-        assert!(SLOTS != 0, "monitor capture pool must contain a slot");
-        assert!(
-            SLOTS <= u8::MAX as usize + 1,
-            "monitor capture pool exceeds the lease index domain"
-        );
+        const {
+            assert!(CAPACITY != 0, "monitor capture slots must not be empty");
+            assert!(SLOTS != 0, "monitor capture pool must contain a slot");
+            assert!(
+                SLOTS <= u8::MAX as usize + 1,
+                "monitor capture pool exceeds the lease index domain"
+            );
+        };
         Self {
             storage: RxHandoffPool::new(),
         }
@@ -191,11 +193,13 @@ impl<'pool, M: RawMutex, Rate, const DEPTH: usize, const CAPACITY: usize, const 
     MonitorCaptureResources<'pool, M, Rate, DEPTH, CAPACITY, SLOTS>
 {
     pub const fn new(pool: &'pool MonitorCapturePool<CAPACITY, SLOTS>) -> Self {
-        assert!(DEPTH != 0, "monitor capture queue must not be empty");
-        assert!(
-            DEPTH <= SLOTS,
-            "monitor capture queue cannot outgrow its ownership pool"
-        );
+        const {
+            assert!(DEPTH != 0, "monitor capture queue must not be empty");
+            assert!(
+                DEPTH <= SLOTS,
+                "monitor capture queue cannot outgrow its ownership pool"
+            );
+        };
         Self {
             pool,
             frames: Channel::new(),

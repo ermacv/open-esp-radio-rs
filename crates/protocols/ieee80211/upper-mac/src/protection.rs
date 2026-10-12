@@ -136,6 +136,13 @@ impl BasicRates {
     /// Rates that every ERP station supports when a BSS names no usable
     /// rate: 1, 2, 5.5, 11, 6, 12 and 24 Mb/s.
     pub const ERP_MANDATORY: Self = Self(0b0000_0001_0101_1111);
+}
+
+// 1 Mb/s, the slowest rate a control frame falls back to, is in the ERP
+// mandatory set.
+const _: () = assert!(BasicRates::ERP_MANDATORY.0 & 1 != 0);
+
+impl BasicRates {
 
     /// Collect rates marked basic (bit seven) in Supported Rates and
     /// Extended Supported Rates element bodies, in 500-kb/s units.
@@ -452,9 +459,11 @@ impl ProtectionPolicy {
                 slowest = Some(rate);
             }
         }
+        // The ERP mandatory set holds 1 Mb/s, eligible under any protection:
+        // the slowest rate a basic set falls back to (checked at build).
         let rate = fastest_not_faster
             .or(slowest)
-            .expect("the ERP mandatory set contains an eligible rate");
+            .unwrap_or(LegacyRate::Dsss1M);
         let short = self.bss.short_preamble && !self.bss.erp.long_preamble_required();
         match (rate, short) {
             (LegacyRate::Dsss2M(_), true) => LegacyRate::Dsss2M(DsssPreamble::Short),

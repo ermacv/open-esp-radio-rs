@@ -676,6 +676,18 @@ enum State<T: StaTokens, K> {
 }
 
 impl<T: StaTokens, K> State<T, K> {
+    fn keys(&self) -> Option<&Keys<T>> {
+        match self {
+            Self::Idle(keys) | Self::Report(_, keys) => Some(keys),
+            Self::Scan(scan) => Some(&scan.keys),
+            Self::Join(join) => Some(&join.keys),
+            Self::Handshake(handshake) => Some(&handshake.keys),
+            Self::Connected(connected) => Some(&connected.keys),
+            Self::Leave(leave) => Some(&leave.keys),
+            Self::Taken => None,
+        }
+    }
+
     fn keys_mut(&mut self) -> Option<&mut Keys<T>> {
         match self {
             Self::Idle(keys) | Self::Report(_, keys) => Some(keys),
@@ -1132,6 +1144,17 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             sequence: StaSequenceCounter::new(SequenceNumber::ZERO),
             scan: ScanTable::new(),
         }
+    }
+
+    /// Tokens given back beyond the station's own: dropped, counted.
+    pub fn lost_tokens(&self) -> u32 {
+        let keys = self.state.keys().map_or(0, |keys| {
+            keys.free_groups.lost().saturating_add(keys.retiring.lost())
+        });
+        self.tickets
+            .lost()
+            .saturating_add(self.buffers.lost())
+            .saturating_add(keys)
     }
 
     /// Whether the station is connected.

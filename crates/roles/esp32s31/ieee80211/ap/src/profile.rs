@@ -39,13 +39,13 @@ pub const ADVERTISEMENT: oer_ieee80211_mac::ap::profile::Advertisement = {
         ap::profile::{Advertisement, LegacyRates, WmmParameters},
         extensions::wmm::WmmAcParameters,
     };
-    Advertisement::new(
+    match Advertisement::new(
         LegacyRates::new(
             [0x8b, 0x96, 0x82, 0x84, 0x0c, 0x18, 0x30, 0x60],
             [0x6c, 0x12, 0x24, 0x48],
         ),
         HT_CAPABILITIES,
-        WmmParameters::new(
+        match WmmParameters::new(
             4,
             false,
             [
@@ -78,9 +78,15 @@ pub const ADVERTISEMENT: oer_ieee80211_mac::ap::profile::Advertisement = {
                     txop_limit_units_32_us: 47,
                 },
             ],
-        ),
+        ) {
+        Some(value) => value,
+        None => panic!("the WMM parameters fit their fields"),
+    },
         // ESS, Short Preamble and Short Slot Time. Privacy follows AP security.
         // ERP and HT protection follow the associated peers.
         0x0421,
-    )
+    ) {
+        Some(value) => value,
+        None => panic!("the advertisement leaves Privacy to the security mode"),
+    }
 };

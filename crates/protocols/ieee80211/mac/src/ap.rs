@@ -95,7 +95,7 @@ impl ApDataFrame<'_> {
             false,
             false,
         )
-        .expect("priority seven is a valid recovered queue class");
+        .ok_or(ApDataFrameError::InvalidUserPriority)?;
         let header_len = usize::from(plan.header_len);
         let required = header_len
             .checked_add(plan.llc_snap.len())
@@ -149,7 +149,7 @@ impl ApUnprotectedDataFrame<'_> {
             false,
             false,
         )
-        .expect("priority zero is valid for plaintext non-QoS data");
+        .ok_or(ApDataFrameError::InvalidUserPriority)?;
         if plan.header[4..10] != self.peer {
             return Err(ApDataFrameError::InvalidPeer);
         }
@@ -376,9 +376,9 @@ impl ApAmsduFrame<'_> {
             return Err(ApDataFrameError::OutputTooSmall { required });
         }
 
-        let first_header: [u8; ETHERNET_HEADER_LEN] = first[..ETHERNET_HEADER_LEN]
-            .try_into()
-            .expect("A-MSDU Ethernet length validated above");
+        let Some(&first_header) = first.first_chunk::<ETHERNET_HEADER_LEN>() else {
+            return Err(ApDataFrameError::EthernetFrameTooShort);
+        };
         let mut plan = plan_data_encapsulation(
             DataInterfaceRole::AccessPoint,
             self.access_point,
@@ -429,7 +429,8 @@ impl ApAmsduFrame<'_> {
             }
         }
         debug_assert_eq!(offset, required);
-        Ok(required)
+        // The length written, which the layout makes `required`.
+        Ok(offset)
     }
 }
 
@@ -462,15 +463,15 @@ impl ApProtectedDataFrame<'_> {
                 required: ethernet_end,
             });
         }
-        let destination: [u8; 6] = storage[ethernet_offset..ethernet_offset + 6]
-            .try_into()
-            .expect("six-byte Ethernet destination");
+        let Some(&destination) = storage[ethernet_offset..].first_chunk::<6>() else {
+            return Err(ApDataFrameError::EthernetFrameTooShort);
+        };
         if destination != self.peer {
             return Err(ApDataFrameError::InvalidPeer);
         }
-        let source: [u8; 6] = storage[ethernet_offset + 6..ethernet_offset + 12]
-            .try_into()
-            .expect("six-byte Ethernet source");
+        let Some(&source) = storage[ethernet_offset + 6..].first_chunk::<6>() else {
+            return Err(ApDataFrameError::EthernetFrameTooShort);
+        };
         let ether_type =
             u16::from_be_bytes([storage[ethernet_offset + 12], storage[ethernet_offset + 13]]);
         let mut ethernet_header = [0_u8; ETHERNET_HEADER_LEN];
@@ -952,9 +953,12 @@ pub fn write_ht_association_response_frame_for_security(
     let frame = &mut output[..AP_ASSOCIATION_RESPONSE_LEN];
     frame.fill(0);
     write_management_header(frame, 0x0010, access_point, peer, management_sequence);
-    let body: &mut [u8; AP_ASSOCIATION_RESPONSE_BODY_LEN] = (&mut frame[MANAGEMENT_HEADER_LEN..])
-        .try_into()
-        .expect("checked association response body length");
+    let Some(body) = frame[MANAGEMENT_HEADER_LEN..].first_chunk_mut::<AP_ASSOCIATION_RESPONSE_BODY_LEN>()
+    else {
+        return Err(ApAssociationResponseError::OutputTooSmall {
+            required: AP_ASSOCIATION_RESPONSE_LEN,
+        });
+    };
     let body_len = write_ht_association_response(
         profile,
         body,

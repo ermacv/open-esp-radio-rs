@@ -304,7 +304,7 @@ fn a_wpa2_request_upgrades_to_sae_on_a_capable_transition_access_point() {
 fn a_resumed_sae_association_lists_its_pmkid_before_the_rsnxe() {
     let record = access_point_with_rsn(&[[0, 0x0f, 0xac, 8]], 0xc0);
     let selected = select_association_rsn(&record, StaSecurityPolicy::Wpa3Personal).unwrap();
-    let resumed = selected.with_pmkid(Pmkid([0x5a; 16]));
+    let resumed = selected.with_pmkid(Pmkid([0x5a; 16])).unwrap();
     let bytes = resumed.as_bytes();
     assert_eq!(bytes.len(), SELECTED_SECURITY_IES_CAPACITY);
     assert_eq!(&bytes[..2], &[48, 38]);

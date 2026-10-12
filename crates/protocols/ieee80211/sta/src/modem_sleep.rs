@@ -241,6 +241,7 @@ pub const PM_ACTION_CAPACITY: usize = 24;
 pub struct PmActions {
     items: [Option<PmAction>; PM_ACTION_CAPACITY],
     len: usize,
+    dropped: u32,
 }
 
 impl Default for PmActions {
@@ -254,16 +255,24 @@ impl PmActions {
         Self {
             items: [None; PM_ACTION_CAPACITY],
             len: 0,
+            dropped: 0,
         }
     }
 
+    /// Owe `action`; one beyond the capacity is dropped and counted.
     fn push(&mut self, action: PmAction) {
-        assert!(
-            self.len < PM_ACTION_CAPACITY,
-            "one power-management input exceeds its effect capacity"
-        );
-        self.items[self.len] = Some(action);
-        self.len += 1;
+        match self.items.get_mut(self.len) {
+            Some(slot) => {
+                *slot = Some(action);
+                self.len += 1;
+            }
+            None => self.dropped = self.dropped.saturating_add(1),
+        }
+    }
+
+    /// Actions dropped because one input owed more than the capacity.
+    pub const fn dropped(&self) -> u32 {
+        self.dropped
     }
 
     pub fn len(&self) -> usize {

@@ -73,13 +73,18 @@ impl WmmUserPriority {
 
     /// Standard UP-to-AC mapping used by WMM and the existing data encoder.
     pub const fn access_category(self) -> WmmAccessCategory {
-        match self.0 {
-            0 | 3 => WmmAccessCategory::BestEffort,
-            1 | 2 => WmmAccessCategory::Background,
-            4 | 5 => WmmAccessCategory::Video,
-            6 | 7 => WmmAccessCategory::Voice,
-            _ => unreachable!(),
-        }
+        // A priority is 0 to 7 (`new`): the table holds each.
+        const BY_PRIORITY: [WmmAccessCategory; 8] = [
+            WmmAccessCategory::BestEffort,
+            WmmAccessCategory::Background,
+            WmmAccessCategory::Background,
+            WmmAccessCategory::BestEffort,
+            WmmAccessCategory::Video,
+            WmmAccessCategory::Video,
+            WmmAccessCategory::Voice,
+            WmmAccessCategory::Voice,
+        ];
+        BY_PRIORITY[(self.0 & 0x07) as usize]
     }
 }
 

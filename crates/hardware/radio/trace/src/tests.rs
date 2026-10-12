@@ -148,6 +148,17 @@ fn words_no_phy_event_encodes_fail_to_decode() {
 }
 
 #[test]
+fn retired_codes_stay_unassigned() {
+    for client in 0..3 {
+        assert_eq!(Refusal::from_raw(13 | client << 8), None);
+    }
+    assert_eq!(Refusal::from_raw(15), None);
+    assert_eq!(Refusal::from_raw(16), None);
+    assert_eq!(FaultStage::from_raw(2), None);
+    assert_eq!(TrackingTick::decode([3, 0]), None);
+}
+
+#[test]
 fn one_channel_gates_each_phy_event() {
     let channels = [
         Registration::CHANNEL,

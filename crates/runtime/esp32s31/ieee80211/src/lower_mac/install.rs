@@ -39,7 +39,6 @@ use oer_ieee80211_lower_mac::{IndividualAddress, SupportedChannel};
 
 use super::{
     Esp32s31Backend, Esp32s31Caps, Esp32s31LowerMac, Esp32s31LowerMacParts, LowerMacRetune,
-    LowerMacRxUnit,
 };
 
 /// The product retune of an installed port: one channel switch under the
@@ -128,18 +127,21 @@ pub enum Esp32s31WifiPortInstallError {
     Installed,
 }
 
-/// The stopped Wi-Fi and the core's parts back from an uninstalled port.
-pub struct Esp32s31WifiPortUninstalled<W, Membership, Parts> {
+/// The stopped Wi-Fi, the core's parts and the RX pipeline back from an
+/// uninstalled port.
+pub struct Esp32s31WifiPortUninstalled<W, Membership, Parts, Rx> {
     pub wifi: WifiStopped<W, Membership>,
     pub core: Parts,
+    pub rx: Rx,
 }
 
 /// A register transaction is still borrowed: the hardware, the disabled
 /// core, the held owner and the setup are back, for a retry of the reclaim.
-pub struct Esp32s31WifiPortUninstallFailure<'arena, W, Membership, Core> {
+pub struct Esp32s31WifiPortUninstallFailure<'arena, W, Membership, Core, Rx> {
     pub error: RadioOwnerArenaError,
     pub hardware: CooperativeRadioHardware<'arena>,
     pub core: Core,
+    pub rx: Rx,
     pub held: Esp32s31WifiPortHeld<W, Membership>,
     pub interrupt_setup: MacInterruptSetup,
 }
@@ -174,7 +176,7 @@ pub fn install_esp32s31_wifi_port<
     const BUFFER_SIZE: usize,
     const TX_BUFFERS: usize,
     const EVENTS: usize,
-    U: LowerMacRxUnit,
+    U: super::PortRxReceiver,
     S: AmpduBacking,
     const AMPDU_SLOTS: usize,
     const AMPDU_BUFFERS: usize,
@@ -201,6 +203,9 @@ pub fn install_esp32s31_wifi_port<
     arena: &'arena RadioOwnerArena,
     core: LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
     retune: R,
+    rx: (U, U::Service),
+    irq: &'r crate::datapath::irq::EmbassyMacIrqRuntime<M>,
+    power: &'r crate::datapath::irq::EmbassyPowerIrqRuntime<M>,
     channel: SupportedChannel<Esp32s31Caps<BUFFER_SIZE>>,
     access_point: IndividualAddress,
 ) -> Result<
@@ -275,6 +280,9 @@ where
             hardware,
             retune,
         },
+        rx,
+        irq,
+        power,
         channel,
         access_point,
     ) {
@@ -327,10 +335,14 @@ pub fn uninstall_esp32s31_wifi_port<
     S: AmpduBacking,
     const AMPDU_SLOTS: usize,
     const AMPDU_BUFFERS: usize,
+    Rx,
+    RxService,
 >(
     uninstalled: (
         LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
         CooperativeRadioHardware<'arena>,
+        Rx,
+        RxService,
     ),
     held: Esp32s31WifiPortHeld<W, Membership>,
     interrupt_setup: MacInterruptSetup,
@@ -339,12 +351,14 @@ pub fn uninstall_esp32s31_wifi_port<
         W,
         Membership,
         LowerMacCoreParts<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
+        (Rx, RxService),
     >,
     Esp32s31WifiPortUninstallFailure<
         'arena,
         W,
         Membership,
         LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
+        (Rx, RxService),
     >,
 >
 where
@@ -352,7 +366,8 @@ where
     E: WifiTxEntropy,
     T: oer_time::Timer,
 {
-    let (core, hardware) = uninstalled;
+    let (core, hardware, receiver, rx_service) = uninstalled;
+    let rx = (receiver, rx_service);
     let registers = match hardware.try_into_registers() {
         Ok(registers) => registers,
         Err((hardware, error)) => {
@@ -360,6 +375,7 @@ where
                 error,
                 hardware,
                 core,
+                rx,
                 held,
                 interrupt_setup,
             });
@@ -371,5 +387,5 @@ where
     let Ok(core) = core.dismantle() else {
         unreachable!("the runtime gives back only a disabled, idle core");
     };
-    Ok(Esp32s31WifiPortUninstalled { wifi, core })
+    Ok(Esp32s31WifiPortUninstalled { wifi, core, rx })
 }

@@ -187,7 +187,7 @@ connected-datapath-poll-telemetry = [
 task-residence-telemetry = ["connected-datapath-poll-telemetry", "pc-profile"]
 # Statistical PC profile of both harts over each UDP RX window.
 pc-profile = []
-# Each core's CPU load over every single-direction session's traffic window
+# Each core's CPU load over every TCP and one-direction UDP session's window
 # (`network::CpuLoadEvidence`): the executors count their cycles in `wfi`.
 # The performance and correctness classes build it, so every image an A/B
 # compares carries the same instrument; `features=-cpu-load` removes it.

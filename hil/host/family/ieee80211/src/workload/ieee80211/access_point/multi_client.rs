@@ -289,6 +289,11 @@ pub(super) fn qualify_multi_client_udp(
     }
 
     let structured = capture.wait_for_session(session, config.timeout);
+    if let Ok(evidence) = &structured
+        && let Some(load) = &evidence.cpu_load
+    {
+        context.measurements.cpu_load(load);
+    }
     let acknowledgement = structured
         .as_ref()
         .map(|_| capture.acknowledge_session(session))

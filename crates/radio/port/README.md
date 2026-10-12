@@ -2,8 +2,8 @@
 
 `oer-radio-port` declares what the three radio ports share: the IEEE 802.11
 lower-MAC port (`Ieee80211LowerMacPort`), the IEEE 802.15.4 radio port
-(`Ieee802154RadioPort`) and the Bluetooth LE radio port (`LeRadioPort`).
-Each extends the base trait `RadioPort` with its own submission, event view
+(`Ieee802154RadioPort`), and the port owner the Bluetooth LE backend
+(`LeRadioBackend`) runs under ([`owner`](src/owner.rs)). Each port extends the base trait `RadioPort` with its own submission, event view
 and capabilities, and takes the shared values from here, so that a caller
 handles every protocol's refusals, losses, poisoning and lifecycle alike.
 

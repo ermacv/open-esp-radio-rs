@@ -6,8 +6,9 @@
 concrete radio execution as executor-independent `async` code; `ieee80211` (`oer-ieee80211-runtime`) holds the
 chip-independent Wi-Fi execution primitives they share, and `bluetooth`
 (`oer-bluetooth-runtime`) the service loop that joins the in-process HCI
-transport, the portable LE Controller core and any `LeRadioPort`, which the
-protocol package `oer-bluetooth-radio` declares. Directory boundaries describe the execution
+transport, the portable LE Controller core and any `LeRadioBackend`, which
+the protocol package `oer-bluetooth-radio` declares, as the body of the
+backend's port. Directory boundaries describe the execution
 responsibility of each package.
 
 ## Execution and time contract

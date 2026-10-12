@@ -143,7 +143,6 @@ impl BluetoothRadioSink for Sink {
             }
             RadioOutcome::TransmitAcknowledged(connection) => Seen::Acknowledged(connection),
             RadioOutcome::TestReport { id, report } => Seen::Test(id, report),
-            RadioOutcome::Lifecycle(_) => unreachable!("the radio reports no lifecycle terminal"),
         });
     }
 

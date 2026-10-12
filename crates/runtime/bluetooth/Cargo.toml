@@ -14,6 +14,7 @@ oer-bluetooth-controller = { path = "../../protocols/bluetooth/le/controller" }
 oer-bluetooth-hci = { path = "../../protocols/bluetooth/hci" }
 oer-bluetooth-hci-transport = { path = "../../services/bluetooth/hci/transport" }
 oer-bluetooth-radio = { path = "../../protocols/bluetooth/le/radio" }
+oer-radio-port = { path = "../../radio/port" }
 oer-time = { path = "../../time" }
 
 [dev-dependencies]

@@ -1,10 +1,10 @@
 //! Static placement, start and stop on the shared radio, interrupt dispatch
-//! and the runner.
+//! and the client tasks beside the port.
 
 use core::cell::Cell;
 
 use critical_section::Mutex;
-use embassy_futures::select::{Either, Either4, select, select4};
+use embassy_futures::select::{Either4, select4};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use oer_bluetooth_hci::BluetoothPublicDeviceAddress;
 use oer_bluetooth_radio::RadioActivity;
@@ -43,8 +43,8 @@ use oer_esp32s31_bluetooth_radio::{
     BluetoothCapabilities, BluetoothRadio, BluetoothRadioConfig, BluetoothRadioMemory,
 };
 use oer_esp32s31_bluetooth_runtime::{
-    BluetoothControl, BluetoothFault, BluetoothInstallError, BluetoothPort, BluetoothRuntime,
-    BluetoothRuntimeFault, BluetoothUninstallError, LiveBluetoothHardware, ModemTimerFault,
+    BluetoothBackend, BluetoothDriver, BluetoothFault, BluetoothInstallError, BluetoothRetained,
+    BluetoothRuntime, BluetoothUninstallError, LiveBluetoothHardware, ModemTimerFault,
     run_modem_timer, settle_modem_timer,
 };
 use oer_esp32s31_coex::{CoexError, CoexStatusType};
@@ -141,11 +141,45 @@ pub type BluetoothSystemRuntime = BluetoothRuntime<
     EVENTS,
 >;
 
-/// The radio port of the running client, for its one outcome consumer (the
-/// HCI service).
-pub type BluetoothSystemPort = BluetoothPort<'static, BluetoothSystemRuntime>;
+type Hardware = LiveBluetoothHardware<'static, Storage>;
 
-type Control = BluetoothControl<'static, BluetoothSystemRuntime>;
+/// The driver of the running client's radio, inside its backend.
+pub type BluetoothSystemDriver = BluetoothDriver<
+    'static,
+    CriticalSectionRawMutex,
+    Hardware,
+    EmbassyClock,
+    BluetoothSystemConfig,
+    LEGACY,
+    CONNECTABLE,
+    SCANNERS,
+    CONNECTIONS,
+    SCAN_PACKETS,
+    RX_PACKETS,
+    ITEMS,
+    EVENTS,
+>;
+
+/// The port backend of the running client, for the body that runs its port
+/// (the HCI service); its driver owns the radio.
+pub type BluetoothSystemBackend =
+    BluetoothBackend<'static, BluetoothSystemRuntime, BluetoothSystemDriver>;
+
+/// What the port's uninstall returns, for [`BluetoothSystem::stop`]: the
+/// radio and its hardware, or the radio the driver did not leave, with why.
+pub type BluetoothSystemUninstalled = Result<(Radio, Hardware), BluetoothSystemRetained>;
+
+/// A radio the port's driver did not leave for the uninstall.
+pub type BluetoothSystemRetained = BluetoothRetained<
+    Hardware,
+    LEGACY,
+    CONNECTABLE,
+    SCANNERS,
+    CONNECTIONS,
+    SCAN_PACKETS,
+    RX_PACKETS,
+    ITEMS,
+>;
 
 /// Why this composition's radio port is poisoned.
 pub type BluetoothSystemFault = BluetoothFault<<Storage as SchedulerRunInterruptStorage>::Error>;
@@ -408,7 +442,7 @@ enum FailStopOwner {
         timer: ModemLpTimerInterruptReadyOwner,
         memory: BluetoothSystemMemory,
     },
-    Installed(Epoch, Control, BluetoothSystemPort),
+    Retained(Epoch, BluetoothSystemRetained),
     TimerRetired {
         role: Radio,
         task: TaskRuntime,
@@ -467,8 +501,8 @@ pub struct BluetoothStartFailure {
 /// Why teardown stopped.
 #[derive(Debug)]
 pub enum BluetoothStopError {
-    /// The runtime refused the uninstall: the port is not disabled, or its
-    /// scheduler could not be stopped.
+    /// The port's driver did not leave the radio: it stopped on a fault, or
+    /// the port was poisoned while enabled.
     Runtime(BluetoothUninstallError<EspHalBluetoothSchedulerRunInterruptError>),
     /// The source-127 task could not return its owner to storage.
     ModemTimer(
@@ -520,11 +554,9 @@ pub enum BluetoothInterruptFault {
     NrtUnavailable,
 }
 
-/// Why the runner stopped.
+/// Why the client's tasks beside the port stopped.
 #[derive(Debug)]
 pub enum BluetoothRunnerFault {
-    /// The radio runtime stopped on a hardware fault.
-    Radio(BluetoothRuntimeFault<EspHalBluetoothSchedulerRunInterruptError>),
     /// The source-127 task could not exchange its owner with storage.
     ModemTimer(
         ModemTimerFault<
@@ -547,15 +579,14 @@ struct Epoch {
 /// The running Bluetooth client.
 ///
 /// The radio role and the task-side Controller live in the runtime; this
-/// value keeps the radio's control, the PHY membership, the BLE PHY graph,
-/// the source-127 task and the bound CPU routes until [`Self::stop`]. The
-/// radio's port goes to its one outcome consumer and comes back to
+/// value keeps the PHY membership, the BLE PHY graph, the source-127 task
+/// and the bound CPU routes until [`Self::stop`]. The port's backend goes
+/// to the body that runs the port, whose uninstall leaves the radio for
 /// [`Self::stop`].
 #[must_use = "the running Bluetooth client must be stopped"]
 // CAPABILITY: bluetooth-powered-shutdown, bluetooth-always-awake-controller, bluetooth-internal-wi-fi-bluetooth-coexistence, bluetooth-wi-fi-bluetooth-ieee-802-15-4-radio-coordination, coex-protocol-integration-and-lifetime-live-bt-ble-requests
 pub struct BluetoothSystem {
     epoch: Epoch,
-    control: Control,
     /// The common power proof.
     power: CommonPower<BluetoothClient>,
     /// Bluetooth takes part in coexistence for the epoch.
@@ -563,47 +594,54 @@ pub struct BluetoothSystem {
 }
 
 impl BluetoothSystem {
-    /// Drive the radio runtime and the source-127 timer task until a fault
-    /// stops either or an interrupt service fails, and publish the active
-    /// roles to the coexistence schedule of `radio`. While another radio
-    /// shares the antenna, the events carry the vendor's coexistence
-    /// priorities.
+    /// Drive the source-127 timer task until it faults or an interrupt
+    /// service fails, publish the active roles to the coexistence schedule
+    /// of `radio` and follow whether another radio shares the antenna, so
+    /// the events carry the vendor's coexistence priorities. The radio's
+    /// own driver runs inside its port ([`oer_radio_port::run_port`]); this
+    /// reaches it only through the runtime's signals and atomics.
     ///
-    /// Cancel it before [`Self::stop`]; the stop settles whatever work the
-    /// cancelled future left and withdraws every Bluetooth LE status bit.
+    /// Poll it beside the body that runs the port. Every fault it returns
+    /// has poisoned the port first, so the body sees it and ends: keep
+    /// polling the body to its end. Cancel it before [`Self::stop`]; the
+    /// stop settles whatever work the cancelled future left and withdraws
+    /// every Bluetooth LE status bit.
     pub async fn run<P, C: PlatformClockProvider>(
         &mut self,
         radio: &RadioSystem<P, C, EmbassyClock>,
     ) -> BluetoothRunnerFault {
-        let workers = select(
-            RUNTIME.run(),
-            run_modem_timer(
-                &mut self.epoch.modem_timer,
-                &MODEM_TIMER_WAKE,
-                &EmbassyClock,
-            ),
+        let modem_timer = run_modem_timer(
+            &mut self.epoch.modem_timer,
+            &MODEM_TIMER_WAKE,
+            &EmbassyClock,
         );
         match select4(
-            workers,
+            modem_timer,
             INTERRUPT_FAULT.wait(),
             publish_coex_status(radio),
             follow_coex_sharing(radio),
         )
         .await
         {
-            Either4::First(Either::First(fault)) => BluetoothRunnerFault::Radio(fault),
-            Either4::First(Either::Second(fault)) => BluetoothRunnerFault::ModemTimer(fault),
-            Either4::Second(fault) => BluetoothRunnerFault::Interrupt(fault),
+            Either4::First(fault) => {
+                RUNTIME.platform_fault();
+                BluetoothRunnerFault::ModemTimer(fault)
+            }
+            Either4::Second(fault) => {
+                RUNTIME.platform_fault();
+                BluetoothRunnerFault::Interrupt(fault)
+            }
             Either4::Third(never) | Either4::Fourth(never) => match never {},
         }
     }
 
     /// Stop the Controller and leave the shared radio.
     ///
-    /// `port` is the one [`start`] returned, disabled by the HCI service's
-    /// managed stop with every outcome taken, so every admitted event has
-    /// ended. The steps reverse [`start`]: take the radio out of the
-    /// runtime, settle the source-127 task, remove the CPU routes
+    /// `uninstalled` is what the uninstall of the port [`start`] returned:
+    /// the port's owner disabled it and handed every admitted event's end to
+    /// its body, and its retired driver left the radio and hardware. A
+    /// radio the driver kept ([`BluetoothSystemRetained`]) stays fail-stop.
+    /// The steps reverse [`start`]: settle the source-127 task, remove the CPU routes
     /// and recover both interrupt owners, release the Controller output and
     /// leave the shared PHY domain and BTBB (the radio system closes RF after
     /// the last PHY client), reset the Controller, release the clocks and
@@ -620,21 +658,20 @@ impl BluetoothSystem {
     // CAPABILITY: bluetooth-idle-powered-release
     pub async fn stop<P, C: PlatformClockProvider>(
         self,
-        port: BluetoothSystemPort,
+        uninstalled: BluetoothSystemUninstalled,
         radio: &RadioSystem<P, C, EmbassyClock>,
     ) -> Result<BluetoothParked, BluetoothStopFailure> {
         let Self {
             epoch,
-            control,
             power,
             coexisting,
         } = self;
-        let (role, hardware) = match control.uninstall(port).await {
+        let (role, hardware) = match uninstalled {
             Ok(parts) => parts,
-            Err((error, control, port)) => {
+            Err(retained) => {
                 return Err(stop_fail(
-                    BluetoothStopError::Runtime(error),
-                    FailStopOwner::Installed(epoch, control, port),
+                    BluetoothStopError::Runtime(retained.error),
+                    FailStopOwner::Retained(epoch, retained),
                     BluetoothPower::Coexisting(power, coexisting),
                 ));
             }
@@ -700,7 +737,7 @@ impl BluetoothSystem {
         // The scheduler is stopped: no role is active any more.
         guard.clear_coex_status_bits(CoexStatusType::Ble, BLE_COEX_STATUS_ALL);
         RUNTIME.clear_activity();
-        RUNTIME.set_coexistence(false).await;
+        RUNTIME.set_coexistence(false);
         let (retired, last) = match retire(guard.lease(), task, retained, output, timer) {
             Ok(retired) => retired,
             Err(failure) => {
@@ -912,8 +949,9 @@ fn unwind_powered(
 ///    interrupt owners and bind the three CPU routes to one dispatcher;
 /// 6. install the radio role in the runtime.
 ///
-/// Returns the running client and the radio's port, which goes to its one
-/// outcome consumer (the HCI service) and back to [`BluetoothSystem::stop`].
+/// Returns the running client and the port's backend, which goes to the
+/// body that runs the port (the HCI service); the port's uninstall leaves
+/// the radio for [`BluetoothSystem::stop`].
 ///
 /// # Errors
 ///
@@ -932,7 +970,7 @@ pub async fn start<P, C: PlatformClockProvider>(
     radio: &RadioSystem<P, C, EmbassyClock>,
     parked: BluetoothParked,
     public_address: BluetoothPublicDeviceAddress,
-) -> Result<(BluetoothSystem, BluetoothSystemPort), BluetoothStartFailure> {
+) -> Result<(BluetoothSystem, BluetoothSystemBackend), BluetoothStartFailure> {
     let BluetoothParked {
         partition,
         coex,
@@ -1106,9 +1144,7 @@ async fn follow_coex_sharing<P, C: PlatformClockProvider>(
     radio: &RadioSystem<P, C, EmbassyClock>,
 ) -> core::convert::Infallible {
     loop {
-        RUNTIME
-            .set_coexistence(radio.bluetooth_coex_started().await)
-            .await;
+        RUNTIME.set_coexistence(radio.bluetooth_coex_started().await);
     }
 }
 
@@ -1121,7 +1157,7 @@ async fn publish_and_install(
     published: Option<&'static Storage>,
     power: CommonPower<BluetoothClient>,
     coexisting: Coexisting<BluetoothClient>,
-) -> Result<(BluetoothSystem, BluetoothSystemPort), BluetoothStartFailure> {
+) -> Result<(BluetoothSystem, BluetoothSystemBackend), BluetoothStartFailure> {
     let BlePhyRuntime {
         endpoints,
         output,
@@ -1203,8 +1239,8 @@ async fn publish_and_install(
             LiveBluetoothHardware::new(task, published, LOCAL_SLEEP_CLOCK_PPM),
         )
         .await;
-    let (port, control) = match installed {
-        Ok(handles) => handles,
+    let backend = match installed {
+        Ok(backend) => backend,
         Err((error, radio_memory, hardware)) => {
             return Err(fail_stop(
                 BluetoothStartError::Install(error),
@@ -1227,10 +1263,9 @@ async fn publish_and_install(
                 retained,
                 published,
             },
-            control,
             power,
             coexisting,
         },
-        port,
+        backend,
     ))
 }

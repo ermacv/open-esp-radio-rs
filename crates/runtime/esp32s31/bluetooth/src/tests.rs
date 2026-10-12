@@ -10,9 +10,9 @@ use oer_bluetooth_radio::{
     AcceptListChange, AcceptListDevice, AdvertisingChannel, AdvertisingChannels,
     AdvertisingConfiguration, AdvertisingEvent, AdvertisingPdu, AdvertisingReception,
     AdvertisingSetId, ClockError, CoexistenceLevel, EventId, EventResult, LeInstant, LePhy,
-    LeWindow, LifecycleCommand, LifecycleError, LifecycleEvent, Poisoned, RadioDuration,
-    RadioOutcome, RadioRequest, ReceivedPdu, RequestError, ScanFilterPolicy, ScanType,
-    ScannerConfiguration, ScannerId, Supported, TestChannel, TestPhy, TestReceive, TxPower,
+    LeWindow, Poisoned, RadioDuration, RadioOutcome, RadioRequest, ReceivedPdu, RequestError,
+    ScanFilterPolicy, ScanType, ScannerConfiguration, ScannerId, Supported, TestChannel, TestPhy,
+    TestReceive, TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerTimeSample,
@@ -54,6 +54,8 @@ struct State {
     time: u32,
     started: Vec<ControllerSramLinkAddress>,
     stops: usize,
+    /// The stop sequence stays pending.
+    stop_never_settles: bool,
     defer_execution: bool,
     running: bool,
     finished: Option<BluetoothSchedulerFinishedListObservation>,
@@ -64,6 +66,8 @@ struct State {
     refuse_start: bool,
     scan_starts: usize,
     device_tables: Vec<LeDeviceTablePublication>,
+    /// Controller-time latch requests.
+    time_requests: usize,
 }
 
 /// The model's owner of a disabled BLE PHY ETM route.
@@ -91,6 +95,7 @@ impl BluetoothRadioHardware for Model {
     }
 
     fn request_time(&mut self) -> Result<ControllerTimeRequest, ControllerTimeRequestError> {
+        self.0.borrow_mut().time_requests += 1;
         Ok(ControllerTimeRequest::for_validation(1))
     }
 
@@ -244,10 +249,13 @@ impl BluetoothRadioHardware for Model {
 
     fn step_stop(
         &mut self,
-        _stop: BluetoothSchedulerStop,
+        stop: BluetoothSchedulerStop,
     ) -> Result<BluetoothSchedulerStopStep, oer_esp32s31_bluetooth::scheduler::SchedulerStopError>
     {
         let mut state = self.0.borrow_mut();
+        if state.stop_never_settles {
+            return Ok(BluetoothSchedulerStopStep::Pending(stop));
+        }
         state.stops += 1;
         state.running = false;
         Ok(BluetoothSchedulerStopStep::Stopped(
@@ -304,7 +312,7 @@ fn clock() -> &'static VirtualClock {
 
 /// Run the runtime for one millisecond of virtual time: poll it, moving
 /// time to each deadline it waits for within the millisecond.
-fn run_for_a_millisecond(runtime: &Runtime) {
+fn run_for_a_millisecond(runtime: &Fixture) {
     let end = clock()
         .now()
         .checked_add(oer_time::Duration::from_millis(1))
@@ -374,47 +382,193 @@ fn advertise(id: u32, anchor: u64) -> RadioRequest<'static, Caps> {
     }))
 }
 
-/// A runtime for the model's scheduler policy and sleep clock.
-fn new_runtime() -> Runtime {
-    Runtime::new(clock())
+type Driver = crate::BluetoothDriver<
+    'static,
+    NoopRawMutex,
+    Model,
+    &'static VirtualClock,
+    TestConfig,
+    1,
+    1,
+    1,
+    1,
+    2,
+    3,
+    8,
+    4,
+>;
+
+type Memory = oer_esp32s31_bluetooth_radio::BluetoothRadioMemory<1, 1, 1, 1, 2, 3>;
+
+/// A runtime and the driver of its installed radio, which every call
+/// polls beside the runtime's operation, as the port's task does.
+struct Fixture {
+    runtime: &'static Runtime,
+    driver: core::cell::Cell<Option<Driver>>,
+}
+
+/// The fixture's driver, lent out of its cell while a call polls it; it
+/// goes back on drop, also when the call's future is dropped unfinished.
+struct Lent<'f> {
+    cell: &'f core::cell::Cell<Option<Driver>>,
+    driver: Option<Driver>,
+}
+
+impl Lent<'_> {
+    fn get(&mut self) -> &mut Driver {
+        self.driver.as_mut().expect("a lent driver")
+    }
+}
+
+impl Drop for Lent<'_> {
+    fn drop(&mut self) {
+        self.cell.set(self.driver.take());
+    }
+}
+
+impl Fixture {
+    fn lend(&self) -> Lent<'_> {
+        Lent {
+            cell: &self.driver,
+            driver: Some(self.driver.take().expect("a radio is installed")),
+        }
+    }
+
+    /// Poll `call` and the driver until `call` completes; the driver may
+    /// stop first only on a fault, which a poisoned call then reports.
+    async fn served<F: Future>(&self, call: F) -> F::Output {
+        let mut driver = self.lend();
+        let mut call = core::pin::pin!(call);
+        match select(call.as_mut(), driver.get().run(|| false)).await {
+            Either::First(output) => output,
+            Either::Second(exit) => {
+                assert!(exit.is_err(), "the driver returned only on a fault");
+                call.await
+            }
+        }
+    }
+
+    async fn install(
+        &self,
+        memory: Memory,
+        hardware: Model,
+    ) -> Result<(), (crate::BluetoothInstallError, Memory, Model)> {
+        let mut backend = self.runtime.install(memory, hardware).await?;
+        self.driver.set(Some(backend.take_driver()));
+        Ok(())
+    }
+
+    async fn submit_request(
+        &self,
+        request: RadioRequest<'_, Caps>,
+    ) -> oer_bluetooth_radio::PortResult<(), RequestError, BluetoothFault<()>> {
+        self.served(self.runtime.submit_request(request)).await
+    }
+
+    async fn read_now(
+        &self,
+    ) -> oer_bluetooth_radio::PortResult<LeInstant, ClockError, BluetoothFault<()>> {
+        self.served(self.runtime.read_now()).await
+    }
+
+    async fn cancel_event(
+        &self,
+        id: EventId,
+    ) -> oer_bluetooth_radio::PortResult<(), oer_bluetooth_radio::CancelError, BluetoothFault<()>>
+    {
+        self.served(self.runtime.cancel_event(id)).await
+    }
+
+    async fn enable(
+        &self,
+    ) -> oer_radio_port::EnableResult<core::convert::Infallible, BluetoothFault<()>> {
+        self.served(self.runtime.enable()).await
+    }
+
+    async fn disable(
+        &self,
+        sink: &mut dyn FnMut(BluetoothOutcome),
+    ) -> Result<(), Poisoned<BluetoothFault<()>>> {
+        self.served(self.runtime.disable(sink)).await
+    }
+
+    /// Drive the radio until the driver stops on a fault.
+    async fn run(&self) -> crate::BluetoothRuntimeFault<()> {
+        let mut driver = self.lend();
+        match driver.get().run(|| false).await {
+            Err(fault) => fault,
+            Ok(()) => panic!("the driver ran until a fault"),
+        }
+    }
+
+    /// Retire the driver and take the radio and hardware out.
+    #[allow(clippy::type_complexity, reason = "the test radio's pools")]
+    async fn take(
+        &self,
+    ) -> Result<
+        (
+            oer_esp32s31_bluetooth_radio::BluetoothRadio<1, 1, 1, 1, 2, 3, 8>,
+            Model,
+        ),
+        crate::BluetoothUninstallError<()>,
+    > {
+        let mut driver = self.driver.take().expect("a radio is installed");
+        let _stopped = driver.run(|| true).await;
+        driver.into_parts().map_err(|retained| retained.error)
+    }
+
+    async fn with_radio<R>(
+        &self,
+        entry: impl FnOnce(&mut oer_esp32s31_bluetooth_radio::BluetoothRadio<1, 1, 1, 1, 2, 3, 8>) -> R,
+    ) -> R {
+        self.lend().get().with_radio(entry)
+    }
+
+    fn wait_event(
+        &self,
+    ) -> impl Future<
+        Output = oer_bluetooth_radio::PortResult<
+            BluetoothOutcome,
+            oer_bluetooth_radio::EventsLost,
+            BluetoothFault<()>,
+        >,
+    > + '_ {
+        self.runtime.wait_event()
+    }
+}
+
+/// A runtime for the model's scheduler policy and sleep clock, with no
+/// radio installed.
+fn new_runtime() -> Fixture {
+    Fixture {
+        runtime: std::boxed::Box::leak(std::boxed::Box::new(Runtime::new(clock()))),
+        driver: core::cell::Cell::new(None),
+    }
 }
 
 /// A runtime with the model's radio installed but its port disabled.
-fn installed_disabled(model: &Model) -> Runtime {
+fn installed_disabled(model: &Model) -> Fixture {
     let runtime = new_runtime();
-    let handles = block_on(runtime.install(model_memory(), model.clone()))
+    block_on(runtime.install(model_memory(), model.clone()))
         .unwrap_or_else(|_| panic!("the first install succeeds"));
-    // The tests reach the runtime's own operations; the port is rebuilt
-    // where a test goes through the port traits.
-    drop(handles);
     runtime
 }
 
-/// The port of an installed `runtime`.
-fn port(runtime: &Runtime) -> crate::BluetoothPort<'_, Runtime> {
-    crate::BluetoothPort::new(runtime)
-}
-
 /// A runtime with the model's radio installed and its port enabled.
-fn installed(model: &Model) -> Runtime {
+fn installed(model: &Model) -> Fixture {
     let runtime = installed_disabled(model);
     enable(&runtime);
     runtime
 }
 
-fn enable(runtime: &Runtime) {
-    assert_eq!(
-        block_on(runtime.run_lifecycle(LifecycleCommand::Enable)),
-        Ok(Ok(()))
-    );
-    assert_eq!(
-        taken(runtime),
-        Some(BluetoothOutcome::Lifecycle(LifecycleEvent::Enabled))
-    );
+fn enable(runtime: &Fixture) {
+    assert_eq!(block_on(runtime.enable()), Ok(Ok(())));
+    // A transition queues no outcome.
+    assert_eq!(taken(runtime), None);
 }
 
 /// The next outcome already queued, if any.
-fn taken(runtime: &Runtime) -> Option<BluetoothOutcome> {
+fn taken(runtime: &Fixture) -> Option<BluetoothOutcome> {
     let mut context = core::task::Context::from_waker(core::task::Waker::noop());
     match core::pin::pin!(runtime.wait_event()).poll(&mut context) {
         core::task::Poll::Ready(Ok(Ok(outcome))) => Some(outcome),
@@ -595,19 +749,10 @@ fn an_exhausted_epoch_admits_nothing_and_still_settles_admitted_work() {
         Ok(Err(RequestError::EpochExhausted))
     );
     // Disable still settles the admitted event.
-    assert_eq!(
-        block_on(runtime.run_lifecycle(LifecycleCommand::Disable)),
-        Ok(Ok(()))
-    );
-    settle(&runtime);
     assert!(matches!(
-        taken(&runtime),
-        Some(BluetoothOutcome::EventEnded { id, .. }) if id == EventId::new(1)
+        disable(&runtime).as_slice(),
+        [BluetoothOutcome::EventEnded { id, .. }] if *id == EventId::new(1)
     ));
-    assert_eq!(
-        taken(&runtime),
-        Some(BluetoothOutcome::Lifecycle(LifecycleEvent::Disabled))
-    );
 }
 
 #[test]
@@ -643,97 +788,65 @@ fn a_refused_request_reports_the_radio_error() {
 }
 
 #[test]
-fn a_disabled_port_admits_nothing_and_enable_opens_it() {
+fn disable_hands_every_admitted_events_end_to_its_sink() {
     let model = Model::default();
-    let runtime = installed_disabled(&model);
+    let runtime = installed(&model);
+    block_on(async {
+        runtime.submit_request(configure()).await.unwrap().unwrap();
+        runtime
+            .submit_request(advertise(1, 10_000))
+            .await
+            .unwrap()
+            .unwrap();
+    });
+    // The waiting event ends at once, through the sink: the phase's
+    // consumer finds nothing left.
     assert_eq!(
-        block_on(runtime.submit_request(configure())),
-        Ok(Err(RequestError::Disabled))
+        disable(&runtime),
+        [BluetoothOutcome::EventEnded {
+            id: EventId::new(1),
+            result: EventResult::NotExecuted,
+        }]
     );
-    assert_eq!(
-        block_on(runtime.run_lifecycle(LifecycleCommand::Quiesce)),
-        Ok(Err(LifecycleError::InvalidState))
-    );
+    assert_eq!(taken(&runtime), None);
+    // Enable resumes the scheduler the disable stopped.
+    assert_eq!(model.0.borrow().stops, 1);
     enable(&runtime);
-    assert_eq!(
-        block_on(runtime.run_lifecycle(LifecycleCommand::Enable)),
-        Ok(Err(LifecycleError::AlreadyInState))
-    );
-    block_on(runtime.submit_request(configure()))
+    block_on(runtime.submit_request(advertise(2, 20_000)))
         .unwrap()
         .unwrap();
 }
 
 #[test]
-fn disable_ends_every_admitted_event_before_its_terminal() {
+fn disable_hands_the_outcomes_the_phase_left_before_the_withdrawn_ends() {
     let model = Model::default();
     let runtime = installed(&model);
-    block_on(async {
-        runtime.submit_request(configure()).await.unwrap().unwrap();
-        runtime
-            .submit_request(advertise(1, 10_000))
-            .await
-            .unwrap()
-            .unwrap();
-    });
+    block_on(runtime.submit_request(configure()))
+        .unwrap()
+        .unwrap();
+    // The first event runs and its end waits in the queue, untaken.
+    block_on(runtime.submit_request(advertise(1, 10_000)))
+        .unwrap()
+        .unwrap();
+    settle(&runtime);
+    model.0.borrow_mut().defer_execution = true;
+    block_on(runtime.submit_request(advertise(2, 40_000)))
+        .unwrap()
+        .unwrap();
+    settle(&runtime);
     assert_eq!(
-        block_on(runtime.run_lifecycle(LifecycleCommand::Disable)),
-        Ok(Ok(()))
+        disable(&runtime),
+        [
+            BluetoothOutcome::EventEnded {
+                id: EventId::new(1),
+                result: EventResult::Executed { anchor: None },
+            },
+            BluetoothOutcome::EventEnded {
+                id: EventId::new(2),
+                result: EventResult::NotExecuted,
+            },
+        ]
     );
-    // The waiting event ends at once, then the port is disabled.
-    assert_eq!(
-        taken(&runtime),
-        Some(BluetoothOutcome::EventEnded {
-            id: EventId::new(1),
-            result: EventResult::NotExecuted,
-        })
-    );
-    assert_eq!(
-        taken(&runtime),
-        Some(BluetoothOutcome::Lifecycle(LifecycleEvent::Disabled))
-    );
-    assert_eq!(
-        block_on(runtime.submit_request(advertise(2, 20_000))),
-        Ok(Err(RequestError::Disabled))
-    );
-}
-
-#[test]
-fn quiesce_reports_quiesced_after_the_last_admitted_event() {
-    let model = Model::default();
-    let runtime = installed(&model);
-    block_on(async {
-        runtime.submit_request(configure()).await.unwrap().unwrap();
-        runtime
-            .submit_request(advertise(1, 10_000))
-            .await
-            .unwrap()
-            .unwrap();
-    });
-    assert_eq!(
-        block_on(runtime.run_lifecycle(LifecycleCommand::Quiesce)),
-        Ok(Ok(()))
-    );
-    // Admission is closed while the event is still admitted.
-    assert_eq!(
-        block_on(runtime.submit_request(advertise(2, 20_000))),
-        Ok(Err(RequestError::Disabled))
-    );
-    assert_eq!(
-        block_on(runtime.run_lifecycle(LifecycleCommand::Enable)),
-        Ok(Err(LifecycleError::Busy))
-    );
-    assert_eq!(taken(&runtime), None);
-    run_for_a_millisecond(&runtime);
-    assert!(matches!(
-        taken(&runtime),
-        Some(BluetoothOutcome::EventEnded { .. })
-    ));
-    assert_eq!(
-        taken(&runtime),
-        Some(BluetoothOutcome::Lifecycle(LifecycleEvent::Quiesced))
-    );
-    enable(&runtime);
 }
 
 #[test]
@@ -817,27 +930,22 @@ fn an_oversized_pdu_becomes_a_memory_fault() {
 }
 
 #[test]
-fn as_a_radio_port_a_refusal_answers_and_a_missing_radio_ends_service() {
-    use oer_bluetooth_radio::LeRadioPort;
-
+fn as_a_port_backend_its_client_answers_a_refusal() {
     let model = Model::default();
     model.0.borrow_mut().time = 20_000;
     let runtime = installed(&model);
     block_on(async {
+        assert_eq!(runtime.submit_request(configure()).await, Ok(Ok(())));
         assert_eq!(
-            LeRadioPort::submit(&port(&runtime), configure()).await,
-            Ok(Ok(()))
-        );
-        assert_eq!(
-            LeRadioPort::submit(&port(&runtime), advertise(1, 5_000)).await,
+            runtime.submit_request(advertise(1, 5_000)).await,
             Ok(Err(RequestError::Late))
         );
     });
 }
 
 #[test]
-fn as_a_radio_port_it_states_le_1m_and_hardware_acknowledgement() {
-    use oer_bluetooth_radio::{LeRadioPort, LinkAcknowledgement};
+fn as_a_port_backend_it_states_le_1m_and_hardware_acknowledgement() {
+    use oer_bluetooth_radio::LinkAcknowledgement;
 
     let model = Model::default();
     let runtime = installed(&model);
@@ -873,10 +981,23 @@ fn as_a_radio_port_it_states_le_1m_and_hardware_acknowledgement() {
         }),
         Err(oer_bluetooth_radio::Unplaced::Unsupported)
     );
+    assert_eq!(block_on(runtime.submit_request(configure())), Ok(Ok(())));
+}
+
+#[test]
+fn an_enabled_port_is_retained_with_its_radio_and_hardware() {
+    let model = Model::default();
+    let runtime = installed(&model);
+    block_on(runtime.submit_request(configure()))
+        .unwrap()
+        .unwrap();
+    // An owner poisoned while enabled leaves admitted events owing their
+    // ends: the retirement keeps the radio for the composition's fail-stop.
     assert_eq!(
-        block_on(LeRadioPort::submit(&port(&runtime), configure())),
-        Ok(Ok(()))
+        block_on(runtime.take()).err(),
+        Some(crate::BluetoothUninstallError::NotDisabled)
     );
+    assert_eq!(model.0.borrow().stops, 0);
 }
 
 #[test]
@@ -894,11 +1015,6 @@ fn uninstall_stops_the_scheduler_and_a_reset_radio_installs_again() {
     // The event is listed and running when the epoch ends.
     model.0.borrow_mut().defer_execution = true;
     run_for_a_millisecond(&runtime);
-    // An enabled port does not uninstall: its event still owes an end.
-    assert_eq!(
-        block_on(runtime.uninstall()).err(),
-        Some(crate::BluetoothUninstallError::NotDisabled)
-    );
     assert_eq!(model.0.borrow().stops, 0);
     // The stop finds it started without a status: execution unconfirmed.
     model.0.borrow_mut().time = 2 * 20_000;
@@ -910,24 +1026,15 @@ fn uninstall_stops_the_scheduler_and_a_reset_radio_installs_again() {
         }]
     );
     assert_eq!(model.0.borrow().stops, 1);
-    let (radio, hardware) = block_on(runtime.uninstall()).unwrap();
+    let (radio, hardware) = block_on(runtime.take()).unwrap();
     // The stopped scheduler is not stopped again.
     assert_eq!(model.0.borrow().stops, 1);
-    assert!(matches!(
-        block_on(runtime.run()),
-        crate::BluetoothRuntimeFault::NotInstalled
-    ));
     let memory =
         radio.into_memory(&oer_esp32s31_hal::bluetooth::BluetoothControllerReset::for_validation());
     model.0.borrow_mut().chains_published = false;
-    let _handles = block_on(runtime.install(memory, hardware))
+    block_on(runtime.install(memory, hardware))
         .unwrap_or_else(|_| panic!("the next epoch installs"));
     assert!(model.0.borrow().chains_published);
-    // The next radio starts disabled.
-    assert_eq!(
-        block_on(runtime.submit_request(configure())),
-        Ok(Err(RequestError::Disabled))
-    );
     enable(&runtime);
     block_on(runtime.submit_request(configure()))
         .unwrap()
@@ -951,24 +1058,19 @@ fn routes(model: &Model) -> (usize, usize) {
 }
 
 /// Run the runtime until it is idle for a moment.
-fn settle(runtime: &Runtime) {
+fn settle(runtime: &Fixture) {
     run_for_a_millisecond(runtime);
 }
 
-/// Disable the port and take every outcome up to `Disabled`, as the
-/// service's managed stop does; the outcomes before the terminal.
-fn disable(runtime: &Runtime) -> Vec<BluetoothOutcome> {
-    assert_eq!(
-        block_on(runtime.run_lifecycle(LifecycleCommand::Disable)),
-        Ok(Ok(()))
-    );
+/// Disable the port, as its owner's `disable` does: the outcomes it handed
+/// to the sink.
+fn disable(runtime: &Fixture) -> Vec<BluetoothOutcome> {
     let mut outcomes = Vec::new();
-    loop {
-        match taken(runtime).expect("Disabled follows the admitted events' ends") {
-            BluetoothOutcome::Lifecycle(LifecycleEvent::Disabled) => return outcomes,
-            outcome => outcomes.push(outcome),
-        }
-    }
+    assert_eq!(
+        block_on(runtime.disable(&mut |outcome| outcomes.push(outcome))),
+        Ok(())
+    );
+    outcomes
 }
 
 #[test]
@@ -1040,7 +1142,7 @@ fn uninstall_restores_the_route_of_an_open_test() {
     settle(&runtime);
     assert_eq!(routes(&model), (1, 0));
     disable(&runtime);
-    let _ = block_on(runtime.uninstall()).unwrap();
+    let _ = block_on(runtime.take()).unwrap();
     assert_eq!(routes(&model), (1, 1));
 }
 
@@ -1152,38 +1254,108 @@ fn a_wait_past_the_timer_range_is_an_error_not_a_forever_wait() {
     assert_eq!(block_on(wait), Ok(()));
 }
 
-/// Install returns the radio's two handles: the consumer serves through the
-/// port, and the composition's control uninstalls: it consumes both, ends
-/// the port's stream and returns the owners for the next install.
-#[test]
-fn install_returns_the_port_and_the_control_whose_uninstall_takes_both() {
-    use oer_bluetooth_radio::{LeRadioPort, RadioPort};
+/// The body of a port that admits one configuration and ends.
+struct ConfigureOnce;
 
+type Backend = crate::BluetoothBackend<'static, Runtime, Driver>;
+
+impl oer_radio_port::PortBody<Backend> for ConfigureOnce {
+    async fn run<'p, 'id>(
+        self,
+        owner: oer_radio_port::Owner<'p, 'id, Backend, oer_radio_port::Disabled>,
+        (): (),
+    ) -> oer_radio_port::Ended<'id, Backend> {
+        use oer_bluetooth_radio::LeRadioBackend;
+
+        let Ok(mut owner) = owner.enable().await else {
+            panic!("the installed port enables")
+        };
+        {
+            let mut parts = owner.split();
+            assert_eq!(
+                Backend::submit(&mut *parts.clients, configure()).await,
+                Ok(Ok(()))
+            );
+        }
+        let Ok(owner) = owner.disable(&mut |_| {}).await else {
+            panic!("the port disables")
+        };
+        owner.uninstall(())
+    }
+}
+
+/// Install returns the port's backend with its driver inside; `run_port`
+/// joins the driver with the body, retires it after the body's uninstall
+/// and returns the radio and hardware for the next install.
+#[test]
+fn a_port_body_runs_beside_its_driver_and_the_uninstall_returns_the_radio() {
     let model = Model::default();
     let runtime = new_runtime();
-    let (port, control) = block_on(runtime.install(model_memory(), model.clone()))
+    let backend = block_on(runtime.runtime.install(model_memory(), model.clone()))
         .unwrap_or_else(|_| panic!("the first install succeeds"));
-    block_on(async {
-        // The consumer borrows the port while it serves.
-        assert_eq!(port.lifecycle(LifecycleCommand::Enable).await, Ok(Ok(())));
-        assert_eq!(port.submit(configure()).await, Ok(Ok(())));
-    });
-    // The control's uninstall consumes both handles of a disabled port; the
-    // owners install again.
-    disable(&runtime);
-    let Ok((radio, hardware)) = block_on(control.uninstall(port)) else {
-        panic!("the idle radio uninstalls")
+    let Some(Ok((radio, hardware))) = block_on(oer_radio_port::run_port(backend, ConfigureOnce))
+    else {
+        panic!("the body uninstalls the port, and the driver leaves its radio")
     };
     let memory =
         radio.into_memory(&oer_esp32s31_hal::bluetooth::BluetoothControllerReset::for_validation());
-    let (port, _control) = block_on(runtime.install(memory, hardware))
+    let backend = block_on(runtime.runtime.install(memory, hardware))
         .unwrap_or_else(|_| panic!("the next epoch installs"));
     // The next port starts with an empty queue (#457).
     assert_eq!(taken(&runtime), None);
-    // The next radio starts disabled.
+    assert!(matches!(
+        block_on(oer_radio_port::run_port(backend, ConfigureOnce)),
+        Some(Ok(_))
+    ));
+}
+
+#[test]
+fn an_abandoned_owner_poisons_the_runtime_and_refuses_every_install() {
+    let model = Model::default();
+    let runtime = installed(&model);
+    runtime.runtime.abandon();
+    let poisoned = Poisoned {
+        cause: BluetoothFault::Runner(crate::BluetoothRuntimeFault::Abandoned),
+    };
+    assert_eq!(block_on(runtime.read_now()), Err(poisoned));
+    // The runner halts at its next pass.
     assert_eq!(
-        block_on(port.submit(configure())),
-        Ok(Err(RequestError::Disabled))
+        block_on(runtime.run()),
+        crate::BluetoothRuntimeFault::Abandoned
+    );
+    let Err((error, _, _)) = block_on(runtime.install(model_memory(), model.clone())) else {
+        panic!("an abandoned runtime installs nothing")
+    };
+    assert_eq!(error, crate::BluetoothInstallError::Abandoned);
+}
+
+#[test]
+fn a_disable_past_its_bound_poisons_the_runtime_and_halts_the_runner() {
+    let model = Model::default();
+    let runtime = installed(&model);
+    // The stop sequence never ends.
+    model.0.borrow_mut().stop_never_settles = true;
+    let mut sink = |_| {};
+    let mut disable = core::pin::pin!(runtime.disable(&mut sink));
+    let started = clock().now();
+    let ended = loop {
+        if let core::task::Poll::Ready(ended) = embassy_futures::poll_once(disable.as_mut()) {
+            break ended;
+        }
+        let deadline = clock().next_deadline().expect("the disable waits on time");
+        clock().advance_to(deadline);
+    };
+    let poisoned = Poisoned {
+        cause: BluetoothFault::Runner(crate::BluetoothRuntimeFault::TransitionTimedOut),
+    };
+    assert_eq!(ended, Err(poisoned));
+    assert_eq!(
+        clock().now(),
+        started.checked_add(crate::TRANSITION_BOUND).unwrap()
+    );
+    assert_eq!(
+        block_on(runtime.run()),
+        crate::BluetoothRuntimeFault::TransitionTimedOut
     );
 }
 
@@ -1228,7 +1400,7 @@ fn disable_reports_real_completions_and_aborts_only_started_events() {
 }
 
 #[test]
-fn disable_finds_room_on_a_queue_its_admitted_events_fill() {
+fn an_event_without_room_for_its_ends_is_refused_and_disable_ends_the_rest() {
     let model = Model::default();
     let runtime = installed(&model);
     block_on(runtime.submit_request(configure()))
@@ -1238,29 +1410,33 @@ fn disable_finds_room_on_a_queue_its_admitted_events_fill() {
     block_on(runtime.submit_request(advertise(1, 10_000)))
         .unwrap()
         .unwrap();
-    // A scan window would need two more slots: the one left belongs to a
-    // lifecycle terminal.
     block_on(runtime.submit_request(scanner_configuration()))
         .unwrap()
         .unwrap();
+    // Each event reserves two of the four slots.
+    block_on(runtime.submit_request(scan_window(2, 30_000)))
+        .unwrap()
+        .unwrap();
     assert_eq!(
-        block_on(runtime.submit_request(scan_window(2, 30_000))),
+        block_on(runtime.submit_request(advertise(3, 50_000))),
         Ok(Err(RequestError::Busy))
     );
-    // The consumer takes nothing before the stop, which still proceeds and
-    // ends the admitted event exactly once.
-    assert_eq!(
-        disable(&runtime),
-        [BluetoothOutcome::EventEnded {
-            id: EventId::new(1),
-            result: EventResult::NotExecuted,
-        }]
-    );
+    // The consumer takes nothing before the stop, which ends each admitted
+    // event exactly once.
+    let mut ended: Vec<EventId> = disable(&runtime)
+        .into_iter()
+        .map(|outcome| match outcome {
+            BluetoothOutcome::EventEnded { id, .. } => id,
+            other => panic!("only ends expected: {other:?}"),
+        })
+        .collect();
+    ended.sort_by_key(|id| id.get());
+    assert_eq!(ended, [EventId::new(1), EventId::new(2)]);
     assert_eq!(taken(&runtime), None);
 }
 
 #[test]
-fn lifecycle_commands_and_their_terminals_are_traced() {
+fn each_transition_is_traced_from_its_start_to_how_it_ended() {
     use oer_bluetooth_trace::{Lifecycle, LifecycleCommand as Command, LifecycleStep as Step};
 
     let model = Model::default();
@@ -1269,21 +1445,77 @@ fn lifecycle_commands_and_their_terminals_are_traced() {
     assert_eq!(
         crate::trace::take::<Lifecycle>(),
         [
-            step(Command::Enable, Step::Terminal),
-            step(Command::Enable, Step::Admitted),
+            step(Command::Enable, Step::Started),
+            step(Command::Enable, Step::Done),
         ]
     );
     disable(&runtime);
     assert_eq!(
-        block_on(runtime.run_lifecycle(LifecycleCommand::Disable)),
-        Ok(Err(LifecycleError::AlreadyInState))
-    );
-    assert_eq!(
         crate::trace::take::<Lifecycle>(),
         [
-            step(Command::Disable, Step::Terminal),
-            step(Command::Disable, Step::Admitted),
-            step(Command::Disable, Step::AlreadyInState),
+            step(Command::Disable, Step::Started),
+            step(Command::Disable, Step::Done),
         ]
     );
+}
+
+/// The driver serves the radio whatever the port's body awaits: with no
+/// consumer taking an outcome, an admitted event still runs and its end is
+/// queued.
+#[test]
+fn the_driver_runs_admitted_events_while_no_consumer_takes_their_ends() {
+    let model = Model::default();
+    let runtime = installed(&model);
+    block_on(runtime.submit_request(configure()))
+        .unwrap()
+        .unwrap();
+    block_on(runtime.submit_request(advertise(1, 10_000)))
+        .unwrap()
+        .unwrap();
+    assert!(model.0.borrow().started.is_empty());
+    run_for_a_millisecond(&runtime);
+    assert_eq!(model.0.borrow().started.len(), 1);
+    assert!(matches!(
+        taken(&runtime),
+        Some(BluetoothOutcome::EventEnded { id, .. }) if id == EventId::new(1)
+    ));
+}
+
+/// A disabled port's driver keeps sampling the controller clock at least
+/// every `TIME_REFRESH`, so the extension of its 32-bit counter holds.
+#[test]
+fn a_disabled_ports_driver_refreshes_the_controller_clock() {
+    let model = Model::default();
+    let runtime = installed_disabled(&model);
+    let before = model.0.borrow().time_requests;
+    let mut run = core::pin::pin!(runtime.run());
+    let mut context = core::task::Context::from_waker(core::task::Waker::noop());
+    assert!(run.as_mut().poll(&mut context).is_pending());
+    let first = model.0.borrow().time_requests;
+    assert!(first > before, "the driver samples when it starts");
+    clock()
+        .advance(crate::TIME_REFRESH)
+        .expect("the refresh fits the clock");
+    assert!(run.as_mut().poll(&mut context).is_pending());
+    assert!(
+        model.0.borrow().time_requests > first,
+        "the driver samples again after TIME_REFRESH while disabled"
+    );
+}
+
+/// Readings of the clock beside each other share one sample the driver
+/// takes after both were asked; no reader waits for another.
+#[test]
+fn readings_beside_each_other_share_one_fresh_sample() {
+    let model = Model::default();
+    let runtime = installed(&model);
+    model.0.borrow_mut().time = 4_000;
+    let before = model.0.borrow().time_requests;
+    let (first, second) = block_on(runtime.served(embassy_futures::join::join(
+        runtime.runtime.read_now(),
+        runtime.runtime.read_now(),
+    )));
+    assert_eq!(first, Ok(Ok(at(2_000))));
+    assert_eq!(second, first);
+    assert_eq!(model.0.borrow().time_requests, before + 1);
 }

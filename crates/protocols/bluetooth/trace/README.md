@@ -19,7 +19,7 @@ microseconds.
 | `bluetooth.7` | 6 | `PeripheralEvent` | A connection event is requested, admitted or refused, and ends with or without peer activity |
 | `bluetooth.8` | 7 | `PeripheralClosed` | The connection closes, or the radio refuses its opening, with the HCI reason the Host gets |
 | `bluetooth.9` | 8 | `QueueLoss` | The S31 runtime's outcome queue drops a report, and the consumer takes the loss |
-| `bluetooth.10` | 9 | `Lifecycle` | The S31 runtime starts or refuses a lifecycle command of its port, and queues its terminal |
+| `bluetooth.10` | 9 | `Lifecycle` | The S31 runtime starts a transition of its port's owner (`Enable`, `Disable`) and ends it: done, poisoned or past its bound; the two records time it |
 
 The `Domain::Bluetooth` range has twelve channels (mask bits 40 to 51);
 10 and 11 are unassigned. The per-PDU channel 2 has the highest rate; a

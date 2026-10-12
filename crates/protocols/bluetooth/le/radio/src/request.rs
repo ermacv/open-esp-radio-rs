@@ -539,8 +539,6 @@ pub enum RadioRequest<'data, K: LeCapabilities> {
 /// Why the backend refused a request. Nothing changed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RequestError {
-    /// The port is disabled or quiesced: it admits no work until `Enable`.
-    Disabled,
     /// The backend could not read its clock to admit the request; a later
     /// request may succeed.
     ClockUnavailable,

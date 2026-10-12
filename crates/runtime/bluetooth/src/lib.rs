@@ -5,50 +5,47 @@
 //!
 //! [`serve`] moves packets and radio work between three owners: the
 //! Controller end of an in-process HCI transport, the sans-IO
-//! [`LeController`] core and one [`LeRadioPort`], which the protocol
-//! package `oer-bluetooth-radio` declares. It publishes the core's
-//! queued packets, takes the next Host command when the core is ready for
-//! one, submits the core's radio requests one at a time and feeds every
-//! radio outcome back. A refused request is retried after
+//! [`LeController`] core and one [`LeRadioBackend`], which the protocol
+//! package `oer-bluetooth-radio` declares. It runs as the body of the
+//! backend's port ([`PortBody`]): [`run_port`] hands it the port's owner
+//! disabled, and it returns the owner's [`Ended`].
+//!
+//! The body enables the port, serves one phase and then disables and
+//! uninstalls it. While it serves, it publishes the core's queued packets,
+//! takes the next Host command when the core is ready for one, submits the
+//! core's radio requests one at a time through the phase's client and feeds
+//! every radio outcome back. A refused request is retried after
 //! [`REFUSED_RETRY_DELAY`] or the next outcome or command. The core plans
-//! only what the port's capabilities ([`LeRadioPort::Caps`]) serve, so no
-//! request is refused as outside them. Whenever the core's
-//! [`RadioActivity`] changes, the loop reports it to the port before doing
-//! anything else.
+//! only what the backend's capabilities ([`LeRadioBackend::Caps`]) serve,
+//! so no request is refused as outside them. Whenever the core's
+//! [`RadioActivity`] changes, the body reports it through the phase's
+//! control before doing anything else.
 //!
-//! The loop owns the port's session: it enables the port when it starts,
-//! cancels a scheduled event through the port's cancellation when the core
-//! asks for it, and ends with a managed stop. It is the port's one event
-//! consumer from the first command to the last outcome.
-//!
-//! The loop owns no memory of its own beyond one command buffer and spawns
+//! The body owns no memory of its own beyond one command buffer and spawns
 //! nothing; the caller polls it on a task of its choice, beside the radio
-//! backend's own runner. It stops serving when the owner's stop request
+//! backend's own runner. It stops serving when the caller's `stop`
 //! completes, when the transport closes or fails, when the radio's clock
-//! cannot be read, when the port refuses to enable, or when the radio epoch
-//! is exhausted ([`ServeExit`]). The port reserves every event's end and a
-//! connection event's data when it admits the event, so an [`EventsLost`]
-//! stands for advertising and scan reports only and the loop goes on: the
-//! core's roles still account every event by its end. Host ACL data enters
-//! the core while it has room for a packet; until then commands pass queued
-//! data.
+//! cannot be read, or when the radio epoch is exhausted ([`ServeExit`]).
+//! The backend reserves every event's end and a connection event's data
+//! when it admits the event, so an [`EventsLost`] stands for advertising
+//! and scan reports only and the body goes on: the core's roles still
+//! account every event by its end. Host ACL data enters the core while it
+//! has room for a packet; until then commands pass queued data.
 //!
 //! The radio epoch is exhausted when a fresh sample lies past its end
 //! ([`ClockError::EpochExhausted`], [`RequestError::EpochExhausted`]) or a
 //! required continuation of the core's schedule lies outside it
-//! ([`EpochExhausted`]): no later sample brings either back, so the loop
+//! ([`EpochExhausted`]): no later sample brings either back, so the body
 //! submits nothing more, retries nothing and stops serving.
 //!
-//! The managed stop then disables the port and feeds every outcome to the
-//! core until [`LifecycleEvent::Disabled`]: each admitted event ends exactly
-//! once, with its real completion when it ran, and the port's terminal
-//! reservations keep the bounded outcome queue from overflowing. A stop the
-//! port refuses as busy takes one more outcome, towards the other lifecycle
-//! command's terminal or a free slot, and asks again. The caller then owns a disabled port and a core that
-//! accounted every event, ready for the backend's uninstall and the Host
-//! epoch's retirement. A poisoned port is not stopped ([`Served::Poisoned`]);
-//! a stop that fails keeps both causes ([`Served::StopFailed`]), and the
-//! caller retains its owners.
+//! The owner's `disable`, bounded by the backend, then hands every event
+//! the phase left to the core: each admitted event ends exactly once, with
+//! its real completion when it ran. The caller then receives the
+//! backend's uninstalled hardware and a core that accounted every event,
+//! ready for the Host epoch's retirement. A backend poisoned while serving
+//! ([`Served::Poisoned`]) or while disabling ([`Served::DisableFailed`]) is
+//! fail-stopped instead: no hardware comes back, and the caller keeps its
+//! other owners as they are.
 
 #[cfg(test)]
 extern crate std;
@@ -61,8 +58,10 @@ use oer_bluetooth_controller::{EpochExhausted, LeController, RadioWork};
 use oer_bluetooth_hci::HostToControllerFrame;
 use oer_bluetooth_hci_transport::{HciChannelError, InProcessHciControllerTransport};
 use oer_bluetooth_radio::{
-    ClockError, EventsLost, LeRadioPort, LifecycleCommand, LifecycleError, LifecycleEvent,
-    Poisoned, RadioActivity, RadioOutcome, RequestError,
+    ClockError, EventsLost, LeRadioBackend, Poisoned, RadioActivity, RequestError,
+};
+use oer_radio_port::{
+    Disabled, Ended, Failed, Owner, PhaseParts, PortBackend, PortBody, RadioPortEvents, run_port,
 };
 use oer_time::{Duration, Instant, Timer};
 
@@ -72,14 +71,12 @@ pub const REFUSED_RETRY_DELAY: Duration = Duration::from_millis(1);
 /// Why [`serve`] stopped serving.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ServeExit {
-    /// The owner's stop request completed.
+    /// The caller's stop request completed.
     Stopped,
     /// The transport closed.
     Closed,
     /// The transport refused a packet.
     Transport(HciChannelError),
-    /// The port refused to enable.
-    Lifecycle(LifecycleError),
     /// The radio clock could not be read now.
     Clock(ClockError),
     /// The radio epoch is exhausted.
@@ -95,124 +92,188 @@ pub enum Exhaustion {
     Planning(EpochExhausted),
 }
 
-/// Why the managed stop failed; `F` is the port's poison cause.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StopError<F> {
-    /// The port refused to disable.
-    Lifecycle(LifecycleError),
-    /// The port admitted the disable, then reported it failed.
-    DisableFailed,
-    /// The port is poisoned.
-    Poisoned(Poisoned<F>),
-}
-
-/// How [`serve`] ended; `F` is the port's poison cause.
+/// How [`serve`] ended; `F` is the backend's poison cause.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Served<F> {
-    /// The service stopped serving for `exit`, and the managed stop ended
-    /// every admitted event: the port is disabled.
+    /// The service stopped serving for `exit`, and the port's `disable`
+    /// ended every admitted event: the backend is uninstalled.
     Stopped(ServeExit),
-    /// The service stopped serving for `exit`, and the managed stop failed
-    /// with `error`: admitted events may be unaccounted, so the caller keeps
-    /// the port, the core and the backend's owners.
-    StopFailed {
+    /// The service stopped serving for `exit`, and the port's `disable`
+    /// found or left the backend poisoned: admitted events may be
+    /// unaccounted, and the backend is fail-stopped.
+    DisableFailed {
         /// Why the service stopped serving.
         exit: ServeExit,
-        /// Why the managed stop failed.
-        error: StopError<F>,
+        /// Why the backend is poisoned.
+        cause: F,
     },
-    /// The port is poisoned; nothing was stopped.
-    Poisoned(Poisoned<F>),
+    /// The backend was poisoned before the service stopped serving; it is
+    /// fail-stopped.
+    Poisoned(F),
 }
 
-/// Serve the Host through `transport` with `core` over `radio` until `stop`
-/// completes or the transport, the radio or the radio epoch ends the
-/// service, then stop the port. Retries after a refusal wait on `timer`.
+/// Serve the Host through `transport` with `core` over `backend` until
+/// `stop` completes or the transport, the radio or the radio epoch ends the
+/// service, then disable the port and uninstall the backend with
+/// `uninstall`. Retries after a refusal wait on `timer`.
+///
+/// Returns how the service ended, with the backend's uninstalled hardware,
+/// or `None` after a fail-stop.
 pub async fn serve<
+    B,
     M,
-    P,
     const H2C: usize,
     const C2H: usize,
     const PACKET: usize,
     const OUTPUT: usize,
     const CONNECTIONS: usize,
 >(
+    backend: B,
+    uninstall: B::Uninstall,
     transport: &InProcessHciControllerTransport<'_, M, H2C, C2H, PACKET>,
-    core: &mut LeController<'_, P::Caps, OUTPUT, CONNECTIONS>,
-    radio: &P,
+    core: &mut LeController<'_, B::Caps, OUTPUT, CONNECTIONS>,
     timer: &impl Timer,
     stop: impl Future<Output = ()>,
-) -> Served<P::Fault>
+) -> (Served<B::Fault>, Option<B::Uninstalled>)
 where
+    B: LeRadioBackend,
     M: RawMutex,
-    P: LeRadioPort,
 {
-    let exit = match serve_until(transport, core, radio, timer, stop).await {
-        Ok(exit) => exit,
-        Err(poisoned) => return Served::Poisoned(poisoned),
-    };
-    match stop_port(core, radio).await {
-        Ok(()) => Served::Stopped(exit),
-        Err(error) => Served::StopFailed { exit, error },
-    }
+    let mut served = None;
+    let uninstalled = run_port(
+        backend,
+        Serve {
+            uninstall,
+            transport,
+            core,
+            timer,
+            stop,
+            served: &mut served,
+        },
+    )
+    .await;
+    (served.expect("the body records how it ended"), uninstalled)
 }
 
-/// Disable `radio` and feed every outcome to `core` until the port reports
-/// `Disabled`.
-async fn stop_port<P: LeRadioPort, const OUTPUT: usize, const CONNECTIONS: usize>(
-    core: &mut LeController<'_, P::Caps, OUTPUT, CONNECTIONS>,
-    radio: &P,
-) -> Result<(), StopError<P::Fault>> {
-    loop {
-        match radio.lifecycle(LifecycleCommand::Disable).await {
-            Ok(Ok(())) => break,
-            // Nothing was admitted: the port never enabled, or is disabled.
-            Ok(Err(LifecycleError::AlreadyInState)) => return Ok(()),
-            // Another lifecycle command has not ended, or the outcome queue
-            // has no slot for the terminal: take one outcome, which frees a
-            // slot or is on the way to the other terminal, and ask again.
-            Ok(Err(LifecycleError::Busy)) => {
-                take_outcome(core, radio).await?;
-            }
-            Ok(Err(error)) => return Err(StopError::Lifecycle(error)),
-            Err(poisoned) => return Err(StopError::Poisoned(poisoned)),
-        }
-    }
-    loop {
-        match take_outcome(core, radio).await? {
-            Some(LifecycleEvent::Disabled) => return Ok(()),
-            Some(LifecycleEvent::Failed {
-                command: LifecycleCommand::Disable,
-            }) => return Err(StopError::DisableFailed),
-            _ => {}
-        }
-    }
+/// The service as the port's body.
+struct Serve<
+    's,
+    't,
+    'c,
+    B: PortBackend,
+    M: RawMutex,
+    T,
+    S,
+    const H2C: usize,
+    const C2H: usize,
+    const PACKET: usize,
+    const OUTPUT: usize,
+    const CONNECTIONS: usize,
+> where
+    B: LeRadioBackend,
+{
+    uninstall: B::Uninstall,
+    transport: &'s InProcessHciControllerTransport<'t, M, H2C, C2H, PACKET>,
+    core: &'s mut LeController<'c, B::Caps, OUTPUT, CONNECTIONS>,
+    timer: &'s T,
+    stop: S,
+    served: &'s mut Option<Served<B::Fault>>,
 }
 
-/// Feed the next outcome to `core`; the lifecycle terminal it was, if any.
-async fn take_outcome<P: LeRadioPort, const OUTPUT: usize, const CONNECTIONS: usize>(
-    core: &mut LeController<'_, P::Caps, OUTPUT, CONNECTIONS>,
-    radio: &P,
-) -> Result<Option<LifecycleEvent>, StopError<P::Fault>> {
-    match radio.next_event().await {
-        Ok(Ok(event)) => {
-            let outcome = P::view(&event);
-            core.outcome(outcome);
-            Ok(match outcome {
-                RadioOutcome::Lifecycle(terminal) => Some(terminal),
-                _ => None,
-            })
-        }
-        // Advertising and scan reports are gone; every end still follows.
-        Ok(Err(EventsLost)) => Ok(None),
-        Err(poisoned) => Err(StopError::Poisoned(poisoned)),
-    }
-}
-
-/// Serve until the service must stop: why, or the port's poison.
-async fn serve_until<
+impl<
+    B,
     M,
-    P,
+    T,
+    S,
+    const H2C: usize,
+    const C2H: usize,
+    const PACKET: usize,
+    const OUTPUT: usize,
+    const CONNECTIONS: usize,
+> PortBody<B> for Serve<'_, '_, '_, B, M, T, S, H2C, C2H, PACKET, OUTPUT, CONNECTIONS>
+where
+    B: LeRadioBackend,
+    M: RawMutex,
+    T: Timer,
+    S: Future<Output = ()>,
+{
+    async fn run<'p, 'id>(
+        self,
+        owner: Owner<'p, 'id, B, Disabled>,
+        // The port-lifetime resources carry nothing the body uses yet.
+        _: B::Resources<'id>,
+    ) -> Ended<'id, B> {
+        let Self {
+            uninstall,
+            transport,
+            core,
+            timer,
+            stop,
+            served,
+        } = self;
+        let mut owner = match owner.enable().await {
+            Ok(enabled) => enabled,
+            Err(Failed::Refused(_, refusal)) => match refusal {},
+            Err(Failed::Poisoned(poisoned)) => {
+                *served = Some(Served::Poisoned(poisoned.cause()));
+                return poisoned.fail_stop();
+            }
+        };
+        let exit = {
+            let PhaseParts {
+                mut events,
+                control,
+                mut clients,
+            } = owner.split();
+            serve_until::<B, _, _, H2C, C2H, PACKET, OUTPUT, CONNECTIONS>(
+                transport,
+                core,
+                &mut *events,
+                &control,
+                &mut clients,
+                timer,
+                stop,
+            )
+            .await
+        };
+        let exit = match exit {
+            Ok(exit) => exit,
+            Err(poisoned) => {
+                *served = Some(Served::Poisoned(poisoned.cause));
+                return owner.fail_stop();
+            }
+        };
+        match owner
+            .disable(&mut |event| core.outcome(B::view(&event)))
+            .await
+        {
+            Ok(disabled) => {
+                *served = Some(Served::Stopped(exit));
+                disabled.uninstall(uninstall)
+            }
+            Err(poisoned) => {
+                *served = Some(Served::DisableFailed {
+                    exit,
+                    cause: poisoned.cause(),
+                });
+                poisoned.fail_stop()
+            }
+        }
+    }
+}
+
+/// Serve one phase until the service must stop: why, or the backend's
+/// poison.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the phase's three parts beside the service's owners"
+)]
+async fn serve_until<
+    'a,
+    'id,
+    B,
+    M,
+    T,
     const H2C: usize,
     const C2H: usize,
     const PACKET: usize,
@@ -220,21 +281,19 @@ async fn serve_until<
     const CONNECTIONS: usize,
 >(
     transport: &InProcessHciControllerTransport<'_, M, H2C, C2H, PACKET>,
-    core: &mut LeController<'_, P::Caps, OUTPUT, CONNECTIONS>,
-    radio: &P,
-    timer: &impl Timer,
+    core: &mut LeController<'_, B::Caps, OUTPUT, CONNECTIONS>,
+    events: &mut B::Events<'a, 'id>,
+    control: &B::Control<'a, 'id>,
+    clients: &mut B::Clients<'a, 'id>,
+    timer: &T,
     stop: impl Future<Output = ()>,
-) -> Result<ServeExit, Poisoned<P::Fault>>
+) -> Result<ServeExit, Poisoned<B::Fault>>
 where
+    B: LeRadioBackend + 'a,
     M: RawMutex,
-    P: LeRadioPort,
+    T: Timer,
 {
     let mut stop = pin!(stop);
-    match radio.lifecycle(LifecycleCommand::Enable).await {
-        Ok(Ok(()) | Err(LifecycleError::AlreadyInState)) => {}
-        Ok(Err(error)) => return Ok(ServeExit::Lifecycle(error)),
-        Err(poisoned) => return Err(poisoned),
-    }
     let mut buffer = [0; PACKET];
     let mut retry_at: Option<Instant> = None;
     let mut reported = RadioActivity::IDLE;
@@ -242,7 +301,7 @@ where
         // Report a change of the active roles first.
         let activity = core.activity();
         if activity != reported {
-            radio.activity(activity)?;
+            B::activity(control, activity)?;
             reported = activity;
         }
 
@@ -259,7 +318,7 @@ where
         // Submit the next radio request.
         if core.wants_radio() && retry_at.is_none_or(|at| timer.now() >= at) {
             retry_at = None;
-            let now = match radio.now().await {
+            let now = match B::client_now(&mut *clients).await {
                 Ok(Ok(now)) => now,
                 Ok(Err(ClockError::EpochExhausted)) => {
                     return Ok(ServeExit::EpochExhausted(Exhaustion::Clock));
@@ -275,7 +334,7 @@ where
             };
             match work {
                 Some(RadioWork::Submit(request)) => {
-                    let result = match radio.submit(request).await {
+                    let result = match B::submit(&mut *clients, request).await {
                         Ok(result) => result,
                         Err(poisoned) => return Err(poisoned),
                     };
@@ -290,7 +349,7 @@ where
                     continue;
                 }
                 Some(RadioWork::Cancel(id)) => {
-                    let result = match radio.cancel(id).await {
+                    let result = match B::cancel(&mut *clients, id).await {
                         Ok(result) => result,
                         Err(poisoned) => return Err(poisoned),
                     };
@@ -330,7 +389,7 @@ where
         let publishing = core.front().is_some();
         let retry = retry_at.filter(|_| core.wants_radio());
         let event = select4(
-            radio.next_event(),
+            events.next_event(),
             async {
                 if command_ready {
                     transport
@@ -358,7 +417,7 @@ where
         match event {
             Either4::First(Ok(Ok(event))) => {
                 retry_at = None;
-                core.outcome(P::view(&event));
+                core.outcome(B::view(&event));
             }
             // Advertising and scan reports are gone; every event's end and
             // the connection's data still follow.

@@ -46,7 +46,7 @@ pub enum PlanningCalculation {
 /// A required continuation of the current schedule lies outside the radio
 /// epoch: no later sample can bring it back. The service must cease
 /// admission and settle the retained Controller and radio owners through
-/// its managed stop.
+/// the port's `disable`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EpochExhausted {
     /// The role whose continuation left the epoch.

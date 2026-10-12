@@ -21,15 +21,15 @@
 //! scanner, a connection — is configured once and named by a small
 //! caller-chosen identifier in later events.
 //!
-//! [`LeRadioPort`] is the port a Controller service loop drives: its
-//! capabilities marker states the backend's [`LeRadioCapabilities`] (roles,
-//! PHYs, data PDU payload,
-//! who runs the [`LinkAcknowledgement`] and the [`RadioTiming`]), submits
-//! requests and, through the shared [`RadioPort`] base, reads the radio
-//! clock, yields owned events, cancels events and runs the lifecycle.
-//! [`NoRadio`] is the port of a host without a radio. Refusals and
-//! poisoning, event loss, correlation identities and the clock relation are
-//! the shared ones of `oer-radio-port`.
+//! [`LeRadioBackend`] is the backend a Controller service body drives
+//! through the shared port owner of `oer-radio-port`
+//! ([`Owner`](oer_radio_port::Owner)): its capabilities marker states the
+//! backend's [`LeRadioCapabilities`] (roles, PHYs, data PDU payload, who
+//! runs the [`LinkAcknowledgement`] and the [`RadioTiming`]), and an enabled
+//! owner's phase submits requests, reads the radio clock, cancels events and
+//! yields owned events. [`NoRadio`] is the backend of a host without a
+//! radio. Poisoning, event loss, correlation identities and the clock
+//! relation are the shared ones of `oer-radio-port`.
 
 #[cfg(test)]
 extern crate std;
@@ -54,8 +54,8 @@ pub use channel::{
 };
 pub use oer_radio_coex::CoexPriority;
 pub use oer_radio_port::{
-    CancelError, ClockError, ClockInfo, Correlation, CorrelationIds, EventsLost, LifecycleCommand,
-    LifecycleError, LifecycleEvent, Poisoned, PortResult, RadioPort,
+    CancelError, ClockError, ClockInfo, Correlation, CorrelationIds, EventsLost, Poisoned,
+    PortResult,
 };
 pub use oer_time::{NonZeroRadioDuration, RadioDuration, WindowError};
 
@@ -73,7 +73,7 @@ pub use owned::{
     OwnedAdvertisingConfiguration, OwnedDataPdu, OwnedRadioRequest, OwnedTestTransmit, Restore,
 };
 pub use pdu::{AdvertisingPdu, DataPdu, DataPduKind, PduError, TestPayloadType};
-pub use port::{LeRadioPort, NoRadio};
+pub use port::{LeRadioBackend, NoRadio, NoRadioPart};
 pub use request::{
     AcceptListChange, AcceptListDevice, AccessAddress, AdvertisingConfiguration, AdvertisingEvent,
     AdvertisingReception, AdvertisingSetId, CoexistenceLevel, ConnectionAllowances,

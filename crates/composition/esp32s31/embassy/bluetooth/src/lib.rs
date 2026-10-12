@@ -20,26 +20,27 @@
 //!    interrupt owners and binds the three CPU routes to one dispatcher;
 //! 6. installs the radio role in the runtime.
 //!
-//! It returns the running client, which keeps the radio's control, and the
-//! radio's port ([`BluetoothSystemPort`]) for its one outcome consumer.
+//! It returns the running client and the port's backend
+//! ([`BluetoothSystemBackend`]) for the body that runs the port.
 //!
 //! The dispatcher services source 124, 127 and 133 and forwards the scheduler
-//! and source-127 worker wakes. [`BluetoothSystem::run`] drives the radio
-//! runtime and the source-127 timer task until a fault stops either, and
+//! and source-127 worker wakes. The radio's driver runs inside its port,
+//! joined with the HCI service; [`BluetoothSystem::run`] drives the
+//! source-127 timer task until it faults or an interrupt service fails, and
 //! publishes the Controller's active roles as Bluetooth LE status bits in the
 //! radio system's coexistence schedule. Each epoch enables coexistence for
 //! Bluetooth when it starts and disables it when it stops, after withdrawing
 //! every status bit.
-//! [`BluetoothSystem::stop`] takes the port back, reverses the epoch and
-//! returns the parked
-//! partition with the controller memory back at its allocation-time image,
+//! [`BluetoothSystem::stop`] takes what the port's uninstall returned
+//! ([`BluetoothSystemUninstalled`]: the radio and hardware), reverses the
+//! epoch and returns the parked partition with the controller memory back at its allocation-time image,
 //! ready for the next [`start`]. Periodic PHY tracking belongs to the radio
 //! system (`RadioSystem::run_tracking`).
 //!
 //! [`start_bluetooth_hci`] creates the HCI Controller once per boot: the
 //! in-process transport, whose Host end goes to the Host stack, and the
-//! service that runs the portable Controller core over the port it borrows
-//! for each run. Between Controller epochs the service retires the
+//! service that runs the portable Controller core as the body of each
+//! Controller epoch's port. Between Controller epochs the service retires the
 //! drained Host end and restarts it with a fresh core.
 //! [`BluetoothEntropy`] binds the SoC entropy service as its random source.
 //!
@@ -60,11 +61,12 @@ pub use hci::{
     start_bluetooth_hci,
 };
 #[cfg(target_arch = "riscv32")]
-pub use oer_bluetooth_runtime::{Exhaustion, ServeExit, Served, StopError};
+pub use oer_bluetooth_runtime::{Exhaustion, ServeExit, Served};
 #[cfg(target_arch = "riscv32")]
 pub use system::{
     BluetoothFailStop, BluetoothInterruptFault, BluetoothMemoryError, BluetoothParked,
     BluetoothRunnerFault, BluetoothStartError, BluetoothStartFailure, BluetoothStopError,
-    BluetoothStopFailure, BluetoothSystem, BluetoothSystemFault, BluetoothSystemMemory,
-    BluetoothSystemPort, BluetoothSystemRuntime, EVENTS, ITEMS, MODEM_TIMER_CAPACITY, start,
+    BluetoothStopFailure, BluetoothSystem, BluetoothSystemBackend, BluetoothSystemDriver,
+    BluetoothSystemFault, BluetoothSystemMemory, BluetoothSystemRetained, BluetoothSystemRuntime,
+    BluetoothSystemUninstalled, EVENTS, ITEMS, MODEM_TIMER_CAPACITY, start,
 };

@@ -82,7 +82,6 @@ pub(crate) const fn answer(
 ) -> RequestAnswer {
     match result {
         Ok(Ok(())) => RequestAnswer::Accepted,
-        Ok(Err(RequestError::Disabled)) => RequestAnswer::Disabled,
         Ok(Err(RequestError::ClockUnavailable)) => RequestAnswer::ClockUnavailable,
         Ok(Err(RequestError::EpochExhausted)) => RequestAnswer::EpochExhausted,
         Ok(Err(RequestError::NoInstance)) => RequestAnswer::NoInstance,

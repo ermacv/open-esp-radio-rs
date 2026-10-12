@@ -16,6 +16,7 @@ embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
 oer-bluetooth-radio = { path = "../../../protocols/bluetooth/le/radio" }
 oer-bluetooth-trace = { path = "../../../protocols/bluetooth/trace" }
+oer-radio-port = { path = "../../../radio/port" }
 oer-esp32s31-bluetooth = { path = "../../../hardware/esp32s31/driver/bluetooth" }
 oer-esp32s31-bluetooth-memory = { path = "../../../hardware/esp32s31/driver/bluetooth/memory" }
 oer-esp32s31-bluetooth-radio = { path = "../../../roles/esp32s31/bluetooth/radio" }

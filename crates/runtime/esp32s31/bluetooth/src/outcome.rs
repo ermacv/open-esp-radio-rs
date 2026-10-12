@@ -1,8 +1,7 @@
 //! Owned copies of the portable outcomes.
 
 use oer_bluetooth_radio::{
-    ConnectionId, EventId, EventResult, LeInstant, LifecycleEvent, RadioOutcome, ReceivedPdu,
-    TestReport,
+    ConnectionId, EventId, EventResult, LeInstant, RadioOutcome, ReceivedPdu, TestReport,
 };
 use oer_esp32s31_bluetooth_memory::BLUETOOTH_LE_RX_PAYLOAD_CAPACITY;
 
@@ -83,8 +82,6 @@ pub enum BluetoothOutcome {
         /// The result.
         report: TestReport,
     },
-    /// The terminal event of a lifecycle command.
-    Lifecycle(LifecycleEvent),
 }
 
 impl BluetoothOutcome {
@@ -102,7 +99,6 @@ impl BluetoothOutcome {
                 Self::TransmitAcknowledged(connection)
             }
             RadioOutcome::TestReport { id, report } => Self::TestReport { id, report },
-            RadioOutcome::Lifecycle(event) => Self::Lifecycle(event),
         })
     }
 
@@ -124,7 +120,6 @@ impl BluetoothOutcome {
                 id: *id,
                 report: *report,
             },
-            Self::Lifecycle(event) => RadioOutcome::Lifecycle(*event),
         }
     }
 }

@@ -1705,6 +1705,7 @@ dependencies = [
  "oer-bluetooth-hci",
  "oer-bluetooth-hci-transport",
  "oer-bluetooth-radio",
+ "oer-radio-port",
  "oer-time",
 ]
 
@@ -1771,6 +1772,7 @@ dependencies = [
  "oer-esp32s31-bluetooth-memory",
  "oer-esp32s31-bluetooth-radio",
  "oer-esp32s31-hal",
+ "oer-radio-port",
  "oer-time",
  "oer-trace",
 ]

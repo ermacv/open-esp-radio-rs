@@ -548,15 +548,16 @@ workspace names its own packages.
 A radio port is the contract between the protocol logic of one radio
 protocol and the backend that executes it: a chip, a family driver or a host
 model. Everything above a port is written once for every backend; everything
-below it is the backend's. [`LeRadioPort`](../crates/protocols/bluetooth/le/radio/src/port.rs)
-is the Bluetooth LE port and
+below it is the backend's. [`LeRadioBackend`](../crates/protocols/bluetooth/le/radio/src/port.rs)
+is the Bluetooth LE backend, which runs under the port owner of
+[`oer-radio-port`](../crates/radio/port/src/owner.rs), and
 [`Ieee802154RadioPort`](../crates/protocols/ieee802154/src/port.rs) the
 IEEE 802.15.4 port, which the Espressif runtime implements and the OpenThread
 adapter consumes, and
 [`Ieee80211LowerMacPort`](../crates/protocols/ieee80211/lower-mac/README.md)
 the Wi-Fi port, carrying the portable `Channel` and `PhyRate` values of
-`oer-ieee80211-mac`. All three extend one base trait, `RadioPort` of the
-contract package [`oer-radio-port`](../crates/radio/port/README.md), which
+`oer-ieee80211-mac`. The two ports extend one base trait, `RadioPort` of
+the contract package [`oer-radio-port`](../crates/radio/port/README.md), which
 carries what they share: the event stream (`type Event`, `next_event`), the
 radio clock (`now`), cancellation (`cancel(id)`) and the lifecycle, with
 the refusals, the poisoned outer error, the loss marker, correlation
@@ -697,7 +698,7 @@ interpreting it.
 | --- | --- | --- |
 | `Ieee80211LowerMacPort` | `lifecycle(Enable / Disable / Quiesce)` and `cancel(TxId)` | affine: the Wi-Fi MAC local time, sampled against the image's monotonic clock |
 | `Ieee802154RadioPort` | `lifecycle(Enable / Disable / Quiesce)` with `RadioEvent::Lifecycle` terminals and `cancel(RequestId)` | identical: the runtime's `Clock`, which the engine reads fresh at each event and the time driver also reads |
-| `LeRadioPort` | `lifecycle(Enable / Disable / Quiesce)` over an installed backend and `cancel(EventId)`; install and uninstall move memory and hardware owners and stay the backend's own operations | none: the extended controller clock |
+| `LeRadioBackend` | the owner's bounded `enable` / `disable(sink)` transitions and the phase client's `cancel(EventId)`; install and uninstall move memory and hardware owners and stay the backend's own operations | none: the extended controller clock |
 
 **Shared RF path.** Protocols that share one radio name themselves with the
 portable [`RadioClient`](../crates/radio/coex/src/lib.rs) of `oer-radio-coex`

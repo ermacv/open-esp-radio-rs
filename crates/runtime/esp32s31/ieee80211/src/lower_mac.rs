@@ -1023,11 +1023,6 @@ impl<const BUFFER_SIZE: usize, const TX_BUFFERS: usize> Esp32s31Held<'_, BUFFER_
             }
         }
     }
-
-    /// Whether an attempt in flight matches `uses`.
-    fn any(&self, uses: impl Fn(&InFlight) -> bool) -> bool {
-        self.in_flight.borrow().iter().flatten().any(uses)
-    }
 }
 
 /// The transmit seats of one interface.

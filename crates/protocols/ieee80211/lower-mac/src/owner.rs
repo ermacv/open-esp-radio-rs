@@ -1,12 +1,10 @@
-//! The lower-MAC port on the shared owner shape of `oer-radio-port`
+//! The lower-MAC port on the owner shape of `oer-ieee80211-port`
 //! ([`Owner`](oer_ieee80211_port::Owner), [`PortBody`](oer_ieee80211_port::PortBody)).
 //!
-//! Every refusal of [`Ieee80211LowerMacPort`](crate::Ieee80211LowerMacPort)
-//! that a caller's own state explains is a type here
-//! ([ownership and refusals]); what the world controls (the air, time, the
-//! hardware) stays a typed outcome. The protocol ports still implement
-//! `Ieee80211LowerMacPort`; a backend on this shape implements
-//! [`LowerMacBackend`].
+//! Every refusal of the old lower-MAC port trait that a caller's own state
+//! explains is a type here ([ownership and refusals]); what the world
+//! controls (the air, time, the hardware) stays a typed outcome. A backend
+//! implements [`LowerMacBackend`].
 //!
 //! | Refusal of the port trait | Form here |
 //! | --- | --- |

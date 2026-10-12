@@ -9,7 +9,7 @@
 //! the one completion it reports.
 //!
 //! The header the caller encodes lives in a [`TxBuffer`] the backend lends
-//! ([`Ieee80211LowerMacPort::tx_buffer`](crate::Ieee80211LowerMacPort::tx_buffer));
+//! (`Ieee80211LowerMacPort::tx_buffer`);
 //! the body, such as a network frame's payload, travels by ownership as a
 //! [`TxBody`]. Whether the backend sends the body from its owner's memory
 //! or copies it into its own is the backend's choice, not the contract's.
@@ -46,7 +46,7 @@ impl oer_ieee80211_port::Correlation for TxId {
 /// an event lost to a queue overflow cannot lose a buffer. A caller that
 /// retries writes the header into a fresh buffer. A buffer that is not
 /// submitted goes back through
-/// [`Ieee80211LowerMacPort::release_tx_buffer`](crate::Ieee80211LowerMacPort::release_tx_buffer).
+/// `Ieee80211LowerMacPort::release_tx_buffer`.
 pub trait TxBuffer {
     /// The length the buffer was requested with.
     fn len(&self) -> usize;
@@ -81,7 +81,7 @@ pub enum TxResponse {
 ///
 /// The backend holds the body from the attempt's admission until the
 /// attempt's completion event carries it back
-/// ([`Ieee80211LowerMacPort::into_completed`](crate::Ieee80211LowerMacPort::into_completed)),
+/// (`Ieee80211LowerMacPort::into_completed`),
 /// so a retransmission sends the same owner again. Dropping a body is how
 /// its owner learns it is no longer needed: a consumer that drops the
 /// completion event drops its bodies, and a backend that discards an
@@ -171,7 +171,7 @@ pub enum Backoff {
 
 /// One hardware transmission attempt carrying payload `P`: a
 /// [`TxPayload`] through the base port, an A-MPDU through
-/// [`LowerMacAmpdu`](crate::LowerMacAmpdu).
+/// `LowerMacAmpdu`.
 #[derive(Debug, Eq, PartialEq)]
 pub struct TxAttempt<P> {
     pub id: TxId,

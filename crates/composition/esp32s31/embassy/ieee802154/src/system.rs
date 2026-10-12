@@ -396,7 +396,6 @@ pub async fn start<K: Ieee802154RuntimeCaps, P, C: PlatformClockProvider>(
     parked: Ieee802154Parked,
     defaults: Ieee802154PibDefaults,
 ) -> Result<(Ieee802154System, Ieee802154SystemBackend<K>), Ieee802154StartFailure> {
-
     // Frames the MAC DMA cannot reach leave the radio silent on air; refuse
     // before any hardware changes.
     if !parked

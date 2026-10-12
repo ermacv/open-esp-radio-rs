@@ -5,8 +5,8 @@ use oer_ieee802154::{
     AppliedSecurity, Channel, EventsLost, FrameCounterUpdate, FrameView, Ieee802154Instant,
     LinkMetrics, ProbingInitiator, ReceivedFrame, RequestId, TimeSync, TxMode, TxSecurity,
     owner::{
-        Has, Ieee802154Caps, Ieee802154Client, Ieee802154Events, Operation, PhaseEvent,
-        Promiscuous, RadioSettings, RecentRssi, ShortPending, ExtendedPending, SourceMatch,
+        ExtendedPending, Has, Ieee802154Caps, Ieee802154Client, Ieee802154Events, Operation,
+        PhaseEvent, Promiscuous, RadioSettings, RecentRssi, ShortPending, SourceMatch,
         SupportedCcaThreshold, SupportedEnergyScan, SupportedPower, SupportedScheduledReceive,
         SupportedTransmit, Transmission,
     },
@@ -106,7 +106,8 @@ enum Terminal<Ev> {
     Lost,
 }
 
-impl<'a, 'id, E, S, C, const QUEUE: usize, const P: usize> OpenThreadRadio<'a, 'id, E, S, C, QUEUE, P>
+impl<'a, 'id, E, S, C, const QUEUE: usize, const P: usize>
+    OpenThreadRadio<'a, 'id, E, S, C, QUEUE, P>
 where
     E: Ieee802154Events,
     S: RadioSettings<Caps = C::Caps>,
@@ -366,9 +367,7 @@ where
             let Some(slot) = self.short_free.pop() else {
                 break;
             };
-            let entry = self
-                .client
-                .add_pending_short(slot, address.to_le_bytes());
+            let entry = self.client.add_pending_short(slot, address.to_le_bytes());
             let _ = self.short.push((address, entry));
         }
         for &address in config.ext_addrs.iter() {

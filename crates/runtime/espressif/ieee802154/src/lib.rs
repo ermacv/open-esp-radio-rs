@@ -75,15 +75,14 @@ use oer_time::{Duration, Instant, Timer};
 
 pub use backend::{
     Ieee802154PortEvent, Ieee802154RouteDetach, Ieee802154RuntimeBackend, Ieee802154RuntimeCaps,
-    NoRoute, RUNTIME_INTERFACES,
-    RuntimeClient, RuntimeClients, RuntimeConfigured, RuntimeControl, RuntimeEvents,
-    RuntimeExtendedEntry, RuntimeHeld, RuntimeResources, RuntimeRssi, RuntimeSetup,
+    NoRoute, RUNTIME_INTERFACES, RuntimeClient, RuntimeClients, RuntimeConfigured, RuntimeControl,
+    RuntimeEvents, RuntimeExtendedEntry, RuntimeHeld, RuntimeResources, RuntimeRssi, RuntimeSetup,
     RuntimeShortEntry, RuntimeToken,
 };
 
 pub use oer_espressif_ieee802154_radio::{
-    IEEE802154_CSL_CAPABILITY, IEEE802154_ENH_ACK_PROBING_CAPACITY, IEEE802154_ENHANCED_ACK_IE_CAPACITY,
-    IEEE802154_RADIO_CAPABILITIES, Ieee802154Random,
+    IEEE802154_CSL_CAPABILITY, IEEE802154_ENH_ACK_PROBING_CAPACITY,
+    IEEE802154_ENHANCED_ACK_IE_CAPACITY, IEEE802154_RADIO_CAPABILITIES, Ieee802154Random,
 };
 
 /// A received frame copied out of the receive ring.
@@ -792,7 +791,6 @@ impl<
             }
         }
     }
-
 }
 
 /// Apply one portable setting to the radio under the runtime's lock. Every

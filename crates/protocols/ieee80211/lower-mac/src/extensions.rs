@@ -386,13 +386,13 @@ impl From<oer_radio_port::ProjectionError> for TsfProjectionError {
 /// Which roles the beacon-timing operations serve.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct BeaconTimingCapabilities {
-    /// Roles whose TSF [`LowerMacBeaconTiming::tsf`] reads.
+    /// Roles whose TSF `LowerMacBeaconTiming::tsf` reads.
     pub tsf_read: VifRoleSet,
-    /// Roles whose TSF [`LowerMacBeaconTiming::set_tsf`] sets to any value.
+    /// Roles whose TSF `LowerMacBeaconTiming::set_tsf` sets to any value.
     pub tsf_set: VifRoleSet,
-    /// Roles whose TSF [`LowerMacBeaconTiming::set_tsf`] restarts from zero.
+    /// Roles whose TSF `LowerMacBeaconTiming::set_tsf` restarts from zero.
     pub tsf_restart: VifRoleSet,
-    /// Roles whose TBTT schedule [`LowerMacBeaconTiming::set_tbtt`]
+    /// Roles whose TBTT schedule `LowerMacBeaconTiming::set_tbtt`
     /// programs.
     pub tbtt: VifRoleSet,
 }

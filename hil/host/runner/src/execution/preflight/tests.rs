@@ -63,7 +63,11 @@ fn an_experiment_arm_s_image_is_its_class_with_the_arm_s_feature_delta() {
     let scenario = catalog.get("udp-rx-ht40-ceiling").unwrap();
     let without: FeatureDelta = "-cpu-load".parse().unwrap();
     let arm = oer_hil_image_class::image_keys_with(scenario.image(), &full, &without).unwrap();
-    check_flashed_image_keys(&full, scenario, &without, &arm).unwrap();
+    // The arm's image is the class's with the delta; no Wi-Fi image serves
+    // a station while the roles return on the port (#563), so only the
+    // role check refuses it.
+    let error = check_flashed_image_keys(&full, scenario, &without, &arm).unwrap_err();
+    assert!(error.to_string().contains("does not declare a role"), "{error}");
     // Without the run's delta the arm's image is no class's; and a class's
     // own image is not the arm's.
     assert!(check_flashed_image_keys(&full, scenario, &FeatureDelta::default(), &arm).is_err());

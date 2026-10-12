@@ -87,25 +87,9 @@ pub fn image_keys(enabled: &dyn Fn(&str) -> bool) -> ImageKeys {
         system::InterruptLatencyProbe::KEY,
         enabled("interrupt-latency-probe"),
     );
-    for key in [
-        network::Udp::KEY,
-        network::Tcp::KEY,
-        network::Rx::KEY,
-        network::Tx::KEY,
-        network::Bidirectional::KEY,
-        network::RuntimeConfiguration::KEY,
-        network::UdpMultiFlow::KEY,
-        network::DataPlanePlacement::KEY,
-        wifi::RuntimeInitialization::KEY,
-        wifi::StationEpochControl::KEY,
-        wifi::RoleControl::KEY,
-        wifi::AccessPoint::KEY,
-        wifi::StationAccessPoint::KEY,
-        wifi::MonitorCapture::KEY,
-        wifi::StationLifecycleEvents::KEY,
-    ] {
-        add(key, traffic);
-    }
+    // No image serves a Wi-Fi role or its network traffic while the roles'
+    // orchestration returns on the lower-MAC port (#563).
+    let _ = traffic;
     add(wifi::DriverObservation::KEY, enabled("driver-observation"));
     add(
         network::RxDeliveryReport::KEY,
@@ -235,9 +219,10 @@ mod tests {
             "bluetooth-radio",
             "bluetooth-secure-gatt"
         ])));
-        // The coexistence image is a Wi-Fi image with the GATT application.
+        // The coexistence image is a Wi-Fi image with the GATT application;
+        // it serves no Wi-Fi traffic while the roles return on the port.
         let coex = with(&["open-radio-hil", "bluetooth-radio", "wifi-ble-coex"]);
-        assert!(has::<bluetooth::Gatt>(&coex) && has::<network::Udp>(&coex));
+        assert!(has::<bluetooth::Gatt>(&coex) && !has::<network::Udp>(&coex));
         assert!(!has::<bluetooth::Dtm>(&coex));
     }
 
@@ -261,7 +246,9 @@ mod tests {
         assert!(!has::<network::Udp>(&benchmark) && !has::<phy::RegisterImage>(&benchmark));
         let performance = with(&["open-radio-hil"]);
         assert!(!has::<system::MemoryBenchmark>(&performance));
-        assert!(has::<network::Udp>(&performance) && has::<phy::RegisterImage>(&performance));
+        assert!(has::<phy::RegisterImage>(&performance));
+        // No image serves a Wi-Fi role or its traffic (#563).
+        assert!(!has::<network::Udp>(&performance) && !has::<wifi::StationEpochControl>(&performance));
     }
 
     #[test]

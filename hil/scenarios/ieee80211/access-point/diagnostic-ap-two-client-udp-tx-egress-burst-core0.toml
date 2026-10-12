@@ -4,6 +4,7 @@ description = "Two-client AP UDP TX pre-DMA destination-burst coarse Core0 diagn
 role = "investigation"
 repetitions = 1
 tags = ["diagnostic", "wifi", "access-point", "multi-client", "udp", "tx", "txq", "egress", "core0", "coarse", "air-strict"]
+unsupported = "The ESP32-S31 Wi-Fi roles' orchestration was removed with the old station path; the roles return on the lower-MAC port in step 2 (https://github.com/ermacv/open-esp-radio-rs/issues/563)"
 
 [wifi]
 image = "diagnostic-core0-rx-coarse"

@@ -457,6 +457,11 @@ impl ScenarioFamily for WifiScenario {
     }
 
     /// The channel of the scenario's link, as the laboratory sets it up.
+    /// A Wi-Fi workload needs an image that brings Wi-Fi up.
+    fn served_by(&self, capabilities: &oer_hil_protocol::DeviceImageKeys) -> bool {
+        capabilities.has::<oer_hil_protocol::wifi::RuntimeInitialization>()
+    }
+
     fn air_use(&self) -> Vec<AirUse> {
         vec![AirUse::WifiLink]
     }

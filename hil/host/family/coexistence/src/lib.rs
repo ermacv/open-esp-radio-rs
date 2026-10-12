@@ -121,6 +121,11 @@ impl ScenarioFamily for CoexistenceScenario {
 
     /// Both radios share the 2.4 GHz band: the station's channel and the
     /// connection's hops.
+    /// The GATT echo runs beside the station's network traffic.
+    fn served_by(&self, capabilities: &oer_hil_protocol::DeviceImageKeys) -> bool {
+        capabilities.has::<oer_hil_protocol::network::Udp>()
+    }
+
     fn air_use(&self) -> Vec<AirUse> {
         vec![AirUse::Band2G4]
     }

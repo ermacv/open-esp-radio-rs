@@ -115,7 +115,13 @@ receive priority) and whose clients are `LowerMacClient<'id>`s, one per
 configured interface, branded by the install. A client awaits the grant
 of the queue an access category occupies (`LowerMacClient::Queue`, a
 `QueueGrant`) and a transmit buffer (`LowerMacClient::TxBuffer`), waited
-for, never refused. Both are the backend's own types: this package states
+for, never refused, each with a seat in its pool's line that the caller
+lends to the take and keeps across takes: the body receives each
+interface's `TxSeats` once, a queue seat and a buffer seat per access
+category (`TX_SEATS` per line, the station's then the access point's), and
+a queue seat's index names the access category whose queue it waits for
+(`seat_access_category`), so `queue(seat)` takes no access category of its
+own. Both are the backend's own types: this package states
 only the contract, so no caller forges one, and the backend proves it with
 compile-fail tests of its types. A client's attempt (`PhaseAttempt`)
 carries both, a rate checked on the phase's channel (`PhaseRate`) and the

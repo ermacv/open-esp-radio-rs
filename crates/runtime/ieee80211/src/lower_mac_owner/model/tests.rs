@@ -12,8 +12,8 @@ use oer_radio_port::{Disabled, Ended, Owner, PhaseParts, PortBody, run_port};
 
 use super::*;
 use oer_ieee80211_lower_mac::{
-    Backoff, ChannelWidth, CoexPriority, PhyRate, Protection, SupportedBackoff, SupportedCoex,
-    SupportedPower, TxPower, TxResponse,
+    Backoff, ChannelWidth, CoexPriority, PhyRate, Protection, QueueGrant, SupportedBackoff,
+    SupportedCoex, SupportedPower, TxPower, TxResponse,
 };
 
 /// The value of a future the model drives to its end: the body and the
@@ -108,7 +108,7 @@ impl PortBody<OwnedModel> for OnePhase<'_> {
     async fn run<'p, 'id>(
         self,
         mut owner: Owner<'p, 'id, OwnedModel, Disabled>,
-        _: ModelResources<'id>,
+        resources: ModelResources<'id>,
     ) -> Ended<'id, OwnedModel> {
         {
             let mut setup = owner.setup();
@@ -120,6 +120,9 @@ impl PortBody<OwnedModel> for OnePhase<'_> {
             Err(failed) => return failed.fail_stop(),
         };
         assert_eq!(self.world.tuned(), SIX.channel());
+        // The station's seats outlive the phases: the caller keeps them.
+        let mut station_tx = resources.station_tx;
+        let seats = &mut station_tx;
         {
             let PhaseParts {
                 mut events,
@@ -127,24 +130,44 @@ impl PortBody<OwnedModel> for OnePhase<'_> {
                 ..
             } = enabled.split();
             let station = &clients.station;
-            let queue = station.queue(WmmAccessCategory::BestEffort).await;
+            let queue = station
+                .queue(seats.queue(WmmAccessCategory::BestEffort))
+                .await;
             // The queue is occupied: a second taker waits, never refused.
-            assert!(pending(station.queue(WmmAccessCategory::BestEffort)));
-            let frame = station.tx_buffer(MpduLength::new(24).unwrap()).await;
+            assert!(pending(
+                station.queue(seats.queue(WmmAccessCategory::BestEffort))
+            ));
+            let frame = station
+                .tx_buffer(
+                    MpduLength::new(24).unwrap(),
+                    seats.buffer(WmmAccessCategory::BestEffort),
+                )
+                .await;
             let work = station.submit(attempt(station, queue, frame)).unwrap();
             let id = work.id();
             // Dropping the handle neither loses nor frees the permits.
             drop(work);
-            assert!(pending(station.queue(WmmAccessCategory::BestEffort)));
+            assert!(pending(
+                station.queue(seats.queue(WmmAccessCategory::BestEffort))
+            ));
             assert!(self.world.complete(id, TxStatus::Success));
             // The completion, dropped unread, gave its permits back.
             let event = events.next_event().await.unwrap().unwrap();
             drop(event);
-            let queue = station.queue(WmmAccessCategory::BestEffort).await;
+            let queue = station
+                .queue(seats.queue(WmmAccessCategory::BestEffort))
+                .await;
             // A permit dropped before its submission goes back too.
             drop(queue);
-            let queue = station.queue(WmmAccessCategory::BestEffort).await;
-            let frame = station.tx_buffer(MpduLength::new(24).unwrap()).await;
+            let queue = station
+                .queue(seats.queue(WmmAccessCategory::BestEffort))
+                .await;
+            let frame = station
+                .tx_buffer(
+                    MpduLength::new(24).unwrap(),
+                    seats.buffer(WmmAccessCategory::BestEffort),
+                )
+                .await;
             let _left = station.submit(attempt(station, queue, frame)).unwrap();
         }
         // The phase left an attempt in flight: the disable ends it and hands
@@ -170,13 +193,29 @@ impl PortBody<OwnedModel> for OnePhase<'_> {
             // Every queue and buffer is free: each take is served at once.
             let mut queues = Vec::new();
             for access_category in ACCESS_CATEGORIES {
-                queues.push(station.queue(access_category).await);
+                queues.push(station.queue(seats.queue(access_category)).await);
             }
+            // Each seat's access category picked the queue its grant names.
+            for (queue, access_category) in queues.iter().zip(ACCESS_CATEGORIES) {
+                assert_eq!(queue.access_category(), access_category);
+                assert_eq!(queue.queue(), ModelCaps::CAPS.tx_queue(access_category));
+            }
+            // An A-MPDU's buffers, taken one after another with one seat.
             let mut buffers = Vec::new();
             for _ in 0..OWNED_MODEL_TX_BUFFERS {
-                buffers.push(station.tx_buffer(MpduLength::new(24).unwrap()).await);
+                buffers.push(
+                    station
+                        .tx_buffer(
+                            MpduLength::new(24).unwrap(),
+                            seats.buffer(WmmAccessCategory::BestEffort),
+                        )
+                        .await,
+                );
             }
-            assert!(pending(station.tx_buffer(MpduLength::new(24).unwrap())));
+            assert!(pending(station.tx_buffer(
+                MpduLength::new(24).unwrap(),
+                seats.buffer(WmmAccessCategory::BestEffort)
+            )));
         }
         match enabled.disable(&mut |_| {}).await {
             Ok(disabled) => disabled.uninstall(()),
@@ -221,7 +260,7 @@ impl PortBody<OwnedModel> for GateWaits<'_> {
     async fn run<'p, 'id>(
         self,
         mut owner: Owner<'p, 'id, OwnedModel, Disabled>,
-        _: ModelResources<'id>,
+        resources: ModelResources<'id>,
     ) -> Ended<'id, OwnedModel> {
         owner.setup().set_channel(SIX);
         let Ok(mut enabled) = owner.enable().await else {
@@ -234,8 +273,17 @@ impl PortBody<OwnedModel> for GateWaits<'_> {
                 ..
             } = enabled.split();
             let station = &clients.station;
-            let queue = station.queue(WmmAccessCategory::BestEffort).await;
-            let frame = station.tx_buffer(MpduLength::new(24).unwrap()).await;
+            let mut station_tx = resources.station_tx;
+            let seats = &mut station_tx;
+            let queue = station
+                .queue(seats.queue(WmmAccessCategory::BestEffort))
+                .await;
+            let frame = station
+                .tx_buffer(
+                    MpduLength::new(24).unwrap(),
+                    seats.buffer(WmmAccessCategory::BestEffort),
+                )
+                .await;
             let work = station.submit(attempt(station, queue, frame)).unwrap();
             {
                 let mut closing = pin!(control.close_gate());
@@ -421,7 +469,7 @@ impl PortBody<OwnedModel> for DropsTheClosing<'_> {
     async fn run<'p, 'id>(
         self,
         owner: Owner<'p, 'id, OwnedModel, Disabled>,
-        _: ModelResources<'id>,
+        resources: ModelResources<'id>,
     ) -> Ended<'id, OwnedModel> {
         let Ok(mut enabled) = owner.enable().await else {
             panic!("the model enables");
@@ -433,8 +481,17 @@ impl PortBody<OwnedModel> for DropsTheClosing<'_> {
                 ..
             } = enabled.split();
             let station = &clients.station;
-            let queue = station.queue(WmmAccessCategory::BestEffort).await;
-            let frame = station.tx_buffer(MpduLength::new(24).unwrap()).await;
+            let mut station_tx = resources.station_tx;
+            let seats = &mut station_tx;
+            let queue = station
+                .queue(seats.queue(WmmAccessCategory::BestEffort))
+                .await;
+            let frame = station
+                .tx_buffer(
+                    MpduLength::new(24).unwrap(),
+                    seats.buffer(WmmAccessCategory::BestEffort),
+                )
+                .await;
             let _work = station.submit(attempt(station, queue, frame)).unwrap();
             {
                 let closing = control.close_gate();
@@ -474,7 +531,7 @@ impl PortBody<OwnedModel> for WaitsForTheWorld<'_> {
     async fn run<'p, 'id>(
         self,
         owner: Owner<'p, 'id, OwnedModel, Disabled>,
-        _: ModelResources<'id>,
+        resources: ModelResources<'id>,
     ) -> Ended<'id, OwnedModel> {
         let Ok(mut enabled) = owner.enable().await else {
             panic!("the model enables");
@@ -486,8 +543,17 @@ impl PortBody<OwnedModel> for WaitsForTheWorld<'_> {
                 ..
             } = enabled.split();
             let station = &clients.station;
-            let queue = station.queue(WmmAccessCategory::BestEffort).await;
-            let frame = station.tx_buffer(MpduLength::new(24).unwrap()).await;
+            let mut station_tx = resources.station_tx;
+            let seats = &mut station_tx;
+            let queue = station
+                .queue(seats.queue(WmmAccessCategory::BestEffort))
+                .await;
+            let frame = station
+                .tx_buffer(
+                    MpduLength::new(24).unwrap(),
+                    seats.buffer(WmmAccessCategory::BestEffort),
+                )
+                .await;
             let work = station.submit(attempt(station, queue, frame)).unwrap();
             let woken = std::sync::Arc::new(Woken(std::sync::atomic::AtomicBool::new(false)));
             let waker = Waker::from(woken.clone());
@@ -530,7 +596,7 @@ impl PortBody<OwnedModel> for NeverReads<'_> {
     async fn run<'p, 'id>(
         self,
         owner: Owner<'p, 'id, OwnedModel, Disabled>,
-        _: ModelResources<'id>,
+        resources: ModelResources<'id>,
     ) -> Ended<'id, OwnedModel> {
         let Ok(mut enabled) = owner.enable().await else {
             panic!("the model enables");
@@ -538,12 +604,23 @@ impl PortBody<OwnedModel> for NeverReads<'_> {
         {
             let PhaseParts { clients, .. } = enabled.split();
             let station = &clients.station;
-            let queue = station.queue(WmmAccessCategory::BestEffort).await;
-            let frame = station.tx_buffer(MpduLength::new(24).unwrap()).await;
+            let mut station_tx = resources.station_tx;
+            let seats = &mut station_tx;
+            let queue = station
+                .queue(seats.queue(WmmAccessCategory::BestEffort))
+                .await;
+            let frame = station
+                .tx_buffer(
+                    MpduLength::new(24).unwrap(),
+                    seats.buffer(WmmAccessCategory::BestEffort),
+                )
+                .await;
             let work = station.submit(attempt(station, queue, frame)).unwrap();
             assert!(self.world.complete(work.id(), TxStatus::Success));
             // No event is read: the driver alone gives the queue back.
-            let _queue = station.queue(WmmAccessCategory::BestEffort).await;
+            let _queue = station
+                .queue(seats.queue(WmmAccessCategory::BestEffort))
+                .await;
         }
         match enabled.disable(&mut |_| {}).await {
             Ok(disabled) => disabled.uninstall(()),

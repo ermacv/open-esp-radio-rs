@@ -11,7 +11,9 @@
 //! posts is served by the model's driver (`PortBackend::drive`), as an
 //! interrupt's status is: it gives the attempt's permits back, then queues
 //! the completion, so a body that reads no event still gets its queue back. Its held part of the install keeps the
-//! transmit permits in [`ModelPermitPool`]s, first-in, first-out pools.
+//! transmit permits in [`ModelPermitPool`]s, first-in, first-out pools,
+//! and the body's resources give each interface its transmit seats
+//! ([`TxSeats`]).
 //!
 //! Its tokens have no value outside it: no caller mints a key, and a key of
 //! a station's client is not an access point's.
@@ -51,9 +53,9 @@ use core::{
 };
 
 use oer_radio_port::{
-    CancelError, ClockError, EnableResult, EventsLost, Lent, Mint, Permit, PermitPool, PhaseParts,
-    Poisoned, PortBackend, PortResult, RadioPortClient, RadioPortEvents, RadioWork, Retire, Slot,
-    Work,
+    CancelError, ClockError, EnableResult, EventsLost, Lent, Line, Mint, Permit, PermitPool,
+    PhaseParts, Poisoned, PortBackend, PortResult, RadioPortClient, RadioPortEvents, RadioWork,
+    Retire, Seat, Slot, Work,
 };
 use oer_time::RadioInstant;
 
@@ -61,12 +63,12 @@ use oer_ieee80211_lower_mac::{
     Ccmp128Key, Channel, Ieee80211Capabilities, Ieee80211Radio, KeyScope, LowerMacBackend,
     LowerMacCapabilities, LowerMacClient, LowerMacControl, LowerMacEvent, LowerMacEvents,
     LowerMacSetup, MacAddress, MpduLength, PhaseAttempt, RxMeta, SupportedBlockAck,
-    SupportedChannel, SupportedFilter, TxCompletion, TxGated, TxId, TxStatus, VifRole,
+    SupportedChannel, SupportedFilter, TX_SEATS, TxCompletion, TxGated, TxId, TxSeats, TxStatus,
+    VifRole,
     model::{MODEL_CAPABILITIES, ModelBody, ModelFault, ModelRxBuffer},
 };
 
 use super::{BufferPermit, QueuePermit, QueuePool, TxBufferKind, TxPermits, TxQueueKind};
-use oer_ieee80211_mac::qos::WmmAccessCategory;
 
 /// The model's capabilities marker.
 pub struct ModelCaps;
@@ -284,9 +286,14 @@ pub struct ModelHeld<'id> {
     pub tx: ModelTxPermits<'id>,
 }
 
+/// The transmit seats of one interface of the model.
+pub type ModelTxSeats<'id> = TxSeats<'id, TxQueueKind, TxBufferKind>;
+
 /// The port-lifetime resources the body of one install of the model
-/// receives: each role's slots.
+/// receives: each role's slots and transmit seats.
 pub struct ModelResources<'id> {
+    pub station_tx: ModelTxSeats<'id>,
+    pub access_point_tx: ModelTxSeats<'id>,
     pub station_keys: [Slot<'id, ModelKeys<Station>>; OWNED_MODEL_KEY_SLOTS],
     pub access_point_keys: [Slot<'id, ModelKeys<AccessPoint>>; OWNED_MODEL_KEY_SLOTS],
     pub station_block_acks: [Slot<'id, ModelBlockAcks<Station>>; OWNED_MODEL_BLOCK_ACK_SLOTS],
@@ -459,6 +466,8 @@ impl<R> RadioPortClient for ModelClient<'_, '_, R> {
 
 impl<'a, 'id, R: ModelRole> LowerMacClient<'id> for ModelClient<'a, 'id, R> {
     type Caps = ModelCaps;
+    type QueueKind = TxQueueKind;
+    type BufferKind = TxBufferKind;
     type Queue<'c>
         = QueuePermit<'c, 'id>
     where
@@ -479,23 +488,29 @@ impl<'a, 'id, R: ModelRole> LowerMacClient<'id> for ModelClient<'a, 'id, R> {
         self.state.borrow().tuned
     }
 
-    fn queue<'c>(
+    fn queue<'c, 's>(
         &'c self,
-        access_category: WmmAccessCategory,
-    ) -> impl Future<Output = QueuePermit<'c, 'id>> + 'c
+        seat: &'s mut Seat<'id, TxQueueKind>,
+    ) -> impl Future<Output = QueuePermit<'c, 'id>> + 's
     where
         'id: 'c,
+        'c: 's,
     {
-        self.held.tx.queue(access_category)
+        self.held.tx.queue(seat)
     }
 
-    async fn tx_buffer<'c>(&'c self, len: MpduLength<ModelCaps>) -> ModelTxBuffer<'c, 'id>
+    async fn tx_buffer<'c, 's>(
+        &'c self,
+        len: MpduLength<ModelCaps>,
+        seat: &'s mut Seat<'id, TxBufferKind>,
+    ) -> ModelTxBuffer<'c, 'id>
     where
         'id: 'c,
+        'c: 's,
     {
         ModelTxBuffer {
             bytes: alloc::vec![0; len.get()],
-            permit: self.held.tx.buffer().await,
+            permit: self.held.tx.buffer(seat).await,
         }
     }
 
@@ -687,10 +702,15 @@ impl PortBackend for OwnedModel {
 
     fn resources<'id>(&mut self, mut mint: Mint<'id>) -> (Self::Held<'id>, Self::Resources<'id>) {
         let buffers: [Permit<'id, TxBufferKind>; OWNED_MODEL_TX_BUFFERS] = mint.permits();
+        // The model's buffer line grows on the heap, so it holds a place for
+        // every seat without the line's size.
+        let (queue_line, _, [station_tx, access_point_tx]) = TxSeats::mint(&mut mint);
         let held = ModelHeld {
-            tx: TxPermits::new(&mut mint, ModelPermitPool::new(buffers)),
+            tx: TxPermits::new(&mut mint, queue_line, ModelPermitPool::new(buffers)),
         };
         let resources = ModelResources {
+            station_tx,
+            access_point_tx,
             station_keys: mint.slots(),
             access_point_keys: mint.slots(),
             station_block_acks: mint.slots(),
@@ -774,23 +794,24 @@ impl LowerMacBackend for OwnedModel {
 }
 
 impl<'id> QueuePool<'id> for ModelPermitPool<'id, TxQueueKind> {
-    fn of(permit: Permit<'id, TxQueueKind>) -> Self {
+    fn of(permit: Permit<'id, TxQueueKind>, _: Line<'id, TxQueueKind, TX_SEATS>) -> Self {
         Self::new([permit])
     }
 }
 
-/// A first-in, first-out pool of permits.
+/// A first-in, first-out pool of permits, whose line grows on the heap: a
+/// place for every seat that waits.
 pub struct ModelPermitPool<'id, Kind> {
     free: RefCell<Vec<Permit<'id, Kind>>>,
     /// The waiting takers, in arrival order: each one's ticket and waker.
-    line: Line,
+    line: Waiting,
     next: Cell<u32>,
 }
 
-type Line = RefCell<VecDeque<(u32, Waker)>>;
+type Waiting = RefCell<VecDeque<(u32, Waker)>>;
 
 /// Wake the taker at the head of `line`, which a free permit now serves.
-fn wake_head(line: &Line) {
+fn wake_head(line: &Waiting) {
     if let Some((_, waker)) = line.borrow().front() {
         waker.wake_by_ref();
     }
@@ -808,7 +829,10 @@ impl<'id, Kind> ModelPermitPool<'id, Kind> {
 }
 
 impl<'id, Kind> PermitPool<'id, Kind> for ModelPermitPool<'id, Kind> {
-    fn take(&self) -> impl Future<Output = Permit<'id, Kind>> + '_ {
+    fn take<'a>(
+        &'a self,
+        _: &'a mut Seat<'id, Kind>,
+    ) -> impl Future<Output = Permit<'id, Kind>> + 'a {
         let mut place = Place {
             line: &self.line,
             ticket: None,
@@ -868,7 +892,7 @@ impl<'id, Kind> PermitPool<'id, Kind> for ModelPermitPool<'id, Kind> {
 /// A taker's place in a [`ModelPermitPool`]'s line, given up when its
 /// future drops before it is served; the taker behind it then leads.
 struct Place<'p> {
-    line: &'p Line,
+    line: &'p Waiting,
     ticket: Option<u32>,
 }
 

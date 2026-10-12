@@ -1697,3 +1697,19 @@ fn tsf_generation(epoch: u32, jumps: u32) -> TsfGeneration {
 fn the_model_keeps_every_rule_of_the_port_conformance_suite() {
     crate::conformance::check_all(crate::conformance::ModelHarness::new);
 }
+
+#[test]
+fn a_transmit_seats_index_names_its_access_category_for_each_role() {
+    use crate::{TX_SEATS, seat_access_category};
+    let order = [
+        WmmAccessCategory::BestEffort,
+        WmmAccessCategory::Background,
+        WmmAccessCategory::Video,
+        WmmAccessCategory::Voice,
+    ];
+    for index in 0..TX_SEATS {
+        // The station's four seats, then the access point's, by ACI.
+        assert_eq!(seat_access_category(index as u8), order[index % 4]);
+        assert_eq!(order[index % 4] as usize, index % 4);
+    }
+}

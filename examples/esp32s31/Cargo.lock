@@ -2233,6 +2233,7 @@ dependencies = [
  "oer-ieee80211-mac",
  "oer-ieee80211-softmac",
  "oer-memory",
+ "oer-radio-permit-pool",
  "oer-radio-port",
  "oer-time",
 ]
@@ -2379,6 +2380,13 @@ version = "0.1.0"
 [[package]]
 name = "oer-radio-coex"
 version = "0.1.0"
+
+[[package]]
+name = "oer-radio-permit-pool"
+version = "0.1.0"
+dependencies = [
+ "oer-radio-port",
+]
 
 [[package]]
 name = "oer-radio-port"

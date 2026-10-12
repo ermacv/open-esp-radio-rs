@@ -12,6 +12,13 @@
 //! of the install than the one that made it panics at admission, a fault of
 //! a backend that keeps two.
 //!
+//! A client takes a queue and a buffer with its seats
+//! ([`TxSeats`](oer_ieee80211_lower_mac::TxSeats)): [`TxPermits::queue`]
+//! waits in the line of the queue its seat's access category occupies,
+//! [`TxPermits::buffer`] in the buffers' line. Every queue's pool takes the
+//! queue line ([`QueuePool::of`]) and holds a place for each of its seats;
+//! `oer-radio-permit-pool`'s allocation-free `FifoPermitPool` is one.
+//!
 //! [`TxPermits::new`] mints one permit per queue the capabilities state and
 //! builds each queue's pool from it ([`QueuePool::of`]), so a queue never
 //! holds two attempts; a queue count other than the capabilities' does not

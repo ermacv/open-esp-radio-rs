@@ -23,6 +23,21 @@
 //!   never lost with an event dropped unread; a cancel is only a request. In which order waiting
 //!   takers are served is the pool's documented policy (first in, first out
 //!   by default), which the conformance suite checks.
+//! - A **seat** ([`Seat`]) is a place in a permit pool's line: a taker
+//!   lends its seat to [`PermitPool::take`] for as long as it waits, so a
+//!   taker without one cannot exist, and a pool whose line has a place per
+//!   seat never overflows. [`Mint::seats`] makes a kind's seats with the
+//!   [`Line`] that sizes its pools, so the line's capacity is a value, as
+//!   every other capacity is. A line is a copyable receipt: several pools
+//!   whose takers are the same seats (a transmit queue's pool each) take
+//!   it, each with a place for every seat, and since a seat waits in one
+//!   take at a time, none of them overflows. The seat stays with its taker: a take that
+//!   is served or dropped ends the loan, and the taker waits again with
+//!   the same seat (an A-MPDU builder's sequential buffer takes). What a
+//!   seat stands for beyond its kind (an interface's role and access
+//!   category) is its value: the backend that minted it maps its
+//!   [`index`](Seat::index), so the pool and its take are generic over the
+//!   kind alone.
 //!
 //! A caller counts its own slots: it plans against the same constant the
 //! backend minted its pool with, so taking a slot synchronously is an
@@ -41,8 +56,11 @@
 //! one that holds none turns that into its protocol's decision (an access
 //! point refuses an association).
 //!
-//! Neither is `Clone`, `Copy` or `Default`, and only a [`Mint`] makes one,
-//! so no caller adds capacity:
+//! A backend mints the tokens of each kind once per install: the kind keeps
+//! pools apart, so a second set of one kind would pass for the first's.
+//!
+//! No token is `Clone`, `Copy` or `Default`, and only a [`Mint`] makes
+//! one, so no caller adds capacity:
 //!
 //! ```compile_fail,E0599
 //! # use oer_radio_port::Slot;
@@ -64,6 +82,62 @@
 //! fn install_twice<'id, Kind>(slot: Slot<'id, Kind>, install: impl Fn(Slot<'id, Kind>)) {
 //!     install(slot);
 //!     install(slot);
+//! }
+//! ```
+//!
+//! A seat, too, is neither cloned nor forged, and no caller makes a line:
+//!
+//! ```compile_fail,E0599
+//! # use oer_radio_port::Seat;
+//! fn copy<'id, K>(seat: &Seat<'id, K>) -> Seat<'id, K> {
+//!     seat.clone()
+//! }
+//! ```
+//!
+//! ```compile_fail,E0451
+//! # use core::marker::PhantomData;
+//! # use oer_radio_port::Seat;
+//! fn forge<'id, K>() -> Seat<'id, K> {
+//!     Seat { index: 0, brand: PhantomData, kind: PhantomData }
+//! }
+//! ```
+//!
+//! ```compile_fail,E0451
+//! # use core::marker::PhantomData;
+//! # use oer_radio_port::Line;
+//! fn forge<'id, K>() -> Line<'id, K, 4> {
+//!     Line { brand: PhantomData, kind: PhantomData }
+//! }
+//! ```
+//!
+//! A take needs a seat, of the pool's own kind:
+//!
+//! ```compile_fail,E0061
+//! # use oer_radio_port::PermitPool;
+//! async fn unseated<'id, K>(pool: &impl PermitPool<'id, K>) {
+//!     let _ = pool.take().await;
+//! }
+//! ```
+//!
+//! ```compile_fail,E0308
+//! # use oer_radio_port::{PermitPool, Seat};
+//! async fn elsewhere<'id, K, J>(pool: &impl PermitPool<'id, K>, seat: &mut Seat<'id, J>) {
+//!     let _ = pool.take(seat).await;
+//! }
+//! ```
+//!
+//! Their compiling twin takes with a seat of the pool's kind and keeps it
+//! for the next take:
+//!
+//! ```
+//! # use oer_radio_port::{Permit, PermitPool, Seat};
+//! async fn twice<'id, K>(
+//!     pool: &impl PermitPool<'id, K>,
+//!     mut seat: Seat<'id, K>,
+//! ) -> (Permit<'id, K>, Permit<'id, K>, Seat<'id, K>) {
+//!     let first = pool.take(&mut seat).await;
+//!     let second = pool.take(&mut seat).await;
+//!     (first, second, seat)
 //! }
 //! ```
 //!
@@ -102,7 +176,7 @@
 //! }
 //! ```
 //!
-//! Their compiling twins move a slot within its own install:
+//! The compiling twins of the slot rules move a slot within its own install:
 //!
 //! ```
 //! # use oer_radio_port::Slot;
@@ -159,6 +233,26 @@ impl<'id> Mint<'id> {
             kind: PhantomData,
         })
     }
+
+    /// The `N` seats of the line of a permit pool of the kind `Kind`,
+    /// indexed 0 to `N - 1`, and the [`Line`] the pool takes to hold a
+    /// place for each: the backend keeps the line in its pool and hands
+    /// each taker its seat (one per interface client, per queue).
+    pub fn seats<Kind, const N: usize>(&mut self) -> (Line<'id, Kind, N>, [Seat<'id, Kind>; N]) {
+        const { assert!(N <= 256, "a pool holds at most 256 tokens") };
+        let seats = core::array::from_fn(|index| Seat {
+            index: index_of(index),
+            brand: PhantomData,
+            kind: PhantomData,
+        });
+        (
+            Line {
+                brand: PhantomData,
+                kind: PhantomData,
+            },
+            seats,
+        )
+    }
 }
 
 /// The index of a token of a pool of at most 256, which `Mint` asserts at
@@ -207,14 +301,65 @@ impl<Kind> Permit<'_, Kind> {
     }
 }
 
+/// One place in the line of a permit pool of the kind `Kind`, which its
+/// taker lends to [`PermitPool::take`] while it waits and keeps across
+/// takes. What it stands for beyond its kind (an interface's role and
+/// access category) is its index, which the backend that minted it maps.
+#[must_use = "a seat is a place in a pool's line; dropping it loses it until the next install"]
+pub struct Seat<'id, Kind> {
+    index: u8,
+    brand: Brand<'id>,
+    kind: PhantomData<fn() -> Kind>,
+}
+
+impl<Kind> Seat<'_, Kind> {
+    /// The seat's index in its line: the place the pool holds for it, and
+    /// what the backend that minted it maps to its holder.
+    pub const fn index(&self) -> u8 {
+        self.index
+    }
+}
+
+/// The line of the permit pools of the kind `Kind`: the proof that
+/// [`Mint`] made the kind's `N` seats, which sizes a pool's line to hold a
+/// place for each, so a pool never overflows and serves every taker in
+/// order. It is a copyable receipt, not capacity: each pool whose takers
+/// are these seats takes it, and a seat waits in one take at a time.
+#[must_use = "a line sizes its permit pools"]
+pub struct Line<'id, Kind, const N: usize> {
+    brand: Brand<'id>,
+    kind: PhantomData<fn() -> Kind>,
+}
+
+impl<Kind, const N: usize> Clone for Line<'_, Kind, N> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<Kind, const N: usize> Copy for Line<'_, Kind, N> {}
+
+impl<Kind, const N: usize> Line<'_, Kind, N> {
+    /// The places in the line, one per seat.
+    pub const fn places(&self) -> usize {
+        N
+    }
+}
+
 /// A pool of the permits of one install of the kind `Kind`, which a runtime
 /// crate or a backend keeps; it lives in one task, shared by reference by
-/// the port's body and its phases, never across executor tasks.
+/// the port's body and its phases, never across executor tasks. Its line
+/// holds a place for each seat of its kind, which [`Mint::seats`] made with
+/// the [`Line`] the pool was built with.
 pub trait PermitPool<'id, Kind> {
-    /// Take a permit, waiting while every permit is held, never refused, in
-    /// the order the pool documents (first in, first out by default).
-    /// Dropping the future gives up its place.
-    fn take(&self) -> impl Future<Output = Permit<'id, Kind>> + '_;
+    /// Take a permit with `seat`, waiting while every permit is held, never
+    /// refused, in the order the pool documents (first in, first out by
+    /// default). The future borrows the seat while it waits: dropping it
+    /// gives up the seat's place, and the seat stays with its taker.
+    fn take<'a>(
+        &'a self,
+        seat: &'a mut Seat<'id, Kind>,
+    ) -> impl Future<Output = Permit<'id, Kind>> + 'a;
 
     /// Give a permit back: the backend that keeps the pool calls it when the
     /// work that held the permit ended, before it hands the terminal out,

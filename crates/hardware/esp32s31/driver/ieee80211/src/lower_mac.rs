@@ -2179,6 +2179,29 @@ where
         Ok(Ok(()))
     }
 
+    /// Stop publishing at once: every attempt admitted from now on is held
+    /// in its lent slot or aggregate, as behind a closed gate, while the
+    /// published ones finish on the air. The first step of closing the gate
+    /// under traffic; [`Self::block_held_queues`] is the second.
+    pub fn hold_new_attempts(&mut self) {
+        self.gate_open = false;
+    }
+
+    /// Whether no attempt is published: every admitted one is held.
+    pub fn published_idle(&self) -> bool {
+        !self.attempts().any(|attempt| !attempt.work.held())
+    }
+
+    /// Block every ordinary queue once [`Self::hold_new_attempts`] held the
+    /// new attempts and no attempt is published
+    /// ([`Self::published_idle`]): the gate is closed. Opening it is the
+    /// ordinary gate setting, which publishes the held attempts.
+    pub fn block_held_queues<H: LowerMacHardware>(&mut self, hardware: &mut H) {
+        debug_assert!(!self.gate_open, "new attempts are held first");
+        debug_assert!(self.published_idle(), "no attempt is published");
+        hardware.set_power_save_tx_block(true);
+    }
+
     /// Open or close the transmit gate: the power-save block of every
     /// ordinary queue. Closing it while an attempt is published is refused
     /// (`Busy`), because the blocked queue would end that attempt with a

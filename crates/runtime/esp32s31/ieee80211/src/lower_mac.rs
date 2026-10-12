@@ -1095,6 +1095,18 @@ pub trait GateOwner {
 
 impl<L: GateOwner> TxGated for Esp32s31Gated<'_, L> {}
 
+/// A gate closing: dropped before it yields its guard, it opens the gate
+/// again and publishes what it held.
+struct GateClosing<'g, L: GateOwner> {
+    runtime: &'g L,
+}
+
+impl<L: GateOwner> Drop for GateClosing<'_, L> {
+    fn drop(&mut self) {
+        self.runtime.set_gate(true);
+    }
+}
+
 impl<L: GateOwner> Drop for Esp32s31Gated<'_, L> {
     fn drop(&mut self) {
         self.runtime.set_gate(true);
@@ -1322,17 +1334,30 @@ where
     where
         Self: 'g;
 
-    /// The core closes its gate once no attempt is published: until then
-    /// the future waits for the published ones to end.
+    /// Admission closes at once: the core holds every attempt admitted from
+    /// now on unpublished, and the gate closes once the published ones
+    /// ended, so the wait ends under any traffic. A future dropped before
+    /// it yields the guard opens the gate again.
     fn close_gate(&mut self) -> impl Future<Output = Self::Gated<'_>> {
         let runtime = self.runtime;
+        let _ = runtime.with_installed(|core, _, _, _| {
+            core.hold_new_attempts();
+            Ok(())
+        });
+        let mut closing = Some(GateClosing { runtime });
         poll_fn(move |context| {
-            if runtime.set_gate(false) {
-                Poll::Ready(Esp32s31Gated { runtime })
-            } else {
-                runtime.wait_settled(context.waker());
-                Poll::Pending
+            let blocked = runtime.with_installed(|core, hardware, _, _| {
+                Ok(core
+                    .published_idle()
+                    .then(|| core.block_held_queues(hardware)))
+            });
+            if let Ok(Some(Some(()))) = blocked {
+                // The guard keeps the gate closed from here.
+                core::mem::forget(closing.take());
+                return Poll::Ready(Esp32s31Gated { runtime });
             }
+            runtime.wait_settled(context.waker());
+            Poll::Pending
         })
     }
 

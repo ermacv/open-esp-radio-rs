@@ -12,8 +12,13 @@ the lease (`LeaseStarted`, `LeaseEnded`, `LeaseCancelled`) name it. Beside a
 running access point, the station leaves the access point's channel only in
 absences after its TBTTs; a station that tells its access point it leaves
 says it is ready, or the lease is cancelled at its start. The lease's
-`until` is absolute, so the access point's beacons hold; the access point's
-air reservation is a policy option, off by default.
+`until` is the moment the port is back on the access point's channel, so
+its beacons hold; the station listens until the return's retune, and a
+lease whose gate closes too late for two retunes and the shortest useful
+listening is cancelled. The access point's air reservation is a policy
+option, off by default: the gate's closing takes one last frame, a
+CTS-to-self the driver sends with the Duration left
+([amendments](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129677418)).
 
 `coordinator` keeps the access point's follow, search and loss policies
 (`ChannelCoordinator`, `ApFollowPolicy`, `ApSearchPolicy`,

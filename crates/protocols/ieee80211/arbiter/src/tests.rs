@@ -70,7 +70,7 @@ fn at(millis: u32) -> Instant {
 enum Seen {
     Station(StationNotice<Caps>),
     AccessPoint(AccessPointCommand<Caps>),
-    CloseGate,
+    CloseGate(Option<Instant>),
     Retune(u8),
     OpenGate,
 }
@@ -83,9 +83,12 @@ fn run(arbiter: &mut Arbiter<Gate, Caps>, now: Instant) -> Vec<Seen> {
         seen.push(match action {
             ArbiterAction::Station(notice) => Seen::Station(notice),
             ArbiterAction::AccessPoint(command) => Seen::AccessPoint(command),
-            ArbiterAction::CloseGate(Open) => {
+            ArbiterAction::CloseGate {
+                gate: Open,
+                reserve_until,
+            } => {
                 arbiter.gate_closed(Closed);
-                Seen::CloseGate
+                Seen::CloseGate(reserve_until)
             }
             ArbiterAction::Retune(channel) => {
                 arbiter.retuned(channel);
@@ -120,25 +123,27 @@ fn a_station_alone_leases_a_scan_channel_at_once_and_returns_it_at_its_end() {
             announces_absence: false,
         },
     ));
+    // The move there and the dwell; alone, the port stays.
     assert_eq!(lease.from(), at(0));
-    assert_eq!(lease.until(), Some(at(100)));
+    assert_eq!(lease.until(), Some(at(102)));
+    assert_eq!(lease.listen_until(), Some(at(102)));
     let id = lease.id();
     assert_eq!(
         run(&mut arbiter, at(0)),
         [
-            Seen::CloseGate,
+            Seen::CloseGate(None),
             Seen::Retune(6),
             Seen::OpenGate,
             Seen::Station(StationNotice::LeaseStarted(id)),
         ]
     );
-    assert_eq!(arbiter.poll_deadline(), Some(at(100)));
+    assert_eq!(arbiter.poll_deadline(), Some(at(102)));
     // Alone, the port stays where the scan left it: its end closes the
     // gate, so every terminal of the lease comes before it.
     assert_eq!(
-        run(&mut arbiter, at(100)),
+        run(&mut arbiter, at(102)),
         [
-            Seen::CloseGate,
+            Seen::CloseGate(None),
             Seen::OpenGate,
             Seen::Station(StationNotice::LeaseEnded(id)),
         ]
@@ -172,32 +177,31 @@ fn beside_an_access_point_a_scan_goes_in_absences_after_its_tbtts() {
             announces_absence: false,
         },
     ));
-    // The first absence: 2 ms after the TBTT at 50 ms, 20 ms long.
+    // The first absence: 2 ms after the TBTT at 50 ms, 20 ms long with
+    // its two retunes; the station listens until the return's retune.
     assert_eq!(lease.from(), at(52));
     assert_eq!(lease.until(), Some(at(72)));
-    assert_eq!(
-        run(&mut arbiter, at(0)),
-        [Seen::AccessPoint(AccessPointCommand::ReserveAir {
-            from: at(52),
-            until: at(72)
-        })]
-    );
+    assert_eq!(lease.listen_until(), Some(at(70)));
+    assert_eq!(run(&mut arbiter, at(0)), []);
     assert_eq!(arbiter.poll_deadline(), Some(at(52)));
     let id = lease.id();
+    // The closing that leaves reserves the access point's air until the
+    // port is back.
     assert_eq!(
         run(&mut arbiter, at(52)),
         [
-            Seen::CloseGate,
+            Seen::CloseGate(Some(at(72))),
             Seen::Retune(6),
             Seen::OpenGate,
             Seen::Station(StationNotice::LeaseStarted(id)),
         ]
     );
-    // Back on the access point's channel at the absence's end.
+    // The return starts a retune before the absence's end.
+    assert_eq!(arbiter.poll_deadline(), Some(at(70)));
     assert_eq!(
-        run(&mut arbiter, at(72)),
+        run(&mut arbiter, at(70)),
         [
-            Seen::CloseGate,
+            Seen::CloseGate(None),
             Seen::Retune(1),
             Seen::OpenGate,
             Seen::Station(StationNotice::LeaseEnded(id)),
@@ -220,6 +224,10 @@ fn the_air_reservation_is_off_by_default() {
         },
     ));
     assert_eq!(run(&mut arbiter, at(0)), []);
+    assert_eq!(
+        run(&mut arbiter, at(52)).first(),
+        Some(&Seen::CloseGate(None))
+    );
     let _ = lease;
 }
 
@@ -307,23 +315,23 @@ fn a_failed_return_stops_the_station_and_the_access_point() {
     run(&mut arbiter, at(52));
     // The return's retune is refused.
     assert!(matches!(
-        arbiter.poll_action(at(62)),
-        Some(ArbiterAction::CloseGate(_))
+        arbiter.poll_action(at(64)),
+        Some(ArbiterAction::CloseGate { .. })
     ));
     arbiter.gate_closed(Closed);
     assert!(matches!(
-        arbiter.poll_action(at(62)),
+        arbiter.poll_action(at(64)),
         Some(ArbiterAction::Retune(_))
     ));
     arbiter.retune_refused();
-    let seen = run(&mut arbiter, at(62));
+    let seen = run(&mut arbiter, at(64));
     assert!(seen.contains(&Seen::Station(StationNotice::Leave(LeaveReason::PortFailed))));
     assert!(seen.contains(&Seen::AccessPoint(AccessPointCommand::Stop)));
     let _ = lease;
 }
 
 #[test]
-fn a_gate_that_closes_after_the_lease_end_cancels_it() {
+fn a_gate_that_closes_too_late_for_two_retunes_and_the_shortest_listening_cancels_the_lease() {
     let mut arbiter = beside_access_point(ArbiterPolicy::DEFAULT);
     let lease = lease(arbiter.request(
         at(0),
@@ -338,12 +346,12 @@ fn a_gate_that_closes_after_the_lease_end_cancels_it() {
     let id = lease.id();
     assert!(matches!(
         arbiter.poll_action(at(52)),
-        Some(ArbiterAction::CloseGate(_))
+        Some(ArbiterAction::CloseGate { .. })
     ));
-    // The attempts in flight outlast the absence.
+    // The attempts in flight end at 58 ms: 58 + 2 + 2 + 5 > 66.
     arbiter.gate_closed(Closed);
     assert_eq!(
-        run(&mut arbiter, at(63)),
+        run(&mut arbiter, at(58)),
         [
             Seen::Station(StationNotice::LeaseCancelled(id, CancelReason::Late)),
             Seen::OpenGate,

@@ -28,16 +28,21 @@
 //!   before its end.
 //! - **Time.** The gate starts closing at the lease's `from`, and the lease
 //!   starts once it closed: the attempts in flight end first. Its `until`
-//!   is absolute, so the access point's beacons and air reservation hold;
-//!   a lease whose gate closed only after `until` is cancelled
-//!   ([`CancelReason::Late`]).
+//!   is the moment the port is back on the access point's channel: the
+//!   return starts a retune earlier, and the station listens only until
+//!   then ([`Lease::listen_until`]). A lease whose gate closes too late
+//!   for two retunes and the policy's shortest listening before `until` is
+//!   cancelled ([`CancelReason::Late`]).
 //! - **A refused move** onto a lease's channel cancels that lease
 //!   ([`CancelReason::Refused`]) and the port returns; a failed return, or
 //!   a poisoned port, stops the station and the access point
 //!   ([`LeaveReason::PortFailed`]).
 //! - **The air reservation** is a policy option, off by default, for
 //!   absences no longer than the Duration field's limit
-//!   ([`MAX_RESERVATION`]).
+//!   ([`MAX_RESERVATION`]): the closing of the gate that leaves the access
+//!   point's channel takes one last frame, a CTS-to-self the driver sends
+//!   after the published attempts end, with the Duration left until the
+//!   lease's end ([`ArbiterAction::CloseGate`]).
 //! - **Beside an access point**, the station leaves the access point's
 //!   channel only in absences after the access point's TBTTs, which the
 //!   access point covers with a reservation of its air.
@@ -46,6 +51,7 @@
 //! keeps the access point's follow, search and loss policies.
 //!
 //! [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129596602
+//! [amendments]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129677418
 
 #[cfg(test)]
 extern crate std;
@@ -70,6 +76,7 @@ pub struct Lease<K> {
     channel: SupportedChannel<K>,
     from: Instant,
     until: Option<Instant>,
+    listen_until: Option<Instant>,
 }
 
 impl<K> Lease<K> {
@@ -88,9 +95,16 @@ impl<K> Lease<K> {
         self.from
     }
 
-    /// When it ends; `None` until it is given back.
+    /// When it ends: the port is back on the access point's channel then;
+    /// `None` until it is given back.
     pub const fn until(&self) -> Option<Instant> {
         self.until
+    }
+
+    /// Until when the station may listen on the lease's channel: its end,
+    /// less the return's retune.
+    pub const fn listen_until(&self) -> Option<Instant> {
+        self.listen_until
     }
 }
 
@@ -185,14 +199,6 @@ pub enum StationNotice<K> {
 /// What the arbiter tells the access point.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AccessPointCommand<K> {
-    /// Reserve the air from `from` until `until` (a CTS-to-self), so the
-    /// access point's peers keep quiet while the station is away.
-    ReserveAir {
-        /// The reservation's start.
-        from: Instant,
-        /// Its end.
-        until: Instant,
-    },
     /// Start on `channel`.
     Start(SupportedChannel<K>),
     /// Stop: release the peers and close the BSS.
@@ -232,7 +238,16 @@ pub enum ArbiterAction<G: GateTokens, K> {
     /// Tell the access point.
     AccessPoint(AccessPointCommand<K>),
     /// Close the port's transmit gate ([`Arbiter::gate_closed`] follows).
-    CloseGate(G::Open),
+    /// With `reserve_until`, the closing's last frame reserves the access
+    /// point's air until then (a CTS-to-self whose Duration the driver
+    /// computes when it sends it, and which it leaves out once no time is
+    /// left).
+    CloseGate {
+        /// The open gate.
+        gate: G::Open,
+        /// The end of the air reservation, if any.
+        reserve_until: Option<Instant>,
+    },
     /// Move the port to the channel: disable, set it, enable
     /// ([`Arbiter::retuned`] follows).
     Retune(SupportedChannel<K>),
@@ -256,19 +271,32 @@ pub struct ArbiterPolicy {
     pub preparation: Duration,
     /// How long after the access point's TBTT an absence starts.
     pub guard: Duration,
-    /// The longest absence from the access point's channel.
+    /// The longest absence from the access point's channel, its two
+    /// retunes included.
     pub absence: Duration,
+    /// The longest retune of the port.
+    pub retune: Duration,
+    /// The shortest listening worth an absence.
+    pub min_listen: Duration,
 }
 
 impl ArbiterPolicy {
     /// No air reservation, a 10 ms preparation, absences 2 ms after the
-    /// TBTT, at most 20 ms.
+    /// TBTT, at most 20 ms with their two retunes of at most 2 ms each, and
+    /// at least 5 ms of listening.
     pub const DEFAULT: Self = Self {
         reserve_air: false,
         preparation: Duration::from_millis(10),
         guard: Duration::from_millis(2),
         absence: Duration::from_millis(20),
+        retune: Duration::from_millis(2),
+        min_listen: Duration::from_millis(5),
     };
+}
+
+/// `a + b`, at most the longest duration.
+const fn sum(a: Duration, b: Duration) -> Duration {
+    Duration::from_micros(a.as_micros().saturating_add(b.as_micros()))
 }
 
 /// The access point's schedule.
@@ -300,6 +328,8 @@ struct Granted<K> {
     channel: SupportedChannel<K>,
     from: Instant,
     until: Option<Instant>,
+    /// The port returns to the access point's channel at its end.
+    returns: bool,
     ready: bool,
     step: Step,
 }
@@ -377,28 +407,43 @@ impl<G: GateTokens, K: Ieee80211Capabilities> Arbiter<G, K> {
             Purpose::Connect => None,
         };
         let away = request.channel.channel() != self.home().channel();
-        let (from, until) = match (&self.access_point, away) {
+        let retune = self.policy.retune;
+        let (from, until, returns) = match (&self.access_point, away) {
             // Beside an access point, away from its channel only in an
-            // absence after its TBTT, which its air reservation covers.
+            // absence after its TBTT: the move there, the listening and
+            // the move back, at most the policy's absence.
             (Some(schedule), true) => {
                 let from = schedule.slot(earliest, &self.policy);
-                let length = match dwell {
-                    Some(dwell) if dwell < self.policy.absence => dwell,
-                    _ => self.policy.absence,
+                let wanted = dwell.map_or(self.policy.absence, |dwell| {
+                    sum(sum(dwell, retune), retune)
+                });
+                let length = if wanted < self.policy.absence {
+                    wanted
+                } else {
+                    self.policy.absence
                 };
-                let until = from.saturating_add(length);
-                if self.policy.reserve_air && length <= MAX_RESERVATION {
-                    self.command = Some(AccessPointCommand::ReserveAir { from, until });
-                }
-                (from, Some(until))
+                (from, Some(from.saturating_add(length)), true)
             }
-            _ => (earliest, dwell.map(|dwell| earliest.saturating_add(dwell))),
+            // Alone, the port stays where the lease leaves it.
+            _ => (
+                earliest,
+                dwell.map(|dwell| earliest.saturating_add(retune).saturating_add(dwell)),
+                false,
+            ),
         };
+        let listen_until = until.map(|until| {
+            if returns {
+                until.checked_sub(retune).unwrap_or(until)
+            } else {
+                until
+            }
+        });
         self.lease = Some(Granted {
             id,
             channel: request.channel,
             from,
             until,
+            returns,
             ready: !request.announces_absence,
             step: Step::Waiting,
         });
@@ -407,6 +452,7 @@ impl<G: GateTokens, K: Ieee80211Capabilities> Arbiter<G, K> {
             channel: request.channel,
             from,
             until,
+            listen_until,
         })
     }
 
@@ -564,7 +610,14 @@ impl<G: GateTokens, K: Ieee80211Capabilities> Arbiter<G, K> {
                 // The lease's end is absolute: it keeps the access point's
                 // beacons and its air reservation. An absence that starts
                 // late is shorter; one the gate closed after is cancelled.
-                if granted.until.is_some_and(|until| now >= until) {
+                let retunes = if granted.returns { 2 } else { 1 };
+                let needed = (0..retunes).fold(self.policy.min_listen, |needed, _| {
+                    sum(needed, self.policy.retune)
+                });
+                if granted
+                    .until
+                    .is_some_and(|until| now.saturating_add(needed) > until)
+                {
                     let id = granted.id;
                     self.lease = None;
                     self.retune = None;
@@ -579,9 +632,23 @@ impl<G: GateTokens, K: Ieee80211Capabilities> Arbiter<G, K> {
                     self.notice = Some(StationNotice::LeaseStarted(granted.id));
                 }
             }
-            Step::Running if granted.until.is_some_and(|until| now >= until) => {
+            Step::Running
+                if granted.until.is_some_and(|until| {
+                    let ends = if granted.returns {
+                        until.checked_sub(self.policy.retune).unwrap_or(until)
+                    } else {
+                        until
+                    };
+                    now >= ends
+                }) =>
+            {
                 granted.step = Step::Returning;
-                self.close_gate_for_move(home);
+                if granted.returns {
+                    self.close_gate_for_move(home);
+                } else {
+                    self.retune = None;
+                    self.closing = true;
+                }
             }
             Step::Returning if !self.closing && self.closed.is_some() => {
                 granted.step = Step::Back;
@@ -607,7 +674,18 @@ impl<G: GateTokens, K: Ieee80211Capabilities> Arbiter<G, K> {
         if self.closing
             && let Some(open) = self.open.take()
         {
-            return Some(ArbiterAction::CloseGate(open));
+            // The closing that leaves the access point's channel reserves
+            // its air for the absence, as the policy asks.
+            let reserve_until = self.lease.as_ref().and_then(|granted| {
+                let until = granted.until?;
+                let leaving = granted.returns && granted.step == Step::Leaving;
+                let length = until.checked_duration_since(granted.from)?;
+                (leaving && self.policy.reserve_air && length <= MAX_RESERVATION).then_some(until)
+            });
+            return Some(ArbiterAction::CloseGate {
+                gate: open,
+                reserve_until,
+            });
         }
         if !self.closing
             && self.closed.is_some()
@@ -642,6 +720,9 @@ impl<G: GateTokens, K: Ieee80211Capabilities> Arbiter<G, K> {
         let granted = self.lease.as_ref()?;
         match granted.step {
             Step::Waiting => Some(granted.from),
+            Step::Running if granted.returns => granted
+                .until
+                .map(|until| until.checked_sub(self.policy.retune).unwrap_or(until)),
             Step::Running => granted.until,
             _ => None,
         }

@@ -22,8 +22,8 @@
 //! control before doing anything else.
 //!
 //! The body owns no memory of its own beyond one command buffer and spawns
-//! nothing; the caller polls it on a task of its choice, beside the radio
-//! backend's own runner. It stops serving when the caller's `stop`
+//! nothing; [`run_port`] joins it with the backend's driver in the task the
+//! caller polls it on. It stops serving when the caller's `stop`
 //! completes, when the transport closes or fails, when the radio's clock
 //! cannot be read, or when the radio epoch is exhausted ([`ServeExit`]).
 //! The backend reserves every event's end and a connection event's data
@@ -95,8 +95,8 @@ pub enum Exhaustion {
 /// How [`serve`] ended; `F` is the backend's poison cause.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Served<F> {
-    /// The service stopped serving for `exit`, and the port's `disable`
-    /// ended every admitted event: the backend is uninstalled.
+    /// The service stopped serving for `exit`, the port's `disable` ended
+    /// every admitted event, and the backend is uninstalled.
     Stopped(ServeExit),
     /// The service stopped serving for `exit`, and the port's `disable`
     /// found or left the backend poisoned: admitted events may be
@@ -110,6 +110,10 @@ pub enum Served<F> {
     /// The backend was poisoned before the service stopped serving; it is
     /// fail-stopped.
     Poisoned(F),
+    /// The service stopped serving for this exit and disabled and
+    /// uninstalled the port, but the backend's driver missed its retire
+    /// bound: [`run_port`] fail-stopped the backend.
+    Unretired(ServeExit),
 }
 
 /// Serve the Host through `transport` with `core` over `backend` until
@@ -152,7 +156,13 @@ where
         },
     )
     .await;
-    (served.expect("the body records how it ended"), uninstalled)
+    let served = match (served.expect("the body records how it ended"), &uninstalled) {
+        // The body uninstalled the port, but its driver did not retire in
+        // time.
+        (Served::Stopped(exit), None) => Served::Unretired(exit),
+        (served, _) => served,
+    };
+    (served, uninstalled)
 }
 
 /// The service as the port's body.

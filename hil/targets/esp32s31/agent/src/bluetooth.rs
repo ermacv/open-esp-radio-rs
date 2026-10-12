@@ -254,6 +254,7 @@ fn stop_failure_reason(
             c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-hci-service-stop-failed\r\n"
         }
         Served::Poisoned(cause) => poisoned_reason(*cause),
+        Served::Unretired(_) => c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-driver-unretired\r\n",
         // A stopped service is no stop failure.
         Served::Stopped(exit) => exit_reason(*exit),
     }
@@ -276,9 +277,6 @@ fn poisoned_reason(
         }
         Fault::Radio(Radio::OutOfOrderCompletion) => {
             c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-radio-out-of-order\r\n"
-        }
-        Fault::Runner(Runtime::NotInstalled) => {
-            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-not-installed\r\n"
         }
         Fault::Runner(Runtime::Scheduler(_)) => {
             c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-scheduler\r\n"

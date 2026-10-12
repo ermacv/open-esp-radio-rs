@@ -44,8 +44,8 @@ use oer_radio_port::CancelError;
 /// # Events
 ///
 /// The phase's one consumer takes the events; the backend's scheduler work
-/// runs in its own runner (the ESP32-S31 `BluetoothRuntime::run`), which the
-/// composition polls beside the body. The backend reserves the slots of an
+/// runs in its driver ([`PortBackend::drive`]), which
+/// [`run_port`](oer_radio_port::run_port) joins with the body. The backend reserves the slots of an
 /// admitted event's end ([`RadioOutcome::EventEnded`], with the
 /// [`RadioOutcome::TransmitAcknowledged`] or [`RadioOutcome::TestReport`]
 /// before it) and of the data PDUs a connection event receives (the Link
@@ -56,9 +56,9 @@ use oer_radio_port::CancelError;
 /// Submission and the clock are asynchronous because a backend may have to
 /// wait for hardware to admit a request: the ESP32-S31 takes a fresh
 /// controller-time latch for every request and every clock reading, which
-/// completes only after the hardware latched the time, and shares its radio
-/// with a runner that holds it across scheduler stop sequences. Neither wait
-/// depends on the caller; both end within the backend's own bounds.
+/// completes only after the hardware latched the time, and its driver
+/// serves a request between its scheduler passes. Neither wait depends on
+/// the caller; both end within the backend's own bounds.
 ///
 /// Who acknowledges data PDUs is part of the capabilities: either way the
 /// port carries only LLID and payload, reports

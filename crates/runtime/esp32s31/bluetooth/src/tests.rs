@@ -1519,3 +1519,51 @@ fn readings_beside_each_other_share_one_fresh_sample() {
     assert_eq!(second, first);
     assert_eq!(model.0.borrow().time_requests, before + 1);
 }
+
+/// The body of a port that, once disabled, awaits something of its own
+/// before it uninstalls: the driver has parked by then.
+struct WaitThenUninstall;
+
+impl oer_radio_port::PortBody<Backend> for WaitThenUninstall {
+    async fn run<'p, 'id>(
+        self,
+        owner: oer_radio_port::Owner<'p, 'id, Backend, oer_radio_port::Disabled>,
+        (): (),
+    ) -> oer_radio_port::Ended<'id, Backend> {
+        let Ok(owner) = owner.enable().await else {
+            panic!("the installed port enables")
+        };
+        let Ok(owner) = owner.disable(&mut |_| {}).await else {
+            panic!("the port disables")
+        };
+        // Something that reaches no port call, as a drained transport.
+        for _ in 0..8 {
+            embassy_futures::yield_now().await;
+        }
+        owner.uninstall(())
+    }
+}
+
+/// A retire request wakes an idle driver at once: the uninstall of a body
+/// that waited after its disable needs no time to pass.
+#[test]
+fn a_retire_request_wakes_an_idle_driver() {
+    let model = Model::default();
+    let runtime = new_runtime();
+    let backend = block_on(runtime.runtime.install(model_memory(), model.clone()))
+        .unwrap_or_else(|_| panic!("the install succeeds"));
+    let mut port = core::pin::pin!(oer_radio_port::run_port(backend, WaitThenUninstall));
+    let mut context = core::task::Context::from_waker(core::task::Waker::noop());
+    let started = clock().now();
+    let ended = (0..1_000)
+        .find_map(|_| match port.as_mut().poll(&mut context) {
+            core::task::Poll::Ready(ended) => Some(ended),
+            core::task::Poll::Pending => None,
+        })
+        .expect("the port ends without time passing");
+    assert!(
+        matches!(ended, Some(Ok(_))),
+        "the driver retires within its bound"
+    );
+    assert_eq!(clock().now(), started);
+}

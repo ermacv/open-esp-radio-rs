@@ -22,6 +22,9 @@ use crate::{
 
 mod sealed {
     pub trait Sealed {}
+
+    /// Only this crate names it, so only this crate calls a `Restore`.
+    pub struct Token(pub(super) ());
 }
 
 /// A move of a value's bytes into another storage that keeps every field
@@ -29,17 +32,14 @@ mod sealed {
 /// checked ([`Supported::map_storage`]).
 ///
 /// Sealed: only this crate implements it, for the request values and their
-/// owned counterparts. Another crate cannot turn a checked value into an
+/// owned counterparts, and only this crate calls it, through
+/// [`Supported::map_storage`] on a value its check passed. Another crate
+/// can neither turn a checked value into an unchecked one nor copy an
 /// unchecked one:
 ///
-/// ```compile_fail,E0277
-/// use oer_bluetooth_radio::{Restore, TxPower};
-/// struct Louder;
-/// impl Restore<'_, TxPower> for Louder {
-///     fn restore(&self) -> TxPower {
-///         TxPower::from_dbm(20)
-///     }
-/// }
+/// ```compile_fail,E0603
+/// // The token a `restore` call takes is private to this crate.
+/// use oer_bluetooth_radio::owned::sealed::Token;
 /// ```
 ///
 /// Its compiling twin moves a checked value into owned storage and back:
@@ -53,8 +53,10 @@ mod sealed {
 /// }
 /// ```
 pub trait Restore<'s, U>: sealed::Sealed {
-    /// The same value in the storage `U`.
-    fn restore(&'s self) -> U;
+    /// The same value in the storage `U`; only [`Supported::map_storage`]
+    /// calls it, on a checked value.
+    #[doc(hidden)]
+    fn restore(&'s self, token: sealed::Token) -> U;
 }
 
 impl<K: LeCapabilities, T> Supported<K, T> {
@@ -65,7 +67,7 @@ impl<K: LeCapabilities, T> Supported<K, T> {
     where
         T: Restore<'s, U>,
     {
-        Supported::restored(self.get().restore())
+        Supported::restored(self.get().restore(sealed::Token(())))
     }
 }
 
@@ -144,7 +146,7 @@ pub struct OwnedAdvertisingConfiguration {
 impl sealed::Sealed for AdvertisingConfiguration<'_> {}
 
 impl<'s> Restore<'s, OwnedAdvertisingConfiguration> for AdvertisingConfiguration<'_> {
-    fn restore(&'s self) -> OwnedAdvertisingConfiguration {
+    fn restore(&'s self, _: sealed::Token) -> OwnedAdvertisingConfiguration {
         OwnedAdvertisingConfiguration {
             set: self.set,
             pdu: OwnedAdvertisingPdu::copy(self.pdu),
@@ -164,7 +166,7 @@ impl<'s> Restore<'s, OwnedAdvertisingConfiguration> for AdvertisingConfiguration
 impl sealed::Sealed for OwnedAdvertisingConfiguration {}
 
 impl<'s> Restore<'s, AdvertisingConfiguration<'s>> for OwnedAdvertisingConfiguration {
-    fn restore(&'s self) -> AdvertisingConfiguration<'s> {
+    fn restore(&'s self, _: sealed::Token) -> AdvertisingConfiguration<'s> {
         AdvertisingConfiguration {
             set: self.set,
             pdu: self.pdu.borrow(),
@@ -191,7 +193,7 @@ pub struct OwnedDataPdu {
 impl sealed::Sealed for DataPdu<'_> {}
 
 impl<'s> Restore<'s, OwnedDataPdu> for DataPdu<'_> {
-    fn restore(&'s self) -> OwnedDataPdu {
+    fn restore(&'s self, _: sealed::Token) -> OwnedDataPdu {
         OwnedDataPdu {
             kind: self.kind(),
             payload: Bytes::copy(self.payload()),
@@ -202,7 +204,7 @@ impl<'s> Restore<'s, OwnedDataPdu> for DataPdu<'_> {
 impl sealed::Sealed for OwnedDataPdu {}
 
 impl<'s> Restore<'s, DataPdu<'s>> for OwnedDataPdu {
-    fn restore(&'s self) -> DataPdu<'s> {
+    fn restore(&'s self, _: sealed::Token) -> DataPdu<'s> {
         DataPdu::new(self.kind, self.payload.as_slice()).expect("a copy keeps a checked PDU")
     }
 }
@@ -222,7 +224,7 @@ pub struct OwnedTestTransmit {
 impl sealed::Sealed for TestTransmit<'_> {}
 
 impl<'s> Restore<'s, OwnedTestTransmit> for TestTransmit<'_> {
-    fn restore(&'s self) -> OwnedTestTransmit {
+    fn restore(&'s self, _: sealed::Token) -> OwnedTestTransmit {
         OwnedTestTransmit {
             id: self.id,
             channel: self.channel,
@@ -238,7 +240,7 @@ impl<'s> Restore<'s, OwnedTestTransmit> for TestTransmit<'_> {
 impl sealed::Sealed for OwnedTestTransmit {}
 
 impl<'s> Restore<'s, TestTransmit<'s>> for OwnedTestTransmit {
-    fn restore(&'s self) -> TestTransmit<'s> {
+    fn restore(&'s self, _: sealed::Token) -> TestTransmit<'s> {
         TestTransmit {
             id: self.id,
             channel: self.channel,
@@ -257,7 +259,7 @@ macro_rules! own_storage {
         impl sealed::Sealed for $value {}
 
         impl<'s> Restore<'s, $value> for $value {
-            fn restore(&'s self) -> $value {
+            fn restore(&'s self, _: sealed::Token) -> $value {
                 *self
             }
         }

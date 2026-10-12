@@ -1,4 +1,5 @@
-//! The radio role and its hardware behind one async lock.
+//! The shared part of the radio, its driver, which owns the radio role and
+//! its hardware, and the driver's requests.
 
 use core::{
     cell::{Cell, RefCell},
@@ -6,7 +7,7 @@ use core::{
     task::Poll,
 };
 
-use embassy_futures::select::{Either, select};
+use embassy_futures::select::{Either, Either3, select, select3};
 use embassy_sync::{
     blocking_mutex::{Mutex as BlockingMutex, raw::RawMutex},
     channel::Channel,
@@ -105,8 +106,6 @@ pub enum BluetoothFault<E> {
 /// Why the runtime stopped driving the radio.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothRuntimeFault<E> {
-    /// No radio is installed.
-    NotInstalled,
     /// A list-zero step or observation failed.
     Scheduler(SchedulerHardwareError),
     /// The idle scheduler did not start.
@@ -1302,8 +1301,18 @@ impl<
                 Pass::Idle => TIME_REFRESH,
             };
             budget.refill();
-            if let Either::Second(Err(error)) =
-                select(runtime.work.wait(), wait_for(&runtime.timer, wait)).await
+            // A retirement, a request, a wake or the deadline ends the wait;
+            // the retire request registers no waker, but its owner polls the
+            // driver right after it asks.
+            let retire = core::future::poll_fn(|_| {
+                if retiring() {
+                    Poll::Ready(())
+                } else {
+                    Poll::Pending
+                }
+            });
+            if let Either3::Second(Err(error)) =
+                select3(runtime.work.wait(), wait_for(&runtime.timer, wait), retire).await
             {
                 let fault = BluetoothRuntimeFault::Time(error);
                 runtime.poison(fault);
@@ -1795,7 +1804,7 @@ impl<
         }
     }
 
-    /// One locked pass: report completions, then advance the transaction in
+    /// One pass of the driver: report completions, then advance the transaction in
     /// progress or drive the next hardware work.
     fn pass(
         &self,

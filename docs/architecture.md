@@ -610,10 +610,10 @@ the phase's work, with their bodies, to the sink and returns the disabled
 owner once every permit is back. A client's submission returns its admitted
 work as a token the backend mints, holding the client that admitted it;
 the work ends only through that client (`work.cancel()`). No call refuses for a state the caller controls
-([Ownership and refusals](#ownership-and-refusals)). The protocol ports
-still implement the base `RadioPort` with its own `lifecycle` and
-`cancel`; `Owner` and `PortBody` are the contract a port body follows, and
-no protocol port is built on them yet.
+([Ownership and refusals](#ownership-and-refusals)). The Bluetooth LE
+backend (`LeRadioBackend`) is built on `Owner` and `PortBody`; the IEEE
+802.11 and IEEE 802.15.4 ports still implement the base `RadioPort` with
+its own `lifecycle` and `cancel`.
 
 **Correlation identities.** Each port keeps its own 32-bit identity type
 (`TxId`, `RequestId`, `EventId`), so a completion of one port cannot be
@@ -629,9 +629,11 @@ completion to the exchange that registered its `TxId` and queues received
 frames, lifecycle terminals and extension events separately. Taking an
 event only dequeues it. Timed work a backend performs in software (the
 802.15.4 CSMA-CA backoffs and retry delays, the Wi-Fi publication watchdog
-and retune, the Bluetooth LE scheduler) runs in the backend's runner
-future (`run`), which the composition polls beside the consumer for as long
-as the port exists.
+and retune) runs in the backend's runner future (`run`), which the
+composition polls beside the consumer for as long as the port exists. The
+Bluetooth LE scheduler runs in its backend's driver (`PortBackend::drive`),
+which `run_port` joins with the port's body; the driver owns the radio and
+its hardware by value and serves the port's requests as messages.
 
 **A port exists only while its backend is installed.** A backend's
 `install` returns two handles that borrow its runtime, and no other value
@@ -648,11 +650,12 @@ ordinary terminal event. A port's
 event stream lives as long as the port: `uninstall` discards the events it
 did not deliver, the terminal events still owed and a pending loss, and the
 next install's port starts with an empty stream; every event guarantee
-below holds for the port's lifetime. The Bluetooth LE backend uninstalls
-only a disabled port whose consumer took every event up to `Disabled`: its
-`Disable` stops the scheduler and ends every admitted event with what the
-hardware recorded, so none is discarded, and `serve` ends every session
-with that managed stop.
+below holds for the port's lifetime. The Bluetooth LE backend differs: its
+`install` returns one backend, which `run_port` runs under the port's
+owner, and its owner's `disable` stops the scheduler and hands every
+admitted event's end, with what the hardware recorded, to the body, so
+none is discarded; `run_port` then retires the driver and the uninstall
+returns the radio and its hardware.
 
 **Loss and poisoning.** A backend reserves the slot of every event whose
 loss would break a guarantee when it admits the work: every terminal event

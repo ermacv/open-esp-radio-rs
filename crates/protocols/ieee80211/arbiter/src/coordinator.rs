@@ -79,17 +79,23 @@ pub struct ApFollowPolicy {
     pub bands: ApBands,
     pub unservable: ApUnservable,
     /// The beacons that announce a move the coordinator starts itself (to
-    /// where a lost upstream was found).
+    /// where a lost upstream was found, or where the station joins).
     pub announce_count: u8,
+    /// The shortest time between two moves of the access point to where
+    /// the station joins, counted from their announcements: within it a
+    /// join elsewhere is refused ([`JoinAway::TooSoon`]).
+    pub min_follow_interval: Duration,
 }
 
 impl ApFollowPolicy {
     /// 2.4 GHz only; the access point stops where it may not follow; five
-    /// beacons announce a move of its own.
+    /// beacons announce a move of its own; at most one move to where the
+    /// station joins every 30 s.
     pub const DEFAULT: Self = Self {
         bands: ApBands::GHZ2_4,
         unservable: ApUnservable::StopAccessPoint,
         announce_count: 5,
+        min_follow_interval: Duration::from_secs(30),
     };
 
     /// Whether the access point may serve `channel`.
@@ -224,6 +230,27 @@ impl IntoIterator for CoordinatorActions {
     }
 }
 
+/// How the access point meets a station that joins away from its channel
+/// ([`ChannelCoordinator::station_joining_away`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum JoinAway {
+    /// The access point announces its move to the station's channel in its
+    /// next `count` beacons; the station joins once the port moved. An
+    /// announced move is never withdrawn: the access point stays there
+    /// whether the station joins or not.
+    Follow { count: u8 },
+    /// The access point may not serve the channel and stops; the station
+    /// joins alone.
+    StopAccessPoint,
+    /// The access point may not serve the channel and keeps it; the station
+    /// may not join there.
+    Refused,
+    /// The access point moved to where the station joins less than
+    /// [`ApFollowPolicy::min_follow_interval`] ago; the station may try
+    /// again at `retry_at`.
+    TooSoon { retry_at: Instant },
+}
+
 /// The access point's schedule, which counts and absences follow.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ApSchedule {
@@ -244,6 +271,14 @@ impl ApSchedule {
             .saturating_duration_since(self.next_tbtt)
             .as_micros()
             .div_ceil(interval)
+    }
+
+    /// When a switch announced at `now` in the next `count` beacons is
+    /// due: at the TBTT after the last of them.
+    pub fn switch_at(self, now: Instant, count: u8) -> Instant {
+        let interval = self.beacon_interval.as_micros();
+        self.tbtt_from(now)
+            .saturating_add(Duration::from_micros(interval.saturating_mul(u64::from(count))))
     }
 
     /// The first TBTT at or after `instant`.
@@ -309,6 +344,9 @@ pub struct ChannelCoordinator<'a> {
     /// The access point should run: the composition wants it, the policy
     /// may have stopped it.
     wanted: bool,
+    /// When the access point last announced a move to where the station
+    /// joins.
+    last_follow: Option<Instant>,
 }
 
 impl<'a> ChannelCoordinator<'a> {
@@ -319,6 +357,7 @@ impl<'a> ChannelCoordinator<'a> {
             upstream: Upstream::None,
             access_point: AccessPoint::Stopped,
             wanted: false,
+            last_follow: None,
         }
     }
 
@@ -334,6 +373,40 @@ impl<'a> ChannelCoordinator<'a> {
     /// Whether the owner should observe the upstream between absences.
     pub const fn searching(&self) -> bool {
         matches!(self.upstream, Upstream::Searching { .. })
+    }
+
+    /// Since when the upstream is searched for, while it is.
+    pub const fn search_since(&self) -> Option<Instant> {
+        match self.upstream {
+            Upstream::Searching { since, .. } => Some(since),
+            _ => None,
+        }
+    }
+
+    /// The station, beside the running access point, joins on `channel`,
+    /// away from the access point's, at `now`: the policy decides whether
+    /// the access point follows, stops or keeps its channel, and how soon
+    /// it follows again.
+    pub fn station_joining_away(&mut self, channel: Channel, now: Instant) -> JoinAway {
+        if !self.policy.serves(channel) {
+            return match self.policy.unservable {
+                ApUnservable::StopAccessPoint => {
+                    self.access_point = AccessPoint::Stopped;
+                    JoinAway::StopAccessPoint
+                }
+                ApUnservable::LeaveUpstream => JoinAway::Refused,
+            };
+        }
+        if let Some(last) = self.last_follow
+            && let Some(retry_at) = last.checked_add(self.policy.min_follow_interval)
+            && now < retry_at
+        {
+            return JoinAway::TooSoon { retry_at };
+        }
+        self.last_follow = Some(now);
+        JoinAway::Follow {
+            count: self.policy.announce_count.max(1),
+        }
     }
 
     /// The composition wants the access point to run: on the upstream's

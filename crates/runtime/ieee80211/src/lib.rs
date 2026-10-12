@@ -26,7 +26,7 @@ pub use monitor::{
     MonitorCaptureResources, MonitorCaptureSink,
 };
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 extern crate std;
 
 // The in-memory lower-MAC model allocates its state and events.

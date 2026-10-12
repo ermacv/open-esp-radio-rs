@@ -258,8 +258,10 @@ pub enum LowerMacEvent<'id, P: PhaseTypes<'id>> {
 pub trait PhaseTypes<'id> {
     /// The kind of the transmit tickets.
     type TicketKind;
-    /// The buffers a completion gives back, of their classes.
-    type TxBuffers: IntoIterator;
+    /// A transmit buffer of any class, as a completion gives it back.
+    type AnyTxBuffer;
+    /// The buffers a completion gives back.
+    type TxBuffers: IntoIterator<Item = Self::AnyTxBuffer>;
     /// The memory of one received MPDU, which goes back through
     /// [`LowerMacPhase::recycle`].
     type RxBuffer: crate::RxBuffer;
@@ -523,6 +525,16 @@ pub trait TxBufferPool<'id, C: TxBufferClass>: PhaseTypes<'id> {
     /// while it is not submitted. The backend owns its type and mints it
     /// only in the install's resources.
     type Buffer: TxBufferMemory;
+
+    /// The buffer, as any class's.
+    fn erase(buffer: Self::Buffer) -> Self::AnyTxBuffer;
+
+    /// The buffer of the class `C` a completion gave back.
+    ///
+    /// # Errors
+    ///
+    /// The buffer, when it is of another class.
+    fn class(buffer: Self::AnyTxBuffer) -> Result<Self::Buffer, Self::AnyTxBuffer>;
 }
 
 /// The memory of a transmit buffer the body holds: the caller encodes a

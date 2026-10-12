@@ -499,20 +499,118 @@ fn a_lost_upstream_is_searched_for_in_absences_and_its_loss_stops_the_access_poi
     assert!(seen.contains(&Seen::AccessPoint(AccessPointCommand::Stop)));
 }
 
+fn connect(number: u8) -> ChannelRequest<Caps> {
+    ChannelRequest {
+        channel: channel(number),
+        purpose: Purpose::Connect,
+    }
+}
+
 #[test]
-fn a_connect_away_from_a_running_access_point_is_refused_with_the_place() {
+fn a_join_away_from_the_access_point_starts_with_its_announced_move_and_it_stays_there() {
     let (mut arbiter, place) = beside_access_point::<NoReservation>();
+    let mut port = Port::default();
+    let lease = lease(arbiter.request(at(0), connect(6), place));
+    // Five beacons announce the move; the switch is due at the TBTT after
+    // the last of them.
+    assert_eq!(lease.from(), at(550));
+    assert_eq!(lease.until(), None);
+    let id = lease.id();
+    assert_eq!(
+        run(&mut arbiter, &mut port, at(0)),
+        [Seen::AccessPoint(AccessPointCommand::AnnounceSwitch {
+            target: channel(6),
+            mode: ChannelSwitchMode::Continue,
+            count: 5,
+        })]
+    );
+    // Nothing moves before the access point's switch.
+    assert_eq!(run(&mut arbiter, &mut port, at(549)), []);
+    assert_eq!(arbiter.channel(), Some(channel(1)));
+    arbiter.access_point(at(550), AccessPointFact::SwitchDue(channel(6)));
+    assert_eq!(
+        run(&mut arbiter, &mut port, at(550)),
+        [
+            Seen::CloseGate(()),
+            Seen::Retune(6),
+            Seen::OpenGate,
+            Seen::Station(StationNotice::LeaseStarted(id)),
+        ]
+    );
+    // The join fails: the station gives its lease back, and the access
+    // point stays on the channel it announced.
+    arbiter.release(lease);
+    assert_eq!(
+        run(&mut arbiter, &mut port, at(600)),
+        [
+            Seen::CloseGate(()),
+            Seen::OpenGate,
+            Seen::Station(StationNotice::LeaseEnded(id, self::place())),
+        ]
+    );
+    assert_eq!(arbiter.channel(), Some(channel(6)));
+}
+
+#[test]
+fn a_second_join_elsewhere_within_the_follow_interval_is_refused_and_the_access_point_stays() {
+    let (mut arbiter, place) = beside_access_point::<NoReservation>();
+    let mut port = Port::default();
+    let lease = lease(arbiter.request(at(0), connect(6), place));
+    run(&mut arbiter, &mut port, at(0));
+    arbiter.access_point(at(550), AccessPointFact::SwitchDue(channel(6)));
+    run(&mut arbiter, &mut port, at(550));
+    arbiter.release(lease);
+    let place = match run(&mut arbiter, &mut port, at(600)).pop() {
+        Some(Seen::Station(StationNotice::LeaseEnded(_, place))) => place,
+        seen => panic!("{seen:?}"),
+    };
+    // Within 30 s of the last announcement: refused, with when to retry,
+    // and nothing is announced.
+    let place = match arbiter.request(at(1_000), connect(11), place) {
+        Answer::Leave(LeaveReason::TooSoon { retry_at }, place) => {
+            assert_eq!(retry_at, at(30_000));
+            place
+        }
+        answer => panic!("{answer:?}"),
+    };
+    assert_eq!(run(&mut arbiter, &mut port, at(1_000)), []);
+    assert_eq!(arbiter.channel(), Some(channel(6)));
+    // After it, the access point follows again.
+    let _ = lease_after(&mut arbiter, place);
     assert!(matches!(
-        arbiter.request(
-            at(0),
-            ChannelRequest {
-                channel: channel(6),
-                purpose: Purpose::Connect,
-            },
-            place,
-        ),
-        Answer::Leave(LeaveReason::AwayFromAccessPoint, _)
+        run(&mut arbiter, &mut port, at(30_000)).as_slice(),
+        [Seen::AccessPoint(AccessPointCommand::AnnounceSwitch { count: 5, .. })]
     ));
+}
+
+fn lease_after(arbiter: &mut TestArbiter, place: LeasePlace) -> Lease<Caps> {
+    lease(arbiter.request(at(30_000), connect(11), place))
+}
+
+#[test]
+fn a_join_where_the_access_point_may_not_follow_stops_it_by_the_default_policy() {
+    let (mut arbiter, place) = beside_access_point::<NoReservation>();
+    let mut port = Port::default();
+    let five = SupportedChannel::new(Channel::ghz5(36, ChannelWidth::Mhz20).unwrap()).unwrap();
+    let lease = lease(arbiter.request(
+        at(0),
+        ChannelRequest {
+            channel: five,
+            purpose: Purpose::Connect,
+        },
+        place,
+    ));
+    // The access point stops; the station joins alone, at once.
+    assert_eq!(
+        run(&mut arbiter, &mut port, at(0)),
+        [
+            Seen::AccessPoint(AccessPointCommand::Stop),
+            Seen::CloseGate(()),
+            Seen::Retune(36),
+            Seen::OpenGate,
+            Seen::Station(StationNotice::LeaseStarted(lease.id())),
+        ]
+    );
 }
 
 /// A station connected on channel 1 beside an access point there, its

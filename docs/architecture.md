@@ -384,7 +384,7 @@ and leaves branded tokens to its body's boundary table.
 
 **Capacity as tokens.** An install's capacity is tokens a stateless
 `Mint<'id>` makes once for the backend's `resources`: slots (`Slot<'id, K>`,
-counting for the capabilities marker `K`), which a caller takes
+of a pool kind `Kind`, any marker type that keeps pools apart), which a caller takes
 synchronously from the ones it holds, an installed resource holding its slot
 until its removal gives it back; and permits (`Permit<'id, K>`), which a
 `PermitPool` hands out to awaiting takers and takes back when the work that

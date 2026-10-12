@@ -222,18 +222,108 @@ pub fn prompt(branch: &str, head: &str, base: &str, previous: Option<&Verdict>) 
     prompt
 }
 
-/// File the wording findings of `verdict` on `branch`, reviewed at `head`,
-/// as `review: …` issues of pull request `pr` through `review_findings.py`,
-/// which validates their labels and skips a finding already filed; returns
-/// its line per finding.
+/// The line of a file at the new side of a `git diff -U0` (`diff`) that
+/// stands for `line` at its old side: shifted by the hunks before it, or the
+/// first line of the hunk that changed it.
+pub fn moved_line(diff: &str, line: u64) -> u64 {
+    let range = |text: &str| -> Option<(u64, u64)> {
+        let (start, length) = text.split_once(',').unwrap_or((text, "1"));
+        Some((start.parse().ok()?, length.parse().ok()?))
+    };
+    let mut moved = line;
+    for header in diff.lines().filter(|text| text.starts_with("@@ ")) {
+        let mut fields = header.split_whitespace().skip(1);
+        let (Some(Some((old, old_length))), Some(Some((new, new_length)))) = (
+            fields
+                .next()
+                .and_then(|text| text.strip_prefix('-'))
+                .map(range),
+            fields
+                .next()
+                .and_then(|text| text.strip_prefix('+'))
+                .map(range),
+        ) else {
+            continue;
+        };
+        // An empty side names the line before the hunk.
+        let old_after = if old_length == 0 {
+            old + 1
+        } else {
+            old + old_length
+        };
+        let new_after = if new_length == 0 {
+            new + 1
+        } else {
+            new + new_length
+        };
+        if line >= old_after {
+            moved = line + new_after - old_after;
+        } else {
+            if old_length > 0 && line >= old {
+                moved = new.max(1);
+            }
+            break;
+        }
+    }
+    moved
+}
+
+/// The environment `review_findings.py` files the wording findings of
+/// `verdict` with, as issues of pull request `pr` on `branch` linking the
+/// pushed commit `head`, or none when it has none. A verdict reused after a
+/// rebase reviewed another commit, `verdict.head`, which may never have been
+/// pushed: `line` gives each finding's line at `head`.
+pub fn wording_filing(
+    verdict: &Verdict,
+    pr: &str,
+    branch: &str,
+    head: &str,
+    mut line: impl FnMut(&Finding) -> Result<u64>,
+) -> Result<Option<Vec<(&'static str, String)>>> {
+    let Some(mut report) = verdict.wording() else {
+        return Ok(None);
+    };
+    for finding in &mut report.findings {
+        finding.line = line(finding)?;
+    }
+    Ok(Some(vec![
+        ("RESULT", serde_json::to_string(&report)?),
+        ("PR", pr.to_owned()),
+        ("HEAD", head.to_owned()),
+        ("BRANCH", branch.to_owned()),
+    ]))
+}
+
+/// File the wording findings of `verdict` ([`wording_filing`]) through
+/// `review_findings.py`, linking the pushed commit `head`, which validates
+/// their labels and skips a finding already filed; returns its line per
+/// finding.
 pub fn file_wording(
     ctx: &Checkout,
     verdict: &Verdict,
     pr: &str,
-    head: &str,
     branch: &str,
+    head: &str,
 ) -> Result<Vec<String>> {
-    let Some(report) = verdict.wording() else {
+    let line = |finding: &Finding| -> Result<u64> {
+        if verdict.head == head {
+            return Ok(finding.line);
+        }
+        let diff = git::output(
+            &ctx.root,
+            [
+                "diff",
+                "-U0",
+                "--no-ext-diff",
+                &verdict.head,
+                head,
+                "--",
+                &finding.path,
+            ],
+        )?;
+        Ok(moved_line(&String::from_utf8_lossy(&diff), finding.line))
+    };
+    let Some(filing) = wording_filing(verdict, pr, branch, head, line)? else {
         return Ok(Vec::new());
     };
     let token = gh(ctx, &["auth", "token"])?;
@@ -252,12 +342,9 @@ pub fn file_wording(
     command
         .current_dir(&ctx.root)
         .arg(FILE_FINDINGS)
-        .env("RESULT", serde_json::to_string(&report)?)
+        .envs(filing)
         .env("GH_TOKEN", token)
         .env("GH_REPO", repository)
-        .env("PR", pr)
-        .env("HEAD", head)
-        .env("BRANCH", branch)
         .env("PYTHONDONTWRITEBYTECODE", "1");
     let output = process::capture(&mut command)?;
     Ok(String::from_utf8(output.stdout)?
@@ -578,6 +665,97 @@ mod tests {
         assert!(render(&wording).contains("🔵 Lost error"));
         // Nothing to file without a wording finding.
         assert_eq!(verdict(vec![finding("pre-existing")]).wording(), None);
+    }
+
+    #[test]
+    fn wording_findings_link_the_pushed_commit_at_their_moved_lines() {
+        // A verdict reused after a rebase reviewed another commit, which may
+        // never have been pushed: the link names the pushed one, at the line
+        // the finding moved to.
+        let filing = wording_filing(
+            &verdict(vec![finding("wording")]),
+            "715",
+            "fix/b",
+            "pushed",
+            |finding| Ok(finding.line + 3),
+        )
+        .unwrap()
+        .unwrap();
+        let value = |name: &str| {
+            filing
+                .iter()
+                .find(|(key, _)| *key == name)
+                .map(|(_, value)| value.clone())
+                .unwrap()
+        };
+        assert_eq!(value("HEAD"), "pushed");
+        assert_eq!(value("PR"), "715");
+        assert_eq!(value("BRANCH"), "fix/b");
+        let filed: Report = serde_json::from_str(&value("RESULT")).unwrap();
+        assert_eq!(filed.findings.len(), 1);
+        assert_eq!(filed.findings[0].line, 10);
+        assert_eq!(
+            wording_filing(
+                &verdict(vec![finding("nit")]),
+                "715",
+                "fix/b",
+                "pushed",
+                |finding| Ok(finding.line)
+            )
+            .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn a_line_moves_with_the_hunks_before_it() {
+        // Three lines inserted after line 2, line 5 rewritten into two, line
+        // 9 deleted.
+        let diff = "diff --git a/f b/f\n--- a/f\n+++ b/f\n\
+                    @@ -2,0 +3,3 @@\n+a\n+b\n+c\n\
+                    @@ -5 +9,2 @@\n-x\n+y\n+z\n\
+                    @@ -9 +13,0 @@\n-gone\n";
+        assert_eq!(moved_line(diff, 1), 1);
+        assert_eq!(moved_line(diff, 2), 2);
+        assert_eq!(moved_line(diff, 3), 6);
+        assert_eq!(moved_line(diff, 5), 9);
+        assert_eq!(moved_line(diff, 6), 11);
+        assert_eq!(moved_line(diff, 9), 13);
+        assert_eq!(moved_line(diff, 10), 14);
+        assert_eq!(moved_line("", 7), 7);
+    }
+
+    #[test]
+    fn a_rebased_line_is_found_in_the_pushed_commit() {
+        let repository = tempfile::tempdir().unwrap();
+        let root = repository.path();
+        let git = |arguments: &[&str]| {
+            git::text(
+                root,
+                [
+                    &[
+                        "-c",
+                        "user.name=t",
+                        "-c",
+                        "user.email=t@t",
+                        "-c",
+                        "commit.gpgsign=false",
+                    ],
+                    arguments,
+                ]
+                .concat(),
+            )
+            .unwrap()
+        };
+        git(&["init", "--quiet"]);
+        fs::write(root.join("f.txt"), "one\ntwo\nreviewed\n").unwrap();
+        git(&["add", "f.txt"]);
+        git(&["commit", "--quiet", "-m", "reviewed"]);
+        let reviewed = git(&["rev-parse", "HEAD"]);
+        fs::write(root.join("f.txt"), "zero\nhalf\none\ntwo\nreviewed\n").unwrap();
+        git(&["commit", "--quiet", "-am", "rebased"]);
+        let diff = git::output(root, ["diff", "-U0", &reviewed, "HEAD", "--", "f.txt"]).unwrap();
+        assert_eq!(moved_line(&String::from_utf8_lossy(&diff), 3), 5);
     }
 
     #[test]

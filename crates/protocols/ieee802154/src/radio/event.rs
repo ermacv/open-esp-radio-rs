@@ -60,8 +60,8 @@ pub enum RadioEvent<'frame> {
         /// Portable fault category.
         fault: RadioFault,
     },
-    /// The terminal event of a port lifecycle command
-    /// ([`RadioPort::lifecycle`](crate::RadioPort::lifecycle)).
+    /// The terminal event of the radio role's own enable or disable; the
+    /// owner shape's backend does not hand it out.
     Lifecycle(LifecycleEvent),
 }
 

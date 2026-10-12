@@ -119,9 +119,7 @@ pub(crate) fn record(tick: &Result<ConcurrentTrackingTick, ConcurrentPhyTracking
     let counter = match tick {
         Ok(ConcurrentTrackingTick::Tracked(_)) => &TRACKED,
         Ok(ConcurrentTrackingTick::NotDue) => &NOT_DUE,
-        Ok(ConcurrentTrackingTick::Unavailable(_) | ConcurrentTrackingTick::AwaitingQuiescence) => {
-            &SKIPPED
-        }
+        Ok(ConcurrentTrackingTick::Unavailable(_)) => &SKIPPED,
         Err(_) => return,
     };
     counter.fetch_add(1, Ordering::Relaxed);

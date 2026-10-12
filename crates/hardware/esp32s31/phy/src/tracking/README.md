@@ -39,28 +39,11 @@ sample order and timestamp updates. It runs only when the caller commits to
 execution; it must not be used merely to ask whether work is due. Its pending
 owner remains pending until the selected target children complete.
 
-`maintain_concurrent_phy` under the `Quiesced` policy runs tracking inside
-the earliest client window through a [`TrackingDeadline`](deadline.rs) in the
-executor's monotonic clock domain. It checks time before and after polling the
-actual tracking graph, and arms an independent wake for a suspended child.
-Expiry, clock loss/reversal, or an inconsistent timer poisons the domain.
-Even a completed calibration cannot settle the domain at or after the
-deadline. The absolute window starts at the caller's admission sample;
-delayed polling does not renew it.
-
-This is an execution guard, not a hardware preemption mechanism. A blocking
-calibration poll can overrun and is rejected when it returns. Admitting live
-protocol work still requires a measured execution bound and a separate reserve
-for IRQ/protocol restoration. The guard neither chooses BLE events nor bounds
-how long maintenance demand may remain deferred. A proof without a window
-admits tracking without a deadline.
-
 The concurrent domain runs the vendor periodic tracking: the radio system
 calls `track_concurrent_phy` every tracking period under the arbiter lease,
-and the domain's admission policy decides whether due work starts. By default
-it follows the vendor and pauses no protocol; the tracking graph brackets its
-RF-sensitive regions with the grant-protect request. There is no
-protocol-selected maintenance of individual operations.
+and due work starts at once, as the vendor's does: no protocol pauses, and
+the tracking graph brackets its RF-sensitive regions with the grant-protect
+request. There is no protocol-selected maintenance of individual operations.
 
 ## Operations and hardware effects
 
@@ -299,8 +282,7 @@ snapshot. Diagnostics-off images have no timing observer.
 ## Physical ownership and errors
 
 The vendor admission runs tracking with protocols active under the lease and
-the grant-protect brackets; the `Quiesced` policy is a stricter local mode.
-Neither establishes that a smaller exclusion scope is safe for an operation
+the grant-protect brackets. It does not establish that a smaller exclusion scope is safe for an operation
 the vendor does not run that way. No active-radio operation is admitted based
 only on its name or on a similar driver for another chip.
 

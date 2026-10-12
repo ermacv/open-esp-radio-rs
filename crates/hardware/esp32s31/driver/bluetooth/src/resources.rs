@@ -104,12 +104,6 @@ impl TaskResources {
         &self.registers
     }
 
-    /// The HAL task owner for a quiescence proof.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn hal_mut(&mut self) -> &mut HalBluetoothTaskOwner {
-        &mut self.registers
-    }
-
     /// Reset the stopped Controller, reunite the drained timer and return the
     /// clocked client.
     ///

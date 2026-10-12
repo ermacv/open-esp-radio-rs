@@ -17,17 +17,7 @@ fn refusals_name_the_client_they_concern() {
         refusal(ConcurrentPhyError::ClientAbsent(RadioClient::Ieee802154)),
         Refusal::ClientAbsent(Client::Ieee802154)
     );
-    assert_eq!(
-        refusal(ConcurrentPhyError::MissingQuiescence(
-            RadioClient::Bluetooth
-        )),
-        Refusal::MissingQuiescence(Client::Bluetooth)
-    );
     assert_eq!(refusal(ConcurrentPhyError::RfClosed), Refusal::RfClosed);
-    assert_eq!(
-        refusal(ConcurrentPhyError::WindowClosed),
-        Refusal::WindowClosed
-    );
 }
 
 #[test]

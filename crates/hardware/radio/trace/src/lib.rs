@@ -137,10 +137,7 @@ pub enum Refusal {
     Release,
     /// The tracking clock was rejected.
     Time,
-    MissingQuiescence(Client),
     ClientAbsent(Client),
-    ClockBehindProof,
-    WindowClosed,
 }
 
 impl Refusal {
@@ -159,10 +156,8 @@ impl Refusal {
             Self::Acquire => 10,
             Self::Release => 11,
             Self::Time => 12,
-            Self::MissingQuiescence(client) => 13 | (client as u32) << 8,
+            // 13, 15 and 16 are retired; never reuse them.
             Self::ClientAbsent(client) => 14 | (client as u32) << 8,
-            Self::ClockBehindProof => 15,
-            Self::WindowClosed => 16,
         }
     }
 
@@ -182,16 +177,10 @@ impl Refusal {
             (10, 0) => Self::Acquire,
             (11, 0) => Self::Release,
             (12, 0) => Self::Time,
-            (13, client) => match Client::from_raw(client) {
-                Some(client) => Self::MissingQuiescence(client),
-                None => return None,
-            },
             (14, client) => match Client::from_raw(client) {
                 Some(client) => Self::ClientAbsent(client),
                 None => return None,
             },
-            (15, 0) => Self::ClockBehindProof,
-            (16, 0) => Self::WindowClosed,
             _ => return None,
         })
     }
@@ -205,8 +194,7 @@ pub enum FaultStage {
     Transition = 0,
     /// A bus or hardware wait failed.
     Hardware = 1,
-    /// The operation missed its deadline.
-    Deadline = 2,
+    // 2 is retired; never reuse it.
     /// The borrow described another registration.
     EpochMismatch = 3,
     /// The completed transition did not return its owner.
@@ -220,7 +208,6 @@ impl FaultStage {
         Some(match raw {
             0 => Self::Transition,
             1 => Self::Hardware,
-            2 => Self::Deadline,
             3 => Self::EpochMismatch,
             4 => Self::MissingOwner,
             5 => Self::Clock,
@@ -387,8 +374,6 @@ pub enum TrackingTick {
     Tracked(TrackingProgress),
     /// The domain cannot track now; nothing changed.
     Unavailable(Refusal),
-    /// Tracking is due and waits for the clients' quiescence proofs.
-    AwaitingQuiescence,
     Refused(Refusal),
     /// Tracking started and failed; the domain is poisoned.
     Failed(Fault),
@@ -403,7 +388,7 @@ impl Event for TrackingTick {
             Self::NotDue => [0, 0],
             Self::Tracked(progress) => [1, progress.raw()],
             Self::Unavailable(refusal) => [2, refusal.raw()],
-            Self::AwaitingQuiescence => [3, 0],
+            // 3 is retired; never reuse it.
             Self::Refused(refusal) => [4, refusal.raw()],
             Self::Failed(fault) => [5, fault.raw()],
         }
@@ -414,7 +399,6 @@ impl Event for TrackingTick {
             [0, 0] => Self::NotDue,
             [1, progress] => Self::Tracked(TrackingProgress::from_raw(progress)?),
             [2, refusal] => Self::Unavailable(Refusal::from_raw(refusal)?),
-            [3, 0] => Self::AwaitingQuiescence,
             [4, refusal] => Self::Refused(Refusal::from_raw(refusal)?),
             [5, fault] => Self::Failed(Fault::from_raw(fault)?),
             _ => return None,
@@ -428,7 +412,6 @@ impl fmt::Display for TrackingTick {
             Self::NotDue => f.write_str("phy tracking not due"),
             Self::Tracked(progress) => write!(f, "phy tracked {progress:?}"),
             Self::Unavailable(refusal) => write!(f, "phy tracking unavailable {refusal:?}"),
-            Self::AwaitingQuiescence => f.write_str("phy tracking awaits quiescence"),
             Self::Refused(refusal) => write!(f, "phy tracking refused {refusal:?}"),
             Self::Failed(fault) => write!(f, "phy tracking failed {fault}"),
         }

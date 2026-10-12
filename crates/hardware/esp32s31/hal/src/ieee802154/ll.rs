@@ -277,12 +277,6 @@ impl Ieee802154MacOwners {
         (self.task, self.interrupts)
     }
 
-    /// Borrow the task owner, for example to prove quiescence while the MAC
-    /// is stopped and its interrupt route closed.
-    pub fn task_mut(&mut self) -> &mut Ieee802154TaskOwner {
-        &mut self.task
-    }
-
     /// Read the MAC power-sequencing words from `PAON_DELAY` to `DCDC_CTRL`,
     /// for comparison with an ESP-IDF image on hardware.
     pub fn power_sequence(&mut self) -> super::Ieee802154PowerSequence {

@@ -45,9 +45,6 @@ pub(crate) fn validate(evidence: &Ieee802154SessionStopEvidence, periods: u8) ->
     if counts.failed {
         return Err("background PHY maintenance failed".into());
     }
-    if counts.awaiting_other_clients != 0 {
-        return Err("another radio client was active during the session".into());
-    }
     let minimum = u16::from(periods).div_ceil(2);
     if counts.tracked < minimum {
         return Err(format!(
@@ -176,13 +173,10 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_or_shared_maintenance_fails_the_run() {
+    fn a_failed_maintenance_fails_the_run() {
         let mut failed = evidence(4);
         failed.maintenance.failed = true;
         assert!(validate(&failed, 4).is_err());
-        let mut shared = evidence(4);
-        shared.maintenance.awaiting_other_clients = 1;
-        assert!(validate(&shared, 4).is_err());
         let mut stopped = evidence(4);
         stopped.result = Ieee802154SessionResult::StopFailed;
         assert!(validate(&stopped, 4).is_err());

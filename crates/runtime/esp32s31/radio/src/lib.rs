@@ -17,9 +17,9 @@
 //! `esp_phy_disable`).
 //!
 //! [`RadioSystem::run_tracking`] is the vendor periodic `phy_track_pll`
-//! timer. It runs one tracking tick every tracking period under the domain's
-//! admission policy; the default follows ESP-IDF and tracks with protocols
-//! running, protected by the grant-protect brackets of the tracking graph.
+//! timer. It runs one tracking tick every tracking period and, as ESP-IDF
+//! does, tracks with protocols running, protected by the grant-protect
+//! brackets of the tracking graph.
 //!
 //! [`RadioSystem::run_coex_schedule`] is the coexistence schedule's phase
 //! timer. Protocols publish their coexistence status and program their

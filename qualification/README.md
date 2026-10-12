@@ -315,8 +315,7 @@ or logical HCI Reset does not establish the complete product lifecycle.
 
 The peripheral program selects the existing recovery, local Disconnect, local
 Reset, RF-loss and soak scenarios, plus physical retirement, same-storage
-powered restart, quiescent PHY maintenance and automatic maintenance with live
-ACL traffic. Qualified execution/restoration bounds and complete terminal-fault
+powered restart, and automatic maintenance with live ACL traffic. Qualified execution/restoration bounds and complete terminal-fault
 coverage remain gaps; active DTM is non-preemptible and has a separate
 hard-deadline fail-stop requirement. See the canonical
 [periodic maintenance contract](catalog/esp32s31/wifi-phy.toml).

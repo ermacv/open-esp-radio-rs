@@ -788,7 +788,7 @@ impl<'radio, P, C: PlatformClockProvider, T: Timer> RadioGuard<'radio, P, C, T> 
     /// when no client did, or waking closed RF - then take the BTBB
     /// reference and enter the PHY client set. A returned
     /// [`ConcurrentAcquire::TrackingDue`] means the domain must run its
-    /// tracking, within the client's quiescence, before the MAC uses RF.
+    /// tracking before the MAC uses RF.
     ///
     /// # Errors
     ///
@@ -841,8 +841,7 @@ impl<'radio, P, C: PlatformClockProvider, T: Timer> RadioGuard<'radio, P, C, T> 
     }
 
     /// One tick of the vendor `phy_track_pll` under this guard: evaluate
-    /// the clients' tracking period and run due tracking under the domain's
-    /// admission policy.
+    /// the clients' tracking period and run due tracking at once.
     ///
     /// # Errors
     ///

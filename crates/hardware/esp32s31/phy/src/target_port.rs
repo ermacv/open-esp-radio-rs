@@ -359,7 +359,6 @@ pub enum TargetPhyParamTrackingError {
     /// request was poisoned before any hardware access.
     EpochMismatch,
     Run(PhyParamTrackingRunError<PhyTargetPortError>),
-    Deadline(crate::tracking::deadline::TrackingDeadlineError),
     MissingCompletedOwner,
 }
 

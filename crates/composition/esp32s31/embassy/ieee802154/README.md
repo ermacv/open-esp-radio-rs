@@ -15,8 +15,7 @@ the [runtime](../../../../runtime/espressif/ieee802154/src/lib.rs) and the
 2. prepare the shared PHY through the radio system: register the domain when
    no client did, or wake its closed RF;
 3. join the domain and the shared BTBB baseband and apply the transmit-on
-   delay; run PHY tracking inside the client's quiescence window when the
-   join makes it due;
+   delay; run PHY tracking at once when the join makes it due;
 4. pulse the MAC reset and configure the masked foundation;
 5. activate the interrupt owner, install the runtime (engine `mac_init`) and
    route modem source 132 at priority one to `ieee802154_interrupt`, which

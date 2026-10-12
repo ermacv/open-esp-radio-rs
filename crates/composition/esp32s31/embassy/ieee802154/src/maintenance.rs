@@ -8,8 +8,4 @@ pub enum Ieee802154PhyMaintenance {
     NotDue,
     /// Tracking ran with IEEE 802.15.4 running.
     Tracked,
-    /// Tracking is due, but the domain's maintenance policy waits for the
-    /// quiescence of every active client, which one client cannot prove;
-    /// the vendor policy never waits. IEEE 802.15.4 keeps running.
-    AwaitingOtherClients,
 }

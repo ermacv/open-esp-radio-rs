@@ -1782,7 +1782,6 @@ dependencies = [
  "critical-section",
  "embassy-futures",
  "embassy-sync 0.8.0",
- "embassy-time",
  "oer-bluetooth-controller",
  "oer-bluetooth-hci",
  "oer-bluetooth-hci-transport",
@@ -2095,7 +2094,6 @@ name = "oer-esp32s31-ieee802154-system"
 version = "0.1.0"
 dependencies = [
  "embassy-sync 0.8.0",
- "embassy-time",
  "oer-esp32s31-coex",
  "oer-esp32s31-hal",
  "oer-esp32s31-ieee802154-esp-hal",

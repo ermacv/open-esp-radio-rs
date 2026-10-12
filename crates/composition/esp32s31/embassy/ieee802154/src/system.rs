@@ -1,7 +1,6 @@
 //! Bring-up and teardown of the IEEE 802.15.4 client on the chip.
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_time::Instant;
 use oer_esp32s31_coex::CoexError;
 use oer_esp32s31_hal::{
     ieee802154::{
@@ -76,11 +75,6 @@ impl Ieee802154Random for HardwareRandom {
 }
 
 static RUNTIME: Ieee802154SystemRuntime = Ieee802154Runtime::new(EmbassyClock);
-
-/// Window a clocked client grants shared PHY tracking at bring-up. The
-/// clocked owner starts no MAC operation while the proof lives, so the bound
-/// only limits how long tracking may hold the shared PHY.
-const TRACKING_WINDOW_MICROS: u64 = 1_000_000;
 
 /// The interrupt-table handler of `MODEM_ZB_MAC`.
 #[allow(
@@ -399,7 +393,7 @@ pub async fn start<P, C: PlatformClockProvider>(
             });
         }
     };
-    let mut clocked = match powered.enable_clocks(lease, clocks) {
+    let clocked = match powered.enable_clocks(lease, clocks) {
         Ok(clocked) => clocked,
         Err(failure) => {
             let error = Ieee802154StartError::Clocks(failure.error());
@@ -447,22 +441,13 @@ pub async fn start<P, C: PlatformClockProvider>(
     };
     let (lease, platform, _) = guard.parts();
     if acquired == ConcurrentAcquire::TrackingDue {
-        let issued_at = Instant::now().as_micros();
-        let tracked = match clocked.quiescence(issued_at, issued_at + TRACKING_WINDOW_MICROS) {
-            Ok(proof) => {
-                maintain_concurrent_phy::<P, RomShortDelay, _>(
-                    &EmbassyClock,
-                    lease,
-                    platform,
-                    &[proof],
-                    NoopPhyTargetObserver,
-                )
-                .await
-            }
-            Err(_) => Err(ConcurrentPhyTrackingError::Rejected(
-                ConcurrentPhyError::WindowClosed,
-            )),
-        };
+        let tracked = maintain_concurrent_phy::<P, RomShortDelay, _>(
+            &EmbassyClock,
+            lease,
+            platform,
+            NoopPhyTargetObserver,
+        )
+        .await;
         match tracked {
             Ok(_outcome) => {}
             Err(ConcurrentPhyTrackingError::Rejected(error)) => {
@@ -754,9 +739,6 @@ impl Ieee802154System {
             Ok(ConcurrentTrackingTick::Tracked(_outcome)) => Ok(Ieee802154PhyMaintenance::Tracked),
             Ok(ConcurrentTrackingTick::Unavailable(error)) => {
                 Err(Ieee802154MaintenanceError::Phy(error))
-            }
-            Ok(ConcurrentTrackingTick::AwaitingQuiescence) => {
-                Ok(Ieee802154PhyMaintenance::AwaitingOtherClients)
             }
             Err(ConcurrentPhyTrackingError::Rejected(error)) => {
                 Err(Ieee802154MaintenanceError::Phy(error))

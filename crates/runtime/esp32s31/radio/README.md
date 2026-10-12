@@ -33,10 +33,10 @@ protocol compositions are clients of the system:
 - `RadioGuard::close_phy_if_idle` is the last-client half of
   `esp_phy_disable`: it closes RF when no client remains.
 - `RadioSystem::run_tracking` is the vendor periodic `phy_track_pll` timer.
-  Every tracking period it runs one tick (`RadioSystem::track`) under the
-  domain's admission policy. The default vendor admission tracks with
-  protocols running; the tracking graph brackets its RF-sensitive regions
-  with the grant-protect request. Run it for the lifetime of the radio;
+  Every tracking period it runs one tick (`RadioSystem::track`): due
+  tracking starts at once with the protocols running, as the vendor's does,
+  and the tracking graph brackets its RF-sensitive regions with the
+  grant-protect request. Run it for the lifetime of the radio;
   `RadioSystem::run_tracking_observed` also reports every tick's result, and
   `RadioSystem::run_tracking_until` ends when a stop future completes, which
   it polls only between ticks so a started tick always finishes.

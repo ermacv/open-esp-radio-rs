@@ -27,9 +27,9 @@ use oer_esp32s31_pac::{
 use crate::{
     root::BluetoothPartition,
     shared_radio::{
-        BluetoothClient, BtbbAcquired, BtbbError, ClientQuiescence, CoexAbsent, CommonPower,
-        CommonPowerExitFailure, CommonRadioPowerError, EmptyQuiescentWindow, LowPowerClockError,
-        ModemClockError, PlatformClockProvider, SharedRadioLease,
+        BluetoothClient, BtbbAcquired, BtbbError, CoexAbsent, CommonPower, CommonPowerExitFailure,
+        CommonRadioPowerError, LowPowerClockError, ModemClockError, PlatformClockProvider,
+        SharedRadioLease,
     },
 };
 
@@ -519,23 +519,6 @@ impl TaskOwner {
                 interrupts: interrupts.registers,
             },
         })
-    }
-
-    /// Promise that Bluetooth performs no RF and does not touch the shared
-    /// PHY until `release_by_micros` (PHY monotonic clock).
-    ///
-    /// The proof borrows this owner mutably, so no Controller operation can
-    /// start while it lives.
-    ///
-    /// # Errors
-    ///
-    /// The window is empty.
-    pub fn quiescence(
-        &mut self,
-        issued_at_micros: u64,
-        release_by_micros: u64,
-    ) -> Result<ClientQuiescence<'_>, EmptyQuiescentWindow> {
-        ClientQuiescence::until(&mut self.registers, issued_at_micros, release_by_micros)
     }
 
     /// Take the shared BTBB baseband as the Bluetooth client.

@@ -7,7 +7,7 @@
 //! enters and leaves it. The BTBB gain byte is projected by the PHY client
 //! from the registration that describes the lease.
 
-use oer_esp32s31_hal::shared_radio::{ClientQuiescence, EmptyQuiescentWindow, SharedRadioLease};
+use oer_esp32s31_hal::shared_radio::SharedRadioLease;
 use oer_esp32s31_phy::{
     bluetooth_client::{
         BluetoothPhyClientError, BluetoothPhyLeaveFailure, BluetoothPhyMembership, join_bluetooth,
@@ -114,8 +114,7 @@ impl<'cells, const MODEM_TIMER_CAPACITY: usize>
     /// the radio system's proof that it prepared the domain.
     ///
     /// [`ConcurrentAcquire::TrackingDue`] means the domain must run its
-    /// tracking before the Controller uses RF; [`ControllerPhyJoined::quiescence`]
-    /// issues the proof the maintenance admission needs.
+    /// tracking before the Controller uses RF.
     ///
     /// # Errors
     ///
@@ -150,28 +149,6 @@ impl<'cells, const MODEM_TIMER_CAPACITY: usize>
                 error: refused.error,
             }),
         }
-    }
-}
-
-impl<const MODEM_TIMER_CAPACITY: usize> ControllerPhyJoined<'_, MODEM_TIMER_CAPACITY> {
-    /// Promise that the Controller performs no RF and does not touch the
-    /// shared PHY until `release_by_micros` (PHY monotonic clock).
-    ///
-    /// No scheduler work can start before the BLE PHY engine is initialized,
-    /// and the proof borrows this owner for its whole lifetime.
-    ///
-    /// # Errors
-    ///
-    /// The window is empty.
-    pub fn quiescence(
-        &mut self,
-        issued_at_micros: u64,
-        release_by_micros: u64,
-    ) -> Result<ClientQuiescence<'_>, EmptyQuiescentWindow> {
-        self.controller
-            .task_mut()
-            .hal_mut()
-            .quiescence(issued_at_micros, release_by_micros)
     }
 }
 

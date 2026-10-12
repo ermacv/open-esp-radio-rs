@@ -118,9 +118,6 @@ async fn serve(
                     Ok(Ieee802154PhyMaintenance::Tracked) => {
                         Ieee802154SessionPhyMaintenance::Tracked
                     }
-                    Ok(Ieee802154PhyMaintenance::AwaitingOtherClients) => {
-                        Ieee802154SessionPhyMaintenance::AwaitingOtherClients
-                    }
                     Err(_) => Ieee802154SessionPhyMaintenance::Failed,
                 };
                 publish_event_reliably(
@@ -187,10 +184,6 @@ async fn track_until(
             }
             Ok(ConcurrentTrackingTick::Tracked(_)) => {
                 tick_counts.tracked = tick_counts.tracked.saturating_add(1);
-            }
-            Ok(ConcurrentTrackingTick::AwaitingQuiescence) => {
-                tick_counts.awaiting_other_clients =
-                    tick_counts.awaiting_other_clients.saturating_add(1);
             }
             Ok(ConcurrentTrackingTick::Unavailable(_)) | Err(_) => unavailable.set(true),
         }

@@ -492,6 +492,12 @@ pub trait PortBackend: Sized {
     /// request channel, outcome queue and wakes to a driver that owns the
     /// state by value. `()` when it keeps none.
     type Held<'id>;
+    /// The handle's own state of the install `'id`, which only the body's
+    /// side reaches: the accounting of the slots it hands out (keys, Block
+    /// Ack agreements). The owner keeps it and lends it by `&mut` into each
+    /// setting, phase and disable, so it needs no lock and the driver never
+    /// sees it ([owner decisions on #563]).
+    type Local<'id>;
     /// What the driver owns by value and returns when it retires: the
     /// backend's state of a driver that owns it (the parts reach it by
     /// messages through `Held`), or `()` when the parts reach the state
@@ -512,6 +518,7 @@ pub trait PortBackend: Sized {
     fn disable<'a, 'id>(
         &'a mut self,
         held: &'a Self::Held<'id>,
+        local: &'a mut Self::Local<'id>,
         sink: &'a mut dyn FnMut(Self::Event),
     ) -> impl Future<Output = Result<(), Poisoned<Self::Fault>>> + 'a
     where
@@ -525,17 +532,25 @@ pub trait PortBackend: Sized {
     /// The port-lifetime part the backend keeps and the resources the body
     /// receives of the install `'id`, minted with `mint`; [`run_port`] calls
     /// it once.
-    fn resources<'id>(&mut self, mint: Mint<'id>) -> (Self::Held<'id>, Self::Resources<'id>);
+    #[allow(clippy::type_complexity, reason = "the install's three parts")]
+    fn resources<'id>(
+        &mut self,
+        mint: Mint<'id>,
+    ) -> (Self::Held<'id>, Self::Local<'id>, Self::Resources<'id>);
 
     /// Lend the disabled-only settings of the install `'id`. An
     /// implementation names the associated types with both lifetimes
     /// (`Self::Setup<'a, 'id>`), as the trait does, so its `'id` stays a
     /// parameter of the method.
-    fn setup<'a, 'id>(&'a mut self) -> Self::Setup<'a, 'id>;
+    fn setup<'a, 'id>(&'a mut self, local: &'a mut Self::Local<'id>) -> Self::Setup<'a, 'id>;
 
     /// Lend the running phase of the enabled port of the install `'id`:
     /// the body's handle over the queues to the driver in `held`.
-    fn phase<'a, 'id>(&'a mut self, held: &'a Self::Held<'id>) -> Self::Phase<'a, 'id>
+    fn phase<'a, 'id>(
+        &'a mut self,
+        held: &'a Self::Held<'id>,
+        local: &'a mut Self::Local<'id>,
+    ) -> Self::Phase<'a, 'id>
     where
         'id: 'a;
 
@@ -588,6 +603,7 @@ pub trait PortBackend: Sized {
     fn uninstall<'id>(
         self,
         held: Self::Held<'id>,
+        local: Self::Local<'id>,
         state: Self::State,
         control: Self::Uninstall,
     ) -> Self::Uninstalled;
@@ -678,20 +694,20 @@ async fn install<'id, B: PortBackend>(
     body: impl PortBody<B>,
     mint: Mint<'id>,
 ) -> Option<B::Uninstalled> {
-    let (held, resources) = backend.resources(mint);
+    let (held, local, resources) = backend.resources(mint);
     let install = Install {
         held,
         halted: Cell::new(false),
         retiring: Cell::new(false),
     };
-    let (mut backend, state, control) = {
+    let (mut backend, local, state, control) = {
         let mut driver = pin!(backend.drive(
             &install.held,
             Retire {
                 requested: &install.retiring,
             },
         ));
-        let mut body = pin!(body.run(Owner::new(backend, &install), resources));
+        let mut body = pin!(body.run(Owner::new(Owned { backend, local }, &install), resources));
         let mut state = None;
         let mut ended = poll_fn(|cx| {
             if let Poll::Ready(ended) = body.as_mut().poll(cx) {
@@ -707,7 +723,7 @@ async fn install<'id, B: PortBackend>(
         })
         .await;
         // A fail-stop already abandoned the backend and halted the driver.
-        let (backend, control) = ended.uninstall.take()?;
+        let (Owned { backend, local }, control) = ended.uninstall.take()?;
         // Until `detach`, a cancelled `run_port` abandons the backend, as a
         // dropped owner does.
         let mut retiring = Retiring {
@@ -726,10 +742,10 @@ async fn install<'id, B: PortBackend>(
                 state
             }
         };
-        (retiring.take(), state, control)
+        (retiring.take(), local, state, control)
     };
     backend.detach(&install.held);
-    Some(backend.uninstall(install.held, state, control))
+    Some(backend.uninstall(install.held, local, state, control))
 }
 
 /// The backend between the body's uninstall and its `detach`, while the
@@ -782,12 +798,12 @@ async fn retired<B: PortBackend>(
 pub struct Ended<'id, B: PortBackend> {
     /// The backend and the composition's control of an uninstall; `None`
     /// after a fail-stop, or once `run_port` took them.
-    uninstall: Option<(B, B::Uninstall)>,
+    uninstall: Option<(Owned<'id, B>, B::Uninstall)>,
     brand: Brand<'id>,
 }
 
-impl<B: PortBackend> Ended<'_, B> {
-    const fn uninstall(backend: B, control: B::Uninstall) -> Self {
+impl<'id, B: PortBackend> Ended<'id, B> {
+    const fn uninstall(backend: Owned<'id, B>, control: B::Uninstall) -> Self {
         Self {
             uninstall: Some((backend, control)),
             brand: PhantomData,
@@ -807,7 +823,7 @@ impl<B: PortBackend> Drop for Ended<'_, B> {
         // A body returns its `Ended` and `run_port` takes the backend out, so
         // only a panic or a cancelled `run_port` drops one that still holds
         // its backend; the driver is dropped with it.
-        let mut backend = self.uninstall.take().map(|(backend, _)| backend);
+        let mut backend = self.uninstall.take().map(|(owned, _)| owned.backend);
         abandoned(&mut backend);
     }
 }
@@ -818,14 +834,14 @@ impl<B: PortBackend> Drop for Ended<'_, B> {
 #[must_use = "an owner leaves only through a transition, an uninstall or a fail-stop"]
 pub struct Owner<'p, 'id, B: PortBackend, S> {
     /// `None` only once a consuming method took it.
-    backend: Option<B>,
+    backend: Option<Owned<'id, B>>,
     /// The install: the part the backend keeps, and the driver's halt.
     install: &'p Install<'id, B>,
     state: PhantomData<S>,
 }
 
 impl<'p, 'id, B: PortBackend, S> Owner<'p, 'id, B, S> {
-    const fn new(backend: B, install: &'p Install<'id, B>) -> Self {
+    const fn new(backend: Owned<'id, B>, install: &'p Install<'id, B>) -> Self {
         Self {
             backend: Some(backend),
             install,
@@ -834,15 +850,17 @@ impl<'p, 'id, B: PortBackend, S> Owner<'p, 'id, B, S> {
     }
 
     fn backend(&mut self) -> &mut B {
-        self.backend.as_mut().expect(HELD)
+        &mut self.backend.as_mut().expect(HELD).backend
     }
 
-    /// The backend and the part of the install it keeps, borrowed apart.
-    fn parts(&mut self) -> (&mut B, &B::Held<'id>) {
-        (self.backend.as_mut().expect(HELD), &self.install.held)
+    /// The backend, the part of the install it keeps and the handle's own
+    /// state, borrowed apart.
+    fn parts(&mut self) -> (&mut B, &B::Held<'id>, &mut B::Local<'id>) {
+        let owned = self.backend.as_mut().expect(HELD);
+        (&mut owned.backend, &self.install.held, &mut owned.local)
     }
 
-    fn take(mut self) -> B {
+    fn take(mut self) -> Owned<'id, B> {
         self.backend.take().expect(HELD)
     }
 
@@ -850,7 +868,7 @@ impl<'p, 'id, B: PortBackend, S> Owner<'p, 'id, B, S> {
     pub fn now(
         &self,
     ) -> impl Future<Output = PortResult<RadioInstant<B::Domain>, ClockError, B::Fault>> + '_ {
-        self.backend.as_ref().expect(HELD).now()
+        self.backend.as_ref().expect(HELD).backend.now()
     }
 
     /// Stop the backend and its driver at once and end the port without its
@@ -858,7 +876,7 @@ impl<'p, 'id, B: PortBackend, S> Owner<'p, 'id, B, S> {
     /// reset.
     pub fn fail_stop(self) -> Ended<'id, B> {
         let install = self.install;
-        halt(install, self.take());
+        halt(install, self.take().backend);
         Ended::fail_stop()
     }
 }
@@ -866,7 +884,8 @@ impl<'p, 'id, B: PortBackend, S> Owner<'p, 'id, B, S> {
 impl<'p, 'id, B: PortBackend> Owner<'p, 'id, B, Disabled> {
     /// Lend the protocol's disabled-only settings.
     pub fn setup(&mut self) -> Lent<'_, B::Setup<'_, 'id>> {
-        Lent::new(self.backend().setup())
+        let (backend, _, local) = self.parts();
+        Lent::new(backend.setup(local))
     }
 
     /// Enable the port, within the backend's bound.
@@ -900,8 +919,8 @@ impl<'p, 'id, B: PortBackend> Owner<'p, 'id, B, Disabled> {
 impl<'p, 'id, B: PortBackend> Owner<'p, 'id, B, Enabled> {
     /// Lend the running phase, a [`Lent`] of this borrow.
     pub fn phase(&mut self) -> Lent<'_, B::Phase<'_, 'id>> {
-        let (backend, held) = self.parts();
-        Lent::new(backend.phase(held))
+        let (backend, held, local) = self.parts();
+        Lent::new(backend.phase(held, local))
     }
 
     /// Disable the port within the backend's bound: every leftover terminal
@@ -917,8 +936,8 @@ impl<'p, 'id, B: PortBackend> Owner<'p, 'id, B, Enabled> {
     ) -> Result<Owner<'p, 'id, B, Disabled>, PoisonedOwner<'p, 'id, B>> {
         // The owner holds the backend across the wait, as `enable`'s does.
         let disabled = {
-            let (backend, held) = self.parts();
-            backend.disable(held, sink).await
+            let (backend, held, local) = self.parts();
+            backend.disable(held, local, sink).await
         };
         let install = self.install;
         let backend = self.take();
@@ -934,7 +953,7 @@ impl<B: PortBackend, S> Drop for Owner<'_, '_, B, S> {
         if self.backend.is_some() {
             self.install.halted.set(true);
         }
-        abandoned(&mut self.backend);
+        abandoned(&mut self.backend.take().map(|owned| owned.backend));
     }
 }
 
@@ -961,13 +980,17 @@ impl<'id, B: PortBackend> Failed<'_, 'id, B> {
 #[must_use = "a poisoned backend leaves only through its uninstall or a fail-stop"]
 pub struct PoisonedOwner<'p, 'id, B: PortBackend> {
     /// `None` only once a consuming method took it.
-    backend: Option<B>,
+    backend: Option<Owned<'id, B>>,
     install: &'p Install<'id, B>,
     cause: B::Fault,
 }
 
 impl<'p, 'id, B: PortBackend> PoisonedOwner<'p, 'id, B> {
-    const fn new(backend: B, install: &'p Install<'id, B>, poisoned: Poisoned<B::Fault>) -> Self {
+    const fn new(
+        backend: Owned<'id, B>,
+        install: &'p Install<'id, B>,
+        poisoned: Poisoned<B::Fault>,
+    ) -> Self {
         Self {
             backend: Some(backend),
             install,
@@ -975,7 +998,7 @@ impl<'p, 'id, B: PortBackend> PoisonedOwner<'p, 'id, B> {
         }
     }
 
-    fn take(mut self) -> B {
+    fn take(mut self) -> Owned<'id, B> {
         self.backend.take().expect(HELD)
     }
 
@@ -994,7 +1017,7 @@ impl<'p, 'id, B: PortBackend> PoisonedOwner<'p, 'id, B> {
     /// its uninstall.
     pub fn fail_stop(self) -> Ended<'id, B> {
         let install = self.install;
-        halt(install, self.take());
+        halt(install, self.take().backend);
         Ended::fail_stop()
     }
 }
@@ -1004,8 +1027,15 @@ impl<B: PortBackend> Drop for PoisonedOwner<'_, '_, B> {
         if self.backend.is_some() {
             self.install.halted.set(true);
         }
-        abandoned(&mut self.backend);
+        abandoned(&mut self.backend.take().map(|owned| owned.backend));
     }
+}
+
+/// The backend with the handle's own state of the install `'id`, which
+/// travel together from owner to owner.
+struct Owned<'id, B: PortBackend> {
+    backend: B,
+    local: B::Local<'id>,
 }
 
 const HELD: &str = "an owner holds its backend until a consuming method";

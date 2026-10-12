@@ -24,7 +24,7 @@ const RESERVED_HEADER_BITS: u8 = 0x10;
 /// The highest connection event scheduling priority.
 const MAX_PRIORITY: u8 = 15;
 /// The longest LE Test packet payload.
-const TEST_PAYLOAD_MAX: usize = 255;
+pub(crate) const TEST_PAYLOAD_MAX: usize = 255;
 
 /// Values checked against a backend's capabilities when they are built.
 ///
@@ -151,6 +151,15 @@ impl<K: LeCapabilities, T> Supported<K, T> {
     /// The checked value.
     pub const fn get(&self) -> &T {
         &self.value
+    }
+
+    /// `value`, a storage move of a checked value that keeps what its check
+    /// read ([`crate::Restore`]).
+    pub(crate) const fn restored(value: T) -> Self {
+        Self {
+            value,
+            caps: PhantomData,
+        }
     }
 }
 

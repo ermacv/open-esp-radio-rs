@@ -38,6 +38,7 @@ mod activity;
 mod capabilities;
 mod channel;
 mod outcome;
+mod owned;
 mod pdu;
 mod port;
 mod request;
@@ -68,6 +69,9 @@ pub type LeInstant = oer_time::RadioInstant<LeRadio>;
 /// A window reserved on the LE radio port's clock.
 pub type LeWindow = oer_time::RadioWindow<LeRadio>;
 pub use outcome::{EventResult, RadioOutcome, ReceivedPdu, TestReport};
+pub use owned::{
+    OwnedAdvertisingConfiguration, OwnedDataPdu, OwnedRadioRequest, OwnedTestTransmit, Restore,
+};
 pub use pdu::{AdvertisingPdu, DataPdu, DataPduKind, PduError, TestPayloadType};
 pub use port::{LeRadioPort, NoRadio};
 pub use request::{

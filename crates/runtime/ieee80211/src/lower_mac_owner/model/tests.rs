@@ -738,3 +738,171 @@ fn a_cancelled_next_event_loses_no_event() {
     ));
     assert_eq!(*received.borrow(), [1, 2]);
 }
+
+/// A protected data MPDU of `sequence` to the peer, 40 octets, in
+/// `buffer`, and its frame.
+fn subframe<'id, C>(
+    mut buffer: ModelBuffer<'id, C>,
+    sequence: u16,
+) -> (ModelBuffer<'id, C>, SizedFrame<AckHeader, ModelCaps>) {
+    let bytes = buffer.bytes_mut();
+    bytes[..40].fill(0x5a);
+    bytes[0..2].copy_from_slice(&0x4108_u16.to_le_bytes());
+    bytes[22..24].copy_from_slice(&(sequence << 4).to_le_bytes());
+    (buffer, subframe_frame(sequence))
+}
+
+/// The frame of a protected data MPDU of `sequence` to the peer, 40
+/// octets.
+fn subframe_frame(sequence: u16) -> SizedFrame<AckHeader, ModelCaps> {
+    let header = HeaderSpec::new(
+        FrameControl::new(0x4108).unwrap(),
+        0,
+        IndividualAddress::new(PEER).unwrap(),
+        STATION,
+        PEER,
+        sequence << 4,
+        None,
+        None,
+        None,
+    )
+    .and_then(AckHeader::new)
+    .unwrap();
+    SizedFrame::new(header, MpduLength::new(40).unwrap()).unwrap()
+}
+
+/// The next terminal: its ticket, buffers and Block Ack.
+async fn aggregate_completion<'p, 'id: 'p>(
+    phase: &mut ModelPhase<'p, 'id>,
+) -> (
+    Slot<'id, ModelTickets>,
+    Vec<ModelAnyBuffer<'id>>,
+    Option<oer_ieee80211_lower_mac::BlockAckReport>,
+) {
+    loop {
+        yield_now().await;
+        let event = {
+            let event = core::pin::pin!(phase.next_event());
+            let mut context = core::task::Context::from_waker(Waker::noop());
+            Future::poll(event, &mut context)
+        };
+        if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted {
+            ticket,
+            buffers,
+            completion,
+            ..
+        }))) = event
+        {
+            return (ticket, buffers.into_iter().collect(), completion.block_ack);
+        }
+    }
+}
+
+/// An A-MPDU of three protected subframes whose Block Ack misses the
+/// second; the second goes again from its numbered buffer beside a new
+/// subframe (owner decision on #563, comment 6131631789).
+struct AggregateRetransmission<'t> {
+    air: &'t ModelAir,
+    report: &'t Cell<Option<oer_ieee80211_lower_mac::BlockAckReport>>,
+}
+
+impl Work for AggregateRetransmission<'_> {
+    async fn work<'p, 'id: 'p>(
+        self,
+        phase: &mut ModelPhase<'p, 'id>,
+        resources: ModelResources<'id>,
+    ) {
+        use oer_ieee80211_lower_mac::{
+            AggregateAttempt, AmpduPhase, MpduStartSpacing, PhaseAggregate, Tid,
+        };
+        let ModelResources {
+            mut tickets,
+            mut small,
+            station_pairwise: [slot, _],
+            ..
+        } = resources;
+        let key = phase.station().install_pairwise_key(
+            slot,
+            IndividualAddress::new(PEER).unwrap(),
+            Ccmp128Key([7; 16]),
+        );
+        let ht = oer_ieee80211_mac::phy::HtRate::new(
+            HtMcs::new(7).unwrap(),
+            oer_ieee80211_mac::phy::PpduBandwidth::Mhz20,
+            false,
+        )
+        .unwrap();
+        let attempt = |ticket, aggregate| AggregateAttempt {
+            ticket,
+            aggregate,
+            protection: Protection::None,
+            key: Some(&key),
+            power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+            coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+            min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
+        };
+        // Three new subframes, sequence numbers 0 to 2; the Block Ack
+        // misses the second.
+        self.air.block_ack(0b101);
+        let rate = phase.rate(PhyRate::Ht(ht)).unwrap();
+        let mut station = phase.station();
+        let rate = station.ampdu_rate(rate).ok().unwrap();
+        let mut aggregate = station.aggregate(Tid::new(0).unwrap(), rate);
+        for sequence in 0..3 {
+            let (buffer, frame) = subframe(small.remove(0), sequence);
+            aggregate
+                .push::<ModelSmall>(buffer, frame, None)
+                .ok()
+                .unwrap();
+        }
+        station
+            .submit_ampdu(attempt(tickets.remove(0), aggregate))
+            .unwrap();
+        let (ticket, mut buffers, report) = aggregate_completion(phase).await;
+        self.report.set(report);
+        // The second again, from its numbered buffer, beside a new one.
+        let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::numbered(buffers.remove(1))
+            .ok()
+            .expect("a protected subframe comes back numbered");
+        let rate = phase.rate(PhyRate::Ht(ht)).unwrap();
+        let mut station = phase.station();
+        let rate = station.ampdu_rate(rate).ok().unwrap();
+        let mut aggregate = station.aggregate(Tid::new(0).unwrap(), rate);
+        aggregate
+            .push_retransmission::<ModelSmall>(numbered, subframe_frame(1), None)
+            .ok()
+            .unwrap();
+        let (buffer, frame) = subframe(small.remove(0), 3);
+        aggregate
+            .push::<ModelSmall>(buffer, frame, None)
+            .ok()
+            .unwrap();
+        station.submit_ampdu(attempt(ticket, aggregate)).unwrap();
+        let _ = aggregate_completion(phase).await;
+    }
+}
+
+#[test]
+fn a_lost_subframe_goes_again_with_its_packet_number_beside_new_ones_numbered_anew() {
+    let (backend, air) = backend();
+    let report = Cell::new(None);
+    block_on(run_port(
+        backend,
+        Body(AggregateRetransmission {
+            air: &air,
+            report: &report,
+        }),
+    ));
+    let report = report.get().expect("the A-MPDU's Block Ack");
+    assert_eq!(report.start_sequence.get(), 0);
+    assert_eq!(report.bitmap, 0b101, "the second subframe missed");
+    let sent = air.sent();
+    let numbers: Vec<_> = sent.iter().map(|frame| frame.packet_number).collect();
+    assert_eq!(numbers, [Some(1), Some(2), Some(3), Some(2), Some(4)]);
+    // The retransmitted subframe carries the Retry bit; the others do not.
+    let retry: Vec<_> = sent
+        .iter()
+        .map(|frame| frame.frame[1] & 0x08 != 0)
+        .collect();
+    assert_eq!(retry, [false, false, false, true, false]);
+}

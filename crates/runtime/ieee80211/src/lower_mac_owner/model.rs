@@ -19,6 +19,12 @@
 //! stand-ins of a backend's lock-free single-producer single-consumer
 //! queues.
 //!
+//! Each interface sends A-MPDUs ([`AmpduPhase`]) of up to
+//! [`MODEL_AMPDU_SUBFRAMES`] subframes: under a key the new subframes are
+//! numbered at their first transmission and a retransmitted one keeps its
+//! number and gets the Retry bit; the air answers each aggregate with a
+//! Block Ack ([`ModelAir::block_ack`], every subframe by default).
+//!
 //! Capacity is the tokens': every terminal returns a ticket, so no terminal
 //! is ever lost; received frames beyond [`MODEL_RX_EVENTS`] queued are
 //! dropped and the stream says [`EventsLost`] once.
@@ -50,6 +56,11 @@ use oer_ieee80211_lower_mac::{
     SupportedEdca, SupportedFilter, TxBody, TxBufferClass, TxBufferMemory, TxBufferPool,
     TxCompletion, TxFrame, TxFrameBody, TxStatus, VifRole, WidthSet,
 };
+use oer_ieee80211_lower_mac::{
+    AckHeader, AggregateAttempt, AmpduCapabilities, AmpduPhase, AmpduRate, BlockAckReport,
+    PhaseAggregate, SizedFrame, Tid,
+};
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 /// The longest MPDU the model's large buffers hold.
 pub const MODEL_MAX_MPDU: usize = 2304;
@@ -525,6 +536,10 @@ pub struct ModelAir {
     settings: Cell<u32>,
     /// The queues the air keeps busy: their attempts wait unpublished.
     held: Cell<[bool; 4]>,
+    /// The Block Acks of the next A-MPDUs, in order: bit `n` acknowledges
+    /// the aggregate's subframe `n`; once none is queued, every subframe
+    /// is acknowledged.
+    block_acks: RefCell<VecDeque<u64>>,
 }
 
 impl ModelAir {
@@ -536,6 +551,12 @@ impl ModelAir {
     /// Answer the next transmission: acknowledged or not.
     pub fn answer(&self, acknowledged: bool) {
         self.answers.borrow_mut().push_back(acknowledged);
+    }
+
+    /// Answer the next A-MPDU with a Block Ack of the subframes whose
+    /// bits `acknowledged` sets, bit `n` for its subframe `n`.
+    pub fn block_ack(&self, acknowledged: u64) {
+        self.block_acks.borrow_mut().push_back(acknowledged);
     }
 
     /// Deliver `frame` to the radio.
@@ -605,6 +626,7 @@ struct Stage {
 /// A command the handle sends the driver, in the order it made it.
 enum Command<'id> {
     Submit(Prepared<'id>),
+    SubmitAmpdu(PreparedAggregate<'id>),
     InstallKey {
         index: u8,
     },
@@ -614,6 +636,29 @@ enum Command<'id> {
     },
     CloseGate,
     OpenGate,
+}
+
+/// The work of a queue: one MPDU, or one A-MPDU.
+enum Work<'id> {
+    Single(Prepared<'id>),
+    Aggregate(PreparedAggregate<'id>),
+}
+
+/// One subframe of an aggregate, in its buffer.
+struct Subframe<'id> {
+    buffer: ModelAnyBuffer<'id>,
+    len: usize,
+    header_len: usize,
+}
+
+/// An A-MPDU attempt prepared for its queue.
+struct PreparedAggregate<'id> {
+    role: VifRole,
+    ticket: Slot<'id, ModelTickets>,
+    subframes: Vec<Subframe<'id>>,
+    queue: usize,
+    rate: PhyRate,
+    key: Option<u8>,
 }
 
 /// An attempt prepared for its queue.
@@ -916,7 +961,7 @@ impl<C: Ieee80211Capabilities> LowerMacBackend for ModelBackend<C> {
 /// The model's hardware, which only the driver owns.
 struct Driver<'id> {
     /// The prepared attempts of each queue, the head first.
-    queues: [VecDeque<Prepared<'id>>; 4],
+    queues: [VecDeque<Work<'id>>; 4],
     /// The installed hardware keys.
     keys: Vec<u8>,
     /// The last packet number of each key that numbered an MPDU.
@@ -954,7 +999,11 @@ impl<'id> Driver<'id> {
             match command {
                 Command::Submit(prepared) => {
                     let queue = prepared.queue;
-                    self.queues[queue].push_back(prepared);
+                    self.queues[queue].push_back(Work::Single(prepared));
+                }
+                Command::SubmitAmpdu(aggregate) => {
+                    let queue = aggregate.queue;
+                    self.queues[queue].push_back(Work::Aggregate(aggregate));
                 }
                 Command::InstallKey { index } => self.keys.push(index),
                 Command::RemoveKey { index, removed } => {
@@ -965,8 +1014,31 @@ impl<'id> Driver<'id> {
                     self.gate_open = false;
                     // Every prepared, unpublished attempt ends as aborted.
                     for queue in &mut self.queues {
-                        while let Some(prepared) = queue.pop_front() {
-                            terminal(held, prepared, TxStatus::Aborted, 0, None);
+                        while let Some(work) = queue.pop_front() {
+                            match work {
+                                Work::Single(prepared) => {
+                                    terminal(held, prepared, TxStatus::Aborted, 0, None);
+                                }
+                                Work::Aggregate(aggregate) => {
+                                    held.post(LowerMacEvent::TxCompleted {
+                                        ticket: aggregate.ticket,
+                                        buffers: aggregate
+                                            .subframes
+                                            .into_iter()
+                                            .map(|subframe| subframe.buffer)
+                                            .collect(),
+                                        completion: TxCompletion {
+                                            status: TxStatus::Aborted,
+                                            ack_rssi_dbm: None,
+                                            ack_snr_db: None,
+                                            block_ack: None,
+                                            transmissions: 0,
+                                            rate: None,
+                                        },
+                                        bodies: core::iter::empty(),
+                                    });
+                                }
+                            }
                         }
                     }
                     let closed = held.closed.borrow_mut().take();
@@ -994,62 +1066,15 @@ impl<'id> Driver<'id> {
             if busy {
                 continue;
             }
-            while let Some(mut prepared) = queue.pop_front() {
-                // A fresh MPDU under a key is numbered at its first
-                // transmission; a numbered one keeps its number.
-                if let Some(key) = prepared.key
-                    && matches!(
-                        prepared.buffer,
-                        ModelAnyBuffer::Small(_) | ModelAnyBuffer::Large(_)
-                    )
-                {
-                    let number = match self
-                        .packet_numbers
-                        .iter_mut()
-                        .find(|(index, _)| *index == key)
-                    {
-                        Some((_, last)) => {
-                            *last += 1;
-                            *last
-                        }
-                        None => {
-                            self.packet_numbers.push((key, 1));
-                            1
-                        }
-                    };
-                    let at = prepared.header_len;
-                    prepared.buffer.memory_mut()[at..at + 8]
-                        .copy_from_slice(&ccmp_header(number, 0));
-                    prepared.buffer = prepared.buffer.into_numbered();
-                }
-                let mut transmissions = 0_u8;
-                let mut last = None;
-                let mut delivered = false;
-                'plan: for stage in &prepared.plan {
-                    for _ in 0..stage.transmissions {
-                        transmissions = transmissions.saturating_add(1);
-                        last = Some(stage.rate);
-                        held.air.sent.borrow_mut().push(AirFrame {
-                            role: prepared.role,
-                            frame: prepared.buffer.memory()[..prepared.len].into(),
-                            rate: stage.rate,
-                            key: prepared.key.map(|key| (key, self.keys.contains(&key))),
-                            packet_number: prepared.key.map(|_| {
-                                packet_number(&prepared.buffer.memory()[prepared.header_len..])
-                            }),
-                        });
-                        if held.air.acknowledges() {
-                            delivered = true;
-                            break 'plan;
-                        }
+            while let Some(work) = queue.pop_front() {
+                match work {
+                    Work::Single(prepared) => {
+                        publish_single(held, &self.keys, &mut self.packet_numbers, prepared)
+                    }
+                    Work::Aggregate(aggregate) => {
+                        publish_aggregate(held, &self.keys, &mut self.packet_numbers, aggregate)
                     }
                 }
-                let status = if delivered {
-                    TxStatus::Success
-                } else {
-                    TxStatus::AckTimeout
-                };
-                terminal(held, prepared, status, transmissions, last);
             }
         }
     }
@@ -1077,6 +1102,164 @@ impl<'id> Driver<'id> {
             }
         }
     }
+}
+
+/// The buffer of a fresh MPDU under `key`, numbered at its first
+/// transmission: its CCMP header written with the key's next packet number.
+/// A numbered buffer keeps its number.
+fn number<'id>(
+    packet_numbers: &mut Vec<(u8, u64)>,
+    key: Option<u8>,
+    mut buffer: ModelAnyBuffer<'id>,
+    header_len: usize,
+) -> ModelAnyBuffer<'id> {
+    let Some(key) = key else {
+        return buffer;
+    };
+    if !matches!(buffer, ModelAnyBuffer::Small(_) | ModelAnyBuffer::Large(_)) {
+        return buffer;
+    }
+    let number = match packet_numbers.iter_mut().find(|(index, _)| *index == key) {
+        Some((_, last)) => {
+            *last += 1;
+            *last
+        }
+        None => {
+            packet_numbers.push((key, 1));
+            1
+        }
+    };
+    buffer.memory_mut()[header_len..header_len + 8].copy_from_slice(&ccmp_header(number, 0));
+    buffer.into_numbered()
+}
+
+/// What the air saw of one transmission of `buffer`.
+fn on_air(
+    role: VifRole,
+    keys: &[u8],
+    key: Option<u8>,
+    buffer: &ModelAnyBuffer<'_>,
+    len: usize,
+    header_len: usize,
+    rate: PhyRate,
+) -> AirFrame {
+    AirFrame {
+        role,
+        frame: buffer.memory()[..len].into(),
+        rate,
+        key: key.map(|key| (key, keys.contains(&key))),
+        packet_number: key.map(|_| packet_number(&buffer.memory()[header_len..])),
+    }
+}
+
+/// Publish one MPDU and carry its retry plan out.
+fn publish_single<'id>(
+    held: &ModelHeld<'id>,
+    keys: &[u8],
+    packet_numbers: &mut Vec<(u8, u64)>,
+    mut prepared: Prepared<'id>,
+) {
+    prepared.buffer = number(
+        packet_numbers,
+        prepared.key,
+        prepared.buffer,
+        prepared.header_len,
+    );
+    let mut transmissions = 0_u8;
+    let mut last = None;
+    let mut delivered = false;
+    'plan: for stage in &prepared.plan {
+        for _ in 0..stage.transmissions {
+            transmissions = transmissions.saturating_add(1);
+            last = Some(stage.rate);
+            held.air.sent.borrow_mut().push(on_air(
+                prepared.role,
+                keys,
+                prepared.key,
+                &prepared.buffer,
+                prepared.len,
+                prepared.header_len,
+                stage.rate,
+            ));
+            if held.air.acknowledges() {
+                delivered = true;
+                break 'plan;
+            }
+        }
+    }
+    let status = if delivered {
+        TxStatus::Success
+    } else {
+        TxStatus::AckTimeout
+    };
+    terminal(held, prepared, status, transmissions, last);
+}
+
+/// Publish one A-MPDU: its new subframes numbered, its retransmitted ones
+/// with their numbers; the air's Block Ack names the subframes it
+/// acknowledged by their sequence numbers.
+fn publish_aggregate<'id>(
+    held: &ModelHeld<'id>,
+    keys: &[u8],
+    packet_numbers: &mut Vec<(u8, u64)>,
+    aggregate: PreparedAggregate<'id>,
+) {
+    let PreparedAggregate {
+        role,
+        ticket,
+        subframes,
+        rate,
+        key,
+        ..
+    } = aggregate;
+    let acknowledged = held
+        .air
+        .block_acks
+        .borrow_mut()
+        .pop_front()
+        .unwrap_or(u64::MAX);
+    let sequence = |buffer: &ModelAnyBuffer<'_>| {
+        u16::from_le_bytes([buffer.memory()[22], buffer.memory()[23]]) >> 4
+    };
+    let mut buffers = Vec::with_capacity(subframes.len());
+    let mut start = None;
+    let mut bitmap = 0_u64;
+    for (index, subframe) in subframes.into_iter().enumerate() {
+        let buffer = number(packet_numbers, key, subframe.buffer, subframe.header_len);
+        held.air.sent.borrow_mut().push(on_air(
+            role,
+            keys,
+            key,
+            &buffer,
+            subframe.len,
+            subframe.header_len,
+            rate,
+        ));
+        let sequence = sequence(&buffer);
+        let start = *start.get_or_insert(sequence);
+        if acknowledged & (1 << index) != 0 {
+            bitmap |= 1 << (sequence.wrapping_sub(start) & 0x0fff).min(63);
+        }
+        buffers.push(buffer);
+    }
+    held.post(LowerMacEvent::TxCompleted {
+        ticket,
+        buffers,
+        completion: TxCompletion {
+            status: TxStatus::Success,
+            ack_rssi_dbm: None,
+            ack_snr_db: None,
+            block_ack: start
+                .and_then(SequenceNumber::new)
+                .map(|start_sequence| BlockAckReport {
+                    start_sequence,
+                    bitmap,
+                }),
+            transmissions: 1,
+            rate: Some(rate),
+        },
+        bodies: core::iter::empty(),
+    });
 }
 
 /// Post the terminal of `prepared`, with its tokens.
@@ -1417,6 +1600,160 @@ where
 
     fn remove_block_ack(&mut self, agreement: ModelBlockAck<'id>) -> Slot<'id, ModelBlockAcks> {
         agreement.slot
+    }
+}
+
+/// The subframes one model A-MPDU holds.
+pub const MODEL_AMPDU_SUBFRAMES: usize = 8;
+
+/// An A-MPDU the model builds: its subframes, each in a buffer of its own.
+pub struct ModelAggregate<'id, C = ModelCaps> {
+    subframes: Vec<Subframe<'id>>,
+    tid: Tid,
+    rate: PhyRate,
+    caps: PhantomData<fn() -> C>,
+}
+
+/// A buffer of any class, as the model's own type.
+fn any<'id>(buffer: <ModelTypes as PhaseTypes<'id>>::AnyTxBuffer) -> ModelAnyBuffer<'id> {
+    buffer
+}
+
+impl<'id, K: Ieee80211Capabilities> ModelAggregate<'id, K> {
+    /// Append a subframe the caller checked: the aggregate has room and
+    /// its class holds the frame.
+    fn append(&mut self, buffer: ModelAnyBuffer<'id>, frame: &SizedFrame<AckHeader, K>) {
+        self.subframes.push(Subframe {
+            buffer,
+            len: frame.len().get(),
+            header_len: frame.header().header_len(),
+        });
+    }
+}
+
+impl<'id, K: Ieee80211Capabilities> PhaseAggregate<'id> for ModelAggregate<'id, K> {
+    type Body = ModelBody;
+    type Caps = K;
+    type Types = ModelTypes;
+
+    fn push<C>(
+        &mut self,
+        buffer: <ModelTypes as TxBufferPool<'id, C>>::Buffer,
+        frame: SizedFrame<AckHeader, K>,
+        body: Option<ModelBody>,
+    ) -> Result<
+        (),
+        (
+            <ModelTypes as TxBufferPool<'id, C>>::Buffer,
+            SizedFrame<AckHeader, K>,
+            Option<ModelBody>,
+        ),
+    >
+    where
+        C: TxBufferClass,
+        ModelTypes: TxBufferPool<'id, C>,
+    {
+        let len = frame.len().get();
+        if self.subframes.len() >= MODEL_AMPDU_SUBFRAMES || C::CAPACITY < len {
+            return Err((buffer, frame, body));
+        }
+        self.append(
+            any(<ModelTypes as TxBufferPool<'id, C>>::erase(buffer)),
+            &frame,
+        );
+        Ok(())
+    }
+
+    fn push_retransmission<C>(
+        &mut self,
+        buffer: <ModelTypes as TxBufferPool<'id, C>>::Numbered,
+        frame: SizedFrame<AckHeader, K>,
+        body: Option<ModelBody>,
+    ) -> Result<
+        (),
+        (
+            <ModelTypes as TxBufferPool<'id, C>>::Numbered,
+            SizedFrame<AckHeader, K>,
+            Option<ModelBody>,
+        ),
+    >
+    where
+        C: TxBufferClass,
+        ModelTypes: TxBufferPool<'id, C>,
+    {
+        let len = frame.len().get();
+        if self.subframes.len() >= MODEL_AMPDU_SUBFRAMES || C::CAPACITY < len {
+            return Err((buffer, frame, body));
+        }
+        let mut erased = any(<ModelTypes as TxBufferPool<'id, C>>::erase_numbered(buffer));
+        // Again: the Retry bit, and the CCMP header as it is.
+        erased.memory_mut()[1] |= 0x08;
+        self.append(erased, &frame);
+        Ok(())
+    }
+
+    fn subframes(&self) -> usize {
+        self.subframes.len()
+    }
+}
+
+impl<'p, 'v, 'id: 'p, R, K: Ieee80211Capabilities> AmpduPhase<'p, 'id>
+    for ModelInterface<'v, 'id, R, K>
+where
+    R: RoleKeys<'id, ModelTypes, Keys = ModelKeys<'id, R>>,
+{
+    type Aggregate = ModelAggregate<'id, K>;
+
+    fn ampdu_capabilities(&self) -> AmpduCapabilities {
+        AmpduCapabilities {
+            max_subframes: MODEL_AMPDU_SUBFRAMES as u16,
+            formats: PhyFormatSet::HT.union(PhyFormatSet::HE),
+            max_length: 65_535,
+        }
+    }
+
+    fn aggregate(&mut self, tid: Tid, rate: AmpduRate<'p>) -> ModelAggregate<'id, K> {
+        ModelAggregate {
+            subframes: Vec::new(),
+            tid,
+            rate: rate.rate().get(),
+            caps: PhantomData,
+        }
+    }
+
+    fn submit_ampdu(
+        &mut self,
+        attempt: AggregateAttempt<
+            'id,
+            '_,
+            ModelTickets,
+            ModelAggregate<'id, K>,
+            ModelPairwiseKey<'id, R>,
+            K,
+        >,
+    ) -> Result<(), Poisoned<ModelFault>> {
+        if self.held.air.poisoned.get() {
+            return Err(Poisoned { cause: ModelFault });
+        }
+        let ModelAggregate {
+            subframes,
+            tid,
+            rate,
+            ..
+        } = attempt.aggregate;
+        let queue = match oer_ieee80211_mac::qos::WmmUserPriority::new(tid.get()) {
+            Some(priority) => priority.access_category() as usize,
+            None => oer_ieee80211_mac::qos::WmmAccessCategory::BestEffort as usize,
+        };
+        self.held.command(Command::SubmitAmpdu(PreparedAggregate {
+            role: R::ROLE,
+            ticket: attempt.ticket,
+            subframes,
+            queue,
+            rate,
+            key: attempt.key.map(|key| key.index),
+        }));
+        Ok(())
     }
 }
 

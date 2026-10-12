@@ -182,7 +182,10 @@ build lacks is all removed or all added. A function either build blocks has
 no accesses compared: its state (`analyzed`, `blocked`, `absent` in each
 build) is reported where it differs, since its accesses there are unknown.
 Each change says whether each build's analysis of the function is complete:
-an access missing from an incomplete one may only be unseen. Code a build
+an access missing from an incomplete one may only be unseen. A function
+both builds define that is not reported but that a build blocks or analyzes
+incompletely is listed as `uncertain`, with its state and completeness in
+each build: no difference is seen there, but none is shown absent either. Code a build
 does not analyze is reported with its reason (`gaps`), and a build with no
 analyzed function, such as a file in no supported format or an image
 without function symbols, is an error rather than a build without MMIO

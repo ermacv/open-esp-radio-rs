@@ -504,6 +504,7 @@ pub fn mmio_diff(
     names.sort_unstable();
     names.dedup();
     let mut changes = Vec::new();
+    let mut uncertain = Vec::new();
     for name in names {
         control.checkpoint(1)?;
         let mut old = before.remove(&name).unwrap_or_default();
@@ -531,12 +532,32 @@ pub fn mmio_diff(
             || old.unresolved != new.unresolved
             || (state[0] != state[1] && (mmio || !compared));
         if !changed {
+            let defined = !state.contains(&MmioFunctionState::Absent);
+            if defined && (!compared || old.incomplete || new.incomplete) {
+                admit(
+                    memory,
+                    &mut admitted,
+                    size_of::<MmioUncertainFunction>(),
+                    control,
+                )?;
+                uncertain.push(MmioUncertainFunction {
+                    function: name,
+                    state,
+                    complete: [
+                        state[0] == MmioFunctionState::Analyzed && !old.incomplete,
+                        state[1] == MmioFunctionState::Analyzed && !new.incomplete,
+                    ],
+                });
+            }
             continue;
         }
         changes.push(MmioFunctionChange {
             function: name,
             state,
-            complete: [!old.incomplete, !new.incomplete],
+            complete: [
+                state[0] == MmioFunctionState::Analyzed && !old.incomplete,
+                state[1] == MmioFunctionState::Analyzed && !new.incomplete,
+            ],
             removed,
             added,
             unresolved: [old.unresolved, new.unresolved],
@@ -547,6 +568,7 @@ pub fn mmio_diff(
         ranges: ranges.to_vec(),
         functions,
         changes,
+        uncertain,
         blocked: [blocked_before, blocked_after],
         gaps: [gaps_before, gaps_after],
     })

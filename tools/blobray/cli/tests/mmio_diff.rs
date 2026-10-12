@@ -348,6 +348,33 @@ fn a_blocked_function_reports_its_state_and_no_accesses() {
         change.removed.is_empty() && change.added.is_empty(),
         "{change:?}"
     );
+    // The blocked build has no complete analysis of it.
+    assert_eq!(change.complete, [true, false]);
+}
+
+#[test]
+fn a_function_both_builds_block_is_uncertain_not_unchanged() {
+    // `copy` keeps both builds analyzed; `gone` only the old one defines.
+    let functions = [
+        ("_RNvCs1a_4demo4poke", poke(0xefff_ffff)),
+        ("_RNvCs1a_4demo4copy", copy(0x3000)),
+        ("_RNvCs1a_4demo4gone", copy(0x3000)),
+    ];
+    let old = image_sized(&functions, 0x3000, &["_RNvCs1a_4demo4poke"]);
+    let new = image_sized(&functions[..2], 0x3000, &["_RNvCs1a_4demo4poke"]);
+    let diff = diff(old, new);
+    assert!(
+        diff.changes.iter().all(|c| c.function != "demo::poke"),
+        "{diff:?}"
+    );
+    let uncertain: Vec<_> = diff.uncertain.iter().map(|u| u.function.as_str()).collect();
+    // An unchanged complete function, or one a build lacks, is not uncertain.
+    assert_eq!(uncertain, ["demo::poke"]);
+    assert_eq!(
+        diff.uncertain[0].state,
+        [blobray_domain::MmioFunctionState::Blocked; 2]
+    );
+    assert_eq!(diff.uncertain[0].complete, [false, false]);
 }
 
 /// `*(0x3000) = 1`: a store outside the window.

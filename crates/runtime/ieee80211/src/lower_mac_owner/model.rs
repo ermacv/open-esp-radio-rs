@@ -93,7 +93,7 @@ impl Ieee80211Capabilities for ModelCaps {
 pub const OWNED_MODEL_TX_BUFFERS: usize = 3;
 /// Pairwise and group key slots of each role.
 pub const OWNED_MODEL_KEY_SLOTS: usize = 2;
-/// Receive Block Ack slots of each role.
+/// Receive Block Ack slots, which both roles share.
 pub const OWNED_MODEL_BLOCK_ACK_SLOTS: usize = 4;
 /// Transmit queues of the model ([`MODEL_CAPABILITIES`]).
 pub const OWNED_MODEL_TX_QUEUES: usize = MODEL_CAPABILITIES.tx_queues as usize;

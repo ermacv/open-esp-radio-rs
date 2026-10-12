@@ -1,7 +1,5 @@
 //! Backend observations.
 
-use oer_radio_port::LifecycleEvent;
-
 use crate::{ConnectionId, EventId, LeInstant};
 
 /// One PDU received during an event.
@@ -75,6 +73,4 @@ pub enum RadioOutcome<'pdu> {
         /// The result.
         report: TestReport,
     },
-    /// The terminal event of a lifecycle command.
-    Lifecycle(LifecycleEvent),
 }

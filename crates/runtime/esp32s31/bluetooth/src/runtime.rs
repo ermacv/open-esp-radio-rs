@@ -1,20 +1,23 @@
-//! The radio role and its hardware behind one async lock.
+//! The shared part of the radio, its driver, which owns the radio role and
+//! its hardware, and the driver's requests.
 
 use core::{
     cell::{Cell, RefCell},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, AtomicU32, Ordering},
+    task::Poll,
 };
 
-use embassy_futures::select::{Either, select};
+use embassy_futures::select::{Either, Either3, select, select3};
 use embassy_sync::{
     blocking_mutex::{Mutex as BlockingMutex, raw::RawMutex},
     channel::Channel,
-    mutex::Mutex,
     signal::Signal,
+    waitqueue::WakerRegistration,
 };
+use oer_bluetooth_port::EnableResult;
 use oer_bluetooth_radio::{
-    CancelError, ClockError, EventId, EventsLost, LeInstant, LifecycleCommand, LifecycleError,
-    LifecycleEvent, OutsideEpoch, Poisoned, PortResult, RadioActivity, RadioOutcome, RadioRequest,
+    CancelError, ClockError, EventId, EventsLost, LeCapabilities, LeInstant, OutsideEpoch,
+    OwnedRadioRequest, Poisoned, PortResult, RadioActivity, RadioOutcome, RadioRequest,
     RequestError,
 };
 use oer_esp32s31_bluetooth::{
@@ -36,7 +39,7 @@ use oer_esp32s31_hal::bluetooth::{
 };
 use oer_time::{Duration, Timer};
 
-use crate::port::{BluetoothControl, BluetoothPort};
+use crate::port::BluetoothBackend;
 use crate::{
     BluetoothOutcome,
     hardware::{BluetoothRadioHardware, RxChainPublicationError},
@@ -48,9 +51,25 @@ use crate::{
 /// settle within microseconds; a scheduler interrupt also ends the delay.
 pub const HARDWARE_RECHECK: Duration = Duration::from_micros(20);
 
-/// The invariant of every port call: the port exists only while its radio
-/// is installed.
-const INSTALLED: &str = "the port exists only while its radio is installed";
+/// The bound of each transition of the port's owner, `Enable` and
+/// `Disable`; past it the runtime is poisoned
+/// ([`BluetoothRuntimeFault::TransitionTimedOut`]).
+///
+/// The bound turns a hung hardware stop into a poisoned port; it does not
+/// time a healthy one. `Disable` (the scheduler stop, the withdrawal of
+/// every admitted event and its settling) took 121 us under a secure GATT
+/// Host restart with advertising and one connection (HIL run
+/// `1791786611325-001db8ba`). The withdrawal after the stop is synchronous
+/// and barely grows with the number of events, so a margin of about 80
+/// times also covers what that run did not measure: several connections,
+/// a scan window or a Direct Test Mode event in flight. The repository
+/// owner chose the value:
+/// <https://github.com/ermacv/open-esp-radio-rs/issues/581#issuecomment-6119183481>.
+/// `Enable` (one controller-time sample and the scheduler's resume) does a
+/// subset of that work and shares the bound, as the owner chose:
+/// <https://github.com/ermacv/open-esp-radio-rs/issues/581#issuecomment-6119937695>.
+/// The trace's lifecycle records time each transition.
+pub const TRANSITION_BOUND: Duration = Duration::from_millis(10);
 
 /// Longest time without a controller-time sample while the runtime is idle.
 ///
@@ -76,15 +95,17 @@ pub enum BluetoothTimeError {
 pub enum BluetoothFault<E> {
     /// The radio faulted.
     Radio(RadioFault),
-    /// The runner stopped on a hardware fault.
+    /// The runner stopped on a hardware fault, or a transition did not end
+    /// within its bound.
     Runner(BluetoothRuntimeFault<E>),
+    /// The platform beside the runtime failed: an interrupt service or the
+    /// timer task ([`BluetoothRuntime::platform_fault`]).
+    Platform,
 }
 
 /// Why the runtime stopped driving the radio.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothRuntimeFault<E> {
-    /// No radio is installed.
-    NotInstalled,
     /// A list-zero step or observation failed.
     Scheduler(SchedulerHardwareError),
     /// The idle scheduler did not start.
@@ -97,16 +118,51 @@ pub enum BluetoothRuntimeFault<E> {
     Stop,
     /// No controller-time sample could be taken to resume.
     Time(BluetoothTimeError),
+    /// A transition of the port's owner did not end within
+    /// [`TRANSITION_BOUND`].
+    TransitionTimedOut,
+    /// The port's owner was abandoned ([`BluetoothRuntime::abandon`]).
+    Abandoned,
+    /// After `Disable`, the outcome queue still owed the end of an admitted
+    /// event: its accounting and the radio disagree.
+    Unsettled,
 }
 
-/// Why a radio was not uninstalled.
+/// Why a radio was not taken out of the runtime.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothUninstallError<E> {
-    /// The port is not disabled, or outcomes up to its `Disabled` were not
-    /// taken: admitted events may still owe their ends. Nothing changed.
+    /// The port was poisoned while enabled: admitted events may still owe
+    /// their ends. Nothing changed.
     NotDisabled,
-    /// The scheduler could not be stopped.
+    /// The driver stopped on a fault, or its stop or controller-time drain
+    /// failed.
     Fault(BluetoothRuntimeFault<E>),
+    /// The driver was never asked to retire.
+    NotRetired,
+}
+
+/// A radio its driver did not leave for the uninstall, with why: the
+/// composition keeps it fail-stop.
+#[allow(
+    clippy::type_complexity,
+    reason = "the role's pool capacities stay visible in the retained radio"
+)]
+pub struct BluetoothRetained<
+    H: BluetoothRadioHardware,
+    const LEGACY: usize,
+    const CONNECTABLE: usize,
+    const SCANNERS: usize,
+    const CONNECTIONS: usize,
+    const SCAN_PACKETS: usize,
+    const RX_PACKETS: usize,
+    const ITEMS: usize,
+> {
+    /// Why the radio was not left.
+    pub error: BluetoothUninstallError<H::StartError>,
+    /// The radio role, in the state the driver left it.
+    pub radio: Radio<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>,
+    /// The hardware.
+    pub hardware: H,
 }
 
 /// Why a radio was not installed.
@@ -121,6 +177,9 @@ pub enum BluetoothInstallError {
     /// The hardware's scheduler policy or sleep-clock accuracy is not the
     /// one the runtime states its timing for.
     TimingMismatch,
+    /// A port owner was abandoned: the radio it left is unreachable until a
+    /// reset.
+    Abandoned,
 }
 
 pub(crate) type Radio<
@@ -152,7 +211,6 @@ struct Installed<
     faulted: bool,
 }
 
-/// What one locked pass left to do.
 impl<
     H: BluetoothRadioHardware,
     const LEGACY: usize,
@@ -178,6 +236,7 @@ impl<
     }
 }
 
+/// What one pass of the driver left to do.
 enum Pass {
     /// The radio asked for a scheduler stop.
     Stop,
@@ -189,16 +248,11 @@ enum Pass {
     Idle,
 }
 
-/// The port's admission of events: its lifecycle state.
+/// The port's admission of events: the state of its owner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Admission {
     Disabled,
     Enabled,
-    /// Every admitted event was cancelled; `Disabled` follows their ends.
-    Disabling,
-    /// Admission is closed; `Quiesced` follows the admitted events' ends.
-    Quiescing,
-    Quiesced,
 }
 
 /// What the outcome queue owes the consumer; `CONNECTIONS` bounds the
@@ -212,8 +266,8 @@ struct Owed<const CONNECTIONS: usize> {
     events: usize,
     /// Slots reserved for outcomes that are never dropped: two for each
     /// admitted event (its end, and the acknowledgement or test report
-    /// before it), the received PDUs an admitted connection event may still
-    /// report, and one for a deferred lifecycle terminal.
+    /// before it) and the received PDUs an admitted connection event may
+    /// still report.
     reserved: usize,
     /// Each admitted connection event and the slots it still holds for the
     /// data PDUs the hardware acknowledges.
@@ -223,9 +277,6 @@ struct Owed<const CONNECTIONS: usize> {
     companion: bool,
     admission: Admission,
 }
-
-/// The slot admitted events leave for a lifecycle terminal.
-const LIFECYCLE_SLOT: usize = 1;
 
 /// One queued outcome, with whether a loss precedes it.
 struct Entry {
@@ -270,11 +321,6 @@ impl<M: RawMutex, const EVENTS: usize, const CONNECTIONS: usize>
         self.owed(|owed| owed.admission)
     }
 
-    /// Whether the consumer took every queued outcome.
-    fn is_empty(&self) -> bool {
-        self.owed(|owed| owed.held.is_none() && !owed.lost) && self.entries.is_empty()
-    }
-
     /// Whether `slots` more terminal outcomes fit beside the queued and
     /// reserved ones.
     fn has_room(&self, owed: &Owed<CONNECTIONS>, slots: usize) -> bool {
@@ -283,16 +329,11 @@ impl<M: RawMutex, const EVENTS: usize, const CONNECTIONS: usize>
 
     /// Reserve the terminal slots of event `id` before its admission, and
     /// `data` more for the data PDUs a connection event may receive;
-    /// `false` when they do not fit. Events, and the reports nothing
-    /// acknowledges, leave one slot free for a lifecycle terminal, so a
-    /// lifecycle command finds room for its own unless the consumer left
-    /// earlier terminals unread.
+    /// `false` when they do not fit.
     fn admit_event(&self, id: EventId, data: usize) -> bool {
         self.owed(|owed| {
             let free = owed.data.iter().position(Option::is_none);
-            if !self.has_room(owed, 2 + data + Self::kept_for_lifecycle(owed))
-                || (data > 0 && free.is_none())
-            {
+            if !self.has_room(owed, 2 + data) || (data > 0 && free.is_none()) {
                 return false;
             }
             if data > 0 {
@@ -302,15 +343,6 @@ impl<M: RawMutex, const EVENTS: usize, const CONNECTIONS: usize>
             owed.events += 1;
             true
         })
-    }
-
-    /// The slots kept free for a lifecycle terminal: none while a closing
-    /// command holds the reservation of its own.
-    fn kept_for_lifecycle(owed: &Owed<CONNECTIONS>) -> usize {
-        match owed.admission {
-            Admission::Disabling | Admission::Quiescing => 0,
-            Admission::Disabled | Admission::Enabled | Admission::Quiesced => LIFECYCLE_SLOT,
-        }
     }
 
     /// Return the slots of event `id`, which the radio refused.
@@ -330,57 +362,22 @@ impl<M: RawMutex, const EVENTS: usize, const CONNECTIONS: usize>
             .map_or(0, |(_, left)| left)
     }
 
-    /// Queue a lifecycle terminal now, in a free slot; `false` when none is
-    /// free.
-    fn lifecycle_now(&self, terminal: LifecycleEvent, admission: Admission) -> bool {
+    /// Open admission: the owner enabled the port.
+    fn open(&self) {
+        self.owed(|owed| owed.admission = Admission::Enabled);
+    }
+
+    /// Close admission once the withdrawn events all ended: `false` when
+    /// an admitted event still owes its end.
+    fn close(&self) -> bool {
         self.owed(|owed| {
-            if !self.has_room(owed, 1) {
-                return false;
-            }
-            owed.admission = admission;
-            crate::trace::terminal(terminal);
-            self.send(owed, BluetoothOutcome::Lifecycle(terminal));
-            true
+            owed.admission = Admission::Disabled;
+            owed.events == 0
         })
-    }
-
-    /// Close admission towards `admission` (`Disabling` or `Quiescing`),
-    /// reserving the slot of its terminal; `false` when none is free.
-    fn begin(&self, admission: Admission) -> bool {
-        self.owed(|owed| {
-            if !self.has_room(owed, 1) {
-                return false;
-            }
-            owed.reserved += 1;
-            owed.admission = admission;
-            true
-        })
-    }
-
-    /// Report the terminal of a closing admission once no admitted event is
-    /// left.
-    fn finish_if_idle(&self) {
-        self.owed(|owed| self.finish(owed));
-    }
-
-    fn finish(&self, owed: &mut Owed<CONNECTIONS>) {
-        if owed.events != 0 {
-            return;
-        }
-        let (terminal, admission) = match owed.admission {
-            Admission::Disabling => (LifecycleEvent::Disabled, Admission::Disabled),
-            Admission::Quiescing => (LifecycleEvent::Quiesced, Admission::Quiesced),
-            _ => return,
-        };
-        owed.reserved -= 1;
-        owed.admission = admission;
-        crate::trace::terminal(terminal);
-        self.send(owed, BluetoothOutcome::Lifecycle(terminal));
     }
 
     /// Queue `outcome`: a terminal one in the slot reserved for it, a
-    /// received PDU when a slot is free; the last end of a closing
-    /// admission queues its terminal after it.
+    /// received PDU when a slot is free.
     fn push(&self, outcome: BluetoothOutcome) {
         self.owed(|owed| {
             match &outcome {
@@ -394,9 +391,7 @@ impl<M: RawMutex, const EVENTS: usize, const CONNECTIONS: usize>
                         // Acknowledged connection data: its reserved slot.
                         *left -= 1;
                         owed.reserved -= 1;
-                    } else if !self.has_room(owed, 1 + Self::kept_for_lifecycle(owed)) {
-                        // A report nothing acknowledges never takes the slot
-                        // kept for a lifecycle terminal.
+                    } else if !self.has_room(owed, 1) {
                         owed.lost = true;
                         crate::trace::emit(|| oer_bluetooth_trace::QueueLoss {
                             op: oer_bluetooth_trace::QueueOp::ReportDropped,
@@ -419,14 +414,8 @@ impl<M: RawMutex, const EVENTS: usize, const CONNECTIONS: usize>
                         };
                     owed.events -= 1;
                 }
-                // The command found or reserved its slot.
-                BluetoothOutcome::Lifecycle(_) => {}
             }
-            let ended = matches!(outcome, BluetoothOutcome::EventEnded { .. });
             self.send(owed, outcome);
-            if ended {
-                self.finish(owed);
-            }
         });
     }
 
@@ -490,7 +479,7 @@ fn trace_loss_reported() {
     });
 }
 
-/// The sink of one locked entry: outcomes go to the queue, and a fault
+/// The sink of one driver step: outcomes go to the queue, and a fault
 /// poisons the runtime.
 struct QueueSink<'a, M: RawMutex, E, const EVENTS: usize, const CONNECTIONS: usize> {
     outcomes: &'a OutcomeQueue<M, EVENTS, CONNECTIONS>,
@@ -519,29 +508,81 @@ impl<M: RawMutex, E: Copy, const EVENTS: usize, const CONNECTIONS: usize> Blueto
     }
 }
 
-/// The Bluetooth LE radio role, its hardware and the outcome queue.
+/// A request of the port to its driver; the parts and the owner send one at
+/// a time, and it owns its PDUs ([`OwnedRadioRequest`]).
+#[allow(
+    clippy::large_enum_variant,
+    reason = "the one request in flight owns its PDU inline, in the runtime's one slot"
+)]
+pub(crate) enum Request<K: LeCapabilities> {
+    Submit(OwnedRadioRequest<K>),
+    Cancel(EventId),
+    Enable,
+    Disable,
+}
+
+/// A call's request the driver has not taken yet: a call dropped before
+/// its reply withdraws it, so nothing happens. A request the driver took is
+/// no longer there to withdraw; the driver serves it to the end.
+struct Withdraw<'a, M: RawMutex, T> {
+    request: &'a Signal<M, (u32, T)>,
+    ticket: u32,
+}
+
+impl<M: RawMutex, T> Drop for Withdraw<'_, M, T> {
+    fn drop(&mut self) {
+        if let Some((ticket, request)) = self.request.try_take()
+            && ticket != self.ticket
+        {
+            // Not this call's: callers never overlap, so this cannot
+            // happen; put it back rather than lose it.
+            self.request.signal((ticket, request));
+        }
+    }
+}
+
+/// The driver's reply to one [`Request`].
+pub(crate) enum Reply<F> {
+    Submit(PortResult<(), RequestError, F>),
+    Cancel(PortResult<(), CancelError, F>),
+    Transition(Result<(), Poisoned<F>>),
+    /// The driver stopped on a fault before it served the request.
+    Poisoned(Poisoned<F>),
+}
+
+/// The part of the Bluetooth LE radio its port and its driver share: the
+/// outcome queue, the request exchange, the poison and the wakes.
 ///
-/// [`Self::run`] drives the scheduler: it reports completions, inserts
-/// admitted events and carries list transactions through their hardware
-/// waits; it is the runner the composition polls beside the consumer of the
-/// port's events, which only takes them. The port
-/// ([`oer_bluetooth_radio::LeRadioPort`]) admits one portable request with a
-/// fresh controller-time sample, while its lifecycle enables it. `EVENTS`
-/// bounds the outcomes waiting for the consumer: each admitted event
-/// reserves the slots of its end and of the acknowledgement or test report
-/// before it, a connection event also `RX_PACKETS` slots for the data PDUs
-/// the hardware acknowledges, a lifecycle command the slot of its terminal,
-/// and an event that finds its slots taken is refused as `Busy`. A full
-/// queue drops the newest advertising or scan report and reports
-/// [`EventsLost`] once in its place.
+/// [`Self::install`] installs a radio and returns its port's backend
+/// ([`BluetoothBackend`], an [`oer_bluetooth_radio::LeRadioBackend`]) and
+/// its driver ([`BluetoothDriver`]), which owns the radio role and its
+/// hardware by value. The driver drives the scheduler: it reports
+/// completions, inserts admitted events, carries list transactions through
+/// their hardware waits, samples the controller clock at least every
+/// [`TIME_REFRESH`] and serves the port's requests in between, each as a
+/// message that owns its PDUs. Nothing else reaches the radio: the backend
+/// sends requests, the interrupt entry signals a wake
+/// ([`Self::on_scheduler_wake`]), and the composition's tasks read the
+/// active roles ([`Self::next_activity`]) and set the coexistence profile
+/// ([`Self::set_coexistence`]) through signals and atomics.
+///
+/// `EVENTS` bounds the outcomes waiting for the port's event consumer: each
+/// admitted event reserves the slots of its end and of the acknowledgement
+/// or test report before it, a connection event also `RX_PACKETS` slots for
+/// the data PDUs the hardware acknowledges, and an event that finds its
+/// slots taken is refused as `Busy`. A full queue drops the newest
+/// advertising or scan report and reports [`EventsLost`] once in its place.
 ///
 /// `C` is the scheduler policy and sleep-clock accuracy the runtime is built
 /// with: its port's capabilities ([`BluetoothCapabilities`]) and their
 /// timing come from it, and an install refuses hardware of another.
 ///
-/// A hardware fault of the radio or the runner poisons the runtime: the
-/// queued outcomes are still reported, then [`Poisoned`] with its
-/// [`BluetoothFault`] at every call, until a new install.
+/// A hardware fault of the radio or the driver, a transition past
+/// [`TRANSITION_BOUND`] or a platform fault poisons the runtime: the queued
+/// outcomes are still reported, then [`Poisoned`] with its
+/// [`BluetoothFault`] at every call. An abandoned owner
+/// ([`Self::abandon`]) leaves it poisoned and refusing any install until a
+/// reset; otherwise a new install clears the poison.
 #[allow(
     clippy::type_complexity,
     reason = "the role's pool capacities stay visible in the runtime type"
@@ -550,7 +591,7 @@ pub struct BluetoothRuntime<
     M: RawMutex,
     H: BluetoothRadioHardware,
     T,
-    C,
+    C: BluetoothRadioConfig,
     const LEGACY: usize,
     const CONNECTABLE: usize,
     const SCANNERS: usize,
@@ -560,24 +601,57 @@ pub struct BluetoothRuntime<
     const ITEMS: usize,
     const EVENTS: usize,
 > {
-    installed: Mutex<
-        M,
-        Option<
-            Installed<
-                H,
-                LEGACY,
-                CONNECTABLE,
-                SCANNERS,
-                CONNECTIONS,
-                SCAN_PACKETS,
-                RX_PACKETS,
-                ITEMS,
-            >,
-        >,
-    >,
+    /// A radio is installed: its driver and backend exist.
+    occupied: AtomicBool,
     outcomes: OutcomeQueue<M, EVENTS, CONNECTIONS>,
-    /// Why the radio or the runner faulted; a new install clears it.
+    /// Why the radio or the driver faulted; a new install clears it.
     fault: BlockingMutex<M, Cell<Option<BluetoothFault<H::StartError>>>>,
+    /// Why the driver must stop at its next pass: a transition past its
+    /// bound or an abandoned owner.
+    halt: BlockingMutex<M, Cell<Option<BluetoothRuntimeFault<H::StartError>>>>,
+    /// A port owner was abandoned: no install until a reset.
+    abandoned: AtomicBool,
+    /// Clock readings asked, each reader's ticket: the owner's `now` may
+    /// run beside itself, and one sample answers every ticket asked before
+    /// it.
+    now_asked: AtomicU32,
+    /// The last ticket the driver answered, and that sample's answer.
+    now_answered: BlockingMutex<
+        M,
+        Cell<(
+            u32,
+            Option<PortResult<LeInstant, ClockError, BluetoothFault<H::StartError>>>,
+        )>,
+    >,
+    /// The waiting readers' waker: they share the port's task with the
+    /// driver.
+    now_waker: BlockingMutex<M, RefCell<WakerRegistration>>,
+    /// The last call's ticket: each call numbers its request, and a reply
+    /// reaches only the call of its ticket.
+    tickets: AtomicU32,
+    /// The one request in flight, with its call's ticket: the phase client
+    /// takes its calls by `&mut` and the owner its transitions by value, and
+    /// the two never run together, so no second request meets it.
+    request: Signal<
+        M,
+        (
+            u32,
+            Request<
+                BluetoothCapabilities<
+                    C,
+                    LEGACY,
+                    CONNECTABLE,
+                    SCANNERS,
+                    CONNECTIONS,
+                    SCAN_PACKETS,
+                    RX_PACKETS,
+                    ITEMS,
+                >,
+            >,
+        ),
+    >,
+    /// The driver's reply, with the ticket of the call it answers.
+    reply: Signal<M, (u32, Reply<BluetoothFault<H::StartError>>)>,
     /// Raised when the consumer must look again without a new outcome.
     changed: Signal<M, ()>,
     /// The scheduler policy and sleep-clock accuracy the timing is for.
@@ -589,8 +663,59 @@ pub struct BluetoothRuntime<
     /// Whether a controller-time sample passed the last instant of the radio
     /// epoch; a new install clears it.
     exhausted: AtomicBool,
-    /// The image's monotonic time the runner's rechecks wait on.
+    /// The image's monotonic time the driver's rechecks and the transition
+    /// bounds wait on.
     timer: T,
+}
+
+/// The driver of an installed radio: it owns the radio role and its
+/// hardware by value and is their one user ([`BluetoothRuntime`]).
+///
+/// Poll [`Self::run`] in the task of the port's body, for the port's whole
+/// life; it returns once the radio is left for the uninstall
+/// ([`BluetoothRuntime::retire`]), or on a fault, which poisoned the port
+/// first.
+#[must_use = "a driver owns the installed radio"]
+#[allow(
+    clippy::type_complexity,
+    reason = "the role's pool capacities stay visible in the driver type"
+)]
+pub struct BluetoothDriver<
+    'r,
+    M: RawMutex,
+    H: BluetoothRadioHardware,
+    T,
+    C: BluetoothRadioConfig,
+    const LEGACY: usize,
+    const CONNECTABLE: usize,
+    const SCANNERS: usize,
+    const CONNECTIONS: usize,
+    const SCAN_PACKETS: usize,
+    const RX_PACKETS: usize,
+    const ITEMS: usize,
+    const EVENTS: usize,
+> {
+    runtime: &'r BluetoothRuntime<
+        M,
+        H,
+        T,
+        C,
+        LEGACY,
+        CONNECTABLE,
+        SCANNERS,
+        CONNECTIONS,
+        SCAN_PACKETS,
+        RX_PACKETS,
+        ITEMS,
+        EVENTS,
+    >,
+    installed:
+        Installed<H, LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>,
+    /// The fault that stopped the driver; it stops again at once.
+    fault: Option<BluetoothRuntimeFault<H::StartError>>,
+    /// How the retirement ended: the radio left for the uninstall, or why
+    /// it was not.
+    retired: Option<Result<(), BluetoothUninstallError<H::StartError>>>,
 }
 
 impl<
@@ -627,9 +752,17 @@ impl<
     pub const fn new(timer: T) -> Self {
         Self {
             timer,
-            installed: Mutex::new(None),
+            occupied: AtomicBool::new(false),
             outcomes: OutcomeQueue::new(),
             fault: BlockingMutex::new(Cell::new(None)),
+            halt: BlockingMutex::new(Cell::new(None)),
+            abandoned: AtomicBool::new(false),
+            now_asked: AtomicU32::new(0),
+            now_answered: BlockingMutex::new(Cell::new((0, None))),
+            now_waker: BlockingMutex::new(RefCell::new(WakerRegistration::new())),
+            tickets: AtomicU32::new(0),
+            request: Signal::new(),
+            reply: Signal::new(),
             changed: Signal::new(),
             config: core::marker::PhantomData,
             work: Signal::new(),
@@ -640,8 +773,8 @@ impl<
     }
 
     /// Publish the receive chains of `memory`, take the first controller-time
-    /// sample and install the radio; its port and its control are returned,
-    /// and [`BluetoothControl::uninstall`] takes the radio out again.
+    /// sample and install the radio: its port's backend and its driver,
+    /// which owns the radio and hardware until its retirement.
     ///
     /// This runs once per powered epoch, after the interrupt owner is
     /// published and before the first scheduler RUN.
@@ -667,7 +800,25 @@ impl<
         >,
         mut hardware: H,
     ) -> Result<
-        (BluetoothPort<'_, Self>, BluetoothControl<'_, Self>),
+        BluetoothBackend<
+            '_,
+            Self,
+            BluetoothDriver<
+                '_,
+                M,
+                H,
+                T,
+                C,
+                LEGACY,
+                CONNECTABLE,
+                SCANNERS,
+                CONNECTIONS,
+                SCAN_PACKETS,
+                RX_PACKETS,
+                ITEMS,
+                EVENTS,
+            >,
+        >,
         (
             BluetoothInstallError,
             BluetoothRadioMemory<
@@ -681,8 +832,10 @@ impl<
             H,
         ),
     > {
-        let mut installed = self.installed.lock().await;
-        if installed.is_some() {
+        if self.abandoned.load(Ordering::Acquire) {
+            return Err((BluetoothInstallError::Abandoned, memory, hardware));
+        }
+        if self.occupied.load(Ordering::Acquire) {
             return Err((BluetoothInstallError::AlreadyInstalled, memory, hardware));
         }
         if hardware.scheduler_config() != C::SCHEDULER
@@ -706,19 +859,31 @@ impl<
             hardware.local_sleep_clock_ppm(),
         );
         radio.set_coexistence(self.coexistence());
-        *installed = Some(Installed {
-            radio,
-            hardware,
-            awaiting: None,
-            phy_route: None,
-            faulted: false,
-        });
-        drop(installed);
+        self.occupied.store(true, Ordering::Release);
         self.outcomes.reset();
         self.exhausted.store(false, Ordering::Release);
         self.fault.lock(|fault| fault.set(None));
+        self.halt.lock(|halt| halt.set(None));
+        self.request.reset();
+        self.reply.reset();
+        self.now_asked.store(0, Ordering::Release);
+        self.now_answered.lock(|answered| answered.set((0, None)));
         self.work.signal(());
-        Ok((BluetoothPort::new(self), BluetoothControl::new(self)))
+        Ok(BluetoothBackend::new(
+            self,
+            BluetoothDriver {
+                runtime: self,
+                installed: Installed {
+                    radio,
+                    hardware,
+                    awaiting: None,
+                    phy_route: None,
+                    faulted: false,
+                },
+                fault: None,
+                retired: None,
+            },
+        ))
     }
 
     /// Advance the radio time with `sample`, remembering an exhausted radio
@@ -746,25 +911,70 @@ impl<
         observed
     }
 
-    /// Run `entry` on the installed radio; for host tests.
-    #[cfg(test)]
-    pub(crate) async fn with_radio<R>(
-        &self,
-        entry: impl FnOnce(
-            &mut Radio<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>,
-        ) -> R,
-    ) -> R {
-        entry(&mut self.installed.lock().await.as_mut().expect(INSTALLED).radio)
+    /// The image's monotonic time the transition bounds wait on.
+    pub(crate) const fn timer(&self) -> &T {
+        &self.timer
     }
 
-    /// The port's [`Poisoned`] once the radio or the runner faulted.
+    /// The port's [`Poisoned`] once the radio or the driver faulted.
     fn poisoned(&self) -> Option<Poisoned<BluetoothFault<H::StartError>>> {
         self.fault.lock(Cell::get).map(|cause| Poisoned { cause })
     }
 
-    /// Admit one request against a fresh controller-time sample: the
-    /// port's submission. An event reserves the slots of its terminal
-    /// outcomes first.
+    /// Send `request` to the driver and wait for its reply; a poisoned
+    /// runtime answers at once.
+    ///
+    /// Cancel-safe: dropped before the driver took the request, the call
+    /// withdraws it and nothing happens; dropped after, the driver serves
+    /// it to the end, its effects stand (an admitted event's end reaches the
+    /// event consumer), and its reply, numbered with the call's ticket, is
+    /// discarded by the next call.
+    async fn call(
+        &self,
+        request: Request<
+            BluetoothCapabilities<
+                C,
+                LEGACY,
+                CONNECTABLE,
+                SCANNERS,
+                CONNECTIONS,
+                SCAN_PACKETS,
+                RX_PACKETS,
+                ITEMS,
+            >,
+        >,
+    ) -> Result<Reply<BluetoothFault<H::StartError>>, Poisoned<BluetoothFault<H::StartError>>> {
+        if let Some(poisoned) = self.poisoned() {
+            return Err(poisoned);
+        }
+        debug_assert!(
+            !self.request.signaled(),
+            "the client and the owner never send two requests at once"
+        );
+        let ticket = self.tickets.fetch_add(1, Ordering::AcqRel).wrapping_add(1);
+        self.request.signal((ticket, request));
+        self.work.signal(());
+        // Dropped before the driver takes the request, this withdraws it;
+        // once taken, nothing is left to withdraw.
+        let _withdraw = Withdraw {
+            request: &self.request,
+            ticket,
+        };
+        let reply = loop {
+            let (answered, reply) = self.reply.wait().await;
+            // The reply of an earlier, dropped call: its effects stand.
+            if answered == ticket {
+                break reply;
+            }
+        };
+        match reply {
+            Reply::Poisoned(poisoned) => Err(poisoned),
+            reply => Ok(reply),
+        }
+    }
+
+    /// Admit one request against a fresh controller-time sample: the phase
+    /// client's submission.
     pub(crate) async fn submit_request(
         &self,
         request: RadioRequest<
@@ -781,185 +991,166 @@ impl<
             >,
         >,
     ) -> PortResult<(), RequestError, BluetoothFault<H::StartError>> {
-        let mut installed = self.installed.lock().await;
-        if let Some(poisoned) = self.poisoned() {
-            return Err(poisoned);
+        match self.call(Request::Submit(request.to_owned())).await? {
+            Reply::Submit(answer) => answer,
+            _ => unreachable!("the driver answers a submission"),
         }
-        let installed = installed.as_mut().expect(INSTALLED);
-        if self.outcomes.admission() != Admission::Enabled {
-            return Ok(Err(RequestError::Disabled));
-        }
-        let Ok(sample) = sample_time(&self.timer, &mut installed.hardware).await else {
-            return Ok(Err(RequestError::ClockUnavailable));
-        };
-        if self.observe(&mut installed.radio, &sample).is_err() {
-            return Ok(Err(RequestError::EpochExhausted));
-        }
-        // An event reserves its terminal outcomes; a connection event also
-        // every data PDU its receive chain holds, which the hardware
-        // acknowledges to the peer.
-        let event = match &request {
-            RadioRequest::Advertise(event) => Some((event.get().id, 0)),
-            RadioRequest::Scan(window) => Some((window.get().id, 0)),
-            RadioRequest::ConnectionEvent(event) => Some((event.get().id, RX_PACKETS)),
-            RadioRequest::TestTransmit(test) => Some((test.get().id, 0)),
-            RadioRequest::TestReceive(test) => Some((test.get().id, 0)),
-            _ => None,
-        };
-        if let Some((id, data)) = event
-            && !self.outcomes.admit_event(id, data)
-        {
-            return Ok(Err(RequestError::Busy));
-        }
-        let starts_scanner = matches!(request, RadioRequest::ConfigureScanner(_));
-        let changes_list = matches!(request, RadioRequest::FilterAcceptList(_));
-        match installed.radio.request(request, &mut self.sink()) {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) => {
-                if let Some((id, _)) = event {
-                    self.outcomes.withdraw_event(id);
-                }
-                return Ok(Err(error));
-            }
-            // The radio reported its fault to the sink, which poisoned the
-            // runtime.
-            Err(RadioFaulted) => {
-                if let Some((id, _)) = event {
-                    self.outcomes.withdraw_event(id);
-                }
-                installed.fault();
-                return Err(self.poisoned().expect("a radio fault poisons the runtime"));
-            }
-        }
-        if starts_scanner {
-            installed.hardware.publish_scan_start();
-        }
-        if changes_list {
-            let publication = installed.radio.device_table_publication();
-            installed.hardware.publish_device_table(publication);
-        }
-        self.work.signal(());
-        Ok(Ok(()))
     }
 
-    /// A fresh radio time: the port's clock.
+    /// A fresh radio time: the port's clock, from a sample the driver took
+    /// after this reading was asked. Readers beside each other share it.
     pub(crate) async fn read_now(
         &self,
     ) -> PortResult<LeInstant, ClockError, BluetoothFault<H::StartError>> {
-        let mut installed = self.installed.lock().await;
         if let Some(poisoned) = self.poisoned() {
             return Err(poisoned);
         }
-        let installed = installed.as_mut().expect(INSTALLED);
-        let Ok(sample) = sample_time(&self.timer, &mut installed.hardware).await else {
-            return Ok(Err(ClockError::Unavailable));
-        };
-        if self.observe(&mut installed.radio, &sample).is_err() {
-            return Ok(Err(ClockError::EpochExhausted));
-        }
-        Ok(Ok(installed.radio.now()))
+        let ticket = self
+            .now_asked
+            .fetch_add(1, Ordering::AcqRel)
+            .wrapping_add(1);
+        self.work.signal(());
+        core::future::poll_fn(|cx| {
+            let (answered, answer) = self.now_answered.lock(Cell::get);
+            // Tickets wrap; one answered at or after this one serves it.
+            if let Some(answer) = answer
+                && answered.wrapping_sub(ticket) < u32::MAX / 2
+            {
+                return Poll::Ready(answer);
+            }
+            if let Some(poisoned) = self.poisoned() {
+                return Poll::Ready(Err(poisoned));
+            }
+            self.now_waker
+                .lock(|waker| waker.borrow_mut().register(cx.waker()));
+            Poll::Pending
+        })
+        .await
     }
 
-    /// Withdraw one scheduled event: the port's cancellation.
+    /// Wake the readers waiting for a clock sample.
+    fn wake_readers(&self) {
+        self.now_waker.lock(|waker| waker.borrow_mut().wake());
+    }
+
+    /// Withdraw one scheduled event: the phase client's cancellation.
     pub(crate) async fn cancel_event(
         &self,
         id: EventId,
     ) -> PortResult<(), CancelError, BluetoothFault<H::StartError>> {
-        let mut installed = self.installed.lock().await;
-        if let Some(poisoned) = self.poisoned() {
-            return Err(poisoned);
+        match self.call(Request::Cancel(id)).await? {
+            Reply::Cancel(answer) => answer,
+            _ => unreachable!("the driver answers a cancellation"),
         }
-        let installed = installed.as_mut().expect(INSTALLED);
-        let cancelled = installed.radio.cancel(id, &mut self.sink());
-        self.work.signal(());
-        Ok(cancelled)
     }
 
-    /// Run one lifecycle command: the port's lifecycle.
-    ///
-    /// - `Enable` opens admission of a disabled or quiesced port, resuming
-    ///   the scheduler a `Disable` stopped.
-    /// - `Disable` closes admission, stops the scheduler, withdraws every
-    ///   admitted event ([`BluetoothRadio::cancel_all_stopped`]) and reports
-    ///   `Disabled` after their ends. A failed stop poisons the runtime.
-    /// - `Quiesce` closes admission and reports `Quiesced` after the ends
-    ///   of the admitted events.
-    ///
-    /// A command while `Disable` or `Quiesce` has not ended, or whose
-    /// terminal finds no free slot, is refused as `Busy`.
-    pub(crate) async fn run_lifecycle(
+    /// Enable the port within [`TRANSITION_BOUND`]: the driver resumes the
+    /// scheduler a `Disable` stopped and opens admission. A failed resume,
+    /// or one past the bound, poisons the runtime.
+    pub(crate) async fn enable(
         &self,
-        command: LifecycleCommand,
-    ) -> PortResult<(), LifecycleError, BluetoothFault<H::StartError>> {
-        let mut installed = self.installed.lock().await;
-        if let Some(poisoned) = self.poisoned() {
-            return Err(poisoned);
-        }
-        let installed = installed.as_mut().expect(INSTALLED);
-        let queue = &self.outcomes;
-        if command == LifecycleCommand::Enable
-            && matches!(queue.admission(), Admission::Disabled | Admission::Quiesced)
-            && installed.radio.stopped().is_some()
-            && let Err(fault) = self.resume_installed(installed).await
+    ) -> EnableResult<core::convert::Infallible, BluetoothFault<H::StartError>> {
+        self.bounded(oer_bluetooth_trace::LifecycleCommand::Enable, async {
+            match self.call(Request::Enable).await? {
+                Reply::Transition(answer) => answer,
+                _ => unreachable!("the driver answers a transition"),
+            }
+        })
+        .await
+        .map(Ok)
+    }
+
+    /// Disable the port within [`TRANSITION_BOUND`]: the driver stops the
+    /// scheduler, withdraws every admitted event
+    /// ([`BluetoothRadio::cancel_all_stopped`]) against a sample taken after
+    /// the stop and settles the withdrawals; every outcome the phase left,
+    /// each admitted event's end among them, then goes to `sink`. A failed
+    /// stop, an event left without its end or a disable past the bound
+    /// poisons the runtime.
+    pub(crate) async fn disable(
+        &self,
+        sink: &mut dyn FnMut(BluetoothOutcome),
+    ) -> Result<(), Poisoned<BluetoothFault<H::StartError>>> {
+        self.bounded(oer_bluetooth_trace::LifecycleCommand::Disable, async {
+            match self.call(Request::Disable).await? {
+                Reply::Transition(answer) => answer?,
+                _ => unreachable!("the driver answers a transition"),
+            }
+            // A loss stands only for reports the phase's consumer did not
+            // take; the sink takes what is left.
+            while let Some(outcome) = self.outcomes.take() {
+                if let Ok(outcome) = outcome {
+                    sink(outcome);
+                }
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    /// Run `transition` within [`TRANSITION_BOUND`], tracing its start and
+    /// how it ended; past the bound the runtime is poisoned and its driver
+    /// halts.
+    async fn bounded(
+        &self,
+        command: oer_bluetooth_trace::LifecycleCommand,
+        transition: impl Future<Output = Result<(), Poisoned<BluetoothFault<H::StartError>>>>,
+    ) -> Result<(), Poisoned<BluetoothFault<H::StartError>>> {
+        use oer_bluetooth_trace::{Lifecycle, LifecycleStep};
+        crate::trace::emit(|| Lifecycle {
+            command,
+            step: LifecycleStep::Started,
+        });
+        let (ended, step) = match select(transition, wait_for(&self.timer, TRANSITION_BOUND)).await
         {
-            installed.fault();
-            self.poison(fault);
-            return Err(self.poisoned().expect("the runtime is poisoned"));
-        }
-        let started = match (command, queue.admission()) {
-            (_, Admission::Disabling | Admission::Quiescing) => Err(LifecycleError::Busy),
-            (LifecycleCommand::Enable, Admission::Enabled)
-            | (LifecycleCommand::Disable, Admission::Disabled)
-            | (LifecycleCommand::Quiesce, Admission::Quiesced) => {
-                Err(LifecycleError::AlreadyInState)
-            }
-            (LifecycleCommand::Quiesce, Admission::Disabled) => Err(LifecycleError::InvalidState),
-            (LifecycleCommand::Enable, _) => queue
-                .lifecycle_now(LifecycleEvent::Enabled, Admission::Enabled)
-                .then_some(())
-                .ok_or(LifecycleError::Busy),
-            (LifecycleCommand::Disable, Admission::Quiesced) => queue
-                .lifecycle_now(LifecycleEvent::Disabled, Admission::Disabled)
-                .then_some(())
-                .ok_or(LifecycleError::Busy),
-            (LifecycleCommand::Disable, _) => {
-                if queue.begin(Admission::Disabling) {
-                    if let Err(fault) = self.withdraw_stopped(installed).await {
-                        installed.fault();
-                        self.poison(fault);
-                        return Err(self.poisoned().expect("the runtime is poisoned"));
-                    }
-                    queue.finish_if_idle();
-                    Ok(())
-                } else {
-                    Err(LifecycleError::Busy)
-                }
-            }
-            (LifecycleCommand::Quiesce, _) => {
-                if queue.begin(Admission::Quiescing) {
-                    queue.finish_if_idle();
-                    Ok(())
-                } else {
-                    Err(LifecycleError::Busy)
-                }
+            Either::First(Ok(())) => (Ok(()), LifecycleStep::Done),
+            Either::First(Err(poisoned)) => (Err(poisoned), LifecycleStep::Poisoned),
+            Either::Second(waited) => {
+                self.halt(match waited {
+                    Ok(()) => BluetoothRuntimeFault::TransitionTimedOut,
+                    Err(error) => BluetoothRuntimeFault::Time(error),
+                });
+                (
+                    Err(self.poisoned().expect("the runtime is poisoned")),
+                    LifecycleStep::TimedOut,
+                )
             }
         };
-        self.changed.signal(());
-        self.work.signal(());
-        crate::trace::emit(|| oer_bluetooth_trace::Lifecycle {
-            command: crate::trace::command(command),
-            step: match started {
-                Ok(()) => oer_bluetooth_trace::LifecycleStep::Admitted,
-                Err(LifecycleError::AlreadyInState) => {
-                    oer_bluetooth_trace::LifecycleStep::AlreadyInState
-                }
-                Err(LifecycleError::InvalidState) => {
-                    oer_bluetooth_trace::LifecycleStep::InvalidState
-                }
-                Err(LifecycleError::Busy) => oer_bluetooth_trace::LifecycleStep::Busy,
-            },
+        crate::trace::emit(|| Lifecycle { command, step });
+        ended
+    }
+
+    /// Stop the runtime at once, synchronously: poison it, halt its driver
+    /// at its next pass and refuse any install until a reset. A dropped or
+    /// fail-stopped port owner calls it ([`oer_bluetooth_port::PortBackend::abandon`]);
+    /// the radio and its hardware stay unreachable, and the composition
+    /// keeps the interrupt routes and power owners fail-stop.
+    pub fn abandon(&self) {
+        self.abandoned.store(true, Ordering::Release);
+        self.halt(BluetoothRuntimeFault::Abandoned);
+    }
+
+    /// Poison the runtime after the platform beside it failed (an interrupt
+    /// service or the timer task), so the port's body sees the fault at its
+    /// next call and stops.
+    pub fn platform_fault(&self) {
+        self.fault.lock(|cause| {
+            if cause.get().is_none() {
+                cause.set(Some(BluetoothFault::Platform));
+            }
         });
-        Ok(started)
+        self.changed.signal(());
+    }
+
+    /// Poison the runtime with `fault` and halt its driver at its next pass.
+    fn halt(&self, fault: BluetoothRuntimeFault<H::StartError>) {
+        self.halt.lock(|halt| {
+            if halt.get().is_none() {
+                halt.set(Some(fault));
+            }
+        });
+        self.poison(fault);
+        self.work.signal(());
     }
 
     /// The platform's scheduler interrupt published a wake for the worker.
@@ -987,7 +1178,7 @@ impl<
         }
     }
 
-    /// Poison the runtime after a fault of the runner, unless the radio
+    /// Poison the runtime after a fault of the driver, unless the radio
     /// faulted first.
     fn poison(&self, fault: BluetoothRuntimeFault<H::StartError>) {
         self.fault.lock(|cause| {
@@ -998,14 +1189,12 @@ impl<
         self.changed.signal(());
     }
 
-    /// Follow whether another radio shares the antenna. The installed radio
-    /// and every later installation use the matching coexistence profile.
-    pub async fn set_coexistence(&self, shared: bool) {
+    /// Follow whether another radio shares the antenna. The driver applies
+    /// the matching coexistence profile at its next pass, and every later
+    /// installation starts with it.
+    pub fn set_coexistence(&self, shared: bool) {
         self.shared.store(shared, Ordering::Release);
-        let mut installed = self.installed.lock().await;
-        if let Some(installed) = installed.as_mut() {
-            installed.radio.set_coexistence(self.coexistence());
-        }
+        self.work.signal(());
     }
 
     fn coexistence(&self) -> CoexistenceProfile {
@@ -1032,53 +1221,122 @@ impl<
     pub async fn next_activity(&self) -> RadioActivity {
         self.activity.wait().await
     }
+}
 
-    /// Drive the radio until a hardware fault stops it.
+impl<
+    M: RawMutex,
+    H: BluetoothRadioHardware,
+    T: Timer,
+    C: BluetoothRadioConfig,
+    const LEGACY: usize,
+    const CONNECTABLE: usize,
+    const SCANNERS: usize,
+    const CONNECTIONS: usize,
+    const SCAN_PACKETS: usize,
+    const RX_PACKETS: usize,
+    const ITEMS: usize,
+    const EVENTS: usize,
+>
+    BluetoothDriver<
+        '_,
+        M,
+        H,
+        T,
+        C,
+        LEGACY,
+        CONNECTABLE,
+        SCANNERS,
+        CONNECTIONS,
+        SCAN_PACKETS,
+        RX_PACKETS,
+        ITEMS,
+        EVENTS,
+    >
+{
+    /// Drive the radio and serve the port's requests until `retiring`
+    /// asks for the uninstall, which it then prepares ([`Self::into_parts`]).
     ///
-    /// Run this on one task for the whole powered epoch. Between passes the
-    /// lock is free for requests.
-    pub async fn run(&self) -> BluetoothRuntimeFault<H::StartError> {
+    /// Between passes it serves the one request in flight, and yields after
+    /// each reply so the requester goes on first; a pass that continues
+    /// yields after a fixed budget, so the body beside it makes progress.
+    /// It returns early on a hardware fault or a halt (a transition past its
+    /// bound, an abandoned owner), which poisoned the runtime first; it is
+    /// cancel-safe, since every step's progress lives in the radio and the
+    /// hardware, and the next pass picks it up.
+    ///
+    /// # Errors
+    ///
+    /// The fault that stopped it.
+    pub(crate) async fn run(
+        &mut self,
+        retiring: impl Fn() -> bool,
+    ) -> Result<(), BluetoothRuntimeFault<H::StartError>> {
+        let runtime = self.runtime;
         let mut budget = ContinueBudget::new();
         loop {
-            let pass = {
-                let mut installed = self.installed.lock().await;
-                let Some(installed) = installed.as_mut() else {
-                    return BluetoothRuntimeFault::NotInstalled;
+            if let Some(fault) = runtime.halt.lock(Cell::get).or(self.fault) {
+                return Err(self.stop(fault));
+            }
+            if retiring() {
+                let retired = self.retire().await;
+                let stopped = match retired {
+                    Err(BluetoothUninstallError::Fault(fault)) => Err(fault),
+                    _ => Ok(()),
                 };
-                if !installed.faulted {
-                    match sample_time(&self.timer, &mut installed.hardware).await {
-                        // Exhaustion admits nothing new; the runner still
-                        // settles the admitted work.
-                        Ok(sample) => {
-                            let _exhausted = self.observe(&mut installed.radio, &sample);
-                        }
-                        Err(BluetoothTimeError::Deadline) => {
-                            let fault = BluetoothRuntimeFault::Time(BluetoothTimeError::Deadline);
-                            installed.fault();
-                            self.poison(fault);
-                            return fault;
-                        }
-                        Err(_) => {}
+                self.retired = Some(retired);
+                return stopped;
+            }
+            let asked = runtime.now_asked.load(Ordering::Acquire);
+            if runtime.now_answered.lock(Cell::get).0 != asked {
+                let answer = self.now().await;
+                runtime
+                    .now_answered
+                    .lock(|answered| answered.set((asked, Some(answer))));
+                runtime.wake_readers();
+                budget.refill();
+                embassy_futures::yield_now().await;
+                continue;
+            }
+            if let Some((ticket, request)) = runtime.request.try_take() {
+                let reply = self.serve(request).await;
+                runtime.reply.signal((ticket, reply));
+                // The requester goes on first.
+                budget.refill();
+                embassy_futures::yield_now().await;
+                continue;
+            }
+            self.installed.radio.set_coexistence(runtime.coexistence());
+            let installed = &mut self.installed;
+            if !installed.faulted {
+                match sample_time(&runtime.timer, &mut installed.hardware).await {
+                    // Exhaustion admits nothing new; the driver still
+                    // settles the admitted work.
+                    Ok(sample) => {
+                        let _exhausted = runtime.observe(&mut installed.radio, &sample);
                     }
+                    Err(BluetoothTimeError::Deadline) => {
+                        let fault = BluetoothRuntimeFault::Time(BluetoothTimeError::Deadline);
+                        runtime.poison(fault);
+                        return Err(self.stop(fault));
+                    }
+                    Err(_) => {}
                 }
-                match self.pass(installed, &mut self.sink()) {
-                    // A test event is published only on an idle scheduler, and
-                    // a listed one leaves its list only after a stop; resuming
-                    // restarts at the remaining events.
-                    Ok(Pass::Stop) => match self.restart_scheduler(installed).await {
-                        Ok(()) => Pass::Continue,
-                        Err(fault) => {
-                            installed.fault();
-                            self.poison(fault);
-                            return fault;
-                        }
-                    },
-                    Ok(pass) => pass,
+            }
+            let pass = match runtime.pass(installed, &mut runtime.sink()) {
+                // A test event is published only on an idle scheduler, and a
+                // listed one leaves its list only after a stop; resuming
+                // restarts at the remaining events.
+                Ok(Pass::Stop) => match runtime.restart_scheduler(installed).await {
+                    Ok(()) => Pass::Continue,
                     Err(fault) => {
-                        installed.fault();
-                        self.poison(fault);
-                        return fault;
+                        runtime.poison(fault);
+                        return Err(self.stop(fault));
                     }
+                },
+                Ok(pass) => pass,
+                Err(fault) => {
+                    runtime.poison(fault);
+                    return Err(self.stop(fault));
                 }
             };
             let wait = match pass {
@@ -1090,93 +1348,354 @@ impl<
                 Pass::Idle => TIME_REFRESH,
             };
             budget.refill();
-            if let Either::Second(Err(error)) =
-                select(self.work.wait(), wait_for(&self.timer, wait)).await
-            {
-                if let Some(installed) = self.installed.lock().await.as_mut() {
-                    installed.fault();
+            // A retirement, a request, a wake or the deadline ends the wait;
+            // the retire request registers no waker, but its owner polls the
+            // driver right after it asks.
+            let retire = core::future::poll_fn(|_| {
+                if retiring() {
+                    Poll::Ready(())
+                } else {
+                    Poll::Pending
                 }
+            });
+            if let Either3::Second(Err(error)) =
+                select3(runtime.work.wait(), wait_for(&runtime.timer, wait), retire).await
+            {
                 let fault = BluetoothRuntimeFault::Time(error);
-                self.poison(fault);
-                return fault;
+                runtime.poison(fault);
+                return Err(self.stop(fault));
             }
         }
     }
 
-    /// Take the radio and its hardware out of a disabled runtime, and stop
-    /// the runner.
-    ///
-    /// The port's `Disable` already ended every admitted event and stopped
-    /// the scheduler; a radio that was never enabled has its scheduler
-    /// stopped here, after a list transaction in progress finishes. A
-    /// controller-time request that a cancelled [`Self::run`] left in flight
-    /// is drained. The port's stream ends here: the next port starts with an
-    /// empty queue, disabled. [`Self::run`] then returns
-    /// [`BluetoothRuntimeFault::NotInstalled`].
-    ///
-    /// # Errors
-    ///
-    /// - [`BluetoothUninstallError::NotDisabled`]: the port is not disabled,
-    ///   or its `Disabled` was not taken yet; nothing changed.
-    /// - [`BluetoothUninstallError::Fault`]: the scheduler could not be
-    ///   stopped; the radio then stays installed and faulted.
-    #[allow(
-        clippy::type_complexity,
-        reason = "the role's pool capacities stay visible in the returned radio"
-    )]
-    pub(crate) async fn uninstall(
-        &self,
-    ) -> Result<
-        (
-            Radio<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>,
-            H,
-        ),
-        BluetoothUninstallError<H::StartError>,
-    > {
-        let mut slot = self.installed.lock().await;
-        let installed = slot.as_mut().expect(INSTALLED);
-        if self.outcomes.admission() != Admission::Disabled || !self.outcomes.is_empty() {
-            return Err(BluetoothUninstallError::NotDisabled);
+    /// Stop driving after `fault`, which poisoned the runtime: answer the
+    /// request in flight and keep the radio faulted.
+    fn stop(
+        &mut self,
+        fault: BluetoothRuntimeFault<H::StartError>,
+    ) -> BluetoothRuntimeFault<H::StartError> {
+        self.fault = Some(fault);
+        self.installed.fault();
+        if let Some((ticket, _)) = self.runtime.request.try_take() {
+            let poisoned = self.runtime.poisoned().expect("the runtime is poisoned");
+            self.runtime
+                .reply
+                .signal((ticket, Reply::Poisoned(poisoned)));
         }
-        if installed.radio.stopped().is_none()
-            && let Err(fault) = self.stop_scheduler(installed, &mut self.sink()).await
+        self.runtime.wake_readers();
+        fault
+    }
+
+    /// Serve one request of the port.
+    async fn serve(
+        &mut self,
+        request: Request<
+            BluetoothCapabilities<
+                C,
+                LEGACY,
+                CONNECTABLE,
+                SCANNERS,
+                CONNECTIONS,
+                SCAN_PACKETS,
+                RX_PACKETS,
+                ITEMS,
+            >,
+        >,
+    ) -> Reply<BluetoothFault<H::StartError>> {
+        match request {
+            Request::Submit(request) => Reply::Submit(self.submit(&request).await),
+            Request::Cancel(id) => Reply::Cancel(self.cancel(id)),
+            Request::Enable => Reply::Transition(self.enable().await),
+            Request::Disable => Reply::Transition(self.disable().await),
+        }
+    }
+
+    /// Admit one request against a fresh controller-time sample. An event
+    /// reserves the slots of its terminal outcomes first.
+    async fn submit(
+        &mut self,
+        request: &OwnedRadioRequest<
+            BluetoothCapabilities<
+                C,
+                LEGACY,
+                CONNECTABLE,
+                SCANNERS,
+                CONNECTIONS,
+                SCAN_PACKETS,
+                RX_PACKETS,
+                ITEMS,
+            >,
+        >,
+    ) -> PortResult<(), RequestError, BluetoothFault<H::StartError>> {
+        let runtime = self.runtime;
+        if let Some(poisoned) = runtime.poisoned() {
+            return Err(poisoned);
+        }
+        debug_assert_eq!(
+            runtime.outcomes.admission(),
+            Admission::Enabled,
+            "a client exists only while the owner is enabled"
+        );
+        let installed = &mut self.installed;
+        let Ok(sample) = sample_time(&runtime.timer, &mut installed.hardware).await else {
+            return Ok(Err(RequestError::ClockUnavailable));
+        };
+        if runtime.observe(&mut installed.radio, &sample).is_err() {
+            return Ok(Err(RequestError::EpochExhausted));
+        }
+        let request = request.as_request();
+        // An event reserves its terminal outcomes; a connection event also
+        // every data PDU its receive chain holds, which the hardware
+        // acknowledges to the peer.
+        let event = match &request {
+            RadioRequest::Advertise(event) => Some((event.get().id, 0)),
+            RadioRequest::Scan(window) => Some((window.get().id, 0)),
+            RadioRequest::ConnectionEvent(event) => Some((event.get().id, RX_PACKETS)),
+            RadioRequest::TestTransmit(test) => Some((test.get().id, 0)),
+            RadioRequest::TestReceive(test) => Some((test.get().id, 0)),
+            _ => None,
+        };
+        if let Some((id, data)) = event
+            && !runtime.outcomes.admit_event(id, data)
+        {
+            return Ok(Err(RequestError::Busy));
+        }
+        let starts_scanner = matches!(request, RadioRequest::ConfigureScanner(_));
+        let changes_list = matches!(request, RadioRequest::FilterAcceptList(_));
+        match installed.radio.request(request, &mut runtime.sink()) {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                if let Some((id, _)) = event {
+                    runtime.outcomes.withdraw_event(id);
+                }
+                return Ok(Err(error));
+            }
+            // The radio reported its fault to the sink, which poisoned the
+            // runtime.
+            Err(RadioFaulted) => {
+                if let Some((id, _)) = event {
+                    runtime.outcomes.withdraw_event(id);
+                }
+                installed.fault();
+                return Err(runtime
+                    .poisoned()
+                    .expect("a radio fault poisons the runtime"));
+            }
+        }
+        if starts_scanner {
+            installed.hardware.publish_scan_start();
+        }
+        if changes_list {
+            let publication = installed.radio.device_table_publication();
+            installed.hardware.publish_device_table(publication);
+        }
+        Ok(Ok(()))
+    }
+
+    /// A fresh radio time.
+    async fn now(&mut self) -> PortResult<LeInstant, ClockError, BluetoothFault<H::StartError>> {
+        let runtime = self.runtime;
+        if let Some(poisoned) = runtime.poisoned() {
+            return Err(poisoned);
+        }
+        let installed = &mut self.installed;
+        let Ok(sample) = sample_time(&runtime.timer, &mut installed.hardware).await else {
+            return Ok(Err(ClockError::Unavailable));
+        };
+        if runtime.observe(&mut installed.radio, &sample).is_err() {
+            return Ok(Err(ClockError::EpochExhausted));
+        }
+        Ok(Ok(installed.radio.now()))
+    }
+
+    /// Withdraw one scheduled event.
+    fn cancel(
+        &mut self,
+        id: EventId,
+    ) -> PortResult<(), CancelError, BluetoothFault<H::StartError>> {
+        let runtime = self.runtime;
+        if let Some(poisoned) = runtime.poisoned() {
+            return Err(poisoned);
+        }
+        Ok(self.installed.radio.cancel(id, &mut runtime.sink()))
+    }
+
+    /// Resume the scheduler a `Disable` stopped and open admission.
+    async fn enable(&mut self) -> Result<(), Poisoned<BluetoothFault<H::StartError>>> {
+        let runtime = self.runtime;
+        if let Some(poisoned) = runtime.poisoned() {
+            return Err(poisoned);
+        }
+        let installed = &mut self.installed;
+        if installed.radio.stopped().is_some()
+            && let Err(fault) = runtime.resume_installed(installed).await
         {
             installed.fault();
-            self.poison(fault);
-            return Err(BluetoothUninstallError::Fault(fault));
+            runtime.poison(fault);
+            return Err(runtime.poisoned().expect("the runtime is poisoned"));
         }
-        // The hardware leaves with its PHY routed as initialization left it.
-        installed.restore_phy_route();
-        // A cancelled runner may have left a controller-time request in
-        // flight; the task owner retires only once it completed.
+        runtime.outcomes.open();
+        Ok(())
+    }
+
+    /// Stop the scheduler, withdraw every admitted event and settle the
+    /// withdrawals: every admitted event ends into the queue.
+    async fn disable(&mut self) -> Result<(), Poisoned<BluetoothFault<H::StartError>>> {
+        let runtime = self.runtime;
+        if let Some(poisoned) = runtime.poisoned() {
+            return Err(poisoned);
+        }
+        let installed = &mut self.installed;
+        if let Err(fault) = runtime.withdraw_stopped(installed).await {
+            installed.fault();
+            runtime.poison(fault);
+            return Err(runtime.poisoned().expect("the runtime is poisoned"));
+        }
+        if !runtime.outcomes.close() {
+            installed.fault();
+            runtime.poison(BluetoothRuntimeFault::Unsettled);
+            return Err(runtime.poisoned().expect("the runtime is poisoned"));
+        }
+        Ok(())
+    }
+
+    /// Leave the radio for the uninstall.
+    ///
+    /// The owner's `disable` already ended every admitted event and stopped
+    /// the scheduler; a radio whose owner never enabled it has its scheduler
+    /// stopped here, after a list transaction in progress finishes. A
+    /// controller-time request in flight is drained, and the BLE PHY route
+    /// leaves as initialization left it.
+    async fn retire(&mut self) -> Result<(), BluetoothUninstallError<H::StartError>> {
+        let runtime = self.runtime;
+        if runtime.outcomes.admission() != Admission::Disabled {
+            return Err(BluetoothUninstallError::NotDisabled);
+        }
+        let installed = &mut self.installed;
+        if installed.radio.stopped().is_none()
+            && let Err(fault) = runtime.stop_scheduler(installed, &mut runtime.sink()).await
+        {
+            runtime.poison(fault);
+            return Err(BluetoothUninstallError::Fault(self.stop(fault)));
+        }
         loop {
             match installed.hardware.drain_time() {
                 Ok(ControllerTimeEventStep::Waiting) => {
-                    if let Err(error) = wait_for(&self.timer, HARDWARE_RECHECK).await {
+                    if let Err(error) = wait_for(&runtime.timer, HARDWARE_RECHECK).await {
                         let fault = BluetoothRuntimeFault::Time(error);
-                        installed.fault();
-                        self.poison(fault);
-                        return Err(BluetoothUninstallError::Fault(fault));
+                        runtime.poison(fault);
+                        return Err(BluetoothUninstallError::Fault(self.stop(fault)));
                     }
                 }
                 Ok(_) => break,
                 Err(error) => {
                     let fault = BluetoothRuntimeFault::Time(BluetoothTimeError::Event(error));
-                    installed.fault();
-                    self.poison(fault);
-                    return Err(BluetoothUninstallError::Fault(fault));
+                    runtime.poison(fault);
+                    return Err(BluetoothUninstallError::Fault(self.stop(fault)));
                 }
             }
         }
-        let Installed {
-            radio, hardware, ..
-        } = slot.take().expect("the radio is installed");
-        drop(slot);
-        self.outcomes.reset();
-        self.work.signal(());
-        Ok((radio, hardware))
+        installed.restore_phy_route();
+        Ok(())
     }
 
+    /// Take the radio and its hardware out of the driver; the runtime is
+    /// free for the next install, which starts disabled with an empty queue.
+    ///
+    /// # Errors
+    ///
+    /// The driver did not leave the radio for the uninstall: it stopped on
+    /// a fault, or its retirement found the port enabled
+    /// ([`BluetoothUninstallError::NotDisabled`]: the owner was poisoned
+    /// while enabled, and admitted events may still owe their ends). The
+    /// radio and hardware come back with the error, for the composition's
+    /// fail-stop; the runtime stays occupied.
+    #[allow(
+        clippy::type_complexity,
+        clippy::result_large_err,
+        reason = "the role's pool capacities stay visible in the returned radio"
+    )]
+    pub fn into_parts(
+        self,
+    ) -> Result<
+        (
+            Radio<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>,
+            H,
+        ),
+        BluetoothRetained<
+            H,
+            LEGACY,
+            CONNECTABLE,
+            SCANNERS,
+            CONNECTIONS,
+            SCAN_PACKETS,
+            RX_PACKETS,
+            ITEMS,
+        >,
+    > {
+        let retired = match (self.retired, self.fault) {
+            (Some(retired), _) => retired,
+            (None, Some(fault)) => Err(BluetoothUninstallError::Fault(fault)),
+            (None, None) => Err(BluetoothUninstallError::NotRetired),
+        };
+        let Installed {
+            radio, hardware, ..
+        } = self.installed;
+        match retired {
+            Ok(()) => {
+                self.runtime.outcomes.reset();
+                self.runtime.occupied.store(false, Ordering::Release);
+                Ok((radio, hardware))
+            }
+            Err(error) => Err(BluetoothRetained {
+                error,
+                radio,
+                hardware,
+            }),
+        }
+    }
+
+    /// Run `entry` on the installed radio; for host tests.
+    #[cfg(test)]
+    pub(crate) fn with_radio<R>(
+        &mut self,
+        entry: impl FnOnce(
+            &mut Radio<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>,
+        ) -> R,
+    ) -> R {
+        entry(&mut self.installed.radio)
+    }
+}
+
+impl<
+    M: RawMutex,
+    H: BluetoothRadioHardware,
+    T: Timer,
+    C: BluetoothRadioConfig,
+    const LEGACY: usize,
+    const CONNECTABLE: usize,
+    const SCANNERS: usize,
+    const CONNECTIONS: usize,
+    const SCAN_PACKETS: usize,
+    const RX_PACKETS: usize,
+    const ITEMS: usize,
+    const EVENTS: usize,
+>
+    BluetoothRuntime<
+        M,
+        H,
+        T,
+        C,
+        LEGACY,
+        CONNECTABLE,
+        SCANNERS,
+        CONNECTIONS,
+        SCAN_PACKETS,
+        RX_PACKETS,
+        ITEMS,
+        EVENTS,
+    >
+{
     /// Stop the scheduler unless it is stopped, withdraw every scheduled
     /// event against a sample taken after the stop, and settle the
     /// withdrawals: every admitted event ends.
@@ -1334,7 +1853,7 @@ impl<
         }
     }
 
-    /// One locked pass: report completions, then advance the transaction in
+    /// One pass of the driver: report completions, then advance the transaction in
     /// progress or drive the next hardware work.
     fn pass(
         &self,

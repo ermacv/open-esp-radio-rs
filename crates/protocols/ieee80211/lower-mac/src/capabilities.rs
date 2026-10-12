@@ -210,12 +210,12 @@ impl HardwareServices {
 ///
 /// A value outside these limits is refused as `Unsupported`. Optional
 /// operations are not limits: a backend that has one implements its
-/// extension trait ([`LowerMacAmpdu`](crate::LowerMacAmpdu),
-/// [`LowerMacBeaconTiming`](crate::LowerMacBeaconTiming),
-/// [`LowerMacMonitor`](crate::LowerMacMonitor),
-/// [`LowerMacCancelPublished`](crate::LowerMacCancelPublished),
-/// [`LowerMacAirReservation`](crate::LowerMacAirReservation),
-/// [`LowerMacLiveRetune`](crate::LowerMacLiveRetune)), whose own
+/// extension trait (`LowerMacAmpdu`,
+/// `LowerMacBeaconTiming`,
+/// `LowerMacMonitor`,
+/// `LowerMacCancelPublished`,
+/// `LowerMacAirReservation`,
+/// `LowerMacLiveRetune`), whose own
 /// capabilities state that operation's limits.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct LowerMacCapabilities {

@@ -284,10 +284,11 @@ mod tests {
 
     use oer_ieee80211_lower_mac::{Ieee80211Radio, TxId, TxSeats};
     use oer_ieee80211_mac::qos::WmmAccessCategory;
-    use oer_radio_port::{
-        ClockError, Disabled, EnableResult, Ended, EventsLost, Lent, Mint, Owner, Permit,
-        PhaseParts, Poisoned, PortBackend, PortBody, PortResult, RadioPortEvents, Retire, run_port,
+    use oer_ieee80211_port::{
+        ClockError, Disabled, EnableResult, Ended, Lent, Owner, PhaseParts, PortBackend, PortBody,
+        RadioPortEvents, Retire, run_port,
     };
+    use oer_radio_port::{EventsLost, Mint, Permit, Poisoned, PortResult};
     use oer_time::RadioInstant;
 
     use oer_ieee80211_lower_mac::{Ieee80211Capabilities, QueueGrant, TX_SEATS};

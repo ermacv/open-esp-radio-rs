@@ -8,10 +8,10 @@
 //! typed HIL console. The
 //! `bluetooth-hil` image drives Direct Test Mode with HCI commands and the
 //! `bluetooth-gatt` image runs the Trouble Host and the GATT application; both
-//! run the radio runner and the HCI service on one client task
-//! ([`client`]), which has no restart: when the service ends, its managed
-//! stop has accounted every admitted event, the task closes the Host epoch,
-//! stops the Controller and only then reports why. The
+//! run the radio runner and the HCI service, the body of the port, on one
+//! client task ([`client`]), which has no restart: when the service ends,
+//! the port's `disable` has accounted every admitted event, the task closes
+//! the Host epoch, stops the Controller and only then reports why. The
 //! `bluetooth-secure-gatt` image runs them beside its Host and restarts the
 //! Controller epoch on request. All reach the radio only through the HCI
 //! transport.
@@ -37,7 +37,7 @@ use oer_esp32s31_bluetooth_system::BluetoothHostTransport;
 #[cfg(feature = "bluetooth-radio")]
 use oer_esp32s31_bluetooth_system::{BluetoothEntropy, BluetoothParked, start_bluetooth_hci};
 #[cfg(not(feature = "bluetooth-secure-gatt"))]
-use oer_esp32s31_bluetooth_system::{BluetoothHciService, BluetoothSystem, BluetoothSystemPort};
+use oer_esp32s31_bluetooth_system::{BluetoothHciService, BluetoothSystem, BluetoothSystemBackend};
 #[cfg(feature = "bluetooth-radio")]
 use oer_esp32s31_hal::root::ConcurrentPartitions;
 #[cfg(feature = "bluetooth-radio")]
@@ -121,7 +121,7 @@ async fn main(
     let Ok(parked) = BluetoothParked::new(bluetooth, bluetooth_coex, interrupts) else {
         super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-memory\r\n");
     };
-    let (system, port) =
+    let (system, backend) =
         match oer_esp32s31_bluetooth_system::start(radio, parked, public_address).await {
             Ok(started) => started,
             Err(_) => super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-start\r\n"),
@@ -133,10 +133,20 @@ async fn main(
         spawner.spawn(hold);
     }
     #[cfg(feature = "bluetooth-secure-gatt")]
-    secure::run(spawner, radio, system, port, hci, public_address, usb, boot).await;
+    secure::run(
+        spawner,
+        radio,
+        system,
+        backend,
+        hci,
+        public_address,
+        usb,
+        boot,
+    )
+    .await;
     #[cfg(not(feature = "bluetooth-secure-gatt"))]
     {
-        spawner.spawn(client(radio, system, port, hci.service).expect("Bluetooth client task"));
+        spawner.spawn(client(radio, system, backend, hci.service).expect("Bluetooth client task"));
         image(spawner, hci.host, usb, boot).await;
     }
 }
@@ -172,36 +182,38 @@ async fn tracking(radio: &'static Radio) {
 /// until the service ends, then close the Host epoch, stop the Controller
 /// and report why the service ended.
 ///
-/// A runner fault, a failed managed stop or a failed Controller stop keeps
-/// every owner as it is: the report diverges with them alive.
+/// A runner fault poisons the port, so the service ends at its next call;
+/// it, a poisoned port or a failed Controller stop keeps every other owner
+/// as it is: the report diverges with them alive.
 #[cfg(not(feature = "bluetooth-secure-gatt"))]
 #[embassy_executor::task]
 async fn client(
     radio: &'static Radio,
     mut system: BluetoothSystem,
-    port: BluetoothSystemPort,
+    backend: BluetoothSystemBackend,
     mut service: BluetoothHciService,
 ) {
+    use core::pin::pin;
     use embassy_futures::select::{Either, select};
     use oer_esp32s31_bluetooth_system::Served;
 
-    let served = match select(
-        system.run(radio),
-        service.run(&port, core::future::pending()),
-    )
-    .await
-    {
-        Either::First(_fault) => {
-            super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-runner-fault\r\n")
+    let (runner_faulted, (served, uninstalled)) = {
+        let mut runner = pin!(system.run(radio));
+        let mut serving = pin!(service.run(backend, core::future::pending()));
+        match select(runner.as_mut(), serving.as_mut()).await {
+            Either::First(_fault) => (true, serving.await),
+            Either::Second(ended) => (false, ended),
         }
-        Either::Second(served) => served,
     };
-    let Served::Stopped(exit) = served else {
+    if runner_faulted {
+        super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-runner-fault\r\n");
+    }
+    let (Served::Stopped(exit), Some(uninstalled)) = (served, uninstalled) else {
         super::fail(stop_failure_reason(&served));
     };
     // No restart follows: the Host epoch closes for good.
     service.close();
-    let stopped = system.stop(port, radio).await;
+    let stopped = system.stop(uninstalled, radio).await;
     let Ok(_parked) = stopped else {
         super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-stop\r\n");
     };
@@ -217,32 +229,84 @@ fn exit_reason(exit: oer_esp32s31_bluetooth_system::ServeExit) -> &'static core:
         ServeExit::EpochExhausted(_) => {
             c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-epoch-exhausted\r\n"
         }
-        ServeExit::Stopped
-        | ServeExit::Closed
-        | ServeExit::Transport(_)
-        | ServeExit::Lifecycle(_)
-        | ServeExit::Clock(_) => c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-hci-service\r\n",
+        ServeExit::Stopped | ServeExit::Closed | ServeExit::Transport(_) | ServeExit::Clock(_) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-hci-service\r\n"
+        }
     }
 }
 
-/// The report of a service whose managed stop failed, naming why the
+/// The report of a service whose port's `disable` failed, naming why the
 /// service stopped serving, or that found the port poisoned. The caller
 /// keeps every owner as it is.
 #[cfg(any(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
-fn stop_failure_reason<F>(
-    served: &oer_esp32s31_bluetooth_system::Served<F>,
+fn stop_failure_reason(
+    served: &oer_esp32s31_bluetooth_system::Served<
+        oer_esp32s31_bluetooth_system::BluetoothSystemFault,
+    >,
 ) -> &'static core::ffi::CStr {
     use oer_esp32s31_bluetooth_system::{ServeExit, Served};
     match served {
-        Served::StopFailed {
+        Served::DisableFailed {
             exit: ServeExit::EpochExhausted(_),
             ..
         } => c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-epoch-exhausted-stop-failed\r\n",
-        Served::StopFailed { .. } => {
+        Served::DisableFailed { .. } => {
             c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-hci-service-stop-failed\r\n"
         }
-        Served::Poisoned(_) => c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned\r\n",
+        Served::Poisoned(cause) => poisoned_reason(*cause),
+        Served::Unretired(_) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-driver-unretired\r\n"
+        }
         // A stopped service is no stop failure.
         Served::Stopped(exit) => exit_reason(*exit),
+    }
+}
+
+/// The report of a port poisoned while it served, naming the fault.
+#[cfg(any(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
+fn poisoned_reason(
+    cause: oer_esp32s31_bluetooth_system::BluetoothSystemFault,
+) -> &'static core::ffi::CStr {
+    use oer_esp32s31_bluetooth_system::{
+        BluetoothFault as Fault, BluetoothRuntimeFault as Runtime, RadioFault as Radio,
+    };
+    match cause {
+        Fault::Radio(Radio::UnsupportedHardwareResult) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-radio-unsupported-result\r\n"
+        }
+        Fault::Radio(Radio::MemoryInconsistency) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-radio-memory\r\n"
+        }
+        Fault::Radio(Radio::OutOfOrderCompletion) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-radio-out-of-order\r\n"
+        }
+        Fault::Runner(Runtime::Scheduler(_)) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-scheduler\r\n"
+        }
+        Fault::Runner(Runtime::Start(_)) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-start\r\n"
+        }
+        Fault::Runner(Runtime::StopSequence(_)) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-stop-sequence\r\n"
+        }
+        Fault::Runner(Runtime::FinishedLists(_)) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-finished-lists\r\n"
+        }
+        Fault::Runner(Runtime::Stop) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-stop\r\n"
+        }
+        Fault::Runner(Runtime::Time(_)) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-time\r\n"
+        }
+        Fault::Runner(Runtime::TransitionTimedOut) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-transition-timed-out\r\n"
+        }
+        Fault::Runner(Runtime::Abandoned) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-abandoned\r\n"
+        }
+        Fault::Runner(Runtime::Unsettled) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-unsettled\r\n"
+        }
+        Fault::Platform => c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-platform\r\n",
     }
 }

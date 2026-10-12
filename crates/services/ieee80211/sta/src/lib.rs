@@ -18,6 +18,5 @@ mod test_support;
 
 pub mod attempt;
 pub mod join;
-pub mod port;
 pub mod scan;
 pub mod station;

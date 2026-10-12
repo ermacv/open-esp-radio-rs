@@ -51,7 +51,7 @@ impl VifRoleSet {
 /// frames. The rules of [`Self::BSS_MEMBER`] belong to a BSS: a station
 /// without a BSSID can request only [`Self::OTHER_BSS_MANAGEMENT`].
 /// Receiving every frame regardless of address is
-/// [`LowerMacMonitor`](crate::LowerMacMonitor), not a filter rule.
+/// `LowerMacMonitor`, not a filter rule.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct ReceiveFilter(u8);
 
@@ -242,12 +242,12 @@ pub enum LowerMacSetting {
     /// The port must be disabled: a backend refuses the setting on an
     /// enabled or quiesced port with [`SettingError::PortEnabled`]. On a
     /// disabled port it refuses only a channel outside its
-    /// [`capabilities`](crate::Ieee80211LowerMacPort::capabilities)
+    /// `capabilities`
     /// ([`SettingError::UnsupportedChannel`]), so a caller that checked the
     /// capabilities first can always tune a disabled port. A
     /// permanent channel move is therefore an explicit lifecycle sequence,
     /// `Disable`, `Channel`, `Enable`; a move that keeps the port enabled
-    /// goes only through [`LowerMacLiveRetune`](crate::LowerMacLiveRetune).
+    /// goes only through `LowerMacLiveRetune`.
     Channel(Channel),
     /// Configure an interface, or remove it (`None`).
     Vif {

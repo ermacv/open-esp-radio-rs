@@ -1,22 +1,14 @@
-//! Optional operations of the lower-MAC port.
-//!
-//! A structural feature a backend may lack is an extension trait over
-//! [`Ieee80211LowerMacPort`], not a capability flag: an upper layer that
-//! needs the feature requires the trait bound, and a backend without it
-//! does not implement the trait, so the missing feature cannot be requested
-//! at all. Each extension states its own parametric limits. Why a backend
+//! The values of the lower-MAC port's optional features: A-MPDU
+//! transmission, beacon timing (each interface's TSF and TBTT schedule)
+//! and monitor reception, with their parametric limits. Why a backend
 //! lacks a feature is recorded in its qualification catalog, not in code.
 
 use oer_ieee80211_mac::tsf::{TsfDuration, TsfInstant};
-use oer_radio_port::{CancelError, Poisoned, PortResult};
-use oer_time::Duration;
 
 use crate::{
-    Channel,
     capabilities::PhyFormatSet,
-    control::{SettingError, VifId, VifRoleSet},
-    port::{Ieee80211LowerMacPort, SubmitResult},
-    tx::{TxBody, TxId},
+    control::{VifId, VifRoleSet},
+    tx::TxBody,
 };
 
 /// Memory for the MPDUs of one A-MPDU, lent by the backend.
@@ -26,7 +18,7 @@ use crate::{
 /// attempt's completion is reported, as a [`TxBuffer`](crate::TxBuffer) is;
 /// the bodies it holds stay with the backend until the attempt's completion
 /// event carries them back by subframe
-/// ([`Ieee80211LowerMacPort::into_completed`]). A buffer released
+/// ([`LowerMacEvents::into_completed`](crate::LowerMacEvents::into_completed)). A buffer released
 /// unsubmitted drops its bodies.
 pub trait AmpduBuffer {
     /// The owner of an MPDU's body.
@@ -76,87 +68,6 @@ pub struct AmpduCapabilities {
 
 /// One A-MPDU attempt.
 pub type AmpduAttempt<A> = crate::TxAttempt<AmpduPayload<A>>;
-
-/// A-MPDU transmission: one attempt sends one aggregate and reports the
-/// recipient's BlockAck in its completion's
-/// [`block_ack`](crate::TxCompletion::block_ack).
-///
-/// The attempt occupies its access category's queue like a single MPDU;
-/// selecting which MPDUs a later aggregate retransmits stays above the port
-/// unless the backend reports
-/// [`HardwareServices::AMPDU_RETRY_SELECTION`](crate::HardwareServices::AMPDU_RETRY_SELECTION).
-pub trait LowerMacAmpdu: Ieee80211LowerMacPort {
-    type AmpduBuffer: AmpduBuffer<Body = Self::TxBody>;
-
-    fn ampdu_capabilities(&self) -> AmpduCapabilities;
-
-    /// Lend an aggregate buffer; `Ok(None)` when every one is in use.
-    fn ampdu_buffer(&self) -> Result<Option<Self::AmpduBuffer>, Poisoned<Self::Fault>>;
-
-    /// Take back an aggregate buffer the caller will not submit.
-    fn release_ampdu_buffer(&self, buffer: Self::AmpduBuffer);
-
-    /// Admit one A-MPDU attempt, with the base port's admission rules. An
-    /// empty aggregate is `InvalidLength`; one above
-    /// [`AmpduCapabilities::max_subframes`] or
-    /// [`AmpduCapabilities::max_length`], or at a rate outside
-    /// [`AmpduCapabilities::formats`], is `Unsupported`.
-    fn submit_ampdu(
-        &self,
-        attempt: AmpduAttempt<Self::AmpduBuffer>,
-    ) -> SubmitResult<AmpduAttempt<Self::AmpduBuffer>, Self::Fault>;
-}
-
-/// The air an interface reserves for itself: the backend sends a CTS
-/// addressed to the interface's own address whose Duration is `duration`,
-/// so every station that hears it defers for that long (IEEE Std
-/// 802.11-2020 10.3.2.4, the NAV).
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct AirReservation {
-    pub duration: Duration,
-}
-
-/// The longest air reservation: the NAV a Duration field sets, 32 767 µs.
-pub const MAX_AIR_RESERVATION: Duration = Duration::from_micros(32_767);
-
-/// One air reservation attempt: it contends as its access category, at a
-/// non-HT rate, with no key and no response.
-pub type AirReservationAttempt = crate::TxAttempt<AirReservation>;
-
-/// Air reservation: one attempt sends a CTS-to-self that keeps the
-/// interface's medium for a while, as an owner that takes the radio off the
-/// channel does. Its completion reports when the CTS went out.
-pub trait LowerMacAirReservation: Ieee80211LowerMacPort {
-    /// Admit one reservation, with the base port's admission rules. A
-    /// duration above [`MAX_AIR_RESERVATION`], a rate other than a non-HT
-    /// one, a key or an interface without an address is `Unsupported`.
-    fn submit_air_reservation(
-        &self,
-        attempt: AirReservationAttempt,
-    ) -> SubmitResult<AirReservationAttempt, Self::Fault>;
-}
-
-/// Temporary channel changes without a port lifecycle transition.
-///
-/// A receive-only absence requires this independently of
-/// [`LowerMacAirReservation`]. A backend that can tune only while disabled
-/// does not implement it; ordinary channel moves may still use the base
-/// port's channel setting and lifecycle.
-pub trait LowerMacLiveRetune: Ieee80211LowerMacPort {
-    /// Retune an enabled port after all admitted transmissions have ended.
-    /// Success means the receiver is on `channel` when the call returns;
-    /// it never just queues work for a runner. Refusal changes nothing;
-    /// an outstanding transmission or a disabled port is `Busy`.
-    ///
-    /// Keep interface configuration, keys, RX BlockAck agreements, TX queue
-    /// configuration and ownership, pending events, lent RX buffers and the
-    /// TX gate intact. Preserve the radio-clock generation, each interface's
-    /// advancing TSF and its relation generation, and absolute TBTT schedules.
-    /// Do not hide Disable/Enable, aborted attempts or a TSF restart.
-    /// The operation is synchronous and must not wait indefinitely; its
-    /// settling latency must be qualified for the owner's window budget.
-    fn retune_live(&self, channel: Channel) -> PortResult<(), SettingError, Self::Fault>;
-}
 
 /// A value of one interface's TSF. Two interfaces count different TSFs (a
 /// station follows its access point's, an access point keeps its own), so
@@ -475,45 +386,15 @@ impl From<oer_radio_port::ProjectionError> for TsfProjectionError {
 /// Which roles the beacon-timing operations serve.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct BeaconTimingCapabilities {
-    /// Roles whose TSF [`LowerMacBeaconTiming::tsf`] reads.
+    /// Roles whose TSF `LowerMacBeaconTiming::tsf` reads.
     pub tsf_read: VifRoleSet,
-    /// Roles whose TSF [`LowerMacBeaconTiming::set_tsf`] sets to any value.
+    /// Roles whose TSF `LowerMacBeaconTiming::set_tsf` sets to any value.
     pub tsf_set: VifRoleSet,
-    /// Roles whose TSF [`LowerMacBeaconTiming::set_tsf`] restarts from zero.
+    /// Roles whose TSF `LowerMacBeaconTiming::set_tsf` restarts from zero.
     pub tsf_restart: VifRoleSet,
-    /// Roles whose TBTT schedule [`LowerMacBeaconTiming::set_tbtt`]
+    /// Roles whose TBTT schedule `LowerMacBeaconTiming::set_tbtt`
     /// programs.
     pub tbtt: VifRoleSet,
-}
-
-/// The TSF and TBTT schedule of each interface.
-///
-/// An operation on an interface whose role the
-/// [`BeaconTimingCapabilities`] exclude is refused as
-/// [`SettingError::Unsupported`].
-pub trait LowerMacBeaconTiming: Ieee80211LowerMacPort {
-    fn beacon_timing_capabilities(&self) -> BeaconTimingCapabilities;
-
-    /// The TSF of a configured interface.
-    fn tsf(&self, vif: VifId) -> PortResult<VifTsf, SettingError, Self::Fault>;
-
-    /// The TSF of a configured interface and the port's radio clock read
-    /// back to back, in the current generation of their relation.
-    fn tsf_sample(&self, vif: VifId) -> PortResult<TsfSample, SettingError, Self::Fault>;
-
-    /// Set the TSF of the interface `tsf` names.
-    fn set_tsf(&self, tsf: VifTsf) -> PortResult<(), SettingError, Self::Fault>;
-
-    /// Report the target beacon transmission times of the schedule's
-    /// interface as events.
-    fn set_tbtt(&self, schedule: TbttSchedule) -> PortResult<(), SettingError, Self::Fault>;
-
-    /// Stop reporting an interface's target beacon transmission times.
-    fn stop_tbtt(&self, vif: VifId) -> PortResult<(), SettingError, Self::Fault>;
-
-    /// The TBTT an event reports; `None` for another event. Its base view
-    /// is [`LowerMacEvent::Extension`](crate::LowerMacEvent::Extension).
-    fn tbtt(event: &Self::Event) -> Option<TbttEvent>;
 }
 
 /// The limits of monitor reception.
@@ -522,23 +403,4 @@ pub struct MonitorCapabilities {
     /// Whether monitor reception runs while an interface has a receive
     /// filter other than `ReceiveFilter::NONE`.
     pub with_receiving_interfaces: bool,
-}
-
-/// Monitor reception: every frame the PHY decodes with a valid FCS is
-/// delivered as [`LowerMacEvent::Received`](crate::LowerMacEvent::Received),
-/// whatever its addresses and the interfaces' filters.
-pub trait LowerMacMonitor: Ieee80211LowerMacPort {
-    fn monitor_capabilities(&self) -> MonitorCapabilities;
-
-    /// Start or stop monitor reception.
-    fn set_monitor(&self, enabled: bool) -> PortResult<(), SettingError, Self::Fault>;
-}
-
-/// Ending a published attempt on the air.
-pub trait LowerMacCancelPublished: Ieee80211LowerMacPort {
-    /// Withdraw an admitted attempt from the hardware, published or not.
-    /// Its terminal event is its completion,
-    /// [`TxStatus::Aborted`](crate::TxStatus::Aborted) unless it had already
-    /// completed; the medium may have carried part of it.
-    fn cancel_published(&self, id: TxId) -> PortResult<(), CancelError, Self::Fault>;
 }

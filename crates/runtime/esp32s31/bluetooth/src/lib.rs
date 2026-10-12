@@ -4,47 +4,49 @@
 
 //! Executor-independent Bluetooth LE radio runtime for the ESP32-S31.
 //!
-//! [`BluetoothRuntime`] holds the radio role — the portable radio event
-//! contract over the scheduler executor — together with its hardware behind
-//! one async lock over a caller-chosen raw mutex.
+//! The radio is a port backend ([`BluetoothBackend`], an
+//! [`oer_bluetooth_radio::LeRadioBackend`]) run under the shared port owner
+//! ([`oer_bluetooth_port::run_port`]), with a driver that owns the radio role
+//! and its hardware by value ([`BluetoothDriver`]). [`BluetoothRuntime`] is
+//! the part the backend, the driver and the platform share: the outcome
+//! queue, the request exchange, the poison and the wakes, behind signals,
+//! atomics and short synchronous sections; nothing holds a lock across an
+//! await.
 //!
 //! - [`BluetoothRuntime::install`] publishes the global receive chains, takes
-//!   the first controller-time sample and installs the radio. It returns the
-//!   radio's two handles: the [`BluetoothPort`] for the one outcome consumer
-//!   and the [`BluetoothControl`] for the composition, whose uninstall
-//!   consumes both. Neither exists without an installed radio, so no port
-//!   call is refused as not installed.
-//! - [`BluetoothRuntime::run`] drives the scheduler on one task: it reports
-//!   finished events, inserts admitted events, starts the idle scheduler and
-//!   carries list transactions through their hardware waits. A scheduler
-//!   interrupt, a request or a short recheck delay resumes it.
-//! - The port's submission admits one request against a fresh
-//!   controller-time sample while its lifecycle enables it. Its `Disable`
-//!   stops the scheduler and ends every admitted event with what the
-//!   hardware recorded (`EventResult::Aborted` when a started item left no
-//!   status), and its `Enable` resumes the scheduler; the uninstall takes
-//!   only a disabled radio, so no admitted event outlives it. Shared-PHY
+//!   the first controller-time sample and returns the backend with the
+//!   driver inside, so no call is refused as not installed.
+//! - The driver, which `run_port` joins with the port's body, drives the
+//!   scheduler: it reports finished events, inserts admitted events, starts
+//!   the idle scheduler, carries list transactions through their hardware
+//!   waits and samples the controller clock at least every
+//!   [`TIME_REFRESH`], enabled or disabled. Between passes it serves the
+//!   port's requests, each a message that owns its PDUs
+//!   ([`oer_bluetooth_radio::OwnedRadioRequest`]).
+//! - The owner's `enable` resumes the scheduler and its `disable` stops it
+//!   and ends every admitted event with what the hardware recorded
+//!   (`EventResult::Aborted` when a started item left no status), each
+//!   within [`TRANSITION_BOUND`]. The uninstall retires the driver, which
+//!   leaves the radio and hardware by value, or keeps them with why
+//!   ([`BluetoothRetained`]) when the port was poisoned. Shared-PHY
 //!   maintenance never pauses the port: it runs under the radio arbiter's
 //!   lease with the vendor grant-protect brackets, and an event that loses
 //!   RF to it ends as an ordinary outcome.
 //!
-//! The port is the [`oer_bluetooth_radio::LeRadioPort`] of the portable
-//! Controller service loop: a refused request is an answer to the Controller
-//! core, and a fault poisons the port with its [`BluetoothFault`].
-//! Submission and the clock stay asynchronous because each takes a fresh
-//! controller-time latch, which completes only after the hardware latched
-//! the time, and shares the lock the runner holds across scheduler stops.
-//! The port's capabilities
+//! A refused request is an answer to the Controller core, and a fault
+//! poisons the port with its [`BluetoothFault`]. Submission and the clock
+//! stay asynchronous because each takes a fresh controller-time latch,
+//! which completes only after the hardware latched the time. The port's
+//! capabilities
 //! ([`BluetoothCapabilities`](oer_esp32s31_bluetooth_radio::BluetoothCapabilities))
-//! state LE 1M roles and hardware Link
-//! Layer acknowledgement: the hardware keeps SN and NESN, retransmits and
-//! answers with empty PDUs.
+//! state LE 1M roles and hardware Link Layer acknowledgement: the hardware
+//! keeps SN and NESN, retransmits and answers with empty PDUs.
 //!
-//! Outcomes leave the lock as owned values through a bounded queue that any
-//! executor may await through the port's event stream; each admitted event
-//! reserves the slots of its terminal outcomes. The platform
-//! calls [`BluetoothRuntime::on_scheduler_wake`] when its scheduler interrupt
-//! publishes a wake for the worker.
+//! Outcomes leave the driver as owned values through a bounded queue the
+//! port's event consumer takes from; each admitted event reserves the slots
+//! of its terminal outcomes. The platform calls
+//! [`BluetoothRuntime::on_scheduler_wake`] when its scheduler interrupt
+//! publishes a wake for the driver.
 //!
 //! [`BluetoothRadioHardware`] names every hardware operation; on the chip,
 //! `LiveBluetoothHardware` joins the powered task endpoint of one Controller
@@ -74,11 +76,12 @@ pub use hardware::{BluetoothRadioHardware, RxChainPublicationError};
 pub use modem_timer::{ModemTimerFault, run_modem_timer, settle_modem_timer};
 pub use outcome::{BluetoothOutcome, BluetoothReceivedPdu, MAX_PDU_BYTES};
 #[cfg(any(target_arch = "riscv32", test))]
-pub use port::{BluetoothControl, BluetoothPort};
+pub use port::{BluetoothBackend, BluetoothClient, BluetoothEvents, BluetoothPhaseControl};
 #[cfg(any(target_arch = "riscv32", test))]
 pub use runtime::{
-    BluetoothFault, BluetoothInstallError, BluetoothRuntime, BluetoothRuntimeFault,
-    BluetoothTimeError, BluetoothUninstallError, HARDWARE_RECHECK, TIME_REFRESH,
+    BluetoothDriver, BluetoothFault, BluetoothInstallError, BluetoothRetained, BluetoothRuntime,
+    BluetoothRuntimeFault, BluetoothTimeError, BluetoothUninstallError, HARDWARE_RECHECK,
+    TIME_REFRESH, TRANSITION_BOUND,
 };
 
 #[cfg(test)]

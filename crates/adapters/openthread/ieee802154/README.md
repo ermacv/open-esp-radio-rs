@@ -1,10 +1,10 @@
 # IEEE 802.15.4 OpenThread radio
 
 `oer-ieee802154-openthread` implements the `Radio` trait of the
-[`openthread`](https://crates.io/crates/openthread) crate over any
-[`Ieee802154RadioPort`](../../../protocols/ieee802154/src/port.rs), so the
-OpenThread stack that crate binds can run on any backend of the portable
-IEEE 802.15.4 radio port. It is portable: it depends on the protocol
+[`openthread`](https://crates.io/crates/openthread) crate over the running
+phase of any IEEE 802.15.4 port on the owner shape
+([`owner`](../../../protocols/ieee802154/src/owner.rs)), so the OpenThread
+stack that crate binds can run on any backend of the portable port. It is portable: it depends on the protocol
 package and the trait crate alone. The ESP32-S31 composition's runtime
 (`oer-espressif-ieee802154-runtime`) is the port the Thread example and the
 HIL target use; the ESP-IDF behaviour described below is that of this
@@ -35,37 +35,34 @@ Link Metrics subject (`Radio::set_enh_ack_probing`), and, with its
 
 ## Use
 
-Start the IEEE 802.15.4 composition, pass
+Start the IEEE 802.15.4 composition and run its backend under `run_port`.
+The port's body configures interface 0, enables the radio and lends its
+running phase to `OpenThreadRadio::new`: the events consumer, the control,
+the client of interface 0 with its operation seat, and the interface's
+pending-table slots (`PendingSlots`), which `into_parts` gives back. Pass
 `MonotonicRadioClock::new(clock)` over the monotonic clock the port counts
 in (the Espressif runtime's `Ieee802154Runtime::clock`) and
-`PortRssi::new(port)` to the `OpenThread` constructor, which reads the radio
-time (`otPlatRadioGetNow`, `otPlatTimeGet`) and the port's live RSSI
-(`otPlatRadioGetRssi`) through them; `init` refuses a port whose clock is
-not the image's monotonic clock (`ClockInfo::monotonic` is not
-`Some(ClockRelation::IDENTICAL)`) or one without a transmit-power, CCA
-threshold or CSL capability, then hand the port to `OpenThreadRadio::new` and give
-the radio to the `openthread` crate. Poll the runtime's runner
-(`Ieee802154System::run`) beside it: the adapter is the port's one event
-consumer and only takes events. OpenThread is told the port's figures
-(`Ieee802154Capabilities`): the transmit power and CCA threshold the radio
-starts with (`reset_dbm`) and its receive sensitivity, from which enhanced
-ACKs also measure link margins. OpenThread's frame power is an upper
-bound: above the port's levels the frame goes out at the highest level,
-below them the transmission fails. A CCA threshold outside the port's range
-fails the operation. The radio enables
-the port through its lifecycle and takes the `Enabled` terminal event,
-installs zeroed MAC keys and an enhanced-ACK generator through
-`RadioSetting`s and serves OpenThread's operations through the port's
-commands and events. Declare `OPEN_THREAD_RADIO_CAPABILITIES`
-with `OtResources::set_radio_caps` before building the OpenThread instance:
+`PortRssi::new(reader)` over the install's recent-RSSI reader to the
+`OpenThread` constructor, which reads the radio time (`otPlatRadioGetNow`,
+`otPlatTimeGet`) and the live RSSI (`otPlatRadioGetRssi`) through them.
+`init` refuses a port without a transmit-power, CCA threshold or CSL
+capability, installs zeroed MAC keys and an enhanced-ACK generator, and
+tells OpenThread the port's figures (`Ieee802154Capabilities`): the
+transmit power and CCA threshold the radio starts with (`reset_dbm`) and
+its receive sensitivity, from which enhanced ACKs also measure link
+margins. OpenThread's frame power is an upper bound: above the port's
+levels the frame goes out at the highest level, below them the
+transmission fails. A CCA threshold outside the port's range fails the
+operation. A scheduled receive (`receive_at`) is the interface's window
+wish, admitted at once. Declare `OPEN_THREAD_RADIO_CAPABILITIES` with
+`OtResources::set_radio_caps` before building the OpenThread instance:
 OpenThread's `SubMac` reads the capabilities once, when the instance is
 built, and leaves transmit security to the radio only when it saw it there.
-When the port reports `EventsLost`, the adapter cancels an operation whose
-terminal event may be in the gap (a refusal as not running proves it ended;
-a port without cancellation is judged by its state) and reports the lost
-frames to OpenThread as one `RxFailed` reception. The
-application still supplies what the `openthread` crate asks of a platform:
-entropy, settings storage and the C library functions OpenThread links.
+When the port reports `EventsLost`, only received frames are in the gap:
+the adapter reports them to OpenThread as one `RxFailed` reception. A
+poisoned port fails every later operation. The application still supplies
+what the `openthread` crate asks of a platform: entropy, settings storage
+and the C library functions OpenThread links.
 
 After an OpenThread role change, `frames::role_txrx_priority` gives the
 coexistence priority of immediate transmission and reception ESP-IDF's
@@ -107,8 +104,7 @@ receive information does. Unlike the port, which reports the counter after
 the one the ACK carried, the radio reports the one the ACK carried. The
 radio acknowledges no second short address.
 
-`otPlatRadioGetRssi` reads the composition's live RSSI reader, over the
-runtime's `Ieee802154RadioPort::recent_rssi`, as the port reads
+`otPlatRadioGetRssi` reads the install's recent-RSSI reader, which reads
 `esp_ieee802154_get_recent_rssi`: the low byte of the shared baseband's
 current receive information, of the most recent reception whichever
 protocol received it; OpenThread's invalid RSSI while no radio is

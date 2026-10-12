@@ -69,18 +69,17 @@ raw_enum!(
     /// radio's fault.
     RequestAnswer {
         Accepted = 0,
-        Disabled = 1,
-        ClockUnavailable = 2,
-        EpochExhausted = 3,
-        NoInstance = 4,
-        Unknown = 5,
-        AlreadyConfigured = 6,
-        Busy = 7,
-        Late = 8,
-        ListFull = 9,
-        NotListed = 10,
+        ClockUnavailable = 1,
+        EpochExhausted = 2,
+        NoInstance = 3,
+        Unknown = 4,
+        AlreadyConfigured = 5,
+        Busy = 6,
+        Late = 7,
+        ListFull = 8,
+        NotListed = 9,
         /// The radio's own structures disagreed: it faulted.
-        Faulted = 11,
+        Faulted = 10,
     }
 );
 
@@ -506,29 +505,26 @@ impl fmt::Display for QueueLoss {
 }
 
 raw_enum!(
-    /// A lifecycle command of the port.
+    /// A transition of the port's owner.
     LifecycleCommand {
         Enable = 0,
         Disable = 1,
-        Quiesce = 2,
     }
 );
 
 raw_enum!(
-    /// What happened to a lifecycle command, or the terminal it reached.
+    /// How far a transition got. A transition's duration is the distance
+    /// between its `Started` record and the record that ended it.
     LifecycleStep {
-        /// The command was admitted. A terminal it reached at once is
-        /// recorded just before this step.
-        Admitted = 0,
-        /// Refused: the port is already in that state.
-        AlreadyInState = 1,
-        /// Refused: the command does not apply now.
-        InvalidState = 2,
-        /// Refused: another command has not ended, or its terminal finds no
-        /// free slot.
-        Busy = 3,
-        /// Its terminal was queued.
-        Terminal = 4,
+        /// The transition started.
+        Started = 0,
+        /// The transition completed.
+        Done = 1,
+        /// The transition found or left the runtime poisoned.
+        Poisoned = 2,
+        /// The transition did not end within its bound: it poisoned the
+        /// runtime.
+        TimedOut = 3,
     }
 );
 

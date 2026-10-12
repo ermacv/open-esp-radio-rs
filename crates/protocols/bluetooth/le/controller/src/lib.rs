@@ -53,8 +53,8 @@
 //! calculation, when a required continuation lies outside the radio epoch:
 //! its only failure. Calculation precedes committing provisional owners;
 //! cancellation and release requests do not require a future anchor. The
-//! service then ends through its managed stop, which settles the retained
-//! core and admitted identities before memory is returned.
+//! service then ends through the port's `disable`, which settles the
+//! retained core and admitted identities before memory is returned.
 //!
 //! Only a captured packet start opens or updates a connection time
 //! reference: a PDU without one, and an event that ended `Aborted`, prove no

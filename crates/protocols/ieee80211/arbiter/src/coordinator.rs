@@ -83,19 +83,26 @@ pub struct ApFollowPolicy {
     pub announce_count: u8,
     /// The shortest time between two moves of the access point to where
     /// the station joins, counted from their announcements: within it a
-    /// join elsewhere is refused ([`JoinAway::TooSoon`]).
+    /// join elsewhere is refused ([`JoinAway::TooSoon`]). It doubles after
+    /// each failed join that followed a move, up to
+    /// [`Self::max_follow_interval`], and comes back to this once the
+    /// station connects.
     pub min_follow_interval: Duration,
+    /// The ceiling of the doubled follow interval.
+    pub max_follow_interval: Duration,
 }
 
 impl ApFollowPolicy {
     /// 2.4 GHz only; the access point stops where it may not follow; five
     /// beacons announce a move of its own; at most one move to where the
-    /// station joins every 30 s.
+    /// station joins every 30 s, doubled after each failed join up to 480 s
+    /// (owner decisions, #563 comments 6130615564 and 6130775558).
     pub const DEFAULT: Self = Self {
         bands: ApBands::GHZ2_4,
         unservable: ApUnservable::StopAccessPoint,
         announce_count: 5,
         min_follow_interval: Duration::from_secs(30),
+        max_follow_interval: Duration::from_secs(480),
     };
 
     /// Whether the access point may serve `channel`.
@@ -347,6 +354,8 @@ pub struct ChannelCoordinator<'a> {
     /// When the access point last announced a move to where the station
     /// joins.
     last_follow: Option<Instant>,
+    /// The interval the next move to where the station joins waits for.
+    follow_interval: Duration,
 }
 
 impl<'a> ChannelCoordinator<'a> {
@@ -358,7 +367,25 @@ impl<'a> ChannelCoordinator<'a> {
             access_point: AccessPoint::Stopped,
             wanted: false,
             last_follow: None,
+            follow_interval: policy.min_follow_interval,
         }
+    }
+
+    /// A join the access point moved for failed: the next follow waits
+    /// twice as long, up to the policy's ceiling.
+    pub fn follow_failed(&mut self) {
+        let doubled = Duration::from_micros(self.follow_interval.as_micros().saturating_mul(2));
+        self.follow_interval = if doubled > self.policy.max_follow_interval {
+            self.policy.max_follow_interval
+        } else {
+            doubled
+        };
+    }
+
+    /// The station connected: the follow interval starts again from the
+    /// policy's shortest.
+    pub fn station_connected_after_follow(&mut self) {
+        self.follow_interval = self.policy.min_follow_interval;
     }
 
     pub const fn policy(&self) -> ApFollowPolicy {
@@ -398,7 +425,7 @@ impl<'a> ChannelCoordinator<'a> {
             };
         }
         if let Some(last) = self.last_follow
-            && let Some(retry_at) = last.checked_add(self.policy.min_follow_interval)
+            && let Some(retry_at) = last.checked_add(self.follow_interval)
             && now < retry_at
         {
             return JoinAway::TooSoon { retry_at };

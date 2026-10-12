@@ -67,11 +67,15 @@
 //!   [`ApFollowPolicy`] ([follow decision]): the access point announces its
 //!   move to the station's channel and the join's lease starts with the
 //!   move; one it may not serve stops it, or refuses the join
-//!   ([`LeaveReason::Unservable`]). The announced move is never withdrawn:
-//!   after a failed join the access point stays there. Within
-//!   [`ApFollowPolicy::min_follow_interval`] of its last such move, a join
-//!   elsewhere is refused with the moment to retry
-//!   ([`LeaveReason::TooSoon`]).
+//!   ([`Refusal::Unservable`]). The announced move is never withdrawn:
+//!   after a failed join the access point stays there. Within the follow
+//!   interval of its last such move, a join elsewhere is refused with the
+//!   moment to retry ([`Refusal::TooSoon`]); the interval doubles after
+//!   each failed join that followed a move, up to
+//!   [`ApFollowPolicy::max_follow_interval`], and starts again from
+//!   [`ApFollowPolicy::min_follow_interval`] once the station connects. A
+//!   lease names the access point's channel ([`Lease::access_point`]), so
+//!   the station can prefer a candidate there.
 //! - **The outbox** holds one cell for each kind of notice and command,
 //!   whose capacity the tokens prove: a lease's end carries the one place,
 //!   a start needs a lease of it, and a move or a start happens only in a
@@ -185,6 +189,7 @@ pub struct Lease<K> {
     from: Instant,
     until: Option<Instant>,
     listen_until: Option<Instant>,
+    access_point: Option<SupportedChannel<K>>,
 }
 
 impl<K> PartialEq for Lease<K> {
@@ -194,6 +199,7 @@ impl<K> PartialEq for Lease<K> {
             && self.from == other.from
             && self.until == other.until
             && self.listen_until == other.listen_until
+            && self.access_point == other.access_point
     }
 }
 
@@ -213,6 +219,12 @@ impl<K> Lease<K> {
     /// When it starts, at the earliest.
     pub const fn from(&self) -> Instant {
         self.from
+    }
+
+    /// The channel of the access point beside the station when the lease
+    /// was granted, if one runs: a join there needs no move of it.
+    pub const fn access_point(&self) -> Option<SupportedChannel<K>> {
+        self.access_point
     }
 
     /// When it ends: the port is back on the access point's channel then;
@@ -283,25 +295,34 @@ pub enum Answer<K> {
     /// move took the port there: its `from` is the expected switch. The
     /// move is never withdrawn, whether the station joins or not.
     Lease(Lease<K>),
-    /// The station must leave its network, or may not have the channel;
-    /// the place comes back.
-    Leave(LeaveReason, LeasePlace),
+    /// The station may not have the channel; the place comes back.
+    Refused(Refusal, LeasePlace),
 }
 
-/// Why the station must leave its network, or may not join on a channel.
+/// Why the arbiter refused a request.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LeaveReason {
-    /// The upstream moved, or the station joins, where the access point may
-    /// not follow, and the policy keeps the access point.
+pub enum Refusal {
+    /// The station joins where the access point beside it may not follow,
+    /// and the policy keeps the access point.
     Unservable,
     /// A join away from the running access point's channel too soon after
-    /// its last move to where the station joins
-    /// ([`ApFollowPolicy::min_follow_interval`]): the station may ask
-    /// again at `retry_at`.
+    /// its last move to where the station joins: the station may ask again
+    /// at `retry_at` ([`ApFollowPolicy`]'s interval, doubled after each
+    /// failed join that followed a move).
     TooSoon {
         /// When the access point may follow again.
         retry_at: Instant,
     },
+    /// The port failed.
+    PortFailed,
+}
+
+/// Why the station must leave its network.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LeaveReason {
+    /// The upstream moved where the access point may not follow, and the
+    /// policy keeps the access point.
+    Unservable,
     /// The port could not return to the access point's channel, or it is
     /// poisoned: the station and the access point stop.
     PortFailed,
@@ -819,6 +840,9 @@ pub struct Arbiter<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMo
     absence: Option<(Granted<K>, AbsencePlace)>,
     /// A command to leave the station hears once its absence ended.
     leave: Option<LeaveReason>,
+    /// The primary lease is a join the access point moved for, which has
+    /// not connected yet.
+    following: bool,
     cycle: Option<Cycle<K, R::Reserve>>,
     next_id: u32,
     outbox: Outbox<K>,
@@ -843,6 +867,7 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
                 primary: None,
                 absence: None,
                 leave: None,
+                following: false,
                 cycle: None,
                 next_id: 0,
                 outbox: Outbox::new(),
@@ -920,8 +945,10 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
         (from, from.saturating_add(length))
     }
 
-    fn lease_value(granted: &Granted<K>, retune: Duration) -> Lease<K> {
+    fn lease_value(&self, granted: &Granted<K>) -> Lease<K> {
+        let retune = self.policy.retune;
         Lease {
+            access_point: self.schedule().map(|_| self.home),
             id: granted.id,
             channel: granted.channel,
             from: granted.from,
@@ -945,7 +972,7 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
         place: LeasePlace,
     ) -> Answer<K> {
         if matches!(self.port, Port::Failed) {
-            return Answer::Leave(LeaveReason::PortFailed, place);
+            return Answer::Refused(Refusal::PortFailed, place);
         }
         let away = request.channel != self.home;
         let mut follows = None;
@@ -964,14 +991,15 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
                         count,
                     });
                     follows = Some(schedule.switch_at(now, count));
+                    self.following = true;
                 }
                 JoinAway::StopAccessPoint => {
                     self.access_point_gone();
                     self.outbox.stop();
                 }
-                JoinAway::Refused => return Answer::Leave(LeaveReason::Unservable, place),
+                JoinAway::Refused => return Answer::Refused(Refusal::Unservable, place),
                 JoinAway::TooSoon { retry_at } => {
-                    return Answer::Leave(LeaveReason::TooSoon { retry_at }, place);
+                    return Answer::Refused(Refusal::TooSoon { retry_at }, place);
                 }
             }
         }
@@ -986,7 +1014,7 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
                 end: LeaseEnd::Own,
                 step: LeaseStep::AwaitingMove,
             };
-            let lease = Self::lease_value(&granted, self.policy.retune);
+            let lease = self.lease_value(&granted);
             self.primary = Some((granted, place));
             return Answer::Lease(lease);
         }
@@ -1045,7 +1073,7 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
             end: LeaseEnd::Own,
             step: LeaseStep::Waiting { ready: true },
         };
-        let lease = Self::lease_value(&granted, self.policy.retune);
+        let lease = self.lease_value(&granted);
         self.primary = Some((granted, place));
         Answer::Lease(lease)
     }
@@ -1085,7 +1113,7 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
             end: LeaseEnd::Own,
             step: LeaseStep::Waiting { ready: false },
         };
-        let lease = Self::lease_value(&granted, self.policy.retune);
+        let lease = self.lease_value(&granted);
         self.absence = Some((granted, place));
         AbsenceAnswer::Lease(lease)
     }
@@ -1095,15 +1123,18 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
     /// the old lease goes by value, so the station never holds two. A
     /// lease that is not the running primary one comes back unchanged.
     pub fn exchange(&mut self, old: Lease<K>) -> Lease<K> {
-        let retune = self.policy.retune;
         let id = LeaseId(self.next_id);
-        match self.primary.as_mut() {
-            Some((granted, _)) if granted.id == old.id && granted.channel != old.channel => {
-                self.next_id = self.next_id.wrapping_add(1);
-                granted.id = id;
-                Self::lease_value(granted, retune)
-            }
-            _ => old,
+        let Some((granted, _)) = self.primary.as_mut() else {
+            return old;
+        };
+        if granted.id != old.id || granted.channel == old.channel {
+            return old;
+        }
+        self.next_id = self.next_id.wrapping_add(1);
+        granted.id = id;
+        match &self.primary {
+            Some((granted, _)) => self.lease_value(granted),
+            None => old,
         }
     }
 
@@ -1162,11 +1193,20 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
         }
     }
 
+    /// A primary lease ended: a join the access point moved for and that
+    /// never connected failed, which doubles the follow interval.
+    fn follow_ended(&mut self) {
+        if core::mem::take(&mut self.following) {
+            self.coordinator.follow_failed();
+        }
+    }
+
     /// Tell the station the lease ended without its own end.
     fn cancel(&mut self, which: Which, reason: CancelReason) {
         match which {
             Which::Primary => {
                 if let Some((granted, place)) = self.primary.take() {
+                    self.follow_ended();
                     self.outbox.primary_end = Some((granted.id, Some(reason), place));
                 }
             }
@@ -1189,6 +1229,7 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
             Some(LeaseEnd::Own | LeaseEnd::Released) => match which {
                 Which::Primary => {
                     if let Some((granted, place)) = self.primary.take() {
+                        self.follow_ended();
                         self.outbox.primary_end = Some((granted.id, None, place));
                     }
                 }
@@ -1260,6 +1301,8 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
     pub fn upstream(&mut self, now: Instant, fact: UpstreamFact<K>) {
         match fact {
             UpstreamFact::Connected(channel) => {
+                self.following = false;
+                self.coordinator.station_connected_after_follow();
                 if let Pair::UpstreamLost { schedule, .. } = self.pair {
                     self.pair = Pair::Serving { schedule };
                 }

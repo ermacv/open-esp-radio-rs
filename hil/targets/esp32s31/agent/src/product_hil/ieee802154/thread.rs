@@ -16,7 +16,7 @@ use embassy_futures::{
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use esp_hal::{efuse, rng::Trng};
-use oer_esp32s31_ieee802154_system::{Ieee802154SystemPort, Ieee802154SystemRuntime};
+use oer_esp32s31_ieee802154_system::Ieee802154SystemRuntime;
 use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
 use oer_hil_protocol::{
     ieee802154::IEEE802154_THREAD_RECORDED_DATAGRAMS, ieee802154::Ieee802154SessionResult,
@@ -25,13 +25,11 @@ use oer_hil_protocol::{
     ieee802154::Ieee802154ThreadSendRequest, ieee802154::Ieee802154ThreadStartRequest,
     ieee802154::Ieee802154ThreadState,
 };
-use oer_ieee802154::{
-    Ieee802154RadioPort, LifecycleCommand, LifecycleEvent, RadioCommand, RadioEvent, RadioPort,
-    RequestId,
-};
+use oer_ieee802154::owner::{Ieee802154Clients, Ieee802154Setup, RecentRssi};
 use oer_ieee802154_openthread::{
-    MonotonicRadioClock, OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, PortRssi,
+    MonotonicRadioClock, OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, PendingSlots, PortRssi,
 };
+use oer_ieee802154_port::{Disabled, Ended, Owner, PortBackend, PortBody, run_port};
 use oer_time_embassy::EmbassyClock;
 use openthread::{
     DeviceRole, OpenThread, OtResources, OtUdpResources, SimpleRamSettings, UdpSocket,
@@ -39,12 +37,7 @@ use openthread::{
 use static_cell::{ConstStaticCell, StaticCell};
 use tinyrlibc as _;
 
-use super::client::Client;
-
-/// The image's own sleep after the stack stopped: the last consumer
-/// identity below the backend-reserved range (`0xFFFF_FF00..`), which the
-/// OpenThread radio, counting up from one, does not reach in a session.
-const STOP_SLEEP: RequestId = RequestId::new(0xFFFF_FEFF);
+use super::client::{Backend, Client};
 use crate::console::{
     Ieee802154ThreadCommand, publish_event_reliably, receive_ieee802154_thread_command,
 };
@@ -53,8 +46,6 @@ use crate::console::{
 const RX_QUEUE: usize = 8;
 const UDP_SOCKETS: usize = 1;
 const UDP_BUFFER: usize = 1280;
-
-type ThreadRadio<'p> = OpenThreadRadio<'p, Ieee802154SystemPort, RX_QUEUE>;
 
 static TRNG: StaticCell<Trng> = StaticCell::new();
 static OT_RESOURCES: StaticCell<OtResources> = StaticCell::new();
@@ -214,15 +205,14 @@ async fn serve(ot: &OpenThread<'_>, socket: &UdpSocket<'_>) -> u32 {
     }
 }
 
-/// Build OpenThread over the runtime's clock and the port's live RSSI
+/// Build OpenThread over the runtime's clock and the install's live RSSI
 /// (`rssi`), apply the dataset and link mode, start Thread and bind the
-/// socket. OpenThread borrows the port for the session, which gives it back
-/// to the client's stop.
-fn start_openthread<'p>(
+/// socket. OpenThread borrows the RSSI reader for the session.
+fn start_openthread<'p, R: RecentRssi>(
     request: &Ieee802154ThreadStartRequest,
     trng: Trng,
     runtime: &'static Ieee802154SystemRuntime,
-    rssi: &'p PortRssi<'p, Ieee802154SystemPort>,
+    rssi: &'p PortRssi<'p, R>,
 ) -> Option<(OpenThread<'p>, UdpSocket<'p>)> {
     let ot_resources = OT_RESOURCES.init(OtResources::new());
     // OpenThread's `SubMac` reads the radio capabilities when the instance
@@ -251,6 +241,99 @@ fn start_openthread<'p>(
     Some((ot, socket))
 }
 
+/// The Thread session's port body: configure interface 0, enable the
+/// radio, build OpenThread over the running phase and serve the host until
+/// it stops the session.
+struct ThreadBody<'b> {
+    request: &'b Ieee802154ThreadStartRequest,
+    request_id: u32,
+    runtime: &'static Ieee802154SystemRuntime,
+    stop_request: &'b mut Option<u32>,
+}
+
+impl PortBody<Backend> for ThreadBody<'_> {
+    async fn run<'p, 'id>(
+        self,
+        mut owner: Owner<'p, 'id, Backend, Disabled>,
+        resources: <Backend as PortBackend>::Resources<'id>,
+    ) -> Ended<'id, Backend> {
+        let started = |result| oer_hil_protocol::ieee802154::ThreadStarted(result);
+        let interface = resources.interfaces;
+        let zero = owner.setup().configure(interface.interface);
+        let [seat, ..] = resources.operation;
+        let rssi = PortRssi::new(&resources.rssi);
+        let mut owner = match owner.enable().await {
+            Ok(owner) => owner,
+            Err(failed) => {
+                publish_event_reliably(
+                    0,
+                    self.request_id,
+                    started(Ieee802154SessionResult::StartFailed),
+                )
+                .await;
+                return failed.fail_stop();
+            }
+        };
+        {
+            let joined = Trng::try_new()
+                .ok()
+                .and_then(|trng| start_openthread(self.request, trng, self.runtime, &rssi));
+            match joined {
+                None => {
+                    publish_event_reliably(
+                        0,
+                        self.request_id,
+                        started(Ieee802154SessionResult::StartFailed),
+                    )
+                    .await;
+                }
+                Some((ot, socket)) => {
+                    publish_event_reliably(
+                        0,
+                        self.request_id,
+                        started(Ieee802154SessionResult::Done),
+                    )
+                    .await;
+                    let parts = owner.split();
+                    let mut events = parts.events;
+                    let mut control = parts.control;
+                    let client = parts.clients.client(&zero);
+                    let radio: OpenThreadRadio<'_, '_, _, _, _, RX_QUEUE, _> =
+                        OpenThreadRadio::new(
+                            &mut *events,
+                            &mut *control,
+                            client,
+                            seat,
+                            PendingSlots {
+                                short: interface.short,
+                                extended: interface.extended,
+                            },
+                        );
+                    // The stack's radio, alarm and tasklet loops share one
+                    // large future.
+                    let running = core::pin::pin!(ot.run(radio));
+                    let served = core::pin::pin!(serve(&ot, &socket));
+                    *self.stop_request = match select(running, served).await {
+                        Either::First(never) => match never {},
+                        Either::Second(stop_request) => Some(stop_request),
+                    };
+                    let _ = ot.enable_thread(false);
+                    let _ = ot.enable_ipv6(false);
+                    drop(socket);
+                    drop(ot);
+                }
+            }
+        }
+        // The stack has stopped: the body disables the radio before the
+        // client stops; the disable hands every leftover terminal to the
+        // sink.
+        match owner.disable(&mut |_| {}).await {
+            Ok(owner) => owner.uninstall(()),
+            Err(poisoned) => poisoned.uninstall(()),
+        }
+    }
+}
+
 /// Run one Thread session until the host stops it. The image is terminal.
 pub(in crate::product_hil) async fn run_thread(
     spawner: embassy_executor::Spawner,
@@ -272,26 +355,11 @@ pub(in crate::product_hil) async fn run_thread(
         let started = core::pin::pin!(client.start(parked));
         started.await
     };
-    let Some((system, port)) = system else {
+    let Some((system, backend)) = system else {
         publish_event_reliably(0, request_id, started(Ieee802154SessionResult::StartFailed)).await;
         return;
     };
-    let rssi = PortRssi::new(&port);
-    let joined = Trng::try_new()
-        .ok()
-        .and_then(|trng| start_openthread(&request, trng, system.runtime(), &rssi));
-    if joined.is_none() {
-        // Nothing borrows the port any more.
-        drop(joined);
-        publish_event_reliably(0, request_id, started(Ieee802154SessionResult::StartFailed)).await;
-        let stopped = core::pin::pin!(client.stop(system, port));
-        let _ = stopped.await;
-        return;
-    }
-    let (ot, socket) = joined.expect("the stack started");
-    publish_event_reliably(0, request_id, started(Ieee802154SessionResult::Done)).await;
-
-    let radio: ThreadRadio<'_> = OpenThreadRadio::new(&port);
+    let mut stop_request = None;
     let tracking_stop = Signal::<CriticalSectionRawMutex, ()>::new();
     let tracking = async {
         // The radio system's periodic PHY tracking, as ESP-IDF's
@@ -302,45 +370,39 @@ pub(in crate::product_hil) async fn run_thread(
             .await;
     };
     let session = async {
-        // The stack's radio, alarm and tasklet loops share one large future.
-        let running = core::pin::pin!(ot.run(radio));
-        // The runtime's runner progresses backoffs beside OpenThread.
-        let runner = core::pin::pin!(system.run());
-        let served = core::pin::pin!(serve(&ot, &socket));
-        let stop_request = match select(select(running, runner), served).await {
-            Either::First(Either::First(never)) => match never {},
-            Either::First(Either::Second(never)) => match never {},
-            Either::Second(stop_request) => stop_request,
-        };
+        let ended = core::pin::pin!(run_port(
+            backend,
+            ThreadBody {
+                request: &request,
+                request_id,
+                runtime: system.runtime(),
+                stop_request: &mut stop_request,
+            },
+        ));
+        let ended = ended.await;
         tracking_stop.signal(());
-        stop_request
+        ended
     };
-    let ((), stop_request) = core::pin::pin!(join(tracking, session)).await;
-
-    let _ = ot.enable_thread(false);
-    let _ = ot.enable_ipv6(false);
-    // OpenThread gives the port back.
-    drop(socket);
-    drop(ot);
-    // The stack has stopped: the image leaves receive mode and disables
-    // the radio itself before the client stops, taking the events up to
-    // the terminal of `Disable`, so the runtime's queue starts empty for
-    // the next session.
-    let _ = port.submit(RadioCommand::Sleep { id: STOP_SLEEP });
-    if let Ok(Ok(())) = port.lifecycle(LifecycleCommand::Disable).await {
-        loop {
-            let Ok(event) = port.next_event().await;
-            if let Ok(event) = event
-                && let RadioEvent::Lifecycle(LifecycleEvent::Disabled) =
-                    Ieee802154SystemPort::view(&event)
-            {
-                break;
-            }
+    let ((), ended) = core::pin::pin!(join(tracking, session)).await;
+    let Some(parts) = ended else {
+        // The port was poisoned and fail-stopped: the client cannot stop.
+        if let Some(stop_request) = stop_request {
+            publish_event_reliably(
+                0,
+                stop_request,
+                oer_hil_protocol::ieee802154::ThreadStopped(Ieee802154SessionResult::StopFailed),
+            )
+            .await;
         }
-    }
+        return;
+    };
     let stopped = {
-        let stopped = core::pin::pin!(client.stop(system, port));
+        let stopped = core::pin::pin!(client.stop(system, parts));
         stopped.await
+    };
+    let Some(stop_request) = stop_request else {
+        // OpenThread never started; the start's failure was published.
+        return;
     };
     let result = match stopped {
         Some(_parked) => Ieee802154SessionResult::Done,

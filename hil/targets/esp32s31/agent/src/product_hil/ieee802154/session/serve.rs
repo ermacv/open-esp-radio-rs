@@ -14,7 +14,10 @@ use oer_hil_protocol::{
     ieee802154::Ieee802154SessionMaintenanceCounts, ieee802154::Ieee802154SessionPhyMaintenance,
     ieee802154::Ieee802154SessionResult,
 };
-use oer_ieee802154::RadioCommand;
+use oer_esp32s31_ieee802154_system::Esp32s31Ieee802154;
+use oer_espressif_ieee802154_runtime::Ieee802154PortEvent;
+use oer_ieee802154::owner::{Ieee802154Client, RadioSettings, RecentRssi};
+use oer_ieee802154_port::RadioPortEvents;
 
 use super::super::client::Client;
 use crate::console::{
@@ -40,11 +43,17 @@ type Foreground<'a> = (&'a mut Ieee802154System, &'a Radio);
 /// Serve host commands until the host stops the session; returns the stop
 /// request. `foreground` serves explicit maintenance requests; without it
 /// background maintenance owns the schedule.
-async fn serve(
-    session: &mut Session,
+async fn serve<'id, E, S, C, Rs>(
+    session: &mut Session<'_, 'id, E, S, C, Rs>,
     mut foreground: Option<Foreground<'_>>,
     restartable: bool,
-) -> Served {
+) -> Served
+where
+    E: RadioPortEvents<Event = Ieee802154PortEvent>,
+    S: RadioSettings<Caps = Esp32s31Ieee802154>,
+    C: Ieee802154Client<'id, 0, Caps = Esp32s31Ieee802154>,
+    Rs: RecentRssi,
+{
     loop {
         let command = match select(receive_ieee802154_session_command(), session.taken()).await {
             Either::First(command) => command,
@@ -68,10 +77,8 @@ async fn serve(
                 .await;
             }
             Ieee802154SessionCommand::Receive { request_id } => {
-                let id = session.id();
-                let channel = session.channel;
                 let reply = session
-                    .submit(RadioCommand::Receive { id, channel })
+                    .receive()
                     .await
                     .map(|()| oer_hil_protocol::base::Accepted)
                     .map_err(|_| RejectReason::InvalidState);
@@ -93,7 +100,7 @@ async fn serve(
                 request_id,
                 request,
             } => {
-                let reply = if session.pending(request).await {
+                let reply = if session.pending(request) {
                     Ok(oer_hil_protocol::base::Accepted)
                 } else {
                     Err(RejectReason::InvalidConfiguration)
@@ -194,13 +201,19 @@ async fn track_until(
 
 /// Serve the session's commands, with background maintenance beside them
 /// when configured, until the host stops the session or restarts its radio.
-pub(super) async fn serve_session(
-    session: &mut Session,
+pub(super) async fn serve_session<'id, E, S, C, Rs>(
+    session: &mut Session<'_, 'id, E, S, C, Rs>,
     system: &mut Ieee802154System,
     client: &Client,
     config: Ieee802154SessionConfig,
     counts: &Cell<Ieee802154SessionMaintenanceCounts>,
-) -> Served {
+) -> Served
+where
+    E: RadioPortEvents<Event = Ieee802154PortEvent>,
+    S: RadioSettings<Caps = Esp32s31Ieee802154>,
+    C: Ieee802154Client<'id, 0, Caps = Esp32s31Ieee802154>,
+    Rs: RecentRssi,
+{
     // The session runs instead of the image's tracking task, so it serves
     // the tracking-hold requests on its client's radio.
     #[cfg(feature = "phy-tracking-hold")]
@@ -218,13 +231,19 @@ pub(super) async fn serve_session(
     core::pin::pin!(serve_commands(session, system, client, config, counts)).await
 }
 
-async fn serve_commands(
-    session: &mut Session,
+async fn serve_commands<'id, E, S, C, Rs>(
+    session: &mut Session<'_, 'id, E, S, C, Rs>,
     system: &mut Ieee802154System,
     client: &Client,
     config: Ieee802154SessionConfig,
     counts: &Cell<Ieee802154SessionMaintenanceCounts>,
-) -> Served {
+) -> Served
+where
+    E: RadioPortEvents<Event = Ieee802154PortEvent>,
+    S: RadioSettings<Caps = Esp32s31Ieee802154>,
+    C: Ieee802154Client<'id, 0, Caps = Esp32s31Ieee802154>,
+    Rs: RecentRssi,
+{
     let restartable = !config.background_maintenance && !config.wifi_coexistence;
     if config.background_maintenance {
         let stop = Signal::<CriticalSectionRawMutex, ()>::new();

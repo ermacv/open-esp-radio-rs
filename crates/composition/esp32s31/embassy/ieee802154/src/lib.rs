@@ -28,6 +28,11 @@ mod system;
 
 pub use caps::{Esp32s31Ieee802154, Esp32s31Ieee802154Multipan, MultipanInterfaces};
 pub use maintenance::Ieee802154PhyMaintenance;
+// The owner shape the backend serves: `run_port` and the owner's types, and
+// the IEEE 802.15.4 port's traits, so an application drives the port
+// through this crate (or the `oer` facade) alone.
+pub use oer_ieee802154::owner;
+pub use oer_ieee802154_port as port;
 
 // Inputs of `start` and `Ieee802154Parked::new`, and the shared radio the
 // client joins, so an application can construct it through this crate (or
@@ -62,5 +67,5 @@ pub use system::{
     IEEE802154_EVENT_CAPACITY, Ieee802154FailStop, Ieee802154MaintenanceError, Ieee802154Parked,
     Ieee802154StartError, Ieee802154StartFailure, Ieee802154StopError, Ieee802154StopFailure,
     Ieee802154System, Ieee802154SystemBackend, Ieee802154SystemClock, Ieee802154SystemParts,
-    Ieee802154SystemRuntime, ieee802154_interrupt, start,
+    Ieee802154SystemRssi, Ieee802154SystemRuntime, ieee802154_interrupt, start,
 };

@@ -93,6 +93,10 @@ impl oer_espressif_ieee802154_runtime::Ieee802154RouteDetach for BoundRoute {
     }
 }
 
+/// The runtime's recent-RSSI reader, which outlives the installs.
+pub type Ieee802154SystemRssi =
+    oer_espressif_ieee802154_runtime::RuntimeRssi<'static, Ieee802154SystemRuntime>;
+
 /// The engine and the MAC owners an ended port returns, for [`Ieee802154System::stop`].
 pub type Ieee802154SystemParts = Ieee802154RuntimeParts<'static, Ieee802154MacOwners>;
 

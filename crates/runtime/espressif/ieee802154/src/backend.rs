@@ -162,9 +162,18 @@ pub struct RuntimeResources<'r, 'id, I, Rt> {
 }
 
 /// The recent-RSSI reader of an install: the live RSSI the hardware reports
-/// (`esp_ieee802154_get_recent_rssi`), whatever the port's state.
+/// (`esp_ieee802154_get_recent_rssi`), whatever the port's state; the
+/// lowest RSSI while no radio is installed.
 pub struct RuntimeRssi<'r, Rt> {
     runtime: &'r Rt,
+}
+
+impl<'storage, M: RawMutex, H, T, R, const EVENTS: usize> Ieee802154Runtime<'storage, M, H, T, R, EVENTS> {
+    /// A recent-RSSI reader that outlives the installs, for a reader built
+    /// before the port runs (OpenThread's instance).
+    pub const fn recent_rssi_reader(&self) -> RuntimeRssi<'_, Self> {
+        RuntimeRssi { runtime: self }
+    }
 }
 
 impl<M, H, T, R, const EVENTS: usize> RecentRssi

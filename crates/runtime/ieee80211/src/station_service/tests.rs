@@ -20,8 +20,8 @@ use oer_ieee80211_lower_mac::{
     Channel, ChannelWidth, IndividualAddress, LowerMacSetup, SignalMetadata,
 };
 use oer_ieee80211_mac::{
-    phy::PhyRate,
     phy::LegacyRate,
+    phy::PhyRate,
     security::rsn::Akm,
     station::{AssociationCapabilities, association::PhyMode},
 };
@@ -37,9 +37,8 @@ use std::vec::Vec;
 
 use super::*;
 use crate::lower_mac_owner::model::{
-    MODEL_RX_EVENTS, ModelAnyBuffer,
-    AirFrame, ModelAir, ModelBackend, ModelCaps24, ModelLarge, ModelPhase, ModelResources,
-    ModelRxMeta, ModelSetup, ModelSmall, ModelTypes,
+    AirFrame, MODEL_RX_EVENTS, ModelAir, ModelAnyBuffer, ModelBackend, ModelCaps24, ModelLarge,
+    ModelPhase, ModelResources, ModelRxMeta, ModelSetup, ModelSmall, ModelTypes,
 };
 
 const LOCAL: [u8; 6] = [0x02, 0, 0, 0x12, 0x34, 0x56];
@@ -251,6 +250,8 @@ struct World<'b> {
     outputs: RefCell<Vec<ServiceOutput<ModelCaps24>>>,
     /// The network stack's end of the transmit queue.
     stack: RefCell<zerocopy_channel::Sender<'b, NoopRawMutex, TxMsdu>>,
+    /// The network stack's end of the receive queue.
+    delivered: RefCell<zerocopy_channel::Receiver<'b, NoopRawMutex, RxMsdu>>,
 }
 
 impl World<'_> {
@@ -289,6 +290,61 @@ impl World<'_> {
             }
         }
         panic!("no {notice:?}");
+    }
+
+    /// The Ethernet frames the network stack received, once the service
+    /// had the chance to deliver what the air holds.
+    async fn delivered(&self) -> Vec<Vec<u8>> {
+        for _ in 0..50 {
+            yield_now().await;
+        }
+        let mut delivered = self.delivered.borrow_mut();
+        let mut frames = Vec::new();
+        while let Some(msdu) = delivered.try_receive() {
+            frames.push(msdu.frame[..msdu.len].to_vec());
+            delivered.receive_done();
+        }
+        frames
+    }
+
+    /// Run the 4-way handshake as the access point after the association:
+    /// the pairwise key it derived, once the station is connected.
+    async fn handshake(&self, seen: &mut usize) -> oer_ieee80211_rsn::Ptk {
+        let message1 = RsnTxFrame::<512>::message1(Akm::Psk, LOCAL, 1, ANONCE).unwrap();
+        self.air.receive(&eapol_frame(message1.as_bytes()), meta());
+        let message2 = self.sent(seen, DATA).await;
+        assert_eq!(message2.rate, ofdm6());
+        let ptk = Pmk::from_bytes(PMK).derive_ptk(
+            Akm::Psk,
+            PtkContext {
+                authenticator_address: BSSID,
+                supplicant_address: LOCAL,
+                authenticator_nonce: ANONCE,
+                supplicant_nonce: SNONCE,
+            },
+        );
+        let mut plain = Vec::new();
+        plain.extend_from_slice(&RSN);
+        plain.extend_from_slice(&[0xdd, 22, 0x00, 0x0f, 0xac, 0x01, 0x01, 0x00]);
+        plain.extend_from_slice(&[0x99; 16]);
+        plain.extend_from_slice(&[0xdd, 0]);
+        let wrapped = oer_ieee80211_rsn::aes::software_aes128_key_wrap(ptk.kek(), &plain).unwrap();
+        let message3 =
+            RsnTxFrame::<512>::message3(Akm::Psk, LOCAL, 2, ANONCE, [0; 8], wrapped.as_bytes())
+                .unwrap()
+                .authenticate(&ptk);
+        self.air.receive(&eapol_frame(message3.as_bytes()), meta());
+        // Message 4: the association's record, and unprotected.
+        let message4 = self.sent(seen, DATA).await;
+        assert_eq!(message4.rate, ofdm6());
+        assert_eq!(message4.key, None);
+        assert_eq!(message4.frame[1] & 0x40, 0);
+        self.notice(StaNotice::Connected {
+            bssid: BSSID,
+            channel: 6,
+        })
+        .await;
+        ptk
     }
 
     async fn command(&self, command: ServiceCommand<ModelCaps24>) {
@@ -428,13 +484,14 @@ where
     let mut transmit = zerocopy_channel::Channel::<NoopRawMutex, TxMsdu>::new(&mut transmit);
     let mut receive = zerocopy_channel::Channel::<NoopRawMutex, RxMsdu>::new(&mut receive);
     let (stack, transmit) = transmit.split();
-    let (receive, _stack) = receive.split();
+    let (receive, delivered) = receive.split();
     let world = World {
         air,
         clock: VirtualClock::new(),
         commands: CommandChannel::new(),
         outputs: RefCell::new(Vec::new()),
         stack: RefCell::new(stack),
+        delivered: RefCell::new(delivered),
     };
     let uninstalled = block_on(run_port(
         backend,
@@ -512,48 +569,7 @@ fn on_wpa2_the_join_goes_on_the_default_record_and_the_handshake_on_the_associat
                 // Associated: the rates start from the association, so the
                 // handshake's Message 2 goes on its record, 6 Mb/s OFDM first
                 // (owner decision on #563).
-                let message1 = RsnTxFrame::<512>::message1(Akm::Psk, LOCAL, 1, ANONCE).unwrap();
-                world.air.receive(&eapol_frame(message1.as_bytes()), meta());
-                let message2 = world.sent(&mut seen, DATA).await;
-                assert_eq!(message2.rate, ofdm6());
-                let ptk = Pmk::from_bytes(PMK).derive_ptk(
-                    Akm::Psk,
-                    PtkContext {
-                        authenticator_address: BSSID,
-                        supplicant_address: LOCAL,
-                        authenticator_nonce: ANONCE,
-                        supplicant_nonce: SNONCE,
-                    },
-                );
-                let mut plain = Vec::new();
-                plain.extend_from_slice(&RSN);
-                plain.extend_from_slice(&[0xdd, 22, 0x00, 0x0f, 0xac, 0x01, 0x01, 0x00]);
-                plain.extend_from_slice(&[0x99; 16]);
-                plain.extend_from_slice(&[0xdd, 0]);
-                let wrapped =
-                    oer_ieee80211_rsn::aes::software_aes128_key_wrap(ptk.kek(), &plain).unwrap();
-                let message3 = RsnTxFrame::<512>::message3(
-                    Akm::Psk,
-                    LOCAL,
-                    2,
-                    ANONCE,
-                    [0; 8],
-                    wrapped.as_bytes(),
-                )
-                .unwrap()
-                .authenticate(&ptk);
-                world.air.receive(&eapol_frame(message3.as_bytes()), meta());
-                // Message 4: the association's record, and unprotected.
-                let message4 = world.sent(&mut seen, DATA).await;
-                assert_eq!(message4.rate, ofdm6());
-                assert_eq!(message4.key, None);
-                assert_eq!(message4.frame[1] & 0x40, 0);
-                world
-                    .notice(StaNotice::Connected {
-                        bssid: BSSID,
-                        channel: 6,
-                    })
-                    .await;
+                let ptk = world.handshake(&mut seen).await;
                 // Connected: Group Message 2 goes under the pairwise key the
                 // link lends, with the Protected bit, on the association's
                 // record.
@@ -571,6 +587,115 @@ fn on_wpa2_the_join_goes_on_the_default_record_and_the_handshake_on_the_associat
                     .await;
                 let deauthentication = world.sent(&mut seen, DEAUTHENTICATION).await;
                 assert_eq!(deauthentication.rate, ofdm6());
+            })
+        },
+    );
+}
+
+/// A protected data MPDU from the DS to the station, as the hardware
+/// hands it up once it decrypted and verified it: the CCMP header of
+/// `packet_number` stays, the MIC is gone.
+fn protected_data(packet_number: u8, source: [u8; 6], payload: &[u8]) -> Vec<u8> {
+    let mut frame = std::vec![0_u8; 24];
+    frame[0..2].copy_from_slice(&0x4208_u16.to_le_bytes());
+    frame[4..10].copy_from_slice(&LOCAL);
+    frame[10..16].copy_from_slice(&BSSID);
+    frame[16..22].copy_from_slice(&source);
+    frame[22..24].copy_from_slice(&(u16::from(packet_number) << 4).to_le_bytes());
+    frame.extend_from_slice(&[packet_number, 0, 0, 0x20, 0, 0, 0, 0]);
+    frame.extend_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x00]);
+    frame.extend_from_slice(payload);
+    frame
+}
+
+fn decrypted() -> ModelRxMeta {
+    meta().with_crypto(oer_ieee80211_lower_mac::RxEvidence::HardwareObserved(
+        oer_ieee80211_lower_mac::RxCryptoStatus::DecryptedAndIntegrityVerified,
+    ))
+}
+
+/// The whole path on the model, the test playing the access point and the
+/// network stack: scan, join, the 4-way handshake, data both ways under
+/// the pairwise key, and the disconnection, after which no data goes.
+#[test]
+fn a_station_scans_joins_handshakes_carries_data_both_ways_and_disconnects() {
+    run(
+        StaSecurity::Wpa2Personal {
+            pmk: Pmk::from_bytes(PMK),
+        },
+        |world| {
+            Box::pin(async move {
+                let mut seen = 0;
+                world.associate(&mut seen, true).await;
+                world.handshake(&mut seen).await;
+
+                // TX: the stack's MSDU goes as one protected MPDU under the
+                // pairwise key, to the access point, its payload after the
+                // CCMP header's room and the LLC/SNAP header.
+                let destination = [0x02, 0, 0, 0, 0, 0x07];
+                world.send_msdu(destination);
+                let data = world.sent(&mut seen, DATA).await;
+                assert!(matches!(data.key, Some((_, true))), "{data:?}");
+                assert!(data.packet_number.is_some());
+                assert_ne!(data.frame[1] & 0x40, 0);
+                assert_eq!(data.frame[1] & 0x03, 0x01, "to the DS");
+                assert_eq!(data.frame[4..10], BSSID);
+                assert_eq!(data.frame[10..16], LOCAL);
+                assert_eq!(data.frame[16..22], destination);
+                assert_eq!(data.frame[32..40], [0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x00]);
+                assert_eq!(data.frame[40..], [0xab; 100]);
+
+                // RX: a decrypted MPDU reaches the stack as its Ethernet
+                // frame; its replay, an unverified one and an unprotected
+                // one do not.
+                let source = [0x02, 0, 0, 0, 0, 0x08];
+                world
+                    .air
+                    .receive(&protected_data(1, source, &[0xcd; 40]), decrypted());
+                let mut expected = Vec::new();
+                expected.extend_from_slice(&LOCAL);
+                expected.extend_from_slice(&source);
+                expected.extend_from_slice(&[0x08, 0x00]);
+                expected.extend_from_slice(&[0xcd; 40]);
+                assert_eq!(world.delivered().await, [expected]);
+                world
+                    .air
+                    .receive(&protected_data(1, source, &[0xcd; 40]), decrypted());
+                world
+                    .air
+                    .receive(&protected_data(2, source, &[0xcd; 40]), meta());
+                let mut plain = protected_data(3, source, &[0xcd; 40]);
+                plain[1] &= !0x40;
+                plain.drain(24..32);
+                world.air.receive(&plain, meta());
+                assert!(world.delivered().await.is_empty());
+                assert_eq!(world.air.pending_rx(), 0, "every buffer recycled");
+
+                // The disconnection: Deauthentication, the notice, and no
+                // data after it.
+                world
+                    .command(ServiceCommand::Station(StaCommand::Disconnect))
+                    .await;
+                let deauthentication = world.sent(&mut seen, DEAUTHENTICATION).await;
+                assert_eq!(deauthentication.frame[4..10], BSSID);
+                world
+                    .notice(StaNotice::Disconnected(
+                        oer_ieee80211_sta::machine::StaDisconnectReason::Requested,
+                    ))
+                    .await;
+                world.send_msdu(destination);
+                for _ in 0..5 {
+                    for _ in 0..20 {
+                        yield_now().await;
+                    }
+                    world.clock.advance_to_next_deadline();
+                }
+                assert!(
+                    world.air.sent()[seen..]
+                        .iter()
+                        .all(|frame| kind(frame) != DATA),
+                    "no data after the disconnection"
+                );
             })
         },
     );

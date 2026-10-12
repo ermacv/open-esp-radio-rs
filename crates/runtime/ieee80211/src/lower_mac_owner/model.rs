@@ -165,6 +165,7 @@ impl<T> Bounded<T> {
 pub enum ModelTickets {}
 
 /// The small buffer class: management frames.
+#[derive(Debug)]
 pub enum ModelSmall {}
 
 impl TxBufferClass for ModelSmall {
@@ -172,6 +173,7 @@ impl TxBufferClass for ModelSmall {
 }
 
 /// The large buffer class: any MPDU.
+#[derive(Debug)]
 pub enum ModelLarge {}
 
 impl TxBufferClass for ModelLarge {
@@ -207,22 +209,70 @@ impl<C> core::fmt::Debug for ModelBuffer<'_, C> {
     }
 }
 
-/// A transmit buffer of either class.
+/// A buffer of the class `C` that holds an MPDU the model numbered.
+#[derive(Debug)]
+pub struct ModelNumbered<'id, C>(ModelBuffer<'id, C>);
+
+impl<C> ModelNumbered<'_, C> {
+    /// The MPDU's packet number, from its CCMP header after the
+    /// `header_len` octets of its MAC header.
+    pub fn packet_number(&self, header_len: usize) -> u64 {
+        packet_number(&self.0.memory[header_len..])
+    }
+}
+
+/// A transmit buffer of either class, fresh or numbered.
 #[derive(Debug)]
 pub enum ModelAnyBuffer<'id> {
     /// A small buffer.
     Small(ModelBuffer<'id, ModelSmall>),
     /// A large buffer.
     Large(ModelBuffer<'id, ModelLarge>),
+    /// A numbered small buffer.
+    SmallNumbered(ModelNumbered<'id, ModelSmall>),
+    /// A numbered large buffer.
+    LargeNumbered(ModelNumbered<'id, ModelLarge>),
 }
 
 impl ModelAnyBuffer<'_> {
     fn memory(&self) -> &[u8] {
         match self {
-            Self::Small(buffer) => &buffer.memory,
-            Self::Large(buffer) => &buffer.memory,
+            Self::Small(buffer) | Self::SmallNumbered(ModelNumbered(buffer)) => &buffer.memory,
+            Self::Large(buffer) | Self::LargeNumbered(ModelNumbered(buffer)) => &buffer.memory,
         }
     }
+
+    fn memory_mut(&mut self) -> &mut [u8] {
+        match self {
+            Self::Small(buffer) | Self::SmallNumbered(ModelNumbered(buffer)) => &mut buffer.memory,
+            Self::Large(buffer) | Self::LargeNumbered(ModelNumbered(buffer)) => &mut buffer.memory,
+        }
+    }
+
+    /// The buffer, numbered.
+    fn into_numbered(self) -> Self {
+        match self {
+            Self::Small(buffer) => Self::SmallNumbered(ModelNumbered(buffer)),
+            Self::Large(buffer) => Self::LargeNumbered(ModelNumbered(buffer)),
+            numbered => numbered,
+        }
+    }
+}
+
+/// The packet number of the CCMP header `header` begins with.
+fn packet_number(header: &[u8]) -> u64 {
+    u64::from(header[0])
+        | u64::from(header[1]) << 8
+        | u64::from(header[4]) << 16
+        | u64::from(header[5]) << 24
+        | u64::from(header[6]) << 32
+        | u64::from(header[7]) << 40
+}
+
+/// The CCMP header of the packet number `number` under the key `key_id`.
+fn ccmp_header(number: u64, key_id: u8) -> [u8; 8] {
+    let pn = number.to_le_bytes();
+    [pn[0], pn[1], 0, 0x20 | (key_id << 6), pn[2], pn[3], pn[4], pn[5]]
 }
 
 /// The types the model's events carry.
@@ -252,9 +302,14 @@ impl<'id, R> KeyTypes<'id> for ModelKeys<'id, R> {
 
 impl<'id> TxBufferPool<'id, ModelSmall> for ModelTypes {
     type Buffer = ModelBuffer<'id, ModelSmall>;
+    type Numbered = ModelNumbered<'id, ModelSmall>;
 
     fn erase(buffer: Self::Buffer) -> ModelAnyBuffer<'id> {
         ModelAnyBuffer::Small(buffer)
+    }
+
+    fn erase_numbered(buffer: Self::Numbered) -> ModelAnyBuffer<'id> {
+        ModelAnyBuffer::SmallNumbered(buffer)
     }
 
     fn class(buffer: ModelAnyBuffer<'id>) -> Result<Self::Buffer, ModelAnyBuffer<'id>> {
@@ -263,13 +318,29 @@ impl<'id> TxBufferPool<'id, ModelSmall> for ModelTypes {
             buffer => Err(buffer),
         }
     }
+
+    fn numbered(buffer: ModelAnyBuffer<'id>) -> Result<Self::Numbered, ModelAnyBuffer<'id>> {
+        match buffer {
+            ModelAnyBuffer::SmallNumbered(buffer) => Ok(buffer),
+            buffer => Err(buffer),
+        }
+    }
+
+    fn renew(buffer: Self::Numbered) -> Self::Buffer {
+        buffer.0
+    }
 }
 
 impl<'id> TxBufferPool<'id, ModelLarge> for ModelTypes {
     type Buffer = ModelBuffer<'id, ModelLarge>;
+    type Numbered = ModelNumbered<'id, ModelLarge>;
 
     fn erase(buffer: Self::Buffer) -> ModelAnyBuffer<'id> {
         ModelAnyBuffer::Large(buffer)
+    }
+
+    fn erase_numbered(buffer: Self::Numbered) -> ModelAnyBuffer<'id> {
+        ModelAnyBuffer::LargeNumbered(buffer)
     }
 
     fn class(buffer: ModelAnyBuffer<'id>) -> Result<Self::Buffer, ModelAnyBuffer<'id>> {
@@ -277,6 +348,17 @@ impl<'id> TxBufferPool<'id, ModelLarge> for ModelTypes {
             ModelAnyBuffer::Large(buffer) => Ok(buffer),
             buffer => Err(buffer),
         }
+    }
+
+    fn numbered(buffer: ModelAnyBuffer<'id>) -> Result<Self::Numbered, ModelAnyBuffer<'id>> {
+        match buffer {
+            ModelAnyBuffer::LargeNumbered(buffer) => Ok(buffer),
+            buffer => Err(buffer),
+        }
+    }
+
+    fn renew(buffer: Self::Numbered) -> Self::Buffer {
+        buffer.0
     }
 }
 
@@ -352,6 +434,8 @@ pub struct AirFrame {
     /// The hardware key it named, and whether that key was installed when
     /// it went.
     pub key: Option<(u8, bool)>,
+    /// The packet number of its CCMP header, under a key.
+    pub packet_number: Option<u64>,
 }
 
 /// The air and the world of a model: shared by the backend's driver and
@@ -455,6 +539,7 @@ struct Prepared<'id> {
     ticket: Slot<'id, ModelTickets>,
     buffer: ModelAnyBuffer<'id>,
     len: usize,
+    header_len: usize,
     queue: usize,
     plan: Vec<Stage>,
     key: Option<u8>,
@@ -708,6 +793,7 @@ impl PortBackend for ModelBackend {
         let mut driver = Driver {
             queues: core::array::from_fn(|_| VecDeque::new()),
             keys: Vec::new(),
+            packet_numbers: Vec::new(),
             gate_open: true,
         };
         poll_fn(move |cx| {
@@ -744,6 +830,8 @@ struct Driver<'id> {
     queues: [VecDeque<Prepared<'id>>; 4],
     /// The installed hardware keys.
     keys: Vec<u8>,
+    /// The last packet number of each key that numbered an MPDU.
+    packet_numbers: Vec<(u8, u64)>,
     gate_open: bool,
 }
 
@@ -809,7 +897,26 @@ impl<'id> Driver<'id> {
     /// Publish the head of every queue and carry its retry plan out.
     fn publish(&mut self, held: &ModelHeld<'id>) {
         for queue in &mut self.queues {
-            while let Some(prepared) = queue.pop_front() {
+            while let Some(mut prepared) = queue.pop_front() {
+                // A fresh MPDU under a key is numbered at its first
+                // transmission; a numbered one keeps its number.
+                if let Some(key) = prepared.key
+                    && matches!(prepared.buffer, ModelAnyBuffer::Small(_) | ModelAnyBuffer::Large(_))
+                {
+                    let number = match self.packet_numbers.iter_mut().find(|(index, _)| *index == key) {
+                        Some((_, last)) => {
+                            *last += 1;
+                            *last
+                        }
+                        None => {
+                            self.packet_numbers.push((key, 1));
+                            1
+                        }
+                    };
+                    let at = prepared.header_len;
+                    prepared.buffer.memory_mut()[at..at + 8].copy_from_slice(&ccmp_header(number, 0));
+                    prepared.buffer = prepared.buffer.into_numbered();
+                }
                 let mut transmissions = 0_u8;
                 let mut last = None;
                 let mut delivered = false;
@@ -822,6 +929,9 @@ impl<'id> Driver<'id> {
                             frame: prepared.buffer.memory()[..prepared.len].into(),
                             rate: stage.rate,
                             key: prepared.key.map(|key| (key, self.keys.contains(&key))),
+                            packet_number: prepared.key.map(|_| {
+                                packet_number(&prepared.buffer.memory()[prepared.header_len..])
+                            }),
                         });
                         if held.air.acknowledges() {
                             delivered = true;
@@ -1009,6 +1119,8 @@ impl TxFrameBody for ModelTxBuffer<'_> {
         match &mut self.buffer {
             ModelAnyBuffer::Small(buffer) => &mut buffer.memory[header..len],
             ModelAnyBuffer::Large(buffer) => &mut buffer.memory[header..len],
+            // A numbered MPDU's bytes are not the caller's to write.
+            ModelAnyBuffer::SmallNumbered(_) | ModelAnyBuffer::LargeNumbered(_) => &mut [],
         }
     }
 }
@@ -1100,6 +1212,24 @@ where
         }
     }
 
+    fn retransmit<C>(
+        &mut self,
+        buffer: <ModelTypes as TxBufferPool<'id, C>>::Numbered,
+        frame: ClassFrame<'p, C, ModelCaps>,
+    ) -> ModelTxBuffer<'id>
+    where
+        C: TxBufferClass,
+        ModelTypes: TxBufferPool<'id, C>,
+    {
+        let frame = frame.into_frame();
+        ModelTxBuffer {
+            buffer: <ModelTypes as TxBufferPool<'id, C>>::erase_numbered(buffer),
+            len: frame.mpdu_len(),
+            header_len: header_len(&frame),
+            plan: stages(&frame),
+        }
+    }
+
     fn submit(
         &mut self,
         attempt: InterfaceAttempt<'_, 'p, 'id, Self>,
@@ -1116,6 +1246,7 @@ where
             ticket: attempt.ticket,
             buffer: attempt.frame.buffer,
             len: attempt.frame.len,
+            header_len: attempt.frame.header_len,
             queue: attempt.access_category as usize,
             plan: attempt.frame.plan,
             key,

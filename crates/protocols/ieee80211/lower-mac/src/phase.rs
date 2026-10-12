@@ -58,6 +58,24 @@
 //!
 //! [owner decision]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6130970169
 //!
+//! # Protected frames
+//!
+//! A frame under a key ([`Attempt::key`]) carries the Protected bit and
+//! leaves the 8 octets of its CCMP header after its MAC header; its length
+//! counts them, not the MIC. At the first transmission of the MPDU the
+//! backend writes the CCMP header with a new packet number of the key into
+//! the buffer, and the hardware appends the MIC; the plan's transmissions
+//! keep it. The completion gives the buffer back numbered
+//! ([`TxBufferPool::Numbered`]): a retransmission of the same MPDU
+//! ([`InterfacePhase::retransmit`]) keeps its packet number, and only a
+//! renewed buffer ([`TxBufferPool::renew`]) is numbered anew. A received
+//! frame whose crypto status is
+//! [`RxCryptoStatus::DecryptedAndIntegrityVerified`](crate::RxCryptoStatus)
+//! keeps its CCMP header, for the receiver's replay check, and loses its
+//! MIC ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6131631789)).
+//! [`HardwareServices::PACKET_NUMBERS`](crate::HardwareServices::PACKET_NUMBERS)
+//! means the hardware itself assigns them.
+//!
 //! # Compile-fail tests
 //!
 //! No caller mints a token: a gate, a ticket or a buffer comes only from
@@ -498,6 +516,19 @@ pub trait InterfacePhase<'p, 'id: 'p> {
         C: TxBufferClass,
         Self::Types: TxBufferPool<'id, C>;
 
+    /// The MPDU a numbered `buffer` holds, again, bound to `frame`, its
+    /// kind: a retransmission (the subframe of an A-MPDU its Block Ack did
+    /// not acknowledge), which keeps its packet number. The backend writes
+    /// no new CCMP header.
+    fn retransmit<C>(
+        &mut self,
+        buffer: <Self::Types as TxBufferPool<'id, C>>::Numbered,
+        frame: ClassFrame<'p, C, Self::Caps>,
+    ) -> Self::TxBuffer
+    where
+        C: TxBufferClass,
+        Self::Types: TxBufferPool<'id, C>;
+
     /// Admit `attempt`: the backend publishes it once its queue is free,
     /// and its ticket and buffers come back with its terminal.
     ///
@@ -593,12 +624,33 @@ pub trait TxBufferPool<'id, C: TxBufferClass>: PhaseTypes<'id> {
     /// The buffer, as any class's.
     fn erase(buffer: Self::Buffer) -> Self::AnyTxBuffer;
 
-    /// The buffer of the class `C` a completion gave back.
+    /// A buffer of the class that holds an MPDU the backend numbered: its
+    /// CCMP header carries the packet number of the MPDU's first
+    /// transmission. A completion gives it back after a protected attempt;
+    /// retransmitted ([`InterfacePhase::retransmit`]) it keeps its packet
+    /// number, and its bytes are not the caller's to write.
+    type Numbered;
+
+    /// The buffer, as any class's.
+    fn erase_numbered(buffer: Self::Numbered) -> Self::AnyTxBuffer;
+
+    /// The fresh buffer of the class `C` a completion gave back.
     ///
     /// # Errors
     ///
-    /// The buffer, when it is of another class.
+    /// The buffer, when it is of another class or numbered.
     fn class(buffer: Self::AnyTxBuffer) -> Result<Self::Buffer, Self::AnyTxBuffer>;
+
+    /// The numbered buffer of the class `C` a completion gave back.
+    ///
+    /// # Errors
+    ///
+    /// The buffer, when it is of another class or fresh.
+    fn numbered(buffer: Self::AnyTxBuffer) -> Result<Self::Numbered, Self::AnyTxBuffer>;
+
+    /// The memory of a numbered buffer for a new MPDU: its packet number is
+    /// forgotten, and the next protected attempt in it is numbered anew.
+    fn renew(buffer: Self::Numbered) -> Self::Buffer;
 }
 
 /// The memory of a transmit buffer the body holds: the caller encodes a

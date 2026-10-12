@@ -58,23 +58,14 @@ fn until(open: &Cell<bool>) -> impl Future<Output = ()> + '_ {
     poll_fn(|_| if open.get() { Poll::Ready(()) } else { Poll::Pending })
 }
 
-/// A data frame to the peer, `len` octets, in `buffer`, submitted with
-/// `ticket` and `key`.
-fn submit<'p, 'id: 'p, C>(
-    phase: &mut ModelPhase<'p, 'id>,
-    ticket: Slot<'id, ModelTickets>,
-    mut buffer: ModelBuffer<'id, C>,
-    key: Option<&ModelPairwiseKey<'id, Station>>,
-) where
-    C: TxBufferClass,
-    ModelTypes: TxBufferPool<'id, C, Buffer = ModelBuffer<'id, C>>
-        + PhaseTypes<'id, TicketKind = ModelTickets, StationKeys = ModelKeys<'id, Station>>,
-{
+/// A data frame to the peer, 40 octets, protected or not.
+fn data_frame<'p>(phase: &ModelPhase<'p, '_>, protected: bool) -> TxFrame<'p, ModelCaps> {
     let rate = phase
         .rate(PhyRate::Legacy(LegacyRate::Ofdm6M))
         .expect("the channel carries 6 Mbit/s");
+    let control = if protected { 0x4108 } else { 0x0108 };
     let header = HeaderSpec::new(
-        FrameControl::new(0x0108).unwrap(),
+        FrameControl::new(control).unwrap(),
         0,
         IndividualAddress::new(PEER).unwrap(),
         STATION,
@@ -86,19 +77,25 @@ fn submit<'p, 'id: 'p, C>(
     )
     .and_then(AckHeader::new)
     .unwrap();
-    let len = 40;
-    buffer.bytes_mut()[..len].fill(0x5a);
-    let frame = TxFrame::Individual {
-        frame: SizedFrame::new(header, MpduLength::new(len).unwrap()).unwrap(),
+    TxFrame::Individual {
+        frame: SizedFrame::new(header, MpduLength::new(40).unwrap()).unwrap(),
         plan: RetryPlan::new(RetryStage {
             rate,
             transmissions: NonZeroU8::new(2).unwrap(),
             protection: Protection::None,
         }),
-    };
-    let mut station = phase.station();
-    let frame = station.tx_buffer::<C>(buffer, ClassFrame::new(frame).ok().unwrap());
-    station
+    }
+}
+
+/// Submit `frame`, its memory bound, with `ticket` and `key`.
+fn submit_frame<'p, 'id: 'p>(
+    phase: &mut ModelPhase<'p, 'id>,
+    ticket: Slot<'id, ModelTickets>,
+    frame: ModelTxBuffer<'id>,
+    key: Option<&ModelPairwiseKey<'id, Station>>,
+) {
+    phase
+        .station()
         .submit(oer_ieee80211_lower_mac::Attempt {
             ticket,
             frame,
@@ -110,6 +107,91 @@ fn submit<'p, 'id: 'p, C>(
             coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
         })
         .unwrap();
+}
+
+/// A data frame to the peer in `buffer`, submitted with `ticket` and `key`.
+fn submit<'p, 'id: 'p, C>(
+    phase: &mut ModelPhase<'p, 'id>,
+    ticket: Slot<'id, ModelTickets>,
+    mut buffer: ModelBuffer<'id, C>,
+    key: Option<&ModelPairwiseKey<'id, Station>>,
+) where
+    C: TxBufferClass,
+    ModelTypes: TxBufferPool<'id, C, Buffer = ModelBuffer<'id, C>>
+        + PhaseTypes<'id, TicketKind = ModelTickets, StationKeys = ModelKeys<'id, Station>>,
+{
+    buffer.bytes_mut()[..40].fill(0x5a);
+    let frame = data_frame(phase, key.is_some());
+    let frame = phase
+        .station()
+        .tx_buffer::<C>(buffer, ClassFrame::new(frame).ok().unwrap());
+    submit_frame(phase, ticket, frame, key);
+}
+
+/// The next terminal's ticket and buffer.
+async fn completion<'p, 'id: 'p>(
+    phase: &mut ModelPhase<'p, 'id>,
+) -> (Slot<'id, ModelTickets>, ModelAnyBuffer<'id>) {
+    loop {
+        yield_now().await;
+        let event = {
+            let event = core::pin::pin!(phase.next_event());
+            let mut context = core::task::Context::from_waker(Waker::noop());
+            Future::poll(event, &mut context)
+        };
+        if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted { ticket, buffers, .. }))) = event {
+            let mut buffers = buffers.into_iter();
+            return (ticket, buffers.next().unwrap());
+        }
+    }
+}
+
+/// A protected attempt, its retransmission from the numbered buffer, then
+/// a new MPDU in the renewed buffer.
+struct Numbering;
+
+impl Work for Numbering {
+    async fn work<'p, 'id: 'p>(self, phase: &mut ModelPhase<'p, 'id>, resources: ModelResources<'id>) {
+        let ModelResources {
+            mut tickets,
+            mut small,
+            station_pairwise: [slot, _],
+            ..
+        } = resources;
+        let key = phase.station().install_pairwise_key(
+            slot,
+            IndividualAddress::new(PEER).unwrap(),
+            Ccmp128Key([7; 16]),
+        );
+        submit(phase, tickets.remove(0), small.remove(0), Some(&key));
+        let (ticket, buffer) = completion(phase).await;
+        let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::numbered(buffer)
+            .ok()
+            .expect("a protected attempt's buffer comes back numbered");
+        // The same MPDU again: a retransmission keeps its number.
+        let frame = data_frame(phase, true);
+        let frame = phase
+            .station()
+            .retransmit::<ModelSmall>(numbered, ClassFrame::new(frame).ok().unwrap());
+        submit_frame(phase, ticket, frame, Some(&key));
+        let (ticket, buffer) = completion(phase).await;
+        let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::numbered(buffer)
+            .ok()
+            .unwrap();
+        // Renewed, the memory holds a new MPDU, numbered anew.
+        let renewed = <ModelTypes as TxBufferPool<'id, ModelSmall>>::renew(numbered);
+        submit(phase, ticket, renewed, Some(&key));
+        let _ = completion(phase).await;
+        let _ = key;
+    }
+}
+
+#[test]
+fn a_retransmitted_mpdu_keeps_its_packet_number_and_a_renewed_buffer_takes_a_new_one() {
+    let (backend, air) = backend();
+    block_on(run_port(backend, Body(Numbering)));
+    let numbers: Vec<_> = air.sent().iter().map(|frame| frame.packet_number).collect();
+    assert_eq!(numbers, [Some(1), Some(1), Some(2)]);
 }
 
 /// Submit an attempt for every ticket, in every buffer of either class,

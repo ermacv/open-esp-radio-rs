@@ -296,7 +296,7 @@ pub fn run(ctx: &Checkout, draft: bool, skip_review: Option<&str>) -> Result<()>
         // The pull request's number ends its URL.
         let number = url.rsplit('/').next().unwrap_or_default();
         let filed =
-            review::file_wording(ctx, verdict, number, &head, &branch).map_err(|error| {
+            review::file_wording(ctx, verdict, number, &branch, &head).map_err(|error| {
                 format!(
                     "push: filing the review's wording findings failed; {branch} is pushed but \
                  auto-merge is not enabled, push again: {error}"

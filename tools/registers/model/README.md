@@ -16,7 +16,11 @@
 - retained effective classification, applicability and evidence for every
   applied register, field, access, description and write-semantics claim;
 - generic physical-layout and write-semantics invariants;
-- reviewed PAC transaction, binding-index and evidence-catalog schemas.
+- reviewed PAC transaction, binding-index and evidence-catalog schemas;
+- the chip memory map (`memory::Memory`, `registers/<chip>/model/memory.toml`):
+  its address spaces and regions, validated against the model and its owned
+  ranges, and its MMIO windows, which the register tool and the vendor copy
+  report (`cargo verification copies`) read.
 
 The raw PAC is generated output only. The PAC pack has no module declarations
 for hand-written code; ownership and validation transactions that need raw

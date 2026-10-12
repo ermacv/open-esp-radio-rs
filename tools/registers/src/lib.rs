@@ -14,7 +14,6 @@ mod host;
 mod library;
 mod shared_blocks;
 pub use drafts::{import_svd, initialize_model};
-mod memory;
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 #[derive(Deserialize)]
@@ -95,7 +94,7 @@ impl ChipSources {
 
     /// The owned MMIO ranges of the memory map, by name, as `start..end`.
     pub fn owned_mmio(&self) -> Result<Vec<(String, u64, u64)>> {
-        let memory = memory::Memory::load(&self.memory)?;
+        let memory = oer_register_model::memory::Memory::load(&self.memory)?;
         let ownership: Ownership = toml_edit::de::from_str(&fs::read_to_string(&self.ownership)?)?;
         ownership
             .owned_ranges
@@ -212,7 +211,7 @@ impl ChipPublication {
             )
             .into());
         }
-        let memory = memory::Memory::load(&base.join(&m.memory))?;
+        let memory = oer_register_model::memory::Memory::load(&base.join(&m.memory))?;
         let ownership: Ownership =
             toml_edit::de::from_str(&fs::read_to_string(base.join(&m.ownership))?)?;
         if ownership.schema != 1 || ownership.owned_ranges.is_empty() {

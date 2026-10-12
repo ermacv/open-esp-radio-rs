@@ -496,9 +496,10 @@ tokens ([Radio ports](#radio-ports)).
 
 ## Changing a shared contract
 
-A shared contract is a crate or trait that more than one block depends on
-(today `oer-radio-port`, the permit pool, the shared radio system, PHY and
-coexistence). It takes only what at least two blocks have proven in code; a
+A shared contract is a crate or trait that more than one block depends on.
+Each block guide skill lists its own under "Shared contracts"; today they
+include `oer-radio-port`, the permit pool, `oer-time`, the shared radio
+system, PHY, coexistence, the HAL split, the PAC and `registers/`. It takes only what at least two blocks have proven in code; a
 need of one block stays in that block until a second one has it. A change
 starts from a prototype in the block that needs it, showing the case the
 current contract fails, and lands before the blocks that depend on it build

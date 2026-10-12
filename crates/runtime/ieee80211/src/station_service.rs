@@ -30,14 +30,12 @@ use oer_ieee80211_arbiter::{
 };
 use oer_ieee80211_lower_mac::{
     AttemptKey, Ccmp128Key, ClassFrame, CoexPriority, GateClosed, GateOpen, Ieee80211Capabilities,
-    InterfacePhase, KeyTypes, LowerMacBackend, LowerMacEvent, LowerMacPhase,  PhaseTypes,
-    Protection, Removed, RemovedKey, RxBuffer, RxMetadata, StationPhase,
-    SupportedChannel, SupportedCoex, SupportedPower, TxBufferClass, TxBufferPool, TxCompletion,
-    TxFrame, TxPower, VifRole,
+    InterfacePhase, KeyTypes, LowerMacBackend, LowerMacEvent, LowerMacPhase, PhaseTypes,
+    Protection, Removed, RemovedKey, RxBuffer, RxMetadata, StationPhase, SupportedChannel,
+    SupportedCoex, SupportedPower, TxBufferClass, TxBufferPool, TxCompletion, TxFrame, TxPower,
+    VifRole,
 };
-use oer_ieee80211_mac::{
-    qos::{WmmAccessCategory, WmmUserPriority},
-};
+use oer_ieee80211_mac::qos::{WmmAccessCategory, WmmUserPriority};
 use oer_ieee80211_port::{Disabled, Enabled, Failed, Owner, PoisonedOwner, PortBackend};
 use oer_ieee80211_sta::{
     data::{self, DataAction, DataInput, DataRefusal, Msdu, StaData, StaDataTokens},
@@ -531,7 +529,10 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                     self.settle(now, io);
                     return Served::Poisoned;
                 }
-                Either3::Second(()) => {}
+                // A machine's deadline passed: the station takes it as a
+                // tick (the arbiter and the data machine read the time in
+                // their polls).
+                Either3::Second(()) => self.station.input(now, StaInput::Tick),
                 Either3::Third(Either::First(command)) => match command {
                     ServiceCommand::Station(command) => {
                         self.station.input(now, StaInput::Command(command));
@@ -943,12 +944,14 @@ where
                 };
                 plan.map(|plan| TxFrame::Individual { frame, plan })
             }
-            StaFrame::Group(frame) => rates
-                .plan(FrameRates::Probe, carried)
-                .map(|plan| TxFrame::Group {
-                    frame,
-                    rate: plan.into_first().rate,
-                }),
+            StaFrame::Group(frame) => {
+                rates
+                    .plan(FrameRates::Probe, carried)
+                    .map(|plan| TxFrame::Group {
+                        frame,
+                        rate: plan.into_first().rate,
+                    })
+            }
         }
     };
     let Some(frame) = frame.and_then(|frame| ClassFrame::<B::Small, B::Caps>::new(frame).ok())

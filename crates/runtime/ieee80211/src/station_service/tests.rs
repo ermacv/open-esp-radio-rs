@@ -353,8 +353,16 @@ impl World<'_> {
 
     /// The network stack sends one Ethernet frame to `destination`.
     fn send_msdu(&self, destination: [u8; 6]) {
+        assert!(self.try_send_msdu(destination), "the queue has room");
+    }
+
+    /// The network stack sends one Ethernet frame to `destination` if its
+    /// queue has room.
+    fn try_send_msdu(&self, destination: [u8; 6]) -> bool {
         let mut stack = self.stack.borrow_mut();
-        let slot = stack.try_send().expect("the queue has room");
+        let Some(slot) = stack.try_send() else {
+            return false;
+        };
         slot.priority = WmmUserPriority::new(0).unwrap();
         slot.frame[..6].copy_from_slice(&destination);
         slot.frame[6..12].copy_from_slice(&LOCAL);
@@ -362,6 +370,7 @@ impl World<'_> {
         slot.frame[14..114].fill(0xab);
         slot.len = 114;
         stack.send_done();
+        true
     }
 
     /// Scan, authenticate and associate: the probe, the Authentication and
@@ -384,7 +393,7 @@ struct Body<'w, 'b, S> {
     world: &'w World<'b>,
     transmit: zerocopy_channel::Receiver<'b, NoopRawMutex, TxMsdu>,
     receive: zerocopy_channel::Sender<'b, NoopRawMutex, RxMsdu>,
-    security: StaSecurity,
+    config: StaConfig<ModelCaps24>,
     script: S,
 }
 
@@ -423,7 +432,7 @@ where
                 gate,
             );
             let station = Station::new(
-                config(self.security),
+                self.config,
                 station_tickets,
                 small,
                 place,
@@ -465,6 +474,14 @@ fn run<S>(security: StaSecurity, script: S)
 where
     S: for<'w, 'b> FnOnce(&'w World<'b>) -> Script<'w>,
 {
+    run_with(config(security), script);
+}
+
+/// Run the service on a 2.4 GHz model with `config`.
+fn run_with<S>(config: StaConfig<ModelCaps24>, script: S)
+where
+    S: for<'w, 'b> FnOnce(&'w World<'b>) -> Script<'w>,
+{
     let (backend, air) = ModelBackend::<ModelCaps24>::new(
         channel6(),
         [
@@ -499,7 +516,7 @@ where
             world: &world,
             transmit,
             receive,
-            security,
+            config,
             script,
         },
     ));
@@ -699,4 +716,83 @@ fn a_station_scans_joins_handshakes_carries_data_both_ways_and_disconnects() {
             })
         },
     );
+}
+
+const NULL: u16 = 0x0048;
+
+/// Data takes every token of its own and the station's frames still go:
+/// with the best-effort queue held, the stack fills the data machine's
+/// tickets and buffers and its own queue, and the group handshake's EAPOL,
+/// the Null before a background scan's absence and the Deauthentication
+/// still reach the air (owner decision on #563, comment 6131495971).
+#[test]
+fn data_takes_all_its_tokens_and_eapol_null_and_deauthentication_still_go() {
+    // A second channel, so the background scan leaves the home channel
+    // and announces its absence with a Null.
+    let mut config = config(StaSecurity::Wpa2Personal {
+        pmk: Pmk::from_bytes(PMK),
+    });
+    config.channels[1] = SupportedChannel::new(Channel::ghz2_4(1, ChannelWidth::Mhz20).unwrap());
+    run_with(config, |world| {
+        Box::pin(async move {
+            let mut seen = 0;
+            world.associate(&mut seen, true).await;
+            let ptk = world.handshake(&mut seen).await;
+            world.air.hold(WmmAccessCategory::BestEffort, true);
+            // The data machine takes four MSDUs, its four tickets and
+            // buffers; two more wait in the stack's queue, which then
+            // refuses.
+            let mut sent = 0;
+            while world.try_send_msdu([0x02, 0, 0, 0, 0, 0x07]) {
+                sent += 1;
+                for _ in 0..20 {
+                    yield_now().await;
+                }
+            }
+            assert_eq!(sent, 4 + 2);
+            assert!(
+                world.air.sent()[seen..]
+                    .iter()
+                    .all(|frame| kind(frame) != DATA)
+            );
+
+            world.air.receive(&group_message1(&ptk, 3, 2), meta());
+            let group_message2 = world.sent(&mut seen, DATA).await;
+            // Protected after the handshake: the EtherType follows the
+            // CCMP header's room.
+            assert_ne!(group_message2.frame[1] & 0x40, 0);
+            assert_eq!(group_message2.frame[38..40], [0x88, 0x8e], "EAPOL");
+
+            world
+                .command(ServiceCommand::Station(StaCommand::BackgroundScan))
+                .await;
+            let null = world.sent(&mut seen, NULL).await;
+            assert_ne!(null.frame[1] & 0x10, 0, "PM=1 before the absence");
+
+            world
+                .command(ServiceCommand::Station(StaCommand::Disconnect))
+                .await;
+            world.sent(&mut seen, DEAUTHENTICATION).await;
+        })
+    });
+}
+
+/// A station deadline reaches the station: an Authentication without a
+/// response goes again once its wait passed, and the service does not spin
+/// on the passed deadline meanwhile.
+#[test]
+fn a_passed_station_deadline_ticks_the_station() {
+    run(StaSecurity::Open, |world| {
+        Box::pin(async move {
+            let mut seen = 0;
+            world
+                .command(ServiceCommand::Station(StaCommand::Connect))
+                .await;
+            world.sent(&mut seen, PROBE_REQUEST).await;
+            world.air.receive(&beacon(false), meta());
+            world.sent(&mut seen, AUTHENTICATION).await;
+            // No response: the wait passes and the station tries again.
+            world.sent(&mut seen, AUTHENTICATION).await;
+        })
+    });
 }

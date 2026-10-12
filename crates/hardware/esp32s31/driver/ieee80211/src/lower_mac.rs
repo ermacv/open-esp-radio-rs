@@ -11,6 +11,25 @@
 //! (`LowerMacAmpdu`, `LowerMacBeaconTiming` for the station,
 //! `LowerMacMonitor`) over this core.
 //!
+//! # Checks and checked operations
+//!
+//! Each operation that `Ieee80211LowerMacPort` can refuse has two halves:
+//! a check that makes that contract's refusals (`submit`, `install_key`,
+//! the `apply` settings, `lifecycle`) and an operation on checked values
+//! that refuses nothing ([`LowerMacCore::submit_checked`], [`LowerMacCore::install_checked_key`]
+//! and [`LowerMacCore::remove_checked_key`],
+//! [`LowerMacCore::start_checked_rx_block_ack`] and
+//! [`LowerMacCore::end_checked_rx_block_ack`],
+//! [`LowerMacCore::configure_checked_vif`], [`LowerMacCore::set_checked_channel`],
+//! [`LowerMacCore::set_checked_edca`], [`LowerMacCore::set_checked_he_bss_color`],
+//! [`LowerMacCore::enable_checked`] and [`LowerMacCore::disable_checked`]).
+//! The port trait's backend calls the check; a backend on the owner shape
+//! (`oer_ieee80211_lower_mac::owner`) calls the checked operation with
+//! values its types guarantee, and its state preconditions are invariants
+//! the core asserts in debug builds. A hardware refusal of a checked value
+//! is a [`LowerMacFault`]. The aggregate path and the extensions keep their
+//! checks until their owner-shape forms exist.
+//!
 //! # One submission, one publication
 //!
 //! An admitted MPDU is published through
@@ -102,7 +121,7 @@ use oer_esp32s31_ieee80211_mac::{
     },
     sta_ap_registers::StaApRegisterHardware,
     tx::{
-        HeEdcaTxopLimit, HtAmpduDensity, LegacyTxQueue, TxError, TxPhyRate, TxSlot, TxSlotState,
+        HeEdcaTxopLimit, HtAmpduDensity, LegacyTxQueue, TxPhyRate, TxSlot, TxSlotState,
         ampdu::{HeAmpduPolicy, HtAmpduHardware, HtAmpduTxError},
         runtime::he_txop_limit,
     },
@@ -114,8 +133,8 @@ use oer_ieee80211_lower_mac::{
     LowerMacSetting, MacAddress, MonitorCapabilities, MpduAttempt, PhyFormatSet, PhyRate,
     Protection, RateSupport, ReceiveFilter, Refused, RxBeaconPriority, RxBlockAckAgreement,
     RxEvidence, RxMeta, SettingError, SubmitError, TbttEvent, TbttSchedule, TxBuffer, TxCompletion,
-    TxFault, TxId, TxPayload, TxPower, TxResponse, TxStatus, VifConfig, VifId, VifRole, VifRoleSet,
-    VifTsf, WidthSet,
+    TxFault, TxId, TxPower, TxResponse, TxStatus, VifConfig, VifId, VifRole, VifRoleSet, VifTsf,
+    WidthSet,
 };
 use oer_ieee80211_mac::{
     channel::{Band, WifiChannel},
@@ -354,6 +373,10 @@ pub enum LowerMacFault {
     Ampdu(HtAmpduTxError),
     /// A receive Block Ack bank did not read back as programmed.
     RxBlockAckReadback,
+    /// The hardware refused a checked key.
+    Key(CryptoKeyError),
+    /// The hardware refused a checked receive Block Ack agreement.
+    RxBlockAck(S31RxBlockAckAgreementError),
 }
 
 /// What a lifecycle command needs from the runtime.
@@ -896,31 +919,145 @@ where
     pub fn submit<H: LowerMacHardware>(
         &mut self,
         hardware: &mut H,
-        mut attempt: Esp32s31MpduAttempt<'slot, BUFFER_SIZE>,
+        attempt: Esp32s31MpduAttempt<'slot, BUFFER_SIZE>,
     ) -> Result<Result<(), Refused<Esp32s31MpduAttempt<'slot, BUFFER_SIZE>>>, LowerMacFault> {
-        let admission = match self.admit(&mut attempt) {
-            Ok(admission) => admission,
-            Err(error) => return Ok(Err(Refused { error, attempt })),
-        };
-        let MpduAttempt {
+        match self.check_mpdu(attempt) {
+            Ok(checked) => self.publish_checked(hardware, checked).map(Ok),
+            Err(refused) => Ok(Err(refused)),
+        }
+    }
+
+    /// Check one MPDU attempt against the port's state and limits, the
+    /// refusals of `Ieee80211LowerMacPort`, and plan its publication.
+    ///
+    /// # Errors
+    ///
+    /// The refusal, with the attempt.
+    #[allow(
+        clippy::result_large_err,
+        reason = "the refusal hands the caller's attempt back by value"
+    )]
+    fn check_mpdu(
+        &self,
+        mut attempt: Esp32s31MpduAttempt<'slot, BUFFER_SIZE>,
+    ) -> Result<CheckedMpdu<'slot, BUFFER_SIZE>, Refused<Esp32s31MpduAttempt<'slot, BUFFER_SIZE>>>
+    {
+        match self.admit(&mut attempt) {
+            Ok(admission) => Ok(CheckedMpdu {
+                id: attempt.id,
+                vif: attempt.vif,
+                frame: attempt.payload.frame,
+                admission,
+            }),
+            Err(error) => Err(Refused { error, attempt }),
+        }
+    }
+
+    /// Plan the publication of an MPDU whose values and state a caller's
+    /// types guarantee: the port enabled, `id` new, the access category's
+    /// queue free, `vif` configured, `key` installed for `vif`, the rate
+    /// carried on the channel, the power, backoff and coexistence level
+    /// within the capabilities, the length at least the header through
+    /// Address 1 and within the buffer, and the
+    /// response one the frame and rate carry (`no_ack` only of an
+    /// individual frame at a rate that sends one without an ACK).
+    fn checked_mpdu(
+        &self,
+        values: MpduValues<'slot, BUFFER_SIZE>,
+    ) -> CheckedMpdu<'slot, BUFFER_SIZE> {
+        let MpduValues {
             id,
             vif,
             access_category,
-            payload:
-                TxPayload {
-                    frame: Esp32s31TxBuffer { slot, len },
-                    body: _,
-                    response,
-                },
+            frame,
+            no_ack,
             rate,
             protection,
             key,
-            power,
-            backoff,
+            power_ceiling_dbm,
+            backoff_slots,
             coex,
+        } = values;
+        debug_assert_eq!(self.state, PortState::Enabled, "a phase submits");
+        debug_assert!(!self.running(id), "a work's identity is new");
+        let role = self
+            .vif(vif)
+            .map(|config| config.role)
+            .expect("a client's interface is configured");
+        let length = frame.len();
+        let mic = if key.is_some() { TX_CCMP_MIC_SIZE } else { 0 };
+        // The transfer the transmit owner publishes, rounded up to a word.
+        let transfer = (TX_METADATA_SIZE + length + mic + TX_FCS_SIZE + 3) & !3;
+        debug_assert!(
+            length >= MIN_FRAME_LENGTH && transfer <= BUFFER_SIZE,
+            "a frame's length reaches Address 1 and fits its buffer"
+        );
+        debug_assert!(
+            key.is_none_or(|handle| self
+                .key(handle)
+                .is_some_and(|installed| installed.vif == vif)),
+            "an attempt's key is its interface's"
+        );
+        let common = self.plan_common(
+            access_category,
+            role,
+            rate,
+            protection,
+            key,
+            power_ceiling_dbm,
+            backoff_slots,
+        );
+        debug_assert!(
+            self.queues[usize::from(common.queue.hardware_index())].is_none(),
+            "a queue grant holds its queue"
+        );
+        let admission = self.plan_mpdu(common, frame.len(), access_category, coex, no_ack);
+        CheckedMpdu {
+            id,
+            vif,
+            frame,
+            admission,
+        }
+    }
+
+    /// Plan and publish an MPDU whose values and state a caller's types
+    /// guarantee ([`MpduValues`] states which), or hold it behind a closed
+    /// gate: one call, so no other operation comes between its plan and
+    /// its publication.
+    ///
+    /// # Errors
+    ///
+    /// A fault of the transmit owner.
+    pub fn submit_checked<H: LowerMacHardware>(
+        &mut self,
+        hardware: &mut H,
+        values: MpduValues<'slot, BUFFER_SIZE>,
+    ) -> Result<(), LowerMacFault> {
+        let attempt = self.checked_mpdu(values);
+        self.publish_checked(hardware, attempt)
+    }
+
+    /// Publish a checked MPDU, or hold it behind a closed gate.
+    fn publish_checked<H: LowerMacHardware>(
+        &mut self,
+        hardware: &mut H,
+        attempt: CheckedMpdu<'slot, BUFFER_SIZE>,
+    ) -> Result<(), LowerMacFault> {
+        let CheckedMpdu {
+            id,
+            vif,
+            frame: Esp32s31TxBuffer { slot, .. },
+            admission,
         } = attempt;
+        // Planned in the same call: the preconditions hold where the queue
+        // is taken.
+        debug_assert_eq!(self.state, PortState::Enabled, "a phase submits");
+        debug_assert!(!self.running(id), "a work's identity is new");
+        debug_assert!(
+            self.queues[usize::from(admission.queue.hardware_index())].is_none(),
+            "a queue grant holds its queue"
+        );
         let work = if self.gate_open {
-            // Publish from the caller's slot.
             match self.tx.start_queued_single_attempt(
                 hardware,
                 slot,
@@ -928,33 +1065,8 @@ where
                 admission.single,
             ) {
                 Ok(queued) => Work::Mpdu(queued),
-                Err(QueuedSingleAttemptRefused {
-                    error:
-                        OrdinaryTxError::BufferSizeOverflow | OrdinaryTxError::Tx(TxError::Invalid),
-                    slot,
-                }) => {
-                    // Nothing was reserved: hand the caller's slot back.
-                    return Ok(Err(Refused {
-                        error: SubmitError::InvalidLength,
-                        attempt: MpduAttempt {
-                            id,
-                            vif,
-                            access_category,
-                            payload: TxPayload {
-                                frame: Esp32s31TxBuffer { slot, len },
-                                body: None,
-                                response,
-                            },
-                            rate,
-                            protection,
-                            key,
-                            power,
-                            backoff,
-                            coex,
-                        },
-                    }));
-                }
                 Err(QueuedSingleAttemptRefused { error, slot }) => {
+                    // The length was checked against the buffer.
                     self.return_slot(slot);
                     return Err(LowerMacFault::Tx(error));
                 }
@@ -972,7 +1084,7 @@ where
             key: admission.key,
             work,
         });
-        Ok(Ok(()))
+        Ok(())
     }
 
     /// Check what every attempt shares against the port's state and limits:
@@ -1029,21 +1141,51 @@ where
         if !capabilities.coex_priorities.contains(coex) {
             return Err(SubmitError::Unsupported);
         }
-        let (key, hardware_key_selector, hardware_mic_length) = match key {
-            KeySelector::Plaintext => (None, 0, 0),
+        let key = match key {
+            KeySelector::Plaintext => None,
             KeySelector::Key(handle) => match self.key(handle) {
-                Some(installed) if installed.vif == vif => (
-                    Some(handle),
-                    installed.token.hardware_index(),
-                    TX_CCMP_MIC_SIZE,
-                ),
+                Some(installed) if installed.vif == vif => Some(handle),
                 _ => return Err(SubmitError::UnknownKey),
             },
         };
-        Ok(CommonAdmission {
-            queue,
-            role: vif_config.role,
-            rate: tx_rate,
+        Ok(self.plan_common(
+            access_category,
+            vif_config.role,
+            tx_rate,
+            protection,
+            key,
+            power_ceiling_dbm,
+            backoff_slots,
+        ))
+    }
+
+    /// What every attempt shares, planned from values its check or its
+    /// caller's types guarantee: `key`, when one, is installed.
+    #[allow(clippy::too_many_arguments, reason = "the fields every attempt shares")]
+    fn plan_common(
+        &self,
+        access_category: WmmAccessCategory,
+        role: VifRole,
+        rate: TxPhyRate,
+        protection: Protection,
+        key: Option<KeyHandle>,
+        power_ceiling_dbm: Option<i8>,
+        backoff_slots: u16,
+    ) -> CommonAdmission {
+        let (hardware_key_selector, hardware_mic_length) = match key {
+            None => (0, 0),
+            Some(handle) => (
+                self.key(handle)
+                    .expect("an attempt's key is installed")
+                    .token
+                    .hardware_index(),
+                TX_CCMP_MIC_SIZE,
+            ),
+        };
+        CommonAdmission {
+            queue: LegacyTxQueue::from_access_category(access_category),
+            role,
+            rate,
             key,
             hardware_key_selector,
             hardware_mic_length,
@@ -1057,7 +1199,7 @@ where
                 power_ceiling_dbm,
                 no_ack: false,
             },
-        })
+        }
     }
 
     /// Check one MPDU attempt against the port's state and limits and plan
@@ -1080,8 +1222,10 @@ where
         )?;
         let capabilities = self.capabilities();
         let length = attempt.payload.frame.len();
+        // The transfer the transmit owner publishes, rounded up to a word.
         if length < MIN_FRAME_LENGTH
-            || TX_METADATA_SIZE + length + common.hardware_mic_length + TX_FCS_SIZE > BUFFER_SIZE
+            || (TX_METADATA_SIZE + length + common.hardware_mic_length + TX_FCS_SIZE + 3) & !3
+                > BUFFER_SIZE
         {
             return Err(SubmitError::InvalidLength);
         }
@@ -1108,8 +1252,26 @@ where
             _ => return Err(SubmitError::Unsupported),
         };
 
+        Ok(self.plan_mpdu(
+            common,
+            length,
+            attempt.access_category,
+            attempt.coex,
+            no_ack,
+        ))
+    }
+
+    /// Plan one MPDU's publication from its checked common values.
+    fn plan_mpdu(
+        &self,
+        common: CommonAdmission,
+        length: usize,
+        access_category: WmmAccessCategory,
+        coex: CoexPriority,
+        no_ack: bool,
+    ) -> Admission {
         let queue = common.queue;
-        let (scheduler_priority, packet_priority, priority_count) = match attempt.coex {
+        let (scheduler_priority, packet_priority, priority_count) = match coex {
             // A connection frame under the radio system's reconnect policy.
             CoexPriority::Elevated => {
                 let connection = self.coex.connection_frame_priorities();
@@ -1131,7 +1293,7 @@ where
             frame_length: length,
             descriptor_capacity: None,
             exchange: MacTxPlan {
-                access_category: attempt.access_category,
+                access_category,
                 initial_rate: common.rate,
                 publication_limit: 1,
                 publication_timeout: self.config.publication_timeout,
@@ -1146,7 +1308,7 @@ where
             packet_priority,
             priority_count,
         };
-        Ok(Admission {
+        Admission {
             queue,
             plan,
             single: SingleAttempt {
@@ -1154,7 +1316,7 @@ where
                 ..common.single
             },
             key: common.key,
-        })
+        }
     }
 
     fn key(&self, handle: KeyHandle) -> Option<&InstalledKey> {
@@ -1300,11 +1462,8 @@ where
     ) -> Result<LifecycleStart, LifecycleError> {
         match command {
             LifecycleCommand::Enable => match self.state {
-                PortState::Disabled if self.channel != self.tuned => {
-                    self.state = PortState::Enabling;
-                    Ok(LifecycleStart::Retune(self.channel))
-                }
-                PortState::Disabled | PortState::Quiesced => {
+                PortState::Disabled => Ok(self.enable_checked(sink)),
+                PortState::Quiesced => {
                     self.state = PortState::Enabled;
                     sink.lifecycle(LifecycleEvent::Enabled);
                     Ok(LifecycleStart::Admitted)
@@ -1325,18 +1484,43 @@ where
             },
             LifecycleCommand::Disable => match self.state {
                 PortState::Enabled | PortState::Quiescing | PortState::Quiesced => {
-                    self.quiesce_pending = self.state == PortState::Quiescing;
-                    self.state = PortState::Disabling;
-                    for index in 0..LOWER_MAC_TX_QUEUES {
-                        self.abort_held(index, sink);
-                    }
-                    self.settle(sink);
+                    self.start_disable(sink);
                     Ok(LifecycleStart::Admitted)
                 }
                 PortState::Disabled | PortState::Disabling => Err(LifecycleError::AlreadyInState),
                 PortState::Enabling => Err(LifecycleError::Busy),
             },
         }
+    }
+
+    /// Enable a disabled port: at once on the tuned channel, or after the
+    /// retune [`LifecycleStart::Retune`] asks for.
+    pub fn enable_checked<K: LowerMacSink>(&mut self, sink: &mut K) -> LifecycleStart {
+        debug_assert_eq!(self.state, PortState::Disabled, "a disabled port enables");
+        if self.channel == self.tuned {
+            self.state = PortState::Enabled;
+            sink.lifecycle(LifecycleEvent::Enabled);
+            LifecycleStart::Admitted
+        } else {
+            self.state = PortState::Enabling;
+            LifecycleStart::Retune(self.channel)
+        }
+    }
+
+    /// Disable an enabled port: every admitted attempt ends, then
+    /// `Disabled` follows through `sink`.
+    pub fn disable_checked<K: LowerMacSink>(&mut self, sink: &mut K) {
+        debug_assert_eq!(self.state, PortState::Enabled, "an enabled port disables");
+        self.start_disable(sink);
+    }
+
+    fn start_disable<K: LowerMacSink>(&mut self, sink: &mut K) {
+        self.quiesce_pending = self.state == PortState::Quiescing;
+        self.state = PortState::Disabling;
+        for index in 0..LOWER_MAC_TX_QUEUES {
+            self.abort_held(index, sink);
+        }
+        self.settle(sink);
     }
 
     /// End one admitted attempt: a held one at once as
@@ -1449,8 +1633,14 @@ where
         if color > 63 {
             return Err(SettingError::Unsupported);
         }
-        self.tx.policy_mut().install_he_bss_color(color);
+        self.set_checked_he_bss_color(color);
         Ok(())
+    }
+
+    /// The station's HE BSS color, at most 63.
+    pub fn set_checked_he_bss_color(&mut self, color: u8) {
+        debug_assert!(color <= 63, "a BSS color is at most 63");
+        self.tx.policy_mut().install_he_bss_color(color);
     }
 
     // SOURCE(esp32s31): complete pinned `libpp[pm_coex.o]::pm_coex_update_rx_beacon_pti`
@@ -1485,12 +1675,30 @@ where
         if self.state != PortState::Disabled {
             return Err(SettingError::PortEnabled);
         }
+        self.set_checked_channel(channel);
+        Ok(())
+    }
+
+    /// The EDCA parameters every queue's attempts contend with, whose
+    /// records lie within the capabilities' limits.
+    pub fn set_checked_edca(
+        &mut self,
+        parameters: oer_ieee80211_mac::extensions::wmm::WmmParameterSet,
+    ) {
+        self.tx
+            .policy_mut()
+            .install_wmm(parameters)
+            .expect("checked EDCA records are within the limits");
+    }
+
+    /// Tune the next `Enable` to `channel`, on a disabled port.
+    pub fn set_checked_channel(&mut self, channel: WifiChannel) {
+        debug_assert_eq!(self.state, PortState::Disabled, "a disabled port retunes");
         if self.channel != channel {
             self.break_tsf_relation(VifRole::Station);
             self.break_tsf_relation(VifRole::AccessPoint);
         }
         self.channel = channel;
-        Ok(())
     }
 
     fn configure_vif<H: LowerMacHardware>(
@@ -1524,6 +1732,52 @@ where
             return Err(SettingError::Unsupported);
         }
         let policy = receive_policy(&self.config, &config)?;
+        self.apply_vif(hardware, vif, config, policy);
+        Ok(())
+    }
+
+    /// Configure an interface whose configuration a caller's types
+    /// guarantee: no attempt of `vif` in flight, no other interface of its
+    /// role, no monitor reception, a station's address the cold start's
+    /// ([`Self::station_address`]), receive rules within the role's limits
+    /// and a BSSID they can take.
+    pub fn configure_checked_vif<H: LowerMacHardware>(
+        &mut self,
+        hardware: &mut H,
+        vif: VifId,
+        config: VifConfig,
+    ) {
+        debug_assert!(
+            !self.attempts().any(|attempt| attempt.vif == vif),
+            "an interface's frames in flight are waited for"
+        );
+        debug_assert!(!self.monitor, "monitor reception is off");
+        debug_assert!(
+            !self.vifs.iter().enumerate().any(|(other, configured)| {
+                other != usize::from(vif.0)
+                    && configured.is_some_and(|configured| configured.role == config.role)
+            }),
+            "one interface per role"
+        );
+        let policy =
+            receive_policy(&self.config, &config).expect("a checked interface configuration");
+        self.apply_vif(hardware, vif, config, policy);
+    }
+
+    /// The station address the cold start published.
+    pub const fn station_address(&self) -> MacAddress {
+        self.config.station_address
+    }
+
+    /// Apply `config` and its receive `policy` to `vif`.
+    fn apply_vif<H: LowerMacHardware>(
+        &mut self,
+        hardware: &mut H,
+        vif: VifId,
+        config: VifConfig,
+        policy: ReceivePolicy,
+    ) {
+        let index = usize::from(vif.0);
         if self.vifs[index].is_some_and(|previous| previous.role != config.role) {
             self.remove_vif(hardware, vif);
         }
@@ -1538,7 +1792,6 @@ where
         // A new association, a reassociation or a roam: the interface
         // follows another TSF.
         self.break_tsf_relation(config.role);
-        Ok(())
     }
 
     /// Close the interface's receive context and clear its keys, receive
@@ -1580,11 +1833,9 @@ where
         let temporal_key: &[u8; CCMP_128_KEY_BYTES] = match key.cipher {
             Cipher::Ccmp128 => key.key.try_into().map_err(|_| SettingError::InvalidKey)?,
         };
-        let free = self
-            .keys
-            .iter()
-            .position(Option::is_none)
-            .ok_or(SettingError::NoKeySlot)?;
+        if self.keys.iter().all(Option::is_some) {
+            return Err(SettingError::NoKeySlot);
+        }
         let count = |matches: fn(&KeyToken) -> bool| {
             self.keys
                 .iter()
@@ -1592,14 +1843,14 @@ where
                 .filter(|installed| matches(&installed.token))
                 .count()
         };
-        let token = match (vif.role, key.scope) {
+        let scope = match (vif.role, key.scope) {
             (VifRole::Station, KeyScope::Pairwise { peer }) => {
                 if count(|token| matches!(token, KeyToken::StaPairwise(_)))
                     >= usize::from(RESOURCES.station_pairwise_ccmp_slots)
                 {
                     return Err(SettingError::NoKeySlot);
                 }
-                install_sta_pairwise_ccmp(hardware, peer, temporal_key).map(KeyToken::StaPairwise)
+                CheckedKeyScope::StationPairwise { peer }
             }
             (VifRole::Station, KeyScope::Group { key_id }) => {
                 if count(|token| matches!(token, KeyToken::StaGroup(_)))
@@ -1607,21 +1858,18 @@ where
                 {
                     return Err(SettingError::NoKeySlot);
                 }
-                install_sta_group_ccmp(hardware, key_id, temporal_key).map(KeyToken::StaGroup)
+                CheckedKeyScope::StationGroup { key_id }
             }
             (VifRole::AccessPoint, KeyScope::Pairwise { peer }) => {
                 // The S31 AP pairwise slot is derived from an association
                 // identifier; the backend picks the lowest free one.
                 let association_id = (1..=u16::from(RESOURCES.access_point_pairwise_ccmp_slots))
-                    .find(|association_id| {
-                        !self.keys.iter().flatten().any(|installed| {
-                            matches!(&installed.token,
-                                KeyToken::ApPairwise(slot) if slot.association_id() == *association_id)
-                        })
-                    })
+                    .find(|association_id| !self.association_id_used(*association_id))
                     .ok_or(SettingError::NoKeySlot)?;
-                install_ap_pairwise_ccmp(hardware, peer, association_id, temporal_key)
-                    .map(KeyToken::ApPairwise)
+                CheckedKeyScope::AccessPointPairwise {
+                    peer,
+                    association_id,
+                }
             }
             (VifRole::AccessPoint, KeyScope::Group { key_id }) => {
                 if count(|token| matches!(token, KeyToken::ApGroup(_)))
@@ -1629,21 +1877,96 @@ where
                 {
                     return Err(SettingError::NoKeySlot);
                 }
+                CheckedKeyScope::AccessPointGroup { key_id }
+            }
+        };
+        self.program_key(hardware, key.vif, scope, temporal_key)
+            .map_err(|error| match error {
+                CryptoKeyError::Occupied | CryptoKeyError::InvalidAccessPointAssociationId => {
+                    SettingError::NoKeySlot
+                }
+                CryptoKeyError::InvalidGroupKeyId | CryptoKeyError::HardwareRejected => {
+                    SettingError::InvalidKey
+                }
+            })
+    }
+
+    /// Install a key whose values and state a caller's types guarantee:
+    /// `vif` is configured in the scope's role, the scope's slots have
+    /// room (an access point's `association_id` is free), and a group key
+    /// identifier is a valid one.
+    ///
+    /// # Errors
+    ///
+    /// The hardware refused the key.
+    pub fn install_checked_key<H: LowerMacHardware>(
+        &mut self,
+        hardware: &mut H,
+        vif: VifId,
+        scope: CheckedKeyScope,
+        temporal_key: &[u8; CCMP_128_KEY_BYTES],
+    ) -> Result<KeyHandle, LowerMacFault> {
+        let role = match scope {
+            CheckedKeyScope::StationPairwise { .. } | CheckedKeyScope::StationGroup { .. } => {
+                VifRole::Station
+            }
+            CheckedKeyScope::AccessPointPairwise { .. }
+            | CheckedKeyScope::AccessPointGroup { .. } => VifRole::AccessPoint,
+        };
+        debug_assert_eq!(
+            self.vif(vif).map(|config| config.role),
+            Some(role),
+            "a key's interface is configured in its scope's role"
+        );
+        if let CheckedKeyScope::AccessPointPairwise { association_id, .. } = scope {
+            debug_assert!(
+                !self.association_id_used(association_id),
+                "an association identifier holds one key"
+            );
+        }
+        self.program_key(hardware, vif, scope, temporal_key)
+            .map_err(LowerMacFault::Key)
+    }
+
+    /// Whether an installed access-point pairwise key holds
+    /// `association_id`.
+    fn association_id_used(&self, association_id: u16) -> bool {
+        self.keys.iter().flatten().any(|installed| {
+            matches!(&installed.token,
+                KeyToken::ApPairwise(slot) if slot.association_id() == association_id)
+        })
+    }
+
+    /// Program `scope`'s key into a free handle.
+    fn program_key<H: LowerMacHardware>(
+        &mut self,
+        hardware: &mut H,
+        vif: VifId,
+        scope: CheckedKeyScope,
+        temporal_key: &[u8; CCMP_128_KEY_BYTES],
+    ) -> Result<KeyHandle, CryptoKeyError> {
+        let free = self
+            .keys
+            .iter()
+            .position(Option::is_none)
+            .ok_or(CryptoKeyError::Occupied)?;
+        let token = match scope {
+            CheckedKeyScope::StationPairwise { peer } => {
+                install_sta_pairwise_ccmp(hardware, peer, temporal_key).map(KeyToken::StaPairwise)
+            }
+            CheckedKeyScope::StationGroup { key_id } => {
+                install_sta_group_ccmp(hardware, key_id, temporal_key).map(KeyToken::StaGroup)
+            }
+            CheckedKeyScope::AccessPointPairwise {
+                peer,
+                association_id,
+            } => install_ap_pairwise_ccmp(hardware, peer, association_id, temporal_key)
+                .map(KeyToken::ApPairwise),
+            CheckedKeyScope::AccessPointGroup { key_id } => {
                 install_ap_group_ccmp(hardware, key_id, temporal_key).map(KeyToken::ApGroup)
             }
-        }
-        .map_err(|error| match error {
-            CryptoKeyError::Occupied | CryptoKeyError::InvalidAccessPointAssociationId => {
-                SettingError::NoKeySlot
-            }
-            CryptoKeyError::InvalidGroupKeyId | CryptoKeyError::HardwareRejected => {
-                SettingError::InvalidKey
-            }
-        })?;
-        self.keys[free] = Some(InstalledKey {
-            vif: key.vif,
-            token,
-        });
+        }?;
+        self.keys[free] = Some(InstalledKey { vif, token });
         Ok(KeyHandle(free as u8))
     }
 
@@ -1655,15 +1978,26 @@ where
         if self.key(handle).is_none() {
             return Err(SettingError::UnknownKey);
         }
-        if self.attempts().any(|attempt| attempt.key == Some(handle)) {
+        if self.key_in_use(handle) {
             return Err(SettingError::Busy);
         }
+        self.remove_checked_key(hardware, handle);
+        Ok(())
+    }
+
+    /// Whether an attempt in flight uses `handle`.
+    pub fn key_in_use(&self, handle: KeyHandle) -> bool {
+        self.attempts().any(|attempt| attempt.key == Some(handle))
+    }
+
+    /// Remove an installed key no attempt in flight uses.
+    pub fn remove_checked_key<H: CcmpKeyHardware>(&mut self, hardware: &mut H, handle: KeyHandle) {
+        debug_assert!(!self.key_in_use(handle), "a key in use is waited for");
         self.keys[usize::from(handle.0)]
             .take()
-            .expect("checked above")
+            .expect("an installed key's handle")
             .token
             .clear(hardware);
-        Ok(())
     }
 
     fn add_rx_block_ack<H: RxBlockAckHardware>(
@@ -1686,26 +2020,91 @@ where
         let Some(bank) = self.rx_block_acks.iter().position(Option::is_none) else {
             return Ok(Err(SettingError::NoBlockAckSlot));
         };
-        match hardware.program_rx_block_ack(S31RxBlockAckAgreement {
+        match self.program_rx_block_ack(hardware, bank, vif.role, agreement) {
+            Ok(()) => Ok(Ok(())),
+            Err(S31RxBlockAckAgreementError::HardwareReadbackMismatch) => {
+                Err(LowerMacFault::RxBlockAckReadback)
+            }
+            Err(_) => Ok(Err(SettingError::InvalidBlockAck)),
+        }
+    }
+
+    /// Start an agreement whose values and state a caller's types
+    /// guarantee: `agreement.vif` is configured, its TID and window are
+    /// within the limits, its peer is individual, and a bank is free when
+    /// no agreement of the same peer and TID exists, which it replaces in
+    /// its bank.
+    ///
+    /// # Errors
+    ///
+    /// The hardware refused or misread the agreement.
+    pub fn start_checked_rx_block_ack<H: RxBlockAckHardware>(
+        &mut self,
+        hardware: &mut H,
+        agreement: RxBlockAckAgreement,
+    ) -> Result<(), LowerMacFault> {
+        let role = self
+            .vif(agreement.vif)
+            .map(|config| config.role)
+            .expect("a client's interface is configured");
+        let bank = self
+            .rx_block_ack_bank(agreement.vif, agreement.peer, agreement.tid)
+            .or_else(|| self.rx_block_acks.iter().position(Option::is_none))
+            .expect("a client's Block Ack slot holds a bank");
+        self.program_rx_block_ack(hardware, bank, role, agreement)
+            .map_err(|error| match error {
+                S31RxBlockAckAgreementError::HardwareReadbackMismatch => {
+                    LowerMacFault::RxBlockAckReadback
+                }
+                error => LowerMacFault::RxBlockAck(error),
+            })
+    }
+
+    /// End the agreement of `vif` with `peer` on `tid`: `false` when none
+    /// exists.
+    ///
+    /// # Errors
+    ///
+    /// The hardware refused to clear its bank.
+    pub fn end_checked_rx_block_ack<H: RxBlockAckHardware>(
+        &mut self,
+        hardware: &mut H,
+        vif: VifId,
+        peer: MacAddress,
+        tid: u8,
+    ) -> Result<bool, LowerMacFault> {
+        let Some(bank) = self.rx_block_ack_bank(vif, peer, tid) else {
+            return Ok(false);
+        };
+        hardware
+            .clear_rx_block_ack(bank as u8)
+            .map_err(LowerMacFault::RxBlockAck)?;
+        self.rx_block_acks[bank] = None;
+        Ok(true)
+    }
+
+    /// Program `agreement` into `bank` and record it there.
+    fn program_rx_block_ack<H: RxBlockAckHardware>(
+        &mut self,
+        hardware: &mut H,
+        bank: usize,
+        role: VifRole,
+        agreement: RxBlockAckAgreement,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        hardware.program_rx_block_ack(S31RxBlockAckAgreement {
             hardware_index: bank as u8,
-            interface: mac_interface(vif.role),
+            interface: mac_interface(role),
             peer: agreement.peer,
             tid: agreement.tid,
             starting_sequence: agreement.start_sequence,
             window: agreement.window,
-        }) {
-            Ok(()) => {}
-            Err(S31RxBlockAckAgreementError::HardwareReadbackMismatch) => {
-                return Err(LowerMacFault::RxBlockAckReadback);
-            }
-            Err(_) => return Ok(Err(SettingError::InvalidBlockAck)),
-        }
+        })?;
         self.rx_block_acks[bank] = Some(RxBlockAckEntry {
             vif: agreement.vif,
             peer: agreement.peer,
             tid: agreement.tid,
         });
-        Ok(Ok(()))
+        Ok(())
     }
 
     fn rx_block_ack_bank(&self, vif: VifId, peer: MacAddress, tid: u8) -> Option<usize> {
@@ -2191,6 +2590,56 @@ struct CommonAdmission {
     hardware_mic_length: usize,
     /// Protection, backoff and power ceiling; `no_ack` is the MPDU's.
     single: SingleAttempt,
+}
+
+/// The scope of a checked key: its role, its kind and what places it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CheckedKeyScope {
+    StationPairwise {
+        peer: MacAddress,
+    },
+    StationGroup {
+        key_id: u8,
+    },
+    AccessPointPairwise {
+        peer: MacAddress,
+        association_id: u16,
+    },
+    AccessPointGroup {
+        key_id: u8,
+    },
+}
+
+/// An MPDU attempt the core may publish, its publication planned: every
+/// value one the core supports and every state precondition holding. The
+/// core makes one inside the call that publishes it.
+struct CheckedMpdu<'slot, const BUFFER_SIZE: usize> {
+    id: TxId,
+    vif: VifId,
+    frame: Esp32s31TxBuffer<'slot, BUFFER_SIZE>,
+    admission: Admission,
+}
+
+/// The values of an MPDU attempt a caller's types guarantee: the port
+/// enabled, `id` new, the access category's queue free, `vif` configured,
+/// `key` installed for `vif`, the rate carried on the channel, the power,
+/// backoff and coexistence level within the capabilities, the length at
+/// least the header through Address 1 and within the buffer, and `no_ack`
+/// only of an individual frame at a rate that sends one without an ACK
+/// ([`LowerMacCore::submit_checked`]).
+pub struct MpduValues<'slot, const BUFFER_SIZE: usize> {
+    pub id: TxId,
+    pub vif: VifId,
+    pub access_category: WmmAccessCategory,
+    pub frame: Esp32s31TxBuffer<'slot, BUFFER_SIZE>,
+    /// An individual frame sent without soliciting its ACK.
+    pub no_ack: bool,
+    pub rate: TxPhyRate,
+    pub protection: Protection,
+    pub key: Option<KeyHandle>,
+    pub power_ceiling_dbm: Option<i8>,
+    pub backoff_slots: u16,
+    pub coex: CoexPriority,
 }
 
 /// An MPDU submission that passed admission.

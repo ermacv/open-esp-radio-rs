@@ -36,6 +36,7 @@ use super::*;
 use crate::ordinary_tx::{WifiTxPowerPair, WifiTxResources};
 use crate::station_tsf::StationTsfWrite;
 use oer_ieee80211_lower_mac::TSF_DRIFT_PPM;
+use oer_ieee80211_lower_mac::TxPayload;
 
 const STATION: MacAddress = [0x02, 0x03, 0x04, 0x05, 0x06, 0x07];
 const ACCESS_POINT: MacAddress = [0x02, 0x11, 0x12, 0x13, 0x14, 0x15];
@@ -2640,4 +2641,141 @@ fn a_core_handed_a_radio_on_another_channel_retunes_at_enable() {
     );
     // An enabling core records nothing.
     assert!(!core.radio_tuned_to(channel(1)));
+}
+
+/// The values of the attempt `attempt` builds, for the checked path.
+fn values(core: &mut Core, id: u32, frame: &[u8], no_ack: bool) -> MpduValues<'static, 512> {
+    let mut buffer = core.tx_buffer(frame.len()).expect("a spare slot");
+    buffer.frame_mut().copy_from_slice(frame);
+    MpduValues {
+        id: TxId(id),
+        vif: STA,
+        access_category: WmmAccessCategory::BestEffort,
+        frame: buffer,
+        no_ack,
+        rate: TxPhyRate::try_from(PhyRate::Legacy(LegacyRate::Ofdm24M)).unwrap(),
+        protection: Protection::None,
+        key: None,
+        power_ceiling_dbm: None,
+        backoff_slots: 7,
+        coex: CoexPriority::Normal,
+    }
+}
+
+#[test]
+fn a_checked_attempt_publishes_as_the_checked_one_of_the_port_trait() {
+    let frame = data_frame(BSSID);
+    let mut checked_hardware = Hardware::default();
+    let mut checked_core = enabled(&mut checked_hardware);
+    let request = values(&mut checked_core, 1, &frame, false);
+    checked_core
+        .submit_checked(&mut checked_hardware, request)
+        .unwrap();
+
+    let mut port_hardware = Hardware::default();
+    let mut port_core = enabled(&mut port_hardware);
+    let request = attempt(&mut port_core, 1, &frame);
+    assert_eq!(
+        submit(&mut port_core, &mut port_hardware, request),
+        Ok(Ok(()))
+    );
+
+    assert_eq!(checked_hardware.legacy, port_hardware.legacy);
+    assert_eq!(
+        complete(&mut checked_core, &mut checked_hardware, 0)[0].id,
+        TxId(1)
+    );
+}
+
+#[test]
+fn a_checked_individual_frame_goes_without_an_ack_on_request() {
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    let request = values(&mut core, 1, &data_frame(BSSID), true);
+    core.submit_checked(&mut hardware, request).unwrap();
+    assert_eq!(hardware.legacy[0].1.response(), MacLegacyTxResponse::None);
+}
+
+#[test]
+fn a_checked_key_installs_and_waits_out_the_attempt_that_uses_it() {
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    let handle = core
+        .install_checked_key(
+            &mut hardware,
+            STA,
+            CheckedKeyScope::StationPairwise { peer: BSSID },
+            &[1; 16],
+        )
+        .unwrap();
+    assert_eq!(hardware.installed_keys.len(), 1);
+    let mut protected = values(&mut core, 1, &data_frame(BSSID), false);
+    protected.key = Some(handle);
+    core.submit_checked(&mut hardware, protected).unwrap();
+    assert!(core.key_in_use(handle));
+    complete(&mut core, &mut hardware, 0);
+    assert!(!core.key_in_use(handle));
+    core.remove_checked_key(&mut hardware, handle);
+    assert_eq!(hardware.cleared_keys.len(), 1);
+}
+
+#[test]
+fn a_checked_agreement_replaces_the_one_of_its_pair_in_its_bank() {
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    let agreement = |window| RxBlockAckAgreement {
+        vif: STA,
+        peer: PEER,
+        tid: 5,
+        start_sequence: SequenceNumber::new(0).unwrap(),
+        window,
+    };
+    core.start_checked_rx_block_ack(&mut hardware, agreement(16))
+        .unwrap();
+    core.start_checked_rx_block_ack(&mut hardware, agreement(32))
+        .unwrap();
+    // Both programmed the same bank: the second replaced the first.
+    assert_eq!(
+        hardware.rx_block_acks[0].hardware_index,
+        hardware.rx_block_acks[1].hardware_index
+    );
+    assert_eq!(
+        core.end_checked_rx_block_ack(&mut hardware, STA, PEER, 5),
+        Ok(true)
+    );
+    assert_eq!(
+        core.end_checked_rx_block_ack(&mut hardware, STA, PEER, 5),
+        Ok(false)
+    );
+}
+
+#[test]
+fn checked_settings_apply_without_refusals() {
+    let mut hardware = Hardware::default();
+    let mut core = core();
+    core.configure_checked_vif(
+        &mut hardware,
+        STA,
+        VifConfig {
+            address: core.station_address(),
+            ..station()
+        },
+    );
+    assert!(hardware.station_policy.is_some());
+    core.configure_checked_vif(&mut hardware, AP, access_point());
+    assert_eq!(hardware.access_point_policy, Some(ACCESS_POINT));
+    core.set_checked_channel(channel(11));
+    let mut events = Events::default();
+    assert_eq!(
+        core.enable_checked(&mut events),
+        LifecycleStart::Retune(channel(11))
+    );
+    core.finish_retune(true, &mut events);
+    assert_eq!(events.lifecycle, [LifecycleEvent::Enabled]);
+    core.set_checked_he_bss_color(7);
+    core.disable_checked(&mut events);
+    assert_eq!(
+        events.lifecycle,
+        [LifecycleEvent::Enabled, LifecycleEvent::Disabled]
+    );
 }

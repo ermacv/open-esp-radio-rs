@@ -16,10 +16,10 @@
 //! ```text
 //! Owner<'id, B, Disabled> ── enable(self).await ──▶ Ok(Owner<'id, B, Enabled>)
 //!        ▲                                    Err(Failed::Refused(Owner<'id, B, Disabled>, refusal))
-//!        │                                    Err(Failed::Poisoned(PoisonedOwner<B>))
+//!        │                                    Err(Failed::Poisoned(PoisonedOwner<'id, B>))
 //!        └── Ok ── disable(self, sink).await ── Owner<'id, B, Enabled>
-//!                  Err(PoisonedOwner<B>)
-//! uninstall / fail_stop ──▶ Ended<B>
+//!                  Err(PoisonedOwner<'id, B>)
+//! uninstall / fail_stop ──▶ Ended<'id, B>
 //! ```
 //!
 //! - [`Owner<'id, B, Disabled>`](Owner) lends the protocol's disabled-only

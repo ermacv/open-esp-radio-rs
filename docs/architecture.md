@@ -533,12 +533,12 @@ protocol:
 **Authority.** An installed port lives in one body (`oer_radio_port::PortBody`,
 run by `run_port`) that must return `Ended`, which only the owner's
 uninstall or a fail-stop constructs. The body's `Owner` has the port's state
-as its type. An `Owner<B, Disabled>` lends the protocol's disabled-only
+as its type. An `Owner<'id, B, Disabled>` lends the protocol's disabled-only
 settings (a permanent channel move, interface configuration, and the
 port-lifetime resources such as keys and agreements, whose tokens it keeps
 and lends into each phase) and is the only state that uninstalls; its
-`enable(self)` returns an `Owner<B, Enabled>`, the disabled owner with the
-radio's refusal, or a `PoisonedOwner`. An `Owner<B, Enabled>` lends one
+`enable(self)` returns an `Owner<'id, B, Enabled>`, the disabled owner with the
+radio's refusal, or a `PoisonedOwner`. An `Owner<'id, B, Enabled>` lends one
 running phase at a time (`split`): the phase's one event consumer, its
 control (the radio-wide operations that only gate or tune admission, as
 guards with one holder, never refusing as busy; a closed transmit gate is a

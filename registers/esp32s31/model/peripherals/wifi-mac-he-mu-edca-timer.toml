@@ -2,7 +2,7 @@ schema = 2
 
 [[peripherals]]
 name = "WIFI_MAC_HE_MU_EDCA_TIMER"
-description = "Four MU-EDCA timer words decoded by complete dbg_read_muedca_timer. Durations are reported by the blob in eight-TU units. Complete blob and ROM mac_tx_set_tb set ENABLE in the timer selected by the logical TX queue before publishing the Trigger queue configuration. After open HE association and TID0 AddBA, all four ordinary-SU baseline words had ENABLE=0, TIMER/CURRENT/AIFS=0 and REACHED=1; that pre-port baseline AP emitted no Trigger frame."
+description = "Four MU-EDCA timer words decoded by complete dbg_read_muedca_timer. Durations are reported by the blob in eight-TU units. Complete blob and ROM libpp[hal_mac_tx.o]::mac_tx_set_tb and rom[]::mac_tx_set_tb set ENABLE in the timer selected by the logical TX queue before publishing the Trigger queue configuration. After open HE association and TID0 AddBA, all four ordinary-SU baseline words had ENABLE=0, TIMER/CURRENT/AIFS=0 and REACHED=1; that pre-port baseline AP emitted no Trigger frame."
 baseAddress = 0x20104DBC
 
 [[peripherals.registers]]

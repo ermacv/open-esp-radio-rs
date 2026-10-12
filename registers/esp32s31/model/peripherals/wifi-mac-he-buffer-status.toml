@@ -2,7 +2,7 @@ schema = 2
 
 [[peripherals]]
 name = "WIFI_MAC_HE_BUFFER_STATUS"
-description = "Eight interleaved hardware/software Buffer Status Report values and their shared control. Complete dbg_read_bsr_info names every exposed field. Complete hal_he_get_hw_txq_bsr independently proves the eight-byte stride and low twenty-bit hardware value. The independent blob and ROM mac_tx_set_tb bodies prove the write-side scheduler interpretation: for logical queues zero through three they replace the corresponding software BSR low twenty bits with the sum of every linked frame-state halfword at offset 0x22, then OR the queue bit into CONTROL[7:0]. Complete dbg_read_tx_ppdu independently names that exact halfword msdu_len, proving that this is an original-MSDU byte sum rather than MPDU, PSDU or encoded A-MPDU length. Complete HE BlockAck response/deletion paths separately select and clear TID_BITMAP bits through hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap. Open HE HIL observed TID_BITMAP=1 immediately after the successful TID0 AddBA transition while sustained DCM A-MPDU remained clean. A later rev0 HIL reproduced the complete ROM write order with a 47104-byte TID0 queue: CONTROL validity read back one while SOFTWARE_BSR already read zero. This qualifies the write-side address and validity edge but leaves the zero as a live-update/read-latch ambiguity until a real AP Trigger is observed."
+description = "Eight interleaved hardware/software Buffer Status Report values and their shared control. Complete dbg_read_bsr_info names every exposed field. Complete hal_he_get_hw_txq_bsr independently proves the eight-byte stride and low twenty-bit hardware value. The independent blob and ROM libpp[hal_mac_tx.o]::mac_tx_set_tb and rom[]::mac_tx_set_tb bodies prove the write-side scheduler interpretation: for logical queues zero through three they replace the corresponding software BSR low twenty bits with the sum of every linked frame-state halfword at offset 0x22, then OR the queue bit into CONTROL[7:0]. Complete dbg_read_tx_ppdu independently names that exact halfword msdu_len, proving that this is an original-MSDU byte sum rather than MPDU, PSDU or encoded A-MPDU length. Complete HE BlockAck response/deletion paths separately select and clear TID_BITMAP bits through hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap. Open HE HIL observed TID_BITMAP=1 immediately after the successful TID0 AddBA transition while sustained DCM A-MPDU remained clean. A later rev0 HIL reproduced the complete ROM write order with a 47104-byte TID0 queue: CONTROL validity read back one while SOFTWARE_BSR already read zero. This qualifies the write-side address and validity edge but leaves the zero as a live-update/read-latch ambiguity until a real AP Trigger is observed."
 baseAddress = 0x20104D74
 
 [[peripherals.registers]]
@@ -34,7 +34,7 @@ dim = 8
 dimIncrement = 0x8
 dimIndex = "0,1,2,3,4,5,6,7"
 name = "SOFTWARE_BSR%s"
-description = "WDEVTXQBSR_SW[0-7]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the sum of linked frame-state +0x22 halfwords before publishing the queue-ready bit. Complete dbg_read_tx_ppdu names that halfword msdu_len. Rev0 open HIL programmed 47104 for logical queue two with the exact ROM sequence, then observed VALUE zero immediately after validity became visible. Treat reads as live hardware state rather than durable software-write readback until a Trigger HIL resolves whether the value was consumed or rejected."
+description = "WDEVTXQBSR_SW[0-7]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM libpp[hal_mac_tx.o]::mac_tx_set_tb and rom[]::mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the sum of linked frame-state +0x22 halfwords before publishing the queue-ready bit. Complete dbg_read_tx_ppdu names that halfword msdu_len. Rev0 open HIL programmed 47104 for logical queue two with the exact ROM sequence, then observed VALUE zero immediately after validity became visible. Treat reads as live hardware state rather than durable software-write readback until a Trigger HIL resolves whether the value was consumed or rejected."
 addressOffset = 0x4
 size = 32
 access = "read-write"
@@ -58,32 +58,32 @@ bitWidth = 12
 
 [peripherals.registers.register]
 name = "CONTROL"
-description = "WDEVTXQBSR_CTRL. Complete dbg_read_bsr_info decodes all fields below. Complete blob and ROM mac_tx_set_tb perform a fresh-read RMW that ORs 1<<logical_queue into bits 7:0 after the queue configuration and software BSR value are visible; the debug function names these bits WDEVTXQBSR_VD[0-7], so the neutral validity name is retained. Complete hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap independently update TID_BITMAP through two fresh reads followed by one write. Open HE HIL qualified the TID0 set edge after successful AddBA and later read back logical queue two validity immediately after the exact ROM publication sequence."
+description = "WDEVTXQBSR_CTRL. Complete dbg_read_bsr_info decodes all fields below. Complete blob and ROM libpp[hal_mac_tx.o]::mac_tx_set_tb and rom[]::mac_tx_set_tb perform a fresh-read RMW that ORs 1<<logical_queue into bits 7:0 after the queue configuration and software BSR value are visible; the debug function names these bits WDEVTXQBSR_VD[0-7], so the neutral validity name is retained. Complete hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap independently update TID_BITMAP through two fresh reads followed by one write. Open HE HIL qualified the TID0 set edge after successful AddBA and later read back logical queue two validity immediately after the exact ROM publication sequence."
 addressOffset = 0x44
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
 name = "VALID_0"
-description = "WDEVTXQBSR_VD[0]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue zero."
+description = "WDEVTXQBSR_VD[0]. Complete libpp[hal_mac_tx.o]::mac_tx_set_tb/rom[]::mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue zero."
 bitOffset = 0
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "VALID_1"
-description = "WDEVTXQBSR_VD[1]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue one."
+description = "WDEVTXQBSR_VD[1]. Complete libpp[hal_mac_tx.o]::mac_tx_set_tb/rom[]::mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue one."
 bitOffset = 1
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "VALID_2"
-description = "WDEVTXQBSR_VD[2]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue two."
+description = "WDEVTXQBSR_VD[2]. Complete libpp[hal_mac_tx.o]::mac_tx_set_tb/rom[]::mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue two."
 bitOffset = 2
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "VALID_3"
-description = "WDEVTXQBSR_VD[3]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue three."
+description = "WDEVTXQBSR_VD[3]. Complete libpp[hal_mac_tx.o]::mac_tx_set_tb/rom[]::mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue three."
 bitOffset = 3
 bitWidth = 1
 

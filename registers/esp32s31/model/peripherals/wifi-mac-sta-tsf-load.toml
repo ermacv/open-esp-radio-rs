@@ -9,14 +9,14 @@ baseAddress = 0x2010D814
 
 [peripherals.registers.register]
 name = "CONTROL"
-description = "Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads."
+description = "Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete libpp[hal_tsf.o]::hal_get_sta_tsf sets then clears bit zero around its snapshot reads."
 addressOffset = 0x0
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
 name = "SNAPSHOT_STATION_TSF"
-description = "Complete hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."
+description = "Complete libpp[hal_tsf.o]::hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."
 bitOffset = 0
 bitWidth = 1
 
@@ -78,7 +78,7 @@ maximum = 0xFFFFFFFF
 
 [peripherals.registers.register]
 name = "SNAPSHOT_LOW"
-description = "Coherently latched low 32 bits conditionally read by complete hal_get_sta_tsf."
+description = "Coherently latched low 32 bits conditionally read by complete libpp[hal_tsf.o]::hal_get_sta_tsf."
 addressOffset = 0xC
 size = 32
 access = "read-only"
@@ -92,7 +92,7 @@ bitWidth = 32
 
 [peripherals.registers.register]
 name = "SNAPSHOT_HIGH"
-description = "Coherently latched high 32 bits conditionally read by complete hal_get_sta_tsf."
+description = "Coherently latched high 32 bits conditionally read by complete libpp[hal_tsf.o]::hal_get_sta_tsf."
 addressOffset = 0x10
 size = 32
 access = "read-only"

@@ -30,7 +30,7 @@ bitWidth = 1
 
 [peripherals.registers.register]
 name = "SOC_WAKEUP_CLEAR"
-description = "Complete hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred."
+description = "Complete libpp[hal_tsf.o]::hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred."
 addressOffset = 0x4
 size = 32
 access = "read-write"
@@ -93,7 +93,7 @@ access = "read-write"
 
 [[peripherals.registers.register.fields]]
 name = "BEACON_MISS_LIMIT"
-description = "Low four argument bits published by pwr_hal_set_mac_modem_beacon_miss_limit."
+description = "Low four argument bits published by libpp[hal_pwr.o]::pwr_hal_set_mac_modem_beacon_miss_limit."
 bitOffset = 0
 bitWidth = 4
 
@@ -109,7 +109,7 @@ bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "MODEM_STATE_SLEEP_LIMIT"
-description = "Low ten argument bits published in bits 14:5 by pwr_hal_set_mac_modem_state_sleep_limit."
+description = "Low ten argument bits published in bits 14:5 by libpp[hal_pwr.o]::pwr_hal_set_mac_modem_state_sleep_limit."
 bitOffset = 5
 bitWidth = 10
 
@@ -145,7 +145,7 @@ maximum = 0xFFFF
 
 [peripherals.registers.register]
 name = "TBTT_RF_CONTROL_WAIT_CYCLES"
-description = "Complete tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown."
+description = "Complete libpp[hal_tsf.o]::tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown."
 addressOffset = 0x14
 size = 32
 access = "read-write"
@@ -159,7 +159,7 @@ bitWidth = 24
 
 [peripherals.registers.register]
 name = "RX_BEACON_TIME_LOW"
-description = "Complete hal_set_rx_beacon_time and pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred."
+description = "Complete hal_set_rx_beacon_time and libpp[hal_pwr.o]::pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred."
 addressOffset = 0x24
 size = 32
 access = "read-write"
@@ -215,7 +215,7 @@ value = 1
 
 [[peripherals.registers.register.fields]]
 name = "MODEM_STATE_WAKEUP_PROTECT_ENABLE"
-description = "pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."
+description = "libpp[hal_pwr.o]::pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."
 bitOffset = 24
 bitWidth = 1
 
@@ -247,7 +247,7 @@ bitWidth = 1
 
 [peripherals.registers.register]
 name = "STA_TBTT_INTERVAL"
-description = "Complete hal_set_sta_tbtt_interval replaces bits 25:0 with its 32-bit argument shifted right by ten and preserves bits 31:26. Complete hal_set_sta_tbtt performs the same update from its third argument, and tsf_hal_get_tbtt_interval reads the interval back as this field shifted left by ten."
+description = "Complete hal_set_sta_tbtt_interval replaces bits 25:0 with its 32-bit argument shifted right by ten and preserves bits 31:26. Complete hal_set_sta_tbtt performs the same update from its third argument, and libpp[hal_tsf.o]::tsf_hal_get_tbtt_interval reads the interval back as this field shifted left by ten."
 addressOffset = 0x2C
 size = 32
 access = "read-write"

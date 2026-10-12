@@ -19,7 +19,7 @@ access = "read-write"
 
 [[peripherals.registers.register.fields]]
 name = "TARGET_HIGH"
-description = "Bits 34:32 of the 64-bit TSF target. Complete hal_tsf_timer_set_target replaces them from its third argument and hal_tsf_timer_get_target returns them through its second output pointer; pm_on_isr_twt_wake passes the high word of the stored 64-bit wake TSF there, and pm_twt_set_target_tsf parks a timer with an all-ones low word and seven."
+description = "Bits 34:32 of the 64-bit TSF target. Complete libpp[hal_tsf.o]::hal_tsf_timer_set_target replaces them from its third argument and hal_tsf_timer_get_target returns them through its second output pointer; libpp[pm_twt.o]::pm_on_isr_twt_wake passes the high word of the stored 64-bit wake TSF there, and libpp[pm_twt.o]::pm_twt_set_target_tsf parks a timer with an all-ones low word and seven."
 bitOffset = 0
 bitWidth = 3
 
@@ -31,7 +31,7 @@ bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "TIMER_ENABLE"
-description = "Set by hal_enable_tsf_timer and cleared by hal_disable_tsf_timer."
+description = "Set by libpp[hal_tsf.o]::hal_enable_tsf_timer and cleared by hal_disable_tsf_timer."
 bitOffset = 31
 bitWidth = 1
 
@@ -42,7 +42,7 @@ dim = 4
 dimIncrement = 0x8
 dimIndex = "0,1,2,3"
 name = "TARGET%s"
-description = "Full 32-bit timer target written by hal_tsf_timer_set_target and returned through the first output pointer by hal_tsf_timer_get_target."
+description = "Full 32-bit timer target written by libpp[hal_tsf.o]::hal_tsf_timer_set_target and returned through the first output pointer by hal_tsf_timer_get_target."
 addressOffset = 0x4
 size = 32
 access = "read-write"

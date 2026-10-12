@@ -36,7 +36,7 @@ bitWidth = 30
 
 [peripherals.registers.register]
 name = "WDEV_TIMER_TARGET_0_CONTROL"
-description = "hal_wdev_timer_target_enable selects timer zero with argument zero and replaces enable bit zero."
+description = "libpp[hal_tsf.o]::hal_wdev_timer_target_enable selects timer zero with argument zero and replaces enable bit zero."
 addressOffset = 0x10
 size = 32
 access = "read-write"
@@ -50,7 +50,7 @@ bitWidth = 1
 
 [peripherals.registers.register]
 name = "WDEV_TIMER_TARGET_0_VALUE"
-description = "hal_wdev_timer_set_target selects timer zero with argument zero and writes the supplied 32-bit target."
+description = "libpp[hal_tsf.o]::hal_wdev_timer_set_target selects timer zero with argument zero and writes the supplied 32-bit target."
 addressOffset = 0x14
 size = 32
 access = "write-only"
@@ -64,7 +64,7 @@ bitWidth = 32
 
 [peripherals.registers.register]
 name = "WDEV_TIMER_TARGET_1_CONTROL"
-description = "hal_wdev_timer_target_enable selects timer one with argument one and replaces enable bit zero."
+description = "libpp[hal_tsf.o]::hal_wdev_timer_target_enable selects timer one with argument one and replaces enable bit zero."
 addressOffset = 0x18
 size = 32
 access = "read-write"
@@ -78,7 +78,7 @@ bitWidth = 1
 
 [peripherals.registers.register]
 name = "WDEV_TIMER_TARGET_1_VALUE"
-description = "hal_wdev_timer_set_target selects timer one with argument one and writes the supplied 32-bit target."
+description = "libpp[hal_tsf.o]::hal_wdev_timer_set_target selects timer one with argument one and writes the supplied 32-bit target."
 addressOffset = 0x1C
 size = 32
 access = "write-only"

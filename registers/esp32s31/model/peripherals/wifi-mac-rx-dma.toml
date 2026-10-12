@@ -44,7 +44,7 @@ modifiedWriteValues = "clear"
 
 [[peripherals.registers.register.fields]]
 name = "WALKER_ENABLE"
-description = "Set by hal_mac_rx_enable and cleared by hal_mac_rx_disable; gates the RX descriptor walker."
+description = "Set by libpp[hal_mac.o]::hal_mac_rx_enable and cleared by libpp[hal_mac.o]::hal_mac_rx_disable; gates the RX descriptor walker."
 bitOffset = 31
 bitWidth = 1
 
@@ -76,7 +76,7 @@ maximum = 0xFFFFFFFF
 
 [peripherals.registers.register]
 name = "RX_NEXT_DESCRIPTOR"
-description = "Complete hardware current/next descriptor word. The low 20 bits are the reviewed address projection; meanings of bits 31:20 remain unknown. Complete ROM wDev_AppendRxBlocks compares the entire 32-bit word with zero after reload completion, not only ADDRESS_LOW, before it may read LAST and repair RX_DESCRIPTOR_BASE."
+description = "Complete hardware current/next descriptor word. The low 20 bits are the reviewed address projection; meanings of bits 31:20 remain unknown. Complete ROM rom[]::wDev_AppendRxBlocks compares the entire 32-bit word with zero after reload completion, not only ADDRESS_LOW, before it may read LAST and repair RX_DESCRIPTOR_BASE."
 addressOffset = 0x88
 size = 32
 access = "read-only"
@@ -88,7 +88,7 @@ bitWidth = 20
 
 [[peripherals.registers.register.fields]]
 name = "BITS_20_31_OPAQUE"
-description = "Unassigned upper state retained by the complete-word zero predicate in wDev_AppendRxBlocks. This is deliberately exposed separately from ADDRESS_LOW so production code never reconstructs or masks a register image."
+description = "Unassigned upper state retained by the complete-word zero predicate in rom[]::wDev_AppendRxBlocks. This is deliberately exposed separately from ADDRESS_LOW so production code never reconstructs or masks a register image."
 bitOffset = 20
 bitWidth = 12
 
@@ -1343,7 +1343,7 @@ dim = 8
 dimIncrement = 0x24
 dimIndex = "7,6,5,4,3,2,1,0"
 name = "RX_BLOCK_ACK_ENTRY%s_CURRENT_SEQUENCE"
-description = "Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."
+description = "Hardware-maintained twelve-bit receive/reorder sequence state. Complete libpp[hal_ampdu.o]::hal_ba_session_store snapshots this word and complete libpp[hal_ampdu.o]::hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD."
 addressOffset = 0x184
 size = 32
 access = "read-only"
@@ -1385,7 +1385,7 @@ dim = 8
 dimIncrement = 0x24
 dimIndex = "7,6,5,4,3,2,1,0"
 name = "RX_BLOCK_ACK_ENTRY%s_BITMAP_LOW_STATUS"
-description = "Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."
+description = "Hardware-maintained low reorder bitmap. Complete libpp[hal_ampdu.o]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear."
 addressOffset = 0x18C
 size = 32
 access = "read-only"
@@ -1421,7 +1421,7 @@ dim = 8
 dimIncrement = 0x24
 dimIndex = "7,6,5,4,3,2,1,0"
 name = "RX_BLOCK_ACK_ENTRY%s_BITMAP_HIGH_STATUS"
-description = "Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."
+description = "Hardware-maintained high reorder bitmap. Complete libpp[hal_ampdu.o]::hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear."
 addressOffset = 0x194
 size = 32
 access = "read-only"

@@ -2085,7 +2085,7 @@ every field transaction.</description>
           <fields>
             <field>
               <name>PHY_HOST_MAP</name>
-              <description>Project-assigned name. Host-selection field that phy_get_i2c_hostid_ replaces on every analog-register access while preserving the other bits.</description>
+              <description>Project-assigned name. Host-selection field that libphy[phy_i2c.o]::phy_get_i2c_hostid_ replaces on every analog-register access while preserving the other bits.</description>
               <bitOffset>4</bitOffset>
               <bitWidth>13</bitWidth>
               <enumeratedValues>
@@ -2331,32 +2331,32 @@ documentation establishes their electrical meaning.</description>
       <registers>
         <register>
           <name>ADC_RATE_AND_FRONT_END_CONTROL</name>
-          <description>Project-assigned name. Word whose bits 1:0 phy_adc_rate_set replaces with its rate bit and whose bits 3:2 phy_dac_rate_set clears.</description>
+          <description>Project-assigned name. Word whose bits 1:0 libphy[phy_i2c.o]::phy_adc_rate_set replaces with its rate bit and whose bits 3:2 libphy[phy_i2c.o]::phy_dac_rate_set clears.</description>
           <addressOffset>0x448</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
               <name>BIT_0_OPAQUE</name>
-              <description>Opaque: meaning not established. Bit 0, set to the ADC rate bit by phy_adc_rate_set.</description>
+              <description>Opaque: meaning not established. Bit 0, set to the ADC rate bit by libphy[phy_i2c.o]::phy_adc_rate_set.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>BIT_1_OPAQUE</name>
-              <description>Opaque: meaning not established. Bit 1, set to the ADC rate bit by phy_adc_rate_set.</description>
+              <description>Opaque: meaning not established. Bit 1, set to the ADC rate bit by libphy[phy_i2c.o]::phy_adc_rate_set.</description>
               <bitOffset>1</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>BIT_2_OPAQUE</name>
-              <description>Opaque: meaning not established. Bit 2, cleared by phy_dac_rate_set.</description>
+              <description>Opaque: meaning not established. Bit 2, cleared by libphy[phy_i2c.o]::phy_dac_rate_set.</description>
               <bitOffset>2</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>BIT_3_OPAQUE</name>
-              <description>Opaque: meaning not established. Bit 3, cleared by phy_dac_rate_set.</description>
+              <description>Opaque: meaning not established. Bit 3, cleared by libphy[phy_i2c.o]::phy_dac_rate_set.</description>
               <bitOffset>3</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -2364,7 +2364,7 @@ documentation establishes their electrical meaning.</description>
         </register>
         <register>
           <name>FE_CLOCK_GATE</name>
-          <description>Project-assigned name. Front-end clock-gate word; phy_open_fe_bb_clk writes 0x1E7.</description>
+          <description>Project-assigned name. Front-end clock-gate word; libphy[phy_init.o]::phy_open_fe_bb_clk writes 0x1E7.</description>
           <addressOffset>0x400</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -2379,7 +2379,7 @@ documentation establishes their electrical meaning.</description>
         </register>
         <register>
           <name>TABLE_MEMORY_INDEX_SOURCE</name>
-          <description>Project-assigned name. Word whose bits 31:24 phy_fe_reg_init replaces with 0xB4.</description>
+          <description>Project-assigned name. Word whose bits 31:24 libphy[phy_reg.o]::phy_fe_reg_init replaces with 0xB4.</description>
           <addressOffset>0x408</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -2394,7 +2394,7 @@ documentation establishes their electrical meaning.</description>
         </register>
         <register>
           <name>FRONT_END_AND_TONE_STOP_CONTROL</name>
-          <description>Project-assigned name. Word whose bit 2 phy_fe_reg_init sets.</description>
+          <description>Project-assigned name. Word whose bit 2 libphy[phy_reg.o]::phy_fe_reg_init sets.</description>
           <addressOffset>0x40C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -2424,7 +2424,7 @@ documentation establishes their electrical meaning.</description>
         </register>
         <register>
           <name>IQ_CORRECTION_CONTROL</name>
-          <description>Project-assigned name. Word whose bits 31:29 phy_fe_reg_init sets.</description>
+          <description>Project-assigned name. Word whose bits 31:29 libphy[phy_reg.o]::phy_fe_reg_init sets.</description>
           <addressOffset>0x438</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -2451,7 +2451,7 @@ documentation establishes their electrical meaning.</description>
         </register>
         <register>
           <name>RX_IQ_SCALE</name>
-          <description>Project-assigned name. Word whose bits 15:8 and 7:0 phy_fe_reg_init clears and phy_rxiq_scale_set replaces.</description>
+          <description>Project-assigned name. Word whose bits 15:8 and 7:0 libphy[phy_reg.o]::phy_fe_reg_init clears and phy_rxiq_scale_set replaces.</description>
           <addressOffset>0x43C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -2472,7 +2472,7 @@ documentation establishes their electrical meaning.</description>
         </register>
         <register>
           <name>FRONT_END_CLEAR_CONTROL</name>
-          <description>Project-assigned name. Word whose bit 8 phy_fe_reg_init clears.</description>
+          <description>Project-assigned name. Word whose bit 8 libphy[phy_reg.o]::phy_fe_reg_init clears.</description>
           <addressOffset>0x444</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -2487,7 +2487,7 @@ documentation establishes their electrical meaning.</description>
         </register>
         <register>
           <name>FE_BB_CLOCK_CONTROL</name>
-          <description>Project-assigned name. Word whose bits 1:0 phy_open_fe_bb_clk sets.</description>
+          <description>Project-assigned name. Word whose bits 1:0 libphy[phy_init.o]::phy_open_fe_bb_clk sets.</description>
           <addressOffset>0x800</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -2509,13 +2509,13 @@ documentation establishes their electrical meaning.</description>
           <fields>
             <field>
               <name>BITS_4_11_OPAQUE</name>
-              <description>Opaque: meaning not established. Byte phy_pwdet_reg_init replaces with 0x50.</description>
+              <description>Opaque: meaning not established. Byte libphy[phy_pwdet.o]::phy_pwdet_reg_init replaces with 0x50.</description>
               <bitOffset>4</bitOffset>
               <bitWidth>8</bitWidth>
             </field>
             <field>
               <name>BITS_20_22_OPAQUE</name>
-              <description>Opaque: meaning not established. Three-bit mode phy_pwdet_reg_init sets to 2 and phy_pwdet_sar2_init to 6.</description>
+              <description>Opaque: meaning not established. Three-bit mode libphy[phy_pwdet.o]::phy_pwdet_reg_init sets to 2 and libphy[phy_pwdet.o]::phy_pwdet_sar2_init to 6.</description>
               <bitOffset>20</bitOffset>
               <bitWidth>3</bitWidth>
             </field>
@@ -2530,13 +2530,13 @@ documentation establishes their electrical meaning.</description>
           <fields>
             <field>
               <name>BIT_9_OPAQUE</name>
-              <description>Opaque: meaning not established. Bit phy_pwdet_sar2_init clears.</description>
+              <description>Opaque: meaning not established. Bit libphy[phy_pwdet.o]::phy_pwdet_sar2_init clears.</description>
               <bitOffset>9</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>BITS_12_13_OPAQUE</name>
-              <description>Opaque: meaning not established. Two bits phy_pwdet_sar2_init sets.</description>
+              <description>Opaque: meaning not established. Two bits libphy[phy_pwdet.o]::phy_pwdet_sar2_init sets.</description>
               <bitOffset>12</bitOffset>
               <bitWidth>2</bitWidth>
             </field>
@@ -2544,7 +2544,7 @@ documentation establishes their electrical meaning.</description>
         </register>
         <register>
           <name>WORD_0810_OPAQUE</name>
-          <description>Opaque: meaning not established. Word phy_pwdet_reg_init writes 0x0F0F0FFF.</description>
+          <description>Opaque: meaning not established. Word libphy[phy_pwdet.o]::phy_pwdet_reg_init writes 0x0F0F0FFF.</description>
           <addressOffset>0x810</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -2559,7 +2559,7 @@ documentation establishes their electrical meaning.</description>
         </register>
         <register>
           <name>WORD_0814_OPAQUE</name>
-          <description>Opaque: meaning not established. Word phy_pwdet_reg_init writes 0x00FF0F64.</description>
+          <description>Opaque: meaning not established. Word libphy[phy_pwdet.o]::phy_pwdet_reg_init writes 0x00FF0F64.</description>
           <addressOffset>0x814</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -2574,7 +2574,7 @@ documentation establishes their electrical meaning.</description>
         </register>
         <register>
           <name>POWER_DETECTOR_REFERENCE</name>
-          <description>Project-assigned name. Word phy_pwdet_reg_init and phy_pwdet_sar2_init write 0xAAAA.</description>
+          <description>Project-assigned name. Word libphy[phy_pwdet.o]::phy_pwdet_reg_init and libphy[phy_pwdet.o]::phy_pwdet_sar2_init write 0xAAAA.</description>
           <addressOffset>0x818</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -2589,7 +2589,7 @@ documentation establishes their electrical meaning.</description>
         </register>
         <register>
           <name>TX_PA_CONTROL_1</name>
-          <description>Project-assigned name. Word whose bits 15:8 phy_fe_reg_init replaces with 0x96.</description>
+          <description>Project-assigned name. Word whose bits 15:8 libphy[phy_reg.o]::phy_fe_reg_init replaces with 0x96.</description>
           <addressOffset>0x870</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -2604,14 +2604,14 @@ documentation establishes their electrical meaning.</description>
         </register>
         <register>
           <name>WORD_0888_OPAQUE</name>
-          <description>Opaque: meaning not established. Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise.</description>
+          <description>Opaque: meaning not established. Word whose bit 29 libphy[phy_reg.o]::phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise.</description>
           <addressOffset>0x888</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
               <name>BIT_29_OPAQUE</name>
-              <description>Opaque: meaning not established. Band-dependent bit that phy_fe_reg_init sets in the 5 GHz band; meaning unknown.</description>
+              <description>Opaque: meaning not established. Band-dependent bit that libphy[phy_reg.o]::phy_fe_reg_init sets in the 5 GHz band; meaning unknown.</description>
               <bitOffset>29</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -2619,7 +2619,7 @@ documentation establishes their electrical meaning.</description>
         </register>
         <register>
           <name>WORD_0894_OPAQUE</name>
-          <description>Opaque: meaning not established. Word whose bit 22 phy_fe_reg_init sets.</description>
+          <description>Opaque: meaning not established. Word whose bit 22 libphy[phy_reg.o]::phy_fe_reg_init sets.</description>
           <addressOffset>0x894</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -2676,7 +2676,7 @@ documentation establishes their electrical meaning.</description>
         </register>
         <register>
           <name>IQ_CORRECTION_AUX</name>
-          <description>Project-assigned name. Word whose bits 14:13 phy_fe_reg_init sets.</description>
+          <description>Project-assigned name. Word whose bits 14:13 libphy[phy_reg.o]::phy_fe_reg_init sets.</description>
           <addressOffset>0xC0C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -2697,7 +2697,7 @@ documentation establishes their electrical meaning.</description>
         </register>
         <register>
           <name>WORD_0C20_OPAQUE</name>
-          <description>Opaque: meaning not established. Word whose bits 7:0 phy_fe_reg_init replaces with 0x57.</description>
+          <description>Opaque: meaning not established. Word whose bits 7:0 libphy[phy_reg.o]::phy_fe_reg_init replaces with 0x57.</description>
           <addressOffset>0xC20</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -2712,7 +2712,7 @@ documentation establishes their electrical meaning.</description>
         </register>
         <register>
           <name>BB_CLOCK_GATE</name>
-          <description>Project-assigned name. Baseband clock-gate word; phy_open_fe_bb_clk writes all ones.</description>
+          <description>Project-assigned name. Baseband clock-gate word; libphy[phy_init.o]::phy_open_fe_bb_clk writes all ones.</description>
           <addressOffset>0x7C80</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -3318,7 +3318,7 @@ documentation establishes their electrical meaning.</description>
             </field>
             <field>
               <name>RX_ASSOCIATED_AUXILIARY_5</name>
-              <description>Project-assigned name. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity.</description>
+              <description>Project-assigned name. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete libpp[wdev.o]::wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity.</description>
               <bitOffset>5</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -3414,7 +3414,7 @@ documentation establishes their electrical meaning.</description>
             </field>
             <field>
               <name>RX_ASSOCIATED_AUXILIARY_24</name>
-              <description>Project-assigned name. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity.</description>
+              <description>Project-assigned name. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete libpp[wdev.o]::wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity.</description>
               <bitOffset>24</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -3768,7 +3768,7 @@ documentation establishes their electrical meaning.</description>
         </register>
         <register>
           <name>SOC_WAKEUP_CLEAR</name>
-          <description>Project-assigned name. Complete hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred.</description>
+          <description>Project-assigned name. Complete libpp[hal_tsf.o]::hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred.</description>
           <addressOffset>0x4</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -3832,7 +3832,7 @@ documentation establishes their electrical meaning.</description>
           <fields>
             <field>
               <name>BEACON_MISS_LIMIT</name>
-              <description>Project-assigned name. Low four argument bits published by pwr_hal_set_mac_modem_beacon_miss_limit.</description>
+              <description>Project-assigned name. Low four argument bits published by libpp[hal_pwr.o]::pwr_hal_set_mac_modem_beacon_miss_limit.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>4</bitWidth>
               <writeConstraint>
@@ -3850,7 +3850,7 @@ documentation establishes their electrical meaning.</description>
             </field>
             <field>
               <name>MODEM_STATE_SLEEP_LIMIT</name>
-              <description>Project-assigned name. Low ten argument bits published in bits 14:5 by pwr_hal_set_mac_modem_state_sleep_limit.</description>
+              <description>Project-assigned name. Low ten argument bits published in bits 14:5 by libpp[hal_pwr.o]::pwr_hal_set_mac_modem_state_sleep_limit.</description>
               <bitOffset>5</bitOffset>
               <bitWidth>10</bitWidth>
               <writeConstraint>
@@ -3891,7 +3891,7 @@ documentation establishes their electrical meaning.</description>
         </register>
         <register>
           <name>TBTT_RF_CONTROL_WAIT_CYCLES</name>
-          <description>Project-assigned name. Complete tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown.</description>
+          <description>Project-assigned name. Complete libpp[hal_tsf.o]::tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown.</description>
           <addressOffset>0x14</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -3906,7 +3906,7 @@ documentation establishes their electrical meaning.</description>
         </register>
         <register>
           <name>RX_BEACON_TIME_LOW</name>
-          <description>Project-assigned name. Complete hal_set_rx_beacon_time and pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred.</description>
+          <description>Project-assigned name. Complete hal_set_rx_beacon_time and libpp[hal_pwr.o]::pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred.</description>
           <addressOffset>0x24</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -3967,7 +3967,7 @@ documentation establishes their electrical meaning.</description>
             </field>
             <field>
               <name>MODEM_STATE_WAKEUP_PROTECT_ENABLE</name>
-              <description>Project-assigned name. pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it.</description>
+              <description>Project-assigned name. libpp[hal_pwr.o]::pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it.</description>
               <bitOffset>24</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -3999,7 +3999,7 @@ documentation establishes their electrical meaning.</description>
         </register>
         <register>
           <name>STA_TBTT_INTERVAL</name>
-          <description>Project-assigned name. Complete hal_set_sta_tbtt_interval replaces bits 25:0 with its 32-bit argument shifted right by ten and preserves bits 31:26. Complete hal_set_sta_tbtt performs the same update from its third argument, and tsf_hal_get_tbtt_interval reads the interval back as this field shifted left by ten.</description>
+          <description>Project-assigned name. Complete hal_set_sta_tbtt_interval replaces bits 25:0 with its 32-bit argument shifted right by ten and preserves bits 31:26. Complete hal_set_sta_tbtt performs the same update from its third argument, and libpp[hal_tsf.o]::tsf_hal_get_tbtt_interval reads the interval back as this field shifted left by ten.</description>
           <addressOffset>0x2C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -4076,14 +4076,14 @@ documentation establishes their electrical meaning.</description>
       <registers>
         <register>
           <name>CONTROL</name>
-          <description>Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads.</description>
+          <description>Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete libpp[hal_tsf.o]::hal_get_sta_tsf sets then clears bit zero around its snapshot reads.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
               <name>SNAPSHOT_STATION_TSF</name>
-              <description>Project-assigned name. Complete hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads.</description>
+              <description>Project-assigned name. Complete libpp[hal_tsf.o]::hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -4151,7 +4151,7 @@ documentation establishes their electrical meaning.</description>
         </register>
         <register>
           <name>SNAPSHOT_LOW</name>
-          <description>Project-assigned name. Coherently latched low 32 bits conditionally read by complete hal_get_sta_tsf.</description>
+          <description>Project-assigned name. Coherently latched low 32 bits conditionally read by complete libpp[hal_tsf.o]::hal_get_sta_tsf.</description>
           <addressOffset>0xC</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
@@ -4166,7 +4166,7 @@ documentation establishes their electrical meaning.</description>
         </register>
         <register>
           <name>SNAPSHOT_HIGH</name>
-          <description>Project-assigned name. Coherently latched high 32 bits conditionally read by complete hal_get_sta_tsf.</description>
+          <description>Project-assigned name. Coherently latched high 32 bits conditionally read by complete libpp[hal_tsf.o]::hal_get_sta_tsf.</description>
           <addressOffset>0x10</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
@@ -4228,7 +4228,7 @@ documentation establishes their electrical meaning.</description>
             </field>
             <field>
               <name>PHY_AUX_FORCE</name>
-              <description>Project-assigned name. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge.</description>
+              <description>Project-assigned name. Complete libphy[phy_reg.o]::phy_disable_cca writes encoding two and complete libphy[phy_reg.o]::phy_enable_cca writes zero in their second fresh-read edge.</description>
               <bitOffset>28</bitOffset>
               <bitWidth>2</bitWidth>
               <writeConstraint>
@@ -4240,7 +4240,7 @@ documentation establishes their electrical meaning.</description>
             </field>
             <field>
               <name>FORCE</name>
-              <description>Project-assigned name. Value three suppresses CCA while invalidating a timed-out queue. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero.</description>
+              <description>Project-assigned name. Value three suppresses CCA while invalidating a timed-out queue. Complete libphy[phy_reg.o]::phy_disable_cca writes encoding two and complete libphy[phy_reg.o]::phy_enable_cca writes zero.</description>
               <bitOffset>30</bitOffset>
               <bitWidth>2</bitWidth>
               <writeConstraint>

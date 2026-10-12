@@ -186,6 +186,13 @@ const RX_BLOCK_ACK_BANKS: usize = RESOURCES.rx_block_ack_entries as usize;
 const BLOCK_ACK_REQUEST_FRAME_CONTROL: u8 = 0x84;
 /// Frame Control, Duration and Address 1: the bytes the owner reads.
 const MIN_FRAME_LENGTH: usize = 10;
+
+/// The longest PSDU (MPDU, MIC and FCS) every transmit program carries:
+/// the legacy program's 12-bit length field
+/// (the `signal` check of `MacLegacyTxProgram::new`, which
+/// `TxSlot::submit_legacy` turns into `TxError::Invalid`); the HE program
+/// takes up to 0x3ff7.
+const MAX_PROGRAM_PSDU: usize = 0x0fff;
 /// Light-sleep wake lead the vendor power manager publishes beside the
 /// station TBTT lead (`g_pm_cfg[16]`, as
 /// `roles/esp32s31/ieee80211/sta/src/modem_sleep.rs` records it). The port
@@ -207,12 +214,20 @@ const STATION_RECEIVE_FILTERS: ReceiveFilter =
 /// services are exactly the hardware-owned operations of
 /// [`ESP32S31_MAC_SERVICE_CAPABILITIES`]. The longest MPDU leaves room for
 /// the TX metadata word, the CCMP MIC and the FCS in the four-byte-aligned
-/// descriptor capacity. Each of the four ordinary EDCA queues holds one
+/// descriptor capacity, and with the MIC and the FCS fits the transmit
+/// programs' PSDU length field (the legacy program's 12 bits). Each of the four ordinary EDCA queues holds one
 /// attempt. 5 GHz is absent from the ESP32-S31.
 // CAPABILITY: wifi-interfaces-and-operating-modes-lower-mac-port-concurrent-queue-attempts
 pub const fn esp32s31_lower_mac_capabilities(buffer_size: usize) -> LowerMacCapabilities {
-    let usable =
+    let buffered =
         (buffer_size & !3).saturating_sub(TX_METADATA_SIZE + TX_CCMP_MIC_SIZE + TX_FCS_SIZE);
+    // The transmit programs' length fields bound a PSDU too.
+    let programmable = MAX_PROGRAM_PSDU - TX_CCMP_MIC_SIZE - TX_FCS_SIZE;
+    let usable = if buffered < programmable {
+        buffered
+    } else {
+        programmable
+    };
     LowerMacCapabilities {
         bands: BandSet::GHZ2_4,
         widths: WidthSet::MHZ20.union(WidthSet::MHZ40),
@@ -958,7 +973,7 @@ where
     /// queue free, `vif` configured, `key` installed for `vif`, the rate
     /// carried on the channel, the power, backoff and coexistence level
     /// within the capabilities, the length at least the header through
-    /// Address 1 and within the buffer, and the
+    /// Address 1 and at most the capabilities' `max_mpdu_length`, and the
     /// response one the frame and rate carry (`no_ack` only of an
     /// individual frame at a rate that sends one without an ACK).
     fn checked_mpdu(
@@ -989,8 +1004,10 @@ where
         // The transfer the transmit owner publishes, rounded up to a word.
         let transfer = (TX_METADATA_SIZE + length + mic + TX_FCS_SIZE + 3) & !3;
         debug_assert!(
-            length >= MIN_FRAME_LENGTH && transfer <= BUFFER_SIZE,
-            "a frame's length reaches Address 1 and fits its buffer"
+            length >= MIN_FRAME_LENGTH
+                && transfer <= BUFFER_SIZE
+                && length + mic + TX_FCS_SIZE <= MAX_PROGRAM_PSDU,
+            "a frame's length reaches Address 1 and fits its buffer and program"
         );
         debug_assert!(
             key.is_none_or(|handle| self
@@ -1226,6 +1243,7 @@ where
         if length < MIN_FRAME_LENGTH
             || (TX_METADATA_SIZE + length + common.hardware_mic_length + TX_FCS_SIZE + 3) & !3
                 > BUFFER_SIZE
+            || length + common.hardware_mic_length + TX_FCS_SIZE > MAX_PROGRAM_PSDU
         {
             return Err(SubmitError::InvalidLength);
         }
@@ -1611,9 +1629,7 @@ where
             // The policy reads each attempt's AIFSN from the set; it
             // validates all four records before installing any.
             LowerMacSetting::Edca(parameters) => Ok(self
-                .tx
-                .policy_mut()
-                .install_wmm(parameters)
+                .install_edca(parameters)
                 .map_err(|_| SettingError::Unsupported)),
             LowerMacSetting::RxBeaconPriority(priority) => {
                 Ok(self.set_rx_beacon_priority(hardware, priority))
@@ -1681,14 +1697,25 @@ where
 
     /// The EDCA parameters every queue's attempts contend with, whose
     /// records lie within the capabilities' limits.
+    ///
+    /// # Panics
+    ///
+    /// A record outside the limits, which a checked value never holds.
     pub fn set_checked_edca(
         &mut self,
         parameters: oer_ieee80211_mac::extensions::wmm::WmmParameterSet,
     ) {
-        self.tx
-            .policy_mut()
-            .install_wmm(parameters)
+        self.install_edca(parameters)
             .expect("checked EDCA records are within the limits");
+    }
+
+    /// Install `parameters`: the policy validates every record before it
+    /// installs any.
+    fn install_edca(
+        &mut self,
+        parameters: oer_ieee80211_mac::extensions::wmm::WmmParameterSet,
+    ) -> Result<(), oer_esp32s31_ieee80211_mac::edca::EdcaParametersError> {
+        self.tx.policy_mut().install_wmm(parameters)
     }
 
     /// Tune the next `Enable` to `channel`, on a disabled port.
@@ -1737,10 +1764,23 @@ where
     }
 
     /// Configure an interface whose configuration a caller's types
-    /// guarantee: no attempt of `vif` in flight, no other interface of its
-    /// role, no monitor reception, a station's address the cold start's
-    /// ([`Self::station_address`]), receive rules within the role's limits
-    /// and a BSSID they can take.
+    /// guarantee:
+    ///
+    /// - `vif` one of the core's interfaces;
+    /// - no attempt of `vif` in flight;
+    /// - no other interface of its role;
+    /// - no monitor reception while it receives anything;
+    /// - its receive rules within the role's limits;
+    /// - a station's address the cold start's ([`Self::station_address`]),
+    ///   and a BSSID whenever it receives anything but other BSSs'
+    ///   management;
+    /// - an access point's address individual, and its BSSID none or its
+    ///   address.
+    ///
+    /// # Panics
+    ///
+    /// An interface the core does not have, or a configuration the receive
+    /// rules cannot take, which a checked one never is.
     pub fn configure_checked_vif<H: LowerMacHardware>(
         &mut self,
         hardware: &mut H,
@@ -1751,7 +1791,10 @@ where
             !self.attempts().any(|attempt| attempt.vif == vif),
             "an interface's frames in flight are waited for"
         );
-        debug_assert!(!self.monitor, "monitor reception is off");
+        debug_assert!(
+            !self.monitor || config.receive.is_empty(),
+            "an interface receives nothing while the monitor does"
+        );
         debug_assert!(
             !self.vifs.iter().enumerate().any(|(other, configured)| {
                 other != usize::from(vif.0)
@@ -2624,7 +2667,8 @@ struct CheckedMpdu<'slot, const BUFFER_SIZE: usize> {
 /// enabled, `id` new, the access category's queue free, `vif` configured,
 /// `key` installed for `vif`, the rate carried on the channel, the power,
 /// backoff and coexistence level within the capabilities, the length at
-/// least the header through Address 1 and within the buffer, and `no_ack`
+/// least the header through Address 1 and at most the capabilities'
+/// `max_mpdu_length`, and `no_ack`
 /// only of an individual frame at a rate that sends one without an ACK
 /// ([`LowerMacCore::submit_checked`]).
 pub struct MpduValues<'slot, const BUFFER_SIZE: usize> {

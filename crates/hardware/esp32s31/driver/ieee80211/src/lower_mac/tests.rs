@@ -2779,3 +2779,150 @@ fn checked_settings_apply_without_refusals() {
         [LifecycleEvent::Enabled, LifecycleEvent::Disabled]
     );
 }
+
+#[test]
+fn the_longest_mpdu_is_bounded_by_the_transmit_programs_too() {
+    // A large buffer does not admit a PSDU the legacy program cannot carry.
+    let capabilities = esp32s31_lower_mac_capabilities(8192);
+    assert_eq!(
+        usize::from(capabilities.max_mpdu_length),
+        MAX_PROGRAM_PSDU - TX_CCMP_MIC_SIZE - TX_FCS_SIZE
+    );
+    // The model's buffers stay the bound below it.
+    assert!(esp32s31_lower_mac_capabilities(512).max_mpdu_length < capabilities.max_mpdu_length);
+}
+
+#[test]
+fn checked_edca_installs_as_the_port_traits_setting_does() {
+    let mut checked_hardware = Hardware::default();
+    let mut checked = enabled(&mut checked_hardware);
+    checked.set_checked_edca(wmm_with_best_effort_txop(94));
+    let mut port_hardware = Hardware::default();
+    let mut port = enabled(&mut port_hardware);
+    port.apply(
+        &mut port_hardware,
+        LowerMacSetting::Edca(wmm_with_best_effort_txop(94)),
+    )
+    .unwrap()
+    .unwrap();
+    let txop = |core: &Core| {
+        core.tx
+            .policy()
+            .access_policy(LegacyTxQueue::BestEffort)
+            .txop_limit_units_32_us()
+    };
+    assert_eq!(txop(&checked), 94);
+    assert_eq!(txop(&checked), txop(&port));
+}
+
+/// A core whose one buffer outgrows the transmit programs.
+type LargeCore = LowerMacCore<'static, Power, fn() -> u32, Timer, 8192, 1>;
+
+fn large_slot() -> Pin<&'static mut TxSlot<8192>> {
+    Pin::static_mut(Box::leak(Box::new(TxSlot::new_model())))
+}
+
+#[test]
+fn the_port_trait_refuses_a_psdu_past_the_program_limit() {
+    let mut hardware = Hardware::default();
+    let mut core = LargeCore::new(
+        OrdinaryTxOwner::new(WifiTxResources {
+            slot: large_slot(),
+            policy: WifiTxRuntimePolicy::vendor_defaults(),
+            power: Power,
+            entropy: entropy as fn() -> u32,
+            timer: Timer::default(),
+        }),
+        [large_slot()],
+        LowerMacConfig {
+            station_address: STATION,
+            channel: channel(6),
+            publication_timeout: oer_time::Duration::from_micros(TIMEOUT),
+            tsf_epoch: 1,
+        },
+        &RadioNine,
+    );
+    core.apply(
+        &mut hardware,
+        LowerMacSetting::Vif {
+            vif: STA,
+            config: Some(station()),
+        },
+    )
+    .unwrap()
+    .unwrap();
+    core.lifecycle(LifecycleCommand::Enable, &mut Events::default())
+        .unwrap();
+    let request = |core: &mut LargeCore, id, len| {
+        // A buffer of `len`, past what `tx_buffer` lends when too long.
+        let slot = core.spare[0].take().expect("the spare slot");
+        let mut frame = Esp32s31TxBuffer { slot, len };
+        frame.frame_mut()[..26].copy_from_slice(&data_frame(BSSID));
+        TxAttempt {
+            id: TxId(id),
+            vif: STA,
+            access_category: WmmAccessCategory::BestEffort,
+            payload: TxPayload {
+                frame,
+                body: None,
+                response: TxResponse::Ack,
+            },
+            rate: PhyRate::Legacy(LegacyRate::Ofdm24M),
+            protection: Protection::None,
+            key: KeySelector::Plaintext,
+            power: TxPower::Calibrated,
+            backoff: Backoff::Slots(7),
+            coex: CoexPriority::Normal,
+        }
+    };
+    let longest = MAX_PROGRAM_PSDU - TX_FCS_SIZE;
+    let too_long = request(&mut core, 1, longest + 1);
+    let refused = core.submit(&mut hardware, too_long).unwrap().unwrap_err();
+    assert_eq!(refused.error, SubmitError::InvalidLength);
+    core.release_tx_buffer(refused.attempt.payload.frame);
+    assert_eq!(
+        {
+            let longest = request(&mut core, 2, longest);
+            core.submit(&mut hardware, longest)
+        }
+        .unwrap()
+        .map_err(|refused| refused.error),
+        Ok(())
+    );
+}
+
+#[test]
+fn the_port_trait_refuses_an_edca_set_outside_the_limits_and_keeps_the_installed_one() {
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    core.apply(
+        &mut hardware,
+        LowerMacSetting::Edca(wmm_with_best_effort_txop(94)),
+    )
+    .unwrap()
+    .unwrap();
+    // A best-effort ECWmax of 11 lies outside the hardware's exponents.
+    let record = |aifsn, ecw_max| oer_ieee80211_mac::extensions::wmm::WmmAcParameters {
+        admission_control_mandatory: false,
+        aifsn,
+        ecw_min: 4,
+        ecw_max,
+        txop_limit_units_32_us: 47,
+    };
+    let outside = oer_ieee80211_mac::extensions::wmm::WmmParameterSet::new(
+        0,
+        false,
+        [record(3, 11), record(7, 10), record(2, 10), record(2, 10)],
+    );
+    assert_eq!(
+        core.apply(&mut hardware, LowerMacSetting::Edca(outside)),
+        Ok(Err(SettingError::Unsupported))
+    );
+    assert_eq!(
+        core.tx
+            .policy()
+            .access_policy(LegacyTxQueue::BestEffort)
+            .txop_limit_units_32_us(),
+        94
+    );
+}

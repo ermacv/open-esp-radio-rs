@@ -26,6 +26,7 @@ const STA_GROUP_HARDWARE_INDEX: u8 = 1;
 pub const AP_PAIRWISE_HARDWARE_INDEX_BASE: u8 = 8;
 pub const AP_PAIRWISE_SLOT_COUNT: u8 = 15;
 const AP_GROUP_HARDWARE_INDEX_BASE: u8 = 1;
+const MIN_WPA2_GTK_ID: u8 = 1;
 const MAX_WPA2_GTK_ID: u8 = 3;
 const CCMP_KEY_BYTES: usize = 16;
 
@@ -467,14 +468,16 @@ pub fn install_ap_pairwise_ccmp<H: CcmpKeyHardware>(
 }
 
 /// Install one AP GTK. Vendor AP group slots map directly to `1 + key_id`;
-/// the first service provisions key id one and therefore owns slot 2.
+/// the first service provisions key id one and therefore owns slot 2. Key
+/// id 0 is the pairwise key's in WPA2 and would take entry 1, the station
+/// group key's: it is refused.
 pub fn install_ap_group_ccmp<H: CcmpKeyHardware>(
     hardware: &mut H,
     key_id: u8,
     temporal_key: &[u8; CCMP_KEY_BYTES],
 ) -> Result<ApGroupCcmpSlot, CryptoKeyError> {
     let tx_key_id = match CcmpKeyId::new(key_id) {
-        Some(tx_key_id) if key_id <= MAX_WPA2_GTK_ID => tx_key_id,
+        Some(tx_key_id) if (MIN_WPA2_GTK_ID..=MAX_WPA2_GTK_ID).contains(&key_id) => tx_key_id,
         _ => return Err(CryptoKeyError::InvalidGroupKeyId),
     };
     let hardware_index = AP_GROUP_HARDWARE_INDEX_BASE + key_id;

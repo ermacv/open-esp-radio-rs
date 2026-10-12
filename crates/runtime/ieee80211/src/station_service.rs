@@ -691,7 +691,10 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                 self.rates
                     .associated(&peer.associated.rate_peer(), &peer.response);
             }
-            Follow::Disconnected => self.rates.disconnected(),
+            Follow::Disconnected => {
+                self.rates.disconnected();
+                self.data.leave();
+            }
             Follow::Unsent { ticket, buffer } => {
                 self.counters.unsent_frames += 1;
                 self.station.input(now, StaInput::Unsent { ticket, buffer });
@@ -721,6 +724,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                 (io.output)(ServiceOutput::Notice(notice));
                 if let StaNotice::Disconnected(_) = notice {
                     self.rates.disconnected();
+                    self.data.leave();
                 }
             }
         }

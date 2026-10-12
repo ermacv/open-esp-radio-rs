@@ -980,6 +980,10 @@ impl<'id> Driver<'id> {
                 self.publish(held);
             }
         }
+        // A queue the air released publishes without a command.
+        if self.gate_open {
+            self.publish(held);
+        }
         self.receive(held);
     }
 

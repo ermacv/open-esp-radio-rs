@@ -230,16 +230,35 @@ async fn yield_now() {
     .await;
 }
 
-/// Poll `future` with a waker that does nothing until it is ready.
+/// How long a service test may take before its watchdog fails it.
+const WATCHDOG: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Poll `future` with a waker that does nothing until it is ready, under a
+/// watchdog: a loop inside one poll never returns to the poll count, so a
+/// watchdog thread aborts the test process once `WATCHDOG` passed, and a
+/// loop is a failed test, not a hang. (A panic in the watchdog's own
+/// thread would not fail the test.)
 fn block_on<F: Future>(future: F) -> F::Output {
+    let (done, watched) = std::sync::mpsc::channel::<()>();
+    let test = std::string::String::from(std::thread::current().name().unwrap_or("a test"));
+    let watchdog = std::thread::spawn(move || {
+        if let Err(std::sync::mpsc::RecvTimeoutError::Timeout) = watched.recv_timeout(WATCHDOG) {
+            std::eprintln!("watchdog: {test} did not end within {WATCHDOG:?}");
+            std::process::abort();
+        }
+    });
     let mut future = core::pin::pin!(future);
     let mut context = core::task::Context::from_waker(Waker::noop());
+    let mut value = None;
     for _ in 0..100_000 {
-        if let Poll::Ready(value) = future.as_mut().poll(&mut context) {
-            return value;
+        if let Poll::Ready(ready) = future.as_mut().poll(&mut context) {
+            value = Some(ready);
+            break;
         }
     }
-    panic!("the test never ended");
+    let _ = done.send(());
+    let _ = watchdog.join();
+    value.expect("the test never ended")
 }
 
 /// The world the test plays: the air, the clock, the application's ends.
@@ -793,6 +812,79 @@ fn a_passed_station_deadline_ticks_the_station() {
             world.sent(&mut seen, AUTHENTICATION).await;
             // No response: the wait passes and the station tries again.
             world.sent(&mut seen, AUTHENTICATION).await;
+        })
+    });
+}
+
+/// The data queue belongs to the link (owner decision on #563, comment
+/// 6133717216): a disconnection during a background scan's absence, while
+/// the port holds the link's attempts, leaves none of them to go after the
+/// reconnection, and every data token comes back.
+#[test]
+fn a_disconnection_during_an_absence_leaves_no_old_frame_to_go_after_the_reconnection() {
+    let mut config = config(StaSecurity::Open);
+    config.channels[1] = SupportedChannel::new(Channel::ghz2_4(1, ChannelWidth::Mhz20).unwrap());
+    run_with(config, |world| {
+        Box::pin(async move {
+            const OLD: [u8; 6] = [0x02, 0, 0, 0, 0, 0x0a];
+            const NEW: [u8; 6] = [0x02, 0, 0, 0, 0, 0x0b];
+            let to = |destination: [u8; 6]| {
+                move |frame: &AirFrame| kind(frame) == DATA && frame.frame[16..22] == destination
+            };
+            let mut seen = 0;
+            world.associate(&mut seen, false).await;
+            world
+                .notice(StaNotice::Connected {
+                    bssid: BSSID,
+                    channel: 6,
+                })
+                .await;
+            // The link's four MPDUs wait at the port.
+            world.air.hold(WmmAccessCategory::BestEffort, true);
+            for _ in 0..4 {
+                world.send_msdu(OLD);
+                for _ in 0..20 {
+                    yield_now().await;
+                }
+            }
+            // The absence starts; the station leaves during it.
+            world
+                .command(ServiceCommand::Station(StaCommand::BackgroundScan))
+                .await;
+            world.sent(&mut seen, NULL).await;
+            world
+                .command(ServiceCommand::Station(StaCommand::Disconnect))
+                .await;
+            world
+                .notice(StaNotice::Disconnected(
+                    oer_ieee80211_sta::machine::StaDisconnectReason::Requested,
+                ))
+                .await;
+            // Reconnected: every data token is back, so the machine takes
+            // four MSDUs again and two more wait in the stack's queue.
+            world.associate(&mut seen, false).await;
+            let mut sent = 0;
+            while world.try_send_msdu(NEW) {
+                sent += 1;
+                for _ in 0..20 {
+                    yield_now().await;
+                }
+            }
+            assert_eq!(sent, 4 + 2);
+            // The queue opens: only the new link's frames go.
+            world.air.hold(WmmAccessCategory::BestEffort, false);
+            for _ in 0..6 {
+                world.sent(&mut seen, DATA).await;
+            }
+            for _ in 0..5 {
+                for _ in 0..20 {
+                    yield_now().await;
+                }
+                world.clock.advance_to_next_deadline();
+            }
+            let air = world.air.sent();
+            assert!(!air.iter().any(to(OLD)), "no frame of the old link went");
+            assert_eq!(air.iter().filter(|frame| to(NEW)(frame)).count(), 6);
         })
     });
 }

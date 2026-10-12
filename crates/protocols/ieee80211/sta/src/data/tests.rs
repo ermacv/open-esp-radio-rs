@@ -382,22 +382,43 @@ fn ended(status: TxStatus, transmissions: u8) -> TxCompletion {
 
 /// The TID and sequence number of a QoS Data MPDU in its buffer.
 fn tid_and_sequence(frame: &[u8]) -> (u8, u16) {
-    (frame[24] & 0x0f, u16::from_le_bytes([frame[22], frame[23]]) >> 4)
+    (
+        frame[24] & 0x0f,
+        u16::from_le_bytes([frame[22], frame[23]]) >> 4,
+    )
 }
 
 #[test]
 fn an_attempt_aborted_before_the_air_goes_again_first_with_its_sequence_number() {
     let mut data = StaData::<Data, Caps>::new(
         [1, 2, 3],
-        [Buffer(std::vec![0; 1600]), Buffer(std::vec![0; 1600]), Buffer(std::vec![0; 1600])],
+        [
+            Buffer(std::vec![0; 1600]),
+            Buffer(std::vec![0; 1600]),
+            Buffer(std::vec![0; 1600]),
+        ],
     );
     let mut replay = epoch();
     let mut link = qos_link(&(), &mut replay);
     // Two MSDUs of TID 6: the first is submitted, then a newer one waits.
-    data.input(NOW, DataInput::Msdu { msdu: msdu(6), link: &mut link }).unwrap();
+    data.input(
+        NOW,
+        DataInput::Msdu {
+            msdu: msdu(6),
+            link: &mut link,
+        },
+    )
+    .unwrap();
     let first = transmit(&mut data);
     let sent = tid_and_sequence(&first.buffer.0);
-    data.input(NOW, DataInput::Msdu { msdu: msdu(6), link: &mut link }).unwrap();
+    data.input(
+        NOW,
+        DataInput::Msdu {
+            msdu: msdu(6),
+            link: &mut link,
+        },
+    )
+    .unwrap();
     // A closing gate aborts the first before any transmission.
     data.input::<Station>(
         NOW,
@@ -426,4 +447,77 @@ fn an_attempt_aborted_before_the_air_goes_again_first_with_its_sequence_number()
     )
     .unwrap();
     assert!(data.poll_action(NOW).is_none());
+}
+
+#[test]
+fn a_link_that_ends_drains_its_queue_and_its_submitted_attempts_never_go_again() {
+    let mut data = StaData::<Data, Caps>::new(
+        [1, 2, 3],
+        [
+            Buffer(std::vec![0; 1600]),
+            Buffer(std::vec![0; 1600]),
+            Buffer(std::vec![0; 1600]),
+        ],
+    );
+    let mut replay = epoch();
+    let mut link = qos_link(&(), &mut replay);
+    // One MPDU submitted and two owed on the link.
+    data.input(
+        NOW,
+        DataInput::Msdu {
+            msdu: msdu(0),
+            link: &mut link,
+        },
+    )
+    .unwrap();
+    let submitted = transmit(&mut data);
+    data.input(
+        NOW,
+        DataInput::Msdu {
+            msdu: msdu(0),
+            link: &mut link,
+        },
+    )
+    .unwrap();
+    data.input(
+        NOW,
+        DataInput::Msdu {
+            msdu: msdu(6),
+            link: &mut link,
+        },
+    )
+    .unwrap();
+    assert!(!data.accepts());
+    // The link ends: the owed ones drain into their tokens, counted.
+    data.leave();
+    assert!(data.poll_action(NOW).is_none());
+    assert_eq!(data.counters().left_behind, 2);
+    // The submitted one, aborted before the air, returns its tokens and
+    // does not go again: the retry rule holds within one link.
+    data.input::<Station>(
+        NOW,
+        DataInput::TxDone {
+            ticket: submitted.ticket,
+            buffer: submitted.buffer,
+            completion: ended(TxStatus::Aborted, 0),
+        },
+    )
+    .unwrap();
+    assert!(data.poll_action(NOW).is_none());
+    assert_eq!(data.counters().left_behind, 3);
+    assert_eq!(data.counters().lost_tokens, 0);
+    // Every token is back: a new link takes three MSDUs again.
+    let mut replay = epoch();
+    let mut link = qos_link(&(), &mut replay);
+    for _ in 0..3 {
+        data.input(
+            NOW,
+            DataInput::Msdu {
+                msdu: msdu(0),
+                link: &mut link,
+            },
+        )
+        .unwrap();
+    }
+    assert!(!data.accepts());
 }

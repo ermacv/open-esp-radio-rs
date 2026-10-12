@@ -71,12 +71,13 @@ pub enum DataInput<'a, 'l, 'v, D: StaDataTokens, T: StaTokens> {
         link: &'l mut LinkView<'v, T>,
     },
     /// A data MPDU's terminal: its ticket and buffer come back. An attempt
-    /// that ended before any transmission (a closing gate aborts the ones
-    /// it holds) goes again: back at the head of its TID's queue, before
-    /// newer MSDUs, in its buffer, which comes back fresh, with its
-    /// sequence number ([owner decision on #563]).
+    /// of the current link that ended before any transmission (a closing
+    /// gate aborts the ones it holds) goes again: back at the head of its
+    /// TID's queue, before newer MSDUs, in its buffer, which comes back
+    /// fresh, with its sequence number ([owner decision on #563]). One of
+    /// a link that ended only returns its tokens ([`StaData::leave`]).
     ///
-    /// [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563
+    /// [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6132835650
     TxDone {
         /// Its ticket.
         ticket: D::Ticket,
@@ -136,6 +137,8 @@ struct Owed<D: StaDataTokens, K> {
 /// What the machine keeps of a submitted MPDU to send it again: its
 /// buffer holds the frame.
 struct InFlight {
+    /// The link it was encoded for.
+    link: u32,
     len: usize,
     access_category: WmmAccessCategory,
     protected: bool,
@@ -150,6 +153,10 @@ pub struct DataCounters {
     pub overflows: u32,
     /// Tokens given back beyond the machine's own: dropped.
     pub lost_tokens: u32,
+    /// MPDUs of a link that ended before they reached the air: the ones
+    /// owed when it ended, and its submitted ones that ended without a
+    /// transmission.
+    pub left_behind: u32,
 }
 
 /// The connected station's data machine. `CAP` sizes each TID's queues of
@@ -166,7 +173,10 @@ pub struct StaData<D: StaDataTokens, K, const CAP: usize = 8> {
     in_flight: [Fifo<InFlight, CAP>; 8],
     /// The order of the next MSDU.
     next_order: u32,
+    /// The current link: [`Self::leave`] ends it.
+    link: u32,
     overflows: u32,
+    left_behind: u32,
 }
 
 impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const CAP: usize>
@@ -191,7 +201,9 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
             owed: [const { Fifo::new() }; 8],
             in_flight: [const { Fifo::new() }; 8],
             next_order: 0,
+            link: 0,
             overflows: 0,
+            left_behind: 0,
         }
     }
 
@@ -200,7 +212,25 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
         DataCounters {
             overflows: self.overflows,
             lost_tokens: self.tickets.lost().saturating_add(self.buffers.lost()),
+            left_behind: self.left_behind,
         }
+    }
+
+    /// The station's link ended: the queue belongs to it
+    /// ([owner decision on #563]). Every MPDU owed for it drains into its
+    /// tokens, counted; its submitted ones return their tokens with their
+    /// terminals and never go again.
+    ///
+    /// [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6133717216
+    pub fn leave(&mut self) {
+        for tid in 0..8 {
+            while let Some(owed) = self.owed[tid].pop() {
+                self.left_behind = self.left_behind.saturating_add(1);
+                self.tickets.put(owed.transmit.ticket);
+                self.buffers.put(owed.transmit.buffer);
+            }
+        }
+        self.link = self.link.wrapping_add(1);
     }
 
     /// An MPDU a full queue did not take: its tokens come back, counted.
@@ -234,6 +264,17 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
             } => {
                 let tid = tid_of(buffer.bytes_mut());
                 let in_flight = self.in_flight[tid].pop();
+                // Of a link that ended: its tokens come back, nothing more.
+                if let Some(InFlight { link, .. }) = in_flight
+                    && link != self.link
+                {
+                    if completion.transmissions == 0 {
+                        self.left_behind = self.left_behind.saturating_add(1);
+                    }
+                    self.tickets.put(ticket);
+                    self.buffers.put(buffer);
+                    return Ok(());
+                }
                 // Never on the air: the same MPDU goes again, first.
                 if completion.transmissions == 0
                     && let Some(in_flight) = in_flight
@@ -340,6 +381,7 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
             .1;
         let Owed { transmit, order } = self.owed[tid].pop()?;
         let in_flight = InFlight {
+            link: self.link,
             len: transmit.frame.len().get(),
             access_category: transmit.access_category,
             protected: transmit.protected,
@@ -473,7 +515,9 @@ fn encode_frame<T: StaTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities>
 /// otherwise.
 fn tid_of(frame: &[u8]) -> usize {
     match frame {
-        [control, _, ..] if control & 0x80 != 0 => frame.get(24).map_or(0, |qos| usize::from(qos & 0x07)),
+        [control, _, ..] if control & 0x80 != 0 => {
+            frame.get(24).map_or(0, |qos| usize::from(qos & 0x07))
+        }
         _ => 0,
     }
 }

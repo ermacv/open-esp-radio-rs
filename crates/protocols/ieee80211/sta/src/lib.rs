@@ -21,6 +21,7 @@ pub mod link_monitor;
 pub mod machine;
 pub mod modem_sleep;
 pub mod pmksa;
+pub mod power_save;
 pub mod request;
 pub mod sa_query;
 pub mod scan;

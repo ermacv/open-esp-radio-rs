@@ -47,8 +47,8 @@
 //! [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6128926225
 
 use oer_ieee80211_arbiter::{
-    Answer, CancelReason, ChannelRequest, Lease, LeasePlace, LeaveReason, Purpose, StationNotice,
-    UpstreamFact,
+    AbsenceAnswer, AbsencePlace, Answer, CancelReason, ChannelRequest, Lease, LeaseId, LeasePlace,
+    LeaveReason, Purpose, StationNotice, UpstreamFact,
 };
 use oer_ieee80211_lower_mac::{
     AckHeader, GroupAddress, HeaderSpec, Ieee80211Capabilities, IndividualAddress, MpduLength,
@@ -57,6 +57,8 @@ use oer_ieee80211_lower_mac::{
 };
 use oer_ieee80211_mac::{
     management::ProbeRequest,
+    station_beacon::parse_sta_beacon,
+    station_power_save::{StaNullDataFrame, StaPowerManagement},
     scan::{ScanRecord, ScanTable},
     security::StaSecurityPolicy,
     sequence::SequenceNumber,
@@ -67,6 +69,8 @@ use oer_ieee80211_mac::{
     },
 };
 use oer_time::{Duration, Instant};
+
+use crate::power_save::{PowerSaveDecision, PowerSaveView};
 
 use crate::join::{
     association::{StaAssociationEvent, StaAssociationPoll, StaAssociationRuntime},
@@ -89,6 +93,9 @@ pub enum StaCommand {
     Connect,
     /// Leave the network and stay idle.
     Disconnect,
+    /// Scan the channel list while connected, in absences from the
+    /// network's channel.
+    BackgroundScan,
 }
 
 /// One input of the station.
@@ -115,6 +122,11 @@ pub enum StaInput<'f, T: StaTokens, K> {
     },
     /// The arbiter's answer to the station's request.
     Answer(Answer<K>),
+    /// The arbiter's answer to the station's absence.
+    AbsenceAnswer(AbsenceAnswer<K>),
+    /// The primary lease of the channel the port moved to, which the
+    /// arbiter exchanged for the old one.
+    Exchanged(Lease<K>),
     /// A notice of the arbiter.
     Arbiter(StationNotice<K>),
     /// The receive configuration the station set took effect.
@@ -122,10 +134,27 @@ pub enum StaInput<'f, T: StaTokens, K> {
 }
 
 /// One action of the station, which the service carries out at once.
-pub enum StaAction<T: StaTokens, K> {
+pub enum StaAction<'a, T: StaTokens, K> {
     /// Ask the arbiter for a channel, with the station's place; the service
     /// hands the answer back ([`StaInput::Answer`]) in the same step.
     RequestChannel(ChannelRequest<K>, LeasePlace),
+    /// Ask the arbiter for an absence from the primary lease `home`, with
+    /// the absence's place; the service hands the answer back
+    /// ([`StaInput::AbsenceAnswer`]) in the same step.
+    RequestAbsence {
+        /// The absence's channel and purpose.
+        request: ChannelRequest<K>,
+        /// The running primary lease.
+        home: &'a Lease<K>,
+        /// The absence's place.
+        place: AbsencePlace,
+    },
+    /// Tell the arbiter the station is ready for its absence: its access
+    /// point knows it leaves.
+    Ready(LeaseId),
+    /// Exchange the primary lease after the port moved; the service hands
+    /// the new one back ([`StaInput::Exchanged`]).
+    ExchangeLease(Lease<K>),
     /// Give a lease back to the arbiter.
     ReleaseChannel(Lease<K>),
     /// Tell the arbiter a fact about the station's upstream.
@@ -170,6 +199,10 @@ pub enum StaRatePlan {
     /// A group frame (a broadcast Probe Request): one transmission at the
     /// band's lowest rate.
     Group,
+    /// A Null that tells the access point the station's power state:
+    /// [`NULL_TRANSMISSIONS`](crate::power_save::NULL_TRANSMISSIONS)
+    /// transmissions at the BSS's lowest basic rate.
+    Null,
 }
 
 /// What the station tells the application.
@@ -184,6 +217,12 @@ pub enum StaNotice {
     },
     /// The station left its network, or failed to join one.
     Disconnected(StaDisconnectReason),
+    /// The background scan ended; `partial` when it ended early after
+    /// cancelled absences.
+    BackgroundScanDone {
+        /// It ended early.
+        partial: bool,
+    },
 }
 
 /// Why the station is not connected.
@@ -256,6 +295,13 @@ pub struct Station<T: StaTokens, K: Ieee80211Capabilities> {
     place: Option<LeasePlace>,
     /// The lease the station holds, or gave back and awaits the end of.
     lease: Held<K>,
+    /// The station's place for an absence, while it takes none.
+    absence_place: Option<AbsencePlace>,
+    /// The absence the station holds.
+    absence: Option<Lease<K>>,
+    /// A notice for the application the station owes outside its state's
+    /// steps.
+    notice_owed: Option<StaNotice>,
     sequence: StaSequenceCounter,
     scan: ScanTable<SCAN_CAPACITY>,
 }
@@ -335,7 +381,7 @@ enum JoinStep {
     AwaitConfigured,
     Authenticate(Authenticate),
     Associate(StaAssociationRuntime),
-    Report,
+    Report { association_id: u16 },
 }
 
 struct Authenticate {
@@ -354,8 +400,53 @@ enum AuthStage {
 struct Connected<K> {
     bssid: [u8; 6],
     channel: SupportedChannel<K>,
+    association_id: u16,
     /// The upstream fact the arbiter has yet to hear.
     report: Option<UpstreamFact<K>>,
+    /// The primary lease to exchange after the port moved.
+    exchange: bool,
+    /// What the access point knows of the station's power state.
+    power: PowerSaveView,
+    /// A Null with PM=0 the station owes its access point, or has in
+    /// flight.
+    wake: Wake,
+    /// The background scan, if one runs.
+    background: Option<Background>,
+}
+
+/// A Null with PM=0 outside the background scan.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Wake {
+    None,
+    Owed,
+    InFlight,
+}
+
+/// A connected station's background scan: one absence per channel.
+struct Background {
+    visit: usize,
+    skipped: u8,
+    step: BackgroundStep,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BackgroundStep {
+    NeedAbsence,
+    AwaitAnswer,
+    /// Tell the access point the station leaves.
+    NeedSleep,
+    AwaitSleep,
+    NeedReady,
+    AwaitStart,
+    NeedConfigure,
+    AwaitConfigured,
+    NeedProbe,
+    Listen,
+    /// Back home: the network's receive rules, then PM=0.
+    NeedHome,
+    AwaitHome,
+    NeedWake,
+    AwaitWake,
 }
 
 /// The station leaving its network, and why.
@@ -445,6 +536,9 @@ enum Done {
 /// An action a state owes.
 enum Owed<T: StaTokens, K> {
     Request(ChannelRequest<K>),
+    Absence(ChannelRequest<K>),
+    Ready(LeaseId),
+    Exchange,
     Release,
     Upstream(UpstreamFact<K>),
     Configure(StationReceive<K>),
@@ -460,6 +554,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         tickets: impl IntoIterator<Item = T::Ticket>,
         buffers: impl IntoIterator<Item = T::SmallBuffer>,
         place: LeasePlace,
+        absence_place: AbsencePlace,
     ) -> Self {
         Self {
             config,
@@ -468,6 +563,9 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             buffers: Pool::new(buffers),
             place: Some(place),
             lease: Held::None,
+            absence_place: Some(absence_place),
+            absence: None,
+            notice_owed: None,
             sequence: StaSequenceCounter::new(SequenceNumber::ZERO),
             scan: ScanTable::new(),
         }
@@ -512,6 +610,14 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 self.answered(answer);
                 return;
             }
+            StaInput::AbsenceAnswer(answer) => {
+                self.absence_answered(answer);
+                return;
+            }
+            StaInput::Exchanged(lease) => {
+                self.lease = Held::Lease(lease);
+                return;
+            }
             StaInput::Arbiter(notice) => {
                 self.noticed(notice);
                 return;
@@ -546,8 +652,86 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         };
     }
 
+    /// The arbiter's answer to the station's absence.
+    fn absence_answered(&mut self, answer: AbsenceAnswer<K>) {
+        let State::Connected(connected) = &mut self.state else {
+            if let AbsenceAnswer::Refused(_, place) = answer {
+                self.absence_place = Some(place);
+            }
+            return;
+        };
+        let Some(background) = &mut connected.background else {
+            return;
+        };
+        match answer {
+            AbsenceAnswer::Lease(lease) => {
+                self.absence = Some(lease);
+                background.step = BackgroundStep::NeedSleep;
+            }
+            // Not connected after all: the background scan ends.
+            AbsenceAnswer::Refused(_, place) => {
+                self.absence_place = Some(place);
+                connected.background = None;
+            }
+        }
+    }
+
+    /// The background scan's step after its absence ended, `cancelled` or
+    /// not.
+    fn absence_over(&mut self, cancelled: bool) {
+        self.absence = None;
+        let limit = self.config.skipped_absences;
+        let State::Connected(connected) = &mut self.state else {
+            return;
+        };
+        let Some(background) = &mut connected.background else {
+            return;
+        };
+        background.step = if cancelled {
+            background.skipped = background.skipped.saturating_add(1);
+            if connected.power.asleep() {
+                // A PM=1 may have reached the access point: wake first.
+                BackgroundStep::NeedWake
+            } else if background.skipped >= limit {
+                connected.background = None;
+                self.notice_owed = Some(StaNotice::BackgroundScanDone { partial: true });
+                return;
+            } else {
+                BackgroundStep::NeedAbsence
+            }
+        } else {
+            background.skipped = 0;
+            BackgroundStep::NeedHome
+        };
+    }
+
     /// A notice of the arbiter.
     fn noticed(&mut self, notice: StationNotice<K>) {
+        match notice {
+            StationNotice::AbsenceStarted(id) => {
+                if self.absence.as_ref().map(Lease::id) == Some(id)
+                    && let State::Connected(Connected {
+                        background: Some(background),
+                        ..
+                    }) = &mut self.state
+                    && background.step == BackgroundStep::AwaitStart
+                {
+                    background.step = BackgroundStep::NeedConfigure;
+                }
+                return;
+            }
+            StationNotice::AbsenceEnded(_, place) => {
+                self.absence_place = Some(place);
+                self.absence_over(false);
+                return;
+            }
+            StationNotice::AbsenceCancelled(_, _, place) => {
+                self.absence_place = Some(place);
+                self.absence_over(true);
+                return;
+            }
+            _ => {}
+        }
         let state = core::mem::replace(&mut self.state, State::Idle);
         self.state = match notice {
             StationNotice::LeaseStarted(id) => {
@@ -588,12 +772,18 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 self.lease_cancelled(state, reason)
             }
             StationNotice::Moved(channel) => match state {
+                // The primary lease moves with the port: the station
+                // exchanges it.
                 State::Connected(mut connected) => {
                     connected.channel = channel;
+                    connected.exchange = true;
                     State::Connected(connected)
                 }
                 state => state,
             },
+            StationNotice::AbsenceStarted(_)
+            | StationNotice::AbsenceEnded(..)
+            | StationNotice::AbsenceCancelled(..) => state,
             StationNotice::Leave(reason) => match state {
                 State::Connected(_) | State::Join(_) | State::Scan(_) => State::Leave(Leave::new(
                     StaDisconnectReason::Arbiter(reason),
@@ -670,6 +860,30 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                     LeaveStep::NeedConfigure,
                 ))
             }
+            (State::Connected(mut connected), Done::Command(StaCommand::BackgroundScan))
+                if connected.background.is_none() =>
+            {
+                self.scan.clear();
+                // The network's own channel needs no absence.
+                let mut visit = 0;
+                while self
+                    .channel(visit)
+                    .is_some_and(|channel| channel == connected.channel)
+                {
+                    visit += 1;
+                }
+                if self.channel(visit).is_some() {
+                    connected.background = Some(Background {
+                        visit,
+                        skipped: 0,
+                        step: BackgroundStep::NeedAbsence,
+                    });
+                } else {
+                    self.notice_owed = Some(StaNotice::BackgroundScanDone { partial: false });
+                }
+                State::Connected(connected)
+            }
+            (State::Connected(connected), done) => self.connected_step(connected, done),
             (State::Scan(mut scan), Done::Configured) if scan.step == ScanStep::AwaitConfigured => {
                 scan.step = ScanStep::NeedProbe;
                 State::Scan(scan)
@@ -686,6 +900,64 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             },
             (state, _) => state,
         }
+    }
+
+    /// The connected state after `done`.
+    fn connected_step(&mut self, mut connected: Connected<K>, done: Done) -> State<K> {
+        let Some(background) = &mut connected.background else {
+            if let Done::Tx { delivered } = done
+                && connected.wake == Wake::InFlight
+            {
+                connected.power.null_sent(StaPowerManagement::Active, delivered);
+                connected.wake = Wake::None;
+            }
+            return State::Connected(connected);
+        };
+        match (background.step, done) {
+            (BackgroundStep::AwaitSleep, Done::Tx { delivered }) => {
+                connected.power.null_sent(StaPowerManagement::PowerSave, delivered);
+                // Not delivered: no readiness; the arbiter cancels the
+                // absence at its start.
+                background.step = if delivered {
+                    BackgroundStep::NeedReady
+                } else {
+                    BackgroundStep::AwaitStart
+                };
+            }
+            (BackgroundStep::AwaitConfigured, Done::Configured) => {
+                background.step = BackgroundStep::NeedProbe;
+            }
+            (BackgroundStep::AwaitHome, Done::Configured) => {
+                background.step = BackgroundStep::NeedWake;
+            }
+            (BackgroundStep::AwaitWake, Done::Tx { delivered }) => {
+                connected.power.null_sent(StaPowerManagement::Active, delivered);
+                let mut visit = if background.skipped > 0 {
+                    background.visit
+                } else {
+                    background.visit + 1
+                };
+                // The network's own channel needs no absence.
+                while self
+                    .channel(visit)
+                    .is_some_and(|channel| channel == connected.channel)
+                {
+                    visit += 1;
+                }
+                if background.skipped >= self.config.skipped_absences {
+                    connected.background = None;
+                    self.notice_owed = Some(StaNotice::BackgroundScanDone { partial: true });
+                } else if self.channel(visit).is_none() {
+                    connected.background = None;
+                    self.notice_owed = Some(StaNotice::BackgroundScanDone { partial: false });
+                } else {
+                    background.visit = visit;
+                    background.step = BackgroundStep::NeedAbsence;
+                }
+            }
+            _ => {}
+        }
+        State::Connected(connected)
     }
 
     /// The scan's visit of the channel at `visit`, or its end.
@@ -837,8 +1109,10 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 JoinStep::Associate(runtime) => {
                     let _ = runtime.observe_received_frame();
                     match runtime.observe_management_frame(frame, now) {
-                        Ok(StaAssociationEvent::Associated { .. }) => {
-                            join.step = JoinStep::Report;
+                        Ok(StaAssociationEvent::Associated { response, .. }) => {
+                            join.step = JoinStep::Report {
+                                association_id: response.association_id,
+                            };
                             State::Join(join)
                         }
                         Ok(StaAssociationEvent::Failed { .. }) | Err(_) => {
@@ -849,24 +1123,65 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 }
                 _ => State::Join(join),
             },
-            State::Connected(connected) => match peer_disconnect(frame, connected.bssid) {
-                Some(reason_code) => State::Leave(Leave::new(
-                    StaDisconnectReason::Peer { reason_code },
-                    LeaveStep::NeedConfigure,
-                )),
-                None => State::Connected(connected),
-            },
+            State::Connected(mut connected) => {
+                if let Some(reason_code) = peer_disconnect(frame, connected.bssid) {
+                    State::Leave(Leave::new(
+                        StaDisconnectReason::Peer { reason_code },
+                        LeaveStep::NeedConfigure,
+                    ))
+                } else {
+                    let listening = connected.background.as_ref().is_some_and(|background| {
+                        matches!(background.step, BackgroundStep::NeedProbe | BackgroundStep::Listen)
+                    });
+                    if listening {
+                        let channel = self
+                            .absence
+                            .as_ref()
+                            .map_or(0, |absence| absence.channel().channel().number());
+                        self.scan.observe_management(frame, channel, rssi, Some(now));
+                    } else if let Ok(beacon) =
+                        parse_sta_beacon(frame, connected.bssid, connected.association_id)
+                        && connected.power.beacon(beacon.tim) == PowerSaveDecision::SendActive
+                        && connected.wake == Wake::None
+                    {
+                        connected.wake = Wake::Owed;
+                    }
+                    State::Connected(connected)
+                }
+            }
             state => state,
         };
     }
 
     /// The next action to carry out at `now`, if any. The service takes
     /// every action before it waits again.
-    pub fn poll_action(&mut self, now: Instant) -> Option<StaAction<T, K>> {
+    pub fn poll_action(&mut self, now: Instant) -> Option<StaAction<'_, T, K>> {
+        if let Some(notice) = self.notice_owed.take() {
+            return Some(StaAction::Notify(notice));
+        }
         let state = core::mem::replace(&mut self.state, State::Idle);
         let (state, owed) = self.owe(state, now);
         self.state = state;
         Some(match owed? {
+            Owed::Absence(request) => {
+                let place = self.absence_place.take().expect("an absence holds its place");
+                let Held::Lease(home) = &self.lease else {
+                    unreachable!("an absence names the primary lease")
+                };
+                StaAction::RequestAbsence {
+                    request,
+                    home,
+                    place,
+                }
+            }
+            Owed::Ready(id) => StaAction::Ready(id),
+            Owed::Exchange => match core::mem::replace(&mut self.lease, Held::None) {
+                Held::Lease(lease) => StaAction::ExchangeLease(lease),
+                held => {
+                    self.lease = held;
+                    unreachable!("an exchange holds the lease")
+                }
+            },
             Owed::Request(request) => {
                 let place = self.place.take().expect("a request holds the place");
                 StaAction::RequestChannel(request, place)
@@ -910,7 +1225,6 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                                 purpose: Purpose::Scan {
                                     dwell: self.config.dwell,
                                 },
-                                announces_absence: false,
                             })),
                         )
                     }
@@ -935,10 +1249,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 )
             }
             State::Join(join) => self.owe_join(join, now),
-            State::Connected(mut connected) => {
-                let owed = connected.report.take().map(Owed::Upstream);
-                (State::Connected(connected), owed)
-            }
+            State::Connected(connected) => self.owe_connected(connected),
             State::Leave(Leave { reason, step }) => {
                 let (step, owed) = match step {
                     LeaveStep::NeedDeauthentication { bssid } => match self.encode_management(
@@ -969,6 +1280,126 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         }
     }
 
+    /// The action the connected state owes.
+    fn owe_connected(&mut self, mut connected: Connected<K>) -> (State<K>, Option<Owed<T, K>>) {
+        if let Some(fact) = connected.report.take() {
+            return (State::Connected(connected), Some(Owed::Upstream(fact)));
+        }
+        if connected.exchange && matches!(self.lease, Held::Lease(_)) {
+            connected.exchange = false;
+            return (State::Connected(connected), Some(Owed::Exchange));
+        }
+        let bssid = connected.bssid;
+        let absence_channel = self.absence.as_ref().map(Lease::channel);
+        let absence_id = self.absence.as_ref().map(Lease::id);
+        let mut owed = None;
+        let mut power = None;
+        if let Some(background) = &mut connected.background {
+            let step = background.step;
+            background.step = match step {
+                BackgroundStep::NeedAbsence
+                    if self.absence_place.is_some() && matches!(self.lease, Held::Lease(_)) =>
+                {
+                    match self.config.channels.get(background.visit).copied().flatten() {
+                        Some(channel) => {
+                            owed = Some(Owed::Absence(ChannelRequest {
+                                channel,
+                                purpose: Purpose::Scan {
+                                    dwell: self.config.dwell,
+                                },
+                            }));
+                            BackgroundStep::AwaitAnswer
+                        }
+                        None => step,
+                    }
+                }
+                BackgroundStep::NeedSleep => {
+                    power = Some(StaPowerManagement::PowerSave);
+                    BackgroundStep::AwaitSleep
+                }
+                BackgroundStep::NeedReady => {
+                    owed = absence_id.map(Owed::Ready);
+                    BackgroundStep::AwaitStart
+                }
+                BackgroundStep::NeedConfigure => {
+                    owed = Some(Owed::Configure(StationReceive::OtherBssManagement));
+                    BackgroundStep::AwaitConfigured
+                }
+                BackgroundStep::NeedProbe => {
+                    owed = self.encode_probe().map(Owed::Transmit);
+                    BackgroundStep::Listen
+                }
+                BackgroundStep::NeedHome => {
+                    owed = SupportedFilter::<K, StationRole>::new(ReceiveFilter::BSS_MEMBER)
+                        .and_then(|filter| {
+                            Some(Owed::Configure(StationReceive::Bss {
+                                bssid: IndividualAddress::new(bssid)?,
+                                filter,
+                            }))
+                        });
+                    BackgroundStep::AwaitHome
+                }
+                BackgroundStep::NeedWake => {
+                    power = Some(StaPowerManagement::Active);
+                    BackgroundStep::AwaitWake
+                }
+                step => step,
+            };
+            let _ = absence_channel;
+        } else if connected.wake == Wake::Owed && !connected.power.asleep() {
+            // The access point buffers for an awake station: PM=0 again.
+            power = Some(StaPowerManagement::Active);
+        }
+        if let Some(power_management) = power {
+            match self.encode_null(bssid, power_management) {
+                Some(transmit) => {
+                    if connected.wake == Wake::Owed {
+                        connected.wake = Wake::InFlight;
+                    }
+                    owed = Some(Owed::Transmit(transmit));
+                }
+                // No token now: the step waits for the next poll.
+                None => {
+                    if let Some(background) = &mut connected.background {
+                        background.step = match background.step {
+                            BackgroundStep::AwaitSleep => BackgroundStep::NeedSleep,
+                            BackgroundStep::AwaitWake => BackgroundStep::NeedWake,
+                            step => step,
+                        };
+                    }
+                }
+            }
+        }
+        (State::Connected(connected), owed)
+    }
+
+    /// A Null to `bssid` with `power_management`, in a buffer.
+    fn encode_null(
+        &mut self,
+        bssid: [u8; 6],
+        power_management: StaPowerManagement,
+    ) -> Option<StaTransmit<T, K>> {
+        let address = self.config.address;
+        let sequence_number = self.sequence.take();
+        let mut transmit = self
+            .encode_individual(
+                |frame| {
+                    StaNullDataFrame {
+                        station_address: address,
+                        bssid,
+                        sequence_number,
+                        power_management,
+                    }
+                    .encode(frame)
+                    .ok()
+                },
+                address,
+            )
+            .ok()?;
+        transmit.plan = StaRatePlan::Null;
+        Some(transmit)
+    }
+
     fn owe_join(&mut self, join: Join<K>, now: Instant) -> (State<K>, Option<Owed<T, K>>) {
         let Join {
             access_point,
@@ -982,7 +1413,6 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 Some(Owed::Request(ChannelRequest {
                     channel,
                     purpose: Purpose::Connect,
-                    announces_absence: false,
                 })),
             ),
             JoinStep::NeedConfigure => {
@@ -1060,13 +1490,18 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                     return (self.leave_joined(StaDisconnectReason::AssociationFailed), None);
                 }
             },
-            JoinStep::Report => {
+            JoinStep::Report { association_id } => {
                 let bssid = access_point.bssid;
                 return (
                     State::Connected(Connected {
                         bssid,
                         channel,
+                        association_id,
                         report: Some(UpstreamFact::Connected(channel)),
+                        exchange: false,
+                        power: PowerSaveView::awake(),
+                        wake: Wake::None,
+                        background: None,
                     }),
                     Some(Owed::Notify(StaNotice::Connected {
                         bssid,

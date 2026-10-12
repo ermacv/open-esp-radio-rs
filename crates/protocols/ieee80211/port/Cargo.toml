@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "The lifecycle of the IEEE 802.11 lower-MAC port: its owner, body, backend and joined driver"
+description = "The lifecycle of the IEEE 802.11 lower-MAC port: its owner, body, backend and running phase"
 readme = "README.md"
 
 [features]

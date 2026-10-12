@@ -108,6 +108,57 @@ pub const MODEL_RX_EVENTS: usize = 4;
 pub const MODEL_KEY_SLOTS: usize = 2;
 /// The receive Block Ack slots both roles share.
 pub const MODEL_BLOCK_ACK_SLOTS: usize = 2;
+/// The key slots of both roles, of both kinds.
+const MODEL_ALL_KEY_SLOTS: usize = 4 * MODEL_KEY_SLOTS;
+
+/// The commands the queue from the handle to the driver holds: what the
+/// contract promises, one per token that can name one (a ticket, a key
+/// slot, a Block Ack slot, the gate). A key's removal while its install
+/// still waits takes the install's entry.
+pub const MODEL_COMMANDS: usize =
+    MODEL_TICKETS + MODEL_ALL_KEY_SLOTS + MODEL_BLOCK_ACK_SLOTS + 1;
+/// The events the queue from the driver to the body holds: a terminal per
+/// ticket, a removal per key slot, the gate's closing, one confirmation of
+/// each interface's settings (they coalesce, as the settings do) and the
+/// received frames.
+pub const MODEL_EVENTS: usize = MODEL_TICKETS + MODEL_ALL_KEY_SLOTS + 1 + 2 + MODEL_RX_EVENTS;
+
+/// A queue of the contract's capacity: an overflow is a broken promise and
+/// fails the test.
+struct Bounded<T> {
+    items: RefCell<VecDeque<T>>,
+    capacity: usize,
+    name: &'static str,
+}
+
+impl<T> Bounded<T> {
+    fn new(capacity: usize, name: &'static str) -> Self {
+        Self {
+            items: RefCell::new(VecDeque::with_capacity(capacity)),
+            capacity,
+            name,
+        }
+    }
+
+    fn push(&self, item: T) {
+        let mut items = self.items.borrow_mut();
+        assert!(
+            items.len() < self.capacity,
+            "the {} queue overflowed its contract capacity of {}",
+            self.name,
+            self.capacity
+        );
+        items.push_back(item);
+    }
+
+    fn pop(&self) -> Option<T> {
+        self.items.borrow_mut().pop_front()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.items.borrow().is_empty()
+    }
+}
 
 /// The kind of the model's transmit tickets.
 pub enum ModelTickets {}
@@ -393,7 +444,6 @@ enum Command<'id> {
     RemoveKey { index: u8, removed: ModelRemovedKey<'id> },
     CloseGate,
     OpenGate,
-    Recycle(ModelRxBuffer),
 }
 
 /// An attempt prepared for its queue.
@@ -419,11 +469,15 @@ struct Settings {
 /// The install's queues between the handle and the driver.
 pub struct ModelHeld<'id> {
     air: Rc<ModelAir>,
-    commands: RefCell<VecDeque<Command<'id>>>,
+    commands: Bounded<Command<'id>>,
+    /// The received buffers the body gives back, at most one per buffer.
+    recycled: Bounded<ModelRxBuffer>,
     settings: RefCell<Settings>,
-    events: RefCell<VecDeque<LowerMacEvent<'id, ModelTypes>>>,
-    /// Received frames queued in `events`.
-    rx_queued: Cell<usize>,
+    events: Bounded<LowerMacEvent<'id, ModelTypes>>,
+    /// The receive buffers out with the body, queued or held.
+    rx_out: Cell<usize>,
+    /// A confirmation of each interface's settings waits in `events`.
+    configured: Cell<[bool; 2]>,
     /// Received frames dropped since the stream last said so.
     lost: Cell<bool>,
     body: RefCell<Option<Waker>>,
@@ -435,13 +489,42 @@ pub struct ModelHeld<'id> {
 
 impl<'id> ModelHeld<'id> {
     fn command(&self, command: Command<'id>) {
-        self.commands.borrow_mut().push_back(command);
+        self.commands.push(command);
         self.air.wake_driver();
     }
 
+    /// Remove the key `index`: a removal while its install still waits
+    /// takes the install's entry.
+    fn remove_key(&self, index: u8, removed: ModelRemovedKey<'id>) {
+        {
+            let mut commands = self.commands.items.borrow_mut();
+            if let Some(command) = commands
+                .iter_mut()
+                .find(|command| matches!(command, Command::InstallKey { index: queued } if *queued == index))
+            {
+                *command = Command::RemoveKey { index, removed };
+                drop(commands);
+                self.air.wake_driver();
+                return;
+            }
+        }
+        self.command(Command::RemoveKey { index, removed });
+    }
+
     fn post(&self, event: LowerMacEvent<'id, ModelTypes>) {
-        self.events.borrow_mut().push_back(event);
+        self.events.push(event);
         self.wake_body();
+    }
+
+    /// Confirm `role`'s settings, once while a confirmation waits.
+    fn configured(&self, role: VifRole) {
+        let mut waiting = self.configured.get();
+        let slot = &mut waiting[role as usize];
+        if !*slot {
+            *slot = true;
+            self.configured.set(waiting);
+            self.post(LowerMacEvent::Configured(role));
+        }
     }
 
     fn wake_body(&self) {
@@ -537,25 +620,21 @@ impl PortBackend for ModelBackend {
     where
         'id: 'a,
     {
-        // The driver ends every command it holds; then every event goes to
-        // the sink.
+        // The driver ends every command it holds and takes every buffer
+        // back; then every event goes to the sink.
         poll_fn(move |cx| {
             if held.air.poisoned.get() {
                 return Poll::Ready(Err(Poisoned { cause: ModelFault }));
             }
-            if !held.commands.borrow().is_empty() {
+            if !held.commands.is_empty() || !held.recycled.is_empty() {
                 *held.body.borrow_mut() = Some(cx.waker().clone());
                 held.air.wake_driver();
                 return Poll::Pending;
             }
-            loop {
-                let event = held.events.borrow_mut().pop_front();
-                match event {
-                    Some(event) => sink(event),
-                    None => break,
-                }
+            while let Some(event) = held.events.pop() {
+                sink(event);
             }
-            held.rx_queued.set(0);
+            held.rx_out.set(0);
             Poll::Ready(Ok(()))
         })
     }
@@ -578,10 +657,12 @@ impl PortBackend for ModelBackend {
         let large: [Slot<'id, ModelLarge>; MODEL_LARGE_BUFFERS] = mint.slots();
         let held = ModelHeld {
             air: self.air.clone(),
-            commands: RefCell::default(),
+            commands: Bounded::new(MODEL_COMMANDS, "command"),
+            recycled: Bounded::new(MODEL_RX_EVENTS, "recycle"),
             settings: RefCell::default(),
-            events: RefCell::default(),
-            rx_queued: Cell::new(0),
+            events: Bounded::new(MODEL_EVENTS, "event"),
+            rx_out: Cell::new(0),
+            configured: Cell::new([false; 2]),
             lost: Cell::new(false),
             body: RefCell::default(),
             closed: RefCell::new(Some(closed)),
@@ -690,16 +771,20 @@ impl<'id> Driver<'id> {
             let settings = core::mem::take(&mut *held.settings.borrow_mut());
             if settings.station {
                 held.air.settings.set(held.air.settings.get() + 1);
-                held.post(LowerMacEvent::Configured(VifRole::Station));
+                held.configured(VifRole::Station);
             }
             if settings.access_point {
                 held.air.settings.set(held.air.settings.get() + 1);
-                held.post(LowerMacEvent::Configured(VifRole::AccessPoint));
+                held.configured(VifRole::AccessPoint);
+            }
+            while let Some(mut buffer) = held.recycled.pop() {
+                buffer.recycled = true;
+                held.rx_out.set(held.rx_out.get().saturating_sub(1));
             }
             if settings.other {
                 held.air.settings.set(held.air.settings.get() + 1);
             }
-            let command = held.commands.borrow_mut().pop_front();
+            let command = held.commands.pop();
             let Some(command) = command else {
                 break;
             };
@@ -728,7 +813,6 @@ impl<'id> Driver<'id> {
                     }
                 }
                 Command::OpenGate => self.gate_open = true,
-                Command::Recycle(mut buffer) => buffer.recycled = true,
             }
             if self.gate_open {
                 self.publish(held);
@@ -770,16 +854,16 @@ impl<'id> Driver<'id> {
         }
     }
 
-    /// Deliver the frames the air brought, as many as the event queue
-    /// holds beside the terminals.
+    /// Deliver the frames the air brought, as many as the receive buffers
+    /// the body does not hold.
     fn receive(&mut self, held: &ModelHeld<'id>) {
         loop {
             let frame = held.air.rx.borrow_mut().pop_front();
             let Some((frame, meta)) = frame else {
                 break;
             };
-            if held.rx_queued.get() < MODEL_RX_EVENTS {
-                held.rx_queued.set(held.rx_queued.get() + 1);
+            if held.rx_out.get() < MODEL_RX_EVENTS {
+                held.rx_out.set(held.rx_out.get() + 1);
                 held.post(LowerMacEvent::Received {
                     frame: ModelRxBuffer {
                         bytes: frame,
@@ -838,10 +922,11 @@ impl<'id> PortPhase for ModelPhase<'_, 'id> {
             if held.air.poisoned.get() {
                 return Poll::Ready(Err(Poisoned { cause: ModelFault }));
             }
-            let event = held.events.borrow_mut().pop_front();
-            if let Some(event) = event {
-                if matches!(event, LowerMacEvent::Received { .. }) {
-                    held.rx_queued.set(held.rx_queued.get().saturating_sub(1));
+            if let Some(event) = held.events.pop() {
+                if let LowerMacEvent::Configured(role) = event {
+                    let mut waiting = held.configured.get();
+                    waiting[role as usize] = false;
+                    held.configured.set(waiting);
                 }
                 return Poll::Ready(Ok(Ok(event)));
             }
@@ -871,7 +956,8 @@ impl<'p, 'id: 'p> LowerMacPhase<'p, 'id> for ModelPhase<'p, 'id> {
     }
 
     fn recycle(&mut self, buffer: ModelRxBuffer) {
-        self.held.command(Command::Recycle(buffer));
+        self.held.recycled.push(buffer);
+        self.held.air.wake_driver();
     }
 
     fn close_gate(&mut self, gate: GateOpen<'id>) {
@@ -1109,17 +1195,11 @@ impl<'p, 'v, 'id: 'p, R: ModelRole> InterfacePhase<'p, 'id> for ModelInterface<'
     }
 
     fn remove_pairwise_key(&mut self, key: ModelPairwiseKey<'id, R>) {
-        self.held.command(Command::RemoveKey {
-            index: key.index,
-            removed: R::pairwise(key.slot),
-        });
+        self.held.remove_key(key.index, R::pairwise(key.slot));
     }
 
     fn remove_group_key(&mut self, key: ModelGroupKey<'id, R>) {
-        self.held.command(Command::RemoveKey {
-            index: key.index,
-            removed: R::group(key.slot),
-        });
+        self.held.remove_key(key.index, R::group(key.slot));
     }
 
     fn add_block_ack(

@@ -7,9 +7,18 @@ license.workspace = true
 repository.workspace = true
 description = "Allocation-free hardware-independent IEEE 802.15.4 radio contracts"
 
+[features]
+# The in-memory backend of `model`, on the owner shape, for host tests of
+# packages that drive the port.
+model = []
+
 [dependencies]
 oer-radio-port = { path = "../../radio/port" }
 oer-time = { path = "../../time" }
+
+[dev-dependencies]
+# The crate's own tests run the shared pool rules on the model.
+oer-radio-port = { path = "../../radio/port", features = ["test-support"] }
 
 [lints]
 workspace = true

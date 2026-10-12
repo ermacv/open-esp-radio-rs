@@ -984,6 +984,7 @@ impl<'storage, R: Ieee802154Random> Ieee802154Radio<'storage, R> {
             }),
             receive_sensitivity_dbm: RECEIVE_SENSITIVITY_DBM,
             csl: Some(IEEE802154_CSL_CAPABILITY),
+            enhanced_ack_header_ies: IEEE802154_ENHANCED_ACK_IE_CAPACITY as u8,
         }
     }
 

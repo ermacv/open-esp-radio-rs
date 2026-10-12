@@ -65,6 +65,9 @@ pub struct Ieee802154Capabilities {
     /// The timing a CSL peer relies on ([`RadioSetting::Csl`]); `None`
     /// when it publishes none.
     pub csl: Option<CslCapability>,
+    /// The header IE bytes every enhanced ACK carries at most
+    /// ([`RadioSetting::EnhancedAckHeaderIes`]).
+    pub enhanced_ack_header_ies: u8,
 }
 
 /// The timing of a backend's Coordinated Sampled Listening, as a CSL

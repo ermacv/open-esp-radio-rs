@@ -19,6 +19,8 @@
 //! currently no public RF-ready IEEE 802.15.4 service composition: these types
 //! must not be read as an application start API or as hardware readiness.
 
+#[cfg(any(test, feature = "model"))]
+extern crate alloc;
 #[cfg(test)]
 extern crate std;
 
@@ -49,6 +51,9 @@ pub mod mac {
 /// Hardware-independent radio command/event and state contracts.
 pub mod radio;
 
+#[cfg(any(test, feature = "model"))]
+pub mod model;
+pub mod owner;
 pub mod port;
 
 pub use mac::csl::{CSL_IE_ID, CSL_IE_TEMPLATE, CSL_UNIT_MICROS, csl_phase, write_csl_ie};

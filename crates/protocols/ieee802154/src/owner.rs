@@ -2,12 +2,11 @@
 //! `oer-radio-port` ([`Owner`](oer_ieee802154_port::Owner),
 //! [`PortBody`](oer_ieee802154_port::PortBody)).
 //!
-//! Every refusal of [`Ieee802154RadioPort`](crate::Ieee802154RadioPort)
-//! that a caller's own state explains is a type here
-//! ([ownership and refusals]); what the world controls (the air, time, the
-//! hardware) stays a typed outcome. The protocol port still implements
-//! `Ieee802154RadioPort`; a backend on this shape implements
-//! [`Ieee802154Backend`].
+//! Every refusal of the former command port that a caller's own state
+//! explains is a type here ([ownership and refusals]); what the world
+//! controls (the air, time, the hardware) stays a typed outcome. A backend
+//! implements [`Ieee802154Backend`]; the Espressif runtime's is
+//! `Ieee802154RuntimeBackend`.
 //!
 //! | Refusal of the port trait | Form here |
 //! | --- | --- |

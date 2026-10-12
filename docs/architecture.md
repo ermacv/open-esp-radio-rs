@@ -551,9 +551,10 @@ model. Everything above a port is written once for every backend; everything
 below it is the backend's. [`LeRadioBackend`](../crates/protocols/bluetooth/le/radio/src/port.rs)
 is the Bluetooth LE backend, which runs under the port owner of
 [`oer-radio-port`](../crates/radio/port/src/owner.rs), and
-[`Ieee802154RadioPort`](../crates/protocols/ieee802154/src/port.rs) the
-IEEE 802.15.4 port, which the Espressif runtime implements and the OpenThread
-adapter consumes, and
+the [owner shape](../crates/protocols/ieee802154/src/owner.rs) of the
+IEEE 802.15.4 port, over its lifecycle package `oer-ieee802154-port`, which
+the Espressif runtime's backend implements and the OpenThread adapter
+consumes, and
 [`Ieee80211LowerMacPort`](../crates/protocols/ieee80211/lower-mac/README.md)
 the Wi-Fi port, carrying the portable `Channel` and `PhyRate` values of
 `oer-ieee80211-mac`. The two ports extend one base trait, `RadioPort` of
@@ -700,7 +701,7 @@ interpreting it.
 | Port | Lifecycle and cancellation | Clock relation to monotonic time (ESP32-S31) |
 | --- | --- | --- |
 | `Ieee80211LowerMacPort` | `lifecycle(Enable / Disable / Quiesce)` and `cancel(TxId)` | affine: the Wi-Fi MAC local time, sampled against the image's monotonic clock |
-| `Ieee802154RadioPort` | `lifecycle(Enable / Disable / Quiesce)` with `RadioEvent::Lifecycle` terminals and `cancel(RequestId)` | identical: the runtime's `Clock`, which the engine reads fresh at each event and the time driver also reads |
+| IEEE 802.15.4 owner shape | the owner's `enable` / `disable(sink)` transitions and the interface client's `Work::cancel`; the one operation permit returns with its terminal | identical: the runtime's `Clock`, which the engine reads fresh at each event and the time driver also reads |
 | `LeRadioBackend` | the owner's bounded `enable` / `disable(sink)` transitions and the phase client's `cancel(EventId)`; install and uninstall move memory and hardware owners and stay the backend's own operations | none: the extended controller clock |
 
 **Shared RF path.** Protocols that share one radio name themselves with the

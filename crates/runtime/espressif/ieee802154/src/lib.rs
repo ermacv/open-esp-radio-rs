@@ -10,39 +10,31 @@
 //! holds its state under `ieee802154_enter_critical`. The platform interrupt
 //! handler and every command run inside that lock. Portable events leave the
 //! lock as owned values through a bounded queue that any executor may await.
-//! [`Ieee802154Runtime::install`] returns the installed radio's two
-//! handles. The [`Ieee802154Port`] is the [`Ieee802154RadioPort`](oer_ieee802154::Ieee802154RadioPort) of the
-//! protocol's one event consumer: commands, events, the clock, the state,
-//! the capabilities and the settings (MAC keys, CSL and the enhanced-ACK
-//! generator the interrupt handler reads, and the transmit power and CCA
-//! the next operation publishes). The
-//! [`Ieee802154Control`] stays with the composition: coexistence, statistics, the frame-pending table and the uninstall, which
-//! consumes both. Neither handle exists without an installed radio, so no
-//! call is refused as not installed.
+//! [`Ieee802154Runtime::install`] returns the installed radio as the IEEE
+//! 802.15.4 port's backend ([`Ieee802154RuntimeBackend`], the owner shape of
+//! `oer_ieee802154::owner`), which the composition hands to `run_port`; the
+//! port's end masks the MAC route and returns the engine and the hardware.
+//! The engine stays behind the runtime's blocking mutex, shared with the
+//! MAC interrupt, an interim the owner allowed until #668.
 //!
 //! CSMA-CA backoffs and the delays before retries run on the runtime's
-//! [`oer_time::Timer`] in [`Ieee802154Runtime::run`], the runner the composition polls for as long
-//! as the radio is installed, as ESP-IDF's OpenThread `SubMac` runs them on
-//! its tasklet timer; [`RadioPort::next_event`](oer_ieee802154::RadioPort::next_event) only takes events.
+//! [`oer_time::Timer`] in the port's joined driver, as ESP-IDF's OpenThread
+//! `SubMac` runs them on its tasklet timer; the events consumer only takes
+//! events.
 //!
-//! The bounded event queue reserves a slot for every terminal event it
-//! owes when the work is admitted: the admitted operation's end, the fault
-//! that may end an enabled period, and a lifecycle command's terminal. A
-//! terminal event is therefore never lost; an operation or a lifecycle
-//! command whose terminal could not be held is refused. Only received
+//! The bounded event queue keeps a slot free for the next operation's
+//! terminal, which the operation permit admits, and for the fault that may
+//! end an enabled period: a terminal event is never lost. Only received
 //! frames are dropped when the queue is full, reported as [`EventsLost`] in
 //! place of the first dropped frame.
 //!
-//! The runtime never poisons (its fault type is [`Infallible`]): a broken
-//! event sequence ends in a recoverable [`RadioEvent::Fault`] that leaves
-//! the radio disabled.
+//! A radio fault poisons the port: the events consumer hands out the
+//! failed operation's terminal and the events before it, then `Poisoned`
+//! at every later call.
 //!
 //! Shared-PHY tracking runs with the MAC receiving, as ESP-IDF's
 //! `phy_common.c` does: the runtime never pauses for it, and an operation
-//! that loses RF ends with its ordinary terminal event. A quiesced port
-//! holds the radio still: it refuses every command that writes the
-//! hardware as quiesced and admits software configuration and every
-//! setting, none of which writes the hardware.
+//! that loses RF ends with its ordinary terminal event.
 
 #[cfg(test)]
 extern crate std;

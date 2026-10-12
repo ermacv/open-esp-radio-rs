@@ -60,9 +60,12 @@ the `SharedRadio` and spawn its PHY tracking and coexistence schedule;
 is at `ieee802154::openthread`; the
 [Thread example](../../../../../examples/esp32s31/thread/) uses only this path.
 
-The runtime is a process singleton. The port `start` returns
-(`Ieee802154SystemPort`) is the client's `Ieee802154RadioPort`: it accepts portable `RadioCommand`s,
-yields `Ieee802154RadioEvent`s and applies `RadioSetting`s. Its
+The runtime is a process singleton. `start` returns the client's port
+backend (`Ieee802154SystemBackend<K>`, with the capabilities marker
+`Esp32s31Ieee802154` or `Esp32s31Ieee802154Multipan`), which the
+application runs under `run_port`; the port's end masks the MAC route and
+returns the engine and MAC owners (`Ieee802154SystemParts`) to
+`Ieee802154System::stop`. Its
 `Ieee802154Capabilities` carry the figures ESP-IDF reports to an upper
 stack: the recovered ESP32-S31 BTBB transmit power levels, every channel
 starting at the highest; the CCA thresholds of ESP-IDF's
@@ -130,10 +133,8 @@ with ESP-IDF's OpenThread defaults: after an attempt without channel access
 at once, after one without acknowledgement following a random delay whose
 exponent grows from 0 to 5. Every attempt arms its transmit security again,
 as the port arms it per transmit. The backoff and
-retry timers run in the runtime's runner, `Ieee802154System::run` (the
-runtime's `Ieee802154Runtime::run`), which the application polls beside the
-consumer of the port's events for as long as the client runs; `next_event`
-only takes events. The random words come from the hardware generator.
+retry timers run in the port's joined driver, which `run_port` polls beside
+the body; the events consumer only takes events. The random words come from the hardware generator.
 The port's clock (`now`) is the runtime's `embassy-time` clock, running
 whether or not a radio is installed; synchronous callers such as OpenThread
 read it through `Ieee802154Runtime::clock` (the OpenThread adapter's

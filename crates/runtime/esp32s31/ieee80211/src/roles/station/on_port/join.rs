@@ -177,6 +177,7 @@ where
             self.seats,
             &self.frame[..len],
             JOIN_RATE,
+            None,
             &mut self.held,
         )
         .await
@@ -221,6 +222,7 @@ where
             self.seats,
             &self.frame[..len],
             JOIN_RATE,
+            None,
             &mut self.held,
         )
         .await
@@ -254,6 +256,7 @@ where
             self.seats,
             &self.frame[..len],
             JOIN_RATE,
+            None,
             &mut self.held,
         )
         .await

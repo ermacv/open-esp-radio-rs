@@ -97,7 +97,7 @@
 //!
 //! ```compile_fail
 //! # use oer_radio_port::{Disabled, Owner, PortBackend};
-//! fn shrink<'a: 'b, 'b, B: PortBackend>(owner: Owner<'a, B, Disabled>) -> Owner<'b, B, Disabled> {
+//! fn shrink<'p, 'a: 'b, 'b, B: PortBackend>(owner: Owner<'p, 'a, B, Disabled>) -> Owner<'p, 'b, B, Disabled> {
 //!     owner
 //! }
 //! ```

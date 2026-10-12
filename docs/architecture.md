@@ -414,7 +414,7 @@ free list, its waiters and its order belong to a runtime crate or the
 backend; its order is its documented policy, first in, first out by default,
 which the conformance suite checks. A pool whose permits admitted work holds
 belongs to the backend's held part of the install (`PortBackend::Held<'id>`),
-which the owner keeps and lends into each phase and disable: the backend
+which `run_port` keeps and the owner lends into each phase and disable: the backend
 takes the permits back when the work ends and before it hands the terminal
 event out, so no caller holds a permit of submitted work, and a terminal
 event dropped unread loses none. The backend never refuses for capacity:
@@ -454,8 +454,26 @@ when every permit is back. Capacity is permits: a submission moves its
 permit into the backend, which gives it back to its pool in the install's
 held part before it hands the terminal out, so no queue overflows, no
 terminal is lost and no caller holds the permit of submitted work; only
-unsolicited reception may lose events. A `Drop` of an owner is a
-safety net, as `PlatformClockGuard`'s: it stops the hardware synchronously,
+unsolicited reception may lose events. The body runs joined with the
+backend's driver, its runner, in one task
+([#581 decision](https://github.com/ermacv/open-esp-radio-rs/issues/581#issuecomment-6120815544),
+a working shape until Wi-Fi's #271 A/B): the driver progresses whatever the
+body awaits, owns the backend's state by value or reaches it in the held
+part directly, and is cancel-safe. One owner reaches that state at a time,
+the body's task or the backend's interrupt context; anything beside the
+body reaches it only through atomics or signals, and in the
+interrupt-owned form terminals and receptions never depend on the driver.
+Shared per-install state is reached by a synchronous closure (`with`) that
+calls no port method; an interrupt-owned backend's body runs on its
+routes' core, which the route binding's type states; IEEE 802.15.4's
+interim critical section is the one exception, until #668
+([decisions](https://github.com/ermacv/open-esp-radio-rs/issues/581#issuecomment-6121016144)).
+A retune stays a bounded step of `enable`. The owner's uninstall only asks:
+`run_port` retires the driver within the backend's bound (a missed bound is
+a fail-stop), detaches the interrupt entries synchronously, then takes the
+backend apart with the held part and the driver's state by value, returning
+the hardware owners by value. A `Drop` of an owner is a
+safety net, as `PlatformClockGuard`'s: it stops the hardware and halts the driver synchronously,
 refuses a new install until a reset and asserts in debug builds; it is
 never the shutdown. Everything the hardware touches is `'static` and owned
 by the resource, so no abandoned owner is a memory-safety issue. Composition
@@ -540,12 +558,15 @@ protocol:
 **Authority.** An installed port lives in one body (`oer_radio_port::PortBody`,
 run by `run_port`) that must return `Ended`, which only the owner's
 uninstall or a fail-stop constructs. The body's `Owner` has the port's state
-as its type. An `Owner<'id, B, Disabled>` lends the protocol's disabled-only
+as its type (`'p` is its borrow of the install `run_port` keeps, `'id` the
+install's brand). An `Owner<'p, 'id, B, Disabled>` lends the protocol's disabled-only
 settings (a permanent channel move, interface configuration, and the
 port-lifetime resources such as keys and agreements, whose tokens it keeps
-and lends into each phase) and is the only state that uninstalls; its
-`enable(self)` returns an `Owner<'id, B, Enabled>`, the disabled owner with the
-radio's refusal, or a `PoisonedOwner`. An `Owner<'id, B, Enabled>` lends one
+and lends into each phase) and is the only state that asks for the
+uninstall, which `run_port` carries out after it retired the backend's
+driver; its
+`enable(self)` returns an `Owner<'p, 'id, B, Enabled>`, the disabled owner with the
+radio's refusal, or a `PoisonedOwner`. An `Owner<'p, 'id, B, Enabled>` lends one
 running phase at a time (`split`): the phase's one event consumer, its
 control (the radio-wide operations that only gate or tune admission, as
 guards with one holder, never refusing as busy; a closed transmit gate is a

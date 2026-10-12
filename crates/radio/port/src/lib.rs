@@ -16,9 +16,11 @@
 //!   cancellation and the lifecycle.
 //! - [`run_port`], [`PortBody`] and [`Ended`]: a port lives in one body,
 //!   generic over the install's brand `'id`, that must end through its
-//!   owner's uninstall or a fail-stop; [`Owner`] over a [`PortBackend`],
-//!   in the states [`Disabled`] and [`Enabled`], with [`Failed`] and
-//!   [`PoisonedOwner`], keeping the backend's held part of the install;
+//!   owner's uninstall or a fail-stop, joined with the backend's driver,
+//!   which [`run_port`] retires before it takes the backend apart
+//!   ([`Retire`]); [`Owner`] over a [`PortBackend`], in the states
+//!   [`Disabled`] and [`Enabled`], with [`Failed`] and [`PoisonedOwner`],
+//!   borrowing the backend's held part of the install;
 //!   [`PhaseParts`] and [`Lent`], one running phase's event consumer
 //!   ([`RadioPortEvents`]), control and clients ([`RadioPortClient`]);
 //!   [`Work`], one admitted operation. Every rule a caller controls is a
@@ -67,9 +69,11 @@
 //! carries.
 //!
 //! Taking an event only dequeues it. Timed work a backend runs in software
-//! (backoffs, retry delays, watchdogs, retunes) progresses in the backend's
-//! own runner future, which the composition polls for as long as the port
-//! exists, next to the consumer and independently of it.
+//! (backoffs, retry delays, watchdogs) progresses in the backend's own
+//! runner future, independently of the consumer: under [`run_port`], the
+//! backend's driver ([`PortBackend::drive`]), which runs joined with the
+//! body for the port's life; on the base [`RadioPort`], a runner the
+//! composition polls next to the consumer for as long as the port exists.
 //!
 //! This package owns no state and never waits.
 
@@ -88,7 +92,7 @@ mod relation;
 
 pub use owner::{
     Disabled, EnableResult, Enabled, Ended, Failed, Lent, Owner, PhaseParts, PoisonedOwner,
-    PortBackend, PortBody, RadioPortClient, RadioPortEvents, RadioWork, Work, run_port,
+    PortBackend, PortBody, RadioPortClient, RadioPortEvents, RadioWork, Retire, Work, run_port,
 };
 pub use pool::{Mint, Permit, PermitPool, Slot};
 pub use relation::{

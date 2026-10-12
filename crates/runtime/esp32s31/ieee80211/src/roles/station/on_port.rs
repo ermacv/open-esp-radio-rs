@@ -23,6 +23,7 @@ use oer_radio_port::{EventsLost, Poisoned};
 
 pub mod join;
 pub mod scan;
+pub mod wpa2;
 
 /// The client of the station interface a backend lends in each phase.
 pub trait StationParts: LowerMacBackend {
@@ -30,6 +31,14 @@ pub trait StationParts: LowerMacBackend {
     type QueueKind;
     /// The permit kind of the backend's transmit buffers.
     type BufferKind;
+    /// The kind of the station's pairwise key slots.
+    type PairwiseKeyKind;
+    /// The kind of the station's group key slots.
+    type GroupKeyKind;
+    /// An installed pairwise key of the station in the install `'id`.
+    type PairwiseKey<'id>;
+    /// An installed group key of the station in the install `'id`.
+    type GroupKey<'id>;
     /// The station's client.
     type Station<'a, 'id>: StationClient<
             'id,
@@ -37,6 +46,10 @@ pub trait StationParts: LowerMacBackend {
             Fault = Self::Fault,
             QueueKind = Self::QueueKind,
             BufferKind = Self::BufferKind,
+            PairwiseKeyKind = Self::PairwiseKeyKind,
+            GroupKeyKind = Self::GroupKeyKind,
+            PairwiseKey = Self::PairwiseKey<'id>,
+            GroupKey = Self::GroupKey<'id>,
         >
     where
         Self: 'a,
@@ -171,9 +184,11 @@ pub trait HeldFrames {
     fn hold(&mut self, frame: &[u8]);
 }
 
-/// Send the individual management frame `encoded`, header and body as its
-/// encoder wrote them, through the station's client at `rate`, and wait for
-/// its completion; frames received meanwhile go to `held`.
+/// Send the individual frame `encoded` (a management frame, or a data
+/// frame with or without QoS), header and body as its encoder wrote them,
+/// through the station's client at `rate`, protected with `key` when
+/// given, and wait for its completion; frames received meanwhile go to
+/// `held`.
 ///
 /// # Errors
 ///
@@ -183,12 +198,13 @@ pub async fn send_encoded<'p, 'id, B: StationParts>(
     seats: &mut oer_ieee80211_lower_mac::TxSeats<'id, B::QueueKind, B::BufferKind>,
     encoded: &[u8],
     rate: oer_ieee80211_lower_mac::PhyRate,
+    key: Option<&B::PairwiseKey<'id>>,
     held: &mut impl HeldFrames,
 ) -> Result<oer_ieee80211_lower_mac::TxCompletion, SendError<B::Fault>> {
     use oer_ieee80211_lower_mac::{
-        AckHeader, Backoff, CoexPriority, FrameControl, HeaderSpec, IndividualAddress,
-        LowerMacClient, MpduLength, PhaseAttempt, Protection, SizedFrame, SupportedBackoff,
-        SupportedCoex, SupportedPower, TxFrame, TxFrameBody, TxPower,
+        AckHeader, AttemptKey, Backoff, CoexPriority, FrameControl, HeaderSpec, IndividualAddress,
+        LowerMacClient, MpduLength, PhaseAttempt, Protection, QosControl, SizedFrame,
+        SupportedBackoff, SupportedCoex, SupportedPower, Tid, TxFrame, TxFrameBody, TxPower,
     };
     use oer_ieee80211_mac::qos::WmmAccessCategory;
     use oer_ieee80211_port::RadioPortEvents;
@@ -199,9 +215,20 @@ pub async fn send_encoded<'p, 'id, B: StationParts>(
             encoded.get(at..at + 2)?.try_into().ok()?,
         ))
     };
-    let frame_control = word(0)
-        .and_then(FrameControl::new)
-        .ok_or(SendError::Frame)?;
+    let control = word(0).ok_or(SendError::Frame)?;
+    let frame_control = FrameControl::new(control).ok_or(SendError::Frame)?;
+    // A QoS data frame: type data with the QoS subtype bit.
+    let qos = if control & 0x00fc == 0x0088 {
+        let field = word(24).ok_or(SendError::Frame)?;
+        Some(QosControl {
+            tid: Tid::new((field & 0x0f) as u8).ok_or(SendError::Frame)?,
+            end_of_service_period: field & 0x0010 != 0,
+            amsdu_present: field & 0x0080 != 0,
+            high: (field >> 8) as u8,
+        })
+    } else {
+        None
+    };
     let receiver = field(4)
         .and_then(IndividualAddress::new)
         .ok_or(SendError::Frame)?;
@@ -213,12 +240,12 @@ pub async fn send_encoded<'p, 'id, B: StationParts>(
         field(16).ok_or(SendError::Frame)?,
         word(22).ok_or(SendError::Frame)?,
         None,
-        None,
+        qos,
         None,
     )
     .and_then(AckHeader::new)
     .ok_or(SendError::Frame)?;
-    let header_len = 24;
+    let header_len = header.header().len();
     let mut phase = owner.phase().ok_or(SendError::NotRunning)?;
     let station = B::station(&phase.clients);
     let rate = station.rate(rate).ok_or(SendError::Frame)?;
@@ -238,7 +265,7 @@ pub async fn send_encoded<'p, 'id, B: StationParts>(
         frame: buffer,
         body: None,
         protection: Protection::None,
-        key: None,
+        key: key.map(AttemptKey::Pairwise),
         power: SupportedPower::new(TxPower::Calibrated).ok_or(SendError::Frame)?,
         backoff: SupportedBackoff::new(Backoff::Slots(0)).ok_or(SendError::Frame)?,
         coex: SupportedCoex::new(CoexPriority::Elevated)
@@ -290,5 +317,22 @@ impl HeldFrames for OneHeldFrame<'_> {
             slot.copy_from_slice(frame);
             self.len = Some(frame.len());
         }
+    }
+}
+
+/// The output of `future`, which is ready at its first poll.
+///
+/// # Panics
+///
+/// The future is pending: its caller's claim that nothing it waits for is
+/// outstanding is wrong.
+pub fn now_ready<F: Future>(future: F) -> F::Output {
+    let mut future = pin!(future);
+    match future
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()))
+    {
+        Poll::Ready(output) => output,
+        Poll::Pending => panic!("a future that waits for nothing outstanding is ready"),
     }
 }

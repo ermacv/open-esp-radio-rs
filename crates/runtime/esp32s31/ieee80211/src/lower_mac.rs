@@ -3429,6 +3429,10 @@ where
 {
     type QueueKind = TxQueueKind;
     type BufferKind = TxBufferKind;
+    type PairwiseKeyKind = Esp32s31PairwiseKeys<Station>;
+    type GroupKeyKind = Esp32s31GroupKeys<Station>;
+    type PairwiseKey<'id> = Esp32s31PairwiseKey<'id, Station>;
+    type GroupKey<'id> = Esp32s31GroupKey<'id, Station>;
     type Station<'a, 'id>
         = Esp32s31Client<
         'a,

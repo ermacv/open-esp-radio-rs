@@ -93,7 +93,9 @@ pub use phase::{
     LowerMacPhase, PhaseTypes, RETRY_STAGES, Removed, RemovedKey, RetryPlan, RetryStage, RoleKeys,
     StationPhase, TxBufferClass, TxBufferMemory, TxBufferPool,
 };
-pub use rx::{RxBuffer, RxCryptoStatus, RxEvidence, RxMeta};
+pub use rx::{
+    LinkMetric, RxBuffer, RxCryptoStatus, RxEvidence, RxMeta, RxMetadata, SignalMetadata,
+};
 pub use tx::{
     Backoff, BlockAckReport, Protection, TxBody, TxCompletion, TxFault, TxPower, TxResponse,
     TxStatus,

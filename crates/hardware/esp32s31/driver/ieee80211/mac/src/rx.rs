@@ -874,6 +874,10 @@ pub struct NormalizedRxFrame<'frame> {
     /// prefix: an owner of the buffer finds the MPDU again from it.
     pub mpdu_offset: usize,
     pub metadata: MacRxMetadata<RxPhyInfo>,
+    /// The frame's RSSI from the receive prefix, which every completed
+    /// frame carries ([`decode_normalized_rx_metadata`] observes the same
+    /// byte).
+    pub rssi_dbm: i8,
     pub logical_length: usize,
     /// The receive timestamp of the prefix: the raw MAC local time of the
     /// frame's reception ([`decode_rx_local_timestamp`]).
@@ -907,10 +911,15 @@ pub fn view_normalized_rx_frame<'frame>(
         .get(layout.frame_offset..end)
         .ok_or(RxError::Bounds)?;
     let metadata = decode_normalized_rx_metadata(segment.buffer).ok_or(RxError::Metadata)?;
+    let rssi_dbm = *segment
+        .buffer
+        .get(RX_PHY_RSSI_OFFSET)
+        .ok_or(RxError::Metadata)? as i8;
     Ok(NormalizedRxFrame {
         mpdu,
         mpdu_offset: layout.frame_offset,
         metadata,
+        rssi_dbm,
         logical_length: layout.expected_frame_length,
         stamp: decode_rx_local_timestamp(segment.buffer),
     })

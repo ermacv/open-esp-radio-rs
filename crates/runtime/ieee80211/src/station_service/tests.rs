@@ -12,9 +12,13 @@ use core::task::{Poll, Waker};
 use embassy_futures::join::join;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::Channel as CommandChannel;
-use oer_espressif_ieee80211_policy::{rate_control::EspressifRateControl, rate_selection::EspressifRateSelection};
+use oer_espressif_ieee80211_policy::{
+    rate_control::EspressifRateControl, rate_selection::EspressifRateSelection,
+};
 use oer_ieee80211_arbiter::ArbiterPolicy;
-use oer_ieee80211_lower_mac::{Channel, ChannelWidth, IndividualAddress, LowerMacSetup, RxEvidence, RxMeta};
+use oer_ieee80211_lower_mac::{
+    Channel, ChannelWidth, IndividualAddress, LowerMacSetup, SignalMetadata,
+};
 use oer_ieee80211_mac::{
     phy::LegacyRate,
     security::rsn::Akm,
@@ -23,7 +27,7 @@ use oer_ieee80211_mac::{
 use oer_ieee80211_port::{Ended, PortBody, run_port};
 use oer_ieee80211_rsn::{Pmk, PtkContext, frames::RsnTxFrame};
 use oer_ieee80211_sta::machine::{StaConfig, StaSecurity};
-use oer_ieee80211_upper_mac::rate_control::{LinkMetric, RateControl};
+use oer_ieee80211_upper_mac::rate_control::RateControl;
 use oer_time::Duration;
 use oer_time_virtual::VirtualClock;
 use std::boxed::Box;
@@ -33,7 +37,7 @@ use std::vec::Vec;
 use super::*;
 use crate::lower_mac_owner::model::{
     AirFrame, ModelAir, ModelBackend, ModelCaps24, ModelLarge, ModelPhase, ModelResources,
-    ModelSetup, ModelSmall, ModelTypes,
+    ModelRxMeta, ModelSetup, ModelSmall, ModelTypes,
 };
 
 const LOCAL: [u8; 6] = [0x02, 0, 0, 0x12, 0x34, 0x56];
@@ -184,11 +188,8 @@ fn group_message1(ptk: &oer_ieee80211_rsn::Ptk, replay: u64, key_id: u8) -> Vec<
 
 /// What the port reported of a frame the access point sent: its signal
 /// over the noise floor, 55 dB.
-fn meta() -> RxMeta {
-    let mut meta = RxMeta::unavailable(channel6());
-    meta.rssi_dbm = RxEvidence::HardwareObserved(-40);
-    meta.noise_floor_dbm = RxEvidence::HardwareObserved(-95);
-    meta
+fn meta() -> ModelRxMeta {
+    ModelRxMeta::new(channel6(), -40, -95)
 }
 
 /// The Frame Control subtype bits of a frame.
@@ -297,7 +298,8 @@ impl World<'_> {
     /// Scan, authenticate and associate: the probe, the Authentication and
     /// the Association Request as they went.
     async fn associate(&self, seen: &mut usize, protected: bool) -> [AirFrame; 3] {
-        self.command(ServiceCommand::Station(StaCommand::Connect)).await;
+        self.command(ServiceCommand::Station(StaCommand::Connect))
+            .await;
         let probe = self.sent(seen, PROBE_REQUEST).await;
         self.air.receive(&beacon(protected), meta());
         let authentication = self.sent(seen, AUTHENTICATION).await;
@@ -346,8 +348,11 @@ where
             let large: [_; 4] = large.try_into().ok().unwrap();
             let [pairwise, _] = station_pairwise;
             let channel = SupportedChannel::new(channel6()).unwrap();
-            let (arbiter, place, absence) =
-                PortArbiter::<ModelBackend<ModelCaps24>>::new(ArbiterPolicy::DEFAULT, channel, gate);
+            let (arbiter, place, absence) = PortArbiter::<ModelBackend<ModelCaps24>>::new(
+                ArbiterPolicy::DEFAULT,
+                channel,
+                gate,
+            );
             let station = Station::new(
                 config(self.security),
                 station_tickets,
@@ -441,40 +446,42 @@ fn ofdm6() -> PhyRate {
 
 #[test]
 fn on_an_open_network_the_join_goes_on_the_default_record_and_then_the_associations() {
-    run(StaSecurity::Open, |world| Box::pin(async move {
-        let mut seen = 0;
-        let [probe, authentication, association] = world.associate(&mut seen, false).await;
-        // Before the connection: the probe once at 1 Mb/s, the join on the
-        // default control record, 1 Mb/s DSSS.
-        assert_eq!(probe.rate, dsss1());
-        assert_eq!(authentication.rate, dsss1());
-        assert_eq!(association.rate, dsss1());
-        world
-            .notice(StaNotice::Connected {
-                bssid: BSSID,
-                channel: 6,
-            })
-            .await;
-        // Connected at once on an open network: data at the rate control's
-        // rate, the next control frame on the association's record.
-        world.send_msdu([0x02, 0, 0, 0, 0, 0x07]);
-        let data = world.sent(&mut seen, DATA).await;
-        let peer = oer_ieee80211_upper_mac::rate_control::RatePeer {
-            phy: PhyMode::Legacy,
-            ht_capabilities: None,
-            he_capabilities: None,
-            he_peer_state: None,
-        };
-        assert_eq!(
-            data.rate,
-            EspressifRateControl::for_peer((), &peer, LinkMetric::of(&meta()).unwrap()).mpdu_rate()
-        );
-        world
-            .command(ServiceCommand::Station(StaCommand::Disconnect))
-            .await;
-        let deauthentication = world.sent(&mut seen, DEAUTHENTICATION).await;
-        assert_eq!(deauthentication.rate, ofdm6());
-    }));
+    run(StaSecurity::Open, |world| {
+        Box::pin(async move {
+            let mut seen = 0;
+            let [probe, authentication, association] = world.associate(&mut seen, false).await;
+            // Before the connection: the probe once at 1 Mb/s, the join on the
+            // default control record, 1 Mb/s DSSS.
+            assert_eq!(probe.rate, dsss1());
+            assert_eq!(authentication.rate, dsss1());
+            assert_eq!(association.rate, dsss1());
+            world
+                .notice(StaNotice::Connected {
+                    bssid: BSSID,
+                    channel: 6,
+                })
+                .await;
+            // Connected at once on an open network: data at the rate control's
+            // rate, the next control frame on the association's record.
+            world.send_msdu([0x02, 0, 0, 0, 0, 0x07]);
+            let data = world.sent(&mut seen, DATA).await;
+            let peer = oer_ieee80211_upper_mac::rate_control::RatePeer {
+                phy: PhyMode::Legacy,
+                ht_capabilities: None,
+                he_capabilities: None,
+                he_peer_state: None,
+            };
+            assert_eq!(
+                data.rate,
+                EspressifRateControl::for_peer((), &peer, meta().link_metric()).mpdu_rate()
+            );
+            world
+                .command(ServiceCommand::Station(StaCommand::Disconnect))
+                .await;
+            let deauthentication = world.sent(&mut seen, DEAUTHENTICATION).await;
+            assert_eq!(deauthentication.rate, ofdm6());
+        })
+    });
 }
 
 #[test]
@@ -483,70 +490,75 @@ fn on_wpa2_the_join_goes_on_the_default_record_and_the_handshake_on_the_associat
         StaSecurity::Wpa2Personal {
             pmk: Pmk::from_bytes(PMK),
         },
-        |world| Box::pin(async move {
-            let mut seen = 0;
-            let [_, authentication, association] = world.associate(&mut seen, true).await;
-            assert_eq!(authentication.rate, dsss1());
-            assert_eq!(association.rate, dsss1());
-            // Associated: the rates start from the association, so the
-            // handshake's Message 2 goes on its record, 6 Mb/s OFDM first
-            // (owner decision on #563).
-            let message1 = RsnTxFrame::<512>::message1(Akm::Psk, LOCAL, 1, ANONCE).unwrap();
-            world.air.receive(&eapol_frame(message1.as_bytes()), meta());
-            let message2 = world.sent(&mut seen, DATA).await;
-            assert_eq!(message2.rate, ofdm6());
-            let ptk = Pmk::from_bytes(PMK).derive_ptk(
-                Akm::Psk,
-                PtkContext {
-                    authenticator_address: BSSID,
-                    supplicant_address: LOCAL,
-                    authenticator_nonce: ANONCE,
-                    supplicant_nonce: SNONCE,
-                },
-            );
-            let mut plain = Vec::new();
-            plain.extend_from_slice(&RSN);
-            plain.extend_from_slice(&[0xdd, 22, 0x00, 0x0f, 0xac, 0x01, 0x01, 0x00]);
-            plain.extend_from_slice(&[0x99; 16]);
-            plain.extend_from_slice(&[0xdd, 0]);
-            let wrapped =
-                oer_ieee80211_rsn::aes::software_aes128_key_wrap(ptk.kek(), &plain).unwrap();
-            let message3 = RsnTxFrame::<512>::message3(
-                Akm::Psk,
-                LOCAL,
-                2,
-                ANONCE,
-                [0; 8],
-                wrapped.as_bytes(),
-            )
-            .unwrap()
-            .authenticate(&ptk);
-            world.air.receive(&eapol_frame(message3.as_bytes()), meta());
-            // Message 4: the association's record, and unprotected.
-            let message4 = world.sent(&mut seen, DATA).await;
-            assert_eq!(message4.rate, ofdm6());
-            assert_eq!(message4.key, None);
-            assert_eq!(message4.frame[1] & 0x40, 0);
-            world
-                .notice(StaNotice::Connected {
-                    bssid: BSSID,
-                    channel: 6,
-                })
-                .await;
-            // Connected: Group Message 2 goes under the pairwise key the
-            // link lends, with the Protected bit, on the association's
-            // record.
-            world.air.receive(&group_message1(&ptk, 3, 2), meta());
-            let group_message2 = world.sent(&mut seen, DATA).await;
-            assert!(matches!(group_message2.key, Some((_, true))), "{group_message2:?}");
-            assert_ne!(group_message2.frame[1] & 0x40, 0);
-            assert!(group_message2.packet_number.is_some());
-            assert_eq!(group_message2.rate, ofdm6());
-            world
-                .command(ServiceCommand::Station(StaCommand::Disconnect))
-                .await;
-            let deauthentication = world.sent(&mut seen, DEAUTHENTICATION).await;
-            assert_eq!(deauthentication.rate, ofdm6());
-        }),
+        |world| {
+            Box::pin(async move {
+                let mut seen = 0;
+                let [_, authentication, association] = world.associate(&mut seen, true).await;
+                assert_eq!(authentication.rate, dsss1());
+                assert_eq!(association.rate, dsss1());
+                // Associated: the rates start from the association, so the
+                // handshake's Message 2 goes on its record, 6 Mb/s OFDM first
+                // (owner decision on #563).
+                let message1 = RsnTxFrame::<512>::message1(Akm::Psk, LOCAL, 1, ANONCE).unwrap();
+                world.air.receive(&eapol_frame(message1.as_bytes()), meta());
+                let message2 = world.sent(&mut seen, DATA).await;
+                assert_eq!(message2.rate, ofdm6());
+                let ptk = Pmk::from_bytes(PMK).derive_ptk(
+                    Akm::Psk,
+                    PtkContext {
+                        authenticator_address: BSSID,
+                        supplicant_address: LOCAL,
+                        authenticator_nonce: ANONCE,
+                        supplicant_nonce: SNONCE,
+                    },
+                );
+                let mut plain = Vec::new();
+                plain.extend_from_slice(&RSN);
+                plain.extend_from_slice(&[0xdd, 22, 0x00, 0x0f, 0xac, 0x01, 0x01, 0x00]);
+                plain.extend_from_slice(&[0x99; 16]);
+                plain.extend_from_slice(&[0xdd, 0]);
+                let wrapped =
+                    oer_ieee80211_rsn::aes::software_aes128_key_wrap(ptk.kek(), &plain).unwrap();
+                let message3 = RsnTxFrame::<512>::message3(
+                    Akm::Psk,
+                    LOCAL,
+                    2,
+                    ANONCE,
+                    [0; 8],
+                    wrapped.as_bytes(),
+                )
+                .unwrap()
+                .authenticate(&ptk);
+                world.air.receive(&eapol_frame(message3.as_bytes()), meta());
+                // Message 4: the association's record, and unprotected.
+                let message4 = world.sent(&mut seen, DATA).await;
+                assert_eq!(message4.rate, ofdm6());
+                assert_eq!(message4.key, None);
+                assert_eq!(message4.frame[1] & 0x40, 0);
+                world
+                    .notice(StaNotice::Connected {
+                        bssid: BSSID,
+                        channel: 6,
+                    })
+                    .await;
+                // Connected: Group Message 2 goes under the pairwise key the
+                // link lends, with the Protected bit, on the association's
+                // record.
+                world.air.receive(&group_message1(&ptk, 3, 2), meta());
+                let group_message2 = world.sent(&mut seen, DATA).await;
+                assert!(
+                    matches!(group_message2.key, Some((_, true))),
+                    "{group_message2:?}"
+                );
+                assert_ne!(group_message2.frame[1] & 0x40, 0);
+                assert!(group_message2.packet_number.is_some());
+                assert_eq!(group_message2.rate, ofdm6());
+                world
+                    .command(ServiceCommand::Station(StaCommand::Disconnect))
+                    .await;
+                let deauthentication = world.sent(&mut seen, DEAUTHENTICATION).await;
+                assert_eq!(deauthentication.rate, ofdm6());
+            })
+        },
     );
 }

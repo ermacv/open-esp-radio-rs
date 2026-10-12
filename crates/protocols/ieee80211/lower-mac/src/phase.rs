@@ -221,7 +221,7 @@ use oer_ieee80211_port::PortPhase;
 use oer_radio_port::{Poisoned, Slot};
 
 use crate::{
-    Channel, PhyRate, Protection, RxMeta, TbttEvent, TxCompletion, VifRole,
+    Channel, PhyRate, Protection, TbttEvent, TxCompletion, VifRole,
     owner::{
         AccessPoint, BssColor, Ccmp128Key, Ieee80211Capabilities, IndividualAddress, InterfaceRole,
         PhaseRate, Station, StationReceive, SupportedBlockAck, SupportedCoex, SupportedEdca,
@@ -252,7 +252,7 @@ pub enum LowerMacEvent<'id, P: PhaseTypes<'id>> {
         /// FCS.
         frame: P::RxBuffer,
         /// What the hardware observed of it.
-        meta: RxMeta,
+        meta: P::RxMeta,
     },
     /// The terminal of one attempt: its ticket, its buffers and the bodies
     /// it carried.
@@ -354,6 +354,9 @@ pub trait PhaseTypes<'id> {
     /// The memory of one received MPDU, which goes back through
     /// [`LowerMacPhase::recycle`].
     type RxBuffer: crate::RxBuffer;
+    /// The metadata of one received MPDU: the portable fields and what the
+    /// backend's type guarantees beyond them.
+    type RxMeta: crate::RxMetadata;
     /// The bodies a completion carries, each with its subframe index.
     type TxBodies: IntoIterator;
     /// The station's keys and their slots.

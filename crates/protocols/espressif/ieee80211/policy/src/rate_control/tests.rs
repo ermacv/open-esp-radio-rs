@@ -514,9 +514,8 @@ mod seam {
         phy::{HtMcs, HtRate, PhyRate, PpduBandwidth},
         station::association::PhyMode,
     };
-    use oer_ieee80211_lower_mac::{Channel, RxEvidence, RxMeta};
-    use oer_ieee80211_mac::channel::WifiChannel;
-    use oer_ieee80211_upper_mac::rate_control::{LinkMetric, RateControl, RatePeer};
+    use oer_ieee80211_lower_mac::LinkMetric;
+    use oer_ieee80211_upper_mac::rate_control::{RateControl, RatePeer};
 
     use super::super::{EspressifRateControl, RateScheduleKind, RateScheduleRef, schedule_state};
 
@@ -535,13 +534,7 @@ mod seam {
 
     /// The metric of a frame `db` dB over the noise floor.
     fn metric(db: i8) -> LinkMetric {
-        let channel = Channel::from_wifi_channel(WifiChannel::mhz20(6).unwrap());
-        LinkMetric::of(&RxMeta {
-            rssi_dbm: RxEvidence::HardwareObserved(db),
-            noise_floor_dbm: RxEvidence::HardwareObserved(0),
-            ..RxMeta::unavailable(channel)
-        })
-        .unwrap()
+        LinkMetric::new(db, 0)
     }
 
     #[test]

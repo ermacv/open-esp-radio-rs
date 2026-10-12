@@ -9,7 +9,7 @@
 //! controller of `oer-espressif-ieee80211-policy::rate_control` adapts as the
 //! vendor does.
 
-use oer_ieee80211_lower_mac::{RxEvidence, RxMeta};
+use oer_ieee80211_lower_mac::LinkMetric;
 use oer_ieee80211_mac::{
     he::{He20Capabilities, He20PeerState},
     ht::HtPeerCapabilities,
@@ -93,61 +93,11 @@ impl RateControl for FixedRateControl {
     }
 }
 
-/// A peer's signal over the noise floor in one received frame, in dB: a
-/// rate controller starts from it. Only a frame whose port reported both
-/// makes one ([`LinkMetric::of`]), so a controller never starts from a
-/// substitute.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LinkMetric(i8);
-
-impl LinkMetric {
-    /// The metric of a frame's receive metadata, narrowed to a signed byte
-    /// as the vendor's `ic_set_trc` does; `None` when the port reported
-    /// either value unavailable.
-    pub fn of(meta: &RxMeta) -> Option<Self> {
-        let value = |evidence: RxEvidence<i8>| match evidence {
-            RxEvidence::HardwareObserved(value) | RxEvidence::ProtocolValidated(value) => {
-                Some(value)
-            }
-            RxEvidence::Unavailable => None,
-        };
-        Some(Self(
-            value(meta.rssi_dbm)?.wrapping_sub(value(meta.noise_floor_dbm)?),
-        ))
-    }
-
-    /// The metric in dB.
-    pub const fn db(self) -> i8 {
-        self.0
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use oer_ieee80211_lower_mac::Channel;
-    use oer_ieee80211_mac::{channel::WifiChannel, phy::LegacyRate};
+    use oer_ieee80211_mac::phy::LegacyRate;
 
     use super::*;
-
-    #[test]
-    fn the_link_metric_needs_both_signal_and_noise_floor() {
-        let channel = Channel::from_wifi_channel(WifiChannel::mhz20(6).unwrap());
-        let unavailable = RxMeta::unavailable(channel);
-        assert_eq!(LinkMetric::of(&unavailable), None);
-        let observed = RxMeta {
-            rssi_dbm: RxEvidence::HardwareObserved(-40),
-            noise_floor_dbm: RxEvidence::ProtocolValidated(-96),
-            ..unavailable
-        };
-        assert_eq!(LinkMetric::of(&observed).map(LinkMetric::db), Some(56));
-        assert_eq!(
-            LinkMetric::of(&RxMeta {
-                noise_floor_dbm: RxEvidence::Unavailable,
-                ..observed
-            }),
-            None
-        );
-    }
 
     #[test]
     fn a_fixed_controller_keeps_its_rate() {
@@ -158,13 +108,7 @@ mod tests {
             he_capabilities: None,
             he_peer_state: None,
         };
-        let metric = LinkMetric::of(&RxMeta {
-            rssi_dbm: RxEvidence::HardwareObserved(-40),
-            noise_floor_dbm: RxEvidence::HardwareObserved(-50),
-            ..RxMeta::unavailable(Channel::from_wifi_channel(WifiChannel::mhz20(6).unwrap()))
-        })
-        .unwrap();
-        let mut control = FixedRateControl::for_peer(rate, &peer, metric);
+        let mut control = FixedRateControl::for_peer(rate, &peer, LinkMetric::new(-40, -50));
         control.observe_mpdu(7, false, None);
         assert_eq!((control.mpdu_rate(), control.ampdu_rate()), (rate, rate));
     }

@@ -33,12 +33,12 @@ use core::marker::PhantomData;
 use core::num::NonZeroU8;
 
 use oer_ieee80211_lower_mac::{
-    Band, Ieee80211Capabilities, Protection, RETRY_STAGES, RetryPlan, RetryStage, TxCompletion,
-    TxStatus,
+    Band, Ieee80211Capabilities, Protection, RETRY_STAGES, RetryPlan, RetryStage, SignalMetadata,
+    TxCompletion, TxStatus,
 };
 use oer_ieee80211_mac::phy::{LegacyRate, PhyRate};
 use oer_ieee80211_upper_mac::{
-    rate_control::{LinkMetric, RateControl, RatePeer},
+    rate_control::{RateControl, RatePeer},
     rate_selection::{FrameRates, RateSelection},
 };
 use oer_time::Instant;
@@ -233,7 +233,80 @@ fn control_plan(schedule: RateScheduleRef) -> RetryPlan<PhyRate> {
     walk(initial, schedule_publication_limit(schedule), rate)
 }
 
-impl<K: Ieee80211Capabilities> RateSelection for EspressifRateSelection<K> {
+/// The selection for a port whose metadata measures every received frame's
+/// signal ([`SignalMetadata`]): the association's rate control starts from
+/// the Association Response's signal over the noise floor. A port whose
+/// metadata does not measure it has no Espressif selection:
+///
+/// ```compile_fail,E0277
+/// # use oer_espressif_ieee80211_policy::rate_selection::EspressifRateSelection;
+/// # use oer_ieee80211_lower_mac::*;
+/// # use oer_ieee80211_upper_mac::rate_selection::RateSelection;
+/// # struct Caps;
+/// # impl Ieee80211Capabilities for Caps { const CAPS: LowerMacCapabilities = PORT; }
+/// # const PORT: LowerMacCapabilities = LowerMacCapabilities {
+/// #     bands: BandSet::GHZ2_4, widths: WidthSet::MHZ20,
+/// #     rates: RateSupport { dsss_cck: true, ofdm: true,
+/// #         ht_max_mcs: oer_ieee80211_mac::phy::HtMcs::new(7),
+/// #         he_max_mcs: oer_ieee80211_mac::phy::HeMcs::new(9), he_max_bandwidth_mhz: 20,
+/// #         he_dcm: false, he_ldpc: true, spatial_streams: 1 },
+/// #     services: HardwareServices::FCS, vifs: 1, tx_queues: 4, max_mpdu_length: 2304,
+/// #     max_backoff_slots: 1023, tx_power_ceiling_min_dbm: None,
+/// #     coex_priorities: CoexPrioritySet::only(CoexPriority::Normal),
+/// #     individual_no_ack: PhyFormatSet::NON_HT,
+/// #     station_receive_filters: ReceiveFilter::BSS_MEMBER,
+/// #     access_point_receive_filters: ReceiveFilter::BSS_MEMBER, key_slots: 4,
+/// #     rx_block_ack_agreements: 0, rx_block_ack_max_tid: 0, rx_block_ack_max_window: 0,
+/// #     edca_max_aifsn: 15, edca_max_cw_exponent: 10,
+/// # };
+/// fn for_port<M: RxMetadata>(selection: impl RateSelection<M>) {}
+/// // The portable metadata measures nothing.
+/// for_port::<RxMeta>(EspressifRateSelection::<Caps>::new());
+/// ```
+///
+/// Metadata that measures the signal takes one:
+///
+/// ```
+/// # use oer_espressif_ieee80211_policy::rate_selection::EspressifRateSelection;
+/// # use oer_ieee80211_lower_mac::*;
+/// # use oer_ieee80211_upper_mac::rate_selection::RateSelection;
+/// # struct Caps;
+/// # impl Ieee80211Capabilities for Caps { const CAPS: LowerMacCapabilities = PORT; }
+/// # const PORT: LowerMacCapabilities = LowerMacCapabilities {
+/// #     bands: BandSet::GHZ2_4, widths: WidthSet::MHZ20,
+/// #     rates: RateSupport { dsss_cck: true, ofdm: true,
+/// #         ht_max_mcs: oer_ieee80211_mac::phy::HtMcs::new(7),
+/// #         he_max_mcs: oer_ieee80211_mac::phy::HeMcs::new(9), he_max_bandwidth_mhz: 20,
+/// #         he_dcm: false, he_ldpc: true, spatial_streams: 1 },
+/// #     services: HardwareServices::FCS, vifs: 1, tx_queues: 4, max_mpdu_length: 2304,
+/// #     max_backoff_slots: 1023, tx_power_ceiling_min_dbm: None,
+/// #     coex_priorities: CoexPrioritySet::only(CoexPriority::Normal),
+/// #     individual_no_ack: PhyFormatSet::NON_HT,
+/// #     station_receive_filters: ReceiveFilter::BSS_MEMBER,
+/// #     access_point_receive_filters: ReceiveFilter::BSS_MEMBER, key_slots: 4,
+/// #     rx_block_ack_agreements: 0, rx_block_ack_max_tid: 0, rx_block_ack_max_window: 0,
+/// #     edca_max_aifsn: 15, edca_max_cw_exponent: 10,
+/// # };
+/// #[derive(Clone, Copy)]
+/// struct Measured {
+///     common: RxMeta,
+///     rssi_dbm: i8,
+///     noise_floor_dbm: i8,
+/// }
+/// impl RxMetadata for Measured {
+///     fn common(&self) -> &RxMeta {
+///         &self.common
+///     }
+/// }
+/// impl SignalMetadata for Measured {
+///     fn link_metric(&self) -> LinkMetric {
+///         LinkMetric::new(self.rssi_dbm, self.noise_floor_dbm)
+///     }
+/// }
+/// fn for_port<M: RxMetadata>(selection: impl RateSelection<M>) {}
+/// for_port::<Measured>(EspressifRateSelection::<Caps>::new());
+/// ```
+impl<K: Ieee80211Capabilities, M: SignalMetadata> RateSelection<M> for EspressifRateSelection<K> {
     fn plan(&self, frame: FrameRates) -> RetryPlan<PhyRate> {
         match (frame, &self.control) {
             // The vendor station's probe: once, at 1 Mb/s.
@@ -255,8 +328,8 @@ impl<K: Ieee80211Capabilities> RateSelection for EspressifRateSelection<K> {
         }
     }
 
-    fn associated(&mut self, peer: &RatePeer, link_metric: LinkMetric) {
-        self.control = Some(EspressifRateControl::for_peer((), peer, link_metric));
+    fn associated(&mut self, peer: &RatePeer, response: &M) {
+        self.control = Some(EspressifRateControl::for_peer((), peer, response.link_metric()));
     }
 
     fn disconnected(&mut self) {

@@ -72,6 +72,49 @@ pub trait RxBuffer {
     fn bytes(&self) -> &[u8];
 }
 
+/// The metadata a backend gives a received MPDU: the portable fields
+/// ([`RxMeta`]), and whatever more the backend's type guarantees
+/// ([`SignalMetadata`]).
+pub trait RxMetadata: Copy {
+    /// The portable fields.
+    fn common(&self) -> &RxMeta;
+}
+
+impl RxMetadata for RxMeta {
+    fn common(&self) -> &RxMeta {
+        self
+    }
+}
+
+/// A peer's signal over the noise floor in one received frame, in dB,
+/// narrowed to a signed byte as the vendor's `ic_set_trc` does: what a rate
+/// controller starts from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LinkMetric(i8);
+
+impl LinkMetric {
+    /// The metric of a frame received at `rssi_dbm` over `noise_floor_dbm`.
+    pub const fn new(rssi_dbm: i8, noise_floor_dbm: i8) -> Self {
+        Self(rssi_dbm.wrapping_sub(noise_floor_dbm))
+    }
+
+    /// The metric in dB.
+    pub const fn db(self) -> i8 {
+        self.0
+    }
+}
+
+/// The metadata of a backend that measures every received frame's signal
+/// and the noise floor it was received over: a property of the backend,
+/// so code that needs the metric requires this trait and a backend
+/// without it does not build with that code ([owner decision on #563]).
+///
+/// [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563
+pub trait SignalMetadata: RxMetadata {
+    /// The frame's signal over the noise floor.
+    fn link_metric(&self) -> LinkMetric;
+}
+
 /// Portable metadata of one received MPDU.
 ///
 /// The backend publishes the physical fields it observed and leaves the

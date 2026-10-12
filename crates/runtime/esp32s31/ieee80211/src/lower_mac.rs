@@ -280,7 +280,7 @@ pub enum Esp32s31LowerMacEvent<U, O, const SUBFRAMES: usize> {
     /// A received MPDU.
     Received {
         frame: Esp32s31RxBuffer<U>,
-        meta: RxMeta,
+        meta: oer_esp32s31_ieee80211::lower_mac::Esp32s31RxMeta,
     },
     TxCompleted(TxCompletion, Option<Esp32s31TxBodies<O, SUBFRAMES>>),
     /// A station TBTT.
@@ -987,9 +987,11 @@ where
                 .and_then(|raw| self.timer.snapshot()?.stamp(raw))
                 .map_or(RxEvidence::Unavailable, RxEvidence::HardwareObserved);
             self.with_installed(|core, hardware, _, _| {
-                Ok(core.received(&*hardware, &frame).map(|(bytes, mut meta)| {
-                    meta.timestamp = stamp;
-                    (frame.mpdu_offset..frame.mpdu_offset + bytes.len(), meta)
+                Ok(core.received(&*hardware, &frame).map(|(bytes, meta)| {
+                    (
+                        frame.mpdu_offset..frame.mpdu_offset + bytes.len(),
+                        meta.with_timestamp(stamp),
+                    )
                 }))
             })
             .ok()
@@ -1931,7 +1933,7 @@ where
         match event {
             Esp32s31LowerMacEvent::Received { frame, meta } => LowerMacEvent::Received {
                 frame: frame.bytes(),
-                meta: *meta,
+                meta: *oer_ieee80211_lower_mac::RxMetadata::common(meta),
             },
             Esp32s31LowerMacEvent::TxCompleted(completion, _) => {
                 LowerMacEvent::TxCompleted(*completion)

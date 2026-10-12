@@ -9,6 +9,7 @@ use oer_ieee80211_arbiter::{
     NoReservation,
 };
 use oer_ieee80211_lower_mac::{
+    RxMeta,
     BandSet, Channel, ChannelWidth, CoexPriority, CoexPrioritySet, HardwareServices,
     LowerMacCapabilities, PhyFormatSet, RateSupport, WidthSet,
 };
@@ -82,6 +83,7 @@ impl StaTokens for Tokens {
     type GroupSlot = Slot;
     type PairwiseKey = Key;
     type GroupKey = Key;
+    type RxMeta = RxMeta;
 }
 
 const SNONCE: [u8; 32] = [3; 32];
@@ -199,7 +201,7 @@ struct World {
     /// Every frame the station sent, in its buffer.
     frames: Vec<Vec<u8>>,
     /// The frames sent before the station said it associated, and its peer.
-    associated: Option<(usize, Peer)>,
+    associated: Option<(usize, Peer<RxMeta>)>,
     /// The signal of the frames the world delivers.
     rssi: i8,
 }
@@ -544,10 +546,10 @@ fn a_station_alone_scans_joins_an_open_network_and_leaves_it() {
     );
     assert!(world.station.is_connected());
     // What a rate selection starts from: the PHY the association made and
-    // the access point's signal over the noise floor.
+    // the metadata its response arrived with.
     let peer = world.station.peer().unwrap();
     assert_eq!(peer.associated.phy, PhyMode::Legacy);
-    assert_eq!(peer.link_metric.db(), 55);
+    assert_eq!(peer.response, meta);
 
     // The application leaves: Deauthentication, receive off, the lease
     // back, then the report.
@@ -569,33 +571,6 @@ fn a_station_alone_scans_joins_an_open_network_and_leaves_it() {
     // Every token came back.
     assert!(world.in_flight.is_empty());
     assert!(world.station.place.is_some());
-}
-
-#[test]
-fn an_association_response_without_the_noise_floor_fails_the_association() {
-    let mut world = World::new(3);
-    world.station.input(at(0), StaInput::Command(StaCommand::Connect));
-    world.run(at(0));
-    world.advance();
-    world.receive(at(13), &beacon());
-    world.advance();
-    world.receive(at(30), &authentication_response(0));
-    world.take();
-    // No noise floor: no signal margin for the rate selection to start from.
-    let mut meta = meta();
-    meta.noise_floor_dbm = RxEvidence::Unavailable;
-    world.station.input(
-        at(31),
-        StaInput::Received {
-            frame: &open_association_response(),
-            meta,
-        },
-    );
-    world.run(at(31));
-    assert!(!world.station.is_connected());
-    assert!(world.take().contains(&Seen::Notify(StaNotice::Disconnected(
-        StaDisconnectReason::AssociationFailed
-    ))));
 }
 
 #[test]
@@ -1162,7 +1137,7 @@ fn the_station_says_it_associated_before_the_handshakes_first_message() {
     let subtype = |frame: &Vec<u8>| u16::from_le_bytes([frame[0], frame[1]]) & 0x00fc;
     assert_eq!(subtype(&world.frames[sent - 1]), 0x0000);
     assert_eq!(subtype(&world.frames[sent]), 0x0008);
-    assert_eq!(peer.link_metric.db(), 55);
+    assert_eq!(peer.response, meta());
 }
 
 #[test]

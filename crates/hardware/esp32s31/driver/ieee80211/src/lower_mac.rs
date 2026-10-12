@@ -132,7 +132,7 @@ use oer_ieee80211_lower_mac::{
     KeySelector, LifecycleCommand, LifecycleError, LifecycleEvent, LowerMacCapabilities,
     LowerMacSetting, MacAddress, MonitorCapabilities, MpduAttempt, PhyFormatSet, PhyRate,
     Protection, RateSupport, ReceiveFilter, Refused, RxBeaconPriority, RxBlockAckAgreement,
-    RxEvidence, RxMeta, SettingError, SubmitError, TbttEvent, TbttSchedule, TxBuffer, TxCompletion,
+    LinkMetric, RxEvidence, RxMeta, RxMetadata, SettingError, SignalMetadata, SubmitError, TbttEvent, TbttSchedule, TxBuffer, TxCompletion,
     TxFault, TxId, TxPower, TxResponse, TxStatus, VifConfig, VifId, VifRole, VifRoleSet, VifTsf,
     WidthSet,
 };
@@ -216,6 +216,42 @@ const STATION_RECEIVE_FILTERS: ReceiveFilter =
 /// the TX metadata word, the CCMP MIC and the FCS in the four-byte-aligned
 /// descriptor capacity, and with the MIC and the FCS fits the transmit
 /// programs' PSDU length field (the legacy program's 12 bits). Each of the four ordinary EDCA queues holds one
+/// One received MPDU's metadata on the ESP32-S31: the portable fields, and
+/// the frame's RSSI from its receive prefix and the PHY's noise floor when
+/// it was received, which every frame carries. The S31 therefore measures
+/// every frame's signal ([`SignalMetadata`]), and a rate selection that
+/// needs it builds for this port (owner decision on #563).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31RxMeta {
+    common: RxMeta,
+    rssi_dbm: i8,
+    noise_floor_dbm: i8,
+}
+
+impl Esp32s31RxMeta {
+    /// The same metadata with the frame's receive stamp, which the runtime
+    /// converts from the MAC local time.
+    pub const fn with_timestamp(
+        mut self,
+        timestamp: RxEvidence<oer_ieee80211_lower_mac::Ieee80211Stamp>,
+    ) -> Self {
+        self.common.timestamp = timestamp;
+        self
+    }
+}
+
+impl RxMetadata for Esp32s31RxMeta {
+    fn common(&self) -> &RxMeta {
+        &self.common
+    }
+}
+
+impl SignalMetadata for Esp32s31RxMeta {
+    fn link_metric(&self) -> LinkMetric {
+        LinkMetric::new(self.rssi_dbm, self.noise_floor_dbm)
+    }
+}
+
 /// attempt. 5 GHz is absent from the ESP32-S31.
 // CAPABILITY: wifi-interfaces-and-operating-modes-lower-mac-port-concurrent-queue-attempts
 pub const fn esp32s31_lower_mac_capabilities(buffer_size: usize) -> LowerMacCapabilities {
@@ -1466,12 +1502,20 @@ where
         &self,
         hardware: &H,
         frame: &NormalizedRxFrame<'frame>,
-    ) -> Option<(&'frame [u8], RxMeta)> {
+    ) -> Option<(&'frame [u8], Esp32s31RxMeta)> {
         let admitted = self.monitor || self.vifs.iter().flatten().any(|vif| vif.admits(frame.mpdu));
         (self.receiving() && admitted).then(|| {
-            let mut meta = portable::rx_meta(frame.metadata, self.channel());
-            meta.noise_floor_dbm = RxEvidence::HardwareObserved(hardware.read_noise_floor_dbm());
-            (frame.mpdu, meta)
+            let noise_floor_dbm = hardware.read_noise_floor_dbm();
+            let mut common = portable::rx_meta(frame.metadata, self.channel());
+            common.noise_floor_dbm = RxEvidence::HardwareObserved(noise_floor_dbm);
+            (
+                frame.mpdu,
+                Esp32s31RxMeta {
+                    common,
+                    rssi_dbm: frame.rssi_dbm,
+                    noise_floor_dbm,
+                },
+            )
         })
     }
 

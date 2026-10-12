@@ -11,11 +11,11 @@
 //!
 //! [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6132066470
 
-use oer_ieee80211_lower_mac::{RetryPlan, TxCompletion};
+use oer_ieee80211_lower_mac::{RetryPlan, RxMetadata, TxCompletion};
 use oer_ieee80211_mac::phy::PhyRate;
 use oer_time::Instant;
 
-use crate::rate_control::{LinkMetric, RatePeer};
+use crate::rate_control::RatePeer;
 
 /// What a frame is for, which picks its rates.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -29,15 +29,17 @@ pub enum FrameRates {
     Data,
 }
 
-/// The rates of one interface's frames.
-pub trait RateSelection {
+/// The rates of one interface's frames, on a port whose received frames
+/// carry the metadata `M`: a selection that needs what `M` does not
+/// guarantee (a signal measurement) is not one for that port.
+pub trait RateSelection<M: RxMetadata> {
     /// The retry plan of the next frame for `frame`.
     fn plan(&self, frame: FrameRates) -> RetryPlan<PhyRate>;
 
-    /// The interface associated with `peer`, whose signal over the noise
-    /// floor was `link_metric` in the frame that made the link: from now on
-    /// its frames go at the association's rates.
-    fn associated(&mut self, peer: &RatePeer, link_metric: LinkMetric);
+    /// The interface associated with `peer`, whose frame that made the link
+    /// (the station's Association Response) arrived with `response`: from
+    /// now on its frames go at the association's rates.
+    fn associated(&mut self, peer: &RatePeer, response: &M);
 
     /// The interface left its peer.
     fn disconnected(&mut self);

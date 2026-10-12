@@ -2,13 +2,13 @@
 //! order and the three tests of the owner decisions on #563
 //! (https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129037560).
 
-use oer_ieee80211_mac::ccmp::GroupKeyId;
 use super::*;
 use core::num::NonZeroU8;
 use oer_ieee80211_lower_mac::{
     AckHeader, ChannelWidth, FrameControl, HeaderSpec, MpduLength, RetryPlan, RetryStage,
     SizedFrame, SupportedCoex, SupportedPower, TxPower,
 };
+use oer_ieee80211_mac::ccmp::GroupKeyId;
 use oer_ieee80211_mac::{phy::LegacyRate, qos::WmmAccessCategory};
 use oer_ieee80211_port::{Disabled, Ended, Owner, PortBody, run_port};
 
@@ -56,7 +56,13 @@ async fn yield_now() {
 
 /// A future that is pending until `open` is set.
 fn until(open: &Cell<bool>) -> impl Future<Output = ()> + '_ {
-    poll_fn(|_| if open.get() { Poll::Ready(()) } else { Poll::Pending })
+    poll_fn(|_| {
+        if open.get() {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
+    })
 }
 
 /// A data frame to the peer, 40 octets, protected or not.
@@ -140,7 +146,10 @@ async fn completion<'p, 'id: 'p>(
             let mut context = core::task::Context::from_waker(Waker::noop());
             Future::poll(event, &mut context)
         };
-        if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted { ticket, buffers, .. }))) = event {
+        if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted {
+            ticket, buffers, ..
+        }))) = event
+        {
             let mut buffers = buffers.into_iter();
             return (ticket, buffers.next().unwrap());
         }
@@ -152,7 +161,11 @@ async fn completion<'p, 'id: 'p>(
 struct Numbering;
 
 impl Work for Numbering {
-    async fn work<'p, 'id: 'p>(self, phase: &mut ModelPhase<'p, 'id>, resources: ModelResources<'id>) {
+    async fn work<'p, 'id: 'p>(
+        self,
+        phase: &mut ModelPhase<'p, 'id>,
+        resources: ModelResources<'id>,
+    ) {
         let ModelResources {
             mut tickets,
             mut small,
@@ -250,7 +263,11 @@ fn drain<'p, 'id: 'p>(phase: &mut ModelPhase<'p, 'id>, stream: &mut Stream) {
 /// What a test's body does over the running phase and the install's
 /// tokens.
 trait Work {
-    async fn work<'p, 'id: 'p>(self, phase: &mut ModelPhase<'p, 'id>, resources: ModelResources<'id>);
+    async fn work<'p, 'id: 'p>(
+        self,
+        phase: &mut ModelPhase<'p, 'id>,
+        resources: ModelResources<'id>,
+    );
 }
 
 /// The body of the tests: it enables, runs its work, then disables and
@@ -288,7 +305,11 @@ impl<W: Work> PortBody<ModelBackend> for Body<W> {
 struct KeyThenAttempt;
 
 impl Work for KeyThenAttempt {
-    async fn work<'p, 'id: 'p>(self, phase: &mut ModelPhase<'p, 'id>, resources: ModelResources<'id>) {
+    async fn work<'p, 'id: 'p>(
+        self,
+        phase: &mut ModelPhase<'p, 'id>,
+        resources: ModelResources<'id>,
+    ) {
         let ModelResources {
             mut tickets,
             mut small,
@@ -325,7 +346,11 @@ fn an_attempt_naming_a_key_goes_after_the_keys_install() {
 struct KeyAttemptRemoval;
 
 impl Work for KeyAttemptRemoval {
-    async fn work<'p, 'id: 'p>(self, phase: &mut ModelPhase<'p, 'id>, resources: ModelResources<'id>) {
+    async fn work<'p, 'id: 'p>(
+        self,
+        phase: &mut ModelPhase<'p, 'id>,
+        resources: ModelResources<'id>,
+    ) {
         let ModelResources {
             mut tickets,
             mut small,
@@ -374,8 +399,18 @@ struct WaitForever<'t> {
 }
 
 impl Work for WaitForever<'_> {
-    async fn work<'p, 'id: 'p>(self, phase: &mut ModelPhase<'p, 'id>, resources: ModelResources<'id>) {
-        submit_all(phase, resources.tickets, resources.small, resources.large, |_| {});
+    async fn work<'p, 'id: 'p>(
+        self,
+        phase: &mut ModelPhase<'p, 'id>,
+        resources: ModelResources<'id>,
+    ) {
+        submit_all(
+            phase,
+            resources.tickets,
+            resources.small,
+            resources.large,
+            |_| {},
+        );
         // The body waits on something else entirely.
         until(self.open).await;
         drain(phase, &mut self.stream.borrow_mut());
@@ -400,7 +435,7 @@ fn a_body_that_waits_forever_never_stalls_the_driver() {
     }
     // The world sends more frames than the stream holds while the body
     // waits; the driver keeps serving the hardware.
-    let meta = RxMeta::unavailable(Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap());
+    let meta = ModelRxMeta::new(Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap(), -40, -95);
     for _ in 0..MODEL_RX_EVENTS + 3 {
         air.receive(&[0x80, 0, 0, 0], meta);
     }
@@ -433,7 +468,11 @@ struct MaxWork<'t> {
 }
 
 impl Work for MaxWork<'_> {
-    async fn work<'p, 'id: 'p>(self, phase: &mut ModelPhase<'p, 'id>, resources: ModelResources<'id>) {
+    async fn work<'p, 'id: 'p>(
+        self,
+        phase: &mut ModelPhase<'p, 'id>,
+        resources: ModelResources<'id>,
+    ) {
         let ModelResources {
             tickets,
             small,
@@ -467,19 +506,31 @@ impl Work for MaxWork<'_> {
             let group = GroupKeyId::new(1).unwrap();
             let mut keys = 0;
             for slot in station_pairwise {
-                let _installed = phase.station().install_pairwise_key(slot, peer, Ccmp128Key([1; 16]));
+                let _installed =
+                    phase
+                        .station()
+                        .install_pairwise_key(slot, peer, Ccmp128Key([1; 16]));
                 keys += 1;
             }
             for slot in station_group {
-                let _installed = phase.station().install_group_key(slot, group, Ccmp128Key([2; 16]));
+                let _installed =
+                    phase
+                        .station()
+                        .install_group_key(slot, group, Ccmp128Key([2; 16]));
                 keys += 1;
             }
             for slot in access_point_pairwise {
-                let _installed = phase.access_point().install_pairwise_key(slot, peer, Ccmp128Key([3; 16]));
+                let _installed =
+                    phase
+                        .access_point()
+                        .install_pairwise_key(slot, peer, Ccmp128Key([3; 16]));
                 keys += 1;
             }
             for slot in access_point_group {
-                let _installed = phase.access_point().install_group_key(slot, group, Ccmp128Key([4; 16]));
+                let _installed =
+                    phase
+                        .access_point()
+                        .install_group_key(slot, group, Ccmp128Key([4; 16]));
                 keys += 1;
             }
             assert_eq!(keys, MODEL_ALL_KEY_SLOTS);
@@ -525,6 +576,9 @@ fn as_much_work_as_allowed_while_every_setting_changes_loses_no_command() {
     // ended; every kind of setting took its latest value before the next
     // command.
     assert_eq!(stream.borrow().completions, MODEL_TICKETS);
-    assert_eq!(air.commands(), (MODEL_TICKETS + MODEL_ALL_KEY_SLOTS + 1) as u32);
+    assert_eq!(
+        air.commands(),
+        (MODEL_TICKETS + MODEL_ALL_KEY_SLOTS + 1) as u32
+    );
     assert!(air.settings() >= 3);
 }

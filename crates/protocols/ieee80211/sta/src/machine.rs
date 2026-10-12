@@ -71,7 +71,7 @@ use oer_ieee80211_arbiter::{
 };
 use oer_ieee80211_lower_mac::{
     AckHeader, GroupAddress, HeaderSpec, Ieee80211Capabilities, IndividualAddress, MpduLength,
-    ReceiveFilter, RxEvidence, RxMeta, SizedFrame, Station as StationRole, StationReceive,
+    ReceiveFilter, RxEvidence, RxMetadata, SizedFrame, Station as StationRole, StationReceive,
     SupportedChannel, SupportedFilter, TxBufferMemory, TxCompletion, TxStatus,
 };
 use oer_ieee80211_mac::ccmp::CcmpRxReplayEpoch;
@@ -99,7 +99,7 @@ use oer_ieee80211_rsn::{
         RsnStaSupplicantAction,
     },
 };
-use oer_ieee80211_upper_mac::{HePacketPadding, rate_control::LinkMetric};
+use oer_ieee80211_upper_mac::HePacketPadding;
 
 use crate::association::StaAssociatedPeer;
 use oer_time::{Duration, Instant};
@@ -127,6 +127,8 @@ pub trait StaTokens {
     type PairwiseKey;
     /// An installed group key, which holds its slot.
     type GroupKey;
+    /// The metadata the port gives a received frame.
+    type RxMeta: RxMetadata;
 }
 
 /// How the station protects its link.
@@ -162,8 +164,8 @@ pub enum StaInput<'f, T: StaTokens, K> {
     Received {
         /// The MPDU, from its header to the end of its body.
         frame: &'f [u8],
-        /// What the hardware observed of it.
-        meta: RxMeta,
+        /// What the port observed of it.
+        meta: T::RxMeta,
     },
     /// The terminal of a transmission: its ticket and buffer come back.
     TxDone {
@@ -264,7 +266,7 @@ pub enum StaAction<'a, T: StaTokens, K> {
     /// [`StaNotice::Disconnected`] ends it.
     ///
     /// [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563
-    Associated(Peer),
+    Associated(Peer<T::RxMeta>),
     /// Tell the application what happened.
     Notify(StaNotice),
 }
@@ -502,7 +504,7 @@ pub struct Station<T: StaTokens, K: Ieee80211Capabilities> {
     /// steps.
     notice_owed: Option<StaNotice>,
     /// The access point of an association the service has yet to hear.
-    associated_owed: Option<Peer>,
+    associated_owed: Option<Peer<T::RxMeta>>,
     sequence: StaSequenceCounter,
     scan: ScanTable<SCAN_CAPACITY>,
 }
@@ -703,11 +705,11 @@ struct Join<T: StaTokens, K> {
     access_point: ScanRecord,
     rsn: SelectedRsn,
     channel: SupportedChannel<K>,
-    step: JoinStep,
+    step: JoinStep<T::RxMeta>,
     keys: Keys<T>,
 }
 
-enum JoinStep {
+enum JoinStep<M> {
     NeedLease,
     AwaitAnswer,
     /// The access point beside the station followed a join too recently:
@@ -720,21 +722,21 @@ enum JoinStep {
     Associate(StaAssociationRuntime),
     Report {
         association_id: u16,
-        peer: Peer,
+        peer: Peer<M>,
     },
 }
 
 /// The access point as the association made it: what it negotiated, and
-/// its signal over the noise floor in the Association Response, in dB,
-/// when the port reported both.
+/// the metadata its Association Response arrived with, whose type is the
+/// port's: a rate selection starts from it (owner decision on #563, fresher
+/// than the scan record the old ESP32-S31 path took), and one that needs a
+/// signal measurement requires a port whose metadata carries one.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Peer {
+pub struct Peer<M> {
     /// What the association negotiated.
     pub associated: StaAssociatedPeer,
-    /// The access point's signal over the noise floor in the Association
-    /// Response, which a rate selection starts from (owner decision on
-    /// #563: fresher than the scan record the old ESP32-S31 path took).
-    pub link_metric: LinkMetric,
+    /// The Association Response's metadata.
+    pub response: M,
 }
 
 struct Authenticate {
@@ -755,7 +757,7 @@ struct Handshake<T: StaTokens, K> {
     channel: SupportedChannel<K>,
     association_id: u16,
     qos: bool,
-    peer: Peer,
+    peer: Peer<T::RxMeta>,
     supplicant: RsnStaSupplicant,
     /// The deadline of the message the station waits for.
     deadline: RsnStaResponseDeadline,
@@ -795,7 +797,7 @@ struct Connected<T: StaTokens, K> {
     /// The access point's BSS is a QoS BSS (it advertised WMM).
     qos: bool,
     /// The access point as the association made it.
-    peer: Peer,
+    peer: Peer<T::RxMeta>,
     /// The association's QoS sequence spaces, one per TID: its EAPOL's and,
     /// lent through the link, its data's.
     qos_sequences: [StaSequenceCounter; 8],
@@ -1073,7 +1075,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     /// # struct Tokens;
     /// # impl StaTokens for Tokens {
     /// #     type Ticket = u8; type SmallBuffer = Buffer; type PairwiseSlot = ();
-    /// #     type GroupSlot = (); type PairwiseKey = (); type GroupKey = ();
+    /// #     type GroupSlot = (); type PairwiseKey = (); type GroupKey = (); type RxMeta = RxMeta;
     /// # }
     /// fn nine(
     ///     config: StaConfig<Caps>,
@@ -1119,7 +1121,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
 
     /// The access point of the associated station, as its association made
     /// it: during the handshake and once connected.
-    pub const fn peer(&self) -> Option<&Peer> {
+    pub const fn peer(&self) -> Option<&Peer<T::RxMeta>> {
         match &self.state {
             State::Handshake(handshake) => Some(&handshake.peer),
             State::Connected(connected) => Some(&connected.peer),
@@ -1886,8 +1888,8 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     }
 
     /// Take a received frame.
-    fn received(&mut self, now: Instant, frame: &[u8], meta: RxMeta) {
-        let rssi = match meta.rssi_dbm {
+    fn received(&mut self, now: Instant, frame: &[u8], meta: T::RxMeta) {
+        let rssi = match meta.common().rssi_dbm {
             RxEvidence::HardwareObserved(rssi) | RxEvidence::ProtocolValidated(rssi) => rssi,
             RxEvidence::Unavailable => i8::MIN,
         };
@@ -1936,27 +1938,25 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                     let _ = runtime.observe_received_frame();
                     match runtime.observe_management_frame(frame, now) {
                         Ok(StaAssociationEvent::Associated { response, .. }) => {
-                            // The rate selection starts from the response's
-                            // signal over the noise floor: a port that did not
-                            // report both fails the association.
-                            let derived = StaAssociatedPeer::derive(
+                            match StaAssociatedPeer::derive(
                                 &join.access_point,
                                 &response,
                                 self.config.phy,
                                 self.config.he_packet_padding,
-                            );
-                            match (derived, LinkMetric::of(&meta)) {
-                                (Ok(associated), Some(link_metric)) => {
+                            ) {
+                                Ok(associated) => {
                                     join.step = JoinStep::Report {
                                         association_id: response.association_id,
+                                        // The rate selection starts from the
+                                        // response's metadata.
                                         peer: Peer {
                                             associated,
-                                            link_metric,
+                                            response: meta,
                                         },
                                     };
                                     State::Join(join)
                                 }
-                                _ => {
+                                Err(_) => {
                                     leave_unkeyed(join.keys, StaDisconnectReason::AssociationFailed)
                                 }
                             }
@@ -2704,7 +2704,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         &mut self,
         join: Join<T, K>,
         association_id: u16,
-        peer: Peer,
+        peer: Peer<T::RxMeta>,
         now: Instant,
     ) -> State<T, K> {
         self.associated_owed = Some(peer);

@@ -71,6 +71,7 @@ impl StaTokens for Station {
     type GroupSlot = ();
     type PairwiseKey = ();
     type GroupKey = ();
+    type RxMeta = RxMeta;
 }
 
 const LOCAL: [u8; 6] = [2, 0, 0, 0, 0, 1];

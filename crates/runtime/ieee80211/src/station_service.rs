@@ -30,26 +30,26 @@ use oer_ieee80211_arbiter::{
 };
 use oer_ieee80211_lower_mac::{
     AttemptKey, Ccmp128Key, ClassFrame, CoexPriority, GateClosed, GateOpen, Ieee80211Capabilities,
-    InterfacePhase, KeyTypes, LowerMacBackend, LowerMacEvent, LowerMacPhase,
-    PhaseTypes, Protection, Removed, RemovedKey, RetryPlan, RxBuffer, PhaseRate,
-    StationPhase, SupportedChannel, SupportedCoex, SupportedPower, TxBufferClass,
-    TxBufferPool, TxCompletion, TxFrame, TxPower, VifRole,
+    InterfacePhase, KeyTypes, LowerMacBackend, LowerMacEvent, LowerMacPhase, PhaseRate, PhaseTypes,
+    Protection, Removed, RemovedKey, RetryPlan, RxBuffer, RxMetadata, StationPhase,
+    SupportedChannel, SupportedCoex, SupportedPower, TxBufferClass, TxBufferPool, TxCompletion,
+    TxFrame, TxPower, VifRole,
 };
 use oer_ieee80211_mac::{
     phy::PhyRate,
     qos::{WmmAccessCategory, WmmUserPriority},
 };
-use oer_ieee80211_upper_mac::rate_selection::{FrameRates, RateSelection};
 use oer_ieee80211_port::{Disabled, Enabled, Failed, Owner, PoisonedOwner, PortBackend};
-use oer_radio_port::Slot;
 use oer_ieee80211_sta::{
     data::{self, DataAction, DataInput, Msdu, StaData, StaDataTokens},
     machine::{
-        LinkProtection, Peer, StaAction, StaCommand, StaFrame, StaFrameClass, StaInput,
-        StaNotice, StaRatePlan, StaTokens, StaTransmit, Station,
+        LinkProtection, Peer, StaAction, StaCommand, StaFrame, StaFrameClass, StaInput, StaNotice,
+        StaRatePlan, StaTokens, StaTransmit, Station,
     },
     power_save::NULL_TRANSMISSIONS,
 };
+use oer_ieee80211_upper_mac::rate_selection::{FrameRates, RateSelection};
+use oer_radio_port::Slot;
 use oer_time::{Instant, Timer};
 
 /// The longest Ethernet frame a queue's slot holds: its 14-octet header and
@@ -102,6 +102,7 @@ where
     type GroupSlot = Slot<'id, <Ty::StationKeys as KeyTypes<'id>>::GroupKind>;
     type PairwiseKey = <Ty::StationKeys as KeyTypes<'id>>::PairwiseKey;
     type GroupKey = <Ty::StationKeys as KeyTypes<'id>>::GroupKey;
+    type RxMeta = Ty::RxMeta;
 }
 
 /// The data machine's tokens on a port of the phase types `Ty`, its MPDUs
@@ -124,6 +125,9 @@ impl<'id> GateTokens for PortGate<'id> {
     type Open = GateOpen<'id>;
     type Closed = GateClosed<'id>;
 }
+
+/// The metadata the port `B` gives a received frame.
+pub type PortRxMeta<'id, B> = <<B as StationPort<'id>>::Types as PhaseTypes<'id>>::RxMeta;
 
 /// The station of the service on the port `B`.
 pub type PortStation<'id, B> = Station<
@@ -259,7 +263,7 @@ enum Next<K> {
     Poisoned,
 }
 
-impl<'a, 'id, B: StationPort<'id>, S: RateSelection, const RX: usize>
+impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: usize>
     StationService<'a, 'id, B, S, RX>
 {
     /// The service of the machines the composition built, its frames at
@@ -513,7 +517,13 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection, const RX: usize>
             };
             // The machine took it, or it can never go (too long): either
             // way it leaves the queue.
-            let _ = self.data.input(now, DataInput::Msdu { msdu, link: &mut link });
+            let _ = self.data.input(
+                now,
+                DataInput::Msdu {
+                    msdu,
+                    link: &mut link,
+                },
+            );
         }
         io.transmit.receive_done();
     }
@@ -618,7 +628,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection, const RX: usize>
             // The rates start from what the association made known.
             Follow::Associated(peer) => {
                 self.rates
-                    .associated(&peer.associated.rate_peer(), peer.link_metric);
+                    .associated(&peer.associated.rate_peer(), &peer.response);
             }
             Follow::Disconnected => self.rates.disconnected(),
         }
@@ -662,15 +672,10 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection, const RX: usize>
         match event {
             LowerMacEvent::Received { frame, meta } => {
                 let bytes = frame.bytes();
-                self.station.input(
-                    now,
-                    StaInput::Received {
-                        frame: bytes,
-                        meta,
-                    },
-                );
+                self.station
+                    .input(now, StaInput::Received { frame: bytes, meta });
                 if let Some(mut link) = self.station.link()
-                    && let Some(msdus) = data::received(&mut link, bytes, &meta)
+                    && let Some(msdus) = data::received(&mut link, bytes, meta.common())
                 {
                     for parts in msdus {
                         // A full queue drops the MSDU, as an Ethernet
@@ -767,7 +772,7 @@ enum Follow<'id, B: StationPort<'id>> {
     /// An arbiter's answer or a key, back to the station.
     Input(StaInput<'static, PortStaTokens<'id, B::Types, B::Small>, B::Caps>),
     /// The station associated: the rates start from its peer.
-    Associated(Peer),
+    Associated(Peer<PortRxMeta<'id, B>>),
     /// The station left: the rates leave its peer.
     Disconnected,
 }
@@ -783,7 +788,7 @@ fn submit_station<'p, 'id: 'p, B, P, S>(
 where
     B: StationPort<'id>,
     P: LowerMacPhase<'p, 'id, Caps = B::Caps, Types = B::Types>,
-    S: RateSelection,
+    S: RateSelection<PortRxMeta<'id, B>>,
 {
     let frame = match transmit.frame {
         StaFrame::Individual(frame) => {
@@ -848,7 +853,7 @@ where
     B: StationPort<'id>,
     P: LowerMacPhase<'p, 'id, Caps = B::Caps, Types = B::Types>,
     M: RawMutex,
-    S: RateSelection,
+    S: RateSelection<PortRxMeta<'id, B>>,
 {
     let input = match action {
         StaAction::RequestChannel(request, place) => {
@@ -895,7 +900,8 @@ where
             return Ok(Follow::Nothing);
         }
         StaAction::Transmit(transmit) => {
-            return submit_station::<B, P, S>(phase, rates, None, transmit).map(|()| Follow::Nothing);
+            return submit_station::<B, P, S>(phase, rates, None, transmit)
+                .map(|()| Follow::Nothing);
         }
         StaAction::TransmitProtected { transmit, key } => {
             return submit_station::<B, P, S>(phase, rates, Some(key), transmit)

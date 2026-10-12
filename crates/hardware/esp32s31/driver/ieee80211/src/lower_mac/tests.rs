@@ -1347,6 +1347,7 @@ fn normalized(mpdu: &[u8]) -> NormalizedRxFrame<'_> {
             ampdu: MacRxEvidence::Unavailable,
             amsdu: MacRxEvidence::Unavailable,
         },
+        rssi_dbm: -42,
         logical_length: mpdu.len(),
         stamp: None,
     }
@@ -1386,8 +1387,11 @@ fn received_frames_are_narrowed_to_the_requested_rules() {
     .unwrap();
     core.lifecycle(LifecycleCommand::Enable, &mut Events::default())
         .unwrap();
-    let (bytes, meta) = core.received(&hardware, &normalized(&unicast)).unwrap();
-    // The frame carries the PHY's noise-floor estimate.
+    let (bytes, received) = core.received(&hardware, &normalized(&unicast)).unwrap();
+    // The frame carries the PHY's noise-floor estimate and its signal over
+    // it.
+    assert_eq!(received.link_metric(), LinkMetric::new(-42, -96));
+    let meta = *received.common();
     assert_eq!(meta.noise_floor_dbm, RxEvidence::HardwareObserved(-96));
     assert_eq!(bytes, unicast);
     assert_eq!(meta.channel, Channel::from_wifi_channel(channel(6)));

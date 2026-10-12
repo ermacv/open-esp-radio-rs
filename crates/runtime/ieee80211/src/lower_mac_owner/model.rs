@@ -25,7 +25,6 @@
 //!
 //! [owner decisions on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129037560
 
-use oer_ieee80211_mac::ccmp::GroupKeyId;
 use alloc::{boxed::Box, collections::VecDeque, rc::Rc, vec::Vec};
 use core::{
     cell::{Cell, RefCell},
@@ -33,6 +32,7 @@ use core::{
     marker::PhantomData,
     task::{Poll, Waker},
 };
+use oer_ieee80211_mac::ccmp::GroupKeyId;
 
 use oer_ieee80211_mac::phy::{HeMcs, HtMcs, PhyRate};
 use oer_ieee80211_port::{ClockError, EnableResult, PortBackend, PortPhase, Retire};
@@ -42,13 +42,13 @@ use oer_time::RadioInstant;
 use oer_ieee80211_lower_mac::{
     AccessPoint, AccessPointPhase, AttemptKey, BandSet, BssColor, Ccmp128Key, Channel, ClassFrame,
     CoexPriority, CoexPrioritySet, FrameHeader, GateClosed, GateClosedKind, GateOpen, GateOpenKind,
-    HardwareServices, Ieee80211Capabilities, Ieee80211Radio, IndividualAddress,
-    InterfaceAttempt, InterfacePhase, KeyTypes, LowerMacBackend, LowerMacCapabilities, Removed,
-    RemovedKey, RoleKeys,
-    LowerMacEvent, LowerMacPhase, LowerMacSetup, PhaseRate, PhaseTypes, PhyFormatSet, Protection,
-    RateSupport, ReceiveFilter, RxBuffer, RxMeta, Station, StationPhase, StationReceive,
-    SupportedBlockAck, SupportedChannel, SupportedEdca, SupportedFilter, TxBody, TxBufferClass,
-    TxBufferMemory, TxBufferPool, TxCompletion, TxFrame, TxFrameBody, TxStatus, VifRole, WidthSet,
+    HardwareServices, Ieee80211Capabilities, Ieee80211Radio, IndividualAddress, InterfaceAttempt,
+    InterfacePhase, KeyTypes, LinkMetric, LowerMacBackend, LowerMacCapabilities, LowerMacEvent,
+    LowerMacPhase, LowerMacSetup, PhaseRate, PhaseTypes, PhyFormatSet, Protection, RateSupport,
+    ReceiveFilter, Removed, RemovedKey, RoleKeys, RxBuffer, RxEvidence, RxMeta, RxMetadata,
+    SignalMetadata, Station, StationPhase, StationReceive, SupportedBlockAck, SupportedChannel,
+    SupportedEdca, SupportedFilter, TxBody, TxBufferClass, TxBufferMemory, TxBufferPool,
+    TxCompletion, TxFrame, TxFrameBody, TxStatus, VifRole, WidthSet,
 };
 
 /// The longest MPDU the model's large buffers hold.
@@ -285,7 +285,16 @@ fn packet_number(header: &[u8]) -> u64 {
 /// The CCMP header of the packet number `number` under the key `key_id`.
 fn ccmp_header(number: u64, key_id: u8) -> [u8; 8] {
     let pn = number.to_le_bytes();
-    [pn[0], pn[1], 0, 0x20 | (key_id << 6), pn[2], pn[3], pn[4], pn[5]]
+    [
+        pn[0],
+        pn[1],
+        0,
+        0x20 | (key_id << 6),
+        pn[2],
+        pn[3],
+        pn[4],
+        pn[5],
+    ]
 }
 
 /// The types the model's events carry.
@@ -297,6 +306,7 @@ impl<'id> PhaseTypes<'id> for ModelTypes {
     type TxBuffers = Vec<ModelAnyBuffer<'id>>;
     type TxBodies = core::iter::Empty<(u8, ModelBody)>;
     type RxBuffer = ModelRxBuffer;
+    type RxMeta = ModelRxMeta;
     type StationKeys = ModelKeys<'id, Station>;
     type AccessPointKeys = ModelKeys<'id, AccessPoint>;
     type BlockAckKind = ModelBlockAcks;
@@ -375,6 +385,50 @@ impl<'id> TxBufferPool<'id, ModelLarge> for ModelTypes {
     }
 }
 
+/// What the model's radio observed of a received frame: the portable
+/// fields and, always, its signal and the noise floor, so the model is a
+/// port whose metadata measures the signal ([`SignalMetadata`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ModelRxMeta {
+    common: RxMeta,
+    rssi_dbm: i8,
+    noise_floor_dbm: i8,
+}
+
+impl ModelRxMeta {
+    /// A frame received on `channel` at `rssi_dbm` over `noise_floor_dbm`.
+    pub const fn new(channel: Channel, rssi_dbm: i8, noise_floor_dbm: i8) -> Self {
+        let mut common = RxMeta::unavailable(channel);
+        common.rssi_dbm = RxEvidence::HardwareObserved(rssi_dbm);
+        common.noise_floor_dbm = RxEvidence::HardwareObserved(noise_floor_dbm);
+        Self {
+            common,
+            rssi_dbm,
+            noise_floor_dbm,
+        }
+    }
+
+    /// The same frame, with what the hardware observed of its decryption.
+    pub const fn with_crypto(
+        mut self,
+        crypto: RxEvidence<oer_ieee80211_lower_mac::RxCryptoStatus>,
+    ) -> Self {
+        self.common.crypto = crypto;
+        self
+    }
+}
+
+impl RxMetadata for ModelRxMeta {
+    fn common(&self) -> &RxMeta {
+        &self.common
+    }
+}
+
+impl SignalMetadata for ModelRxMeta {
+    fn link_metric(&self) -> LinkMetric {
+        LinkMetric::new(self.rssi_dbm, self.noise_floor_dbm)
+    }
+}
 
 /// The memory of one received MPDU, which goes back through
 /// [`LowerMacPhase::recycle`]: dropped without it, it panics in a test.
@@ -459,7 +513,7 @@ pub struct ModelAir {
     /// The answers of the next transmissions, in order; once none is
     /// queued, each is acknowledged.
     answers: RefCell<VecDeque<bool>>,
-    rx: RefCell<VecDeque<(Vec<u8>, RxMeta)>>,
+    rx: RefCell<VecDeque<(Vec<u8>, ModelRxMeta)>>,
     refuse_enable: Cell<bool>,
     poisoned: Cell<bool>,
     driver: RefCell<Option<Waker>>,
@@ -483,7 +537,7 @@ impl ModelAir {
     }
 
     /// Deliver `frame` to the radio.
-    pub fn receive(&self, frame: &[u8], meta: RxMeta) {
+    pub fn receive(&self, frame: &[u8], meta: ModelRxMeta) {
         self.rx.borrow_mut().push_back((frame.into(), meta));
         self.wake_driver();
     }
@@ -540,8 +594,13 @@ struct Stage {
 /// A command the handle sends the driver, in the order it made it.
 enum Command<'id> {
     Submit(Prepared<'id>),
-    InstallKey { index: u8 },
-    RemoveKey { index: u8, removed: Removed<'id, ModelTypes> },
+    InstallKey {
+        index: u8,
+    },
+    RemoveKey {
+        index: u8,
+        removed: Removed<'id, ModelTypes>,
+    },
     CloseGate,
     OpenGate,
 }
@@ -918,9 +977,16 @@ impl<'id> Driver<'id> {
                 // A fresh MPDU under a key is numbered at its first
                 // transmission; a numbered one keeps its number.
                 if let Some(key) = prepared.key
-                    && matches!(prepared.buffer, ModelAnyBuffer::Small(_) | ModelAnyBuffer::Large(_))
+                    && matches!(
+                        prepared.buffer,
+                        ModelAnyBuffer::Small(_) | ModelAnyBuffer::Large(_)
+                    )
                 {
-                    let number = match self.packet_numbers.iter_mut().find(|(index, _)| *index == key) {
+                    let number = match self
+                        .packet_numbers
+                        .iter_mut()
+                        .find(|(index, _)| *index == key)
+                    {
                         Some((_, last)) => {
                             *last += 1;
                             *last
@@ -931,7 +997,8 @@ impl<'id> Driver<'id> {
                         }
                     };
                     let at = prepared.header_len;
-                    prepared.buffer.memory_mut()[at..at + 8].copy_from_slice(&ccmp_header(number, 0));
+                    prepared.buffer.memory_mut()[at..at + 8]
+                        .copy_from_slice(&ccmp_header(number, 0));
                     prepared.buffer = prepared.buffer.into_numbered();
                 }
                 let mut transmissions = 0_u8;

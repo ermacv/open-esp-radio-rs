@@ -18,7 +18,8 @@ use oer_ieee80211_mac::{
     phy::{FecCoding, HeGiLtf, HeMcs, HeRate, HtMcs, HtRate, LegacyRate, PhyRate, PpduBandwidth},
     station::association::PhyMode,
 };
-use oer_ieee80211_upper_mac::rate_control::{LinkMetric, RateControl, RatePeer};
+use oer_ieee80211_lower_mac::LinkMetric;
+use oer_ieee80211_upper_mac::rate_control::{RateControl, RatePeer};
 use oer_time::Instant;
 
 /// Instruction-evidenced fields of one 12-byte rate schedule record.

@@ -193,7 +193,6 @@ pub trait Ieee80211Capabilities {
 }
 
 /// A channel the capabilities `K` tune to.
-#[derive(Debug)]
 pub struct SupportedChannel<K> {
     channel: Channel,
     brand: PhantomData<fn() -> K>,
@@ -239,6 +238,23 @@ impl<K> Clone for SupportedChannel<K> {
 }
 
 impl<K> Copy for SupportedChannel<K> {}
+
+impl<K> PartialEq for SupportedChannel<K> {
+    fn eq(&self, other: &Self) -> bool {
+        self.channel == other.channel
+    }
+}
+
+impl<K> Eq for SupportedChannel<K> {}
+
+impl<K> core::fmt::Debug for SupportedChannel<K> {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_tuple("SupportedChannel")
+            .field(&self.channel)
+            .finish()
+    }
+}
 
 /// An interface role, as a type.
 pub trait InterfaceRole {

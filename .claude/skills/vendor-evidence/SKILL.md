@@ -22,10 +22,14 @@ Scenario authors also read the
    which `cargo tidy check` uses too) (a chip-neutral path names its chips). The cited
    function is registered with its reviewed fingerprint in
    `verification/<chip>/facts/provenance.toml`; grep that file by explicit
-   path, never read it whole. A bare name cites every pinned copy (the
-   library's and the ROM's); cite only the copy you reviewed as
-   `artifact[member]::symbol` (`libpp[pm.o]::pm_parse_beacon`), the form the
-   check prints. Accepting a copy no citation names removes its registration.
+   path, never read it whole. A function several pinned artifacts define
+   (the ROM's copy and a library's, which may handle the same register bits
+   differently) is cited by the copy the fact was read from, as
+   `artifact[member]::symbol` (`libpp[pm.o]::pm_parse_beacon`,
+   `rom[]::pm_tbtt_process`), the form the check prints; a bare name of one
+   fails the check. A bare name cites a function's only copy. Coverage
+   decisions are exempt until #655. Accepting a copy no citation names
+   removes its registration.
 3. **After a citation change** run `cargo verification check provenance --chip <chip>`.
    After review, record new fingerprints with
    `cargo verification provenance --chip <chip> --accept NAME`.

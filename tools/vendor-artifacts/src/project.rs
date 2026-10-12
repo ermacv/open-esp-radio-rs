@@ -69,13 +69,11 @@ impl Project {
         evidence_shards(&self.0)
     }
 
-    /// The chip's reviewed summaries of the ROM functions its images call,
-    /// relative to the root, as its profile's `[rom]` names them; `None`
-    /// for a chip that reviews none.
-    pub fn rom_summaries(&self, root: &Path) -> Result<Option<std::path::PathBuf>> {
-        Ok(oer_chip_profile::Profile::load(root, &self.0)?
-            .rom
-            .and_then(|rom| rom.summaries))
+    /// The chip's ROM as its profile's `[rom]` names it: the pinned ROM
+    /// ELF's artifact id and the reviewed summaries of the ROM functions its
+    /// images call, relative to the root; `None` for a chip without one.
+    pub fn rom(&self, root: &Path) -> Result<Option<oer_chip_profile::Rom>> {
+        Ok(oer_chip_profile::Profile::load(root, &self.0)?.rom)
     }
 
     /// The chip's reviewed acceptances of vendor roots its index retired or

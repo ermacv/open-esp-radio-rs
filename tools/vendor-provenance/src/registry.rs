@@ -14,13 +14,18 @@
 //! or the `artifact[member]::symbol` form the check prints, which narrows it
 //! to that member; a name neither registered nor pinned is an error.
 //!
-//! A bare name cites every pinned copy of the function: the vendor library's
-//! and, where the ROM carries one, the ROM's. A citation in the same
-//! `artifact[member]::symbol` form (`libpp[pm.o]::pm_parse_beacon`,
-//! `rom[]::pm_tbtt_process`) cites only that copy, so a fact reviewed
-//! against one copy does not claim the others; naming a copy no pinned
-//! artifact defines is an error. Accepting a copy no citation names any
-//! longer removes its registration.
+//! A citation in the `artifact[member]::symbol` form
+//! (`libpp[pm.o]::pm_parse_beacon`, `rom[]::pm_tbtt_process`) cites only that
+//! copy, so a fact reviewed against one copy does not claim the others;
+//! naming a copy no pinned artifact defines is an error. A bare name cites
+//! the function's one pinned copy; a function several pinned artifacts
+//! define (the ROM's copy and a library's, which may handle the same
+//! register bits differently) must be cited by its copy, and a bare name of
+//! one is an error. The platform's ROM function summaries cite the ROM's
+//! copy. A coverage decision names the function a scenario executed,
+//! whichever copy its link took, and cites every copy until coverage
+//! locations carry the copy (#655). Accepting a copy no citation names any longer removes its
+//! registration.
 use crate::Result;
 use crate::fingerprint::Function;
 use oer_vendor_artifacts::project::{self, Project};
@@ -301,6 +306,32 @@ struct Found {
     problems: Vec<String>,
     /// Location and identifiers of every neutral block that names no chip.
     uncharted: Vec<(String, BTreeSet<String>)>,
+    /// Where each bare citation was written, with the identifiers it names.
+    bare_at: Vec<(String, BTreeSet<String>)>,
+}
+
+impl Found {
+    /// Record the citations of `text`, written at `location`: its
+    /// `artifact[member]::symbol` copies and its bare identifiers.
+    fn cite(&mut self, location: &str, text: &str) {
+        let (bare, copies) = qualified_citations(text);
+        let mut words = BTreeSet::new();
+        identifiers(&bare, &mut words);
+        self.words.extend(words.iter().cloned());
+        self.bare_at.push((location.to_owned(), words));
+        for (artifact, member, symbol) in copies {
+            self.qualified_at.push((
+                location.to_owned(),
+                artifact.clone(),
+                member.clone(),
+                symbol.clone(),
+            ));
+            self.qualified
+                .entry(symbol)
+                .or_default()
+                .insert((artifact, member));
+        }
+    }
 }
 
 /// The production files below `directory` (through the repository model's
@@ -339,23 +370,10 @@ fn production_words(
             };
             for block in blocks {
                 match attribute(&block, place, scan.chip, scan.citable) {
-                    Attribution::Cited => {
-                        let (bare, copies) = qualified_citations(&block.text);
-                        identifiers(&bare, &mut found.words);
-                        for (artifact, member, symbol) in copies {
-                            found.qualified_at.push((
-                                format!("{}:{}", relative.display(), block.line),
-                                artifact.clone(),
-                                member.clone(),
-                                symbol.clone(),
-                            ));
-                            found
-                                .qualified
-                                .entry(symbol)
-                                .or_default()
-                                .insert((artifact, member));
-                        }
-                    }
+                    Attribution::Cited => found.cite(
+                        &format!("{}:{}", relative.display(), block.line),
+                        &block.text,
+                    ),
                     Attribution::NotCited => {}
                     Attribution::Uncharted => {
                         let mut words = BTreeSet::new();
@@ -439,6 +457,8 @@ struct Survey {
     qualified: BTreeMap<String, BTreeSet<(String, String)>>,
     /// Each qualified citation with where it was written.
     qualified_at: Vec<(String, String, String, String)>,
+    /// Where each bare citation was written, with the identifiers it names.
+    bare_at: Vec<(String, BTreeSet<String>)>,
     /// Every cited identifier, whether or not it names a function.
     words: BTreeSet<String>,
     /// Names the verification decisions cite, with the files citing them.
@@ -482,12 +502,16 @@ fn survey(root: &Path, chip: &str) -> Result<Survey> {
             &mut found,
         )?;
     }
+    for (file, text) in oer_register_model::descriptions(root, chip)? {
+        found.cite(&file.display().to_string(), &text);
+    }
     let Found {
         mut words,
         qualified: forms,
         qualified_at: forms_at,
         problems: mut citations,
         uncharted,
+        mut bare_at,
     } = found;
     // `libpp[pm.o]::f` names one copy; `libpp.a[pm.o]::f` or any other
     // form whose artifact is no pinned id cites `f` bare.
@@ -504,23 +528,30 @@ fn survey(root: &Path, chip: &str) -> Result<Survey> {
             }
         }
     }
-    let qualified_at: Vec<_> = forms_at
-        .into_iter()
-        .filter(|(_, artifact, _, _)| pinned.contains_key(artifact))
-        .collect();
+    let qualified_at = split_forms(
+        forms_at,
+        |artifact| pinned.contains_key(artifact),
+        &mut bare_at,
+    );
 
-    for text in oer_register_model::descriptions(root, chip)? {
-        identifiers(&text, &mut words);
-    }
     let mut decisions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    // A decision names the function a scenario executed, whichever copy its
+    // link took; its copy is not named until coverage locations carry one
+    // (#655), so it cites every copy.
     for directory in DECISIONS {
         for (word, files) in decision_words(&root.join(scanned.verification(directory)))? {
             decisions.entry(word).or_default().extend(files);
         }
     }
     words.extend(decisions.keys().cloned());
-    if let Some(summaries) = scanned.rom_summaries(root)? {
-        words.extend(summary_names(&root.join(summaries))?);
+    if let Some(rom) = scanned.rom(root)?
+        && let Some(summaries) = rom.summaries
+    {
+        rom_summary_citations(
+            summary_names(&root.join(summaries))?,
+            &rom.elf,
+            &mut qualified,
+        );
     }
     let known: BTreeSet<&str> = current
         .keys()
@@ -550,6 +581,7 @@ fn survey(root: &Path, chip: &str) -> Result<Survey> {
         references,
         qualified,
         qualified_at,
+        bare_at,
         words,
         decisions,
         pinned,
@@ -617,6 +649,7 @@ fn problems_of(survey: &Survey) -> Vec<String> {
         }
     }
     problems.extend(survey.documents.iter().cloned());
+    problems.extend(ambiguous_citations(survey));
     let registered: BTreeSet<(&str, &str, &str)> = survey
         .registry
         .iter()
@@ -671,6 +704,64 @@ fn problems_of(survey: &Survey) -> Vec<String> {
             problems.push(format!(
                 "{artifact}[{member}]::{symbol} is cited but not registered"
             ));
+        }
+    }
+    problems
+}
+
+/// The `artifact[member]::symbol` forms `forms_at` wrote whose artifact is
+/// pinned, as qualified citations; a form naming any other artifact (such as
+/// the file `libpp.a`) cites its symbol bare, into `bare_at`.
+fn split_forms(
+    forms_at: Vec<(String, String, String, String)>,
+    pinned: impl Fn(&str) -> bool,
+    bare_at: &mut Vec<(String, BTreeSet<String>)>,
+) -> Vec<(String, String, String, String)> {
+    let (qualified, unpinned): (Vec<_>, Vec<_>) = forms_at
+        .into_iter()
+        .partition(|(_, artifact, _, _)| pinned(artifact));
+    for (location, _, _, symbol) in unpinned {
+        bare_at.push((location, BTreeSet::from([symbol])));
+    }
+    qualified
+}
+
+/// Cite the ROM's copy (`rom_elf`, the chip's pinned ROM ELF) of every
+/// function a ROM summary `names`: a summary describes the ROM's code.
+fn rom_summary_citations(
+    names: BTreeSet<String>,
+    rom_elf: &str,
+    qualified: &mut BTreeMap<String, BTreeSet<(String, String)>>,
+) {
+    for name in names {
+        qualified
+            .entry(name)
+            .or_default()
+            .insert((rom_elf.to_owned(), String::new()));
+    }
+}
+
+/// A violation for every bare citation of a function several pinned
+/// artifacts define: the fact names one of its copies.
+fn ambiguous_citations(survey: &Survey) -> Vec<String> {
+    let mut copies: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+    for (artifact, member, symbol) in survey.current.keys() {
+        copies
+            .entry(symbol.as_str())
+            .or_default()
+            .push(format!("{artifact}[{member}]::{symbol}"));
+    }
+    let mut problems = vec![];
+    for (location, words) in &survey.bare_at {
+        for word in words {
+            if let Some(copies) = copies.get(word.as_str()).filter(|c| c.len() > 1) {
+                problems.push(format!(
+                    "{location}: cites `{word}` bare, but {} pinned copies define it ({}); \
+                     cite the copy the fact was read from",
+                    copies.len(),
+                    copies.join(", ")
+                ));
+            }
         }
     }
     problems

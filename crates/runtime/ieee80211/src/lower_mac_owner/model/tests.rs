@@ -5,7 +5,7 @@
 use super::*;
 use core::num::NonZeroU8;
 use oer_ieee80211_lower_mac::{
-    AckHeader, ChannelWidth, FrameControl, HeaderSpec, MpduLength, RetryPlan, RetryStage,
+    AckHeader, ChannelWidth, FrameControl, GroupKeyId, HeaderSpec, MpduLength, RetryPlan, RetryStage,
     SizedFrame, SupportedCoex, SupportedPower, TxPower,
 };
 use oer_ieee80211_mac::{phy::LegacyRate, qos::WmmAccessCategory};
@@ -60,12 +60,16 @@ fn until(open: &Cell<bool>) -> impl Future<Output = ()> + '_ {
 
 /// A data frame to the peer, `len` octets, in `buffer`, submitted with
 /// `ticket` and `key`.
-fn submit<'p, 'id: 'p>(
+fn submit<'p, 'id: 'p, C>(
     phase: &mut ModelPhase<'p, 'id>,
     ticket: Slot<'id, ModelTickets>,
-    mut buffer: ModelBuffer<'id, ModelSmall>,
+    mut buffer: ModelBuffer<'id, C>,
     key: Option<&ModelPairwiseKey<'id, Station>>,
-) {
+) where
+    C: TxBufferClass,
+    ModelTypes: TxBufferPool<'id, C, Buffer = ModelBuffer<'id, C>>
+        + PhaseTypes<'id, TicketKind = ModelTickets>,
+{
     let rate = phase
         .rate(PhyRate::Legacy(LegacyRate::Ofdm6M))
         .expect("the channel carries 6 Mbit/s");
@@ -93,7 +97,7 @@ fn submit<'p, 'id: 'p>(
         }),
     };
     let mut station = phase.station();
-    let frame = station.tx_buffer::<ModelSmall>(buffer, ClassFrame::new(frame).ok().unwrap());
+    let frame = station.tx_buffer::<C>(buffer, ClassFrame::new(frame).ok().unwrap());
     station
         .submit(oer_ieee80211_lower_mac::Attempt {
             ticket,
@@ -108,6 +112,27 @@ fn submit<'p, 'id: 'p>(
         .unwrap();
 }
 
+/// Submit an attempt for every ticket, in every buffer of either class,
+/// running `between` after each.
+fn submit_all<'p, 'id: 'p>(
+    phase: &mut ModelPhase<'p, 'id>,
+    tickets: Vec<Slot<'id, ModelTickets>>,
+    small: Vec<ModelBuffer<'id, ModelSmall>>,
+    large: Vec<ModelBuffer<'id, ModelLarge>>,
+    mut between: impl FnMut(&mut ModelPhase<'p, 'id>),
+) {
+    assert_eq!(small.len() + large.len(), MODEL_TICKETS);
+    let mut tickets = tickets.into_iter();
+    for buffer in small {
+        submit(phase, tickets.next().unwrap(), buffer, None);
+        between(phase);
+    }
+    for buffer in large {
+        submit(phase, tickets.next().unwrap(), buffer, None);
+        between(phase);
+    }
+}
+
 /// What a body saw of its port's stream.
 #[derive(Debug, Default, Eq, PartialEq)]
 struct Stream {
@@ -118,7 +143,7 @@ struct Stream {
 
 /// Take every queued event: completions and receptions, their tokens
 /// recycled or dropped.
-async fn drain<'p, 'id: 'p>(phase: &mut ModelPhase<'p, 'id>, stream: &mut Stream) {
+fn drain<'p, 'id: 'p>(phase: &mut ModelPhase<'p, 'id>, stream: &mut Stream) {
     loop {
         let event = {
             let event = core::pin::pin!(phase.next_event());
@@ -197,11 +222,11 @@ impl Work for KeyThenAttempt {
         submit(phase, tickets.remove(0), small.remove(0), Some(&key));
         let mut stream = Stream::default();
         while stream.completions == 0 {
-            drain(phase, &mut stream).await;
+            drain(phase, &mut stream);
             yield_now().await;
         }
         // The key ends with the install.
-        core::mem::forget(key);
+        let _ = key;
     }
 }
 
@@ -222,13 +247,10 @@ struct WaitForever<'t> {
 
 impl Work for WaitForever<'_> {
     async fn work<'p, 'id: 'p>(self, phase: &mut ModelPhase<'p, 'id>, resources: ModelResources<'id>) {
-        let ModelResources { tickets, small, .. } = resources;
-        for (ticket, buffer) in tickets.into_iter().zip(small) {
-            submit(phase, ticket, buffer, None);
-        }
+        submit_all(phase, resources.tickets, resources.small, resources.large, |_| {});
         // The body waits on something else entirely.
         until(self.open).await;
-        drain(phase, &mut self.stream.borrow_mut()).await;
+        drain(phase, &mut self.stream.borrow_mut());
     }
 }
 
@@ -267,7 +289,7 @@ fn a_body_that_waits_forever_never_stalls_the_driver() {
     assert_eq!(
         *stream.borrow(),
         Stream {
-            completions: MODEL_SMALL_BUFFERS,
+            completions: MODEL_TICKETS,
             received: MODEL_RX_EVENTS,
             lost: 1,
         }
@@ -284,14 +306,24 @@ struct MaxWork<'t> {
 
 impl Work for MaxWork<'_> {
     async fn work<'p, 'id: 'p>(self, phase: &mut ModelPhase<'p, 'id>, resources: ModelResources<'id>) {
-        let ModelResources { tickets, small, .. } = resources;
-        for _ in 0..MODEL_SMALL_BUFFERS {
+        let ModelResources {
+            tickets,
+            small,
+            large,
+            station_pairwise,
+            station_group,
+            access_point_pairwise,
+            access_point_group,
+            gate,
+            ..
+        } = resources;
+        for _ in 0..MODEL_TICKETS {
             self.air.answer(false);
             self.air.answer(false);
         }
-        for (ticket, buffer) in tickets.into_iter().zip(small) {
-            submit(phase, ticket, buffer, None);
-            if self.settings {
+        let settings = self.settings;
+        submit_all(phase, tickets, small, large, |phase| {
+            if settings {
                 // Every setting changes between the submissions, unread.
                 phase.station().configure(StationReceive::Off);
                 phase.station().set_bss_color(BssColor::new(5).unwrap());
@@ -299,11 +331,38 @@ impl Work for MaxWork<'_> {
                     .access_point()
                     .configure(SupportedFilter::new(ReceiveFilter::BSS_MEMBER).unwrap());
             }
+        });
+        if settings {
+            // Every key slot's install and the gate's closing as well: the
+            // command queue at the contract's limit.
+            let peer = IndividualAddress::new(PEER).unwrap();
+            let group = GroupKeyId::new(1).unwrap();
+            let mut keys = 0;
+            for slot in station_pairwise {
+                let _installed = phase.station().install_pairwise_key(slot, peer, Ccmp128Key([1; 16]));
+                keys += 1;
+            }
+            for slot in station_group {
+                let _installed = phase.station().install_group_key(slot, group, Ccmp128Key([2; 16]));
+                keys += 1;
+            }
+            for slot in access_point_pairwise {
+                let _installed = phase.access_point().install_pairwise_key(slot, peer, Ccmp128Key([3; 16]));
+                keys += 1;
+            }
+            for slot in access_point_group {
+                let _installed = phase.access_point().install_group_key(slot, group, Ccmp128Key([4; 16]));
+                keys += 1;
+            }
+            assert_eq!(keys, MODEL_ALL_KEY_SLOTS);
+            phase.close_gate(gate);
+        } else {
+            let _ = gate;
         }
         for _ in 0..10 {
             yield_now().await;
         }
-        drain(phase, &mut self.stream.borrow_mut()).await;
+        drain(phase, &mut self.stream.borrow_mut());
     }
 }
 
@@ -319,7 +378,7 @@ fn as_much_work_as_the_tickets_allow_loses_no_completion_unread() {
             settings: false,
         }),
     ));
-    assert_eq!(stream.borrow().completions, MODEL_SMALL_BUFFERS);
+    assert_eq!(stream.borrow().completions, MODEL_TICKETS);
 }
 
 #[test]
@@ -334,9 +393,10 @@ fn as_much_work_as_allowed_while_every_setting_changes_loses_no_command() {
             settings: true,
         }),
     ));
-    // Every submission arrived and ended; every kind of setting took its
-    // latest value, before the next submission.
-    assert_eq!(stream.borrow().completions, MODEL_SMALL_BUFFERS);
-    assert_eq!(air.commands(), MODEL_SMALL_BUFFERS as u32);
+    // Every submission, install and the closing arrived; every attempt
+    // ended; every kind of setting took its latest value before the next
+    // command.
+    assert_eq!(stream.borrow().completions, MODEL_TICKETS);
+    assert_eq!(air.commands(), (MODEL_TICKETS + MODEL_ALL_KEY_SLOTS + 1) as u32);
     assert!(air.settings() >= 3);
 }

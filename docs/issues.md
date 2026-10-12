@@ -58,8 +58,12 @@ with a link to where they did. A comment, an issue body or a `kind:decision`
 label written by an agent is a proposal, not a decision. The repository owner may
 revise or withdraw a decision at any time; the record then says what
 changed and when, and the superseded wording is not kept as current.
-Agents propose options, ask, and never write "owner decision" for anything
-the repository owner did not say.
+Agents never write "owner decision" for anything the repository owner did
+not say. On a material question (one that changes a shared crate, drops
+data, changes on-hardware behavior or qualification, or changes a block's
+public API) they propose options with a recommendation and ask. Any other
+choice they make themselves and record in the pull request as their own
+decision, which the owner may revise like any other.
 
 ## Creation and automatic control
 

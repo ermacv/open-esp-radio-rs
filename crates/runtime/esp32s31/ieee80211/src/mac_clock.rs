@@ -153,6 +153,23 @@ impl MacClockSnapshot {
             .map(|projected| projected.at)
     }
 
+    /// The monotonic time `stamp` records, converted with the sample of
+    /// its generation this snapshot holds; `None` for a generation it holds
+    /// no sample of.
+    pub fn monotonic(&self, stamp: Ieee80211Stamp) -> Option<Instant> {
+        let sample = if stamp.generation == self.now.generation {
+            self.now
+        } else {
+            self.boundary?
+                .previous
+                .filter(|previous| previous.generation == stamp.generation)?
+        };
+        MAC_CLOCK_RELATION
+            .project(stamp.at, stamp.generation, &sample)
+            .ok()
+            .map(|projected| projected.at)
+    }
+
     /// The stamp of `raw` and the sample of its generation.
     fn classify(&self, raw: u32) -> Option<(Ieee80211Stamp, Ieee80211ClockSample)> {
         let at = self.timeline.place(raw)?;

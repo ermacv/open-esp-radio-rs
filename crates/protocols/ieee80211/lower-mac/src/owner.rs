@@ -1232,6 +1232,9 @@ pub trait LowerMacClient<'id>:
     /// The channel the phase runs on.
     fn channel(&self) -> Channel;
 
+    /// The interface's own address, which the install gave it.
+    fn address(&self) -> IndividualAddress;
+
     /// The rate on the phase's channel, when the capabilities send it
     /// there. Only this check mints a [`PhaseRate`].
     fn rate(&self, rate: PhyRate) -> Option<PhaseRate<'_>> {

@@ -2133,6 +2133,19 @@ where
             .unwrap_or_else(|_| panic!("a poisoned phase reads no channel"))
     }
 
+    fn address(&self) -> IndividualAddress {
+        let address = self
+            .runtime
+            .with_phase(|core, _, access_point, _| {
+                Ok(match Role::ROLE {
+                    VifRole::Station => core.station_address(),
+                    VifRole::AccessPoint => access_point,
+                })
+            })
+            .unwrap_or_else(|_| panic!("a poisoned phase reads no address"));
+        IndividualAddress::new(address).expect("an interface's address is individual")
+    }
+
     fn queue<'c, 's>(
         &'c self,
         seat: &'s mut Seat<'id, TxQueueKind>,
@@ -3386,6 +3399,77 @@ where
     R: LowerMacRetune<H>,
 {
     type Caps = Esp32s31Caps<B>;
+}
+
+impl<
+    'r,
+    'slot,
+    M: RawMutex,
+    P,
+    E,
+    T,
+    H,
+    R,
+    const B: usize,
+    const N: usize,
+    const EV: usize,
+    U: PortRxReceiver,
+    S: AmpduBacking,
+    const AS: usize,
+    const AB: usize,
+    O: TxBody,
+> crate::roles::station::on_port::StationParts
+    for Esp32s31Backend<'r, 'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>
+where
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: oer_time::Timer + ReceptionClock,
+    H: LowerMacHardware,
+    R: LowerMacRetune<H>,
+{
+    type QueueKind = TxQueueKind;
+    type BufferKind = TxBufferKind;
+    type Station<'a, 'id>
+        = Esp32s31Client<
+        'a,
+        'id,
+        Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>,
+        Station,
+        B,
+        N,
+        AB,
+    >
+    where
+        Self: 'a,
+        'id: 'a;
+
+    fn station<'b, 'a, 'id>(clients: &'b Self::Clients<'a, 'id>) -> &'b Self::Station<'a, 'id>
+    where
+        Self: 'a,
+        'id: 'a,
+    {
+        &clients.station
+    }
+
+    fn set_channel<'a, 'id>(
+        setup: &mut Self::Setup<'a, 'id>,
+        channel: SupportedChannel<Esp32s31Caps<B>>,
+    ) where
+        Self: 'a,
+    {
+        LowerMacSetup::set_channel(setup, channel);
+    }
+
+    fn view(event: &Self::Event) -> LowerMacEvent<'_> {
+        <Esp32s31Events<
+            '_,
+            '_,
+            Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>,
+            B,
+            N,
+            AB,
+        > as LowerMacEvents>::view(event)
+    }
 }
 
 #[cfg(target_arch = "riscv32")]

@@ -4,7 +4,8 @@ use core::pin::pin;
 
 use esp_hal::time::Instant;
 use oer_esp32s31_ieee802154_system::{
-    Ieee802154Parked, Ieee802154System, Ieee802154SystemPort, start,
+    Esp32s31Ieee802154, Ieee802154Parked, Ieee802154System, Ieee802154SystemBackend,
+    Ieee802154SystemParts, start,
 };
 use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
 use oer_espressif_ieee802154_engine::pib::Ieee802154PibDefaults;
@@ -16,6 +17,9 @@ pub(super) fn now_micros() -> u64 {
 }
 
 type Radio = oer_esp32s31_radio_system::SharedRadio;
+
+/// The single-interface client's port backend.
+pub(super) type Backend = Ieee802154SystemBackend<Esp32s31Ieee802154>;
 
 /// The concurrently split radio and the IEEE 802.15.4 client's owners. The
 /// images are terminal: the radio stays split. The radio is placed by the
@@ -45,24 +49,29 @@ impl Client {
         Some((Self { radio, defaults }, parked))
     }
 
-    /// Start the client. Bring-up holds the PHY registration future, so it
-    /// is pinned in place.
+    /// Start the client: the running system and its port backend.
+    /// Bring-up holds the PHY registration future, so it is pinned in
+    /// place.
     pub(super) async fn start(
         &mut self,
         parked: Ieee802154Parked,
-    ) -> Option<(Ieee802154System, Ieee802154SystemPort)> {
-        let started = pin!(start(self.radio, parked, self.defaults));
+    ) -> Option<(Ieee802154System, Backend)> {
+        let started = pin!(start::<Esp32s31Ieee802154, _, _>(
+            self.radio,
+            parked,
+            self.defaults
+        ));
         started.await.ok()
     }
 
-    /// Stop the client and take its port back. Teardown holds the RF close
-    /// future, pinned in place.
+    /// Stop the client with the parts its ended port returned. Teardown
+    /// holds the RF close future, pinned in place.
     pub(super) async fn stop(
         &mut self,
         system: Ieee802154System,
-        port: Ieee802154SystemPort,
+        parts: Ieee802154SystemParts,
     ) -> Option<Ieee802154Parked> {
-        let stopped = pin!(system.stop(port, self.radio));
+        let stopped = pin!(system.stop(parts, self.radio));
         stopped.await.ok()
     }
 }

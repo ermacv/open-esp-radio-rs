@@ -4,7 +4,7 @@
 //! The transport and the core live for the whole boot. Each Controller epoch
 //! serves one Host epoch: [`BluetoothHciService::run`] serves it until its
 //! owner asks it to stop or the service must end, and ends with the port's
-//! managed stop. [`BluetoothHciService::retire`] then closes the old Host end
+//! bounded `disable` and its uninstall. [`BluetoothHciService::retire`] then closes the old Host end
 //! once both directions are drained, and [`BluetoothHciService::restart`]
 //! rebuilds the core and opens a new Host end on the same storage; or
 //! [`BluetoothHciService::close`] closes the Host epoch for good. Handles of
@@ -25,7 +25,10 @@ use oer_esp32s31_soc_esp_hal::entropy::Entropy;
 use oer_time_embassy::EmbassyClock;
 use static_cell::StaticCell;
 
-use crate::system::{BluetoothSystemCapabilities, BluetoothSystemFault, BluetoothSystemPort};
+use crate::system::{
+    BluetoothSystemBackend, BluetoothSystemCapabilities, BluetoothSystemFault,
+    BluetoothSystemUninstalled,
+};
 
 /// Host-to-Controller packet slots; they also bound the Host's ACL credits.
 pub const HOST_TO_CONTROLLER: usize = 4;
@@ -113,23 +116,29 @@ pub enum BluetoothHciRestartError {
 }
 
 impl BluetoothHciService {
-    /// Serve over `port`, the radio port of the running client, until `stop`
-    /// completes or the transport, the radio or the radio epoch ends the
-    /// service, then disable the port and account every admitted event in
-    /// the core ([`Served`]). The service is the port's one outcome consumer
-    /// from its start to the port's `Disabled`; the client's runner keeps
-    /// running meanwhile.
+    /// Run the port of `backend`, the running client's, with the service as
+    /// its body ([`serve`]): enable it, serve until `stop` completes or the
+    /// transport, the radio or the radio epoch ends the service, then
+    /// disable it, account every admitted event in the core and uninstall
+    /// it; the radio's driver runs inside the port, joined with the service.
+    /// Returns how the service ended ([`Served`]) and what the uninstall
+    /// returned, for [`BluetoothSystem::stop`](crate::BluetoothSystem::stop),
+    /// or `None` when the port was poisoned and fail-stopped. Poll the
+    /// client's tasks ([`BluetoothSystem::run`](crate::BluetoothSystem::run))
+    /// beside it.
     ///
-    /// Run it to completion: cancelling it leaves the core mid-request and
-    /// the port enabled, which [`BluetoothSystem::stop`](crate::BluetoothSystem::stop)
-    /// refuses. Only [`Self::restart`] makes the core serve again, after the
-    /// Host epoch was retired.
+    /// Run it to completion: a cancelled body abandons the port, which then
+    /// stays unreachable until a reset. Only [`Self::restart`] makes the
+    /// core serve again, after the Host epoch was retired.
     pub async fn run(
         &mut self,
-        port: &BluetoothSystemPort,
+        backend: BluetoothSystemBackend,
         stop: impl Future<Output = ()>,
-    ) -> Served<BluetoothSystemFault> {
-        serve(&self.transport, self.core, port, &EmbassyClock, stop).await
+    ) -> (
+        Served<BluetoothSystemFault>,
+        Option<BluetoothSystemUninstalled>,
+    ) {
+        serve(backend, (), &self.transport, self.core, &EmbassyClock, stop).await
     }
 
     /// Close the current Host epoch for good: every handle of it reports the

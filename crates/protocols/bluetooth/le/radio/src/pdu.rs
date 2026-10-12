@@ -14,12 +14,12 @@ pub enum PduError {
 }
 
 /// Maximum payload of a legacy advertising PDU.
-const ADVERTISING_PAYLOAD_MAX: usize = 37;
+pub(crate) const ADVERTISING_PAYLOAD_MAX: usize = 37;
 /// Advertiser address that starts every legacy advertising payload.
-const ADVERTISER_ADDRESS_BYTES: usize = 6;
+pub(crate) const ADVERTISER_ADDRESS_BYTES: usize = 6;
 /// Maximum payload of a data channel PDU on air: 251 octets of data and an
 /// encrypted packet's 4-octet MIC.
-const DATA_PAYLOAD_MAX: usize = 255;
+pub(crate) const DATA_PAYLOAD_MAX: usize = 255;
 
 /// One encoded legacy advertising PDU: header, length and payload starting
 /// with the advertiser address. Protocol validity stays with the caller.

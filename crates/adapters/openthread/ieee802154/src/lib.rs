@@ -2,9 +2,9 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-//! The [`openthread`] crate's `Radio` over any IEEE 802.15.4 radio port
-//! ([`oer_ieee802154::Ieee802154RadioPort`]), such as the Espressif
-//! IEEE 802.15.4 runtime. OpenThread starts from the transmit power, CCA
+//! The [`openthread`] crate's `Radio` over the running phase of any IEEE
+//! 802.15.4 port on the owner shape ([`oer_ieee802154::owner`]), such as
+//! the Espressif IEEE 802.15.4 runtime's. OpenThread starts from the transmit power, CCA
 //! threshold and receive sensitivity of the port's capabilities. The
 //! composition supplies what the port does not carry: the synchronous live
 //! RSSI read, and the mapping of a role change's coexistence priority
@@ -33,4 +33,6 @@ pub mod frames;
 
 mod radio;
 
-pub use radio::{MonotonicRadioClock, OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, PortRssi};
+pub use radio::{
+    MonotonicRadioClock, OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, PendingSlots, PortRssi,
+};

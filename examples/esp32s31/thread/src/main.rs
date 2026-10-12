@@ -21,13 +21,16 @@ use esp_hal::{
 };
 use log::{error, info};
 use oer::systems::esp32s31::embassy::ieee802154::{
-    self as ieee802154, EspHalRadioPlatform, Ieee802154CoexConfig, Ieee802154CoexLevel,
-    Ieee802154Parked, Ieee802154PibDefaults, Ieee802154System, Ieee802154SystemClock,
-    Ieee802154SystemPort, Ieee802154SystemRuntime,
+    self as ieee802154, Esp32s31Ieee802154, EspHalRadioPlatform, Ieee802154CoexConfig,
+    Ieee802154CoexLevel, Ieee802154Parked, Ieee802154PibDefaults, Ieee802154System,
+    Ieee802154SystemBackend, Ieee802154SystemClock,
     openthread::{
-        MonotonicRadioClock, OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, PortRssi,
+        MonotonicRadioClock, OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, PendingSlots,
+        PortRssi,
         frames::{RoleCoexPriority, role_txrx_priority},
     },
+    owner::{Ieee802154Clients, Ieee802154Setup},
+    port::{Disabled, Ended, Owner, PortBackend, PortBody, run_port},
     start,
 };
 use oer::systems::esp32s31::embassy::radio::{self as shared_radio, RadioStart, SharedRadio};
@@ -49,7 +52,12 @@ oer_espressif_staged_runtime::interrupt_table! {
 
 /// Frames OpenThread has not taken yet while it transmits or scans.
 const RX_QUEUE: usize = 8;
-type ThreadRadio = OpenThreadRadio<'static, Ieee802154SystemPort, RX_QUEUE>;
+
+/// The single-interface client's port backend.
+type Backend = Ieee802154SystemBackend<Esp32s31Ieee802154>;
+
+/// The live RSSI OpenThread reads synchronously, over the runtime's reader.
+type RadioRssi = ieee802154::Ieee802154SystemRssi;
 
 const UDP_PORT: u16 = 1212;
 const UDP_BUFFER: usize = 1280;
@@ -71,14 +79,14 @@ static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
 static TRNG_SOURCE: StaticCell<TrngSource<'static>> = StaticCell::new();
 static TRNG: StaticCell<Trng> = StaticCell::new();
 static SYSTEM: StaticCell<Ieee802154System> = StaticCell::new();
-static PORT: StaticCell<Ieee802154SystemPort> = StaticCell::new();
 static OT_RESOURCES: StaticCell<OtResources> = StaticCell::new();
 static OT_UDP: StaticCell<OtUdpResources<UDP_SOCKETS, UDP_BUFFER>> = StaticCell::new();
 static OT_SETTINGS_BUFFER: ConstStaticCell<[u8; 1024]> = ConstStaticCell::new([0; 1024]);
 static OT_SETTINGS: StaticCell<SimpleRamSettings> = StaticCell::new();
 static RADIO_CLOCK: StaticCell<MonotonicRadioClock<&'static Ieee802154SystemClock>> =
     StaticCell::new();
-static RADIO_RSSI: StaticCell<PortRssi<'static, Ieee802154SystemPort>> = StaticCell::new();
+static RSSI_READER: StaticCell<RadioRssi> = StaticCell::new();
+static RADIO_RSSI: StaticCell<PortRssi<'static, RadioRssi>> = StaticCell::new();
 static UDP_RECEIVE: ConstStaticCell<[u8; UDP_BUFFER]> = ConstStaticCell::new([0; UDP_BUFFER]);
 
 /// The IEEE 802.15.4 EUI-64 as ESP-IDF derives it
@@ -164,13 +172,12 @@ async fn thread_task(
         let started = pin!(start(radio, parked, defaults));
         started.await
     };
-    let Ok((system, port)) = started else {
+    let Ok((system, backend)) = started else {
         error!("the IEEE 802.15.4 client did not start");
         return;
     };
     let system = SYSTEM.init(system);
-    // OpenThread is the port's one event consumer for the image's life.
-    let port = PORT.init(port);
+    let rssi = RSSI_READER.init(system.runtime().recent_rssi_reader());
 
     let ot_settings = OT_SETTINGS.init(SimpleRamSettings::new(OT_SETTINGS_BUFFER.take()));
     // OpenThread's `SubMac` reads the radio capabilities when the instance
@@ -183,14 +190,14 @@ async fn thread_task(
         ot_settings,
         // OpenThread reads the port's own clock and live RSSI.
         RADIO_CLOCK.init(MonotonicRadioClock::new(system.runtime().clock())),
-        Some(RADIO_RSSI.init(PortRssi::new(port))),
+        Some(RADIO_RSSI.init(PortRssi::new(rssi))),
         ot_resources,
         OT_UDP.init(OtUdpResources::new()),
     )
     .expect("OpenThread must initialize once");
-    let thread_radio = OpenThreadRadio::new(port);
-    spawner.spawn(openthread_task(ot.clone(), thread_radio).expect("OpenThread task storage"));
-    spawner.spawn(runner_task(system.runtime()).expect("runner task storage"));
+    // OpenThread runs in the port's body for the image's life; the port's
+    // driver runs the CSMA-CA backoffs beside it.
+    spawner.spawn(openthread_task(ot.clone(), backend).expect("OpenThread task storage"));
     spawner.spawn(role_task(ot.clone(), system, radio).expect("role task storage"));
 
     if THREAD_DATASET.is_empty() {
@@ -239,16 +246,52 @@ async fn thread_task(
     }
 }
 
-/// The radio runtime's runner: CSMA-CA backoffs and retry delays.
-#[embassy_executor::task]
-async fn runner_task(runtime: &'static Ieee802154SystemRuntime) {
-    let _ = runtime.run().await;
+/// The port body OpenThread runs in: configure interface 0, enable the
+/// radio and lend its running phase to the OpenThread radio, for the
+/// image's life.
+struct ThreadBody {
+    ot: OpenThread<'static>,
+}
+
+impl PortBody<Backend> for ThreadBody {
+    async fn run<'p, 'id>(
+        self,
+        mut owner: Owner<'p, 'id, Backend, Disabled>,
+        resources: <Backend as PortBackend>::Resources<'id>,
+    ) -> Ended<'id, Backend> {
+        let interface = resources.interfaces;
+        let zero = owner.setup().configure(interface.interface);
+        let [seat, ..] = resources.operation;
+        let mut owner = match owner.enable().await {
+            Ok(owner) => owner,
+            Err(failed) => {
+                error!("the IEEE 802.15.4 radio did not enable");
+                return failed.fail_stop();
+            }
+        };
+        let parts = owner.split();
+        let mut events = parts.events;
+        let mut control = parts.control;
+        let client = parts.clients.client(&zero);
+        let radio: OpenThreadRadio<'_, '_, _, _, _, RX_QUEUE, _> = OpenThreadRadio::new(
+            &mut *events,
+            &mut *control,
+            client,
+            seat,
+            PendingSlots {
+                short: interface.short,
+                extended: interface.extended,
+            },
+        );
+        // The stack's radio, alarm and tasklet loops share one large future.
+        match pin!(self.ot.run(radio)).await {}
+    }
 }
 
 #[embassy_executor::task]
-async fn openthread_task(ot: OpenThread<'static>, radio: ThreadRadio) -> ! {
-    // The stack's radio, alarm and tasklet loops share one large future.
-    pin!(ot.run(radio)).await
+async fn openthread_task(ot: OpenThread<'static>, backend: Backend) {
+    let _ = pin!(run_port(backend, ThreadBody { ot })).await;
+    error!("the IEEE 802.15.4 port ended");
 }
 
 /// Log the device's role and addresses when OpenThread's state changes, and

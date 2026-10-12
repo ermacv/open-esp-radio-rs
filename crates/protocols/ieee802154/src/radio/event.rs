@@ -1,6 +1,6 @@
 //! Backend-to-caller observations, completion categories and receive metadata.
 
-use oer_radio_port::LifecycleEvent;
+use oer_ieee802154_port::LifecycleEvent;
 
 use super::{Ieee802154Instant, RequestId, channel::Channel, interface::Interface};
 use crate::mac::frame::FrameView;
@@ -60,8 +60,8 @@ pub enum RadioEvent<'frame> {
         /// Portable fault category.
         fault: RadioFault,
     },
-    /// The terminal event of a port lifecycle command
-    /// ([`RadioPort::lifecycle`](crate::RadioPort::lifecycle)).
+    /// The terminal event of the radio role's own enable or disable; the
+    /// owner shape's backend does not hand it out.
     Lifecycle(LifecycleEvent),
 }
 

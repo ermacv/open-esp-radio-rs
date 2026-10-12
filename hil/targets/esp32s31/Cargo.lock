@@ -1687,9 +1687,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-bluetooth-port"
+version = "0.1.0"
+dependencies = [
+ "oer-radio-port",
+ "oer-time",
+]
+
+[[package]]
 name = "oer-bluetooth-radio"
 version = "0.1.0"
 dependencies = [
+ "oer-bluetooth-port",
  "oer-radio-coex",
  "oer-radio-port",
  "oer-time",
@@ -1704,7 +1713,9 @@ dependencies = [
  "oer-bluetooth-controller",
  "oer-bluetooth-hci",
  "oer-bluetooth-hci-transport",
+ "oer-bluetooth-port",
  "oer-bluetooth-radio",
+ "oer-radio-port",
  "oer-time",
 ]
 
@@ -1765,12 +1776,14 @@ version = "0.1.0"
 dependencies = [
  "embassy-futures",
  "embassy-sync 0.8.0",
+ "oer-bluetooth-port",
  "oer-bluetooth-radio",
  "oer-bluetooth-trace",
  "oer-esp32s31-bluetooth",
  "oer-esp32s31-bluetooth-memory",
  "oer-esp32s31-bluetooth-radio",
  "oer-esp32s31-hal",
+ "oer-radio-port",
  "oer-time",
  "oer-trace",
 ]
@@ -1785,6 +1798,7 @@ dependencies = [
  "oer-bluetooth-controller",
  "oer-bluetooth-hci",
  "oer-bluetooth-hci-transport",
+ "oer-bluetooth-port",
  "oer-bluetooth-radio",
  "oer-bluetooth-runtime",
  "oer-esp32s31-bluetooth",
@@ -1875,8 +1889,10 @@ dependencies = [
  "oer-ieee80211-softmac",
  "oer-ieee802154",
  "oer-ieee802154-openthread",
+ "oer-ieee802154-port",
  "oer-memory",
  "oer-network-interface",
+ "oer-radio-port",
  "oer-time-embassy",
  "oer-trace",
  "open-esp-radio",
@@ -1998,6 +2014,7 @@ dependencies = [
  "oer-ieee80211-datapath",
  "oer-ieee80211-lower-mac",
  "oer-ieee80211-mac",
+ "oer-ieee80211-port",
  "oer-ieee80211-rsn",
  "oer-ieee80211-rsn-service",
  "oer-ieee80211-runtime",
@@ -2005,9 +2022,10 @@ dependencies = [
  "oer-ieee80211-sta",
  "oer-ieee80211-sta-service",
  "oer-ieee80211-trace",
- "oer-ieee80211-upper-mac-service",
  "oer-memory",
  "oer-network-interface",
+ "oer-radio-permit-pool",
+ "oer-radio-port",
  "oer-time",
  "oer-trace",
  "riscv",
@@ -2102,7 +2120,10 @@ dependencies = [
  "oer-esp32s31-radio-runtime",
  "oer-espressif-ieee802154-engine",
  "oer-espressif-ieee802154-runtime",
+ "oer-ieee802154",
+ "oer-ieee802154-port",
  "oer-memory",
+ "oer-radio-port",
  "oer-time-embassy",
 ]
 
@@ -2276,7 +2297,10 @@ dependencies = [
  "oer-espressif-ieee802154-engine",
  "oer-espressif-ieee802154-radio",
  "oer-ieee802154",
+ "oer-ieee802154-port",
  "oer-ieee802154-trace",
+ "oer-radio-permit-pool",
+ "oer-radio-port",
  "oer-time",
  "oer-trace",
 ]
@@ -2385,6 +2409,7 @@ name = "oer-ieee80211-lower-mac"
 version = "0.1.0"
 dependencies = [
  "oer-ieee80211-mac",
+ "oer-ieee80211-port",
  "oer-radio-coex",
  "oer-radio-port",
  "oer-time",
@@ -2409,6 +2434,14 @@ name = "oer-ieee80211-pac-raw"
 version = "0.1.0"
 dependencies = [
  "vcell",
+]
+
+[[package]]
+name = "oer-ieee80211-port"
+version = "0.1.0"
+dependencies = [
+ "oer-radio-port",
+ "oer-time",
 ]
 
 [[package]]
@@ -2444,6 +2477,7 @@ dependencies = [
  "embassy-sync 0.8.0",
  "oer-ieee80211-lower-mac",
  "oer-ieee80211-mac",
+ "oer-ieee80211-port",
  "oer-ieee80211-softmac",
  "oer-memory",
  "oer-radio-permit-pool",
@@ -2487,7 +2521,6 @@ dependencies = [
  "oer-ieee80211-softmac",
  "oer-ieee80211-sta",
  "oer-ieee80211-upper-mac",
- "oer-ieee80211-upper-mac-service",
  "oer-time",
 ]
 
@@ -2509,21 +2542,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-ieee80211-upper-mac-service"
-version = "0.1.0"
-dependencies = [
- "oer-ieee80211-datapath",
- "oer-ieee80211-lower-mac",
- "oer-ieee80211-mac",
- "oer-ieee80211-softmac",
- "oer-ieee80211-upper-mac",
- "oer-time",
-]
-
-[[package]]
 name = "oer-ieee802154"
 version = "0.1.0"
 dependencies = [
+ "oer-ieee802154-port",
  "oer-radio-port",
  "oer-time",
 ]
@@ -2534,6 +2556,8 @@ version = "0.1.0"
 dependencies = [
  "heapless 0.9.3",
  "oer-ieee802154",
+ "oer-ieee802154-port",
+ "oer-radio-port",
  "oer-time",
  "openthread-radio",
 ]
@@ -2541,6 +2565,14 @@ dependencies = [
 [[package]]
 name = "oer-ieee802154-pac"
 version = "0.1.0"
+
+[[package]]
+name = "oer-ieee802154-port"
+version = "0.1.0"
+dependencies = [
+ "oer-radio-port",
+ "oer-time",
+]
 
 [[package]]
 name = "oer-ieee802154-trace"

@@ -23,7 +23,7 @@ fn every_role_event_decodes_to_what_it_encoded() {
         }
     }
     assert_eq!(every(RequestKind::from_raw).count(), 14);
-    assert_eq!(every(RequestAnswer::from_raw).count(), 12);
+    assert_eq!(every(RequestAnswer::from_raw).count(), 11);
     for result in every(EndResult::from_raw) {
         round_trip(RoleEventEnd {
             id: u32::MAX,
@@ -90,7 +90,8 @@ fn malformed_words_decode_to_nothing() {
     assert_eq!(PeripheralEvent::decode([1 << 24, 0]), None);
     assert_eq!(PeripheralClosed::decode([1, 256]), None);
     assert_eq!(PeripheralClosed::decode([2, 0]), None);
-    assert_eq!(Lifecycle::decode([3, 0]), None);
+    assert_eq!(Lifecycle::decode([2, 0]), None);
+    assert_eq!(Lifecycle::decode([0, 4]), None);
 }
 
 #[test]

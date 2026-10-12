@@ -1069,7 +1069,7 @@ section = "wifi-interfaces-and-operating-modes"
 title = "Lower-MAC port: A-MPDU attempts"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "`LowerMacAmpdu` over the retained-DMA aggregate owner (`RetainedDmaAmpduTx`) in single-attempt mode: each lent aggregate is one owner whose subframes are `StableDmaBacking` leases of the integrator's `AmpduBackingSource`; one attempt begins, commits every subframe and publishes the aggregate once on its access category's queue, and its completion reports the BlockAck the hardware marks received, after which the leases return to their source. Retries are the caller's; the owner's retained retry is not used. HT and HE SU, up to the owner's subframe slots (32 for HE) and 6490 octets (the vendor's lowest per-rate ceiling, HT MCS 0 long GI). The caller keeps an aggregate within its access category's TXOP limit; an HE aggregate's program carries that limit and the station's `HeBssColor`. Reason for the rest: glue not written. Trigger-based aggregates are refused, because the port carries no Trigger reservation. No composition supplies an aggregate source on hardware yet and no HIL scenario drives the port."
+scope-and-limitations = "The S31 lower-MAC core's A-MPDU path (the owner-shape port has no A-MPDU operation yet, #709 step 2) over the retained-DMA aggregate owner (`RetainedDmaAmpduTx`) in single-attempt mode: each lent aggregate is one owner whose subframes are `StableDmaBacking` leases of the integrator's `AmpduBackingSource`; one attempt begins, commits every subframe and publishes the aggregate once on its access category's queue, and its completion reports the BlockAck the hardware marks received, after which the leases return to their source. Retries are the caller's; the owner's retained retry is not used. HT and HE SU, up to the owner's subframe slots (32 for HE) and 6490 octets (the vendor's lowest per-rate ceiling, HT MCS 0 long GI). The caller keeps an aggregate within its access category's TXOP limit; an HE aggregate's program carries that limit and the station's `HeBssColor`. Reason for the rest: glue not written. Trigger-based aggregates are refused, because the port carries no Trigger reservation. No composition supplies an aggregate source on hardware yet and no HIL scenario drives the port."
 packages = ["oer-esp32s31-ieee80211"]
 
 [[items]]
@@ -1095,7 +1095,7 @@ section = "wifi-interfaces-and-operating-modes"
 title = "Lower-MAC port: access-point TBTT schedule"
 status = "absent"
 level = "lower-primitive"
-scope-and-limitations = "Reason: vendor knowledge not recovered. `LowerMacBeaconTiming` programs and reports the station TBTT schedule only; no reviewed access-point TBTT register transaction or power-interrupt cause exists in the PAC/HAL, so the backend's beacon-timing capabilities exclude the access-point role from TBTT."
+scope-and-limitations = "Reason: vendor knowledge not recovered. the S31 lower-MAC core's beacon timing programs and reports the station TBTT schedule only; no reviewed access-point TBTT register transaction or power-interrupt cause exists in the PAC/HAL, so the backend's beacon-timing capabilities exclude the access-point role from TBTT."
 
 [[items]]
 id = "wifi-interfaces-and-operating-modes-lower-mac-port-access-point-tsf"
@@ -1103,7 +1103,7 @@ section = "wifi-interfaces-and-operating-modes"
 title = "Lower-MAC port: access-point TSF read and arbitrary set"
 status = "fail-closed"
 level = "lower-primitive"
-scope-and-limitations = "Reason: vendor knowledge not recovered. The reviewed access-point TSF seam only resets and starts or stops the timer, so `LowerMacBeaconTiming` restarts the access-point TSF from zero and refuses reading it or setting another value as outside its limits. The station TSF is read and set."
+scope-and-limitations = "Reason: vendor knowledge not recovered. The reviewed access-point TSF seam only resets and starts or stops the timer, so the S31 lower-MAC core's beacon timing restarts the access-point TSF from zero and refuses reading it or setting another value as outside its limits. The station TSF is read and set."
 packages = ["oer-esp32s31-ieee80211"]
 
 [[items]]

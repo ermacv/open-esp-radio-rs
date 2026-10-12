@@ -9,9 +9,9 @@ use crate::mac::time_sync::TimeSync;
 /// Portable Host-to-radio operation.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 ///
-/// Enabling and disabling the radio are the port's lifecycle commands
-/// ([`RadioPort::lifecycle`](crate::RadioPort::lifecycle)),
-/// not submissions.
+/// Enabling and disabling the radio are the owner's transitions
+/// (`Owner::enable` and `Owner::disable` of `oer-ieee802154-port`), not
+/// submissions.
 pub enum RadioCommand<'frame> {
     /// Leave receive mode and enter sleep.
     Sleep {

@@ -51,35 +51,3 @@ pub(crate) fn take<E: Event>() -> std::vec::Vec<E> {
             .collect()
     })
 }
-
-/// The trace's name of a lifecycle command.
-pub(crate) const fn command(
-    command: oer_bluetooth_radio::LifecycleCommand,
-) -> oer_bluetooth_trace::LifecycleCommand {
-    match command {
-        oer_bluetooth_radio::LifecycleCommand::Enable => {
-            oer_bluetooth_trace::LifecycleCommand::Enable
-        }
-        oer_bluetooth_radio::LifecycleCommand::Disable => {
-            oer_bluetooth_trace::LifecycleCommand::Disable
-        }
-        oer_bluetooth_radio::LifecycleCommand::Quiesce => {
-            oer_bluetooth_trace::LifecycleCommand::Quiesce
-        }
-    }
-}
-
-/// Record that the terminal `terminal` was queued.
-pub(crate) fn terminal(terminal: oer_bluetooth_radio::LifecycleEvent) {
-    use oer_bluetooth_radio::LifecycleEvent;
-    let command = match terminal {
-        LifecycleEvent::Enabled => oer_bluetooth_trace::LifecycleCommand::Enable,
-        LifecycleEvent::Disabled => oer_bluetooth_trace::LifecycleCommand::Disable,
-        LifecycleEvent::Quiesced => oer_bluetooth_trace::LifecycleCommand::Quiesce,
-        LifecycleEvent::Failed { command: failed } => self::command(failed),
-    };
-    emit(|| oer_bluetooth_trace::Lifecycle {
-        command,
-        step: oer_bluetooth_trace::LifecycleStep::Terminal,
-    });
-}

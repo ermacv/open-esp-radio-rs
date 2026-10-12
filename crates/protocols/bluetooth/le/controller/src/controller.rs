@@ -1388,11 +1388,6 @@ impl<'r, K: LeCapabilities, const OUTPUT: usize, const CONNECTIONS: usize>
 
     /// Account one backend observation.
     pub fn outcome(&mut self, outcome: RadioOutcome<'_>) {
-        // The port's lifecycle is the service loop's; the roles have
-        // nothing to account.
-        if let RadioOutcome::Lifecycle(_) = outcome {
-            return;
-        }
         self.dtm.outcome(outcome);
         self.peripheral.outcome(outcome, self.random);
         self.advertiser.outcome(outcome);

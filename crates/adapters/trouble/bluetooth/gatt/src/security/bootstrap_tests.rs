@@ -8,12 +8,12 @@ use core::{
     task::{Context, Poll, Waker},
 };
 use embassy_futures::select::{Either, select};
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use embassy_sync::{blocking_mutex::raw::NoopRawMutex, signal::Signal};
 use oer_bluetooth_controller::{LeController, LeControllerConfig};
 use oer_bluetooth_hci::*;
 use oer_bluetooth_hci_transport::*;
 use oer_bluetooth_radio::NoRadio;
-use oer_bluetooth_runtime::serve;
+use oer_bluetooth_runtime::{ServeExit, Served, serve};
 use trouble_host::{BleHostError, Error as HostError, prelude::*};
 
 struct Entropy {
@@ -74,14 +74,17 @@ fn run_bootstrap(fail: bool, bonds: bool) {
         .set_pairing_policy(PairingPolicy::NumericComparisonOnly)
         .unwrap();
     let mut runner = stack.runner();
-    // Bootstrap never needs the radio.
-    let controller_task = serve(
+    // Bootstrap never needs the radio. The service runs the port's body
+    // until it is asked to stop, then disables and uninstalls the port.
+    let stop = Signal::<NoopRawMutex, ()>::new();
+    let mut controller_task = pin!(serve(
+        NoRadio,
+        (),
         &controller,
         &mut core,
-        &NoRadio,
         &oer_time_embassy::EmbassyClock,
-        core::future::pending(),
-    );
+        stop.wait(),
+    ));
     // Public commands wait for Host initialization. Keep polling afterwards too:
     // the Host still executes post-initialization commands after opening that
     // gate. A single completion would miss a late startup failure.
@@ -124,7 +127,7 @@ fn run_bootstrap(fail: bool, bonds: bool) {
         }
     };
     let mut test = pin!(async {
-        match select(probe, select(runner.run(), controller_task)).await {
+        match select(probe, select(runner.run(), controller_task.as_mut())).await {
             Either::First(()) => {
                 assert!(!fail);
             }
@@ -139,6 +142,11 @@ fn run_bootstrap(fail: bool, bonds: bool) {
             }
             Either::Second(Either::Second(_)) => panic!("Controller unexpectedly returned"),
         }
+        stop.signal(());
+        assert_eq!(
+            controller_task.as_mut().await,
+            (Served::Stopped(ServeExit::Stopped), Some(()))
+        );
     });
     // All peers live in this deterministic future: bound polling rather than
     // hanging the suite if bootstrap stops making progress. No wall-clock sleep.

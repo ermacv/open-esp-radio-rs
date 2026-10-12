@@ -1,13 +1,12 @@
 //! The IEEE 802.15.4 radio port on the shared owner shape of
-//! `oer-radio-port` ([`Owner`](oer_radio_port::Owner),
-//! [`PortBody`](oer_radio_port::PortBody)).
+//! `oer-radio-port` ([`Owner`](oer_ieee802154_port::Owner),
+//! [`PortBody`](oer_ieee802154_port::PortBody)).
 //!
-//! Every refusal of [`Ieee802154RadioPort`](crate::Ieee802154RadioPort)
-//! that a caller's own state explains is a type here
-//! ([ownership and refusals]); what the world controls (the air, time, the
-//! hardware) stays a typed outcome. The protocol port still implements
-//! `Ieee802154RadioPort`; a backend on this shape implements
-//! [`Ieee802154Backend`].
+//! Every refusal of the former command port that a caller's own state
+//! explains is a type here ([ownership and refusals]); what the world
+//! controls (the air, time, the hardware) stays a typed outcome. A backend
+//! implements [`Ieee802154Backend`]; the Espressif runtime's is
+//! `Ieee802154RuntimeBackend`.
 //!
 //! | Refusal of the port trait | Form here |
 //! | --- | --- |
@@ -26,7 +25,7 @@
 //! [`EventsLost`](oer_radio_port::EventsLost) (only received frames), a
 //! clock that could not be read, an operation's status on the air, and a
 //! cancel that finds the work already ended
-//! ([`CancelError::NotRunning`](oer_radio_port::CancelError::NotRunning)).
+//! ([`CancelError::NotRunning`](oer_ieee802154_port::CancelError::NotRunning)).
 //!
 //! # Interfaces
 //!
@@ -210,10 +209,8 @@
 
 use core::{cell::RefCell, future::Future, marker::PhantomData};
 
-use oer_radio_port::{
-    Line, Mint, Permit, PermitPool, Poisoned, PortBackend, RadioPortClient, RadioPortEvents,
-    RadioWork, Seat, Slot, Work,
-};
+use oer_ieee802154_port::{PortBackend, RadioPortClient, RadioPortEvents, RadioWork, Work};
+use oer_radio_port::{Line, Mint, Permit, PermitPool, Poisoned, Seat, Slot};
 
 use crate::{
     AppliedSecurity, CcaMode, Channel, CslReceiver, EnhancedAckGeneration, FrameCounterUpdate,

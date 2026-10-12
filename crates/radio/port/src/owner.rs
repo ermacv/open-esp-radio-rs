@@ -147,12 +147,32 @@
 //! }
 //! ```
 //!
+//! A port's run returns its hardware owners, which no caller ignores:
+//!
+//! ```compile_fail
+//! #![deny(unused_must_use)]
+//! # use oer_radio_port::{PortBackend, PortBody, run_port};
+//! async fn forget<B: PortBackend>(backend: B, body: impl PortBody<B>) {
+//!     run_port(backend, body).await;
+//! }
+//! ```
+//!
+//! Its compiling twin keeps them:
+//!
+//! ```
+//! #![deny(unused_must_use)]
+//! # use oer_radio_port::{PortBackend, PortBody, run_port};
+//! async fn keep<B: PortBackend>(backend: B, body: impl PortBody<B>) -> Option<B::Uninstalled> {
+//!     run_port(backend, body).await
+//! }
+//! ```
+//!
 //! No caller makes an owner outside a body:
 //!
 //! ```compile_fail,E0624
 //! # use oer_radio_port::{Disabled, Owner, PortBackend};
-//! fn forge<'id, B: PortBackend>(backend: B) -> Owner<'id, B, Disabled> {
-//!     Owner::new(backend)
+//! fn forge<'id, B: PortBackend>(backend: B, held: B::Held<'id>) -> Owner<'id, B, Disabled> {
+//!     Owner::new(backend, held)
 //! }
 //! ```
 //!
@@ -467,6 +487,7 @@ pub trait PortBody<B: PortBackend> {
 /// Run `body` over a just-installed, disabled `backend`. A backend's install
 /// calls it, in the executor task that runs the port, and receives the
 /// hardware owners an uninstall returned, or `None` after a fail-stop.
+#[must_use = "a port's run returns its hardware owners, or `None` after a fail-stop"]
 pub async fn run_port<B: PortBackend>(
     mut backend: B,
     body: impl PortBody<B>,

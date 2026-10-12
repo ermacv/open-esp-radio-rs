@@ -80,6 +80,10 @@ use core::{fmt::Debug, future::Future, ops::RangeInclusive};
 
 use oer_time::RadioInstant;
 
+// The conformance suite's wakers count wake-ups on the heap.
+#[cfg(any(test, feature = "test-support"))]
+extern crate alloc;
+
 #[cfg(any(test, feature = "test-support"))]
 pub mod conformance;
 pub mod owner;

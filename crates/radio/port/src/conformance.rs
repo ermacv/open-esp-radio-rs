@@ -7,8 +7,9 @@
 //! function over a harness; [`check_all`] runs them in turn. The one rule
 //! of a permit pool, [`permits_serve_takers_in_arrival_order`], runs apart
 //! from it: its pool's owner (a backend's held part, a runtime) calls it
-//! with the pool and at most eight permits it holds aside. A rule that a
-//! backend or pool breaks panics with what it observed, so the test fails.
+//! with the pool and the permits it holds aside, none for a pool of one
+//! permit and at most eight. A rule that a backend or pool breaks panics
+//! with what it observed, so the test fails.
 //!
 //! The rules are the shared contract of [`RadioPort`]
 //! (`docs/architecture.md`, "Radio ports"); each port's own rules, such as
@@ -374,19 +375,22 @@ pub fn caller_identities_avoid_the_backend_range<I: Correlation>() {
 /// documented order is first in, first out: with every permit but one
 /// held, three takers wait in arrival order, and each released permit goes
 /// to the earliest of them; a taker that gave up its place before then
-/// stalls none of them. `held` are the other permits, taken by the caller,
-/// at most eight.
+/// stalls none of them. Each release wakes the taker it serves, and, when
+/// `held` has a permit, two releases before any taker runs serve and wake
+/// two takers in turn. `held` are the other permits, taken by the caller,
+/// at most eight; a pool of one permit passes none.
 ///
 /// # Panics
 ///
-/// The pool serves a later taker first, or none at all.
+/// The pool serves a later taker first, or none at all, or does not wake
+/// the taker a release serves.
 pub fn permits_serve_takers_in_arrival_order<'id, K, P: crate::PermitPool<'id, K>>(
     pool: &P,
     held: impl IntoIterator<Item = crate::Permit<'id, K>>,
 ) {
-    let mut context = Context::from_waker(Waker::noop());
+    let mut idle = Context::from_waker(Waker::noop());
     let held: alloc_free::Held<'id, K> = alloc_free::Held::new(held);
-    let mut last = match pin!(pool.take()).as_mut().poll(&mut context) {
+    let last = match pin!(pool.take()).as_mut().poll(&mut idle) {
         Poll::Ready(permit) => permit,
         Poll::Pending => panic!("a pool with a free permit serves its first taker"),
     };
@@ -394,42 +398,115 @@ pub fn permits_serve_takers_in_arrival_order<'id, K, P: crate::PermitPool<'id, K
     {
         let mut gives_up = pin!(pool.take());
         assert!(
-            gives_up.as_mut().poll(&mut context).is_pending(),
+            gives_up.as_mut().poll(&mut idle).is_pending(),
             "a taker waits while every permit is held"
         );
     }
+    let [first_woken, second_woken, third_woken] = [(); 3].map(|()| Woken::new());
+    let [first_waker, second_waker, third_waker] =
+        [&first_woken, &second_woken, &third_woken].map(|woken| Waker::from(woken.clone()));
+    let mut first_context = Context::from_waker(&first_waker);
+    let mut second_context = Context::from_waker(&second_waker);
+    let mut third_context = Context::from_waker(&third_waker);
     let mut first = pin!(pool.take());
     let mut second = pin!(pool.take());
     let mut third = pin!(pool.take());
     for taker in [
-        first.as_mut().poll(&mut context),
-        second.as_mut().poll(&mut context),
-        third.as_mut().poll(&mut context),
+        first.as_mut().poll(&mut first_context),
+        second.as_mut().poll(&mut second_context),
+        third.as_mut().poll(&mut third_context),
     ] {
         assert!(
             taker.is_pending(),
             "a taker waits while every permit is held"
         );
     }
+    // One release serves the earliest taker and wakes it.
+    for woken in [&first_woken, &second_woken, &third_woken] {
+        woken.take();
+    }
     pool.release(last);
     assert!(
-        second.as_mut().poll(&mut context).is_pending(),
+        first_woken.take(),
+        "a released permit wakes the earliest waiting taker"
+    );
+    assert!(
+        second.as_mut().poll(&mut second_context).is_pending(),
         "a released permit goes to the earliest taker, not a later one"
     );
-    last = match first.as_mut().poll(&mut context) {
-        Poll::Ready(permit) => permit,
-        Poll::Pending => panic!("the earliest taker gets the released permit"),
+    let Poll::Ready(served) = first.as_mut().poll(&mut first_context) else {
+        panic!("the earliest taker gets the released permit");
     };
-    pool.release(last);
-    let Poll::Ready(permit) = second.as_mut().poll(&mut context) else {
-        panic!("the next taker gets the next released permit");
-    };
-    pool.release(permit);
-    let Poll::Ready(permit) = third.as_mut().poll(&mut context) else {
-        panic!("every waiting taker is served in turn");
-    };
-    pool.release(permit);
+    let mut held = held;
+    if let Some(aside) = held.take() {
+        // Two releases before any taker runs serve both waiting takers in
+        // turn, each woken: a taker served while a permit is still free
+        // leaves the next one woken.
+        for woken in [&second_woken, &third_woken] {
+            woken.take();
+        }
+        pool.release(served);
+        pool.release(aside);
+        assert!(
+            second_woken.take(),
+            "a released permit wakes the earliest waiting taker"
+        );
+        let Poll::Ready(second_served) = second.as_mut().poll(&mut second_context) else {
+            panic!("the next taker gets the next released permit");
+        };
+        assert!(
+            third_woken.take(),
+            "a permit still free when a taker is served wakes the next taker"
+        );
+        let Poll::Ready(third_served) = third.as_mut().poll(&mut third_context) else {
+            panic!("every waiting taker is served in turn");
+        };
+        pool.release(second_served);
+        pool.release(third_served);
+    } else {
+        // A pool of one permit: each release serves and wakes the next.
+        second_woken.take();
+        pool.release(served);
+        assert!(
+            second_woken.take(),
+            "a released permit wakes the next waiting taker"
+        );
+        let Poll::Ready(second_served) = second.as_mut().poll(&mut second_context) else {
+            panic!("the next taker gets the next released permit");
+        };
+        third_woken.take();
+        pool.release(second_served);
+        assert!(third_woken.take(), "every waiting taker is woken in turn");
+        let Poll::Ready(third_served) = third.as_mut().poll(&mut third_context) else {
+            panic!("every waiting taker is served in turn");
+        };
+        pool.release(third_served);
+    }
     held.release_into(pool);
+}
+
+/// A waker's record of whether it was woken.
+struct Woken(core::sync::atomic::AtomicBool);
+
+impl Woken {
+    fn new() -> alloc::sync::Arc<Self> {
+        alloc::sync::Arc::new(Self(core::sync::atomic::AtomicBool::new(false)))
+    }
+
+    /// Whether it was woken since the last call.
+    fn take(&self) -> bool {
+        self.0.swap(false, core::sync::atomic::Ordering::Relaxed)
+    }
+}
+
+impl alloc::task::Wake for Woken {
+    fn wake(self: alloc::sync::Arc<Self>) {
+        self.wake_by_ref();
+    }
+
+    fn wake_by_ref(self: &alloc::sync::Arc<Self>) {
+        self.0.store(true, core::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 /// The permits a rule holds aside, without an allocator.
@@ -453,6 +530,11 @@ mod alloc_free {
                 "the rule holds at most {HELD} permits aside"
             );
             Self { permits }
+        }
+
+        /// One of the permits held aside.
+        pub fn take(&mut self) -> Option<crate::Permit<'id, K>> {
+            self.permits.iter_mut().find_map(Option::take)
         }
 
         pub fn release_into<P: crate::PermitPool<'id, K>>(self, pool: &P) {

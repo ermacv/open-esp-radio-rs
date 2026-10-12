@@ -218,7 +218,9 @@ pub trait PermitPool<'id, Kind> {
 
     /// Give a permit back: the backend that keeps the pool calls it when the
     /// work that held the permit ended, before it hands the terminal out,
-    /// or when a taker drops a permit it never submitted; the next waiting
-    /// taker resumes.
+    /// and a taker that holds a permit it never submitted gives it back
+    /// through it (a guard over the permit may do so when dropped). A
+    /// permit dropped bare loses its capacity until the next install. The
+    /// next waiting taker resumes.
     fn release(&self, permit: Permit<'id, Kind>);
 }

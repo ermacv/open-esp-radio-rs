@@ -767,9 +767,18 @@ fn a_refused_enable_can_fail_stop_without_an_uninstall() {
 /// A first-in, first-out pool of the test, over the permits a mint made.
 struct FifoPool<'id> {
     free: core::cell::RefCell<std::vec::Vec<Permit<'id, ModelCaps>>>,
-    /// The tickets of the waiting takers, in arrival order.
-    line: core::cell::RefCell<std::collections::VecDeque<u32>>,
+    /// The waiting takers, in arrival order: each one's ticket and waker.
+    line: Line,
     next: core::cell::Cell<u32>,
+}
+
+type Line = core::cell::RefCell<std::collections::VecDeque<(u32, core::task::Waker)>>;
+
+/// Wake the taker at the head of `line`, which a free permit now serves.
+fn wake_head(line: &Line) {
+    if let Some((_, waker)) = line.borrow().front() {
+        waker.wake_by_ref();
+    }
 }
 
 impl<'id> PermitPool<'id, ModelCaps> for FifoPool<'id> {
@@ -778,23 +787,45 @@ impl<'id> PermitPool<'id, ModelCaps> for FifoPool<'id> {
             line: &self.line,
             ticket: None,
         };
-        core::future::poll_fn(move |_| {
+        core::future::poll_fn(move |context| {
             // The whole place moves into the future, so dropping the future
             // drops it; a closure that named only its field would copy that.
             let place = &mut place;
-            let mine = *place.ticket.get_or_insert_with(|| {
-                let issued = self.next.get();
-                self.next.set(issued + 1);
-                self.line.borrow_mut().push_back(issued);
-                issued
-            });
-            if self.line.borrow().front() != Some(&mine) {
+            let mine = match place.ticket {
+                Some(mine) => {
+                    // Keep the latest waker of this taker.
+                    if let Some(entry) = self
+                        .line
+                        .borrow_mut()
+                        .iter_mut()
+                        .find(|(ticket, _)| *ticket == mine)
+                    {
+                        entry.1.clone_from(context.waker());
+                    }
+                    mine
+                }
+                None => {
+                    let issued = self.next.get();
+                    self.next.set(issued + 1);
+                    self.line
+                        .borrow_mut()
+                        .push_back((issued, context.waker().clone()));
+                    place.ticket = Some(issued);
+                    issued
+                }
+            };
+            if self.line.borrow().front().map(|(ticket, _)| *ticket) != Some(mine) {
                 return core::task::Poll::Pending;
             }
-            match self.free.borrow_mut().pop() {
+            let served = self.free.borrow_mut().pop();
+            match served {
                 Some(permit) => {
                     self.line.borrow_mut().pop_front();
                     place.ticket = None;
+                    // A permit still free serves the next taker: wake it.
+                    if !self.free.borrow().is_empty() {
+                        wake_head(&self.line);
+                    }
                     core::task::Poll::Ready(permit)
                 }
                 None => core::task::Poll::Pending,
@@ -804,20 +835,24 @@ impl<'id> PermitPool<'id, ModelCaps> for FifoPool<'id> {
 
     fn release(&self, permit: Permit<'id, ModelCaps>) {
         self.free.borrow_mut().push(permit);
+        wake_head(&self.line);
     }
 }
 
 /// A taker's place in a [`FifoPool`]'s line, given up when its future
-/// drops before it is served.
+/// drops before it is served; the taker behind it then leads the line.
 struct Place<'p> {
-    line: &'p core::cell::RefCell<std::collections::VecDeque<u32>>,
+    line: &'p Line,
     ticket: Option<u32>,
 }
 
 impl Drop for Place<'_> {
     fn drop(&mut self) {
         if let Some(ticket) = self.ticket {
-            self.line.borrow_mut().retain(|waiting| *waiting != ticket);
+            self.line
+                .borrow_mut()
+                .retain(|(waiting, _)| *waiting != ticket);
+            wake_head(self.line);
         }
     }
 }
@@ -834,4 +869,17 @@ fn a_fifo_permit_pool_meets_the_conformance_rule() {
     crate::conformance::permits_serve_takers_in_arrival_order(&pool, [held]);
     // The rule handed every permit back.
     assert_eq!(pool.free.borrow().len(), 2);
+}
+
+#[test]
+fn a_fifo_pool_of_one_permit_meets_the_conformance_rule() {
+    let mut mint = Mint::new();
+    let [only] = mint.permits::<ModelCaps, 1>();
+    let pool = FifoPool {
+        free: core::cell::RefCell::new(std::vec![only]),
+        line: core::cell::RefCell::default(),
+        next: core::cell::Cell::new(0),
+    };
+    crate::conformance::permits_serve_takers_in_arrival_order(&pool, []);
+    assert_eq!(pool.free.borrow().len(), 1);
 }

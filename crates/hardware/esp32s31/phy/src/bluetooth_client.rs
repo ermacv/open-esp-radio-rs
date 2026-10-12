@@ -54,7 +54,7 @@ pub enum BluetoothPhyClientError {
 /// Enter Bluetooth into the shared PHY domain and the shared BTBB baseband.
 ///
 /// This is `esp_phy_enable(PHY_MODEM_BT)` followed by `esp_btbb_enable`. The
-/// returned [`ConcurrentAcquire::TrackingDue`] means the domain must run its
+/// returned [`ConcurrentAcquire::TrackingDue`](crate::concurrent::ConcurrentAcquire::TrackingDue) means the domain must run its
 /// tracking before the Controller may use RF.
 ///
 /// # Errors

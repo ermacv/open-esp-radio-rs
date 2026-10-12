@@ -72,7 +72,7 @@ pub enum Ieee802154PhyClientError {
 /// `esp_btbb_enable`; the pinned `ieee802154_txon_delay_set` writes only the
 /// MAC's own delays, so the shared transmit-on delay keeps the value of the
 /// BTBB initialization. The
-/// returned [`ConcurrentAcquire::TrackingDue`] means the domain must run its
+/// returned [`ConcurrentAcquire::TrackingDue`](crate::concurrent::ConcurrentAcquire::TrackingDue) means the domain must run its
 /// tracking before the MAC may use RF.
 ///
 /// # Errors
@@ -266,7 +266,7 @@ impl RegisteredIeee802154Operational {
 
 /// PHY membership retained while the MAC is operational. The membership
 /// comes back only with the foundation owners
-/// ([`RegisteredIeee802154Operational::into_foundation`]), so IEEE 802.15.4
+/// ([`RegisteredIeee802154OperationalRoute::into_foundation`]), so IEEE 802.15.4
 /// leaves the PHY only after its operational MAC was taken apart:
 ///
 /// ```

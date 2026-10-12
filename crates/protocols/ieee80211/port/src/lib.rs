@@ -460,7 +460,7 @@ pub type EnableResult<R, F> = Result<Result<(), R>, Poisoned<F>>;
 /// `run_port` call each method only in the state its documentation names.
 pub trait PortBackend: Sized {
     /// One owned event.
-    type Event;
+    type Event<'id>;
     /// The clock domain of the port's radio instants.
     type Domain;
     /// The cause a poisoned backend reports.
@@ -474,7 +474,7 @@ pub trait PortBackend: Sized {
         Self: 'a;
     /// The running phase, lent while the port is enabled: one object under
     /// `&mut`, the body's handle over its queues to the driver.
-    type Phase<'a, 'id>: PortPhase<Event = Self::Event, Fault = Self::Fault>
+    type Phase<'a, 'id>: PortPhase<Event = Self::Event<'id>, Fault = Self::Fault>
     where
         Self: 'a,
         'id: 'a;
@@ -519,7 +519,7 @@ pub trait PortBackend: Sized {
         &'a mut self,
         held: &'a Self::Held<'id>,
         local: &'a mut Self::Local<'id>,
-        sink: &'a mut dyn FnMut(Self::Event),
+        sink: &'a mut dyn FnMut(Self::Event<'id>),
     ) -> impl Future<Output = Result<(), Poisoned<Self::Fault>>> + 'a
     where
         'id: 'a;
@@ -932,7 +932,7 @@ impl<'p, 'id, B: PortBackend> Owner<'p, 'id, B, Enabled> {
     /// A poisoned backend.
     pub async fn disable(
         mut self,
-        sink: &mut dyn FnMut(B::Event),
+        sink: &mut dyn FnMut(B::Event<'id>),
     ) -> Result<Owner<'p, 'id, B, Disabled>, PoisonedOwner<'p, 'id, B>> {
         // The owner holds the backend across the wait, as `enable`'s does.
         let disabled = {

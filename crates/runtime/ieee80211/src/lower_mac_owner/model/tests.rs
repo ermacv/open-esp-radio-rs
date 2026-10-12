@@ -7,13 +7,14 @@ use core::{
 
 use alloc::vec::Vec;
 
-use oer_ieee80211_mac::{phy::LegacyRate, qos::WmmAccessCategory};
+use oer_ieee80211_mac::{phy::LegacyRate, qos::WmmAccessCategory, sequence::SequenceNumber};
 use oer_radio_port::{Disabled, Ended, Owner, PhaseParts, PortBody, run_port};
 
 use super::*;
 use oer_ieee80211_lower_mac::{
-    Backoff, ChannelWidth, CoexPriority, PhyRate, Protection, QueueGrant, SupportedBackoff,
-    SupportedCoex, SupportedPower, TxPower, TxResponse,
+    AckHeader, Backoff, ChannelWidth, CoexPriority, FrameControl, GroupAddress, HeaderSpec,
+    IndividualAddress, MpduLength, NoAckHeader, PhyRate, Protection, QosControl, QueueGrant,
+    SupportedBackoff, SupportedCoex, SupportedPower, Tid, TxFrame, TxFrameBody, TxPower,
 };
 
 /// The value of a future the model drives to its end: the body and the
@@ -67,9 +68,38 @@ const ONE: SupportedChannel<ModelCaps> =
 
 const ADDRESSES: [MacAddress; 2] = [[2, 0, 0, 0, 0, 1], [2, 0, 0, 0, 0, 2]];
 
-/// An attempt at 6 Mb/s with no key.
+/// The header of a data frame to the access point's address.
+fn data_header() -> HeaderSpec<IndividualAddress> {
+    HeaderSpec::new(
+        FrameControl::new(0x0008).unwrap(),
+        0,
+        IndividualAddress::new(ADDRESSES[1]).unwrap(),
+        ADDRESSES[0],
+        ADDRESSES[1],
+        0,
+        None,
+        None,
+        None,
+    )
+    .unwrap()
+}
+
+/// An individual data frame at 6 Mb/s that solicits an ACK.
+fn individual<'c, 'a, 'id, R: ModelRole>(
+    client: &'c ModelClient<'a, 'id, R>,
+) -> TxFrame<'c, ModelCaps> {
+    TxFrame::Individual {
+        header: AckHeader::new(data_header()).unwrap(),
+        rate: client
+            .rate(PhyRate::Legacy(LegacyRate::Ofdm6M))
+            .expect("channel 6 carries 6 Mb/s"),
+        len: MpduLength::new(24).unwrap(),
+    }
+}
+
+/// An attempt of `frame` with no key.
 fn attempt<'p, 'a, 'id, R: ModelRole>(
-    client: &'p ModelClient<'a, 'id, R>,
+    _: &'p ModelClient<'a, 'id, R>,
     queue: QueuePermit<'p, 'id>,
     frame: ModelTxBuffer<'p, 'id>,
 ) -> PhaseAttempt<'p, 'id, ModelClient<'a, 'id, R>> {
@@ -77,10 +107,6 @@ fn attempt<'p, 'a, 'id, R: ModelRole>(
         queue,
         frame,
         body: None,
-        response: TxResponse::None,
-        rate: client
-            .rate(PhyRate::Legacy(LegacyRate::Ofdm6M))
-            .expect("channel 6 carries 6 Mb/s"),
         protection: Protection::None,
         key: None,
         power: SupportedPower::new(TxPower::Calibrated).unwrap(),
@@ -113,7 +139,10 @@ impl PortBody<OwnedModel> for OnePhase<'_> {
         {
             let mut setup = owner.setup();
             setup.set_channel(SIX);
-            setup.configure(VifRole::Station, [2, 0, 0, 0, 0, 1]);
+            setup.set_address(
+                VifRole::Station,
+                IndividualAddress::new([2, 0, 0, 0, 0, 1]).unwrap(),
+            );
         }
         let mut enabled = match owner.enable().await {
             Ok(enabled) => enabled,
@@ -139,7 +168,7 @@ impl PortBody<OwnedModel> for OnePhase<'_> {
             ));
             let frame = station
                 .tx_buffer(
-                    MpduLength::new(24).unwrap(),
+                    individual(station),
                     seats.buffer(WmmAccessCategory::BestEffort),
                 )
                 .await;
@@ -164,7 +193,7 @@ impl PortBody<OwnedModel> for OnePhase<'_> {
                 .await;
             let frame = station
                 .tx_buffer(
-                    MpduLength::new(24).unwrap(),
+                    individual(station),
                     seats.buffer(WmmAccessCategory::BestEffort),
                 )
                 .await;
@@ -206,14 +235,14 @@ impl PortBody<OwnedModel> for OnePhase<'_> {
                 buffers.push(
                     station
                         .tx_buffer(
-                            MpduLength::new(24).unwrap(),
+                            individual(station),
                             seats.buffer(WmmAccessCategory::BestEffort),
                         )
                         .await,
                 );
             }
             assert!(pending(station.tx_buffer(
-                MpduLength::new(24).unwrap(),
+                individual(station),
                 seats.buffer(WmmAccessCategory::BestEffort)
             )));
         }
@@ -280,7 +309,7 @@ impl PortBody<OwnedModel> for GateWaits<'_> {
                 .await;
             let frame = station
                 .tx_buffer(
-                    MpduLength::new(24).unwrap(),
+                    individual(station),
                     seats.buffer(WmmAccessCategory::BestEffort),
                 )
                 .await;
@@ -332,7 +361,9 @@ impl PortBody<OwnedModel> for KeySlots<'_> {
         mut owner: Owner<'p, 'id, OwnedModel, Disabled>,
         resources: ModelResources<'id>,
     ) -> Ended<'id, OwnedModel> {
-        let [pairwise_slot, group_slot] = resources.station_keys;
+        let [pairwise_slot, _] = resources.station_pairwise_keys;
+        let [group_slot, _] = resources.station_group_keys;
+        let [first, second] = resources.station_block_acks;
         owner.setup().set_channel(SIX);
         let Ok(mut enabled) = owner.enable().await else {
             panic!("the model enables");
@@ -340,16 +371,43 @@ impl PortBody<OwnedModel> for KeySlots<'_> {
         let pairwise = {
             let PhaseParts { clients, .. } = enabled.split();
             let station = &clients.station;
-            let pairwise = station.install_key(
+            let pairwise = station.install_pairwise_key(
                 pairwise_slot,
-                KeyScope::Pairwise { peer: [2; 6] },
+                IndividualAddress::new([2; 6]).unwrap(),
                 Ccmp128Key([1; 16]),
             );
-            let _group = station.install_key(
+            let _group = station.install_group_key(
                 group_slot,
-                KeyScope::Group { key_id: 1 },
+                GroupKeyId::new(1).unwrap(),
                 Ccmp128Key([2; 16]),
             );
+            // A second agreement of the same peer and TID replaces the
+            // first, whose slot comes back.
+            let peer = IndividualAddress::new([2; 6]).unwrap();
+            let agreement = || {
+                SupportedBlockAck::new(
+                    peer,
+                    Tid::new(0).unwrap(),
+                    SequenceNumber::new(0).unwrap(),
+                    8,
+                )
+                .unwrap()
+            };
+            assert!(station.add_block_ack(first, agreement()).is_none());
+            let replaced = station
+                .add_block_ack(second, agreement())
+                .expect("the pair's earlier agreement comes back");
+            assert!(
+                station
+                    .remove_block_ack(peer, Tid::new(0).unwrap())
+                    .is_some()
+            );
+            assert!(
+                station
+                    .remove_block_ack(peer, Tid::new(0).unwrap())
+                    .is_none()
+            );
+            drop(replaced);
             pairwise
         };
         // A channel move ends the phase; the key outlives it.
@@ -363,10 +421,10 @@ impl PortBody<OwnedModel> for KeySlots<'_> {
             let PhaseParts { clients, .. } = enabled.split();
             let station = &clients.station;
             assert_eq!(self.world.installed_keys().len(), 2);
-            let slot = station.remove_key(pairwise);
-            let _again = station.install_key(
+            let slot = station.remove_pairwise_key(pairwise).await;
+            let _again = station.install_pairwise_key(
                 slot,
-                KeyScope::Pairwise { peer: [3; 6] },
+                IndividualAddress::new([4; 6]).unwrap(),
                 Ccmp128Key([3; 16]),
             );
         }
@@ -488,7 +546,7 @@ impl PortBody<OwnedModel> for DropsTheClosing<'_> {
                 .await;
             let frame = station
                 .tx_buffer(
-                    MpduLength::new(24).unwrap(),
+                    individual(station),
                     seats.buffer(WmmAccessCategory::BestEffort),
                 )
                 .await;
@@ -550,7 +608,7 @@ impl PortBody<OwnedModel> for WaitsForTheWorld<'_> {
                 .await;
             let frame = station
                 .tx_buffer(
-                    MpduLength::new(24).unwrap(),
+                    individual(station),
                     seats.buffer(WmmAccessCategory::BestEffort),
                 )
                 .await;
@@ -611,7 +669,7 @@ impl PortBody<OwnedModel> for NeverReads<'_> {
                 .await;
             let frame = station
                 .tx_buffer(
-                    MpduLength::new(24).unwrap(),
+                    individual(station),
                     seats.buffer(WmmAccessCategory::BestEffort),
                 )
                 .await;
@@ -637,4 +695,250 @@ fn the_driver_gives_a_queue_back_to_a_body_that_reads_no_event() {
         world.lifecycle(),
         ["enable", "disable", "retire", "detach", "uninstall"]
     );
+}
+
+/// A body that requests one buffer of each kind and checks what each
+/// solicits.
+struct FrameKinds;
+
+impl PortBody<OwnedModel> for FrameKinds {
+    async fn run<'p, 'id>(
+        self,
+        owner: Owner<'p, 'id, OwnedModel, Disabled>,
+        resources: ModelResources<'id>,
+    ) -> Ended<'id, OwnedModel> {
+        let mut station_tx = resources.station_tx;
+        let seats = &mut station_tx;
+        let Ok(mut enabled) = owner.enable().await else {
+            panic!("the model enables");
+        };
+        {
+            let PhaseParts { clients, .. } = enabled.split();
+            let station = &clients.station;
+            let six = || {
+                station
+                    .rate(PhyRate::Legacy(LegacyRate::Ofdm6M))
+                    .expect("channel 6 carries 6 Mb/s")
+            };
+            // An individual frame without an ACK at a rate that allows it:
+            // its QoS Ack Policy is No Ack.
+            let qos_header = HeaderSpec::new(
+                FrameControl::new(0x0088).unwrap(),
+                0,
+                IndividualAddress::new(ADDRESSES[1]).unwrap(),
+                ADDRESSES[0],
+                ADDRESSES[1],
+                0,
+                None,
+                Some(QosControl {
+                    tid: Tid::new(5).unwrap(),
+                    end_of_service_period: false,
+                    amsdu_present: false,
+                    high: 0,
+                }),
+                None,
+            )
+            .unwrap();
+            let no_ack = station.no_ack(six()).expect("6 Mb/s carries no ACK");
+            let mut frame = station
+                .tx_buffer(
+                    TxFrame::IndividualNoAck {
+                        header: NoAckHeader::new(qos_header).unwrap(),
+                        rate: no_ack,
+                        len: MpduLength::new(30).unwrap(),
+                    },
+                    seats.buffer(WmmAccessCategory::BestEffort),
+                )
+                .await;
+            assert_eq!(frame.response, TxResponse::None);
+            assert_eq!(frame.bytes[24] & 0b0110_0000, 0b0010_0000);
+            assert_eq!(frame.body_mut().len(), 4);
+            drop(frame);
+            // A group frame solicits nothing: its QoS Ack Policy is No Ack.
+            let group = HeaderSpec::new(
+                FrameControl::new(0x0088).unwrap(),
+                0,
+                GroupAddress::new([0xff; 6]).unwrap(),
+                ADDRESSES[0],
+                ADDRESSES[0],
+                0,
+                None,
+                Some(QosControl {
+                    tid: Tid::new(0).unwrap(),
+                    end_of_service_period: false,
+                    amsdu_present: false,
+                    high: 0,
+                }),
+                None,
+            )
+            .unwrap();
+            let frame = station
+                .tx_buffer(
+                    TxFrame::Group {
+                        header: group,
+                        rate: six(),
+                        len: MpduLength::new(24).unwrap(),
+                    },
+                    seats.buffer(WmmAccessCategory::BestEffort),
+                )
+                .await;
+            assert_eq!(frame.response, TxResponse::None);
+            assert_eq!(frame.bytes[24] & 0b0110_0000, 0b0010_0000);
+            drop(frame);
+            // A BlockAckReq at a non-HT rate solicits a BlockAck.
+            let frame = station
+                .tx_buffer(
+                    TxFrame::BlockAckRequest {
+                        receiver: IndividualAddress::new(ADDRESSES[1]).unwrap(),
+                        transmitter: ADDRESSES[0],
+                        tid: Tid::new(0).unwrap(),
+                        starting_sequence: SequenceNumber::new(0).unwrap(),
+                        rate: six().legacy().expect("6 Mb/s is non-HT"),
+                    },
+                    seats.buffer(WmmAccessCategory::BestEffort),
+                )
+                .await;
+            assert_eq!(frame.response, TxResponse::BlockAck);
+            assert_eq!(&frame.bytes[..2], &[0x84, 0x00]);
+        }
+        match enabled.disable(&mut |_| {}).await {
+            Ok(disabled) => disabled.uninstall(()),
+            Err(poisoned) => poisoned.fail_stop(),
+        }
+    }
+}
+
+#[test]
+fn a_buffers_kind_fixes_its_header_rate_and_response() {
+    let (backend, _world) = OwnedModel::new(ONE, ADDRESSES);
+    assert!(now_ready(run_port(backend, FrameKinds)).is_some());
+}
+
+/// A body that removes a key and reconfigures the station while an
+/// attempt using the key is in flight.
+struct WaitsForTheAir<'t> {
+    world: &'t ModelHandle,
+}
+
+impl PortBody<OwnedModel> for WaitsForTheAir<'_> {
+    async fn run<'p, 'id>(
+        self,
+        owner: Owner<'p, 'id, OwnedModel, Disabled>,
+        resources: ModelResources<'id>,
+    ) -> Ended<'id, OwnedModel> {
+        let [slot, _] = resources.station_pairwise_keys;
+        let mut station_tx = resources.station_tx;
+        let seats = &mut station_tx;
+        let Ok(mut enabled) = owner.enable().await else {
+            panic!("the model enables");
+        };
+        {
+            let PhaseParts { clients, .. } = enabled.split();
+            let station = &clients.station;
+            let key = station.install_pairwise_key(
+                slot,
+                IndividualAddress::new(ADDRESSES[1]).unwrap(),
+                Ccmp128Key([7; 16]),
+            );
+            let queue = station
+                .queue(seats.queue(WmmAccessCategory::BestEffort))
+                .await;
+            let frame = station
+                .tx_buffer(
+                    individual(station),
+                    seats.buffer(WmmAccessCategory::BestEffort),
+                )
+                .await;
+            let mut protected = attempt(station, queue, frame);
+            protected.key = Some(AttemptKey::Pairwise(&key));
+            let id = station.submit(protected).unwrap().id();
+            // The key and the interface wait for the attempt, never refused.
+            assert!(pending(station.configure(StationReceive::Off)));
+            let mut removal = pin!(station.remove_pairwise_key(key));
+            assert!(
+                removal
+                    .as_mut()
+                    .poll(&mut Context::from_waker(Waker::noop()))
+                    .is_pending()
+            );
+            assert!(self.world.complete(id, TxStatus::Success));
+            yield_to_driver().await;
+            let _slot = removal.await;
+            station.configure(StationReceive::Off).await;
+            assert!(self.world.installed_keys().is_empty());
+        }
+        match enabled.disable(&mut |_| {}).await {
+            Ok(disabled) => disabled.uninstall(()),
+            Err(poisoned) => poisoned.fail_stop(),
+        }
+    }
+}
+
+#[test]
+fn a_key_and_an_interface_wait_for_the_attempt_in_flight_that_uses_them() {
+    let (backend, world) = OwnedModel::new(ONE, ADDRESSES);
+    assert!(now_ready(run_port(backend, WaitsForTheAir { world: &world })).is_some());
+}
+
+/// A body that removes a key under the closed gate, while the gate holds an
+/// attempt that uses it.
+struct RemovesUnderTheGate;
+
+impl PortBody<OwnedModel> for RemovesUnderTheGate {
+    async fn run<'p, 'id>(
+        self,
+        owner: Owner<'p, 'id, OwnedModel, Disabled>,
+        resources: ModelResources<'id>,
+    ) -> Ended<'id, OwnedModel> {
+        let [slot, _] = resources.station_pairwise_keys;
+        let mut station_tx = resources.station_tx;
+        let seats = &mut station_tx;
+        let Ok(mut enabled) = owner.enable().await else {
+            panic!("the model enables");
+        };
+        let mut terminals = Vec::new();
+        {
+            let PhaseParts {
+                mut events,
+                mut control,
+                clients,
+            } = enabled.split();
+            let station = &clients.station;
+            let key = station.install_pairwise_key(
+                slot,
+                IndividualAddress::new(ADDRESSES[1]).unwrap(),
+                Ccmp128Key([7; 16]),
+            );
+            let _gated = control.close_gate().await;
+            let queue = station
+                .queue(seats.queue(WmmAccessCategory::BestEffort))
+                .await;
+            let frame = station
+                .tx_buffer(
+                    individual(station),
+                    seats.buffer(WmmAccessCategory::BestEffort),
+                )
+                .await;
+            let mut protected = attempt(station, queue, frame);
+            protected.key = Some(AttemptKey::Pairwise(&key));
+            let id = station.submit(protected).unwrap().id();
+            // The gate holds the attempt; the removal aborts it and ends.
+            let _slot = station.remove_pairwise_key(key).await;
+            let event = events.next_event().await.unwrap().unwrap();
+            let (completion, _) = ModelEvents::into_completed(event).ok().unwrap();
+            assert_eq!(completion.id, id);
+            terminals.push(completion.status);
+        }
+        assert_eq!(terminals, [TxStatus::Aborted]);
+        match enabled.disable(&mut |_| {}).await {
+            Ok(disabled) => disabled.uninstall(()),
+            Err(poisoned) => poisoned.fail_stop(),
+        }
+    }
+}
+
+#[test]
+fn a_removal_under_the_closed_gate_aborts_the_held_attempt_and_ends() {
+    let (backend, _world) = OwnedModel::new(ONE, ADDRESSES);
+    assert!(now_ready(run_port(backend, RemovesUnderTheGate)).is_some());
 }

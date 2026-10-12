@@ -108,7 +108,8 @@ refusal; unavailable or different-generation samples are `StaleClock`.
 The module `owner` states the lower-MAC port on the shared owner shape of
 `oer-radio-port`: a backend implements `LowerMacBackend`, a `PortBackend`
 whose disabled-only settings are `LowerMacSetup` (the channel, as a
-`SupportedChannel`, and each interface's address), whose phase control is
+`SupportedChannel`; a backend whose addresses change also implements
+`AddressSetup`), whose phase control is
 `LowerMacControl` (the transmit gate, closed by an awaited `close_gate`
 whose `TxGated` guard reopens it, EDCA as a `SupportedEdca`, the beacon
 receive priority) and whose clients are `LowerMacClient<'id>`s, one per
@@ -123,17 +124,37 @@ a queue seat's index names the access category whose queue it waits for
 (`seat_access_category`), so `queue(seat)` takes no access category of its
 own. Both are the backend's own types: this package states
 only the contract, so no caller forges one, and the backend proves it with
-compile-fail tests of its types. A client's attempt (`PhaseAttempt`)
-carries both, a rate checked on the phase's channel (`PhaseRate`) and the
-values the capabilities marker `K: Ieee80211Capabilities` checks
-(`SupportedPower`, `SupportedBackoff`, `SupportedCoex`); the buffer request
-(`LowerMacClient::tx_buffer`) checks the MPDU's length (`MpduLength`). A
+compile-fail tests of its types. The buffer request
+(`LowerMacClient::tx_buffer`) describes the frame (`TxFrame`), and its kind
+fixes its rate and response, so a frame and its response never disagree:
+an individual frame (an `AckHeader` with an `IndividualAddress`
+receiver, any data or management frame but Action No Ack, an ACK at a
+phase rate), an individual frame without an ACK (a `NoAckHeader`, a QoS data or
+Action No Ack frame that says so, at a `SupportedNoAck` rate), a group frame (a
+`GroupAddress` receiver, no response) or a BlockAckReq (a BlockAck, at a
+`LegacyPhaseRate`). The header is a `HeaderSpec` whose fields agree with
+its `FrameControl` (a data or management frame); the backend writes it, and
+its QoS Ack Policy from the frame's response, so that field has one source.
+The caller writes the body (`TxFrameBody`). A client's attempt
+(`PhaseAttempt`) carries the queue grant, that buffer and the values the
+capabilities marker `K: Ieee80211Capabilities` checks (`SupportedPower`,
+`SupportedBackoff`, `SupportedCoex`); the request checks the MPDU's length
+(`MpduLength`). A
 submission moves them into the backend and returns its `Work`; the
 backend gives them back when it takes the attempt's terminal, before it
 hands the event out, so no caller holds them and a dropped handle or event
-loses none. The body receives each role's key and Block Ack slots once;
-keys and agreements hold a slot of their client's own kind and give it
-back when removed: a station's key is not an access point's.
+loses none. The body receives each role's pairwise key, group key and
+Block Ack slots once; a key holds a slot of its client's own kind and gives
+it back when removed, once no attempt in flight uses it: a station's key is
+not an access point's, nor a group key a pairwise one. A client keeps one
+Block Ack agreement per peer and TID; a new one for the pair replaces the
+old and gives its slot back. A client's type is its role
+(`StationClient`, `AccessPointClient`): only the station has an HE BSS
+color, and each role states its receive rules with its own type
+(`StationReceive`, `SupportedFilter` of the role), applied once its frames
+in flight end. The install gives the port its channel and addresses;
+`LowerMacSetup` changes the channel while disabled, and a backend whose
+addresses can change implements `AddressSetup` (the ESP32-S31 does not).
 
 The module's table maps every refusal of `Ieee80211LowerMacPort` to its
 type, and lists the world's outcomes that stay. The protocol ports still

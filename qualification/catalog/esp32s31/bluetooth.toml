@@ -3426,7 +3426,7 @@ id = "bluetooth-qualification-mapping-initial-phy-registration-acquisition-and-t
 section = "bluetooth-qualification-scope-mapping"
 title = "Initial PHY registration, acquisition and tracking"
 kind = "qualification-mapping"
-details = "`common-phy-baseband` / `bluetooth-initial-phy-handoff`. Common-PHY power/clock prerequisites and borrowed handoff are implemented. The retained client can inspect and evaluate periodic demand; Controller quiescence, target execution and physical release remain incomplete."
+details = "`common-phy-baseband` / `bluetooth-initial-phy-handoff`. Common-PHY power/clock prerequisites, borrowed handoff and initial tracking at once under the arbiter lease are implemented; periodic maintenance and final physical release belong to the parent requirement."
 
 [[references]]
 id = "bluetooth-qualification-mapping-bounded-dtm-sessions"

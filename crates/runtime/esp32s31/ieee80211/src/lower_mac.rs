@@ -3327,7 +3327,9 @@ where
             // interrupt edge moves it.
             let mut serviced = None;
             loop {
-                if retire.is_requested() {
+                // A driver that sees the abandon latch publishes nothing and
+                // stops.
+                if retire.is_requested() || retire.is_abandoned() {
                     return;
                 }
                 held.complete(runtime.take_ended());

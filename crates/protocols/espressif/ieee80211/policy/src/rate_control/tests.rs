@@ -687,3 +687,49 @@ fn a_record_beyond_its_table_is_the_slowest() {
         RateScheduleRef::new(RateScheduleKind::Dot11B, 5).unwrap()
     );
 }
+
+/// The clamp's target is the slowest record: in every table the last
+/// record's rate is no faster than any other record's. The vendor's Long
+/// Range codes have no portable rate and count at their nominal rates,
+/// `wifi_phy_rate_t`'s `WIFI_PHY_RATE_LORA_250K` (`0x29`) and
+/// `WIFI_PHY_RATE_LORA_500K` (`0x2a`).
+#[test]
+fn the_last_record_of_every_table_is_the_slowest() {
+    const KINDS: [RateScheduleKind; 9] = [
+        RateScheduleKind::BarOfdm,
+        RateScheduleKind::BasicOfdm,
+        RateScheduleKind::Dot11Ax,
+        RateScheduleKind::Dot11B,
+        RateScheduleKind::Dot11G,
+        RateScheduleKind::Dot11N,
+        RateScheduleKind::Lora,
+        RateScheduleKind::P2pDot11G,
+        RateScheduleKind::P2pDot11N,
+    ];
+    let kbps = |kind, index| {
+        let code = schedule_state(RateScheduleRef::new(kind, index).unwrap()).rate;
+        match code {
+            0x29 => return 250,
+            0x2a => return 500,
+            _ => {}
+        }
+        crate::rate_code::phy_rate(
+            kind,
+            code,
+            PpduBandwidth::Mhz20,
+            oer_ieee80211_mac::phy::HeGiLtf::Ltf2xGi800Ns,
+        )
+        .map(|rate| rate.nominal_kbps())
+        .unwrap_or_else(|| panic!("{kind:?} record {index} code {code:#x} has no rate"))
+    };
+    for kind in KINDS {
+        let last = (kind.record_count() - 1) as u8;
+        assert_eq!(slowest(kind), RateScheduleRef::new(kind, last).unwrap());
+        for index in 0..last {
+            assert!(
+                kbps(kind, last) <= kbps(kind, index),
+                "{kind:?}: record {index} is slower than the last"
+            );
+        }
+    }
+}

@@ -885,7 +885,9 @@ impl<C: Ieee80211Capabilities> PortBackend for ModelBackend<C> {
         };
         poll_fn(move |cx| {
             held.air.passes.set(held.air.passes.get() + 1);
-            if held.air.poisoned.get() || retire.is_requested() {
+            // A driver that sees the abandon latch publishes nothing and
+            // stops.
+            if held.air.poisoned.get() || retire.is_requested() || retire.is_abandoned() {
                 return Poll::Ready(());
             }
             driver.serve(held);

@@ -479,7 +479,13 @@ backend apart with the held part and the driver's state by value, returning
 the hardware owners by value. A `Drop` of an owner is a
 safety net, as `PlatformClockGuard`'s: it stops the hardware and halts the driver synchronously,
 refuses a new install until a reset and asserts in debug builds; it is
-never the shutdown. Everything the hardware touches is `'static` and owned
+never the shutdown. On the Wi-Fi port, whose driver is the core's one
+owner in its own executor, the owner has no `Drop`: a dropped owner sets
+an atomic abandon latch at once, the driver publishes nothing more, and
+`run_port` abandons the backend at the end of that poll of the body and
+returns `None`
+([refinement](https://github.com/ermacv/open-esp-radio-rs/issues/581#issuecomment-6133179528));
+Bluetooth LE and IEEE 802.15.4 keep the owner's `Drop`. Everything the hardware touches is `'static` and owned
 by the resource, so no abandoned owner is a memory-safety issue. Composition
 crates disallow `core::future::pending` in their own `clippy.toml`, so a
 body does not end by pending forever.

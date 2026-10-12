@@ -194,6 +194,10 @@ impl<'m> PortBackend for Backend<'m> {
         // poll after the request unless it is stubborn.
         core::future::poll_fn(move |_| {
             model.driver_polls.set(model.driver_polls.get() + 1);
+            // A driver that sees the latch publishes nothing and stops.
+            if retire.is_abandoned() {
+                return core::task::Poll::Ready(());
+            }
             model.served.set(model.posted.get());
             if retire.is_requested() && !model.stubborn_driver.get() {
                 model.lifecycle.borrow_mut().push("retire");
@@ -405,19 +409,17 @@ impl<'m> PortBody<Backend<'m>> for DropTheEnable {
         _: [Slot<'id, ModelCaps>; 2],
     ) -> Ended<'id, Backend<'m>> {
         drop(owner.enable());
-        panic!("the dropped owner's safety net asserts first")
+        core::future::pending().await
     }
 }
 
 #[test]
-fn a_dropped_owner_abandons_its_backend_and_asserts_in_debug() {
+fn a_dropped_enable_ends_the_port_abandoned() {
     let model = Model::default();
-    let dropped = std::panic::catch_unwind(core::panic::AssertUnwindSafe(|| {
-        now_ready(run_port(Backend(&model), DropTheEnable))
-    }));
-    assert!(dropped.is_err());
-    // The safety net stopped the backend before it asserted.
+    let ended = now_ready(run_port(Backend(&model), DropTheEnable));
+    assert!(ended.is_none());
     assert_eq!(*model.lifecycle.borrow(), ["abandon"]);
+    assert_eq!(model.driver_polls.get(), 0);
 }
 
 /// A body that drops its `disable` future after its first poll, while the
@@ -443,19 +445,18 @@ impl<'m> PortBody<Backend<'m>> for DropTheDisable {
                 ));
             assert!(first.is_pending());
         }
-        panic!("the dropped owner's safety net asserts first")
+        core::future::pending().await
     }
 }
 
 #[test]
-fn an_owner_dropped_while_its_disable_waits_abandons_its_backend() {
+fn an_owner_dropped_while_its_disable_waits_ends_the_port_abandoned() {
     let model = Model::default();
     model.slow_disable.set(true);
-    let dropped = std::panic::catch_unwind(core::panic::AssertUnwindSafe(|| {
-        now_ready(run_port(Backend(&model), DropTheDisable))
-    }));
-    assert!(dropped.is_err());
-    // The owner held the backend across the wait: its safety net stopped it.
+    let ended = now_ready(run_port(Backend(&model), DropTheDisable));
+    // The disable's future held the owner across the wait: its sentry set
+    // the latch.
+    assert!(ended.is_none());
     assert_eq!(*model.lifecycle.borrow(), ["enable", "abandon"]);
 }
 
@@ -656,8 +657,7 @@ fn a_fail_stop_halts_the_driver_at_its_next_poll() {
     assert_eq!(model.driver_polls.get(), before);
 }
 
-/// A body that drops its owner, survives the safety net's debug assertion,
-/// and waits on.
+/// A body that drops its owner and waits on.
 struct DropTheOwnerAndWait;
 
 impl<'m> PortBody<Backend<'m>> for DropTheOwnerAndWait {
@@ -666,21 +666,66 @@ impl<'m> PortBody<Backend<'m>> for DropTheOwnerAndWait {
         owner: Owner<'_, 'id, Backend<'m>, Disabled>,
         _: [Slot<'id, ModelCaps>; 2],
     ) -> Ended<'id, Backend<'m>> {
-        let dropped = std::panic::catch_unwind(core::panic::AssertUnwindSafe(|| drop(owner)));
-        assert_eq!(dropped.is_err(), cfg!(debug_assertions));
+        drop(owner);
         foreign(&core::cell::Cell::new(false)).await;
-        unreachable!("the test drops the port first")
+        unreachable!("run_port drops the body at the end of this poll")
     }
 }
 
 #[test]
-fn a_dropped_owner_halts_the_driver_at_its_next_poll() {
+fn a_dropped_owner_ends_the_port_at_the_end_of_that_poll() {
     let model = Model::default();
     let mut port = core::pin::pin!(run_port(Backend(&model), DropTheOwnerAndWait));
-    assert!(poll_once(port.as_mut()).is_pending());
-    assert!(poll_once(port.as_mut()).is_pending());
+    let core::task::Poll::Ready(ended) = poll_once(port.as_mut()) else {
+        panic!("the port ends in the poll that dropped the owner");
+    };
+    assert!(ended.is_none());
     assert_eq!(*model.lifecycle.borrow(), ["abandon"]);
     assert_eq!(model.driver_polls.get(), 0);
+}
+
+/// A body that enables, posts work to the driver and drops its owner, all
+/// in one poll.
+struct PostThenDropTheOwner<'t>(&'t Model);
+
+impl<'m> PortBody<Backend<'m>> for PostThenDropTheOwner<'_> {
+    async fn run<'id>(
+        self,
+        owner: Owner<'_, 'id, Backend<'m>, Disabled>,
+        _: [Slot<'id, ModelCaps>; 2],
+    ) -> Ended<'id, Backend<'m>> {
+        let Ok(mut enabled) = owner.enable().await else {
+            panic!("the model enables");
+        };
+        enabled.phase().admit(1);
+        self.0.posted.set(self.0.posted.get() + 1);
+        drop(enabled);
+        core::future::pending().await
+    }
+}
+
+#[test]
+fn nothing_posted_in_the_poll_that_dropped_the_owner_is_published() {
+    let model = Model::default();
+    let ended = now_ready(run_port(Backend(&model), PostThenDropTheOwner(&model)));
+    assert!(ended.is_none());
+    assert_eq!(*model.lifecycle.borrow(), ["enable", "abandon"]);
+    // The driver never served the posted work.
+    assert_eq!(model.posted.get(), 1);
+    assert_eq!(model.served.get(), 0);
+    assert_eq!(model.driver_polls.get(), 0);
+}
+
+#[test]
+fn the_abandon_latch_is_atomic() {
+    const fn shared<T: Send + Sync>() {}
+    shared::<AbandonLatch>();
+    let latch = AbandonLatch::new();
+    assert!(!latch.is_set());
+    std::thread::scope(|scope| {
+        scope.spawn(|| latch.set());
+    });
+    assert!(latch.is_set());
 }
 
 #[test]

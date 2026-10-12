@@ -26,10 +26,8 @@
 //! This module only declares the port; it never waits on it.
 
 pub use oer_ieee802154_port::{CancelError, ClockError};
-pub use oer_radio_port::{
-    ClockInfo, EventsLost, LifecycleCommand, LifecycleError, LifecycleEvent, Poisoned, PortResult,
-    RadioPort,
-};
+pub use oer_ieee802154_port::{LifecycleCommand, LifecycleError, LifecycleEvent, RadioPort};
+pub use oer_radio_port::{ClockInfo, EventsLost, Poisoned, PortResult};
 
 use crate::mac::link_metrics::ProbingInitiator;
 use crate::radio::{

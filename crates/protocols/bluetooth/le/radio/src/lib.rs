@@ -53,10 +53,9 @@ pub use channel::{
     AdvertisingChannel, AdvertisingChannels, ChannelError, DataChannel, TestChannel,
 };
 pub use oer_bluetooth_port::{CancelError, ClockError};
+pub use oer_bluetooth_port::{Correlation, CorrelationIds};
 pub use oer_radio_coex::CoexPriority;
-pub use oer_radio_port::{
-    ClockInfo, Correlation, CorrelationIds, EventsLost, Poisoned, PortResult,
-};
+pub use oer_radio_port::{ClockInfo, EventsLost, Poisoned, PortResult};
 pub use oer_time::{NonZeroRadioDuration, RadioDuration, WindowError};
 
 /// The clock domain of the LE radio port: its instants never mix with

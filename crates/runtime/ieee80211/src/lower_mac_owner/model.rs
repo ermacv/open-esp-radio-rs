@@ -126,8 +126,7 @@ pub struct ModelBlockAcks;
 
 /// A role's receive Block Ack agreements: one per peer and TID, each with
 /// its slot.
-pub type BlockAckTable<'id, R> =
-    RefCell<Vec<(IndividualAddress, Tid, Slot<'id, ModelBlockAcks>)>>;
+pub type BlockAckTable<'id, R> = RefCell<Vec<(IndividualAddress, Tid, Slot<'id, ModelBlockAcks>)>>;
 
 /// Which installed key an attempt uses: its role, whether it is pairwise,
 /// and its slot.

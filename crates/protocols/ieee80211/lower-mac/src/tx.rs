@@ -24,7 +24,7 @@ use crate::control::{KeyHandle, VifId};
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct TxId(pub u32);
 
-impl oer_radio_port::Correlation for TxId {
+impl oer_ieee80211_port::Correlation for TxId {
     fn from_raw(raw: u32) -> Self {
         Self(raw)
     }

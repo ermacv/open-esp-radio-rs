@@ -2,7 +2,8 @@
 
 use crate::{Ieee80211ClockSample, Ieee80211Radio};
 use oer_ieee80211_port::ClockError;
-use oer_radio_port::{ClockInfo, LifecycleEvent, Poisoned, PortResult, RadioPort};
+use oer_ieee80211_port::{LifecycleEvent, RadioPort};
+use oer_radio_port::{ClockInfo, Poisoned, PortResult};
 
 use crate::{
     capabilities::LowerMacCapabilities,

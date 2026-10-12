@@ -178,7 +178,7 @@ impl Harness for ModelHarness {
         crate::model::MODEL_EVENT_CAPACITY
     }
 
-    fn classify(event: &<Self::Port as oer_radio_port::RadioPort>::Event) -> EventClass<TxId> {
+    fn classify(event: &<Self::Port as oer_ieee80211_port::RadioPort>::Event) -> EventClass<TxId> {
         classify::<Self::Port>(event)
     }
 }

@@ -1408,7 +1408,22 @@ pub trait LowerMacEvents: RadioPortEvents {
     fn into_completed(
         event: Self::Event,
     ) -> Result<(crate::TxCompletion, Self::TxBodies), Self::Event>;
+
+    /// The TBTT an event announces, of a client's
+    /// [`BeaconTimingClient`] schedule; `None` for another kind, and on a
+    /// backend without beacon timing.
+    fn tbtt(event: &Self::Event) -> Option<crate::TbttEvent> {
+        let _ = event;
+        None
+    }
 }
+
+mod extensions;
+
+pub use extensions::{
+    AmpduClient, AmpduRate, BeaconTimingClient, MonitorControl, MpduStartSpacing, PhaseAmpdu,
+    PhaseAmpduBuffer, TbttPlan,
+};
 
 #[cfg(test)]
 mod tests;

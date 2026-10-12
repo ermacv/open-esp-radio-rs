@@ -367,6 +367,85 @@ pub fn caller_identities_avoid_the_backend_range<I: Correlation>() {
     }
 }
 
+/// A [`PermitPool`](crate::PermitPool) of `held.len() + 1` permits whose
+/// documented order is first in, first out: with every permit but one
+/// held, three takers wait in arrival order, and each released permit goes
+/// to the earliest of them. `held` are the other permits, taken by the
+/// caller.
+///
+/// # Panics
+///
+/// The pool serves a later taker first, or none at all.
+pub fn permits_serve_takers_in_arrival_order<'id, K, P: crate::PermitPool<'id, K>>(
+    pool: &P,
+    held: impl IntoIterator<Item = crate::Permit<'id, K>>,
+) {
+    let mut context = Context::from_waker(Waker::noop());
+    let held: alloc_free::Held<'id, K> = alloc_free::Held::new(held);
+    let mut last = match pin!(pool.take()).as_mut().poll(&mut context) {
+        Poll::Ready(permit) => permit,
+        Poll::Pending => panic!("a pool with a free permit serves its first taker"),
+    };
+    let mut first = pin!(pool.take());
+    let mut second = pin!(pool.take());
+    let mut third = pin!(pool.take());
+    for taker in [
+        first.as_mut().poll(&mut context),
+        second.as_mut().poll(&mut context),
+        third.as_mut().poll(&mut context),
+    ] {
+        assert!(
+            taker.is_pending(),
+            "a taker waits while every permit is held"
+        );
+    }
+    pool.release(last);
+    assert!(
+        second.as_mut().poll(&mut context).is_pending(),
+        "a released permit goes to the earliest taker, not a later one"
+    );
+    last = match first.as_mut().poll(&mut context) {
+        Poll::Ready(permit) => permit,
+        Poll::Pending => panic!("the earliest taker gets the released permit"),
+    };
+    pool.release(last);
+    let Poll::Ready(permit) = second.as_mut().poll(&mut context) else {
+        panic!("the next taker gets the next released permit");
+    };
+    pool.release(permit);
+    let Poll::Ready(permit) = third.as_mut().poll(&mut context) else {
+        panic!("every waiting taker is served in turn");
+    };
+    pool.release(permit);
+    held.release_into(pool);
+}
+
+/// The permits a rule holds aside, without an allocator.
+mod alloc_free {
+    /// At most this many permits held aside.
+    const HELD: usize = 8;
+
+    pub struct Held<'id, K> {
+        permits: [Option<crate::Permit<'id, K>>; HELD],
+    }
+
+    impl<'id, K> Held<'id, K> {
+        pub fn new(held: impl IntoIterator<Item = crate::Permit<'id, K>>) -> Self {
+            let mut permits = [const { None }; HELD];
+            for (place, permit) in permits.iter_mut().zip(held) {
+                *place = Some(permit);
+            }
+            Self { permits }
+        }
+
+        pub fn release_into<P: crate::PermitPool<'id, K>>(self, pool: &P) {
+            for permit in self.permits.into_iter().flatten() {
+                pool.release(permit);
+            }
+        }
+    }
+}
+
 /// Run every shared rule but poisoning on fresh harnesses `new` builds, one
 /// per rule, so one rule's state never meets another's.
 pub fn check_all<H: Harness>(mut new: impl FnMut() -> H) {

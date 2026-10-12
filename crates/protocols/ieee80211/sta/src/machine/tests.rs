@@ -202,6 +202,17 @@ impl World {
     }
 
     fn with_group_slots(skipped_absences: u8, security: StaSecurity, group_slots: u8) -> Self {
+        match group_slots {
+            1 => Self::with_groups(skipped_absences, security, [Slot(1)]),
+            _ => Self::with_groups(skipped_absences, security, [Slot(1), Slot(2)]),
+        }
+    }
+
+    fn with_groups<const G: usize>(
+        skipped_absences: u8,
+        security: StaSecurity,
+        group_slots: [Slot; G],
+    ) -> Self {
         let mut ssid = [0; 32];
         ssid[..SSID.len()].copy_from_slice(SSID);
         let mut channels = [None; 16];
@@ -228,7 +239,7 @@ impl World {
             place,
             absence,
             Slot(0),
-            (1..=group_slots).map(Slot),
+            group_slots,
         );
         Self {
             station,

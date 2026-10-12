@@ -392,6 +392,9 @@ pub enum LowerMacFault {
     Key(CryptoKeyError),
     /// The hardware refused a checked receive Block Ack agreement.
     RxBlockAck(S31RxBlockAckAgreementError),
+    /// The port's owner abandoned the backend: a fail-stop or a dropped
+    /// owner. Only a reset restores it.
+    Abandoned,
 }
 
 /// What a lifecycle command needs from the runtime.

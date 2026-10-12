@@ -1371,5 +1371,52 @@ impl CorrelationIds {
     }
 }
 
+/// The old base of the IEEE 802.15.4 radio port: its event stream, its
+/// radio clock, cancellation and lifecycle. `Ieee802154RadioPort` extends
+/// it until the block moves onto its owner shape and deletes both.
+pub trait RadioPort {
+    /// One owned event.
+    type Event;
+    /// The correlation identity of the port's admitted work.
+    type Id: Correlation;
+    /// The clock domain of the port's radio instants.
+    type Domain;
+    /// The cause a poisoned backend reports.
+    type Fault: Copy + Debug;
+
+    /// The next event. Taking it only dequeues it; dropping the future
+    /// loses no event. `Ok(Err(EventsLost))` takes the place of the first
+    /// dropped event. A poisoned backend returns [`Poisoned`] after every
+    /// event it produced before the fault, and again at every later call.
+    fn next_event(
+        &self,
+    ) -> impl Future<
+        Output = oer_radio_port::PortResult<Self::Event, oer_radio_port::EventsLost, Self::Fault>,
+    > + '_;
+
+    /// The radio clock: the epoch of the port's scheduled work and receive
+    /// timestamps, at the resolution its [`ClockInfo`] states.
+    fn now(
+        &self,
+    ) -> impl Future<
+        Output = oer_radio_port::PortResult<RadioInstant<Self::Domain>, ClockError, Self::Fault>,
+    > + '_;
+
+    /// End one admitted operation. Its terminal event is the operation's
+    /// own, which may be its natural end. A refusal as
+    /// [`CancelError::NotRunning`] proves that the operation already ended.
+    fn cancel(
+        &self,
+        id: Self::Id,
+    ) -> impl Future<Output = oer_radio_port::PortResult<(), CancelError, Self::Fault>> + '_;
+
+    /// Start one lifecycle command; its terminal [`LifecycleEvent`] follows
+    /// through [`Self::next_event`].
+    fn lifecycle(
+        &self,
+        command: LifecycleCommand,
+    ) -> impl Future<Output = oer_radio_port::PortResult<(), LifecycleError, Self::Fault>> + '_;
+}
+
 #[cfg(test)]
 mod tests;

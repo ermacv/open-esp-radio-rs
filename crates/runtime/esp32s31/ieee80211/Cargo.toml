@@ -36,6 +36,9 @@ oer-ieee80211-rsn = { path = "../../../protocols/ieee80211/security/rsn" }
 oer-ieee80211-sta-service = { path = "../../../services/ieee80211/sta" }
 oer-ieee80211-rsn-service = { path = "../../../services/ieee80211/rsn" }
 oer-ieee80211-runtime = { path = "../../ieee80211" }
+oer-ieee80211-port = { path = "../../../protocols/ieee80211/port" }
+oer-radio-port = { path = "../../../radio/port" }
+oer-radio-permit-pool = { path = "../../radio/permit-pool" }
 log = { version = "0.4", optional = true }
 
 [dev-dependencies]

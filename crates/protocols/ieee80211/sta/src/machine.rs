@@ -99,6 +99,7 @@ use oer_ieee80211_rsn::{
 };
 use oer_time::{Duration, Instant};
 
+use crate::pool::Pool;
 use crate::power_save::{PowerSaveDecision, PowerSaveView};
 
 use crate::join::{
@@ -297,6 +298,23 @@ pub enum StaRatePlan {
     Null,
 }
 
+/// The station's connected link, as the data machine sees it.
+pub struct LinkView<'a, T: StaTokens> {
+    /// The station's own address.
+    pub address: [u8; 6],
+    /// The access point.
+    pub bssid: [u8; 6],
+    /// The station's association identifier.
+    pub association_id: u16,
+    /// The BSS is a QoS BSS: data goes as QoS Data by TID.
+    pub qos: bool,
+    /// The pairwise key, on a protected link once it is installed.
+    pub pairwise: Option<&'a T::PairwiseKey>,
+    /// Data may go now: the station is home and awake, and a protected
+    /// link holds its key; otherwise MSDUs wait.
+    pub transmit: bool,
+}
+
 /// What the station tells the application.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaNotice {
@@ -354,8 +372,6 @@ const SSID_CAPACITY: usize = 32;
 const CHANNEL_CAPACITY: usize = 16;
 /// The BSSs a scan keeps at most.
 const SCAN_CAPACITY: usize = 16;
-/// The tokens of one kind the station holds at most.
-const POOL_CAPACITY: usize = 8;
 
 /// The reason codes of the station's Deauthentication (IEEE 802.11-2020
 /// Table 9-90).
@@ -660,6 +676,7 @@ struct Handshake<T: StaTokens, K> {
     bssid: [u8; 6],
     channel: SupportedChannel<K>,
     association_id: u16,
+    qos: bool,
     supplicant: RsnStaSupplicant,
     /// The deadline of the message the station waits for.
     deadline: RsnStaResponseDeadline,
@@ -690,6 +707,8 @@ struct Connected<T: StaTokens, K> {
     bssid: [u8; 6],
     channel: SupportedChannel<K>,
     association_id: u16,
+    /// The access point's BSS is a QoS BSS (it advertised WMM).
+    qos: bool,
     /// The upstream fact the arbiter has yet to hear.
     report: Option<UpstreamFact<K>>,
     /// The primary lease to exchange after the port moved.
@@ -809,48 +828,6 @@ enum LeaveStep {
     NeedRelease,
     /// The lease ends with its notice, which gives the place back.
     AwaitEnd,
-}
-
-/// A bounded pool of tokens of one kind.
-struct Pool<X> {
-    items: [Option<X>; POOL_CAPACITY],
-}
-
-impl<X> Pool<X> {
-    /// A pool of `items`, at most [`POOL_CAPACITY`]: checked at compile
-    /// time, so no granted token is ever lost.
-    fn new<const N: usize>(items: [X; N]) -> Self {
-        const { assert!(N <= POOL_CAPACITY, "a station holds at most 8 tokens of a kind") };
-        let mut pool = Self {
-            items: [const { None }; POOL_CAPACITY],
-        };
-        for (slot, item) in pool.items.iter_mut().zip(items) {
-            *slot = Some(item);
-        }
-        pool
-    }
-
-    fn take(&mut self) -> Option<X> {
-        self.items.iter_mut().find_map(Option::take)
-    }
-
-    fn is_empty(&self) -> bool {
-        self.items.iter().all(Option::is_none)
-    }
-
-    /// Keep `item`, a token of its kind the station was granted and gave
-    /// out: the tokens are unique and their number checked at the pool's
-    /// creation, so a free entry always waits for it.
-    fn put(&mut self, item: X) {
-        let slot = self.items.iter_mut().find(|slot| slot.is_none());
-        debug_assert!(
-            slot.is_some(),
-            "a station holds at most POOL_CAPACITY tokens of a kind"
-        );
-        if let Some(slot) = slot {
-            *slot = Some(item);
-        }
-    }
 }
 
 /// The EAPOL ether type.
@@ -1015,6 +992,37 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     /// Whether the station is connected.
     pub const fn is_connected(&self) -> bool {
         matches!(self.state, State::Connected(_))
+    }
+
+    /// The connected link, which the data machine sends and receives on:
+    /// its pairwise key is lent, so only the station removes it
+    /// ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6131495971)).
+    pub fn link(&self) -> Option<LinkView<'_, T>> {
+        let State::Connected(connected) = &self.state else {
+            return None;
+        };
+        let pairwise = match &connected.keys.pairwise {
+            KeyCell::Installed(key) => Some(key),
+            KeyCell::Free(_) | KeyCell::Busy => None,
+        };
+        // A protected link without its key sends nothing.
+        let protected = connected.rsn.is_some();
+        Some(LinkView {
+            address: self.config.address,
+            bssid: connected.bssid,
+            association_id: connected.association_id,
+            qos: connected.qos,
+            pairwise,
+            transmit: self.absence.is_none()
+                && !connected.power.asleep()
+                && (pairwise.is_some() || !protected),
+        })
+    }
+
+    /// The next sequence number of the station's non-QoS space, which its
+    /// management frames and a non-QoS link's data share.
+    pub const fn take_sequence(&mut self) -> SequenceNumber {
+        self.sequence.take()
     }
 
     /// The security policy the scan selects and the join associates with.
@@ -2425,11 +2433,13 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     fn joined(&mut self, join: Join<T, K>, association_id: u16, now: Instant) -> State<T, K> {
         let bssid = join.access_point.bssid;
         let channel = join.channel;
+        let qos = join.access_point.wmm_ie_len > 0;
         if matches!(self.config.security, StaSecurity::Open) {
             return State::Connected(Connected {
                 bssid,
                 channel,
                 association_id,
+                qos,
                 report: Some(UpstreamFact::Connected(channel)),
                 exchange: false,
                 power: PowerSaveView::awake(),
@@ -2455,6 +2465,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 bssid,
                 channel,
                 association_id,
+                qos,
                 supplicant,
                 deadline,
                 step: HandshakeStep::Await,
@@ -2683,6 +2694,7 @@ fn connect<T: StaTokens, K>(handshake: Handshake<T, K>) -> State<T, K> {
         bssid,
         channel,
         association_id,
+        qos,
         supplicant,
         keys,
         ..
@@ -2692,6 +2704,7 @@ fn connect<T: StaTokens, K>(handshake: Handshake<T, K>) -> State<T, K> {
             bssid,
             channel,
             association_id,
+            qos,
             report: Some(UpstreamFact::Connected(channel)),
             exchange: false,
             power: PowerSaveView::awake(),

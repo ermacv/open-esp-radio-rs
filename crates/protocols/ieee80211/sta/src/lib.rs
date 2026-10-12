@@ -19,6 +19,7 @@ pub mod link_monitor;
 pub mod machine;
 pub mod modem_sleep;
 pub mod pmksa;
+mod pool;
 pub mod power_save;
 pub mod request;
 pub mod sa_query;
@@ -27,3 +28,4 @@ pub mod time;
 pub mod twt;
 
 pub mod association;
+pub mod data;

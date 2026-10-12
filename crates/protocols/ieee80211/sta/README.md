@@ -12,6 +12,10 @@ Module map:
 
 - `machine`: the station, its tokens (`StaTokens`) and its host slice tests
   beside the real arbiter;
+- `data`: the connected station's data machine beside it: MSDUs into QoS or
+  non-QoS Data MPDUs in its own tickets and buffers, under the pairwise key
+  the station's `LinkView` lends, and the BSS's data MPDUs into MSDUs; no
+  A-MPDU, Block Ack, reorder, replay check or power save yet;
 - `join`: Open System and SAE authentication and Association state machines
   and their retry policy;
 - `association`: association capability selection from the scan record;

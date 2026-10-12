@@ -59,6 +59,7 @@ Cargo package identities are independent of this directory hierarchy.
 | `adapters/embassy/espressif/executor/` | Scheduler-free Embassy executor and time driver of the staged-boot chips |
 | `adapters/esp-hal/espressif/interrupt-table/` | The image's interrupt table on an Espressif interrupt matrix, through esp-hal |
 | `adapters/virtual/time/` | Per-instance virtual monotonic time for host tests and simulations: a `VirtualClock` its owner advances and a `SkipClock` whose waits skip to their deadline |
+| `runtime/radio/permit-pool/` | `oer-radio-permit-pool`: the allocation-free first-in, first-out `PermitPool` a radio port backend keeps in its held part of the install |
 | `runtime/radio/supervisor/` | Executor-independent supervisor of the `radio` service port: the one-command mailbox and the role-epoch actor that owns physical role frontiers |
 | `runtime/ieee80211/` | Portable Wi-Fi execution primitives: monitor handoffs, task shutdown, station network ownership and poll boundaries |
 | `runtime/interrupt-table/` | Each image's static table of peripheral interrupt sources (handler, level, core) with unique tokens that enable and disable them |

@@ -40,7 +40,9 @@ use oer_esp32s31_bluetooth_memory::{
     PeripheralConnectionPool, PeripheralConnectionStorage, RxMemoryListClass,
     SchedulerAllocationConfig, SchedulerPoolBindError, SchedulerRolePoolStorage,
 };
-use oer_esp32s31_bluetooth_radio::{BluetoothRadio, BluetoothRadioMemory};
+use oer_esp32s31_bluetooth_radio::{
+    BluetoothCapabilities, BluetoothRadio, BluetoothRadioConfig, BluetoothRadioMemory,
+};
 use oer_esp32s31_bluetooth_runtime::{
     BluetoothControl, BluetoothFault, BluetoothInstallError, BluetoothPort, BluetoothRuntime,
     BluetoothRuntimeFault, BluetoothUninstallError, LiveBluetoothHardware, ModemTimerFault,
@@ -106,11 +108,34 @@ const TRACKING_WINDOW_MICROS: u64 = 1_000_000;
 
 type Storage = PublishedEspHalBluetoothInterruptOwners;
 
+/// The scheduler policy and sleep clock this composition's radio is built
+/// with.
+pub enum BluetoothSystemConfig {}
+
+impl BluetoothRadioConfig for BluetoothSystemConfig {
+    const SCHEDULER: SchedulerSoftwareConfig = SchedulerSoftwareConfig::reviewed_standalone();
+    const LOCAL_SLEEP_CLOCK_PPM: u16 = LOCAL_SLEEP_CLOCK_PPM;
+}
+
+/// The capabilities of this composition's radio: the marker its Controller
+/// core plans for.
+pub type BluetoothSystemCapabilities = BluetoothCapabilities<
+    BluetoothSystemConfig,
+    LEGACY,
+    CONNECTABLE,
+    SCANNERS,
+    CONNECTIONS,
+    SCAN_PACKETS,
+    RX_PACKETS,
+    ITEMS,
+>;
+
 /// The radio runtime of this composition.
 pub type BluetoothSystemRuntime = BluetoothRuntime<
     CriticalSectionRawMutex,
     LiveBluetoothHardware<'static, Storage>,
     EmbassyClock,
+    BluetoothSystemConfig,
     LEGACY,
     CONNECTABLE,
     SCANNERS,
@@ -176,11 +201,7 @@ controller_memory!(NON_SCANNING_CHAIN: LeRxChainStorage<RX_PACKETS> = LeRxChainS
 
 static CELLS: ControllerEventCells = ControllerEventCells::new();
 static PUBLISHED: StaticCell<Storage> = StaticCell::new();
-static RUNTIME: BluetoothSystemRuntime = BluetoothRuntime::new(
-    EmbassyClock,
-    SchedulerSoftwareConfig::reviewed_standalone(),
-    LOCAL_SLEEP_CLOCK_PPM,
-);
+static RUNTIME: BluetoothSystemRuntime = BluetoothRuntime::new(EmbassyClock);
 static MODEM_TIMER_WAKE: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 static INTERRUPT_FAULT: Signal<CriticalSectionRawMutex, BluetoothInterruptFault> = Signal::new();
 static DISPATCH: Mutex<Cell<Option<Dispatch>>> = Mutex::new(Cell::new(None));

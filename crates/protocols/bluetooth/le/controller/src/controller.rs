@@ -5,6 +5,7 @@ use bt_hci::{
     data::AclPacket,
     param::{ConnHandle, ControllerToHostFlowControl, Duration, Error as HciError, Status},
 };
+use core::marker::PhantomData;
 use oer_bluetooth_hci::{
     BootstrapCommandCompleteEvent, HciCommandPacket, LeAcceptListCommand,
     LeAcceptListCommandCompleteEvent, LeAcceptListEntry, LeConnectionUpdateCompleteEvent,
@@ -23,6 +24,7 @@ use oer_bluetooth_hci::{
     LeReadRemoteFeaturesCompleteEvent, LeReadRemoteVersionInformationCompleteEvent,
     OwnedBootstrapCommand, classify_le_controller_command,
 };
+
 use oer_bluetooth_ll::{
     control::LeVersionInformation,
     data_length::{LeDataLength, LeDataLengths},
@@ -30,8 +32,9 @@ use oer_bluetooth_ll::{
 };
 use oer_bluetooth_radio::LeRadio;
 use oer_bluetooth_radio::{
-    AcceptListChange, AcceptListDevice, CancelError, EventId, LeInstant, LeWindow, OutsideEpoch,
-    RadioActivity, RadioDuration, RadioOutcome, RadioRequest, RadioTiming, RequestError,
+    AcceptListChange, AcceptListDevice, CancelError, EventId, LeCapabilities, LeInstant, LePhy,
+    LeRadioCapabilities, LeWindow, OutsideEpoch, RadioActivity, RadioDuration, RadioOutcome,
+    RadioRequest, RequestError, Supported, Unplaced,
 };
 
 use crate::planning::{
@@ -48,6 +51,27 @@ use crate::{
     peripheral::{Admission, EVENT_OUTPUT, HostEvent, Peripheral, PeripheralEvent, PeripheralWork},
     scanning::Scanner,
 };
+
+/// The largest connection data PDU payload the core builds: the Data
+/// Length Extension maximum and an encrypted PDU's MIC.
+const LL_DATA_PAYLOAD: usize = crate::peripheral::LL_DATA_PAYLOAD;
+
+/// Whether `caps` serve what the core builds of every role it plans: LE 1M
+/// at 0 dBm for any served role, a connection data PDU up to the Data Length
+/// Extension maximum with its MIC, and the Direct Test Mode transmit power.
+/// Which roles, scan types and test PHYs they serve is checked when the Host
+/// asks for them, so a backend may serve less of those.
+pub const fn serves_the_core(caps: &LeRadioCapabilities) -> bool {
+    let roles =
+        caps.legacy_advertising.any() || caps.scanning() || caps.peripheral_connection.is_some();
+    let values = !roles || (caps.phys.contains(LePhy::Le1M) && caps.min_tx_power_dbm <= 0);
+    let data = match caps.peripheral_connection {
+        Some(connection) => connection.max_data_payload as usize >= LL_DATA_PAYLOAD,
+        None => true,
+    };
+    let test = !caps.direct_test_mode || caps.min_tx_power_dbm <= crate::dtm::DTM_TX_POWER.dbm();
+    values && data && test
+}
 
 /// Static configuration of one Controller.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -110,6 +134,15 @@ enum Pending {
 /// reports the backend's answer to [`Self::request_done`] before asking
 /// again, and feeds every backend observation to [`Self::outcome`].
 ///
+/// `K` is the capabilities of the backend it plans for: every request it
+/// builds is a [`Supported`] of `K`, a Host command that asks for something
+/// `K` excludes is answered with an HCI status, and the timing it plans with
+/// is `K::CAPS.timing`.
+///
+/// What the core builds of every role is checked against `K` when the
+/// image is built ([`serves_the_core`]): a backend that does not serve it
+/// stops the build where the core is created for it.
+///
 /// `CONNECTIONS` is the number of connections it holds at once.
 ///
 /// `OUTPUT` bounds the queued Controller-to-Host packets. One slot is kept
@@ -118,7 +151,8 @@ enum Pending {
 /// output has room for everything it can produce, so connection data and
 /// events are never dropped.
 // CAPABILITY: bluetooth-hci-command-event-packets, bluetooth-hci-reset, bluetooth-event-masks, bluetooth-connection-handles-connection-complete-disconnection-complete, bluetooth-hci-acl-routing-and-bidirectional-flow-control
-pub struct LeController<'r, const OUTPUT: usize, const CONNECTIONS: usize> {
+pub struct LeController<'r, K: LeCapabilities, const OUTPUT: usize, const CONNECTIONS: usize> {
+    caps: PhantomData<fn() -> K>,
     bootstrap: LeControllerBootstrap,
     random: Option<&'r dyn LeRandomSource>,
     output: Output<OUTPUT>,
@@ -161,16 +195,26 @@ impl<const CONNECTIONS: usize> AclAdmission<CONNECTIONS> {
 }
 
 /// One unit of radio work the core asks its port for.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RadioWork<'a> {
+#[derive(Debug, PartialEq)]
+pub enum RadioWork<'a, K: LeCapabilities> {
     /// Submit a request.
-    Submit(RadioRequest<'a>),
+    Submit(RadioRequest<'a, K>),
     /// Withdraw a scheduled event through the port's cancellation; its end
     /// still follows.
     Cancel(EventId),
 }
 
-impl<'r, const OUTPUT: usize, const CONNECTIONS: usize> LeController<'r, OUTPUT, CONNECTIONS> {
+impl<'r, K: LeCapabilities, const OUTPUT: usize, const CONNECTIONS: usize>
+    LeController<'r, K, OUTPUT, CONNECTIONS>
+{
+    /// [`serves_the_core`] of `K`, evaluated when the image is built.
+    const SERVES_THE_CORE: () = assert!(
+        serves_the_core(&K::CAPS),
+        "the backend serves what the core builds: LE 1M at 0 dBm for its roles, \
+         the Data Length Extension maximum with its MIC for a connection and \
+         the Direct Test Mode transmit power"
+    );
+
     /// A Controller awaiting its first HCI Reset. `random` answers LE Rand
     /// and supplies the encryption procedure's random values; without it,
     /// connectable advertising is refused.
@@ -181,6 +225,7 @@ impl<'r, const OUTPUT: usize, const CONNECTIONS: usize> LeController<'r, OUTPUT,
                 "the output holds one connection event and a command response"
             )
         };
+        let () = Self::SERVES_THE_CORE;
         let version = config.version;
         let config = config.bootstrap;
         // The delay needs no entropy, only a sequence that differs between
@@ -190,6 +235,7 @@ impl<'r, const OUTPUT: usize, const CONNECTIONS: usize> LeController<'r, OUTPUT,
         address[..6].copy_from_slice(&config.public_address().canonical_bytes());
         let seed = u64::from_le_bytes(address) ^ 0x9e37_79b9_7f4a_7c15;
         Self {
+            caps: PhantomData,
             bootstrap: LeControllerBootstrap::new(config),
             random,
             output: Output::new(),
@@ -481,6 +527,14 @@ impl<'r, const OUTPUT: usize, const CONNECTIONS: usize> LeController<'r, OUTPUT,
                         .as_bytes(),
                     ),
                     (true, false) => match self.scanning.enable_request(command) {
+                        // The backend runs only the scanners `K` serves.
+                        Ok(request) if !Scanner::serves::<K>(request) => self.respond(
+                            LeLegacyScanningCommandCompleteEvent::new(
+                                opcode,
+                                HciError::UNSUPPORTED.to_status(),
+                            )
+                            .as_bytes(),
+                        ),
                         Ok(request) => {
                             self.scanner.enable(request);
                             self.pending = Some(Pending::Scanning(opcode));
@@ -811,7 +865,7 @@ impl<'r, const OUTPUT: usize, const CONNECTIONS: usize> LeController<'r, OUTPUT,
             self.respond(response.as_bytes());
             return;
         }
-        match self.dtm.command(command) {
+        match self.dtm.command::<K>(command) {
             Some(response) => self.respond(response.as_bytes()),
             None => self.pending = Some(Pending::TestEnd),
         }
@@ -829,7 +883,7 @@ impl<'r, const OUTPUT: usize, const CONNECTIONS: usize> LeController<'r, OUTPUT,
                 let previous = self.advertising;
                 self.advertising.configure(command);
                 match self.advertising_request() {
-                    Ok(request) => match self.advertiser.update(request) {
+                    Ok(request) => match self.advertiser.update::<K>(request) {
                         Ok(()) => self.pending = Some(Pending::Advertising(opcode)),
                         Err(error) => {
                             self.advertising = previous;
@@ -866,8 +920,12 @@ impl<'r, const OUTPUT: usize, const CONNECTIONS: usize> LeController<'r, OUTPUT,
                     self.bootstrap.config().public_address(),
                     self.bootstrap.requested_random_address(),
                 ) {
-                    // A connection needs a free slot, and encryption needs
-                    // entropy.
+                    // A connection needs a backend that serves one, a free
+                    // slot, and encryption needs entropy.
+                    if K::CAPS.peripheral_connection.is_none() {
+                        self.respond_advertising(opcode, HciError::UNSUPPORTED.to_status());
+                        return;
+                    }
                     if !self.peripheral.has_free_slot() {
                         self.respond_advertising(opcode, HciError::CMD_DISALLOWED.to_status());
                         return;
@@ -879,7 +937,7 @@ impl<'r, const OUTPUT: usize, const CONNECTIONS: usize> LeController<'r, OUTPUT,
                 }
                 let result = self
                     .advertising_request()
-                    .and_then(|request| self.advertiser.enable(request));
+                    .and_then(|request| self.advertiser.enable::<K>(request));
                 match result {
                     Ok(()) => self.pending = Some(Pending::Advertising(opcode)),
                     Err(error) => self.respond_advertising(opcode, error.to_status()),
@@ -944,6 +1002,14 @@ impl<'r, const OUTPUT: usize, const CONNECTIONS: usize> LeController<'r, OUTPUT,
                 return;
             }
         };
+        // The backend keeps the list only when `K` serves one.
+        if !K::CAPS.filter_accept_list {
+            self.respond(
+                LeAcceptListCommandCompleteEvent::new(opcode, HciError::UNSUPPORTED.to_status())
+                    .as_bytes(),
+            );
+            return;
+        }
         self.accept_list.change(change);
         self.pending = Some(Pending::AcceptList(opcode));
     }
@@ -1052,9 +1118,8 @@ impl<'r, const OUTPUT: usize, const CONNECTIONS: usize> LeController<'r, OUTPUT,
     #[cfg(test)]
     pub(crate) fn planned_connections(
         &self,
-        timing: RadioTiming,
     ) -> Result<[Option<oer_bluetooth_radio::LeWindow>; CONNECTIONS], EpochExhausted> {
-        self.peripheral.planned(timing)
+        self.peripheral.planned(K::CAPS.timing)
     }
 
     /// Take one Host ACL packet for the connection.
@@ -1063,28 +1128,35 @@ impl<'r, const OUTPUT: usize, const CONNECTIONS: usize> LeController<'r, OUTPUT,
             .acl(packet, self.bootstrap.config().le_acl_data_packet_length());
     }
 
-    /// The next radio work. `now` is a fresh backend time and `timing` its
-    /// admission rule. The caller submits a request and reports the answer
-    /// to [`Self::request_done`], or cancels an event and reports the answer
-    /// to [`Self::cancel_done`], before asking again.
+    /// The next radio work. `now` is a fresh backend time, which every timed
+    /// request is placed at. The caller submits a request and reports the
+    /// answer to [`Self::request_done`], or cancels an event and reports the
+    /// answer to [`Self::cancel_done`], before asking again.
+    ///
+    /// A timed request the core cannot place at `now` within `K`'s horizon
+    /// is skipped as a refused one is; one outside the radio epoch ends the
+    /// planning as [`EpochExhausted`].
     pub fn next_request(
         &mut self,
         now: LeInstant,
-        timing: RadioTiming,
-    ) -> Result<Option<RadioWork<'_>>, EpochExhausted> {
+    ) -> Result<Option<RadioWork<'_, K>>, EpochExhausted> {
+        let timing = K::CAPS.timing;
         if self.in_flight.is_some() {
             return Ok(None);
         }
         // Control work must remain available without any future radio anchor.
-        if let Some(request) = self.accept_list.request() {
+        if let Some(change) = self.accept_list.request() {
             self.in_flight = Some(Owner::AcceptList);
-            return Ok(Some(RadioWork::Submit(request)));
+            return Ok(Some(RadioWork::Submit(RadioRequest::FilterAcceptList(
+                Supported::new(change)
+                    .expect("the accept list commands were checked against K when taken"),
+            ))));
         }
         if self.dtm.is_active() {
             if !self.dtm.wants_radio() {
                 return Ok(None);
             }
-            return match self.dtm.next_request(now, timing, &mut self.payload)? {
+            return match self.dtm.next_request::<K>(now, timing, &mut self.payload)? {
                 DtmRadioWork::Request(request) => {
                     self.in_flight = Some(Owner::Dtm);
                     Ok(Some(RadioWork::Submit(request)))
@@ -1125,33 +1197,53 @@ impl<'r, const OUTPUT: usize, const CONNECTIONS: usize> LeController<'r, OUTPUT,
         // Connections without work leave the radio to advertising and
         // scanning: their control requests and events go on.
         if self.peripheral.wants_radio(room) {
-            match self
+            let work = self
                 .peripheral
-                .next_request(&mut self.next_event, now, timing, room)?
-            {
-                Some(PeripheralWork::Ready(work)) => {
-                    self.in_flight = Some(Owner::Peripheral);
-                    return Ok(Some(work));
+                .next_request(&mut self.next_event, now, timing, room)?;
+            if work.is_some() {
+                self.in_flight = Some(Owner::Peripheral);
+            }
+            match work {
+                Some(PeripheralWork::Cancel(id)) => return Ok(Some(RadioWork::Cancel(id))),
+                Some(PeripheralWork::Open(configuration)) => {
+                    return Ok(Some(RadioWork::Submit(RadioRequest::OpenConnection(
+                        Supported::new(configuration).expect(
+                            "connectable advertising was checked against K when it was enabled",
+                        ),
+                    ))));
+                }
+                Some(PeripheralWork::Close(id)) => {
+                    return Ok(Some(RadioWork::Submit(RadioRequest::CloseConnection(id))));
+                }
+                Some(PeripheralWork::Event(event)) => {
+                    return match Supported::placed(event, now) {
+                        Ok(event) => Ok(Some(RadioWork::Submit(RadioRequest::ConnectionEvent(
+                            event,
+                        )))),
+                        Err(unplaced) => {
+                            self.work_done(false, Ok(()));
+                            unplaced_work(unplaced, R::Peripheral)
+                        }
+                    };
                 }
                 Some(PeripheralWork::Transmit {
                     index,
                     kind,
                     length,
                 }) => {
-                    self.in_flight = Some(Owner::Peripheral);
                     return Ok(Some(self.peripheral.transmission(index, kind, length)));
                 }
                 None => {}
             }
         }
         if self.advertiser.has_control_request() {
-            let request = self.advertiser.control_request();
+            let request = self.advertiser.control_request::<K>();
             if request.is_some() {
                 self.in_flight = Some(Owner::AdvertiserControl)
             }
             return Ok(request);
         }
-        if let Some(request) = self.scanner.control_request() {
+        if let Some(request) = self.scanner.control_request::<K>() {
             self.in_flight = Some(Owner::ScannerControl);
             return Ok(Some(request));
         }
@@ -1178,13 +1270,21 @@ impl<'r, const OUTPUT: usize, const CONNECTIONS: usize> LeController<'r, OUTPUT,
                 match anchor {
                     Some(anchor) => {
                         let id = EventId::new(self.next_event);
-                        let request =
+                        let event =
                             self.advertiser
                                 .build(id, anchor, timing, delay, advertising)?;
                         self.allocate_event();
                         self.prng = next_prng;
                         self.in_flight = Some(Owner::AdvertiserEvent);
-                        return Ok(Some(RadioWork::Submit(request)));
+                        return match Supported::placed(event, now) {
+                            Ok(event) => {
+                                Ok(Some(RadioWork::Submit(RadioRequest::Advertise(event))))
+                            }
+                            Err(unplaced) => {
+                                self.work_done(false, Ok(()));
+                                unplaced_work(unplaced, R::Advertising)
+                            }
+                        };
                     }
                     None => {
                         crate::trace::emit(|| oer_bluetooth_trace::AdvertiserStep {
@@ -1219,11 +1319,17 @@ impl<'r, const OUTPUT: usize, const CONNECTIONS: usize> LeController<'r, OUTPUT,
                         next_anchor,
                     } => {
                         let id = self.allocate_event();
-                        let request = self.scanner.build(id, window, reservation, next_anchor);
+                        let window = self.scanner.build(id, window, reservation, next_anchor);
                         self.advertiser.commit(advertising);
                         self.prng = prng;
                         self.in_flight = Some(Owner::ScannerWindow);
-                        return Ok(Some(RadioWork::Submit(request)));
+                        return match Supported::placed(window, now) {
+                            Ok(window) => Ok(Some(RadioWork::Submit(RadioRequest::Scan(window)))),
+                            Err(unplaced) => {
+                                self.work_done(false, Ok(()));
+                                unplaced_work(unplaced, R::Scanning)
+                            }
+                        };
                     }
                     crate::scanning::Placement::Skipped { next_anchor } => {
                         scan_anchor = Some(next_anchor)
@@ -1305,6 +1411,25 @@ impl<'r, const OUTPUT: usize, const CONNECTIONS: usize> LeController<'r, OUTPUT,
 
     fn allocate_event(&mut self) -> EventId {
         allocate_event(&mut self.next_event)
+    }
+}
+
+/// What a timed request the core could not place leaves: nothing to submit
+/// now, its role answered as for a refusal, or the end of the radio epoch.
+/// `Unsupported` cannot happen: what a role plans was checked against the
+/// capabilities when the Host asked for it.
+fn unplaced_work<'a, K: LeCapabilities>(
+    unplaced: Unplaced,
+    role: R,
+) -> Result<Option<RadioWork<'a, K>>, EpochExhausted> {
+    debug_assert_ne!(
+        unplaced,
+        Unplaced::Unsupported,
+        "a planned value is supported"
+    );
+    match unplaced {
+        Unplaced::OutsideEpoch => Err(EpochExhausted::at(role, O::Event, C::Reservation)),
+        Unplaced::Unsupported | Unplaced::BeyondHorizon => Ok(None),
     }
 }
 

@@ -12,13 +12,18 @@
 //! stay in the backend.
 //!
 //! Events never overlap: conflicts between roles are resolved before a
-//! request reaches the backend, and a backend refuses an overlapping window
-//! instead of moving it. Long-lived role state — an advertising set, a
+//! request reaches the backend, with the one reservation function both use
+//! ([`RadioTiming::reservation`]), so a backend never meets an overlapping
+//! window. Every value a request carries is checked against the backend's
+//! capabilities when it is built ([`Supported`], branded by the
+//! capabilities marker [`LeCapabilities`]), so a backend refuses nothing
+//! they exclude. Long-lived role state — an advertising set, a
 //! scanner, a connection — is configured once and named by a small
 //! caller-chosen identifier in later events.
 //!
-//! [`LeRadioPort`] is the port a Controller service loop drives: it states
-//! the backend's [`LeRadioCapabilities`] (roles, PHYs, data PDU payload,
+//! [`LeRadioPort`] is the port a Controller service loop drives: its
+//! capabilities marker states the backend's [`LeRadioCapabilities`] (roles,
+//! PHYs, data PDU payload,
 //! who runs the [`LinkAcknowledgement`] and the [`RadioTiming`]), submits
 //! requests and, through the shared [`RadioPort`] base, reads the radio
 //! clock, yields owned events, cancels events and runs the lifecycle.
@@ -36,10 +41,12 @@ mod outcome;
 mod pdu;
 mod port;
 mod request;
+mod supported;
 
 pub use activity::RadioActivity;
 pub use capabilities::{
-    LeConnectionCapabilities, LePhy, LePhys, LeRadioCapabilities, LinkAcknowledgement,
+    LeCapabilities, LeConnectionCapabilities, LePhy, LePhys, LeRadioCapabilities,
+    LegacyAdvertisingTypes, LinkAcknowledgement, NoCapabilities,
 };
 pub use channel::{
     AdvertisingChannel, AdvertisingChannels, ChannelError, DataChannel, TestChannel,
@@ -71,3 +78,4 @@ pub use request::{
     ScanType, ScanWindow, ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestTransmit,
     TxPower,
 };
+pub use supported::{Capability, Supported, Timed, Unplaced, Untimed};

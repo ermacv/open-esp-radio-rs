@@ -15,6 +15,7 @@ use oer_bluetooth_radio::{
 use crate::{LeController, LeControllerConfig, LeVersionInformation, PLANNING_SLACK, RadioWork};
 
 mod accept_list;
+mod capabilities;
 mod connection;
 mod connections;
 
@@ -34,6 +35,36 @@ pub(super) const TIMING: RadioTiming = RadioTiming {
         first_event_length: RadioDuration::from_micros(5155),
     },
 };
+/// The capabilities the core plans for in these tests: what the
+/// ESP32-S31 serves, with [`TIMING`].
+#[derive(Debug, PartialEq)]
+pub(super) enum Caps {}
+
+impl oer_bluetooth_radio::LeCapabilities for Caps {
+    const CAPS: oer_bluetooth_radio::LeRadioCapabilities =
+        oer_bluetooth_radio::LeRadioCapabilities {
+            legacy_advertising: oer_bluetooth_radio::LegacyAdvertisingTypes {
+                nonconnectable: true,
+                responsive: true,
+            },
+            passive_scanning: true,
+            active_scanning: true,
+            filter_accept_list: true,
+            peripheral_connection: Some(oer_bluetooth_radio::LeConnectionCapabilities {
+                max_data_payload: 255,
+                link_acknowledgement: oer_bluetooth_radio::LinkAcknowledgement::Hardware,
+                max_first_receive_wait: RadioDuration::from_micros(65_473),
+                max_receive_wait: RadioDuration::from_micros(131_070),
+            }),
+            direct_test_mode: true,
+            phys: oer_bluetooth_radio::LePhys::LE_1M,
+            test_phys: oer_bluetooth_radio::LePhys::ALL,
+            min_tx_power_dbm: -24,
+            max_ahead: RadioDuration::from_micros(1 << 30),
+            timing: TIMING,
+        };
+}
+
 const SUCCESS: u8 = 0x00;
 const UNKNOWN_CONNECTION: u8 = 0x02;
 const HARDWARE_FAILURE: u8 = 0x03;
@@ -102,41 +133,47 @@ enum Request {
     Cancel(EventId),
 }
 
-impl From<RadioWork<'_>> for Request {
-    fn from(work: RadioWork<'_>) -> Self {
+impl<K: oer_bluetooth_radio::LeCapabilities> From<RadioWork<'_, K>> for Request {
+    fn from(work: RadioWork<'_, K>) -> Self {
         let request = match work {
             RadioWork::Submit(request) => request,
             RadioWork::Cancel(id) => return Self::Cancel(id),
         };
         match request {
-            RadioRequest::ConfigureAdvertising(configuration) => match configuration.reception {
-                AdvertisingReception::ScanResponse(response) => Self::ConfigureConnectable(
-                    configuration.pdu.bytes().to_vec(),
-                    response.bytes().to_vec(),
-                ),
-                AdvertisingReception::Report => {
-                    Self::ConfigureDirected(configuration.pdu.bytes().to_vec())
+            RadioRequest::ConfigureAdvertising(configuration) => {
+                let configuration = *configuration.get();
+                match configuration.reception {
+                    AdvertisingReception::ScanResponse(response) => Self::ConfigureConnectable(
+                        configuration.pdu.bytes().to_vec(),
+                        response.bytes().to_vec(),
+                    ),
+                    AdvertisingReception::Report => {
+                        Self::ConfigureDirected(configuration.pdu.bytes().to_vec())
+                    }
+                    AdvertisingReception::None => {
+                        Self::ConfigureAdvertising(configuration.pdu.bytes().to_vec())
+                    }
                 }
-                AdvertisingReception::None => {
-                    Self::ConfigureAdvertising(configuration.pdu.bytes().to_vec())
-                }
-            },
-            RadioRequest::OpenConnection(configuration) => Self::OpenConnection(configuration),
-            RadioRequest::ConnectionEvent(event) => Self::ConnectionEvent(event),
+            }
+            RadioRequest::OpenConnection(configuration) => {
+                Self::OpenConnection(*configuration.get())
+            }
+            RadioRequest::ConnectionEvent(event) => Self::ConnectionEvent(*event.get()),
             RadioRequest::Transmit { pdu, .. } => {
-                Self::Transmit(pdu.kind(), pdu.payload().to_vec())
+                Self::Transmit(pdu.get().kind(), pdu.get().payload().to_vec())
             }
             RadioRequest::CloseConnection(_) => Self::CloseConnection,
-            RadioRequest::Advertise(event) => Self::Advertise(event),
+            RadioRequest::Advertise(event) => Self::Advertise(*event.get()),
             RadioRequest::RemoveAdvertising(_) => Self::RemoveAdvertising,
-            RadioRequest::ConfigureScanner(configuration) => {
-                Self::ConfigureScanner(configuration.scan_type, configuration.filter_policy)
-            }
-            RadioRequest::FilterAcceptList(change) => Self::FilterAcceptList(change),
-            RadioRequest::Scan(window) => Self::Scan(window),
+            RadioRequest::ConfigureScanner(configuration) => Self::ConfigureScanner(
+                configuration.get().scan_type,
+                configuration.get().filter_policy,
+            ),
+            RadioRequest::FilterAcceptList(change) => Self::FilterAcceptList(*change.get()),
+            RadioRequest::Scan(window) => Self::Scan(*window.get()),
             RadioRequest::RemoveScanner(_) => Self::RemoveScanner,
-            RadioRequest::TestTransmit(test) => Self::TestTransmit(test.id),
-            RadioRequest::TestReceive(test) => Self::TestReceive(test.id),
+            RadioRequest::TestTransmit(test) => Self::TestTransmit(test.get().id),
+            RadioRequest::TestReceive(test) => Self::TestReceive(test.get().id),
             RadioRequest::EndTest => Self::EndTest,
         }
     }
@@ -144,8 +181,8 @@ impl From<RadioWork<'_>> for Request {
 
 /// A Controller of `C` connections and an output of `O` packets under
 /// test.
-struct Bench<const C: usize, const O: usize> {
-    core: LeController<'static, O, C>,
+struct Bench<const C: usize, const O: usize, K: oer_bluetooth_radio::LeCapabilities = Caps> {
+    core: LeController<'static, K, O, C>,
     now: u64,
 }
 
@@ -159,7 +196,7 @@ const PAIR_OUTPUT: usize = 32;
 /// The two-connection Controller.
 type Pair = Bench<2, PAIR_OUTPUT>;
 
-impl<const C: usize, const O: usize> Bench<C, O> {
+impl<const C: usize, const O: usize, K: oer_bluetooth_radio::LeCapabilities> Bench<C, O, K> {
     fn new() -> Self {
         Self {
             core: LeController::new(config(), Some(&RANDOM)),
@@ -225,7 +262,7 @@ impl<const C: usize, const O: usize> Bench<C, O> {
     ) -> Result<Option<Request>, crate::EpochExhausted> {
         let request = self
             .core
-            .next_request(LeInstant::from_micros(self.now), TIMING)?
+            .next_request(LeInstant::from_micros(self.now))?
             .map(Request::from);
         match request {
             Some(Request::Cancel(_)) => self
@@ -372,7 +409,7 @@ fn le_rand_uses_the_random_source_or_is_unknown_without_one() {
     assert_eq!(packets[0][5], SUCCESS);
     assert_eq!(&packets[0][6..14], &[1, 2, 3, 4, 5, 6, 7, 8]);
 
-    let mut core = LeController::<OUTPUT, 1>::new(config(), None);
+    let mut core = LeController::<Caps, OUTPUT, 1>::new(config(), None);
     core.command(HciCommandPacket::new(LE_RAND, &[])).unwrap();
     assert_eq!(core.front().unwrap().as_bytes()[5], 0x01);
 }
@@ -422,7 +459,7 @@ fn advertising_pdu_carries_the_public_address_and_host_data() {
 #[test]
 fn connectable_advertising_needs_entropy_and_a_set_random_address() {
     // Defaults describe connectable undirected advertising.
-    let mut core = LeController::<OUTPUT, 1>::new(config(), None);
+    let mut core = LeController::<Caps, OUTPUT, 1>::new(config(), None);
     core.command(HciCommandPacket::new(RESET, &[])).unwrap();
     core.pop();
     core.command(HciCommandPacket::new(SET_ADV_ENABLE, &[1]))

@@ -86,6 +86,7 @@ mod trace;
 
 pub use controller::{
     AclAdmission, ControllerBusy, LeController, LeControllerConfig, PLANNING_SLACK, RadioWork,
+    serves_the_core,
 };
 pub use oer_bluetooth_ll::control::LeVersionInformation;
 pub use output::{HCI_PACKET_CAPACITY, HciPacket};

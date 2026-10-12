@@ -18,6 +18,10 @@ use oer_esp32s31_hal::phy::baseband::TX_POWER_LEVELS_DBM;
 pub struct LeTxPower(u8);
 
 impl LeTxPower {
+    /// The lowest level, in dBm: every request at or above it selects a
+    /// level.
+    pub const LOWEST_DBM: i8 = TX_POWER_LEVELS_DBM[0];
+
     /// The highest provider level not above `dbm`, or `None` below the
     /// lowest level.
     pub const fn from_dbm(dbm: i8) -> Option<Self> {

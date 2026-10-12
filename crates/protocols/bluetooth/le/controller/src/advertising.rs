@@ -41,9 +41,9 @@ use oer_bluetooth_radio::LeRadio;
 
 use oer_bluetooth_radio::{
     AdvertisingChannels, AdvertisingConfiguration, AdvertisingEvent, AdvertisingPdu,
-    AdvertisingReception, AdvertisingSetId, EventId, LeInstant, LePhy, LeWindow,
-    NonZeroRadioDuration, OutsideEpoch, RadioDuration, RadioOutcome, RadioRequest, RadioTiming,
-    TxPower,
+    AdvertisingReception, AdvertisingSetId, Capability, EventId, LeCapabilities, LeInstant, LePhy,
+    LeWindow, NonZeroRadioDuration, OutsideEpoch, RadioDuration, RadioOutcome, RadioRequest,
+    RadioTiming, Supported, TxPower,
 };
 
 use oer_bluetooth_trace::{AdvertiserStep, AdvertiserStepKind, IndicationVerdict};
@@ -186,11 +186,16 @@ impl Advertiser {
     }
 
     /// Start a set; the completion follows once the backend took it.
-    pub(crate) fn enable(
+    pub(crate) fn enable<K: LeCapabilities>(
         &mut self,
         request: LeLegacyAdvertisingEnableRequest,
     ) -> Result<(), HciError> {
         self.load(request)?;
+        // The backend sends only the types `K` serves; the Host asked for
+        // another.
+        if !self.configuration().supported(&K::CAPS) {
+            return Err(HciError::UNSUPPORTED);
+        }
         self.next_anchor = None;
         self.outstanding = None;
         self.expires = None;
@@ -201,11 +206,14 @@ impl Advertiser {
 
     /// Replace the running set's PDU. The set is removed and configured
     /// again; the completion follows once the backend took the new one.
-    pub(crate) fn update(
+    pub(crate) fn update<K: LeCapabilities>(
         &mut self,
         request: LeLegacyAdvertisingEnableRequest,
     ) -> Result<(), HciError> {
         self.load(request)?;
+        // New data keeps the running set's type, which `K` served when the
+        // set was enabled.
+        debug_assert!(self.configuration().supported(&K::CAPS));
         self.restart = true;
         self.disable();
         Ok(())
@@ -353,27 +361,33 @@ impl Advertiser {
         )
     }
 
+    /// The set as the backend configures it.
+    fn configuration(&self) -> AdvertisingConfiguration<'_> {
+        AdvertisingConfiguration {
+            set: SET,
+            pdu: AdvertisingPdu::new(&self.pdu[..self.pdu_len])
+                .expect("the encoded PDU fits the legacy bounds"),
+            reception: match (self.kind, self.scan_response_len) {
+                (SetKind::Directed { .. }, _) => AdvertisingReception::Report,
+                (_, Some(length)) => AdvertisingReception::ScanResponse(
+                    AdvertisingPdu::new(&self.scan_response[..length])
+                        .expect("the encoded response fits the legacy bounds"),
+                ),
+                (_, None) => AdvertisingReception::None,
+            },
+            tx_power: TxPower::from_dbm(0),
+            phy: LePhy::Le1M,
+        }
+    }
+
     /// A configuration request the role needs now.
-    pub(crate) fn control_request(&mut self) -> Option<RadioWork<'_>> {
+    pub(crate) fn control_request<K: LeCapabilities>(&mut self) -> Option<RadioWork<'_, K>> {
         match &mut self.phase {
             Phase::Configuring { sent: sent @ false } => {
                 *sent = true;
                 Some(RadioWork::Submit(RadioRequest::ConfigureAdvertising(
-                    AdvertisingConfiguration {
-                        set: SET,
-                        pdu: AdvertisingPdu::new(&self.pdu[..self.pdu_len])
-                            .expect("the encoded PDU fits the legacy bounds"),
-                        reception: match (self.kind, self.scan_response_len) {
-                            (SetKind::Directed { .. }, _) => AdvertisingReception::Report,
-                            (_, Some(length)) => AdvertisingReception::ScanResponse(
-                                AdvertisingPdu::new(&self.scan_response[..length])
-                                    .expect("the encoded response fits the legacy bounds"),
-                            ),
-                            (_, None) => AdvertisingReception::None,
-                        },
-                        tx_power: TxPower::from_dbm(0),
-                        phy: LePhy::Le1M,
-                    },
+                    Supported::new(self.configuration())
+                        .expect("the set's type was checked against K when it was enabled"),
                 )))
             }
             Phase::Cancelling { sent: sent @ false } => {
@@ -565,7 +579,7 @@ impl Advertiser {
         timing: RadioTiming,
         delay: RadioDuration<LeRadio>,
         progress: Progress,
-    ) -> Result<RadioRequest<'static>, EpochExhausted> {
+    ) -> Result<AdvertisingEvent, EpochExhausted> {
         let channel_spacing = self.channel_spacing(timing)?;
         let reserved = reservation(anchor, self.event_duration(timing)?, timing)
             .map_err(|OutsideEpoch| error(O::Event, C::Reservation))?;
@@ -580,14 +594,14 @@ impl Advertiser {
             preempted: false,
         });
         self.commit(continuation);
-        Ok(RadioRequest::Advertise(AdvertisingEvent {
+        Ok(AdvertisingEvent {
             id,
             set: SET,
             anchor,
             channels: self.channels,
             channel_spacing,
             coexistence: coexistence::advertising_level(self.coexistence_period, self.ended),
-        }))
+        })
     }
 
     /// The backend's answer to the event request. A refused event counts as

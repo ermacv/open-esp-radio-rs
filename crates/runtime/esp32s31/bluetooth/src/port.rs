@@ -5,10 +5,11 @@ use core::future::Future;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use oer_bluetooth_radio::{
-    CancelError, ClockError, ClockInfo, EventId, EventsLost, LeInstant, LeRadio,
-    LeRadioCapabilities, LeRadioPort, LifecycleCommand, LifecycleError, Poisoned, PortResult,
-    RadioActivity, RadioOutcome, RadioPort, RadioRequest, RequestError,
+    CancelError, ClockError, ClockInfo, EventId, EventsLost, LeInstant, LeRadio, LeRadioPort,
+    LifecycleCommand, LifecycleError, Poisoned, PortResult, RadioActivity, RadioOutcome, RadioPort,
+    RadioRequest, RequestError,
 };
+use oer_esp32s31_bluetooth_radio::{BluetoothCapabilities, BluetoothRadioConfig};
 use oer_time::Timer;
 
 use crate::runtime::Radio;
@@ -65,6 +66,7 @@ impl<
     M: RawMutex,
     H: BluetoothRadioHardware,
     T: Timer,
+    C: BluetoothRadioConfig,
     const LEGACY: usize,
     const CONNECTABLE: usize,
     const SCANNERS: usize,
@@ -80,6 +82,7 @@ impl<
             M,
             H,
             T,
+            C,
             LEGACY,
             CONNECTABLE,
             SCANNERS,
@@ -125,6 +128,7 @@ impl<
     M: RawMutex,
     H: BluetoothRadioHardware,
     T: Timer,
+    C: BluetoothRadioConfig,
     const LEGACY: usize,
     const CONNECTABLE: usize,
     const SCANNERS: usize,
@@ -140,6 +144,7 @@ impl<
             M,
             H,
             T,
+            C,
             LEGACY,
             CONNECTABLE,
             SCANNERS,
@@ -151,9 +156,16 @@ impl<
         >,
     >
 {
-    fn capabilities(&self) -> LeRadioCapabilities {
-        self.runtime.capabilities()
-    }
+    type Caps = BluetoothCapabilities<
+        C,
+        LEGACY,
+        CONNECTABLE,
+        SCANNERS,
+        CONNECTIONS,
+        SCAN_PACKETS,
+        RX_PACKETS,
+        ITEMS,
+    >;
 
     /// The radio time is the controller clock, extended from the 32-bit
     /// controller-time latch the radio samples; the runtime keeps no
@@ -167,7 +179,7 @@ impl<
 
     fn submit(
         &self,
-        request: RadioRequest<'_>,
+        request: RadioRequest<'_, Self::Caps>,
     ) -> impl Future<Output = PortResult<(), RequestError, Self::Fault>> {
         self.runtime.submit_request(request)
     }
@@ -186,6 +198,7 @@ impl<
     M: RawMutex,
     H: BluetoothRadioHardware,
     T: Timer,
+    C: BluetoothRadioConfig,
     const LEGACY: usize,
     const CONNECTABLE: usize,
     const SCANNERS: usize,
@@ -201,6 +214,7 @@ impl<
             M,
             H,
             T,
+            C,
             LEGACY,
             CONNECTABLE,
             SCANNERS,
@@ -239,6 +253,7 @@ impl<
                 M,
                 H,
                 T,
+                C,
                 LEGACY,
                 CONNECTABLE,
                 SCANNERS,
@@ -263,6 +278,7 @@ impl<
                     M,
                     H,
                     T,
+                    C,
                     LEGACY,
                     CONNECTABLE,
                     SCANNERS,

@@ -1,13 +1,13 @@
 //! Filter accept list commands.
 //!
 //! The backend owns the list: each Clear, Add or Remove command becomes one
-//! [`RadioRequest::FilterAcceptList`] and completes with the backend's answer.
+//! `RadioRequest::FilterAcceptList` and completes with the backend's answer.
 //! A full list answers Memory Capacity Exceeded and removing an absent device
 //! Invalid HCI Command Parameters, as the vendor Controller does. HCI Reset clears a list that
 //! may hold devices the same way before it completes.
 
 use bt_hci::param::{Error as HciError, Status};
-use oer_bluetooth_radio::{AcceptListChange, RadioRequest, RequestError};
+use oer_bluetooth_radio::{AcceptListChange, RequestError};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Phase {
@@ -60,14 +60,15 @@ impl AcceptList {
         matches!(self.phase, Phase::Changing { sent: false, .. })
     }
 
-    pub(crate) fn request(&mut self) -> Option<RadioRequest<'static>> {
+    /// The change the backend makes next.
+    pub(crate) fn request(&mut self) -> Option<AcceptListChange> {
         match &mut self.phase {
             Phase::Changing {
                 change,
                 sent: sent @ false,
             } => {
                 *sent = true;
-                Some(RadioRequest::FilterAcceptList(*change))
+                Some(*change)
             }
             _ => None,
         }

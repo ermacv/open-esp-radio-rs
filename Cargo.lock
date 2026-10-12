@@ -3086,6 +3086,7 @@ dependencies = [
  "oer-bluetooth-gatt-trouble",
  "oer-bluetooth-hci",
  "oer-bluetooth-hci-transport",
+ "oer-bluetooth-radio",
  "oer-hil-protocol",
  "trouble-host",
  "xarxa",

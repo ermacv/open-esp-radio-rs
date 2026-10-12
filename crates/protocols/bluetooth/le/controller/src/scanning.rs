@@ -26,9 +26,9 @@ use oer_bluetooth_ll::{
 use oer_bluetooth_radio::LeRadio;
 
 use oer_bluetooth_radio::{
-    AdvertisingChannel, EventId, LeInstant, LePhy, LeWindow, NonZeroRadioDuration, OutsideEpoch,
-    RadioDuration, RadioOutcome, RadioRequest, RadioTiming, ScanFilterPolicy, ScanType, ScanWindow,
-    ScannerConfiguration, ScannerId, TxPower,
+    AdvertisingChannel, Capability, EventId, LeCapabilities, LeInstant, LePhy, LeWindow,
+    NonZeroRadioDuration, OutsideEpoch, RadioDuration, RadioOutcome, RadioRequest, RadioTiming,
+    ScanFilterPolicy, ScanType, ScanWindow, ScannerConfiguration, ScannerId, Supported, TxPower,
 };
 
 use crate::RadioWork;
@@ -106,16 +106,7 @@ impl Scanner {
 
     pub(crate) fn enable(&mut self, request: LeLegacyScanningEnableRequest) {
         let parameters = request.parameters();
-        self.scan_type = if parameters.is_active() {
-            ScanType::Active
-        } else {
-            ScanType::Passive
-        };
-        self.filter_policy = if parameters.is_accept_list_only() {
-            ScanFilterPolicy::AcceptListOnly
-        } else {
-            ScanFilterPolicy::AcceptAll
-        };
+        (self.scan_type, self.filter_policy) = kind(request);
         self.interval =
             RadioDuration::from_micros(u64::from(parameters.interval_units_625_us()) * 625);
         self.window = RadioDuration::from_micros(u64::from(parameters.window_units_625_us()) * 625);
@@ -137,18 +128,20 @@ impl Scanner {
         };
     }
 
-    pub(crate) fn control_request(&mut self) -> Option<RadioWork<'static>> {
+    /// Whether `K` serves the scanner `request` asks for; a Host request it
+    /// excludes is answered with an HCI status.
+    pub(crate) fn serves<K: LeCapabilities>(request: LeLegacyScanningEnableRequest) -> bool {
+        let (scan_type, filter_policy) = kind(request);
+        configuration(scan_type, filter_policy).supported(&K::CAPS)
+    }
+
+    pub(crate) fn control_request<K: LeCapabilities>(&mut self) -> Option<RadioWork<'static, K>> {
         match &mut self.phase {
             Phase::Configuring { sent: sent @ false } => {
                 *sent = true;
                 Some(RadioWork::Submit(RadioRequest::ConfigureScanner(
-                    ScannerConfiguration {
-                        scanner: SCANNER,
-                        scan_type: self.scan_type,
-                        filter_policy: self.filter_policy,
-                        tx_power: TxPower::from_dbm(0),
-                        phy: LePhy::Le1M,
-                    },
+                    Supported::new(configuration(self.scan_type, self.filter_policy))
+                        .expect("the scanner was checked against K when it was enabled"),
                 )))
             }
             Phase::Cancelling { sent: sent @ false } => {
@@ -280,7 +273,7 @@ impl Scanner {
         window: LeWindow,
         reservation: LeWindow,
         next_anchor: LeInstant,
-    ) -> RadioRequest<'static> {
+    ) -> ScanWindow {
         let channel = self.channel;
         self.outstanding = Some(Outstanding {
             id,
@@ -290,12 +283,12 @@ impl Scanner {
         });
         self.next_anchor = Some(next_anchor);
         self.channel = next_channel(channel);
-        RadioRequest::Scan(ScanWindow {
+        ScanWindow {
             id,
             scanner: SCANNER,
             channel,
             window,
-        })
+        }
     }
 
     pub(crate) fn busy(&self) -> Option<LeWindow> {
@@ -431,6 +424,34 @@ pub(crate) enum Placement {
     },
 }
 
+/// The scanner as the backend configures it.
+fn configuration(scan_type: ScanType, filter_policy: ScanFilterPolicy) -> ScannerConfiguration {
+    ScannerConfiguration {
+        scanner: SCANNER,
+        scan_type,
+        filter_policy,
+        tx_power: TxPower::from_dbm(0),
+        phy: LePhy::Le1M,
+    }
+}
+
+/// The scan type and filter policy `request` asks for.
+fn kind(request: LeLegacyScanningEnableRequest) -> (ScanType, ScanFilterPolicy) {
+    let parameters = request.parameters();
+    (
+        if parameters.is_active() {
+            ScanType::Active
+        } else {
+            ScanType::Passive
+        },
+        if parameters.is_accept_list_only() {
+            ScanFilterPolicy::AcceptListOnly
+        } else {
+            ScanFilterPolicy::AcceptAll
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -462,10 +483,7 @@ mod tests {
         assert_eq!(scanner.channel, AdvertisingChannel::Channel37);
         assert!(scanner.outstanding.is_none());
         let id = EventId::new(9);
-        assert!(matches!(
-            scanner.build(id, window, reservation, next_anchor),
-            RadioRequest::Scan(_)
-        ));
+        assert_eq!(scanner.build(id, window, reservation, next_anchor).id, id);
         assert!(scanner.owns(id));
         assert_eq!(scanner.next_anchor(), Some(next_anchor));
         assert_eq!(scanner.channel, AdvertisingChannel::Channel38);
@@ -492,7 +510,7 @@ mod tests {
         }
         scanner.disable();
         assert!(matches!(
-            scanner.control_request(),
+            scanner.control_request::<crate::tests::Caps>(),
             Some(RadioWork::Submit(RadioRequest::RemoveScanner(_)))
         ));
     }

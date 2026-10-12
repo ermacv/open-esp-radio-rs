@@ -27,7 +27,7 @@ use oer_esp32s31_hal::{
 };
 use oer_esp32s31_ieee80211::{
     cooperative_hardware::CooperativeRadioHardware,
-    lower_mac::{LowerMacCore, LowerMacCoreParts},
+    lower_mac::{AmpduBacking, LowerMacCore, LowerMacCoreParts},
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile},
     runtime::{WifiRoleOwner, WifiStopped, materialize_esp32s31_wifi_role},
 };
@@ -175,6 +175,9 @@ pub fn install_esp32s31_wifi_port<
     const TX_BUFFERS: usize,
     const EVENTS: usize,
     U: LowerMacRxUnit,
+    S: AmpduBacking,
+    const AMPDU_SLOTS: usize,
+    const AMPDU_BUFFERS: usize,
     O,
 >(
     runtime: &'r Esp32s31LowerMac<
@@ -189,11 +192,14 @@ pub fn install_esp32s31_wifi_port<
         TX_BUFFERS,
         EVENTS,
         U,
+        S,
+        AMPDU_SLOTS,
+        AMPDU_BUFFERS,
         O,
     >,
     wifi: WifiStopped<W, Membership>,
     arena: &'arena RadioOwnerArena,
-    core: LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS>,
+    core: LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
     retune: R,
     channel: SupportedChannel<Esp32s31Caps<BUFFER_SIZE>>,
     access_point: IndividualAddress,
@@ -212,6 +218,9 @@ pub fn install_esp32s31_wifi_port<
             TX_BUFFERS,
             EVENTS,
             U,
+            S,
+            AMPDU_SLOTS,
+            AMPDU_BUFFERS,
             O,
         >,
         W,
@@ -220,7 +229,7 @@ pub fn install_esp32s31_wifi_port<
     Esp32s31WifiPortInstallFailure<
         W,
         Membership,
-        LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS>,
+        LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
         R,
     >,
 >
@@ -317,7 +326,7 @@ pub fn uninstall_esp32s31_wifi_port<
     const TX_BUFFERS: usize,
 >(
     uninstalled: (
-        LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS>,
+        LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
         CooperativeRadioHardware<'arena>,
     ),
     held: Esp32s31WifiPortHeld<W, Membership>,
@@ -326,13 +335,13 @@ pub fn uninstall_esp32s31_wifi_port<
     Esp32s31WifiPortUninstalled<
         W,
         Membership,
-        LowerMacCoreParts<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS>,
+        LowerMacCoreParts<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
     >,
     Esp32s31WifiPortUninstallFailure<
         'arena,
         W,
         Membership,
-        LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS>,
+        LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
     >,
 >
 where

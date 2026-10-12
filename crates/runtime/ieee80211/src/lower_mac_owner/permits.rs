@@ -156,7 +156,9 @@ pub struct TxPermits<'id, K, Q, B, const N: usize> {
 struct InFlight<'id> {
     id: TxId,
     queue: Permit<'id, TxQueueKind>,
-    buffer: Permit<'id, TxBufferKind>,
+    /// `None` for an attempt whose memory is not a transmit buffer (an
+    /// aggregate, whose buffer permit its backend keeps).
+    buffer: Option<Permit<'id, TxBufferKind>>,
 }
 
 impl<'id, K, Q, B, const N: usize> TxPermits<'id, K, Q, B, N>
@@ -231,7 +233,32 @@ where
         let buffer = buffer.into_permit();
         // Each queue's pool holds the one permit `new` minted for it, so the
         // queue's entry is free while that permit was out.
-        self.in_flight.borrow_mut()[index] = Some(InFlight { id, queue, buffer });
+        self.in_flight.borrow_mut()[index] = Some(InFlight {
+            id,
+            queue,
+            buffer: Some(buffer),
+        });
+    }
+
+    /// Keep the queue permit of the admitted attempt `id`, whose memory is
+    /// not a transmit buffer (an aggregate), until its terminal.
+    ///
+    /// # Panics
+    ///
+    /// The guard came from another keeper of the install.
+    pub fn admit_queue(&self, id: TxId, queue: QueuePermit<'_, 'id>) {
+        let this: &dyn Keeper<'id> = self;
+        assert!(
+            core::ptr::addr_eq(queue.keeper, this),
+            "a guard goes back into the keeper that made it"
+        );
+        let index = usize::from(queue.queue);
+        let queue = queue.into_permit();
+        self.in_flight.borrow_mut()[index] = Some(InFlight {
+            id,
+            queue,
+            buffer: None,
+        });
     }
 
     /// Give back the permits of the attempt `id`, whose terminal the
@@ -249,7 +276,9 @@ where
                 });
         if let Some((queue, held)) = ended {
             self.queues[queue].release(held.queue);
-            self.buffers.release(held.buffer);
+            if let Some(buffer) = held.buffer {
+                self.buffers.release(buffer);
+            }
         }
     }
 

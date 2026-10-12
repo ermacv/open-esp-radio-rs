@@ -94,3 +94,29 @@ fn only_a_frame_that_says_so_goes_without_an_ack() {
     assert!(AckHeader::new(header(0x00d0, None, None, None).unwrap()).is_some());
     assert!(AckHeader::new(header(0x0088, None, Some(qos(1)), None).unwrap()).is_some());
 }
+
+#[test]
+fn a_header_decodes_as_it_was_encoded() {
+    for (control, address4, qos, ht) in [
+        // Management.
+        (0x00b0, None, None, None),
+        // QoS data to the DS.
+        (0x0188, None, Some(qos(5)), None),
+        // Four-address QoS data with HT Control.
+        (0x8388, Some(A), Some(qos(3)), Some([1, 2, 3, 4])),
+    ] {
+        let spec = header(control, address4, qos, ht).unwrap();
+        let mut bytes = [0; 40];
+        let len = spec.encode(&mut bytes, false);
+        let decoded =
+            HeaderSpec::<IndividualAddress>::decode(&bytes[..len], IndividualAddress::new).unwrap();
+        assert_eq!(decoded, spec);
+    }
+    // A group receiver is no individual header, and a control frame no
+    // header at all.
+    let mut group = [0; 24];
+    group[4..10].copy_from_slice(&[0xff; 6]);
+    assert!(HeaderSpec::<IndividualAddress>::decode(&group, IndividualAddress::new).is_none());
+    assert!(HeaderSpec::<GroupAddress>::decode(&group, GroupAddress::new).is_some());
+    assert!(HeaderSpec::<IndividualAddress>::decode(&[0xd4, 0, 0, 0], IndividualAddress::new).is_none());
+}

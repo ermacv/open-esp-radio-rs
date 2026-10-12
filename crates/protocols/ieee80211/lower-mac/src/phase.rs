@@ -14,7 +14,7 @@
 //! | Token | Taken by | Given back by |
 //! | --- | --- | --- |
 //! | a transmit ticket ([`PhaseTypes::TicketKind`]) | [`InterfacePhase::submit`] | [`LowerMacEvent::TxCompleted`] |
-//! | a transmit buffer of a class ([`TxBufferClass`]) | [`InterfacePhase::tx_buffer`] (the buffer holds it), then the submission | [`LowerMacEvent::TxCompleted`], every buffer of the attempt |
+//! | a transmit buffer of a class ([`TxBufferClass`]), its memory ([`TxBufferMemory`]) | [`InterfacePhase::tx_buffer`], once the caller encoded its frame in it, then the submission | [`LowerMacEvent::TxCompleted`], every buffer of the attempt |
 //! | a key slot of a role's kind | [`InterfacePhase::install_pairwise_key`], [`InterfacePhase::install_group_key`] (the installed key holds it) | [`LowerMacEvent::KeyRemoved`], after a removal |
 //! | a Block Ack slot | [`InterfacePhase::add_block_ack`] (the agreement holds it) | [`InterfacePhase::remove_block_ack`] |
 //! | the open gate ([`GateOpen`]) | [`LowerMacPhase::close_gate`] | [`LowerMacPhase::open_gate`], which takes the closed gate ([`GateClosed`]) that [`LowerMacEvent::GateClosed`] gave |
@@ -23,7 +23,8 @@
 //! A ticket and a buffer are different tokens ([owner decisions on #563]).
 //! A ticket is a place in flight and a place for its terminal; their
 //! number is bounded by the hardware. A buffer is memory of one class,
-//! sized by the composition, from a pool the body holds. A submission
+//! sized by the composition, from a pool the body holds: the caller
+//! encodes its frame straight into it. A submission
 //! takes one ticket and the buffers of its frames (an A-MPDU: one ticket
 //! and a buffer per subframe), and its terminal gives all of them back. So
 //! a submission never waits: an empty pool is the caller's own capacity,
@@ -416,13 +417,15 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     /// The interface's own address, which the install gave it.
     fn address(&self) -> IndividualAddress;
 
-    /// The buffer `buffer` names, holding `frame`'s header, which the
-    /// buffer's class fits ([`ClassFrame`]); the caller writes its body.
-    /// Dropped unsubmitted, the buffer loses its token until the next
+    /// The frame `buffer` holds, the caller's encoding from its header on,
+    /// bound to `frame`, its kind, which the buffer's class fits
+    /// ([`ClassFrame`]): the backend writes the header from `frame` (one
+    /// source of its QoS Ack Policy) and sends the octets after it as
+    /// written. Dropped unsubmitted, the buffer is lost until the next
     /// install.
     fn tx_buffer<C>(
         &mut self,
-        buffer: Slot<'id, C>,
+        buffer: <Self::Types as TxBufferPool<'id, C>>::Buffer,
         frame: ClassFrame<'p, C, Self::Caps>,
     ) -> Self::TxBuffer
     where
@@ -515,7 +518,19 @@ pub trait TxBufferClass {
 }
 
 /// The phase types of a backend that keeps a pool of the buffer class `C`.
-pub trait TxBufferPool<'id, C: TxBufferClass>: PhaseTypes<'id> {}
+pub trait TxBufferPool<'id, C: TxBufferClass>: PhaseTypes<'id> {
+    /// A buffer of the class: its memory, which the body holds and writes
+    /// while it is not submitted. The backend owns its type and mints it
+    /// only in the install's resources.
+    type Buffer: TxBufferMemory;
+}
+
+/// The memory of a transmit buffer the body holds: the caller encodes a
+/// frame into it, from its header on, before it hands the buffer in.
+pub trait TxBufferMemory {
+    /// The buffer's octets, as long as its class holds.
+    fn bytes_mut(&mut self) -> &mut [u8];
+}
 
 /// A frame that a buffer of the class `C` fits; only [`ClassFrame::new`]
 /// makes one.

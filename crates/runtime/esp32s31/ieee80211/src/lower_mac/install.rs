@@ -324,6 +324,9 @@ pub fn uninstall_esp32s31_wifi_port<
     Membership,
     const BUFFER_SIZE: usize,
     const TX_BUFFERS: usize,
+    S: AmpduBacking,
+    const AMPDU_SLOTS: usize,
+    const AMPDU_BUFFERS: usize,
 >(
     uninstalled: (
         LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,

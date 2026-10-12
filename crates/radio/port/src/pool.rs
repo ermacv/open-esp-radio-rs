@@ -82,6 +82,24 @@
 //! }
 //! ```
 //!
+//! The brand is invariant: even a brand that outlives another does not
+//! shrink to it, so a slot of an outer install never passes for an inner
+//! one's, nor an owner for another's:
+//!
+//! ```compile_fail
+//! # use oer_radio_port::Slot;
+//! fn shrink<'a: 'b, 'b, K>(slot: Slot<'a, K>) -> Slot<'b, K> {
+//!     slot
+//! }
+//! ```
+//!
+//! ```compile_fail
+//! # use oer_radio_port::{Disabled, Owner, PortBackend};
+//! fn shrink<'a: 'b, 'b, B: PortBackend>(owner: Owner<'a, B, Disabled>) -> Owner<'b, B, Disabled> {
+//!     owner
+//! }
+//! ```
+//!
 //! Their compiling twins move a slot within its own install:
 //!
 //! ```

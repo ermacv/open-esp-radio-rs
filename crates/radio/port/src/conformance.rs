@@ -371,7 +371,7 @@ pub fn caller_identities_avoid_the_backend_range<I: Correlation>() {
 /// documented order is first in, first out: with every permit but one
 /// held, three takers wait in arrival order, and each released permit goes
 /// to the earliest of them. `held` are the other permits, taken by the
-/// caller.
+/// caller, at most eight.
 ///
 /// # Panics
 ///
@@ -432,9 +432,14 @@ mod alloc_free {
     impl<'id, K> Held<'id, K> {
         pub fn new(held: impl IntoIterator<Item = crate::Permit<'id, K>>) -> Self {
             let mut permits = [const { None }; HELD];
-            for (place, permit) in permits.iter_mut().zip(held) {
-                *place = Some(permit);
+            let mut held = held.into_iter();
+            for place in &mut permits {
+                *place = held.next();
             }
+            assert!(
+                held.next().is_none(),
+                "the rule holds at most {HELD} permits aside"
+            );
             Self { permits }
         }
 

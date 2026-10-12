@@ -29,7 +29,7 @@ oer-time = { path = "../../time" }
 critical-section = { version = "1.2.0", features = ["std"] }
 oer-time-virtual = { path = "../../adapters/virtual/time" }
 # The model of `lower_mac_owner` and its tests.
-oer-ieee80211-lower-mac = { path = "../../protocols/ieee80211/lower-mac", features = ["model"] }
+oer-ieee80211-lower-mac = { path = "../../protocols/ieee80211/lower-mac" }
 oer-radio-port = { path = "../../radio/port", features = ["test-support"] }
 oer-ieee80211-port = { path = "../../protocols/ieee80211/port", features = ["test-support"] }
 

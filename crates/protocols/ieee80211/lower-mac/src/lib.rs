@@ -3,27 +3,25 @@
 
 //! The IEEE 802.11 lower-MAC radio port.
 //!
-//! [`Ieee80211LowerMacPort`] is the contract between portable Wi-Fi MAC
-//! logic and the backend that puts frames on the air, whether a chip, a
-//! family driver or a host model. One submission is one hardware
-//! transmission attempt: the backend contends for the medium with the
-//! caller's backoff, sends the PPDU at the given rate and reports how that
-//! single attempt ended. Retry policy, rate selection, the backoff draw,
-//! sequence and packet numbers, reordering and every other decision
-//! software takes stay above the port, in portable code; the services a
-//! backend performs autonomously are its [`LowerMacCapabilities::services`].
+//! The port is the contract between portable Wi-Fi MAC logic and the
+//! backend that puts frames on the air, whether a chip, a family driver or
+//! a host model, on the owner shape of `oer-ieee80211-port`: a
+//! [`LowerMacBackend`] runs under its owner, which lends each running phase
+//! its event consumer ([`LowerMacEvents`]), control ([`LowerMacControl`])
+//! and one client per interface ([`LowerMacClient`], [`StationClient`],
+//! [`AccessPointClient`]); its disabled-only settings are a
+//! [`LowerMacSetup`]. Every rule a caller controls is a type
+//! ([`owner`]). One submission is one hardware transmission attempt: the
+//! backend contends for the medium with the caller's backoff, sends the
+//! PPDU at the frame's rate and reports how that single attempt ended.
+//! Retry policy, rate selection, the backoff draw, sequence and packet
+//! numbers, reordering and every other decision software takes stay above
+//! the port, in portable code; the services a backend performs
+//! autonomously are its [`LowerMacCapabilities::services`].
 //!
-//! The capability model has three parts. Structural optional features are
-//! extension traits ([`LowerMacAmpdu`], [`LowerMacBeaconTiming`],
-//! [`LowerMacMonitor`], [`LowerMacCancelPublished`],
-//! [`LowerMacAirReservation`], [`LowerMacLiveRetune`]); parametric limits of
-//! what a backend has are its capabilities, and a value outside them is
-//! refused as `Unsupported`; why a backend lacks a feature is recorded in
-//! its qualification catalog.
-//!
-//! The base trait [`RadioPort`] (events, clock, cancellation and lifecycle),
-//! refusals and poisoning, event loss, correlation identities and the clock
-//! relation are the shared ones of `oer-radio-port`, re-exported here.
+//! The values its backends' cores take (attempts, settings, key installs,
+//! A-MPDU and beacon timing values) live beside it ([`tx`], [`control`],
+//! [`extensions`]).
 //!
 //! The PHY and channel values the port carries ([`Channel`], [`PhyRate`])
 //! are the portable ones of `oer-ieee80211-mac`. This package only declares
@@ -71,16 +69,14 @@ pub use control::{
     RxBeaconPriority, RxBlockAckAgreement, SettingError, VifConfig, VifId, VifRole, VifRoleSet,
 };
 pub use extensions::{
-    AirReservation, AirReservationAttempt, AmpduAttempt, AmpduBuffer, AmpduCapabilities,
-    AmpduPayload, BeaconTimingCapabilities, LowerMacAirReservation, LowerMacAmpdu,
-    LowerMacBeaconTiming, LowerMacCancelPublished, LowerMacLiveRetune, LowerMacMonitor,
-    MAX_AIR_RESERVATION, MonitorCapabilities, TSF_DRIFT_PPM, TSF_RELATION, TbttEvent, TbttSchedule,
-    TsfArithmeticError, TsfGeneration, TsfProjectionError, TsfRelation, TsfSample, TsfSetKind,
-    TsfTimingError, TsfVifMismatch, VifTsf,
+    AmpduAttempt, AmpduBuffer, AmpduCapabilities, AmpduPayload, BeaconTimingCapabilities,
+    MonitorCapabilities, TSF_DRIFT_PPM, TSF_RELATION, TbttEvent, TbttSchedule, TsfArithmeticError,
+    TsfGeneration, TsfProjectionError, TsfRelation, TsfSample, TsfSetKind, TsfTimingError,
+    TsfVifMismatch, VifTsf,
 };
 pub use oer_ieee80211_port::{CancelError, ClockError};
 pub use oer_ieee80211_port::{
-    Correlation, CorrelationIds, LifecycleCommand, LifecycleError, LifecycleEvent, RadioPort,
+    Correlation, CorrelationIds, LifecycleCommand, LifecycleError, LifecycleEvent,
 };
 pub use oer_radio_port::{
     ClockInfo, ClockRelation, EventsLost, Generation, GenerationSource, Poisoned, PortResult,
@@ -96,22 +92,12 @@ pub use owner::{
     SupportedEdca, SupportedFilter, SupportedNoAck, SupportedPower, TX_SEATS, Tid, TxFrame,
     TxFrameBody, TxGated, TxSeats, seat_access_category,
 };
-pub use port::{ExtensionKind, Ieee80211LowerMacPort, LowerMacEvent, MpduAttempt, SubmitResult};
+pub use port::{ExtensionKind, LowerMacEvent, MpduAttempt};
 pub use rx::{RxBuffer, RxCryptoStatus, RxEvidence, RxMeta};
 pub use tx::{
     Backoff, BlockAckReport, KeySelector, Protection, Refused, SubmitError, TxAttempt, TxBody,
     TxBuffer, TxCompletion, TxFault, TxId, TxPayload, TxPower, TxResponse, TxStatus,
 };
 
-#[cfg(any(test, feature = "model"))]
-extern crate alloc;
 #[cfg(test)]
 extern crate std;
-
-#[cfg(any(test, feature = "test-support"))]
-pub mod conformance;
-#[cfg(any(test, feature = "model"))]
-pub mod model;
-
-#[cfg(test)]
-mod tests;

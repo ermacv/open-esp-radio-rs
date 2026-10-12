@@ -9,11 +9,8 @@ description = "Portable IEEE 802.11 lower-MAC radio port: one hardware transmiss
 readme = "README.md"
 
 [features]
-# The in-memory backend of `model`, for host tests of packages that drive the
-# port.
-model = []
-# The lower-MAC rules of the shared port conformance suite (`conformance`),
-# with the model's harness under `model`.
+# Lets a host test's dropped owner skip its debug assertion while a panic
+# unwinds.
 test-support = ["oer-radio-port/test-support", "oer-ieee80211-port/test-support"]
 
 [dependencies]

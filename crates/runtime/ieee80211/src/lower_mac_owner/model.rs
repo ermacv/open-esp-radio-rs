@@ -61,6 +61,7 @@ use core::{
     task::{Poll, Waker},
 };
 
+use oer_ieee80211_mac::phy::{HeMcs, HtMcs};
 use oer_ieee80211_port::{
     CancelError, ClockError, EnableResult, Lent, PhaseParts, PortBackend, RadioPortClient,
     RadioPortEvents, RadioWork, Retire, Work,
@@ -71,16 +72,84 @@ use oer_radio_port::{
 use oer_time::RadioInstant;
 
 use oer_ieee80211_lower_mac::{
-    AccessPoint, AccessPointClient, AddressSetup, AttemptKey, Ccmp128Key, Channel, GroupKeyId,
-    Ieee80211Capabilities, Ieee80211Radio, IndividualAddress, InterfaceRole, KeyScope,
-    LowerMacBackend, LowerMacCapabilities, LowerMacClient, LowerMacControl, LowerMacEvent,
-    LowerMacEvents, LowerMacSetup, MacAddress, PhaseAttempt, PhyRate, RxMeta, Station,
-    StationClient, StationReceive, SupportedBlockAck, SupportedChannel, SupportedFilter, TX_SEATS,
-    Tid, TxCompletion, TxFrame, TxFrameBody, TxGated, TxId, TxResponse, TxSeats, TxStatus, VifRole,
-    model::{MODEL_CAPABILITIES, ModelBody, ModelFault, ModelRxBuffer},
+    AccessPoint, AccessPointClient, AddressSetup, AttemptKey, BandSet, Ccmp128Key, Channel,
+    CoexPriority, CoexPrioritySet, GroupKeyId, HardwareServices, Ieee80211Capabilities,
+    Ieee80211Radio, IndividualAddress, InterfaceRole, KeyScope, LowerMacBackend,
+    LowerMacCapabilities, LowerMacClient, LowerMacControl, LowerMacEvent, LowerMacEvents,
+    LowerMacSetup, MacAddress, PhaseAttempt, PhyFormatSet, PhyRate, RateSupport, ReceiveFilter,
+    RxBuffer, RxMeta, Station, StationClient, StationReceive, SupportedBlockAck, SupportedChannel,
+    SupportedFilter, TX_SEATS, Tid, TxBody, TxCompletion, TxFrame, TxFrameBody, TxGated, TxId,
+    TxResponse, TxSeats, TxStatus, VifRole, WidthSet,
 };
 
 use super::{BufferPermit, QueuePermit, QueuePool, TxBufferKind, TxPermits, TxQueueKind};
+
+/// The longest MPDU of a model buffer.
+pub const MODEL_MAX_MPDU: usize = 2304;
+
+/// The model's parametric limits.
+pub const MODEL_CAPABILITIES: LowerMacCapabilities = LowerMacCapabilities {
+    bands: BandSet::GHZ2_4.union(BandSet::GHZ5),
+    widths: WidthSet::MHZ20.union(WidthSet::MHZ40),
+    rates: RateSupport {
+        dsss_cck: true,
+        ofdm: true,
+        ht_max_mcs: HtMcs::new(7),
+        he_max_mcs: HeMcs::new(9),
+        he_max_bandwidth_mhz: 20,
+        he_dcm: true,
+        he_ldpc: true,
+        spatial_streams: 1,
+    },
+    services: HardwareServices::FCS
+        .union(HardwareServices::IMMEDIATE_ACK)
+        .union(HardwareServices::BACKOFF_COUNTDOWN)
+        .union(HardwareServices::CIPHER_TRANSFORM)
+        .union(HardwareServices::RX_BLOCK_ACK_MATCHING)
+        .union(HardwareServices::TX_BLOCK_ACK_CAPTURE),
+    vifs: 2,
+    tx_queues: 4,
+    max_mpdu_length: MODEL_MAX_MPDU as u16,
+    max_backoff_slots: 1023,
+    tx_power_ceiling_min_dbm: Some(0),
+    coex_priorities: CoexPrioritySet::only(CoexPriority::Normal)
+        .union(CoexPrioritySet::only(CoexPriority::Elevated)),
+    individual_no_ack: PhyFormatSet::NON_HT,
+    station_receive_filters: ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::OTHER_BSS_MANAGEMENT),
+    access_point_receive_filters: ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::PROBE_REQUESTS),
+    key_slots: 4,
+    rx_block_ack_agreements: 2,
+    rx_block_ack_max_tid: 7,
+    rx_block_ack_max_window: 64,
+    edca_max_aifsn: 15,
+    edca_max_cw_exponent: 10,
+};
+
+/// A received frame the model lends: its bytes.
+#[derive(Debug)]
+pub struct ModelRxBuffer {
+    bytes: Vec<u8>,
+}
+
+impl RxBuffer for ModelRxBuffer {
+    fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+/// A body the model's test owns: its octets.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModelBody(pub Vec<u8>);
+
+impl TxBody for ModelBody {
+    fn bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+/// The cause of a poisoned model: [`ModelHandle::poison`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ModelFault;
 
 /// The model's capabilities marker.
 pub struct ModelCaps;

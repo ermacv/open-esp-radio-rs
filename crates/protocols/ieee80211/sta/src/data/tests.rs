@@ -6,8 +6,8 @@ use oer_ieee80211_lower_mac::{
     Ieee80211Capabilities, LowerMacCapabilities, PhyFormatSet, RateSupport, ReceiveFilter,
     RxEvidence, WidthSet,
 };
+use oer_ieee80211_mac::ccmp::{CcmpRxReplayEpoch, GroupKeyId};
 use oer_ieee80211_mac::phy::{HeMcs, HtMcs};
-use oer_ieee80211_mac::ccmp::CcmpRxReplayEpoch;
 use oer_ieee80211_mac::sequence::SequenceNumber;
 use std::vec::Vec;
 
@@ -98,7 +98,10 @@ fn open_link(counter: &mut StaSequenceCounter) -> LinkView<'_, Station> {
 }
 
 fn machine() -> StaData<Data, Caps> {
-    StaData::new([1, 2], [Buffer(std::vec![0; 1600]), Buffer(std::vec![0; 1600])])
+    StaData::new(
+        [1, 2],
+        [Buffer(std::vec![0; 1600]), Buffer(std::vec![0; 1600])],
+    )
 }
 
 fn msdu(priority: u8) -> Msdu<'static> {
@@ -111,7 +114,7 @@ fn msdu(priority: u8) -> Msdu<'static> {
 }
 
 fn epoch() -> CcmpRxReplayEpoch {
-    CcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap()
+    CcmpRxReplayEpoch::new([0; 8], GroupKeyId::new(1).unwrap(), [0; 8]).unwrap()
 }
 
 fn transmit(data: &mut StaData<Data, Caps>) -> DataTransmit<Data, Caps> {
@@ -125,8 +128,14 @@ fn transmit(data: &mut StaData<Data, Caps>) -> DataTransmit<Data, Caps> {
 fn a_protected_qos_msdu_leaves_room_for_the_ccmp_header_and_contends_by_its_priority() {
     let mut data = machine();
     let mut replay = epoch();
-    data.input(NOW, DataInput::Msdu { msdu: msdu(6), link: &mut qos_link(&(), &mut replay) })
-        .unwrap();
+    data.input(
+        NOW,
+        DataInput::Msdu {
+            msdu: msdu(6),
+            link: &mut qos_link(&(), &mut replay),
+        },
+    )
+    .unwrap();
     let sent = transmit(&mut data);
     assert!(data.poll_action(NOW).is_none());
     let frame = &sent.buffer.0;
@@ -147,8 +156,14 @@ fn a_protected_qos_msdu_leaves_room_for_the_ccmp_header_and_contends_by_its_prio
 fn an_open_non_qos_msdu_takes_the_stations_sequence_number_and_no_ccmp_room() {
     let mut data = machine();
     let mut counter = StaSequenceCounter::new(SequenceNumber::new(42).unwrap());
-    data.input(NOW, DataInput::Msdu { msdu: msdu(0), link: &mut open_link(&mut counter) })
-        .unwrap();
+    data.input(
+        NOW,
+        DataInput::Msdu {
+            msdu: msdu(0),
+            link: &mut open_link(&mut counter),
+        },
+    )
+    .unwrap();
     let sent = transmit(&mut data);
     let frame = &sent.buffer.0;
     assert_eq!(u16::from_le_bytes([frame[0], frame[1]]), 0x0108);
@@ -159,15 +174,70 @@ fn an_open_non_qos_msdu_takes_the_stations_sequence_number_and_no_ccmp_room() {
 }
 
 #[test]
+fn an_msdu_too_long_for_its_buffer_takes_no_sequence_number() {
+    let mut data = StaData::<Data, Caps>::new([1], [Buffer(std::vec![0; 200])]);
+    let mut counter = StaSequenceCounter::new(SequenceNumber::new(42).unwrap());
+    let long = Msdu {
+        payload: &[0; 200],
+        ..msdu(0)
+    };
+    assert_eq!(
+        data.input(
+            NOW,
+            DataInput::Msdu {
+                msdu: long,
+                link: &mut open_link(&mut counter)
+            }
+        ),
+        Err(DataRefusal::TooLong)
+    );
+    assert_eq!(counter.peek(), SequenceNumber::new(42).unwrap());
+    // The tokens stay, and a short MSDU takes the number.
+    data.input(
+        NOW,
+        DataInput::Msdu {
+            msdu: msdu(0),
+            link: &mut open_link(&mut counter),
+        },
+    )
+    .unwrap();
+    let sent = transmit(&mut data);
+    assert_eq!(
+        u16::from_le_bytes([sent.buffer.0[22], sent.buffer.0[23]]) >> 4,
+        42
+    );
+}
+
+#[test]
 fn msdus_wait_while_the_tokens_are_out() {
     let mut data = machine();
     let mut replay = epoch();
     let mut link = qos_link(&(), &mut replay);
-    data.input(NOW, DataInput::Msdu { msdu: msdu(0), link: &mut link }).unwrap();
-    data.input(NOW, DataInput::Msdu { msdu: msdu(0), link: &mut link }).unwrap();
+    data.input(
+        NOW,
+        DataInput::Msdu {
+            msdu: msdu(0),
+            link: &mut link,
+        },
+    )
+    .unwrap();
+    data.input(
+        NOW,
+        DataInput::Msdu {
+            msdu: msdu(0),
+            link: &mut link,
+        },
+    )
+    .unwrap();
     assert!(!data.accepts());
     assert_eq!(
-        data.input(NOW, DataInput::Msdu { msdu: msdu(0), link: &mut link }),
+        data.input(
+            NOW,
+            DataInput::Msdu {
+                msdu: msdu(0),
+                link: &mut link
+            }
+        ),
         Err(DataRefusal::NoTokens)
     );
     let first = transmit(&mut data);
@@ -225,7 +295,10 @@ fn a_decrypted_data_mpdu_gives_its_msdu_and_an_unverified_or_eapol_one_none() {
     assert!(received(&mut link, &frame, &meta(RxEvidence::Unavailable)).is_none());
     // EAPOL is the station's.
     let eapol = received_frame(0x4288, 0x888e, 3, 0);
-    assert_eq!(received(&mut link, &eapol, &decrypted()).unwrap().count(), 0);
+    assert_eq!(
+        received(&mut link, &eapol, &decrypted()).unwrap().count(),
+        0
+    );
 }
 
 #[test]
@@ -233,13 +306,16 @@ fn a_frame_sent_again_is_dropped_by_the_replay_check() {
     let mut replay = epoch();
     let mut link = qos_link(&(), &mut replay);
     let frame = received_frame(0x4288, 0x0800, 7, 0);
-    assert_eq!(received(&mut link, &frame, &decrypted()).unwrap().count(), 1);
+    assert_eq!(
+        received(&mut link, &frame, &decrypted()).unwrap().count(),
+        1
+    );
     // The same packet number again: dropped before it reaches the network.
     assert!(received(&mut link, &frame, &decrypted()).is_none());
 }
 
 #[test]
-fn after_a_group_key_change_frames_under_the_new_key_are_taken() {
+fn the_old_and_the_new_group_key_are_both_taken_until_the_old_is_removed() {
     let mut replay = epoch();
     let group = |packet_number, key_id| {
         let mut frame = received_frame(0x4288, 0x0800, packet_number, key_id);
@@ -248,12 +324,40 @@ fn after_a_group_key_change_frames_under_the_new_key_are_taken() {
     };
     {
         let mut link = qos_link(&(), &mut replay);
-        assert_eq!(received(&mut link, &group(200, 1), &decrypted()).unwrap().count(), 1);
+        assert_eq!(
+            received(&mut link, &group(200, 1), &decrypted())
+                .unwrap()
+                .count(),
+            1
+        );
     }
     // The access point's new group key, index 2, from packet number 1.
-    let rotation = replay.prepare_group_rotation(2, [0; 8]).unwrap();
-    replay.commit_group_rotation(rotation).unwrap();
+    replay
+        .install_group(GroupKeyId::new(2).unwrap(), [0; 8])
+        .unwrap();
+    {
+        // Both keys are taken while both are installed.
+        let mut link = qos_link(&(), &mut replay);
+        assert_eq!(
+            received(&mut link, &group(1, 2), &decrypted())
+                .unwrap()
+                .count(),
+            1
+        );
+        assert_eq!(
+            received(&mut link, &group(201, 1), &decrypted())
+                .unwrap()
+                .count(),
+            1
+        );
+    }
+    replay.remove_group(GroupKeyId::new(1).unwrap());
     let mut link = qos_link(&(), &mut replay);
-    assert_eq!(received(&mut link, &group(1, 2), &decrypted()).unwrap().count(), 1);
-    assert!(received(&mut link, &group(201, 1), &decrypted()).is_none());
+    assert!(received(&mut link, &group(202, 1), &decrypted()).is_none());
+    assert_eq!(
+        received(&mut link, &group(2, 2), &decrypted())
+            .unwrap()
+            .count(),
+        1
+    );
 }

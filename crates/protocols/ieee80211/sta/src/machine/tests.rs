@@ -42,7 +42,8 @@ impl Ieee80211Capabilities for Caps {
         tx_power_ceiling_min_dbm: Some(0),
         coex_priorities: CoexPrioritySet::only(CoexPriority::Normal),
         individual_no_ack: PhyFormatSet::NON_HT,
-        station_receive_filters: ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::OTHER_BSS_MANAGEMENT),
+        station_receive_filters: ReceiveFilter::BSS_MEMBER
+            .union(ReceiveFilter::OTHER_BSS_MANAGEMENT),
         access_point_receive_filters: ReceiveFilter::BSS_MEMBER,
         key_slots: 4,
         rx_block_ack_agreements: 2,
@@ -233,6 +234,7 @@ impl World {
                 phy: PhyMode::Legacy,
                 security,
                 nonce,
+                he_packet_padding: |_| oer_ieee80211_upper_mac::HePacketPadding::None,
             },
             [Ticket(0), Ticket(1)],
             [Buffer([0; 512]), Buffer([0; 512])],
@@ -283,7 +285,8 @@ impl World {
                     }
                     StaAction::InstallGroupKey { slot, key_id, .. } => {
                         self.seen.push(Seen::InstallGroup(key_id.get()));
-                        self.station.input(now, StaInput::GroupKeyInstalled(Key(slot)));
+                        self.station
+                            .input(now, StaInput::GroupKeyInstalled(Key(slot)));
                     }
                     StaAction::RemovePairwiseKey(Key(slot)) => {
                         self.seen.push(Seen::RemoveKey);
@@ -430,7 +433,9 @@ impl World {
 #[test]
 fn a_station_alone_scans_joins_an_open_network_and_leaves_it() {
     let mut world = World::new(3);
-    world.station.input(at(0), StaInput::Command(StaCommand::Connect));
+    world
+        .station
+        .input(at(0), StaInput::Command(StaCommand::Connect));
     world.run(at(0));
     // Channel 1, where the port is: the station listens and probes.
     assert_eq!(
@@ -479,7 +484,19 @@ fn a_station_alone_scans_joins_an_open_network_and_leaves_it() {
             on: 6
         }]
     );
-    world.receive(at(31), &open_association_response());
+    assert!(world.station.peer().is_none());
+    // The Association Response, 55 dB over the noise floor.
+    let mut meta = meta();
+    meta.rssi_dbm = RxEvidence::HardwareObserved(-40);
+    meta.noise_floor_dbm = RxEvidence::HardwareObserved(-95);
+    world.station.input(
+        at(31),
+        StaInput::Received {
+            frame: &open_association_response(),
+            meta,
+        },
+    );
+    world.run(at(31));
     assert_eq!(
         world.take(),
         [
@@ -491,6 +508,11 @@ fn a_station_alone_scans_joins_an_open_network_and_leaves_it() {
         ]
     );
     assert!(world.station.is_connected());
+    // What a rate selection starts from: the PHY the association made and
+    // the access point's signal over the noise floor.
+    let peer = world.station.peer().unwrap();
+    assert_eq!(peer.associated.phy, PhyMode::Legacy);
+    assert_eq!(peer.link_metric, Some(55));
 
     // The application leaves: Deauthentication, receive off, the lease
     // back, then the report.
@@ -525,7 +547,9 @@ fn beside_an_access_point_the_scan_goes_in_absences_after_its_tbtts() {
             beacon_interval: Duration::from_millis(100),
         },
     );
-    world.station.input(at(0), StaInput::Command(StaCommand::Connect));
+    world
+        .station
+        .input(at(0), StaInput::Command(StaCommand::Connect));
     world.run(at(0));
     // Channel 1 is the access point's: the station scans it at once.
     assert_eq!(
@@ -573,7 +597,9 @@ fn a_scan_ends_with_a_partial_result_after_skipped_absences() {
             beacon_interval: Duration::from_millis(100),
         },
     );
-    world.station.input(at(0), StaInput::Command(StaCommand::Connect));
+    world
+        .station
+        .input(at(0), StaInput::Command(StaCommand::Connect));
     world.run(at(0));
     world.advance();
     world.take();
@@ -630,7 +656,9 @@ fn announces(seen: &Seen) -> bool {
 fn beside_an_access_point_a_join_elsewhere_moves_it_and_one_too_soon_after_waits() {
     let mut world = World::new(3);
     access_point_on_1(&mut world);
-    world.station.input(at(0), StaInput::Command(StaCommand::Connect));
+    world
+        .station
+        .input(at(0), StaInput::Command(StaCommand::Connect));
     world.run(at(0));
     // Channel 6 in the absence at 52 ms, where the network's beacon is.
     world.advance();
@@ -638,13 +666,15 @@ fn beside_an_access_point_a_join_elsewhere_moves_it_and_one_too_soon_after_waits
     world.receive(at(53), &beacon_on(6));
     // The join waits for the access point's announced move.
     let asked = advance_until(&mut world, announces);
-    assert!(world.take().contains(&Seen::AccessPoint(
-        AccessPointCommand::AnnounceSwitch {
-            target: channel(6),
-            mode: ChannelSwitchMode::Continue,
-            count: 5,
-        }
-    )));
+    assert!(
+        world
+            .take()
+            .contains(&Seen::AccessPoint(AccessPointCommand::AnnounceSwitch {
+                target: channel(6),
+                mode: ChannelSwitchMode::Continue,
+                count: 5,
+            }))
+    );
     assert_eq!(world.arbiter.channel(), Some(channel(1)));
     // The switch is due: the port moves, and the join authenticates there.
     world
@@ -682,13 +712,15 @@ fn beside_an_access_point_a_join_elsewhere_moves_it_and_one_too_soon_after_waits
     let retried = advance_until(&mut world, announces);
     assert!(retried >= asked.saturating_add(Duration::from_secs(30)));
     assert_eq!(world.arbiter.channel(), Some(channel(6)));
-    assert!(world.take().contains(&Seen::AccessPoint(
-        AccessPointCommand::AnnounceSwitch {
-            target: channel(1),
-            mode: ChannelSwitchMode::Continue,
-            count: 5,
-        }
-    )));
+    assert!(
+        world
+            .take()
+            .contains(&Seen::AccessPoint(AccessPointCommand::AnnounceSwitch {
+                target: channel(1),
+                mode: ChannelSwitchMode::Continue,
+                count: 5,
+            }))
+    );
 }
 
 /// The Null data frame's subtype in the seen frames, with and without PM.
@@ -699,7 +731,9 @@ const NULL_POWER_SAVE: u16 = 0x1048;
 /// alone on the port.
 fn connected_world() -> World {
     let mut world = World::new(3);
-    world.station.input(at(0), StaInput::Command(StaCommand::Connect));
+    world
+        .station
+        .input(at(0), StaInput::Command(StaCommand::Connect));
     world.run(at(0));
     world.advance();
     world.receive(at(13), &beacon());
@@ -769,7 +803,9 @@ fn a_connected_station_scans_in_an_absence_announced_with_nulls() {
     world.run(now);
     assert_eq!(
         world.take(),
-        [Seen::Notify(StaNotice::BackgroundScanDone { partial: false })]
+        [Seen::Notify(StaNotice::BackgroundScanDone {
+            partial: false
+        })]
     );
 }
 
@@ -808,7 +844,9 @@ fn an_undelivered_wake_null_is_sent_again_when_the_tim_shows_buffered_frames() {
     world.advance();
     assert_eq!(
         world.take().last(),
-        Some(&Seen::Notify(StaNotice::BackgroundScanDone { partial: false }))
+        Some(&Seen::Notify(StaNotice::BackgroundScanDone {
+            partial: false
+        }))
     );
     // The access point's beacon shows the station's association identifier
     // (0xc02a & 0x3fff = 42: octet 5, bit 2) in its TIM, a partial virtual
@@ -867,7 +905,9 @@ fn a_station_joins_a_wpa2_network_through_the_four_way_handshake() {
             pmk: Pmk::from_bytes(PMK),
         },
     );
-    world.station.input(at(0), StaInput::Command(StaCommand::Connect));
+    world
+        .station
+        .input(at(0), StaInput::Command(StaCommand::Connect));
     world.run(at(0));
     world.advance();
     world.receive(at(13), &wpa2_beacon());
@@ -948,7 +988,6 @@ fn a_station_joins_a_wpa2_network_through_the_four_way_handshake() {
     );
 }
 
-
 /// A WPA2 world whose station holds `group_slots` group key slots, up to
 /// Message 3 at 33 ms; the PTK of its handshake.
 fn wpa2_associated(group_slots: u8) -> (World, oer_ieee80211_rsn::Ptk) {
@@ -962,7 +1001,9 @@ fn wpa2_associated(group_slots: u8) -> (World, oer_ieee80211_rsn::Ptk) {
         },
         group_slots,
     );
-    world.station.input(at(0), StaInput::Command(StaCommand::Connect));
+    world
+        .station
+        .input(at(0), StaInput::Command(StaCommand::Connect));
     world.run(at(0));
     world.advance();
     world.receive(at(13), &wpa2_beacon());
@@ -1016,9 +1057,10 @@ fn group_message1(ptk: &oer_ieee80211_rsn::Ptk, replay: u64, key_id: u8) -> std:
     plain.extend_from_slice(&[0x77; 16]);
     plain.extend_from_slice(&[0xdd, 0, 0, 0, 0, 0, 0, 0]);
     let wrapped = oer_ieee80211_rsn::aes::software_aes128_key_wrap(ptk.kek(), &plain).unwrap();
-    let message = RsnTxFrame::<512>::group_message1(Akm::Psk, LOCAL, replay, [0; 8], wrapped.as_bytes())
-        .unwrap()
-        .authenticate(ptk);
+    let message =
+        RsnTxFrame::<512>::group_message1(Akm::Psk, LOCAL, replay, [0; 8], wrapped.as_bytes())
+            .unwrap()
+            .authenticate(ptk);
     eapol_frame(message.as_bytes())
 }
 
@@ -1094,7 +1136,10 @@ fn the_access_points_deauthentication_is_not_answered_with_one() {
     world.receive(at(50), &deauthentication);
     let seen = world.take();
     // Both keys removed, no Deauthentication back.
-    assert_eq!(seen.iter().filter(|seen| **seen == Seen::RemoveKey).count(), 2);
+    assert_eq!(
+        seen.iter().filter(|seen| **seen == Seen::RemoveKey).count(),
+        2
+    );
     assert!(world.deauthentications.is_empty());
     assert!(seen.contains(&Seen::Notify(StaNotice::Disconnected(
         StaDisconnectReason::Peer { reason_code: 7 }
@@ -1125,7 +1170,9 @@ fn beacon_from(bssid: [u8; 6], number: u8) -> [u8; 55] {
 fn joined_beside(beside: i8) -> (u8, bool) {
     let mut world = World::new(3);
     access_point_on_1(&mut world);
-    world.station.input(at(0), StaInput::Command(StaCommand::Connect));
+    world
+        .station
+        .input(at(0), StaInput::Command(StaCommand::Connect));
     world.run(at(0));
     world.rssi = beside;
     world.receive(at(1), &beacon_from([2, 0, 0, 0, 0, 0xbb], 1));
@@ -1134,7 +1181,13 @@ fn joined_beside(beside: i8) -> (u8, bool) {
     world.rssi = -56;
     world.receive(at(53), &beacon_from(BSSID, 6));
     let now = advance_until(&mut world, |seen| {
-        matches!(seen, Seen::Transmit { subtype: 0x00b0, .. }) || announces(seen)
+        matches!(
+            seen,
+            Seen::Transmit {
+                subtype: 0x00b0,
+                ..
+            }
+        ) || announces(seen)
     });
     let _ = now;
     let seen = world.take();
@@ -1142,7 +1195,10 @@ fn joined_beside(beside: i8) -> (u8, bool) {
     let on = seen
         .iter()
         .find_map(|seen| match seen {
-            Seen::Transmit { subtype: 0x00b0, on } => Some(*on),
+            Seen::Transmit {
+                subtype: 0x00b0,
+                on,
+            } => Some(*on),
             _ => None,
         })
         .unwrap_or(6);

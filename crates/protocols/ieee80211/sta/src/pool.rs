@@ -12,7 +12,12 @@ impl<X> Pool<X> {
     /// A pool of `items`, at most [`POOL_CAPACITY`]: checked at compile
     /// time, so no granted token is ever lost.
     pub(crate) fn new<const N: usize>(items: [X; N]) -> Self {
-        const { assert!(N <= POOL_CAPACITY, "a station holds at most 8 tokens of a kind") };
+        const {
+            assert!(
+                N <= POOL_CAPACITY,
+                "a station holds at most 8 tokens of a kind"
+            )
+        };
         let mut pool = Self {
             items: [const { None }; POOL_CAPACITY],
         };
@@ -65,7 +70,10 @@ impl<X> Fifo<X> {
 
     /// Queue `item` at the back.
     pub(crate) fn push(&mut self, item: X) {
-        assert!(self.len < POOL_CAPACITY, "a queue holds at most its pool's tokens");
+        assert!(
+            self.len < POOL_CAPACITY,
+            "a queue holds at most its pool's tokens"
+        );
         let at = (self.head + self.len) % POOL_CAPACITY;
         self.items[at] = Some(item);
         self.len += 1;

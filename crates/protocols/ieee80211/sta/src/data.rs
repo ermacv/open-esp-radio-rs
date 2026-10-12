@@ -164,12 +164,27 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities> StaDat
                     return Err(DataRefusal::NoTokens);
                 };
                 let tid = msdu.priority.value();
-                let (qos, sequence_number) = match &mut link.mode {
-                    LinkMode::Qos => (true, self.sequences[usize::from(tid)].take()),
-                    LinkMode::NonQos(counter) => (false, counter.take()),
-                };
+                let qos = matches!(link.mode, LinkMode::Qos);
                 let protected = matches!(link.protection, LinkProtection::Ccmp { .. });
-                let frame = encode_frame(link, qos, msdu, sequence_number, protected, buffer.bytes_mut());
+                // A frame that does not fit its buffer takes no sequence
+                // number.
+                if mpdu_len(qos, protected, msdu.payload.len()) > buffer.bytes_mut().len() {
+                    self.tickets.put(ticket);
+                    self.buffers.put(buffer);
+                    return Err(DataRefusal::TooLong);
+                }
+                let sequence_number = match &mut link.mode {
+                    LinkMode::Qos => self.sequences[usize::from(tid)].take(),
+                    LinkMode::NonQos(counter) => counter.take(),
+                };
+                let frame = encode_frame(
+                    link,
+                    qos,
+                    msdu,
+                    sequence_number,
+                    protected,
+                    buffer.bytes_mut(),
+                );
                 match frame {
                     Some(frame) => {
                         self.owed.push(DataTransmit {
@@ -228,7 +243,9 @@ pub fn received<'f, T: StaTokens>(
     if qos && order {
         offset += 4;
     }
-    let tid = qos.then(|| frame.get(24).map(|control| control & 0x0f)).flatten();
+    let tid = qos
+        .then(|| frame.get(24).map(|control| control & 0x0f))
+        .flatten();
     match &mut link.protection {
         LinkProtection::Ccmp { replay, .. } => {
             if control & 0x4000 == 0 {
@@ -267,6 +284,15 @@ pub fn received<'f, T: StaTokens>(
             .filter_map(Result::ok)
             .filter(|parts| parts.ether_type != EAPOL_ETHER_TYPE),
     )
+}
+
+/// The length of the MPDU of a payload of `payload` octets: its header,
+/// the CCMP header's room on a protected link, the LLC/SNAP header and the
+/// payload.
+const fn mpdu_len(qos: bool, protected: bool, payload: usize) -> usize {
+    let header = if qos { 26 } else { 24 };
+    let ccmp = if protected { 8 } else { 0 };
+    header + ccmp + 8 + payload
 }
 
 /// The MPDU of `msdu` on `link`, written into `output`.

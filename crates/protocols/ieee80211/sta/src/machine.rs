@@ -63,17 +63,18 @@
 //! [follow decision]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6130775558
 
 use core::marker::PhantomData;
+use oer_ieee80211_mac::ccmp::GroupKeyId;
 
 use oer_ieee80211_arbiter::{
     AbsenceAnswer, AbsencePlace, Answer, ChannelRequest, Lease, LeaseId, LeasePlace, LeaveReason,
     Purpose, Refusal, StationNotice, UpstreamFact,
 };
 use oer_ieee80211_lower_mac::{
-    AckHeader, GroupAddress, GroupKeyId, HeaderSpec, Ieee80211Capabilities, IndividualAddress,
-    MpduLength,
+    AckHeader, GroupAddress, HeaderSpec, Ieee80211Capabilities, IndividualAddress, MpduLength,
     ReceiveFilter, RxEvidence, RxMeta, SizedFrame, Station as StationRole, StationReceive,
     SupportedChannel, SupportedFilter, TxBufferMemory, TxCompletion, TxStatus,
 };
+use oer_ieee80211_mac::ccmp::CcmpRxReplayEpoch;
 use oer_ieee80211_mac::{
     management::ProbeRequest,
     scan::{ScanRecord, ScanTable},
@@ -93,12 +94,14 @@ use oer_ieee80211_rsn::{
     frames::RsnTxFrame,
     keys::{RsnKeyInstall, RsnKeyKind},
     supplicant::{
-        RsnConnectedAction, RsnConnectedSupplicant, RsnGroupKeyInstallRequest,
-        RsnStaDeadlineEvent, RsnStaKeyInstallRequest, RsnStaResponseDeadline, RsnStaResponseWait,
-        RsnStaSupplicant, RsnStaSupplicantAction,
+        RsnConnectedAction, RsnConnectedSupplicant, RsnGroupKeyInstallRequest, RsnStaDeadlineEvent,
+        RsnStaKeyInstallRequest, RsnStaResponseDeadline, RsnStaResponseWait, RsnStaSupplicant,
+        RsnStaSupplicantAction,
     },
 };
-use oer_ieee80211_mac::ccmp::CcmpRxReplayEpoch;
+use oer_ieee80211_upper_mac::HePacketPadding;
+
+use crate::association::StaAssociatedPeer;
 use oer_time::{Duration, Instant};
 
 use crate::pool::Pool;
@@ -431,6 +434,10 @@ pub struct StaConfig<K> {
     pub security: StaSecurity,
     /// A fresh 32-octet nonce for each handshake.
     pub nonce: fn() -> [u8; 32],
+    /// The nominal packet padding the access point's HE Capabilities
+    /// element sets: an integrator's policy (the Espressif stack's is
+    /// `oer-espressif-ieee80211-policy`'s).
+    pub he_packet_padding: fn(&[u8]) -> HePacketPadding,
 }
 
 /// The receive rules a station uses, which its port must offer: checked
@@ -511,10 +518,12 @@ struct Keys<T: StaTokens> {
     pairwise: KeyCell<T::PairwiseKey, T::PairwiseSlot>,
     /// The free group slots.
     free_groups: Pool<T::GroupSlot>,
-    /// The group key in use.
-    group: Option<T::GroupKey>,
+    /// The group key in use, by its index.
+    group: Option<(GroupKeyId, T::GroupKey)>,
     /// The group keys a rekey replaced, until their removal.
-    retiring: Pool<T::GroupKey>,
+    retiring: Pool<(GroupKeyId, T::GroupKey)>,
+    /// The index of the group key being installed.
+    installing: Option<GroupKeyId>,
     /// The group installs and removals that have not ended.
     group_busy: u8,
 }
@@ -526,6 +535,7 @@ impl<T: StaTokens> Keys<T> {
             free_groups: Pool::new(groups),
             group: None,
             retiring: Pool::new([]),
+            installing: None,
             group_busy: 0,
         }
     }
@@ -550,9 +560,11 @@ impl<T: StaTokens> Keys<T> {
         }
     }
 
-    fn take_group_slot(&mut self) -> Option<T::GroupSlot> {
+    /// A free slot for the group key `key_id`.
+    fn take_group_slot(&mut self, key_id: GroupKeyId) -> Option<T::GroupSlot> {
         let slot = self.free_groups.take()?;
         self.group_busy += 1;
+        self.installing = Some(key_id);
         Some(slot)
     }
 
@@ -560,13 +572,16 @@ impl<T: StaTokens> Keys<T> {
     /// replaces retires.
     fn group_installed(&mut self, key: T::GroupKey) {
         self.group_busy = self.group_busy.saturating_sub(1);
-        if let Some(old) = self.group.replace(key) {
+        let Some(key_id) = self.installing.take() else {
+            unreachable!("a group key is installed into a slot taken for it");
+        };
+        if let Some(old) = self.group.replace((key_id, key)) {
             self.retiring.put(old);
         }
     }
 
     /// A key to remove: a retiring group key first, then the one in use.
-    fn take_group_key(&mut self) -> Option<T::GroupKey> {
+    fn take_group_key(&mut self) -> Option<(GroupKeyId, T::GroupKey)> {
         let key = self.retiring.take().or_else(|| self.group.take())?;
         self.group_busy += 1;
         Some(key)
@@ -679,7 +694,21 @@ enum JoinStep {
     AwaitConfigured,
     Authenticate(Authenticate),
     Associate(StaAssociationRuntime),
-    Report { association_id: u16 },
+    Report {
+        association_id: u16,
+        peer: Peer,
+    },
+}
+
+/// The access point as the association made it: what it negotiated, and
+/// its signal over the noise floor in the Association Response, in dB,
+/// when the port reported both.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Peer {
+    /// What the association negotiated.
+    pub associated: StaAssociatedPeer,
+    /// The access point's signal over the noise floor.
+    pub link_metric: Option<i8>,
 }
 
 struct Authenticate {
@@ -700,6 +729,7 @@ struct Handshake<T: StaTokens, K> {
     channel: SupportedChannel<K>,
     association_id: u16,
     qos: bool,
+    peer: Peer,
     supplicant: RsnStaSupplicant,
     /// The deadline of the message the station waits for.
     deadline: RsnStaResponseDeadline,
@@ -738,6 +768,8 @@ struct Connected<T: StaTokens, K> {
     association_id: u16,
     /// The access point's BSS is a QoS BSS (it advertised WMM).
     qos: bool,
+    /// The access point as the association made it.
+    peer: Peer,
     /// The upstream fact the arbiter has yet to hear.
     report: Option<UpstreamFact<K>>,
     /// The primary lease to exchange after the port moved.
@@ -827,8 +859,12 @@ enum BackgroundStep {
     /// The network's own channel: the widened receive rules, a probe and
     /// the dwell, then the network's rules again.
     AwaitWidened,
-    HomeProbe { until: Instant },
-    HomeListen { until: Instant },
+    HomeProbe {
+        until: Instant,
+    },
+    HomeListen {
+        until: Instant,
+    },
     Narrow,
     AwaitNarrowed,
 }
@@ -916,15 +952,35 @@ fn group_key(install: &RsnKeyInstall) -> Option<(GroupKeyId, [u8; 16])> {
 
 /// The replay check of the keys a handshake's Message 3 installs.
 fn replay_epoch(request: &RsnStaKeyInstallRequest) -> Option<CcmpRxReplayEpoch> {
-    let RsnKeyKind::Group { key_id, .. } = request.group().kind() else {
-        return None;
-    };
+    let (key_id, _) = group_key(request.group())?;
     CcmpRxReplayEpoch::new(
         *request.pairwise().receive_sequence(),
         key_id,
         *request.group().receive_sequence(),
     )
     .ok()
+}
+
+/// The replay check forgets a removed group key, unless the key in use
+/// holds its index.
+fn forget_group<T: StaTokens>(rsn: &mut ConnectedRsn, keys: &Keys<T>, key_id: GroupKeyId) {
+    if keys
+        .group
+        .as_ref()
+        .is_none_or(|(in_use, _)| *in_use != key_id)
+    {
+        rsn.replay.remove_group(key_id);
+    }
+}
+
+/// The signal over the noise floor of a frame whose port reported both,
+/// narrowed as the vendor's rate control takes it.
+fn link_metric(meta: &RxMeta) -> Option<i8> {
+    let observed = |value: RxEvidence<i8>| match value {
+        RxEvidence::HardwareObserved(value) | RxEvidence::ProtocolValidated(value) => Some(value),
+        RxEvidence::Unavailable => None,
+    };
+    Some(observed(meta.rssi_dbm)?.wrapping_sub(observed(meta.noise_floor_dbm)?))
 }
 
 /// What ended in the station's world.
@@ -1037,6 +1093,15 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     /// Whether the station is connected.
     pub const fn is_connected(&self) -> bool {
         matches!(self.state, State::Connected(_))
+    }
+
+    /// The access point of the connected station, as its association made
+    /// it: what a rate selection starts from once the station connected.
+    pub const fn peer(&self) -> Option<&Peer> {
+        match &self.state {
+            State::Connected(connected) => Some(&connected.peer),
+            _ => None,
+        }
     }
 
     /// The connected link, which the data machine sends and receives on,
@@ -1251,19 +1316,15 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                         core::mem::replace(&mut rsn.rekey, Rekey::None)
                 {
                     // The new group key's frontiers start from its receive
-                    // sequence once it is installed.
-                    let rotation = match request.group().kind() {
-                        RsnKeyKind::Group { key_id, .. } => rsn
-                            .replay
-                            .prepare_group_rotation(key_id, *request.group().receive_sequence())
-                            .ok(),
-                        RsnKeyKind::Pairwise => None,
-                    };
+                    // sequence once it is installed, beside the old key's.
+                    let installed = group_key(request.group()).is_some_and(|(key_id, _)| {
+                        rsn.replay
+                            .install_group(key_id, *request.group().receive_sequence())
+                            .is_ok()
+                    });
                     let completed = rsn.supplicant.complete_group_key_install(request, true);
-                    let rotated = rotation
-                        .is_some_and(|rotation| rsn.replay.commit_group_rotation(rotation).is_ok());
                     match completed {
-                        Ok(response) if rotated => rsn.rekey = Rekey::Send(response),
+                        Ok(response) if installed => rsn.rekey = Rekey::Send(response),
                         _ => {
                             return self.set(leave_connected(
                                 connected,
@@ -1285,10 +1346,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
 
     /// A group key is removed: a rekey's slot is free, or its old key gone.
     fn group_removed(&mut self) {
-        if let State::Connected(Connected {
-            rsn: Some(rsn), ..
-        }) = &mut self.state
-        {
+        if let State::Connected(Connected { rsn: Some(rsn), .. }) = &mut self.state {
             rsn.rekey = match core::mem::replace(&mut rsn.rekey, Rekey::None) {
                 Rekey::AwaitFree(request) => Rekey::Install(request),
                 Rekey::AwaitRetired => Rekey::None,
@@ -1440,9 +1498,11 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                     LeaveReason::Unservable => Some(REASON_LEAVING),
                 };
                 match state {
-                    State::Connected(connected) => {
-                        leave_connected(connected, StaDisconnectReason::Arbiter(reason), reason_code)
-                    }
+                    State::Connected(connected) => leave_connected(
+                        connected,
+                        StaDisconnectReason::Arbiter(reason),
+                        reason_code,
+                    ),
                     State::Handshake(handshake) => {
                         let bssid = handshake.bssid;
                         leave_keyed(
@@ -1451,8 +1511,12 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                             reason_code.map(|reason_code| Deauthentication { bssid, reason_code }),
                         )
                     }
-                    State::Join(join) => leave_unkeyed(join.keys, StaDisconnectReason::Arbiter(reason)),
-                    State::Scan(scan) => leave_unkeyed(scan.keys, StaDisconnectReason::Arbiter(reason)),
+                    State::Join(join) => {
+                        leave_unkeyed(join.keys, StaDisconnectReason::Arbiter(reason))
+                    }
+                    State::Scan(scan) => {
+                        leave_unkeyed(scan.keys, StaDisconnectReason::Arbiter(reason))
+                    }
                     state => state,
                 }
             }
@@ -1505,15 +1569,16 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     /// The state after `done` in `state`.
     fn step(&mut self, state: State<T, K>, now: Instant, done: Done) -> State<T, K> {
         match (state, done) {
-            (
-                State::Idle(keys) | State::Report(_, keys),
-                Done::Command(StaCommand::Connect),
-            ) => {
+            (State::Idle(keys) | State::Report(_, keys), Done::Command(StaCommand::Connect)) => {
                 self.scan.clear();
                 self.visit(0, 0, None, keys)
             }
             (State::Connected(connected), Done::Command(StaCommand::Disconnect)) => {
-                leave_connected(connected, StaDisconnectReason::Requested, Some(REASON_LEAVING))
+                leave_connected(
+                    connected,
+                    StaDisconnectReason::Requested,
+                    Some(REASON_LEAVING),
+                )
             }
             (State::Scan(scan), Done::Command(StaCommand::Disconnect)) => {
                 leave_unkeyed(scan.keys, StaDisconnectReason::Requested)
@@ -1553,7 +1618,10 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 // Message 4 went: connected, the supplicant's keys held.
                 (HandshakeStep::AwaitLast(_), Done::Tx { .. }) => connect(handshake),
                 (HandshakeStep::Await, Done::Tick)
-                    if matches!(handshake.deadline.poll(now), RsnStaDeadlineEvent::Expired { .. }) =>
+                    if matches!(
+                        handshake.deadline.poll(now),
+                        RsnStaDeadlineEvent::Expired { .. }
+                    ) =>
                 {
                     leave_handshake(handshake, REASON_HANDSHAKE_TIMEOUT)
                 }
@@ -1581,7 +1649,9 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         if let Done::Tx { delivered } = done {
             match connected.sending.take() {
                 Some(Sending::Wake) => {
-                    connected.power.null_sent(StaPowerManagement::Active, delivered);
+                    connected
+                        .power
+                        .null_sent(StaPowerManagement::Active, delivered);
                     if let Some(background) = &mut connected.background
                         && background.step == BackgroundStep::AwaitWake
                     {
@@ -1589,7 +1659,9 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                     }
                 }
                 Some(Sending::Sleep) => {
-                    connected.power.null_sent(StaPowerManagement::PowerSave, delivered);
+                    connected
+                        .power
+                        .null_sent(StaPowerManagement::PowerSave, delivered);
                     if let Some(background) = &mut connected.background
                         && background.step == BackgroundStep::AwaitSleep
                     {
@@ -1746,9 +1818,15 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     }
 
     fn join_step(&mut self, mut join: Join<T, K>, now: Instant, done: Done) -> State<T, K> {
-        join.step = match (core::mem::replace(&mut join.step, JoinStep::NeedLease), done) {
+        join.step = match (
+            core::mem::replace(&mut join.step, JoinStep::NeedLease),
+            done,
+        ) {
             (JoinStep::AwaitConfigured, Done::Configured) => JoinStep::Authenticate(Authenticate {
-                runtime: StaAuthenticationRuntime::new(self.config.address, join.access_point.bssid),
+                runtime: StaAuthenticationRuntime::new(
+                    self.config.address,
+                    join.access_point.bssid,
+                ),
                 stage: AuthStage::NeedSend,
             }),
             (JoinStep::Authenticate(mut auth), done) => {
@@ -1766,7 +1844,9 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 };
                 if timed_out {
                     match auth.runtime.response_timed_out() {
-                        Ok(StaAuthenticationEvent::Retry { .. }) => auth.stage = AuthStage::NeedSend,
+                        Ok(StaAuthenticationEvent::Retry { .. }) => {
+                            auth.stage = AuthStage::NeedSend
+                        }
                         _ => {
                             return leave_unkeyed(
                                 join.keys,
@@ -1790,11 +1870,14 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         };
         let state = self.take_state();
         self.state = match state {
-            State::Scan(scan) if scan.step == ScanStep::Listen || scan.step == ScanStep::NeedProbe => {
+            State::Scan(scan)
+                if scan.step == ScanStep::Listen || scan.step == ScanStep::NeedProbe =>
+            {
                 let channel = self
                     .channel(scan.visit)
                     .map_or(0, |channel| channel.channel().number());
-                self.scan.observe_management(frame, channel, rssi, Some(now));
+                self.scan
+                    .observe_management(frame, channel, rssi, Some(now));
                 State::Scan(scan)
             }
             State::Join(mut join) => match &mut join.step {
@@ -1830,10 +1913,26 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                     let _ = runtime.observe_received_frame();
                     match runtime.observe_management_frame(frame, now) {
                         Ok(StaAssociationEvent::Associated { response, .. }) => {
-                            join.step = JoinStep::Report {
-                                association_id: response.association_id,
-                            };
-                            State::Join(join)
+                            match StaAssociatedPeer::derive(
+                                &join.access_point,
+                                &response,
+                                self.config.phy,
+                                self.config.he_packet_padding,
+                            ) {
+                                Ok(associated) => {
+                                    join.step = JoinStep::Report {
+                                        association_id: response.association_id,
+                                        peer: Peer {
+                                            associated,
+                                            link_metric: link_metric(&meta),
+                                        },
+                                    };
+                                    State::Join(join)
+                                }
+                                Err(_) => {
+                                    leave_unkeyed(join.keys, StaDisconnectReason::AssociationFailed)
+                                }
+                            }
                         }
                         Ok(StaAssociationEvent::Failed { .. }) | Err(_) => {
                             leave_unkeyed(join.keys, StaDisconnectReason::AssociationFailed)
@@ -1864,8 +1963,14 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         if let Some(eapol) = received_eapol(frame, self.config.address, connected.bssid) {
             return self.group_message(connected, eapol);
         }
-        let step = connected.background.as_ref().map(|background| background.step);
-        let away = matches!(step, Some(BackgroundStep::NeedProbe | BackgroundStep::Listen));
+        let step = connected
+            .background
+            .as_ref()
+            .map(|background| background.step);
+        let away = matches!(
+            step,
+            Some(BackgroundStep::NeedProbe | BackgroundStep::Listen)
+        );
         let home = matches!(
             step,
             Some(BackgroundStep::HomeProbe { .. } | BackgroundStep::HomeListen { .. })
@@ -1875,12 +1980,14 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 .absence
                 .as_ref()
                 .map_or(0, |absence| absence.channel().channel().number());
-            self.scan.observe_management(frame, channel, rssi, Some(now));
+            self.scan
+                .observe_management(frame, channel, rssi, Some(now));
             return State::Connected(connected);
         }
         if home {
             let channel = connected.channel.channel().number();
-            self.scan.observe_management(frame, channel, rssi, Some(now));
+            self.scan
+                .observe_management(frame, channel, rssi, Some(now));
         }
         if let Ok(beacon) = parse_sta_beacon(frame, connected.bssid, connected.association_id)
             && connected.power.beacon(beacon.tim) == PowerSaveDecision::SendActive
@@ -1908,7 +2015,10 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             Ok(RsnConnectedAction::UnwrapGroupKeyData(request)) => {
                 let unwrapped =
                     software_aes128_key_unwrap(request.kek(), request.wrapped_key_data());
-                match rsn.supplicant.complete_group_key_data_unwrap(request, unwrapped) {
+                match rsn
+                    .supplicant
+                    .complete_group_key_data_unwrap(request, unwrapped)
+                {
                     Ok(install) => Rekey::Install(install),
                     // Unusable key data: nothing changes.
                     Err(_) => Rekey::None,
@@ -2028,7 +2138,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             LeaveStep::RemoveKeys(deauthentication) => {
                 if let Some(key) = leave.keys.take_pairwise_key() {
                     Some(Owed::RemovePairwise(key))
-                } else if let Some(key) = leave.keys.take_group_key() {
+                } else if let Some((_, key)) = leave.keys.take_group_key() {
                     Some(Owed::RemoveGroup(key))
                 } else if leave.keys.clear() {
                     // Every key is back: the next step owes the action.
@@ -2082,7 +2192,11 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         frame: &[u8],
     ) -> State<T, K> {
         if let Some(reason_code) = peer_disconnect(frame, handshake.bssid) {
-            return leave_keyed(handshake.keys, StaDisconnectReason::Peer { reason_code }, None);
+            return leave_keyed(
+                handshake.keys,
+                StaDisconnectReason::Peer { reason_code },
+                None,
+            );
         }
         let Some(eapol) = received_eapol(frame, self.config.address, handshake.bssid) else {
             return State::Handshake(handshake);
@@ -2095,7 +2209,10 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             Ok(RsnStaSupplicantAction::UnwrapKeyData(request)) => {
                 let unwrapped =
                     software_aes128_key_unwrap(request.kek(), request.wrapped_key_data());
-                match handshake.supplicant.complete_key_data_unwrap(request, unwrapped) {
+                match handshake
+                    .supplicant
+                    .complete_key_data_unwrap(request, unwrapped)
+                {
                     Ok(install) => RsnStaSupplicantAction::InstallKeys(install),
                     Err(_) => return leave_handshake(handshake, REASON_UNSPECIFIED),
                 }
@@ -2131,11 +2248,15 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         mut handshake: Handshake<T, K>,
     ) -> (State<T, K>, Option<Owed<T, K>>) {
         let (step, owed) = match core::mem::replace(&mut handshake.step, HandshakeStep::Await) {
-            HandshakeStep::Send(message) => match self.encode_eapol(handshake.bssid, message.as_bytes()) {
-                Ok(transmit) => (HandshakeStep::AwaitSent, Some(Owed::Transmit(transmit))),
-                Err(Unsent::NoTokens) => (HandshakeStep::Send(message), None),
-                Err(Unsent::Encode) => return (leave_handshake(handshake, REASON_UNSPECIFIED), None),
-            },
+            HandshakeStep::Send(message) => {
+                match self.encode_eapol(handshake.bssid, message.as_bytes()) {
+                    Ok(transmit) => (HandshakeStep::AwaitSent, Some(Owed::Transmit(transmit))),
+                    Err(Unsent::NoTokens) => (HandshakeStep::Send(message), None),
+                    Err(Unsent::Encode) => {
+                        return (leave_handshake(handshake, REASON_UNSPECIFIED), None);
+                    }
+                }
+            }
             HandshakeStep::Install(request) => {
                 let Some(peer) = IndividualAddress::new(handshake.bssid) else {
                     return (leave_handshake(handshake, REASON_UNSPECIFIED), None);
@@ -2156,7 +2277,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 let Some((key_id, key)) = group_key(request.group()) else {
                     return (leave_handshake(handshake, REASON_UNSPECIFIED), None);
                 };
-                match handshake.keys.take_group_slot() {
+                match handshake.keys.take_group_slot(key_id) {
                     Some(slot) => (
                         HandshakeStep::AwaitInstalled(request),
                         Some(Owed::InstallGroup { slot, key_id, key }),
@@ -2166,7 +2287,10 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             }
             HandshakeStep::SendLast(message, epoch) => {
                 match self.encode_eapol(handshake.bssid, message.as_bytes()) {
-                    Ok(transmit) => (HandshakeStep::AwaitLast(epoch), Some(Owed::Transmit(transmit))),
+                    Ok(transmit) => (
+                        HandshakeStep::AwaitLast(epoch),
+                        Some(Owed::Transmit(transmit)),
+                    ),
                     Err(Unsent::NoTokens) => (HandshakeStep::SendLast(message, epoch), None),
                     Err(Unsent::Encode) => {
                         return (leave_handshake(handshake, REASON_UNSPECIFIED), None);
@@ -2245,13 +2369,15 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 let Some((key_id, key)) = group_key(request.group()) else {
                     return Some(Err(StaDisconnectReason::HandshakeFailed));
                 };
-                if let Some(slot) = connected.keys.take_group_slot() {
+                if let Some(slot) = connected.keys.take_group_slot(key_id) {
                     (
                         Rekey::AwaitInstalled(request),
                         Some(Owed::InstallGroup { slot, key_id, key }),
                     )
-                } else if let Some(key) = connected.keys.take_group_key() {
-                    // No free slot: the old key goes first.
+                } else if let Some((old, key)) = connected.keys.take_group_key() {
+                    // No free slot: the old key goes first, and its frames
+                    // with it.
+                    forget_group(rsn, &connected.keys, old);
                     (Rekey::AwaitFree(request), Some(Owed::RemoveGroup(key)))
                 } else {
                     (Rekey::Install(request), None)
@@ -2268,8 +2394,9 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 }
             }
             Rekey::Retire => match connected.keys.retiring.take() {
-                Some(key) => {
+                Some((old, key)) => {
                     connected.keys.group_busy += 1;
+                    forget_group(rsn, &connected.keys, old);
                     (Rekey::AwaitRetired, Some(Owed::RemoveGroup(key)))
                 }
                 None => (Rekey::None, None),
@@ -2405,7 +2532,11 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         Some(transmit)
     }
 
-    fn owe_join(&mut self, mut join: Join<T, K>, now: Instant) -> (State<T, K>, Option<Owed<T, K>>) {
+    fn owe_join(
+        &mut self,
+        mut join: Join<T, K>,
+        now: Instant,
+    ) -> (State<T, K>, Option<Owed<T, K>>) {
         let connect = ChannelRequest {
             channel: join.channel,
             purpose: Purpose::Connect,
@@ -2417,7 +2548,8 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             JoinStep::NeedLease if self.place.is_some() => {
                 (JoinStep::AwaitAnswer, Some(Owed::Request(connect)))
             }
-            JoinStep::NeedConfigure => match bss_rules(join.access_point.bssid, Rules::<K>::MEMBER) {
+            JoinStep::NeedConfigure => match bss_rules(join.access_point.bssid, Rules::<K>::MEMBER)
+            {
                 Some(receive) => (JoinStep::AwaitConfigured, Some(Owed::Configure(receive))),
                 None => return (leave_unkeyed(join.keys, StaDisconnectReason::Encode), None),
             },
@@ -2480,7 +2612,9 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                         StaFrameClass::Connection,
                     );
                     match encoded {
-                        Ok(transmit) => (JoinStep::Associate(runtime), Some(Owed::Transmit(transmit))),
+                        Ok(transmit) => {
+                            (JoinStep::Associate(runtime), Some(Owed::Transmit(transmit)))
+                        }
                         Err(Unsent::NoTokens) => (JoinStep::Associate(runtime), None),
                         Err(Unsent::Encode) => {
                             return (leave_unkeyed(join.keys, StaDisconnectReason::Encode), None);
@@ -2496,8 +2630,11 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 }
             },
             // The next state owes its first action at once.
-            JoinStep::Report { association_id } => {
-                let state = self.joined(join, association_id, now);
+            JoinStep::Report {
+                association_id,
+                peer,
+            } => {
+                let state = self.joined(join, association_id, peer, now);
                 return self.owe(state, now);
             }
             step => (step, None),
@@ -2508,7 +2645,13 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
 
     /// The associated station: its handshake, or, on an open network,
     /// connected.
-    fn joined(&mut self, join: Join<T, K>, association_id: u16, now: Instant) -> State<T, K> {
+    fn joined(
+        &mut self,
+        join: Join<T, K>,
+        association_id: u16,
+        peer: Peer,
+        now: Instant,
+    ) -> State<T, K> {
         let bssid = join.access_point.bssid;
         let channel = join.channel;
         let qos = join.access_point.wmm_ie_len > 0;
@@ -2518,6 +2661,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 channel,
                 association_id,
                 qos,
+                peer,
                 report: Some(UpstreamFact::Connected(channel)),
                 exchange: false,
                 power: PowerSaveView::awake(),
@@ -2544,6 +2688,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 channel,
                 association_id,
                 qos,
+                peer,
                 supplicant,
                 deadline,
                 step: HandshakeStep::Await,
@@ -2702,7 +2847,10 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
 }
 
 /// The network's receive rules of `filter` for `bssid`.
-fn bss_rules<K>(bssid: [u8; 6], filter: SupportedFilter<K, StationRole>) -> Option<StationReceive<K>> {
+fn bss_rules<K>(
+    bssid: [u8; 6],
+    filter: SupportedFilter<K, StationRole>,
+) -> Option<StationReceive<K>> {
     Some(StationReceive::Bss {
         bssid: IndividualAddress::new(bssid)?,
         filter,
@@ -2773,6 +2921,7 @@ fn connect<T: StaTokens, K>(handshake: Handshake<T, K>) -> State<T, K> {
         channel,
         association_id,
         qos,
+        peer,
         supplicant,
         keys,
         step,
@@ -2787,6 +2936,7 @@ fn connect<T: StaTokens, K>(handshake: Handshake<T, K>) -> State<T, K> {
             channel,
             association_id,
             qos,
+            peer,
             report: Some(UpstreamFact::Connected(channel)),
             exchange: false,
             power: PowerSaveView::awake(),

@@ -33,8 +33,10 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
 5. **Commit** scoped Conventional commits: `feat(scope): …`, `fix(esp32s31): …`.
    A production change needed by Blobray or verification work is its own commit.
    The pull request merges by rebase, so each commit lands on `main` as is.
-6. **Push** with `cargo xtask push` in the background: it gates exactly
-   `HEAD`, runs the local Claude review of the branch's diff in a separate
+6. **Push** with `cargo xtask push` in the background: it fetches
+   `origin/main` and refuses a branch that lacks any of its commits, naming
+   them (rebase with `git rebase origin/main` and push again; a failed fetch
+   refuses too), gates exactly `HEAD`, runs the local Claude review of the branch's diff in a separate
    Claude Code process (`cargo xtask review`, minutes; an unchanged diff
    reuses its verdict) and refuses a 🔴 or 🟡 finding, pushes the branch, opens the pull request titled by its first
    commit (`gh pr create --fill-first`)
@@ -42,8 +44,9 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
    the required `ci-ok` check passes. `--draft` for work that needs the
    user's review first. `--skip-review "<reason>"` only when Claude Code
    cannot run; the reason is commented on the pull request. Rebase onto
-   `main` only to resolve a conflict, then push again: `push` rewrites only
-   its own branch, with `--force-with-lease`; every rebase reruns all of CI.
+   `origin/main` when the push refuses a branch behind it, or to resolve a
+   conflict, then push again: `push` rewrites only its own branch, with
+   `--force-with-lease`; every rebase reruns all of CI.
    Never push to `main` directly.
 7. **CI** runs on every branch push: xtask plans jobs by the complete Git tree and tool versions
    ([CI reuse](../../../tools/xtask/README.md#ci-input-reuse)). On a branch

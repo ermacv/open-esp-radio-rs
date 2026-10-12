@@ -14,7 +14,7 @@ or is marked ready, in parallel with CI, and again when a collaborator
 comments `@claude review` on it. Draft PRs are not reviewed. Every push is
 reviewed before it leaves the checkout by the local review
 (`cargo xtask review`, run by `cargo xtask push`), which blocks on 🔴 and 🟡
-findings and is paid by the developer's Claude Code plan; this review audits
+findings, files its 🔵 wording findings as issues without blocking, and is paid by the developer's Claude Code plan; this review audits
 it within the API budget.
 
 Every event runs the workflow file from `main`. The trusted `main` checkout
@@ -24,8 +24,8 @@ The PR head is checked out in `pr/` and only read. Claude gets read-only tools (
 `git diff/log/show` in `pr/`, `gh pr view/diff`, `gh issue view`, subagents)
 and a read-only GitHub token, and returns a structured report. A separate job
 with write access posts it as a PR review with inline comments, files each
-finding (🔴 important, 🟡 nit or 🟣 pre-existing) as a `kind:bug` issue
-titled `review: …` and naming the branch, with the area and priority the
+finding (🔴 important, 🟡 nit, 🔵 wording or 🟣 pre-existing) as an issue
+(`kind:docs` for wording, `kind:bug` otherwise) titled `review: …` and naming the branch, with the area and priority the
 reviewer chose (once: the reviewer is shown the findings already filed, the
 marked issues of the workflow and of the repository owner only, and names the
 issue of one it finds again; a number it was not shown files anew, an

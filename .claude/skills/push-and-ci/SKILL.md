@@ -39,7 +39,8 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
    refuses too), gates exactly `HEAD`, runs the local Claude review of the branch's diff in a separate
    Claude Code process (`cargo xtask review`, minutes; an unchanged diff
    reuses its verdict) and refuses a 🔴 or 🟡 finding, pushes the branch, opens the pull request titled by its first
-   commit (`gh pr create --fill-first`)
+   commit (`gh pr create --fill-first`), files the review's 🔵 wording
+   findings as `review: …` issues of the branch
    and enables auto-merge. Do not wait for CI: GitHub merges the branch once
    the required `ci-ok` check passes. `--draft` for work that needs the
    user's review first. `--skip-review "<reason>"` only when Claude Code
@@ -68,7 +69,10 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
    Fixing it comes before other work: `gh run view <id> --log-failed`,
    reproduce the job's command locally, fix it on a branch.
 9. **Review findings.** The local review blocks the push on 🔴 important and
-   🟡 nit findings. The Claude review in CI reviews each PR once, blocks
+   🟡 nit findings, text that misstates behavior included; 🔵 wording
+   findings (only the phrasing, naming or clarity of correct text) do not
+   block, and the push files them as `review: …` issues of the branch. The
+   Claude review in CI reviews each PR once, blocks
    nothing and files every finding as an issue titled `review: …` naming the
    branch (`REVIEW.md`). The session start and the gate list the open findings
    of this checkout's branch; for its session fixing them comes before other

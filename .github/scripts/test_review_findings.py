@@ -122,6 +122,20 @@ class Record(unittest.TestCase):
         self.assertEqual(len(api.created), 1)
         self.assertEqual(lines, ["- 🟣 **stale cache**: recorded as #500"])
 
+    def test_a_wording_finding_is_filed_as_docs_work_that_does_not_block(self):
+        api = FakeGitHub()
+        lines = self.record(api, finding(severity="wording", title="unclear name"))
+        created = api.created[0]
+        self.assertEqual(created["labels"], ["kind:docs", "area:tooling", "priority:P2"])
+        self.assertIn("🔵 wording finding", created["body"])
+        self.assertIn("correct text", created["body"])
+        self.assertIn("<!-- claude-review-branch: fix/a -->", created["body"])
+        self.assertEqual(lines, ["- 🔵 **unclear name**: recorded as #500"])
+
+    def test_text_that_misstates_behavior_is_never_wording(self):
+        self.assertIn("text that misstates behavior is never wording", findings.SEVERITY)
+        self.assertIn("text that misstates behavior included", findings.SEVERITY)
+
     def test_another_path_or_title_is_another_finding(self):
         self.assertNotEqual(findings.key(finding()), findings.key(finding(path="a/c.rs")))
         self.assertNotEqual(findings.key(finding()), findings.key(finding(title="other")))

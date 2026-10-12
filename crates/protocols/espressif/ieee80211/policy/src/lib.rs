@@ -40,6 +40,7 @@ pub mod lmac;
 pub mod rate_code;
 pub mod rate_control;
 pub mod rate_schedule;
+pub mod rate_selection;
 pub mod retry_ladder;
 pub mod station_link;
 

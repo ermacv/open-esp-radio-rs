@@ -31,6 +31,7 @@ pub mod aggregate;
 pub mod ampdu;
 pub mod protection;
 pub mod rate_control;
+pub mod rate_selection;
 pub mod retry;
 pub mod tx;
 

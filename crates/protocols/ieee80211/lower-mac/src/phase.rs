@@ -768,4 +768,73 @@ impl<R> RetryPlan<R> {
             .map(|stage| u16::from(stage.transmissions.get()))
             .sum()
     }
+
+    /// The plan's first `transmissions` transmissions: its stages in order,
+    /// the last one cut and the ones after it dropped.
+    ///
+    /// ```
+    /// # use core::num::NonZeroU8;
+    /// # use oer_ieee80211_lower_mac::{Protection, RetryPlan, RetryStage};
+    /// let stage = |rate, transmissions| RetryStage {
+    ///     rate,
+    ///     transmissions: NonZeroU8::new(transmissions).unwrap(),
+    ///     protection: Protection::None,
+    /// };
+    /// let plan = RetryPlan::new(stage('a', 2)).then(stage('b', 3)).ok().unwrap();
+    /// let plan = plan.then(stage('c', 25)).ok().unwrap();
+    /// let cut = plan.limit(NonZeroU8::new(4).unwrap());
+    /// let left: Vec<_> = cut.stages().map(|s| (s.rate, s.transmissions.get())).collect();
+    /// assert_eq!(left, [('a', 2), ('b', 2)]);
+    /// assert_eq!(cut.transmissions(), 4);
+    /// // Each stage's rate turns; a refused one stops the plan.
+    /// let numbers = cut.try_map(|rate| Ok::<_, char>(rate as u8)).unwrap();
+    /// assert_eq!(numbers.stages().next().unwrap().rate, b'a');
+    /// let refused = numbers.try_map(|rate| if rate == b'b' { Err(rate) } else { Ok(rate) });
+    /// assert_eq!(refused.err(), Some(b'b'));
+    /// ```
+    pub fn limit(mut self, transmissions: core::num::NonZeroU8) -> Self {
+        let mut left = transmissions.get();
+        for slot in &mut self.stages {
+            match slot {
+                Some(_) if left == 0 => *slot = None,
+                Some(stage) => {
+                    let taken = stage.transmissions.get().min(left);
+                    left -= taken;
+                    stage.transmissions = core::num::NonZeroU8::new(taken)
+                        .unwrap_or(core::num::NonZeroU8::MIN);
+                }
+                None => {}
+            }
+        }
+        self
+    }
+
+    /// The plan with each stage's rate turned by `rate`, the stages and
+    /// their transmissions kept.
+    ///
+    /// # Errors
+    ///
+    /// The first error `rate` returned.
+    pub fn try_map<S, E>(
+        self,
+        mut rate: impl FnMut(R) -> Result<S, E>,
+    ) -> Result<RetryPlan<S>, E> {
+        let mut stages = [const { None }; RETRY_STAGES];
+        for (slot, stage) in stages.iter_mut().zip(self.stages) {
+            let Some(RetryStage {
+                rate: from,
+                transmissions,
+                protection,
+            }) = stage
+            else {
+                break;
+            };
+            *slot = Some(RetryStage {
+                rate: rate(from)?,
+                transmissions,
+                protection,
+            });
+        }
+        Ok(RetryPlan { stages })
+    }
 }

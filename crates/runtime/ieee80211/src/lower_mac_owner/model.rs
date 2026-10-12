@@ -98,6 +98,18 @@ impl Ieee80211Capabilities for ModelCaps {
     const CAPS: LowerMacCapabilities = MODEL_CAPABILITIES;
 }
 
+/// The model's capabilities without its 5 GHz band: a port of the
+/// ESP32-S31's bands, for host tests of a station whose rate selection
+/// builds only for such a port (#748).
+pub struct ModelCaps24;
+
+impl Ieee80211Capabilities for ModelCaps24 {
+    const CAPS: LowerMacCapabilities = LowerMacCapabilities {
+        bands: BandSet::GHZ2_4,
+        ..MODEL_CAPABILITIES
+    };
+}
+
 /// The model's transmit tickets.
 pub const MODEL_TICKETS: usize = 8;
 /// The model's small transmit buffers.
@@ -615,13 +627,14 @@ pub struct ModelLocal<'id> {
 
 /// The model's backend; only [`run_port`](oer_ieee80211_port::run_port)
 /// holds it.
-pub struct ModelBackend {
+pub struct ModelBackend<C = ModelCaps> {
     air: Rc<ModelAir>,
     channel: Channel,
     addresses: [IndividualAddress; 2],
+    caps: PhantomData<fn() -> C>,
 }
 
-impl ModelBackend {
+impl<C> ModelBackend<C> {
     /// A backend tuned to `channel` with the station's and the access
     /// point's addresses, and the air it plays on.
     pub fn new(channel: Channel, addresses: [IndividualAddress; 2]) -> (Self, Rc<ModelAir>) {
@@ -631,6 +644,7 @@ impl ModelBackend {
                 air: air.clone(),
                 channel,
                 addresses,
+                caps: PhantomData,
             },
             air,
         )
@@ -638,29 +652,30 @@ impl ModelBackend {
 }
 
 /// The model's disabled-only settings.
-pub struct ModelSetup<'a> {
+pub struct ModelSetup<'a, C = ModelCaps> {
     channel: &'a mut Channel,
+    caps: PhantomData<fn() -> C>,
 }
 
-impl LowerMacSetup for ModelSetup<'_> {
-    type Caps = ModelCaps;
+impl<C: Ieee80211Capabilities> LowerMacSetup for ModelSetup<'_, C> {
+    type Caps = C;
 
-    fn set_channel(&mut self, channel: SupportedChannel<ModelCaps>) {
+    fn set_channel(&mut self, channel: SupportedChannel<C>) {
         *self.channel = channel.channel();
     }
 }
 
-impl PortBackend for ModelBackend {
+impl<C: Ieee80211Capabilities> PortBackend for ModelBackend<C> {
     type Event<'id> = LowerMacEvent<'id, ModelTypes>;
     type Domain = Ieee80211Radio;
     type Fault = ModelFault;
     type Refusal = ();
     type Setup<'a, 'id>
-        = ModelSetup<'a>
+        = ModelSetup<'a, C>
     where
         Self: 'a;
     type Phase<'a, 'id>
-        = ModelPhase<'a, 'id>
+        = ModelPhase<'a, 'id, C>
     where
         Self: 'a,
         'id: 'a;
@@ -768,6 +783,7 @@ impl PortBackend for ModelBackend {
     fn setup<'a, 'id>(&'a mut self, _: &'a mut Self::Local<'id>) -> Self::Setup<'a, 'id> {
         ModelSetup {
             channel: &mut self.channel,
+            caps: PhantomData,
         }
     }
 
@@ -775,7 +791,7 @@ impl PortBackend for ModelBackend {
         &'a mut self,
         held: &'a ModelHeld<'id>,
         local: &'a mut ModelLocal<'id>,
-    ) -> ModelPhase<'a, 'id>
+    ) -> ModelPhase<'a, 'id, C>
     where
         'id: 'a,
     {
@@ -790,7 +806,7 @@ impl PortBackend for ModelBackend {
         &mut self,
         held: &'p Self::Held<'id>,
         retire: Retire<'p>,
-    ) -> impl Future<Output = ()> + use<'p, 'id> {
+    ) -> impl Future<Output = ()> + use<'p, 'id, C> {
         let mut driver = Driver {
             queues: core::array::from_fn(|_| VecDeque::new()),
             keys: Vec::new(),
@@ -821,8 +837,8 @@ impl PortBackend for ModelBackend {
     fn abandon(&mut self) {}
 }
 
-impl LowerMacBackend for ModelBackend {
-    type Caps = ModelCaps;
+impl<C: Ieee80211Capabilities> LowerMacBackend for ModelBackend<C> {
+    type Caps = C;
 }
 
 /// The model's hardware, which only the driver owns.
@@ -999,13 +1015,13 @@ fn terminal<'id>(
 }
 
 /// The model's running phase: the body's handle over the queues.
-pub struct ModelPhase<'a, 'id> {
-    backend: &'a mut ModelBackend,
+pub struct ModelPhase<'a, 'id, C = ModelCaps> {
+    backend: &'a mut ModelBackend<C>,
     held: &'a ModelHeld<'id>,
     local: &'a mut ModelLocal<'id>,
 }
 
-impl<'id> PortPhase for ModelPhase<'_, 'id> {
+impl<'id, C> PortPhase for ModelPhase<'_, 'id, C> {
     type Event = LowerMacEvent<'id, ModelTypes>;
     type Fault = ModelFault;
 
@@ -1035,15 +1051,15 @@ impl<'id> PortPhase for ModelPhase<'_, 'id> {
     }
 }
 
-impl<'p, 'id: 'p> LowerMacPhase<'p, 'id> for ModelPhase<'p, 'id> {
-    type Caps = ModelCaps;
+impl<'p, 'id: 'p, C: Ieee80211Capabilities> LowerMacPhase<'p, 'id> for ModelPhase<'p, 'id, C> {
+    type Caps = C;
     type Types = ModelTypes;
     type Station<'v>
-        = ModelInterface<'v, 'id, Station>
+        = ModelInterface<'v, 'id, Station, C>
     where
         Self: 'v;
     type AccessPoint<'v>
-        = ModelInterface<'v, 'id, AccessPoint>
+        = ModelInterface<'v, 'id, AccessPoint, C>
     where
         Self: 'v;
 
@@ -1074,12 +1090,12 @@ impl<'p, 'id: 'p> LowerMacPhase<'p, 'id> for ModelPhase<'p, 'id> {
             .expect("a closed gate's open twin waits with the backend")
     }
 
-    fn set_edca(&mut self, _: SupportedEdca<ModelCaps>) {
+    fn set_edca(&mut self, _: SupportedEdca<C>) {
         self.held.settings.borrow_mut().other = true;
         self.held.air.wake_driver();
     }
 
-    fn station(&mut self) -> ModelInterface<'_, 'id, Station> {
+    fn station(&mut self) -> ModelInterface<'_, 'id, Station, C> {
         ModelInterface {
             held: self.held,
             local: self.local,
@@ -1088,7 +1104,7 @@ impl<'p, 'id: 'p> LowerMacPhase<'p, 'id> for ModelPhase<'p, 'id> {
         }
     }
 
-    fn access_point(&mut self) -> ModelInterface<'_, 'id, AccessPoint> {
+    fn access_point(&mut self) -> ModelInterface<'_, 'id, AccessPoint, C> {
         ModelInterface {
             held: self.held,
             local: self.local,
@@ -1099,11 +1115,11 @@ impl<'p, 'id: 'p> LowerMacPhase<'p, 'id> for ModelPhase<'p, 'id> {
 }
 
 /// One interface of the model's phase.
-pub struct ModelInterface<'v, 'id, R> {
+pub struct ModelInterface<'v, 'id, R, C = ModelCaps> {
     held: &'v ModelHeld<'id>,
     local: &'v mut ModelLocal<'id>,
     address: IndividualAddress,
-    role: PhantomData<fn() -> R>,
+    role: PhantomData<fn() -> (R, C)>,
 }
 
 /// A frame's memory, bound to its frame, ready to submit.
@@ -1144,7 +1160,7 @@ pub struct ModelBlockAck<'id> {
 }
 
 /// A retry plan's stages, as the model's hardware takes them.
-fn stages(frame: &TxFrame<'_, ModelCaps>) -> Vec<Stage> {
+fn stages<C: Ieee80211Capabilities>(frame: &TxFrame<'_, C>) -> Vec<Stage> {
     match frame {
         TxFrame::Individual { plan, .. } => plan
             .stages()
@@ -1171,7 +1187,7 @@ fn stages(frame: &TxFrame<'_, ModelCaps>) -> Vec<Stage> {
     }
 }
 
-fn header_len(frame: &TxFrame<'_, ModelCaps>) -> usize {
+fn header_len<C: Ieee80211Capabilities>(frame: &TxFrame<'_, C>) -> usize {
     match frame {
         TxFrame::Individual { frame, .. } => frame.header().header_len(),
         TxFrame::IndividualNoAck { frame, .. } => frame.header().header_len(),
@@ -1180,11 +1196,12 @@ fn header_len(frame: &TxFrame<'_, ModelCaps>) -> usize {
     }
 }
 
-impl<'p, 'v, 'id: 'p, R> InterfacePhase<'p, 'id> for ModelInterface<'v, 'id, R>
+impl<'p, 'v, 'id: 'p, R, K: Ieee80211Capabilities> InterfacePhase<'p, 'id>
+    for ModelInterface<'v, 'id, R, K>
 where
     R: RoleKeys<'id, ModelTypes, Keys = ModelKeys<'id, R>>,
 {
-    type Caps = ModelCaps;
+    type Caps = K;
     type Types = ModelTypes;
     type Role = R;
     type Fault = ModelFault;
@@ -1198,7 +1215,7 @@ where
     fn tx_buffer<C>(
         &mut self,
         buffer: <ModelTypes as TxBufferPool<'id, C>>::Buffer,
-        frame: ClassFrame<'p, C, ModelCaps>,
+        frame: ClassFrame<'p, C, K>,
     ) -> ModelTxBuffer<'id>
     where
         C: TxBufferClass,
@@ -1216,7 +1233,7 @@ where
     fn retransmit<C>(
         &mut self,
         buffer: <ModelTypes as TxBufferPool<'id, C>>::Numbered,
-        frame: ClassFrame<'p, C, ModelCaps>,
+        frame: ClassFrame<'p, C, K>,
     ) -> ModelTxBuffer<'id>
     where
         C: TxBufferClass,
@@ -1297,7 +1314,7 @@ where
     fn add_block_ack(
         &mut self,
         slot: Slot<'id, ModelBlockAcks>,
-        _: SupportedBlockAck<ModelCaps>,
+        _: SupportedBlockAck<K>,
     ) -> ModelBlockAck<'id> {
         ModelBlockAck { slot }
     }
@@ -1305,7 +1322,7 @@ where
     fn replace_block_ack(
         &mut self,
         running: ModelBlockAck<'id>,
-        _: SupportedBlockAck<ModelCaps>,
+        _: SupportedBlockAck<K>,
     ) -> ModelBlockAck<'id> {
         running
     }
@@ -1315,8 +1332,10 @@ where
     }
 }
 
-impl<'p, 'v, 'id: 'p> StationPhase<'p, 'id> for ModelInterface<'v, 'id, Station> {
-    fn configure(&mut self, _: StationReceive<ModelCaps>) {
+impl<'p, 'v, 'id: 'p, C: Ieee80211Capabilities> StationPhase<'p, 'id>
+    for ModelInterface<'v, 'id, Station, C>
+{
+    fn configure(&mut self, _: StationReceive<C>) {
         self.held.settings.borrow_mut().station = true;
         self.held.air.wake_driver();
     }
@@ -1327,8 +1346,10 @@ impl<'p, 'v, 'id: 'p> StationPhase<'p, 'id> for ModelInterface<'v, 'id, Station>
     }
 }
 
-impl<'p, 'v, 'id: 'p> AccessPointPhase<'p, 'id> for ModelInterface<'v, 'id, AccessPoint> {
-    fn configure(&mut self, _: SupportedFilter<ModelCaps, AccessPoint>) {
+impl<'p, 'v, 'id: 'p, C: Ieee80211Capabilities> AccessPointPhase<'p, 'id>
+    for ModelInterface<'v, 'id, AccessPoint, C>
+{
+    fn configure(&mut self, _: SupportedFilter<C, AccessPoint>) {
         self.held.settings.borrow_mut().access_point = true;
         self.held.air.wake_driver();
     }

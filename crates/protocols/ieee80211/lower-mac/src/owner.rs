@@ -10,26 +10,30 @@
 //!
 //! | Refusal of the port trait | Form here |
 //! | --- | --- |
-//! | lifecycle refusals, `SubmitError::Disabled`, `SettingError::PortEnabled` | the owner's state: the install gives the port its channel and addresses, [`LowerMacSetup`] changes them only while disabled, clients exist only in a running phase |
+//! | lifecycle refusals, `SubmitError::Disabled`, `SettingError::PortEnabled` | the owner's state: the install gives the port its channel and addresses, [`LowerMacSetup`] changes the channel only while disabled, a backend whose addresses change implements [`AddressSetup`], clients exist only in a running phase |
 //! | `SettingError::UnsupportedChannel` | [`SupportedChannel`] |
-//! | `SettingError::UnknownVif`, `SettingError::UnsupportedRole`, `SubmitError::UnknownVif` | a client per configured interface; an attempt names no interface |
-//! | the receive rules a role may request | [`SupportedFilter`] |
-//! | `SubmitError::UnsupportedRate` | [`PhaseRate`], checked against the phase's channel |
+//! | `SettingError::UnknownVif`, `SettingError::UnsupportedRole`, `SubmitError::UnknownVif` | a client per interface, its role a type ([`StationClient`], [`AccessPointClient`]) with only that role's operations (the station's HE BSS color); an attempt names no interface |
+//! | the receive rules a role may request, a BSSID the role cannot take | [`SupportedFilter`] of the role, and the station's [`StationReceive`]; an access point's BSSID is its address |
+//! | `SettingError::Busy` (configuring an interface, removing a key an attempt in flight uses) | [`StationClient::configure`], [`AccessPointClient::configure`] and the key removals wait for the published attempts and abort the ones the closed gate holds, never refused |
+//! | `SubmitError::UnsupportedRate` | [`PhaseRate`], checked against the phase's channel; a BlockAckReq takes a [`LegacyPhaseRate`] |
 //! | `SubmitError::Unsupported` (backoff, power, coexistence level) | [`SupportedBackoff`], [`SupportedPower`], [`SupportedCoex`] |
+//! | `SubmitError::Unsupported` (a response the frame or rate cannot carry: an ACK of a group frame, no ACK at a rate without it or of a frame that does not say so) | the buffer's [`TxFrame`] kind: an [`IndividualAddress`] or [`GroupAddress`] receiver, and for no ACK a [`NoAckHeader`] at a [`SupportedNoAck`] rate; the backend writes the QoS Ack Policy from the kind ([`QosControl`]) |
 //! | `SubmitError::Busy` (the queue holds an attempt) | the queue's grant ([`LowerMacClient::queue`], awaited in the pool's order with the seat of the interface's access category, a [`QueueGrant`] of the backend's own type): a submission moves it into the backend, which gives the queue back when it takes the attempt's terminal |
 //! | `SubmitError::DuplicateId` | the backend mints the [`Work`] of each submission |
 //! | `SubmitError::InvalidLength`, a buffer request past `max_mpdu_length`, no free buffer | [`MpduLength`], and a buffer ([`LowerMacClient::tx_buffer`], awaited with a seat, never refused) the attempt holds until its terminal event |
-//! | `SettingError::NoKeySlot`, `SettingError::UnknownKey`, `SubmitError::UnknownKey` | a key slot ([`Slot`] of the client's own kind) that the install's resources give once, which the caller counts itself; an installed key token the attempt borrows |
-//! | `SettingError::InvalidKey` | [`Ccmp128Key`] |
-//! | `SettingError::NoBlockAckSlot`, `SettingError::InvalidBlockAck` | a Block Ack [`Slot`] of the client's own kind and [`SupportedBlockAck`]; ending an agreement takes its token |
+//! | `SettingError::NoKeySlot`, `SettingError::UnknownKey`, `SubmitError::UnknownKey` | a key slot ([`Slot`] of the client's own kind, pairwise or group; an access point's pairwise slot is an association identifier) that the install's resources give once, which the caller counts itself; an installed key token the attempt borrows ([`AttemptKey`]) |
+//! | `SettingError::InvalidKey` | [`Ccmp128Key`], [`GroupKeyId`], an [`IndividualAddress`] peer |
+//! | `SettingError::NoBlockAckSlot`, `SettingError::InvalidBlockAck` | a Block Ack [`Slot`] of the client's own kind and [`SupportedBlockAck`]; the client keeps one agreement per peer and [`Tid`], and a new one for the pair replaces the old and gives its slot back |
 //! | `SettingError::Busy` (closing the transmit gate) | [`LowerMacControl::close_gate`], awaited, which yields the gate's guard |
 //! | `SettingError::Unsupported` (an EDCA record outside the limits, a BSS color above 63) | [`SupportedEdca`], [`BssColor`] |
 //!
 //! These stay the world's outcomes: [`Poisoned`],
 //! [`EventsLost`](oer_radio_port::EventsLost) (only unsolicited
 //! reception), a clock that could not be read, a TSF that failed its timing
-//! check, and a cancel that finds the work already ended
-//! ([`CancelError::NotRunning`](oer_radio_port::CancelError::NotRunning)).
+//! check, a cancel that finds the work already ended
+//! ([`CancelError::NotRunning`](oer_radio_port::CancelError::NotRunning)),
+//! and hardware that rejects a key or misreads a programmed agreement (a
+//! fault).
 //!
 //! # Capabilities
 //!
@@ -73,7 +77,7 @@
 //! and the backend gives them back when it takes the attempt's terminal,
 //! before it hands the event out. No caller holds a submitted attempt's
 //! permits, and a dropped handle or event loses none. The
-//! backend mints its own tokens (a key, an agreement, a buffer), each
+//! backend mints its own tokens (a key, a queue grant, a buffer), each
 //! neither `Clone` nor `Copy` and without a public constructor, which it
 //! proves with compile-fail tests of its types.
 //!
@@ -210,7 +214,7 @@ use oer_radio_port::{
 
 use crate::{
     Backoff, Channel, CoexPriority, LowerMacCapabilities, MacAddress, PhyRate, ReceiveFilter,
-    RxBeaconPriority, TxBody, TxPower, TxResponse, VifRole,
+    RxBeaconPriority, TxBody, TxPower, VifRole,
 };
 
 /// What a lower-MAC backend type supports, the same for every instance: the
@@ -260,21 +264,37 @@ impl<K: Ieee80211Capabilities> SupportedChannel<K> {
     }
 }
 
-/// The receive rules an interface of a role may request of `K`.
-#[derive(Debug)]
-pub struct SupportedFilter<K> {
-    role: VifRole,
-    filter: ReceiveFilter,
-    brand: PhantomData<fn() -> K>,
+/// An interface role, as a type.
+pub trait InterfaceRole {
+    /// The role.
+    const ROLE: VifRole;
 }
 
-impl<K: Ieee80211Capabilities> SupportedFilter<K> {
-    /// `filter` for an interface of `role`, when `K` admits every rule of it
-    /// for that role.
-    pub const fn new(role: VifRole, filter: ReceiveFilter) -> Option<Self> {
-        if K::CAPS.receive_filters(role).contains(filter) {
+/// The station role.
+pub enum Station {}
+
+/// The access-point role.
+pub enum AccessPoint {}
+
+impl InterfaceRole for Station {
+    const ROLE: VifRole = VifRole::Station;
+}
+
+impl InterfaceRole for AccessPoint {
+    const ROLE: VifRole = VifRole::AccessPoint;
+}
+
+/// Receive rules an interface of role `R` may request of `K`.
+pub struct SupportedFilter<K, R> {
+    filter: ReceiveFilter,
+    brand: PhantomData<fn() -> (K, R)>,
+}
+
+impl<K: Ieee80211Capabilities, R: InterfaceRole> SupportedFilter<K, R> {
+    /// `filter`, when `K` admits every rule of it for role `R`.
+    pub const fn new(filter: ReceiveFilter) -> Option<Self> {
+        if K::CAPS.receive_filters(R::ROLE).contains(filter) {
             Some(Self {
-                role,
                 filter,
                 brand: PhantomData,
             })
@@ -283,9 +303,65 @@ impl<K: Ieee80211Capabilities> SupportedFilter<K> {
         }
     }
 
-    /// The role and its rules.
-    pub const fn get(&self) -> (VifRole, ReceiveFilter) {
-        (self.role, self.filter)
+    /// The rules.
+    pub const fn get(&self) -> ReceiveFilter {
+        self.filter
+    }
+}
+
+impl<K, R> Clone for SupportedFilter<K, R> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<K, R> Copy for SupportedFilter<K, R> {}
+
+impl<K, R> core::fmt::Debug for SupportedFilter<K, R> {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_tuple("SupportedFilter")
+            .field(&self.filter)
+            .finish()
+    }
+}
+
+/// What a station receives: nothing, other BSSs' management only (outside
+/// a BSS), or a BSS with its rules.
+pub enum StationReceive<K> {
+    Off,
+    OtherBssManagement,
+    Bss {
+        bssid: IndividualAddress,
+        filter: SupportedFilter<K, Station>,
+    },
+}
+
+impl<K> Clone for StationReceive<K> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<K> Copy for StationReceive<K> {}
+
+/// The identifier of a group key, 0 to 3.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GroupKeyId(u8);
+
+impl GroupKeyId {
+    /// `key_id`, when it is at most 3.
+    pub const fn new(key_id: u8) -> Option<Self> {
+        if key_id <= 3 {
+            Some(Self(key_id))
+        } else {
+            None
+        }
+    }
+
+    /// The identifier.
+    pub const fn get(self) -> u8 {
+        self.0
     }
 }
 
@@ -406,8 +482,8 @@ impl<K: Ieee80211Capabilities> MpduLength<K> {
 /// A receive Block Ack agreement within `K`'s limits.
 #[derive(Debug)]
 pub struct SupportedBlockAck<K> {
-    peer: MacAddress,
-    tid: u8,
+    peer: IndividualAddress,
+    tid: Tid,
     start_sequence: SequenceNumber,
     window: u16,
     brand: PhantomData<fn() -> K>,
@@ -417,12 +493,12 @@ impl<K: Ieee80211Capabilities> SupportedBlockAck<K> {
     /// An agreement with `peer` on `tid`, when `K` acknowledges its TID and
     /// window.
     pub const fn new(
-        peer: MacAddress,
-        tid: u8,
+        peer: IndividualAddress,
+        tid: Tid,
         start_sequence: SequenceNumber,
         window: u16,
     ) -> Option<Self> {
-        if tid <= K::CAPS.rx_block_ack_max_tid
+        if tid.get() <= K::CAPS.rx_block_ack_max_tid
             && window >= 1
             && window <= K::CAPS.rx_block_ack_max_window
         {
@@ -439,7 +515,7 @@ impl<K: Ieee80211Capabilities> SupportedBlockAck<K> {
     }
 
     /// The originator, the TID, the starting sequence and the window.
-    pub const fn get(&self) -> (MacAddress, u8, SequenceNumber, u16) {
+    pub const fn get(&self) -> (IndividualAddress, Tid, SequenceNumber, u16) {
         (self.peer, self.tid, self.start_sequence, self.window)
     }
 }
@@ -526,7 +602,7 @@ pub struct PhaseRate<'p> {
     loan: PhantomData<fn(&'p ()) -> &'p ()>,
 }
 
-impl PhaseRate<'_> {
+impl<'p> PhaseRate<'p> {
     /// A rate [`LowerMacClient::rate`] checked; nothing else mints one.
     const fn checked(rate: PhyRate) -> Self {
         Self {
@@ -539,6 +615,361 @@ impl PhaseRate<'_> {
     pub const fn get(&self) -> PhyRate {
         self.rate
     }
+
+    /// The rate, when it is non-HT, as a BlockAckReq needs.
+    ///
+    /// # Errors
+    ///
+    /// The rate, when it is not.
+    pub fn legacy(self) -> Result<LegacyPhaseRate<'p>, Self> {
+        if matches!(self.rate, PhyRate::Legacy(_)) {
+            Ok(LegacyPhaseRate(self))
+        } else {
+            Err(self)
+        }
+    }
+}
+
+/// The receiver of an individual frame: its address has the group bit
+/// clear.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IndividualAddress(MacAddress);
+
+impl IndividualAddress {
+    /// `address`, when its group bit is clear.
+    pub const fn new(address: MacAddress) -> Option<Self> {
+        if address[0] & 1 == 0 {
+            Some(Self(address))
+        } else {
+            None
+        }
+    }
+
+    /// The address.
+    pub const fn get(self) -> MacAddress {
+        self.0
+    }
+}
+
+/// The receiver of a group frame: its address has the group bit set.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GroupAddress(MacAddress);
+
+impl GroupAddress {
+    /// `address`, when its group bit is set.
+    pub const fn new(address: MacAddress) -> Option<Self> {
+        if address[0] & 1 == 1 {
+            Some(Self(address))
+        } else {
+            None
+        }
+    }
+
+    /// The address.
+    pub const fn get(self) -> MacAddress {
+        self.0
+    }
+}
+
+/// A traffic identifier, 0 to 15.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Tid(u8);
+
+impl Tid {
+    /// `tid`, when it is at most 15.
+    pub const fn new(tid: u8) -> Option<Self> {
+        if tid <= 15 { Some(Self(tid)) } else { None }
+    }
+
+    /// The identifier.
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
+/// The Frame Control field of a data or management frame of protocol
+/// version 0: never a control frame, whose kinds have their own buffers.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FrameControl(u16);
+
+impl FrameControl {
+    const DATA: u16 = 2;
+    const MANAGEMENT: u16 = 0;
+
+    /// `field`, when it is a data or management frame of version 0.
+    pub const fn new(field: u16) -> Option<Self> {
+        let kind = (field >> 2) & 0b11;
+        if field & 0b11 == 0 && (kind == Self::DATA || kind == Self::MANAGEMENT) {
+            Some(Self(field))
+        } else {
+            None
+        }
+    }
+
+    /// The field.
+    pub const fn get(self) -> u16 {
+        self.0
+    }
+
+    const fn is_qos_data(self) -> bool {
+        (self.0 >> 2) & 0b11 == Self::DATA && self.0 & (1 << 7) != 0
+    }
+
+    const fn is_four_address(self) -> bool {
+        (self.0 >> 2) & 0b11 == Self::DATA && self.0 & (0b11 << 8) == 0b11 << 8
+    }
+
+    /// Whether the frame carries an HT Control field: the Order bit of a
+    /// QoS data or management frame; in a non-QoS data frame the bit
+    /// requests strictly ordered service instead.
+    const fn has_ht_control(self) -> bool {
+        self.0 & (1 << 15) != 0 && (self.is_qos_data() || (self.0 >> 2) & 0b11 == Self::MANAGEMENT)
+    }
+}
+
+/// The QoS Control field of a QoS data frame, but its Ack Policy: the
+/// backend writes that from the frame's response
+/// (its [`TxFrame`] kind), the one source of it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct QosControl {
+    pub tid: Tid,
+    pub end_of_service_period: bool,
+    pub amsdu_present: bool,
+    /// The field's high octet (TXOP limit, queue size or mesh control).
+    pub high: u8,
+}
+
+impl QosControl {
+    /// The field, with the Ack Policy of a frame that solicits an ACK
+    /// (`no_ack` false: Normal Ack) or none (No Ack).
+    pub const fn encode(self, no_ack: bool) -> u16 {
+        self.tid.get() as u16
+            | (self.end_of_service_period as u16) << 4
+            | (no_ack as u16) << 5
+            | (self.amsdu_present as u16) << 7
+            | (self.high as u16) << 8
+    }
+}
+
+/// The MAC header of a data or management frame, addressed to `A`
+/// ([`IndividualAddress`] or [`GroupAddress`]). Its fields agree with its
+/// Frame Control: a fourth address exactly when To DS and From DS are both
+/// set, a QoS Control exactly in a QoS data frame, an HT Control exactly
+/// when the Order bit is set in a QoS data or management frame.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HeaderSpec<A> {
+    frame_control: FrameControl,
+    duration: u16,
+    receiver: A,
+    transmitter: MacAddress,
+    address3: MacAddress,
+    sequence_control: u16,
+    address4: Option<MacAddress>,
+    qos: Option<QosControl>,
+    ht_control: Option<[u8; 4]>,
+}
+
+/// A receiver address of a header: [`IndividualAddress`] or
+/// [`GroupAddress`].
+pub trait ReceiverAddress: Copy {
+    /// The address.
+    fn address(self) -> MacAddress;
+}
+
+impl ReceiverAddress for IndividualAddress {
+    fn address(self) -> MacAddress {
+        self.0
+    }
+}
+
+impl ReceiverAddress for GroupAddress {
+    fn address(self) -> MacAddress {
+        self.0
+    }
+}
+
+impl<A: ReceiverAddress> HeaderSpec<A> {
+    /// The header, when its fields agree with its Frame Control.
+    #[allow(clippy::too_many_arguments, reason = "the fields of a MAC header")]
+    pub fn new(
+        frame_control: FrameControl,
+        duration: u16,
+        receiver: A,
+        transmitter: MacAddress,
+        address3: MacAddress,
+        sequence_control: u16,
+        address4: Option<MacAddress>,
+        qos: Option<QosControl>,
+        ht_control: Option<[u8; 4]>,
+    ) -> Option<Self> {
+        (address4.is_some() == frame_control.is_four_address()
+            && qos.is_some() == frame_control.is_qos_data()
+            && ht_control.is_some() == frame_control.has_ht_control())
+        .then_some(Self {
+            frame_control,
+            duration,
+            receiver,
+            transmitter,
+            address3,
+            sequence_control,
+            address4,
+            qos,
+            ht_control,
+        })
+    }
+
+    /// The header's length in octets.
+    pub fn len(&self) -> usize {
+        24 + 6 * usize::from(self.address4.is_some())
+            + 2 * usize::from(self.qos.is_some())
+            + 4 * usize::from(self.ht_control.is_some())
+    }
+
+    /// Whether the header is empty: never.
+    pub fn is_empty(&self) -> bool {
+        false
+    }
+
+    /// Write the header into `out` with the Ack Policy of a frame that
+    /// solicits no ACK when `no_ack`; a backend's buffer request calls it.
+    ///
+    /// # Panics
+    ///
+    /// `out` is shorter than [`Self::len`].
+    pub fn encode(&self, out: &mut [u8], no_ack: bool) -> usize {
+        let len = self.len();
+        let out = &mut out[..len];
+        out[0..2].copy_from_slice(&self.frame_control.get().to_le_bytes());
+        out[2..4].copy_from_slice(&self.duration.to_le_bytes());
+        out[4..10].copy_from_slice(&self.receiver.address());
+        out[10..16].copy_from_slice(&self.transmitter);
+        out[16..22].copy_from_slice(&self.address3);
+        out[22..24].copy_from_slice(&self.sequence_control.to_le_bytes());
+        let mut at = 24;
+        if let Some(address4) = self.address4 {
+            out[at..at + 6].copy_from_slice(&address4);
+            at += 6;
+        }
+        if let Some(qos) = self.qos {
+            out[at..at + 2].copy_from_slice(&qos.encode(no_ack).to_le_bytes());
+            at += 2;
+        }
+        if let Some(ht_control) = self.ht_control {
+            out[at..at + 4].copy_from_slice(&ht_control);
+            at += 4;
+        }
+        at
+    }
+}
+
+/// A rate of the phase that carries an individual frame without an ACK,
+/// as the capabilities' individual no-ACK formats state:
+/// [`LowerMacClient::no_ack`] checks it.
+#[derive(Debug)]
+pub struct SupportedNoAck<'p>(PhaseRate<'p>);
+
+impl<'p> SupportedNoAck<'p> {
+    /// The rate.
+    pub const fn rate(&self) -> &PhaseRate<'p> {
+        &self.0
+    }
+}
+
+/// A non-HT rate of the phase, the only rates a BlockAckReq goes at:
+/// [`PhaseRate::legacy`] checks it.
+#[derive(Debug)]
+pub struct LegacyPhaseRate<'p>(PhaseRate<'p>);
+
+impl<'p> LegacyPhaseRate<'p> {
+    /// The rate.
+    pub const fn rate(&self) -> &PhaseRate<'p> {
+        &self.0
+    }
+}
+
+/// The header of an individual frame that solicits an ACK: any data or
+/// management frame but Action No Ack, which its receiver never
+/// acknowledges.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AckHeader(HeaderSpec<IndividualAddress>);
+
+impl AckHeader {
+    /// `header`, when it is not an Action No Ack frame.
+    pub fn new(header: HeaderSpec<IndividualAddress>) -> Option<Self> {
+        (header.frame_control.get() & 0x00fc != NoAckHeader::ACTION_NO_ACK).then_some(Self(header))
+    }
+
+    /// The header.
+    pub const fn header(&self) -> &HeaderSpec<IndividualAddress> {
+        &self.0
+    }
+}
+
+/// The header of an individual frame that solicits no ACK: one that says
+/// so to its receiver, a QoS data frame (whose Ack Policy the backend
+/// writes as No Ack) or an Action No Ack frame. Any other individual frame
+/// is acknowledged by its receiver whatever its sender expects.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NoAckHeader(HeaderSpec<IndividualAddress>);
+
+impl NoAckHeader {
+    /// Frame Control's type and subtype bits of an Action No Ack frame.
+    const ACTION_NO_ACK: u16 = 0b1110 << 4;
+
+    /// `header`, when it is a QoS data or an Action No Ack frame.
+    pub fn new(header: HeaderSpec<IndividualAddress>) -> Option<Self> {
+        let frame_control = header.frame_control;
+        (frame_control.is_qos_data() || frame_control.get() & 0x00fc == Self::ACTION_NO_ACK)
+            .then_some(Self(header))
+    }
+
+    /// The header.
+    pub const fn header(&self) -> &HeaderSpec<IndividualAddress> {
+        &self.0
+    }
+}
+
+/// What a buffer request describes: the frame's kind, its header and its
+/// rate, from which its response follows. Only the kinds the hardware
+/// sends exist, so a frame and its response never disagree.
+#[derive(Debug)]
+pub enum TxFrame<'p, K> {
+    /// An individual data or management frame of `len` octets, which
+    /// solicits an ACK.
+    Individual {
+        header: AckHeader,
+        rate: PhaseRate<'p>,
+        len: MpduLength<K>,
+    },
+    /// An individual frame of `len` octets that solicits no ACK and says so,
+    /// at a rate that carries one without it.
+    IndividualNoAck {
+        header: NoAckHeader,
+        rate: SupportedNoAck<'p>,
+        len: MpduLength<K>,
+    },
+    /// A group data or management frame of `len` octets, which solicits no
+    /// response.
+    Group {
+        header: HeaderSpec<GroupAddress>,
+        rate: PhaseRate<'p>,
+        len: MpduLength<K>,
+    },
+    /// A BlockAckReq, which solicits a BlockAck, at a non-HT rate.
+    BlockAckRequest {
+        receiver: IndividualAddress,
+        transmitter: MacAddress,
+        tid: Tid,
+        starting_sequence: SequenceNumber,
+        rate: LegacyPhaseRate<'p>,
+    },
+}
+
+/// The body of a frame a buffer holds: the octets after its header, which
+/// the caller writes.
+pub trait TxFrameBody {
+    /// The octets after the header.
+    fn body_mut(&mut self) -> &mut [u8];
 }
 
 /// The grant of the queue an attempt of one access category occupies: a
@@ -628,16 +1059,21 @@ impl<'id, Q, B> TxSeats<'id, Q, B> {
 /// coexistence level.
 pub struct PhaseAttempt<'p, 'id: 'p, C: LowerMacClient<'id> + 'p> {
     pub queue: C::Queue<'p>,
+    /// The frame, whose kind fixes its rate and response.
     pub frame: C::TxBuffer<'p>,
     pub body: Option<C::TxBody>,
-    pub response: TxResponse,
-    pub rate: PhaseRate<'p>,
     pub protection: crate::Protection,
     /// The installed key that protects the frame, or none.
-    pub key: Option<&'p C::Key>,
+    pub key: Option<AttemptKey<'p, 'id, C>>,
     pub power: SupportedPower<C::Caps>,
     pub backoff: SupportedBackoff<C::Caps>,
     pub coex: SupportedCoex<C::Caps>,
+}
+
+/// The installed key an attempt borrows.
+pub enum AttemptKey<'p, 'id: 'p, C: LowerMacClient<'id> + 'p> {
+    Pairwise(&'p C::PairwiseKey),
+    Group(&'p C::GroupKey),
 }
 
 /// A lower-MAC backend on the owner shape. Its disabled-only settings are a
@@ -661,11 +1097,15 @@ pub trait LowerMacSetup {
     /// so no phase runs untuned. The next `Enable` retunes. Nothing refuses
     /// it: the port is disabled and the channel is supported.
     fn set_channel(&mut self, channel: SupportedChannel<Self::Caps>);
+}
 
-    /// Set the address of the interface of `role`, in place of the address
-    /// the install or an earlier call gave it: every interface the backend
-    /// serves has one, and its client exists in every phase.
-    fn configure(&mut self, role: VifRole, address: MacAddress);
+/// The disabled-only setting of a backend whose interface addresses change
+/// after its install; one whose hardware fixes them (the ESP32-S31 station
+/// address, set by its cold start) does not implement it.
+pub trait AddressSetup: LowerMacSetup {
+    /// Set the address of the interface of `role`, in place of the one the
+    /// install or an earlier call gave it.
+    fn set_address(&mut self, role: VifRole, address: IndividualAddress);
 }
 
 /// The guard of a closed transmit gate: it proves this port publishes no
@@ -704,7 +1144,7 @@ pub trait LowerMacControl {
 /// install `'id`.
 ///
 /// A client exists for each interface the backend serves, each with the
-/// address the install or [`LowerMacSetup::configure`] gave it; its type is
+/// address the install or [`AddressSetup::set_address`] gave it; its type is
 /// its role, so a backend gives a role's client only the operations
 /// that role has. Its key and Block Ack slots are of its own kinds, so a
 /// key or agreement of one role's client is not another role's, by type.
@@ -722,21 +1162,25 @@ pub trait LowerMacClient<'id>:
     where
         Self: 'c,
         'id: 'c;
-    /// One MPDU's memory, bound to a buffer permit it holds.
-    type TxBuffer<'c>
+    /// One frame's memory, bound to a buffer permit it holds, with its
+    /// header, kind, rate and response written by the request.
+    type TxBuffer<'c>: TxFrameBody
     where
         Self: 'c,
         'id: 'c;
     /// The owner of an MPDU's body.
     type TxBody: TxBody;
-    /// The kind of the client's key slots.
-    type KeyKind;
-    /// An installed key; removing it gives its slot back.
-    type Key;
+    /// The kind of the client's pairwise key slots (an access point's:
+    /// its association identifiers).
+    type PairwiseKeyKind;
+    /// The kind of the client's group key slots.
+    type GroupKeyKind;
+    /// An installed pairwise key; removing it gives its slot back.
+    type PairwiseKey;
+    /// An installed group key; removing it gives its slot back.
+    type GroupKey;
     /// The kind of the client's receive Block Ack slots.
     type BlockAckKind;
-    /// A receive Block Ack agreement; ending it gives its slot back.
-    type BlockAck;
 
     /// The channel the phase runs on.
     fn channel(&self) -> Channel;
@@ -763,14 +1207,29 @@ pub trait LowerMacClient<'id>:
         'id: 'c,
         'c: 's;
 
-    /// A buffer for an MPDU of `len`, once one of the pool is free: a lent
-    /// pool is waited for in its line with `seat`, never refused. The seat
-    /// is lent only while the take waits, so an A-MPDU takes its buffers
-    /// one after another with one seat. Dropped before a submission, the
-    /// buffer gives its permit back.
+    /// The rate, when the capabilities carry an individual frame without
+    /// an ACK at it.
+    ///
+    /// # Errors
+    ///
+    /// The rate, when they do not.
+    fn no_ack<'p>(&self, rate: PhaseRate<'p>) -> Result<SupportedNoAck<'p>, PhaseRate<'p>> {
+        if Self::Caps::CAPS.individual_no_ack.contains_rate(rate.get()) {
+            Ok(SupportedNoAck(rate))
+        } else {
+            Err(rate)
+        }
+    }
+
+    /// A buffer holding `frame`'s header, once one of the pool is free: a
+    /// lent pool is waited for in its line with `seat`, never refused. Its
+    /// kind fixes its rate and response; the caller writes its body. The
+    /// seat is lent only while the take waits, so an A-MPDU takes its
+    /// buffers one after another with one seat. Dropped before a
+    /// submission, the buffer gives its permit back.
     fn tx_buffer<'c, 's>(
         &'c self,
-        len: MpduLength<Self::Caps>,
+        frame: TxFrame<'c, Self::Caps>,
         seat: &'s mut Seat<'id, Self::BufferKind>,
     ) -> impl Future<Output = Self::TxBuffer<'c>> + 's
     where
@@ -790,33 +1249,84 @@ pub trait LowerMacClient<'id>:
     where
         'id: 'p;
 
-    /// Set the interface's BSS and receive rules.
-    fn configure(&self, bssid: Option<MacAddress>, receive: SupportedFilter<Self::Caps>);
-
-    /// Install `key` for frames with `peer` (pairwise) or under `key_id`
-    /// (group) in `slot`.
-    fn install_key(
+    /// Install `key` for frames with `peer` in `slot`.
+    fn install_pairwise_key(
         &self,
-        slot: Slot<'id, Self::KeyKind>,
-        scope: crate::KeyScope,
+        slot: Slot<'id, Self::PairwiseKeyKind>,
+        peer: IndividualAddress,
         key: Ccmp128Key,
-    ) -> Self::Key;
+    ) -> Self::PairwiseKey;
 
-    /// Remove `key`, giving its slot back.
-    fn remove_key(&self, key: Self::Key) -> Slot<'id, Self::KeyKind>;
+    /// Install `key` for group frames under `key_id` in `slot`.
+    fn install_group_key(
+        &self,
+        slot: Slot<'id, Self::GroupKeyKind>,
+        key_id: GroupKeyId,
+        key: Ccmp128Key,
+    ) -> Self::GroupKey;
 
-    /// Start acknowledging A-MPDUs of `agreement` in `slot`.
+    /// Remove `key` once no attempt in flight uses it, giving its slot
+    /// back.
+    /// An attempt that uses it and that the closed transmit gate holds ends
+    /// as aborted at once; a published one is waited for, never refused,
+    /// so the wait ends also under the gate's guard. Dropped before it
+    /// ends, the removal leaves the key installed, and its slot is lost
+    /// until the next install.
+    fn remove_pairwise_key(
+        &self,
+        key: Self::PairwiseKey,
+    ) -> impl Future<Output = Slot<'id, Self::PairwiseKeyKind>> + '_;
+
+    /// Remove `key` once no attempt in flight uses it, giving its slot
+    /// back.
+    /// An attempt that uses it and that the closed transmit gate holds ends
+    /// as aborted at once; a published one is waited for, never refused,
+    /// so the wait ends also under the gate's guard. Dropped before it
+    /// ends, the removal leaves the key installed, and its slot is lost
+    /// until the next install.
+    fn remove_group_key(
+        &self,
+        key: Self::GroupKey,
+    ) -> impl Future<Output = Slot<'id, Self::GroupKeyKind>> + '_;
+
+    /// Start acknowledging A-MPDUs of `agreement` in `slot`. The client
+    /// keeps one agreement per peer and TID: one that replaces an earlier
+    /// agreement of the pair gives that agreement's slot back.
     fn add_block_ack(
         &self,
         slot: Slot<'id, Self::BlockAckKind>,
         agreement: SupportedBlockAck<Self::Caps>,
-    ) -> Self::BlockAck;
+    ) -> Option<Slot<'id, Self::BlockAckKind>>;
 
-    /// End `agreement`, giving its slot back.
-    fn remove_block_ack(&self, agreement: Self::BlockAck) -> Slot<'id, Self::BlockAckKind>;
+    /// End the agreement with `peer` on `tid`, giving its slot back; `None`
+    /// when the client keeps none for the pair.
+    fn remove_block_ack(
+        &self,
+        peer: IndividualAddress,
+        tid: Tid,
+    ) -> Option<Slot<'id, Self::BlockAckKind>>;
+}
 
-    /// The BSS color of the interface's HE BSS.
+/// The client of a station interface.
+pub trait StationClient<'id>: LowerMacClient<'id> {
+    /// Set what the station receives, once none of its frames is in
+    /// flight: a frame the closed transmit gate holds ends as aborted at
+    /// once, a published one is waited for, never refused.
+    fn configure(&self, receive: StationReceive<Self::Caps>) -> impl Future<Output = ()> + '_;
+
+    /// The BSS color of the station's HE BSS.
     fn set_bss_color(&self, color: BssColor);
+}
+
+/// The client of an access-point interface, whose BSSID is its address.
+pub trait AccessPointClient<'id>: LowerMacClient<'id> {
+    /// Set the access point's receive rules, once none of its frames is in
+    /// flight: a frame the closed transmit gate holds ends as aborted at
+    /// once, a published one is waited for.
+    fn configure(
+        &self,
+        receive: SupportedFilter<Self::Caps, AccessPoint>,
+    ) -> impl Future<Output = ()> + '_;
 }
 
 /// The one consumer of a running lower-MAC phase's events: received frames,
@@ -850,3 +1360,6 @@ pub trait LowerMacEvents: RadioPortEvents {
         event: Self::Event,
     ) -> Result<(crate::TxCompletion, Self::TxBodies), Self::Event>;
 }
+
+#[cfg(test)]
+mod tests;

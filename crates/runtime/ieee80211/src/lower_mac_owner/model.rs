@@ -15,32 +15,41 @@
 //! and the body's resources give each interface its transmit seats
 //! ([`TxSeats`]).
 //!
-//! Its tokens have no value outside it: no caller mints a key, and a key of
-//! a station's client is not an access point's.
+//! Its tokens have no value outside it: no caller mints a key, a key of a
+//! station's client is not an access point's, and a group key is not a
+//! pairwise key.
 //!
 //! ```compile_fail,E0451
-//! # use core::marker::PhantomData;
-//! # use oer_ieee80211_runtime::lower_mac_owner::model::{ModelKey, Station};
-//! fn forge<'id>() -> ModelKey<'id, Station> {
-//!     ModelKey { index: 0, slot: todo!() }
+//! # use oer_ieee80211_lower_mac::Station;
+//! # use oer_ieee80211_runtime::lower_mac_owner::model::ModelPairwiseKey;
+//! fn forge<'id>() -> ModelPairwiseKey<'id, Station> {
+//!     ModelPairwiseKey { index: 0, slot: todo!() }
 //! }
 //! ```
 //!
 //! ```compile_fail,E0308
-//! # use oer_ieee80211_lower_mac::LowerMacClient;
-//! # use oer_ieee80211_runtime::lower_mac_owner::model::{AccessPoint, ModelClient, ModelKey, Station};
-//! fn cross<'id>(client: &ModelClient<'_, 'id, AccessPoint>, key: ModelKey<'id, Station>) {
-//!     let _ = client.remove_key(key);
+//! # use oer_ieee80211_lower_mac::{AccessPoint, LowerMacClient, Station};
+//! # use oer_ieee80211_runtime::lower_mac_owner::model::{ModelClient, ModelPairwiseKey};
+//! fn cross<'id>(client: &ModelClient<'_, 'id, AccessPoint>, key: ModelPairwiseKey<'id, Station>) {
+//!     let _ = client.remove_pairwise_key(key);
 //! }
 //! ```
 //!
-//! Its compiling twin gives a key back to its own role's client:
+//! ```compile_fail,E0308
+//! # use oer_ieee80211_lower_mac::{LowerMacClient, Station};
+//! # use oer_ieee80211_runtime::lower_mac_owner::model::{ModelClient, ModelGroupKey};
+//! fn scope<'id>(client: &ModelClient<'_, 'id, Station>, key: ModelGroupKey<'id, Station>) {
+//!     let _ = client.remove_pairwise_key(key);
+//! }
+//! ```
+//!
+//! Its compiling twin gives a key back to its own role's client and kind:
 //!
 //! ```
-//! # use oer_ieee80211_lower_mac::LowerMacClient;
-//! # use oer_ieee80211_runtime::lower_mac_owner::model::{AccessPoint, ModelClient, ModelKey};
-//! fn own<'id>(client: &ModelClient<'_, 'id, AccessPoint>, key: ModelKey<'id, AccessPoint>) {
-//!     let _ = client.remove_key(key);
+//! # use oer_ieee80211_lower_mac::{AccessPoint, LowerMacClient};
+//! # use oer_ieee80211_runtime::lower_mac_owner::model::{ModelClient, ModelPairwiseKey};
+//! fn own<'id>(client: &ModelClient<'_, 'id, AccessPoint>, key: ModelPairwiseKey<'id, AccessPoint>) {
+//!     let _ = client.remove_pairwise_key(key);
 //! }
 //! ```
 
@@ -60,11 +69,12 @@ use oer_radio_port::{
 use oer_time::RadioInstant;
 
 use oer_ieee80211_lower_mac::{
-    Ccmp128Key, Channel, Ieee80211Capabilities, Ieee80211Radio, KeyScope, LowerMacBackend,
-    LowerMacCapabilities, LowerMacClient, LowerMacControl, LowerMacEvent, LowerMacEvents,
-    LowerMacSetup, MacAddress, MpduLength, PhaseAttempt, RxMeta, SupportedBlockAck,
-    SupportedChannel, SupportedFilter, TX_SEATS, TxCompletion, TxGated, TxId, TxSeats, TxStatus,
-    VifRole,
+    AccessPoint, AccessPointClient, AddressSetup, AttemptKey, Ccmp128Key, Channel, GroupKeyId,
+    Ieee80211Capabilities, Ieee80211Radio, IndividualAddress, InterfaceRole, KeyScope,
+    LowerMacBackend, LowerMacCapabilities, LowerMacClient, LowerMacControl, LowerMacEvent,
+    LowerMacEvents, LowerMacSetup, MacAddress, PhaseAttempt, PhyRate, RxMeta, Station,
+    StationClient, StationReceive, SupportedBlockAck, SupportedChannel, SupportedFilter, TX_SEATS,
+    Tid, TxCompletion, TxFrame, TxFrameBody, TxGated, TxId, TxResponse, TxSeats, TxStatus, VifRole,
     model::{MODEL_CAPABILITIES, ModelBody, ModelFault, ModelRxBuffer},
 };
 
@@ -79,40 +89,53 @@ impl Ieee80211Capabilities for ModelCaps {
 
 /// Transmit buffers the model holds.
 pub const OWNED_MODEL_TX_BUFFERS: usize = 3;
-/// Key slots of each role.
+/// Pairwise and group key slots of each role.
 pub const OWNED_MODEL_KEY_SLOTS: usize = 2;
 /// Receive Block Ack slots of each role.
-pub const OWNED_MODEL_BLOCK_ACK_SLOTS: usize = 1;
+pub const OWNED_MODEL_BLOCK_ACK_SLOTS: usize = 2;
 /// Transmit queues of the model ([`MODEL_CAPABILITIES`]).
 pub const OWNED_MODEL_TX_QUEUES: usize = MODEL_CAPABILITIES.tx_queues as usize;
 
-/// An interface role of the model's clients.
-pub trait ModelRole {
-    /// The role.
-    const ROLE: VifRole;
+/// An interface role of the model's clients: its table of receive Block
+/// Ack agreements in the held part of the install.
+pub trait ModelRole: InterfaceRole + Sized {
+    #[doc(hidden)]
+    fn block_acks<'a, 'id>(held: &'a ModelHeld<'id>) -> &'a BlockAckTable<'id, Self>;
 }
 
-/// The station role.
-pub enum Station {}
-/// The access-point role.
-pub enum AccessPoint {}
-
 impl ModelRole for Station {
-    const ROLE: VifRole = VifRole::Station;
+    fn block_acks<'a, 'id>(held: &'a ModelHeld<'id>) -> &'a BlockAckTable<'id, Self> {
+        &held.station_block_acks
+    }
 }
 
 impl ModelRole for AccessPoint {
-    const ROLE: VifRole = VifRole::AccessPoint;
+    fn block_acks<'a, 'id>(held: &'a ModelHeld<'id>) -> &'a BlockAckTable<'id, Self> {
+        &held.access_point_block_acks
+    }
 }
 
-/// The kind of a role's key slots.
-pub struct ModelKeys<R>(PhantomData<fn() -> R>);
+/// The kind of a role's pairwise key slots.
+pub struct ModelPairwiseKeys<R>(PhantomData<fn() -> R>);
+/// The kind of a role's group key slots.
+pub struct ModelGroupKeys<R>(PhantomData<fn() -> R>);
 /// The kind of a role's receive Block Ack slots.
 pub struct ModelBlockAcks<R>(PhantomData<fn() -> R>);
+
+/// A role's receive Block Ack agreements: one per peer and TID, each with
+/// its slot.
+pub type BlockAckTable<'id, R> =
+    RefCell<Vec<(IndividualAddress, Tid, Slot<'id, ModelBlockAcks<R>>)>>;
+
+/// Which installed key an attempt uses: its role, whether it is pairwise,
+/// and its slot.
+type KeyUse = (VifRole, bool, u8);
 
 /// One admitted attempt.
 struct Admission {
     id: TxId,
+    role: VifRole,
+    key: Option<KeyUse>,
     published: bool,
     body: Option<ModelBody>,
 }
@@ -281,9 +304,12 @@ pub type ModelTxPermits<'id> = TxPermits<
     OWNED_MODEL_TX_QUEUES,
 >;
 
-/// The model's held part of one install: its transmit permits.
+/// The model's held part of one install: its transmit permits and each
+/// role's receive Block Ack agreements.
 pub struct ModelHeld<'id> {
     pub tx: ModelTxPermits<'id>,
+    station_block_acks: BlockAckTable<'id, Station>,
+    access_point_block_acks: BlockAckTable<'id, AccessPoint>,
 }
 
 /// The transmit seats of one interface of the model.
@@ -294,8 +320,11 @@ pub type ModelTxSeats<'id> = TxSeats<'id, TxQueueKind, TxBufferKind>;
 pub struct ModelResources<'id> {
     pub station_tx: ModelTxSeats<'id>,
     pub access_point_tx: ModelTxSeats<'id>,
-    pub station_keys: [Slot<'id, ModelKeys<Station>>; OWNED_MODEL_KEY_SLOTS],
-    pub access_point_keys: [Slot<'id, ModelKeys<AccessPoint>>; OWNED_MODEL_KEY_SLOTS],
+    pub station_pairwise_keys: [Slot<'id, ModelPairwiseKeys<Station>>; OWNED_MODEL_KEY_SLOTS],
+    pub station_group_keys: [Slot<'id, ModelGroupKeys<Station>>; OWNED_MODEL_KEY_SLOTS],
+    pub access_point_pairwise_keys:
+        [Slot<'id, ModelPairwiseKeys<AccessPoint>>; OWNED_MODEL_KEY_SLOTS],
+    pub access_point_group_keys: [Slot<'id, ModelGroupKeys<AccessPoint>>; OWNED_MODEL_KEY_SLOTS],
     pub station_block_acks: [Slot<'id, ModelBlockAcks<Station>>; OWNED_MODEL_BLOCK_ACK_SLOTS],
     pub access_point_block_acks:
         [Slot<'id, ModelBlockAcks<AccessPoint>>; OWNED_MODEL_BLOCK_ACK_SLOTS],
@@ -310,9 +339,11 @@ impl LowerMacSetup for ModelSetup {
     fn set_channel(&mut self, channel: SupportedChannel<ModelCaps>) {
         self.0.borrow_mut().next_channel = channel.channel();
     }
+}
 
-    fn configure(&mut self, role: VifRole, address: MacAddress) {
-        self.0.borrow_mut().addresses[role_index(role)] = address;
+impl AddressSetup for ModelSetup {
+    fn set_address(&mut self, role: VifRole, address: IndividualAddress) {
+        self.0.borrow_mut().addresses[role_index(role)] = address.get();
     }
 }
 
@@ -417,22 +448,34 @@ impl RadioWork for ModelToken {
     }
 }
 
-/// One MPDU's memory, bound to its buffer permit.
+/// One frame's memory, bound to its buffer permit: the header the request
+/// wrote, then the body the caller writes.
 pub struct ModelTxBuffer<'c, 'id> {
     pub bytes: Vec<u8>,
+    header: usize,
+    /// The response the frame's kind solicits.
+    pub response: TxResponse,
+    /// The rate the frame's kind took.
+    pub rate: PhyRate,
     permit: BufferPermit<'c, 'id>,
 }
 
-/// An installed key of a client of role `R`; it holds its slot.
-pub struct ModelKey<'id, R> {
-    index: u8,
-    slot: Slot<'id, ModelKeys<R>>,
+impl TxFrameBody for ModelTxBuffer<'_, '_> {
+    fn body_mut(&mut self) -> &mut [u8] {
+        &mut self.bytes[self.header..]
+    }
 }
 
-/// A receive Block Ack agreement of a client of role `R`; it holds its
-/// slot.
-pub struct ModelBlockAck<'id, R> {
-    slot: Slot<'id, ModelBlockAcks<R>>,
+/// An installed pairwise key of a client of role `R`; it holds its slot.
+pub struct ModelPairwiseKey<'id, R> {
+    index: u8,
+    slot: Slot<'id, ModelPairwiseKeys<R>>,
+}
+
+/// An installed group key of a client of role `R`; it holds its slot.
+pub struct ModelGroupKey<'id, R> {
+    index: u8,
+    slot: Slot<'id, ModelGroupKeys<R>>,
 }
 
 impl<R> RadioPortClient for ModelClient<'_, '_, R> {
@@ -479,10 +522,11 @@ impl<'a, 'id, R: ModelRole> LowerMacClient<'id> for ModelClient<'a, 'id, R> {
         Self: 'c,
         'id: 'c;
     type TxBody = ModelBody;
-    type KeyKind = ModelKeys<R>;
-    type Key = ModelKey<'id, R>;
+    type PairwiseKeyKind = ModelPairwiseKeys<R>;
+    type GroupKeyKind = ModelGroupKeys<R>;
+    type PairwiseKey = ModelPairwiseKey<'id, R>;
+    type GroupKey = ModelGroupKey<'id, R>;
     type BlockAckKind = ModelBlockAcks<R>;
-    type BlockAck = ModelBlockAck<'id, R>;
 
     fn channel(&self) -> Channel {
         self.state.borrow().tuned
@@ -501,16 +545,58 @@ impl<'a, 'id, R: ModelRole> LowerMacClient<'id> for ModelClient<'a, 'id, R> {
 
     async fn tx_buffer<'c, 's>(
         &'c self,
-        len: MpduLength<ModelCaps>,
+        frame: TxFrame<'c, ModelCaps>,
         seat: &'s mut Seat<'id, TxBufferKind>,
     ) -> ModelTxBuffer<'c, 'id>
     where
         'id: 'c,
         'c: 's,
     {
+        let permit = self.held.tx.buffer(seat).await;
+        let (bytes, header, response, rate) = match frame {
+            TxFrame::Individual { header, rate, len } => {
+                let header = header.header();
+                let mut bytes = alloc::vec![0; len.get().max(header.len())];
+                let written = header.encode(&mut bytes, false);
+                (bytes, written, TxResponse::Ack, rate.get())
+            }
+            TxFrame::IndividualNoAck { header, rate, len } => {
+                let header = header.header();
+                let mut bytes = alloc::vec![0; len.get().max(header.len())];
+                let written = header.encode(&mut bytes, true);
+                (bytes, written, TxResponse::None, rate.rate().get())
+            }
+            TxFrame::Group { header, rate, len } => {
+                let mut bytes = alloc::vec![0; len.get().max(header.len())];
+                // A group frame solicits no response: its QoS Ack Policy is
+                // No Ack.
+                let written = header.encode(&mut bytes, true);
+                (bytes, written, TxResponse::None, rate.get())
+            }
+            TxFrame::BlockAckRequest {
+                receiver,
+                transmitter,
+                tid,
+                starting_sequence,
+                rate,
+            } => {
+                let bytes = oer_ieee80211_mac::block_ack::encode_block_ack_request(
+                    receiver.get(),
+                    transmitter,
+                    tid.get(),
+                    starting_sequence,
+                )
+                .to_vec();
+                let header = bytes.len();
+                (bytes, header, TxResponse::BlockAck, rate.rate().get())
+            }
+        };
         ModelTxBuffer {
-            bytes: alloc::vec![0; len.get()],
-            permit: self.held.tx.buffer(seat).await,
+            bytes,
+            header,
+            response,
+            rate,
+            permit,
         }
     }
 
@@ -526,13 +612,23 @@ impl<'a, 'id, R: ModelRole> LowerMacClient<'id> for ModelClient<'a, 'id, R> {
             return Err(Poisoned { cause: ModelFault });
         }
         let PhaseAttempt {
-            queue, frame, body, ..
+            queue,
+            frame,
+            body,
+            key,
+            ..
         } = attempt;
+        let key = key.map(|key| match key {
+            AttemptKey::Pairwise(key) => (R::ROLE, true, key.index),
+            AttemptKey::Group(key) => (R::ROLE, false, key.index),
+        });
         let id = TxId(state.next_id);
         state.next_id += 1;
         let published = state.gate_open;
         state.admitted.push(Admission {
             id,
+            role: R::ROLE,
+            key,
             published,
             body,
         });
@@ -541,43 +637,173 @@ impl<'a, 'id, R: ModelRole> LowerMacClient<'id> for ModelClient<'a, 'id, R> {
         Ok(Work::new(self, ModelToken(id)))
     }
 
-    fn configure(&self, _: Option<MacAddress>, _: SupportedFilter<ModelCaps>) {}
-
-    fn install_key(
+    fn install_pairwise_key(
         &self,
-        slot: Slot<'id, ModelKeys<R>>,
-        scope: KeyScope,
+        slot: Slot<'id, ModelPairwiseKeys<R>>,
+        peer: IndividualAddress,
         _: Ccmp128Key,
-    ) -> ModelKey<'id, R> {
+    ) -> ModelPairwiseKey<'id, R> {
         let index = slot.index();
-        self.state
-            .borrow_mut()
-            .installed_keys
-            .push((R::ROLE, index, scope));
-        ModelKey { index, slot }
+        self.state.borrow_mut().installed_keys.push((
+            R::ROLE,
+            index,
+            KeyScope::Pairwise { peer: peer.get() },
+        ));
+        ModelPairwiseKey { index, slot }
     }
 
-    fn remove_key(&self, key: ModelKey<'id, R>) -> Slot<'id, ModelKeys<R>> {
-        self.state
-            .borrow_mut()
-            .installed_keys
-            .retain(|(role, slot, _)| (*role, *slot) != (R::ROLE, key.index));
-        key.slot
+    fn install_group_key(
+        &self,
+        slot: Slot<'id, ModelGroupKeys<R>>,
+        key_id: GroupKeyId,
+        _: Ccmp128Key,
+    ) -> ModelGroupKey<'id, R> {
+        let index = slot.index();
+        self.state.borrow_mut().installed_keys.push((
+            R::ROLE,
+            index,
+            KeyScope::Group {
+                key_id: key_id.get(),
+            },
+        ));
+        ModelGroupKey { index, slot }
+    }
+
+    fn remove_pairwise_key(
+        &self,
+        key: ModelPairwiseKey<'id, R>,
+    ) -> impl Future<Output = Slot<'id, ModelPairwiseKeys<R>>> + '_ {
+        let state = &self.state;
+        let mut key = Some(key);
+        poll_fn(move |context| {
+            let index = key.as_ref().expect("a removal ends once").index;
+            if !unused(state, (R::ROLE, true, index), context) {
+                return Poll::Pending;
+            }
+            uninstall(state, R::ROLE, index, true);
+            Poll::Ready(key.take().expect("a removal ends once").slot)
+        })
+    }
+
+    fn remove_group_key(
+        &self,
+        key: ModelGroupKey<'id, R>,
+    ) -> impl Future<Output = Slot<'id, ModelGroupKeys<R>>> + '_ {
+        let state = &self.state;
+        let mut key = Some(key);
+        poll_fn(move |context| {
+            let index = key.as_ref().expect("a removal ends once").index;
+            if !unused(state, (R::ROLE, false, index), context) {
+                return Poll::Pending;
+            }
+            uninstall(state, R::ROLE, index, false);
+            Poll::Ready(key.take().expect("a removal ends once").slot)
+        })
     }
 
     fn add_block_ack(
         &self,
         slot: Slot<'id, ModelBlockAcks<R>>,
-        _: SupportedBlockAck<ModelCaps>,
-    ) -> ModelBlockAck<'id, R> {
-        ModelBlockAck { slot }
+        agreement: SupportedBlockAck<ModelCaps>,
+    ) -> Option<Slot<'id, ModelBlockAcks<R>>> {
+        let (peer, tid, ..) = agreement.get();
+        let mut table = R::block_acks(self.held).borrow_mut();
+        let replaced = table
+            .iter()
+            .position(|(other, other_tid, _)| (*other, *other_tid) == (peer, tid))
+            .map(|index| table.swap_remove(index).2);
+        table.push((peer, tid, slot));
+        replaced
     }
 
-    fn remove_block_ack(&self, agreement: ModelBlockAck<'id, R>) -> Slot<'id, ModelBlockAcks<R>> {
-        agreement.slot
+    fn remove_block_ack(
+        &self,
+        peer: IndividualAddress,
+        tid: Tid,
+    ) -> Option<Slot<'id, ModelBlockAcks<R>>> {
+        let mut table = R::block_acks(self.held).borrow_mut();
+        let index = table
+            .iter()
+            .position(|(other, other_tid, _)| (*other, *other_tid) == (peer, tid))?;
+        Some(table.swap_remove(index).2)
+    }
+}
+
+impl<'a, 'id> StationClient<'id> for ModelClient<'a, 'id, Station> {
+    fn configure(&self, _: StationReceive<ModelCaps>) -> impl Future<Output = ()> + '_ {
+        let state = &self.state;
+        poll_fn(move |context| quiet(state, VifRole::Station, context))
     }
 
     fn set_bss_color(&self, _: oer_ieee80211_lower_mac::BssColor) {}
+}
+
+impl<'a, 'id> AccessPointClient<'id> for ModelClient<'a, 'id, AccessPoint> {
+    fn configure(
+        &self,
+        _: SupportedFilter<ModelCaps, AccessPoint>,
+    ) -> impl Future<Output = ()> + '_ {
+        let state = &self.state;
+        poll_fn(move |context| quiet(state, VifRole::AccessPoint, context))
+    }
+}
+
+/// Whether no attempt in flight uses `key`: one the closed gate holds is
+/// posted to end as aborted, and a published one is waited for.
+fn unused(state: &Shared, key: KeyUse, context: &mut core::task::Context<'_>) -> bool {
+    settle(state, |admitted| admitted.key == Some(key), context)
+}
+
+/// Whether no admitted attempt matches `uses`: the held ones are posted to
+/// end as aborted, which the driver serves, and the waker waits for the
+/// rest.
+fn settle(
+    state: &Shared,
+    uses: impl Fn(&Admission) -> bool,
+    context: &mut core::task::Context<'_>,
+) -> bool {
+    let mut state = state.borrow_mut();
+    let held: Vec<TxId> = state
+        .admitted
+        .iter()
+        .filter(|admitted| uses(admitted) && !admitted.published)
+        .map(|admitted| admitted.id)
+        .filter(|id| !state.posted.iter().any(|(posted, _)| posted == id))
+        .collect();
+    if !held.is_empty() {
+        for id in held {
+            state.posted.push((id, TxStatus::Aborted));
+        }
+        // The driver serves what was posted: wake it, before this waiter
+        // joins the line.
+        wake(&mut state);
+    }
+    if state.admitted.iter().any(&uses) {
+        state.waiting.push(context.waker().clone());
+        false
+    } else {
+        true
+    }
+}
+
+/// Forget an installed key of `role` in slot `index`.
+fn uninstall(state: &Shared, role: VifRole, index: u8, pairwise: bool) {
+    state
+        .borrow_mut()
+        .installed_keys
+        .retain(|(other, slot, scope)| {
+            (*other, *slot, matches!(scope, KeyScope::Pairwise { .. })) != (role, index, pairwise)
+        });
+}
+
+/// Ready once no attempt of `role` is in flight: held ones end as aborted,
+/// published ones are waited for.
+fn quiet(state: &Shared, role: VifRole, context: &mut core::task::Context<'_>) -> Poll<()> {
+    if settle(state, |admitted| admitted.role == role, context) {
+        Poll::Ready(())
+    } else {
+        Poll::Pending
+    }
 }
 
 /// The model's event consumer: the driver gave each attempt's permits
@@ -707,12 +933,16 @@ impl PortBackend for OwnedModel {
         let (queue_line, _, [station_tx, access_point_tx]) = TxSeats::mint(&mut mint);
         let held = ModelHeld {
             tx: TxPermits::new(&mut mint, queue_line, ModelPermitPool::new(buffers)),
+            station_block_acks: RefCell::new(Vec::new()),
+            access_point_block_acks: RefCell::new(Vec::new()),
         };
         let resources = ModelResources {
             station_tx,
             access_point_tx,
-            station_keys: mint.slots(),
-            access_point_keys: mint.slots(),
+            station_pairwise_keys: mint.slots(),
+            station_group_keys: mint.slots(),
+            access_point_pairwise_keys: mint.slots(),
+            access_point_group_keys: mint.slots(),
             station_block_acks: mint.slots(),
             access_point_block_acks: mint.slots(),
         };

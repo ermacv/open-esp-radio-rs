@@ -121,7 +121,8 @@ fn run<R: ReservationMode>(
 }
 
 fn alone<R: ReservationMode>() -> (TestArbiter<R>, LeasePlace) {
-    Arbiter::new(ArbiterPolicy::DEFAULT, channel(1), Open)
+    let (arbiter, place, _) = Arbiter::new(ArbiterPolicy::DEFAULT, channel(1), Open);
+    (arbiter, place)
 }
 
 fn running(arbiter: &mut TestArbiter<impl ReservationMode>) {
@@ -141,13 +142,12 @@ fn beside_access_point<R: ReservationMode>() -> (TestArbiter<R>, LeasePlace) {
     (arbiter, place)
 }
 
-fn scan(number: u8, dwell: u32, announces_absence: bool) -> ChannelRequest<Caps> {
+fn scan(number: u8, dwell: u32) -> ChannelRequest<Caps> {
     ChannelRequest {
         channel: channel(number),
         purpose: Purpose::Scan {
             dwell: Duration::from_millis(dwell),
         },
-        announces_absence,
     }
 }
 
@@ -167,7 +167,7 @@ fn place() -> LeasePlace {
 fn a_station_alone_leases_a_scan_channel_at_once_and_ends_it_in_place() {
     let (mut arbiter, place) = alone::<NoReservation>();
     let mut port = Port::default();
-    let lease = lease(arbiter.request(at(0), scan(6, 100, false), place));
+    let lease = lease(arbiter.request(at(0), scan(6, 100), place));
     // The move there and the dwell; alone, the port stays.
     assert_eq!((lease.from(), lease.until()), (at(0), Some(at(102))));
     assert_eq!(lease.listen_until(), Some(at(102)));
@@ -199,7 +199,7 @@ fn a_station_alone_leases_a_scan_channel_at_once_and_ends_it_in_place() {
 fn beside_an_access_point_a_scan_goes_in_an_absence_with_the_air_reserved() {
     let (mut arbiter, place) = beside_access_point::<AirReservation>();
     let mut port = Port::default();
-    let lease = lease(arbiter.request(at(0), scan(6, 100, false), place));
+    let lease = lease(arbiter.request(at(0), scan(6, 100), place));
     // 2 ms after the TBTT at 50 ms, 20 ms with its two retunes; the
     // station listens until the return's retune.
     assert_eq!((lease.from(), lease.until()), (at(52), Some(at(72))));
@@ -235,7 +235,7 @@ fn an_absence_longer_than_the_duration_field_goes_without_a_reservation() {
     arbiter.policy.absence = Duration::from_millis(40);
     running(&mut arbiter);
     let mut port = Port::default();
-    let lease = lease(arbiter.request(at(0), scan(6, 100, false), place));
+    let lease = lease(arbiter.request(at(0), scan(6, 100), place));
     assert_eq!(lease.until(), Some(at(92)));
     assert_eq!(
         run(&mut arbiter, &mut port, at(52)).first(),
@@ -245,40 +245,12 @@ fn an_absence_longer_than_the_duration_field_goes_without_a_reservation() {
 }
 
 #[test]
-fn an_absence_waits_for_the_stations_readiness_and_is_cancelled_without_it() {
-    let (mut arbiter, place) = beside_access_point::<NoReservation>();
-    let mut port = Port::default();
-    // At 45 ms the preparation window ends at 55 ms, past the slot at
-    // 52 ms: the absence follows the next TBTT.
-    let late = lease(arbiter.request(at(45), scan(6, 10, true), place));
-    assert_eq!(late.from(), at(152));
-    let id = late.id();
-    assert_eq!(
-        run(&mut arbiter, &mut port, at(152)),
-        [Seen::Station(StationNotice::LeaseCancelled(
-            id,
-            CancelReason::NotReady,
-            self::place()
-        ))]
-    );
-    let _ = late;
-    let ready = lease(arbiter.request(at(200), scan(6, 10, true), self::place()));
-    assert_eq!(ready.from(), at(252));
-    arbiter.ready(ready.id());
-    assert_eq!(
-        run(&mut arbiter, &mut port, at(252)).last(),
-        Some(&Seen::Station(StationNotice::LeaseStarted(ready.id())))
-    );
-    let _ = ready;
-}
-
-#[test]
 fn a_released_lease_always_ends_or_is_cancelled() {
     let mut port = Port::default();
 
     // Before its start: cancelled.
     let (mut arbiter, place) = beside_access_point::<NoReservation>();
-    let waiting = lease(arbiter.request(at(0), scan(6, 10, false), place));
+    let waiting = lease(arbiter.request(at(0), scan(6, 10), place));
     let id = waiting.id();
     arbiter.release(waiting);
     assert_eq!(
@@ -292,7 +264,7 @@ fn a_released_lease_always_ends_or_is_cancelled() {
 
     // While its gate closes: the cycle onto its channel ends, then the
     // lease's, back home.
-    let closing = lease(arbiter.request(at(0), scan(6, 10, false), self::place()));
+    let closing = lease(arbiter.request(at(0), scan(6, 10), self::place()));
     let id = closing.id();
     assert!(matches!(
         arbiter.poll_action(at(52)),
@@ -308,7 +280,7 @@ fn a_released_lease_always_ends_or_is_cancelled() {
     assert_eq!(arbiter.channel(), Some(channel(1)));
 
     // While the port retunes onto its channel.
-    let moving = lease(arbiter.request(at(100), scan(6, 10, false), self::place()));
+    let moving = lease(arbiter.request(at(100), scan(6, 10), self::place()));
     let id = moving.id();
     assert!(matches!(
         arbiter.poll_action(at(152)),
@@ -334,7 +306,6 @@ fn a_released_lease_always_ends_or_is_cancelled() {
         ChannelRequest {
             channel: channel(1),
             purpose: Purpose::Connect,
-            announces_absence: false,
         },
         self::place(),
     ));
@@ -355,7 +326,7 @@ fn a_released_lease_always_ends_or_is_cancelled() {
 fn an_access_point_that_stops_during_an_absence_cancels_it_and_the_port_returns() {
     let (mut arbiter, place) = beside_access_point::<NoReservation>();
     let mut port = Port::default();
-    let lease = lease(arbiter.request(at(0), scan(6, 10, false), place));
+    let lease = lease(arbiter.request(at(0), scan(6, 10), place));
     let id = lease.id();
     run(&mut arbiter, &mut port, at(52));
     arbiter.access_point(at(55), AccessPointFact::Stopped);
@@ -379,7 +350,7 @@ fn an_access_point_that_stops_during_an_absence_cancels_it_and_the_port_returns(
 fn a_refused_move_cancels_the_lease_and_the_port_returns() {
     let (mut arbiter, place) = beside_access_point::<NoReservation>();
     let mut port = Port { refuse: true };
-    let lease = lease(arbiter.request(at(0), scan(6, 10, false), place));
+    let lease = lease(arbiter.request(at(0), scan(6, 10), place));
     let id = lease.id();
     assert_eq!(
         run(&mut arbiter, &mut port, at(52)),
@@ -403,7 +374,7 @@ fn a_refused_move_cancels_the_lease_and_the_port_returns() {
 fn a_failed_return_or_a_poisoned_port_stops_the_station_and_the_access_point() {
     let (mut arbiter, place) = beside_access_point::<NoReservation>();
     let mut port = Port::default();
-    let returning = lease(arbiter.request(at(0), scan(6, 10, false), place));
+    let returning = lease(arbiter.request(at(0), scan(6, 10), place));
     let id = returning.id();
     run(&mut arbiter, &mut port, at(52));
     port.refuse = true;
@@ -420,7 +391,7 @@ fn a_failed_return_or_a_poisoned_port_stops_the_station_and_the_access_point() {
     let _ = returning;
 
     let (mut arbiter, place) = beside_access_point::<NoReservation>();
-    let poisoned = lease(arbiter.request(at(0), scan(6, 10, false), place));
+    let poisoned = lease(arbiter.request(at(0), scan(6, 10), place));
     arbiter.poisoned();
     let seen = run(&mut arbiter, &mut port, at(0));
     assert!(seen.contains(&Seen::Station(StationNotice::Leave(
@@ -429,7 +400,7 @@ fn a_failed_return_or_a_poisoned_port_stops_the_station_and_the_access_point() {
     assert!(seen.contains(&Seen::AccessPoint(AccessPointCommand::Stop)));
     // A failed port answers every request with a leave and the place.
     assert!(matches!(
-        arbiter.request(at(1), scan(6, 10, false), self::place()),
+        arbiter.request(at(1), scan(6, 10), self::place()),
         Answer::Leave(LeaveReason::PortFailed, _)
     ));
     let _ = poisoned;
@@ -439,7 +410,7 @@ fn a_failed_return_or_a_poisoned_port_stops_the_station_and_the_access_point() {
 fn a_gate_that_closes_too_late_for_two_retunes_and_the_shortest_listening_cancels_the_lease() {
     let (mut arbiter, place) = beside_access_point::<NoReservation>();
     let mut port = Port::default();
-    let lease = lease(arbiter.request(at(0), scan(6, 10, false), place));
+    let lease = lease(arbiter.request(at(0), scan(6, 10), place));
     let id = lease.id();
     assert!(matches!(
         arbiter.poll_action(at(52)),
@@ -508,7 +479,6 @@ fn a_lost_upstream_is_searched_for_in_absences_and_its_loss_stops_the_access_poi
         purpose: Purpose::Search {
             dwell: Duration::from_millis(10),
         },
-        announces_absence: false,
     };
     let first = lease(arbiter.request(at(10), search(6), place));
     assert_eq!(first.from(), at(52));
@@ -538,10 +508,187 @@ fn a_connect_away_from_a_running_access_point_is_refused_with_the_place() {
             ChannelRequest {
                 channel: channel(6),
                 purpose: Purpose::Connect,
-                announces_absence: false,
             },
             place,
         ),
         Answer::Leave(LeaveReason::AwayFromAccessPoint, _)
     ));
 }
+
+/// A station connected on channel 1 beside an access point there, its
+/// primary lease running.
+fn connected() -> (TestArbiter, Lease<Caps>, AbsencePlace, Port) {
+    let (mut arbiter, place, absence) = Arbiter::new(ArbiterPolicy::DEFAULT, channel(1), Open);
+    running(&mut arbiter);
+    let mut port = Port::default();
+    let home = lease(arbiter.request(
+        at(0),
+        ChannelRequest {
+            channel: channel(1),
+            purpose: Purpose::Connect,
+        },
+        place,
+    ));
+    let id = home.id();
+    assert_eq!(
+        run(&mut arbiter, &mut port, at(0)).last(),
+        Some(&Seen::Station(StationNotice::LeaseStarted(id)))
+    );
+    (arbiter, home, absence, port)
+}
+
+fn absence(answer: AbsenceAnswer<Caps>) -> Lease<Caps> {
+    match answer {
+        AbsenceAnswer::Lease(lease) => lease,
+        AbsenceAnswer::Refused(refusal, _) => panic!("refused: {refusal:?}"),
+    }
+}
+
+fn absence_place() -> AbsencePlace {
+    AbsencePlace { private: () }
+}
+
+#[test]
+fn a_connected_stations_absence_waits_for_its_readiness_and_returns_home() {
+    let (mut arbiter, home, place, mut port) = connected();
+    // At 45 ms the preparation window ends at 55 ms, past the slot at
+    // 52 ms: the absence follows the next TBTT.
+    let late = absence(arbiter.request_absence(at(45), scan(6, 10), &home, place));
+    assert_eq!(late.from(), at(152));
+    let id = late.id();
+    // The station never said it was ready: cancelled at its start.
+    assert_eq!(
+        run(&mut arbiter, &mut port, at(152)),
+        [Seen::Station(StationNotice::AbsenceCancelled(
+            id,
+            CancelReason::NotReady,
+            absence_place()
+        ))]
+    );
+    let _ = late;
+    let ready = absence(arbiter.request_absence(at(200), scan(6, 10), &home, absence_place()));
+    assert_eq!(ready.from(), at(252));
+    arbiter.ready(ready.id());
+    assert_eq!(
+        run(&mut arbiter, &mut port, at(252)),
+        [
+            Seen::CloseGate(()),
+            Seen::Retune(6),
+            Seen::OpenGate,
+            Seen::Station(StationNotice::AbsenceStarted(ready.id())),
+        ]
+    );
+    assert_eq!(
+        run(&mut arbiter, &mut port, at(264)),
+        [
+            Seen::CloseGate(()),
+            Seen::Retune(1),
+            Seen::OpenGate,
+            Seen::Station(StationNotice::AbsenceEnded(ready.id(), absence_place())),
+        ]
+    );
+    let _ = (ready, home);
+}
+
+#[test]
+fn an_absence_needs_the_running_primary_lease() {
+    let (mut arbiter, place, absence) = Arbiter::<Gate, Caps>::new(ArbiterPolicy::DEFAULT, channel(1), Open);
+    let waiting = lease(arbiter.request(
+        at(0),
+        ChannelRequest {
+            channel: channel(1),
+            purpose: Purpose::Connect,
+        },
+        place,
+    ));
+    // Not started yet: no absence from it.
+    assert!(matches!(
+        arbiter.request_absence(at(0), scan(6, 10), &waiting, absence),
+        AbsenceAnswer::Refused(AbsenceRefusal::NotConnected, _)
+    ));
+    let _ = waiting;
+}
+
+#[test]
+fn a_release_of_the_primary_lease_during_an_absence_ends_the_absence_first() {
+    let (mut arbiter, home, place, mut port) = connected();
+    let away = absence(arbiter.request_absence(at(0), scan(6, 10), &home, place));
+    arbiter.ready(away.id());
+    run(&mut arbiter, &mut port, at(52));
+    let (home_id, away_id) = (home.id(), away.id());
+    arbiter.release(home);
+    let seen = run(&mut arbiter, &mut port, at(55));
+    let ends: Vec<_> = seen
+        .into_iter()
+        .filter(|seen| matches!(seen, Seen::Station(_)))
+        .collect();
+    assert_eq!(
+        ends,
+        [
+            Seen::Station(StationNotice::AbsenceCancelled(
+                away_id,
+                CancelReason::Released,
+                absence_place()
+            )),
+            Seen::Station(StationNotice::LeaseEnded(home_id, self::place())),
+        ]
+    );
+    let _ = away;
+}
+
+#[test]
+fn a_switch_during_an_absence_cancels_it_and_replaces_the_primary_lease() {
+    let (mut arbiter, home, place, mut port) = connected();
+    arbiter.upstream(at(0), UpstreamFact::Connected(channel(1)));
+    let away = absence(arbiter.request_absence(at(0), scan(6, 10), &home, place));
+    arbiter.ready(away.id());
+    run(&mut arbiter, &mut port, at(52));
+    // The upstream moves to channel 11, during the absence.
+    arbiter.upstream(
+        at(53),
+        UpstreamFact::SwitchAnnounced {
+            target: channel(11),
+            mode: ChannelSwitchMode::Continue,
+            at: at(55),
+        },
+    );
+    // The access point announces the switch; it is due at 55 ms.
+    arbiter.access_point(at(55), AccessPointFact::SwitchDue(channel(11)));
+    let seen = run(&mut arbiter, &mut port, at(55));
+    let notices: Vec<_> = seen
+        .into_iter()
+        .filter(|seen| matches!(seen, Seen::Station(_)))
+        .collect();
+    assert!(matches!(
+        &notices[..],
+        [
+            Seen::Station(StationNotice::AbsenceCancelled(cancelled, CancelReason::Switch, _)),
+            Seen::Station(StationNotice::Moved(moved)),
+        ] if *cancelled == away.id() && *moved == channel(11)
+    ));
+    assert_eq!(arbiter.channel(), Some(channel(11)));
+    // The station exchanges its primary lease: the old one goes, a new one
+    // of the new channel comes, under a new name.
+    let old = home.id();
+    let home = arbiter.exchange(home);
+    assert_ne!(home.id(), old);
+    assert_eq!(home.channel(), channel(11));
+    // The old name is gone: a release of the new lease ends it.
+    arbiter.release(home);
+    assert!(
+        run(&mut arbiter, &mut port, at(56))
+            .into_iter()
+            .any(|seen| matches!(seen, Seen::Station(StationNotice::LeaseEnded(..))))
+    );
+    let _ = away;
+}
+
+#[test]
+fn an_exchange_without_a_move_gives_the_same_lease_back() {
+    let (mut arbiter, home, _, _) = connected();
+    let id = home.id();
+    let home = arbiter.exchange(home);
+    assert_eq!(home.id(), id);
+    assert_eq!(home.channel(), channel(1));
+}
+

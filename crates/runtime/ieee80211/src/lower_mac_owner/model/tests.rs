@@ -7,14 +7,19 @@ use core::{
 
 use alloc::vec::Vec;
 
-use oer_ieee80211_mac::{phy::LegacyRate, qos::WmmAccessCategory, sequence::SequenceNumber};
+use oer_ieee80211_mac::{
+    phy::{HtMcs, HtRate, LegacyRate, PpduBandwidth},
+    qos::WmmAccessCategory,
+    sequence::SequenceNumber,
+};
 use oer_radio_port::{Disabled, Ended, Owner, PhaseParts, PortBody, run_port};
 
 use super::*;
 use oer_ieee80211_lower_mac::{
     AckHeader, Backoff, ChannelWidth, CoexPriority, FrameControl, GroupAddress, HeaderSpec,
     IndividualAddress, MpduLength, NoAckHeader, PhyRate, Protection, QosControl, QueueGrant,
-    SupportedBackoff, SupportedCoex, SupportedPower, Tid, TxFrame, TxFrameBody, TxPower,
+    SizedFrame, SupportedBackoff, SupportedCoex, SupportedPower, Tid, TxFrame, TxFrameBody,
+    TxPower,
 };
 
 /// The value of a future the model drives to its end: the body and the
@@ -89,11 +94,14 @@ fn individual<'c, 'a, 'id, R: ModelRole>(
     client: &'c ModelClient<'a, 'id, R>,
 ) -> TxFrame<'c, ModelCaps> {
     TxFrame::Individual {
-        header: AckHeader::new(data_header()).unwrap(),
+        frame: SizedFrame::new(
+            AckHeader::new(data_header()).unwrap(),
+            MpduLength::new(24).unwrap(),
+        )
+        .unwrap(),
         rate: client
             .rate(PhyRate::Legacy(LegacyRate::Ofdm6M))
             .expect("channel 6 carries 6 Mb/s"),
-        len: MpduLength::new(24).unwrap(),
     }
 }
 
@@ -720,6 +728,31 @@ impl PortBody<OwnedModel> for FrameKinds {
                     .rate(PhyRate::Legacy(LegacyRate::Ofdm6M))
                     .expect("channel 6 carries 6 Mb/s")
             };
+            // An individual frame solicits an ACK.
+            let frame = station
+                .tx_buffer(
+                    individual(station),
+                    seats.buffer(WmmAccessCategory::BestEffort),
+                )
+                .await;
+            assert_eq!(frame.response, TxResponse::Ack);
+            assert_eq!(frame.bytes.len(), 24);
+            drop(frame);
+            // An HT rate carries neither a frame without an ACK nor a
+            // BlockAckReq.
+            let ht = || {
+                station
+                    .rate(PhyRate::Ht(
+                        HtRate::new(HtMcs::new(7).unwrap(), PpduBandwidth::Mhz20, false).unwrap(),
+                    ))
+                    .expect("channel 6 carries HT MCS 7")
+            };
+            assert!(station.no_ack(ht()).is_err());
+            assert!(ht().legacy().is_err());
+            // A length shorter than its header is no frame.
+            assert!(
+                SizedFrame::new(data_header(), MpduLength::<ModelCaps>::new(23).unwrap()).is_none()
+            );
             // An individual frame without an ACK at a rate that allows it:
             // its QoS Ack Policy is No Ack.
             let qos_header = HeaderSpec::new(
@@ -743,9 +776,12 @@ impl PortBody<OwnedModel> for FrameKinds {
             let mut frame = station
                 .tx_buffer(
                     TxFrame::IndividualNoAck {
-                        header: NoAckHeader::new(qos_header).unwrap(),
+                        frame: SizedFrame::new(
+                            NoAckHeader::new(qos_header).unwrap(),
+                            MpduLength::new(30).unwrap(),
+                        )
+                        .unwrap(),
                         rate: no_ack,
-                        len: MpduLength::new(30).unwrap(),
                     },
                     seats.buffer(WmmAccessCategory::BestEffort),
                 )
@@ -775,9 +811,8 @@ impl PortBody<OwnedModel> for FrameKinds {
             let frame = station
                 .tx_buffer(
                     TxFrame::Group {
-                        header: group,
+                        frame: SizedFrame::new(group, MpduLength::new(26).unwrap()).unwrap(),
                         rate: six(),
-                        len: MpduLength::new(24).unwrap(),
                     },
                     seats.buffer(WmmAccessCategory::BestEffort),
                 )
@@ -941,4 +976,95 @@ impl PortBody<OwnedModel> for RemovesUnderTheGate {
 fn a_removal_under_the_closed_gate_aborts_the_held_attempt_and_ends() {
     let (backend, _world) = OwnedModel::new(ONE, ADDRESSES);
     assert!(now_ready(run_port(backend, RemovesUnderTheGate)).is_some());
+}
+
+/// A body that removes an access point's group key and reconfigures the
+/// access point while a group attempt using the key is in flight.
+struct AccessPointWaitsForTheAir<'t> {
+    world: &'t ModelHandle,
+}
+
+impl PortBody<OwnedModel> for AccessPointWaitsForTheAir<'_> {
+    async fn run<'p, 'id>(
+        self,
+        owner: Owner<'p, 'id, OwnedModel, Disabled>,
+        resources: ModelResources<'id>,
+    ) -> Ended<'id, OwnedModel> {
+        let [slot, _] = resources.access_point_group_keys;
+        let mut access_point_tx = resources.access_point_tx;
+        let seats = &mut access_point_tx;
+        let Ok(mut enabled) = owner.enable().await else {
+            panic!("the model enables");
+        };
+        {
+            let PhaseParts { clients, .. } = enabled.split();
+            let access_point = &clients.access_point;
+            let key = access_point.install_group_key(
+                slot,
+                GroupKeyId::new(1).unwrap(),
+                Ccmp128Key([7; 16]),
+            );
+            let queue = access_point
+                .queue(seats.queue(WmmAccessCategory::BestEffort))
+                .await;
+            let group = HeaderSpec::new(
+                FrameControl::new(0x0008).unwrap(),
+                0,
+                GroupAddress::new([0xff; 6]).unwrap(),
+                ADDRESSES[1],
+                ADDRESSES[1],
+                0,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            let frame = access_point
+                .tx_buffer(
+                    TxFrame::Group {
+                        frame: SizedFrame::new(group, MpduLength::new(24).unwrap()).unwrap(),
+                        rate: access_point
+                            .rate(PhyRate::Legacy(LegacyRate::Ofdm6M))
+                            .expect("channel 6 carries 6 Mb/s"),
+                    },
+                    seats.buffer(WmmAccessCategory::BestEffort),
+                )
+                .await;
+            let mut protected = attempt(access_point, queue, frame);
+            protected.key = Some(AttemptKey::Group(&key));
+            let id = access_point.submit(protected).unwrap().id();
+            // The key and the interface wait for the attempt, never refused.
+            let filter =
+                SupportedFilter::new(oer_ieee80211_lower_mac::ReceiveFilter::BSS_MEMBER).unwrap();
+            assert!(pending(access_point.configure(filter)));
+            let mut removal = pin!(access_point.remove_group_key(key));
+            assert!(
+                removal
+                    .as_mut()
+                    .poll(&mut Context::from_waker(Waker::noop()))
+                    .is_pending()
+            );
+            assert!(self.world.complete(id, TxStatus::Success));
+            yield_to_driver().await;
+            let _slot = removal.await;
+            access_point.configure(filter).await;
+            assert!(self.world.installed_keys().is_empty());
+        }
+        match enabled.disable(&mut |_| {}).await {
+            Ok(disabled) => disabled.uninstall(()),
+            Err(poisoned) => poisoned.fail_stop(),
+        }
+    }
+}
+
+#[test]
+fn an_access_points_group_key_and_interface_wait_for_the_attempt_in_flight() {
+    let (backend, world) = OwnedModel::new(ONE, ADDRESSES);
+    assert!(
+        now_ready(run_port(
+            backend,
+            AccessPointWaitsForTheAir { world: &world }
+        ))
+        .is_some()
+    );
 }

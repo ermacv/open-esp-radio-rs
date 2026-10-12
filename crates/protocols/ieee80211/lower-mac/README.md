@@ -126,7 +126,12 @@ own. Both are the backend's own types: this package states
 only the contract, so no caller forges one, and the backend proves it with
 compile-fail tests of its types. The buffer request
 (`LowerMacClient::tx_buffer`) describes the frame (`TxFrame`), and its kind
-fixes its rate and response, so a frame and its response never disagree:
+fixes its rate and response, so a frame and its response never disagree.
+A data or management frame carries a `SizedFrame`: its header with the
+MPDU's length (`MpduLength`, at most what the buffers hold), which
+`SizedFrame::new` takes only when it holds the header
+(`FrameHeader::header_len`), and the buffer is exactly that long. The kinds
+are
 an individual frame (an `AckHeader` with an `IndividualAddress`
 receiver, any data or management frame but Action No Ack, an ACK at a
 phase rate), an individual frame without an ACK (a `NoAckHeader`, a QoS data or
@@ -138,9 +143,7 @@ its QoS Ack Policy from the frame's response, so that field has one source.
 The caller writes the body (`TxFrameBody`). A client's attempt
 (`PhaseAttempt`) carries the queue grant, that buffer and the values the
 capabilities marker `K: Ieee80211Capabilities` checks (`SupportedPower`,
-`SupportedBackoff`, `SupportedCoex`); the request checks the MPDU's length
-(`MpduLength`). A
-submission moves them into the backend and returns its `Work`; the
+`SupportedBackoff`, `SupportedCoex`). A submission moves them into the backend and returns its `Work`; the
 backend gives them back when it takes the attempt's terminal, before it
 hands the event out, so no caller holds them and a dropped handle or event
 loses none. The body receives each role's pairwise key, group key and

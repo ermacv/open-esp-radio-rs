@@ -85,13 +85,13 @@ pub use oer_radio_port::{
 };
 pub use owner::{
     AccessPoint, AccessPointClient, AckHeader, AddressSetup, AttemptKey, BssColor, Ccmp128Key,
-    FrameControl, GroupAddress, GroupKeyId, HeaderSpec, Ieee80211Capabilities, IndividualAddress,
-    InterfaceRole, LegacyPhaseRate, LowerMacBackend, LowerMacClient, LowerMacControl,
-    LowerMacEvents, LowerMacSetup, MpduLength, NoAckHeader, PhaseAttempt, PhaseRate, QosControl,
-    QueueGrant, ReceiverAddress, Station, StationClient, StationReceive, SupportedBackoff,
-    SupportedBlockAck, SupportedChannel, SupportedCoex, SupportedEdca, SupportedFilter,
-    SupportedNoAck, SupportedPower, TX_SEATS, Tid, TxFrame, TxFrameBody, TxGated, TxSeats,
-    seat_access_category,
+    FrameControl, FrameHeader, GroupAddress, GroupKeyId, HeaderSpec, Ieee80211Capabilities,
+    IndividualAddress, InterfaceRole, LegacyPhaseRate, LowerMacBackend, LowerMacClient,
+    LowerMacControl, LowerMacEvents, LowerMacSetup, MpduLength, NoAckHeader, PhaseAttempt,
+    PhaseRate, QosControl, QueueGrant, ReceiverAddress, SizedFrame, Station, StationClient,
+    StationReceive, SupportedBackoff, SupportedBlockAck, SupportedChannel, SupportedCoex,
+    SupportedEdca, SupportedFilter, SupportedNoAck, SupportedPower, TX_SEATS, Tid, TxFrame,
+    TxFrameBody, TxGated, TxSeats, seat_access_category,
 };
 pub use port::{ExtensionKind, Ieee80211LowerMacPort, LowerMacEvent, MpduAttempt, SubmitResult};
 pub use rx::{RxBuffer, RxCryptoStatus, RxEvidence, RxMeta};

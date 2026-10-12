@@ -1,73 +1,21 @@
 # Radio port vocabulary
 
-`oer-radio-port` declares what the three radio ports share: the IEEE 802.11
-lower-MAC port (`Ieee80211LowerMacPort`), the IEEE 802.15.4 port (the owner shape of `oer_ieee802154::owner`), and the port owner the Bluetooth LE backend
-(`LeRadioBackend`) runs under ([`owner`](src/owner.rs)). Each port extends the base trait `RadioPort` with its own submission, event view
-and capabilities, and takes the shared values from here, so that a caller
-handles every protocol's refusals, losses, poisoning and lifecycle alike.
+`oer-radio-port` declares what the three radio blocks' ports share. Each
+block owns its port's lifecycle (the owner, the body, the backend and its
+joined driver): `oer-ieee80211-port`, `oer-ieee802154-port` and
+`oer-bluetooth-port`. Code a second block needs moves back here under the
+two-block rule.
 
 | Value | Meaning |
 | --- | --- |
-| `RadioPort` | The base trait: `type Event`, `next_event`, `now`, `cancel(id)` and `lifecycle`, with the port's identity type (`Id`), clock domain (`Domain`) and poison cause (`Fault`). The calls are asynchronous: a backend that decides at once returns a ready future |
-| `run_port`, `PortBody`, `Mint`, `Slot`, `Permit`, `PermitPool`, `Seat`, `Line`, `Ended`, `Owner`, `PortBackend`, `Disabled`, `Enabled`, `Failed`, `PoisonedOwner`, `Retire`, `PhaseParts`, `Lent`, `RadioPortEvents`, `RadioPortClient`, `Work`, `RadioWork` | The port's authority as types. A port lives in one body that `run_port` runs over a backend no caller holds, generic over the install's brand `'id`, which every port-lifetime value carries so none leaves the body or reaches another install; and the body must return `Ended`, which only an uninstall or a fail-stop constructs. `run_port` joins the body with the backend's driver (`PortBackend::drive`, its runner) in one task, so the driver progresses whatever the body awaits; the driver owns the backend's state by value and returns it as `PortBackend::State` (the parts send it messages through `Held`), or reaches the state in `Held` directly and returns `()`, and is cancel-safe. The owner's uninstall only records the request in `Ended`; `run_port` then asks the driver to retire (`Retire`) within `PortBackend::retire_bound` (a missed bound is a fail-stop), detaches the interrupt entries (`PortBackend::detach`) and calls `PortBackend::uninstall` with the held part and the state by value, which returns the hardware owners. A fail-stop or a dropped owner abandons the backend and halts the driver at its next poll. Its `Owner<'p, 'id, B, S>` (`'p`: its borrow of the install `run_port` keeps) is `Disabled` (lends disabled-only settings and port-lifetime resources, enables, uninstalls) or `Enabled` (lends one running phase, disables). `enable(self)` returns the enabled owner, the disabled owner with the radio's refusal (`Failed::Refused`) or a `PoisonedOwner`; `disable(self, sink)` hands the leftover terminals to the sink and returns once every permit is back. A phase's parts (one event consumer, one control with one holder, interface-scoped clients) are each a `Lent` of the owner's borrow. A submission returns a `Work` that holds its client and a token only the backend mints; `work.cancel()` ends it through that client, and no client cancels another's work. The body receives its port-lifetime resources once: slots and permits a stateless `Mint` makes for the backend, a slot taken synchronously by its holder, a permit awaited from a `PermitPool` the backend or a runtime keeps and released with its work's terminal, its taker lending the pool one of the seats of its line (`Seat<'id, K>`, a place in the line, which the taker keeps across takes; what it stands for beyond its kind, such as a role and an access category, is its index, which the backend maps, so pool and take code is instantiated once per line) for as long as it waits, so a taker without a place cannot exist; `Mint::seats` makes a kind's seats with the `Line<'id, K, N>` that sizes the pool's line, so a pool never overflows and serves every taker in arrival order; a pool whose permits submitted work holds lives in the backend's held part of the install (`PortBackend::Held<'id>`), which `run_port` keeps and the owner lends into each `split` and `disable`, so the backend takes a permit back before it hands the terminal out and no caller holds one; in the pool's documented order (FIFO by default, checked by `conformance::permits_serve_takers_in_arrival_order`). A dropped owner abandons its backend and asserts in debug. Compile-fail tests cover each rule; a backend proves with its own that its parts and tokens have no value outside it. The Bluetooth LE backend (`LeRadioBackend`, ESP32-S31 `BluetoothBackend`) is built on this shape; the other protocol ports still implement `RadioPort`. The IEEE 802.15.4 port states its shape beside it (`oer_ieee802154::owner`), with an in-memory backend (`oer_ieee802154::model`) ([ownership and refusals](../../../docs/architecture.md#ownership-and-refusals)) |
+| `branded`, `Mint`, `Slot`, `Permit`, `PermitPool`, `Seat`, `Line` | Capacity as branded tokens. `branded` runs an install with the `Mint` of a fresh brand `'id`, generic over it, so nothing branded leaves the install or reaches another; `Mint::new` is private, so no block forges capacity. A mint makes slots, taken synchronously, permits, awaited from a `PermitPool` in its documented order, and seats, the places in a pool's `Line` its takers wait with; no token is `Clone`, `Copy` or `Default` |
 | `PortResult`, `Poisoned` | Every port call returns `Result<Result<T, Refusal>, Poisoned<Fault>>`. The inner `Err` is a typed refusal (nothing changed); the outer one is only a poisoned backend, carrying the backend's cause, which portable code passes on without interpreting it. `next_event` returns it after every earlier event and again at every later call |
-| Port value | A `RadioPort` backend's `install` returns its port, for the one event consumer, and its control, for the composition; the control's `uninstall` consumes both, so no call reaches a backend that is not installed and no refusal says so. A `PortBackend`'s `install` returns the backend, which `run_port` runs and uninstalls. Shared-PHY maintenance is not a layer over `Quiesce` and never pauses a port: it runs under the radio arbiter's lease, and an operation that loses RF to it ends with its ordinary terminal event |
 | `EventsLost` | Events were dropped. Reported once, in place of the first dropped event; events before it precede the gap and events after it follow it. A backend reserves at admission the slot of every terminal event and of data its protocol promises to deliver (acknowledged Bluetooth LE connection data), so the gap holds only data the protocol does not promise (received frames, advertising reports) and the consumer continues |
-| `LifecycleCommand`, `LifecycleEvent`, `LifecycleError` | `Enable`, `Disable` and `Quiesce`, each ending with `Enabled`, `Disabled`, `Quiesced` or `Failed { command }` (the port is as before the command); a refusal is `AlreadyInState`, `InvalidState` or `Busy` |
-| `CancelError`, `ClockError` | A cancellation named no running work (`NotRunning`); the clock could not be read now (`Unavailable`), or the radio epoch has no later instant (`EpochExhausted`) |
-| `Correlation`, `CorrelationIds`, `BACKEND_RESERVED` | Each port keeps its own 32-bit identity type (`TxId`, `RequestId`, `EventId`) and implements `Correlation`; the top 256 raw values are the backend's, and a caller's `CorrelationIds` allocator wraps before them |
 | `ClockInfo<D>`, `ClockRelation<A, B>`, `RelationRate`, `RelationSample<A, B>`, `Generation<A, B>`, `GenerationSource<A, B>`, `Stamp<A, B>`, `Projected<T, S>`, `ProjectionError` | One relation between two clock domains, typed by its source `A` and target `B`: identical, or affine within a drift bound. A `RelationSample` pairs one reading of each clock with its uncertainty (a target span) and its generation; `project`, `project_back` and `project_span` are the one projection both ways, returning the value and an uncertainty that adds the drift over the distance from the sample, as a span of the target domain. A coordinate of another generation is `StaleSample`, a result outside the range `OutOfRange`. A generation has no public constructor: the relation owner's `GenerationSource` opens an epoch and jumps at each break. `ClockInfo<D>` states a port's resolution and its relation to monotonic time (`monotonic`, `None` when none exists); `RadioStamp<D>` and `ClockSample<D>` are the radio-to-monotonic `Stamp` and `RelationSample` |
 
-Identities stay per port so that a completion of one port cannot be taken
-for another's; the trait gives them one reserved range and one allocator.
+## Conformance
 
-## Event model
-
-Every port has exactly one consumer of its events. Several users of one port
-share it through a router that owns the event stream and dispatches each
-event by its identity. Taking an event only dequeues it: timed work a
-backend performs in software runs in the backend's own runner future, which
-the composition polls for as long as the port exists, or in a
-`PortBackend`'s driver, which `run_port` joins with the port's body.
-
-## Conformance suite
-
-The `conformance` module (the `test-support` feature) checks the shared
-rules on any backend. A backend's test wraps it in a `Harness`: the port, how
-to drive its futures beside its runner, and hooks that make its hardware or
-model admit work, finish it, settle its runner and produce data the protocol
-does not promise to deliver (naming the operation whose reserved terminal
-carried it, where one did); `classify` sorts its events into a work
-terminal, a lifecycle terminal and other events. `check_all` runs every
-rule on fresh harnesses:
-
-- every event produced before a loss comes before one `EventsLost`, an
-  event produced after it follows the marker, and a reserved terminal is
-  never lost;
-- a cancel of admitted work is followed by that work's own terminal exactly
-  once, and a later cancel is `NotRunning`;
-- `Disable` with work in flight ends the work first, then `Disabled`, and
-  nothing follows;
-- `Quiesce` with work in flight lets it end, then `Quiesced`, nothing
-  follows, and `Enable` admits work again;
-- a poisoned backend reports the events from before the fault, then
-  `Poisoned` at every event call and at once from every other call
-  (`check_all_poisoning`, for a backend that implements `PoisoningHarness`;
-  one that never poisons runs `check_all`);
-- the caller's identities avoid the backend's reserved range.
-
-`permits_serve_takers_in_arrival_order` is not part of `check_all`: it runs
-over a `PermitPool` rather than a harness, so a pool's owner (a backend's
-held part, a runtime) calls it with the pool, three seats of its line and the
-other permits it holds aside (at most eight). It checks that a pool with a
-free permit serves at once, that waiting takers are served in arrival order
-whatever their seats' indices, that a taker which drops its future gives up
-its place without stalling the others, and that a seat waits again once its
-take was served or dropped.
-
-A port's own rules (a refusal hands its arguments back) live beside the
-port's definition and use the same harness. Backends run the suite from
-their own tests; a test double that does not keep the port's contract (a
-scripted model) does not.
-
-The package has no state, never waits and depends only on `oer-time`.
+The `conformance` module (the `test-support` feature) holds the rule every
+permit pool meets, `permits_serve_takers_in_arrival_order`: its pool's
+owner (a backend's held part, a runtime) calls it with the pool, three
+seats of its line and at most eight permits it holds aside.

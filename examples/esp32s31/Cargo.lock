@@ -1968,7 +1968,10 @@ dependencies = [
  "oer-esp32s31-radio-runtime",
  "oer-espressif-ieee802154-engine",
  "oer-espressif-ieee802154-runtime",
+ "oer-ieee802154",
+ "oer-ieee802154-port",
  "oer-memory",
+ "oer-radio-port",
  "oer-time-embassy",
 ]
 
@@ -2134,7 +2137,10 @@ dependencies = [
  "oer-espressif-ieee802154-engine",
  "oer-espressif-ieee802154-radio",
  "oer-ieee802154",
+ "oer-ieee802154-port",
  "oer-ieee802154-trace",
+ "oer-radio-permit-pool",
+ "oer-radio-port",
  "oer-time",
  "oer-trace",
 ]
@@ -2330,6 +2336,8 @@ version = "0.1.0"
 dependencies = [
  "heapless 0.9.3",
  "oer-ieee802154",
+ "oer-ieee802154-port",
+ "oer-radio-port",
  "oer-time",
  "openthread-radio",
 ]

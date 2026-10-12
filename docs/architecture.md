@@ -548,25 +548,21 @@ workspace names its own packages.
 A radio port is the contract between the protocol logic of one radio
 protocol and the backend that executes it: a chip, a family driver or a host
 model. Everything above a port is written once for every backend; everything
-below it is the backend's. [`LeRadioBackend`](../crates/protocols/bluetooth/le/radio/src/port.rs)
-is the Bluetooth LE backend, which runs under the port owner of
-[`oer-radio-port`](../crates/radio/port/src/owner.rs), and
-the [owner shape](../crates/protocols/ieee802154/src/owner.rs) of the
-IEEE 802.15.4 port, over its lifecycle package `oer-ieee802154-port`, which
-the Espressif runtime's backend implements and the OpenThread adapter
-consumes, and
-[`Ieee80211LowerMacPort`](../crates/protocols/ieee80211/lower-mac/README.md)
-the Wi-Fi port, carrying the portable `Channel` and `PhyRate` values of
-`oer-ieee80211-mac`. The two ports extend one base trait, `RadioPort` of
-the contract package [`oer-radio-port`](../crates/radio/port/README.md), which
-carries what they share: the event stream (`type Event`, `next_event`), the
-radio clock (`now`), cancellation (`cancel(id)`) and the lifecycle, with
-the refusals, the poisoned outer error, the loss marker, correlation
-identities and the clock relation. The base calls are asynchronous: the
-ESP32-S31 Bluetooth LE backend admits every request and reads its clock
-against a fresh controller-time latch, a bounded wait for the hardware,
-while the Wi-Fi and IEEE 802.15.4 backends decide at once and return ready
-futures.
+below it is the backend's. Every port runs on the owner shape, whose
+lifecycle each block owns in its own contract package: a backend runs under
+`run_port`, which joins it with its driver and lends the body an `Owner`
+whose transitions and phase parts make every caller rule a type.
+[`LeRadioBackend`](../crates/protocols/bluetooth/le/radio/src/port.rs)
+is the Bluetooth LE backend, over `oer-bluetooth-port`; the
+[owner shape](../crates/protocols/ieee802154/src/owner.rs) of the
+IEEE 802.15.4 port, over `oer-ieee802154-port`, is what the Espressif
+runtime's backend implements and the OpenThread adapter consumes; and the
+[lower-MAC port](../crates/protocols/ieee80211/lower-mac/README.md) is the
+Wi-Fi one, over `oer-ieee80211-port`, carrying the portable `Channel` and
+`PhyRate` values of `oer-ieee80211-mac`. The vocabulary they share (the
+brand and capacity tokens, the refusals, the poisoned outer error, the loss
+marker and the clock relation) is the contract package
+[`oer-radio-port`](../crates/radio/port/README.md)'s.
 
 **Placement follows hardware autonomy.** Work the backend performs without
 software on the air timeline (acknowledgement turnaround, FCS or CRC,
@@ -624,15 +620,11 @@ and a caller's `CorrelationIds` allocator wraps before them.
 
 **Event model.** Every port has exactly one consumer of its events. Users
 that share a port share it through a router that owns the stream and
-dispatches each event by its identity; for IEEE 802.11 that is the
-`EventRouter` of `oer-ieee80211-upper-mac-service`, which hands each
-completion to the exchange that registered its `TxId` and queues received
-frames, lifecycle terminals and extension events separately. Taking an
+dispatches each event by its identity. Taking an
 event only dequeues it. Timed work a backend performs in software (the
-802.15.4 CSMA-CA backoffs and retry delays, the Wi-Fi publication watchdog
-and retune) runs in the backend's runner future (`run`), which the
-composition polls beside the consumer for as long as the port exists. The
-Bluetooth LE scheduler runs in its backend's driver (`PortBackend::drive`),
+802.15.4 CSMA-CA backoffs and retry delays, the Wi-Fi publication watchdog,
+the Bluetooth LE scheduler) runs in its backend's driver
+(`PortBackend::drive`),
 which `run_port` joins with the port's body; the driver owns the radio and
 its hardware by value and serves the port's requests as messages.
 
@@ -700,7 +692,7 @@ interpreting it.
 
 | Port | Lifecycle and cancellation | Clock relation to monotonic time (ESP32-S31) |
 | --- | --- | --- |
-| `Ieee80211LowerMacPort` | `lifecycle(Enable / Disable / Quiesce)` and `cancel(TxId)` | affine: the Wi-Fi MAC local time, sampled against the image's monotonic clock |
+| IEEE 802.11 lower-MAC owner shape | the owner's `enable` (with the retune a channel change needs) / `disable(sink)` transitions and a client's `Work::cancel`; the queue and buffer permits return with their attempt's terminal | affine: the Wi-Fi MAC local time, sampled against the image's monotonic clock |
 | IEEE 802.15.4 owner shape | the owner's `enable` / `disable(sink)` transitions and the interface client's `Work::cancel`; the one operation permit returns with its terminal | identical: the runtime's `Clock`, which the engine reads fresh at each event and the time driver also reads |
 | `LeRadioBackend` | the owner's bounded `enable` / `disable(sink)` transitions and the phase client's `cancel(EventId)`; install and uninstall move memory and hardware owners and stay the backend's own operations | none: the extended controller clock |
 

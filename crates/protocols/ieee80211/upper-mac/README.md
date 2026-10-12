@@ -60,8 +60,6 @@ sequence number and CCMP packet number. Sequence numbers, packet numbers
 buffer (`oer-ieee80211-mac::block_ack::reorder`) are allocated and kept by
 their owners in `oer-ieee80211-mac`. Adaptive rate control, which chooses a
 frame's first rate from the reports, is the caller's.
-[`oer-ieee80211-upper-mac-service`](../../../services/ieee80211/upper-mac/README.md)
-drives the planner over any `Ieee80211LowerMacPort`.
 
 The ESP32-S31 MAC (`oer-esp32s31-ieee80211-mac`) runs its ordinary retry,
 A-MPDU retry and protection owners through these algorithms with adapters

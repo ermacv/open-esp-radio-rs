@@ -20,7 +20,7 @@ Layers and edges: [layer dependencies](../../../docs/architecture.md#layer-depen
 
 ## Port
 
-`Ieee80211LowerMacPort` (`crates/protocols/ieee80211/lower-mac/src/port.rs`); optional operations are extension traits `LowerMacAmpdu`, `LowerMacBeaconTiming`, `LowerMacMonitor`, `LowerMacCancelPublished`, `LowerMacAirReservation`, `LowerMacLiveRetune` (`extensions.rs`). The S31 backend is `Esp32s31LowerMac` (`crates/runtime/esp32s31/ieee80211/src/lower_mac.rs`). The S31 station roles use the portable `oer-ieee80211-sta-service` for scan, join and lifecycle.
+The port is on the owner shape: `LowerMacBackend` and its parts in `crates/protocols/ieee80211/lower-mac/src/owner.rs`, its lifecycle (`run_port`, `Owner`, `PortBackend`) in `oer-ieee80211-port` (`crates/protocols/ieee80211/port`). The S31 backend is `Esp32s31Backend` over the static runtime `Esp32s31LowerMac` (`crates/runtime/esp32s31/ieee80211/src/lower_mac.rs`); it has no A-MPDU, beacon-timing or monitor operation yet, and the product datapath still drives the hardware directly (`DatapathRunner`) until #709 step 2 moves it onto the port. The portable port services (upper-mac service, ap, sta-ap, the sta port station) were deleted in #709 step 1; git history keeps them for the rebuild on the portable stack. The S31 station roles use the portable `oer-ieee80211-sta-service` for scan, join and lifecycle.
 
 ## Shared contracts (change only with their owners)
 

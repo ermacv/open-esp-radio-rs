@@ -1186,12 +1186,8 @@ dependencies = [
  "oer-ieee80211-mac",
  "oer-ieee80211-port",
  "oer-ieee80211-rsn",
- "oer-ieee80211-rsn-service",
  "oer-ieee80211-runtime",
  "oer-ieee80211-softmac",
- "oer-ieee80211-sta",
- "oer-ieee80211-sta-service",
- "oer-ieee80211-trace",
  "oer-memory",
  "oer-network-interface",
  "oer-radio-permit-pool",
@@ -1400,6 +1396,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-ieee80211-arbiter"
+version = "0.1.0"
+dependencies = [
+ "oer-ieee80211-lower-mac",
+ "oer-ieee80211-mac",
+ "oer-time",
+]
+
+[[package]]
 name = "oer-ieee80211-datapath"
 version = "0.1.0"
 dependencies = [
@@ -1465,14 +1470,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-ieee80211-rsn-service"
-version = "0.1.0"
-dependencies = [
- "oer-ieee80211-rsn",
- "oer-time",
-]
-
-[[package]]
 name = "oer-ieee80211-runtime"
 version = "0.1.0"
 dependencies = [
@@ -1483,7 +1480,6 @@ dependencies = [
  "oer-ieee80211-port",
  "oer-ieee80211-softmac",
  "oer-memory",
- "oer-radio-permit-pool",
  "oer-radio-port",
  "oer-time",
 ]
@@ -1503,22 +1499,14 @@ name = "oer-ieee80211-sta"
 version = "0.1.0"
 dependencies = [
  "critical-section",
+ "oer-ieee80211-arbiter",
+ "oer-ieee80211-lower-mac",
  "oer-ieee80211-mac",
  "oer-ieee80211-rsn",
  "oer-ieee80211-trace",
  "oer-ieee80211-upper-mac",
  "oer-time",
  "oer-trace",
-]
-
-[[package]]
-name = "oer-ieee80211-sta-service"
-version = "0.1.0"
-dependencies = [
- "oer-ieee80211-mac",
- "oer-ieee80211-rsn",
- "oer-ieee80211-sta",
- "oer-time",
 ]
 
 [[package]]

@@ -3,7 +3,7 @@
 //! The physical RX producer classifies each staged unit by its public
 //! IEEE 802.11 header fields and publishes it, with that route, into one
 //! ordered queue. This module owns only that transport. The STA+AP protocol
-//! dispatcher in `roles::concurrent` decides which role consumes a frame.
+//! dispatcher of the STA+AP composition decides which role consumes a frame.
 
 use core::marker::PhantomData;
 

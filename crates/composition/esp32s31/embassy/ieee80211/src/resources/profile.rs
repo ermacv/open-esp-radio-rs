@@ -7,17 +7,13 @@
 //! remains in SRAM.
 
 use core::{
-    mem::MaybeUninit,
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use oer_esp32s31_ieee80211_dma::tx_storage::TxDmaStorage;
 
-use oer_esp32s31_ieee80211_runtime::{
-    datapath::rx::dma::ReceiveDmaStorage, roles::station::StationControlResources,
-};
+use oer_esp32s31_ieee80211_runtime::datapath::rx::dma::ReceiveDmaStorage;
 
 use oer_esp32s31_ieee80211_mac::rx::PUBLIC_HEADER_SIZE;
 
@@ -169,16 +165,15 @@ impl Default for DefaultScanMemory {
 /// written when [`Self::claim`] takes them.
 #[derive(bytemuck::Zeroable)]
 #[zeroable(bound = "")]
-pub struct DefaultWifiMemory<M: RawMutex> {
+pub struct DefaultWifiMemory {
     claimed: AtomicBool,
     rx_dma: ZeroedStatic<DefaultRxDmaStorage>,
     tx_dma: ZeroedStatic<TxDmaStorage<ESP32S31_DEFAULT_TX_BUFFER_SIZE>>,
     ap_beacon: ZeroedStatic<[u8; AP_BEACON_CAPACITY]>,
     scan_frame: ZeroedStatic<[u8; ESP32S31_DEFAULT_SCAN_FRAME_CAPACITY]>,
-    station_control: ZeroedStatic<MaybeUninit<StationControlResources<M>>>,
 }
 
-impl<M: RawMutex> DefaultWifiMemory<M> {
+impl DefaultWifiMemory {
     /// The unclaimed memory: all zero bytes.
     pub const fn new() -> Self {
         zeroed()
@@ -195,7 +190,7 @@ impl<M: RawMutex> DefaultWifiMemory<M> {
     pub fn claim(
         &'static self,
         scan: &'static DefaultScanMemory,
-    ) -> Result<DefaultWifiMemoryLease<M>, DefaultWifiMemoryError> {
+    ) -> Result<DefaultWifiMemoryLease, DefaultWifiMemoryError> {
         if self
             .claimed
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -219,25 +214,23 @@ impl<M: RawMutex> DefaultWifiMemory<M> {
             scan_table: scan.table.init_with(ScanTable::new),
             ap_beacon: self.ap_beacon.take(),
             scan_frame: self.scan_frame.take(),
-            station_control: self.station_control.init(StationControlResources::new()),
         })
     }
 }
 
-impl<M: RawMutex> Default for DefaultWifiMemory<M> {
+impl Default for DefaultWifiMemory {
     fn default() -> Self {
         Self::new()
     }
 }
 
 /// Exact owners acquired from one default station arena.
-pub struct DefaultWifiMemoryLease<M: RawMutex + 'static> {
+pub struct DefaultWifiMemoryLease {
     pub rx_dma: &'static mut DefaultRxDmaStorage,
     pub tx_dma: &'static mut TxDmaStorage<ESP32S31_DEFAULT_TX_BUFFER_SIZE>,
     pub scan_table: &'static mut DefaultScanTable,
     pub ap_beacon: &'static mut [u8; AP_BEACON_CAPACITY],
     pub scan_frame: &'static mut [u8; ESP32S31_DEFAULT_SCAN_FRAME_CAPACITY],
-    pub station_control: &'static StationControlResources<M>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -1,4 +1,3 @@
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
 use super::*;
 
@@ -38,7 +37,7 @@ fn marker_and_public_dimensions_cannot_drift() {
 
 #[test]
 fn default_station_memory_is_acquired_as_one_owner_graph() {
-    static MEMORY: DefaultWifiMemory<NoopRawMutex> = DefaultWifiMemory::new();
+    static MEMORY: DefaultWifiMemory = DefaultWifiMemory::new();
 
     static SCAN: DefaultScanMemory = DefaultScanMemory::new();
 
@@ -59,8 +58,8 @@ fn default_station_memory_is_acquired_as_one_owner_graph() {
 
 #[test]
 fn conflicting_scan_claim_does_not_consume_the_radio_arena() {
-    static FIRST: DefaultWifiMemory<NoopRawMutex> = DefaultWifiMemory::new();
-    static SECOND: DefaultWifiMemory<NoopRawMutex> = DefaultWifiMemory::new();
+    static FIRST: DefaultWifiMemory = DefaultWifiMemory::new();
+    static SECOND: DefaultWifiMemory = DefaultWifiMemory::new();
     static BUSY: DefaultScanMemory = DefaultScanMemory::new();
     static FRESH: DefaultScanMemory = DefaultScanMemory::new();
 
@@ -80,8 +79,8 @@ fn conflicting_scan_claim_does_not_consume_the_radio_arena() {
 
 #[test]
 fn conflicting_radio_claim_does_not_consume_the_scan_arena() {
-    static FIRST: DefaultWifiMemory<NoopRawMutex> = DefaultWifiMemory::new();
-    static SECOND: DefaultWifiMemory<NoopRawMutex> = DefaultWifiMemory::new();
+    static FIRST: DefaultWifiMemory = DefaultWifiMemory::new();
+    static SECOND: DefaultWifiMemory = DefaultWifiMemory::new();
     static BUSY: DefaultScanMemory = DefaultScanMemory::new();
     static FRESH: DefaultScanMemory = DefaultScanMemory::new();
 

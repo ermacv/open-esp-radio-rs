@@ -3,12 +3,14 @@
 
 //! Concrete ESP32-S31 Embassy Wi-Fi composition on the shared radio.
 //!
-//! On ESP32-S31, `new` brings Wi-Fi up as a client of the application's
-//! [`SharedRadio`] and returns the Wi-Fi application capabilities with the
-//! sole owner-holding runner. Board firmware owns credentials, IP policy and
-//! sockets; it does not assemble PAC, DMA, ISR or role transactions. The
-//! [`resources`] profile is also available on the host for product resource
-//! and ownership validation.
+//! The roles' orchestration (the station, the access point, the monitor,
+//! ESP-NOW and STA+AP, with the application facade `new` over them) was
+//! removed with the old station path; it comes back in #563's step 2 as the
+//! roles' bodies on the lower-MAC port (`run_port`) beside the channel
+//! arbiter. This crate keeps the shared pieces: interrupts, the watchdog,
+//! the interface addresses, the diagnostics and the [`resources`] profile,
+//! also available on the host for product resource and ownership
+//! validation.
 //!
 //! Every shared-PHY transaction (bring-up, channel changes, release) takes the
 //! radio arbiter lease for that one transaction; the shared radio's periodic
@@ -104,38 +106,15 @@ macro_rules! diagnostics_debug {
     }};
 }
 
-#[cfg(target_arch = "riscv32")]
-mod composition;
 #[cfg(feature = "diagnostics")]
 #[cfg(target_arch = "riscv32")]
 mod diagnostics;
 #[cfg(target_arch = "riscv32")]
 mod efuse;
-#[cfg(target_arch = "riscv32")]
-mod esp_now;
 pub mod exit_evidence;
 #[cfg(target_arch = "riscv32")]
-mod facade;
-#[cfg(target_arch = "riscv32")]
 mod interrupts;
-#[cfg(target_arch = "riscv32")]
-mod monitor;
-#[cfg(target_arch = "riscv32")]
-mod radio_resources;
-#[cfg(target_arch = "riscv32")]
-mod status;
-#[cfg(target_arch = "riscv32")]
-mod supervisor;
 
-/// Zero-copy RX origin shared by the station and AP endpoints, for its
-/// adoption and fallback counters.
-#[cfg(all(target_arch = "riscv32", feature = "owned-network"))]
-pub fn rx_zero_copy_origin()
--> &'static oer_esp32s31_ieee80211_runtime::datapath::owned::RxZeroCopyOrigin {
-    supervisor::rx_zero_copy_origin()
-}
-#[cfg(target_arch = "riscv32")]
-mod wifi_network;
 
 #[cfg(feature = "diagnostics")]
 #[cfg(target_arch = "riscv32")]
@@ -145,68 +124,11 @@ pub use diagnostics::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use efuse::EfuseMacError;
-#[cfg(target_arch = "riscv32")]
-pub use esp_now::{
-    ESP_NOW_CCMP_HEADER_LEN, ESP_NOW_CCMP_MIC_LEN, ESP_NOW_DEFAULT_ENCRYPTED_PEER_CAPACITY,
-    ESP_NOW_DEFAULT_PEER_CAPACITY, ESP_NOW_KEY_LEN, ESP_NOW_RX_REPLAY_WINDOW_BITS,
-    ESP_NOW_V1_MAX_PAYLOAD_LEN, ESP_NOW_V1_MAX_PROTECTED_MPDU_LEN,
-    ESP_NOW_V1_MIN_PROTECTED_MPDU_LEN, ESP_NOW_V2_ACTION_PREFIX_LEN, ESP_NOW_V2_MAX_ACTION_LEN,
-    ESP_NOW_V2_MAX_ELEMENT_COUNT, ESP_NOW_V2_MAX_ELEMENT_PAYLOAD_LEN, ESP_NOW_V2_MAX_MPDU_LEN,
-    ESP_NOW_V2_MAX_PAYLOAD_LEN, ESP_NOW_V2_MAX_VENDOR_CONTENT_LEN, ESP_NOW_V2_VERSION,
-    ESP32S31_DEFAULT_ESP_NOW_RX_QUEUE_DEPTH, ESP32S31_DEFAULT_ESP_NOW_TX_QUEUE_DEPTH,
-    EspNowCcmpPacketNumber, EspNowCcmpPacketNumberError, EspNowConfig, EspNowConfigError,
-    EspNowConnectedControl, EspNowConnectedControlConfigError, EspNowConnectedControlError,
-    EspNowConnectedControlShutdown, EspNowCryptoDiagnostics, EspNowCryptoError, EspNowDestination,
-    EspNowEncryptedPeerConfig, EspNowEncryptedPeerDiagnostics, EspNowEncryptedPeerError,
-    EspNowEncryptedPeerId, EspNowEncryptedPeerMutationFailure, EspNowEncryptedPeerReplacement,
-    EspNowEncryptedPeerRestoreFailure, EspNowEncryptedPeerTable, EspNowEncryptedPeerView,
-    EspNowEncryptedProtocol, EspNowEncryptedReceiveError, EspNowEncryptedRxCandidate,
-    EspNowEncryptedSendError, EspNowEncryptedV1Unavailable, EspNowKeyOwner, EspNowKeySlot,
-    EspNowLmk, EspNowLongRangeMissing, EspNowLongRangeReached, EspNowLongRangeUnsupported,
-    EspNowOffChannelFailureStage, EspNowOwnedV1Tx, EspNowPeerCapability, EspNowPeerChannelPolicy,
-    EspNowPeerConfig, EspNowPeerId, EspNowPeerSecurity, EspNowPeerTableError, EspNowPhyMode,
-    EspNowPhySupport, EspNowPmk, EspNowPmkError, EspNowPmkId, EspNowPmkMutationFailure,
-    EspNowPmkOwner, EspNowPreparedEncryptedV1Tx, EspNowPreparedV2Tx, EspNowProtectedV1Envelope,
-    EspNowProtectedV1WireError, EspNowProtocol, EspNowRandomValue, EspNowReceivePublisher,
-    EspNowReceiveReceiver, EspNowReceivedV2, EspNowRemovedEncryptedPeer, EspNowRxMailboxEpochError,
-    EspNowRxMailboxResources, EspNowRxMailboxShutdown, EspNowRxMetadata, EspNowRxPublishOutcome,
-    EspNowRxPublisher, EspNowRxRateNormalization, EspNowRxReceiver, EspNowRxReplayCandidate,
-    EspNowRxResources, EspNowTransmitHandle, EspNowTransmitMailboxOwner, EspNowTxBackpressure,
-    EspNowTxBinding, EspNowTxCancelReason, EspNowTxCompletion, EspNowTxConfig, EspNowTxConfigError,
-    EspNowTxError, EspNowTxMailboxEpochError, EspNowTxMailboxInvariantError,
-    EspNowTxMailboxShutdown, EspNowTxResources, EspNowTxRuntimeFailure, EspNowTxTerminal,
-    EspNowTxTicket, EspNowTxTrySendError, EspNowUnicastAddress, EspNowV1WireError, EspNowV2Action,
-    EspNowV2Element, EspNowV2Elements, EspNowV2Frame, EspNowV2Payload, EspNowV2Reassembly,
-    EspNowV2ReceiveError, EspNowV2RxEvent, EspNowV2RxMailboxError, EspNowV2RxOutcome,
-    EspNowV2SendError, EspNowV2TxTrySendError, EspNowV2WireError, EspNowVersionError,
-    EspNowWireVersion, EspressifLongRangeRate, StandaloneEspNowBinding,
-    StandaloneEspNowBindingError, StandaloneEspNowChannelControl,
-    StandaloneEspNowOffChannelRunError, StandaloneEspNowOffChannelRunFailure,
-    StandaloneEspNowPeerError, StandaloneEspNowPhyChannelControl, StandaloneEspNowPrepareFailure,
-    StandaloneEspNowReceive, StandaloneEspNowRequest, StandaloneEspNowRunError,
-    StandaloneEspNowRunFailure, StandaloneEspNowRunReport, StandaloneEspNowRx,
-    StandaloneEspNowRxProgress, StandaloneEspNowService, StandaloneEspNowStopError,
-    StandaloneEspNowStopped, WifiStandaloneEspNowPlan, attach_esp_now_tx,
-    encrypted_peer_destination, esp_now_encrypted_v1_codec_status, esp_now_wire_version,
-    esp32s31_esp_now_phy_support, normalize_esp_now_rx_metadata,
-    prepare_esp32s31_standalone_esp_now,
-};
-#[cfg(target_arch = "riscv32")]
-pub use facade::{
-    NewError, RadioError, WifiControl, WifiInitialization, WifiParts, WifiStarted, WifiSystem,
-};
 #[cfg(feature = "mac-irq-diagnostics")]
 #[cfg(target_arch = "riscv32")]
 pub use interrupts::MacIrqObservation;
 #[cfg(target_arch = "riscv32")]
 pub use interrupts::{mac_interrupt, power_interrupt};
-#[cfg(target_arch = "riscv32")]
-pub use monitor::{
-    ESP32S31_MONITOR_CAPTURE_CAPACITY, Esp32s31MonitorBasebandFormat, Esp32s31MonitorPhyInfo,
-    MONITOR_CHANNEL_SEQUENCE_CAPACITY, MonitorCapturePolicy, MonitorCaptureStatistics,
-    MonitorChannelPolicy, MonitorChannelSequence, MonitorChannelSequenceError, MonitorFrames,
-    MonitorRequest, ReceivedMonitorFrame,
-};
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 #[cfg(target_arch = "riscv32")]
 pub use oer_esp32s31_ieee80211_runtime::datapath::{
@@ -238,30 +160,6 @@ pub use oer_esp32s31_ieee80211_runtime::diagnostics::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason;
-#[cfg(target_arch = "riscv32")]
-pub use radio_resources::WifiStackResources;
-#[cfg(feature = "tx-psram-dma-probe")]
-#[cfg(target_arch = "riscv32")]
-pub use radio_resources::configure_direct_psram_tx_dma_probe;
-#[cfg(feature = "tx-psram-dma-probe")]
-#[cfg(target_arch = "riscv32")]
-pub use radio_resources::{
-    DirectPsramTxDmaProbeObservation, direct_psram_tx_dma_probe_observation,
-};
-#[cfg(target_arch = "riscv32")]
-pub use radio_resources::{WifiDevice, WifiDevices, WifiNetworkDevice};
-#[cfg(target_arch = "riscv32")]
-pub use status::{
-    AccessPointStatus, AccessPointStatusSnapshot, StationLinkSecurity, StationLinkState,
-    StationStatus, StationStatusSnapshot,
-};
-#[cfg(feature = "diagnostics")]
-#[cfg(target_arch = "riscv32")]
-pub use supervisor::station::{DiagnosticRxStatistics, DiagnosticSnapshot, DiagnosticTxVector};
-#[cfg(target_arch = "riscv32")]
-pub use supervisor::{SystemRunner, new};
-#[cfg(target_arch = "riscv32")]
-pub use wifi_network::WifiNetworkRunner;
 
 /// One low-overhead batch of Core0 connected-DATAPATH poll residence.
 ///

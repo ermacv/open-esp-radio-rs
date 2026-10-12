@@ -119,7 +119,6 @@ use crate::{
         },
         tx::aggregate::AggregateTxServiceEvent,
     },
-    roles::concurrent::StaApRxBlockAck,
 };
 #[cfg(any(feature = "diagnostics", test))]
 use oer_esp32s31_ieee80211_ap::ampdu::ApAmpduCompletion;
@@ -181,8 +180,9 @@ const fn can_publish_ap_rx_in_place(
     current_staging_owner && !current_is_amsdu && deferred_bytes == 0
 }
 
+mod rx_block_ack;
+pub use rx_block_ack::{STA_AP_RX_BLOCK_ACK_PEER_CAPACITY, StaApRxBlockAck};
 mod ampdu;
-pub mod concurrent;
 mod datapath;
 pub mod network_tx;
 mod protocol_mailbox;
@@ -190,12 +190,6 @@ mod rx_pipeline;
 mod rx_reorder;
 
 pub use ampdu::AccessPointAmpdu;
-
-pub use concurrent::{
-    AccessPointRoleRuntime, StaApAccessPointFinishFailure, StaApAccessPointFinished,
-    StaApAccessPointParkError, StaApAccessPointParkFailure, StaApAccessPointTxActive,
-    StaApAccessPointTxParked, finish_sta_ap_access_point_role, park_sta_ap_access_point_role,
-};
 
 pub use self::rx_reorder::{AccessPointRxReorder, AccessPointRxReorderError};
 

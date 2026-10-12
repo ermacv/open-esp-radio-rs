@@ -12,6 +12,7 @@ use oer_ieee80211_lower_mac::{
     BandSet, Channel, ChannelWidth, CoexPriority, CoexPrioritySet, HardwareServices,
     LowerMacCapabilities, PhyFormatSet, RateSupport, WidthSet,
 };
+use oer_ieee80211_mac::channel_switch::ChannelSwitchMode;
 use oer_ieee80211_mac::phy::{HeMcs, HtMcs};
 use std::vec::Vec;
 
@@ -129,6 +130,11 @@ fn open_association_response() -> [u8; 30] {
 
 /// A beacon of the open network on channel 6.
 fn beacon() -> [u8; 55] {
+    beacon_on(6)
+}
+
+/// A beacon of the open network on the channel `number`.
+fn beacon_on(number: u8) -> [u8; 55] {
     let mut frame = [0_u8; 55];
     frame[0..2].copy_from_slice(&0x0080_u16.to_le_bytes());
     frame[4..10].copy_from_slice(&[0xff; 6]);
@@ -144,7 +150,7 @@ fn beacon() -> [u8; 55] {
     frame[48..52].copy_from_slice(&[0x82, 0x84, 0x8b, 0x96]);
     frame[52] = 3;
     frame[53] = 1;
-    frame[54] = 6;
+    frame[54] = number;
     frame
 }
 
@@ -539,6 +545,101 @@ fn a_scan_ends_with_a_partial_result_after_skipped_absences() {
     ))));
 }
 
+/// The access point beside the station runs on channel 1.
+fn access_point_on_1(world: &mut World) {
+    world.arbiter.access_point(
+        at(0),
+        AccessPointFact::Running {
+            channel: channel(1),
+            next_tbtt: at(50),
+            beacon_interval: Duration::from_millis(100),
+        },
+    );
+}
+
+/// Advance until the world saw what `seen` matches; the instant then.
+fn advance_until(world: &mut World, seen: impl Fn(&Seen) -> bool) -> Instant {
+    for _ in 0..100 {
+        let now = world.advance();
+        if world.seen.iter().any(&seen) {
+            return now;
+        }
+    }
+    panic!("never seen: {:?}", world.seen);
+}
+
+fn announces(seen: &Seen) -> bool {
+    matches!(
+        seen,
+        Seen::AccessPoint(AccessPointCommand::AnnounceSwitch { .. })
+    )
+}
+
+#[test]
+fn beside_an_access_point_a_join_elsewhere_moves_it_and_one_too_soon_after_waits() {
+    let mut world = World::new(3);
+    access_point_on_1(&mut world);
+    world.station.input(at(0), StaInput::Command(StaCommand::Connect));
+    world.run(at(0));
+    // Channel 6 in the absence at 52 ms, where the network's beacon is.
+    world.advance();
+    world.advance();
+    world.receive(at(53), &beacon_on(6));
+    // The join waits for the access point's announced move.
+    let asked = advance_until(&mut world, announces);
+    assert!(world.take().contains(&Seen::AccessPoint(
+        AccessPointCommand::AnnounceSwitch {
+            target: channel(6),
+            mode: ChannelSwitchMode::Continue,
+            count: 5,
+        }
+    )));
+    assert_eq!(world.arbiter.channel(), Some(channel(1)));
+    // The switch is due: the port moves, and the join authenticates there.
+    world
+        .arbiter
+        .access_point(at(650), AccessPointFact::SwitchDue(channel(6)));
+    world.run(at(650));
+    assert_eq!(
+        world.take(),
+        [
+            Seen::Retune(6),
+            Seen::Configure("bss"),
+            Seen::Transmit {
+                subtype: 0x00b0,
+                on: 6
+            },
+        ]
+    );
+    // The join fails; the access point stays where it moved.
+    world.receive(at(660), &authentication_response(1));
+    assert!(world.take().contains(&Seen::Notify(StaNotice::Disconnected(
+        StaDisconnectReason::AuthenticationFailed
+    ))));
+    assert_eq!(world.arbiter.channel(), Some(channel(6)));
+
+    // The network is now on channel 1, where the access point was: the
+    // join there is refused within the follow interval, and the station
+    // asks again once it passed.
+    world
+        .station
+        .input(at(700), StaInput::Command(StaCommand::Connect));
+    world.run(at(700));
+    advance_until(&mut world, |seen| *seen == Seen::Retune(1));
+    let now = world.arbiter.poll_deadline().unwrap_or(at(760));
+    world.receive(now, &beacon_on(1));
+    let retried = advance_until(&mut world, announces);
+    assert!(retried >= asked.saturating_add(Duration::from_secs(30)));
+    assert_eq!(world.arbiter.channel(), Some(channel(6)));
+    assert!(world.take().contains(&Seen::AccessPoint(
+        AccessPointCommand::AnnounceSwitch {
+            target: channel(1),
+            mode: ChannelSwitchMode::Continue,
+            count: 5,
+        }
+    )));
+}
+
 /// The Null data frame's subtype in the seen frames, with and without PM.
 const NULL_ACTIVE: u16 = 0x0048;
 const NULL_POWER_SAVE: u16 = 0x1048;
@@ -598,7 +699,34 @@ fn a_connected_station_scans_in_an_absence_announced_with_nulls() {
                 subtype: NULL_ACTIVE,
                 on: 6
             },
-            // Channel 6 is the network's own: the scan is done.
+            // Channel 6 next, the network's own: an absence as any other.
+            Seen::Transmit {
+                subtype: NULL_POWER_SAVE,
+                on: 6
+            },
+        ]
+    );
+    // The port stays; the other networks there are heard only in it.
+    world.advance();
+    assert_eq!(
+        world.take(),
+        [
+            Seen::Configure("scan"),
+            Seen::Transmit {
+                subtype: 0x0040,
+                on: 6
+            },
+        ]
+    );
+    world.advance();
+    assert_eq!(
+        world.take(),
+        [
+            Seen::Configure("bss"),
+            Seen::Transmit {
+                subtype: NULL_ACTIVE,
+                on: 6
+            },
             Seen::Notify(StaNotice::BackgroundScanDone { partial: false }),
         ]
     );
@@ -631,11 +759,17 @@ fn an_undelivered_wake_null_is_sent_again_when_the_tim_shows_buffered_frames() {
         .station
         .input(at(40), StaInput::Command(StaCommand::BackgroundScan));
     world.run(at(40));
+    // Channel 1's absence, then channel 6's.
     world.advance();
-    // Back home, the PM=0 Null is not delivered.
+    world.advance();
+    world.advance();
+    // Back home from the last, the PM=0 Null is not delivered.
     world.outcomes.push_back(false);
     world.advance();
-    world.take();
+    assert_eq!(
+        world.take().last(),
+        Some(&Seen::Notify(StaNotice::BackgroundScanDone { partial: false }))
+    );
     // The access point's beacon shows the station's association identifier
     // (0xc02a & 0x3fff = 42: octet 5, bit 2) in its TIM, a partial virtual
     // bitmap from octet 4: PM=0 again.

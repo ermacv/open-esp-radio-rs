@@ -42,7 +42,7 @@ pub(crate) fn snapshot_station_tsf(
 impl WifiRadioRegisters {
     /// Return one coherent station TSF snapshot.
     ///
-    /// SOURCE: complete rev0 ROM `hal_get_sta_tsf` at `0x2f82c15c` sets
+    /// SOURCE: complete rev0 ROM `rom[]::hal_get_sta_tsf` at `0x2f82c15c` sets
     /// CONTROL bit zero, reads the low word at `0x2010_d820`, reads the high
     /// word at `0x2010_d824`, then clears CONTROL bit zero. Both output
     /// pointers are present in this production specialization.
@@ -99,7 +99,7 @@ impl WifiRadioRegisters {
 
     /// Program the station TBTT schedule and enable its interrupt.
     ///
-    /// SOURCE: complete pinned `libpp.a[pm.o]::pm_update_next_tbtt` disables
+    /// SOURCE: complete pinned `libpp[pm.o]::pm_update_next_tbtt` disables
     /// and re-enables the station TBTT, programs the schedule with
     /// `hal_set_sta_tbtt`, then clears the SoC wakeup request and sets bit
     /// zero at `0x2010_d810`. Complete `hal_tsf.o::hal_disable_sta_tbtt`
@@ -146,7 +146,7 @@ impl WifiRadioRegisters {
 
     /// Stop the station TBTT.
     ///
-    /// SOURCE: complete pinned `libpp.a[hal_tsf.o]::hal_disable_sta_tbtt`
+    /// SOURCE: complete pinned `libpp[hal_tsf.o]::hal_disable_sta_tbtt`
     /// clears bit 26 at `0x2010_d858`.
     pub fn stop_station_tbtt(&mut self) {
         self.peripherals
@@ -159,7 +159,7 @@ impl WifiRadioRegisters {
 
     /// Replace the station TBTT lead and the light-sleep wake lead beside it.
     ///
-    /// SOURCE: complete pinned `libpp.a[pm.o]::pm_update_params` calls
+    /// SOURCE: complete pinned `libpp[pm.o]::pm_update_params` calls
     /// `hal_set_sta_tbtt_ahead_time`, which replaces bits 15:0 at
     /// `0x2010_d858`, then `hal_set_sta_light_sleep_wake_ahead_time`, which
     /// replaces bits 31:16 at `0x2010_d840`.
@@ -174,8 +174,7 @@ impl WifiRadioRegisters {
     /// Replace the station TBTT interval, as the vendor does when the
     /// coexistence period changes.
     ///
-    /// SOURCE: complete pinned `libpp.a[hal_tsf.o]::
-    /// hal_set_sta_tbtt_interval` replaces bits 25:0 at `0x2010_d85c` with
+    /// SOURCE: complete pinned `libpp[hal_tsf.o]::hal_set_sta_tbtt_interval` replaces bits 25:0 at `0x2010_d85c` with
     /// the interval shifted right by ten.
     pub fn set_station_tbtt_interval(&mut self, interval_micros: u32) {
         self.peripherals

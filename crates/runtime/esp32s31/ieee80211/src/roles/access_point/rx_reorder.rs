@@ -107,7 +107,7 @@ impl<'storage, const CAPACITY: usize> AccessPointRxReorder<'storage, CAPACITY> {
         let released = self.banks.start(agreement)?;
         // SOURCE: complete `ht_recv_action_ba_addba_request` sets agreement
         // flag 0x40 after publishing the hardware entry. Complete
-        // `ieee80211_ampdu_reorder` consumes that flag when it observes the
+        // `libnet80211[ieee80211_ht.o]::ieee80211_ampdu_reorder` consumes that flag when it observes the
         // first physical A-MPDU. It reloads the hardware entry only when that
         // MPDU is behind the current software sequence frontier.
         self.pending_hardware_window_reset[bank] = true;

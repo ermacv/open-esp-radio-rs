@@ -78,8 +78,7 @@ impl HtAmpduLengthAccumulator {
 
     /// Add one MPDU whose HE-Control field may be inserted by MAC hardware.
     ///
-    /// SOURCE: complete `libpp.a[pp_he.o]::
-    /// ppCalSubFrameLength` reads `metadata[7] & 1`, multiplies it by four,
+    /// SOURCE: complete `libpp[pp_he.o]::ppCalSubFrameLength` reads `metadata[7] & 1`, multiplies it by four,
     /// and adds it after the delimiter and rounded metadata length. The low
     /// fourteen-bit MPDU length remains unchanged.
     pub const fn push_with_hardware_he_control(
@@ -201,9 +200,8 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// preceding lengths on every `commit_frame`, making a 32-MPDU build
     /// O(n²).
     ///
-    /// SOURCE: complete `libpp.a[pp.o]::{ppCalSubFrameLength,
-    /// ppCalTxAMPDULength}`, complete `libpp.a[pp_he.o]::
-    /// ppCalSubFrameLength`, and the equivalent finite rules in
+    /// SOURCE: complete `libpp[pp.o]::ppCalTxAMPDULength`, complete
+    /// `libpp[pp_he.o]::ppCalSubFrameLength`, and the equivalent finite rules in
     /// [`HtAmpduLengthAccumulator`].
     pub(super) fn length_after_append(
         &self,

@@ -90,7 +90,7 @@ impl Descriptor {
     ///
     /// SOURCE\[ROM_REV0_WDEV_APPEND_RX_BLOCKS]: the complete ROM body at
     /// `0x2f838a7e` stores the new head through the old tail's `next` word
-    /// before calling `hal_mac_rx_set_dscr_reload`; the production RX-ring
+    /// before calling `rom[]::hal_mac_rx_set_dscr_reload`; the production RX-ring
     /// owner retains the same ownership order.
     ///
     /// This crate-private edge is called only by the live RX-ring owner after

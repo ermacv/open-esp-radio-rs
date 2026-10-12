@@ -5,7 +5,7 @@
 /// TX Block Ack TIDs the vendor station negotiates when its connection
 /// completes, in order.
 ///
-/// SOURCE(esp32s31): complete `libnet80211.a[wl_cnx.o]::cnx_auth_done`
+/// SOURCE(esp32s31): complete `libnet80211[wl_cnx.o]::cnx_auth_done`
 /// invokes `ieee80211_ampdu_request` for TIDs 0, 7 and 5 in this order.
 pub const STA_TX_BLOCK_ACK_TIDS: [u8; 3] = [0, 7, 5];
 
@@ -15,7 +15,7 @@ pub const FIRST_DIALOG_TOKEN: u8 = 1;
 /// The Dialog Token that follows `current` in the vendor's sequence: one
 /// archive-static token shared by every agreement, modulo 63.
 ///
-/// SOURCE(esp32s31): complete `libnet80211.a[ieee80211_ht.o]::ieee80211_ampdu_request`
+/// SOURCE(esp32s31): complete `libnet80211[ieee80211_ht.o]::ieee80211_ampdu_request`
 /// increments one archive-static token modulo 63.
 pub const fn next_dialog_token(current: u8) -> u8 {
     if current >= 62 { 0 } else { current + 1 }
@@ -25,7 +25,7 @@ pub const fn next_dialog_token(current: u8) -> u8 {
 /// MPDU before it releases the run past the gap, from the first MPDU it
 /// retains.
 ///
-/// SOURCE(esp32s31): complete `libnet80211.a[ieee80211_ht.o]::ieee80211_ampdu_reorder`
+/// SOURCE(esp32s31): complete `libnet80211[ieee80211_ht.o]::ieee80211_ampdu_reorder`
 /// starts its reorder age timer with 0x493e0 exactly when the first frame is
 /// retained; the timer is armed through the microsecond OSI timer-arm slot,
 /// a 300,000 us edge.

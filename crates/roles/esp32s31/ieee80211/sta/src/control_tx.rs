@@ -68,8 +68,8 @@ pub use oer_esp32s31_ieee80211::ordinary_tx::WifiTxResources;
 // SOURCE: complete `libnet80211.a[ieee80211_output.o]` passes
 // coexistence events 5/6 for Probe and Authentication/Association. Complete
 // `libcoexist.a[coexist_core.o]::coex_pti_tab` maps both to PTI one;
-// complete `libpp.a[hal_mac.o,hal_coex.o]::
-// {mac_tx_set_pti,hal_set_tx_pti}` retains scheduler and packet PTI one.
+// complete `libpp[hal_mac.o]::mac_tx_set_pti` and
+// `libpp[hal_coex.o]::hal_set_tx_pti` retain scheduler and packet PTI one.
 const MANAGEMENT_SCHEDULER_PRIORITY: u8 = 1;
 const MANAGEMENT_PACKET_PRIORITY: u8 = 1;
 
@@ -94,10 +94,10 @@ enum ControlRetry {
     /// An acknowledged frame on the interface's non-data schedule record,
     /// which selects its rate, retry rates and publication budget.
     ///
-    /// SOURCE: `libnet80211.a::ieee80211_set_tx_desc` binds a frame to the
+    /// SOURCE: `libnet80211[ieee80211_output.o]::ieee80211_set_tx_desc` binds a frame to the
     /// interface's default trc until `ic_set_sta` enables the association's
     /// own; `trc_init` gave that trc `rc11BSchedTbl` record 3 at `+0x68`,
-    /// which `rcGetSched` selects for authentication, association and EAPOL.
+    /// which `libpp[trc.o]::rcGetSched` selects for authentication, association and EAPOL.
     Schedule(RateScheduleRef),
 }
 

@@ -135,7 +135,7 @@ impl EdcaContentionParameters {
     }
 
     /// The LMAC's cold contention of a queue: complete
-    /// `libpp.a[lmac.o]::{lmacInit, lmacInitAc}`, kept as the Espressif
+    /// `libpp[lmac.o]::lmacInit, libpp[lmac.o]::lmacInitAc`, kept as the Espressif
     /// family's policy data.
     const fn vendor_default(queue: LegacyTxQueue) -> Self {
         let defaults = lmac::default_contention(match queue {
@@ -184,7 +184,7 @@ impl EdcaBackoffState {
 
     /// Install a new parameter set while retaining a still-valid current CW.
     pub fn reconfigure(&mut self, parameters: EdcaContentionParameters) {
-        // SOURCE: complete `libpp.a[lmac.o]::lmacSetAcParam`.
+        // SOURCE: complete `libpp[lmac.o]::lmacSetAcParam`.
         // It replaces AIFSN/min/max, clamps current down to a lower new max,
         // clamps it up to a higher new min, and otherwise retains it: the
         // portable `EdcaContention::reconfigure`.
@@ -201,8 +201,8 @@ impl EdcaBackoffState {
 
     /// Select the hardware slot count from caller-supplied entropy.
     pub const fn select_slot(self, entropy: u32) -> u16 {
-        // SOURCE: complete `libpp.a[lmac.o]::lmacTxFrame`
-        // +0x10e..0x12c calls `hal_random`, masks it with
+        // SOURCE: complete `libpp[lmac.o]::lmacTxFrame`
+        // +0x10e..0x12c calls `libpp[hal_mac.o]::hal_random`, masks it with
         // `(1 << current_exponent) - 1`, stores the u16 result at AC+0x06,
         // and passes it to `hal_mac_tx_config_edca`: the portable draw
         // `EdcaContention::draw` over that entropy word.
@@ -211,16 +211,14 @@ impl EdcaBackoffState {
 
     /// Advance the current CW after an attempt that will be retried.
     pub fn record_retry_failure(&mut self) {
-        // SOURCE: complete `libpp.a[lmac.o]::
-        // {lmacProcessLongRetryFail,lmacProcessShortRetryFail}`. Both raise
+        // SOURCE: complete `libpp[lmac.o]::lmacProcessLongRetryFail,libpp[lmac.o]::lmacProcessShortRetryFail`. Both raise
         // AC+0x08 by one while it is below the active maximum.
         self.contention.record_failure();
     }
 
     /// Reset contention after a successful frame exchange.
     pub fn record_success(&mut self) {
-        // SOURCE: complete `libpp.a[lmac.o]::
-        // {lmacProcessLongFrameSuccess,lmacProcessShortFrameSuccess}`. Both
+        // SOURCE: complete `libpp[lmac.o]::lmacProcessLongFrameSuccess,libpp[lmac.o]::lmacProcessShortFrameSuccess`. Both
         // copy AC+0x09 (ECWmin) to AC+0x08 (current exponent).
         self.contention.reset();
     }
@@ -228,8 +226,7 @@ impl EdcaBackoffState {
     /// Reset a terminal exchange before a new MSDU starts.
     pub fn reset_terminal_exchange(&mut self) {
         // SOURCE: the retry-limit branches in complete
-        // `libpp.a[lmac.o]::
-        // {lmacProcessLongRetryFail,lmacProcessShortRetryFail}` restore the
+        // `libpp[lmac.o]::lmacProcessLongRetryFail,libpp[lmac.o]::lmacProcessShortRetryFail` restore the
         // active minimum before discarding or completing the exchange.
         self.contention.reset();
     }

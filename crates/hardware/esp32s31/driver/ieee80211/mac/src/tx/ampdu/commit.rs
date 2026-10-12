@@ -46,10 +46,8 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// which retains exclusive ownership of the same stable allocation until
     /// this batch has completed, detached and released or cancelled.
     ///
-    /// SOURCE: complete `libnet80211.a[ieee80211_output.o]::
-    /// ieee80211_alloc_tx_buf` cache-TX/type-nine branch retains the netstack
-    /// buffer through `s_netstack_ref`; complete `libpp.a[pp.o]::
-    /// ppAssembleAMPDU` links the existing ESF descriptors without copying
+    /// SOURCE: complete `libnet80211[ieee80211_output.o]::ieee80211_alloc_tx_buf` cache-TX/type-nine branch retains the netstack
+    /// buffer through `s_netstack_ref`; complete `libpp[pp.o]::ppAssembleAMPDU` links the existing ESF descriptors without copying
     /// their payloads.
     pub(super) fn commit_referenced_frame(
         self: Pin<&mut Self>,
@@ -192,8 +190,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         buffer[4] = empty_delimiters;
         buffer[5..TX_AMPDU_METADATA_SIZE].fill(0);
         if hardware_he_control {
-            // SOURCE: complete `libpp.a[pp_he.o]::
-            // ppCalSubFrameLength` uses byte seven bit zero as the four-byte
+            // SOURCE: complete `libpp[pp_he.o]::ppCalSubFrameLength` uses byte seven bit zero as the four-byte
             // on-air insertion term. HIL_VENDOR_HE_CONTROL_INSERTION_2026_07_30
             // captured vendor metadata word one as 0x0100_0000 while CCMP
             // remained immediately after the QoS header in DMA.
@@ -273,11 +270,11 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
 
     /// Commit one referenced HE MPDU under the complete rate/TXOP policy.
     ///
-    /// SOURCE: complete `libpp.a[pp_he.o]::{ppCalDeliNum,
-    /// ppCalTxHEAMPDULength,ppCheckTxHEAMPDUlength}` supplies delimiter and
+    /// SOURCE: complete `libpp[pp_he.o]::ppCalDeliNum,
+    /// libpp[pp_he.o]::ppCalTxHEAMPDULength,libpp[pp_he.o]::ppCheckTxHEAMPDUlength` supplies delimiter and
     /// duration accounting. Complete
-    /// `libnet80211.a[ieee80211_output.o]::ieee80211_alloc_tx_buf`
-    /// and `libpp.a[pp.o]::ppAssembleAMPDU` retain and link the
+    /// `libnet80211[ieee80211_output.o]::ieee80211_alloc_tx_buf`
+    /// and `libpp[pp.o]::ppAssembleAMPDU` retain and link the
     /// cache-TX allocation instead of copying it into aggregate storage.
     ///
     /// The retained owner keeps `dma_storage` at its current address until the
@@ -382,9 +379,9 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
 
     /// Commit one HE MPDU together with its original MSDU byte count.
     ///
-    /// SOURCE: complete `libpp.a[hal_debug.o]::dbg_read_tx_ppdu`
+    /// SOURCE: complete `libpp[hal_debug.o]::dbg_read_tx_ppdu`
     /// names frame-state halfword `+0x22` `msdu_len`; complete
-    /// `libpp.a[hal_mac_tx.o]::mac_tx_set_tb` sums that halfword
+    /// `libpp[hal_mac_tx.o]::mac_tx_set_tb` sums that halfword
     /// across the linked aggregate and publishes it to `WDEVTXQBSR_SW`.
     /// Keeping the value beside the owned encoded MPDU prevents the Trigger
     /// path from substituting the larger 802.11 frame or PSDU length.

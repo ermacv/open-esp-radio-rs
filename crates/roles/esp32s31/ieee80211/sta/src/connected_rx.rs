@@ -2020,7 +2020,7 @@ impl ConnectedRxDispatcher {
     /// for reason 6 or 7 starts an SA Query; every other unprotected robust
     /// frame is dropped.
     ///
-    /// SOURCE: complete pinned `libnet80211.a[ieee80211_sta.o]::sta_input`
+    /// SOURCE: complete pinned `libnet80211[ieee80211_sta.o]::sta_input`
     /// and `sta_recv_mgmt`.
     fn dispatch_protected_management(
         &self,

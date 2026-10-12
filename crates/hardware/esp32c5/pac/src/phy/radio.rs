@@ -1,14 +1,14 @@
 //! PMU analog I2C power and the PHY baseband configuration words.
 //!
 //! SOURCE: reviewed evidence `C5_BLOB_LIBPHY_RF_INIT_LEAVES` (ESP32-C5
-//! `libphy.a[phy_reg.o]::phy_open_i2c_xpd`,
-//! `libphy.a[phy_i2c.o]::{phy_dac_rate_set, phy_adc_rate_set}`) with the
+//! `libphy[phy_reg.o]::phy_open_i2c_xpd`,
+//! `libphy[phy_i2c.o]::phy_dac_rate_set, libphy[phy_i2c.o]::phy_adc_rate_set`) with the
 //! PMU fields of `ESP_IDF_4D59230D_C5_PMU`, and `C5_BLOB_LIBPHY_RF_INIT_LEAVES_2`
-//! (`phy_open_fe_bb_clk`, `phy_iq_swap_set`, `phy_fe_reg_init`,
-//! `phy_pwdet_reg_init`, `phy_dac_scale_set`, `phy_rxiq_scale_set`,
-//! `phy_pwdet_sar2_init`) with `ESP_IDF_4D59230D_C5_LP_AON_SARADC`, and
+//! (`libphy[phy_init.o]::phy_open_fe_bb_clk`, `phy_iq_swap_set`, `libphy[phy_reg.o]::phy_fe_reg_init`,
+//! `libphy[phy_pwdet.o]::phy_pwdet_reg_init`, `phy_dac_scale_set`, `phy_rxiq_scale_set`,
+//! `libphy[phy_pwdet.o]::phy_pwdet_sar2_init`) with `ESP_IDF_4D59230D_C5_LP_AON_SARADC`, and
 //! `C5_BLOB_LIBPHY_RF_INIT_LEAVES_4` (the `phy_rf_init` prologue,
-//! `phy_set_tsens_power`, `phy_set_tsens_pwr`, `phy_tsens_read_init`) with
+//! `phy_set_tsens_power`, `phy_set_tsens_pwr`, `libphy[phy_tsens.o]::phy_tsens_read_init`) with
 //! `ESP_IDF_4D59230D_C5_PCR_TSENS`, and `C5_BLOB_LIBPHY_RF_INIT_LEAVES_5`
 //! (`phy_rxevm_init_cfg`, `phy_rxevm_reset_mem`).
 

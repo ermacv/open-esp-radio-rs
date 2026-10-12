@@ -6,9 +6,7 @@
 //! access point still holds the association before it believes an
 //! unprotected disconnect.
 //!
-//! SOURCE(esp32s31): complete pinned `libnet80211.a[ieee80211.o]::
-//! ieee80211_is_robust_mgmt_frm` and `libnet80211.a[ieee80211_sta.o]::
-//! ieee80211_is_action_category_robust`; IEEE 802.11-2016 9.6.10 (SA Query).
+//! SOURCE(esp32s31): complete pinned `libnet80211[ieee80211.o]::ieee80211_is_robust_mgmt_frm` and `libnet80211[ieee80211_sta.o]::ieee80211_is_action_category_robust`; IEEE 802.11-2016 9.6.10 (SA Query).
 
 /// Management subtype byte (Frame Control byte zero) of Disassociation.
 const DISASSOCIATION: u8 = 0xa0;

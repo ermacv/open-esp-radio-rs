@@ -8,7 +8,7 @@ impl WifiRadioRegisters {
     /// Request the complete `WIFI_PS_NONE` MAC stop used before retuning PHY.
     ///
     /// SOURCE: `BLOB_LIBPP_MAC_CHANNEL_SWITCH`, specifically complete
-    /// `hal_mac_deinit`, and the exact transcription retained in
+    /// `libpp[hal_mac.o]::hal_mac_deinit`, and the exact transcription retained in
     /// `PROMOTED_CHANNEL_SWITCH`. With the all-ones no-power-save retention
     /// mask the vendor leaf sets bit 12 and bits 23:16 in one RMW.
     pub fn request_mac_channel_stop_without_power_save(&mut self) {
@@ -28,7 +28,7 @@ impl WifiRadioRegisters {
 
     /// Block or unblock the TX queues for station power management.
     ///
-    /// SOURCE: complete pinned `libpp.a[pm.o]::pm_coex_go_to_sleep` and
+    /// SOURCE: complete pinned `libpp[pm.o]::pm_coex_go_to_sleep` and
     /// `pm_coex_schm_process` set bits 19:17 at `0x2010_4cac`, and
     /// `hal_pm_unblock_txq` clears them, each through one fresh-read RMW.
     pub fn set_power_save_tx_block(&mut self, blocked: bool) {

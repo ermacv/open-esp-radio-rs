@@ -697,18 +697,18 @@ pub enum AmpduRetryDecision {
     /// The protection exchange failed before the data PPDU: publish the same
     /// aggregate again. No MPDU was transmitted, so none gains the Retry bit.
     ///
-    /// SOURCE: complete `libpp.a[lmac.o]::lmacProcessCtsTimeout` calls
-    /// `lmacProcessShortRetryFail(queue, 0, 1)`, which advances the short
+    /// SOURCE: complete `libpp[lmac.o]::lmacProcessCtsTimeout` calls
+    /// `libpp[lmac.o]::lmacProcessShortRetryFail(queue, 0, 1)`, which advances the short
     /// retry count and contention window, skips the Retry-bit leaf and
-    /// re-enters `lmacEndFrameExchangeSequence` with the unchanged frame.
+    /// re-enters `libpp[lmac.o]::lmacEndFrameExchangeSequence` with the unchanged frame.
     RepublishUnchanged { retry_mask: u32 },
     /// The protection exchange failed at every attempt: keep the aggregate
     /// and send a BlockAckReq starting at its head. The BlockAck it solicits
     /// drives the resort ([`AmpduRetryState::observe_block_ack_request`]).
     ///
-    /// SOURCE: `libpp.a[lmac.o]::lmacEndRetryAMPDUFail` keeps an
+    /// SOURCE: `libpp[lmac.o]::lmacEndRetryAMPDUFail` keeps an
     /// RTS-protected aggregate whose CTS never arrived and sends a
-    /// BlockAckReq through `ppFillAMPDUBar`/`ppReSendBar` with the starting
+    /// BlockAckReq through `libpp[pp.o]::ppFillAMPDUBar`/`libpp[pp.o]::ppReSendBar` with the starting
     /// sequence of its head (blobray 7a0f2090f).
     RequestBlockAck {
         retry_mask: u32,
@@ -717,11 +717,11 @@ pub enum AmpduRetryDecision {
     /// End aggregate ownership and send the selected MPDUs individually,
     /// in order, each already carrying its Retry bit.
     ///
-    /// SOURCE: `libpp.a[pp.o]::ppResortTxAMPDU` moves the remaining MPDUs
+    /// SOURCE: `libpp[pp.o]::ppResortTxAMPDU` moves the remaining MPDUs
     /// to the head of the queue's ordinary list when
-    /// `trc_isTxAmpduOperational` or `trc_tid_isTxAmpduOperational` is
+    /// `libpp[trc.o]::trc_isTxAmpduOperational` or `libpp[trc.o]::trc_tid_isTxAmpduOperational` is
     /// false after its resort, first converting a missing aggregate head
-    /// through `ppHEAMPDU2Normal` (blobray 943d350d7). A single missing HT
+    /// through `libpp[pp_he.o]::ppHEAMPDU2Normal` (blobray 943d350d7). A single missing HT
     /// MPDU takes the same ordinary path.
     Unaggregate { retry_mask: u32 },
     /// End aggregate ownership. The selected MPDUs were not acknowledged
@@ -760,10 +760,10 @@ impl AmpduRetryDecision {
 /// DMA owner's `CAPACITY`, reads the chip completion and keeps the 32-bit
 /// masks of the S31 descriptor chain.
 ///
-/// SOURCE: complete `libpp.a[pp.o]::ppResortTxAMPDU` preserves Sequence
+/// SOURCE: complete `libpp[pp.o]::ppResortTxAMPDU` preserves Sequence
 /// Control and compacts only the MPDUs absent from BlockAck. Complete
-/// `libpp.a[lmac.o]::lmacRetryTxFrame` skips `rcGetRate` for the state
-/// written by `lmacProcessLongRetryFail`, so a retained aggregate keeps its
+/// `libpp[lmac.o]::lmacRetryTxFrame` skips `libpp[trc.o]::rcGetRate` for the state
+/// written by `libpp[lmac.o]::lmacProcessLongRetryFail`, so a retained aggregate keeps its
 /// PHY rate.
 pub struct AmpduRetryState<const CAPACITY: usize> {
     state: UpperAmpduRetryState,
@@ -816,13 +816,13 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
     /// the TID's BlockAck agreement is no longer `block_ack_operational`,
     /// the live missing MPDUs leave the aggregate for individual retry.
     ///
-    /// SOURCE: complete `libpp.a[lmac.o]::lmacProcessTxComplete` maps status
-    /// five to `lmacProcessAckTimeout`. Both its short- and long-frame
+    /// SOURCE: complete `libpp[lmac.o]::lmacProcessTxComplete` maps status
+    /// five to `libpp[lmac.o]::lmacProcessAckTimeout`. Both its short- and long-frame
     /// leaves call `lmacProcessTBSuccess(queue, 0x7f)` instead of retrying
     /// when the queue is in Trigger flow and its applicable packet counts
     /// are zero ([`crate::tx::TxCompletion::completes_vendor_trigger_flow`]),
     /// which ends the exchange without an ordinary BlockAck. A CTS timeout is
-    /// a failed protection exchange (`lmacProcessCtsTimeout`). Without the
+    /// a failed protection exchange (`libpp[lmac.o]::lmacProcessCtsTimeout`). Without the
     /// hardware's BlockAck-received result every MPDU is retried; with it,
     /// the bitmap under [`HtAmpduTxCompletion::valid_block_ack`] resorts the
     /// aggregate.

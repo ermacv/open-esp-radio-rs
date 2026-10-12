@@ -5678,7 +5678,7 @@ pub mod i2c_ana_mst {
         pub type R = crate::R<AnaConf2Spec>;
         #[doc = "Register `ANA_CONF2` writer"]
         pub type W = crate::W<AnaConf2Spec>;
-        #[doc = "Project-assigned name. Host-selection field that phy_get_i2c_hostid_ replaces on every analog-register access while preserving the other bits.\n\nValue on reset: 0"]
+        #[doc = "Project-assigned name. Host-selection field that libphy\\[phy_i2c.o\\]::phy_get_i2c_hostid_ replaces on every analog-register access while preserving the other bits.\n\nValue on reset: 0"]
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         #[repr(u16)]
         pub enum PhyHostMap {
@@ -5697,7 +5697,7 @@ pub mod i2c_ana_mst {
             type Ux = u16;
         }
         impl crate::IsEnum for PhyHostMap {}
-        #[doc = "Field `PHY_HOST_MAP` reader - Project-assigned name. Host-selection field that phy_get_i2c_hostid_ replaces on every analog-register access while preserving the other bits."]
+        #[doc = "Field `PHY_HOST_MAP` reader - Project-assigned name. Host-selection field that libphy\\[phy_i2c.o\\]::phy_get_i2c_hostid_ replaces on every analog-register access while preserving the other bits."]
         pub type PhyHostMapR = crate::FieldReader<PhyHostMap>;
         impl PhyHostMapR {
             #[doc = "Get enumerated values variant"]
@@ -5720,7 +5720,7 @@ pub mod i2c_ana_mst {
                 *self == PhyHostMap::ParallelInitializationMap
             }
         }
-        #[doc = "Field `PHY_HOST_MAP` writer - Project-assigned name. Host-selection field that phy_get_i2c_hostid_ replaces on every analog-register access while preserving the other bits."]
+        #[doc = "Field `PHY_HOST_MAP` writer - Project-assigned name. Host-selection field that libphy\\[phy_i2c.o\\]::phy_get_i2c_hostid_ replaces on every analog-register access while preserving the other bits."]
         pub type PhyHostMapW<'a, REG> = crate::FieldWriter<'a, REG, 13, PhyHostMap>;
         impl<'a, REG> PhyHostMapW<'a, REG>
         where
@@ -5739,14 +5739,14 @@ pub mod i2c_ana_mst {
             }
         }
         impl R {
-            #[doc = "Bits 4:16 - Project-assigned name. Host-selection field that phy_get_i2c_hostid_ replaces on every analog-register access while preserving the other bits."]
+            #[doc = "Bits 4:16 - Project-assigned name. Host-selection field that libphy\\[phy_i2c.o\\]::phy_get_i2c_hostid_ replaces on every analog-register access while preserving the other bits."]
             #[inline(always)]
             pub fn phy_host_map(&self) -> PhyHostMapR {
                 PhyHostMapR::new(((self.bits >> 4) & 0x1fff) as u16)
             }
         }
         impl W {
-            #[doc = "Bits 4:16 - Project-assigned name. Host-selection field that phy_get_i2c_hostid_ replaces on every analog-register access while preserving the other bits."]
+            #[doc = "Bits 4:16 - Project-assigned name. Host-selection field that libphy\\[phy_i2c.o\\]::phy_get_i2c_hostid_ replaces on every analog-register access while preserving the other bits."]
             #[inline(always)]
             pub fn phy_host_map(&mut self) -> PhyHostMapW<'_, AnaConf2Spec> {
                 PhyHostMapW::new(self, 4)
@@ -6292,17 +6292,17 @@ pub mod phy_baseband_config {
         bb_clock_gate: BbClockGate,
     }
     impl RegisterBlock {
-        #[doc = "0x400 - Project-assigned name. Front-end clock-gate word; phy_open_fe_bb_clk writes 0x1E7."]
+        #[doc = "0x400 - Project-assigned name. Front-end clock-gate word; libphy\\[phy_init.o\\]::phy_open_fe_bb_clk writes 0x1E7."]
         #[inline(always)]
         pub const fn fe_clock_gate(&self) -> &FeClockGate {
             &self.fe_clock_gate
         }
-        #[doc = "0x408 - Project-assigned name. Word whose bits 31:24 phy_fe_reg_init replaces with 0xB4."]
+        #[doc = "0x408 - Project-assigned name. Word whose bits 31:24 libphy\\[phy_reg.o\\]::phy_fe_reg_init replaces with 0xB4."]
         #[inline(always)]
         pub const fn table_memory_index_source(&self) -> &TableMemoryIndexSource {
             &self.table_memory_index_source
         }
-        #[doc = "0x40c - Project-assigned name. Word whose bit 2 phy_fe_reg_init sets."]
+        #[doc = "0x40c - Project-assigned name. Word whose bit 2 libphy\\[phy_reg.o\\]::phy_fe_reg_init sets."]
         #[inline(always)]
         pub const fn front_end_and_tone_stop_control(&self) -> &FrontEndAndToneStopControl {
             &self.front_end_and_tone_stop_control
@@ -6312,27 +6312,27 @@ pub mod phy_baseband_config {
         pub const fn rx_dco_control(&self) -> &RxDcoControl {
             &self.rx_dco_control
         }
-        #[doc = "0x438 - Project-assigned name. Word whose bits 31:29 phy_fe_reg_init sets."]
+        #[doc = "0x438 - Project-assigned name. Word whose bits 31:29 libphy\\[phy_reg.o\\]::phy_fe_reg_init sets."]
         #[inline(always)]
         pub const fn iq_correction_control(&self) -> &IqCorrectionControl {
             &self.iq_correction_control
         }
-        #[doc = "0x43c - Project-assigned name. Word whose bits 15:8 and 7:0 phy_fe_reg_init clears and phy_rxiq_scale_set replaces."]
+        #[doc = "0x43c - Project-assigned name. Word whose bits 15:8 and 7:0 libphy\\[phy_reg.o\\]::phy_fe_reg_init clears and phy_rxiq_scale_set replaces."]
         #[inline(always)]
         pub const fn rx_iq_scale(&self) -> &RxIqScale {
             &self.rx_iq_scale
         }
-        #[doc = "0x444 - Project-assigned name. Word whose bit 8 phy_fe_reg_init clears."]
+        #[doc = "0x444 - Project-assigned name. Word whose bit 8 libphy\\[phy_reg.o\\]::phy_fe_reg_init clears."]
         #[inline(always)]
         pub const fn front_end_clear_control(&self) -> &FrontEndClearControl {
             &self.front_end_clear_control
         }
-        #[doc = "0x448 - Project-assigned name. Word whose bits 1:0 phy_adc_rate_set replaces with its rate bit and whose bits 3:2 phy_dac_rate_set clears."]
+        #[doc = "0x448 - Project-assigned name. Word whose bits 1:0 libphy\\[phy_i2c.o\\]::phy_adc_rate_set replaces with its rate bit and whose bits 3:2 libphy\\[phy_i2c.o\\]::phy_dac_rate_set clears."]
         #[inline(always)]
         pub const fn adc_rate_and_front_end_control(&self) -> &AdcRateAndFrontEndControl {
             &self.adc_rate_and_front_end_control
         }
-        #[doc = "0x800 - Project-assigned name. Word whose bits 1:0 phy_open_fe_bb_clk sets."]
+        #[doc = "0x800 - Project-assigned name. Word whose bits 1:0 libphy\\[phy_init.o\\]::phy_open_fe_bb_clk sets."]
         #[inline(always)]
         pub const fn fe_bb_clock_control(&self) -> &FeBbClockControl {
             &self.fe_bb_clock_control
@@ -6347,32 +6347,32 @@ pub mod phy_baseband_config {
         pub const fn power_detector_sar_control_status(&self) -> &PowerDetectorSarControlStatus {
             &self.power_detector_sar_control_status
         }
-        #[doc = "0x810 - Opaque: meaning not established. Word phy_pwdet_reg_init writes 0x0F0F0FFF."]
+        #[doc = "0x810 - Opaque: meaning not established. Word libphy\\[phy_pwdet.o\\]::phy_pwdet_reg_init writes 0x0F0F0FFF."]
         #[inline(always)]
         pub const fn word_0810_opaque(&self) -> &Word0810Opaque {
             &self.word_0810_opaque
         }
-        #[doc = "0x814 - Opaque: meaning not established. Word phy_pwdet_reg_init writes 0x00FF0F64."]
+        #[doc = "0x814 - Opaque: meaning not established. Word libphy\\[phy_pwdet.o\\]::phy_pwdet_reg_init writes 0x00FF0F64."]
         #[inline(always)]
         pub const fn word_0814_opaque(&self) -> &Word0814Opaque {
             &self.word_0814_opaque
         }
-        #[doc = "0x818 - Project-assigned name. Word phy_pwdet_reg_init and phy_pwdet_sar2_init write 0xAAAA."]
+        #[doc = "0x818 - Project-assigned name. Word libphy\\[phy_pwdet.o\\]::phy_pwdet_reg_init and libphy\\[phy_pwdet.o\\]::phy_pwdet_sar2_init write 0xAAAA."]
         #[inline(always)]
         pub const fn power_detector_reference(&self) -> &PowerDetectorReference {
             &self.power_detector_reference
         }
-        #[doc = "0x870 - Project-assigned name. Word whose bits 15:8 phy_fe_reg_init replaces with 0x96."]
+        #[doc = "0x870 - Project-assigned name. Word whose bits 15:8 libphy\\[phy_reg.o\\]::phy_fe_reg_init replaces with 0x96."]
         #[inline(always)]
         pub const fn tx_pa_control_1(&self) -> &TxPaControl1 {
             &self.tx_pa_control_1
         }
-        #[doc = "0x888 - Opaque: meaning not established. Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise."]
+        #[doc = "0x888 - Opaque: meaning not established. Word whose bit 29 libphy\\[phy_reg.o\\]::phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise."]
         #[inline(always)]
         pub const fn word_0888_opaque(&self) -> &Word0888Opaque {
             &self.word_0888_opaque
         }
-        #[doc = "0x894 - Opaque: meaning not established. Word whose bit 22 phy_fe_reg_init sets."]
+        #[doc = "0x894 - Opaque: meaning not established. Word whose bit 22 libphy\\[phy_reg.o\\]::phy_fe_reg_init sets."]
         #[inline(always)]
         pub const fn word_0894_opaque(&self) -> &Word0894Opaque {
             &self.word_0894_opaque
@@ -6387,12 +6387,12 @@ pub mod phy_baseband_config {
         pub const fn word_0c08_opaque(&self) -> &Word0c08Opaque {
             &self.word_0c08_opaque
         }
-        #[doc = "0xc0c - Project-assigned name. Word whose bits 14:13 phy_fe_reg_init sets."]
+        #[doc = "0xc0c - Project-assigned name. Word whose bits 14:13 libphy\\[phy_reg.o\\]::phy_fe_reg_init sets."]
         #[inline(always)]
         pub const fn iq_correction_aux(&self) -> &IqCorrectionAux {
             &self.iq_correction_aux
         }
-        #[doc = "0xc20 - Opaque: meaning not established. Word whose bits 7:0 phy_fe_reg_init replaces with 0x57."]
+        #[doc = "0xc20 - Opaque: meaning not established. Word whose bits 7:0 libphy\\[phy_reg.o\\]::phy_fe_reg_init replaces with 0x57."]
         #[inline(always)]
         pub const fn word_0c20_opaque(&self) -> &Word0c20Opaque {
             &self.word_0c20_opaque
@@ -6417,83 +6417,83 @@ pub mod phy_baseband_config {
         pub const fn rx_evm_memory_reset(&self) -> &RxEvmMemoryReset {
             &self.rx_evm_memory_reset
         }
-        #[doc = "0x7c80 - Project-assigned name. Baseband clock-gate word; phy_open_fe_bb_clk writes all ones."]
+        #[doc = "0x7c80 - Project-assigned name. Baseband clock-gate word; libphy\\[phy_init.o\\]::phy_open_fe_bb_clk writes all ones."]
         #[inline(always)]
         pub const fn bb_clock_gate(&self) -> &BbClockGate {
             &self.bb_clock_gate
         }
     }
-    #[doc = "ADC_RATE_AND_FRONT_END_CONTROL (rw) register accessor: Project-assigned name. Word whose bits 1:0 phy_adc_rate_set replaces with its rate bit and whose bits 3:2 phy_dac_rate_set clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`adc_rate_and_front_end_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`adc_rate_and_front_end_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@adc_rate_and_front_end_control`] module"]
+    #[doc = "ADC_RATE_AND_FRONT_END_CONTROL (rw) register accessor: Project-assigned name. Word whose bits 1:0 libphy\\[phy_i2c.o\\]::phy_adc_rate_set replaces with its rate bit and whose bits 3:2 libphy\\[phy_i2c.o\\]::phy_dac_rate_set clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`adc_rate_and_front_end_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`adc_rate_and_front_end_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@adc_rate_and_front_end_control`] module"]
     #[doc(alias = "ADC_RATE_AND_FRONT_END_CONTROL")]
     pub type AdcRateAndFrontEndControl =
         crate::Reg<adc_rate_and_front_end_control::AdcRateAndFrontEndControlSpec>;
-    #[doc = "Project-assigned name. Word whose bits 1:0 phy_adc_rate_set replaces with its rate bit and whose bits 3:2 phy_dac_rate_set clears."]
+    #[doc = "Project-assigned name. Word whose bits 1:0 libphy\\[phy_i2c.o\\]::phy_adc_rate_set replaces with its rate bit and whose bits 3:2 libphy\\[phy_i2c.o\\]::phy_dac_rate_set clears."]
     pub mod adc_rate_and_front_end_control {
         #[doc = "Register `ADC_RATE_AND_FRONT_END_CONTROL` reader"]
         pub type R = crate::R<AdcRateAndFrontEndControlSpec>;
         #[doc = "Register `ADC_RATE_AND_FRONT_END_CONTROL` writer"]
         pub type W = crate::W<AdcRateAndFrontEndControlSpec>;
-        #[doc = "Field `BIT_0_OPAQUE` reader - Opaque: meaning not established. Bit 0, set to the ADC rate bit by phy_adc_rate_set."]
+        #[doc = "Field `BIT_0_OPAQUE` reader - Opaque: meaning not established. Bit 0, set to the ADC rate bit by libphy\\[phy_i2c.o\\]::phy_adc_rate_set."]
         pub type Bit0OpaqueR = crate::BitReader;
-        #[doc = "Field `BIT_0_OPAQUE` writer - Opaque: meaning not established. Bit 0, set to the ADC rate bit by phy_adc_rate_set."]
+        #[doc = "Field `BIT_0_OPAQUE` writer - Opaque: meaning not established. Bit 0, set to the ADC rate bit by libphy\\[phy_i2c.o\\]::phy_adc_rate_set."]
         pub type Bit0OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `BIT_1_OPAQUE` reader - Opaque: meaning not established. Bit 1, set to the ADC rate bit by phy_adc_rate_set."]
+        #[doc = "Field `BIT_1_OPAQUE` reader - Opaque: meaning not established. Bit 1, set to the ADC rate bit by libphy\\[phy_i2c.o\\]::phy_adc_rate_set."]
         pub type Bit1OpaqueR = crate::BitReader;
-        #[doc = "Field `BIT_1_OPAQUE` writer - Opaque: meaning not established. Bit 1, set to the ADC rate bit by phy_adc_rate_set."]
+        #[doc = "Field `BIT_1_OPAQUE` writer - Opaque: meaning not established. Bit 1, set to the ADC rate bit by libphy\\[phy_i2c.o\\]::phy_adc_rate_set."]
         pub type Bit1OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `BIT_2_OPAQUE` reader - Opaque: meaning not established. Bit 2, cleared by phy_dac_rate_set."]
+        #[doc = "Field `BIT_2_OPAQUE` reader - Opaque: meaning not established. Bit 2, cleared by libphy\\[phy_i2c.o\\]::phy_dac_rate_set."]
         pub type Bit2OpaqueR = crate::BitReader;
-        #[doc = "Field `BIT_2_OPAQUE` writer - Opaque: meaning not established. Bit 2, cleared by phy_dac_rate_set."]
+        #[doc = "Field `BIT_2_OPAQUE` writer - Opaque: meaning not established. Bit 2, cleared by libphy\\[phy_i2c.o\\]::phy_dac_rate_set."]
         pub type Bit2OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `BIT_3_OPAQUE` reader - Opaque: meaning not established. Bit 3, cleared by phy_dac_rate_set."]
+        #[doc = "Field `BIT_3_OPAQUE` reader - Opaque: meaning not established. Bit 3, cleared by libphy\\[phy_i2c.o\\]::phy_dac_rate_set."]
         pub type Bit3OpaqueR = crate::BitReader;
-        #[doc = "Field `BIT_3_OPAQUE` writer - Opaque: meaning not established. Bit 3, cleared by phy_dac_rate_set."]
+        #[doc = "Field `BIT_3_OPAQUE` writer - Opaque: meaning not established. Bit 3, cleared by libphy\\[phy_i2c.o\\]::phy_dac_rate_set."]
         pub type Bit3OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bit 0 - Opaque: meaning not established. Bit 0, set to the ADC rate bit by phy_adc_rate_set."]
+            #[doc = "Bit 0 - Opaque: meaning not established. Bit 0, set to the ADC rate bit by libphy\\[phy_i2c.o\\]::phy_adc_rate_set."]
             #[inline(always)]
             pub fn bit_0_opaque(&self) -> Bit0OpaqueR {
                 Bit0OpaqueR::new((self.bits & 1) != 0)
             }
-            #[doc = "Bit 1 - Opaque: meaning not established. Bit 1, set to the ADC rate bit by phy_adc_rate_set."]
+            #[doc = "Bit 1 - Opaque: meaning not established. Bit 1, set to the ADC rate bit by libphy\\[phy_i2c.o\\]::phy_adc_rate_set."]
             #[inline(always)]
             pub fn bit_1_opaque(&self) -> Bit1OpaqueR {
                 Bit1OpaqueR::new(((self.bits >> 1) & 1) != 0)
             }
-            #[doc = "Bit 2 - Opaque: meaning not established. Bit 2, cleared by phy_dac_rate_set."]
+            #[doc = "Bit 2 - Opaque: meaning not established. Bit 2, cleared by libphy\\[phy_i2c.o\\]::phy_dac_rate_set."]
             #[inline(always)]
             pub fn bit_2_opaque(&self) -> Bit2OpaqueR {
                 Bit2OpaqueR::new(((self.bits >> 2) & 1) != 0)
             }
-            #[doc = "Bit 3 - Opaque: meaning not established. Bit 3, cleared by phy_dac_rate_set."]
+            #[doc = "Bit 3 - Opaque: meaning not established. Bit 3, cleared by libphy\\[phy_i2c.o\\]::phy_dac_rate_set."]
             #[inline(always)]
             pub fn bit_3_opaque(&self) -> Bit3OpaqueR {
                 Bit3OpaqueR::new(((self.bits >> 3) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bit 0 - Opaque: meaning not established. Bit 0, set to the ADC rate bit by phy_adc_rate_set."]
+            #[doc = "Bit 0 - Opaque: meaning not established. Bit 0, set to the ADC rate bit by libphy\\[phy_i2c.o\\]::phy_adc_rate_set."]
             #[inline(always)]
             pub fn bit_0_opaque(&mut self) -> Bit0OpaqueW<'_, AdcRateAndFrontEndControlSpec> {
                 Bit0OpaqueW::new(self, 0)
             }
-            #[doc = "Bit 1 - Opaque: meaning not established. Bit 1, set to the ADC rate bit by phy_adc_rate_set."]
+            #[doc = "Bit 1 - Opaque: meaning not established. Bit 1, set to the ADC rate bit by libphy\\[phy_i2c.o\\]::phy_adc_rate_set."]
             #[inline(always)]
             pub fn bit_1_opaque(&mut self) -> Bit1OpaqueW<'_, AdcRateAndFrontEndControlSpec> {
                 Bit1OpaqueW::new(self, 1)
             }
-            #[doc = "Bit 2 - Opaque: meaning not established. Bit 2, cleared by phy_dac_rate_set."]
+            #[doc = "Bit 2 - Opaque: meaning not established. Bit 2, cleared by libphy\\[phy_i2c.o\\]::phy_dac_rate_set."]
             #[inline(always)]
             pub fn bit_2_opaque(&mut self) -> Bit2OpaqueW<'_, AdcRateAndFrontEndControlSpec> {
                 Bit2OpaqueW::new(self, 2)
             }
-            #[doc = "Bit 3 - Opaque: meaning not established. Bit 3, cleared by phy_dac_rate_set."]
+            #[doc = "Bit 3 - Opaque: meaning not established. Bit 3, cleared by libphy\\[phy_i2c.o\\]::phy_dac_rate_set."]
             #[inline(always)]
             pub fn bit_3_opaque(&mut self) -> Bit3OpaqueW<'_, AdcRateAndFrontEndControlSpec> {
                 Bit3OpaqueW::new(self, 3)
             }
         }
-        #[doc = "Project-assigned name. Word whose bits 1:0 phy_adc_rate_set replaces with its rate bit and whose bits 3:2 phy_dac_rate_set clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`adc_rate_and_front_end_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`adc_rate_and_front_end_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Word whose bits 1:0 libphy\\[phy_i2c.o\\]::phy_adc_rate_set replaces with its rate bit and whose bits 3:2 libphy\\[phy_i2c.o\\]::phy_dac_rate_set clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`adc_rate_and_front_end_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`adc_rate_and_front_end_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct AdcRateAndFrontEndControlSpec;
         impl crate::RegisterSpec for AdcRateAndFrontEndControlSpec {
             type Ux = u32;
@@ -6505,10 +6505,10 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "FE_CLOCK_GATE (rw) register accessor: Project-assigned name. Front-end clock-gate word; phy_open_fe_bb_clk writes 0x1E7.\n\nYou can [`read`](crate::Reg::read) this register and get [`fe_clock_gate::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fe_clock_gate::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@fe_clock_gate`] module"]
+    #[doc = "FE_CLOCK_GATE (rw) register accessor: Project-assigned name. Front-end clock-gate word; libphy\\[phy_init.o\\]::phy_open_fe_bb_clk writes 0x1E7.\n\nYou can [`read`](crate::Reg::read) this register and get [`fe_clock_gate::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fe_clock_gate::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@fe_clock_gate`] module"]
     #[doc(alias = "FE_CLOCK_GATE")]
     pub type FeClockGate = crate::Reg<fe_clock_gate::FeClockGateSpec>;
-    #[doc = "Project-assigned name. Front-end clock-gate word; phy_open_fe_bb_clk writes 0x1E7."]
+    #[doc = "Project-assigned name. Front-end clock-gate word; libphy\\[phy_init.o\\]::phy_open_fe_bb_clk writes 0x1E7."]
     pub mod fe_clock_gate {
         #[doc = "Register `FE_CLOCK_GATE` reader"]
         pub type R = crate::R<FeClockGateSpec>;
@@ -6532,7 +6532,7 @@ pub mod phy_baseband_config {
                 StateW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Front-end clock-gate word; phy_open_fe_bb_clk writes 0x1E7.\n\nYou can [`read`](crate::Reg::read) this register and get [`fe_clock_gate::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fe_clock_gate::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Front-end clock-gate word; libphy\\[phy_init.o\\]::phy_open_fe_bb_clk writes 0x1E7.\n\nYou can [`read`](crate::Reg::read) this register and get [`fe_clock_gate::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fe_clock_gate::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct FeClockGateSpec;
         impl crate::RegisterSpec for FeClockGateSpec {
             type Ux = u32;
@@ -6544,11 +6544,11 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "TABLE_MEMORY_INDEX_SOURCE (rw) register accessor: Project-assigned name. Word whose bits 31:24 phy_fe_reg_init replaces with 0xB4.\n\nYou can [`read`](crate::Reg::read) this register and get [`table_memory_index_source::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`table_memory_index_source::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@table_memory_index_source`] module"]
+    #[doc = "TABLE_MEMORY_INDEX_SOURCE (rw) register accessor: Project-assigned name. Word whose bits 31:24 libphy\\[phy_reg.o\\]::phy_fe_reg_init replaces with 0xB4.\n\nYou can [`read`](crate::Reg::read) this register and get [`table_memory_index_source::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`table_memory_index_source::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@table_memory_index_source`] module"]
     #[doc(alias = "TABLE_MEMORY_INDEX_SOURCE")]
     pub type TableMemoryIndexSource =
         crate::Reg<table_memory_index_source::TableMemoryIndexSourceSpec>;
-    #[doc = "Project-assigned name. Word whose bits 31:24 phy_fe_reg_init replaces with 0xB4."]
+    #[doc = "Project-assigned name. Word whose bits 31:24 libphy\\[phy_reg.o\\]::phy_fe_reg_init replaces with 0xB4."]
     pub mod table_memory_index_source {
         #[doc = "Register `TABLE_MEMORY_INDEX_SOURCE` reader"]
         pub type R = crate::R<TableMemoryIndexSourceSpec>;
@@ -6572,7 +6572,7 @@ pub mod phy_baseband_config {
                 BaseIndexW::new(self, 24)
             }
         }
-        #[doc = "Project-assigned name. Word whose bits 31:24 phy_fe_reg_init replaces with 0xB4.\n\nYou can [`read`](crate::Reg::read) this register and get [`table_memory_index_source::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`table_memory_index_source::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Word whose bits 31:24 libphy\\[phy_reg.o\\]::phy_fe_reg_init replaces with 0xB4.\n\nYou can [`read`](crate::Reg::read) this register and get [`table_memory_index_source::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`table_memory_index_source::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TableMemoryIndexSourceSpec;
         impl crate::RegisterSpec for TableMemoryIndexSourceSpec {
             type Ux = u32;
@@ -6584,11 +6584,11 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "FRONT_END_AND_TONE_STOP_CONTROL (rw) register accessor: Project-assigned name. Word whose bit 2 phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_and_tone_stop_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_and_tone_stop_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_and_tone_stop_control`] module"]
+    #[doc = "FRONT_END_AND_TONE_STOP_CONTROL (rw) register accessor: Project-assigned name. Word whose bit 2 libphy\\[phy_reg.o\\]::phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_and_tone_stop_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_and_tone_stop_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_and_tone_stop_control`] module"]
     #[doc(alias = "FRONT_END_AND_TONE_STOP_CONTROL")]
     pub type FrontEndAndToneStopControl =
         crate::Reg<front_end_and_tone_stop_control::FrontEndAndToneStopControlSpec>;
-    #[doc = "Project-assigned name. Word whose bit 2 phy_fe_reg_init sets."]
+    #[doc = "Project-assigned name. Word whose bit 2 libphy\\[phy_reg.o\\]::phy_fe_reg_init sets."]
     pub mod front_end_and_tone_stop_control {
         #[doc = "Register `FRONT_END_AND_TONE_STOP_CONTROL` reader"]
         pub type R = crate::R<FrontEndAndToneStopControlSpec>;
@@ -6612,7 +6612,7 @@ pub mod phy_baseband_config {
                 Bit2OpaqueW::new(self, 2)
             }
         }
-        #[doc = "Project-assigned name. Word whose bit 2 phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_and_tone_stop_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_and_tone_stop_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Word whose bit 2 libphy\\[phy_reg.o\\]::phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_and_tone_stop_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_and_tone_stop_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct FrontEndAndToneStopControlSpec;
         impl crate::RegisterSpec for FrontEndAndToneStopControlSpec {
             type Ux = u32;
@@ -6663,10 +6663,10 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "IQ_CORRECTION_CONTROL (rw) register accessor: Project-assigned name. Word whose bits 31:29 phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`iq_correction_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`iq_correction_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@iq_correction_control`] module"]
+    #[doc = "IQ_CORRECTION_CONTROL (rw) register accessor: Project-assigned name. Word whose bits 31:29 libphy\\[phy_reg.o\\]::phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`iq_correction_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`iq_correction_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@iq_correction_control`] module"]
     #[doc(alias = "IQ_CORRECTION_CONTROL")]
     pub type IqCorrectionControl = crate::Reg<iq_correction_control::IqCorrectionControlSpec>;
-    #[doc = "Project-assigned name. Word whose bits 31:29 phy_fe_reg_init sets."]
+    #[doc = "Project-assigned name. Word whose bits 31:29 libphy\\[phy_reg.o\\]::phy_fe_reg_init sets."]
     pub mod iq_correction_control {
         #[doc = "Register `IQ_CORRECTION_CONTROL` reader"]
         pub type R = crate::R<IqCorrectionControlSpec>;
@@ -6722,7 +6722,7 @@ pub mod phy_baseband_config {
                 Bit31OpaqueW::new(self, 31)
             }
         }
-        #[doc = "Project-assigned name. Word whose bits 31:29 phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`iq_correction_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`iq_correction_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Word whose bits 31:29 libphy\\[phy_reg.o\\]::phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`iq_correction_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`iq_correction_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct IqCorrectionControlSpec;
         impl crate::RegisterSpec for IqCorrectionControlSpec {
             type Ux = u32;
@@ -6734,10 +6734,10 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_IQ_SCALE (rw) register accessor: Project-assigned name. Word whose bits 15:8 and 7:0 phy_fe_reg_init clears and phy_rxiq_scale_set replaces.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_iq_scale::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_iq_scale::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_iq_scale`] module"]
+    #[doc = "RX_IQ_SCALE (rw) register accessor: Project-assigned name. Word whose bits 15:8 and 7:0 libphy\\[phy_reg.o\\]::phy_fe_reg_init clears and phy_rxiq_scale_set replaces.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_iq_scale::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_iq_scale::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_iq_scale`] module"]
     #[doc(alias = "RX_IQ_SCALE")]
     pub type RxIqScale = crate::Reg<rx_iq_scale::RxIqScaleSpec>;
-    #[doc = "Project-assigned name. Word whose bits 15:8 and 7:0 phy_fe_reg_init clears and phy_rxiq_scale_set replaces."]
+    #[doc = "Project-assigned name. Word whose bits 15:8 and 7:0 libphy\\[phy_reg.o\\]::phy_fe_reg_init clears and phy_rxiq_scale_set replaces."]
     pub mod rx_iq_scale {
         #[doc = "Register `RX_IQ_SCALE` reader"]
         pub type R = crate::R<RxIqScaleSpec>;
@@ -6775,7 +6775,7 @@ pub mod phy_baseband_config {
                 Bits8_15OpaqueW::new(self, 8)
             }
         }
-        #[doc = "Project-assigned name. Word whose bits 15:8 and 7:0 phy_fe_reg_init clears and phy_rxiq_scale_set replaces.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_iq_scale::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_iq_scale::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Word whose bits 15:8 and 7:0 libphy\\[phy_reg.o\\]::phy_fe_reg_init clears and phy_rxiq_scale_set replaces.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_iq_scale::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_iq_scale::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxIqScaleSpec;
         impl crate::RegisterSpec for RxIqScaleSpec {
             type Ux = u32;
@@ -6787,10 +6787,10 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "FRONT_END_CLEAR_CONTROL (rw) register accessor: Project-assigned name. Word whose bit 8 phy_fe_reg_init clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_clear_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_clear_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_clear_control`] module"]
+    #[doc = "FRONT_END_CLEAR_CONTROL (rw) register accessor: Project-assigned name. Word whose bit 8 libphy\\[phy_reg.o\\]::phy_fe_reg_init clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_clear_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_clear_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_clear_control`] module"]
     #[doc(alias = "FRONT_END_CLEAR_CONTROL")]
     pub type FrontEndClearControl = crate::Reg<front_end_clear_control::FrontEndClearControlSpec>;
-    #[doc = "Project-assigned name. Word whose bit 8 phy_fe_reg_init clears."]
+    #[doc = "Project-assigned name. Word whose bit 8 libphy\\[phy_reg.o\\]::phy_fe_reg_init clears."]
     pub mod front_end_clear_control {
         #[doc = "Register `FRONT_END_CLEAR_CONTROL` reader"]
         pub type R = crate::R<FrontEndClearControlSpec>;
@@ -6814,7 +6814,7 @@ pub mod phy_baseband_config {
                 Bit8OpaqueW::new(self, 8)
             }
         }
-        #[doc = "Project-assigned name. Word whose bit 8 phy_fe_reg_init clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_clear_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_clear_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Word whose bit 8 libphy\\[phy_reg.o\\]::phy_fe_reg_init clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_clear_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_clear_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct FrontEndClearControlSpec;
         impl crate::RegisterSpec for FrontEndClearControlSpec {
             type Ux = u32;
@@ -6826,10 +6826,10 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "FE_BB_CLOCK_CONTROL (rw) register accessor: Project-assigned name. Word whose bits 1:0 phy_open_fe_bb_clk sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`fe_bb_clock_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fe_bb_clock_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@fe_bb_clock_control`] module"]
+    #[doc = "FE_BB_CLOCK_CONTROL (rw) register accessor: Project-assigned name. Word whose bits 1:0 libphy\\[phy_init.o\\]::phy_open_fe_bb_clk sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`fe_bb_clock_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fe_bb_clock_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@fe_bb_clock_control`] module"]
     #[doc(alias = "FE_BB_CLOCK_CONTROL")]
     pub type FeBbClockControl = crate::Reg<fe_bb_clock_control::FeBbClockControlSpec>;
-    #[doc = "Project-assigned name. Word whose bits 1:0 phy_open_fe_bb_clk sets."]
+    #[doc = "Project-assigned name. Word whose bits 1:0 libphy\\[phy_init.o\\]::phy_open_fe_bb_clk sets."]
     pub mod fe_bb_clock_control {
         #[doc = "Register `FE_BB_CLOCK_CONTROL` reader"]
         pub type R = crate::R<FeBbClockControlSpec>;
@@ -6853,7 +6853,7 @@ pub mod phy_baseband_config {
                 Bits0_1OpaqueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Word whose bits 1:0 phy_open_fe_bb_clk sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`fe_bb_clock_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fe_bb_clock_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Word whose bits 1:0 libphy\\[phy_init.o\\]::phy_open_fe_bb_clk sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`fe_bb_clock_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fe_bb_clock_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct FeBbClockControlSpec;
         impl crate::RegisterSpec for FeBbClockControlSpec {
             type Ux = u32;
@@ -6874,33 +6874,33 @@ pub mod phy_baseband_config {
         pub type R = crate::R<PowerDetectorControlSpec>;
         #[doc = "Register `POWER_DETECTOR_CONTROL` writer"]
         pub type W = crate::W<PowerDetectorControlSpec>;
-        #[doc = "Field `BITS_4_11_OPAQUE` reader - Opaque: meaning not established. Byte phy_pwdet_reg_init replaces with 0x50."]
+        #[doc = "Field `BITS_4_11_OPAQUE` reader - Opaque: meaning not established. Byte libphy\\[phy_pwdet.o\\]::phy_pwdet_reg_init replaces with 0x50."]
         pub type Bits4_11OpaqueR = crate::FieldReader;
-        #[doc = "Field `BITS_4_11_OPAQUE` writer - Opaque: meaning not established. Byte phy_pwdet_reg_init replaces with 0x50."]
+        #[doc = "Field `BITS_4_11_OPAQUE` writer - Opaque: meaning not established. Byte libphy\\[phy_pwdet.o\\]::phy_pwdet_reg_init replaces with 0x50."]
         pub type Bits4_11OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
-        #[doc = "Field `BITS_20_22_OPAQUE` reader - Opaque: meaning not established. Three-bit mode phy_pwdet_reg_init sets to 2 and phy_pwdet_sar2_init to 6."]
+        #[doc = "Field `BITS_20_22_OPAQUE` reader - Opaque: meaning not established. Three-bit mode libphy\\[phy_pwdet.o\\]::phy_pwdet_reg_init sets to 2 and libphy\\[phy_pwdet.o\\]::phy_pwdet_sar2_init to 6."]
         pub type Bits20_22OpaqueR = crate::FieldReader;
-        #[doc = "Field `BITS_20_22_OPAQUE` writer - Opaque: meaning not established. Three-bit mode phy_pwdet_reg_init sets to 2 and phy_pwdet_sar2_init to 6."]
+        #[doc = "Field `BITS_20_22_OPAQUE` writer - Opaque: meaning not established. Three-bit mode libphy\\[phy_pwdet.o\\]::phy_pwdet_reg_init sets to 2 and libphy\\[phy_pwdet.o\\]::phy_pwdet_sar2_init to 6."]
         pub type Bits20_22OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
         impl R {
-            #[doc = "Bits 4:11 - Opaque: meaning not established. Byte phy_pwdet_reg_init replaces with 0x50."]
+            #[doc = "Bits 4:11 - Opaque: meaning not established. Byte libphy\\[phy_pwdet.o\\]::phy_pwdet_reg_init replaces with 0x50."]
             #[inline(always)]
             pub fn bits_4_11_opaque(&self) -> Bits4_11OpaqueR {
                 Bits4_11OpaqueR::new(((self.bits >> 4) & 0xff) as u8)
             }
-            #[doc = "Bits 20:22 - Opaque: meaning not established. Three-bit mode phy_pwdet_reg_init sets to 2 and phy_pwdet_sar2_init to 6."]
+            #[doc = "Bits 20:22 - Opaque: meaning not established. Three-bit mode libphy\\[phy_pwdet.o\\]::phy_pwdet_reg_init sets to 2 and libphy\\[phy_pwdet.o\\]::phy_pwdet_sar2_init to 6."]
             #[inline(always)]
             pub fn bits_20_22_opaque(&self) -> Bits20_22OpaqueR {
                 Bits20_22OpaqueR::new(((self.bits >> 20) & 7) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 4:11 - Opaque: meaning not established. Byte phy_pwdet_reg_init replaces with 0x50."]
+            #[doc = "Bits 4:11 - Opaque: meaning not established. Byte libphy\\[phy_pwdet.o\\]::phy_pwdet_reg_init replaces with 0x50."]
             #[inline(always)]
             pub fn bits_4_11_opaque(&mut self) -> Bits4_11OpaqueW<'_, PowerDetectorControlSpec> {
                 Bits4_11OpaqueW::new(self, 4)
             }
-            #[doc = "Bits 20:22 - Opaque: meaning not established. Three-bit mode phy_pwdet_reg_init sets to 2 and phy_pwdet_sar2_init to 6."]
+            #[doc = "Bits 20:22 - Opaque: meaning not established. Three-bit mode libphy\\[phy_pwdet.o\\]::phy_pwdet_reg_init sets to 2 and libphy\\[phy_pwdet.o\\]::phy_pwdet_sar2_init to 6."]
             #[inline(always)]
             pub fn bits_20_22_opaque(&mut self) -> Bits20_22OpaqueW<'_, PowerDetectorControlSpec> {
                 Bits20_22OpaqueW::new(self, 20)
@@ -6928,33 +6928,33 @@ pub mod phy_baseband_config {
         pub type R = crate::R<PowerDetectorSarControlStatusSpec>;
         #[doc = "Register `POWER_DETECTOR_SAR_CONTROL_STATUS` writer"]
         pub type W = crate::W<PowerDetectorSarControlStatusSpec>;
-        #[doc = "Field `BIT_9_OPAQUE` reader - Opaque: meaning not established. Bit phy_pwdet_sar2_init clears."]
+        #[doc = "Field `BIT_9_OPAQUE` reader - Opaque: meaning not established. Bit libphy\\[phy_pwdet.o\\]::phy_pwdet_sar2_init clears."]
         pub type Bit9OpaqueR = crate::BitReader;
-        #[doc = "Field `BIT_9_OPAQUE` writer - Opaque: meaning not established. Bit phy_pwdet_sar2_init clears."]
+        #[doc = "Field `BIT_9_OPAQUE` writer - Opaque: meaning not established. Bit libphy\\[phy_pwdet.o\\]::phy_pwdet_sar2_init clears."]
         pub type Bit9OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `BITS_12_13_OPAQUE` reader - Opaque: meaning not established. Two bits phy_pwdet_sar2_init sets."]
+        #[doc = "Field `BITS_12_13_OPAQUE` reader - Opaque: meaning not established. Two bits libphy\\[phy_pwdet.o\\]::phy_pwdet_sar2_init sets."]
         pub type Bits12_13OpaqueR = crate::FieldReader;
-        #[doc = "Field `BITS_12_13_OPAQUE` writer - Opaque: meaning not established. Two bits phy_pwdet_sar2_init sets."]
+        #[doc = "Field `BITS_12_13_OPAQUE` writer - Opaque: meaning not established. Two bits libphy\\[phy_pwdet.o\\]::phy_pwdet_sar2_init sets."]
         pub type Bits12_13OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
         impl R {
-            #[doc = "Bit 9 - Opaque: meaning not established. Bit phy_pwdet_sar2_init clears."]
+            #[doc = "Bit 9 - Opaque: meaning not established. Bit libphy\\[phy_pwdet.o\\]::phy_pwdet_sar2_init clears."]
             #[inline(always)]
             pub fn bit_9_opaque(&self) -> Bit9OpaqueR {
                 Bit9OpaqueR::new(((self.bits >> 9) & 1) != 0)
             }
-            #[doc = "Bits 12:13 - Opaque: meaning not established. Two bits phy_pwdet_sar2_init sets."]
+            #[doc = "Bits 12:13 - Opaque: meaning not established. Two bits libphy\\[phy_pwdet.o\\]::phy_pwdet_sar2_init sets."]
             #[inline(always)]
             pub fn bits_12_13_opaque(&self) -> Bits12_13OpaqueR {
                 Bits12_13OpaqueR::new(((self.bits >> 12) & 3) as u8)
             }
         }
         impl W {
-            #[doc = "Bit 9 - Opaque: meaning not established. Bit phy_pwdet_sar2_init clears."]
+            #[doc = "Bit 9 - Opaque: meaning not established. Bit libphy\\[phy_pwdet.o\\]::phy_pwdet_sar2_init clears."]
             #[inline(always)]
             pub fn bit_9_opaque(&mut self) -> Bit9OpaqueW<'_, PowerDetectorSarControlStatusSpec> {
                 Bit9OpaqueW::new(self, 9)
             }
-            #[doc = "Bits 12:13 - Opaque: meaning not established. Two bits phy_pwdet_sar2_init sets."]
+            #[doc = "Bits 12:13 - Opaque: meaning not established. Two bits libphy\\[phy_pwdet.o\\]::phy_pwdet_sar2_init sets."]
             #[inline(always)]
             pub fn bits_12_13_opaque(
                 &mut self,
@@ -6974,10 +6974,10 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "WORD_0810_OPAQUE (rw) register accessor: Opaque: meaning not established. Word phy_pwdet_reg_init writes 0x0F0F0FFF.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0810_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0810_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0810_opaque`] module"]
+    #[doc = "WORD_0810_OPAQUE (rw) register accessor: Opaque: meaning not established. Word libphy\\[phy_pwdet.o\\]::phy_pwdet_reg_init writes 0x0F0F0FFF.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0810_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0810_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0810_opaque`] module"]
     #[doc(alias = "WORD_0810_OPAQUE")]
     pub type Word0810Opaque = crate::Reg<word_0810_opaque::Word0810OpaqueSpec>;
-    #[doc = "Opaque: meaning not established. Word phy_pwdet_reg_init writes 0x0F0F0FFF."]
+    #[doc = "Opaque: meaning not established. Word libphy\\[phy_pwdet.o\\]::phy_pwdet_reg_init writes 0x0F0F0FFF."]
     pub mod word_0810_opaque {
         #[doc = "Register `WORD_0810_OPAQUE` reader"]
         pub type R = crate::R<Word0810OpaqueSpec>;
@@ -7001,7 +7001,7 @@ pub mod phy_baseband_config {
                 StateW::new(self, 0)
             }
         }
-        #[doc = "Opaque: meaning not established. Word phy_pwdet_reg_init writes 0x0F0F0FFF.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0810_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0810_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Word libphy\\[phy_pwdet.o\\]::phy_pwdet_reg_init writes 0x0F0F0FFF.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0810_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0810_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct Word0810OpaqueSpec;
         impl crate::RegisterSpec for Word0810OpaqueSpec {
             type Ux = u32;
@@ -7013,10 +7013,10 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "WORD_0814_OPAQUE (rw) register accessor: Opaque: meaning not established. Word phy_pwdet_reg_init writes 0x00FF0F64.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0814_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0814_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0814_opaque`] module"]
+    #[doc = "WORD_0814_OPAQUE (rw) register accessor: Opaque: meaning not established. Word libphy\\[phy_pwdet.o\\]::phy_pwdet_reg_init writes 0x00FF0F64.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0814_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0814_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0814_opaque`] module"]
     #[doc(alias = "WORD_0814_OPAQUE")]
     pub type Word0814Opaque = crate::Reg<word_0814_opaque::Word0814OpaqueSpec>;
-    #[doc = "Opaque: meaning not established. Word phy_pwdet_reg_init writes 0x00FF0F64."]
+    #[doc = "Opaque: meaning not established. Word libphy\\[phy_pwdet.o\\]::phy_pwdet_reg_init writes 0x00FF0F64."]
     pub mod word_0814_opaque {
         #[doc = "Register `WORD_0814_OPAQUE` reader"]
         pub type R = crate::R<Word0814OpaqueSpec>;
@@ -7040,7 +7040,7 @@ pub mod phy_baseband_config {
                 StateW::new(self, 0)
             }
         }
-        #[doc = "Opaque: meaning not established. Word phy_pwdet_reg_init writes 0x00FF0F64.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0814_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0814_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Word libphy\\[phy_pwdet.o\\]::phy_pwdet_reg_init writes 0x00FF0F64.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0814_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0814_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct Word0814OpaqueSpec;
         impl crate::RegisterSpec for Word0814OpaqueSpec {
             type Ux = u32;
@@ -7052,11 +7052,11 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "POWER_DETECTOR_REFERENCE (rw) register accessor: Project-assigned name. Word phy_pwdet_reg_init and phy_pwdet_sar2_init write 0xAAAA.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_reference::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_reference::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@power_detector_reference`] module"]
+    #[doc = "POWER_DETECTOR_REFERENCE (rw) register accessor: Project-assigned name. Word libphy\\[phy_pwdet.o\\]::phy_pwdet_reg_init and libphy\\[phy_pwdet.o\\]::phy_pwdet_sar2_init write 0xAAAA.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_reference::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_reference::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@power_detector_reference`] module"]
     #[doc(alias = "POWER_DETECTOR_REFERENCE")]
     pub type PowerDetectorReference =
         crate::Reg<power_detector_reference::PowerDetectorReferenceSpec>;
-    #[doc = "Project-assigned name. Word phy_pwdet_reg_init and phy_pwdet_sar2_init write 0xAAAA."]
+    #[doc = "Project-assigned name. Word libphy\\[phy_pwdet.o\\]::phy_pwdet_reg_init and libphy\\[phy_pwdet.o\\]::phy_pwdet_sar2_init write 0xAAAA."]
     pub mod power_detector_reference {
         #[doc = "Register `POWER_DETECTOR_REFERENCE` reader"]
         pub type R = crate::R<PowerDetectorReferenceSpec>;
@@ -7080,7 +7080,7 @@ pub mod phy_baseband_config {
                 StateW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Word phy_pwdet_reg_init and phy_pwdet_sar2_init write 0xAAAA.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_reference::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_reference::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Word libphy\\[phy_pwdet.o\\]::phy_pwdet_reg_init and libphy\\[phy_pwdet.o\\]::phy_pwdet_sar2_init write 0xAAAA.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_reference::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_reference::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct PowerDetectorReferenceSpec;
         impl crate::RegisterSpec for PowerDetectorReferenceSpec {
             type Ux = u32;
@@ -7092,10 +7092,10 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "TX_PA_CONTROL_1 (rw) register accessor: Project-assigned name. Word whose bits 15:8 phy_fe_reg_init replaces with 0x96.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_pa_control_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_pa_control_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_pa_control_1`] module"]
+    #[doc = "TX_PA_CONTROL_1 (rw) register accessor: Project-assigned name. Word whose bits 15:8 libphy\\[phy_reg.o\\]::phy_fe_reg_init replaces with 0x96.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_pa_control_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_pa_control_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_pa_control_1`] module"]
     #[doc(alias = "TX_PA_CONTROL_1")]
     pub type TxPaControl1 = crate::Reg<tx_pa_control_1::TxPaControl1Spec>;
-    #[doc = "Project-assigned name. Word whose bits 15:8 phy_fe_reg_init replaces with 0x96."]
+    #[doc = "Project-assigned name. Word whose bits 15:8 libphy\\[phy_reg.o\\]::phy_fe_reg_init replaces with 0x96."]
     pub mod tx_pa_control_1 {
         #[doc = "Register `TX_PA_CONTROL_1` reader"]
         pub type R = crate::R<TxPaControl1Spec>;
@@ -7119,7 +7119,7 @@ pub mod phy_baseband_config {
                 PaOnBtDelayW::new(self, 8)
             }
         }
-        #[doc = "Project-assigned name. Word whose bits 15:8 phy_fe_reg_init replaces with 0x96.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_pa_control_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_pa_control_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Word whose bits 15:8 libphy\\[phy_reg.o\\]::phy_fe_reg_init replaces with 0x96.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_pa_control_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_pa_control_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TxPaControl1Spec;
         impl crate::RegisterSpec for TxPaControl1Spec {
             type Ux = u32;
@@ -7131,34 +7131,34 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "WORD_0888_OPAQUE (rw) register accessor: Opaque: meaning not established. Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0888_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0888_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0888_opaque`] module"]
+    #[doc = "WORD_0888_OPAQUE (rw) register accessor: Opaque: meaning not established. Word whose bit 29 libphy\\[phy_reg.o\\]::phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0888_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0888_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0888_opaque`] module"]
     #[doc(alias = "WORD_0888_OPAQUE")]
     pub type Word0888Opaque = crate::Reg<word_0888_opaque::Word0888OpaqueSpec>;
-    #[doc = "Opaque: meaning not established. Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise."]
+    #[doc = "Opaque: meaning not established. Word whose bit 29 libphy\\[phy_reg.o\\]::phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise."]
     pub mod word_0888_opaque {
         #[doc = "Register `WORD_0888_OPAQUE` reader"]
         pub type R = crate::R<Word0888OpaqueSpec>;
         #[doc = "Register `WORD_0888_OPAQUE` writer"]
         pub type W = crate::W<Word0888OpaqueSpec>;
-        #[doc = "Field `BIT_29_OPAQUE` reader - Opaque: meaning not established. Band-dependent bit that phy_fe_reg_init sets in the 5 GHz band; meaning unknown."]
+        #[doc = "Field `BIT_29_OPAQUE` reader - Opaque: meaning not established. Band-dependent bit that libphy\\[phy_reg.o\\]::phy_fe_reg_init sets in the 5 GHz band; meaning unknown."]
         pub type Bit29OpaqueR = crate::BitReader;
-        #[doc = "Field `BIT_29_OPAQUE` writer - Opaque: meaning not established. Band-dependent bit that phy_fe_reg_init sets in the 5 GHz band; meaning unknown."]
+        #[doc = "Field `BIT_29_OPAQUE` writer - Opaque: meaning not established. Band-dependent bit that libphy\\[phy_reg.o\\]::phy_fe_reg_init sets in the 5 GHz band; meaning unknown."]
         pub type Bit29OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bit 29 - Opaque: meaning not established. Band-dependent bit that phy_fe_reg_init sets in the 5 GHz band; meaning unknown."]
+            #[doc = "Bit 29 - Opaque: meaning not established. Band-dependent bit that libphy\\[phy_reg.o\\]::phy_fe_reg_init sets in the 5 GHz band; meaning unknown."]
             #[inline(always)]
             pub fn bit_29_opaque(&self) -> Bit29OpaqueR {
                 Bit29OpaqueR::new(((self.bits >> 29) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bit 29 - Opaque: meaning not established. Band-dependent bit that phy_fe_reg_init sets in the 5 GHz band; meaning unknown."]
+            #[doc = "Bit 29 - Opaque: meaning not established. Band-dependent bit that libphy\\[phy_reg.o\\]::phy_fe_reg_init sets in the 5 GHz band; meaning unknown."]
             #[inline(always)]
             pub fn bit_29_opaque(&mut self) -> Bit29OpaqueW<'_, Word0888OpaqueSpec> {
                 Bit29OpaqueW::new(self, 29)
             }
         }
-        #[doc = "Opaque: meaning not established. Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0888_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0888_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Word whose bit 29 libphy\\[phy_reg.o\\]::phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0888_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0888_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct Word0888OpaqueSpec;
         impl crate::RegisterSpec for Word0888OpaqueSpec {
             type Ux = u32;
@@ -7170,10 +7170,10 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "WORD_0894_OPAQUE (rw) register accessor: Opaque: meaning not established. Word whose bit 22 phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0894_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0894_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0894_opaque`] module"]
+    #[doc = "WORD_0894_OPAQUE (rw) register accessor: Opaque: meaning not established. Word whose bit 22 libphy\\[phy_reg.o\\]::phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0894_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0894_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0894_opaque`] module"]
     #[doc(alias = "WORD_0894_OPAQUE")]
     pub type Word0894Opaque = crate::Reg<word_0894_opaque::Word0894OpaqueSpec>;
-    #[doc = "Opaque: meaning not established. Word whose bit 22 phy_fe_reg_init sets."]
+    #[doc = "Opaque: meaning not established. Word whose bit 22 libphy\\[phy_reg.o\\]::phy_fe_reg_init sets."]
     pub mod word_0894_opaque {
         #[doc = "Register `WORD_0894_OPAQUE` reader"]
         pub type R = crate::R<Word0894OpaqueSpec>;
@@ -7197,7 +7197,7 @@ pub mod phy_baseband_config {
                 Bit22OpaqueW::new(self, 22)
             }
         }
-        #[doc = "Opaque: meaning not established. Word whose bit 22 phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0894_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0894_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Word whose bit 22 libphy\\[phy_reg.o\\]::phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0894_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0894_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct Word0894OpaqueSpec;
         impl crate::RegisterSpec for Word0894OpaqueSpec {
             type Ux = u32;
@@ -7315,10 +7315,10 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "IQ_CORRECTION_AUX (rw) register accessor: Project-assigned name. Word whose bits 14:13 phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`iq_correction_aux::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`iq_correction_aux::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@iq_correction_aux`] module"]
+    #[doc = "IQ_CORRECTION_AUX (rw) register accessor: Project-assigned name. Word whose bits 14:13 libphy\\[phy_reg.o\\]::phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`iq_correction_aux::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`iq_correction_aux::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@iq_correction_aux`] module"]
     #[doc(alias = "IQ_CORRECTION_AUX")]
     pub type IqCorrectionAux = crate::Reg<iq_correction_aux::IqCorrectionAuxSpec>;
-    #[doc = "Project-assigned name. Word whose bits 14:13 phy_fe_reg_init sets."]
+    #[doc = "Project-assigned name. Word whose bits 14:13 libphy\\[phy_reg.o\\]::phy_fe_reg_init sets."]
     pub mod iq_correction_aux {
         #[doc = "Register `IQ_CORRECTION_AUX` reader"]
         pub type R = crate::R<IqCorrectionAuxSpec>;
@@ -7360,7 +7360,7 @@ pub mod phy_baseband_config {
                 TxIqCorrectionModeHighW::new(self, 14)
             }
         }
-        #[doc = "Project-assigned name. Word whose bits 14:13 phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`iq_correction_aux::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`iq_correction_aux::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Word whose bits 14:13 libphy\\[phy_reg.o\\]::phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`iq_correction_aux::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`iq_correction_aux::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct IqCorrectionAuxSpec;
         impl crate::RegisterSpec for IqCorrectionAuxSpec {
             type Ux = u32;
@@ -7372,10 +7372,10 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "WORD_0C20_OPAQUE (rw) register accessor: Opaque: meaning not established. Word whose bits 7:0 phy_fe_reg_init replaces with 0x57.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0c20_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0c20_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0c20_opaque`] module"]
+    #[doc = "WORD_0C20_OPAQUE (rw) register accessor: Opaque: meaning not established. Word whose bits 7:0 libphy\\[phy_reg.o\\]::phy_fe_reg_init replaces with 0x57.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0c20_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0c20_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0c20_opaque`] module"]
     #[doc(alias = "WORD_0C20_OPAQUE")]
     pub type Word0c20Opaque = crate::Reg<word_0c20_opaque::Word0c20OpaqueSpec>;
-    #[doc = "Opaque: meaning not established. Word whose bits 7:0 phy_fe_reg_init replaces with 0x57."]
+    #[doc = "Opaque: meaning not established. Word whose bits 7:0 libphy\\[phy_reg.o\\]::phy_fe_reg_init replaces with 0x57."]
     pub mod word_0c20_opaque {
         #[doc = "Register `WORD_0C20_OPAQUE` reader"]
         pub type R = crate::R<Word0c20OpaqueSpec>;
@@ -7399,7 +7399,7 @@ pub mod phy_baseband_config {
                 Bits0_7OpaqueW::new(self, 0)
             }
         }
-        #[doc = "Opaque: meaning not established. Word whose bits 7:0 phy_fe_reg_init replaces with 0x57.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0c20_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0c20_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Word whose bits 7:0 libphy\\[phy_reg.o\\]::phy_fe_reg_init replaces with 0x57.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0c20_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0c20_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct Word0c20OpaqueSpec;
         impl crate::RegisterSpec for Word0c20OpaqueSpec {
             type Ux = u32;
@@ -7411,10 +7411,10 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BB_CLOCK_GATE (rw) register accessor: Project-assigned name. Baseband clock-gate word; phy_open_fe_bb_clk writes all ones.\n\nYou can [`read`](crate::Reg::read) this register and get [`bb_clock_gate::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bb_clock_gate::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bb_clock_gate`] module"]
+    #[doc = "BB_CLOCK_GATE (rw) register accessor: Project-assigned name. Baseband clock-gate word; libphy\\[phy_init.o\\]::phy_open_fe_bb_clk writes all ones.\n\nYou can [`read`](crate::Reg::read) this register and get [`bb_clock_gate::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bb_clock_gate::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bb_clock_gate`] module"]
     #[doc(alias = "BB_CLOCK_GATE")]
     pub type BbClockGate = crate::Reg<bb_clock_gate::BbClockGateSpec>;
-    #[doc = "Project-assigned name. Baseband clock-gate word; phy_open_fe_bb_clk writes all ones."]
+    #[doc = "Project-assigned name. Baseband clock-gate word; libphy\\[phy_init.o\\]::phy_open_fe_bb_clk writes all ones."]
     pub mod bb_clock_gate {
         #[doc = "Register `BB_CLOCK_GATE` reader"]
         pub type R = crate::R<BbClockGateSpec>;
@@ -7438,7 +7438,7 @@ pub mod phy_baseband_config {
                 StateW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Baseband clock-gate word; phy_open_fe_bb_clk writes all ones.\n\nYou can [`read`](crate::Reg::read) this register and get [`bb_clock_gate::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bb_clock_gate::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Baseband clock-gate word; libphy\\[phy_init.o\\]::phy_open_fe_bb_clk writes all ones.\n\nYou can [`read`](crate::Reg::read) this register and get [`bb_clock_gate::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bb_clock_gate::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct BbClockGateSpec;
         impl crate::RegisterSpec for BbClockGateSpec {
             type Ux = u32;
@@ -8931,7 +8931,7 @@ pub mod wifi_mac_interrupt {
         pub type R = crate::R<StatusSpec>;
         #[doc = "Field `BITS_0_4_OPAQUE` reader - Opaque: meaning not established. Masked event bits whose identities remain unknown."]
         pub type Bits0_4OpaqueR = crate::FieldReader;
-        #[doc = "Field `RX_ASSOCIATED_AUXILIARY_5` reader - Project-assigned name. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
+        #[doc = "Field `RX_ASSOCIATED_AUXILIARY_5` reader - Project-assigned name. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete libpp\\[wdev.o\\]::wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
         pub type RxAssociatedAuxiliary5R = crate::BitReader;
         #[doc = "Field `BIT_6_OPAQUE` reader - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
         pub type Bit6OpaqueR = crate::BitReader;
@@ -8963,7 +8963,7 @@ pub mod wifi_mac_interrupt {
         pub type Bit22OpaqueR = crate::BitReader;
         #[doc = "Field `BIT_23_OPAQUE` reader - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
         pub type Bit23OpaqueR = crate::BitReader;
-        #[doc = "Field `RX_ASSOCIATED_AUXILIARY_24` reader - Project-assigned name. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
+        #[doc = "Field `RX_ASSOCIATED_AUXILIARY_24` reader - Project-assigned name. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete libpp\\[wdev.o\\]::wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
         pub type RxAssociatedAuxiliary24R = crate::BitReader;
         #[doc = "Field `BITS_25_26_OPAQUE` reader - Opaque: meaning not established. Masked event bits whose identities remain unknown."]
         pub type Bits25_26OpaqueR = crate::FieldReader;
@@ -8979,7 +8979,7 @@ pub mod wifi_mac_interrupt {
             pub fn bits_0_4_opaque(&self) -> Bits0_4OpaqueR {
                 Bits0_4OpaqueR::new((self.bits & 0x1f) as u8)
             }
-            #[doc = "Bit 5 - Project-assigned name. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
+            #[doc = "Bit 5 - Project-assigned name. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete libpp\\[wdev.o\\]::wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
             #[inline(always)]
             pub fn rx_associated_auxiliary_5(&self) -> RxAssociatedAuxiliary5R {
                 RxAssociatedAuxiliary5R::new(((self.bits >> 5) & 1) != 0)
@@ -9059,7 +9059,7 @@ pub mod wifi_mac_interrupt {
             pub fn bit_23_opaque(&self) -> Bit23OpaqueR {
                 Bit23OpaqueR::new(((self.bits >> 23) & 1) != 0)
             }
-            #[doc = "Bit 24 - Project-assigned name. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
+            #[doc = "Bit 24 - Project-assigned name. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete libpp\\[wdev.o\\]::wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
             #[inline(always)]
             pub fn rx_associated_auxiliary_24(&self) -> RxAssociatedAuxiliary24R {
                 RxAssociatedAuxiliary24R::new(((self.bits >> 24) & 1) != 0)
@@ -9657,7 +9657,7 @@ pub mod wifi_mac_rtc_timer_update {
         pub const fn control(&self) -> &Control {
             &self.control
         }
-        #[doc = "0x04 - Project-assigned name. Complete hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred."]
+        #[doc = "0x04 - Project-assigned name. Complete libpp\\[hal_tsf.o\\]::hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred."]
         #[inline(always)]
         pub const fn soc_wakeup_clear(&self) -> &SocWakeupClear {
             &self.soc_wakeup_clear
@@ -9672,12 +9672,12 @@ pub mod wifi_mac_rtc_timer_update {
         pub const fn sta_light_sleep_wake_ahead(&self) -> &StaLightSleepWakeAhead {
             &self.sta_light_sleep_wake_ahead
         }
-        #[doc = "0x14 - Project-assigned name. Complete tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown."]
+        #[doc = "0x14 - Project-assigned name. Complete libpp\\[hal_tsf.o\\]::tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown."]
         #[inline(always)]
         pub const fn tbtt_rf_control_wait_cycles(&self) -> &TbttRfControlWaitCycles {
             &self.tbtt_rf_control_wait_cycles
         }
-        #[doc = "0x24 - Project-assigned name. Complete hal_set_rx_beacon_time and pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred."]
+        #[doc = "0x24 - Project-assigned name. Complete hal_set_rx_beacon_time and libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred."]
         #[inline(always)]
         pub const fn rx_beacon_time_low(&self) -> &RxBeaconTimeLow {
             &self.rx_beacon_time_low
@@ -9687,7 +9687,7 @@ pub mod wifi_mac_rtc_timer_update {
         pub const fn sta_tsf_control(&self) -> &StaTsfControl {
             &self.sta_tsf_control
         }
-        #[doc = "0x2c - Project-assigned name. Complete hal_set_sta_tbtt_interval replaces bits 25:0 with its 32-bit argument shifted right by ten and preserves bits 31:26. Complete hal_set_sta_tbtt performs the same update from its third argument, and tsf_hal_get_tbtt_interval reads the interval back as this field shifted left by ten."]
+        #[doc = "0x2c - Project-assigned name. Complete hal_set_sta_tbtt_interval replaces bits 25:0 with its 32-bit argument shifted right by ten and preserves bits 31:26. Complete hal_set_sta_tbtt performs the same update from its third argument, and libpp\\[hal_tsf.o\\]::tsf_hal_get_tbtt_interval reads the interval back as this field shifted left by ten."]
         #[inline(always)]
         pub const fn sta_tbtt_interval(&self) -> &StaTbttInterval {
             &self.sta_tbtt_interval
@@ -9751,10 +9751,10 @@ pub mod wifi_mac_rtc_timer_update {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SOC_WAKEUP_CLEAR (rw) register accessor: Project-assigned name. Complete hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`soc_wakeup_clear::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`soc_wakeup_clear::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@soc_wakeup_clear`] module"]
+    #[doc = "SOC_WAKEUP_CLEAR (rw) register accessor: Project-assigned name. Complete libpp\\[hal_tsf.o\\]::hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`soc_wakeup_clear::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`soc_wakeup_clear::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@soc_wakeup_clear`] module"]
     #[doc(alias = "SOC_WAKEUP_CLEAR")]
     pub type SocWakeupClear = crate::Reg<soc_wakeup_clear::SocWakeupClearSpec>;
-    #[doc = "Project-assigned name. Complete hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred."]
+    #[doc = "Project-assigned name. Complete libpp\\[hal_tsf.o\\]::hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred."]
     pub mod soc_wakeup_clear {
         #[doc = "Register `SOC_WAKEUP_CLEAR` reader"]
         pub type R = crate::R<SocWakeupClearSpec>;
@@ -9888,7 +9888,7 @@ pub mod wifi_mac_rtc_timer_update {
                 ClearBeaconInfoW::new(self, 31)
             }
         }
-        #[doc = "Project-assigned name. Complete hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`soc_wakeup_clear::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`soc_wakeup_clear::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Complete libpp\\[hal_tsf.o\\]::hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`soc_wakeup_clear::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`soc_wakeup_clear::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SocWakeupClearSpec;
         impl crate::RegisterSpec for SocWakeupClearSpec {
             type Ux = u32;
@@ -9910,24 +9910,24 @@ pub mod wifi_mac_rtc_timer_update {
         pub type R = crate::R<ModemSleepLimitControlSpec>;
         #[doc = "Register `MODEM_SLEEP_LIMIT_CONTROL` writer"]
         pub type W = crate::W<ModemSleepLimitControlSpec>;
-        #[doc = "Field `BEACON_MISS_LIMIT` reader - Project-assigned name. Low four argument bits published by pwr_hal_set_mac_modem_beacon_miss_limit."]
+        #[doc = "Field `BEACON_MISS_LIMIT` reader - Project-assigned name. Low four argument bits published by libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_beacon_miss_limit."]
         pub type BeaconMissLimitR = crate::FieldReader;
-        #[doc = "Field `BEACON_MISS_LIMIT` writer - Project-assigned name. Low four argument bits published by pwr_hal_set_mac_modem_beacon_miss_limit."]
+        #[doc = "Field `BEACON_MISS_LIMIT` writer - Project-assigned name. Low four argument bits published by libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_beacon_miss_limit."]
         pub type BeaconMissLimitW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `BEACON_MISS_LIMIT_WAKEUP_ENABLE` reader - Project-assigned name. Dedicated enable/disable leaves set or clear bit four."]
         pub type BeaconMissLimitWakeupEnableR = crate::BitReader;
         #[doc = "Field `BEACON_MISS_LIMIT_WAKEUP_ENABLE` writer - Project-assigned name. Dedicated enable/disable leaves set or clear bit four."]
         pub type BeaconMissLimitWakeupEnableW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `MODEM_STATE_SLEEP_LIMIT` reader - Project-assigned name. Low ten argument bits published in bits 14:5 by pwr_hal_set_mac_modem_state_sleep_limit."]
+        #[doc = "Field `MODEM_STATE_SLEEP_LIMIT` reader - Project-assigned name. Low ten argument bits published in bits 14:5 by libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_state_sleep_limit."]
         pub type ModemStateSleepLimitR = crate::FieldReader<u16>;
-        #[doc = "Field `MODEM_STATE_SLEEP_LIMIT` writer - Project-assigned name. Low ten argument bits published in bits 14:5 by pwr_hal_set_mac_modem_state_sleep_limit."]
+        #[doc = "Field `MODEM_STATE_SLEEP_LIMIT` writer - Project-assigned name. Low ten argument bits published in bits 14:5 by libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_state_sleep_limit."]
         pub type ModemStateSleepLimitW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
         #[doc = "Field `MODEM_STATE_SLEEP_LIMIT_WAKEUP_ENABLE` reader - Project-assigned name. Dedicated enable/disable leaves set or clear bit fifteen."]
         pub type ModemStateSleepLimitWakeupEnableR = crate::BitReader;
         #[doc = "Field `MODEM_STATE_SLEEP_LIMIT_WAKEUP_ENABLE` writer - Project-assigned name. Dedicated enable/disable leaves set or clear bit fifteen."]
         pub type ModemStateSleepLimitWakeupEnableW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bits 0:3 - Project-assigned name. Low four argument bits published by pwr_hal_set_mac_modem_beacon_miss_limit."]
+            #[doc = "Bits 0:3 - Project-assigned name. Low four argument bits published by libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_beacon_miss_limit."]
             #[inline(always)]
             pub fn beacon_miss_limit(&self) -> BeaconMissLimitR {
                 BeaconMissLimitR::new((self.bits & 0x0f) as u8)
@@ -9937,7 +9937,7 @@ pub mod wifi_mac_rtc_timer_update {
             pub fn beacon_miss_limit_wakeup_enable(&self) -> BeaconMissLimitWakeupEnableR {
                 BeaconMissLimitWakeupEnableR::new(((self.bits >> 4) & 1) != 0)
             }
-            #[doc = "Bits 5:14 - Project-assigned name. Low ten argument bits published in bits 14:5 by pwr_hal_set_mac_modem_state_sleep_limit."]
+            #[doc = "Bits 5:14 - Project-assigned name. Low ten argument bits published in bits 14:5 by libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_state_sleep_limit."]
             #[inline(always)]
             pub fn modem_state_sleep_limit(&self) -> ModemStateSleepLimitR {
                 ModemStateSleepLimitR::new(((self.bits >> 5) & 0x03ff) as u16)
@@ -9951,7 +9951,7 @@ pub mod wifi_mac_rtc_timer_update {
             }
         }
         impl W {
-            #[doc = "Bits 0:3 - Project-assigned name. Low four argument bits published by pwr_hal_set_mac_modem_beacon_miss_limit."]
+            #[doc = "Bits 0:3 - Project-assigned name. Low four argument bits published by libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_beacon_miss_limit."]
             #[inline(always)]
             pub fn beacon_miss_limit(
                 &mut self,
@@ -9965,7 +9965,7 @@ pub mod wifi_mac_rtc_timer_update {
             ) -> BeaconMissLimitWakeupEnableW<'_, ModemSleepLimitControlSpec> {
                 BeaconMissLimitWakeupEnableW::new(self, 4)
             }
-            #[doc = "Bits 5:14 - Project-assigned name. Low ten argument bits published in bits 14:5 by pwr_hal_set_mac_modem_state_sleep_limit."]
+            #[doc = "Bits 5:14 - Project-assigned name. Low ten argument bits published in bits 14:5 by libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_state_sleep_limit."]
             #[inline(always)]
             pub fn modem_state_sleep_limit(
                 &mut self,
@@ -10032,11 +10032,11 @@ pub mod wifi_mac_rtc_timer_update {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "TBTT_RF_CONTROL_WAIT_CYCLES (rw) register accessor: Project-assigned name. Complete tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`tbtt_rf_control_wait_cycles::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tbtt_rf_control_wait_cycles::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tbtt_rf_control_wait_cycles`] module"]
+    #[doc = "TBTT_RF_CONTROL_WAIT_CYCLES (rw) register accessor: Project-assigned name. Complete libpp\\[hal_tsf.o\\]::tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`tbtt_rf_control_wait_cycles::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tbtt_rf_control_wait_cycles::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tbtt_rf_control_wait_cycles`] module"]
     #[doc(alias = "TBTT_RF_CONTROL_WAIT_CYCLES")]
     pub type TbttRfControlWaitCycles =
         crate::Reg<tbtt_rf_control_wait_cycles::TbttRfControlWaitCyclesSpec>;
-    #[doc = "Project-assigned name. Complete tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown."]
+    #[doc = "Project-assigned name. Complete libpp\\[hal_tsf.o\\]::tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown."]
     pub mod tbtt_rf_control_wait_cycles {
         #[doc = "Register `TBTT_RF_CONTROL_WAIT_CYCLES` reader"]
         pub type R = crate::R<TbttRfControlWaitCyclesSpec>;
@@ -10060,7 +10060,7 @@ pub mod wifi_mac_rtc_timer_update {
                 WaitCyclesW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Complete tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`tbtt_rf_control_wait_cycles::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tbtt_rf_control_wait_cycles::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Complete libpp\\[hal_tsf.o\\]::tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`tbtt_rf_control_wait_cycles::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tbtt_rf_control_wait_cycles::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TbttRfControlWaitCyclesSpec;
         impl crate::RegisterSpec for TbttRfControlWaitCyclesSpec {
             type Ux = u32;
@@ -10072,10 +10072,10 @@ pub mod wifi_mac_rtc_timer_update {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_BEACON_TIME_LOW (rw) register accessor: Project-assigned name. Complete hal_set_rx_beacon_time and pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_beacon_time_low::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_beacon_time_low::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_beacon_time_low`] module"]
+    #[doc = "RX_BEACON_TIME_LOW (rw) register accessor: Project-assigned name. Complete hal_set_rx_beacon_time and libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_beacon_time_low::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_beacon_time_low::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_beacon_time_low`] module"]
     #[doc(alias = "RX_BEACON_TIME_LOW")]
     pub type RxBeaconTimeLow = crate::Reg<rx_beacon_time_low::RxBeaconTimeLowSpec>;
-    #[doc = "Project-assigned name. Complete hal_set_rx_beacon_time and pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred."]
+    #[doc = "Project-assigned name. Complete hal_set_rx_beacon_time and libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred."]
     pub mod rx_beacon_time_low {
         #[doc = "Register `RX_BEACON_TIME_LOW` reader"]
         pub type R = crate::R<RxBeaconTimeLowSpec>;
@@ -10099,7 +10099,7 @@ pub mod wifi_mac_rtc_timer_update {
                 ValueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Complete hal_set_rx_beacon_time and pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_beacon_time_low::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_beacon_time_low::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Complete hal_set_rx_beacon_time and libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_beacon_time_low::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_beacon_time_low::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxBeaconTimeLowSpec;
         impl crate::RegisterSpec for RxBeaconTimeLowSpec {
             type Ux = u32;
@@ -10184,9 +10184,9 @@ pub mod wifi_mac_rtc_timer_update {
                 self.variant(StaTsfMode::Enabled)
             }
         }
-        #[doc = "Field `MODEM_STATE_WAKEUP_PROTECT_ENABLE` reader - Project-assigned name. pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."]
+        #[doc = "Field `MODEM_STATE_WAKEUP_PROTECT_ENABLE` reader - Project-assigned name. libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."]
         pub type ModemStateWakeupProtectEnableR = crate::BitReader;
-        #[doc = "Field `MODEM_STATE_WAKEUP_PROTECT_ENABLE` writer - Project-assigned name. pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."]
+        #[doc = "Field `MODEM_STATE_WAKEUP_PROTECT_ENABLE` writer - Project-assigned name. libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."]
         pub type ModemStateWakeupProtectEnableW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `STA_TBTT_ENABLE` reader - Project-assigned name. hal_enable_sta_tbtt sets bit 26 and hal_disable_sta_tbtt clears only this bit."]
         pub type StaTbttEnableR = crate::BitReader;
@@ -10215,7 +10215,7 @@ pub mod wifi_mac_rtc_timer_update {
             pub fn sta_tsf_mode(&self) -> StaTsfModeR {
                 StaTsfModeR::new(((self.bits >> 19) & 0x0f) as u8)
             }
-            #[doc = "Bit 24 - Project-assigned name. pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."]
+            #[doc = "Bit 24 - Project-assigned name. libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."]
             #[inline(always)]
             pub fn modem_state_wakeup_protect_enable(&self) -> ModemStateWakeupProtectEnableR {
                 ModemStateWakeupProtectEnableR::new(((self.bits >> 24) & 1) != 0)
@@ -10252,7 +10252,7 @@ pub mod wifi_mac_rtc_timer_update {
             pub fn sta_tsf_mode(&mut self) -> StaTsfModeW<'_, StaTsfControlSpec> {
                 StaTsfModeW::new(self, 19)
             }
-            #[doc = "Bit 24 - Project-assigned name. pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."]
+            #[doc = "Bit 24 - Project-assigned name. libpp\\[hal_pwr.o\\]::pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."]
             #[inline(always)]
             pub fn modem_state_wakeup_protect_enable(
                 &mut self,
@@ -10292,10 +10292,10 @@ pub mod wifi_mac_rtc_timer_update {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "STA_TBTT_INTERVAL (rw) register accessor: Project-assigned name. Complete hal_set_sta_tbtt_interval replaces bits 25:0 with its 32-bit argument shifted right by ten and preserves bits 31:26. Complete hal_set_sta_tbtt performs the same update from its third argument, and tsf_hal_get_tbtt_interval reads the interval back as this field shifted left by ten.\n\nYou can [`read`](crate::Reg::read) this register and get [`sta_tbtt_interval::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sta_tbtt_interval::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@sta_tbtt_interval`] module"]
+    #[doc = "STA_TBTT_INTERVAL (rw) register accessor: Project-assigned name. Complete hal_set_sta_tbtt_interval replaces bits 25:0 with its 32-bit argument shifted right by ten and preserves bits 31:26. Complete hal_set_sta_tbtt performs the same update from its third argument, and libpp\\[hal_tsf.o\\]::tsf_hal_get_tbtt_interval reads the interval back as this field shifted left by ten.\n\nYou can [`read`](crate::Reg::read) this register and get [`sta_tbtt_interval::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sta_tbtt_interval::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@sta_tbtt_interval`] module"]
     #[doc(alias = "STA_TBTT_INTERVAL")]
     pub type StaTbttInterval = crate::Reg<sta_tbtt_interval::StaTbttIntervalSpec>;
-    #[doc = "Project-assigned name. Complete hal_set_sta_tbtt_interval replaces bits 25:0 with its 32-bit argument shifted right by ten and preserves bits 31:26. Complete hal_set_sta_tbtt performs the same update from its third argument, and tsf_hal_get_tbtt_interval reads the interval back as this field shifted left by ten."]
+    #[doc = "Project-assigned name. Complete hal_set_sta_tbtt_interval replaces bits 25:0 with its 32-bit argument shifted right by ten and preserves bits 31:26. Complete hal_set_sta_tbtt performs the same update from its third argument, and libpp\\[hal_tsf.o\\]::tsf_hal_get_tbtt_interval reads the interval back as this field shifted left by ten."]
     pub mod sta_tbtt_interval {
         #[doc = "Register `STA_TBTT_INTERVAL` reader"]
         pub type R = crate::R<StaTbttIntervalSpec>;
@@ -10321,7 +10321,7 @@ pub mod wifi_mac_rtc_timer_update {
                 IntervalTsfBits35_10W::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Complete hal_set_sta_tbtt_interval replaces bits 25:0 with its 32-bit argument shifted right by ten and preserves bits 31:26. Complete hal_set_sta_tbtt performs the same update from its third argument, and tsf_hal_get_tbtt_interval reads the interval back as this field shifted left by ten.\n\nYou can [`read`](crate::Reg::read) this register and get [`sta_tbtt_interval::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sta_tbtt_interval::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Complete hal_set_sta_tbtt_interval replaces bits 25:0 with its 32-bit argument shifted right by ten and preserves bits 31:26. Complete hal_set_sta_tbtt performs the same update from its third argument, and libpp\\[hal_tsf.o\\]::tsf_hal_get_tbtt_interval reads the interval back as this field shifted left by ten.\n\nYou can [`read`](crate::Reg::read) this register and get [`sta_tbtt_interval::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sta_tbtt_interval::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct StaTbttIntervalSpec;
         impl crate::RegisterSpec for StaTbttIntervalSpec {
             type Ux = u32;
@@ -10455,7 +10455,7 @@ pub mod wifi_mac_sta_tsf_load {
         tsf_deviation_control: TsfDeviationControl,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads."]
+        #[doc = "0x00 - Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets then clears bit zero around its snapshot reads."]
         #[inline(always)]
         pub const fn control(&self) -> &Control {
             &self.control
@@ -10470,12 +10470,12 @@ pub mod wifi_mac_sta_tsf_load {
         pub const fn value_high(&self) -> &ValueHigh {
             &self.value_high
         }
-        #[doc = "0x0c - Project-assigned name. Coherently latched low 32 bits conditionally read by complete hal_get_sta_tsf."]
+        #[doc = "0x0c - Project-assigned name. Coherently latched low 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf."]
         #[inline(always)]
         pub const fn snapshot_low(&self) -> &SnapshotLow {
             &self.snapshot_low
         }
-        #[doc = "0x10 - Project-assigned name. Coherently latched high 32 bits conditionally read by complete hal_get_sta_tsf."]
+        #[doc = "0x10 - Project-assigned name. Coherently latched high 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf."]
         #[inline(always)]
         pub const fn snapshot_high(&self) -> &SnapshotHigh {
             &self.snapshot_high
@@ -10486,18 +10486,18 @@ pub mod wifi_mac_sta_tsf_load {
             &self.tsf_deviation_control
         }
     }
-    #[doc = "CONTROL (rw) register accessor: Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc = "CONTROL (rw) register accessor: Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets then clears bit zero around its snapshot reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
     #[doc(alias = "CONTROL")]
     pub type Control = crate::Reg<control::ControlSpec>;
-    #[doc = "Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads."]
+    #[doc = "Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets then clears bit zero around its snapshot reads."]
     pub mod control {
         #[doc = "Register `CONTROL` reader"]
         pub type R = crate::R<ControlSpec>;
         #[doc = "Register `CONTROL` writer"]
         pub type W = crate::W<ControlSpec>;
-        #[doc = "Field `SNAPSHOT_STATION_TSF` reader - Project-assigned name. Complete hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
+        #[doc = "Field `SNAPSHOT_STATION_TSF` reader - Project-assigned name. Complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
         pub type SnapshotStationTsfR = crate::BitReader;
-        #[doc = "Field `SNAPSHOT_STATION_TSF` writer - Project-assigned name. Complete hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
+        #[doc = "Field `SNAPSHOT_STATION_TSF` writer - Project-assigned name. Complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
         pub type SnapshotStationTsfW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `LOAD_STATION_TSF` reader - Project-assigned name. Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf."]
         pub type LoadStationTsfR = crate::BitReader;
@@ -10512,7 +10512,7 @@ pub mod wifi_mac_sta_tsf_load {
         #[doc = "Field `LOAD_STATION_TBTT_TARGET` writer - Project-assigned name. Complete hal_set_sta_tbtt and the index-0 TBTT start-time leaf set this bit after writing the station TBTT target."]
         pub type LoadStationTbttTargetW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bit 0 - Project-assigned name. Complete hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
+            #[doc = "Bit 0 - Project-assigned name. Complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
             #[inline(always)]
             pub fn snapshot_station_tsf(&self) -> SnapshotStationTsfR {
                 SnapshotStationTsfR::new((self.bits & 1) != 0)
@@ -10534,7 +10534,7 @@ pub mod wifi_mac_sta_tsf_load {
             }
         }
         impl W {
-            #[doc = "Bit 0 - Project-assigned name. Complete hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
+            #[doc = "Bit 0 - Project-assigned name. Complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
             #[inline(always)]
             pub fn snapshot_station_tsf(&mut self) -> SnapshotStationTsfW<'_, ControlSpec> {
                 SnapshotStationTsfW::new(self, 0)
@@ -10555,7 +10555,7 @@ pub mod wifi_mac_sta_tsf_load {
                 LoadStationTbttTargetW::new(self, 8)
             }
         }
-        #[doc = "Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets then clears bit zero around its snapshot reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ControlSpec;
         impl crate::RegisterSpec for ControlSpec {
             type Ux = u32;
@@ -10619,10 +10619,10 @@ pub mod wifi_mac_sta_tsf_load {
             type Safety = crate::Safe;
         }
     }
-    #[doc = "SNAPSHOT_LOW (r) register accessor: Project-assigned name. Coherently latched low 32 bits conditionally read by complete hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_low::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@snapshot_low`] module"]
+    #[doc = "SNAPSHOT_LOW (r) register accessor: Project-assigned name. Coherently latched low 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_low::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@snapshot_low`] module"]
     #[doc(alias = "SNAPSHOT_LOW")]
     pub type SnapshotLow = crate::Reg<snapshot_low::SnapshotLowSpec>;
-    #[doc = "Project-assigned name. Coherently latched low 32 bits conditionally read by complete hal_get_sta_tsf."]
+    #[doc = "Project-assigned name. Coherently latched low 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf."]
     pub mod snapshot_low {
         #[doc = "Register `SNAPSHOT_LOW` reader"]
         pub type R = crate::R<SnapshotLowSpec>;
@@ -10635,7 +10635,7 @@ pub mod wifi_mac_sta_tsf_load {
                 ValueR::new(self.bits)
             }
         }
-        #[doc = "Project-assigned name. Coherently latched low 32 bits conditionally read by complete hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_low::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Coherently latched low 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_low::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SnapshotLowSpec;
         impl crate::RegisterSpec for SnapshotLowSpec {
             type Ux = u32;
@@ -10643,10 +10643,10 @@ pub mod wifi_mac_sta_tsf_load {
         #[doc = "`read()` method returns [`snapshot_low::R`](R) reader structure"]
         impl crate::Readable for SnapshotLowSpec {}
     }
-    #[doc = "SNAPSHOT_HIGH (r) register accessor: Project-assigned name. Coherently latched high 32 bits conditionally read by complete hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_high::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@snapshot_high`] module"]
+    #[doc = "SNAPSHOT_HIGH (r) register accessor: Project-assigned name. Coherently latched high 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_high::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@snapshot_high`] module"]
     #[doc(alias = "SNAPSHOT_HIGH")]
     pub type SnapshotHigh = crate::Reg<snapshot_high::SnapshotHighSpec>;
-    #[doc = "Project-assigned name. Coherently latched high 32 bits conditionally read by complete hal_get_sta_tsf."]
+    #[doc = "Project-assigned name. Coherently latched high 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf."]
     pub mod snapshot_high {
         #[doc = "Register `SNAPSHOT_HIGH` reader"]
         pub type R = crate::R<SnapshotHighSpec>;
@@ -10659,7 +10659,7 @@ pub mod wifi_mac_sta_tsf_load {
                 ValueR::new(self.bits)
             }
         }
-        #[doc = "Project-assigned name. Coherently latched high 32 bits conditionally read by complete hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_high::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Coherently latched high 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_high::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SnapshotHighSpec;
         impl crate::RegisterSpec for SnapshotHighSpec {
             type Ux = u32;
@@ -10798,13 +10798,13 @@ pub mod wifi_mac_tx_common {
         pub type Bits0_27OpaqueR = crate::FieldReader<u32>;
         #[doc = "Field `BITS_0_27_OPAQUE` writer - Opaque: meaning not established."]
         pub type Bits0_27OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 28, u32>;
-        #[doc = "Field `PHY_AUX_FORCE` reader - Project-assigned name. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge."]
+        #[doc = "Field `PHY_AUX_FORCE` reader - Project-assigned name. Complete libphy\\[phy_reg.o\\]::phy_disable_cca writes encoding two and complete libphy\\[phy_reg.o\\]::phy_enable_cca writes zero in their second fresh-read edge."]
         pub type PhyAuxForceR = crate::FieldReader;
-        #[doc = "Field `PHY_AUX_FORCE` writer - Project-assigned name. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge."]
+        #[doc = "Field `PHY_AUX_FORCE` writer - Project-assigned name. Complete libphy\\[phy_reg.o\\]::phy_disable_cca writes encoding two and complete libphy\\[phy_reg.o\\]::phy_enable_cca writes zero in their second fresh-read edge."]
         pub type PhyAuxForceW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
-        #[doc = "Field `FORCE` reader - Project-assigned name. Value three suppresses CCA while invalidating a timed-out queue. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero."]
+        #[doc = "Field `FORCE` reader - Project-assigned name. Value three suppresses CCA while invalidating a timed-out queue. Complete libphy\\[phy_reg.o\\]::phy_disable_cca writes encoding two and complete libphy\\[phy_reg.o\\]::phy_enable_cca writes zero."]
         pub type ForceR = crate::FieldReader;
-        #[doc = "Field `FORCE` writer - Project-assigned name. Value three suppresses CCA while invalidating a timed-out queue. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero."]
+        #[doc = "Field `FORCE` writer - Project-assigned name. Value three suppresses CCA while invalidating a timed-out queue. Complete libphy\\[phy_reg.o\\]::phy_disable_cca writes encoding two and complete libphy\\[phy_reg.o\\]::phy_enable_cca writes zero."]
         pub type ForceW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:27 - Opaque: meaning not established."]
@@ -10812,12 +10812,12 @@ pub mod wifi_mac_tx_common {
             pub fn bits_0_27_opaque(&self) -> Bits0_27OpaqueR {
                 Bits0_27OpaqueR::new(self.bits & 0x0fff_ffff)
             }
-            #[doc = "Bits 28:29 - Project-assigned name. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge."]
+            #[doc = "Bits 28:29 - Project-assigned name. Complete libphy\\[phy_reg.o\\]::phy_disable_cca writes encoding two and complete libphy\\[phy_reg.o\\]::phy_enable_cca writes zero in their second fresh-read edge."]
             #[inline(always)]
             pub fn phy_aux_force(&self) -> PhyAuxForceR {
                 PhyAuxForceR::new(((self.bits >> 28) & 3) as u8)
             }
-            #[doc = "Bits 30:31 - Project-assigned name. Value three suppresses CCA while invalidating a timed-out queue. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero."]
+            #[doc = "Bits 30:31 - Project-assigned name. Value three suppresses CCA while invalidating a timed-out queue. Complete libphy\\[phy_reg.o\\]::phy_disable_cca writes encoding two and complete libphy\\[phy_reg.o\\]::phy_enable_cca writes zero."]
             #[inline(always)]
             pub fn force(&self) -> ForceR {
                 ForceR::new(((self.bits >> 30) & 3) as u8)
@@ -10829,12 +10829,12 @@ pub mod wifi_mac_tx_common {
             pub fn bits_0_27_opaque(&mut self) -> Bits0_27OpaqueW<'_, CcaControlSpec> {
                 Bits0_27OpaqueW::new(self, 0)
             }
-            #[doc = "Bits 28:29 - Project-assigned name. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge."]
+            #[doc = "Bits 28:29 - Project-assigned name. Complete libphy\\[phy_reg.o\\]::phy_disable_cca writes encoding two and complete libphy\\[phy_reg.o\\]::phy_enable_cca writes zero in their second fresh-read edge."]
             #[inline(always)]
             pub fn phy_aux_force(&mut self) -> PhyAuxForceW<'_, CcaControlSpec> {
                 PhyAuxForceW::new(self, 28)
             }
-            #[doc = "Bits 30:31 - Project-assigned name. Value three suppresses CCA while invalidating a timed-out queue. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero."]
+            #[doc = "Bits 30:31 - Project-assigned name. Value three suppresses CCA while invalidating a timed-out queue. Complete libphy\\[phy_reg.o\\]::phy_disable_cca writes encoding two and complete libphy\\[phy_reg.o\\]::phy_enable_cca writes zero."]
             #[inline(always)]
             pub fn force(&mut self) -> ForceW<'_, CcaControlSpec> {
                 ForceW::new(self, 30)

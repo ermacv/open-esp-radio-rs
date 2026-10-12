@@ -85,9 +85,9 @@ pub struct SingleMpduTxConfig {
 /// Rate and publication budget of one network data MPDU, selected per frame
 /// from the association's ordinary rate schedule.
 ///
-/// SOURCE: `libpp.a[trc.o]::rcGetSched` selects the data schedule record
-/// that `rcGetRate` walks for the retry ladder, and complete
-/// `rcReachRetryLimit` bounds the MPDU retry counter by record byte `0x08`.
+/// SOURCE: `libpp[trc.o]::rcGetSched` selects the data schedule record
+/// that `libpp[trc.o]::rcGetRate` walks for the retry ladder, and complete
+/// `libpp[trc.o]::rcReachRetryLimit` bounds the MPDU retry counter by record byte `0x08`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaDataTxSelection {
     pub rate: TxPhyRate,
@@ -613,8 +613,8 @@ where
     /// Publish a BlockAckReq for `tid` whose BlockAck starts at
     /// `starting_sequence`.
     ///
-    /// SOURCE: `libpp.a[pp.o]::ppFillAMPDUBar` leaves Duration zero and
-    /// queues the request on the access category of its TID; `rcGetSched`
+    /// SOURCE: `libpp[pp.o]::ppFillAMPDUBar` leaves Duration zero and
+    /// queues the request on the access category of its TID; `libpp[trc.o]::rcGetSched`
     /// selects row three of `rc11BSchedTbl`, the 1 Mbit/s long-preamble
     /// schedule with 32 publications, and the descriptor solicits a BlockAck
     /// (blobray 7a0f2090f).
@@ -669,10 +669,10 @@ where
     /// control schedule selects its first rate, every retry rate and its
     /// publication budget.
     ///
-    /// SOURCE: `libpp.a[pp.o]::ppTxProtoProc` leaves management frames,
+    /// SOURCE: `libpp[pp.o]::ppTxProtoProc` leaves management frames,
     /// power-management (QoS-)Null and BlockAck control without the data bit,
-    /// and `trc_set_per_pkt_rate` sets bit 25 on EAPOL; `rcGetSched` then
-    /// selects trc `+0x68`, `rcGetRate` walks it and `rcReachRetryLimit`
+    /// and `trc_set_per_pkt_rate` sets bit 25 on EAPOL; `libpp[trc.o]::rcGetSched` then
+    /// selects trc `+0x68`, `libpp[trc.o]::rcGetRate` walks it and `libpp[trc.o]::rcReachRetryLimit`
     /// bounds it by record byte `0x08`. A unicast probe request additionally
     /// selects `BasicOFDMSched`, which is the connected station's `+0x68`.
     fn control_exchange(
@@ -1070,7 +1070,7 @@ where
     /// to the broadcast address otherwise (as the destination and the
     /// BSSID).
     ///
-    /// SOURCE(esp32s31): complete `libnet80211.a[wl_cnx.o]::send_ap_probe`
+    /// SOURCE(esp32s31): complete `libnet80211[wl_cnx.o]::send_ap_probe`
     /// passes the configured SSID (`g_wifi_nvs`) to
     /// `ieee80211_send_probereq` for either address; a hidden-SSID access
     /// point answers only a Probe Request that names its SSID.

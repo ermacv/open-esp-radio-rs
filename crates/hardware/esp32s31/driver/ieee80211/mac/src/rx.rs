@@ -368,7 +368,7 @@ impl HeGuardIntervalAndLtf {
 /// `esp_wifi_su_siga1_t` and packed `esp_wifi_su_siga2_t` layouts. The same
 /// MCS/BW/GI bit positions are independently used by the qualified vendor
 /// `libpp.a` `dbg_read_tx_sig` diagnostic. Complete
-/// `libpp.a[hal_debug.o]::dbg_dump_rx_ppdu`, size `0xa36`, names
+/// `libpp[hal_debug.o]::dbg_dump_rx_ppdu`, size `0xa36`, names
 /// bits 25:23 `nsts_and_midamble_periodicity`; they must not be reported
 /// unconditionally as the number of spatial streams.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -497,7 +497,7 @@ impl HeMuBandwidth {
 /// `esp_wifi_mu_siga1_t` and packed `esp_wifi_mu_siga2_t` layouts.
 ///
 /// SOURCE\[BLOB_LIBPP_DBG_DUMP_RX_PPDU]: complete
-/// `libpp.a[hal_debug.o]::dbg_dump_rx_ppdu`, size `0xa36`,
+/// `libpp[hal_debug.o]::dbg_dump_rx_ppdu`, size `0xa36`,
 /// instructions `0x4b4..0x586`. The format-five branch independently loads
 /// HE-SIG-A1 at RX-prefix offset `0x04` and HE-SIG-A2 at offsets `0x09..0x0a`,
 /// then applies the masks represented below. In particular, it names the
@@ -564,7 +564,7 @@ impl HeMuSignal {
 /// SOURCE\[ESP_WIFI_SYS_S31_HE_TB_SIG]: the pinned `esp-wifi-sys`
 /// `esp_wifi_tb_siga1_t` and packed `esp_wifi_tb_siga2_t` layouts.
 /// SOURCE\[BLOB_LIBPP_DBG_DUMP_RX_PPDU]: complete
-/// `libpp.a[hal_debug.o]::dbg_dump_rx_ppdu`, instructions
+/// `libpp[hal_debug.o]::dbg_dump_rx_ppdu`, instructions
 /// `0x412..0x4b2`, independently decodes the same prefix words for baseband
 /// format seven.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -596,7 +596,7 @@ impl HeTriggerBasedSignal {
 /// Bounded HE-MU SIG-B view from one completed S31 RX buffer.
 ///
 /// SOURCE\[BLOB_LIBPP_DBG_DUMP_RX_SIGB]: complete
-/// `libpp.a[test_hal_rx_mu_sigb.o]::dbg_dump_rx_sigb`, size `0x1e6`.
+/// `libpp[test_hal_rx_mu_sigb.o]::dbg_dump_rx_sigb`, size `0x1e6`.
 /// The blob reads the exact offsets used by [`decode_rx_he_mu_sig_b`]:
 /// bit length from `0x2a[7:5]` and `0x2b[6:0]`, presence at `0x2b[7]`,
 /// the selected user at `0x28..0x2a`, common information at `0x2d..0x2f`,
@@ -754,7 +754,7 @@ impl RxPhyInfo {
 
     /// HT-SIG Aggregation bit, when the RX vector is an HT PPDU.
     ///
-    /// SOURCE: complete `libpp.a[hal_debug.o]::dbg_dump_rx_ppdu`,
+    /// SOURCE: complete `libpp[hal_debug.o]::dbg_dump_rx_ppdu`,
     /// offsets `0x592..0x5e0`. The format-two branch reads the word at prefix
     /// bytes `4..8`, shifts bit 27 into the sixth argument of the HT record and
     /// names it `Aggregation`.
@@ -792,7 +792,7 @@ impl RxPhyInfo {
 ///
 /// SOURCE: public ESP32-S31 `esp_wifi_rxctrl_t` definition. The packed ABI
 /// places the 32-bit `timestamp` at bytes 12..16, after `is_group` in byte
-/// 11; vendor `lmacAdjustTimestamp` reads and rewrites the same word
+/// 11; vendor `libpp[lmac.o]::lmacAdjustTimestamp` reads and rewrites the same word
 /// relative to the local-time counter.
 pub fn decode_rx_local_timestamp(buffer: &[u8]) -> Option<u32> {
     Some(u32::from_le_bytes(

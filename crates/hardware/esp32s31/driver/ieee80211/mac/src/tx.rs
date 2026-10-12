@@ -65,7 +65,7 @@ const LEGACY_FCS_LENGTH: u16 = 4;
 /// Hardware lifetime class selected by the descriptor's A-MPDU-container bit.
 ///
 /// This is not an EDCA access category or a management/data distinction.
-/// Complete `libpp.a[lmac.o]::lmacSetTxFrame` tests descriptor flag
+/// Complete `libpp[lmac.o]::lmacSetTxFrame` tests descriptor flag
 /// `0x0040_0000`: clear loads `lmacConfMib + 0x08`, while set loads
 /// `lmacConfMib + 0x00`. Complete `lmacInit` initializes those two lifetimes
 /// to `0x400` and `0x600`, shifts the selected value left by ten, and passes it
@@ -142,8 +142,7 @@ impl LegacyTxQueue {
 
     /// Packet PTI assigned by complete vendor data encapsulation.
     ///
-    /// Complete `libnet80211.a[ieee80211_output.o]::
-    /// ieee80211_encap_esfbuf` maps voice/video/best-effort/background to
+    /// Complete `libnet80211[ieee80211_output.o]::ieee80211_encap_esfbuf` maps voice/video/best-effort/background to
     /// coexistence events 10/11/12/13. The complete pinned
     /// `libcoexist.a[coexist_core.o]::coex_pti_tab` maps those events to
     /// 3/2/1/1.
@@ -157,7 +156,7 @@ impl LegacyTxQueue {
 
     /// Queue scheduler PTI selected by complete vendor data encapsulation.
     ///
-    /// Complete `libpp.a[hal_mac.o]::mac_tx_set_pti` takes the
+    /// Complete `libpp[hal_mac.o]::mac_tx_set_pti` takes the
     /// unsigned minimum of the packet PTI and coexistence event-one PTI 5.
     /// Every ordinary data priority is below five, so it is retained.
     pub const fn vendor_data_scheduler_priority(self) -> u8 {
@@ -423,8 +422,8 @@ impl TxCompletion {
     /// Hardware completion status used by the vendor ACK-timeout path.
     ///
     /// SOURCE: the six-entry jump table in complete
-    /// `libpp.a[lmac.o]::lmacProcessTxComplete` maps status five to
-    /// `lmacProcessAckTimeout` (status zero maps to ordinary TX success).
+    /// `libpp[lmac.o]::lmacProcessTxComplete` maps status five to
+    /// `libpp[lmac.o]::lmacProcessAckTimeout` (status zero maps to ordinary TX success).
     pub const ACK_TIMEOUT_STATUS: u8 = 5;
 
     pub const fn cookie(&self) -> TxCookie {
@@ -487,7 +486,7 @@ impl TxCompletion {
 
     /// Count the ordinary Trigger-based packets reported by hardware.
     ///
-    /// SOURCE: complete `libpp.a[lmac.o]::lmacProcessTxComplete`
+    /// SOURCE: complete `libpp[lmac.o]::lmacProcessTxComplete`
     /// stores completion extension word zero bits 19:13 at per-queue state
     /// byte `+0x30`. Complete `lmacProcess{Short,Long}RetryFail` consumes that
     /// byte before deciding whether to enter `lmacProcessTBSuccess`.
@@ -497,7 +496,7 @@ impl TxCompletion {
 
     /// Return whether the completion selects the additional TB packet count.
     ///
-    /// SOURCE: complete `libpp.a[lmac.o]::lmacProcessTxComplete`
+    /// SOURCE: complete `libpp[lmac.o]::lmacProcessTxComplete`
     /// copies completion extension word zero bit 20 to per-queue state byte
     /// `+0x2e`. The retry leaves add byte `+0x2f` only when this flag is set.
     pub const fn last_tx_was_trigger_based(&self) -> bool {
@@ -542,9 +541,7 @@ impl TxCompletion {
     /// pinned initialized value is `0x60`, and narrows the sum to a signed
     /// byte before calling `rcUpdateAckSnr`.
     ///
-    /// SOURCE: complete `libpp.a[hal_mac_tx.o]::
-    /// hal_mac_get_txq_complete`, `libpp.a[lmac.o]::
-    /// lmacProcessTxSuccess`, and `libpp.a[trc.o]::rcUpdateTxDone`.
+    /// SOURCE: complete `libpp[hal_mac_tx.o]::hal_mac_get_txq_complete`, `libpp[lmac.o]::lmacProcessTxSuccess`, and `libpp[trc.o]::rcUpdateTxDone`.
     pub const fn ack_snr_sample(&self) -> Option<i8> {
         if self.status() != 0 {
             return None;
@@ -706,7 +703,7 @@ impl LegacyRate {
     /// legacy rates use their corresponding records. `None` reports that the
     /// record's complete retry budget has been consumed.
     ///
-    /// SOURCE: `libpp.a[trc.o]::{rcGetRate, rcUpdatePhyMode}` and the
+    /// SOURCE: `libpp[trc.o]::rcGetRate, libpp[trc.o]::rcUpdatePhyMode` and the
     /// exact Rust-owned schedule arenas in [`crate::rate::schedule`],
     /// cross-checked against `SOURCE[PROMOTED_LMAC_TX]`
     /// `lmac.rs::select_basic_retry_rate`.
@@ -731,8 +728,7 @@ impl LegacyRate {
     /// therefore part of every legacy PPDU image, not only frames which
     /// request explicit RTS/CTS protection.
     ///
-    /// SOURCE: complete `libpp.a[hal_mac_tx.o]::
-    /// mac_tx_get_rts_rate` (size `0x96`) and the exhaustive reviewed
+    /// SOURCE: complete `libpp[hal_mac_tx.o]::mac_tx_get_rts_rate` (size `0x96`) and the exhaustive reviewed
     /// production reconstruction.
     pub const fn vendor_control_rate(self) -> Self {
         match self {
@@ -836,7 +832,7 @@ impl HtProtectionSpacing {
     /// Derive the exact finite hardware value from a complete HT A-MPDU
     /// Parameters byte (HT Capabilities IE payload byte two).
     ///
-    /// SOURCE: complete `libpp.a[trc.o]::rcUpdateAMPDUParam`,
+    /// SOURCE: complete `libpp[trc.o]::rcUpdateAMPDUParam`,
     /// size `0xde`, cross-checked against a coherent hardware-owned vendor HT
     /// queue containing three copies of value 40 (`0x0280_a028`).
     pub const fn from_ampdu_parameters(parameters: u8) -> Self {
@@ -905,10 +901,11 @@ impl HtAmpduDensity {
 
     /// Integer-microsecond value consumed by the pinned PP blob.
     ///
-    /// SOURCE: complete `libpp.a[trc.o]::rcUpdateAMPDUParam`.
+    /// SOURCE: complete `libpp[trc.o]::rcUpdateAMPDUParam`.
     /// Its two stack constants form the exact byte table
     /// `[0, 1, 1, 1, 2, 4, 8, 16]`; the selected byte is stored in ROM global
-    /// `s_ht_ampdu_density_us` before `he_get_min_subframe_len[_dcm]` uses it.
+    /// `s_ht_ampdu_density_us` before `libpp[trc.o]::he_get_min_subframe_len`
+    /// and its `_dcm` variant use it.
     pub const fn vendor_integer_microseconds(self) -> u8 {
         match self {
             Self::NoRestriction => 0,
@@ -936,7 +933,7 @@ pub struct HtPeerAmpduParameters {
 impl HtPeerAmpduParameters {
     /// Decode the peer's HT Capabilities A-MPDU Parameters byte.
     ///
-    /// SOURCE: complete `libpp.a[trc.o]::rcUpdateAMPDUParam`.
+    /// SOURCE: complete `libpp[trc.o]::rcUpdateAMPDUParam`.
     /// Bits 1:0 select exactly `0x1fff`, `0x3fff`, `0x7fff` or `0xffff`;
     /// bits 4:2 select the retained IEEE density and its collapsed S31 queue
     /// protection value.
@@ -1029,7 +1026,7 @@ impl HtRate {
     /// Exact S31 non-HE MAC rate code.
     ///
     /// SOURCE: sibling S31 `wifi_phy_rate_t`, complete
-    /// `libpp.a[hal_mac_tx.o]::mac_tx_set_htsig`, and the recovered
+    /// `libpp[hal_mac_tx.o]::mac_tx_set_htsig`, and the recovered
     /// Dot11N rate schedules. Long-GI MCS0 starts at 16; short-GI MCS0 starts
     /// at 26.
     pub const fn code(self) -> u8 {
@@ -1050,8 +1047,7 @@ impl HtRate {
 
     /// Legacy basic rate used by the protection/length vector.
     ///
-    /// SOURCE: complete `libpp.a[hal_mac_tx.o]::
-    /// mac_tx_get_rts_rate` (size 0x96). Both GI code ranges select 6M for
+    /// SOURCE: complete `libpp[hal_mac_tx.o]::mac_tx_get_rts_rate` (size 0x96). Both GI code ranges select 6M for
     /// MCS0, 12M for MCS1/2 and 24M for MCS3..7.
     pub const fn vendor_control_rate(self) -> LegacyRate {
         match self.mcs {
@@ -1087,8 +1083,7 @@ impl HtRate {
 
     /// Additional rate-dependent A-MPDU byte ceiling used by the vendor.
     ///
-    /// SOURCE: complete `libpp.a[trc.o]::
-    /// rx11NRate2AMPDULimit` and its complete 18-entry halfword table. The
+    /// SOURCE: complete `libpp[trc.o]::rx11NRate2AMPDULimit` and its complete 18-entry halfword table. The
     /// selector consumes only the HT rate code; width is therefore not an
     /// independent input. A zero table cell means that this leaf contributes
     /// no additional ceiling, leaving the negotiated/static A-MPDU limit in
@@ -1573,8 +1568,8 @@ impl HeMcs {
 
 /// Forward-error-correction profile carried by the S31 HE-SIG-A2 control.
 ///
-/// SOURCE: complete `libpp.a[hal_mac_tx.o]::mac_tx_set_hesig`
-/// (size `0x324`) and ROM rev0 `mac_tx_set_hesig` at `0x2f8350a8`.
+/// SOURCE: complete `libpp[hal_mac_tx.o]::mac_tx_set_hesig`
+/// (size `0x324`) and ROM rev0 `rom[]::mac_tx_set_hesig` at `0x2f8350a8`.
 /// The blob's `esp_wifi_cert_tx_bcc` selector produces intermediate halfword
 /// `0x017f` for BCC and `0x01ff` for LDPC. Its final `>> 6` transformation
 /// changes the queue's HE-SIG-A2 control image from `0x105` to `0x107`.
@@ -1591,7 +1586,7 @@ pub enum HeFecCoding {
 /// HE DCM MCS values valid in the currently owned BCC SU profile.
 ///
 /// This intentionally does not expose an unchecked integer. The pinned
-/// `libpp.a[trc.o]::rcGetDCMMaxRate` selects exactly the internal
+/// `libpp[trc.o]::rcGetDCMMaxRate` selects exactly the internal
 /// rate-control fallback codes `0x10`, `0x11`, and `0x13` for BPSK, QPSK,
 /// and 16-QAM DCM. Its RU242 DCM table additionally contains MCS4, but that
 /// requires the separately owned LDPC profile and therefore must not be
@@ -1726,9 +1721,9 @@ impl HeRate {
 
     /// Construct one standard-valid HE SU BCC+DCM rate.
     ///
-    /// SOURCE: complete `libpp.a[trc.o]::{rcGetDCMMaxRate,
-    /// he_get_min_subframe_len_dcm}`, the RU242 DCM rate table, and complete
-    /// `libpp.a[hal_mac_tx.o]::mac_tx_set_hesig`.
+    /// SOURCE: complete `libpp[trc.o]::rcGetDCMMaxRate,
+    /// libpp[trc.o]::he_get_min_subframe_len_dcm`, the RU242 DCM rate table, and complete
+    /// `libpp[hal_mac_tx.o]::mac_tx_set_hesig`.
     pub const fn bcc_dcm(
         mcs: HeBccDcmMcs,
         guard_interval_and_ltf: crate::rx::HeGuardIntervalAndLtf,
@@ -1808,7 +1803,7 @@ impl HeRate {
     /// `0x1a`, PLCP1 `0x0401a000`, and HE-SIG-A1 `0xfc204087`.
     ///
     /// Do not confuse this with [`Self::rate_control_dcm_fallback_code`].
-    /// Complete `libpp.a[trc.o]::rcGetDCMMaxRate` can rewrite the
+    /// Complete `libpp[trc.o]::rcGetDCMMaxRate` can rewrite the
     /// descriptor to a separate `0x10 + MCS` domain when its internal
     /// rate-control state requests a DCM fallback.
     pub const fn code(self) -> u8 {
@@ -1817,7 +1812,7 @@ impl HeRate {
 
     /// Internal vendor rate-control fallback code for an explicit DCM rate.
     ///
-    /// SOURCE: complete `libpp.a[trc.o]::rcGetDCMMaxRate`. That
+    /// SOURCE: complete `libpp[trc.o]::rcGetDCMMaxRate`. That
     /// function first requires descriptor-state word bit 21, selects the
     /// peer-bounded DCM constellation from bits 1:0, then stores exactly
     /// `0x10`, `0x11`, or `0x13` and sets descriptor byte `+0x31` bit 7.
@@ -1857,7 +1852,7 @@ impl HeRate {
     /// `rcGetRate` walks the four `(rate, count)` pairs of the current
     /// schedule record after an ordinary MPDU failure. The aggregate retry
     /// path is deliberately different: complete
-    /// `libpp.a[lmac.o]::lmacRetryTxFrame` branches around
+    /// `libpp[lmac.o]::lmacRetryTxFrame` branches around
     /// `rcGetRate` when its state byte is four, and
     /// `lmacProcessLongRetryFail` installs that state immediately before an
     /// A-MPDU retry. The HE20 records use one dedicated 800-ns MCS9 entry and
@@ -1870,7 +1865,7 @@ impl HeRate {
     /// DCM has a separate producer and is rejected here instead of being
     /// silently combined with the ordinary Dot11Ax table.
     ///
-    /// SOURCE: complete pinned `libpp.a[trc.o]::rcGetRate`, size `0xf6`,
+    /// SOURCE: complete pinned `libpp[trc.o]::rcGetRate`, size `0xf6`,
     /// and the pinned `rcUpdatePhyMode` mapping represented by the Rust-owned
     /// [`RateScheduleKind::Dot11Ax`] arena.
     pub fn vendor_retry_rate(self, failed_attempts: u8) -> Option<TxPhyRate> {
@@ -1966,11 +1961,11 @@ impl HeRate {
     /// Maximum APEP bytes for the vendor's zero-TXOP HE SU policy.
     ///
     /// SOURCE: ROM rev0 `he_max_apep_length` at `0x2f84fd40`, complete
-    /// `libpp.a[trc.o]::rx11AXRate2AMPDULimit`, and complete
-    /// `libpp.a[pp_he.o]::ppCheckTxHEAMPDUlength`.
+    /// `libpp[trc.o]::rx11AXRate2AMPDULimit`, and complete
+    /// `libpp[pp_he.o]::ppCheckTxHEAMPDUlength`.
     ///
     /// The ROM object contains three GI rows by ten MCS columns. The selector
-    /// maps both 0.8-us GI encodings to row zero. `ppCheckTxHEAMPDUlength`
+    /// maps both 0.8-us GI encodings to row zero. `libpp[pp_he.o]::ppCheckTxHEAMPDUlength`
     /// consumes the selected value as a `u16` and halves it when descriptor
     /// state bit 15 selects DCM. This limit is independent of the peer's
     /// advertised maximum A-MPDU exponent; an owner must satisfy both.
@@ -2000,9 +1995,8 @@ impl HeRate {
 
     /// Checked maximum APEP bytes for this rate and one EDCA TXOP limit.
     ///
-    /// SOURCE: complete `libpp.a[trc.o]::
-    /// rx11AXRate2AMPDULimit_update` (size `0x136`), complete
-    /// `libpp.a[pp_he.o]::get_estimated_batime` (size `0x1a`), and
+    /// SOURCE: complete `libpp[trc.o]::rx11AXRate2AMPDULimit_update` (size `0x136`), complete
+    /// `libpp[pp_he.o]::get_estimated_batime` (size `0x1a`), and
     /// `libpp.a[hal_mac_ctl.o]::{he_preamble_ersu,
     /// he_time_per_sym,he_data_bits_per_sym}`.
     ///
@@ -2105,8 +2099,7 @@ impl HeRate {
 
     /// Minimum HE A-MPDU subframe length for a negotiated density.
     ///
-    /// This reproduces complete `libpp.a[trc.o]::
-    /// {he_get_min_subframe_len,he_get_min_subframe_len_dcm}`: select the
+    /// This reproduces complete `libpp[trc.o]::he_get_min_subframe_len,libpp[trc.o]::he_get_min_subframe_len_dcm`: select the
     /// ordinary or DCM RU242 rate in 100-kbit/s units, multiply by the blob's
     /// integer-microsecond density, truncate by eight, then divide by ten and
     /// round up when a remainder remains.
@@ -2126,7 +2119,7 @@ impl HeRate {
     /// Empty four-byte delimiters required after one HE A-MPDU PSDU.
     ///
     /// `psdu_length` includes the hardware MIC and FCS. Complete
-    /// `libpp.a[pp_he.o]::ppCheckTxHEAMPDUlength` passes
+    /// `libpp[pp_he.o]::ppCheckTxHEAMPDUlength` passes
     /// `round_up(psdu_length + 4, 4)` to `ppCalDeliNum`; with the owned
     /// metadata profile this is `round_up(psdu_length, 4) + 4`.
     /// `ppCalDeliNum` writes `ceil((minimum-current)/4)` to metadata byte
@@ -2183,7 +2176,7 @@ impl HeDcmRate {
 
     /// Smallest DCM constellation the receiving peer must advertise.
     ///
-    /// SOURCE: complete `libpp.a[trc.o]::rcGetDCMMaxRate` maps peer
+    /// SOURCE: complete `libpp[trc.o]::rcGetDCMMaxRate` maps peer
     /// capability levels BPSK/QPSK/16-QAM to MCS0/MCS1/MCS3. ROM
     /// `he_rates_dcm_ru_242` adds MCS4 only in the separately typed LDPC
     /// column, which still uses 16-QAM.
@@ -2288,9 +2281,8 @@ impl HeTriggerScheduledRate {
 
     /// Admit the Trigger user assigned to this 1T1R HE20 station.
     ///
-    /// SOURCE: complete pinned `libpp.a[hal_debug.o]::
-    /// dbg_dump_trig_common_info` and `dbg_dump_trig_user_ss`, and complete
-    /// `libpp.a[hal_utilities.o]::ru2str`, which decode the UL bandwidth,
+    /// SOURCE: complete pinned `libpp[hal_debug.o]::dbg_dump_trig_common_info` and `dbg_dump_trig_user_ss`, and complete
+    /// `libpp[hal_utilities.o]::ru2str`, which decode the UL bandwidth,
     /// GI/LTF, RU allocation, UL HE-MCS, UL FEC, DCM and spatial-stream
     /// fields. IEEE Std 802.11ax-2021 9.3.1.22 and 27.3.2 define their
     /// meaning: the RU class follows from the raw allocation, and the rate
@@ -2394,8 +2386,8 @@ pub enum TxPhyRate {
 impl TxPhyRate {
     /// Control rate published in LENGTH_CONTROL for an unprotected PPDU.
     ///
-    /// SOURCE: complete `libpp.a[hal_mac_tx.o]::mac_tx_get_rts_rate`
-    /// (size `0x96`), whose result complete `mac_tx_set_len` writes for every
+    /// SOURCE: complete `libpp[hal_mac_tx.o]::mac_tx_get_rts_rate`
+    /// (size `0x96`), whose result complete `libpp[hal_mac_tx.o]::mac_tx_set_len` writes for every
     /// PPDU.
     pub const fn vendor_control_rate(self) -> LegacyRate {
         match self {
@@ -2438,7 +2430,7 @@ impl TxPhyRate {
     /// SOURCE: sibling S31 `esp_wifi_types_generic.h::wifi_phy_rate_t`, whose
     /// rate table explicitly assigns HE20 1600 ns to `MCS*_LGI` and HE20
     /// 800 ns to `MCS*_SGI`; complete
-    /// `libpp.a[trc.o]::{rcGetRate,rcGetSMPDURate}`; and the exact
+    /// `libpp[trc.o]::rcGetRate,libpp[trc.o]::rcGetSMPDURate`; and the exact
     /// Rust-owned Dot11Ax/Dot11N schedule arenas.
     pub const fn from_rate_control_code(
         kind: RateScheduleKind,
@@ -2585,9 +2577,9 @@ pub struct LegacyTxConfig {
     /// Response the MAC awaits: none for a group address, an ACK for an
     /// individual frame, a BlockAck for a BlockAckReq.
     ///
-    /// SOURCE: `libpp.a[pp.o]::ppTxProtoProc` copies the low bit of
+    /// SOURCE: `libpp[pp.o]::ppTxProtoProc` copies the low bit of
     /// address one into descriptor flag `0x0000_0002`.
-    /// `libpp.a[hal_mac_tx.o]::mac_tx_set_plcp0` then preserves PLCP0
+    /// `libpp[hal_mac_tx.o]::mac_tx_set_plcp0` then preserves PLCP0
     /// format zero when that flag is set. For the bounded plain legacy profile
     /// represented here, an ordinary individual address follows the recovered
     /// zero-flags branch and selects format one. This distinction is qualified
@@ -2713,12 +2705,11 @@ pub struct HeSmpduTxConfig {
 impl HeSmpduTxConfig {
     /// Construct the exact bounded vendor S-MPDU profile.
     ///
-    /// SOURCE: complete `libpp.a[pp_he.o]::
-    /// ppCalTxHESMPDULength` (`0x58` bytes) first rounds the descriptor
-    /// payload length to four, calls `ppCalDeliNum` and
-    /// `ppCalSubFrameLength`, then sets descriptor byte `+0x32` bit two,
+    /// SOURCE: complete `libpp[pp_he.o]::ppCalTxHESMPDULength` (`0x58` bytes) first rounds the descriptor
+    /// payload length to four, calls `libpp[pp_he.o]::ppCalDeliNum` and
+    /// `libpp[pp_he.o]::ppCalSubFrameLength`, then sets descriptor byte `+0x32` bit two,
     /// frame byte `+0x26` to one and descriptor byte `+0x2a` to one.
-    /// Complete `ppCalSubFrameLength` (`0x3e` bytes) adds the mandatory
+    /// Complete `libpp[pp_he.o]::ppCalSubFrameLength` (`0x3e` bytes) adds the mandatory
     /// four-byte delimiter. The live vendor raw oracle independently captured
     /// metadata word `0x0100_001c`: payload length 28 is the 24-byte encoded
     /// MPDU plus hardware FCS, metadata bit 24 is set, and metadata byte seven
@@ -2886,10 +2877,9 @@ pub struct HeTriggerBasedTxConfig {
 impl HeTriggerBasedTxConfig {
     /// Select one QoS TID admitted by the exact vendor eligibility table.
     ///
-    /// SOURCE: complete `libpp.a[if_hecfg.o]::
-    /// wifi_he_get_hetb_tid_bitmap`. Keeping the validation here prevents a
+    /// SOURCE: complete `libpp[if_hecfg.o]::wifi_he_get_hetb_tid_bitmap`. Keeping the validation here prevents a
     /// later MMIO transaction from silently doing nothing for an ineligible
-    /// TID, as the complete `mac_tx_set_tb` body does.
+    /// TID, as the complete `libpp[hal_mac_tx.o]::mac_tx_set_tb` body does.
     pub const fn new(tid_limit: MacHeTbTidLimit, tid: MacHeTid) -> Option<Self> {
         if tid_limit.contains(tid) {
             Some(Self {
@@ -2984,8 +2974,8 @@ impl HeAmpduTxConfig {
     /// Construct an HE20 SU A-MPDU under the complete vendor duration gate.
     ///
     /// SOURCE: ROM rev0 `he_max_apep_length`, complete
-    /// `libpp.a[trc.o]::rx11AXRate2AMPDULimit_update`, and complete
-    /// `libpp.a[pp_he.o]::ppCheckTxHEAMPDUlength`. The final
+    /// `libpp[trc.o]::rx11AXRate2AMPDULimit_update`, and complete
+    /// `libpp[pp_he.o]::ppCheckTxHEAMPDUlength`. The final
     /// assembled APEP must satisfy the rate/GI-specific limit selected by the
     /// negotiated EDCA TXOP; the peer's independent A-MPDU exponent is
     /// enforced by the pinned DMA owner before this constructor is reached.
@@ -3020,10 +3010,9 @@ impl HeAmpduTxConfig {
             trigger_based: None,
             bss_color,
             spatial_reuse: 0,
-            // SOURCE: complete `libpp.a[pp_he.o]::ppCalDeliNum`
+            // SOURCE: complete `libpp[pp_he.o]::ppCalDeliNum`
             // writes he_get_min_subframe_len_static's result to descriptor
-            // offset +0x28. Complete `libpp.a[hal_mac_tx.o]::
-            // mac_tx_set_hesig` later copies that halfword into all three
+            // offset +0x28. Complete `libpp[hal_mac_tx.o]::mac_tx_set_hesig` later copies that halfword into all three
             // queue PROTECTION spacing lanes. Keeping rate, density and this
             // derived value in one constructor prevents a metadata/MMIO
             // mismatch like the fixed-0x31 failure qualified by

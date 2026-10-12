@@ -20,7 +20,7 @@ use crate::{
 /// Guard value restored by the ROM RX recycler at both DMA-buffer bounds.
 ///
 /// SOURCE\[ROM_REV0_WDEV_APPEND_RX_BLOCKS]: `esp32s31_rev0_rom.elf`,
-/// `wDev_AppendRxBlocks` at `0x2f838a7e`, complete size `0x132`, writes
+/// `rom[]::wDev_AppendRxBlocks` at `0x2f838a7e`, complete size `0x132`, writes
 /// `0xdead_beef` at `buffer` and `buffer + descriptor_capacity`.
 /// The trailing word lives immediately after the descriptor-advertised
 /// capacity, so backing storage must reserve four additional bytes.
@@ -1078,8 +1078,8 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     /// Snapshot a complete RX unit only through the descriptor frontier which
     /// hardware has published in `RX_LAST_DESCRIPTOR`.
     ///
-    /// `SOURCE[libpp:wdevProcessRxSucDataAll]`: the complete vendor walker
-    /// snapshots `hal_mac_rx_get_last_dscr` before touching the software list,
+    /// SOURCE: the complete vendor walker
+    /// `libpp[wdev.o]::wdevProcessRxSucDataAll` snapshots `libpp[hal_mac_rx.o]::hal_mac_rx_get_last_dscr` before touching the software list,
     /// processes through that descriptor, then refreshes the snapshot before
     /// extending the same pass. `RX_DONE` alone is therefore not sufficient
     /// ownership evidence: its store may be observed before the MAC has
@@ -2246,7 +2246,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
                 return Ok(None);
             }
             {
-                // SOURCE[`libpp:wDev_AppendRxBlocks`]: after reload clears,
+                // SOURCE: `libpp[wdev.o]::wDev_AppendRxBlocks`: after reload clears,
                 // `NEXT=0` and `LAST != new_tail` lead directly to
                 // `BASE = LAST->next`. LAST may still name an earlier node of
                 // the accepted list when several completed units are detached

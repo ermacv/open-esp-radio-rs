@@ -1,7 +1,7 @@
 //! The Espressif ordinary-MPDU retry ladder: the rate of each attempt of an
 //! MPDU after failures, from the vendor rate schedules.
 //!
-//! SOURCE(esp32s31): `libpp.a[trc.o]::{rcGetRate, rcUpdatePhyMode}`. `rcGetRate`
+//! SOURCE(esp32s31): `libpp[trc.o]::rcGetRate, libpp[trc.o]::rcUpdatePhyMode`. `libpp[trc.o]::rcGetRate`
 //! walks the four `(rate, count)` pairs of the schedule record the frame's
 //! first rate selects ([`crate::rate_schedule::schedule_rate_after_failures`]);
 //! the record comes from `rcUpdatePhyMode`'s mapping of that rate. The

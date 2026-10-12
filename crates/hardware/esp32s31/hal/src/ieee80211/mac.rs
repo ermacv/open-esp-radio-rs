@@ -114,7 +114,7 @@ fn execute_cold_mac_handshake(
 
 /// Execute the finite cold-MAC handshake and interrupt cleanup sequence.
 ///
-/// SOURCE: complete pinned `libpp.a[hal_mac.o]::hal_init`, offsets
+/// SOURCE: complete pinned `libpp[hal_mac.o]::hal_init`, offsets
 /// `0x00..0x3a`. The vendor waits forever; this HAL operation owns the finite
 /// sample limit, polling, and multi-register cleanup order. One initial sample
 /// always occurs. Each not-ready observation increments the sample count, then
@@ -367,7 +367,7 @@ impl<'registers> WifiMacHal<'registers> {
     /// Finish a channel switch and return the selected REGDMA link for
     /// diagnostics. Delays and polling remain outside the PAC.
     pub fn restart_after_channel_switch(&mut self) -> u8 {
-        // SOURCE: complete `ic_mac_init -> hal_mac_init ->
+        // SOURCE: complete `libpp[if_hwctrl.o]::ic_mac_init -> hal_mac_init ->
         // pwr_hal_select_wifimac_regdma_link` in
         // `BLOB_LIBPP_MAC_CHANNEL_SWITCH`. This is intentionally a HAL
         // sequence: the PAC exposes only the two register-local operations.

@@ -7,10 +7,9 @@
 //! EAPOL frame requests event 46 and carries that event's priority with a
 //! priority count of 4000 instead of its ordinary one.
 //!
-//! SOURCE(esp32s31): complete pinned `libpp.a[pp.o]::pp_coex_tx_request`, which
-//! `ppProcessTxQ` calls before `lmacTxFrame`; `libpp.a[pm_coex.o]::
-//! pm_coex_reconnect_policy` and `pm_coex_set_reconnect_policy`;
-//! `libpp.a[hal_mac.o]::mac_tx_set_pti`, which publishes the unsigned
+//! SOURCE(esp32s31): complete pinned `libpp[pp.o]::pp_coex_tx_request`, which
+//! `libpp[pp.o]::ppProcessTxQ` calls before `libpp[lmac.o]::lmacTxFrame`; `libpp[pm_coex.o]::pm_coex_reconnect_policy` and `pm_coex_set_reconnect_policy`;
+//! `libpp[hal_mac.o]::mac_tx_set_pti`, which publishes the unsigned
 //! minimum of the frame and slice priorities as the scheduler priority.
 
 use core::future::Future;

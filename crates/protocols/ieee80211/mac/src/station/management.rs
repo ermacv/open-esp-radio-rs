@@ -126,8 +126,7 @@ impl StaManagementFrame<'_> {
 /// the MIC, as for protected data. The vendor protects a robust management
 /// frame through the same `ieee80211_crypto_encap` key selection as data.
 ///
-/// SOURCE(esp32s31): complete pinned `libnet80211.a[ieee80211_crypto.o]::
-/// ieee80211_crypto_encap` and `[ieee80211_crypto_ccmp.o]::ccmp_encap`.
+/// SOURCE(esp32s31): complete pinned `libnet80211[ieee80211_crypto.o]::ieee80211_crypto_encap` and `[ieee80211_crypto_ccmp.o]::ccmp_encap`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaProtectedManagementFrame<'a> {
     pub subtype: StaManagementSubtype,
@@ -281,7 +280,7 @@ pub fn parse_open_authentication_response(
 /// relationship with a Deauthentication frame.
 ///
 /// SOURCE(esp32s31): complete
-/// `libnet80211.a[ieee80211_sta.o]::sta_recv_mgmt`: branches `.L731`
+/// `libnet80211[ieee80211_sta.o]::sta_recv_mgmt`: branches `.L731`
 /// (Disassociation) and `.L737` (Deauthentication) read the reason code at
 /// management-body offset zero (`frame + 24`) and immediately call
 /// `ieee80211_sta_new_state(g_ic, 0, (reason << 8) | subtype)`.

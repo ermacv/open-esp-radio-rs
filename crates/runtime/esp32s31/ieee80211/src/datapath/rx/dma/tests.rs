@@ -35,7 +35,7 @@ use oer_esp32s31_ieee80211_mac::rx::{
 };
 
 use oer_esp32s31_ieee80211_sta::connected_rx::{
-    ConnectedRxConfig, ConnectedRxEvent, ConnectedRxSink, StaCcmpRxReplayEpoch,
+    ConnectedRxConfig, ConnectedRxEvent, ConnectedRxSink,
 };
 
 use oer_ieee80211_mac::{

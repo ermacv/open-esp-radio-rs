@@ -12,6 +12,13 @@
 
 use core::num::NonZeroU8;
 
+mod replay;
+
+pub use replay::{
+    CcmpGroupReplayReplacement, CcmpRxProtection, CcmpRxReplayEpoch, CcmpRxReplayEpochCandidate,
+    CcmpRxReplayError,
+};
+
 pub const CCMP_HEADER_LEN: usize = 8;
 pub const CCMP_PACKET_NUMBER_MAX: u64 = (1_u64 << 48) - 1;
 pub const CCMP_REPLAY_LANE_COUNT: usize = 17;

@@ -23,7 +23,7 @@ fn times(handoff_micros: u64) -> Option<oer_esp32s31_ieee80211_mac::rx::pool::Rx
 fn replay_resource() -> (StaCcmpRxReplayRxEndpoint, StaCcmpRxReplayControlEndpoint) {
     let resource = std::boxed::Box::leak(std::boxed::Box::new(StaCcmpRxReplayResource::new()));
     resource
-        .start(StaCcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap())
+        .start(CcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap())
         .unwrap()
 }
 
@@ -38,11 +38,11 @@ fn ccmp_header(packet_number: u64, key_id: u8) -> CcmpHeader {
 fn shared_group_rotation_changes_key_id_and_rsc_without_resetting_pairwise() {
     let (mut rx, mut control) = replay_resource();
     drop(
-        rx.prepare_publication(ConnectedRxProtection::Pairwise, Some(3), ccmp_header(9, 0))
+        rx.prepare_publication(CcmpRxProtection::Pairwise, Some(3), ccmp_header(9, 0))
             .unwrap(),
     );
     drop(
-        rx.prepare_publication(ConnectedRxProtection::Group, Some(3), ccmp_header(7, 1))
+        rx.prepare_publication(CcmpRxProtection::Group, Some(3), ccmp_header(7, 1))
             .unwrap(),
     );
 
@@ -51,39 +51,39 @@ fn shared_group_rotation_changes_key_id_and_rsc_without_resetting_pairwise() {
         .unwrap();
     let installing = control.begin_group_rotation(prepared).unwrap();
     assert_eq!(
-        rx.prepare_publication(ConnectedRxProtection::Group, Some(3), ccmp_header(21, 2),)
+        rx.prepare_publication(CcmpRxProtection::Group, Some(3), ccmp_header(21, 2),)
             .err(),
         Some(StaCcmpRxReplayError::GroupRotationInProgress)
     );
     // The group gate never resets or suspends PTK replay ownership.
     drop(
-        rx.prepare_publication(ConnectedRxProtection::Pairwise, Some(3), ccmp_header(10, 0))
+        rx.prepare_publication(CcmpRxProtection::Pairwise, Some(3), ccmp_header(10, 0))
             .unwrap(),
     );
     control.commit_group_rotation(installing).unwrap();
 
     assert!(matches!(
-        rx.prepare_publication(ConnectedRxProtection::Group, Some(3), ccmp_header(22, 1),),
+        rx.prepare_publication(CcmpRxProtection::Group, Some(3), ccmp_header(22, 1),),
         Err(StaCcmpRxReplayError::UnexpectedKeyId { .. })
     ));
     assert!(matches!(
-        rx.prepare_publication(ConnectedRxProtection::Group, Some(3), ccmp_header(20, 2),),
+        rx.prepare_publication(CcmpRxProtection::Group, Some(3), ccmp_header(20, 2),),
         Err(StaCcmpRxReplayError::Replay(
             CcmpReplayError::Replayed { .. }
         ))
     ));
     drop(
-        rx.prepare_publication(ConnectedRxProtection::Group, Some(3), ccmp_header(21, 2))
+        rx.prepare_publication(CcmpRxProtection::Group, Some(3), ccmp_header(21, 2))
             .unwrap(),
     );
     assert!(matches!(
-        rx.prepare_publication(ConnectedRxProtection::Pairwise, Some(3), ccmp_header(10, 0),),
+        rx.prepare_publication(CcmpRxProtection::Pairwise, Some(3), ccmp_header(10, 0),),
         Err(StaCcmpRxReplayError::Replay(
             CcmpReplayError::Replayed { .. }
         ))
     ));
     drop(
-        rx.prepare_publication(ConnectedRxProtection::Pairwise, Some(3), ccmp_header(11, 0))
+        rx.prepare_publication(CcmpRxProtection::Pairwise, Some(3), ccmp_header(11, 0))
             .unwrap(),
     );
     rx.stop().unwrap();
@@ -106,13 +106,13 @@ fn shared_group_rotation_applies_same_key_id_rsc_and_rejects_stale_candidate() {
         Some(StaCcmpRxReplayError::StaleGroupRotation)
     );
     assert!(matches!(
-        rx.prepare_publication(ConnectedRxProtection::Group, None, ccmp_header(8, 1),),
+        rx.prepare_publication(CcmpRxProtection::Group, None, ccmp_header(8, 1),),
         Err(StaCcmpRxReplayError::Replay(
             CcmpReplayError::Replayed { .. }
         ))
     ));
     drop(
-        rx.prepare_publication(ConnectedRxProtection::Group, None, ccmp_header(9, 1))
+        rx.prepare_publication(CcmpRxProtection::Group, None, ccmp_header(9, 1))
             .unwrap(),
     );
     rx.stop().unwrap();
@@ -123,15 +123,15 @@ fn shared_group_rotation_applies_same_key_id_rsc_and_rejects_stale_candidate() {
 fn same_key_id_rotation_merges_each_lane_monotonically_but_new_key_id_resets() {
     let (mut rx, mut control) = replay_resource();
     drop(
-        rx.prepare_publication(ConnectedRxProtection::Group, Some(0), ccmp_header(10, 1))
+        rx.prepare_publication(CcmpRxProtection::Group, Some(0), ccmp_header(10, 1))
             .unwrap(),
     );
     drop(
-        rx.prepare_publication(ConnectedRxProtection::Group, Some(7), ccmp_header(20, 1))
+        rx.prepare_publication(CcmpRxProtection::Group, Some(7), ccmp_header(20, 1))
             .unwrap(),
     );
     drop(
-        rx.prepare_publication(ConnectedRxProtection::Group, None, ccmp_header(5, 1))
+        rx.prepare_publication(CcmpRxProtection::Group, None, ccmp_header(5, 1))
             .unwrap(),
     );
 
@@ -142,7 +142,7 @@ fn same_key_id_rotation_merges_each_lane_monotonically_but_new_key_id_resets() {
     control.commit_group_rotation(installing).unwrap();
     for (tid, highest) in [(Some(0), 10), (Some(7), 20), (None, 8)] {
         assert!(matches!(
-            rx.prepare_publication(ConnectedRxProtection::Group, tid, ccmp_header(highest, 1),),
+            rx.prepare_publication(CcmpRxProtection::Group, tid, ccmp_header(highest, 1),),
             Err(StaCcmpRxReplayError::Replay(
                 CcmpReplayError::Replayed { .. }
             ))
@@ -161,7 +161,7 @@ fn same_key_id_rotation_merges_each_lane_monotonically_but_new_key_id_resets() {
     control.commit_group_rotation(installing).unwrap();
     for tid in [None, Some(0), Some(7), Some(15)] {
         assert!(matches!(
-            rx.prepare_publication(ConnectedRxProtection::Group, tid, ccmp_header(25, 1),),
+            rx.prepare_publication(CcmpRxProtection::Group, tid, ccmp_header(25, 1),),
             Err(StaCcmpRxReplayError::Replay(
                 CcmpReplayError::Replayed { .. }
             ))
@@ -174,7 +174,7 @@ fn same_key_id_rotation_merges_each_lane_monotonically_but_new_key_id_resets() {
     let installing = control.begin_group_rotation(new_key).unwrap();
     control.commit_group_rotation(installing).unwrap();
     drop(
-        rx.prepare_publication(ConnectedRxProtection::Group, Some(7), ccmp_header(4, 2))
+        rx.prepare_publication(CcmpRxProtection::Group, Some(7), ccmp_header(4, 2))
             .unwrap(),
     );
     rx.stop().unwrap();
@@ -192,7 +192,7 @@ fn same_key_id_begin_refreshes_all_lanes_advanced_after_prepare() {
         let packet_number = 40 + u64::from(tid.unwrap_or(16));
         drop(
             rx.prepare_publication(
-                ConnectedRxProtection::Group,
+                CcmpRxProtection::Group,
                 tid,
                 ccmp_header(packet_number, 1),
             )
@@ -206,7 +206,7 @@ fn same_key_id_begin_refreshes_all_lanes_advanced_after_prepare() {
         let packet_number = 40 + u64::from(tid.unwrap_or(16));
         assert!(matches!(
             rx.prepare_publication(
-                ConnectedRxProtection::Group,
+                CcmpRxProtection::Group,
                 tid,
                 ccmp_header(packet_number, 1),
             ),
@@ -223,7 +223,7 @@ fn same_key_id_begin_refreshes_all_lanes_advanced_after_prepare() {
 fn group_publication_and_stop_races_fail_without_mixing_epochs() {
     let (mut rx, mut control) = replay_resource();
     let permit = rx
-        .prepare_publication(ConnectedRxProtection::Group, None, ccmp_header(1, 1))
+        .prepare_publication(CcmpRxProtection::Group, None, ccmp_header(1, 1))
         .unwrap();
     let prepared = control
         .prepare_group_rotation(2, [3, 0, 0, 0, 0, 0, 0, 0])
@@ -259,14 +259,14 @@ fn group_publication_and_stop_races_fail_without_mixing_epochs() {
 fn endpoint_drop_defers_epoch_release_until_group_publication_returns() {
     let resource = std::boxed::Box::leak(std::boxed::Box::new(StaCcmpRxReplayResource::new()));
     let (mut rx, control) = resource
-        .start(StaCcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap())
+        .start(CcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap())
         .unwrap();
     let permit = rx
-        .prepare_publication(ConnectedRxProtection::Group, None, ccmp_header(1, 1))
+        .prepare_publication(CcmpRxProtection::Group, None, ccmp_header(1, 1))
         .unwrap();
     drop(rx);
     drop(control);
-    let busy = match resource.start(StaCcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap()) {
+    let busy = match resource.start(CcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap()) {
         Ok(_) => panic!("a live publication must retain the old replay epoch"),
         Err(failure) => failure,
     };
@@ -283,7 +283,7 @@ fn endpoint_drop_defers_epoch_release_until_group_publication_returns() {
 fn stale_generation_commit_cannot_quarantine_new_epoch() {
     let resource = std::boxed::Box::leak(std::boxed::Box::new(StaCcmpRxReplayResource::new()));
     let (mut old_rx, mut old_control) = resource
-        .start(StaCcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap())
+        .start(CcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap())
         .unwrap();
     let prepared = old_control
         .prepare_group_rotation(2, [3, 0, 0, 0, 0, 0, 0, 0])
@@ -293,14 +293,14 @@ fn stale_generation_commit_cannot_quarantine_new_epoch() {
     old_control.stop().unwrap();
 
     let (mut rx, mut control) = resource
-        .start(StaCcmpRxReplayEpoch::new([0; 8], 2, [0; 8]).unwrap())
+        .start(CcmpRxReplayEpoch::new([0; 8], 2, [0; 8]).unwrap())
         .unwrap();
     assert_eq!(
         old_control.commit_group_rotation(installing),
         Err(StaCcmpRxReplayError::StaleGroupRotation)
     );
     drop(
-        rx.prepare_publication(ConnectedRxProtection::Group, None, ccmp_header(1, 2))
+        rx.prepare_publication(CcmpRxProtection::Group, None, ccmp_header(1, 2))
             .unwrap(),
     );
     rx.stop().unwrap();
@@ -311,7 +311,7 @@ fn stale_generation_commit_cannot_quarantine_new_epoch() {
 fn stale_generation_abort_cannot_quarantine_new_epoch() {
     let resource = std::boxed::Box::leak(std::boxed::Box::new(StaCcmpRxReplayResource::new()));
     let (mut old_rx, mut old_control) = resource
-        .start(StaCcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap())
+        .start(CcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap())
         .unwrap();
     let prepared = old_control
         .prepare_group_rotation(2, [3, 0, 0, 0, 0, 0, 0, 0])
@@ -321,14 +321,14 @@ fn stale_generation_abort_cannot_quarantine_new_epoch() {
     old_control.stop().unwrap();
 
     let (mut rx, mut control) = resource
-        .start(StaCcmpRxReplayEpoch::new([0; 8], 2, [0; 8]).unwrap())
+        .start(CcmpRxReplayEpoch::new([0; 8], 2, [0; 8]).unwrap())
         .unwrap();
     assert_eq!(
         old_control.abort_group_rotation(installing),
         Err(StaCcmpRxReplayError::StaleGroupRotation)
     );
     drop(
-        rx.prepare_publication(ConnectedRxProtection::Group, None, ccmp_header(1, 2))
+        rx.prepare_publication(CcmpRxProtection::Group, None, ccmp_header(1, 2))
             .unwrap(),
     );
     rx.stop().unwrap();
@@ -347,7 +347,7 @@ fn generation_and_rotation_ticket_exhaustion_fail_closed_without_wrap() {
             .generation = u32::MAX;
     });
     let exhausted =
-        match exhausted_generation.start(StaCcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap()) {
+        match exhausted_generation.start(CcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap()) {
             Ok(_) => panic!("an exhausted generation must not wrap"),
             Err(failure) => failure,
         };
@@ -361,7 +361,7 @@ fn generation_and_rotation_ticket_exhaustion_fail_closed_without_wrap() {
 
     let resource = std::boxed::Box::leak(std::boxed::Box::new(StaCcmpRxReplayResource::new()));
     let (mut rx, mut control) = resource
-        .start(StaCcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap())
+        .start(CcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap())
         .unwrap();
     critical_section::with(|cs| {
         resource.state.borrow(cs).borrow_mut().next_rotation_ticket = u32::MAX;
@@ -373,12 +373,12 @@ fn generation_and_rotation_ticket_exhaustion_fail_closed_without_wrap() {
         Some(StaCcmpRxReplayError::GroupRotationTicketExhausted)
     );
     assert_eq!(
-        rx.prepare_publication(ConnectedRxProtection::Group, None, ccmp_header(1, 1))
+        rx.prepare_publication(CcmpRxProtection::Group, None, ccmp_header(1, 1))
             .err(),
         Some(StaCcmpRxReplayError::GroupRotationInProgress)
     );
     drop(
-        rx.prepare_publication(ConnectedRxProtection::Pairwise, None, ccmp_header(1, 0))
+        rx.prepare_publication(CcmpRxProtection::Pairwise, None, ccmp_header(1, 0))
             .unwrap(),
     );
     rx.stop().unwrap();
@@ -594,7 +594,7 @@ fn config() -> ConnectedRxConfig {
 
 fn dispatcher() -> ConnectedRxDispatcher {
     let mut dispatcher = ConnectedRxDispatcher::new(config());
-    dispatcher.install_ccmp_rx_replay(StaCcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap());
+    dispatcher.install_ccmp_rx_replay(CcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap());
     dispatcher
 }
 
@@ -778,7 +778,7 @@ fn open_station_reassembles_only_the_exact_fragment_identity() {
             &mut sink,
         ),
         ConnectedRxDispatch::Rejected {
-            protection: ConnectedRxProtection::Pairwise,
+            protection: CcmpRxProtection::Pairwise,
             error: ConnectedRxError::Fragment(OpenDataFragmentError::MoreFragmentsMismatch),
         }
     );
@@ -795,7 +795,7 @@ fn open_station_reassembles_only_the_exact_fragment_identity() {
             &mut sink,
         ),
         ConnectedRxDispatch::Rejected {
-            protection: ConnectedRxProtection::Pairwise,
+            protection: CcmpRxProtection::Pairwise,
             error: ConnectedRxError::Fragment(OpenDataFragmentError::IdentityMismatch),
         }
     );
@@ -914,7 +914,7 @@ fn station_ccmp_fragments_commit_each_pn_before_one_final_publication() {
             &mut sink,
         ),
         ConnectedRxDispatch::Rejected {
-            protection: ConnectedRxProtection::Pairwise,
+            protection: CcmpRxProtection::Pairwise,
             error: ConnectedRxError::Fragment(OpenDataFragmentError::RetryPacketNumberMismatch {
                 fragment_number: 0,
                 expected: oer_ieee80211_mac::ccmp::CcmpPacketNumber::new(3).unwrap(),
@@ -939,7 +939,7 @@ fn station_ccmp_fragments_commit_each_pn_before_one_final_publication() {
             &mut sink,
         ),
         ConnectedRxDispatch::Rejected {
-            protection: ConnectedRxProtection::Pairwise,
+            protection: CcmpRxProtection::Pairwise,
             error: ConnectedRxError::Fragment(OpenDataFragmentError::RetryPayloadMismatch {
                 fragment_number: 0
             }),
@@ -1091,7 +1091,7 @@ fn protected_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
             &mut sink,
         ),
         ConnectedRxDispatch::Rejected {
-            protection: ConnectedRxProtection::Pairwise,
+            protection: CcmpRxProtection::Pairwise,
             error: ConnectedRxError::Fragment(OpenDataFragmentError::Orphan { fragment_number: 1 }),
         }
     );
@@ -1177,7 +1177,7 @@ fn replay_rejection_cannot_evict_two_durable_ccmp_fragment_trains() {
             &mut sink,
         ),
         ConnectedRxDispatch::Rejected {
-            protection: ConnectedRxProtection::Pairwise,
+            protection: CcmpRxProtection::Pairwise,
             error: ConnectedRxError::CcmpReplay(StaCcmpRxReplayError::Replay(
                 CcmpReplayError::Replayed {
                     packet_number: pn4,
@@ -1256,7 +1256,7 @@ fn open_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
             &mut sink,
         ),
         ConnectedRxDispatch::Rejected {
-            protection: ConnectedRxProtection::Pairwise,
+            protection: CcmpRxProtection::Pairwise,
             error: ConnectedRxError::Fragment(OpenDataFragmentError::Orphan { fragment_number: 1 }),
         }
     );
@@ -1296,7 +1296,7 @@ fn open_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
             &mut sink,
         ),
         ConnectedRxDispatch::Rejected {
-            protection: ConnectedRxProtection::Pairwise,
+            protection: CcmpRxProtection::Pairwise,
             error: ConnectedRxError::Fragment(OpenDataFragmentError::InvalidLlcSnap),
         }
     );
@@ -1390,7 +1390,7 @@ fn reconfigure_refuses_an_in_flight_shared_replay_publication() {
     let prepared = prepare_ccmp_replay(
         &mut dispatcher.shared_ccmp_replay,
         &mut dispatcher.owned_ccmp_replay,
-        ConnectedRxProtection::Group,
+        CcmpRxProtection::Group,
         None,
         ccmp_header(1, 1),
     )
@@ -1448,7 +1448,7 @@ fn dispatches_protected_ethernet_and_owns_duplicate_history() {
             &mut sink,
         ),
         ConnectedRxDispatch::Rejected {
-            protection: ConnectedRxProtection::Pairwise,
+            protection: CcmpRxProtection::Pairwise,
             error: ConnectedRxError::CcmpReplay(StaCcmpRxReplayError::OwnerUnavailable),
         }
     );
@@ -1517,7 +1517,7 @@ fn dispatches_protected_ethernet_and_owns_duplicate_history() {
     assert!(matches!(
         replay,
         ConnectedRxDispatch::Rejected {
-            protection: ConnectedRxProtection::Pairwise,
+            protection: CcmpRxProtection::Pairwise,
             error: ConnectedRxError::CcmpReplay(StaCcmpRxReplayError::Replay(
                 CcmpReplayError::Replayed {
                     packet_number,
@@ -1580,7 +1580,7 @@ fn wpa2_admits_only_plaintext_eapol_from_the_exact_associated_link() {
             &mut sink,
         ),
         ConnectedRxDispatch::Rejected {
-            protection: ConnectedRxProtection::Pairwise,
+            protection: CcmpRxProtection::Pairwise,
             error: ConnectedRxError::SecurityModeMismatch,
         }
     );
@@ -1597,7 +1597,7 @@ fn wpa2_admits_only_plaintext_eapol_from_the_exact_associated_link() {
             &mut sink,
         ),
         ConnectedRxDispatch::Rejected {
-            protection: ConnectedRxProtection::Pairwise,
+            protection: CcmpRxProtection::Pairwise,
             error: ConnectedRxError::SecurityModeMismatch,
         }
     );

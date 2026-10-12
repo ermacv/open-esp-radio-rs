@@ -17,8 +17,8 @@ use oer_esp32s31_ieee80211_dma::rx_ring::RxSegment;
 use oer_esp32s31_ieee80211_mac::rx::pool::RxTimes;
 use oer_ieee80211_mac::{
     ccmp::{
-        CcmpHeader, CcmpKeyId, CcmpReplayError, CcmpReplayLane, CcmpRxReplayCandidate,
-        CcmpRxReplayState,
+        CcmpHeader, CcmpKeyId, CcmpReplayError, CcmpReplayLane, CcmpRxProtection,
+        CcmpRxReplayEpoch, CcmpRxReplayEpochCandidate, CcmpRxReplayError, CcmpRxReplayState,
     },
     data::{DataDecapError, DataInterfaceRole, EthernetFrameParts, RxDuplicateFilter},
     extensions::espressif::esp_now::{
@@ -125,105 +125,6 @@ pub struct ConnectedRxConfig {
     pub management_protection: bool,
 }
 
-/// Destination class observed before protected-data extraction.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ConnectedRxProtection {
-    Pairwise,
-    Group,
-    Other,
-}
-
-/// Association-scoped software anti-replay owner for the installed PTK and
-/// GTK. It is moved into the one connected RX dispatcher and is never cloned.
-/// BlockAck release happens before dispatcher entry, so each per-TID frontier
-/// observes sequence-ordered frames even when DMA completion order differed.
-#[derive(Debug, Eq, PartialEq)]
-pub struct StaCcmpRxReplayEpoch {
-    pairwise: CcmpRxReplayState,
-    group: CcmpRxReplayState,
-    group_key_id: CcmpKeyId,
-    group_revision: u32,
-}
-
-impl StaCcmpRxReplayEpoch {
-    pub fn new(
-        pairwise_receive_sequence: [u8; 8],
-        group_key_id: u8,
-        group_receive_sequence: [u8; 8],
-    ) -> Result<Self, StaCcmpRxReplayError> {
-        let pairwise = CcmpRxReplayState::from_receive_sequence(pairwise_receive_sequence)
-            .map_err(|_| StaCcmpRxReplayError::InvalidPairwiseReceiveSequence)?;
-        let group = CcmpRxReplayState::from_receive_sequence(group_receive_sequence)
-            .map_err(|_| StaCcmpRxReplayError::InvalidGroupReceiveSequence)?;
-        let group_key_id = CcmpKeyId::new(group_key_id)
-            .ok_or(StaCcmpRxReplayError::InvalidGroupKeyId(group_key_id))?;
-        Ok(Self {
-            pairwise,
-            group,
-            group_key_id,
-            group_revision: 0,
-        })
-    }
-
-    pub const fn group_key_id(&self) -> CcmpKeyId {
-        self.group_key_id
-    }
-
-    fn prepare(
-        &self,
-        protection: ConnectedRxProtection,
-        tid: Option<u8>,
-        header: CcmpHeader,
-    ) -> Result<StaCcmpRxReplayCandidate, StaCcmpRxReplayError> {
-        let lane = match tid {
-            Some(tid) => CcmpReplayLane::Tid(tid),
-            None => CcmpReplayLane::NonQos,
-        };
-        match protection {
-            ConnectedRxProtection::Pairwise => {
-                if header.key_id() != CcmpKeyId::PAIRWISE {
-                    return Err(StaCcmpRxReplayError::UnexpectedKeyId {
-                        protection,
-                        expected: CcmpKeyId::PAIRWISE,
-                        observed: header.key_id(),
-                    });
-                }
-                self.pairwise
-                    .prepare(lane, header.packet_number())
-                    .map(StaCcmpRxReplayCandidate::Pairwise)
-                    .map_err(StaCcmpRxReplayError::Replay)
-            }
-            ConnectedRxProtection::Group => {
-                if header.key_id() != self.group_key_id {
-                    return Err(StaCcmpRxReplayError::UnexpectedKeyId {
-                        protection,
-                        expected: self.group_key_id,
-                        observed: header.key_id(),
-                    });
-                }
-                self.group
-                    .prepare(lane, header.packet_number())
-                    .map(StaCcmpRxReplayCandidate::Group)
-                    .map_err(StaCcmpRxReplayError::Replay)
-            }
-            ConnectedRxProtection::Other => Err(StaCcmpRxReplayError::ForeignDestination),
-        }
-    }
-
-    fn commit(&mut self, candidate: StaCcmpRxReplayCandidate) -> Result<(), StaCcmpRxReplayError> {
-        match candidate {
-            StaCcmpRxReplayCandidate::Pairwise(candidate) => self
-                .pairwise
-                .commit(candidate)
-                .map_err(StaCcmpRxReplayError::Replay),
-            StaCcmpRxReplayCandidate::Group(candidate) => self
-                .group
-                .commit(candidate)
-                .map_err(StaCcmpRxReplayError::Replay),
-        }
-    }
-}
-
 /// Group-only replay state shared with GTK rotation. Pairwise lanes are moved
 /// into the unique RX endpoint and therefore need no per-MPDU mutex.
 struct StaCcmpSharedGroupReplayEpoch {
@@ -301,10 +202,10 @@ impl StaCcmpSharedGroupReplayEpoch {
         &self,
         tid: Option<u8>,
         header: CcmpHeader,
-    ) -> Result<StaCcmpRxReplayCandidate, StaCcmpRxReplayError> {
+    ) -> Result<CcmpRxReplayEpochCandidate, StaCcmpRxReplayError> {
         if header.key_id() != self.group_key_id {
             return Err(StaCcmpRxReplayError::UnexpectedKeyId {
-                protection: ConnectedRxProtection::Group,
+                protection: CcmpRxProtection::Group,
                 expected: self.group_key_id,
                 observed: header.key_id(),
             });
@@ -315,15 +216,15 @@ impl StaCcmpSharedGroupReplayEpoch {
         };
         self.group
             .prepare(lane, header.packet_number())
-            .map(StaCcmpRxReplayCandidate::Group)
+            .map(CcmpRxReplayEpochCandidate::Group)
             .map_err(StaCcmpRxReplayError::Replay)
     }
 
     fn commit_group(
         &mut self,
-        candidate: StaCcmpRxReplayCandidate,
+        candidate: CcmpRxReplayEpochCandidate,
     ) -> Result<(), StaCcmpRxReplayError> {
-        let StaCcmpRxReplayCandidate::Group(candidate) = candidate else {
+        let CcmpRxReplayEpochCandidate::Group(candidate) = candidate else {
             return Err(StaCcmpRxReplayError::ForeignDestination);
         };
         self.group
@@ -396,7 +297,7 @@ impl StaCcmpRxReplayResource {
     )]
     pub fn start(
         &'static self,
-        replay: StaCcmpRxReplayEpoch,
+        replay: CcmpRxReplayEpoch,
     ) -> Result<
         (StaCcmpRxReplayRxEndpoint, StaCcmpRxReplayControlEndpoint),
         StaCcmpRxReplayStartFailure,
@@ -416,7 +317,7 @@ impl StaCcmpRxReplayResource {
                 });
             };
             state.generation = generation;
-            let StaCcmpRxReplayEpoch {
+            let CcmpRxReplayEpoch {
                 pairwise,
                 group,
                 group_key_id,
@@ -489,11 +390,11 @@ pub enum StaCcmpRxReplayStartError {
 #[derive(Debug, Eq, PartialEq)]
 pub struct StaCcmpRxReplayStartFailure {
     pub error: StaCcmpRxReplayStartError,
-    replay: StaCcmpRxReplayEpoch,
+    replay: CcmpRxReplayEpoch,
 }
 
 impl StaCcmpRxReplayStartFailure {
-    pub fn into_parts(self) -> (StaCcmpRxReplayStartError, StaCcmpRxReplayEpoch) {
+    pub fn into_parts(self) -> (StaCcmpRxReplayStartError, CcmpRxReplayEpoch) {
         (self.error, self.replay)
     }
 }
@@ -552,7 +453,7 @@ impl StaCcmpRxReplayRxEndpoint {
     ) -> Result<(), StaCcmpRxReplayError> {
         if header.key_id() != CcmpKeyId::PAIRWISE {
             return Err(StaCcmpRxReplayError::UnexpectedKeyId {
-                protection: ConnectedRxProtection::Pairwise,
+                protection: CcmpRxProtection::Pairwise,
                 expected: CcmpKeyId::PAIRWISE,
                 observed: header.key_id(),
             });
@@ -570,10 +471,10 @@ impl StaCcmpRxReplayRxEndpoint {
         &self,
         tid: Option<u8>,
         header: CcmpHeader,
-    ) -> Result<StaCcmpRxReplayCandidate, StaCcmpRxReplayError> {
+    ) -> Result<CcmpRxReplayEpochCandidate, StaCcmpRxReplayError> {
         if header.key_id() != CcmpKeyId::PAIRWISE {
             return Err(StaCcmpRxReplayError::UnexpectedKeyId {
-                protection: ConnectedRxProtection::Pairwise,
+                protection: CcmpRxProtection::Pairwise,
                 expected: CcmpKeyId::PAIRWISE,
                 observed: header.key_id(),
             });
@@ -584,15 +485,15 @@ impl StaCcmpRxReplayRxEndpoint {
             .ok_or(StaCcmpRxReplayError::StaleEpoch)?
             .replay
             .prepare(lane, header.packet_number())
-            .map(StaCcmpRxReplayCandidate::Pairwise)
+            .map(CcmpRxReplayEpochCandidate::Pairwise)
             .map_err(StaCcmpRxReplayError::Replay)
     }
 
     fn commit_pairwise(
         &mut self,
-        candidate: StaCcmpRxReplayCandidate,
+        candidate: CcmpRxReplayEpochCandidate,
     ) -> Result<(), StaCcmpRxReplayError> {
-        let StaCcmpRxReplayCandidate::Pairwise(candidate) = candidate else {
+        let CcmpRxReplayEpochCandidate::Pairwise(candidate) = candidate else {
             return Err(StaCcmpRxReplayError::ForeignDestination);
         };
         self.pairwise
@@ -638,12 +539,12 @@ impl StaCcmpRxReplayRxEndpoint {
     #[cfg(test)]
     fn prepare_publication(
         &mut self,
-        protection: ConnectedRxProtection,
+        protection: CcmpRxProtection,
         tid: Option<u8>,
         header: CcmpHeader,
     ) -> Result<StaCcmpRxPublicationPermit, StaCcmpRxReplayError> {
         match protection {
-            ConnectedRxProtection::Pairwise => {
+            CcmpRxProtection::Pairwise => {
                 let candidate = self.prepare_pairwise(tid, header)?;
                 let resource = self.resource()?;
                 let generation =
@@ -655,8 +556,8 @@ impl StaCcmpRxReplayRxEndpoint {
                     group: false,
                 })
             }
-            ConnectedRxProtection::Group => self.prepare_candidate(tid, header)?.commit(),
-            ConnectedRxProtection::Other => Err(StaCcmpRxReplayError::ForeignDestination),
+            CcmpRxProtection::Group => self.prepare_candidate(tid, header)?.commit(),
+            CcmpRxProtection::Other => Err(StaCcmpRxReplayError::ForeignDestination),
         }
     }
 
@@ -924,7 +825,7 @@ struct StaCcmpRxPublicationPermit {
 struct StaCcmpPreparedRxPublication {
     resource: &'static StaCcmpRxReplayResource,
     generation: u32,
-    candidate: StaCcmpRxReplayCandidate,
+    candidate: CcmpRxReplayEpochCandidate,
     group_gate_armed: bool,
 }
 
@@ -987,14 +888,17 @@ impl Drop for StaCcmpRxPublicationPermit {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum StaCcmpRxReplayCandidate {
-    Pairwise(CcmpRxReplayCandidate),
-    Group(CcmpRxReplayCandidate),
+impl From<CcmpRxReplayError> for StaCcmpRxReplayError {
+    fn from(error: CcmpRxReplayError) -> Self {
+        Self::Epoch(error)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaCcmpRxReplayError {
+    /// The replay check of the association's keys
+    /// (`oer_ieee80211_mac::ccmp::CcmpRxReplayEpoch`).
+    Epoch(CcmpRxReplayError),
     InvalidPairwiseReceiveSequence,
     InvalidGroupReceiveSequence,
     InvalidGroupKeyId(u8),
@@ -1009,7 +913,7 @@ pub enum StaCcmpRxReplayError {
     RxStopped,
     ForeignDestination,
     UnexpectedKeyId {
-        protection: ConnectedRxProtection,
+        protection: CcmpRxProtection,
         expected: CcmpKeyId,
         observed: CcmpKeyId,
     },
@@ -1340,7 +1244,7 @@ pub enum ConnectedRxDispatch {
     Duplicate,
     Ignored,
     Rejected {
-        protection: ConnectedRxProtection,
+        protection: CcmpRxProtection,
         error: ConnectedRxError,
     },
 }
@@ -1350,34 +1254,34 @@ pub struct ConnectedRxDispatcher {
     config: ConnectedRxConfig,
     duplicate_filter: RxDuplicateFilter,
     shared_ccmp_replay: StaCcmpRxReplayRxEndpoint,
-    owned_ccmp_replay: Option<StaCcmpRxReplayEpoch>,
+    owned_ccmp_replay: Option<CcmpRxReplayEpoch>,
     esp_now: Option<EspNowRxEpoch>,
     fragments: OpenDataDefragmenter<OPEN_FRAGMENT_CONTEXTS, OPEN_DATA_REASSEMBLY_CAPACITY>,
     fragment_admission_active: bool,
 }
 
 enum StaCcmpPreparedReplay {
-    Owned(StaCcmpRxReplayCandidate),
-    SharedPairwise(StaCcmpRxReplayCandidate),
+    Owned(CcmpRxReplayEpochCandidate),
+    SharedPairwise(CcmpRxReplayEpochCandidate),
     SharedGroup(StaCcmpPreparedRxPublication),
 }
 
 fn prepare_ccmp_replay(
     shared: &mut StaCcmpRxReplayRxEndpoint,
-    owned: &mut Option<StaCcmpRxReplayEpoch>,
-    protection: ConnectedRxProtection,
+    owned: &mut Option<CcmpRxReplayEpoch>,
+    protection: CcmpRxProtection,
     tid: Option<u8>,
     header: CcmpHeader,
 ) -> Result<StaCcmpPreparedReplay, StaCcmpRxReplayError> {
     if shared.is_live() {
         return match protection {
-            ConnectedRxProtection::Pairwise => shared
+            CcmpRxProtection::Pairwise => shared
                 .prepare_pairwise(tid, header)
                 .map(StaCcmpPreparedReplay::SharedPairwise),
-            ConnectedRxProtection::Group => shared
+            CcmpRxProtection::Group => shared
                 .prepare_candidate(tid, header)
                 .map(StaCcmpPreparedReplay::SharedGroup),
-            ConnectedRxProtection::Other => Err(StaCcmpRxReplayError::ForeignDestination),
+            CcmpRxProtection::Other => Err(StaCcmpRxReplayError::ForeignDestination),
         };
     }
     match owned.as_mut() {
@@ -1390,7 +1294,7 @@ fn prepare_ccmp_replay(
 
 fn commit_ccmp_replay(
     shared: &mut StaCcmpRxReplayRxEndpoint,
-    owned: &mut Option<StaCcmpRxReplayEpoch>,
+    owned: &mut Option<CcmpRxReplayEpoch>,
     prepared: StaCcmpPreparedReplay,
 ) -> Result<Option<StaCcmpRxPublicationPermit>, StaCcmpRxReplayError> {
     match prepared {
@@ -1469,7 +1373,7 @@ impl ConnectedRxDispatcher {
     /// Install the unique replay epoch created from this association's M3
     /// pairwise/group RSC values. A WPA2 dispatcher without this owner rejects
     /// protected data instead of silently accepting PN reuse.
-    pub fn install_ccmp_rx_replay(&mut self, replay: StaCcmpRxReplayEpoch) {
+    pub fn install_ccmp_rx_replay(&mut self, replay: CcmpRxReplayEpoch) {
         assert_eq!(
             self.config.security,
             LinkProtection::Ccmp,
@@ -1708,10 +1612,10 @@ impl ConnectedRxDispatcher {
         let handoff = times.map(|times| times.handoff);
         let raw = segment.buffer;
         let Some(frame_control) = public_frame_control(raw) else {
-            return rejected(ConnectedRxProtection::Other, ConnectedRxError::PublicHeader);
+            return rejected(CcmpRxProtection::Other, ConnectedRxError::PublicHeader);
         };
         let protection = public_protection(raw, frame_control, self.config.station_address)
-            .unwrap_or(ConnectedRxProtection::Other);
+            .unwrap_or(CcmpRxProtection::Other);
 
         match frame_control & 0x00fc {
             BEACON_FRAME_CONTROL => {
@@ -2025,7 +1929,7 @@ impl ConnectedRxDispatcher {
     fn dispatch_protected_management(
         &self,
         segment: RxSegment<'_>,
-        protection: ConnectedRxProtection,
+        protection: CcmpRxProtection,
         frame_control: u16,
         mpdu: &mut [u8],
         sink: &mut dyn ConnectedRxSink,
@@ -2099,7 +2003,7 @@ impl ConnectedRxDispatcher {
         &mut self,
         segment: RxSegment<'_>,
         public_frame_control: u16,
-        protection: ConnectedRxProtection,
+        protection: CcmpRxProtection,
         handoff: Option<oer_time::Instant>,
         sink: &mut dyn ConnectedRxSink,
     ) -> ConnectedRxDispatch {
@@ -2116,7 +2020,7 @@ impl ConnectedRxDispatcher {
             return rejected(protection, ConnectedRxError::SecurityModeMismatch);
         }
         if !fragmented
-            && protection == ConnectedRxProtection::Pairwise
+            && protection == CcmpRxProtection::Pairwise
             && self.shared_ccmp_replay.is_live()
         {
             return self.dispatch_shared_pairwise_data(
@@ -2152,7 +2056,7 @@ impl ConnectedRxDispatcher {
                 if identity.transmitter_address() != self.config.bssid
                     || identity.receiver_address() != self.config.station_address
                         && identity.receiver_address()[0] & 1 == 0
-                    || protection == ConnectedRxProtection::Other
+                    || protection == CcmpRxProtection::Other
                 {
                     return ConnectedRxDispatch::Ignored;
                 }
@@ -2193,7 +2097,7 @@ impl ConnectedRxDispatcher {
                 if fragment_identity.transmitter_address() != self.config.bssid
                     || fragment_identity.receiver_address() != self.config.station_address
                         && fragment_identity.receiver_address()[0] & 1 == 0
-                    || protection == ConnectedRxProtection::Other
+                    || protection == CcmpRxProtection::Other
                 {
                     return ConnectedRxDispatch::Ignored;
                 }
@@ -2271,7 +2175,7 @@ impl ConnectedRxDispatcher {
         }
         if sink.wants_power_save_data() {
             sink.publish(ConnectedRxEvent::PowerSaveData(PowerSaveData {
-                group: protection == ConnectedRxProtection::Group,
+                group: protection == CcmpRxProtection::Group,
                 more_data: public_frame_control & MORE_DATA != 0,
             }));
         }
@@ -2312,7 +2216,7 @@ impl ConnectedRxDispatcher {
       ) -> ConnectedRxDispatch {
         #[cfg(feature = "task-poll-telemetry")]
         let cycle_started = connected_rx_cycle_count();
-        let protection = ConnectedRxProtection::Pairwise;
+        let protection = CcmpRxProtection::Pairwise;
         let view = match view_protected_data(segment, self.config.ingress) {
           Ok(view) => view,
           Err(error) => return rejected(protection, ConnectedRxError::Rx(error)),
@@ -2430,7 +2334,7 @@ impl ConnectedRxDispatcher {
     fn dispatch_open_fragment(
         &mut self,
         segment: RxSegment<'_>,
-        protection: ConnectedRxProtection,
+        protection: CcmpRxProtection,
         handoff: Option<oer_time::Instant>,
         sink: &mut dyn ConnectedRxSink,
     ) -> ConnectedRxDispatch {
@@ -2457,7 +2361,7 @@ impl ConnectedRxDispatcher {
         if identity.transmitter_address() != self.config.bssid
             || identity.receiver_address() != self.config.station_address
                 && identity.receiver_address()[0] & 1 == 0
-            || protection == ConnectedRxProtection::Other
+            || protection == CcmpRxProtection::Other
         {
             return ConnectedRxDispatch::Ignored;
         }
@@ -2480,7 +2384,7 @@ impl ConnectedRxDispatcher {
             return ConnectedRxDispatch::Duplicate;
         }
         let power_save_data = PowerSaveData {
-            group: protection == ConnectedRxProtection::Group,
+            group: protection == CcmpRxProtection::Group,
             more_data: u16::from_le_bytes([view.mpdu[0], view.mpdu[1]]) & MORE_DATA != 0,
         };
         let raw = view.raw;
@@ -2515,7 +2419,7 @@ impl ConnectedRxDispatcher {
     fn dispatch_protected_fragment(
         &mut self,
         segment: RxSegment<'_>,
-        protection: ConnectedRxProtection,
+        protection: CcmpRxProtection,
         handoff: Option<oer_time::Instant>,
         sink: &mut dyn ConnectedRxSink,
     ) -> ConnectedRxDispatch {
@@ -2541,7 +2445,7 @@ impl ConnectedRxDispatcher {
         let identity = view.fragment.identity();
         if identity.transmitter_address() != self.config.bssid
             || identity.receiver_address() != self.config.station_address
-            || protection != ConnectedRxProtection::Pairwise
+            || protection != CcmpRxProtection::Pairwise
         {
             return ConnectedRxDispatch::Ignored;
         }
@@ -2648,10 +2552,10 @@ impl ConnectedRxDispatcher {
     fn dispatch_unprotected_eapol(
         &mut self,
         segment: RxSegment<'_>,
-        protection: ConnectedRxProtection,
+        protection: CcmpRxProtection,
         sink: &mut dyn ConnectedRxSink,
     ) -> ConnectedRxDispatch {
-        if protection != ConnectedRxProtection::Pairwise {
+        if protection != CcmpRxProtection::Pairwise {
             return rejected(protection, ConnectedRxError::SecurityModeMismatch);
         }
         let view = match view_unprotected_data(segment, self.config.ingress) {
@@ -2703,7 +2607,7 @@ impl ConnectedRxDispatcher {
     #[cold]
     fn replay_rejection(
         &self,
-        protection: ConnectedRxProtection,
+        protection: CcmpRxProtection,
         error: StaCcmpRxReplayError,
         retry: bool,
         sequence_control: u16,
@@ -2726,7 +2630,7 @@ impl Default for ConnectedRxDispatcher {
     }
 }
 
-fn rejected(protection: ConnectedRxProtection, error: ConnectedRxError) -> ConnectedRxDispatch {
+fn rejected(protection: CcmpRxProtection, error: ConnectedRxError) -> ConnectedRxDispatch {
     ConnectedRxDispatch::Rejected { protection, error }
 }
 
@@ -2748,17 +2652,17 @@ fn public_protection(
     raw: &[u8],
     frame_control: u16,
     station_address: [u8; 6],
-) -> Option<ConnectedRxProtection> {
+) -> Option<CcmpRxProtection> {
     if frame_control & DATA_TYPE_MASK != DATA_TYPE {
-        return Some(ConnectedRxProtection::Other);
+        return Some(CcmpRxProtection::Other);
     }
     let destination = raw.get(PUBLIC_HEADER_SIZE + 4..PUBLIC_HEADER_SIZE + 10)?;
     if destination.first().is_some_and(|byte| byte & 1 != 0) {
-        Some(ConnectedRxProtection::Group)
+        Some(CcmpRxProtection::Group)
     } else if destination == station_address {
-        Some(ConnectedRxProtection::Pairwise)
+        Some(CcmpRxProtection::Pairwise)
     } else {
-        Some(ConnectedRxProtection::Other)
+        Some(CcmpRxProtection::Other)
     }
 }
 

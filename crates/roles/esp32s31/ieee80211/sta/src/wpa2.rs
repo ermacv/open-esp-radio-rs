@@ -9,7 +9,8 @@ use core::future::Future;
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use crate::connected::management_protection::StationManagementProtection;
-use crate::connected_rx::{StaCcmpRxReplayEpoch, StaCcmpRxReplayError};
+use crate::connected_rx::StaCcmpRxReplayError;
+use oer_ieee80211_mac::ccmp::CcmpRxReplayEpoch;
 use crate::connection_coex::{ConnectionFrame, ConnectionFrameCoex, ReconnectFramePriority};
 
 use oer_esp32s31_ieee80211_mac::{
@@ -264,7 +265,7 @@ pub struct InstalledWpa2Keys {
     pairwise: StaPairwiseCcmpSlot,
     group: StaGroupCcmpSlot,
     group_material: StaGroupCcmpKeyMaterial,
-    replay: StaCcmpRxReplayEpoch,
+    replay: CcmpRxReplayEpoch,
     management: Option<StationManagementProtection>,
 }
 
@@ -273,7 +274,7 @@ pub struct InstalledWpa2KeyParts {
     pub pairwise: StaPairwiseCcmpSlot,
     pub group: StaGroupCcmpSlot,
     pub group_material: StaGroupCcmpKeyMaterial,
-    pub replay: StaCcmpRxReplayEpoch,
+    pub replay: CcmpRxReplayEpoch,
     /// Present when the association protects its management frames.
     pub management: Option<StationManagementProtection>,
 }
@@ -402,12 +403,12 @@ where
         let RsnKeyKind::Group { key_id, .. } = group.kind() else {
             return Err(Wpa2KeyPortError::InvalidGroupKind);
         };
-        let replay = StaCcmpRxReplayEpoch::new(
+        let replay = CcmpRxReplayEpoch::new(
             *pairwise.receive_sequence(),
             key_id,
             *group.receive_sequence(),
         )
-        .map_err(Wpa2KeyPortError::InvalidReceiveSequence)?;
+        .map_err(|error| Wpa2KeyPortError::InvalidReceiveSequence(error.into()))?;
         let group_material = StaGroupCcmpKeyMaterial::new(key_id, *group.key().as_bytes())
             .map_err(Wpa2KeyPortError::Install)?;
         let pairwise = install_sta_pairwise_ccmp(

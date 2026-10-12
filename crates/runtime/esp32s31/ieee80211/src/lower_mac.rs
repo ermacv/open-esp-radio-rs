@@ -1,48 +1,42 @@
 //! The ESP32-S31 Wi-Fi backend on the owner shape of the lower-MAC port
-//! (`oer_ieee80211_lower_mac::owner`, `oer-ieee80211-port`).
+//! (`oer_ieee80211_lower_mac::owner`, `oer-ieee80211-port`), with the
+//! product event model (#563).
 //!
 //! [`Esp32s31LowerMac`] is the runtime a composition places in a `static`:
 //! the sans-IO [`LowerMacCore`] of `oer-esp32s31-ieee80211` and its register
-//! owner in one blocking mutex over a caller-chosen raw mutex, the event
-//! queues, and the entries the interrupts and the receive producer call
-//! ([`Esp32s31LowerMac::on_interrupt`], [`Esp32s31LowerMac::on_power_interrupt`],
-//! [`Esp32s31LowerMac::on_received`]). Those entries only post: they run
-//! the core's service under the lock and queue its events.
+//! owner, the event queues and the product RX pipeline's two ends
+//! ([`PortRxReceiver`], [`PortRxService`]: the staging queue and the RX DMA
+//! epoch that fills it). [`Esp32s31LowerMac::install`] installs a disabled
+//! core with its register owner, its retune, the RX pipeline, the
+//! interrupt runtimes and the install's channel and access-point address,
+//! and returns the [`Esp32s31Backend`], which the composition hands to
+//! [`run_port`](oer_ieee80211_port::run_port) with the port's body.
 //!
-//! [`Esp32s31LowerMac::install`] installs a disabled core with its register
-//! owner, its retune and the install's access-point address, and returns
-//! the [`Esp32s31Backend`], which the composition hands to
-//! [`run_port`](oer_ieee80211_port::run_port) with the port's body. The
-//! backend is direct ([`PortBackend::Held`]): its held part keeps the
-//! transmit permits ([`TxPermits`]) and the receive Block Ack agreements,
-//! the parts reach the core synchronously, and its driver
-//! ([`PortBackend::drive`]) serves what the core runs in software: the
-//! publication watchdog of the attempts in flight, the interrupt causes
-//! deferred while a retune held the registers, and the permits of every
-//! attempt whose completion the core reported, which it gives back before
-//! the event consumer hands the completion out.
+//! The interrupts only post: the MAC and power interrupt handlers publish
+//! into [`EmbassyMacIrqRuntime`] and [`EmbassyPowerIrqRuntime`], and the
+//! backend's driver ([`PortBackend::drive`]), joined with the body, serves
+//! them in the vendor's order: RX success first, as budgeted drains of the
+//! RX DMA epoch into the staging queue while the RX interrupt stays masked,
+//! unmasked once the frontier is drained (a full staging queue waits for
+//! the event consumer to return a credit); then the coalesced TX
+//! completion edges of the core, the station TBTT, and the publication
+//! watchdog. A submission publishes at once, with no interrupt round trip.
+//! The driver gives every ended attempt's permits back before the event
+//! consumer hands its completion out.
 //!
-//! `Enable` is one bounded step of the owner: it enables the core and, when
-//! the core asks for it after a channel change, retunes the PHY through the
-//! [`LowerMacRetune`] it holds, under the shared radio's lease
-//! ([`Esp32s31PortRetune`]). A refused retune leaves the port disabled
-//! ([`RetuneRefused`]). The core's lifecycle terminals reach the owner's
-//! transitions, never the event consumer.
+//! The event consumer reads the core's completions and TBTTs in the order
+//! they occurred, then the staged units the core's receive rules admit, as
+//! received events whose buffer is the staged DMA unit itself.
 //!
-//! Each of the four ordinary EDCA queues holds one attempt, which the
-//! queue permit of [`TxPermits`] proves; completions leave in whatever
-//! order the queues end, correlated by `TxId`. Received frames hold their
-//! receive unit (on the target, a staging-pool DMA buffer) until the
-//! consumer drops it. A fault poisons the port: the queued events are still
-//! reported, then [`Poisoned`] with the [`LowerMacFault`] at every call.
+//! `Enable` is one bounded step of the owner: it enables the core and,
+//! after a channel change, retunes the PHY through the [`LowerMacRetune`]
+//! it holds, under the shared radio's lease ([`Esp32s31PortRetune`]); a
+//! refused retune leaves the port disabled ([`RetuneRefused`]).
 //!
 //! The receive Block Ack slots are one pool both roles share, as the
 //! hardware's banks are (owner decision, Claude Code chat with common,
-//! 2026-10-12).
-//!
-//! This backend has no A-MPDU, beacon-timing or monitor operation: the
-//! owner-shape contract has none yet, and the product datapath keeps its
-//! direct path until it moves onto the port (#709 step 2).
+//! 2026-10-12). Beside the base contract the backend serves A-MPDU
+//! aggregates, the station's beacon timing and monitor reception.
 
 use core::{
     cell::{Cell, RefCell},
@@ -53,13 +47,12 @@ use core::{
     task::{Poll, Waker},
 };
 
-use embassy_futures::select::{Either3, select, select3};
+use embassy_futures::select::{Either3, Either4, select, select3, select4};
 use embassy_sync::{
     blocking_mutex::{Mutex, raw::RawMutex},
     channel::Channel,
     signal::Signal,
 };
-use oer_esp32s31_hal::types::MacPowerInterruptObservation;
 use oer_esp32s31_ieee80211::{
     lower_mac::{
         AmpduBacking, AmpduBackingSource, CheckedKeyScope, Esp32s31AmpduBuffer, Esp32s31TxBuffer,
@@ -99,6 +92,7 @@ use oer_radio_permit_pool::FifoPermitPool;
 use oer_radio_port::{Mint, Permit, PermitPool, Seat, Slot};
 use oer_time::Duration;
 
+use crate::datapath::irq::{EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime};
 use crate::mac_clock::ReceptionClock;
 use oer_ieee80211_mac::channel::WifiChannel;
 
@@ -186,6 +180,38 @@ pub trait LowerMacRxUnit {
     fn buffer(&self) -> &[u8];
     /// The MPDU and metadata the hardware reported for the unit.
     fn normalized(&self) -> Result<NormalizedRxFrame<'_>, RxError>;
+}
+
+/// The receiving end of the product RX pipeline: the staging queue the RX
+/// DMA epoch ([`PortRxService`]) fills, which the event consumer reads.
+pub trait PortRxReceiver {
+    /// One received unit.
+    type Unit: LowerMacRxUnit;
+    /// The pipeline's producing end.
+    type Service: PortRxService;
+
+    /// The next staged unit, if any.
+    fn try_receive(&self) -> Option<Self::Unit>;
+}
+
+/// The producing end of the product RX pipeline: the RX DMA epoch, which
+/// the backend's driver serves after an RX interrupt.
+pub trait PortRxService {
+    /// Serve one budgeted RX frontier into the staging queue.
+    fn service(&mut self) -> impl Future<Output = RxPass>;
+}
+
+/// How one budgeted RX pass ended.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RxPass {
+    /// The completed frontier is drained: the interrupt is unmasked.
+    Drained,
+    /// The budget ran out with more pending: the interrupt stays masked and
+    /// the driver serves again after yielding.
+    More,
+    /// The staging queue is full: the interrupt stays masked until the
+    /// event consumer takes a unit and returns its credit.
+    Blocked,
 }
 
 /// A staging-pool DMA buffer, the target's receive unit, with the ingress
@@ -340,39 +366,6 @@ impl<M: RawMutex, T, const N: usize> EventQueue<M, T, N> {
         });
     }
 
-    /// Queue `entry`, which occurred as `occurrence`, behind a pending loss
-    /// marker, or hand it back when there is no room for both: nothing is
-    /// lost.
-    fn try_push(&self, occurrence: u64, entry: T) -> Result<(), T> {
-        self.lost.lock(|lost| {
-            let marker = usize::from(lost.get().is_some());
-            if self.entries.free_capacity() < marker + 1 {
-                return Err(entry);
-            }
-            self.queue_marker(lost);
-            self.entries
-                .try_send(Ok(entry))
-                .map(|()| {
-                    let _ = self.occurrences.try_send(occurrence);
-                })
-                .map_err(|error| match error {
-                    embassy_sync::channel::TrySendError::Full(Ok(entry)) => entry,
-                    embassy_sync::channel::TrySendError::Full(Err(_)) => {
-                        unreachable!("an entry is sent as `Ok`")
-                    }
-                })
-        })
-    }
-
-    /// Entries that fit now.
-    fn room(&self) -> usize {
-        self.lost.lock(|lost| {
-            self.entries
-                .free_capacity()
-                .saturating_sub(usize::from(lost.get().is_some()))
-        })
-    }
-
     /// The occurrence of the entry [`Self::take`] would return next.
     fn head(&self) -> Option<u64> {
         self.lost
@@ -405,22 +398,17 @@ impl<M: RawMutex, T, const N: usize> EventQueue<M, T, N> {
 /// An event the port queues; a completion takes the body of its attempt
 /// only as the consumer takes it, so the queues hold no body.
 #[derive(Debug)]
-enum QueuedEvent<U> {
-    Received {
-        frame: Esp32s31RxBuffer<U>,
-        meta: RxMeta,
-    },
+enum QueuedEvent {
     TxCompleted(TxCompletion),
     Tbtt(TbttEvent),
 }
 
 /// The queues of the port, one per kind of event, and the lifecycle
 /// terminals the owner's transitions read.
-struct Queues<M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> {
+struct Queues<M: RawMutex> {
     completions: EventQueue<M, TxCompletion, COMPLETION_SLOTS>,
     lifecycle: EventQueue<M, LifecycleEvent, LIFECYCLE_SLOTS>,
     tbtt: EventQueue<M, TbttEvent, TBTT_CAPACITY>,
-    received: EventQueue<M, QueuedEvent<U>, EVENTS>,
     /// The occurrence number of the next event, one sequence for every
     /// queue: the stream is merged in this order. Its lock also orders the
     /// queues: a producer numbers and queues an event, and the consumer
@@ -431,13 +419,12 @@ struct Queues<M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> {
     changed: Signal<M, ()>,
 }
 
-impl<M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> Queues<M, EVENTS, U> {
+impl<M: RawMutex> Queues<M> {
     const fn new() -> Self {
         Self {
             completions: EventQueue::new(),
             lifecycle: EventQueue::new(),
             tbtt: EventQueue::new(),
-            received: EventQueue::new(),
             next_occurrence: Mutex::new(Cell::new(0)),
             changed: Signal::new(),
         }
@@ -455,13 +442,9 @@ impl<M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> Queues<M, EVENTS, U> {
 
     /// The next queued event of the consumer's stream, in the order the
     /// events occurred.
-    fn take(&self) -> Option<Result<QueuedEvent<U>, EventsLost>> {
+    fn take(&self) -> Option<Result<QueuedEvent, EventsLost>> {
         self.next_occurrence.lock(|_| {
-            let heads = [
-                self.completions.head(),
-                self.tbtt.head(),
-                self.received.head(),
-            ];
+            let heads = [self.completions.head(), self.tbtt.head()];
             let (first, _) = heads
                 .iter()
                 .enumerate()
@@ -469,8 +452,7 @@ impl<M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> Queues<M, EVENTS, U> {
                 .min_by_key(|(_, occurrence)| *occurrence)?;
             match first {
                 0 => Some(self.completions.take()?.map(QueuedEvent::TxCompleted)),
-                1 => Some(self.tbtt.take()?.map(QueuedEvent::Tbtt)),
-                _ => self.received.take(),
+                _ => Some(self.tbtt.take()?.map(QueuedEvent::Tbtt)),
             }
         })
     }
@@ -480,10 +462,7 @@ impl<M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> Queues<M, EVENTS, U> {
     async fn wait(&self) {
         select3(
             self.completions.entries.ready_to_receive(),
-            select(
-                self.tbtt.entries.ready_to_receive(),
-                self.received.entries.ready_to_receive(),
-            ),
+            self.tbtt.entries.ready_to_receive(),
             self.changed.wait(),
         )
         .await;
@@ -494,7 +473,6 @@ impl<M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> Queues<M, EVENTS, U> {
         self.completions.discard();
         self.lifecycle.discard();
         self.tbtt.discard();
-        self.received.discard();
     }
 }
 
@@ -524,14 +502,12 @@ type Ended = [Option<TxId>; COMPLETION_CAPACITY];
 
 /// The sink of one locked entry: events go to their queues, and every
 /// completion's attempt to the ended set.
-struct QueueSink<'a, M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> {
-    queues: &'a Queues<M, EVENTS, U>,
+struct QueueSink<'a, M: RawMutex> {
+    queues: &'a Queues<M>,
     ended: &'a Mutex<M, RefCell<Ended>>,
 }
 
-impl<M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> LowerMacSink
-    for QueueSink<'_, M, EVENTS, U>
-{
+impl<M: RawMutex> LowerMacSink for QueueSink<'_, M> {
     fn tx_completed(&mut self, completion: TxCompletion) {
         let queues = self.queues;
         self.ended.lock(|ended| {
@@ -551,20 +527,6 @@ impl<M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> LowerMacSink
         let queues = self.queues;
         queues.ordered(|occurrence| queues.tbtt.push(occurrence, event));
     }
-}
-
-/// Interrupt causes that arrived while the retune held the registers.
-#[derive(Clone, Copy)]
-struct Deferred {
-    events: u32,
-    station_tbtt: bool,
-}
-
-impl Deferred {
-    const NONE: Self = Self {
-        events: 0,
-        station_tbtt: false,
-    };
 }
 
 /// The wakers of the futures that wait for the port to settle: a closing
@@ -588,7 +550,7 @@ pub struct Esp32s31LowerMac<
     const BUFFER_SIZE: usize,
     const TX_BUFFERS: usize,
     const EVENTS: usize,
-    U: LowerMacRxUnit,
+    U: PortRxReceiver,
     S: AmpduBacking = NoAmpdu,
     const AMPDU_SLOTS: usize = 2,
     const AMPDU_BUFFERS: usize = 0,
@@ -614,9 +576,19 @@ pub struct Esp32s31LowerMac<
         >,
     >,
     retune: Mutex<M, RefCell<Option<R>>>,
-    deferred: Mutex<M, Cell<Deferred>>,
     fault: Mutex<M, Cell<Option<LowerMacFault>>>,
-    queues: Queues<M, EVENTS, U>,
+    queues: Queues<M>,
+    /// The staging queue's receiving end, while a backend is installed.
+    receiver: Mutex<M, RefCell<Option<U>>>,
+    /// The RX DMA epoch while no driver serves it: the driver takes it for
+    /// its life and puts it back when it retires.
+    rx_service: Mutex<M, RefCell<Option<U::Service>>>,
+    /// Raised after every RX service, so the event consumer looks at the
+    /// staging queue again.
+    rx_ready: Signal<M, ()>,
+    /// Raised when the event consumer took a staged unit, returning a
+    /// credit to a blocked RX pass.
+    rx_capacity: Signal<M, ()>,
     ended: Mutex<M, RefCell<Ended>>,
     /// Raised when a deadline, an install, a completion or a fault may have
     /// started, so the driver rearms.
@@ -663,7 +635,7 @@ impl<
     const BUFFER_SIZE: usize,
     const TX_BUFFERS: usize,
     const EVENTS: usize,
-    U: LowerMacRxUnit,
+    U: PortRxReceiver,
     S: AmpduBacking,
     const AMPDU_SLOTS: usize,
     const AMPDU_BUFFERS: usize,
@@ -700,9 +672,12 @@ where
             timer,
             installed: Mutex::new(RefCell::new(None)),
             retune: Mutex::new(RefCell::new(None)),
-            deferred: Mutex::new(Cell::new(Deferred::NONE)),
             fault: Mutex::new(Cell::new(None)),
             queues: Queues::new(),
+            receiver: Mutex::new(RefCell::new(None)),
+            rx_service: Mutex::new(RefCell::new(None)),
+            rx_ready: Signal::new(),
+            rx_capacity: Signal::new(),
             ended: Mutex::new(RefCell::new([None; COMPLETION_CAPACITY])),
             wake: Signal::new(),
             settle: Mutex::new(RefCell::new(
@@ -725,8 +700,8 @@ where
         clippy::type_complexity,
         reason = "the no-alloc runtime returns the unconsumed owners by value"
     )]
-    pub fn install(
-        &self,
+    pub fn install<'r>(
+        &'r self,
         parts: Esp32s31LowerMacParts<
             'slot,
             P,
@@ -740,11 +715,14 @@ where
             AMPDU_SLOTS,
             AMPDU_BUFFERS,
         >,
+        rx: (U, U::Service),
+        irq: &'r EmbassyMacIrqRuntime<M>,
+        power: &'r EmbassyPowerIrqRuntime<M>,
         channel: SupportedChannel<Esp32s31Caps<BUFFER_SIZE>>,
         access_point: IndividualAddress,
     ) -> Result<
         Esp32s31Backend<
-            '_,
+            'r,
             'slot,
             M,
             P,
@@ -801,10 +779,19 @@ where
                 retune,
             });
         }
+        let (receiver, rx_service) = rx;
         self.retune.lock(|slot| *slot.borrow_mut() = Some(retune));
+        self.receiver
+            .lock(|slot| *slot.borrow_mut() = Some(receiver));
+        self.rx_service
+            .lock(|slot| *slot.borrow_mut() = Some(rx_service));
         self.fault.lock(|fault| fault.set(None));
         self.wake.signal(());
-        Ok(Esp32s31Backend { runtime: self })
+        Ok(Esp32s31Backend {
+            runtime: self,
+            irq,
+            power,
+        })
     }
 
     /// Take the core and its register owner back and discard queued events;
@@ -819,6 +806,8 @@ where
     ) -> Option<(
         LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
         H,
+        U,
+        U::Service,
     )> {
         let (core, hardware) = self.installed.lock(|installed| {
             let mut installed = installed.borrow_mut();
@@ -838,8 +827,9 @@ where
         });
         self.ended
             .lock(|ended| *ended.borrow_mut() = [None; COMPLETION_CAPACITY]);
-        self.deferred.lock(|deferred| deferred.set(Deferred::NONE));
-        Some((core, hardware))
+        let receiver = self.receiver.lock(|slot| slot.borrow_mut().take())?;
+        let rx_service = self.rx_service.lock(|slot| slot.borrow_mut().take())?;
+        Some((core, hardware, receiver, rx_service))
     }
 
     /// Run one entry over the installed core and its registers under the
@@ -865,7 +855,7 @@ where
             >,
             &mut H,
             MacAddress,
-            &mut QueueSink<'_, M, EVENTS, U>,
+            &mut QueueSink<'_, M>,
         ) -> Result<V, LowerMacFault>,
     ) -> Result<Option<V>, Poisoned<LowerMacFault>> {
         if let Some(cause) = self.fault.lock(Cell::get) {
@@ -914,7 +904,7 @@ where
             >,
             &mut H,
             MacAddress,
-            &mut QueueSink<'_, M, EVENTS, U>,
+            &mut QueueSink<'_, M>,
         ) -> Result<V, LowerMacFault>,
     ) -> Result<V, Poisoned<LowerMacFault>> {
         self.with_installed(entry)
@@ -945,94 +935,29 @@ where
             .lock(|settle| settle.borrow_mut().register(waker));
     }
 
-    /// The MAC interrupt handler's TX edges: completion, hardware timeout
-    /// and collision events of `oer_esp32s31_ieee80211_mac::irq`.
-    pub fn on_interrupt(&self, events: u32) {
-        if let Ok(None) = self.with_installed(|core, hardware, _, sink| {
-            core.service(hardware, WifiTxWake::Interrupt { events }, sink)
-        }) {
-            self.deferred.lock(|deferred| {
-                let mut cause = deferred.get();
-                cause.events |= events;
-                deferred.set(cause);
-            });
-        }
-        // A timeout starts the abort-settle deadline, and a completion's
-        // permits go back through the driver.
-        self.wake.signal(());
-    }
-
-    /// The power interrupt's semantic causes: a station TBTT is reported as
-    /// an event while its schedule runs.
-    pub fn on_power_interrupt(&self, observation: MacPowerInterruptObservation) {
-        if observation.sta_tbtt()
-            && let Ok(None) = self.with_installed(|core, hardware, _, sink| {
-                core.station_tbtt(hardware, sink);
-                Ok(())
+    /// The received event of `unit`, when the core's receive rules admit
+    /// its MPDU: its metadata, its receive timestamp in the MAC clock's
+    /// generation, and where the MPDU lies in the unit's buffer.
+    fn admit(&self, unit: U::Unit) -> Option<Esp32s31LowerMacEvent<U::Unit, O, AMPDU_SLOTS>> {
+        let (mpdu, meta) = {
+            let frame = unit.normalized().ok()?;
+            let stamp = frame
+                .stamp
+                .and_then(|raw| self.timer.snapshot()?.stamp(raw))
+                .map_or(RxEvidence::Unavailable, RxEvidence::HardwareObserved);
+            self.with_installed(|core, hardware, _, _| {
+                Ok(core.received(&*hardware, &frame).map(|(bytes, mut meta)| {
+                    meta.timestamp = stamp;
+                    (frame.mpdu_offset..frame.mpdu_offset + bytes.len(), meta)
+                }))
             })
-        {
-            self.deferred.lock(|deferred| {
-                let mut cause = deferred.get();
-                cause.station_tbtt = true;
-                deferred.set(cause);
-            });
-        }
-    }
-
-    /// One unit of the receive producer, queued as it is while the port
-    /// receives and a receive rule admits its MPDU; a unit the port does not
-    /// queue is dropped, which returns its buffer. A unit whose hardware
-    /// report does not decode is the error.
-    pub fn on_received(&self, unit: U) -> Result<(), RxError> {
-        self.receive(unit, false).map(|_| ())
-    }
-
-    /// Received frames that fit in the port's queue now.
-    pub fn received_room(&self) -> usize {
-        self.queues.received.room()
-    }
-
-    /// As [`Self::on_received`], but a unit the port would queue and has
-    /// no room for comes back: nothing is lost, and its producer keeps it
-    /// until there is room.
-    pub fn try_on_received(&self, unit: U) -> Result<Result<(), U>, RxError> {
-        self.receive(unit, true)
-    }
-
-    /// Queue `unit` when a receive rule admits it; without room, hand it
-    /// back when `keep`, else drop it as a loss.
-    fn receive(&self, unit: U, keep: bool) -> Result<Result<(), U>, RxError> {
-        let frame = unit.normalized()?;
-        let stamp = frame
-            .stamp
-            .and_then(|raw| self.timer.snapshot()?.stamp(raw))
-            .map_or(RxEvidence::Unavailable, RxEvidence::HardwareObserved);
-        let admitted = self.with_installed(|core, hardware, _, _| {
-            Ok(core.received(&*hardware, &frame).map(|(bytes, mut meta)| {
-                meta.timestamp = stamp;
-                (frame.mpdu_offset..frame.mpdu_offset + bytes.len(), meta)
-            }))
-        });
-        // The enabling port, and one without a core, receives nothing.
-        let Ok(Some(Some((mpdu, meta)))) = admitted else {
-            return Ok(Ok(()));
+            .ok()
+            .flatten()
+            .flatten()?
         };
-        let event = QueuedEvent::Received {
+        Some(Esp32s31LowerMacEvent::Received {
             frame: Esp32s31RxBuffer { unit, mpdu },
             meta,
-        };
-        let mut refused = None;
-        let queues = &self.queues;
-        queues.ordered(|occurrence| {
-            if keep {
-                refused = queues.received.try_push(occurrence, event).err();
-            } else {
-                queues.received.push(occurrence, event);
-            }
-        });
-        Ok(match refused {
-            Some(QueuedEvent::Received { frame, .. }) => Err(frame.unit),
-            _ => Ok(()),
         })
     }
 
@@ -1100,23 +1025,6 @@ where
             .ok_or(ClockError::Unavailable))
     }
 
-    /// Service the interrupt causes deferred while the retune held the
-    /// registers.
-    fn service_deferred(&self) {
-        let deferred = self
-            .deferred
-            .lock(|deferred| deferred.replace(Deferred::NONE));
-        if deferred.events != 0 {
-            self.on_interrupt(deferred.events);
-        }
-        if deferred.station_tbtt {
-            let _ = self.with_installed(|core, hardware, _, sink| {
-                core.station_tbtt(hardware, sink);
-                Ok(())
-            });
-        }
-    }
-
     /// The next lifecycle terminal the core reported.
     async fn lifecycle_event(&self) -> Result<LifecycleEvent, Poisoned<LowerMacFault>> {
         loop {
@@ -1131,6 +1039,165 @@ where
                 self.queues.changed.wait(),
             )
             .await;
+        }
+    }
+}
+
+/// Serve the RX frontier until it is drained or blocked: a budgeted pass
+/// while the interrupt stays masked, the unmask once drained.
+async fn serve_rx<V: PortRxService, R: RawMutex>(
+    rx: &mut Option<V>,
+    ready: &impl RxReady,
+    irq: &EmbassyMacIrqRuntime<R>,
+) {
+    loop {
+        let pass = match rx.as_mut() {
+            Some(rx) => rx.service().await,
+            None => RxPass::Drained,
+        };
+        ready.rx_ready();
+        match pass {
+            RxPass::Drained => {
+                irq.unmask_rx_after_drain();
+                return;
+            }
+            RxPass::Blocked => return,
+            RxPass::More => embassy_futures::yield_now().await,
+        }
+    }
+}
+
+/// What a served RX pass tells the event consumer.
+trait RxReady {
+    fn rx_ready(&self);
+}
+
+/// The product RX pipeline's receiving end: the staging queue's receiver,
+/// with the ingress configuration of the ring its units come from, and the
+/// type of the epoch that fills it.
+pub struct Esp32s31StagedReceiver<
+    'queue,
+    'pool,
+    M: RawMutex,
+    const DEPTH: usize,
+    const CAPACITY: usize,
+    const SLOTS: usize,
+    V,
+> {
+    receiver:
+        crate::datapath::rx::staging::StagedRxReceiver<'queue, 'pool, M, DEPTH, CAPACITY, SLOTS>,
+    config: RxIngressConfig,
+    service: PhantomData<fn() -> V>,
+}
+
+impl<'queue, 'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, const SLOTS: usize, V>
+    Esp32s31StagedReceiver<'queue, 'pool, M, DEPTH, CAPACITY, SLOTS, V>
+{
+    pub const fn new(
+        receiver: crate::datapath::rx::staging::StagedRxReceiver<
+            'queue,
+            'pool,
+            M,
+            DEPTH,
+            CAPACITY,
+            SLOTS,
+        >,
+        config: RxIngressConfig,
+    ) -> Self {
+        Self {
+            receiver,
+            config,
+            service: PhantomData,
+        }
+    }
+}
+
+impl<'queue, 'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, const SLOTS: usize, V>
+    PortRxReceiver for Esp32s31StagedReceiver<'queue, 'pool, M, DEPTH, CAPACITY, SLOTS, V>
+where
+    V: PortRxService,
+{
+    type Unit = Esp32s31StagedRx<'pool, SLOTS, CAPACITY>;
+    type Service = V;
+
+    fn try_receive(&self) -> Option<Self::Unit> {
+        self.receiver
+            .try_receive()
+            .ok()
+            .map(|frame| Esp32s31StagedRx::new(frame, self.config))
+    }
+}
+
+/// The product RX pipeline's producing end: the RX DMA epoch and the
+/// register handle it serves the ring through. The handle reaches the
+/// registers one serialized transaction at a time, beside the core's.
+pub struct Esp32s31RxDmaService<E, X> {
+    pub epoch: E,
+    pub hardware: X,
+}
+
+impl<
+    'storage,
+    'pool,
+    'queue,
+    D,
+    M: RawMutex,
+    const QUEUE_DEPTH: usize,
+    const COUNT: usize,
+    const STAGE_CAPACITY: usize,
+    const STAGE_SLOTS: usize,
+    const DMA_BUFFER_SIZE: usize,
+    const DMA_STORAGE_SIZE: usize,
+    X: oer_esp32s31_ieee80211_mac::rx::RxDma,
+> PortRxService
+    for Esp32s31RxDmaService<
+        crate::datapath::rx::dma::StagedRxEpoch<
+            'storage,
+            'pool,
+            'queue,
+            D,
+            M,
+            QUEUE_DEPTH,
+            COUNT,
+            STAGE_CAPACITY,
+            STAGE_SLOTS,
+            DMA_BUFFER_SIZE,
+            DMA_STORAGE_SIZE,
+        >,
+        X,
+    >
+where
+    D: oer_time::Timer,
+{
+    async fn service(&mut self) -> RxPass {
+        use oer_esp32s31_ieee80211::datapath::DatapathRxProgress;
+        match self.epoch.service(&mut self.hardware).await {
+            Ok(DatapathRxProgress::BudgetExhausted | DatapathRxProgress::ProbePending) => {
+                RxPass::More
+            }
+            Ok(
+                DatapathRxProgress::StageCapacityBlocked
+                | DatapathRxProgress::NetworkBackpressured
+                | DatapathRxProgress::UpperLayerBlockedButDroppable,
+            ) => RxPass::Blocked,
+            // A drained frontier, and a ring error the next interrupt meets
+            // again.
+            Ok(_) | Err(_) => RxPass::Drained,
+        }
+    }
+}
+
+/// A value a driver holds for its life: it goes home when the driver
+/// retires or is dropped.
+struct Retained<V, F: FnMut(V)> {
+    value: Option<V>,
+    home: F,
+}
+
+impl<V, F: FnMut(V)> Drop for Retained<V, F> {
+    fn drop(&mut self) {
+        if let Some(value) = self.value.take() {
+            (self.home)(value);
         }
     }
 }
@@ -1260,7 +1327,7 @@ pub struct Esp32s31Backend<
     const BUFFER_SIZE: usize,
     const TX_BUFFERS: usize,
     const EVENTS: usize,
-    U: LowerMacRxUnit,
+    U: PortRxReceiver,
     S: AmpduBacking,
     const AMPDU_SLOTS: usize,
     const AMPDU_BUFFERS: usize,
@@ -1283,6 +1350,10 @@ pub struct Esp32s31Backend<
         AMPDU_BUFFERS,
         O,
     >,
+    /// The MAC interrupt's posts: RX first, then TX events.
+    irq: &'r EmbassyMacIrqRuntime<M>,
+    /// The power interrupt's posts: the station TBTT.
+    power: &'r EmbassyPowerIrqRuntime<M>,
 }
 
 /// The backend's disabled-only settings.
@@ -1472,7 +1543,36 @@ impl<
     const B: usize,
     const N: usize,
     const EV: usize,
-    U: LowerMacRxUnit,
+    U: PortRxReceiver,
+    S: AmpduBacking,
+    const AS: usize,
+    const AB: usize,
+    O: TxBody,
+> RxReady for Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>
+where
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: oer_time::Timer + ReceptionClock,
+    H: LowerMacHardware,
+    R: LowerMacRetune<H>,
+{
+    fn rx_ready(&self) {
+        self.rx_ready.signal(());
+    }
+}
+
+impl<
+    'slot,
+    M: RawMutex,
+    P,
+    E,
+    T,
+    H,
+    R,
+    const B: usize,
+    const N: usize,
+    const EV: usize,
+    U: PortRxReceiver,
     S: AmpduBacking,
     const AS: usize,
     const AB: usize,
@@ -1504,7 +1604,7 @@ impl<
     const B: usize,
     const N: usize,
     const EV: usize,
-    U: LowerMacRxUnit,
+    U: PortRxReceiver,
     S: AmpduBacking,
     const AS: usize,
     const AB: usize,
@@ -1543,7 +1643,7 @@ impl<
     const B: usize,
     const N: usize,
     const EV: usize,
-    U: LowerMacRxUnit,
+    U: PortRxReceiver,
     S: AmpduBacking,
     const AS: usize,
     const AB: usize,
@@ -1579,7 +1679,7 @@ impl<
     const B: usize,
     const N: usize,
     const EV: usize,
-    U: LowerMacRxUnit,
+    U: PortRxReceiver,
     S: AmpduBacking,
     const AS: usize,
     const AB: usize,
@@ -1654,7 +1754,7 @@ impl<
     const B: usize,
     const N: usize,
     const EV: usize,
-    U: LowerMacRxUnit,
+    U: PortRxReceiver,
     S: AmpduBacking,
     const AS: usize,
     const AB: usize,
@@ -1675,12 +1775,12 @@ where
     H: LowerMacHardware,
     R: LowerMacRetune<H>,
 {
-    type Event = Esp32s31LowerMacEvent<U, O, AS>;
+    type Event = Esp32s31LowerMacEvent<U::Unit, O, AS>;
     type Fault = LowerMacFault;
 
     async fn next_event(
         &mut self,
-    ) -> PortResult<Esp32s31LowerMacEvent<U, O, AS>, EventsLost, LowerMacFault> {
+    ) -> PortResult<Esp32s31LowerMacEvent<U::Unit, O, AS>, EventsLost, LowerMacFault> {
         let runtime = self.runtime;
         loop {
             // The permits of every ended attempt are back before its
@@ -1688,9 +1788,6 @@ where
             self.held.complete(runtime.take_ended());
             if let Some(event) = runtime.queues.take() {
                 return Ok(event.map(|event| match event {
-                    QueuedEvent::Received { frame, meta } => {
-                        Esp32s31LowerMacEvent::Received { frame, meta }
-                    }
                     QueuedEvent::TxCompleted(completion) => Esp32s31LowerMacEvent::TxCompleted(
                         completion,
                         runtime.unhold_body(completion.id),
@@ -1698,10 +1795,23 @@ where
                     QueuedEvent::Tbtt(event) => Esp32s31LowerMacEvent::Tbtt(event),
                 }));
             }
+            // A staged unit a receive rule admits; one it does not is
+            // dropped, which returns its buffer.
+            while let Some(unit) = runtime.receiver.lock(|receiver| {
+                receiver
+                    .borrow()
+                    .as_ref()
+                    .and_then(PortRxReceiver::try_receive)
+            }) {
+                runtime.rx_capacity.signal(());
+                if let Some(event) = runtime.admit(unit) {
+                    return Ok(Ok(event));
+                }
+            }
             if let Some(poisoned) = runtime.poisoned() {
                 return Err(poisoned);
             }
-            runtime.queues.wait().await;
+            select(runtime.queues.wait(), runtime.rx_ready.wait()).await;
         }
     }
 }
@@ -1719,7 +1829,7 @@ impl<
     const B: usize,
     const N: usize,
     const EV: usize,
-    U: LowerMacRxUnit,
+    U: PortRxReceiver,
     S: AmpduBacking,
     const AS: usize,
     const AB: usize,
@@ -1740,10 +1850,10 @@ where
     H: LowerMacHardware,
     R: LowerMacRetune<H>,
 {
-    type RxBuffer = Esp32s31RxBuffer<U>;
+    type RxBuffer = Esp32s31RxBuffer<U::Unit>;
     type TxBodies = Esp32s31TxBodies<O, AS>;
 
-    fn view(event: &Esp32s31LowerMacEvent<U, O, AS>) -> LowerMacEvent<'_> {
+    fn view(event: &Esp32s31LowerMacEvent<U::Unit, O, AS>) -> LowerMacEvent<'_> {
         match event {
             Esp32s31LowerMacEvent::Received { frame, meta } => LowerMacEvent::Received {
                 frame: frame.bytes(),
@@ -1760,8 +1870,8 @@ where
     }
 
     fn into_received(
-        event: Esp32s31LowerMacEvent<U, O, AS>,
-    ) -> Result<(Esp32s31RxBuffer<U>, RxMeta), Esp32s31LowerMacEvent<U, O, AS>> {
+        event: Esp32s31LowerMacEvent<U::Unit, O, AS>,
+    ) -> Result<(Esp32s31RxBuffer<U::Unit>, RxMeta), Esp32s31LowerMacEvent<U::Unit, O, AS>> {
         match event {
             Esp32s31LowerMacEvent::Received { frame, meta } => Ok((frame, meta)),
             event => Err(event),
@@ -1769,8 +1879,9 @@ where
     }
 
     fn into_completed(
-        event: Esp32s31LowerMacEvent<U, O, AS>,
-    ) -> Result<(TxCompletion, Esp32s31TxBodies<O, AS>), Esp32s31LowerMacEvent<U, O, AS>> {
+        event: Esp32s31LowerMacEvent<U::Unit, O, AS>,
+    ) -> Result<(TxCompletion, Esp32s31TxBodies<O, AS>), Esp32s31LowerMacEvent<U::Unit, O, AS>>
+    {
         match event {
             Esp32s31LowerMacEvent::TxCompleted(completion, bodies) => {
                 Ok((completion, bodies.unwrap_or(Esp32s31TxBodies::NONE)))
@@ -1779,7 +1890,7 @@ where
         }
     }
 
-    fn tbtt(event: &Esp32s31LowerMacEvent<U, O, AS>) -> Option<TbttEvent> {
+    fn tbtt(event: &Esp32s31LowerMacEvent<U::Unit, O, AS>) -> Option<TbttEvent> {
         match event {
             Esp32s31LowerMacEvent::Tbtt(event) => Some(*event),
             _ => None,
@@ -1801,7 +1912,7 @@ impl<
     const B: usize,
     const N: usize,
     const EV: usize,
-    U: LowerMacRxUnit,
+    U: PortRxReceiver,
     S: AmpduBacking,
     const AS: usize,
     const AB: usize,
@@ -1896,7 +2007,7 @@ impl<
     const B: usize,
     const N: usize,
     const EV: usize,
-    U: LowerMacRxUnit,
+    U: PortRxReceiver,
     S: AmpduBacking,
     const AS: usize,
     const AB: usize,
@@ -1968,7 +2079,7 @@ impl<
     const B: usize,
     const N: usize,
     const EV: usize,
-    U: LowerMacRxUnit,
+    U: PortRxReceiver,
     S: AmpduBacking,
     const AS: usize,
     const AB: usize,
@@ -2311,7 +2422,7 @@ impl<
     const B: usize,
     const N: usize,
     const EV: usize,
-    U: LowerMacRxUnit,
+    U: PortRxReceiver,
     S: AmpduBacking,
     const AS: usize,
     const AB: usize,
@@ -2378,7 +2489,7 @@ impl<
     const B: usize,
     const N: usize,
     const EV: usize,
-    U: LowerMacRxUnit,
+    U: PortRxReceiver,
     S: AmpduBacking,
     const AS: usize,
     const AB: usize,
@@ -2436,7 +2547,7 @@ impl<
     const B: usize,
     const N: usize,
     const EV: usize,
-    U: LowerMacRxUnit,
+    U: PortRxReceiver,
     S: AmpduBacking,
     const AS: usize,
     const AB: usize,
@@ -2560,7 +2671,7 @@ impl<
     const B: usize,
     const N: usize,
     const EV: usize,
-    U: LowerMacRxUnit,
+    U: PortRxReceiver,
     S: AmpduBacking,
     const AS: usize,
     const AB: usize,
@@ -2745,7 +2856,7 @@ impl<
     const B: usize,
     const N: usize,
     const EV: usize,
-    U: LowerMacRxUnit,
+    U: PortRxReceiver,
     S: AmpduBacking,
     const AS: usize,
     const AB: usize,
@@ -2859,7 +2970,7 @@ impl<
     const B: usize,
     const N: usize,
     const EV: usize,
-    U: LowerMacRxUnit,
+    U: PortRxReceiver,
     S: AmpduBacking,
     const AS: usize,
     const AB: usize,
@@ -2901,7 +3012,7 @@ impl<
     const B: usize,
     const N: usize,
     const EV: usize,
-    U: LowerMacRxUnit,
+    U: PortRxReceiver,
     S: AmpduBacking,
     const AS: usize,
     const AB: usize,
@@ -2914,7 +3025,7 @@ where
     H: LowerMacHardware,
     R: LowerMacRetune<H>,
 {
-    type Event = Esp32s31LowerMacEvent<U, O, AS>;
+    type Event = Esp32s31LowerMacEvent<U::Unit, O, AS>;
     type Domain = Ieee80211Radio;
     type Fault = LowerMacFault;
     type Refusal = RetuneRefused;
@@ -2955,7 +3066,12 @@ where
     type Held<'id> = Esp32s31Held<'id, B, N, AB>;
     type State = ();
     type Uninstall = ();
-    type Uninstalled = (LowerMacCore<'slot, P, E, T, B, N, S, AS, AB>, H);
+    type Uninstalled = (
+        LowerMacCore<'slot, P, E, T, B, N, S, AS, AB>,
+        H,
+        U,
+        U::Service,
+    );
 
     async fn enable(&mut self) -> EnableResult<RetuneRefused, LowerMacFault> {
         let runtime = self.runtime;
@@ -2997,7 +3113,7 @@ where
     async fn disable<'a, 'id>(
         &'a mut self,
         held: &'a Esp32s31Held<'id, B, N, AB>,
-        sink: &'a mut dyn FnMut(Esp32s31LowerMacEvent<U, O, AS>),
+        sink: &'a mut dyn FnMut(Esp32s31LowerMacEvent<U::Unit, O, AS>),
     ) -> Result<(), Poisoned<LowerMacFault>>
     where
         'id: 'a,
@@ -3104,7 +3220,20 @@ where
     ) -> impl Future<Output = ()> + use<'p, 'id, 'r, 'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>
     {
         let runtime = self.runtime;
+        let irq = self.irq;
+        let power = self.power;
+        // The driver owns the RX DMA epoch for its life and puts it back
+        // when it retires.
+        let mut rx = runtime.rx_service.lock(|slot| slot.borrow_mut().take());
         async move {
+            let mut rx = Retained {
+                value: rx.take(),
+                home: |value| {
+                    runtime
+                        .rx_service
+                        .lock(|slot| *slot.borrow_mut() = Some(value))
+                },
+            };
             // The deadline serviced last, which the core may keep until an
             // interrupt edge moves it.
             let mut serviced = None;
@@ -3119,7 +3248,23 @@ where
                         embassy_futures::select::Either::Second(()) => return,
                     }
                 }
-                runtime.service_deferred();
+                if let Some(events) = irq.try_take_tx() {
+                    // Completions coalesce: one service ends every attempt
+                    // the edge reports.
+                    let _ = runtime.with_installed(|core, hardware, _, sink| {
+                        core.service(hardware, WifiTxWake::Interrupt { events }, sink)
+                    });
+                    continue;
+                }
+                if let Some(observation) = power.try_take()
+                    && observation.sta_tbtt()
+                {
+                    let _ = runtime.with_installed(|core, hardware, _, sink| {
+                        core.station_tbtt(hardware, sink);
+                        Ok(())
+                    });
+                    continue;
+                }
                 let deadline = runtime
                     .installed
                     .lock(|installed| {
@@ -3136,16 +3281,41 @@ where
                         None => core::future::pending().await,
                     }
                 };
-                match select3(watchdog, runtime.wake.wait(), retire.requested()).await {
-                    Either3::First(()) => {
+                // RX success is polled first, as the vendor's interrupt
+                // order has it; a returned staging credit resumes a blocked
+                // pass.
+                let rx_wake = select(irq.wait_rx(), runtime.rx_capacity.wait());
+                let interrupt = select3(rx_wake, irq.wait_tx(), power.wait());
+                match select4(interrupt, watchdog, runtime.wake.wait(), retire.requested()).await {
+                    Either4::First(Either3::First(_)) => {
+                        // A budgeted drain while the interrupt stays masked;
+                        // the unmask once the frontier is drained.
+                        serve_rx(&mut rx.value, runtime, irq).await;
+                    }
+                    Either4::First(Either3::Second(events)) => {
+                        // Completions coalesce: one service ends every
+                        // attempt the edge reports.
+                        let _ = runtime.with_installed(|core, hardware, _, sink| {
+                            core.service(hardware, WifiTxWake::Interrupt { events }, sink)
+                        });
+                    }
+                    Either4::First(Either3::Third(observation)) => {
+                        if observation.sta_tbtt() {
+                            let _ = runtime.with_installed(|core, hardware, _, sink| {
+                                core.station_tbtt(hardware, sink);
+                                Ok(())
+                            });
+                        }
+                    }
+                    Either4::Second(()) => {
                         serviced = deadline;
                         let _ = runtime.with_installed(|core, hardware, _, sink| {
                             core.service(hardware, WifiTxWake::Deadline, sink)
                         });
                     }
-                    // A deadline, an install, a completion or a fault; rearm.
-                    Either3::Second(()) => serviced = None,
-                    Either3::Third(()) => return,
+                    // A publication, an install or a fault; rearm.
+                    Either4::Third(()) => serviced = None,
+                    Either4::Fourth(()) => return,
                 }
             }
         }
@@ -3165,7 +3335,12 @@ where
         _: Esp32s31Held<'id, B, N, AB>,
         (): (),
         (): (),
-    ) -> (LowerMacCore<'slot, P, E, T, B, N, S, AS, AB>, H) {
+    ) -> (
+        LowerMacCore<'slot, P, E, T, B, N, S, AS, AB>,
+        H,
+        U,
+        U::Service,
+    ) {
         self.runtime
             .uninstall()
             .expect("a disabled port's core is idle with its registers home")
@@ -3197,7 +3372,7 @@ impl<
     const B: usize,
     const N: usize,
     const EV: usize,
-    U: LowerMacRxUnit,
+    U: PortRxReceiver,
     S: AmpduBacking,
     const AS: usize,
     const AB: usize,
@@ -3213,41 +3388,6 @@ where
     type Caps = Esp32s31Caps<B>;
 }
 
-impl<
-    'slot,
-    M: RawMutex,
-    P,
-    E,
-    T,
-    H,
-    R,
-    const B: usize,
-    const N: usize,
-    const EV: usize,
-    U: LowerMacRxUnit,
-    S: AmpduBacking,
-    const AS: usize,
-    const AB: usize,
-    O: TxBody,
-> PortRxSink<U> for Runtime<'slot, M, P, E, T, H, R, B, N, EV, U, S, AS, AB, O>
-where
-    P: WifiTxPowerProfile,
-    E: WifiTxEntropy,
-    T: oer_time::Timer + ReceptionClock,
-    H: LowerMacHardware,
-    R: LowerMacRetune<H>,
-{
-    fn received_room(&self) -> usize {
-        Esp32s31LowerMac::received_room(self)
-    }
-
-    fn try_on_received(&self, unit: U) -> Result<Result<(), U>, RxError> {
-        Esp32s31LowerMac::try_on_received(self, unit)
-    }
-}
-
-mod rx_publisher;
-
 #[cfg(target_arch = "riscv32")]
 mod install;
 
@@ -3257,5 +3397,3 @@ pub use install::{
     Esp32s31WifiPortInstallFailure, Esp32s31WifiPortInstalled, Esp32s31WifiPortUninstallFailure,
     Esp32s31WifiPortUninstalled, install_esp32s31_wifi_port, uninstall_esp32s31_wifi_port,
 };
-
-pub use rx_publisher::{Esp32s31PortRxPublisher, PortRxSink};

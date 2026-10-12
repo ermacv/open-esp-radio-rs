@@ -155,7 +155,7 @@ pub trait AmpduPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id> {
             '_,
             <Self::Types as PhaseTypes<'id>>::TicketKind,
             Self::Aggregate,
-            Self::PairwiseKey,
+            <crate::InterfaceKeys<'p, 'id, Self> as crate::KeyTypes<'id>>::PairwiseKey,
             Self::Caps,
         >,
     ) -> Result<(), Poisoned<Self::Fault>>;

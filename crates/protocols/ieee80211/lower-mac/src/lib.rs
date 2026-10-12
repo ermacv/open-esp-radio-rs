@@ -89,9 +89,9 @@ pub use owner::{
 };
 pub use phase::{
     AccessPointPhase, Attempt, AttemptKey, ClassFrame, GateClosed, GateClosedKind, GateOpen,
-    GateOpenKind, InterfaceAttempt, InterfacePhase, LowerMacEvent, LowerMacPhase, PhaseTypes,
-    RETRY_STAGES, RetryPlan, RetryStage, StationPhase, TxBufferClass, TxBufferMemory,
-    TxBufferPool,
+    GateOpenKind, InterfaceAttempt, InterfaceKeys, InterfacePhase, KeyTypes, LowerMacEvent,
+    LowerMacPhase, PhaseTypes, RETRY_STAGES, Removed, RemovedKey, RetryPlan, RetryStage,
+    RoleKeys, StationPhase, TxBufferClass, TxBufferMemory, TxBufferPool,
 };
 pub use rx::{RxBuffer, RxCryptoStatus, RxEvidence, RxMeta};
 pub use tx::{

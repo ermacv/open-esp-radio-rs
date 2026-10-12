@@ -68,7 +68,7 @@ fn submit<'p, 'id: 'p, C>(
 ) where
     C: TxBufferClass,
     ModelTypes: TxBufferPool<'id, C, Buffer = ModelBuffer<'id, C>>
-        + PhaseTypes<'id, TicketKind = ModelTickets>,
+        + PhaseTypes<'id, TicketKind = ModelTickets, StationKeys = ModelKeys<'id, Station>>,
 {
     let rate = phase
         .rate(PhyRate::Legacy(LegacyRate::Ofdm6M))

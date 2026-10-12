@@ -258,9 +258,72 @@ pub enum LowerMacEvent<'id, P: PhaseTypes<'id>> {
     GateClosed(GateClosed<'id>),
     /// An interface's receive configuration took effect.
     Configured(VifRole),
-    /// A removed key's slot, once no attempt in flight uses the key.
-    KeyRemoved(P::RemovedKey),
+    /// A removed key's slot, of its role and kind, once no attempt in
+    /// flight uses the key.
+    KeyRemoved(Removed<'id, P>),
 }
+
+/// The keys of one role and their slots, which a phase's types name: they
+/// depend on the install alone, so a caller holds them across the phase's
+/// lends ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6131533566)).
+pub trait KeyTypes<'id> {
+    /// The kind of the role's pairwise key slots (an access point's: its
+    /// association identifiers).
+    type PairwiseKind;
+    /// The kind of the role's group key slots.
+    type GroupKind;
+    /// An installed pairwise key, which holds its slot.
+    type PairwiseKey;
+    /// An installed group key, which holds its slot.
+    type GroupKey;
+}
+
+/// A removed key's slot, of its kind.
+pub enum RemovedKey<'id, K: KeyTypes<'id>> {
+    /// A pairwise key's slot.
+    Pairwise(Slot<'id, K::PairwiseKind>),
+    /// A group key's slot.
+    Group(Slot<'id, K::GroupKind>),
+}
+
+/// A removed key's slot, of its role.
+pub enum Removed<'id, P: PhaseTypes<'id>> {
+    /// The station's.
+    Station(RemovedKey<'id, P::StationKeys>),
+    /// The access point's.
+    AccessPoint(RemovedKey<'id, P::AccessPointKeys>),
+}
+
+/// The keys of a role in the phase types `P`.
+pub trait RoleKeys<'id, P: PhaseTypes<'id>>: InterfaceRole {
+    /// The role's keys.
+    type Keys: KeyTypes<'id>;
+
+    /// The removed key's slot, as the event names it.
+    fn removed(key: RemovedKey<'id, Self::Keys>) -> Removed<'id, P>;
+}
+
+impl<'id, P: PhaseTypes<'id>> RoleKeys<'id, P> for Station {
+    type Keys = P::StationKeys;
+
+    fn removed(key: RemovedKey<'id, Self::Keys>) -> Removed<'id, P> {
+        Removed::Station(key)
+    }
+}
+
+impl<'id, P: PhaseTypes<'id>> RoleKeys<'id, P> for AccessPoint {
+    type Keys = P::AccessPointKeys;
+
+    fn removed(key: RemovedKey<'id, Self::Keys>) -> Removed<'id, P> {
+        Removed::AccessPoint(key)
+    }
+}
+
+/// The keys of the interface `I`.
+pub type InterfaceKeys<'p, 'id, I> = <<I as InterfacePhase<'p, 'id>>::Role as RoleKeys<
+    'id,
+    <I as InterfacePhase<'p, 'id>>::Types,
+>>::Keys;
 
 /// The types of one backend's phase that its events carry.
 pub trait PhaseTypes<'id> {
@@ -275,8 +338,16 @@ pub trait PhaseTypes<'id> {
     type RxBuffer: crate::RxBuffer;
     /// The bodies a completion carries, each with its subframe index.
     type TxBodies: IntoIterator;
-    /// A removed key's slot, of the role and kind of the key.
-    type RemovedKey;
+    /// The station's keys and their slots.
+    type StationKeys: KeyTypes<'id>;
+    /// The access point's keys and their slots.
+    type AccessPointKeys: KeyTypes<'id>;
+    /// The kind of the receive Block Ack slots: one pool the backend's
+    /// hardware shares between its roles (owner decision, Claude Code chat
+    /// with common, 2026-10-12).
+    type BlockAckKind;
+    /// A running receive Block Ack agreement, which holds its slot.
+    type BlockAck;
 }
 
 /// A running lower-MAC phase of the install `'id`, lent for `'p`.
@@ -387,8 +458,8 @@ pub type InterfaceAttempt<'k, 'p, 'id, I> = Attempt<
     <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::TicketKind,
     <I as InterfacePhase<'p, 'id>>::TxBuffer,
     <I as InterfacePhase<'p, 'id>>::TxBody,
-    <I as InterfacePhase<'p, 'id>>::PairwiseKey,
-    <I as InterfacePhase<'p, 'id>>::GroupKey,
+    <InterfaceKeys<'p, 'id, I> as KeyTypes<'id>>::PairwiseKey,
+    <InterfaceKeys<'p, 'id, I> as KeyTypes<'id>>::GroupKey,
     <I as InterfacePhase<'p, 'id>>::Caps,
 >;
 
@@ -399,8 +470,8 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     type Caps: Ieee80211Capabilities;
     /// The types the phase's events carry.
     type Types: PhaseTypes<'id>;
-    /// The interface's role.
-    type Role: InterfaceRole;
+    /// The interface's role, which names its keys among the phase's types.
+    type Role: RoleKeys<'id, Self::Types>;
     /// What poisons the backend.
     type Fault: Copy + core::fmt::Debug;
     /// One frame's memory, which holds its buffer token, with its header,
@@ -408,21 +479,6 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     type TxBuffer: crate::owner::TxFrameBody;
     /// The owner of an MPDU's body.
     type TxBody: crate::TxBody;
-    /// The kind of the interface's pairwise key slots (an access point's:
-    /// its association identifiers).
-    type PairwiseKeyKind;
-    /// The kind of the interface's group key slots.
-    type GroupKeyKind;
-    /// An installed pairwise key, which holds its slot.
-    type PairwiseKey;
-    /// An installed group key, which holds its slot.
-    type GroupKey;
-    /// The kind of the receive Block Ack slots: one pool the backend's
-    /// hardware shares between its roles (owner decision, Claude Code chat
-    /// with common, 2026-10-12).
-    type BlockAckKind;
-    /// A running receive Block Ack agreement, which holds its slot.
-    type BlockAck;
 
     /// The interface's own address, which the install gave it.
     fn address(&self) -> IndividualAddress;
@@ -456,26 +512,26 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     /// Install `key` for frames with `peer` in `slot`.
     fn install_pairwise_key(
         &mut self,
-        slot: Slot<'id, Self::PairwiseKeyKind>,
+        slot: Slot<'id, <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::PairwiseKind>,
         peer: IndividualAddress,
         key: Ccmp128Key,
-    ) -> Self::PairwiseKey;
+    ) -> <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::PairwiseKey;
 
     /// Install `key` for group frames under `key_id` in `slot`.
     fn install_group_key(
         &mut self,
-        slot: Slot<'id, Self::GroupKeyKind>,
+        slot: Slot<'id, <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::GroupKind>,
         key_id: GroupKeyId,
         key: Ccmp128Key,
-    ) -> Self::GroupKey;
+    ) -> <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::GroupKey;
 
     /// Remove `key`: an attempt that uses it and that the closed gate holds
     /// ends as aborted at once, a published one is waited for, and
     /// [`LowerMacEvent::KeyRemoved`] gives its slot back.
-    fn remove_pairwise_key(&mut self, key: Self::PairwiseKey);
+    fn remove_pairwise_key(&mut self, key: <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::PairwiseKey);
 
     /// Remove `key`, as [`Self::remove_pairwise_key`].
-    fn remove_group_key(&mut self, key: Self::GroupKey);
+    fn remove_group_key(&mut self, key: <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::GroupKey);
 
     /// Start acknowledging A-MPDUs of `agreement` in `slot`; the agreement
     /// holds the slot. A caller holds one agreement per peer and TID: it
@@ -483,22 +539,22 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     #[must_use = "an agreement holds its slot; dropping it loses the slot until the next install"]
     fn add_block_ack(
         &mut self,
-        slot: Slot<'id, Self::BlockAckKind>,
+        slot: Slot<'id, <Self::Types as PhaseTypes<'id>>::BlockAckKind>,
         agreement: SupportedBlockAck<Self::Caps>,
-    ) -> Self::BlockAck;
+    ) -> <Self::Types as PhaseTypes<'id>>::BlockAck;
 
     /// Replace `running` with `agreement` of the same peer and TID, in its
     /// slot.
     #[must_use = "an agreement holds its slot; dropping it loses the slot until the next install"]
     fn replace_block_ack(
         &mut self,
-        running: Self::BlockAck,
+        running: <Self::Types as PhaseTypes<'id>>::BlockAck,
         agreement: SupportedBlockAck<Self::Caps>,
-    ) -> Self::BlockAck;
+    ) -> <Self::Types as PhaseTypes<'id>>::BlockAck;
 
     /// End `agreement`, giving its slot back.
     #[must_use = "an ended agreement's slot is capacity; dropping it loses it until the next install"]
-    fn remove_block_ack(&mut self, agreement: Self::BlockAck) -> Slot<'id, Self::BlockAckKind>;
+    fn remove_block_ack(&mut self, agreement: <Self::Types as PhaseTypes<'id>>::BlockAck) -> Slot<'id, <Self::Types as PhaseTypes<'id>>::BlockAckKind>;
 }
 
 /// The station interface of a running phase.

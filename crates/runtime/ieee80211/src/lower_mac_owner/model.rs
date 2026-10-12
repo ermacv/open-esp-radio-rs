@@ -42,7 +42,8 @@ use oer_ieee80211_lower_mac::{
     AccessPoint, AccessPointPhase, AttemptKey, BandSet, BssColor, Ccmp128Key, Channel, ClassFrame,
     CoexPriority, CoexPrioritySet, FrameHeader, GateClosed, GateClosedKind, GateOpen, GateOpenKind,
     GroupKeyId, HardwareServices, Ieee80211Capabilities, Ieee80211Radio, IndividualAddress,
-    InterfaceAttempt, InterfacePhase, InterfaceRole, LowerMacBackend, LowerMacCapabilities,
+    InterfaceAttempt, InterfacePhase, KeyTypes, LowerMacBackend, LowerMacCapabilities, Removed,
+    RemovedKey, RoleKeys,
     LowerMacEvent, LowerMacPhase, LowerMacSetup, PhaseRate, PhaseTypes, PhyFormatSet, Protection,
     RateSupport, ReceiveFilter, RxBuffer, RxMeta, Station, StationPhase, StationReceive,
     SupportedBlockAck, SupportedChannel, SupportedEdca, SupportedFilter, TxBody, TxBufferClass,
@@ -233,7 +234,20 @@ impl<'id> PhaseTypes<'id> for ModelTypes {
     type TxBuffers = Vec<ModelAnyBuffer<'id>>;
     type TxBodies = core::iter::Empty<(u8, ModelBody)>;
     type RxBuffer = ModelRxBuffer;
-    type RemovedKey = ModelRemovedKey<'id>;
+    type StationKeys = ModelKeys<'id, Station>;
+    type AccessPointKeys = ModelKeys<'id, AccessPoint>;
+    type BlockAckKind = ModelBlockAcks;
+    type BlockAck = ModelBlockAck<'id>;
+}
+
+/// The keys of the role `R` and their slots.
+pub struct ModelKeys<'id, R>(PhantomData<fn(&'id ()) -> R>);
+
+impl<'id, R> KeyTypes<'id> for ModelKeys<'id, R> {
+    type PairwiseKind = ModelPairwiseKeys<R>;
+    type GroupKind = ModelGroupKeys<R>;
+    type PairwiseKey = ModelPairwiseKey<'id, R>;
+    type GroupKey = ModelGroupKey<'id, R>;
 }
 
 impl<'id> TxBufferPool<'id, ModelSmall> for ModelTypes {
@@ -266,17 +280,6 @@ impl<'id> TxBufferPool<'id, ModelLarge> for ModelTypes {
     }
 }
 
-/// A removed key's slot.
-pub enum ModelRemovedKey<'id> {
-    /// A station's pairwise key.
-    StationPairwise(Slot<'id, ModelPairwiseKeys<Station>>),
-    /// A station's group key.
-    StationGroup(Slot<'id, ModelGroupKeys<Station>>),
-    /// An access point's pairwise key.
-    AccessPointPairwise(Slot<'id, ModelPairwiseKeys<AccessPoint>>),
-    /// An access point's group key.
-    AccessPointGroup(Slot<'id, ModelGroupKeys<AccessPoint>>),
-}
 
 /// The memory of one received MPDU, which goes back through
 /// [`LowerMacPhase::recycle`]: dropped without it, it panics in a test.
@@ -441,7 +444,7 @@ struct Stage {
 enum Command<'id> {
     Submit(Prepared<'id>),
     InstallKey { index: u8 },
-    RemoveKey { index: u8, removed: ModelRemovedKey<'id> },
+    RemoveKey { index: u8, removed: Removed<'id, ModelTypes> },
     CloseGate,
     OpenGate,
 }
@@ -1027,34 +1030,6 @@ pub struct ModelBlockAck<'id> {
     slot: Slot<'id, ModelBlockAcks>,
 }
 
-/// The removed-key event of a role.
-pub trait ModelRole: InterfaceRole + Sized {
-    #[doc(hidden)]
-    fn pairwise<'id>(slot: Slot<'id, ModelPairwiseKeys<Self>>) -> ModelRemovedKey<'id>;
-    #[doc(hidden)]
-    fn group<'id>(slot: Slot<'id, ModelGroupKeys<Self>>) -> ModelRemovedKey<'id>;
-}
-
-impl ModelRole for Station {
-    fn pairwise<'id>(slot: Slot<'id, ModelPairwiseKeys<Self>>) -> ModelRemovedKey<'id> {
-        ModelRemovedKey::StationPairwise(slot)
-    }
-
-    fn group<'id>(slot: Slot<'id, ModelGroupKeys<Self>>) -> ModelRemovedKey<'id> {
-        ModelRemovedKey::StationGroup(slot)
-    }
-}
-
-impl ModelRole for AccessPoint {
-    fn pairwise<'id>(slot: Slot<'id, ModelPairwiseKeys<Self>>) -> ModelRemovedKey<'id> {
-        ModelRemovedKey::AccessPointPairwise(slot)
-    }
-
-    fn group<'id>(slot: Slot<'id, ModelGroupKeys<Self>>) -> ModelRemovedKey<'id> {
-        ModelRemovedKey::AccessPointGroup(slot)
-    }
-}
-
 /// A retry plan's stages, as the model's hardware takes them.
 fn stages(frame: &TxFrame<'_, ModelCaps>) -> Vec<Stage> {
     match frame {
@@ -1092,19 +1067,16 @@ fn header_len(frame: &TxFrame<'_, ModelCaps>) -> usize {
     }
 }
 
-impl<'p, 'v, 'id: 'p, R: ModelRole> InterfacePhase<'p, 'id> for ModelInterface<'v, 'id, R> {
+impl<'p, 'v, 'id: 'p, R> InterfacePhase<'p, 'id> for ModelInterface<'v, 'id, R>
+where
+    R: RoleKeys<'id, ModelTypes, Keys = ModelKeys<'id, R>>,
+{
     type Caps = ModelCaps;
     type Types = ModelTypes;
     type Role = R;
     type Fault = ModelFault;
     type TxBuffer = ModelTxBuffer<'id>;
     type TxBody = ModelBody;
-    type PairwiseKeyKind = ModelPairwiseKeys<R>;
-    type GroupKeyKind = ModelGroupKeys<R>;
-    type PairwiseKey = ModelPairwiseKey<'id, R>;
-    type GroupKey = ModelGroupKey<'id, R>;
-    type BlockAckKind = ModelBlockAcks;
-    type BlockAck = ModelBlockAck<'id>;
 
     fn address(&self) -> IndividualAddress {
         self.address
@@ -1179,14 +1151,14 @@ impl<'p, 'v, 'id: 'p, R: ModelRole> InterfacePhase<'p, 'id> for ModelInterface<'
     fn remove_pairwise_key(&mut self, key: ModelPairwiseKey<'id, R>) {
         self.held.command(Command::RemoveKey {
             index: key.index,
-            removed: R::pairwise(key.slot),
+            removed: R::removed(RemovedKey::Pairwise(key.slot)),
         });
     }
 
     fn remove_group_key(&mut self, key: ModelGroupKey<'id, R>) {
         self.held.command(Command::RemoveKey {
             index: key.index,
-            removed: R::group(key.slot),
+            removed: R::removed(RemovedKey::Group(key.slot)),
         });
     }
 

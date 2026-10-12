@@ -14,13 +14,18 @@
 //!
 //! - [`RadioPort`]: the base trait, with the event stream, the radio clock,
 //!   cancellation and the lifecycle.
-//! - [`run_port`], [`PortBody`] and [`Ended`]: a port lives in one body
-//!   that must end through its owner's uninstall or a fail-stop; [`Owner`]
-//!   over a [`PortBackend`], in the states [`Disabled`] and [`Enabled`],
-//!   with [`Failed`] and [`PoisonedOwner`]; [`PhaseParts`] and [`Lent`],
-//!   one running phase's event consumer ([`RadioPortEvents`]), control and
-//!   clients ([`RadioPortClient`]); [`Work`], one admitted operation. Every
-//!   rule a caller controls is a type.
+//! - [`run_port`], [`PortBody`] and [`Ended`]: a port lives in one body,
+//!   generic over the install's brand `'id`, that must end through its
+//!   owner's uninstall or a fail-stop; [`Owner`] over a [`PortBackend`],
+//!   in the states [`Disabled`] and [`Enabled`], with [`Failed`] and
+//!   [`PoisonedOwner`], keeping the backend's held part of the install;
+//!   [`PhaseParts`] and [`Lent`], one running phase's event consumer
+//!   ([`RadioPortEvents`]), control and clients ([`RadioPortClient`]);
+//!   [`Work`], one admitted operation. Every rule a caller controls is a
+//!   type.
+//! - [`pool`]: capacity as branded tokens: a [`Mint`] makes an install's
+//!   [`Slot`]s, taken synchronously, and [`Permit`]s, awaited from a
+//!   [`PermitPool`] in its documented order.
 //! - [`Poisoned`] and [`PortResult`]: the only outer error of a port call,
 //!   carrying the backend's cause; every refusal is the inner `Err`.
 //! - [`EventsLost`]: the one loss marker, with its ordering rule.

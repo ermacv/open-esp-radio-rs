@@ -278,6 +278,8 @@ struct Model {
     /// `disable` answers `Pending` once before it ends.
     slow_disable: core::cell::Cell<bool>,
     lifecycle: core::cell::RefCell<std::vec::Vec<&'static str>>,
+    /// The install's held part as the last split or disable left it.
+    held: core::cell::Cell<(u32, u32)>,
 }
 
 /// The model's capabilities marker.
@@ -338,16 +340,21 @@ impl<'m> PortBackend for Backend<'m> {
     type Events<'a, 'id>
         = Events<'m>
     where
-        Self: 'a;
+        Self: 'a,
+        'id: 'a;
     type Control<'a, 'id>
         = Control
     where
-        Self: 'a;
+        Self: 'a,
+        'id: 'a;
     type Clients<'a, 'id>
         = [Client<'m>; 2]
     where
-        Self: 'a;
+        Self: 'a,
+        'id: 'a;
     type Resources<'id> = [Slot<'id, ModelCaps>; 2];
+    /// The phases lent and the disables run over the install's held part.
+    type Held<'id> = core::cell::Cell<(u32, u32)>;
     type Uninstall = ();
     type Uninstalled = &'m Model;
 
@@ -363,12 +370,19 @@ impl<'m> PortBackend for Backend<'m> {
         })
     }
 
-    fn disable<'a>(
+    fn disable<'a, 'id>(
         &'a mut self,
+        held: &'a Self::Held<'id>,
         sink: &'a mut dyn FnMut(u32),
-    ) -> impl Future<Output = Result<(), Poisoned<()>>> + 'a {
+    ) -> impl Future<Output = Result<(), Poisoned<()>>> + 'a
+    where
+        'id: 'a,
+    {
         let model = self.0;
         async move {
+            let (phases, disables) = held.get();
+            held.set((phases, disables + 1));
+            model.held.set(held.get());
             if model.slow_disable.get() {
                 let mut waited = false;
                 core::future::poll_fn(|_| {
@@ -408,8 +422,11 @@ impl<'m> PortBackend for Backend<'m> {
         core::future::ready(Ok(Err(ClockError::Unavailable)))
     }
 
-    fn resources<'id>(&mut self, mut mint: Mint<'id>) -> [Slot<'id, ModelCaps>; 2] {
-        mint.slots()
+    fn resources<'id>(
+        &mut self,
+        mut mint: Mint<'id>,
+    ) -> (core::cell::Cell<(u32, u32)>, [Slot<'id, ModelCaps>; 2]) {
+        (core::cell::Cell::new((0, 0)), mint.slots())
     }
 
     fn setup<'a, 'id>(&'a mut self) -> Lent<'a, Self::Setup<'a, 'id>> {
@@ -418,8 +435,15 @@ impl<'m> PortBackend for Backend<'m> {
 
     fn split<'a, 'id>(
         &'a mut self,
-    ) -> PhaseParts<'a, Self::Events<'a, 'id>, Self::Control<'a, 'id>, Self::Clients<'a, 'id>> {
+        held: &'a Self::Held<'id>,
+    ) -> PhaseParts<'a, Self::Events<'a, 'id>, Self::Control<'a, 'id>, Self::Clients<'a, 'id>>
+    where
+        'id: 'a,
+    {
         let model = self.0;
+        let (phases, disables) = held.get();
+        held.set((phases + 1, disables));
+        model.held.set(held.get());
         let client = |interface| Client { model, interface };
         PhaseParts {
             events: Lent::new(Events(model)),
@@ -540,6 +564,37 @@ fn a_port_runs_a_phase_between_its_lifecycle_commands_and_ends_through_its_unins
         *model.lifecycle.borrow(),
         ["enable", "disable", "uninstall"]
     );
+}
+
+/// A body that runs two phases of one install.
+struct TwoPhases;
+
+impl<'m> PortBody<Backend<'m>> for TwoPhases {
+    async fn run<'id>(
+        self,
+        mut owner: Owner<'id, Backend<'m>, Disabled>,
+        _: [Slot<'id, ModelCaps>; 2],
+    ) -> Ended<'id, Backend<'m>> {
+        for _ in 0..2 {
+            let Ok(mut enabled) = owner.enable().await else {
+                panic!("the model enables");
+            };
+            let _ = enabled.split();
+            owner = match enabled.disable(&mut |_| {}).await {
+                Ok(disabled) => disabled,
+                Err(poisoned) => return poisoned.fail_stop(),
+            };
+        }
+        owner.uninstall(())
+    }
+}
+
+#[test]
+fn the_backends_held_part_of_the_install_reaches_every_phase_and_disable() {
+    let model = Model::default();
+    assert!(now_ready(run_port(Backend(&model), TwoPhases)).is_some());
+    // One held part travelled through both transitions of both phases.
+    assert_eq!(model.held.get(), (2, 2));
 }
 
 /// A body that enables once and reports the refusal it met.
@@ -719,9 +774,15 @@ struct FifoPool<'id> {
 
 impl<'id> PermitPool<'id, ModelCaps> for FifoPool<'id> {
     fn take(&self) -> impl Future<Output = Permit<'id, ModelCaps>> + '_ {
-        let mut ticket = None;
+        let mut place = Place {
+            line: &self.line,
+            ticket: None,
+        };
         core::future::poll_fn(move |_| {
-            let mine = *ticket.get_or_insert_with(|| {
+            // The whole place moves into the future, so dropping the future
+            // drops it; a closure that named only its field would copy that.
+            let place = &mut place;
+            let mine = *place.ticket.get_or_insert_with(|| {
                 let issued = self.next.get();
                 self.next.set(issued + 1);
                 self.line.borrow_mut().push_back(issued);
@@ -733,6 +794,7 @@ impl<'id> PermitPool<'id, ModelCaps> for FifoPool<'id> {
             match self.free.borrow_mut().pop() {
                 Some(permit) => {
                     self.line.borrow_mut().pop_front();
+                    place.ticket = None;
                     core::task::Poll::Ready(permit)
                 }
                 None => core::task::Poll::Pending,
@@ -742,6 +804,21 @@ impl<'id> PermitPool<'id, ModelCaps> for FifoPool<'id> {
 
     fn release(&self, permit: Permit<'id, ModelCaps>) {
         self.free.borrow_mut().push(permit);
+    }
+}
+
+/// A taker's place in a [`FifoPool`]'s line, given up when its future
+/// drops before it is served.
+struct Place<'p> {
+    line: &'p core::cell::RefCell<std::collections::VecDeque<u32>>,
+    ticket: Option<u32>,
+}
+
+impl Drop for Place<'_> {
+    fn drop(&mut self) {
+        if let Some(ticket) = self.ticket {
+            self.line.borrow_mut().retain(|waiting| *waiting != ticket);
+        }
     }
 }
 

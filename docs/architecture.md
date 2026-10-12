@@ -412,7 +412,12 @@ until its removal gives it back; and permits (`Permit<'id, K>`), which a
 held one ends with its terminal event, not when a handle drops. A pool's
 free list, its waiters and its order belong to a runtime crate or the
 backend; its order is its documented policy, first in, first out by default,
-which the conformance suite checks. The backend never refuses for capacity:
+which the conformance suite checks. A pool whose permits admitted work holds
+belongs to the backend's held part of the install (`PortBackend::Held<'id>`),
+which the owner keeps and lends into each phase and disable: the backend
+takes the permits back when the work ends and before it hands the terminal
+event out, so no caller holds a permit of submitted work, and a terminal
+event dropped unread loses none. The backend never refuses for capacity:
 a caller that holds no slot turns that into its protocol's decision.
 
 **Port-lifetime and phase-scoped tokens.** A resource that outlives a phase
@@ -445,9 +450,11 @@ Its transitions take the owner by value and are bounded by contract: each
 ends within its bound or as poisoned, and an unbounded wait (an arbiter's
 lease) is a separate cancel-safe step before it. A transition that ends
 work hands every leftover terminal to a sink it takes and completes only
-when every permit is back. Capacity is permits: a submission consumes one
-and its terminal returns it, so no queue overflows and no terminal is lost;
-only unsolicited reception may lose events. A `Drop` of an owner is a
+when every permit is back. Capacity is permits: a submission moves its
+permit into the backend, which gives it back to its pool in the install's
+held part before it hands the terminal out, so no queue overflows, no
+terminal is lost and no caller holds the permit of submitted work; only
+unsolicited reception may lose events. A `Drop` of an owner is a
 safety net, as `PlatformClockGuard`'s: it stops the hardware synchronously,
 refuses a new install until a reset and asserts in debug builds; it is
 never the shutdown. Everything the hardware touches is `'static` and owned

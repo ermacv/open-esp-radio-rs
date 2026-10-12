@@ -4,9 +4,8 @@
 //! The service asks it for the retry plan of each frame by what the frame
 //! is for ([`FrameRates`]) and hands it every terminal of those frames
 //! ([`RateSelection::completed`]): the rates and transmissions the attempt
-//! made teach it the next plan. It hears when its interface connects to a
-//! peer and when it leaves: data goes only while connected, and a
-//! controller adapts per peer. The selection is an integrator's policy;
+//! made teach it the next plan. It hears when its interface associates
+//! with a peer and when it leaves: a controller adapts per peer. The selection is an integrator's policy;
 //! the Espressif one (`oer-espressif-ieee80211-policy::rate_selection`)
 //! sends as the vendor's station does.
 //!
@@ -16,7 +15,7 @@ use oer_ieee80211_lower_mac::{RetryPlan, TxCompletion};
 use oer_ieee80211_mac::phy::PhyRate;
 use oer_time::Instant;
 
-use crate::rate_control::RatePeer;
+use crate::rate_control::{LinkMetric, RatePeer};
 
 /// What a frame is for, which picks its rates.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -35,10 +34,10 @@ pub trait RateSelection {
     /// The retry plan of the next frame for `frame`.
     fn plan(&self, frame: FrameRates) -> RetryPlan<PhyRate>;
 
-    /// The interface connected to `peer`, whose signal over the noise floor
-    /// was `link_metric` dB in the frame that made the link; `None` when the
-    /// port reported either value unavailable.
-    fn connected(&mut self, peer: &RatePeer, link_metric: Option<i8>);
+    /// The interface associated with `peer`, whose signal over the noise
+    /// floor was `link_metric` in the frame that made the link: from now on
+    /// its frames go at the association's rates.
+    fn associated(&mut self, peer: &RatePeer, link_metric: LinkMetric);
 
     /// The interface left its peer.
     fn disconnected(&mut self);

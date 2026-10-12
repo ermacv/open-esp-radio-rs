@@ -155,8 +155,13 @@ fn beacon_on(number: u8) -> [u8; 55] {
     frame
 }
 
+/// What the port reports of a received frame: its signal and the noise
+/// floor.
 fn meta() -> RxMeta {
-    RxMeta::unavailable(Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap())
+    let mut meta = RxMeta::unavailable(Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap());
+    meta.rssi_dbm = RxEvidence::HardwareObserved(-40);
+    meta.noise_floor_dbm = RxEvidence::HardwareObserved(-95);
+    meta
 }
 
 /// What the world saw the station and the arbiter do.
@@ -189,10 +194,12 @@ struct World {
     outcomes: std::collections::VecDeque<bool>,
     /// The reason codes of the Deauthentications sent.
     deauthentications: Vec<u16>,
-    /// Each EAPOL frame's Protected bit and key.
-    eapol: Vec<(bool, StaTxKey)>,
+    /// Each EAPOL frame's Protected bit and whether it went under the key.
+    eapol: Vec<(bool, bool)>,
     /// Every frame the station sent, in its buffer.
     frames: Vec<Vec<u8>>,
+    /// The frames sent before the station said it associated, and its peer.
+    associated: Option<(usize, Peer)>,
     /// The signal of the frames the world delivers.
     rssi: i8,
 }
@@ -258,6 +265,7 @@ impl World {
             deauthentications: Vec::new(),
             eapol: Vec::new(),
             frames: Vec::new(),
+            associated: None,
             rssi: i8::MIN,
         }
     }
@@ -323,41 +331,15 @@ impl World {
                         }));
                         self.configuring += 1;
                     }
-                    StaAction::Transmit(mut transmit) => {
-                        let frame = transmit.buffer.bytes_mut();
-                        // A Null's PM bit tells its power state apart.
-                        let subtype = u16::from_le_bytes([frame[0], frame[1]]) & 0x10fc;
-                        // Authentication, Association and EAPOL are the
-                        // connection's frames.
-                        // A protected frame carries the CCMP header's room,
-                        // a QoS one its QoS Control field.
-                        let protected = frame[1] & 0x40 != 0;
-                        let qos = subtype & 0x0080 != 0;
-                        let ether_type = 30 + usize::from(qos) * 2 + usize::from(protected) * 8;
-                        let eapol = subtype & 0x000c == 0x0008
-                            && frame[ether_type..ether_type + 2] == [0x88, 0x8e];
-                        if eapol {
-                            self.eapol.push((protected, transmit.key));
-                        }
-                        self.frames.push(frame.to_vec());
-                        let connection = matches!(subtype, 0x00b0 | 0x0000) || eapol;
-                        assert_eq!(
-                            transmit.class,
-                            if connection {
-                                StaFrameClass::Connection
-                            } else {
-                                StaFrameClass::Normal
-                            }
-                        );
-                        if subtype == 0x00c0 {
-                            self.deauthentications
-                                .push(u16::from_le_bytes([frame[24], frame[25]]));
-                        }
-                        let on = self.arbiter.channel().map_or(0, |c| c.channel().number());
-                        self.seen.push(Seen::Transmit { subtype, on });
-                        self.in_flight.push((transmit.ticket, transmit.buffer));
+                    StaAction::Transmit(transmit) => self.transmitted(transmit, false),
+                    // A frame under the key goes as any other; the world
+                    // notes the key.
+                    StaAction::TransmitProtected { transmit, .. } => {
+                        self.transmitted(transmit, true);
                     }
                     StaAction::Notify(notice) => self.seen.push(Seen::Notify(notice)),
+                    // The frames sent before the station associated.
+                    StaAction::Associated(peer) => self.associated = Some((self.frames.len(), peer)),
                 }
             }
             while let Some(action) = self.arbiter.poll_action(now) {
@@ -418,6 +400,43 @@ impl World {
                 },
             );
         }
+    }
+
+    /// One frame the station sent: the world records it and holds its
+    /// tokens.
+    fn transmitted(&mut self, mut transmit: StaTransmit<Tokens, Caps>, keyed: bool) {
+        let frame = transmit.buffer.bytes_mut();
+        // A Null's PM bit tells its power state apart.
+        let subtype = u16::from_le_bytes([frame[0], frame[1]]) & 0x10fc;
+        // Authentication, Association and EAPOL are the
+        // connection's frames.
+        // A protected frame carries the CCMP header's room,
+        // a QoS one its QoS Control field.
+        let protected = frame[1] & 0x40 != 0;
+        let qos = subtype & 0x0080 != 0;
+        let ether_type = 30 + usize::from(qos) * 2 + usize::from(protected) * 8;
+        let eapol = subtype & 0x000c == 0x0008
+            && frame[ether_type..ether_type + 2] == [0x88, 0x8e];
+        if eapol {
+            self.eapol.push((protected, keyed));
+        }
+        self.frames.push(frame.to_vec());
+        let connection = matches!(subtype, 0x00b0 | 0x0000) || eapol;
+        assert_eq!(
+            transmit.class,
+            if connection {
+                StaFrameClass::Connection
+            } else {
+                StaFrameClass::Normal
+            }
+        );
+        if subtype == 0x00c0 {
+            self.deauthentications
+                .push(u16::from_le_bytes([frame[24], frame[25]]));
+        }
+        let on = self.arbiter.channel().map_or(0, |c| c.channel().number());
+        self.seen.push(Seen::Transmit { subtype, on });
+        self.in_flight.push((transmit.ticket, transmit.buffer));
     }
 
     fn receive(&mut self, now: Instant, frame: &[u8]) {
@@ -528,7 +547,7 @@ fn a_station_alone_scans_joins_an_open_network_and_leaves_it() {
     // the access point's signal over the noise floor.
     let peer = world.station.peer().unwrap();
     assert_eq!(peer.associated.phy, PhyMode::Legacy);
-    assert_eq!(peer.link_metric, Some(55));
+    assert_eq!(peer.link_metric.db(), 55);
 
     // The application leaves: Deauthentication, receive off, the lease
     // back, then the report.
@@ -550,6 +569,33 @@ fn a_station_alone_scans_joins_an_open_network_and_leaves_it() {
     // Every token came back.
     assert!(world.in_flight.is_empty());
     assert!(world.station.place.is_some());
+}
+
+#[test]
+fn an_association_response_without_the_noise_floor_fails_the_association() {
+    let mut world = World::new(3);
+    world.station.input(at(0), StaInput::Command(StaCommand::Connect));
+    world.run(at(0));
+    world.advance();
+    world.receive(at(13), &beacon());
+    world.advance();
+    world.receive(at(30), &authentication_response(0));
+    world.take();
+    // No noise floor: no signal margin for the rate selection to start from.
+    let mut meta = meta();
+    meta.noise_floor_dbm = RxEvidence::Unavailable;
+    world.station.input(
+        at(31),
+        StaInput::Received {
+            frame: &open_association_response(),
+            meta,
+        },
+    );
+    world.run(at(31));
+    assert!(!world.station.is_connected());
+    assert!(world.take().contains(&Seen::Notify(StaNotice::Disconnected(
+        StaDisconnectReason::AssociationFailed
+    ))));
 }
 
 #[test]
@@ -1109,14 +1155,25 @@ fn a_new_group_key_goes_in_beside_the_old_one_which_is_removed_after_group_messa
 }
 
 #[test]
+fn the_station_says_it_associated_before_the_handshakes_first_message() {
+    let (world, _) = wpa2_connected(2);
+    // After the Association Request, before Message 2.
+    let (sent, peer) = world.associated.expect("the station associated");
+    let subtype = |frame: &Vec<u8>| u16::from_le_bytes([frame[0], frame[1]]) & 0x00fc;
+    assert_eq!(subtype(&world.frames[sent - 1]), 0x0000);
+    assert_eq!(subtype(&world.frames[sent]), 0x0008);
+    assert_eq!(peer.link_metric.db(), 55);
+}
+
+#[test]
 fn the_handshakes_eapol_goes_unprotected_and_group_message_2_under_the_pairwise_key() {
     let (mut world, ptk) = wpa2_connected(2);
     // Messages 2 and 4 of the four-way handshake: no key, no Protected bit.
-    assert_eq!(world.eapol, [(false, StaTxKey::None), (false, StaTxKey::None)]);
+    assert_eq!(world.eapol, [(false, false), (false, false)]);
     world.receive(at(50), &group_message1(&ptk, 3, 2));
     // Group Message 2, once connected: under the pairwise key, with the
     // Protected bit and the CCMP header's room.
-    assert_eq!(world.eapol[2..], [(true, StaTxKey::Pairwise)]);
+    assert_eq!(world.eapol[2..], [(true, true)]);
 }
 
 impl crate::data::StaDataTokens for Tokens {

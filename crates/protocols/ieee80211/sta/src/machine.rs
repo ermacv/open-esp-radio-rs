@@ -99,7 +99,7 @@ use oer_ieee80211_rsn::{
         RsnStaSupplicantAction,
     },
 };
-use oer_ieee80211_upper_mac::HePacketPadding;
+use oer_ieee80211_upper_mac::{HePacketPadding, rate_control::LinkMetric};
 
 use crate::association::StaAssociatedPeer;
 use oer_time::{Duration, Instant};
@@ -248,6 +248,23 @@ pub enum StaAction<'a, T: StaTokens, K> {
     RemoveGroupKey(T::GroupKey),
     /// Transmit one MPDU ([`StaInput::TxDone`] follows).
     Transmit(StaTransmit<T, K>),
+    /// Transmit one MPDU under the pairwise key its link lends: EAPOL
+    /// after the handshake, sent only while the link is up
+    /// ([`StaInput::TxDone`] follows). It carries the Protected bit and
+    /// the CCMP header's room.
+    TransmitProtected {
+        /// The MPDU.
+        transmit: StaTransmit<T, K>,
+        /// The pairwise key, as [`Station::link`] lends it.
+        key: &'a T::PairwiseKey,
+    },
+    /// The station associated with `Peer`: the rates of its frames start
+    /// from what the association made known, the handshake's EAPOL
+    /// included ([owner decision on #563]). A
+    /// [`StaNotice::Disconnected`] ends it.
+    ///
+    /// [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563
+    Associated(Peer),
     /// Tell the application what happened.
     Notify(StaNotice),
 }
@@ -266,18 +283,6 @@ pub struct StaTransmit<T: StaTokens, K> {
     pub class: StaFrameClass,
     /// Its rate and retry plan.
     pub plan: StaRatePlan,
-    /// The key it goes under.
-    pub key: StaTxKey,
-}
-
-/// The key a station frame goes under.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StaTxKey {
-    /// None: management frames and the four-way handshake's EAPOL.
-    None,
-    /// The pairwise key the link lends ([`Station::link`]): EAPOL after the
-    /// handshake, only while the link is up. The service names the key.
-    Pairwise,
 }
 
 /// What a station frame is for.
@@ -496,6 +501,8 @@ pub struct Station<T: StaTokens, K: Ieee80211Capabilities> {
     /// A notice for the application the station owes outside its state's
     /// steps.
     notice_owed: Option<StaNotice>,
+    /// The access point of an association the service has yet to hear.
+    associated_owed: Option<Peer>,
     sequence: StaSequenceCounter,
     scan: ScanTable<SCAN_CAPACITY>,
 }
@@ -724,8 +731,10 @@ enum JoinStep {
 pub struct Peer {
     /// What the association negotiated.
     pub associated: StaAssociatedPeer,
-    /// The access point's signal over the noise floor.
-    pub link_metric: Option<i8>,
+    /// The access point's signal over the noise floor in the Association
+    /// Response, which a rate selection starts from (owner decision on
+    /// #563: fresher than the scan record the old ESP32-S31 path took).
+    pub link_metric: LinkMetric,
 }
 
 struct Authenticate {
@@ -993,16 +1002,6 @@ fn forget_group<T: StaTokens>(rsn: &mut ConnectedRsn, keys: &Keys<T>, key_id: Gr
     }
 }
 
-/// The signal over the noise floor of a frame whose port reported both,
-/// narrowed as the vendor's rate control takes it.
-fn link_metric(meta: &RxMeta) -> Option<i8> {
-    let observed = |value: RxEvidence<i8>| match value {
-        RxEvidence::HardwareObserved(value) | RxEvidence::ProtocolValidated(value) => Some(value),
-        RxEvidence::Unavailable => None,
-    };
-    Some(observed(meta.rssi_dbm)?.wrapping_sub(observed(meta.noise_floor_dbm)?))
-}
-
 /// What ended in the station's world.
 enum Done {
     Command(StaCommand),
@@ -1036,6 +1035,8 @@ enum Owed<T: StaTokens, K> {
     Upstream(UpstreamFact<K>),
     Configure(StationReceive<K>),
     Transmit(StaTransmit<T, K>),
+    /// Under the pairwise key of the connected link.
+    TransmitProtected(StaTransmit<T, K>),
     Notify(StaNotice),
 }
 
@@ -1105,6 +1106,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             absence_place: Some(absence_place),
             absence: None,
             notice_owed: None,
+            associated_owed: None,
             sequence: StaSequenceCounter::new(SequenceNumber::ZERO),
             scan: ScanTable::new(),
         }
@@ -1115,10 +1117,11 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         matches!(self.state, State::Connected(_))
     }
 
-    /// The access point of the connected station, as its association made
-    /// it: what a rate selection starts from once the station connected.
+    /// The access point of the associated station, as its association made
+    /// it: during the handshake and once connected.
     pub const fn peer(&self) -> Option<&Peer> {
         match &self.state {
+            State::Handshake(handshake) => Some(&handshake.peer),
             State::Connected(connected) => Some(&connected.peer),
             _ => None,
         }
@@ -1933,23 +1936,27 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                     let _ = runtime.observe_received_frame();
                     match runtime.observe_management_frame(frame, now) {
                         Ok(StaAssociationEvent::Associated { response, .. }) => {
-                            match StaAssociatedPeer::derive(
+                            // The rate selection starts from the response's
+                            // signal over the noise floor: a port that did not
+                            // report both fails the association.
+                            let derived = StaAssociatedPeer::derive(
                                 &join.access_point,
                                 &response,
                                 self.config.phy,
                                 self.config.he_packet_padding,
-                            ) {
-                                Ok(associated) => {
+                            );
+                            match (derived, LinkMetric::of(&meta)) {
+                                (Ok(associated), Some(link_metric)) => {
                                     join.step = JoinStep::Report {
                                         association_id: response.association_id,
                                         peer: Peer {
                                             associated,
-                                            link_metric: link_metric(&meta),
+                                            link_metric,
                                         },
                                     };
                                     State::Join(join)
                                 }
-                                Err(_) => {
+                                _ => {
                                     leave_unkeyed(join.keys, StaDisconnectReason::AssociationFailed)
                                 }
                             }
@@ -2054,6 +2061,9 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     /// The next action to carry out at `now`, if any. The service takes
     /// every action before it waits again.
     pub fn poll_action(&mut self, now: Instant) -> Option<StaAction<'_, T, K>> {
+        if let Some(peer) = self.associated_owed.take() {
+            return Some(StaAction::Associated(peer));
+        }
         if let Some(notice) = self.notice_owed.take() {
             return Some(StaAction::Notify(notice));
         }
@@ -2107,6 +2117,24 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             Owed::Upstream(fact) => StaAction::Upstream(fact),
             Owed::Configure(receive) => StaAction::Configure(receive),
             Owed::Transmit(transmit) => StaAction::Transmit(transmit),
+            // Owed only while the link is up in this very step, so the key
+            // is there; without it the frame does not go and its tokens
+            // come back.
+            Owed::TransmitProtected(transmit) => match &self.state {
+                State::Connected(Connected {
+                    keys:
+                        Keys {
+                            pairwise: KeyCell::Installed(key),
+                            ..
+                        },
+                    ..
+                }) => StaAction::TransmitProtected { transmit, key },
+                _ => {
+                    self.tickets.put(transmit.ticket);
+                    self.buffers.put(transmit.buffer);
+                    return None;
+                }
+            },
             Owed::Notify(notice) => StaAction::Notify(notice),
         })
     }
@@ -2414,7 +2442,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 match self.encode_protected_eapol(connected.bssid, qos, message.as_bytes()) {
                     Ok(transmit) => {
                         connected.sending = Some(Sending::GroupResponse);
-                        (Rekey::AwaitSent, Some(Owed::Transmit(transmit)))
+                        (Rekey::AwaitSent, Some(Owed::TransmitProtected(transmit)))
                     }
                     Err(Unsent::NoTokens) => (Rekey::Send(message), None),
                     Err(Unsent::Encode) => return Some(Err(StaDisconnectReason::Encode)),
@@ -2679,6 +2707,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         peer: Peer,
         now: Instant,
     ) -> State<T, K> {
+        self.associated_owed = Some(peer);
         let bssid = join.access_point.bssid;
         let channel = join.channel;
         let qos = join.access_point.wmm_ie_len > 0;
@@ -2764,7 +2793,6 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 frame: StaFrame::Individual(frame),
                 class,
                 plan: StaRatePlan::Management,
-                key: StaTxKey::None,
             }),
             None => {
                 self.tickets.put(ticket);
@@ -2814,10 +2842,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             ether_type: EAPOL_ETHER_TYPE,
             payload: eapol,
         };
-        let mut transmit =
-            self.encode_individual(|buffer| frame.encode(buffer).ok(), StaFrameClass::Connection)?;
-        transmit.key = StaTxKey::Pairwise;
-        Ok(transmit)
+        self.encode_individual(|buffer| frame.encode(buffer).ok(), StaFrameClass::Connection)
     }
 
     /// A broadcast Probe Request in a buffer, if the station holds tokens
@@ -2847,7 +2872,6 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 frame: StaFrame::Group(frame),
                 class: StaFrameClass::Normal,
                 plan: StaRatePlan::Group,
-                key: StaTxKey::None,
             }),
             None => {
                 self.tickets.put(ticket);

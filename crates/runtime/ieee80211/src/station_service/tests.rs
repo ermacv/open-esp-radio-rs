@@ -1,7 +1,8 @@
 //! The service on the model, the test playing the access point: the
 //! station's frames go at the rates its selection picks, and the control
-//! record switches where the old ESP32-S31 path switched it, once the
-//! station is connected ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6132066470)).
+//! record switches once the station associated, the handshake's EAPOL on
+//! the association's record (owner decision on #563, a deliberate
+//! departure from the old ESP32-S31 path, which switched once connected).
 
 use core::cell::RefCell;
 use core::future::{Future, poll_fn};
@@ -22,7 +23,7 @@ use oer_ieee80211_mac::{
 use oer_ieee80211_port::{Ended, PortBody, run_port};
 use oer_ieee80211_rsn::{Pmk, PtkContext, frames::RsnTxFrame};
 use oer_ieee80211_sta::machine::{StaConfig, StaSecurity};
-use oer_ieee80211_upper_mac::rate_control::RateControl;
+use oer_ieee80211_upper_mac::rate_control::{LinkMetric, RateControl};
 use oer_time::Duration;
 use oer_time_virtual::VirtualClock;
 use std::boxed::Box;
@@ -439,7 +440,7 @@ fn ofdm6() -> PhyRate {
 }
 
 #[test]
-fn on_an_open_network_control_frames_switch_to_the_association_record_once_associated() {
+fn on_an_open_network_the_join_goes_on_the_default_record_and_then_the_associations() {
     run(StaSecurity::Open, |world| Box::pin(async move {
         let mut seen = 0;
         let [probe, authentication, association] = world.associate(&mut seen, false).await;
@@ -466,7 +467,7 @@ fn on_an_open_network_control_frames_switch_to_the_association_record_once_assoc
         };
         assert_eq!(
             data.rate,
-            EspressifRateControl::for_peer((), &peer, Some(55)).mpdu_rate()
+            EspressifRateControl::for_peer((), &peer, LinkMetric::of(&meta()).unwrap()).mpdu_rate()
         );
         world
             .command(ServiceCommand::Station(StaCommand::Disconnect))
@@ -477,7 +478,7 @@ fn on_an_open_network_control_frames_switch_to_the_association_record_once_assoc
 }
 
 #[test]
-fn on_wpa2_the_handshake_goes_unprotected_on_the_default_record_and_group_message_2_under_the_key() {
+fn on_wpa2_the_join_goes_on_the_default_record_and_the_handshake_on_the_associations() {
     run(
         StaSecurity::Wpa2Personal {
             pmk: Pmk::from_bytes(PMK),
@@ -487,11 +488,13 @@ fn on_wpa2_the_handshake_goes_unprotected_on_the_default_record_and_group_messag
             let [_, authentication, association] = world.associate(&mut seen, true).await;
             assert_eq!(authentication.rate, dsss1());
             assert_eq!(association.rate, dsss1());
-            // Associated, not connected: Message 2 on the default record.
+            // Associated: the rates start from the association, so the
+            // handshake's Message 2 goes on its record, 6 Mb/s OFDM first
+            // (owner decision on #563).
             let message1 = RsnTxFrame::<512>::message1(Akm::Psk, LOCAL, 1, ANONCE).unwrap();
             world.air.receive(&eapol_frame(message1.as_bytes()), meta());
             let message2 = world.sent(&mut seen, DATA).await;
-            assert_eq!(message2.rate, dsss1());
+            assert_eq!(message2.rate, ofdm6());
             let ptk = Pmk::from_bytes(PMK).derive_ptk(
                 Akm::Psk,
                 PtkContext {
@@ -519,10 +522,9 @@ fn on_wpa2_the_handshake_goes_unprotected_on_the_default_record_and_group_messag
             .unwrap()
             .authenticate(&ptk);
             world.air.receive(&eapol_frame(message3.as_bytes()), meta());
-            // Message 4 is the handshake's: still the default record, and
-            // unprotected.
+            // Message 4: the association's record, and unprotected.
             let message4 = world.sent(&mut seen, DATA).await;
-            assert_eq!(message4.rate, dsss1());
+            assert_eq!(message4.rate, ofdm6());
             assert_eq!(message4.key, None);
             assert_eq!(message4.frame[1] & 0x40, 0);
             world
@@ -540,7 +542,6 @@ fn on_wpa2_the_handshake_goes_unprotected_on_the_default_record_and_group_messag
             assert_ne!(group_message2.frame[1] & 0x40, 0);
             assert!(group_message2.packet_number.is_some());
             assert_eq!(group_message2.rate, ofdm6());
-            // Connected: the association's record, 6 Mb/s OFDM first.
             world
                 .command(ServiceCommand::Station(StaCommand::Disconnect))
                 .await;

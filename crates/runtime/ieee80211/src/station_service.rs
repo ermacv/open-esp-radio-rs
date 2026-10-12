@@ -45,8 +45,8 @@ use oer_radio_port::Slot;
 use oer_ieee80211_sta::{
     data::{self, DataAction, DataInput, Msdu, StaData, StaDataTokens},
     machine::{
-        LinkProtection, LinkView, StaAction, StaCommand, StaFrame, StaFrameClass, StaInput,
-        StaNotice, StaRatePlan, StaTokens, StaTransmit, StaTxKey, Station,
+        LinkProtection, Peer, StaAction, StaCommand, StaFrame, StaFrameClass, StaInput,
+        StaNotice, StaRatePlan, StaTokens, StaTransmit, Station,
     },
     power_save::NULL_TRANSMISSIONS,
 };
@@ -550,28 +550,9 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection, const RX: usize>
             }
             while let Some(action) = self.station.poll_action(now) {
                 progress = true;
-                let submitted = match station_action(now, phase, io, &mut self.arbiter, action) {
-                    Ok(Follow::Transmit(transmit)) => {
-                        let key = match transmit.key {
-                            StaTxKey::None => None,
-                            StaTxKey::Pairwise => match self.station.link() {
-                                Some(LinkView {
-                                    protection: LinkProtection::Ccmp { key, .. },
-                                    ..
-                                }) => Some(key),
-                                _ => unreachable!(
-                                    "the station sends under its key only while its link is up"
-                                ),
-                            },
-                        };
-                        submit_station::<B, P, S>(phase, &self.rates, key, transmit)
-                    }
-                    Ok(follow) => {
-                        self.follow(now, follow);
-                        Ok(())
-                    }
-                    Err(()) => Err(()),
-                };
+                let submitted =
+                    station_action(now, phase, io, &mut self.arbiter, &self.rates, action)
+                        .map(|follow| self.follow(now, follow));
                 if submitted.is_err() {
                     self.arbiter.poisoned();
                     self.settle(now, io);
@@ -634,16 +615,12 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection, const RX: usize>
         match follow {
             Follow::Nothing => {}
             Follow::Input(input) => self.station.input(now, input),
-            // The rates follow the station's peer: the switch of the old
-            // path's connected epoch.
-            Follow::Connected => {
-                if let Some(peer) = self.station.peer() {
-                    self.rates
-                        .connected(&peer.associated.rate_peer(), peer.link_metric);
-                }
+            // The rates start from what the association made known.
+            Follow::Associated(peer) => {
+                self.rates
+                    .associated(&peer.associated.rate_peer(), peer.link_metric);
             }
             Follow::Disconnected => self.rates.disconnected(),
-            Follow::Transmit(_) => unreachable!("the step submits the station's frames"),
         }
     }
 
@@ -789,12 +766,10 @@ enum Follow<'id, B: StationPort<'id>> {
     Nothing,
     /// An arbiter's answer or a key, back to the station.
     Input(StaInput<'static, PortStaTokens<'id, B::Types, B::Small>, B::Caps>),
-    /// The station connected: the rates follow its peer.
-    Connected,
+    /// The station associated: the rates start from its peer.
+    Associated(Peer),
     /// The station left: the rates leave its peer.
     Disconnected,
-    /// A frame of the station to submit.
-    Transmit(StaTransmit<PortStaTokens<'id, B::Types, B::Small>, B::Caps>),
 }
 
 /// Submit a frame of the station at the rates `rates` selects, under `key`
@@ -861,17 +836,19 @@ where
 
 /// Carry out one action of the station; an arbiter's answer goes back to
 /// it at once.
-fn station_action<'p, 'id: 'p, B, P, M>(
+fn station_action<'p, 'id: 'p, B, P, M, S>(
     now: Instant,
     phase: &mut P,
     io: &mut ServiceIo<'_, M, B::Caps>,
     arbiter: &mut PortArbiter<'_, 'id, B>,
+    rates: &S,
     action: StaAction<'_, PortStaTokens<'id, B::Types, B::Small>, B::Caps>,
 ) -> Result<Follow<'id, B>, ()>
 where
     B: StationPort<'id>,
     P: LowerMacPhase<'p, 'id, Caps = B::Caps, Types = B::Types>,
     M: RawMutex,
+    S: RateSelection,
 {
     let input = match action {
         StaAction::RequestChannel(request, place) => {
@@ -917,16 +894,24 @@ where
             phase.station().remove_group_key(key);
             return Ok(Follow::Nothing);
         }
-        // The service submits it once the action no longer borrows the
-        // station: a frame under the pairwise key takes the link's.
-        StaAction::Transmit(transmit) => return Ok(Follow::Transmit(transmit)),
+        StaAction::Transmit(transmit) => {
+            return submit_station::<B, P, S>(phase, rates, None, transmit).map(|()| Follow::Nothing);
+        }
+        StaAction::TransmitProtected { transmit, key } => {
+            return submit_station::<B, P, S>(phase, rates, Some(key), transmit)
+                .map(|()| Follow::Nothing);
+        }
         StaAction::Notify(notice) => {
             (io.output)(ServiceOutput::Notice(notice));
             return Ok(match notice {
-                StaNotice::Connected { .. } => Follow::Connected,
                 StaNotice::Disconnected(_) => Follow::Disconnected,
-                StaNotice::BackgroundScanDone { .. } => Follow::Nothing,
+                StaNotice::Connected { .. } | StaNotice::BackgroundScanDone { .. } => {
+                    Follow::Nothing
+                }
             });
+        }
+        StaAction::Associated(peer) => {
+            return Ok(Follow::Associated(peer));
         }
     };
     Ok(Follow::Input(input))

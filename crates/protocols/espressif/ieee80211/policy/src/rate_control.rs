@@ -18,7 +18,7 @@ use oer_ieee80211_mac::{
     phy::{FecCoding, HeGiLtf, HeMcs, HeRate, HtMcs, HtRate, LegacyRate, PhyRate, PpduBandwidth},
     station::association::PhyMode,
 };
-use oer_ieee80211_upper_mac::rate_control::{RateControl, RatePeer};
+use oer_ieee80211_upper_mac::rate_control::{LinkMetric, RateControl, RatePeer};
 use oer_time::Instant;
 
 /// Instruction-evidenced fields of one 12-byte rate schedule record.
@@ -1282,7 +1282,7 @@ impl RateDecode {
 impl RateControl for EspressifRateControl {
     type Config = ();
 
-    fn for_peer((): (), peer: &RatePeer, link_metric: Option<i8>) -> Self {
+    fn for_peer((): (), peer: &RatePeer, link_metric: LinkMetric) -> Self {
         let he = peer.he_capabilities;
         let phy = match peer.phy {
             PhyMode::Legacy => StaRateControlPhy::Dot11G,
@@ -1301,9 +1301,7 @@ impl RateControl for EspressifRateControl {
             .map(StaRateControlPeerHighestRate::he20_one_spatial_stream);
         let association = StaRateControlAssociation::new(StaRateControlAssociationInput {
             phy,
-            // An unknown metric is the weakest link: the selection starts at
-            // the format's slowest schedule and adaptation raises it.
-            link_metric: StaLinkMetric::from_estimator(link_metric.unwrap_or(i8::MIN)),
+            link_metric: StaLinkMetric::from_estimator(link_metric.db()),
             p2p: false,
             peer_highest_rate,
             long_range_rates_present: false,

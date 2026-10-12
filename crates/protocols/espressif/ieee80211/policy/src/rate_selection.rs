@@ -5,11 +5,13 @@
 //! - Every other frame without network data (management, EAPOL, Nulls,
 //!   BlockAckReqs) walks a control schedule record: the interface's
 //!   default one ([`DEFAULT_CONTROL_SCHEDULE`], 1 Mb/s DSSS) until the
-//!   station is connected, then the association's
-//!   ([`StaRateControlAssociation::control_schedule`](crate::rate_control::StaRateControlAssociation::control_schedule)).
-//!   As in the old ESP32-S31 path, the switch comes once the station is
-//!   connected: on WPA2 after the four-way handshake, whose EAPOL goes on
-//!   the default record, on an open network right after the association.
+//!   station associated, then the association's
+//!   ([`StaRateControlAssociation::control_schedule`](crate::rate_control::StaRateControlAssociation::control_schedule)),
+//!   the four-way handshake's EAPOL included. The rates depend on what is
+//!   known of the access point, which the association makes known; the old
+//!   ESP32-S31 path switched only once connected, a consequence of when
+//!   the vendor calls `ic_set_sta` (a deliberate departure, owner decision
+//!   on #563).
 //! - A data MPDU starts at the rate the association's rate control holds
 //!   ([`EspressifRateControl`]) and steps down the vendor's retry ladder
 //!   ([`ordinary_retry_rate`]), within the publication budget of the
@@ -36,7 +38,7 @@ use oer_ieee80211_lower_mac::{
 };
 use oer_ieee80211_mac::phy::{LegacyRate, PhyRate};
 use oer_ieee80211_upper_mac::{
-    rate_control::{RateControl, RatePeer},
+    rate_control::{LinkMetric, RateControl, RatePeer},
     rate_selection::{FrameRates, RateSelection},
 };
 use oer_time::Instant;
@@ -113,7 +115,7 @@ use crate::{
 /// # core::hint::black_box(selection);
 /// ```
 pub struct EspressifRateSelection<K> {
-    /// The rate control of the connected peer.
+    /// The rate control of the associated peer.
     control: Option<EspressifRateControl>,
     port: PhantomData<fn() -> K>,
 }
@@ -248,12 +250,12 @@ impl<K: Ieee80211Capabilities> RateSelection for EspressifRateSelection<K> {
                     |failures| ordinary_retry_rate(initial, failures),
                 )
             }
-            // No data goes before a connection; it would go as control.
+            // No data goes before an association; it would go as control.
             (FrameRates::Control | FrameRates::Data, _) => control_plan(self.control_schedule()),
         }
     }
 
-    fn connected(&mut self, peer: &RatePeer, link_metric: Option<i8>) {
+    fn associated(&mut self, peer: &RatePeer, link_metric: LinkMetric) {
         self.control = Some(EspressifRateControl::for_peer((), peer, link_metric));
     }
 

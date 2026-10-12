@@ -35,11 +35,10 @@ pub trait RateControl: Sized {
     /// What the integrator configures every peer's controller with.
     type Config: Copy;
 
-    /// The controller of `peer`. `link_metric` is the peer's signal over the
-    /// noise floor, in dB, in the frame that made the link (the station's
-    /// Association Response, or the access point's Association Request);
-    /// `None` when the port reported either value unavailable.
-    fn for_peer(config: Self::Config, peer: &RatePeer, link_metric: Option<i8>) -> Self;
+    /// The controller of `peer`, whose signal over the noise floor was
+    /// `link_metric` in the frame that made the link (the station's
+    /// Association Response, or the access point's Association Request).
+    fn for_peer(config: Self::Config, peer: &RatePeer, link_metric: LinkMetric) -> Self;
 
     /// The rate of a data MPDU's first attempt sent alone.
     fn mpdu_rate(&self) -> PhyRate;
@@ -70,7 +69,7 @@ pub struct FixedRateControl(PhyRate);
 impl RateControl for FixedRateControl {
     type Config = PhyRate;
 
-    fn for_peer(rate: PhyRate, _peer: &RatePeer, _link_metric: Option<i8>) -> Self {
+    fn for_peer(rate: PhyRate, _peer: &RatePeer, _link_metric: LinkMetric) -> Self {
         Self(rate)
     }
 
@@ -94,15 +93,33 @@ impl RateControl for FixedRateControl {
     }
 }
 
-/// The peer's signal over the noise floor in a frame's receive metadata,
-/// narrowed to a signed byte as the vendor's `ic_set_trc` does; `None` when
-/// the port reported either value unavailable.
-pub fn link_metric(meta: RxMeta) -> Option<i8> {
-    let value = |evidence: RxEvidence<i8>| match evidence {
-        RxEvidence::HardwareObserved(value) | RxEvidence::ProtocolValidated(value) => Some(value),
-        RxEvidence::Unavailable => None,
-    };
-    Some(value(meta.rssi_dbm)?.wrapping_sub(value(meta.noise_floor_dbm)?))
+/// A peer's signal over the noise floor in one received frame, in dB: a
+/// rate controller starts from it. Only a frame whose port reported both
+/// makes one ([`LinkMetric::of`]), so a controller never starts from a
+/// substitute.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LinkMetric(i8);
+
+impl LinkMetric {
+    /// The metric of a frame's receive metadata, narrowed to a signed byte
+    /// as the vendor's `ic_set_trc` does; `None` when the port reported
+    /// either value unavailable.
+    pub fn of(meta: &RxMeta) -> Option<Self> {
+        let value = |evidence: RxEvidence<i8>| match evidence {
+            RxEvidence::HardwareObserved(value) | RxEvidence::ProtocolValidated(value) => {
+                Some(value)
+            }
+            RxEvidence::Unavailable => None,
+        };
+        Some(Self(
+            value(meta.rssi_dbm)?.wrapping_sub(value(meta.noise_floor_dbm)?),
+        ))
+    }
+
+    /// The metric in dB.
+    pub const fn db(self) -> i8 {
+        self.0
+    }
 }
 
 #[cfg(test)]
@@ -116,15 +133,15 @@ mod tests {
     fn the_link_metric_needs_both_signal_and_noise_floor() {
         let channel = Channel::from_wifi_channel(WifiChannel::mhz20(6).unwrap());
         let unavailable = RxMeta::unavailable(channel);
-        assert_eq!(link_metric(unavailable), None);
+        assert_eq!(LinkMetric::of(&unavailable), None);
         let observed = RxMeta {
             rssi_dbm: RxEvidence::HardwareObserved(-40),
             noise_floor_dbm: RxEvidence::ProtocolValidated(-96),
             ..unavailable
         };
-        assert_eq!(link_metric(observed), Some(56));
+        assert_eq!(LinkMetric::of(&observed).map(LinkMetric::db), Some(56));
         assert_eq!(
-            link_metric(RxMeta {
+            LinkMetric::of(&RxMeta {
                 noise_floor_dbm: RxEvidence::Unavailable,
                 ..observed
             }),
@@ -141,7 +158,13 @@ mod tests {
             he_capabilities: None,
             he_peer_state: None,
         };
-        let mut control = FixedRateControl::for_peer(rate, &peer, Some(10));
+        let metric = LinkMetric::of(&RxMeta {
+            rssi_dbm: RxEvidence::HardwareObserved(-40),
+            noise_floor_dbm: RxEvidence::HardwareObserved(-50),
+            ..RxMeta::unavailable(Channel::from_wifi_channel(WifiChannel::mhz20(6).unwrap()))
+        })
+        .unwrap();
+        let mut control = FixedRateControl::for_peer(rate, &peer, metric);
         control.observe_mpdu(7, false, None);
         assert_eq!((control.mpdu_rate(), control.ampdu_rate()), (rate, rate));
     }

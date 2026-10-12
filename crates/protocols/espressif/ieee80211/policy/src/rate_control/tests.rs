@@ -514,7 +514,9 @@ mod seam {
         phy::{HtMcs, HtRate, PhyRate, PpduBandwidth},
         station::association::PhyMode,
     };
-    use oer_ieee80211_upper_mac::rate_control::{RateControl, RatePeer};
+    use oer_ieee80211_lower_mac::{Channel, RxEvidence, RxMeta};
+    use oer_ieee80211_mac::channel::WifiChannel;
+    use oer_ieee80211_upper_mac::rate_control::{LinkMetric, RateControl, RatePeer};
 
     use super::super::{EspressifRateControl, RateScheduleKind, RateScheduleRef, schedule_state};
 
@@ -531,20 +533,29 @@ mod seam {
         }
     }
 
+    /// The metric of a frame `db` dB over the noise floor.
+    fn metric(db: i8) -> LinkMetric {
+        let channel = Channel::from_wifi_channel(WifiChannel::mhz20(6).unwrap());
+        LinkMetric::of(&RxMeta {
+            rssi_dbm: RxEvidence::HardwareObserved(db),
+            noise_floor_dbm: RxEvidence::HardwareObserved(0),
+            ..RxMeta::unavailable(channel)
+        })
+        .unwrap()
+    }
+
     #[test]
-    fn an_unknown_link_metric_starts_at_the_weakest_link_s_rate() {
+    fn a_weaker_link_starts_at_a_slower_rate() {
         let peer = ht20_peer(true);
-        let unknown = EspressifRateControl::for_peer((), &peer, None);
-        let weakest = EspressifRateControl::for_peer((), &peer, Some(i8::MIN));
-        let strong = EspressifRateControl::for_peer((), &peer, Some(60));
-        assert_eq!(unknown.mpdu_rate(), weakest.mpdu_rate());
-        assert!(unknown.mpdu_rate().nominal_kbps() < strong.mpdu_rate().nominal_kbps());
+        let weakest = EspressifRateControl::for_peer((), &peer, metric(i8::MIN));
+        let strong = EspressifRateControl::for_peer((), &peer, metric(60));
+        assert!(weakest.mpdu_rate().nominal_kbps() < strong.mpdu_rate().nominal_kbps());
     }
 
     #[test]
     fn a_short_guard_interval_is_used_only_where_the_peer_supports_it() {
-        let with = EspressifRateControl::for_peer((), &ht20_peer(true), Some(60)).decode;
-        let without = EspressifRateControl::for_peer((), &ht20_peer(false), Some(60)).decode;
+        let with = EspressifRateControl::for_peer((), &ht20_peer(true), metric(60)).decode;
+        let without = EspressifRateControl::for_peer((), &ht20_peer(false), metric(60)).decode;
         let mut short = 0;
         for index in 0..14 {
             let Some(schedule) = RateScheduleRef::new(RateScheduleKind::Dot11N, index) else {
@@ -573,7 +584,7 @@ mod seam {
 
     #[test]
     fn retry_pressure_lowers_the_rate() {
-        let mut control = EspressifRateControl::for_peer((), &ht20_peer(true), Some(60));
+        let mut control = EspressifRateControl::for_peer((), &ht20_peer(true), metric(60));
         let before = control.mpdu_rate().nominal_kbps();
         // Exchanges of ten attempts each add two to the retry pressure; past
         // six the controller moves to the next, slower schedule.
@@ -585,7 +596,7 @@ mod seam {
 
     #[test]
     fn a_block_ack_s_ack_snr_feeds_the_filter() {
-        let mut control = EspressifRateControl::for_peer((), &ht20_peer(true), Some(60));
+        let mut control = EspressifRateControl::for_peer((), &ht20_peer(true), metric(60));
         assert_eq!(control.association().filtered_ack_snr(), None);
         control.observe_ampdu(oer_time::Instant::from_micros(1_000), 4, 4, Some(30));
         assert!(control.association().filtered_ack_snr().is_some());

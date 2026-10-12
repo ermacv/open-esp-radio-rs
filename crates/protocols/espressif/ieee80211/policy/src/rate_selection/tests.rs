@@ -15,6 +15,8 @@ use oer_ieee80211_mac::{
 };
 
 use super::*;
+use oer_ieee80211_lower_mac::{Channel, ChannelWidth, RxEvidence, RxMeta};
+use oer_ieee80211_upper_mac::rate_control::LinkMetric;
 use crate::rate_schedule::{RateScheduleKind, schedule_state};
 
 struct Caps;
@@ -50,6 +52,16 @@ impl Ieee80211Capabilities for Caps {
         edca_max_aifsn: 15,
         edca_max_cw_exponent: 10,
     };
+}
+
+/// The metric of a frame `db` dB over the noise floor.
+fn metric(db: i8) -> LinkMetric {
+    LinkMetric::of(&RxMeta {
+        rssi_dbm: RxEvidence::HardwareObserved(db),
+        noise_floor_dbm: RxEvidence::HardwareObserved(0),
+        ..RxMeta::unavailable(Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap())
+    })
+    .unwrap()
 }
 
 fn legacy_peer() -> RatePeer {
@@ -123,7 +135,7 @@ fn a_probe_goes_once_at_one_megabit() {
 }
 
 #[test]
-fn until_connected_control_frames_walk_the_default_record() {
+fn until_associated_control_frames_walk_the_default_record() {
     let selection = EspressifRateSelection::<Caps>::new();
     let plan = selection.plan(FrameRates::Control);
     assert_eq!(plan_walk(&plan), record_walk(DEFAULT_CONTROL_SCHEDULE));
@@ -132,9 +144,9 @@ fn until_connected_control_frames_walk_the_default_record() {
 }
 
 #[test]
-fn connected_control_frames_walk_the_association_record_and_leaving_restores_the_default() {
+fn associated_control_frames_walk_the_association_record_and_leaving_restores_the_default() {
     let mut selection = EspressifRateSelection::<Caps>::new();
-    selection.connected(&legacy_peer(), Some(40));
+    selection.associated(&legacy_peer(), metric(40));
     let schedule = selection.control().unwrap().association().control_schedule();
     // An 802.11g association: the vendor's BasicOFDMSched, from 6 Mb/s.
     assert_eq!(schedule, RateScheduleRef::new(RateScheduleKind::BasicOfdm, 0).unwrap());
@@ -151,7 +163,7 @@ fn connected_control_frames_walk_the_association_record_and_leaving_restores_the
 #[test]
 fn data_starts_at_the_controls_rate_and_steps_down_the_vendor_ladder_within_its_budget() {
     let mut selection = EspressifRateSelection::<Caps>::new();
-    selection.connected(&ht20_peer(), Some(60));
+    selection.associated(&ht20_peer(), metric(60));
     let control = selection.control().unwrap();
     let initial = control.mpdu_rate();
     let limit = schedule_publication_limit(control.association().current_schedule());
@@ -171,8 +183,8 @@ fn data_starts_at_the_controls_rate_and_steps_down_the_vendor_ladder_within_its_
 #[test]
 fn data_completions_adapt_the_rate_as_the_vendor_control_does() {
     let mut selection = EspressifRateSelection::<Caps>::new();
-    let mut reference = EspressifRateControl::for_peer((), &ht20_peer(), Some(60));
-    selection.connected(&ht20_peer(), Some(60));
+    let mut reference = EspressifRateControl::for_peer((), &ht20_peer(), metric(60));
+    selection.associated(&ht20_peer(), metric(60));
     let before = selection.plan(FrameRates::Data).stages().next().unwrap().rate;
     for _ in 0..64 {
         selection.completed(Instant::from_micros(0), FrameRates::Data, &completion(TxStatus::AckTimeout, 8));

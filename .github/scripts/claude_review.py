@@ -42,7 +42,8 @@ SCHEMA = {
             "type": "object", "additionalProperties": False,
             "required": ["severity", "path", "line", "title", "body", "area", "priority", "issue"],
             "properties": {
-                "severity": {"enum": ["important", "nit", "pre-existing"]},
+                "severity": {"enum": ["important", "nit", "wording", "pre-existing"],
+                             "description": review_findings.SEVERITY},
                 "path": {"type": "string"},
                 "line": {"type": "integer", "minimum": 1},
                 "title": {"type": "string"},

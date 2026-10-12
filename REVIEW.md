@@ -25,15 +25,21 @@ speculation.
 
 ## Severity
 
-The local review blocks the push on important and nit findings. The
-workflow's review blocks nothing: it files every finding as a `kind:bug`
-issue naming the branch, which the session on that branch fixes next, so give
-each finding a self-contained title and body.
+The local review blocks the push on important and nit findings; its wording
+findings do not block, and `cargo xtask push` files them as issues. The
+workflow's review blocks nothing: it files every finding as an issue naming
+the branch (`kind:docs` for wording, `kind:bug` otherwise), which the session
+on that branch fixes next, so give each finding a self-contained title and
+body.
 
 - **important**: a reachable failure or a violated contract, with the concrete
   trigger.
-- **nit**: a real but minor defect this PR introduces or touches. Report every
-  nit; none is summarized as a count.
+- **nit**: a real but minor defect this PR introduces or touches, including
+  text that misstates behavior: documentation, a comment, a message or a name
+  that says something false ("Docs current"). Report every nit; none is
+  summarized as a count.
+- **wording**: only the phrasing, naming or clarity of text that is correct.
+  Text that misstates behavior is never wording: it is a nit or important.
 - **pre-existing**: a defect outside this PR found while tracing it, read at
   both `origin/main` and head. At most five.
 

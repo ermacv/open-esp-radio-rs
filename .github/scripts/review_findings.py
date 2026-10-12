@@ -1,10 +1,12 @@
 """Record a Claude review's findings as issues.
 
 The publish job of the review workflow runs this from trusted main with the
-review's structured result in RESULT. The review never blocks a merge, so the
-issues are the record of what it found: each finding, 🔴 important, 🟡 nit or
-🟣 pre-existing, becomes one `kind:bug` issue with the area and priority the
-reviewer chose and the reviewed branch, which `cargo xtask ci-status` lists to
+review's structured result in RESULT; `cargo xtask push` runs it with the
+wording findings of the local review, which do not block the push. The CI
+review never blocks a merge, so the issues are the record of what it found:
+each finding, 🔴 important, 🟡 nit, 🔵 wording or 🟣 pre-existing, becomes one
+issue (`kind:docs` for wording, `kind:bug` otherwise) with the area and
+priority the reviewer chose and the reviewed branch, which `cargo xtask ci-status` lists to
 the session on that branch, unless an issue already records it: the reviewer,
 shown the findings a trusted author filed, names the issue of one it finds
 again, and the body's key of the finding's path and title catches an
@@ -39,10 +41,23 @@ def marker(finding, found=None):
 
 
 def labels(finding):
-    return ["kind:bug", finding["area"], finding["priority"]]
+    """The labels of a finding's issue: a wording finding asks to improve
+    correct text, every other one reports a defect."""
+    kind = "kind:docs" if finding["severity"] == "wording" else "kind:bug"
+    return [kind, finding["area"], finding["priority"]]
 
 
-MARKS = {"important": "🔴", "nit": "🟡", "pre-existing": "🟣"}
+# What each severity means, as the report schemas describe it (the local
+# review's copy is `oer_xtask::review::SEVERITY`): the line between a nit and
+# wording is whether the text is correct.
+SEVERITY = ("important: a reachable failure or a violated contract, with its trigger. "
+            "nit: a real but minor defect the change introduces or touches, text that "
+            "misstates behavior included (documentation, comments, messages, names that say "
+            "something false). wording: only the phrasing, naming or clarity of text that is "
+            "correct; text that misstates behavior is never wording. pre-existing: a defect "
+            "outside the change.")
+
+MARKS = {"important": "🔴", "nit": "🟡", "wording": "🔵", "pre-existing": "🟣"}
 
 
 def branch_marker(branch):
@@ -55,6 +70,11 @@ def body(finding, pr, head, repository, branch, found=None):
     if finding["severity"] == "pre-existing":
         origin = (f"Pre-existing defect found by the Claude review of #{pr} at {place}; "
                   "it is not part of that pull request.")
+    elif finding["severity"] == "wording":
+        origin = (f"{MARKS['wording']} wording finding of the Claude review of #{pr} at {place}: "
+                  "the phrasing, naming or clarity of correct text that pull request "
+                  "introduces or touches. It does not block; the session on its branch "
+                  "improves it next.")
     else:
         origin = (f"{MARKS[finding['severity']]} {finding['severity']} finding of the Claude review "
                   f"of #{pr} at {place}: a defect that pull request introduces or touches. "

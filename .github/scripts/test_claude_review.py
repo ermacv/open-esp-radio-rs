@@ -80,6 +80,11 @@ class Policy(unittest.TestCase):
         finding = review.SCHEMA["properties"]["findings"]["items"]
         self.assertEqual(set(finding["required"]), set(finding["properties"]))
 
+    def test_wording_is_a_severity_apart_from_a_nit(self):
+        severity = review.SCHEMA["properties"]["findings"]["items"]["properties"]["severity"]
+        self.assertEqual(severity["enum"], ["important", "nit", "wording", "pre-existing"])
+        self.assertIn("text that misstates behavior is never wording", severity["description"])
+
     def test_the_prompt_lists_each_filed_finding_once(self):
         issue = {"number": 7, "state": "closed", "title": "review: stale cache"}
         listed = review.filed_findings({"k1": issue, "k2": issue})

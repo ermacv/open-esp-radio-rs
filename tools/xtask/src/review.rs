@@ -14,9 +14,14 @@
 //! diff between the merge base with `origin/main` and `HEAD`, so a rebase
 //! that changes nothing in the diff, or a reworded commit, keeps it. A
 //! re-review of the branch hands Claude the findings of the branch's previous
-//! verdict to check. 🔴 important and 🟡 nit findings block the push; 🟣
-//! pre-existing ones are only printed. This is the only blocking review: the
-//! one in CI reviews a pull request once and files its findings as issues.
+//! verdict to check. 🔴 important and 🟡 nit findings block the push, a
+//! nit being any real defect, text that misstates behavior included; 🔵
+//! wording findings, about the phrasing, naming or clarity of correct text,
+//! do not: `cargo xtask push` files them as `review: …` issues of the branch
+//! once its pull request exists ([`file_wording`]), as the CI review files
+//! its findings. 🟣 pre-existing ones are only printed. This is the only
+//! blocking review: the one in CI reviews a pull request once and files its
+//! findings as issues.
 
 use std::{
     fs,
@@ -65,7 +70,23 @@ CI has not run; the push gate's fast checks (tidy,
 formatting, Clippy and tests of the changed packages) passed. The branch may
 have no pull request yet; then no earlier review exists on GitHub, and the
 prompt lists the findings of the previous local review, if any. The prompt
-lists no filed issues: set `issue` to 0 for every finding.";
+lists no filed issues: set `issue` to 0 for every finding. `cargo xtask push`
+files the wording findings as issues after this review: report a wording
+finding the previous review listed with the same path and title, so it is
+not filed twice.";
+
+/// What each severity means, in the report schema: the line between a nit and
+/// wording is whether the text is correct.
+pub const SEVERITY: &str = "important: a reachable failure or a violated contract, with \
+     its trigger. nit: a real but minor defect the change introduces or touches, text that \
+     misstates behavior included (documentation, comments, messages, names that say \
+     something false). wording: only the phrasing, naming or clarity of text that is \
+     correct; text that misstates behavior is never wording. pre-existing: a defect \
+     outside the change.";
+
+/// The script that files review findings as issues, for the CI review and
+/// for the wording findings of the local one.
+const FILE_FINDINGS: &str = ".github/scripts/review_findings.py";
 
 /// One finding, as the CI review's schema reports it.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -80,14 +101,22 @@ pub struct Finding {
 }
 
 impl Finding {
+    /// A finding that holds the push: a defect, never only wording.
     pub fn blocking(&self) -> bool {
         matches!(self.severity.as_str(), "important" | "nit")
+    }
+
+    /// A finding about the phrasing, naming or clarity of correct text: it is
+    /// filed as an issue instead of holding the push.
+    pub fn wording(&self) -> bool {
+        self.severity == "wording"
     }
 
     fn mark(&self) -> &'static str {
         match self.severity.as_str() {
             "important" => "🔴",
             "nit" => "🟡",
+            "wording" => "🔵",
             _ => "🟣",
         }
     }
@@ -114,6 +143,22 @@ impl Verdict {
     pub fn blocking(&self) -> usize {
         self.report.findings.iter().filter(|f| f.blocking()).count()
     }
+
+    /// The report `review_findings.py` files for this verdict: its wording
+    /// findings, or none when it has none.
+    pub fn wording(&self) -> Option<Report> {
+        let findings: Vec<Finding> = self
+            .report
+            .findings
+            .iter()
+            .filter(|finding| finding.wording())
+            .cloned()
+            .collect();
+        (!findings.is_empty()).then(|| Report {
+            summary: self.report.summary.clone(),
+            findings,
+        })
+    }
 }
 
 /// The report schema of `.github/scripts/claude_review.py`, with the areas and
@@ -136,7 +181,8 @@ pub fn schema(labels: &str) -> Result<Value> {
                 "type": "object", "additionalProperties": false,
                 "required": ["severity", "path", "line", "title", "body", "area", "priority", "issue"],
                 "properties": {
-                    "severity": {"enum": ["important", "nit", "pre-existing"]},
+                    "severity": {"enum": ["important", "nit", "wording", "pre-existing"],
+                                 "description": SEVERITY},
                     "path": {"type": "string"},
                     "line": {"type": "integer", "minimum": 1},
                     "title": {"type": "string"},
@@ -174,6 +220,57 @@ pub fn prompt(branch: &str, head: &str, base: &str, previous: Option<&Verdict>) 
         _ => {}
     }
     prompt
+}
+
+/// File the wording findings of `verdict` on `branch`, reviewed at `head`,
+/// as `review: …` issues of pull request `pr` through `review_findings.py`,
+/// which validates their labels and skips a finding already filed; returns
+/// its line per finding.
+pub fn file_wording(
+    ctx: &Checkout,
+    verdict: &Verdict,
+    pr: &str,
+    head: &str,
+    branch: &str,
+) -> Result<Vec<String>> {
+    let Some(report) = verdict.wording() else {
+        return Ok(Vec::new());
+    };
+    let token = gh(ctx, &["auth", "token"])?;
+    let repository = gh(
+        ctx,
+        &[
+            "repo",
+            "view",
+            "--json",
+            "nameWithOwner",
+            "--jq",
+            ".nameWithOwner",
+        ],
+    )?;
+    let mut command = process::command("python3");
+    command
+        .current_dir(&ctx.root)
+        .arg(FILE_FINDINGS)
+        .env("RESULT", serde_json::to_string(&report)?)
+        .env("GH_TOKEN", token)
+        .env("GH_REPO", repository)
+        .env("PR", pr)
+        .env("HEAD", head)
+        .env("BRANCH", branch)
+        .env("PYTHONDONTWRITEBYTECODE", "1");
+    let output = process::capture(&mut command)?;
+    Ok(String::from_utf8(output.stdout)?
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(str::to_owned)
+        .collect())
+}
+
+/// The output of the GitHub CLI, whose login files the issues.
+fn gh(ctx: &Checkout, arguments: &[&str]) -> Result<String> {
+    let output = process::capture(ctx.command("gh").args(arguments))?;
+    Ok(String::from_utf8(output.stdout)?.trim().to_owned())
 }
 
 /// The text a terminal shows for `verdict`.
@@ -386,6 +483,13 @@ pub fn run(ctx: &Checkout) -> Result<()> {
     match verdict.blocking() {
         0 => {
             println!("review: no blocking findings");
+            if let Some(wording) = verdict.wording() {
+                println!(
+                    "review: {} wording finding(s) do not block; `cargo xtask push` files \
+                     them as issues",
+                    wording.findings.len()
+                );
+            }
             Ok(())
         }
         count => Err(format!(
@@ -462,6 +566,45 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("🟣"), "{text}");
+    }
+
+    #[test]
+    fn a_wording_only_report_passes_and_its_findings_are_filed() {
+        let wording = verdict(vec![finding("wording"), finding("pre-existing")]);
+        assert_eq!(wording.blocking(), 0);
+        let filed = wording.wording().unwrap();
+        assert_eq!(filed.findings, vec![finding("wording")]);
+        assert_eq!(filed.summary, wording.report.summary);
+        assert!(render(&wording).contains("🔵 Lost error"));
+        // Nothing to file without a wording finding.
+        assert_eq!(verdict(vec![finding("pre-existing")]).wording(), None);
+    }
+
+    #[test]
+    fn a_nit_beside_wording_still_blocks() {
+        let verdict = verdict(vec![finding("wording"), finding("nit")]);
+        assert_eq!(verdict.blocking(), 1);
+        assert_eq!(verdict.wording().unwrap().findings.len(), 1);
+    }
+
+    #[test]
+    fn text_that_misstates_behavior_is_never_wording() {
+        let schema = schema("[]").unwrap();
+        let severity = &schema["properties"]["findings"]["items"]["properties"]["severity"];
+        assert_eq!(
+            severity["enum"],
+            json!(["important", "nit", "wording", "pre-existing"])
+        );
+        let description = severity["description"].as_str().unwrap();
+        assert!(
+            description.contains("nit: a real but minor defect")
+                && description.contains("text that misstates behavior included"),
+            "{description}"
+        );
+        assert!(
+            description.contains("text that misstates behavior is never wording"),
+            "{description}"
+        );
     }
 
     #[test]

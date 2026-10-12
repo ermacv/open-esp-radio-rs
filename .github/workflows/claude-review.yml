@@ -187,14 +187,14 @@ jobs:
           body() {
             jq -r --argjson details "$1" --arg url "https://github.com/$GH_REPO/blob/$HEAD" \
               --arg head "$HEAD" --arg run "$RUN" '
-              def mark: {important: "🔴", nit: "🟡", "pre-existing": "🟣"}[.severity];
+              def mark: {important: "🔴", nit: "🟡", wording: "🔵", "pre-existing": "🟣"}[.severity];
               ["## Claude review", "", .summary, ""]
               + [.findings[] | "- \(mark) **\(.title)**: [`\(.path):\(.line)`](\($url)/\(.path)#L\(.line))"
                   + if $details then "\n\n  \(.body | gsub("\n"; "\n  "))\n" else "" end]
               + ["", "Head `\($head)` · [run](\($run))"] | join("\n")' <<<"$RESULT"
           }
           comments=$(jq -c '[.findings[] | {path, line, side: "RIGHT",
-            body: ({important: "🔴", nit: "🟡", "pre-existing": "🟣"}[.severity] + " **\(.title)**\n\n\(.body)")}]' <<<"$RESULT")
+            body: ({important: "🔴", nit: "🟡", wording: "🔵", "pre-existing": "🟣"}[.severity] + " **\(.title)**\n\n\(.body)")}]' <<<"$RESULT")
           review() {
             jq -n --arg body "$1" --arg sha "$HEAD" --argjson comments "$2" \
               '{commit_id: $sha, event: "COMMENT", body: $body, comments: $comments}' |

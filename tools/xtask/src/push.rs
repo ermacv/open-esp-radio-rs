@@ -16,7 +16,10 @@
 //! 5. Unless the pull request is a draft, the local Claude review
 //!    ([`crate::review`]) of the same diff has no blocking finding: it is the
 //!    only review that blocks; the one in CI reviews the pull request once
-//!    and only files its findings as issues. `--skip-review REASON` pushes
+//!    and only files its findings as issues. Its wording findings do not
+//!    block: once the pull request exists, they are filed as `review: …`
+//!    issues of the branch before auto-merge is enabled, and a failed filing
+//!    fails the push. `--skip-review REASON` pushes
 //!    without it and records the reason on the pull request, so nothing
 //!    reviewed the push before it merges.
 //! 6. Push the branch, open its pull request when it has none, and enable
@@ -193,7 +196,7 @@ pub fn run(ctx: &Checkout, draft: bool, skip_review: Option<&str>) -> Result<()>
     );
     registry::run_change(ctx, &change)
         .map_err(|error| format!("push: the gate failed; nothing pushed: {error}"))?;
-    if !draft && skip_review.is_none() {
+    let reviewed = if !draft && skip_review.is_none() {
         let (verdict, path) = review::verdict(ctx, &branch, &base, &head).map_err(|error| {
             format!(
                 "push: the local review did not complete; nothing pushed: {error}\n\
@@ -212,7 +215,10 @@ pub fn run(ctx: &Checkout, draft: bool, skip_review: Option<&str>) -> Result<()>
             )
             .into());
         }
-    }
+        Some(verdict)
+    } else {
+        None
+    };
     // The gate and the review take minutes while the session keeps working:
     // push only the commit they checked.
     let now = git::text(&ctx.root, ["rev-parse", "HEAD"])?;
@@ -286,6 +292,20 @@ pub fn run(ctx: &Checkout, draft: bool, skip_review: Option<&str>) -> Result<()>
             gh(ctx, &create).map_err(|error| format!("push: gh pr create failed: {error}"))?
         }
     };
+    if let Some(verdict) = &reviewed {
+        // The pull request's number ends its URL.
+        let number = url.rsplit('/').next().unwrap_or_default();
+        let filed =
+            review::file_wording(ctx, verdict, number, &head, &branch).map_err(|error| {
+                format!(
+                    "push: filing the review's wording findings failed; {branch} is pushed but \
+                 auto-merge is not enabled, push again: {error}"
+                )
+            })?;
+        for line in filed {
+            println!("push: wording finding {}", line.trim_start_matches("- "));
+        }
+    }
     if let (Some(reason), false) = (skip_review, draft) {
         let body = format!("The local Claude review was skipped for this push: {reason}");
         gh(ctx, &["pr", "comment", &branch, "--body", &body]).map_err(|error| {

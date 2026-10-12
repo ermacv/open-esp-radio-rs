@@ -254,7 +254,9 @@ fn stop_failure_reason(
             c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-hci-service-stop-failed\r\n"
         }
         Served::Poisoned(cause) => poisoned_reason(*cause),
-        Served::Unretired(_) => c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-driver-unretired\r\n",
+        Served::Unretired(_) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-driver-unretired\r\n"
+        }
         // A stopped service is no stop failure.
         Served::Stopped(exit) => exit_reason(*exit),
     }

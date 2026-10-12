@@ -136,6 +136,7 @@ fn evidence(rx_bytes: u64, tx_bytes: u64, rx_units: u64, tx_units: u64) -> Sessi
         rx_delivery: None,
         network_scheduler: None,
         rx_zero_copy: None,
+        cpu_load: None,
         stack: StackUsage {
             cpu0_irq: None,
             cpu1_irq: None,

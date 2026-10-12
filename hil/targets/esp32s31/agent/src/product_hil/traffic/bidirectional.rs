@@ -3,9 +3,9 @@
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
 use oer_hil_protocol::network::SessionVerdict;
 use oer_hil_protocol::{
-    network::Direction, network::FlowTransportEvidence, network::RadioEvidence,
-    network::RxDeliveryEvidence, network::RxZeroCopyEvidence, network::SESSION_FLOW_CAPACITY,
-    network::TxAggregateTimingEvidence,
+    network::CpuLoadEvidence, network::Direction, network::FlowTransportEvidence,
+    network::RadioEvidence, network::RxDeliveryEvidence, network::RxZeroCopyEvidence,
+    network::SESSION_FLOW_CAPACITY, network::TxAggregateTimingEvidence,
 };
 
 use crate::console::{ActiveSession, complete_session};
@@ -32,6 +32,7 @@ pub(in crate::product_hil) struct OpenRadioBidirectionalResult {
     tx_timing: Option<TxAggregateTimingEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
     rx_zero_copy: Option<RxZeroCopyEvidence>,
+    cpu_load: Option<CpuLoadEvidence>,
     verdict: SessionVerdict,
 }
 
@@ -48,6 +49,7 @@ impl OpenRadioBidirectionalResult {
         tx_timing: Option<TxAggregateTimingEvidence>,
         rx_delivery: Option<RxDeliveryEvidence>,
         rx_zero_copy: Option<RxZeroCopyEvidence>,
+        cpu_load: Option<CpuLoadEvidence>,
         verdict: SessionVerdict,
     ) -> Self {
         Self {
@@ -58,6 +60,7 @@ impl OpenRadioBidirectionalResult {
             tx_timing,
             rx_delivery,
             rx_zero_copy,
+            cpu_load,
             verdict,
         }
     }
@@ -115,6 +118,9 @@ pub(in crate::product_hil) async fn run_open_radio_bidirectional_session_coordin
                         second.rx_delivery
                     },
                     first.rx_zero_copy.or(second.rx_zero_copy),
+                    // Each direction measured its own window; neither is
+                    // the session's.
+                    None,
                     match first.verdict {
                         SessionVerdict::Passed => second.verdict,
                         failed => failed,
@@ -143,6 +149,7 @@ async fn complete_single_direction(
         result.tx_timing,
         result.rx_delivery,
         result.rx_zero_copy,
+        result.cpu_load,
         result.verdict,
     )
     .await;

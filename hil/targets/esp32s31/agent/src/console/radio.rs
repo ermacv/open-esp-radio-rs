@@ -347,27 +347,28 @@ pub async fn publish_station_lifecycle(event: StationLifecycleEvent) {
 /// Hands a completed in-memory measurement back to the protocol owner.
 ///
 /// USB serialization happens in another task and therefore cannot extend the
-/// benchmark's measured interval.
-pub async fn complete_session(
+/// benchmark's measured interval. The result is built before the returned
+/// future, which holds it once: the arguments are not kept across the wait.
+pub fn complete_session(
     session_id: u64,
     flow_evidence: [Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY],
     radio: Option<oer_hil_protocol::network::RadioEvidence>,
     tx_timing: Option<oer_hil_protocol::network::TxAggregateTimingEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
     rx_zero_copy: Option<oer_hil_protocol::network::RxZeroCopyEvidence>,
+    cpu_load: Option<oer_hil_protocol::network::CpuLoadEvidence>,
     verdict: oer_hil_protocol::network::SessionVerdict,
-) {
+) -> impl core::future::Future<Output = ()> {
     let evidence = TransportEvidence::from_flows(flow_evidence);
-    SESSION_RESULTS
-        .send(SessionResult {
-            session_id,
-            flow_evidence,
-            evidence,
-            radio,
-            tx_timing,
-            rx_delivery,
-            rx_zero_copy,
-            verdict,
-        })
-        .await;
+    SESSION_RESULTS.send(SessionResult {
+        session_id,
+        flow_evidence,
+        evidence,
+        radio,
+        tx_timing,
+        rx_delivery,
+        rx_zero_copy,
+        cpu_load,
+        verdict,
+    })
 }

@@ -286,6 +286,11 @@ pub fn run(
         }
     };
     let structured = capture.wait_for_session(session, timeout);
+    if let Ok(evidence) = &structured
+        && let Some(load) = &evidence.cpu_load
+    {
+        context.measurements.cpu_load(load);
+    }
     let bursts = receiver.finish(
         structured
             .as_ref()

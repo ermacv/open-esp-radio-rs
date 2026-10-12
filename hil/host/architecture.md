@@ -157,6 +157,15 @@ cargo hil run-all --tag network-comparison
 The throughput criteria still apply under overload; a completed
 measurement can fail its speed gate. Task residence is not full CPU utilization.
 
+CPU utilization is the `cpu.core0.load` and `cpu.core1.load` measurements
+(basis points, lower is better): each core's busy share of a single-direction
+session's traffic window, from the cycles its executor spent in `wfi`
+(`network::CpuLoadEvidence`). The performance and correctness classes build
+the instrument (`cpu-load`), so both arms of a `cargo hil ab` carry it and the
+comparison pairs the load like the throughput. A bidirectional session runs one
+window per direction and reports no load. The idle-link reference is
+`udp-rx-ht40-idle-cpu-load`, a 100 kbit/s receive window.
+
 The separate `ap-network-comparison` tag uses ESP as an HT40 AP with two
 physical stations (laptop and OpenWrt). Each scenario has one boot, one AP
 cycle and one 12-second UDP window:

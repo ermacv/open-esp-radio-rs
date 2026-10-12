@@ -22,7 +22,7 @@ use crate::product_hil::{
 };
 
 use super::{
-    SessionChannel, aggregate_tx_evidence, log_open_radio_ampdu_snapshot,
+    CpuLoadWindow, SessionChannel, aggregate_tx_evidence, log_open_radio_ampdu_snapshot,
     log_open_radio_task_poll_interval, wait_session_link_requirements,
 };
 
@@ -145,6 +145,7 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
         };
         socket.set_nagle_enabled(false);
         let started = Instant::now();
+        let cpu_window = CpuLoadWindow::begin();
         let (mut rx, mut tx) = (StreamResult::default(), StreamResult::default());
         let session_flow = session
             .config
@@ -231,6 +232,7 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
                 }
             }
         }
+        let cpu_load = cpu_window.finish();
         let elapsed_us = started.elapsed().as_micros().max(1);
         socket.abort();
 
@@ -351,6 +353,7 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             aggregate_evidence.map(|(_, timing)| timing),
             None,
             None,
+            cpu_load,
             verdict,
         )
         .await;

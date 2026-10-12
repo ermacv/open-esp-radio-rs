@@ -211,6 +211,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             mut flow_evidence,
             elapsed_us,
             task_poll_end,
+            cpu_load,
         } = outcome;
         super::super::session_evidence_due();
         let qualification_end = qualification_sample(QualificationRequester::UdpRx).await;
@@ -605,6 +606,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
                 None,
                 rx_delivery,
                 zero_copy,
+                cpu_load,
                 verdict,
             ),
         )

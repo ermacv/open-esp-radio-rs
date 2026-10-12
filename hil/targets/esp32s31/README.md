@@ -418,6 +418,20 @@ Board initialization, relocation and interrupt-stack mechanics belong to the
 shared platform; application images use the same mechanism through `cargo fw
 build`. A hardware scenario verdict remains a separate HIL responsibility.
 
+## CPU load
+
+The `cpu-load` feature, built by the performance and correctness classes,
+turns on the Embassy executor's `idle-accounting`: each core's executor reads
+the 64-bit `mcycle` around its `wfi`, with interrupts masked, and adds the wait
+to its idle counter. `product_hil::traffic::CpuLoadWindow` samples both counters
+at the traffic window's boundaries (UDP RX from its first in-window datagram to
+the window's end, UDP TX and TCP over their elapsed interval) and the session
+publishes `CpuLoadEvidence`. `mcycle` keeps counting in `wfi` only because
+`HP_SYSTEM_CPU_WAITI_CONF.CPU_WAIT_MODE_FORCE_ON` stays at its reset value 1;
+an image that clears it would read a busy core everywhere. The window adds one
+wake of a sleeping core per boundary and two CSR reads per executor wait, and
+`features=-cpu-load` builds the same image without it for an A/B.
+
 ## Station AP availability
 
 A successful station-start request admits the production station service; it

@@ -6,6 +6,7 @@ mod bidirectional;
     feature = "core0-rx-coarse-telemetry"
 ))]
 mod cache_performance;
+mod cpu_load;
 mod evidence;
 mod reporting;
 mod runtime;
@@ -71,6 +72,7 @@ pub(super) use bidirectional::{
     OpenRadioBidirectionalResult, complete_open_radio_bidirectional_direction,
     run_open_radio_bidirectional_session_coordinator,
 };
+pub(super) use cpu_load::CpuLoadWindow;
 pub(super) use evidence::{UdpSequenceEvidence, iperf2_udp_sequence};
 #[cfg(any(
     feature = "core0-rx-coarse-telemetry",

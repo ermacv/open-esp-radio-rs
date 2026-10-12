@@ -139,6 +139,11 @@ pub fn run(
     // Otherwise a reset/timeout hides precisely the evidence needed to
     // distinguish a host socket problem from a target transport failure.
     let structured = capture.wait_for_session(session, timeout);
+    if let Ok(evidence) = &structured
+        && let Some(load) = &evidence.cpu_load
+    {
+        context.measurements.cpu_load(load);
+    }
     let acknowledgement = structured
         .as_ref()
         .map(|_| capture.acknowledge_session(session))

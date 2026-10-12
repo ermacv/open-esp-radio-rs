@@ -23,8 +23,8 @@ use oer_hil_protocol::{network::SessionFailure, network::SessionVerdict};
 use crate::{
     console::{publish_event_reliably, runtime_log},
     product_hil::traffic::{
-        BidirectionalResultChannel, BidirectionalSessionChannel, OpenRadioBidirectionalDirection,
-        OpenRadioBidirectionalResult, aggregate_tx_evidence,
+        BidirectionalResultChannel, BidirectionalSessionChannel, CpuLoadWindow,
+        OpenRadioBidirectionalDirection, OpenRadioBidirectionalResult, aggregate_tx_evidence,
         complete_open_radio_bidirectional_direction, wait_session_link_requirements,
     },
     product_hil::{
@@ -309,6 +309,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             crate::product_hil::RX_PIPELINE.snapshot(),
         );
         let started = Instant::now();
+        let cpu_window = CpuLoadWindow::begin();
         let task_poll_start = TASK_POLLS.snapshot();
         #[cfg(feature = "mac-irq-telemetry")]
         let irq_start = crate::product_hil::MAC_IRQ.snapshot();
@@ -457,6 +458,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
                 flows,
             )
         };
+        let cpu_load = cpu_window.finish();
         let elapsed_us = started.elapsed().as_micros().max(1);
         let task_poll_interval = OPEN_RADIO_TASK_POLL_TELEMETRY
             .then(|| TASK_POLLS.snapshot().wrapping_delta_since(task_poll_start));
@@ -571,6 +573,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
                 aggregate_evidence.map(|(_, timing)| timing),
                 None,
                 None,
+                cpu_load,
                 if send_errors == 0 {
                     SessionVerdict::Passed
                 } else {

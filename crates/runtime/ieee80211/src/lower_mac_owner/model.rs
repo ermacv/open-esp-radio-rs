@@ -554,23 +554,23 @@ impl<'a, 'id, R: ModelRole> LowerMacClient<'id> for ModelClient<'a, 'id, R> {
     {
         let permit = self.held.tx.buffer(seat).await;
         let (bytes, header, response, rate) = match frame {
-            TxFrame::Individual { header, rate, len } => {
-                let header = header.header();
-                let mut bytes = alloc::vec![0; len.get().max(header.len())];
+            TxFrame::Individual { frame, rate } => {
+                let header = frame.header().header();
+                let mut bytes = alloc::vec![0; frame.len().get()];
                 let written = header.encode(&mut bytes, false);
                 (bytes, written, TxResponse::Ack, rate.get())
             }
-            TxFrame::IndividualNoAck { header, rate, len } => {
-                let header = header.header();
-                let mut bytes = alloc::vec![0; len.get().max(header.len())];
+            TxFrame::IndividualNoAck { frame, rate } => {
+                let header = frame.header().header();
+                let mut bytes = alloc::vec![0; frame.len().get()];
                 let written = header.encode(&mut bytes, true);
                 (bytes, written, TxResponse::None, rate.rate().get())
             }
-            TxFrame::Group { header, rate, len } => {
-                let mut bytes = alloc::vec![0; len.get().max(header.len())];
+            TxFrame::Group { frame, rate } => {
+                let mut bytes = alloc::vec![0; frame.len().get()];
                 // A group frame solicits no response: its QoS Ack Policy is
                 // No Ack.
-                let written = header.encode(&mut bytes, true);
+                let written = frame.header().encode(&mut bytes, true);
                 (bytes, written, TxResponse::None, rate.get())
             }
             TxFrame::BlockAckRequest {

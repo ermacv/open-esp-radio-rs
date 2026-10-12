@@ -67,8 +67,10 @@
 //! queue seat's index names its access category
 //! ([`seat_access_category`]), so the queue a take waits for is the one
 //! the capabilities assign that access category.
-//! An installed key or agreement holds its slot and outlives the phases
-//! between; its kind is its client's, so a station's key is not an access
+//! An installed key holds its slot and outlives the phases between; a
+//! Block Ack agreement's slot stays in its client's table, one per peer and
+//! TID, which gives it back when the agreement is replaced or removed. A
+//! slot's kind is its client's, so a station's key is not an access
 //! point's. The queue and buffer permits stay in the backend's held part of
 //! the install (such as `oer-ieee80211-runtime`'s `TxPermits`): a client
 //! awaits them as the backend's own guards ([`LowerMacClient::Queue`],
@@ -934,26 +936,21 @@ impl NoAckHeader {
 /// sends exist, so a frame and its response never disagree.
 #[derive(Debug)]
 pub enum TxFrame<'p, K> {
-    /// An individual data or management frame of `len` octets, which
-    /// solicits an ACK.
+    /// An individual data or management frame, which solicits an ACK.
     Individual {
-        header: AckHeader,
+        frame: SizedFrame<AckHeader, K>,
         rate: PhaseRate<'p>,
-        len: MpduLength<K>,
     },
-    /// An individual frame of `len` octets that solicits no ACK and says so,
-    /// at a rate that carries one without it.
+    /// An individual frame that solicits no ACK and says so, at a rate that
+    /// carries one without it.
     IndividualNoAck {
-        header: NoAckHeader,
+        frame: SizedFrame<NoAckHeader, K>,
         rate: SupportedNoAck<'p>,
-        len: MpduLength<K>,
     },
-    /// A group data or management frame of `len` octets, which solicits no
-    /// response.
+    /// A group data or management frame, which solicits no response.
     Group {
-        header: HeaderSpec<GroupAddress>,
+        frame: SizedFrame<HeaderSpec<GroupAddress>, K>,
         rate: PhaseRate<'p>,
-        len: MpduLength<K>,
     },
     /// A BlockAckReq, which solicits a BlockAck, at a non-HT rate.
     BlockAckRequest {
@@ -963,6 +960,56 @@ pub enum TxFrame<'p, K> {
         starting_sequence: SequenceNumber,
         rate: LegacyPhaseRate<'p>,
     },
+}
+
+/// A header that knows its length: [`HeaderSpec`], [`AckHeader`] and
+/// [`NoAckHeader`].
+pub trait FrameHeader {
+    /// The header's length in octets.
+    fn header_len(&self) -> usize;
+}
+
+impl<A: ReceiverAddress> FrameHeader for HeaderSpec<A> {
+    fn header_len(&self) -> usize {
+        self.len()
+    }
+}
+
+impl FrameHeader for AckHeader {
+    fn header_len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl FrameHeader for NoAckHeader {
+    fn header_len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+/// A frame's header with the length of its whole MPDU, which holds the
+/// header: the buffer a request lends is exactly that long.
+#[derive(Debug)]
+pub struct SizedFrame<H, K> {
+    header: H,
+    len: MpduLength<K>,
+}
+
+impl<H: FrameHeader, K: Ieee80211Capabilities> SizedFrame<H, K> {
+    /// `header` in an MPDU of `len` octets, when they hold the header.
+    pub fn new(header: H, len: MpduLength<K>) -> Option<Self> {
+        (len.get() >= header.header_len()).then_some(Self { header, len })
+    }
+
+    /// The header.
+    pub const fn header(&self) -> &H {
+        &self.header
+    }
+
+    /// The MPDU's length.
+    pub const fn len(&self) -> &MpduLength<K> {
+        &self.len
+    }
 }
 
 /// The body of a frame a buffer holds: the octets after its header, which
@@ -1054,9 +1101,9 @@ impl<'id, Q, B> TxSeats<'id, Q, B> {
 }
 
 /// One attempt of a running phase, every value of it checked: the queue it
-/// occupies, its MPDU in a buffer bound to a buffer permit, its body, its
-/// rate on the phase's channel, its protection, key, power, backoff and
-/// coexistence level.
+/// occupies, its MPDU in a buffer bound to a buffer permit (whose kind fixes
+/// its rate and response), its body, its protection, key, power, backoff
+/// and coexistence level.
 pub struct PhaseAttempt<'p, 'id: 'p, C: LowerMacClient<'id> + 'p> {
     pub queue: C::Queue<'p>,
     /// The frame, whose kind fixes its rate and response.
@@ -1292,6 +1339,7 @@ pub trait LowerMacClient<'id>:
     /// Start acknowledging A-MPDUs of `agreement` in `slot`. The client
     /// keeps one agreement per peer and TID: one that replaces an earlier
     /// agreement of the pair gives that agreement's slot back.
+    #[must_use = "a replaced agreement's slot is capacity; dropping it loses it until the next install"]
     fn add_block_ack(
         &self,
         slot: Slot<'id, Self::BlockAckKind>,
@@ -1300,6 +1348,7 @@ pub trait LowerMacClient<'id>:
 
     /// End the agreement with `peer` on `tid`, giving its slot back; `None`
     /// when the client keeps none for the pair.
+    #[must_use = "an ended agreement's slot is capacity; dropping it loses it until the next install"]
     fn remove_block_ack(
         &self,
         peer: IndividualAddress,

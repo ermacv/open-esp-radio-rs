@@ -42,7 +42,7 @@ impl Ieee80211Capabilities for Caps {
         tx_power_ceiling_min_dbm: Some(0),
         coex_priorities: CoexPrioritySet::only(CoexPriority::Normal),
         individual_no_ack: PhyFormatSet::NON_HT,
-        station_receive_filters: ReceiveFilter::BSS_MEMBER,
+        station_receive_filters: ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::OTHER_BSS_MANAGEMENT),
         access_point_receive_filters: ReceiveFilter::BSS_MEMBER,
         key_slots: 4,
         rx_block_ack_agreements: 2,
@@ -181,9 +181,15 @@ struct World {
     in_flight: Vec<(Ticket, Buffer)>,
     /// The receive configurations the port has yet to confirm.
     configuring: u32,
+    /// The configurations wait for the test's confirmation.
+    hold_configured: bool,
     /// The outcomes of the next transmissions; delivered once none is
     /// queued.
     outcomes: std::collections::VecDeque<bool>,
+    /// The reason codes of the Deauthentications sent.
+    deauthentications: Vec<u16>,
+    /// The signal of the frames the world delivers.
+    rssi: i8,
 }
 
 impl World {
@@ -192,6 +198,10 @@ impl World {
     }
 
     fn with_security(skipped_absences: u8, security: StaSecurity) -> Self {
+        Self::with_group_slots(skipped_absences, security, 2)
+    }
+
+    fn with_group_slots(skipped_absences: u8, security: StaSecurity, group_slots: u8) -> Self {
         let mut ssid = [0; 32];
         ssid[..SSID.len()].copy_from_slice(SSID);
         let mut channels = [None; 16];
@@ -206,6 +216,7 @@ impl World {
                 channels,
                 dwell: Duration::from_millis(10),
                 skipped_absences,
+                access_point_margin_db: 6,
                 supported_rates: [0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24],
                 association: &CAPABILITIES,
                 phy: PhyMode::Legacy,
@@ -216,7 +227,8 @@ impl World {
             [Buffer([0; 512]), Buffer([0; 512])],
             place,
             absence,
-            (Slot(0), Slot(1)),
+            Slot(0),
+            (1..=group_slots).map(Slot),
         );
         Self {
             station,
@@ -224,7 +236,10 @@ impl World {
             seen: Vec::new(),
             in_flight: Vec::new(),
             configuring: 0,
+            hold_configured: false,
             outcomes: std::collections::VecDeque::new(),
+            deauthentications: Vec::new(),
+            rssi: i8::MIN,
         }
     }
 
@@ -279,7 +294,12 @@ impl World {
                         self.seen.push(Seen::Configure(match receive {
                             StationReceive::Off => "off",
                             StationReceive::OtherBssManagement => "scan",
-                            StationReceive::Bss { .. } => "bss",
+                            StationReceive::Bss { filter, .. }
+                                if filter.get() == ReceiveFilter::BSS_MEMBER =>
+                            {
+                                "bss"
+                            }
+                            StationReceive::Bss { .. } => "bss+scan",
                         }));
                         self.configuring += 1;
                     }
@@ -287,6 +307,22 @@ impl World {
                         let frame = transmit.buffer.bytes_mut();
                         // A Null's PM bit tells its power state apart.
                         let subtype = u16::from_le_bytes([frame[0], frame[1]]) & 0x10fc;
+                        // Authentication, Association and EAPOL are the
+                        // connection's frames.
+                        let eapol = subtype == 0x0008 && frame[30..32] == [0x88, 0x8e];
+                        let connection = matches!(subtype, 0x00b0 | 0x0000) || eapol;
+                        assert_eq!(
+                            transmit.class,
+                            if connection {
+                                StaFrameClass::Connection
+                            } else {
+                                StaFrameClass::Normal
+                            }
+                        );
+                        if subtype == 0x00c0 {
+                            self.deauthentications
+                                .push(u16::from_le_bytes([frame[24], frame[25]]));
+                        }
                         let on = self.arbiter.channel().map_or(0, |c| c.channel().number());
                         self.seen.push(Seen::Transmit { subtype, on });
                         self.in_flight.push((transmit.ticket, transmit.buffer));
@@ -315,7 +351,7 @@ impl World {
                     ArbiterAction::OpenGate(Closed) => self.arbiter.gate_opened(Open),
                 }
             }
-            if self.configuring > 0 {
+            if self.configuring > 0 && !self.hold_configured {
                 self.configuring -= 1;
                 self.station.input(now, StaInput::Configured);
                 acted = true;
@@ -355,7 +391,11 @@ impl World {
     }
 
     fn receive(&mut self, now: Instant, frame: &[u8]) {
-        self.station.input(now, StaInput::Received { frame, meta: meta() });
+        let mut meta = meta();
+        if self.rssi != i8::MIN {
+            meta.rssi_dbm = RxEvidence::HardwareObserved(self.rssi);
+        }
+        self.station.input(now, StaInput::Received { frame, meta });
         self.run(now);
     }
 
@@ -699,36 +739,26 @@ fn a_connected_station_scans_in_an_absence_announced_with_nulls() {
                 subtype: NULL_ACTIVE,
                 on: 6
             },
-            // Channel 6 next, the network's own: an absence as any other.
-            Seen::Transmit {
-                subtype: NULL_POWER_SAVE,
-                on: 6
-            },
-        ]
-    );
-    // The port stays; the other networks there are heard only in it.
-    world.advance();
-    assert_eq!(
-        world.take(),
-        [
-            Seen::Configure("scan"),
+            // Channel 6 next, the network's own: no absence, the receive
+            // rules widened to the other networks, and a probe.
+            Seen::Configure("bss+scan"),
             Seen::Transmit {
                 subtype: 0x0040,
                 on: 6
             },
         ]
     );
-    world.advance();
+    // The dwell ends: the network's rules again, and the scan ends only
+    // once the port confirmed them.
+    world.hold_configured = true;
+    let now = world.advance();
+    assert_eq!(world.take(), [Seen::Configure("bss")]);
+    assert!(world.station.notice_owed.is_none());
+    world.hold_configured = false;
+    world.run(now);
     assert_eq!(
         world.take(),
-        [
-            Seen::Configure("bss"),
-            Seen::Transmit {
-                subtype: NULL_ACTIVE,
-                on: 6
-            },
-            Seen::Notify(StaNotice::BackgroundScanDone { partial: false }),
-        ]
+        [Seen::Notify(StaNotice::BackgroundScanDone { partial: false })]
     );
 }
 
@@ -759,12 +789,11 @@ fn an_undelivered_wake_null_is_sent_again_when_the_tim_shows_buffered_frames() {
         .station
         .input(at(40), StaInput::Command(StaCommand::BackgroundScan));
     world.run(at(40));
-    // Channel 1's absence, then channel 6's.
+    // Channel 1's absence; back home, the PM=0 Null is not delivered.
     world.advance();
-    world.advance();
-    world.advance();
-    // Back home from the last, the PM=0 Null is not delivered.
     world.outcomes.push_back(false);
+    world.advance();
+    // Channel 6, the network's own, without an absence.
     world.advance();
     assert_eq!(
         world.take().last(),
@@ -908,3 +937,213 @@ fn a_station_joins_a_wpa2_network_through_the_four_way_handshake() {
     );
 }
 
+
+/// A WPA2 world whose station holds `group_slots` group key slots, up to
+/// Message 3 at 33 ms; the PTK of its handshake.
+fn wpa2_associated(group_slots: u8) -> (World, oer_ieee80211_rsn::Ptk) {
+    use oer_ieee80211_mac::security::rsn::Akm;
+    use oer_ieee80211_rsn::{PtkContext, frames::RsnTxFrame};
+
+    let mut world = World::with_group_slots(
+        3,
+        StaSecurity::Wpa2Personal {
+            pmk: Pmk::from_bytes(PMK),
+        },
+        group_slots,
+    );
+    world.station.input(at(0), StaInput::Command(StaCommand::Connect));
+    world.run(at(0));
+    world.advance();
+    world.receive(at(13), &wpa2_beacon());
+    world.advance();
+    world.receive(at(30), &authentication_response(0));
+    world.receive(at(31), &association_response(0));
+    let message1 = RsnTxFrame::<512>::message1(Akm::Psk, LOCAL, 1, ANONCE).unwrap();
+    world.receive(at(32), &eapol_frame(message1.as_bytes()));
+    world.take();
+    let ptk = Pmk::from_bytes(PMK).derive_ptk(
+        Akm::Psk,
+        PtkContext {
+            authenticator_address: BSSID,
+            supplicant_address: LOCAL,
+            authenticator_nonce: ANONCE,
+            supplicant_nonce: SNONCE,
+        },
+    );
+    (world, ptk)
+}
+
+/// The world of [`wpa2_associated`], connected with group key 1.
+fn wpa2_connected(group_slots: u8) -> (World, oer_ieee80211_rsn::Ptk) {
+    use oer_ieee80211_mac::security::rsn::Akm;
+    use oer_ieee80211_rsn::frames::RsnTxFrame;
+
+    let (mut world, ptk) = wpa2_associated(group_slots);
+    let mut plain = std::vec::Vec::new();
+    plain.extend_from_slice(&RSN);
+    plain.extend_from_slice(&[0xdd, 22, 0x00, 0x0f, 0xac, 0x01, 0x01, 0x00]);
+    plain.extend_from_slice(&[0x99; 16]);
+    plain.extend_from_slice(&[0xdd, 0]);
+    let wrapped = oer_ieee80211_rsn::aes::software_aes128_key_wrap(ptk.kek(), &plain).unwrap();
+    let message3 =
+        RsnTxFrame::<512>::message3(Akm::Psk, LOCAL, 2, ANONCE, [0; 8], wrapped.as_bytes())
+            .unwrap()
+            .authenticate(&ptk);
+    world.receive(at(33), &eapol_frame(message3.as_bytes()));
+    assert!(world.station.is_connected());
+    world.take();
+    (world, ptk)
+}
+
+/// Group Message 1 of key `key_id` with replay counter `replay`.
+fn group_message1(ptk: &oer_ieee80211_rsn::Ptk, replay: u64, key_id: u8) -> std::vec::Vec<u8> {
+    use oer_ieee80211_mac::security::rsn::Akm;
+    use oer_ieee80211_rsn::frames::RsnTxFrame;
+
+    let mut plain = std::vec::Vec::new();
+    plain.extend_from_slice(&[0xdd, 22, 0x00, 0x0f, 0xac, 0x01, key_id, 0x00]);
+    plain.extend_from_slice(&[0x77; 16]);
+    plain.extend_from_slice(&[0xdd, 0, 0, 0, 0, 0, 0, 0]);
+    let wrapped = oer_ieee80211_rsn::aes::software_aes128_key_wrap(ptk.kek(), &plain).unwrap();
+    let message = RsnTxFrame::<512>::group_message1(Akm::Psk, LOCAL, replay, [0; 8], wrapped.as_bytes())
+        .unwrap()
+        .authenticate(ptk);
+    eapol_frame(message.as_bytes())
+}
+
+#[test]
+fn a_new_group_key_goes_in_beside_the_old_one_which_is_removed_after_group_message_2() {
+    let (mut world, ptk) = wpa2_connected(2);
+    world.receive(at(50), &group_message1(&ptk, 3, 2));
+    assert_eq!(
+        world.take(),
+        [
+            Seen::InstallGroup(2),
+            Seen::Transmit {
+                subtype: 0x0008,
+                on: 6
+            },
+            Seen::RemoveKey,
+        ]
+    );
+    assert!(world.station.is_connected());
+}
+
+#[test]
+fn without_a_free_group_slot_the_old_key_goes_first() {
+    let (mut world, ptk) = wpa2_connected(1);
+    world.receive(at(50), &group_message1(&ptk, 3, 2));
+    assert_eq!(
+        world.take(),
+        [
+            Seen::RemoveKey,
+            Seen::InstallGroup(2),
+            Seen::Transmit {
+                subtype: 0x0008,
+                on: 6
+            },
+        ]
+    );
+    assert!(world.station.is_connected());
+}
+
+#[test]
+fn a_handshake_that_times_out_deauthenticates_with_its_reason() {
+    let (mut world, _) = wpa2_associated(2);
+    // No Message 3: the handshake's deadline passes.
+    world.advance();
+    assert_eq!(world.deauthentications, [REASON_HANDSHAKE_TIMEOUT]);
+    assert!(world.take().contains(&Seen::Notify(StaNotice::Disconnected(
+        StaDisconnectReason::HandshakeFailed
+    ))));
+}
+
+#[test]
+fn a_message_3_whose_key_data_does_not_unwrap_deauthenticates() {
+    use oer_ieee80211_mac::security::rsn::Akm;
+    use oer_ieee80211_rsn::frames::RsnTxFrame;
+
+    let (mut world, ptk) = wpa2_associated(2);
+    let message3 = RsnTxFrame::<512>::message3(Akm::Psk, LOCAL, 2, ANONCE, [0; 8], &[0x55; 24])
+        .unwrap()
+        .authenticate(&ptk);
+    world.receive(at(33), &eapol_frame(message3.as_bytes()));
+    assert_eq!(world.deauthentications, [REASON_UNSPECIFIED]);
+}
+
+#[test]
+fn the_access_points_deauthentication_is_not_answered_with_one() {
+    let (mut world, _) = wpa2_connected(2);
+    let mut deauthentication = [0_u8; 26];
+    deauthentication[0..2].copy_from_slice(&0x00c0_u16.to_le_bytes());
+    deauthentication[4..10].copy_from_slice(&LOCAL);
+    deauthentication[10..16].copy_from_slice(&BSSID);
+    deauthentication[16..22].copy_from_slice(&BSSID);
+    deauthentication[24..26].copy_from_slice(&7_u16.to_le_bytes());
+    world.receive(at(50), &deauthentication);
+    let seen = world.take();
+    // Both keys removed, no Deauthentication back.
+    assert_eq!(seen.iter().filter(|seen| **seen == Seen::RemoveKey).count(), 2);
+    assert!(world.deauthentications.is_empty());
+    assert!(seen.contains(&Seen::Notify(StaNotice::Disconnected(
+        StaDisconnectReason::Peer { reason_code: 7 }
+    ))));
+}
+
+#[test]
+fn leaving_on_request_deauthenticates_as_leaving() {
+    let (mut world, _) = wpa2_connected(2);
+    world
+        .station
+        .input(at(50), StaInput::Command(StaCommand::Disconnect));
+    world.run(at(50));
+    assert_eq!(world.deauthentications, [REASON_LEAVING]);
+}
+
+/// A beacon of the open network from `bssid` on the channel `number`.
+fn beacon_from(bssid: [u8; 6], number: u8) -> [u8; 55] {
+    let mut frame = beacon_on(number);
+    frame[10..16].copy_from_slice(&bssid);
+    frame[16..22].copy_from_slice(&bssid);
+    frame
+}
+
+/// The network on channel 1, where the access point beside the station
+/// runs, at `beside` dBm and on channel 6 at -56 dBm: the channel the join
+/// goes to, and whether the access point announces a move.
+fn joined_beside(beside: i8) -> (u8, bool) {
+    let mut world = World::new(3);
+    access_point_on_1(&mut world);
+    world.station.input(at(0), StaInput::Command(StaCommand::Connect));
+    world.run(at(0));
+    world.rssi = beside;
+    world.receive(at(1), &beacon_from([2, 0, 0, 0, 0, 0xbb], 1));
+    world.advance();
+    world.advance();
+    world.rssi = -56;
+    world.receive(at(53), &beacon_from(BSSID, 6));
+    let now = advance_until(&mut world, |seen| {
+        matches!(seen, Seen::Transmit { subtype: 0x00b0, .. }) || announces(seen)
+    });
+    let _ = now;
+    let seen = world.take();
+    let announced = seen.iter().any(announces);
+    let on = seen
+        .iter()
+        .find_map(|seen| match seen {
+            Seen::Transmit { subtype: 0x00b0, on } => Some(*on),
+            _ => None,
+        })
+        .unwrap_or(6);
+    (on, announced)
+}
+
+#[test]
+fn a_candidate_on_the_access_points_channel_wins_within_the_margin() {
+    // 4 dB weaker: within 6 dB, the join stays on the access point's
+    // channel and nothing moves.
+    assert_eq!(joined_beside(-60), (1, false));
+    // 14 dB weaker: the strongest wins, and the access point announces its
+    // move.
+    assert_eq!(joined_beside(-70), (6, true));
+}

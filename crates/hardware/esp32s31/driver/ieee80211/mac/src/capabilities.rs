@@ -68,6 +68,10 @@ pub const ESP32S31_MAC_SERVICE_CAPABILITIES: MacServiceCapabilities = MacService
         // These are the slots intentionally exposed by the open STA driver,
         // not the size of the underlying hardware key table.
         station_pairwise_ccmp_slots: 1,
+        // One station group slot until #747 proves the receive-side lookup
+        // by key id and a second entry's index. Known limitation: with one
+        // slot the station's group rekey removes the old key before it
+        // installs the new one, and group frames in that window are lost.
         station_group_ccmp_slots: 1,
         access_point_pairwise_ccmp_slots: 15,
         access_point_group_ccmp_slots: 1,

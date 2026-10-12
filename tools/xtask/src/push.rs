@@ -7,10 +7,12 @@
 //! 2. The branch is not `main`: `main` changes only through pull requests,
 //!    which CI checks and merges.
 //! 3. The branch contains the current `origin/main`: the push fetches it
-//!    first and refuses a branch that lacks any of its commits, naming them
-//!    and the rebase that brings them in ([`current_main`]), so auto-merge
-//!    never merges a branch built against a stale `main`. A failed fetch
-//!    refuses the push too. A draft is checked the same way.
+//!    before the gate, and again after the gate and the review right before
+//!    `git push` (step 6), and refuses a branch that lacks any of its
+//!    commits, naming them and the rebase that brings them in
+//!    ([`current_main`], [`checked`]), so auto-merge never merges a branch
+//!    built against a stale `main`. A failed fetch refuses the push too. A
+//!    draft is checked the same way.
 //! 4. The registry's fast checks ([`crate::registry`]) check what `HEAD`'s
 //!    commits change against `origin/main`, their merge base.
 //! 5. Unless the pull request is a draft, the local Claude review
@@ -28,10 +30,11 @@
 //!
 //! The push never waits for CI and never rebases: the developer rebases a
 //! branch that `main` outran and pushes again. Since the gate and the
-//! review take minutes, the push fetches and checks `origin/main` again
-//! right before `git push`, so a `main` that moved meanwhile refuses it too;
-//! an unchanged diff reuses its review verdict after the rebase. A branch the developer rebased replaces its remote copy with `--force-with-lease`
-//! bound to the copy this push saw ([`Update::Rewrite`]), so a commit pushed
+//! review take minutes, a `main` that moved meanwhile refuses the push too;
+//! an unchanged diff reuses its review verdict after the rebase.
+//!
+//! A branch the developer rebased replaces its remote copy with
+//! `--force-with-lease` bound to the copy this push saw ([`Update::Rewrite`]), so a commit pushed
 //! there by anyone else in the meantime refuses the push instead of being
 //! lost.
 
@@ -132,9 +135,10 @@ pub fn behind(missing: &[String]) -> Option<String> {
 }
 
 /// Fetch `main` from `origin` into `origin/main` and return its commit when
-/// `HEAD` contains it. A failed fetch, or a `HEAD` that lacks a commit of it
-/// ([`behind`]), is an error: the push never builds on a stale `main`.
-pub fn current_main(root: &Path) -> Result<String> {
+/// the commit `head` contains it. A failed fetch, or a `head` that lacks a
+/// commit of it ([`behind`]), is an error: the push never builds on a stale
+/// `main`.
+pub fn current_main(root: &Path, head: &str) -> Result<String> {
     let refspec = format!("+refs/heads/{MAIN}:refs/remotes/origin/{MAIN}");
     git::output(root, ["fetch", "--quiet", "origin", &refspec])
         .map_err(|error| format!("push: fetching origin/{MAIN} failed; nothing pushed: {error}"))?;
@@ -146,11 +150,56 @@ pub fn current_main(root: &Path) -> Result<String> {
             &format!("refs/remotes/origin/{MAIN}^{{commit}}"),
         ],
     )?;
-    let missing = git::lines(root, ["log", "--format=%h %s", &format!("HEAD..{main}")])?;
+    let missing = git::lines(root, ["log", "--format=%h %s", &format!("{head}..{main}")])?;
     match behind(&missing) {
         Some(reason) => Err(format!("push: {reason}").into()),
         None => Ok(main),
     }
+}
+
+/// The commits the push checked: `HEAD` and its merge base with
+/// `origin/main`, which is `origin/main` itself, with what the checks
+/// returned.
+#[derive(Debug)]
+pub struct Checked<T> {
+    pub base: String,
+    pub head: String,
+    pub result: T,
+}
+
+/// Run `checks` (the gate and the review, handed the merge base and `HEAD`)
+/// on a branch that contains the current `origin/main`, then confirm that
+/// neither `HEAD` nor `origin/main` moved while they ran, so the push sends
+/// exactly what they checked, on the current `main`. `None` when `HEAD` is
+/// in `origin/main` and there is nothing to push; `checks` does not run.
+pub fn checked<T>(
+    root: &Path,
+    checks: impl FnOnce(&str, &str) -> Result<T>,
+) -> Result<Option<Checked<T>>> {
+    let head = git::text(root, ["rev-parse", "HEAD"])?;
+    // `head` contains `origin/main`, so that is their merge base.
+    let base = current_main(root, &head)?;
+    if head == base {
+        return Ok(None);
+    }
+    let result = checks(&base, &head)?;
+    // The gate and the review take minutes while the session keeps working:
+    // push only the commit they checked.
+    let now = git::text(root, ["rev-parse", "HEAD"])?;
+    if now != head {
+        return Err(format!(
+            "push: HEAD moved from {} to {} after it was gated; nothing pushed, push again",
+            &head[..head.len().min(12)],
+            &now[..now.len().min(12)]
+        )
+        .into());
+    }
+    // `main` may have moved meanwhile too: check the commit that is pushed
+    // against it again right before the push.
+    current_main(root, &head).map_err(|error| {
+        format!("{error}\n(checked again before `git push`, after the gate and the review)")
+    })?;
+    Ok(Some(Checked { base, head, result }))
 }
 
 fn gh(ctx: &Checkout, arguments: &[&str]) -> Result<String> {
@@ -174,31 +223,27 @@ pub fn run(ctx: &Checkout, draft: bool, skip_review: Option<&str>) -> Result<()>
     if let Some(reason) = unreviewable(&branch) {
         return Err(format!("push: {reason}").into());
     }
-    // `HEAD` contains `origin/main`, so that is their merge base.
-    let base = current_main(&ctx.root)?;
-    let head = git::text(&ctx.root, ["rev-parse", "HEAD"])?;
-    if head == base {
-        println!("push: nothing to push; HEAD is in origin/{MAIN}");
-        return Ok(());
-    }
-    let change = gate::Change::of(
-        ctx,
-        gate::committed(ctx, &base)?,
-        &base,
-        None,
-        registry::Tier::Fast,
-    )?;
-    println!(
-        "push: gating {} on {}: {} files, {} package(s) with dependents",
-        &head[..12],
-        &base[..12],
-        change.files.len(),
-        change.affected.len()
-    );
-    registry::run_change(ctx, &change)
-        .map_err(|error| format!("push: the gate failed; nothing pushed: {error}"))?;
-    let reviewed = if !draft && skip_review.is_none() {
-        let (verdict, path) = review::verdict(ctx, &branch, &base, &head).map_err(|error| {
+    let gated = checked(&ctx.root, |base, head| {
+        let change = gate::Change::of(
+            ctx,
+            gate::committed(ctx, base)?,
+            base,
+            None,
+            registry::Tier::Fast,
+        )?;
+        println!(
+            "push: gating {} on {}: {} files, {} package(s) with dependents",
+            &head[..12],
+            &base[..12],
+            change.files.len(),
+            change.affected.len()
+        );
+        registry::run_change(ctx, &change)
+            .map_err(|error| format!("push: the gate failed; nothing pushed: {error}"))?;
+        if draft || skip_review.is_some() {
+            return Ok(None);
+        }
+        let (verdict, path) = review::verdict(ctx, &branch, base, head).map_err(|error| {
             format!(
                 "push: the local review did not complete; nothing pushed: {error}\n\
                  Without Claude Code, `cargo xtask push --skip-review \"<reason>\"` pushes \
@@ -216,25 +261,17 @@ pub fn run(ctx: &Checkout, draft: bool, skip_review: Option<&str>) -> Result<()>
             )
             .into());
         }
-        Some(verdict)
-    } else {
-        None
-    };
-    // The gate and the review take minutes while the session keeps working:
-    // push only the commit they checked.
-    let now = git::text(&ctx.root, ["rev-parse", "HEAD"])?;
-    if now != head {
-        return Err(format!(
-            "push: HEAD moved from {} to {} after it was gated; nothing pushed, push again",
-            &head[..12],
-            &now[..now.len().min(12)]
-        )
-        .into());
-    }
-    // `main` may have moved meanwhile too: check again right before the push.
-    current_main(&ctx.root).map_err(|error| {
-        format!("{error}\n(checked again before `git push`, after the gate and the review)")
+        Ok(Some(verdict))
     })?;
+    let Some(Checked {
+        head,
+        result: reviewed,
+        ..
+    }) = gated
+    else {
+        println!("push: nothing to push; HEAD is in origin/{MAIN}");
+        return Ok(());
+    };
     let reference = format!("refs/heads/{branch}");
     let remote = git::text(&ctx.root, ["ls-remote", "origin", &reference])?
         .split_whitespace()
@@ -430,31 +467,77 @@ mod tests {
         let (_directory, seed, clone) = repositories();
         commit(&clone, "the change");
         let main = git_in(&seed, &["rev-parse", "HEAD"]);
-        assert_eq!(current_main(&clone).unwrap(), main);
+        assert_eq!(current_main(&clone, "HEAD").unwrap(), main);
         // `main` moved and the branch was rebased onto it.
         let moved = commit(&seed, "upstream");
         git_in(&seed, &["push", "--quiet", "origin", MAIN]);
         git_in(&clone, &["fetch", "--quiet", "origin"]);
         git_in(&clone, &["rebase", "--quiet", "origin/main"]);
-        assert_eq!(current_main(&clone).unwrap(), moved);
+        assert_eq!(current_main(&clone, "HEAD").unwrap(), moved);
     }
 
     #[test]
-    fn a_main_that_moves_after_the_first_check_refuses_the_second() {
+    fn a_main_that_moves_while_the_checks_run_refuses_the_push() {
         let (_directory, seed, clone) = repositories();
-        commit(&clone, "the change");
-        // The check before the gate passes.
-        current_main(&clone).unwrap();
-        // A pull request merges while the gate and the review run.
-        commit(&seed, "merged meanwhile");
-        git_in(&seed, &["push", "--quiet", "origin", MAIN]);
-        // The check before `git push` refuses.
-        let error = current_main(&clone).unwrap_err().to_string();
+        let head = commit(&clone, "the change");
+        let main = git_in(&seed, &["rev-parse", "HEAD"]);
+        let error = checked(&clone, |base, checked| {
+            assert_eq!((base, checked), (main.as_str(), head.as_str()));
+            // A pull request merges while the gate and the review run.
+            commit(&seed, "merged meanwhile");
+            git_in(&seed, &["push", "--quiet", "origin", MAIN]);
+            Ok(())
+        })
+        .unwrap_err()
+        .to_string();
         assert!(
             error.contains("behind origin/main by 1 commit(s)"),
             "{error}"
         );
         assert!(error.contains("merged meanwhile"), "{error}");
+        assert!(error.contains("checked again before `git push`"), "{error}");
+    }
+
+    #[test]
+    fn the_pushed_commit_is_checked_not_the_live_head() {
+        let (_directory, seed, clone) = repositories();
+        let pushed = commit(&clone, "the change");
+        commit(&seed, "upstream");
+        git_in(&seed, &["push", "--quiet", "origin", MAIN]);
+        // The session rebased meanwhile: the live `HEAD` is current, the
+        // commit the checks passed is not.
+        git_in(&clone, &["fetch", "--quiet", "origin"]);
+        git_in(&clone, &["rebase", "--quiet", "origin/main"]);
+        current_main(&clone, "HEAD").unwrap();
+        let error = current_main(&clone, &pushed).unwrap_err().to_string();
+        assert!(
+            error.contains("behind origin/main by 1 commit(s)"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn the_push_sends_exactly_what_the_checks_passed() {
+        let (_directory, seed, clone) = repositories();
+        let head = commit(&clone, "the change");
+        let main = git_in(&seed, &["rev-parse", "HEAD"]);
+        let passed = checked(&clone, |_, _| Ok(7)).unwrap().unwrap();
+        assert_eq!((passed.base, passed.head, passed.result), (main, head, 7));
+        // A commit made while the checks ran is not what they checked.
+        let error = checked(&clone, |_, _| {
+            commit(&clone, "made meanwhile");
+            Ok(())
+        })
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("HEAD moved"), "{error}");
+    }
+
+    #[test]
+    fn nothing_is_checked_when_head_is_in_main() {
+        let (_directory, _seed, clone) = repositories();
+        let checked = checked(&clone, |_, _| -> Result<()> { panic!("checked") }).unwrap();
+        assert!(checked.is_none());
     }
 
     #[test]
@@ -465,7 +548,7 @@ mod tests {
         commit(&seed, "second upstream");
         git_in(&seed, &["push", "--quiet", "origin", MAIN]);
         // The clone has not fetched: the push must fetch to see them.
-        let error = current_main(&clone).unwrap_err().to_string();
+        let error = current_main(&clone, "HEAD").unwrap_err().to_string();
         assert!(
             error.contains("behind origin/main by 2 commit(s)"),
             "{error}"
@@ -483,7 +566,7 @@ mod tests {
         let (directory, _seed, clone) = repositories();
         commit(&clone, "the change");
         std::fs::remove_dir_all(directory.path().join("origin.git")).unwrap();
-        let error = current_main(&clone).unwrap_err().to_string();
+        let error = current_main(&clone, "HEAD").unwrap_err().to_string();
         assert!(error.contains("fetching origin/main failed"), "{error}");
     }
 

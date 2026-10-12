@@ -191,6 +191,8 @@ struct World {
     deauthentications: Vec<u16>,
     /// Each EAPOL frame's Protected bit and key.
     eapol: Vec<(bool, StaTxKey)>,
+    /// Every frame the station sent, in its buffer.
+    frames: Vec<Vec<u8>>,
     /// The signal of the frames the world delivers.
     rssi: i8,
 }
@@ -255,6 +257,7 @@ impl World {
             outcomes: std::collections::VecDeque::new(),
             deauthentications: Vec::new(),
             eapol: Vec::new(),
+            frames: Vec::new(),
             rssi: i8::MIN,
         }
     }
@@ -326,14 +329,17 @@ impl World {
                         let subtype = u16::from_le_bytes([frame[0], frame[1]]) & 0x10fc;
                         // Authentication, Association and EAPOL are the
                         // connection's frames.
-                        // A protected frame carries the CCMP header's room.
+                        // A protected frame carries the CCMP header's room,
+                        // a QoS one its QoS Control field.
                         let protected = frame[1] & 0x40 != 0;
-                        let ether_type = if protected { 38 } else { 30 };
-                        let eapol = subtype == 0x0008
+                        let qos = subtype & 0x0080 != 0;
+                        let ether_type = 30 + usize::from(qos) * 2 + usize::from(protected) * 8;
+                        let eapol = subtype & 0x000c == 0x0008
                             && frame[ether_type..ether_type + 2] == [0x88, 0x8e];
                         if eapol {
                             self.eapol.push((protected, transmit.key));
                         }
+                        self.frames.push(frame.to_vec());
                         let connection = matches!(subtype, 0x00b0 | 0x0000) || eapol;
                         assert_eq!(
                             transmit.class,
@@ -1001,6 +1007,11 @@ fn a_station_joins_a_wpa2_network_through_the_four_way_handshake() {
 /// A WPA2 world whose station holds `group_slots` group key slots, up to
 /// Message 3 at 33 ms; the PTK of its handshake.
 fn wpa2_associated(group_slots: u8) -> (World, oer_ieee80211_rsn::Ptk) {
+    wpa2_associated_by(group_slots, &wpa2_beacon())
+}
+
+/// [`wpa2_associated`] with the access point's `beacon`.
+fn wpa2_associated_by(group_slots: u8, beacon: &[u8]) -> (World, oer_ieee80211_rsn::Ptk) {
     use oer_ieee80211_mac::security::rsn::Akm;
     use oer_ieee80211_rsn::{PtkContext, frames::RsnTxFrame};
 
@@ -1016,7 +1027,7 @@ fn wpa2_associated(group_slots: u8) -> (World, oer_ieee80211_rsn::Ptk) {
         .input(at(0), StaInput::Command(StaCommand::Connect));
     world.run(at(0));
     world.advance();
-    world.receive(at(13), &wpa2_beacon());
+    world.receive(at(13), beacon);
     world.advance();
     world.receive(at(30), &authentication_response(0));
     world.receive(at(31), &association_response(0));
@@ -1037,10 +1048,15 @@ fn wpa2_associated(group_slots: u8) -> (World, oer_ieee80211_rsn::Ptk) {
 
 /// The world of [`wpa2_associated`], connected with group key 1.
 fn wpa2_connected(group_slots: u8) -> (World, oer_ieee80211_rsn::Ptk) {
+    wpa2_connected_by(group_slots, &wpa2_beacon())
+}
+
+/// [`wpa2_connected`] with the access point's `beacon`.
+fn wpa2_connected_by(group_slots: u8, beacon: &[u8]) -> (World, oer_ieee80211_rsn::Ptk) {
     use oer_ieee80211_mac::security::rsn::Akm;
     use oer_ieee80211_rsn::frames::RsnTxFrame;
 
-    let (mut world, ptk) = wpa2_associated(group_slots);
+    let (mut world, ptk) = wpa2_associated_by(group_slots, beacon);
     let mut plain = std::vec::Vec::new();
     plain.extend_from_slice(&RSN);
     plain.extend_from_slice(&[0xdd, 22, 0x00, 0x0f, 0xac, 0x01, 0x01, 0x00]);
@@ -1101,6 +1117,65 @@ fn the_handshakes_eapol_goes_unprotected_and_group_message_2_under_the_pairwise_
     // Group Message 2, once connected: under the pairwise key, with the
     // Protected bit and the CCMP header's room.
     assert_eq!(world.eapol[2..], [(true, StaTxKey::Pairwise)]);
+}
+
+impl crate::data::StaDataTokens for Tokens {
+    type Ticket = Ticket;
+    type Buffer = Buffer;
+}
+
+/// The TID and sequence number of a QoS Data frame.
+fn tid_and_sequence(frame: &[u8]) -> (u8, u16) {
+    (frame[24] & 0x0f, u16::from_le_bytes([frame[22], frame[23]]) >> 4)
+}
+
+#[test]
+fn eapol_and_data_on_tid_7_share_one_counter_and_tid_0_runs_on_across_a_rekey() {
+    use crate::data::{DataAction, DataInput, Msdu, StaData};
+    use oer_ieee80211_mac::qos::WmmUserPriority;
+
+    // A QoS BSS: the beacon advertises WMM.
+    let mut beacon = wpa2_beacon().to_vec();
+    beacon.extend_from_slice(&[0xdd, 7, 0x00, 0x50, 0xf2, 0x02, 0x00, 0x01, 0x00]);
+    let (mut world, ptk) = wpa2_connected_by(2, &beacon);
+    let mut data = StaData::<Tokens, Caps>::new([Ticket(10)], [Buffer([0; 512])]);
+    let mut send = |world: &mut World, priority: u8| {
+        let mut link = world.station.link().expect("the link is up");
+        let msdu = Msdu {
+            destination: BSSID,
+            ether_type: 0x0800,
+            priority: WmmUserPriority::new(priority).unwrap(),
+            payload: &[0xab; 20],
+        };
+        data.input(at(60), DataInput::Msdu { msdu, link: &mut link })
+            .unwrap();
+        let Some(DataAction::Transmit(transmit)) = data.poll_action(at(60)) else {
+            panic!("an MPDU is owed");
+        };
+        let sent = tid_and_sequence(&transmit.buffer.0);
+        data.input::<Tokens>(
+            at(60),
+            DataInput::TxDone {
+                ticket: transmit.ticket,
+                buffer: transmit.buffer,
+            },
+        )
+        .unwrap();
+        sent
+    };
+    assert_eq!(send(&mut world, 7), (7, 0));
+    assert_eq!(send(&mut world, 0), (0, 0));
+    // A rekey: Group Message 2 is QoS Data on TID 7, numbered in its space.
+    let before = world.frames.len();
+    world.receive(at(50), &group_message1(&ptk, 3, 2));
+    let group_message2 = world.frames[before..]
+        .iter()
+        .find(|frame| frame[0] & 0xfc == 0x88)
+        .expect("Group Message 2 went as QoS Data");
+    assert_eq!(tid_and_sequence(group_message2), (7, 1));
+    // TID 7 goes on after the EAPOL's number; TID 0 never lost one.
+    assert_eq!(send(&mut world, 7), (7, 2));
+    assert_eq!(send(&mut world, 0), (0, 1));
 }
 
 #[test]

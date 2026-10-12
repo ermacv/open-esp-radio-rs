@@ -412,6 +412,10 @@ const CHANNEL_CAPACITY: usize = 16;
 /// The BSSs a scan keeps at most.
 const SCAN_CAPACITY: usize = 16;
 
+/// A new association's QoS sequence spaces.
+const QOS_SEQUENCES: [StaSequenceCounter; 8] =
+    [StaSequenceCounter::new(SequenceNumber::ZERO); 8];
+
 /// The reason codes of the station's Deauthentication (IEEE 802.11-2020
 /// Table 9-90).
 const REASON_UNSPECIFIED: u16 = 1;
@@ -493,9 +497,6 @@ pub struct Station<T: StaTokens, K: Ieee80211Capabilities> {
     /// steps.
     notice_owed: Option<StaNotice>,
     sequence: StaSequenceCounter,
-    /// The QoS sequence spaces, one per TID, which data shares through the
-    /// link.
-    qos_sequences: [StaSequenceCounter; 8],
     scan: ScanTable<SCAN_CAPACITY>,
 }
 
@@ -786,6 +787,9 @@ struct Connected<T: StaTokens, K> {
     qos: bool,
     /// The access point as the association made it.
     peer: Peer,
+    /// The association's QoS sequence spaces, one per TID: its EAPOL's and,
+    /// lent through the link, its data's.
+    qos_sequences: [StaSequenceCounter; 8],
     /// The upstream fact the arbiter has yet to hear.
     report: Option<UpstreamFact<K>>,
     /// The primary lease to exchange after the port moved.
@@ -1102,7 +1106,6 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             absence: None,
             notice_owed: None,
             sequence: StaSequenceCounter::new(SequenceNumber::ZERO),
-            qos_sequences: [StaSequenceCounter::new(SequenceNumber::ZERO); 8],
             scan: ScanTable::new(),
         }
     }
@@ -1152,7 +1155,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             bssid: connected.bssid,
             association_id: connected.association_id,
             mode: if connected.qos {
-                LinkMode::Qos(&mut self.qos_sequences)
+                LinkMode::Qos(&mut connected.qos_sequences)
             } else {
                 LinkMode::NonQos(&mut self.sequence)
             },
@@ -2407,8 +2410,8 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 if connected.sending.is_none()
                     && self.link_up(&connected.power, &connected.keys) =>
             {
-                match self.encode_protected_eapol(connected.bssid, connected.qos, message.as_bytes())
-                {
+                let qos = connected.qos.then_some(&mut connected.qos_sequences);
+                match self.encode_protected_eapol(connected.bssid, qos, message.as_bytes()) {
                     Ok(transmit) => {
                         connected.sending = Some(Sending::GroupResponse);
                         (Rekey::AwaitSent, Some(Owed::Transmit(transmit)))
@@ -2686,6 +2689,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 association_id,
                 qos,
                 peer,
+                qos_sequences: QOS_SEQUENCES,
                 report: Some(UpstreamFact::Connected(channel)),
                 exchange: false,
                 power: PowerSaveView::awake(),
@@ -2782,17 +2786,22 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     /// Protected bit and the CCMP header's room, which the backend fills;
     /// QoS Data at user priority 7 on a QoS BSS, as the old ESP32-S31 path
     /// sent it.
+    ///
+    /// On a QoS BSS it takes TID 7's number, which data at priority 7
+    /// shares, not TID 0's as the old path did: a rekey's EAPOL would leave
+    /// holes in TID 0's sequence under its Block Ack (owner decision on
+    /// #563).
     fn encode_protected_eapol(
         &mut self,
         bssid: [u8; 6],
-        qos: bool,
+        qos: Option<&mut [StaSequenceCounter; 8]>,
         eapol: &[u8],
     ) -> Result<StaTransmit<T, K>, Unsent> {
         const PRIORITY: u8 = 7;
-        let sequence_number = if qos {
-            self.qos_sequences[usize::from(PRIORITY)].take()
-        } else {
-            self.sequence.take()
+        let peer_qos = qos.is_some();
+        let sequence_number = match qos {
+            Some(sequences) => sequences[usize::from(PRIORITY)].take(),
+            None => self.sequence.take(),
         };
         let frame = oer_ieee80211_mac::station::StaProtectedDataFrame {
             source: self.config.address,
@@ -2800,7 +2809,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             destination: bssid,
             sequence_number,
             user_priority: PRIORITY,
-            peer_qos: qos,
+            peer_qos,
             ccmp_header: [0; 8],
             ether_type: EAPOL_ETHER_TYPE,
             payload: eapol,
@@ -3004,6 +3013,7 @@ fn connect<T: StaTokens, K>(handshake: Handshake<T, K>) -> State<T, K> {
             association_id,
             qos,
             peer,
+            qos_sequences: QOS_SEQUENCES,
             report: Some(UpstreamFact::Connected(channel)),
             exchange: false,
             power: PowerSaveView::awake(),

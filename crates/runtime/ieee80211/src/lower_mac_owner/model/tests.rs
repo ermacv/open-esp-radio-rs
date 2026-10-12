@@ -582,3 +582,95 @@ fn as_much_work_as_allowed_while_every_setting_changes_loses_no_command() {
     );
     assert!(air.settings() >= 3);
 }
+
+/// What an attempt the closing gate aborted came back as.
+#[derive(Debug, Default)]
+struct Aborted {
+    status: Option<TxStatus>,
+    transmissions: u8,
+    fresh: bool,
+    untouched: bool,
+}
+
+/// A protected attempt waits in a busy queue; the gate closes over it.
+struct AbortHeld<'t> {
+    air: &'t ModelAir,
+    seen: &'t RefCell<Aborted>,
+}
+
+impl Work for AbortHeld<'_> {
+    async fn work<'p, 'id: 'p>(
+        self,
+        phase: &mut ModelPhase<'p, 'id>,
+        resources: ModelResources<'id>,
+    ) {
+        let ModelResources {
+            mut tickets,
+            mut large,
+            station_pairwise: [slot, _],
+            gate,
+            ..
+        } = resources;
+        let key = phase.station().install_pairwise_key(
+            slot,
+            IndividualAddress::new(PEER).unwrap(),
+            Ccmp128Key([7; 16]),
+        );
+        self.air.hold(WmmAccessCategory::BestEffort, true);
+        submit(phase, tickets.remove(0), large.remove(0), Some(&key));
+        for _ in 0..10 {
+            yield_now().await;
+        }
+        phase.close_gate(gate);
+        loop {
+            yield_now().await;
+            let event = {
+                let event = core::pin::pin!(phase.next_event());
+                let mut context = core::task::Context::from_waker(Waker::noop());
+                Future::poll(event, &mut context)
+            };
+            if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted {
+                buffers,
+                completion,
+                ..
+            }))) = event
+            {
+                let mut seen = self.seen.borrow_mut();
+                seen.status = Some(completion.status);
+                seen.transmissions = completion.transmissions;
+                let buffer = buffers.into_iter().next().unwrap();
+                if let Ok(mut fresh) = <ModelTypes as TxBufferPool<'id, ModelLarge>>::class(buffer)
+                {
+                    seen.fresh = true;
+                    // The MPDU as it was written: its body, no CCMP header
+                    // filled in.
+                    let bytes = fresh.bytes_mut();
+                    seen.untouched = bytes[24..32] == [0x5a; 8];
+                }
+                break;
+            }
+        }
+        let _ = key;
+    }
+}
+
+#[test]
+fn an_attempt_the_closing_gate_aborts_comes_back_fresh_without_a_transmission() {
+    let (backend, air) = backend();
+    let seen = RefCell::new(Aborted::default());
+    block_on(run_port(
+        backend,
+        Body(AbortHeld {
+            air: &air,
+            seen: &seen,
+        }),
+    ));
+    let seen = seen.into_inner();
+    // Contract (owner decision on #563): aborted with no transmission, its
+    // buffer fresh, never numbered, its MPDU untouched.
+    assert_eq!(seen.status, Some(TxStatus::Aborted));
+    assert_eq!(seen.transmissions, 0);
+    assert!(seen.fresh, "the buffer comes back fresh");
+    assert!(seen.untouched, "the MPDU is as it was written");
+    assert!(air.sent().is_empty());
+}

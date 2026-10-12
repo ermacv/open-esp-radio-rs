@@ -523,6 +523,8 @@ pub struct ModelAir {
     commands: Cell<u32>,
     /// The settings the driver applied.
     settings: Cell<u32>,
+    /// The queues the air keeps busy: their attempts wait unpublished.
+    held: Cell<[bool; 4]>,
 }
 
 impl ModelAir {
@@ -539,6 +541,15 @@ impl ModelAir {
     /// Deliver `frame` to the radio.
     pub fn receive(&self, frame: &[u8], meta: ModelRxMeta) {
         self.rx.borrow_mut().push_back((frame.into(), meta));
+        self.wake_driver();
+    }
+
+    /// Keep the queue of `access_category` busy, or free it: its attempts
+    /// wait unpublished meanwhile, as behind a long transmission.
+    pub fn hold(&self, access_category: oer_ieee80211_mac::qos::WmmAccessCategory, held: bool) {
+        let mut queues = self.held.get();
+        queues[access_category as usize] = held;
+        self.held.set(queues);
         self.wake_driver();
     }
 
@@ -972,7 +983,11 @@ impl<'id> Driver<'id> {
 
     /// Publish the head of every queue and carry its retry plan out.
     fn publish(&mut self, held: &ModelHeld<'id>) {
-        for queue in &mut self.queues {
+        let busy = held.air.held.get();
+        for (queue, busy) in self.queues.iter_mut().zip(busy) {
+            if busy {
+                continue;
+            }
             while let Some(mut prepared) = queue.pop_front() {
                 // A fresh MPDU under a key is numbered at its first
                 // transmission; a numbered one keeps its number.

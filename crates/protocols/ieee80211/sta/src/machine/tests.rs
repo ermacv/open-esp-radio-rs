@@ -1224,6 +1224,14 @@ fn eapol_and_data_on_tid_7_share_one_counter_and_tid_0_runs_on_across_a_rekey() 
             DataInput::TxDone {
                 ticket: transmit.ticket,
                 buffer: transmit.buffer,
+                completion: TxCompletion {
+                    status: TxStatus::Success,
+                    ack_rssi_dbm: None,
+                    ack_snr_db: None,
+                    block_ack: None,
+                    transmissions: 1,
+                    rate: None,
+                },
             },
         )
         .unwrap();

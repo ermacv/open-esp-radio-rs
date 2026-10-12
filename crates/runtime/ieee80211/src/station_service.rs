@@ -621,20 +621,12 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                     return Next::Poisoned;
                 }
             }
-            while let Some(DataAction::Transmit(transmit)) = self.data.poll_action(now) {
+            // Data goes only while the link is up: otherwise its MPDUs wait
+            // in the machine, none lost.
+            while let Some(link) = self.station.link()
+                && let Some(DataAction::Transmit(transmit)) = self.data.poll_action(now)
+            {
                 progress = true;
-                let Some(link) = self.station.link() else {
-                    // The link closed in this step: the MPDU's tokens come
-                    // back unsent.
-                    let _ = self.data.input::<PortStaTokens<'id, B::Types, B::Small>>(
-                        now,
-                        DataInput::TxDone {
-                            ticket: transmit.ticket,
-                            buffer: transmit.buffer,
-                        },
-                    );
-                    continue;
-                };
                 let key = match (&link.protection, transmit.protected) {
                     (LinkProtection::Ccmp { key, .. }, true) => Some(AttemptKey::Pairwise(*key)),
                     _ => None,
@@ -881,7 +873,11 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
         let input = match ticket {
             Some(ticket) => {
                 self.rates.completed(now, FrameRates::Data, &completion);
-                DataInput::TxDone { ticket, buffer }
+                DataInput::TxDone {
+                    ticket,
+                    buffer,
+                    completion,
+                }
             }
             None => DataInput::Returned {
                 ticket: None,

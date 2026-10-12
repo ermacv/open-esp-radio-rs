@@ -422,7 +422,12 @@ pub trait LowerMacPhase<'p, 'id: 'p>:
 
     /// Close the transmit gate of every queue: admission of new attempts
     /// stops at once, and [`LowerMacEvent::GateClosed`] follows once no
-    /// attempt is published.
+    /// attempt is published. An attempt the gate holds unpublished ends as
+    /// [`TxStatus::Aborted`](crate::TxStatus::Aborted) with no
+    /// transmission; its buffer comes back fresh (a protected attempt is
+    /// numbered at its first transmission), its MPDU untouched, so the
+    /// caller sends it again with its sequence number
+    /// ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563)).
     fn close_gate(&mut self, gate: GateOpen<'id>);
 
     /// Open the closed gate, a register write that cannot fail.
@@ -635,7 +640,8 @@ pub trait TxBufferPool<'id, C: TxBufferClass>: PhaseTypes<'id> {
 
     /// A buffer of the class that holds an MPDU the backend numbered: its
     /// CCMP header carries the packet number of the MPDU's first
-    /// transmission. A completion gives it back after a protected attempt;
+    /// transmission. An attempt that made no transmission gives its buffer
+    /// back fresh, never numbered. A completion gives it back after a protected attempt;
     /// retransmitted ([`InterfacePhase::retransmit`]) it keeps its packet
     /// number, and its bytes are not the caller's to write.
     type Numbered;

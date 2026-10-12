@@ -79,6 +79,25 @@ impl<X> Fifo<X> {
         self.len += 1;
     }
 
+    /// Queue `item` at the front.
+    pub(crate) fn push_front(&mut self, item: X) {
+        assert!(
+            self.len < POOL_CAPACITY,
+            "a queue holds at most its pool's tokens"
+        );
+        self.head = (self.head + POOL_CAPACITY - 1) % POOL_CAPACITY;
+        self.items[self.head] = Some(item);
+        self.len += 1;
+    }
+
+    /// The front item, in place.
+    pub(crate) fn front(&self) -> Option<&X> {
+        if self.len == 0 {
+            return None;
+        }
+        self.items[self.head].as_ref()
+    }
+
     /// The front item.
     pub(crate) fn pop(&mut self) -> Option<X> {
         if self.len == 0 {

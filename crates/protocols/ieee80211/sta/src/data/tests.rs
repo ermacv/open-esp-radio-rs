@@ -4,7 +4,7 @@ use super::*;
 use oer_ieee80211_lower_mac::{
     BandSet, Channel, ChannelWidth, CoexPriority, CoexPrioritySet, HardwareServices,
     Ieee80211Capabilities, LowerMacCapabilities, PhyFormatSet, RateSupport, ReceiveFilter,
-    RxEvidence, WidthSet,
+    RxEvidence, TxStatus, WidthSet,
 };
 use oer_ieee80211_mac::ccmp::{CcmpRxReplayEpoch, GroupKeyId};
 use oer_ieee80211_mac::phy::{HeMcs, HtMcs};
@@ -251,6 +251,7 @@ fn msdus_wait_while_the_tokens_are_out() {
         DataInput::TxDone {
             ticket: first.ticket,
             buffer: first.buffer,
+            completion: ended(TxStatus::Success, 1),
         },
     )
     .unwrap();
@@ -365,4 +366,64 @@ fn the_old_and_the_new_group_key_are_both_taken_until_the_old_is_removed() {
             .count(),
         1
     );
+}
+
+/// The terminal of an attempt that made `transmissions`.
+fn ended(status: TxStatus, transmissions: u8) -> TxCompletion {
+    TxCompletion {
+        status,
+        ack_rssi_dbm: None,
+        ack_snr_db: None,
+        block_ack: None,
+        transmissions,
+        rate: None,
+    }
+}
+
+/// The TID and sequence number of a QoS Data MPDU in its buffer.
+fn tid_and_sequence(frame: &[u8]) -> (u8, u16) {
+    (frame[24] & 0x0f, u16::from_le_bytes([frame[22], frame[23]]) >> 4)
+}
+
+#[test]
+fn an_attempt_aborted_before_the_air_goes_again_first_with_its_sequence_number() {
+    let mut data = StaData::<Data, Caps>::new(
+        [1, 2, 3],
+        [Buffer(std::vec![0; 1600]), Buffer(std::vec![0; 1600]), Buffer(std::vec![0; 1600])],
+    );
+    let mut replay = epoch();
+    let mut link = qos_link(&(), &mut replay);
+    // Two MSDUs of TID 6: the first is submitted, then a newer one waits.
+    data.input(NOW, DataInput::Msdu { msdu: msdu(6), link: &mut link }).unwrap();
+    let first = transmit(&mut data);
+    let sent = tid_and_sequence(&first.buffer.0);
+    data.input(NOW, DataInput::Msdu { msdu: msdu(6), link: &mut link }).unwrap();
+    // A closing gate aborts the first before any transmission.
+    data.input::<Station>(
+        NOW,
+        DataInput::TxDone {
+            ticket: first.ticket,
+            buffer: first.buffer,
+            completion: ended(TxStatus::Aborted, 0),
+        },
+    )
+    .unwrap();
+    // It goes again at the head of its TID's queue, before the newer MSDU,
+    // with the same sequence number, in its buffer.
+    let again = transmit(&mut data);
+    assert_eq!(tid_and_sequence(&again.buffer.0), sent);
+    let newer = transmit(&mut data);
+    assert_eq!(tid_and_sequence(&newer.buffer.0), (6, sent.1 + 1));
+    assert!(data.poll_action(NOW).is_none());
+    // One that made a transmission ends: its tokens come back.
+    data.input::<Station>(
+        NOW,
+        DataInput::TxDone {
+            ticket: again.ticket,
+            buffer: again.buffer,
+            completion: ended(TxStatus::AckTimeout, 3),
+        },
+    )
+    .unwrap();
+    assert!(data.poll_action(NOW).is_none());
 }

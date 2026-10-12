@@ -22,7 +22,7 @@
 
 use oer_ieee80211_lower_mac::{
     AckHeader, HeaderSpec, IndividualAddress, MpduLength, RxCryptoStatus, RxEvidence, RxMeta,
-    SizedFrame, TxBufferMemory,
+    SizedFrame, TxBufferMemory, TxCompletion,
 };
 use oer_ieee80211_mac::{
     ccmp::{CcmpHeader, CcmpRxProtection},
@@ -70,12 +70,20 @@ pub enum DataInput<'a, 'l, 'v, D: StaDataTokens, T: StaTokens> {
         /// The station's link.
         link: &'l mut LinkView<'v, T>,
     },
-    /// A data MPDU's terminal: its ticket and buffer come back.
+    /// A data MPDU's terminal: its ticket and buffer come back. An attempt
+    /// that ended before any transmission (a closing gate aborts the ones
+    /// it holds) goes again: back at the head of its TID's queue, before
+    /// newer MSDUs, in its buffer, which comes back fresh, with its
+    /// sequence number ([owner decision on #563]).
+    ///
+    /// [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563
     TxDone {
         /// Its ticket.
         ticket: D::Ticket,
         /// Its buffer.
         buffer: D::Buffer,
+        /// How it ended.
+        completion: TxCompletion,
     },
     /// Tokens that came back without an MPDU's terminal: an MPDU the
     /// service did not send, or a terminal that carried a buffer more or
@@ -119,12 +127,33 @@ pub enum DataRefusal {
     TooLong,
 }
 
+/// An attempt owed, with its place in the order MSDUs came.
+struct Owed<D: StaDataTokens, K> {
+    transmit: DataTransmit<D, K>,
+    order: u32,
+}
+
+/// What the machine keeps of a submitted MPDU to send it again: its
+/// buffer holds the frame.
+struct InFlight {
+    len: usize,
+    access_category: WmmAccessCategory,
+    protected: bool,
+    order: u32,
+}
+
 /// The connected station's data machine.
 pub struct StaData<D: StaDataTokens, K> {
     tickets: Pool<D::Ticket>,
     buffers: Pool<D::Buffer>,
-    /// The attempts owed, in their order.
-    owed: Fifo<DataTransmit<D, K>>,
+    /// The attempts owed, by TID (a non-QoS link's in the first), each in
+    /// its order.
+    owed: [Fifo<Owed<D, K>>; 8],
+    /// The submitted MPDUs, by TID, in their order: a port ends a queue's
+    /// attempts in order.
+    in_flight: [Fifo<InFlight>; 8],
+    /// The order of the next MSDU.
+    next_order: u32,
 }
 
 impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities> StaData<D, K> {
@@ -137,7 +166,9 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities> StaDat
         Self {
             tickets: Pool::new(tickets),
             buffers: Pool::new(buffers),
-            owed: Fifo::new(),
+            owed: [const { Fifo::new() }; 8],
+            in_flight: [const { Fifo::new() }; 8],
+            next_order: 0,
         }
     }
 
@@ -158,7 +189,30 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities> StaDat
         input: DataInput<'_, '_, '_, D, T>,
     ) -> Result<(), DataRefusal> {
         match input {
-            DataInput::TxDone { ticket, buffer } => {
+            DataInput::TxDone {
+                ticket,
+                mut buffer,
+                completion,
+            } => {
+                let tid = tid_of(buffer.bytes_mut());
+                let in_flight = self.in_flight[tid].pop();
+                // Never on the air: the same MPDU goes again, first.
+                if completion.transmissions == 0
+                    && let Some(in_flight) = in_flight
+                    && let Some(frame) = sized::<K>(&buffer.bytes_mut()[..in_flight.len])
+                {
+                    self.owed[tid].push_front(Owed {
+                        transmit: DataTransmit {
+                            ticket,
+                            buffer,
+                            frame,
+                            access_category: in_flight.access_category,
+                            protected: in_flight.protected,
+                        },
+                        order: in_flight.order,
+                    });
+                    return Ok(());
+                }
                 self.tickets.put(ticket);
                 self.buffers.put(buffer);
                 Ok(())
@@ -180,6 +234,12 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities> StaDat
                 };
                 let tid = msdu.priority.value();
                 let qos = matches!(link.mode, LinkMode::Qos(_));
+                // A non-QoS link has one queue, best effort.
+                let (slot, access_category) = if qos {
+                    (usize::from(tid), msdu.priority.access_category())
+                } else {
+                    (0, WmmAccessCategory::BestEffort)
+                };
                 let protected = matches!(link.protection, LinkProtection::Ccmp { .. });
                 // A frame that does not fit its buffer takes no sequence
                 // number.
@@ -202,12 +262,17 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities> StaDat
                 );
                 match frame {
                     Some(frame) => {
-                        self.owed.push(DataTransmit {
-                            ticket,
-                            buffer,
-                            frame,
-                            access_category: msdu.priority.access_category(),
-                            protected,
+                        let order = self.next_order;
+                        self.next_order = self.next_order.wrapping_add(1);
+                        self.owed[slot].push(Owed {
+                            transmit: DataTransmit {
+                                ticket,
+                                buffer,
+                                frame,
+                                access_category,
+                                protected,
+                            },
+                            order,
                         });
                         Ok(())
                     }
@@ -224,7 +289,19 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities> StaDat
     /// The next action at `now`, if any. The service takes every action
     /// before it waits again.
     pub fn poll_action(&mut self, _now: Instant) -> Option<DataAction<D, K>> {
-        self.owed.pop().map(DataAction::Transmit)
+        // The earliest MSDU first, whatever its TID.
+        let tid = (0..8)
+            .filter_map(|tid| self.owed[tid].front().map(|owed| (owed.order, tid)))
+            .min_by_key(|&(order, _)| order.wrapping_sub(self.next_order))?
+            .1;
+        let Owed { transmit, order } = self.owed[tid].pop()?;
+        self.in_flight[tid].push(InFlight {
+            len: transmit.frame.len().get(),
+            access_category: transmit.access_category,
+            protected: transmit.protected,
+            order,
+        });
+        Some(DataAction::Transmit(transmit))
     }
 
     /// When the machine next needs [`Self::poll_action`] without an input:
@@ -341,6 +418,15 @@ fn encode_frame<T: StaTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities>
         return sized(&output[..len - 8]);
     }
     sized(&output[..len])
+}
+
+/// The queue of an MPDU in its buffer: its TID on QoS Data, the first
+/// otherwise.
+fn tid_of(frame: &[u8]) -> usize {
+    match frame {
+        [control, _, ..] if control & 0x80 != 0 => frame.get(24).map_or(0, |qos| usize::from(qos & 0x07)),
+        _ => 0,
+    }
 }
 
 fn sized<K: oer_ieee80211_lower_mac::Ieee80211Capabilities>(

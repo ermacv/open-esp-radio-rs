@@ -1101,9 +1101,9 @@ impl<'id, Q, B> TxSeats<'id, Q, B> {
 }
 
 /// One attempt of a running phase, every value of it checked: the queue it
-/// occupies, its MPDU in a buffer bound to a buffer permit (whose kind fixes
-/// its rate and response), its body, its protection, key, power, backoff
-/// and coexistence level.
+/// occupies, its MPDU in a buffer bound to a buffer permit, its body, its
+/// protection, key, power, backoff and coexistence level. The frame's kind,
+/// fixed when the buffer was lent, sets its rate and response.
 pub struct PhaseAttempt<'p, 'id: 'p, C: LowerMacClient<'id> + 'p> {
     pub queue: C::Queue<'p>,
     /// The frame, whose kind fixes its rate and response.

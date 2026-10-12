@@ -205,6 +205,21 @@ impl<'r, 'storage, K, M: RawMutex, H, T, R, const EVENTS: usize>
     }
 }
 
+impl<'storage, K, M, H, T, R, const EVENTS: usize>
+    Ieee802154RuntimeBackend<'_, 'storage, K, M, H, T, R, EVENTS>
+where
+    M: RawMutex,
+    H: Ieee802154LowLevel,
+    T: Timer,
+    R: Ieee802154Random,
+{
+    /// Take the engine and the hardware back from a backend that never ran
+    /// a port, as a bring-up failure after the install does.
+    pub fn uninstall_unused(self) -> Ieee802154RuntimeParts<'storage, H> {
+        self.runtime.uninstall()
+    }
+}
+
 /// The port's owned event: the runtime's event and, for a terminal, the
 /// interface whose operation it ends.
 #[derive(Clone, Debug, Eq, PartialEq)]

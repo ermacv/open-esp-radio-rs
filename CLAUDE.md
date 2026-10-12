@@ -71,8 +71,9 @@ One task is one session and one PR. A block guide skill (`block-wifi`,
 a block's packages across layers, its shared contracts, traps and checks; the
 agent profile of the same name in `.claude/agents/` starts a session with it
 (`@block-wifi` in agent view, `claude --agent block-wifi`). A block decides
-inside its own crates with the repository owner directly; `common` joins only
-when a shared crate changes. A shared crate takes only what at least two
+inside its own crates with the repository owner directly; `common`, the
+session in the main checkout that owns the shared crates and coordinates the
+blocks, joins only when a shared crate changes. A shared crate takes only what at least two
 blocks have proven in code. A shared change comes with a prototype in a block
 that shows the failing case, a
 [cost table](docs/architecture.md#changing-a-shared-contract) and one owner

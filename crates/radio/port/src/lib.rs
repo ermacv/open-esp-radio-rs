@@ -87,15 +87,10 @@ use oer_time::RadioInstant;
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod conformance;
-pub mod owner;
 pub mod pool;
 mod relation;
 
-pub use owner::{
-    Disabled, EnableResult, Enabled, Ended, Failed, Lent, Owner, PhaseParts, PoisonedOwner,
-    PortBackend, PortBody, RadioPortClient, RadioPortEvents, RadioWork, Retire, Work, run_port,
-};
-pub use pool::{Line, Mint, Permit, PermitPool, Seat, Slot};
+pub use pool::{Line, Mint, Permit, PermitPool, Seat, Slot, branded};
 pub use relation::{
     ClockInfo, ClockRelation, ClockSample, Generation, GenerationSource, Projected,
     ProjectionError, RadioStamp, RelationRate, RelationSample, Stamp,

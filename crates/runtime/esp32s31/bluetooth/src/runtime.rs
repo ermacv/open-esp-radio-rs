@@ -14,6 +14,7 @@ use embassy_sync::{
     signal::Signal,
     waitqueue::WakerRegistration,
 };
+use oer_bluetooth_port::EnableResult;
 use oer_bluetooth_radio::{
     CancelError, ClockError, EventId, EventsLost, LeCapabilities, LeInstant, OutsideEpoch,
     OwnedRadioRequest, Poisoned, PortResult, RadioActivity, RadioOutcome, RadioRequest,
@@ -36,7 +37,6 @@ use oer_esp32s31_bluetooth_radio::{
 use oer_esp32s31_hal::bluetooth::{
     BluetoothSchedulerHardwareListIndex, BluetoothSchedulerStop, BluetoothSchedulerStopStep,
 };
-use oer_radio_port::EnableResult;
 use oer_time::{Duration, Timer};
 
 use crate::port::BluetoothBackend;
@@ -1075,7 +1075,7 @@ impl<
 
     /// Stop the runtime at once, synchronously: poison it, halt its driver
     /// at its next pass and refuse any install until a reset. A dropped or
-    /// fail-stopped port owner calls it ([`oer_radio_port::PortBackend::abandon`]);
+    /// fail-stopped port owner calls it ([`oer_bluetooth_port::PortBackend::abandon`]);
     /// the radio and its hardware stay unreachable, and the composition
     /// keeps the interrupt routes and power owners fail-stop.
     pub fn abandon(&self) {

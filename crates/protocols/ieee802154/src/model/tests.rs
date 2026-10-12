@@ -6,7 +6,8 @@ use core::{
     task::{Context, Poll, Waker},
 };
 
-use oer_radio_port::{Ended, EventsLost, Owner, Poisoned, PortBody, RadioPortEvents, run_port};
+use oer_ieee802154_port::{Ended, Owner, PortBody, RadioPortEvents, run_port};
+use oer_radio_port::{EventsLost, Poisoned};
 
 use super::*;
 use crate::owner::{Ieee802154Clients, Transmission};
@@ -60,7 +61,7 @@ fn the_operation_permit_comes_back_before_its_terminal_is_handed_out() {
     impl PortBody<OwnedModel> for Body {
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
             resources: ModelResources<'id>,
         ) -> Ended<'id, OwnedModel> {
             let [mut seat0, mut seat1] = resources.operation;
@@ -135,7 +136,7 @@ fn takers_of_the_operation_are_served_in_arrival_order_across_interfaces() {
     impl PortBody<OwnedModel> for Body {
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
             resources: ModelResources<'id>,
         ) -> Ended<'id, OwnedModel> {
             let [mut seat0, mut seat1] = resources.operation;
@@ -182,7 +183,7 @@ fn disable_hands_leftover_terminals_to_the_sink_and_takes_their_permits_back() {
     impl PortBody<OwnedModel> for Body {
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
             resources: ModelResources<'id>,
         ) -> Ended<'id, OwnedModel> {
             let [mut seat0, _] = resources.operation;
@@ -232,7 +233,7 @@ fn the_radio_receives_while_any_interface_asks_on_one_shared_channel() {
     impl PortBody<OwnedModel> for Body {
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
             resources: ModelResources<'id>,
         ) -> Ended<'id, OwnedModel> {
             let zero = owner.setup().configure(resources.interface0.interface);
@@ -276,7 +277,7 @@ fn a_window_is_a_wish_that_owes_no_event() {
     impl PortBody<OwnedModel> for Body {
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
             resources: ModelResources<'id>,
         ) -> Ended<'id, OwnedModel> {
             let zero = owner.setup().configure(resources.interface0.interface);
@@ -332,7 +333,7 @@ fn a_cancel_ends_the_operation_once() {
     impl PortBody<OwnedModel> for Body {
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
             resources: ModelResources<'id>,
         ) -> Ended<'id, OwnedModel> {
             let [_, mut seat1] = resources.operation;
@@ -380,7 +381,7 @@ fn a_radio_fault_ends_admitted_work_first_then_poisons() {
     impl PortBody<OwnedModel> for Body {
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
             resources: ModelResources<'id>,
         ) -> Ended<'id, OwnedModel> {
             let [mut seat0, _] = resources.operation;
@@ -435,7 +436,7 @@ fn a_reception_overflow_is_reported_once_and_loses_no_terminal() {
     impl PortBody<OwnedModel> for Body {
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
             resources: ModelResources<'id>,
         ) -> Ended<'id, OwnedModel> {
             let [mut seat0, _] = resources.operation;
@@ -517,7 +518,7 @@ fn pending_entries_hold_their_interface_slots_across_phases() {
     impl PortBody<OwnedModel> for Body {
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
             resources: ModelResources<'id>,
         ) -> Ended<'id, OwnedModel> {
             let ModelResources {
@@ -585,7 +586,7 @@ fn settings_reach_the_radio_while_disabled_and_while_enabled() {
     impl PortBody<OwnedModel> for Body {
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
             resources: ModelResources<'id>,
         ) -> Ended<'id, OwnedModel> {
             {
@@ -639,12 +640,14 @@ fn a_refused_enable_returns_the_disabled_owner() {
     impl PortBody<OwnedModel> for Body {
         async fn run<'p, 'id>(
             self,
-            owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
+            owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
             _: ModelResources<'id>,
         ) -> Ended<'id, OwnedModel> {
             parts_handle().refuse_enable(true);
             match owner.enable().await {
-                Err(oer_radio_port::Failed::Refused(owner, ModelRefusal)) => owner.uninstall(()),
+                Err(oer_ieee802154_port::Failed::Refused(owner, ModelRefusal)) => {
+                    owner.uninstall(())
+                }
                 _ => panic!("the radio refused"),
             }
         }
@@ -762,7 +765,8 @@ impl PortBackend for PoolProbe {
 
     fn enable(
         &mut self,
-    ) -> impl Future<Output = oer_radio_port::EnableResult<ModelRefusal, ModelFault>> + '_ {
+    ) -> impl Future<Output = oer_ieee802154_port::EnableResult<ModelRefusal, ModelFault>> + '_
+    {
         core::future::ready(Ok(Ok(())))
     }
 
@@ -782,7 +786,7 @@ impl PortBackend for PoolProbe {
     ) -> impl Future<
         Output = oer_radio_port::PortResult<
             Ieee802154Instant,
-            oer_radio_port::ClockError,
+            oer_ieee802154_port::ClockError,
             ModelFault,
         >,
     > + '_ {
@@ -822,7 +826,7 @@ impl PortBackend for PoolProbe {
     fn drive<'p, 'id>(
         &mut self,
         _: &'p Self::Held<'id>,
-        retire: oer_radio_port::Retire<'p>,
+        retire: oer_ieee802154_port::Retire<'p>,
     ) -> impl Future<Output = ()> + use<'p, 'id> {
         core::future::poll_fn(move |_| {
             if retire.is_requested() {
@@ -850,7 +854,7 @@ fn the_operation_pool_serves_takers_in_arrival_order() {
     impl PortBody<PoolProbe> for Body {
         async fn run<'p, 'id>(
             self,
-            owner: Owner<'p, 'id, PoolProbe, oer_radio_port::Disabled>,
+            owner: Owner<'p, 'id, PoolProbe, oer_ieee802154_port::Disabled>,
             (pool, mut seats): (
                 ModelPermitPool<'id, crate::owner::Operation>,
                 [oer_radio_port::Seat<'id, crate::owner::Operation>; 3],
@@ -882,7 +886,7 @@ fn a_change_of_wish_wakes_waiting_receives_and_a_window_preempts() {
     impl PortBody<OwnedModel> for Body {
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
             resources: ModelResources<'id>,
         ) -> Ended<'id, OwnedModel> {
             let zero = owner.setup().configure(resources.interface0.interface);
@@ -937,7 +941,7 @@ fn interfaces_moving_to_one_channel_admit_each_other() {
     impl PortBody<OwnedModel> for Body {
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
             resources: ModelResources<'id>,
         ) -> Ended<'id, OwnedModel> {
             let zero = owner.setup().configure(resources.interface0.interface);
@@ -974,7 +978,7 @@ fn removing_an_interface_keeps_its_pending_entries() {
     impl PortBody<OwnedModel> for Body {
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
             resources: ModelResources<'id>,
         ) -> Ended<'id, OwnedModel> {
             let zero = owner.setup().configure(resources.interface0.interface);

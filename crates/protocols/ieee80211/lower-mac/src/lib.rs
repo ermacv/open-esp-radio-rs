@@ -78,10 +78,11 @@ pub use extensions::{
     TsfArithmeticError, TsfGeneration, TsfProjectionError, TsfRelation, TsfSample, TsfSetKind,
     TsfTimingError, TsfVifMismatch, VifTsf,
 };
+pub use oer_ieee80211_port::{CancelError, ClockError};
 pub use oer_radio_port::{
-    CancelError, ClockError, ClockInfo, ClockRelation, Correlation, CorrelationIds, EventsLost,
-    Generation, GenerationSource, LifecycleCommand, LifecycleError, LifecycleEvent, Poisoned,
-    PortResult, Projected, ProjectionError, RadioPort, RelationRate,
+    ClockInfo, ClockRelation, Correlation, CorrelationIds, EventsLost, Generation,
+    GenerationSource, LifecycleCommand, LifecycleError, LifecycleEvent, Poisoned, PortResult,
+    Projected, ProjectionError, RadioPort, RelationRate,
 };
 pub use owner::{
     AccessPoint, AccessPointClient, AckHeader, AddressSetup, AttemptKey, BssColor, Ccmp128Key,

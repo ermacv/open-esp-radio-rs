@@ -12,7 +12,7 @@ use oer_ieee80211_mac::{
     qos::WmmAccessCategory,
     sequence::SequenceNumber,
 };
-use oer_radio_port::{Disabled, Ended, Owner, PhaseParts, PortBody, run_port};
+use oer_ieee80211_port::{Disabled, Ended, Owner, PhaseParts, PortBody, run_port};
 
 use super::*;
 use oer_ieee80211_lower_mac::{

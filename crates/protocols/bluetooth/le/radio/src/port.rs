@@ -5,19 +5,19 @@ use core::{
     future::{Future, pending, ready},
 };
 
-use oer_radio_port::{
-    ClockError, ClockInfo, EnableResult, EventsLost, Lent, Mint, PhaseParts, Poisoned, PortBackend,
-    PortResult, RadioPortEvents, Retire,
+use oer_bluetooth_port::{
+    ClockError, EnableResult, Lent, PhaseParts, PortBackend, RadioPortEvents, Retire,
 };
+use oer_radio_port::{ClockInfo, EventsLost, Mint, Poisoned, PortResult};
 
 use crate::{
     EventId, LeCapabilities, LeInstant, LeRadio, NoCapabilities, RadioActivity, RadioOutcome,
     RadioRequest, RequestError,
 };
-use oer_radio_port::CancelError;
+use oer_bluetooth_port::CancelError;
 
 /// A Bluetooth LE radio backend, as a Controller service body drives it
-/// through its port owner ([`oer_radio_port::Owner`]).
+/// through its port owner ([`oer_bluetooth_port::Owner`]).
 ///
 /// The lifecycle is the owner's: its disabled owner enables the port, an
 /// enabled one lends one running phase of three parts and disables the port
@@ -45,7 +45,7 @@ use oer_radio_port::CancelError;
 ///
 /// The phase's one consumer takes the events; the backend's scheduler work
 /// runs in its driver ([`PortBackend::drive`]), which
-/// [`run_port`](oer_radio_port::run_port) joins with the body. The backend reserves the slots of an
+/// [`run_port`](oer_bluetooth_port::run_port) joins with the body. The backend reserves the slots of an
 /// admitted event's end ([`RadioOutcome::EventEnded`], with the
 /// [`RadioOutcome::TransmitAcknowledged`] or [`RadioOutcome::TestReport`]
 /// before it) and of the data PDUs a connection event receives (the Link

@@ -198,12 +198,21 @@ use core::{future::Future, marker::PhantomData};
 /// The brand of one install.
 type Brand<'id> = PhantomData<fn(&'id ()) -> &'id ()>;
 
-/// The one maker of an install's slots and permits. [`run_port`](crate::run_port)
-/// hands it to the backend's `resources` once and no caller ever holds
-/// one, so every slot and permit of an install counts real capacity. It
-/// keeps no state: the backend places what it mints.
+/// The one maker of an install's slots and permits. Only [`branded`] makes
+/// one, for a brand no other install shares, and a block's port lifecycle
+/// hands it to its backend's `resources` once, so no caller ever holds one
+/// and every slot and permit of an install counts real capacity. It keeps
+/// no state: the backend places what it mints.
 pub struct Mint<'id> {
     brand: Brand<'id>,
+}
+
+/// Run `install` with the [`Mint`] of a fresh brand: `install` is generic
+/// over the brand `'id`, so it names no concrete one, nothing branded by
+/// `'id` leaves it, and a second `branded` inside it mints another brand.
+/// Each block's port lifecycle runs one install in it.
+pub async fn branded<R>(install: impl for<'id> AsyncFnOnce(Mint<'id>) -> R) -> R {
+    install(Mint::new()).await
 }
 
 impl<'id> Mint<'id> {

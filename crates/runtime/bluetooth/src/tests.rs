@@ -20,13 +20,14 @@ use oer_bluetooth_hci_transport::{
     InProcessHciHostTransport, LeControllerHciEndpoints, LeControllerHciResources,
 };
 
+use oer_bluetooth_port::{EnableResult, Lent, PhaseParts, PortBackend, RadioPortEvents, Retire};
 use oer_bluetooth_radio::{
     CancelError, ClockError, ClockInfo, ConnectionAllowances, EventId, EventResult, EventsLost,
     LeCapabilities, LeInstant, LePhys, LeRadio, LeRadioBackend, LeRadioCapabilities,
     LegacyAdvertisingTypes, NoCapabilities, NoRadio, Poisoned, PortResult, RadioActivity,
     RadioDuration, RadioOutcome, RadioRequest, RadioTiming, RequestError,
 };
-use oer_radio_port::{EnableResult, Lent, Mint, PhaseParts, PortBackend, RadioPortEvents, Retire};
+use oer_radio_port::Mint;
 
 use oer_time::Duration;
 use oer_time_virtual::VirtualClock;

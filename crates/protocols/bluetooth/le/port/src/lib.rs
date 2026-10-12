@@ -1,4 +1,12 @@
-//! The one authority over an installed port, as types.
+#![no_std]
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
+
+//! The lifecycle of the Bluetooth LE radio port: the one authority over an installed
+//! port, as types. The Bluetooth LE block owns it; the vocabulary it shares with
+//! the other radio blocks (the brand and [`Mint`], slots, permits and
+//! seats, [`Poisoned`], [`PortResult`], [`EventsLost`], the clock
+//! relation) stays in `oer-radio-port`.
 //!
 //! Every rule a caller controls is a type here, so breaking it does not
 //! compile ([ownership and refusals]); only what the world controls (the
@@ -208,7 +216,7 @@
 //! A body cannot end without an uninstall or a fail-stop:
 //!
 //! ```compile_fail,E0451
-//! # use oer_radio_port::{Disabled, Ended, Owner, PortBackend, PortBody};
+//! # use oer_bluetooth_port::{Disabled, Ended, Owner, PortBackend, PortBody};
 //! struct Forget;
 //! impl<B: PortBackend> PortBody<B> for Forget {
 //!     async fn run<'id>(self, owner: Owner<'_, 'id, B, Disabled>, _: B::Resources<'id>) -> Ended<'id, B> {
@@ -221,7 +229,7 @@
 //! Its compiling twin ends through the owner:
 //!
 //! ```
-//! # use oer_radio_port::{Disabled, Ended, Owner, PortBackend, PortBody};
+//! # use oer_bluetooth_port::{Disabled, Ended, Owner, PortBackend, PortBody};
 //! struct FailStop;
 //! impl<B: PortBackend> PortBody<B> for FailStop {
 //!     async fn run<'id>(self, owner: Owner<'_, 'id, B, Disabled>, _: B::Resources<'id>) -> Ended<'id, B> {
@@ -233,7 +241,7 @@
 //! No caller makes an owner outside a body:
 //!
 //! ```compile_fail,E0624
-//! # use oer_radio_port::{Disabled, Owner, PortBackend};
+//! # use oer_bluetooth_port::{Disabled, Owner, PortBackend};
 //! fn forge<'p, 'id, B: PortBackend>(backend: B) -> Owner<'p, 'id, B, Disabled> {
 //!     Owner::new(backend)
 //! }
@@ -242,7 +250,7 @@
 //! A disabled port lends no phase:
 //!
 //! ```compile_fail,E0599
-//! # use oer_radio_port::{Disabled, Owner, PortBackend};
+//! # use oer_bluetooth_port::{Disabled, Owner, PortBackend};
 //! fn phase_while_disabled<'id, B: PortBackend>(owner: &mut Owner<'_, 'id, B, Disabled>) {
 //!     let _ = owner.split();
 //! }
@@ -251,14 +259,14 @@
 //! An enabled port takes no disabled-only setting and no uninstall:
 //!
 //! ```compile_fail,E0599
-//! # use oer_radio_port::{Enabled, Owner, PortBackend};
+//! # use oer_bluetooth_port::{Enabled, Owner, PortBackend};
 //! fn setup_while_enabled<'id, B: PortBackend>(owner: &mut Owner<'_, 'id, B, Enabled>) {
 //!     let _ = owner.setup();
 //! }
 //! ```
 //!
 //! ```compile_fail,E0599
-//! # use oer_radio_port::{Enabled, Owner, PortBackend};
+//! # use oer_bluetooth_port::{Enabled, Owner, PortBackend};
 //! fn uninstall_while_enabled<'id, B: PortBackend>(owner: Owner<'_, 'id, B, Enabled>, control: B::Uninstall) {
 //!     let _ = owner.uninstall(control);
 //! }
@@ -268,7 +276,7 @@
 //! start beside it:
 //!
 //! ```compile_fail,E0382
-//! # use oer_radio_port::{Disabled, Owner, PortBackend};
+//! # use oer_bluetooth_port::{Disabled, Owner, PortBackend};
 //! async fn two_commands<'id, B: PortBackend>(owner: Owner<'_, 'id, B, Disabled>) {
 //!     let enabling = owner.enable();
 //!     let _ = owner.enable();
@@ -279,7 +287,7 @@
 //! A phase's part does not outlive the phase:
 //!
 //! ```compile_fail,E0505
-//! # use oer_radio_port::{Enabled, Owner, PortBackend};
+//! # use oer_bluetooth_port::{Enabled, Owner, PortBackend};
 //! async fn keep_the_control<'id, B: PortBackend>(mut owner: Owner<'_, 'id, B, Enabled>) {
 //!     let control = owner.split().control;
 //!     let _ = owner.disable(&mut |_| {}).await;
@@ -290,7 +298,7 @@
 //! Nor does a second phase run beside the first:
 //!
 //! ```compile_fail,E0499
-//! # use oer_radio_port::{Enabled, Owner, PortBackend};
+//! # use oer_bluetooth_port::{Enabled, Owner, PortBackend};
 //! fn two_phases<'id, B: PortBackend>(owner: &mut Owner<'_, 'id, B, Enabled>) {
 //!     let first = owner.split();
 //!     let second = owner.split();
@@ -301,7 +309,7 @@
 //! A caller does not reach the backend past the owner:
 //!
 //! ```compile_fail,E0616
-//! # use oer_radio_port::{Enabled, Owner, PortBackend};
+//! # use oer_bluetooth_port::{Enabled, Owner, PortBackend};
 //! fn reach_the_backend<'id, B: PortBackend>(owner: &mut Owner<'_, 'id, B, Enabled>) {
 //!     let _ = &mut owner.backend;
 //! }
@@ -310,7 +318,7 @@
 //! Nor takes a part out of its loan:
 //!
 //! ```compile_fail,E0616
-//! # use oer_radio_port::{Enabled, Owner, PortBackend};
+//! # use oer_bluetooth_port::{Enabled, Owner, PortBackend};
 //! fn take_the_part<'id, B: PortBackend>(owner: &mut Owner<'_, 'id, B, Enabled>) {
 //!     let _ = owner.split().control.part;
 //! }
@@ -320,7 +328,7 @@
 //! names the work of a later phase:
 //!
 //! ```compile_fail,E0515
-//! # use oer_radio_port::{RadioPortClient, Work};
+//! # use oer_bluetooth_port::{RadioPortClient, Work};
 //! fn keep_the_work<C: RadioPortClient>(
 //!     admit: impl for<'c> Fn(&'c C) -> Work<'c, C>,
 //!     client: C,
@@ -333,7 +341,7 @@
 //! through the client that admitted it:
 //!
 //! ```compile_fail,E0616
-//! # use oer_radio_port::{RadioPortClient, Work};
+//! # use oer_bluetooth_port::{RadioPortClient, Work};
 //! fn take_the_token<C: RadioPortClient>(work: Work<'_, C>) {
 //!     let _ = work.token;
 //! }
@@ -342,7 +350,7 @@
 //! Its compiling twin reads only the work's routing key:
 //!
 //! ```
-//! # use oer_radio_port::{RadioPortClient, Work};
+//! # use oer_bluetooth_port::{RadioPortClient, Work};
 //! fn read_the_key<C: RadioPortClient>(work: Work<'_, C>) {
 //!     let _ = work.id();
 //! }
@@ -353,7 +361,7 @@
 //!
 //! ```compile_fail,E0700
 //! # use core::future::Future;
-//! # use oer_radio_port::{PortBackend, Retire};
+//! # use oer_bluetooth_port::{PortBackend, Retire};
 //! fn keep_the_driver<'p, 'id, B: PortBackend + 'static>(
 //!     backend: &mut B,
 //!     held: &'p B::Held<'id>,
@@ -368,7 +376,7 @@
 //!
 //! ```
 //! # use core::future::Future;
-//! # use oer_radio_port::{PortBackend, Retire};
+//! # use oer_bluetooth_port::{PortBackend, Retire};
 //! fn keep_the_driver<'p, 'id, B: PortBackend + 'static>(
 //!     backend: &mut B,
 //!     held: &'p B::Held<'id>,
@@ -384,7 +392,7 @@
 //!
 //! ```compile_fail,E0451
 //! # use core::cell::Cell;
-//! # use oer_radio_port::Retire;
+//! # use oer_bluetooth_port::Retire;
 //! fn forge(requested: &Cell<bool>) -> Retire<'_> {
 //!     Retire { requested }
 //! }
@@ -393,7 +401,7 @@
 //! Its compiling twin reads the request it was given:
 //!
 //! ```
-//! # use oer_radio_port::Retire;
+//! # use oer_bluetooth_port::Retire;
 //! fn read(retire: &Retire<'_>) -> bool {
 //!     retire.is_requested()
 //! }
@@ -403,7 +411,7 @@
 //! commands and keeps the work only as long as its client:
 //!
 //! ```
-//! # use oer_radio_port::{Disabled, Ended, Owner, PortBackend, PortBody, RadioPortClient, Work};
+//! # use oer_bluetooth_port::{Disabled, Ended, Owner, PortBackend, PortBody, RadioPortClient, Work};
 //! struct OnePhase;
 //! impl<B: PortBackend> PortBody<B> for OnePhase {
 //!     async fn run<'id>(self, mut owner: Owner<'_, 'id, B, Disabled>, _: B::Resources<'id>) -> Ended<'id, B> {
@@ -437,7 +445,7 @@
 //! loan:
 //!
 //! ```
-//! # use oer_radio_port::{Disabled, Enabled, Ended, Owner, PortBackend, PortBody, run_port};
+//! # use oer_bluetooth_port::{Disabled, Enabled, Ended, Owner, PortBackend, PortBody, run_port};
 //! async fn own<B: PortBackend>(backend: B, body: impl PortBody<B>) -> Option<B::Uninstalled> {
 //!     run_port(backend, body).await
 //! }
@@ -455,6 +463,9 @@
 //! [ownership and refusals]: https://github.com/ermacv/open-esp-radio-rs/blob/main/docs/architecture.md#ownership-and-refusals
 //! [`PlatformClockGuard`]: https://github.com/ermacv/open-esp-radio-rs/blob/main/crates/hardware/esp32s31/hal/src/power/clock/executor.rs
 
+#[cfg(any(test, all(feature = "test-support", not(target_os = "none"))))]
+extern crate std;
+
 use core::{
     cell::Cell,
     fmt::Debug,
@@ -467,7 +478,7 @@ use core::{
 
 use oer_time::RadioInstant;
 
-use crate::{CancelError, ClockError, EventsLost, Mint, Poisoned, PortResult};
+use oer_radio_port::{EventsLost, Mint, Poisoned, PortResult, branded};
 
 /// The brand of one install: invariant, so no install's brand converts to
 /// another's.
@@ -710,10 +721,19 @@ struct Install<'id, B: PortBackend> {
 /// missed bound is a fail-stop), then calls [`PortBackend::detach`] and
 /// [`PortBackend::uninstall`].
 pub async fn run_port<B: PortBackend>(
-    mut backend: B,
+    backend: B,
     body: impl PortBody<B>,
 ) -> Option<B::Uninstalled> {
-    let (held, resources) = backend.resources(crate::pool::Mint::new());
+    branded(async move |mint| install(backend, body, mint).await).await
+}
+
+/// [`run_port`] over the install `'id`, whose `mint` [`branded`] made.
+async fn install<'id, B: PortBackend>(
+    mut backend: B,
+    body: impl PortBody<B>,
+    mint: Mint<'id>,
+) -> Option<B::Uninstalled> {
+    let (held, resources) = backend.resources(mint);
     let install = Install {
         held,
         halted: Cell::new(false),
@@ -1199,7 +1219,7 @@ pub trait RadioPortClient {
     type Fault: Copy + Debug;
 
     /// The radio clock: the epoch of the port's scheduled work and receive
-    /// timestamps, at the resolution its [`ClockInfo`](crate::ClockInfo)
+    /// timestamps, at the resolution its [`ClockInfo`](oer_radio_port::ClockInfo)
     /// states.
     fn now(
         &self,
@@ -1214,3 +1234,25 @@ pub trait RadioPortClient {
         token: Self::Token,
     ) -> impl Future<Output = PortResult<(), CancelError, Self::Fault>> + '_;
 }
+
+/// Why the radio clock could not be read; nothing changed.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ClockError {
+    /// The backend could not take a reading now (a latch failed, the clock
+    /// belongs to a replaced radio start); a later call may succeed.
+    Unavailable,
+    /// The radio epoch has no later instant: the clock cannot advance, and
+    /// no later call succeeds. The port still settles the work it admitted.
+    EpochExhausted,
+}
+
+/// Why a cancellation was refused; nothing changed.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum CancelError {
+    /// No admitted work has this identity: it already ended and its terminal
+    /// event was reported, or it never ran.
+    NotRunning,
+}
+
+#[cfg(test)]
+mod tests;

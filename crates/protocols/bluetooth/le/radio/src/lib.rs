@@ -23,7 +23,7 @@
 //!
 //! [`LeRadioBackend`] is the backend a Controller service body drives
 //! through the shared port owner of `oer-radio-port`
-//! ([`Owner`](oer_radio_port::Owner)): its capabilities marker states the
+//! ([`Owner`](oer_bluetooth_port::Owner)): its capabilities marker states the
 //! backend's [`LeRadioCapabilities`] (roles, PHYs, data PDU payload, who
 //! runs the [`LinkAcknowledgement`] and the [`RadioTiming`]), and an enabled
 //! owner's phase submits requests, reads the radio clock, cancels events and
@@ -52,10 +52,10 @@ pub use capabilities::{
 pub use channel::{
     AdvertisingChannel, AdvertisingChannels, ChannelError, DataChannel, TestChannel,
 };
+pub use oer_bluetooth_port::{CancelError, ClockError};
 pub use oer_radio_coex::CoexPriority;
 pub use oer_radio_port::{
-    CancelError, ClockError, ClockInfo, Correlation, CorrelationIds, EventsLost, Poisoned,
-    PortResult,
+    ClockInfo, Correlation, CorrelationIds, EventsLost, Poisoned, PortResult,
 };
 pub use oer_time::{NonZeroRadioDuration, RadioDuration, WindowError};
 

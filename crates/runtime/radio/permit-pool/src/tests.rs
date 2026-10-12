@@ -14,10 +14,12 @@ use std::{
     task::Wake,
 };
 
+use oer_ieee802154_port::{
+    ClockError, Disabled, EnableResult, Ended, Lent, Owner, PhaseParts, PortBackend, PortBody,
+    RadioPortEvents, Retire, run_port,
+};
 use oer_radio_port::{
-    ClockError, Disabled, EnableResult, Ended, EventsLost, Lent, Line, Mint, Owner, Permit,
-    PermitPool, PhaseParts, Poisoned, PortBackend, PortBody, PortResult, RadioPortEvents, Retire,
-    Seat, conformance, run_port,
+    EventsLost, Line, Mint, Permit, PermitPool, Poisoned, PortResult, Seat, conformance,
 };
 use oer_time::RadioInstant;
 

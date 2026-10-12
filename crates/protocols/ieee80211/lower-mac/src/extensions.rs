@@ -8,7 +8,8 @@
 //! lacks a feature is recorded in its qualification catalog, not in code.
 
 use oer_ieee80211_mac::tsf::{TsfDuration, TsfInstant};
-use oer_radio_port::{CancelError, Poisoned, PortResult};
+use oer_ieee80211_port::CancelError;
+use oer_radio_port::{Poisoned, PortResult};
 use oer_time::Duration;
 
 use crate::{

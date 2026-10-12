@@ -14,6 +14,7 @@ default = []
 test-support = ["oer-ieee80211-lower-mac/model"]
 
 [dependencies]
+oer-ieee80211-port = { path = "../../protocols/ieee80211/port" }
 embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
 oer-memory = { path = "../../memory" }
@@ -30,6 +31,7 @@ oer-time-virtual = { path = "../../adapters/virtual/time" }
 # The model of `lower_mac_owner` and its tests.
 oer-ieee80211-lower-mac = { path = "../../protocols/ieee80211/lower-mac", features = ["model"] }
 oer-radio-port = { path = "../../radio/port", features = ["test-support"] }
+oer-ieee80211-port = { path = "../../protocols/ieee80211/port", features = ["test-support"] }
 
 [lints]
 workspace = true

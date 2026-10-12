@@ -1,7 +1,8 @@
 //! The lower-MAC port trait and its events.
 
 use crate::{Ieee80211ClockSample, Ieee80211Radio};
-use oer_radio_port::{ClockError, ClockInfo, LifecycleEvent, Poisoned, PortResult, RadioPort};
+use oer_ieee80211_port::ClockError;
+use oer_radio_port::{ClockInfo, LifecycleEvent, Poisoned, PortResult, RadioPort};
 
 use crate::{
     capabilities::LowerMacCapabilities,

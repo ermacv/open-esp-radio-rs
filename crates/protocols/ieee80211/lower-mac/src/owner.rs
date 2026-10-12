@@ -1,5 +1,5 @@
 //! The lower-MAC port on the shared owner shape of `oer-radio-port`
-//! ([`Owner`](oer_radio_port::Owner), [`PortBody`](oer_radio_port::PortBody)).
+//! ([`Owner`](oer_ieee80211_port::Owner), [`PortBody`](oer_ieee80211_port::PortBody)).
 //!
 //! Every refusal of [`Ieee80211LowerMacPort`](crate::Ieee80211LowerMacPort)
 //! that a caller's own state explains is a type here
@@ -31,7 +31,7 @@
 //! [`EventsLost`](oer_radio_port::EventsLost) (only unsolicited
 //! reception), a clock that could not be read, a TSF that failed its timing
 //! check, a cancel that finds the work already ended
-//! ([`CancelError::NotRunning`](oer_radio_port::CancelError::NotRunning)),
+//! ([`CancelError::NotRunning`](oer_ieee80211_port::CancelError::NotRunning)),
 //! and hardware that rejects a key or misreads a programmed agreement (a
 //! fault).
 //!
@@ -210,9 +210,8 @@ use core::{future::Future, marker::PhantomData};
 
 use oer_ieee80211_mac::qos::WmmAccessCategory;
 use oer_ieee80211_mac::{extensions::wmm::WmmParameterSet, sequence::SequenceNumber};
-use oer_radio_port::{
-    Line, Mint, Poisoned, PortBackend, RadioPortClient, RadioPortEvents, Seat, Slot, Work,
-};
+use oer_ieee80211_port::{PortBackend, RadioPortClient, RadioPortEvents, Work};
+use oer_radio_port::{Line, Mint, Poisoned, Seat, Slot};
 
 use crate::{
     Backoff, Channel, CoexPriority, LowerMacCapabilities, MacAddress, PhyRate, ReceiveFilter,
@@ -1196,7 +1195,7 @@ pub trait LowerMacControl {
 /// that role has. Its key and Block Ack slots are of its own kinds, so a
 /// key or agreement of one role's client is not another role's, by type.
 pub trait LowerMacClient<'id>:
-    RadioPortClient<Token: oer_radio_port::RadioWork<Id = crate::TxId>> + Sized
+    RadioPortClient<Token: oer_ieee80211_port::RadioWork<Id = crate::TxId>> + Sized
 {
     /// The backend's capabilities marker.
     type Caps: Ieee80211Capabilities;

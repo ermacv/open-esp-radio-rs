@@ -4,12 +4,13 @@
 use core::{convert::Infallible, future::Future};
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
+use oer_bluetooth_port::{EnableResult, Lent, PhaseParts, PortBackend, RadioPortEvents, Retire};
 use oer_bluetooth_radio::{
     CancelError, ClockError, ClockInfo, EventId, EventsLost, LeInstant, LeRadio, LeRadioBackend,
     Poisoned, PortResult, RadioActivity, RadioOutcome, RadioRequest, RequestError,
 };
 use oer_esp32s31_bluetooth_radio::{BluetoothCapabilities, BluetoothRadioConfig};
-use oer_radio_port::{EnableResult, Lent, Mint, PhaseParts, PortBackend, RadioPortEvents, Retire};
+use oer_radio_port::Mint;
 use oer_time::Timer;
 
 use crate::runtime::Radio;
@@ -19,7 +20,7 @@ use crate::{
 };
 
 /// The port backend of an installed [`BluetoothRuntime`]: what
-/// [`oer_radio_port::run_port`] wraps in the port's owner.
+/// [`oer_bluetooth_port::run_port`] wraps in the port's owner.
 ///
 /// [`BluetoothRuntime::install`] returns it with the radio's driver `D`
 /// ([`BluetoothDriver`]) inside, so no backend meets a runtime without a

@@ -6,7 +6,7 @@
 //!
 //! The radio is a port backend ([`BluetoothBackend`], an
 //! [`oer_bluetooth_radio::LeRadioBackend`]) run under the shared port owner
-//! ([`oer_radio_port::run_port`]), with a driver that owns the radio role
+//! ([`oer_bluetooth_port::run_port`]), with a driver that owns the radio role
 //! and its hardware by value ([`BluetoothDriver`]). [`BluetoothRuntime`] is
 //! the part the backend, the driver and the platform share: the outcome
 //! queue, the request exchange, the poison and the wakes, behind signals,

@@ -57,11 +57,11 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use oer_bluetooth_controller::{EpochExhausted, LeController, RadioWork};
 use oer_bluetooth_hci::HostToControllerFrame;
 use oer_bluetooth_hci_transport::{HciChannelError, InProcessHciControllerTransport};
+use oer_bluetooth_port::{
+    Disabled, Ended, Failed, Owner, PhaseParts, PortBackend, PortBody, RadioPortEvents, run_port,
+};
 use oer_bluetooth_radio::{
     ClockError, EventsLost, LeRadioBackend, Poisoned, RadioActivity, RequestError,
-};
-use oer_radio_port::{
-    Disabled, Ended, Failed, Owner, PhaseParts, PortBackend, PortBody, RadioPortEvents, run_port,
 };
 use oer_time::{Duration, Instant, Timer};
 

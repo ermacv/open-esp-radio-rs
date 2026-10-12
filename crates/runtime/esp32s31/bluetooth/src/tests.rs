@@ -481,7 +481,7 @@ impl Fixture {
 
     async fn enable(
         &self,
-    ) -> oer_radio_port::EnableResult<core::convert::Infallible, BluetoothFault<()>> {
+    ) -> oer_bluetooth_port::EnableResult<core::convert::Infallible, BluetoothFault<()>> {
         self.served(self.runtime.enable()).await
     }
 
@@ -1259,12 +1259,12 @@ struct ConfigureOnce;
 
 type Backend = crate::BluetoothBackend<'static, Runtime, Driver>;
 
-impl oer_radio_port::PortBody<Backend> for ConfigureOnce {
+impl oer_bluetooth_port::PortBody<Backend> for ConfigureOnce {
     async fn run<'p, 'id>(
         self,
-        owner: oer_radio_port::Owner<'p, 'id, Backend, oer_radio_port::Disabled>,
+        owner: oer_bluetooth_port::Owner<'p, 'id, Backend, oer_bluetooth_port::Disabled>,
         (): (),
-    ) -> oer_radio_port::Ended<'id, Backend> {
+    ) -> oer_bluetooth_port::Ended<'id, Backend> {
         use oer_bluetooth_radio::LeRadioBackend;
 
         let Ok(mut owner) = owner.enable().await else {
@@ -1293,7 +1293,8 @@ fn a_port_body_runs_beside_its_driver_and_the_uninstall_returns_the_radio() {
     let runtime = new_runtime();
     let backend = block_on(runtime.runtime.install(model_memory(), model.clone()))
         .unwrap_or_else(|_| panic!("the first install succeeds"));
-    let Some(Ok((radio, hardware))) = block_on(oer_radio_port::run_port(backend, ConfigureOnce))
+    let Some(Ok((radio, hardware))) =
+        block_on(oer_bluetooth_port::run_port(backend, ConfigureOnce))
     else {
         panic!("the body uninstalls the port, and the driver leaves its radio")
     };
@@ -1304,7 +1305,7 @@ fn a_port_body_runs_beside_its_driver_and_the_uninstall_returns_the_radio() {
     // The next port starts with an empty queue (#457).
     assert_eq!(taken(&runtime), None);
     assert!(matches!(
-        block_on(oer_radio_port::run_port(backend, ConfigureOnce)),
+        block_on(oer_bluetooth_port::run_port(backend, ConfigureOnce)),
         Some(Ok(_))
     ));
 }
@@ -1524,12 +1525,12 @@ fn readings_beside_each_other_share_one_fresh_sample() {
 /// before it uninstalls: the driver has parked by then.
 struct WaitThenUninstall;
 
-impl oer_radio_port::PortBody<Backend> for WaitThenUninstall {
+impl oer_bluetooth_port::PortBody<Backend> for WaitThenUninstall {
     async fn run<'p, 'id>(
         self,
-        owner: oer_radio_port::Owner<'p, 'id, Backend, oer_radio_port::Disabled>,
+        owner: oer_bluetooth_port::Owner<'p, 'id, Backend, oer_bluetooth_port::Disabled>,
         (): (),
-    ) -> oer_radio_port::Ended<'id, Backend> {
+    ) -> oer_bluetooth_port::Ended<'id, Backend> {
         let Ok(owner) = owner.enable().await else {
             panic!("the installed port enables")
         };
@@ -1552,7 +1553,7 @@ fn a_retire_request_wakes_an_idle_driver() {
     let runtime = new_runtime();
     let backend = block_on(runtime.runtime.install(model_memory(), model.clone()))
         .unwrap_or_else(|_| panic!("the install succeeds"));
-    let mut port = core::pin::pin!(oer_radio_port::run_port(backend, WaitThenUninstall));
+    let mut port = core::pin::pin!(oer_bluetooth_port::run_port(backend, WaitThenUninstall));
     let mut context = core::task::Context::from_waker(core::task::Waker::noop());
     let started = clock().now();
     let ended = (0..1_000)

@@ -4,7 +4,7 @@
 //!
 //! [`OwnedModel::new`] takes the install's channel and interface addresses,
 //! so no phase runs untuned, and returns the backend, which a test hands to
-//! [`run_port`](oer_radio_port::run_port), and a [`ModelHandle`] that plays
+//! [`run_port`](oer_ieee80211_port::run_port), and a [`ModelHandle`] that plays
 //! the air and the world: it ends published attempts, refuses the next
 //! enable or poisons the backend, and wakes the futures that wait on it
 //! (an events consumer, a closing gate) when it does. An end the world
@@ -61,10 +61,12 @@ use core::{
     task::{Poll, Waker},
 };
 
+use oer_ieee80211_port::{
+    CancelError, ClockError, EnableResult, Lent, PhaseParts, PortBackend, RadioPortClient,
+    RadioPortEvents, RadioWork, Retire, Work,
+};
 use oer_radio_port::{
-    CancelError, ClockError, EnableResult, EventsLost, Lent, Line, Mint, Permit, PermitPool,
-    PhaseParts, Poisoned, PortBackend, PortResult, RadioPortClient, RadioPortEvents, RadioWork,
-    Retire, Seat, Slot, Work,
+    EventsLost, Line, Mint, Permit, PermitPool, Poisoned, PortResult, Seat, Slot,
 };
 use oer_time::RadioInstant;
 
@@ -265,7 +267,7 @@ pub enum ModelEvent {
     Completed(TxCompletion, Option<ModelBody>),
 }
 
-/// The model's backend; only [`run_port`](oer_radio_port::run_port) holds it.
+/// The model's backend; only [`run_port`](oer_ieee80211_port::run_port) holds it.
 pub struct OwnedModel(Shared);
 
 impl OwnedModel {

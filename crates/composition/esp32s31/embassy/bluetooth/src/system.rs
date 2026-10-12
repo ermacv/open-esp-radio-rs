@@ -598,7 +598,7 @@ impl BluetoothSystem {
     /// service fails, publish the active roles to the coexistence schedule
     /// of `radio` and follow whether another radio shares the antenna, so
     /// the events carry the vendor's coexistence priorities. The radio's
-    /// own driver runs inside its port ([`oer_radio_port::run_port`]); this
+    /// own driver runs inside its port ([`oer_bluetooth_port::run_port`]); this
     /// reaches it only through the runtime's signals and atomics.
     ///
     /// Poll it beside the body that runs the port. Every fault it returns

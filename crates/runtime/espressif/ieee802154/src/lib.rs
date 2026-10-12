@@ -82,7 +82,8 @@ use oer_ieee802154::{
 use oer_time::{Duration, Instant, Timer};
 
 pub use backend::{
-    Ieee802154PortEvent, Ieee802154RuntimeBackend, Ieee802154RuntimeCaps, RUNTIME_INTERFACES,
+    Ieee802154PortEvent, Ieee802154RouteDetach, Ieee802154RuntimeBackend, Ieee802154RuntimeCaps,
+    NoRoute, RUNTIME_INTERFACES,
     RuntimeClient, RuntimeClients, RuntimeConfigured, RuntimeControl, RuntimeEvents,
     RuntimeExtendedEntry, RuntimeHeld, RuntimeResources, RuntimeRssi, RuntimeSetup,
     RuntimeShortEntry, RuntimeToken,

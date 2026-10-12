@@ -182,10 +182,36 @@ where
     }
 }
 
+/// What detaches the MAC interrupt's entry synchronously before the
+/// uninstall: the composition's bound CPU route.
+pub trait Ieee802154RouteDetach {
+    /// Mask the route, so the interrupt entry never runs again.
+    fn detach(&mut self);
+}
+
+/// No route to detach, as a backend that never ran a port has.
+pub struct NoRoute;
+
+impl Ieee802154RouteDetach for NoRoute {
+    fn detach(&mut self) {}
+}
+
 /// The installed runtime as the IEEE 802.15.4 port's backend, with the
-/// capabilities marker `K` its composition names.
-pub struct Ieee802154RuntimeBackend<'r, 'storage, K, M: RawMutex, H, T, R, const EVENTS: usize> {
+/// capabilities marker `K` its composition names and the route `D` its
+/// `detach` masks before the uninstall takes the engine.
+pub struct Ieee802154RuntimeBackend<
+    'r,
+    'storage,
+    K,
+    M: RawMutex,
+    H,
+    T,
+    R,
+    const EVENTS: usize,
+    D = NoRoute,
+> {
     runtime: &'r Ieee802154Runtime<'storage, M, H, T, R, EVENTS>,
+    route: Option<D>,
     caps: PhantomData<fn() -> K>,
 }
 
@@ -195,18 +221,35 @@ impl<'r, 'storage, K, M: RawMutex, H, T, R, const EVENTS: usize>
     pub(crate) const fn new(runtime: &'r Ieee802154Runtime<'storage, M, H, T, R, EVENTS>) -> Self {
         Self {
             runtime,
+            route: None,
             caps: PhantomData,
         }
     }
 
+    /// The backend whose `detach` masks `route`.
+    pub fn with_route<D: Ieee802154RouteDetach>(
+        self,
+        route: D,
+    ) -> Ieee802154RuntimeBackend<'r, 'storage, K, M, H, T, R, EVENTS, D> {
+        Ieee802154RuntimeBackend {
+            runtime: self.runtime,
+            route: Some(route),
+            caps: PhantomData,
+        }
+    }
+}
+
+impl<'r, 'storage, K, M: RawMutex, H, T, R, const EVENTS: usize, D>
+    Ieee802154RuntimeBackend<'r, 'storage, K, M, H, T, R, EVENTS, D>
+{
     /// The runtime it serves.
     pub const fn runtime(&self) -> &'r Ieee802154Runtime<'storage, M, H, T, R, EVENTS> {
         self.runtime
     }
 }
 
-impl<'storage, K, M, H, T, R, const EVENTS: usize>
-    Ieee802154RuntimeBackend<'_, 'storage, K, M, H, T, R, EVENTS>
+impl<'storage, K, M, H, T, R, const EVENTS: usize, D>
+    Ieee802154RuntimeBackend<'_, 'storage, K, M, H, T, R, EVENTS, D>
 where
     M: RawMutex,
     H: Ieee802154LowLevel,
@@ -214,9 +257,10 @@ where
     R: Ieee802154Random,
 {
     /// Take the engine and the hardware back from a backend that never ran
-    /// a port, as a bring-up failure after the install does.
-    pub fn uninstall_unused(self) -> Ieee802154RuntimeParts<'storage, H> {
-        self.runtime.uninstall()
+    /// a port, as a bring-up failure after the install does, with its route
+    /// not yet detached.
+    pub fn uninstall_unused(self) -> (Ieee802154RuntimeParts<'storage, H>, Option<D>) {
+        (self.runtime.uninstall(), self.route)
     }
 }
 
@@ -434,9 +478,10 @@ where
 /// The runtime type a backend of these parameters serves.
 type Rt<'storage, M, H, T, R, const EVENTS: usize> = Ieee802154Runtime<'storage, M, H, T, R, EVENTS>;
 
-impl<'r, 'storage, K, M, H, T, R, const EVENTS: usize> PortBackend
-    for Ieee802154RuntimeBackend<'r, 'storage, K, M, H, T, R, EVENTS>
+impl<'r, 'storage, K, M, H, T, R, const EVENTS: usize, D> PortBackend
+    for Ieee802154RuntimeBackend<'r, 'storage, K, M, H, T, R, EVENTS, D>
 where
+    D: Ieee802154RouteDetach,
     K: Ieee802154RuntimeCaps,
     M: RawMutex,
     H: Ieee802154LowLevel + oer_espressif_ieee802154_engine::ll::Ieee802154RecentRssi,
@@ -574,7 +619,7 @@ where
         &mut self,
         _: &'p Self::Held<'id>,
         retire: Retire<'p>,
-    ) -> impl Future<Output = ()> + use<'p, 'id, 'r, 'storage, K, M, H, T, R, EVENTS> {
+    ) -> impl Future<Output = ()> + use<'p, 'id, 'r, 'storage, K, M, H, T, R, EVENTS, D> {
         let runtime = self.runtime;
         async move {
             select(runtime.run(), retire.requested()).await;
@@ -586,10 +631,13 @@ where
         core::future::pending()
     }
 
-    /// The composition masks the MAC interrupt's route after the uninstall;
-    /// the interrupt entry finds no installed radio meanwhile and does
-    /// nothing.
-    fn detach<'id>(&mut self, _: &RuntimeHeld<'id>) {}
+    /// Mask the MAC interrupt's route, so the interrupt entry never runs
+    /// again before the uninstall takes the engine.
+    fn detach<'id>(&mut self, _: &RuntimeHeld<'id>) {
+        if let Some(route) = self.route.as_mut() {
+            route.detach();
+        }
+    }
 
     fn uninstall<'id>(self, _: RuntimeHeld<'id>, (): (), (): ()) -> Ieee802154RuntimeParts<'storage, H> {
         self.runtime.uninstall()
@@ -598,12 +646,16 @@ where
     fn abandon(&mut self) {
         self.runtime.poison(RadioFault::StateLost);
         self.runtime.disable_locked();
+        if let Some(route) = self.route.as_mut() {
+            route.detach();
+        }
     }
 }
 
-impl<'r, 'storage, K, M, H, T, R, const EVENTS: usize> Ieee802154Backend
-    for Ieee802154RuntimeBackend<'r, 'storage, K, M, H, T, R, EVENTS>
+impl<'r, 'storage, K, M, H, T, R, const EVENTS: usize, D> Ieee802154Backend
+    for Ieee802154RuntimeBackend<'r, 'storage, K, M, H, T, R, EVENTS, D>
 where
+    D: Ieee802154RouteDetach,
     K: Ieee802154RuntimeCaps,
     M: RawMutex,
     H: Ieee802154LowLevel + oer_espressif_ieee802154_engine::ll::Ieee802154RecentRssi,

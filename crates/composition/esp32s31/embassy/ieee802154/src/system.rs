@@ -74,7 +74,24 @@ pub type Ieee802154SystemBackend<K> = Ieee802154RuntimeBackend<
     EmbassyClock,
     HardwareRandom,
     IEEE802154_EVENT_CAPACITY,
+    BoundRoute,
 >;
+
+/// The bound CPU route of modem source 132, which the port's end masks
+/// before it takes the engine.
+pub struct BoundRoute(Option<BoundEspHalIeee802154InterruptRoute>);
+
+impl oer_espressif_ieee802154_runtime::Ieee802154RouteDetach for BoundRoute {
+    fn detach(&mut self) {
+        if let Some(bound) = self.0.take()
+            && bound.quiesce().is_err()
+        {
+            // The port's body runs on the route's core (owner decision on
+            // #581); another core cannot mask it.
+            panic!("the IEEE 802.15.4 port's body runs off its MAC route's core");
+        }
+    }
+}
 
 /// The engine and the MAC owners an ended port returns, for [`Ieee802154System::stop`].
 pub type Ieee802154SystemParts = Ieee802154RuntimeParts<'static, Ieee802154MacOwners>;
@@ -234,8 +251,6 @@ pub struct Ieee802154StartFailure {
 /// Why teardown stopped.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Ieee802154StopError {
-    /// The route of modem source 132 must be quiesced on its binding core.
-    Route(EspHalIeee802154InterruptRouteError),
     /// The MAC foundation did not read back after the operational epoch.
     Foundation(Ieee802154ReadbackError<Ieee802154FoundationCheckpoint>),
     /// IEEE 802.15.4 could not leave the shared PHY domain or BTBB.
@@ -264,14 +279,13 @@ pub struct Ieee802154StopFailure {
 /// The running IEEE 802.15.4 client.
 ///
 /// The MAC owners and the engine live in the runtime; this value keeps the
-/// PHY membership and the bound CPU route until [`Self::stop`]. The radio's
-/// backend goes to `run_port`, whose end returns the engine and the MAC
-/// owners to [`Self::stop`].
+/// PHY membership until [`Self::stop`]. The radio's backend, which holds the
+/// bound CPU route, goes to `run_port`, whose end masks the route and
+/// returns the engine and the MAC owners to [`Self::stop`].
 #[must_use = "the running IEEE 802.15.4 client must be stopped"]
 // CAPABILITY: ieee802154-mac-operation-subset
 pub struct Ieee802154System {
     route: RegisteredIeee802154OperationalRoute,
-    bound: BoundEspHalIeee802154InterruptRoute,
     /// The scene levels the MAC's priorities were resolved with
     /// (`s_coex_config`).
     coex_config: Ieee802154CoexConfig,
@@ -556,15 +570,14 @@ pub async fn start<K: Ieee802154RuntimeCaps, P, C: PlatformClockProvider>(
         Ok(bound) => Ok((
             Ieee802154System {
                 route,
-                bound,
                 coex_config: Ieee802154CoexConfig::VENDOR,
                 power,
                 coex: Ieee802154Coex::Absent(coex),
             },
-            backend,
+            backend.with_route(BoundRoute(Some(bound))),
         )),
         Err(error) => {
-            let parts = backend.uninstall_unused();
+            let (parts, _) = backend.uninstall_unused();
             let (mut task, interrupts) = parts.hardware.into_parts();
             let interrupts = interrupts.deactivate(&mut task);
             Err(fail_stop(
@@ -650,7 +663,6 @@ impl Ieee802154System {
     ) -> Self {
         let Self {
             route,
-            bound,
             coex_config,
             power,
             coex,
@@ -663,7 +675,6 @@ impl Ieee802154System {
         };
         Self {
             route,
-            bound,
             coex_config,
             power,
             coex,
@@ -690,7 +701,6 @@ impl Ieee802154System {
     ) -> Result<Self, (Self, CoexError)> {
         let Self {
             route,
-            bound,
             coex_config,
             power,
             coex,
@@ -703,7 +713,6 @@ impl Ieee802154System {
         };
         let system = Self {
             route,
-            bound,
             coex_config,
             power,
             coex,
@@ -755,20 +764,19 @@ impl Ieee802154System {
         }
     }
 
-    /// `esp_ieee802154_disable`: leave coexistence with Wi-Fi when IEEE
-    /// 802.15.4 takes part, quiesce the CPU route, take the MAC owners out of
-    /// the runtime, prove the foundation again, leave the shared PHY and BTBB
+    /// `esp_ieee802154_disable` with the parts the ended port returned (its
+    /// end masked the CPU route and took the MAC owners out of the runtime):
+    /// leave coexistence with Wi-Fi when IEEE 802.15.4 takes part, prove the
+    /// foundation again, leave the shared PHY and BTBB
     /// (closing RF after the last PHY client), release the module clocks and
     /// leave common power. Must run on the core that started the client.
     ///
     /// # Errors
     ///
     /// A step failed. A coexistence timer that could not be withdrawn
-    /// returns the running system, still taking part
-    /// ([`Ieee802154StopError::Coexistence`]). A route that could not be
-    /// quiesced returns the running system outside coexistence
-    /// ([`Ieee802154StopError::Route`]). Any later failure returns a
-    /// fail-stop owner.
+    /// returns the system, still taking part
+    /// ([`Ieee802154StopError::Coexistence`]), with the parts. Any later
+    /// failure returns a fail-stop owner.
     #[allow(
         clippy::result_large_err,
         reason = "the allocation-free failure returns the running system"
@@ -780,7 +788,6 @@ impl Ieee802154System {
     ) -> Result<Ieee802154Parked, Ieee802154StopFailure> {
         let Self {
             route,
-            bound,
             coex_config,
             power,
             coex,
@@ -794,7 +801,6 @@ impl Ieee802154System {
                     owner: Ok((
                         Self {
                             route,
-                            bound,
                             coex_config,
                             power,
                             coex: Ieee802154Coex::Coexisting(proof),
@@ -804,21 +810,8 @@ impl Ieee802154System {
                 });
             }
         };
-        if let Err((error, bound)) = bound.quiesce() {
-            return Err(Ieee802154StopFailure {
-                error: Ieee802154StopError::Route(error),
-                owner: Ok((
-                    Self {
-                        route,
-                        bound,
-                        coex_config,
-                        power,
-                        coex: Ieee802154Coex::Absent(coex),
-                    },
-                    parts,
-                )),
-            });
-        }
+        // The port's end masked the CPU route before it took the engine
+        // (`Ieee802154RouteDetach`).
         let engine = parts.engine;
         let (mut task, interrupts) = parts.hardware.into_parts();
         let interrupts = interrupts.deactivate(&mut task);

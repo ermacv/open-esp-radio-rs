@@ -261,6 +261,14 @@ impl<K: Ieee80211Capabilities> SupportedChannel<K> {
     }
 }
 
+impl<K> Clone for SupportedChannel<K> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<K> Copy for SupportedChannel<K> {}
+
 /// An interface role, as a type.
 pub trait InterfaceRole {
     /// The role.

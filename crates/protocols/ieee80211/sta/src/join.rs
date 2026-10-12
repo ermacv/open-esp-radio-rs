@@ -25,7 +25,7 @@ pub mod authentication;
 pub mod sae;
 
 #[cfg(test)]
-mod test_support;
+pub(crate) mod test_support;
 
 /// Vendor state timer used by ordinary Authentication and Association.
 ///

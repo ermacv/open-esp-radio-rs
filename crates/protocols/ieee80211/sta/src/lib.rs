@@ -18,6 +18,7 @@ pub mod attempt;
 pub mod ftm;
 pub mod join;
 pub mod link_monitor;
+pub mod machine;
 pub mod modem_sleep;
 pub mod pmksa;
 pub mod request;

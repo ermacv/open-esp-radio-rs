@@ -12,9 +12,9 @@ their terminal events are handed out.
   leads and a permit is free. A taker whose future drops gives up its place.
 - A released permit wakes the leader. A served taker that leaves a permit free
   wakes the next leader.
-- The line holds `WAITERS` places. A taker that finds it full waits outside
-  until a place frees. Arrival order holds among the takers in the line, so
-  `WAITERS` covers every taker that can wait at once.
+- The line holds `WAITERS` places, which must cover every taker that can wait
+  at once. A taker that finds the line full is a fault of the composition, and
+  the pool panics, so arrival order is always strict.
 - The pool is `!Sync`. It lives in the port body's task, and nothing outside
   that task reaches it.
 

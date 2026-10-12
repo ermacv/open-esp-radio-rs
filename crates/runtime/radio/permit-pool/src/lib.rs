@@ -19,11 +19,11 @@
 //! - a taker whose future drops gives up its place, and the taker behind it
 //!   leads.
 //!
-//! The line holds `WAITERS` places. A taker that finds it full waits
-//! outside it until a place frees, and takes it then; arrival order holds
-//! among takers that found a place, so size `WAITERS` for every taker that
-//! can wait at once (each interface client's one operation, each queue's
-//! transmissions).
+//! The line holds `WAITERS` places, and `WAITERS` must cover every taker
+//! that can wait at once, which the backend knows from its own structure
+//! (each interface client's one operation, each queue's transmissions). A
+//! taker that finds the line full is a fault of the composition: the pool
+//! panics (owner decision on #703), so arrival order is always strict.
 //!
 //! The pool is `!Sync`: it lives in one task, the port body's, and is
 //! shared there by reference between the body's parts. Nothing outside the
@@ -91,8 +91,6 @@ pub struct FifoPermitPool<'id, K, const PERMITS: usize, const WAITERS: usize> {
     free: RefCell<[Option<Permit<'id, K>>; PERMITS]>,
     /// The places in the line: each one's ticket and its taker's waker.
     line: RefCell<[Option<(u32, Waker)>; WAITERS]>,
-    /// The takers that found the line full.
-    outside: RefCell<[Option<Waker>; WAITERS]>,
     /// The next ticket.
     next: Cell<u32>,
 }
@@ -104,7 +102,6 @@ impl<'id, K, const PERMITS: usize, const WAITERS: usize> FifoPermitPool<'id, K, 
         Self {
             free: RefCell::new(permits.map(Some)),
             line: RefCell::new([const { None }; WAITERS]),
-            outside: RefCell::new([const { None }; WAITERS]),
             next: Cell::new(0),
         }
     }
@@ -140,15 +137,6 @@ impl<'id, K, const PERMITS: usize, const WAITERS: usize> FifoPermitPool<'id, K, 
         }
     }
 
-    /// A place freed: wake the takers outside the line to take it.
-    fn wake_outside(&self) {
-        for waker in self.outside.borrow_mut().iter_mut() {
-            if let Some(waker) = waker.take() {
-                waker.wake();
-            }
-        }
-    }
-
     /// Give up `ticket`'s place.
     fn leave(&self, ticket: u32) {
         let led = self.leader() == Some(ticket);
@@ -163,7 +151,6 @@ impl<'id, K, const PERMITS: usize, const WAITERS: usize> FifoPermitPool<'id, K, 
         if led && self.available() > 0 {
             self.wake_leader();
         }
-        self.wake_outside();
     }
 
     /// One poll of a taker holding `ticket`, or none yet.
@@ -188,9 +175,7 @@ impl<'id, K, const PERMITS: usize, const WAITERS: usize> FifoPermitPool<'id, K, 
             None => {
                 let mut line = self.line.borrow_mut();
                 let Some(place) = line.iter_mut().find(|place| place.is_none()) else {
-                    drop(line);
-                    self.wait_outside(context);
-                    return Poll::Pending;
+                    panic!("more takers wait than the pool's line has places (`WAITERS`)");
                 };
                 let issued = self.next.get();
                 self.next.set(issued.wrapping_add(1));
@@ -209,27 +194,6 @@ impl<'id, K, const PERMITS: usize, const WAITERS: usize> FifoPermitPool<'id, K, 
         *ticket = None;
         self.leave(mine);
         Poll::Ready(permit)
-    }
-
-    /// Wait outside a full line for a place.
-    fn wait_outside(&self, context: &mut Context<'_>) {
-        let mut outside = self.outside.borrow_mut();
-        if outside
-            .iter()
-            .flatten()
-            .any(|waker| waker.will_wake(context.waker()))
-        {
-            return;
-        }
-        if let Some(slot) = outside.iter_mut().find(|slot| slot.is_none()) {
-            *slot = Some(context.waker().clone());
-            return;
-        }
-        // More takers than places wait outside: wake them all to register
-        // again, which keeps every one of them woken.
-        drop(outside);
-        self.wake_outside();
-        context.waker().wake_by_ref();
     }
 }
 

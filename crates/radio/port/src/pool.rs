@@ -5,7 +5,9 @@
 //! entries, a transmit queue, the one operation of a radio) is a set of
 //! tokens the install mints once, through the [`Mint`] that
 //! [`run_port`](crate::run_port) hands its backend, branded by the install
-//! (`'id`) and by the capabilities marker `K` they count for.
+//! (`'id`) and by the pool's kind marker `Kind`, which keeps pools apart
+//! (a Wi-Fi station's key slots and an access point's; a Bluetooth LE
+//! advertising set and a connection).
 //!
 //! - A **slot** ([`Slot`]) is taken synchronously: a pool is an array of
 //!   slots its holder owns, so how many are left is in the types, and an
@@ -19,6 +21,16 @@
 //!   handle drops; a cancel is only a request. In which order waiting
 //!   takers are served is the pool's documented policy (first in, first out
 //!   by default), which the conformance suite checks.
+//!
+//! A caller counts its own slots: it plans against the same constant the
+//! backend minted its pool with, so taking a slot synchronously is an
+//! invariant of that count (popping the array it holds), never a refusal.
+//!
+//! The clients of one install share a pool only inside the body's task. A
+//! token is branded, so it never enters `'static` storage such as an
+//! interrupt handler's: a backend keeps the tokens on the task side, keyed
+//! by their [`index`](Permit::index), and its interrupt carries only the
+//! index.
 //!
 //! This package owns no state and never waits: it states the tokens and the
 //! rules. A pool's free list, its waiters and their wake-ups belong to a
@@ -40,14 +52,14 @@
 //! ```compile_fail,E0451
 //! # use core::marker::PhantomData;
 //! # use oer_radio_port::Slot;
-//! fn forge<'id, K>() -> Slot<'id, K> {
-//!     Slot { index: 0, brand: PhantomData, capabilities: PhantomData }
+//! fn forge<'id, Kind>() -> Slot<'id, Kind> {
+//!     Slot { index: 0, brand: PhantomData, kind: PhantomData }
 //! }
 //! ```
 //!
 //! ```compile_fail,E0382
 //! # use oer_radio_port::Slot;
-//! fn install_twice<'id, K>(slot: Slot<'id, K>, install: impl Fn(Slot<'id, K>)) {
+//! fn install_twice<'id, Kind>(slot: Slot<'id, Kind>, install: impl Fn(Slot<'id, Kind>)) {
 //!     install(slot);
 //!     install(slot);
 //! }
@@ -58,14 +70,14 @@
 //!
 //! ```compile_fail
 //! # use oer_radio_port::Slot;
-//! fn mix<'a, 'b, K>(slot: Slot<'a, K>) -> Slot<'b, K> {
+//! fn mix<'a, 'b, Kind>(slot: Slot<'a, Kind>) -> Slot<'b, Kind> {
 //!     slot
 //! }
 //! ```
 //!
 //! ```compile_fail
 //! # use oer_radio_port::Slot;
-//! fn keep<'id, K>(slot: Slot<'id, K>) -> Slot<'static, K> {
+//! fn keep<'id, Kind>(slot: Slot<'id, Kind>) -> Slot<'static, Kind> {
 //!     slot
 //! }
 //! ```
@@ -74,13 +86,13 @@
 //!
 //! ```
 //! # use oer_radio_port::Slot;
-//! fn install_once<'id, K>(slot: Slot<'id, K>, install: impl Fn(Slot<'id, K>)) {
+//! fn install_once<'id, Kind>(slot: Slot<'id, Kind>, install: impl Fn(Slot<'id, Kind>)) {
 //!     install(slot);
 //! }
-//! fn same<'a, K>(slot: Slot<'a, K>) -> Slot<'a, K> {
+//! fn same<'a, Kind>(slot: Slot<'a, Kind>) -> Slot<'a, Kind> {
 //!     slot
 //! }
-//! fn index<K>(slot: &Slot<'_, K>) -> u8 {
+//! fn index<Kind>(slot: &Slot<'_, Kind>) -> u8 {
 //!     slot.index()
 //! }
 //! ```
@@ -105,41 +117,51 @@ impl<'id> Mint<'id> {
         Self { brand: PhantomData }
     }
 
-    /// The `N` slots of a pool counting for `K`, indexed 0 to `N - 1`.
-    pub fn slots<K, const N: usize>(&mut self) -> [Slot<'id, K>; N] {
+    /// The `N` slots of a pool of the kind `Kind`, indexed 0 to `N - 1`.
+    /// `N` is a plain constant: a backend generic over several pool sizes
+    /// mints one pool per hardware pool rather than summing them.
+    pub fn slots<Kind, const N: usize>(&mut self) -> [Slot<'id, Kind>; N] {
+        const { assert!(N <= 256, "a pool holds at most 256 tokens") };
         core::array::from_fn(|index| Slot {
             index: index_of(index),
             brand: PhantomData,
-            capabilities: PhantomData,
+            kind: PhantomData,
         })
     }
 
-    /// The `N` permits of a pool counting for `K`, indexed 0 to `N - 1`,
+    /// The `N` permits of a pool of the kind `Kind`, indexed 0 to `N - 1`,
     /// which the backend's [`PermitPool`] hands out and takes back.
-    pub fn permits<K, const N: usize>(&mut self) -> [Permit<'id, K>; N] {
+    pub fn permits<Kind, const N: usize>(&mut self) -> [Permit<'id, Kind>; N] {
+        const { assert!(N <= 256, "a pool holds at most 256 tokens") };
         core::array::from_fn(|index| Permit {
             index: index_of(index),
             brand: PhantomData,
-            capabilities: PhantomData,
+            kind: PhantomData,
         })
     }
 }
 
-fn index_of(index: usize) -> u8 {
-    u8::try_from(index).expect("a pool holds at most 256 tokens")
+/// The index of a token of a pool of at most 256, which `Mint` asserts at
+/// compile time.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "a pool holds at most 256 tokens"
+)]
+const fn index_of(index: usize) -> u8 {
+    index as u8
 }
 
-/// One slot of an install's pool counting for `K`: the capacity of one
+/// One slot of an install's pool of the kind `Kind`: the capacity of one
 /// installed resource. Installing a resource moves it in; removing the
 /// resource gives it back.
 #[must_use = "a slot is capacity; dropping it loses it until the next install"]
-pub struct Slot<'id, K> {
+pub struct Slot<'id, Kind> {
     index: u8,
     brand: Brand<'id>,
-    capabilities: PhantomData<fn() -> K>,
+    kind: PhantomData<fn() -> Kind>,
 }
 
-impl<K> Slot<'_, K> {
+impl<Kind> Slot<'_, Kind> {
     /// The slot's index in its pool, for the backend that places the
     /// resource.
     pub const fn index(&self) -> u8 {
@@ -147,16 +169,16 @@ impl<K> Slot<'_, K> {
     }
 }
 
-/// One permit of a pool counting for `K`: one unit of capacity a piece of
+/// One permit of a pool of the kind `Kind`: one unit of capacity a piece of
 /// work holds until its terminal event carries it back.
 #[must_use = "a permit goes back to its pool through `PermitPool::release`"]
-pub struct Permit<'id, K> {
+pub struct Permit<'id, Kind> {
     index: u8,
     brand: Brand<'id>,
-    capabilities: PhantomData<fn() -> K>,
+    kind: PhantomData<fn() -> Kind>,
 }
 
-impl<K> Permit<'_, K> {
+impl<Kind> Permit<'_, Kind> {
     /// The permit's index in its pool, for the backend that places the
     /// work.
     pub const fn index(&self) -> u8 {
@@ -164,16 +186,16 @@ impl<K> Permit<'_, K> {
     }
 }
 
-/// A pool of the permits of one install counting for `K`, which a runtime
+/// A pool of the permits of one install of the kind `Kind`, which a runtime
 /// crate or a backend keeps; it lives in one task, shared by reference by
 /// the port's body and its phases, never across executor tasks.
-pub trait PermitPool<'id, K> {
+pub trait PermitPool<'id, Kind> {
     /// Take a permit, waiting while every permit is held, never refused, in
     /// the order the pool documents (first in, first out by default).
     /// Dropping the future gives up its place.
-    fn take(&self) -> impl Future<Output = Permit<'id, K>> + '_;
+    fn take(&self) -> impl Future<Output = Permit<'id, Kind>> + '_;
 
     /// Give a permit back, when the terminal event of the work that held it
     /// arrived; the next waiting taker resumes.
-    fn release(&self, permit: Permit<'id, K>);
+    fn release(&self, permit: Permit<'id, Kind>);
 }

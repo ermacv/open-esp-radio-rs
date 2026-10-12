@@ -21,6 +21,7 @@ use oer_ieee80211_lower_mac::{LowerMacBackend, LowerMacEvent, StationClient, Sup
 use oer_ieee80211_port::{Disabled, Enabled, Failed, Owner, PhaseParts, PoisonedOwner};
 use oer_radio_port::{EventsLost, Poisoned};
 
+pub mod join;
 pub mod scan;
 
 /// The client of the station interface a backend lends in each phase.
@@ -149,5 +150,145 @@ pub fn try_next_event<E: oer_ieee80211_port::RadioPortEvents>(
     match next.as_mut().poll(&mut Context::from_waker(Waker::noop())) {
         Poll::Ready(event) => Some(event),
         Poll::Pending => None,
+    }
+}
+
+/// Why a frame could not be sent.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SendError<F> {
+    /// The backend is poisoned.
+    Poisoned(F),
+    /// The port is not enabled.
+    NotRunning,
+    /// The frame does not make a checked header, length or rate.
+    Frame,
+}
+
+/// What to do with a frame received while a send waits for its
+/// completion: the caller keeps it for its next receive pass.
+pub trait HeldFrames {
+    /// Keep `frame`; a full store drops it.
+    fn hold(&mut self, frame: &[u8]);
+}
+
+/// Send the individual management frame `encoded`, header and body as its
+/// encoder wrote them, through the station's client at `rate`, and wait for
+/// its completion; frames received meanwhile go to `held`.
+///
+/// # Errors
+///
+/// The port is gone or not enabled, or `encoded` makes no checked frame.
+pub async fn send_encoded<'p, 'id, B: StationParts>(
+    owner: &mut StationOwner<'p, 'id, B>,
+    seats: &mut oer_ieee80211_lower_mac::TxSeats<'id, B::QueueKind, B::BufferKind>,
+    encoded: &[u8],
+    rate: oer_ieee80211_lower_mac::PhyRate,
+    held: &mut impl HeldFrames,
+) -> Result<oer_ieee80211_lower_mac::TxCompletion, SendError<B::Fault>> {
+    use oer_ieee80211_lower_mac::{
+        AckHeader, Backoff, CoexPriority, FrameControl, HeaderSpec, IndividualAddress,
+        LowerMacClient, MpduLength, PhaseAttempt, Protection, SizedFrame, SupportedBackoff,
+        SupportedCoex, SupportedPower, TxFrame, TxFrameBody, TxPower,
+    };
+    use oer_ieee80211_mac::qos::WmmAccessCategory;
+    use oer_ieee80211_port::RadioPortEvents;
+
+    let field = |at: usize| -> Option<[u8; 6]> { encoded.get(at..at + 6)?.try_into().ok() };
+    let word = |at: usize| -> Option<u16> {
+        Some(u16::from_le_bytes(
+            encoded.get(at..at + 2)?.try_into().ok()?,
+        ))
+    };
+    let frame_control = word(0)
+        .and_then(FrameControl::new)
+        .ok_or(SendError::Frame)?;
+    let receiver = field(4)
+        .and_then(IndividualAddress::new)
+        .ok_or(SendError::Frame)?;
+    let header = HeaderSpec::new(
+        frame_control,
+        word(2).ok_or(SendError::Frame)?,
+        receiver,
+        field(10).ok_or(SendError::Frame)?,
+        field(16).ok_or(SendError::Frame)?,
+        word(22).ok_or(SendError::Frame)?,
+        None,
+        None,
+        None,
+    )
+    .and_then(AckHeader::new)
+    .ok_or(SendError::Frame)?;
+    let header_len = 24;
+    let mut phase = owner.phase().ok_or(SendError::NotRunning)?;
+    let station = B::station(&phase.clients);
+    let rate = station.rate(rate).ok_or(SendError::Frame)?;
+    let frame = MpduLength::new(encoded.len())
+        .and_then(|len| SizedFrame::new(header, len))
+        .ok_or(SendError::Frame)?;
+    // Management and EAPOL frames contend as voice, as the vendor sends
+    // them.
+    let category = WmmAccessCategory::Voice;
+    let mut buffer = station
+        .tx_buffer(TxFrame::Individual { frame, rate }, seats.buffer(category))
+        .await;
+    buffer.body_mut().copy_from_slice(&encoded[header_len..]);
+    let queue = station.queue(seats.queue(category)).await;
+    let attempt = PhaseAttempt {
+        queue,
+        frame: buffer,
+        body: None,
+        protection: Protection::None,
+        key: None,
+        power: SupportedPower::new(TxPower::Calibrated).ok_or(SendError::Frame)?,
+        backoff: SupportedBackoff::new(Backoff::Slots(0)).ok_or(SendError::Frame)?,
+        coex: SupportedCoex::new(CoexPriority::Elevated)
+            .or_else(|| SupportedCoex::new(CoexPriority::Normal))
+            .ok_or(SendError::Frame)?,
+    };
+    let work = station
+        .submit(attempt)
+        .map_err(|poisoned| SendError::Poisoned(poisoned.cause))?;
+    let id = work.id();
+    loop {
+        match phase.events.next_event().await {
+            Ok(Ok(event)) => match B::view(&event) {
+                LowerMacEvent::TxCompleted(completion) if completion.id == id => {
+                    return Ok(completion);
+                }
+                LowerMacEvent::Received { frame, .. } => held.hold(frame),
+                _ => {}
+            },
+            Ok(Err(_lost)) => {}
+            Err(poisoned) => return Err(SendError::Poisoned(poisoned.cause)),
+        }
+    }
+}
+
+/// A store of one frame received while a send waited.
+pub struct OneHeldFrame<'b> {
+    buffer: &'b mut [u8],
+    len: Option<usize>,
+}
+
+impl<'b> OneHeldFrame<'b> {
+    pub fn new(buffer: &'b mut [u8]) -> Self {
+        Self { buffer, len: None }
+    }
+
+    /// The held frame, which the store gives up.
+    pub fn take(&mut self) -> Option<&[u8]> {
+        let len = self.len.take()?;
+        Some(&self.buffer[..len])
+    }
+}
+
+impl HeldFrames for OneHeldFrame<'_> {
+    fn hold(&mut self, frame: &[u8]) {
+        if self.len.is_none()
+            && let Some(slot) = self.buffer.get_mut(..frame.len())
+        {
+            slot.copy_from_slice(frame);
+            self.len = Some(frame.len());
+        }
     }
 }

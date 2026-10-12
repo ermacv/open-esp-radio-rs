@@ -2,8 +2,12 @@
 //! the frames received between collections.
 
 use embassy_time::{Duration, with_timeout};
-use oer_esp32s31_ieee802154_system::Ieee802154SystemPort;
-use oer_espressif_ieee802154_runtime::{Ieee802154OwnedFrame, Ieee802154RadioEvent};
+use heapless::Vec;
+use oer_esp32s31_ieee802154_system::Esp32s31Ieee802154;
+use oer_espressif_ieee802154_engine::engine::PENDING_TABLE_SIZE;
+use oer_espressif_ieee802154_runtime::{
+    Ieee802154OwnedFrame, Ieee802154PortEvent, Ieee802154RadioEvent,
+};
 use oer_hil_protocol::{
     ieee802154::IEEE802154_SESSION_RECORDED_FRAMES, ieee802154::Ieee802154AirCcaOutcome,
     ieee802154::Ieee802154AirEnergyOutcome, ieee802154::Ieee802154AirTxOutcome,
@@ -17,10 +21,15 @@ use oer_hil_protocol::{
     ieee802154::ieee802154_frame_crc32c,
 };
 use oer_ieee802154::{
-    AutoPendingMode, Channel, Configuration, EnergyScanRequest, EnhancedAckGeneration, EventsLost,
-    FrameAddress, FrameView, Ieee802154RadioPort, Interface, LifecycleCommand, LifecycleEvent,
-    RadioCommand, RadioPort, RadioSetting, RequestId, TxMode, TxRequest, TxSecurity,
+    AutoPendingMode, Channel, EnhancedAckGeneration, EventsLost, FrameView, RequestId, TxMode,
+    TxSecurity,
+    owner::{
+        Has, Ieee802154Client, Operation, RadioSettings, RecentRssi, ShortPending, SupportedCca,
+        SupportedEnergyScan, SupportedTransmit, Transmission,
+    },
 };
+use oer_ieee802154_port::{RadioPortEvents, RadioWork};
+use oer_radio_port::{Seat, Slot};
 
 use super::super::client::tx_outcome;
 
@@ -60,42 +69,37 @@ impl Received {
     }
 }
 
-pub(super) struct Session {
-    /// The radio's port; the session gives it back only across a restart.
-    pub(super) port: Option<Ieee802154SystemPort>,
+/// The session's view of a running port phase: its events consumer, its
+/// control, the client of interface 0 with its operation seat, the
+/// interface's pending-table slots and the install's RSSI reader.
+pub(super) struct Session<'s, 'id, E, S, C, Rs>
+where
+    C: Ieee802154Client<'id, 0>,
+{
+    pub(super) events: &'s mut E,
+    pub(super) control: &'s mut S,
+    pub(super) client: &'s C,
+    pub(super) seat: &'s mut Seat<'id, Operation>,
+    pub(super) rssi: &'s Rs,
+    pub(super) short_free: Vec<Slot<'id, ShortPending<0>>, PENDING_TABLE_SIZE>,
+    pub(super) short: Vec<(u16, C::ShortEntry), PENDING_TABLE_SIZE>,
     pub(super) channel: Channel,
-    pub(super) next_id: u32,
-    pub(super) received: Received,
+    /// Frames received since the previous collection; they survive a
+    /// restart of the radio.
+    pub(super) received: &'s mut Received,
     pub(super) lost: bool,
 }
 
-impl Session {
-    pub(super) fn id(&mut self) -> RequestId {
-        self.next_id = self.next_id.wrapping_add(1);
-        RequestId::new(self.next_id)
-    }
-
-    /// The radio's port.
-    pub(super) fn port(&self) -> &Ieee802154SystemPort {
-        self.port
-            .as_ref()
-            .expect("the session holds its port outside a restart")
-    }
-
-    /// Admit `command`; a refusal fails the request.
-    pub(super) async fn submit(
-        &mut self,
-        command: RadioCommand<'_>,
-    ) -> Result<(), Ieee802154SessionResult> {
-        match self.port().submit(command) {
-            Ok(Ok(_)) => Ok(()),
-            _ => Err(Ieee802154SessionResult::CommandRejected),
-        }
-    }
-
-    /// Apply the host's identity and filter to an enabled radio, and
+impl<'id, E, S, C, Rs> Session<'_, 'id, E, S, C, Rs>
+where
+    E: RadioPortEvents<Event = Ieee802154PortEvent>,
+    S: RadioSettings<Caps = Esp32s31Ieee802154>,
+    C: Ieee802154Client<'id, 0, Caps = Esp32s31Ieee802154>,
+    Rs: RecentRssi,
+{
+    /// Apply the host's identity and filter to the enabled radio, and
     /// install the enhanced-ACK generator the host asked for.
-    pub(super) async fn configure(
+    pub(super) fn configure(
         &mut self,
         config: Ieee802154SessionConfig,
     ) -> Result<(), Ieee802154SessionResult> {
@@ -104,55 +108,30 @@ impl Session {
         let generation = config
             .enhanced_ack
             .then_some(EnhancedAckGeneration { noise_floor_dbm: 0 });
-        if !matches!(
-            self.port().apply(RadioSetting::EnhancedAck(generation)),
-            Ok(Ok(()))
-        ) {
-            return Err(Ieee802154SessionResult::StartFailed);
-        }
-        self.lifecycle(LifecycleCommand::Enable, LifecycleEvent::Enabled)
-            .await?;
-        for configuration in [
-            Configuration::PanId(config.pan_id),
-            Configuration::ShortAddress(config.short_address),
-            Configuration::ExtendedAddress(config.extended_address),
-            Configuration::Promiscuous(config.promiscuous),
-        ] {
-            let id = self.id();
-            self.submit(RadioCommand::Configure { id, configuration })
-                .await?;
-        }
+        self.control.set_enhanced_ack(generation);
+        self.client.set_pan_id(config.pan_id);
+        self.client.set_short_address(config.short_address);
+        self.client.set_extended_address(config.extended_address);
+        let has = Has::new().ok_or(Ieee802154SessionResult::UnsupportedSetup)?;
+        self.control.set_promiscuous(has, config.promiscuous);
         Ok(())
     }
 
-    /// Run one lifecycle command and take its terminal event; frames
-    /// received before it are recorded.
-    pub(super) async fn lifecycle(
-        &mut self,
-        command: LifecycleCommand,
-        terminal: LifecycleEvent,
-    ) -> Result<(), Ieee802154SessionResult> {
-        let Ok(Ok(())) = self.port().lifecycle(command).await else {
-            return Err(Ieee802154SessionResult::CommandRejected);
-        };
-        match self.terminal_event(ASSESS_TIMEOUT).await? {
-            Ieee802154RadioEvent::Lifecycle(event) if event == terminal => Ok(()),
-            _ => Err(Ieee802154SessionResult::UnexpectedEvent),
-        }
-    }
-
-    /// Leave receive mode and disable the radio before its client stops.
-    pub(super) async fn rest_disabled(&mut self) -> Result<(), Ieee802154SessionResult> {
-        let id = self.id();
-        self.submit(RadioCommand::Sleep { id }).await?;
-        self.lifecycle(LifecycleCommand::Disable, LifecycleEvent::Disabled)
+    /// Receive on the session's channel.
+    pub(super) async fn receive(&mut self) -> Result<(), Ieee802154SessionResult> {
+        self.client
+            .receive(self.channel)
             .await
+            .map_err(|_| Ieee802154SessionResult::CommandRejected)
     }
 
-    /// The port's next event; the runtime never poisons.
-    pub(super) async fn taken(&self) -> Result<Ieee802154RadioEvent, EventsLost> {
-        let Ok(event) = self.port().next_event().await;
-        event
+    /// The port's next event.
+    pub(super) async fn taken(&mut self) -> Result<Ieee802154RadioEvent, EventsLost> {
+        match self.events.next_event().await {
+            Ok(Ok(event)) => Ok(event.event),
+            // A poisoned port reports nothing more; the session sees a gap.
+            Ok(Err(EventsLost)) | Err(_) => Err(EventsLost),
+        }
     }
 
     /// Take one runtime event; received frames are recorded.
@@ -182,29 +161,31 @@ impl Session {
             evidence.result = Ieee802154SessionResult::CommandRejected;
             return evidence;
         };
-        let id = self.id();
         let mode = match request.mode {
             Ieee802154SessionTxMode::Direct => TxMode::Direct,
             Ieee802154SessionTxMode::ClearChannelAssessment => TxMode::ClearChannelAssessment,
             Ieee802154SessionTxMode::CsmaCa { max_backoffs } => TxMode::CsmaCa { max_backoffs },
         };
-        if let Err(result) = self
-            .submit(RadioCommand::Transmit(TxRequest {
-                id,
-                frame,
-                channel: self.channel,
-                mode,
-                transmit_power_dbm: None,
-                max_frame_retries: request.max_frame_retries,
-                security: TxSecurity::Radio,
-                interface: Interface::PRIMARY,
-                time_sync: None,
-            }))
-            .await
-        {
-            evidence.result = result;
+        let Ok(transmission) = SupportedTransmit::new(Transmission {
+            frame,
+            channel: self.channel,
+            mode,
+            power: None,
+            max_frame_retries: request.max_frame_retries,
+            security: TxSecurity::Radio,
+            time_sync: None,
+        }) else {
+            evidence.result = Ieee802154SessionResult::CommandRejected;
             return evidence;
-        }
+        };
+        let permit = self.client.operation(self.seat).await;
+        let id = match self.client.transmit(permit, transmission) {
+            Ok(work) => work.id(),
+            Err(_) => {
+                evidence.result = Ieee802154SessionResult::CommandRejected;
+                return evidence;
+            }
+        };
         loop {
             let Ok(event) = with_timeout(TRANSMIT_TIMEOUT, self.taken()).await else {
                 evidence.result = Ieee802154SessionResult::EventTimeout;
@@ -237,24 +218,27 @@ impl Session {
         }
     }
 
-    /// The next terminal event within `timeout`; received frames are
+    /// The terminal event of `id` within `timeout`; received frames are
     /// recorded on the way.
-    pub(super) async fn terminal_event(
+    async fn terminal_of(
         &mut self,
+        id: RequestId,
         timeout: Duration,
     ) -> Result<Ieee802154RadioEvent, Ieee802154SessionResult> {
         loop {
             let Ok(event) = with_timeout(timeout, self.taken()).await else {
                 return Err(Ieee802154SessionResult::EventTimeout);
             };
-            if let Some(event) = self.observe(event) {
-                return Ok(event);
+            match self.observe(event) {
+                Some(event) if terminal_id(&event) == Some(id) => return Ok(event),
+                Some(_) => return Err(Ieee802154SessionResult::UnexpectedEvent),
+                None => {}
             }
         }
     }
 
     /// Scan the energy on the requested channel, then assess it once, as
-    /// two radio commands on that channel.
+    /// two radio operations on that channel.
     pub(super) async fn assess(
         &mut self,
         request: Ieee802154SessionAssessRequest,
@@ -264,65 +248,47 @@ impl Session {
             assessment.result = Ieee802154SessionResult::CommandRejected;
             return assessment;
         };
-        let id = self.id();
-        if let Err(result) = self
-            .submit(RadioCommand::EnergyScan(EnergyScanRequest {
-                id,
-                channel,
-                duration_us: request.energy_scan_micros,
-            }))
-            .await
-        {
-            assessment.result = result;
+        let (Some(scan), Some(cca)) = (
+            SupportedEnergyScan::new(channel, request.energy_scan_micros),
+            SupportedCca::new(channel),
+        ) else {
+            assessment.result = Ieee802154SessionResult::UnsupportedSetup;
             return assessment;
-        }
+        };
+        let permit = self.client.operation(self.seat).await;
+        let Ok(id) = self.client.energy_scan(permit, scan).map(|work| work.id()) else {
+            assessment.result = Ieee802154SessionResult::CommandRejected;
+            return assessment;
+        };
         let scan_timeout =
             Duration::from_micros(u64::from(request.energy_scan_micros)) + ASSESS_TIMEOUT;
-        assessment.energy = match self.terminal_event(scan_timeout).await {
-            Ok(Ieee802154RadioEvent::EnergyScanDone {
-                id: done,
-                energy_dbm,
-                ..
-            }) if done == id => Ieee802154AirEnergyOutcome::Energy(energy_dbm),
-            Ok(Ieee802154RadioEvent::EnergyScanFailed { id: done, .. }) if done == id => {
-                Ieee802154AirEnergyOutcome::Failed
+        assessment.energy = match self.terminal_of(id, scan_timeout).await {
+            Ok(Ieee802154RadioEvent::EnergyScanDone { energy_dbm, .. }) => {
+                Ieee802154AirEnergyOutcome::Energy(energy_dbm)
             }
-            Ok(_) => {
-                assessment.result = Ieee802154SessionResult::UnexpectedEvent;
-                return assessment;
-            }
+            Ok(_) => Ieee802154AirEnergyOutcome::Failed,
             Err(result) => {
                 assessment.result = result;
                 return assessment;
             }
         };
-        let id = self.id();
-        if let Err(result) = self
-            .submit(RadioCommand::ClearChannelAssessment { id, channel })
-            .await
-        {
-            assessment.result = result;
+        let permit = self.client.operation(self.seat).await;
+        let Ok(id) = self
+            .client
+            .clear_channel_assessment(permit, cca)
+            .map(|work| work.id())
+        else {
+            assessment.result = Ieee802154SessionResult::CommandRejected;
             return assessment;
-        }
-        assessment.cca = match self.terminal_event(ASSESS_TIMEOUT).await {
-            Ok(Ieee802154RadioEvent::ClearChannelAssessmentDone { id: done, idle, .. })
-                if done == id =>
-            {
-                if idle {
-                    Ieee802154AirCcaOutcome::Clear
-                } else {
-                    Ieee802154AirCcaOutcome::Busy
-                }
+        };
+        assessment.cca = match self.terminal_of(id, ASSESS_TIMEOUT).await {
+            Ok(Ieee802154RadioEvent::ClearChannelAssessmentDone { idle: true, .. }) => {
+                Ieee802154AirCcaOutcome::Clear
             }
-            Ok(Ieee802154RadioEvent::ClearChannelAssessmentFailed { id: done, .. })
-                if done == id =>
-            {
-                Ieee802154AirCcaOutcome::Failed
+            Ok(Ieee802154RadioEvent::ClearChannelAssessmentDone { idle: false, .. }) => {
+                Ieee802154AirCcaOutcome::Busy
             }
-            Ok(_) => {
-                assessment.result = Ieee802154SessionResult::UnexpectedEvent;
-                return assessment;
-            }
+            Ok(_) => Ieee802154AirCcaOutcome::Failed,
             Err(result) => {
                 assessment.result = result;
                 return assessment;
@@ -334,46 +300,56 @@ impl Session {
 
     /// The live RSSI of the most recent baseband reception.
     pub(super) fn recent_rssi(&self) -> Ieee802154SessionRecentRssi {
-        let Ok(rssi_dbm) = self.port().recent_rssi();
         Ieee802154SessionRecentRssi {
             result: Ieee802154SessionResult::Done,
-            rssi_dbm,
+            rssi_dbm: self.rssi.recent_rssi(),
         }
     }
 
-    /// Set the pending mode and add the host's source through the port; the
-    /// pending table is software the next operation publishes.
-    pub(super) async fn pending(&mut self, request: Ieee802154SessionPendingRequest) -> bool {
+    /// Set the pending mode and add the host's source in a pending-table
+    /// slot; the pending table is software the next operation publishes.
+    pub(super) fn pending(&mut self, request: Ieee802154SessionPendingRequest) -> bool {
         let mode = match request.mode {
             Ieee802154SessionPendingMode::Disabled => AutoPendingMode::Disable,
             Ieee802154SessionPendingMode::Enabled => AutoPendingMode::Enable,
             Ieee802154SessionPendingMode::Enhanced => AutoPendingMode::Enhanced,
             Ieee802154SessionPendingMode::Zigbee => AutoPendingMode::Zigbee,
         };
-        let id = self.id();
-        if self
-            .submit(RadioCommand::Configure {
-                id,
-                configuration: Configuration::PendingMode(mode),
-            })
-            .await
-            .is_err()
-        {
+        let Some(has) = Has::new() else {
             return false;
-        }
+        };
+        self.client.set_pending_mode(has, mode);
         match request.short_address {
             None => true,
+            Some(short) if self.short.iter().any(|(held, _)| *held == short) => true,
             Some(short) => {
-                let id = self.id();
-                self.submit(RadioCommand::Configure {
-                    id,
-                    configuration: Configuration::AddPendingAddress(FrameAddress::Short(
-                        short.to_le_bytes(),
-                    )),
-                })
-                .await
-                .is_ok()
+                // A full table refuses the source.
+                let Some(slot) = self.short_free.pop() else {
+                    return false;
+                };
+                let entry = self.client.add_pending_short(slot, short.to_le_bytes());
+                self.short.push((short, entry)).is_ok()
             }
         }
+    }
+
+    /// Clear every pending entry this session added, giving the slots back.
+    pub(super) fn clear_pending(&mut self) {
+        while let Some((_, entry)) = self.short.pop() {
+            let slot = self.client.remove_pending_short(entry);
+            let _ = self.short_free.push(slot);
+        }
+    }
+}
+
+/// The identity of the operation `event` ends.
+fn terminal_id(event: &Ieee802154RadioEvent) -> Option<RequestId> {
+    match *event {
+        Ieee802154RadioEvent::TransmitDone { id, .. }
+        | Ieee802154RadioEvent::EnergyScanDone { id, .. }
+        | Ieee802154RadioEvent::EnergyScanFailed { id }
+        | Ieee802154RadioEvent::ClearChannelAssessmentDone { id, .. }
+        | Ieee802154RadioEvent::ClearChannelAssessmentFailed { id } => Some(id),
+        _ => None,
     }
 }

@@ -7,8 +7,8 @@
 //! This crate owns bounded MAC bytes, normalized metadata, portable radio
 //! values and a finite command/event state machine. It contains no PHR/FCS DMA
 //! image, ESP register layout, interrupt owner, allocator or executor. It
-//! declares the [`Ieee802154RadioPort`] a backend implements, but never
-//! waits on it. Platform adapters translate these contracts to their own
+//! declares the port's owner shape ([`owner`]) a backend implements, but
+//! never waits on it. Platform adapters translate these contracts to their own
 //! hardware ownership model; OpenThread- and Zephyr-facing code can use them
 //! through the port without inheriting that platform representation.
 //!
@@ -75,8 +75,8 @@ pub use oer_ieee802154_port::{Correlation, CorrelationIds};
 pub use oer_radio_port::ClockRelation;
 pub use port::{
     CancelError, ClockError, ClockInfo, CslCapability, CslReceiver, EnhancedAckGeneration,
-    EventsLost, FrameCounterUpdate, Ieee802154Capabilities, Ieee802154RadioPort, LifecycleCommand,
-    LifecycleError, LifecycleEvent, Poisoned, PortResult, RadioPort, RadioSetting, SettingError,
+    EventsLost, FrameCounterUpdate, Ieee802154Capabilities, LifecycleCommand, LifecycleError,
+    LifecycleEvent, Poisoned, PortResult, RadioSetting, SettingError,
 };
 pub use radio::capabilities::{CapabilityBitsError, RadioCapabilities};
 pub use radio::channel::{Channel, ChannelError};

@@ -10,44 +10,36 @@
 //! holds its state under `ieee802154_enter_critical`. The platform interrupt
 //! handler and every command run inside that lock. Portable events leave the
 //! lock as owned values through a bounded queue that any executor may await.
-//! [`Ieee802154Runtime::install`] returns the installed radio's two
-//! handles. The [`Ieee802154Port`] is the [`Ieee802154RadioPort`](oer_ieee802154::Ieee802154RadioPort) of the
-//! protocol's one event consumer: commands, events, the clock, the state,
-//! the capabilities and the settings (MAC keys, CSL and the enhanced-ACK
-//! generator the interrupt handler reads, and the transmit power and CCA
-//! the next operation publishes). The
-//! [`Ieee802154Control`] stays with the composition: coexistence, statistics, the frame-pending table and the uninstall, which
-//! consumes both. Neither handle exists without an installed radio, so no
-//! call is refused as not installed.
+//! [`Ieee802154Runtime::install`] returns the installed radio as the IEEE
+//! 802.15.4 port's backend ([`Ieee802154RuntimeBackend`], the owner shape of
+//! `oer_ieee802154::owner`), which the composition hands to `run_port`; the
+//! port's end masks the MAC route and returns the engine and the hardware.
+//! The engine stays behind the runtime's blocking mutex, shared with the
+//! MAC interrupt, an interim the owner allowed until #668.
 //!
 //! CSMA-CA backoffs and the delays before retries run on the runtime's
-//! [`oer_time::Timer`] in [`Ieee802154Runtime::run`], the runner the composition polls for as long
-//! as the radio is installed, as ESP-IDF's OpenThread `SubMac` runs them on
-//! its tasklet timer; [`RadioPort::next_event`](oer_ieee802154::RadioPort::next_event) only takes events.
+//! [`oer_time::Timer`] in the port's joined driver, as ESP-IDF's OpenThread
+//! `SubMac` runs them on its tasklet timer; the events consumer only takes
+//! events.
 //!
-//! The bounded event queue reserves a slot for every terminal event it
-//! owes when the work is admitted: the admitted operation's end, the fault
-//! that may end an enabled period, and a lifecycle command's terminal. A
-//! terminal event is therefore never lost; an operation or a lifecycle
-//! command whose terminal could not be held is refused. Only received
+//! The bounded event queue keeps a slot free for the next operation's
+//! terminal, which the operation permit admits, and for the fault that may
+//! end an enabled period: a terminal event is never lost. Only received
 //! frames are dropped when the queue is full, reported as [`EventsLost`] in
 //! place of the first dropped frame.
 //!
-//! The runtime never poisons (its fault type is [`Infallible`]): a broken
-//! event sequence ends in a recoverable [`RadioEvent::Fault`] that leaves
-//! the radio disabled.
+//! A radio fault poisons the port: the events consumer hands out the
+//! failed operation's terminal and the events before it, then `Poisoned`
+//! at every later call.
 //!
 //! Shared-PHY tracking runs with the MAC receiving, as ESP-IDF's
 //! `phy_common.c` does: the runtime never pauses for it, and an operation
-//! that loses RF ends with its ordinary terminal event. A quiesced port
-//! holds the radio still: it refuses every command that writes the
-//! hardware as quiesced and admits software configuration and every
-//! setting, none of which writes the hardware.
+//! that loses RF ends with its ordinary terminal event.
 
 #[cfg(test)]
 extern crate std;
 
-mod port;
+mod backend;
 mod trace;
 
 use core::{
@@ -81,10 +73,16 @@ use oer_ieee802154::{
 };
 use oer_time::{Duration, Instant, Timer};
 
-pub use port::{Ieee802154Control, Ieee802154Port};
+pub use backend::{
+    Ieee802154PortEvent, Ieee802154RouteDetach, Ieee802154RuntimeBackend, Ieee802154RuntimeCaps,
+    NoRoute, RUNTIME_INTERFACES,
+    RuntimeClient, RuntimeClients, RuntimeConfigured, RuntimeControl, RuntimeEvents,
+    RuntimeExtendedEntry, RuntimeHeld, RuntimeResources, RuntimeRssi, RuntimeSetup,
+    RuntimeShortEntry, RuntimeToken,
+};
 
 pub use oer_espressif_ieee802154_radio::{
-    IEEE802154_ENH_ACK_PROBING_CAPACITY, IEEE802154_ENHANCED_ACK_IE_CAPACITY,
+    IEEE802154_CSL_CAPABILITY, IEEE802154_ENH_ACK_PROBING_CAPACITY, IEEE802154_ENHANCED_ACK_IE_CAPACITY,
     IEEE802154_RADIO_CAPABILITIES, Ieee802154Random,
 };
 
@@ -334,7 +332,10 @@ impl<M: RawMutex, const EVENTS: usize> EventQueue<M, EVENTS> {
         self.owed(|owed| {
             let ends_operation = match &event {
                 Ieee802154RadioEvent::Received(_) => {
-                    if !self.has_room(owed, 1) {
+                    // A received frame leaves a slot for the next
+                    // operation's terminal, which its permit admits
+                    // without asking the queue.
+                    if !self.has_room(owed, 1 + usize::from(!owed.operation)) {
                         owed.lost = true;
                         return false;
                     }
@@ -449,6 +450,10 @@ pub struct Ieee802154Runtime<'storage, M: RawMutex, H, T, R, const EVENTS: usize
     backoff_until: Mutex<M, Cell<Option<Instant>>>,
     /// Raised when a delay starts, so an awaiting consumer rearms.
     backoff_started: Signal<M, ()>,
+    /// The next request identifier the runtime mints.
+    next_id: Mutex<M, Cell<u32>>,
+    /// The radio fault that poisoned the port.
+    fault: Mutex<M, Cell<Option<RadioFault>>>,
 }
 
 impl<
@@ -487,6 +492,8 @@ impl<
             events: EventQueue::new(),
             backoff_until: Mutex::new(Cell::new(None)),
             backoff_started: Signal::new(),
+            next_id: Mutex::new(Cell::new(1)),
+            fault: Mutex::new(Cell::new(None)),
         }
     }
 
@@ -517,9 +524,9 @@ impl<
     /// enabled afterwards; the port's `Enable` lifecycle command opens
     /// admission.
     ///
-    /// Returns the radio's port, for the protocol's one event consumer, and
-    /// its control, for the composition; [`Ieee802154Control::uninstall`]
-    /// consumes both.
+    /// Returns the installed radio as the port's backend, with the
+    /// capabilities marker `K` its composition names; the composition hands
+    /// it to `run_port`, whose end returns the engine and the hardware.
     ///
     /// # Errors
     ///
@@ -529,13 +536,13 @@ impl<
         clippy::type_complexity,
         reason = "the no-alloc runtime returns the unconsumed owners by value"
     )]
-    pub fn install(
+    pub fn install<K>(
         &self,
         mut parts: Ieee802154RuntimeParts<'storage, H>,
         random: R,
         defaults: Ieee802154PibDefaults,
     ) -> Result<
-        (Ieee802154Port<'_, Self>, Ieee802154Control<'_, Self>),
+        Ieee802154RuntimeBackend<'_, 'storage, K, M, H, T, R, EVENTS>,
         Ieee802154RuntimeParts<'storage, H>,
     > {
         #[allow(
@@ -556,7 +563,61 @@ impl<
             Ok(())
         };
         self.installed.lock(install)?;
-        Ok((Ieee802154Port::new(self), Ieee802154Control::new(self)))
+        self.fault.lock(|fault| fault.set(None));
+        Ok(Ieee802154RuntimeBackend::new(self))
+    }
+
+    /// Enable the installed radio: it enters sleep.
+    fn enable_locked(&self) -> Result<(), ()> {
+        self.with_installed(|radio, hardware, sink| {
+            radio.enable(hardware, &self.timer, sink).map_err(|_| ())
+        })
+    }
+
+    /// Disable the installed radio, ending the operation in flight with its
+    /// terminal; a disabled radio stays as it is.
+    fn disable_locked(&self) {
+        self.with_installed(|radio, hardware, sink| {
+            if radio.state() != RadioState::Disabled {
+                let _ = radio.disable(hardware, &self.timer, sink);
+            }
+        });
+        self.events.owed(|owed| {
+            owed.operation = false;
+            owed.fault = false;
+        });
+    }
+
+    /// Collect the vendor's TX/RX statistics
+    /// (`CONFIG_IEEE802154_TXRX_STATISTIC`), from zero, or stop collecting
+    /// them.
+    pub fn set_txrx_statistics(&self, collect: bool) {
+        self.with_installed(|radio, _, _| radio.engine().set_txrx_statistics(collect));
+    }
+
+    /// The TX/RX statistics while collected.
+    pub fn txrx_statistics(&self) -> Option<Ieee802154TxRxStatistics> {
+        self.with_installed(|radio, _, _| radio.engine().txrx_statistics())
+    }
+
+    /// `esp_ieee802154_txrx_statistic_clear`.
+    pub fn clear_txrx_statistics(&self) {
+        self.with_installed(|radio, _, _| radio.engine().clear_txrx_statistics());
+    }
+
+    /// Replace the engine's software-coexistence priorities.
+    pub fn set_coexistence(
+        &self,
+        coexistence: oer_espressif_ieee802154_engine::coex::Ieee802154Coexistence,
+    ) {
+        self.with_installed(|radio, _, _| radio.engine().set_coexistence(coexistence));
+    }
+
+    /// Run `entry` on the radio's hardware under the runtime's lock, for a
+    /// diagnostic read such as the MAC power sequence; `None` while no radio
+    /// is installed.
+    pub fn with_hardware<O>(&self, entry: impl FnOnce(&mut H) -> O) -> Option<O> {
+        self.with_held(|_, hardware, _| entry(hardware))
     }
 
     /// `esp_ieee802154_disable` after the platform CPU route is disabled:
@@ -701,82 +762,6 @@ impl<
         cancelled
     }
 
-    /// Start one lifecycle command; its terminal event is queued in a slot
-    /// it found free or reserved.
-    ///
-    /// - `Enable` enables a disabled radio, reserving the slot of the fault
-    ///   that may end its enabled period, or reopens a quiesced one.
-    /// - `Disable` ends the operation in flight with its terminal event,
-    ///   then disables the radio; its terminal takes the fault's slot.
-    /// - `Quiesce` closes admission of operations and ends with `Quiesced`
-    ///   after the terminal event of the operation in flight.
-    fn lifecycle_locked(&self, command: LifecycleCommand) -> Result<(), LifecycleError> {
-        self.with_installed(|radio, hardware, sink| {
-            let enabled = radio.state() != RadioState::Disabled;
-            let (quiescing, quiesced) = self.events.owed(|owed| (owed.quiescing, owed.quiesced));
-            if quiescing {
-                return Err(LifecycleError::Busy);
-            }
-            match command {
-                LifecycleCommand::Enable if enabled && !quiesced => {
-                    Err(LifecycleError::AlreadyInState)
-                }
-                LifecycleCommand::Enable if enabled => {
-                    if !self.events.owed(|owed| self.events.has_room(owed, 1)) {
-                        return Err(LifecycleError::Busy);
-                    }
-                    self.events.owed(|owed| owed.quiesced = false);
-                    sink.event(RadioEvent::Lifecycle(LifecycleEvent::Enabled));
-                    Ok(())
-                }
-                LifecycleCommand::Enable => {
-                    // The terminal and the fault slot of the enabled period.
-                    if !self.events.owed(|owed| self.events.has_room(owed, 2)) {
-                        return Err(LifecycleError::Busy);
-                    }
-                    radio
-                        .enable(hardware, &self.timer, sink)
-                        .map_err(|_| LifecycleError::InvalidState)?;
-                    self.events.owed(|owed| owed.quiesced = false);
-                    sink.event(RadioEvent::Lifecycle(LifecycleEvent::Enabled));
-                    self.events.owed(|owed| owed.fault = true);
-                    Ok(())
-                }
-                LifecycleCommand::Disable if !enabled => Err(LifecycleError::AlreadyInState),
-                LifecycleCommand::Disable => {
-                    radio
-                        .disable(hardware, &self.timer, sink)
-                        .map_err(|_| LifecycleError::InvalidState)?;
-                    self.events.owed(|owed| {
-                        owed.fault = false;
-                        owed.quiesced = false;
-                    });
-                    sink.event(RadioEvent::Lifecycle(LifecycleEvent::Disabled));
-                    Ok(())
-                }
-                LifecycleCommand::Quiesce if !enabled => Err(LifecycleError::InvalidState),
-                LifecycleCommand::Quiesce if quiesced => Err(LifecycleError::AlreadyInState),
-                LifecycleCommand::Quiesce => {
-                    let running = self.events.owed(|owed| {
-                        if !self.events.has_room(owed, 1) {
-                            return Err(LifecycleError::Busy);
-                        }
-                        if owed.operation {
-                            owed.quiescing = true;
-                        } else {
-                            owed.quiesced = true;
-                        }
-                        Ok(owed.operation)
-                    })?;
-                    if !running {
-                        sink.event(RadioEvent::Lifecycle(LifecycleEvent::Quiesced));
-                    }
-                    Ok(())
-                }
-            }
-        })
-    }
-
     /// The radio's runner: a transmission's CSMA-CA backoff or retry delay,
     /// after which the transmission goes on.
     ///
@@ -808,19 +793,6 @@ impl<
         }
     }
 
-    /// Take the next event; nothing else progresses here.
-    async fn wait_event(&self) -> PortResult<Ieee802154RadioEvent, EventsLost, Infallible> {
-        loop {
-            if let Some(event) = self.events.take() {
-                return Ok(event);
-            }
-            select(
-                self.events.entries.ready_to_receive(),
-                self.events.changed.wait(),
-            )
-            .await;
-        }
-    }
 }
 
 /// Apply one portable setting to the radio under the runtime's lock. Every

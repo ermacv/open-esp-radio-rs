@@ -1,46 +1,24 @@
-//! The IEEE 802.15.4 radio port: the contract between portable protocol
-//! logic (an upper stack's radio adapter, a MAC service) and the backend
-//! that executes radio operations, whether a chip, a family driver or a
-//! host model.
-//!
-//! [`Ieee802154RadioPort`] has the five parts every radio port has:
-//! synchronous submission of a [`RadioCommand`] whose refusal is a value,
-//! an asynchronous stream of owned events viewed as [`RadioEvent`] with
-//! reported loss ([`EventsLost`]), the backend's [`Ieee802154Capabilities`],
-//! the lifecycle ([`RadioPort::lifecycle`], whose commands end with a
-//! [`RadioEvent::Lifecycle`] terminal, and [`RadioPort::cancel`], which
-//! ends a running operation through its terminal event), and the radio
-//! clock in the [`Ieee802154Instant`](crate::Ieee802154Instant) epoch with
-//! its [`ClockInfo`]. The event stream, the clock, cancellation and the
-//! lifecycle are the shared [`RadioPort`] base of `oer-radio-port`, with
-//! its refusals, poisoning ([`Poisoned`]), event loss and clock relation.
-//! Its
-//! [`RadioSetting`] values carry the radio configuration outside the
-//! command state machine: the state the backend reads from its own
-//! interrupt context (MAC keys and frame counters, the CSL receiver, the
-//! enhanced-ACK generator), and the transmit power and clear-channel
-//! assessment the next operation publishes, checked against the
-//! [`Ieee802154Capabilities`]. A backend changes them atomically with
-//! respect to that context and in any radio state.
-//!
-//! This module only declares the port; it never waits on it.
+//! The IEEE 802.15.4 radio values every backend shares: its capabilities
+//! ([`Ieee802154Capabilities`]) and the radio configuration outside the
+//! command state machine ([`RadioSetting`]): the state the backend reads
+//! from its own interrupt context (MAC keys and frame counters, the CSL
+//! receiver, the enhanced-ACK generator), and the transmit power and
+//! clear-channel assessment the next operation publishes. The port itself
+//! is the owner shape of [`crate::owner`].
 
 pub use oer_ieee802154_port::{CancelError, ClockError};
-pub use oer_ieee802154_port::{LifecycleCommand, LifecycleError, LifecycleEvent, RadioPort};
+pub use oer_ieee802154_port::{LifecycleCommand, LifecycleError, LifecycleEvent};
 pub use oer_radio_port::{ClockInfo, EventsLost, Poisoned, PortResult};
 
 use crate::mac::link_metrics::ProbingInitiator;
 use crate::radio::{
-    Ieee802154Radio, RequestId,
     capabilities::RadioCapabilities,
     channel::Channel,
-    command::{CcaMode, RadioCommand},
-    event::RadioEvent,
+    command::CcaMode,
     interface::Interface,
     power::{
         CcaThresholdCapability, CcaThresholdError, TransmitPowerCapability, TransmitPowerError,
     },
-    state::{AcceptedCommand, CommandError, RadioState},
 };
 
 /// What a backend supports, read before submission.
@@ -201,81 +179,4 @@ pub enum SettingError {
     CcaThreshold(CcaThresholdError),
     /// The backend does not implement the setting.
     Unsupported,
-}
-
-/// An IEEE 802.15.4 radio backend as portable protocol logic drives it.
-///
-/// Every method of this trait is synchronous and takes the backend's lock
-/// for its own duration only; the [`RadioPort`] base calls return ready
-/// futures. A call that can be refused returns a [`PortResult`]: the inner
-/// `Err` is a refusal and nothing changed; the outer one is [`Poisoned`],
-/// after which only a reset restores the port. The other calls return only
-/// the poison. The port value exists only while its backend is installed,
-/// so no call is refused as not installed. Shared PHY maintenance never
-/// pauses the port: an operation that loses RF ends with its ordinary
-/// terminal event.
-///
-/// # Events
-///
-/// The port has exactly one consumer of its events. Taking an event only
-/// dequeues it: timed work the backend runs in software (CSMA-CA backoffs,
-/// retry delays) progresses in the backend's own runner, which the
-/// composition polls beside the consumer. The backend reserves the slot of
-/// an admitted operation's terminal event and of a lifecycle command's
-/// terminal when it admits them, so a terminal event is never lost; a loss
-/// is reported as [`EventsLost`] in place of the first dropped received
-/// frame, and the consumer continues. A [`RadioEvent::Fault`] is
-/// recoverable: it leaves the radio disabled, and `Enable` serves again.
-///
-/// # Lifecycle and cancellation
-///
-/// `Enable` acquires the radio and enters sleep. `Disable` ends the
-/// operation in flight with its terminal event, then releases the radio
-/// and ends with `Disabled`. `Quiesce` holds the radio still: once the
-/// operation in flight ended it reports `Quiesced`, and until `Enabled` the
-/// port refuses every command that writes the hardware (operations,
-/// receive and sleep, addresses and PAN identifiers) as
-/// [`CommandError::Quiesced`]. A configuration the next operation publishes
-/// (pending mode and table, promiscuity), every [`RadioSetting`], the
-/// state, frame counters and recent RSSI stay available. A backend without
-/// a quiesce refuses `Quiesce` as `InvalidState`. [`RadioPort::cancel`] ends the running transmission,
-/// energy scan, clear-channel assessment or scheduled receive window
-/// through its own terminal event
-/// ([`RadioStateMachine::admit_cancel`](crate::RadioStateMachine::admit_cancel)).
-pub trait Ieee802154RadioPort: RadioPort<Id = RequestId, Domain = Ieee802154Radio> {
-    /// The portable view of an owned event.
-    fn view(event: &Self::Event) -> RadioEvent<'_>;
-
-    /// What the backend supports; read before submission.
-    fn capabilities(&self) -> Ieee802154Capabilities;
-
-    /// Admit and start one command. `Ok(Err(_))` when the backend refused
-    /// it: nothing changed. An admitted operation reports its terminal
-    /// event through [`RadioPort::next_event`].
-    fn submit(
-        &self,
-        command: RadioCommand<'_>,
-    ) -> PortResult<AcceptedCommand, CommandError, Self::Fault>;
-
-    /// The resolution of [`RadioPort::now`] and how its epoch relates to
-    /// the image's monotonic time. The port's radio clock is the epoch of
-    /// scheduled operations and receive timestamps. A caller that needs it
-    /// synchronously without the port (OpenThread's `otPlatRadioGetNow`)
-    /// takes the clock the composition binds the backend to, which this
-    /// relates to monotonic time.
-    fn clock_info(&self) -> ClockInfo<Ieee802154Radio>;
-
-    /// The portable state.
-    fn state(&self) -> Result<RadioState, Poisoned<Self::Fault>>;
-
-    /// Change one setting. `Ok(Err(_))` when the backend refused it.
-    fn apply(&self, setting: RadioSetting<'_>) -> PortResult<(), SettingError, Self::Fault>;
-
-    /// The next frame counter of `interface`; `None` for an interface
-    /// without keys or one the radio does not have.
-    fn frame_counter(&self, interface: Interface) -> Result<Option<u32>, Poisoned<Self::Fault>>;
-
-    /// The live RSSI in dBm of the most recent reception
-    /// (`otPlatRadioGetRssi`), whatever the radio's state.
-    fn recent_rssi(&self) -> Result<i8, Poisoned<Self::Fault>>;
 }

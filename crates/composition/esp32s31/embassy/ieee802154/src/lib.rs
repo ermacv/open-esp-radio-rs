@@ -15,16 +15,24 @@
 //! transaction that fails is fail-stop.
 //!
 //! The runtime is a process singleton: modem source 132 has one handler and
-//! the MAC has one set of owners. [`start`] returns the running client, which
-//! keeps the radio's control, and the radio's port
-//! ([`Ieee802154SystemPort`]), through which its one consumer issues commands
-//! and takes events; [`Ieee802154System::stop`] takes the port back.
+//! the MAC has one set of owners. [`start`] returns the running client and
+//! the radio's port backend ([`Ieee802154SystemBackend`]), which the
+//! application's body runs under `run_port`; the port's end returns the
+//! engine and the MAC owners ([`Ieee802154SystemParts`]), which
+//! [`Ieee802154System::stop`] takes.
 
+mod caps;
 mod maintenance;
 #[cfg(target_arch = "riscv32")]
 mod system;
 
+pub use caps::{Esp32s31Ieee802154, Esp32s31Ieee802154Multipan, MultipanInterfaces};
 pub use maintenance::Ieee802154PhyMaintenance;
+// The owner shape the backend serves: `run_port` and the owner's types, and
+// the IEEE 802.15.4 port's traits, so an application drives the port
+// through this crate (or the `oer` facade) alone.
+pub use oer_ieee802154::owner;
+pub use oer_ieee802154_port as port;
 
 // Inputs of `start` and `Ieee802154Parked::new`, and the shared radio the
 // client joins, so an application can construct it through this crate (or
@@ -58,6 +66,6 @@ pub use oer_esp32s31_ieee802154_esp_hal::{
 pub use system::{
     IEEE802154_EVENT_CAPACITY, Ieee802154FailStop, Ieee802154MaintenanceError, Ieee802154Parked,
     Ieee802154StartError, Ieee802154StartFailure, Ieee802154StopError, Ieee802154StopFailure,
-    Ieee802154System, Ieee802154SystemClock, Ieee802154SystemPort, Ieee802154SystemRuntime,
-    ieee802154_interrupt, start,
+    Ieee802154System, Ieee802154SystemBackend, Ieee802154SystemClock, Ieee802154SystemParts,
+    Ieee802154SystemRssi, Ieee802154SystemRuntime, ieee802154_interrupt, start,
 };

@@ -246,7 +246,7 @@ pub struct RxZeroCopyEvidence {
 /// Cores whose load a session reports: the ESP32-S31's two.
 pub const CPU_LOAD_CORES: usize = 2;
 
-/// Each core's CPU load over the session's measured traffic window: the
+/// Each core's CPU load over the session's throughput measurement window: the
 /// cycles its executor spent in its idle wait (`wfi`) against the window's
 /// cycles. Everything else on the core is busy: tasks, interrupt handlers and
 /// the executor's own polling.

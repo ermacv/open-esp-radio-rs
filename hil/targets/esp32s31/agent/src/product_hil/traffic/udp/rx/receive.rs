@@ -30,8 +30,8 @@ pub(super) struct Outcome {
     pub flow_evidence: [Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY],
     pub elapsed_us: u64,
     pub task_poll_end: TaskPollSetSnapshot,
-    /// Over the measurement window: from its first datagram (from arming
-    /// when none arrives) to its end.
+    /// Over the measurement window: from its start, the first datagram or
+    /// the end of the startup allowance, whichever is first, to its end.
     pub cpu_load: Option<CpuLoadEvidence>,
 }
 
@@ -82,8 +82,8 @@ pub(super) async fn run(
     });
     let payload_fill =
         PayloadFillCheck::for_flows(flows.iter().flatten().map(|flow| flow.payload_identity));
-    let mut cpu_window = Some(CpuLoadWindow::begin());
-    let mut cpu_window_at_data = false;
+    let mut cpu_window = None;
+    let mut cpu_window_opened = false;
     let mut cpu_load = None;
     let mut window = RxWindow::new(
         Instant::now().as_micros(),
@@ -102,6 +102,12 @@ pub(super) async fn run(
     let mut task_poll_end = None;
     loop {
         let now = Instant::now().as_micros();
+        if !cpu_window_opened && now >= window.start() {
+            // No datagram before the startup allowance ended: the
+            // measurement window starts there.
+            cpu_window = Some(CpuLoadWindow::begin());
+            cpu_window_opened = true;
+        }
         if now >= window.end() && task_poll_end.is_none() {
             task_poll_end = Some(task_polls.snapshot());
             cpu_load = cpu_window.take().and_then(CpuLoadWindow::finish);
@@ -112,7 +118,11 @@ pub(super) async fn run(
         if window.finished(now, terminal) {
             break;
         }
-        let deadline = window.next_deadline(now);
+        let mut deadline = window.next_deadline(now);
+        if !cpu_window_opened {
+            // Wake at the window's start to open the CPU window there.
+            deadline = deadline.min(window.start());
+        }
         let received = with_timeout(
             Duration::from_micros(deadline.saturating_sub(now)),
             recv_from_with(socket, |packet, metadata| {
@@ -193,10 +203,11 @@ pub(super) async fn run(
             }
             continue;
         }
-        if !cpu_window_at_data {
-            // The measurement window starts at its first datagram.
-            cpu_window_at_data = true;
+        if !cpu_window_opened {
+            // The measurement window starts at its first datagram, here
+            // before the startup allowance ended.
             cpu_window = Some(CpuLoadWindow::begin());
+            cpu_window_opened = true;
         }
         flow.evidence.rx_bytes = flow.evidence.rx_bytes.saturating_add(length as u64);
         flow.evidence.rx_units = flow.evidence.rx_units.saturating_add(1);

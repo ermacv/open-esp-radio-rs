@@ -424,8 +424,9 @@ The `cpu-load` feature, built by the performance and correctness classes,
 turns on the Embassy executor's `idle-accounting`: each core's executor reads
 the 64-bit `mcycle` around its `wfi`, with interrupts masked, and adds the wait
 to its idle counter. `product_hil::traffic::CpuLoadWindow` samples both counters
-at the traffic window's boundaries (UDP RX from its first in-window datagram to
-the window's end, UDP TX and TCP over their elapsed interval) and the session
+at the throughput window's boundaries (UDP RX from its first datagram, or the
+end of the startup allowance when none arrived by then, to the window's end;
+UDP TX and TCP over their elapsed interval) and the session
 publishes `CpuLoadEvidence`. `mcycle` keeps counting in `wfi` only because
 `HP_SYSTEM_CPU_WAITI_CONF.CPU_WAIT_MODE_FORCE_ON` stays at its reset value 1;
 an image that clears it would read a busy core everywhere. The window adds one

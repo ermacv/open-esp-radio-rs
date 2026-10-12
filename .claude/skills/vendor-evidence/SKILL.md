@@ -33,13 +33,16 @@ Scenario authors also read the
 3. **After a citation change** run `cargo verification check provenance --chip <chip>`.
    After review, record new fingerprints with
    `cargo verification provenance --chip <chip> --accept NAME`.
-4. **After a pin change** run `cargo verification diff --chip <chip> --old A --new B`,
+4. **Which copy.** `cargo verification copies --chip <chip>` shows the
+   functions whose ROM and library copies differ in MMIO, with the copies
+   our facts cite; read a `differs` pair's fact against the copy it cites.
+5. **After a pin change** run `cargo verification diff --chip <chip> --old A --new B`,
    make production follow the pinned behavior, then re-accept provenance.
-5. **Compare compiled production code.** A scenario runs the pinned vendor
+6. **Compare compiled production code.** A scenario runs the pinned vendor
    function and the compiled production probe in one Blobray session and
    fails closed: `MATCH`, `DIFF` or `INCOMPLETE`. Never compare against a
    shadow implementation or a duplicated fixture table.
-6. **Shards.** The evidence index is derived data, never committed:
+7. **Shards.** The evidence index is derived data, never committed:
    `cargo verification evidence --chip <chip>` computes it for the checkout
    into `target/verification/<chip>/evidence`, and qualification reads it
    there; a stale index holds no evidence (`EVIDENCE-DIR stale`) until
@@ -57,13 +60,13 @@ Scenario authors also read the
    `[[narrowed]]` entry the comparisons reach beyond again is an error too:
    a change that widens such a root removes or updates its entry
    ([comparison with main](../../../verification/README.md)).
-7. **Hardware cross-checks** are HIL runs: `cargo hil run
+8. **Hardware cross-checks** are HIL runs: `cargo hil run
    phy-vendor-calibration` (and its `-restart`, `-ieee802154` points) flashes
    the vendor firmware and production alternately and records the
    comparison of `oer-esp32s31-phy-vendor-calibration` as the run bundle's
    typed result. Nothing is written to the vendor evidence index
    `target/verification/<chip>/evidence`.
-8. **Commits.** A production change the comparison needs lands in its own
+9. **Commits.** A production change the comparison needs lands in its own
    product-scoped commit, never inside a `blobray` or verification commit.
 
 ## Commands (all `run_in_background: true`)

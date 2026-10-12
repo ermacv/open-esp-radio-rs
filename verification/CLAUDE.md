@@ -41,5 +41,6 @@ probes and scenarios.
 - `cargo verification fetch <chip>` downloads and verifies the pins into `target/vendor/`.
 - `cargo verification check provenance --chip <chip>` after touching a `SOURCE:` citation or a pin.
 - `cargo verification diff --chip <chip> --old A --new B` after a pin change.
+- `cargo verification copies --chip <chip>`: where a function's ROM and library copies differ in MMIO, and which copy our facts cite.
 
 Workflow: the `vendor-evidence` skill.

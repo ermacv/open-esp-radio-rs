@@ -1163,14 +1163,24 @@ dependencies = [
 name = "oer-verification-cli"
 version = "0.1.0"
 dependencies = [
+ "blobray-application",
+ "blobray-domain",
  "clap",
+ "object",
+ "oer-chip-profile",
  "oer-command-tree",
+ "oer-elf",
  "oer-process",
+ "oer-register-model",
  "oer-repo",
+ "oer-riscv-lift",
+ "oer-riscv-model",
  "oer-toolchain",
  "oer-vendor-artifacts",
  "oer-vendor-evidence",
  "oer-vendor-provenance",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

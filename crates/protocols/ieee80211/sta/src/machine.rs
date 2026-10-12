@@ -450,6 +450,9 @@ struct Join<K> {
 enum JoinStep {
     NeedLease,
     AwaitAnswer,
+    /// The access point beside the station followed a join too recently:
+    /// the station asks again at this instant.
+    RetryAt(Instant),
     AwaitStart,
     NeedConfigure,
     AwaitConfigured,
@@ -818,7 +821,13 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             }
             Answer::Leave(reason, place) => {
                 self.place = Some(place);
-                State::Report(StaDisconnectReason::Arbiter(reason))
+                match (state, reason) {
+                    (State::Join(mut join), LeaveReason::TooSoon { retry_at }) => {
+                        join.step = JoinStep::RetryAt(retry_at);
+                        State::Join(join)
+                    }
+                    _ => State::Report(StaDisconnectReason::Arbiter(reason)),
+                }
             }
         };
     }
@@ -1092,17 +1101,11 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 if connected.background.is_none() =>
             {
                 self.scan.clear();
-                // The network's own channel needs no absence.
-                let mut visit = 0;
-                while self
-                    .channel(visit)
-                    .is_some_and(|channel| channel == connected.channel)
-                {
-                    visit += 1;
-                }
-                if self.channel(visit).is_some() {
+                // The network's own channel is visited as any other: the
+                // home receive rules hear the network alone.
+                if self.channel(0).is_some() {
                     connected.background = Some(Background {
-                        visit,
+                        visit: 0,
                         skipped: 0,
                         step: BackgroundStep::NeedAbsence,
                     });
@@ -1189,18 +1192,11 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             }
             (BackgroundStep::AwaitWake, Done::Tx { delivered }) => {
                 connected.power.null_sent(StaPowerManagement::Active, delivered);
-                let mut visit = if background.skipped > 0 {
+                let visit = if background.skipped > 0 {
                     background.visit
                 } else {
                     background.visit + 1
                 };
-                // The network's own channel needs no absence.
-                while self
-                    .channel(visit)
-                    .is_some_and(|channel| channel == connected.channel)
-                {
-                    visit += 1;
-                }
                 if background.skipped >= self.config.skipped_absences {
                     connected.background = None;
                     self.notice_owed = Some(StaNotice::BackgroundScanDone { partial: true });
@@ -1869,6 +1865,13 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             step,
         } = join;
         let (step, owed) = match step {
+            JoinStep::RetryAt(at) if now >= at && self.place.is_some() => (
+                JoinStep::AwaitAnswer,
+                Some(Owed::Request(ChannelRequest {
+                    channel,
+                    purpose: Purpose::Connect,
+                })),
+            ),
             JoinStep::NeedLease if self.place.is_some() => (
                 JoinStep::AwaitAnswer,
                 Some(Owed::Request(ChannelRequest {
@@ -2131,6 +2134,10 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 step: JoinStep::Associate(runtime),
                 ..
             }) => runtime.next_deadline(),
+            State::Join(Join {
+                step: JoinStep::RetryAt(at),
+                ..
+            }) => Some(*at),
             State::Handshake(Handshake {
                 step: HandshakeStep::Await,
                 deadline,

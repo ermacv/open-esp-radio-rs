@@ -21,12 +21,18 @@
 //!   lease, so a notice of an earlier lease is never taken for the
 //!   current one, and every lease ends in exactly one of
 //!   [`StationNotice::LeaseEnded`] or [`StationNotice::LeaseCancelled`].
-//! - **Readiness.** A station that must tell its access point it leaves (a
-//!   Null with PM=1) asks with [`ChannelRequest::announces_absence`]; the
-//!   lease then starts a preparation window later, and only once the
-//!   station said [`Arbiter::ready`]. A lease not ready at its start is
-//!   cancelled ([`CancelReason::NotReady`]); the station has no timer of
-//!   its own for it.
+//! - **A connected station's absence** ([absence decision]) takes its own
+//!   token, the [`AbsencePlace`], and names the running primary lease
+//!   ([`Arbiter::request_absence`]): it starts a preparation window later,
+//!   in which the station tells its access point it leaves (a Null with
+//!   PM=1), and only once the station said [`Arbiter::ready`]; one not
+//!   ready at its start is cancelled ([`CancelReason::NotReady`]). It
+//!   returns to the primary lease's channel, and it ends before the
+//!   primary lease does. When the upstream moves the port, the absence is
+//!   cancelled ([`CancelReason::Switch`]), and on the [`StationNotice::Moved`]
+//!   notice the station exchanges its primary lease for one on the new
+//!   channel ([`Arbiter::exchange`]): the old lease goes by value, so two
+//!   primary leases never exist at once.
 //! - **Order.** The gate closes before every move of the port, so every
 //!   terminal of the station's attempts comes before the lease's start and
 //!   before its end.
@@ -109,6 +115,7 @@
 //! [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129596602
 //! [amendments]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129677418
 //! [reservation decision]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129750091
+//! [absence decision]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6130033259
 
 #[cfg(test)]
 extern crate std;
@@ -145,6 +152,14 @@ pub struct LeasePlace {
     private: (),
 }
 
+/// The connected station's right to one absence from its primary lease's
+/// channel: [`Arbiter::request_absence`] takes it, and the absence's end or
+/// cancellation gives it back. Only the arbiter makes one.
+#[derive(Debug, Eq, PartialEq)]
+pub struct AbsencePlace {
+    private: (),
+}
+
 /// The port's channel, leased to the station from `from` until `until`
 /// (`None`: until the station gives it back). Only the arbiter makes one,
 /// and the station gives it back by value.
@@ -157,6 +172,18 @@ pub struct Lease<K> {
     until: Option<Instant>,
     listen_until: Option<Instant>,
 }
+
+impl<K> PartialEq for Lease<K> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.channel == other.channel
+            && self.from == other.from
+            && self.until == other.until
+            && self.listen_until == other.listen_until
+    }
+}
+
+impl<K> Eq for Lease<K> {}
 
 impl<K> Lease<K> {
     /// Its name.
@@ -211,10 +238,26 @@ pub struct ChannelRequest<K> {
     pub channel: SupportedChannel<K>,
     /// What for.
     pub purpose: Purpose,
-    /// The station is connected and tells its access point it leaves
-    /// before the lease starts: the lease waits a preparation window and
-    /// the station's [`Arbiter::ready`].
-    pub announces_absence: bool,
+}
+
+/// The arbiter's answer to a connected station's absence.
+#[derive(Debug)]
+pub enum AbsenceAnswer<K> {
+    /// The absence, leased: it starts a preparation window later, once the
+    /// station said [`Arbiter::ready`], and returns to the primary lease's
+    /// channel.
+    Lease(Lease<K>),
+    /// No absence now; the place comes back.
+    Refused(AbsenceRefusal, AbsencePlace),
+}
+
+/// Why the arbiter refused an absence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AbsenceRefusal {
+    /// The primary lease named is not the running one.
+    NotConnected,
+    /// The port failed.
+    PortFailed,
 }
 
 /// The arbiter's answer to a request.
@@ -274,7 +317,16 @@ pub enum StationNotice<K> {
     LeaseEnded(LeaseId, LeasePlace),
     /// The lease ended without its own end; the place comes back.
     LeaseCancelled(LeaseId, CancelReason, LeasePlace),
-    /// The port moved without the station's request.
+    /// The absence started: the port runs on its channel.
+    AbsenceStarted(LeaseId),
+    /// The absence ended: the port is back on the primary lease's channel;
+    /// the place comes back.
+    AbsenceEnded(LeaseId, AbsencePlace),
+    /// The absence ended without its own end; the place comes back.
+    AbsenceCancelled(LeaseId, CancelReason, AbsencePlace),
+    /// The port moved without the station's request. A station that holds
+    /// its primary lease exchanges it for one on the new channel
+    /// ([`Arbiter::exchange`]).
     Moved(SupportedChannel<K>),
     /// The station must leave its network.
     Leave(LeaveReason),
@@ -496,6 +548,7 @@ const fn sum(a: Duration, b: Duration) -> Duration {
     Duration::from_micros(a.as_micros().saturating_add(b.as_micros()))
 }
 
+
 /// The port's transmit gate and who holds its token.
 enum Gate<G: GateTokens> {
     /// Open: the arbiter holds the open gate.
@@ -532,15 +585,21 @@ enum LeaseEnd {
     Cancelled(CancelReason),
 }
 
-/// The station's lease, by its steps.
+/// Which of the station's leases.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Which {
+    Primary,
+    Absence,
+}
+
+/// A lease the arbiter granted, by its steps.
 struct Granted<K> {
     id: LeaseId,
     channel: SupportedChannel<K>,
     from: Instant,
     until: Option<Instant>,
-    /// The port returns to the access point's channel at its end.
+    /// The port returns to the home channel at its end.
     returns: bool,
-    place: LeasePlace,
     end: LeaseEnd,
     step: LeaseStep,
 }
@@ -599,8 +658,8 @@ impl<K, Reserve: Copy> Copy for Cycle<K, Reserve> {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CyclePurpose {
-    LeaseStart,
-    LeaseEnd,
+    LeaseStart(Which),
+    LeaseEnd(Which),
     /// A move no lease asked for; the station hears of it.
     Move,
     /// The return after a refused move or a late lease; the station heard
@@ -608,24 +667,24 @@ enum CyclePurpose {
     Return,
 }
 
-/// What one transition owes the station and the access point: at most a
-/// lease's end and a command to leave, and at most two commands.
+/// What one transition owes the station and the access point: at most
+/// two notices (a lease's end and a command to leave) and two commands.
 struct Outbox<K> {
-    notices: [Option<StationNotice<K>>; 2],
+    notices: [Option<StationNotice<K>>; 3],
     commands: [Option<AccessPointCommand<K>>; 2],
 }
 
 impl<K> Outbox<K> {
     const fn new() -> Self {
         Self {
-            notices: [None, None],
+            notices: [None, None, None],
             commands: [None, None],
         }
     }
 
     fn tell(&mut self, notice: StationNotice<K>) {
         let slot = self.notices.iter_mut().find(|slot| slot.is_none());
-        debug_assert!(slot.is_some(), "a transition owes the station at most two notices");
+        debug_assert!(slot.is_some(), "a transition owes the station at most three notices");
         if let Some(slot) = slot {
             *slot = Some(notice);
         }
@@ -649,9 +708,15 @@ pub struct Arbiter<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMo
     port: Port<K>,
     /// The access point's schedule while it runs.
     access_point: Option<ApSchedule>,
-    /// The access point's channel, or the port's alone.
+    /// The channel the port returns to: the access point's, the primary
+    /// lease's, or the port's alone.
     home: SupportedChannel<K>,
-    lease: Option<Granted<K>>,
+    /// The station's primary lease and its place.
+    primary: Option<(Granted<K>, LeasePlace)>,
+    /// The connected station's absence and its place.
+    absence: Option<(Granted<K>, AbsencePlace)>,
+    /// A command to leave the station hears once its absence ended.
+    leave: Option<LeaveReason>,
     pending: Option<Move<K>>,
     cycle: Option<Cycle<K, R::Reserve>>,
     /// The upstream is lost since this instant, while the access point
@@ -665,12 +730,12 @@ pub struct Arbiter<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMo
 
 impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, G, K, R> {
     /// The arbiter of a port on `channel`, holding its open gate, and the
-    /// station's place for its lease.
+    /// station's places for its primary lease and its absence.
     pub fn new(
         policy: ArbiterPolicy<'a>,
         channel: SupportedChannel<K>,
         gate: G::Open,
-    ) -> (Self, LeasePlace) {
+    ) -> (Self, LeasePlace, AbsencePlace) {
         (
             Self {
                 policy,
@@ -679,7 +744,9 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
                 port: Port::On(channel),
                 access_point: None,
                 home: channel,
-                lease: None,
+                primary: None,
+                absence: None,
+                leave: None,
                 pending: None,
                 cycle: None,
                 lost: None,
@@ -688,6 +755,7 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
                 outbox: Outbox::new(),
             },
             LeasePlace { private: () },
+            AbsencePlace { private: () },
         )
     }
 
@@ -699,8 +767,48 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
         }
     }
 
-    /// Answer the station's request at `now`, in this step; the request
-    /// takes the station's place.
+    fn next_id(&mut self) -> LeaseId {
+        let id = LeaseId(self.next_id);
+        self.next_id = self.next_id.wrapping_add(1);
+        id
+    }
+
+    /// The absence slot and end for `dwell` from `earliest`: beside an
+    /// access point after one of its TBTTs, alone at once; the move there,
+    /// the listening and the move back, at most the policy's absence.
+    fn absence_window(&self, earliest: Instant, dwell: Option<Duration>) -> (Instant, Instant) {
+        let retune = self.policy.retune;
+        let from = match &self.access_point {
+            Some(schedule) => slot(*schedule, earliest, self.policy.guard),
+            None => earliest,
+        };
+        let wanted = dwell.map_or(self.policy.absence, |dwell| sum(sum(dwell, retune), retune));
+        let length = if wanted < self.policy.absence {
+            wanted
+        } else {
+            self.policy.absence
+        };
+        (from, from.saturating_add(length))
+    }
+
+    fn lease_value(granted: &Granted<K>, retune: Duration) -> Lease<K> {
+        Lease {
+            id: granted.id,
+            channel: granted.channel,
+            from: granted.from,
+            until: granted.until,
+            listen_until: granted.until.map(|until| {
+                if granted.returns {
+                    until.checked_sub(retune).unwrap_or(until)
+                } else {
+                    until
+                }
+            }),
+        }
+    }
+
+    /// Answer the station's request for its primary lease at `now`, in
+    /// this step; the request takes the station's place.
     pub fn request(
         &mut self,
         now: Instant,
@@ -714,13 +822,8 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
         if away && request.purpose == Purpose::Connect && self.access_point.is_some() {
             return Answer::Leave(LeaveReason::AwayFromAccessPoint, place);
         }
-        let id = LeaseId(self.next_id);
-        self.next_id = self.next_id.wrapping_add(1);
-        let mut earliest = if request.announces_absence {
-            now.saturating_add(self.policy.preparation)
-        } else {
-            now
-        };
+        let id = self.next_id();
+        let mut earliest = now;
         let dwell = match request.purpose {
             Purpose::Scan { dwell } => Some(dwell),
             Purpose::Search { dwell } => {
@@ -744,64 +847,97 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
             }
             Purpose::Connect => None,
         };
-        let retune = self.policy.retune;
-        let (from, until, returns) = match (&self.access_point, away) {
+        let (from, until, returns) = if away && self.access_point.is_some() {
             // Beside an access point, away from its channel only in an
-            // absence after its TBTT: the move there, the listening and
-            // the move back, at most the policy's absence.
-            (Some(schedule), true) => {
-                let from = slot(*schedule, earliest, self.policy.guard);
-                let wanted = dwell.map_or(self.policy.absence, |dwell| {
-                    sum(sum(dwell, retune), retune)
-                });
-                let length = if wanted < self.policy.absence {
-                    wanted
-                } else {
-                    self.policy.absence
-                };
-                (from, Some(from.saturating_add(length)), true)
-            }
+            // absence after its TBTT.
+            let (from, until) = self.absence_window(earliest, dwell);
+            (from, Some(until), true)
+        } else {
             // Alone, or on the access point's channel, the port stays.
-            _ => (
+            (
                 earliest,
-                dwell.map(|dwell| earliest.saturating_add(retune).saturating_add(dwell)),
+                dwell.map(|dwell| earliest.saturating_add(self.policy.retune).saturating_add(dwell)),
                 false,
-            ),
+            )
         };
         if matches!(request.purpose, Purpose::Search { .. }) {
             self.last_search = Some(from);
         }
-        let listen_until = until.map(|until| {
-            if returns {
-                until.checked_sub(retune).unwrap_or(until)
-            } else {
-                until
-            }
-        });
-        self.lease = Some(Granted {
+        let granted = Granted {
             id,
             channel: request.channel,
             from,
             until,
             returns,
-            place,
             end: LeaseEnd::Own,
-            step: LeaseStep::Waiting {
-                ready: !request.announces_absence,
-            },
-        });
-        Answer::Lease(Lease {
+            step: LeaseStep::Waiting { ready: true },
+        };
+        let lease = Self::lease_value(&granted, self.policy.retune);
+        self.primary = Some((granted, place));
+        Answer::Lease(lease)
+    }
+
+    /// Answer the connected station's request for an absence from its
+    /// running primary lease `home`, at `now`, in this step.
+    pub fn request_absence(
+        &mut self,
+        now: Instant,
+        request: ChannelRequest<K>,
+        home: &Lease<K>,
+        place: AbsencePlace,
+    ) -> AbsenceAnswer<K> {
+        if matches!(self.port, Port::Failed) {
+            return AbsenceAnswer::Refused(AbsenceRefusal::PortFailed, place);
+        }
+        let connected = self
+            .primary
+            .as_ref()
+            .is_some_and(|(granted, _)| granted.id == home.id && granted.step == LeaseStep::Running);
+        if !connected {
+            return AbsenceAnswer::Refused(AbsenceRefusal::NotConnected, place);
+        }
+        let id = self.next_id();
+        let dwell = match request.purpose {
+            Purpose::Scan { dwell } | Purpose::Search { dwell } => Some(dwell),
+            Purpose::Connect => None,
+        };
+        let (from, until) =
+            self.absence_window(now.saturating_add(self.policy.preparation), dwell);
+        let granted = Granted {
             id,
             channel: request.channel,
             from,
-            until,
-            listen_until,
-        })
+            until: Some(until),
+            returns: true,
+            end: LeaseEnd::Own,
+            step: LeaseStep::Waiting { ready: false },
+        };
+        let lease = Self::lease_value(&granted, self.policy.retune);
+        self.absence = Some((granted, place));
+        AbsenceAnswer::Lease(lease)
     }
 
-    /// The station is ready for `lease`.
+    /// Exchange the primary lease `old`, after a [`StationNotice::Moved`],
+    /// for the lease of the channel the port moved to, under a new name:
+    /// the old lease goes by value, so the station never holds two. A
+    /// lease that is not the running primary one comes back unchanged.
+    pub fn exchange(&mut self, old: Lease<K>) -> Lease<K> {
+        let retune = self.policy.retune;
+        let id = LeaseId(self.next_id);
+        match self.primary.as_mut() {
+            Some((granted, _)) if granted.id == old.id && granted.channel != old.channel => {
+                self.next_id = self.next_id.wrapping_add(1);
+                granted.id = id;
+                Self::lease_value(granted, retune)
+            }
+            _ => old,
+        }
+    }
+
+    /// The station is ready for its absence `lease`: it told its access
+    /// point it leaves.
     pub fn ready(&mut self, lease: LeaseId) {
-        if let Some(granted) = &mut self.lease
+        if let Some((granted, _)) = &mut self.absence
             && granted.id == lease
             && let LeaseStep::Waiting { ready } = &mut granted.step
         {
@@ -809,33 +945,90 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
         }
     }
 
-    /// The station gives `lease` back: it ends with
-    /// [`StationNotice::LeaseCancelled`] before its start, with
-    /// [`StationNotice::LeaseEnded`] after, once the gate's cycle that
-    /// runs ended.
+    /// The station gives `lease` back, its primary lease or its absence: it
+    /// ends with its cancellation before its start, with its end after,
+    /// once the gate's cycle that runs ended. A primary lease ends after
+    /// the absence.
     pub fn release(&mut self, lease: Lease<K>) {
-        if self.lease.as_ref().is_some_and(|granted| granted.id == lease.id) {
-            self.end_lease(LeaseEnd::Released, CancelReason::Released);
+        let which = if self.primary.as_ref().is_some_and(|(granted, _)| granted.id == lease.id) {
+            Which::Primary
+        } else if self.absence.as_ref().is_some_and(|(granted, _)| granted.id == lease.id) {
+            Which::Absence
+        } else {
+            return;
+        };
+        if which == Which::Primary {
+            self.end_lease(Which::Absence, LeaseEnd::Cancelled(CancelReason::Released));
+        }
+        self.end_lease(which, LeaseEnd::Released);
+    }
+
+    fn granted(&mut self, which: Which) -> Option<&mut Granted<K>> {
+        match which {
+            Which::Primary => self.primary.as_mut().map(|(granted, _)| granted),
+            Which::Absence => self.absence.as_mut().map(|(granted, _)| granted),
         }
     }
 
-    /// End the lease: a waiting one is cancelled for `reason` at once; one
-    /// that started ends as `end` once the gate's cycle that runs ended.
-    fn end_lease(&mut self, end: LeaseEnd, reason: CancelReason) {
-        let Some(granted) = &mut self.lease else {
+    /// End the lease: a waiting one is cancelled at once; one that started
+    /// ends as `end` once the gate's cycle that runs ended.
+    fn end_lease(&mut self, which: Which, end: LeaseEnd) {
+        let Some(granted) = self.granted(which) else {
             return;
         };
         match granted.step {
             LeaseStep::Waiting { .. } => {
-                let granted = self.lease.take().expect("a lease waits");
-                self.outbox.tell(StationNotice::LeaseCancelled(
-                    granted.id,
-                    reason,
-                    granted.place,
-                ));
+                let reason = match end {
+                    LeaseEnd::Cancelled(reason) => reason,
+                    LeaseEnd::Own | LeaseEnd::Released => CancelReason::Released,
+                };
+                self.cancel(which, reason);
             }
             LeaseStep::Starting | LeaseStep::Running => granted.end = end,
             LeaseStep::Ending => {}
+        }
+    }
+
+    /// Tell the station the lease ended without its own end.
+    fn cancel(&mut self, which: Which, reason: CancelReason) {
+        match which {
+            Which::Primary => {
+                if let Some((granted, place)) = self.primary.take() {
+                    self.outbox
+                        .tell(StationNotice::LeaseCancelled(granted.id, reason, place));
+                }
+            }
+            Which::Absence => {
+                if let Some((granted, place)) = self.absence.take() {
+                    self.outbox
+                        .tell(StationNotice::AbsenceCancelled(granted.id, reason, place));
+                }
+            }
+        }
+    }
+
+    /// Tell the station the lease ended as it was to end.
+    fn ended(&mut self, which: Which) {
+        let end = match which {
+            Which::Primary => self.primary.as_ref().map(|(granted, _)| granted.end),
+            Which::Absence => self.absence.as_ref().map(|(granted, _)| granted.end),
+        };
+        match end {
+            Some(LeaseEnd::Cancelled(reason)) => self.cancel(which, reason),
+            Some(LeaseEnd::Own | LeaseEnd::Released) => match which {
+                Which::Primary => {
+                    if let Some((granted, place)) = self.primary.take() {
+                        self.outbox.tell(StationNotice::LeaseEnded(granted.id, place));
+                    }
+                }
+                Which::Absence => {
+                    if let Some((granted, place)) = self.absence.take() {
+                        self.outbox
+                            .tell(StationNotice::AbsenceEnded(granted.id, place));
+                    }
+                }
+            },
+            None => {}
         }
     }
 
@@ -860,9 +1053,10 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
                 self.access_point = None;
                 self.coordinator.access_point_stopped();
                 // A lease away from its channel is cancelled and returns.
-                if self.lease.as_ref().is_some_and(|granted| granted.returns) {
-                    let reason = CancelReason::AccessPointStopped;
-                    self.end_lease(LeaseEnd::Cancelled(reason), reason);
+                let reason = LeaseEnd::Cancelled(CancelReason::AccessPointStopped);
+                self.end_lease(Which::Absence, reason);
+                if self.primary.as_ref().is_some_and(|(granted, _)| granted.returns) {
+                    self.end_lease(Which::Primary, reason);
                 }
             }
             AccessPointFact::SwitchDue(target) => {
@@ -884,22 +1078,22 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
                 self.apply(actions);
             }
             UpstreamFact::SwitchAnnounced { target, mode, at } => {
-                let reason = CancelReason::Switch;
-                self.end_lease(LeaseEnd::Cancelled(reason), reason);
+                self.end_lease(Which::Absence, LeaseEnd::Cancelled(CancelReason::Switch));
+                if self
+                    .primary
+                    .as_ref()
+                    .is_some_and(|(granted, _)| matches!(granted.step, LeaseStep::Waiting { .. }))
+                {
+                    self.cancel(Which::Primary, CancelReason::Switch);
+                }
                 let actions = self
                     .coordinator
                     .upstream_switch_announced(target.channel(), mode, at);
                 self.apply(actions);
             }
             UpstreamFact::Lost => {
-                let reason = CancelReason::UpstreamLost;
-                if self
-                    .lease
-                    .as_ref()
-                    .is_some_and(|granted| matches!(granted.step, LeaseStep::Waiting { .. }))
-                {
-                    self.end_lease(LeaseEnd::Cancelled(reason), reason);
-                }
+                let reason = LeaseEnd::Cancelled(CancelReason::UpstreamLost);
+                self.end_lease(Which::Absence, reason);
                 self.coordinator.upstream_lost(now);
                 self.lost = self.access_point.map(|_| now);
                 self.last_search = None;
@@ -922,6 +1116,16 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
         self.apply(actions);
     }
 
+    /// The station must leave: its absence ends first, then it hears it.
+    fn command_leave(&mut self, reason: LeaveReason) {
+        if self.absence.is_some() {
+            self.end_lease(Which::Absence, LeaseEnd::Cancelled(CancelReason::Switch));
+            self.leave = Some(reason);
+        } else {
+            self.outbox.tell(StationNotice::Leave(reason));
+        }
+    }
+
     /// Carry the coordinator's actions out.
     fn apply(&mut self, actions: CoordinatorActions) {
         for action in actions {
@@ -936,11 +1140,11 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
                         mode,
                         count,
                     }),
-                    None => self.outbox.tell(StationNotice::Leave(LeaveReason::Unservable)),
+                    None => self.command_leave(LeaveReason::Unservable),
                 },
                 CoordinatorAction::Retune { channel, at } => match SupportedChannel::new(channel) {
                     Some(to) => self.pending = Some(Move { to, at }),
-                    None => self.outbox.tell(StationNotice::Leave(LeaveReason::Unservable)),
+                    None => self.command_leave(LeaveReason::Unservable),
                 },
                 CoordinatorAction::StopAccessPoint => {
                     self.access_point = None;
@@ -951,9 +1155,7 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
                         self.outbox.command(AccessPointCommand::Start(channel));
                     }
                 }
-                CoordinatorAction::LeaveUpstream => {
-                    self.outbox.tell(StationNotice::Leave(LeaveReason::Unservable));
-                }
+                CoordinatorAction::LeaveUpstream => self.command_leave(LeaveReason::Unservable),
                 // The station joins on the channel the port moved to; the
                 // move's notice told it.
                 CoordinatorAction::JoinUpstream { .. } => {}
@@ -980,25 +1182,42 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
     /// What a cycle was for, once the gate opened again.
     fn finish(&mut self, cycle: Cycle<K, R::Reserve>) {
         match cycle.purpose {
-            CyclePurpose::LeaseStart => {
-                if let Some(granted) = &mut self.lease {
-                    granted.step = LeaseStep::Running;
-                    self.outbox.tell(StationNotice::LeaseStarted(granted.id));
+            CyclePurpose::LeaseStart(which) => {
+                if which == Which::Primary
+                    && self.access_point.is_none()
+                    && let Some((granted, _)) = &self.primary
+                    && granted.until.is_none()
+                {
+                    // A connected station alone: its channel is home.
+                    self.home = granted.channel;
                 }
-            }
-            CyclePurpose::LeaseEnd => {
-                if let Some(granted) = self.lease.take() {
-                    self.outbox.tell(match granted.end {
-                        LeaseEnd::Cancelled(reason) => {
-                            StationNotice::LeaseCancelled(granted.id, reason, granted.place)
-                        }
-                        LeaseEnd::Own | LeaseEnd::Released => {
-                            StationNotice::LeaseEnded(granted.id, granted.place)
-                        }
+                if let Some(granted) = self.granted(which) {
+                    granted.step = LeaseStep::Running;
+                    let id = granted.id;
+                    self.outbox.tell(match which {
+                        Which::Primary => StationNotice::LeaseStarted(id),
+                        Which::Absence => StationNotice::AbsenceStarted(id),
                     });
                 }
             }
-            CyclePurpose::Move => self.outbox.tell(StationNotice::Moved(cycle.to)),
+            CyclePurpose::LeaseEnd(which) => {
+                self.ended(which);
+                if which == Which::Absence
+                    && let Some(reason) = self.leave.take()
+                {
+                    self.outbox.tell(StationNotice::Leave(reason));
+                }
+            }
+            CyclePurpose::Move => {
+                // The primary lease moves with the port; the station
+                // exchanges its value for the new one.
+                if let Some((granted, _)) = self.primary.as_mut()
+                    && granted.step == LeaseStep::Running
+                {
+                    granted.channel = cycle.to;
+                }
+                self.outbox.tell(StationNotice::Moved(cycle.to));
+            }
             CyclePurpose::Return => {}
         }
     }
@@ -1017,20 +1236,15 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
     /// channel cancels that lease and the port returns; a failed return
     /// stops the station and the access point.
     pub fn retune_refused(&mut self) {
-        let starting = self
-            .cycle
-            .is_some_and(|cycle| cycle.purpose == CyclePurpose::LeaseStart);
-        if !starting {
+        let Some(Cycle {
+            purpose: CyclePurpose::LeaseStart(which),
+            ..
+        }) = self.cycle
+        else {
             self.fail();
             return;
-        }
-        if let Some(granted) = self.lease.take() {
-            self.outbox.tell(StationNotice::LeaseCancelled(
-                granted.id,
-                CancelReason::Refused,
-                granted.place,
-            ));
-        }
+        };
+        self.cancel(which, CancelReason::Refused);
         // The port is on no channel it can trust: back home, the gate
         // still closed.
         self.port = Port::Unknown;
@@ -1050,16 +1264,65 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
         self.port = Port::Failed;
         self.cycle = None;
         self.pending = None;
-        if let Some(granted) = self.lease.take() {
-            self.outbox.tell(StationNotice::LeaseCancelled(
-                granted.id,
-                CancelReason::PortFailed,
-                granted.place,
-            ));
-        }
-        self.outbox
-            .tell(StationNotice::Leave(LeaveReason::PortFailed));
+        self.cancel(Which::Absence, CancelReason::PortFailed);
+        self.cancel(Which::Primary, CancelReason::PortFailed);
+        self.outbox.tell(StationNotice::Leave(LeaveReason::PortFailed));
         self.outbox.command(AccessPointCommand::Stop);
+    }
+
+    /// The cycle that starts or ends the lease at `now`, if it is due.
+    fn lease_cycle(&mut self, which: Which, now: Instant) -> Option<Cycle<K, R::Reserve>> {
+        let home = self.home;
+        let retune = self.policy.retune;
+        let pending_due = self.pending.is_some_and(|pending| now >= pending.at);
+        let granted = self.granted(which)?;
+        match granted.step {
+            LeaseStep::Waiting { ready } if now >= granted.from => {
+                if !ready {
+                    self.cancel(which, CancelReason::NotReady);
+                    return None;
+                }
+                granted.step = LeaseStep::Starting;
+                let reserve = match (granted.returns, granted.until) {
+                    (true, Some(until)) => match until.checked_duration_since(now) {
+                        Some(length) => R::reserve(until, length),
+                        None => R::none(),
+                    },
+                    _ => R::none(),
+                };
+                Some(Cycle {
+                    to: granted.channel,
+                    reserve,
+                    purpose: CyclePurpose::LeaseStart(which),
+                })
+            }
+            LeaseStep::Running => {
+                let ends = granted.until.map(|until| {
+                    if granted.returns {
+                        until.checked_sub(retune).unwrap_or(until)
+                    } else {
+                        until
+                    }
+                });
+                // An absence ends before the port moves with the upstream.
+                let moving = which == Which::Absence && pending_due;
+                if granted.end != LeaseEnd::Own || moving || ends.is_some_and(|ends| now >= ends)
+                {
+                    if moving && granted.end == LeaseEnd::Own {
+                        granted.end = LeaseEnd::Cancelled(CancelReason::Switch);
+                    }
+                    granted.step = LeaseStep::Ending;
+                    Some(Cycle {
+                        to: if granted.returns { home } else { granted.channel },
+                        reserve: R::none(),
+                        purpose: CyclePurpose::LeaseEnd(which),
+                    })
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
     }
 
     /// Start the next gate's cycle due at `now`, if none runs.
@@ -1075,57 +1338,22 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
             let actions = self.coordinator.upstream_rescan();
             self.apply(actions);
         }
-        let home = self.home;
-        let retune = self.policy.retune;
-        let pending_due = self.pending.is_some_and(|pending| now >= pending.at);
-        if let Some(granted) = &mut self.lease {
-            match granted.step {
-                LeaseStep::Waiting { ready } if now >= granted.from => {
-                    if !ready {
-                        let reason = CancelReason::NotReady;
-                        self.end_lease(LeaseEnd::Cancelled(reason), reason);
-                        return;
-                    }
-                    granted.step = LeaseStep::Starting;
-                    let reserve = match (granted.returns, granted.until) {
-                        (true, Some(until)) => match until.checked_duration_since(now) {
-                            Some(length) => R::reserve(until, length),
-                            None => R::none(),
-                        },
-                        _ => R::none(),
-                    };
-                    self.cycle = Some(Cycle {
-                        to: granted.channel,
-                        reserve,
-                        purpose: CyclePurpose::LeaseStart,
-                    });
-                    return;
-                }
-                LeaseStep::Running => {
-                    let ends = granted.until.map(|until| {
-                        if granted.returns {
-                            until.checked_sub(retune).unwrap_or(until)
-                        } else {
-                            until
-                        }
-                    });
-                    if granted.end != LeaseEnd::Own
-                        || pending_due
-                        || ends.is_some_and(|ends| now >= ends)
-                    {
-                        granted.step = LeaseStep::Ending;
-                        self.cycle = Some(Cycle {
-                            to: if granted.returns { home } else { granted.channel },
-                            reserve: R::none(),
-                            purpose: CyclePurpose::LeaseEnd,
-                        });
-                        return;
-                    }
-                }
-                _ => {}
-            }
+        // The absence first: it ends before the primary lease does and
+        // before the port moves.
+        if let Some(cycle) = self.lease_cycle(Which::Absence, now) {
+            self.cycle = Some(cycle);
+            return;
         }
-        if pending_due && let Some(pending) = self.pending.take() {
+        if self.absence.is_none()
+            && let Some(cycle) = self.lease_cycle(Which::Primary, now)
+        {
+            self.cycle = Some(cycle);
+            return;
+        }
+        if self.absence.is_none()
+            && self.pending.is_some_and(|pending| now >= pending.at)
+            && let Some(pending) = self.pending.take()
+        {
             self.home = pending.to;
             self.cycle = Some(Cycle {
                 to: pending.to,
@@ -1138,18 +1366,12 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
     /// The next action at `now`, if any. The service takes every action
     /// before it waits again.
     pub fn poll_action(&mut self, now: Instant) -> Option<ArbiterAction<G, K, R>> {
-        if let Some(command) = self.outbox.commands.iter_mut().find_map(Option::take) {
-            return Some(ArbiterAction::AccessPoint(command));
-        }
-        if let Some(notice) = self.outbox.notices.iter_mut().find_map(Option::take) {
-            return Some(ArbiterAction::Station(notice));
+        if let Some(action) = self.owed() {
+            return Some(action);
         }
         self.plan(now);
-        if let Some(command) = self.outbox.commands.iter_mut().find_map(Option::take) {
-            return Some(ArbiterAction::AccessPoint(command));
-        }
-        if let Some(notice) = self.outbox.notices.iter_mut().find_map(Option::take) {
-            return Some(ArbiterAction::Station(notice));
+        if let Some(action) = self.owed() {
+            return Some(action);
         }
         let cycle = self.cycle?;
         match core::mem::replace(&mut self.gate, Gate::Closing) {
@@ -1163,15 +1385,12 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
                 None
             }
             Gate::Closed(closed) => {
-                if cycle.purpose == CyclePurpose::LeaseStart && self.too_late(now) {
+                if let CyclePurpose::LeaseStart(which) = cycle.purpose
+                    && self.too_late(which, now)
+                {
                     // The lease no longer fits: cancelled, and the gate
                     // opens where the port is.
-                    let granted = self.lease.take().expect("a lease starts");
-                    self.outbox.tell(StationNotice::LeaseCancelled(
-                        granted.id,
-                        CancelReason::Late,
-                        granted.place,
-                    ));
+                    self.cancel(which, CancelReason::Late);
                     self.cycle = Some(Cycle {
                         to: self.channel().unwrap_or(self.home),
                         purpose: CyclePurpose::Return,
@@ -1199,36 +1418,50 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
         }
     }
 
+    /// A command or a notice owed, the commands first.
+    fn owed(&mut self) -> Option<ArbiterAction<G, K, R>> {
+        if let Some(command) = self.outbox.commands.iter_mut().find_map(Option::take) {
+            return Some(ArbiterAction::AccessPoint(command));
+        }
+        self.outbox
+            .notices
+            .iter_mut()
+            .find_map(Option::take)
+            .map(ArbiterAction::Station)
+    }
+
     /// Whether the starting lease no longer fits two retunes and the
     /// shortest listening before its end.
-    fn too_late(&self, now: Instant) -> bool {
-        let Some(granted) = &self.lease else {
+    fn too_late(&mut self, which: Which, now: Instant) -> bool {
+        let policy = self.policy;
+        let Some(granted) = self.granted(which) else {
             return false;
         };
         let Some(until) = granted.until else {
             return false;
         };
         let retunes = if granted.returns { 2 } else { 1 };
-        let needed = (0..retunes).fold(self.policy.min_listen, |needed, _| {
-            sum(needed, self.policy.retune)
-        });
+        let needed = (0..retunes).fold(policy.min_listen, |needed, _| sum(needed, policy.retune));
         now.saturating_add(needed) > until
     }
 
     /// When the arbiter next needs [`Self::poll_action`], even without an
     /// input.
     pub fn poll_deadline(&self) -> Option<Instant> {
-        let lease = self.lease.as_ref().and_then(|granted| match granted.step {
+        let retune = self.policy.retune;
+        let lease = |granted: &Granted<K>| match granted.step {
             LeaseStep::Waiting { .. } => Some(granted.from),
             LeaseStep::Running if granted.returns => granted
                 .until
-                .map(|until| until.checked_sub(self.policy.retune).unwrap_or(until)),
+                .map(|until| until.checked_sub(retune).unwrap_or(until)),
             LeaseStep::Running => granted.until,
             _ => None,
-        });
+        };
+        let primary = self.primary.as_ref().and_then(|(granted, _)| lease(granted));
+        let absence = self.absence.as_ref().and_then(|(granted, _)| lease(granted));
         let pending = self.pending.map(|pending| pending.at);
         let loss = self.coordinator.upstream_loss_due(self.policy.loss);
-        [lease, pending, loss].into_iter().flatten().min()
+        [primary, absence, pending, loss].into_iter().flatten().min()
     }
 }
 

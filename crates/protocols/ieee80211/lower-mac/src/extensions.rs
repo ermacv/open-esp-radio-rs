@@ -7,47 +7,8 @@ use oer_ieee80211_mac::tsf::{TsfDuration, TsfInstant};
 
 use crate::{
     capabilities::PhyFormatSet,
-    control::{VifId, VifRoleSet},
-    tx::TxBody,
+    control::{VifRole, VifRoleSet},
 };
-
-/// Memory for the MPDUs of one A-MPDU, lent by the backend.
-///
-/// The caller appends the MPDUs in transmission order, each without FCS;
-/// the backend adds delimiters and padding. It is released when the
-/// attempt's completion is reported, as a [`TxBuffer`](crate::TxBuffer) is;
-/// the bodies it holds stay with the backend until the attempt's completion
-/// event carries them back by subframe
-/// ([`LowerMacEvents::into_completed`](crate::LowerMacEvents::into_completed)). A buffer released
-/// unsubmitted drops its bodies.
-pub trait AmpduBuffer {
-    /// The owner of an MPDU's body.
-    type Body: TxBody;
-
-    /// Append one MPDU of `len` bytes that ends with `body`, which the
-    /// buffer takes, and return its octets before the body for writing; the
-    /// body back when the buffer cannot hold another MPDU of that length or
-    /// the body is longer than the MPDU.
-    fn push_mpdu(
-        &mut self,
-        len: usize,
-        body: Option<Self::Body>,
-    ) -> Result<&mut [u8], Option<Self::Body>>;
-
-    /// The MPDUs appended so far.
-    fn subframes(&self) -> usize;
-}
-
-/// The payload of one A-MPDU attempt, answered by a BlockAck.
-#[derive(Debug, Eq, PartialEq)]
-pub struct AmpduPayload<A> {
-    pub subframes: A,
-    /// The traffic identifier all subframes share.
-    pub tid: u8,
-    /// The recipient's Minimum MPDU Start Spacing, the IEEE encoding 0-7 of
-    /// its HT Capabilities A-MPDU Parameters.
-    pub min_mpdu_start_spacing: u8,
-}
 
 /// The limits of A-MPDU attempts.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -66,23 +27,20 @@ pub struct AmpduCapabilities {
     pub max_length: u32,
 }
 
-/// One A-MPDU attempt.
-pub type AmpduAttempt<A> = crate::TxAttempt<AmpduPayload<A>>;
-
 /// A value of one interface's TSF. Two interfaces count different TSFs (a
 /// station follows its access point's, an access point keeps its own), so
 /// arithmetic between values of different interfaces is an error.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct VifTsf {
-    pub vif: VifId,
+    pub vif: VifRole,
     pub at: TsfInstant,
 }
 
 /// Two TSF values of different interfaces were combined.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct TsfVifMismatch {
-    pub left: VifId,
-    pub right: VifId,
+    pub left: VifRole,
+    pub right: VifRole,
 }
 
 /// Failure of arithmetic between interface-scoped TSF values.
@@ -93,7 +51,7 @@ pub enum TsfArithmeticError {
 }
 
 impl VifTsf {
-    pub const fn new(vif: VifId, at: TsfInstant) -> Self {
+    pub const fn new(vif: VifRole, at: TsfInstant) -> Self {
         Self { vif, at }
     }
 
@@ -111,7 +69,7 @@ impl VifTsf {
         self,
         earlier: Self,
     ) -> Result<TsfDuration, TsfArithmeticError> {
-        if self.vif.0 != earlier.vif.0 {
+        if self.vif as u8 != earlier.vif as u8 {
             return Err(TsfArithmeticError::VifMismatch(TsfVifMismatch {
                 left: self.vif,
                 right: earlier.vif,
@@ -122,18 +80,6 @@ impl VifTsf {
             None => Err(TsfArithmeticError::ReversedTime),
         }
     }
-}
-
-/// When the backend reports target beacon transmission times.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct TbttSchedule {
-    /// A target beacon transmission time of the schedule, in the TSF of the
-    /// interface the schedule is for.
-    pub next: VifTsf,
-    /// The beacon interval ([`time_units`](oer_ieee80211_mac::tsf::time_units) of the beacon's interval field).
-    pub beacon_interval: TsfDuration,
-    /// How long before each TBTT its event is reported.
-    pub lead: TsfDuration,
 }
 
 /// One target beacon transmission time of an interface's schedule.
@@ -345,7 +291,7 @@ impl TsfSample {
         >,
         TsfVifMismatch,
     > {
-        if tsf.vif.0 != self.tsf.vif.0 {
+        if tsf.vif as u8 != self.tsf.vif as u8 {
             return Err(TsfVifMismatch {
                 left: tsf.vif,
                 right: self.tsf.vif,

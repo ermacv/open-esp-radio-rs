@@ -1,54 +1,16 @@
-//! One hardware transmission attempt and its completion.
+//! The values of a transmission and of its completion.
 //!
-//! A [`TxAttempt`] is exactly one publication to the hardware: the backend
-//! contends for the medium with the [`Backoff`] the caller chose, sends the
-//! PPDU once, waits for the solicited response and reports the result as
-//! one [`TxCompletion`]. It does not retry, fall back to another rate or
-//! renumber the frame; the caller decides whether and how to submit the
-//! next attempt from the completion: one publication to the hardware and
-//! the one completion it reports.
-//!
-//! The header the caller encodes lives in a [`TxBuffer`] the backend lends
-//! (`Ieee80211LowerMacPort::tx_buffer`);
-//! the body, such as a network frame's payload, travels by ownership as a
-//! [`TxBody`]. Whether the backend sends the body from its owner's memory
-//! or copies it into its own is the backend's choice, not the contract's.
+//! An attempt of the phase ([`Attempt`](crate::Attempt)) is one frame
+//! exchange by its retry plan ([`RetryPlan`](crate::RetryPlan)), which the
+//! backend carries out below the port; its one [`TxCompletion`] reports how
+//! it ended, how many transmissions it made and at which rate the last
+//! went. The header the caller encodes lives in a transmit buffer of the
+//! phase; the body, such as a network frame's payload, travels by
+//! ownership as a [`TxBody`]. Whether the backend sends the body from its
+//! owner's memory or copies it into its own is the backend's choice, not
+//! the contract's.
 
-use oer_ieee80211_mac::{phy::PhyRate, qos::WmmAccessCategory, sequence::SequenceNumber};
-use oer_radio_coex::CoexPriority;
-
-use crate::control::{KeyHandle, VifId};
-
-/// Caller-chosen correlation identity of one attempt; its completion
-/// carries it back.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct TxId(pub u32);
-
-/// Memory for one MPDU, lent by the backend.
-///
-/// The buffer holds exactly the MPDU length it was requested with, without
-/// the FCS (and without the MIC when the backend's cipher transform appends
-/// it). The caller writes the MPDU from its header up to its
-/// [`TxPayload::body`], which the backend places after it: every octet when
-/// the attempt carries no body. The caller then submits the buffer inside a
-/// [`TxPayload`]. The backend releases a submitted buffer when the
-/// attempt's completion is reported: the completion does not return it, so
-/// an event lost to a queue overflow cannot lose a buffer. A caller that
-/// retries writes the header into a fresh buffer. A buffer that is not
-/// submitted goes back through
-/// `Ieee80211LowerMacPort::release_tx_buffer`.
-pub trait TxBuffer {
-    /// The length the buffer was requested with.
-    fn len(&self) -> usize;
-
-    /// Whether the buffer holds no byte.
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    /// The frame bytes, for writing and reading.
-    fn frame_mut(&mut self) -> &mut [u8];
-}
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 /// The response the attempt solicits, which the hardware waits for.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -90,25 +52,6 @@ impl TxBody for core::convert::Infallible {
     }
 }
 
-/// One MPDU and the response it solicits: the octets the caller wrote into
-/// `frame`, then `body`'s.
-#[derive(Debug, Eq, PartialEq)]
-pub struct TxPayload<B, O> {
-    pub frame: B,
-    pub body: Option<O>,
-    pub response: TxResponse,
-}
-
-impl<B: TxBuffer, O: TxBody> TxPayload<B, O> {
-    /// The octets the caller writes: the buffer's MPDU without the body.
-    /// `None` when the body is longer than the buffer.
-    pub fn header_len(&self) -> Option<usize> {
-        self.frame
-            .len()
-            .checked_sub(self.body.as_ref().map_or(0, |body| body.bytes().len()))
-    }
-}
-
 /// Medium protection sent ahead of the PPDU in the same attempt.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Protection {
@@ -117,19 +60,6 @@ pub enum Protection {
     RtsCts,
     /// CTS addressed to the transmitter itself.
     CtsToSelf,
-}
-
-/// Which installed key the hardware cipher applies.
-///
-/// The MPDU already carries its security header with the packet number the
-/// caller allocated; the backend encrypts the body and appends the MIC
-/// when its capabilities include the cipher transform.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum KeySelector {
-    /// Send the frame as given.
-    Plaintext,
-    /// Protect the frame with an installed key.
-    Key(KeyHandle),
 }
 
 /// Transmit power of one attempt.
@@ -157,48 +87,6 @@ pub enum Backoff {
     /// `2^cw_exponent - 1` slots. Valid only when the backend reports
     /// [`HardwareServices::BACKOFF_DRAW`](crate::HardwareServices::BACKOFF_DRAW).
     HardwareDraw { cw_exponent: u8 },
-}
-
-/// One hardware transmission attempt carrying payload `P`: a
-/// [`TxPayload`] through the base port, an A-MPDU through
-/// `LowerMacAmpdu`.
-#[derive(Debug, Eq, PartialEq)]
-pub struct TxAttempt<P> {
-    pub id: TxId,
-    /// The interface whose address and TSF the frame uses.
-    pub vif: VifId,
-    /// The EDCA parameters the attempt contends with, and the queue it
-    /// occupies ([`LowerMacCapabilities::tx_queue`](crate::LowerMacCapabilities::tx_queue)).
-    pub access_category: WmmAccessCategory,
-    pub payload: P,
-    pub rate: PhyRate,
-    pub protection: Protection,
-    pub key: KeySelector,
-    pub power: TxPower,
-    pub backoff: Backoff,
-    /// How urgently the attempt needs the shared antenna; the backend
-    /// maps the levels its
-    /// [`coex_priorities`](crate::LowerMacCapabilities::coex_priorities)
-    /// state onto its coexistence arbitration.
-    pub coex: CoexPriority,
-}
-
-impl<P> TxAttempt<P> {
-    /// The same attempt with its payload mapped by `map`.
-    pub fn map_payload<Q>(self, map: impl FnOnce(P) -> Q) -> TxAttempt<Q> {
-        TxAttempt {
-            id: self.id,
-            vif: self.vif,
-            access_category: self.access_category,
-            payload: map(self.payload),
-            rate: self.rate,
-            protection: self.protection,
-            key: self.key,
-            power: self.power,
-            backoff: self.backoff,
-            coex: self.coex,
-        }
-    }
 }
 
 /// Why an admitted attempt ended without a portable status of its own.
@@ -267,7 +155,6 @@ impl BlockAckReport {
 /// The terminal event of one attempt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TxCompletion {
-    pub id: TxId,
     pub status: TxStatus,
     /// RSSI of the received ACK or BlockAck, when the hardware reports it.
     pub ack_rssi_dbm: Option<i8>,
@@ -283,34 +170,3 @@ pub struct TxCompletion {
     pub rate: Option<crate::PhyRate>,
 }
 
-/// Why the backend refused an attempt; nothing was sent or changed.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum SubmitError {
-    /// An earlier attempt still holds the attempt's queue; submit again
-    /// after its completion.
-    Busy,
-    /// The port is disabled or quiescing.
-    Disabled,
-    /// The attempt names an interface that is not configured.
-    UnknownVif,
-    /// The attempt names a key that is not installed.
-    UnknownKey,
-    /// The backend cannot send this rate on the current channel.
-    UnsupportedRate,
-    /// The frame is too short to be an MPDU, or the aggregate is empty.
-    InvalidLength,
-    /// An attempt with the same identity is still in flight.
-    DuplicateId,
-    /// A value lies outside the limits the backend's capabilities declare:
-    /// backoff, power ceiling, coexistence level, a response the rate
-    /// cannot carry, or an aggregate larger than its limits.
-    Unsupported,
-}
-
-/// A refused submission: the error and the attempt with its buffers and
-/// bodies, so the caller can correct and resubmit it or release them.
-#[derive(Debug, Eq, PartialEq)]
-pub struct Refused<A> {
-    pub error: SubmitError,
-    pub attempt: A,
-}

@@ -16,7 +16,7 @@
 //! | a transmit ticket ([`PhaseTypes::TicketKind`]) | [`InterfacePhase::submit`] | [`LowerMacEvent::TxCompleted`] |
 //! | a transmit buffer of a class ([`TxBufferClass`]) | [`InterfacePhase::tx_buffer`] (the buffer holds it), then the submission | [`LowerMacEvent::TxCompleted`], every buffer of the attempt |
 //! | a key slot of a role's kind | [`InterfacePhase::install_pairwise_key`], [`InterfacePhase::install_group_key`] (the installed key holds it) | [`LowerMacEvent::KeyRemoved`], after a removal |
-//! | a Block Ack slot | [`InterfacePhase::add_block_ack`] | [`InterfacePhase::remove_block_ack`], or an agreement that replaces it |
+//! | a Block Ack slot | [`InterfacePhase::add_block_ack`] (the agreement holds it) | [`InterfacePhase::remove_block_ack`] |
 //! | the open gate ([`GateOpen`]) | [`LowerMacPhase::close_gate`] | [`LowerMacPhase::open_gate`], which takes the closed gate ([`GateClosed`]) that [`LowerMacEvent::GateClosed`] gave |
 //! | a received frame's buffer | [`LowerMacEvent::Received`] | [`LowerMacPhase::recycle`] |
 //!
@@ -42,6 +42,143 @@
 //! returns at once, and its end arrives as an event of the stream. No
 //! operation of the phase awaits.
 //!
+//! # Order
+//!
+//! The phase's operations reach the hardware in the order the caller made
+//! them, through one queue to the driver: an attempt that names a key is
+//! published after that key's install, and a key's removal ends after
+//! every attempt that names it. A backend's conformance tests check both.
+//!
+//! # Compile-fail tests
+//!
+//! No caller mints a token: a gate, a ticket or a buffer comes only from
+//! the install's resources.
+//!
+//! ```compile_fail,E0451
+//! # use oer_ieee80211_lower_mac::GateOpen;
+//! # use core::marker::PhantomData;
+//! fn forge<'id>() -> GateOpen<'id> {
+//!     oer_radio_port::Slot { index: 0, brand: PhantomData, kind: PhantomData }
+//! }
+//! ```
+//!
+//! Nor copies one:
+//!
+//! ```compile_fail,E0382
+//! # use oer_ieee80211_lower_mac::GateOpen;
+//! fn twice<'id>(gate: GateOpen<'id>) -> (GateOpen<'id>, GateOpen<'id>) {
+//!     (gate, gate)
+//! }
+//! ```
+//!
+//! ```compile_fail,E0599
+//! # use oer_radio_port::Slot;
+//! fn copy<'id, K>(ticket: &Slot<'id, K>) -> Slot<'id, K> {
+//!     ticket.clone()
+//! }
+//! ```
+//!
+//! Its compiling twin moves the token on, as an operation takes it:
+//!
+//! ```
+//! # use oer_ieee80211_lower_mac::{GateClosed, GateOpen, LowerMacPhase};
+//! fn close<'p, 'id: 'p, P: LowerMacPhase<'p, 'id>>(phase: &mut P, gate: GateOpen<'id>) {
+//!     phase.close_gate(gate);
+//! }
+//! fn open<'p, 'id: 'p, P: LowerMacPhase<'p, 'id>>(phase: &mut P, gate: GateClosed<'id>) -> GateOpen<'id> {
+//!     phase.open_gate(gate)
+//! }
+//! ```
+//!
+//! The open gate does not open a gate, nor the closed one close it:
+//!
+//! ```compile_fail,E0308
+//! # use oer_ieee80211_lower_mac::{GateOpen, LowerMacPhase};
+//! fn reopen<'p, 'id: 'p, P: LowerMacPhase<'p, 'id>>(phase: &mut P, gate: GateOpen<'id>) {
+//!     let _ = phase.open_gate(gate);
+//! }
+//! ```
+//!
+//! A frame a buffer's class does not fit has no [`ClassFrame`], whose
+//! fields no caller sets:
+//!
+//! ```compile_fail,E0451
+//! # use oer_ieee80211_lower_mac::{ClassFrame, TxFrame};
+//! fn forge<'p, C, K>(frame: TxFrame<'p, K>) -> ClassFrame<'p, C, K> {
+//!     ClassFrame { frame, class: core::marker::PhantomData }
+//! }
+//! ```
+//!
+//! Its compiling twin checks the frame against the class:
+//!
+//! ```
+//! # use oer_ieee80211_lower_mac::{ClassFrame, Ieee80211Capabilities, TxBufferClass, TxFrame};
+//! fn fit<'p, C: TxBufferClass, K: Ieee80211Capabilities>(
+//!     frame: TxFrame<'p, K>,
+//! ) -> Result<ClassFrame<'p, C, K>, TxFrame<'p, K>> {
+//!     ClassFrame::new(frame)
+//! }
+//! ```
+//!
+//! An attempt holds its ticket and its buffer, so a submitted ticket is
+//! gone until its terminal:
+//!
+//! ```compile_fail,E0382
+//! # use oer_ieee80211_lower_mac::*;
+//! # use oer_ieee80211_mac::qos::WmmAccessCategory;
+//! # use oer_radio_port::Slot;
+//! fn two<'p, 'id: 'p, I: InterfacePhase<'p, 'id>>(
+//!     interface: &mut I,
+//!     ticket: Slot<'id, <I::Types as PhaseTypes<'id>>::TicketKind>,
+//!     frame: I::TxBuffer,
+//!     other: I::TxBuffer,
+//!     power: SupportedPower<I::Caps>,
+//!     coex: SupportedCoex<I::Caps>,
+//! ) where
+//!     SupportedPower<I::Caps>: Copy,
+//!     SupportedCoex<I::Caps>: Copy,
+//! {
+//!     let attempt = |frame| Attempt {
+//!         ticket,
+//!         frame,
+//!         body: None,
+//!         access_category: WmmAccessCategory::BestEffort,
+//!         protection: Protection::None,
+//!         key: None,
+//!         power,
+//!         coex,
+//!     };
+//!     let _ = interface.submit(attempt(frame));
+//!     let _ = interface.submit(attempt(other));
+//! }
+//! ```
+//!
+//! Its compiling twin submits each ticket once:
+//!
+//! ```
+//! # use oer_ieee80211_lower_mac::*;
+//! # use oer_ieee80211_mac::qos::WmmAccessCategory;
+//! # use oer_radio_port::Slot;
+//! fn one<'p, 'id: 'p, I: InterfacePhase<'p, 'id>>(
+//!     interface: &mut I,
+//!     ticket: Slot<'id, <I::Types as PhaseTypes<'id>>::TicketKind>,
+//!     frame: I::TxBuffer,
+//!     power: SupportedPower<I::Caps>,
+//!     coex: SupportedCoex<I::Caps>,
+//! ) {
+//!     let _ = interface.submit(Attempt {
+//!         ticket,
+//!         frame,
+//!         body: None,
+//!         access_category: WmmAccessCategory::BestEffort,
+//!         protection: Protection::None,
+//!         key: None,
+//!         power,
+//!         coex,
+//!     });
+//! }
+//! ```
+//!
 //! # Poisoned
 //!
 //! A poisoned backend ends the phase: `next_event` returns
@@ -60,7 +197,7 @@ use crate::{
     owner::{
         AccessPoint, BssColor, Ccmp128Key, GroupKeyId, Ieee80211Capabilities, IndividualAddress,
         InterfaceRole, PhaseRate, Station, StationReceive, SupportedBlockAck,
-        SupportedCoex, SupportedEdca, SupportedFilter, SupportedNoAck, SupportedPower, Tid,
+        SupportedCoex, SupportedEdca, SupportedFilter, SupportedNoAck, SupportedPower,
         TxFrame,
     },
 };
@@ -273,6 +410,8 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     /// hardware shares between its roles (owner decision, Claude Code chat
     /// with common, 2026-10-12).
     type BlockAckKind;
+    /// A running receive Block Ack agreement, which holds its slot.
+    type BlockAck;
 
     /// The interface's own address, which the install gave it.
     fn address(&self) -> IndividualAddress;
@@ -325,24 +464,28 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     /// Remove `key`, as [`Self::remove_pairwise_key`].
     fn remove_group_key(&mut self, key: Self::GroupKey);
 
-    /// Start acknowledging A-MPDUs of `agreement` in `slot`. The interface
-    /// keeps one agreement per peer and TID: one that replaces an earlier
-    /// agreement of the pair gives that agreement's slot back.
-    #[must_use = "a replaced agreement's slot is capacity; dropping it loses it until the next install"]
+    /// Start acknowledging A-MPDUs of `agreement` in `slot`; the agreement
+    /// holds the slot. A caller holds one agreement per peer and TID: it
+    /// replaces one through [`Self::replace_block_ack`].
+    #[must_use = "an agreement holds its slot; dropping it loses the slot until the next install"]
     fn add_block_ack(
         &mut self,
         slot: Slot<'id, Self::BlockAckKind>,
         agreement: SupportedBlockAck<Self::Caps>,
-    ) -> Option<Slot<'id, Self::BlockAckKind>>;
+    ) -> Self::BlockAck;
 
-    /// End the agreement with `peer` on `tid`, giving its slot back; `None`
-    /// when the interface keeps none for the pair.
-    #[must_use = "an ended agreement's slot is capacity; dropping it loses it until the next install"]
-    fn remove_block_ack(
+    /// Replace `running` with `agreement` of the same peer and TID, in its
+    /// slot.
+    #[must_use = "an agreement holds its slot; dropping it loses the slot until the next install"]
+    fn replace_block_ack(
         &mut self,
-        peer: IndividualAddress,
-        tid: Tid,
-    ) -> Option<Slot<'id, Self::BlockAckKind>>;
+        running: Self::BlockAck,
+        agreement: SupportedBlockAck<Self::Caps>,
+    ) -> Self::BlockAck;
+
+    /// End `agreement`, giving its slot back.
+    #[must_use = "an ended agreement's slot is capacity; dropping it loses it until the next install"]
+    fn remove_block_ack(&mut self, agreement: Self::BlockAck) -> Slot<'id, Self::BlockAckKind>;
 }
 
 /// The station interface of a running phase.

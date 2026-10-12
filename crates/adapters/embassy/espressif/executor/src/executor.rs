@@ -216,7 +216,28 @@ fn pend<const SWI: u8>() {
 fn wait_for_work<const SWI: u8>() {
     riscv::interrupt::free(|| {
         if !EMBASSY_WORK_PENDING.0[SWI as usize].load(Ordering::Acquire) {
+            #[cfg(feature = "idle-accounting")]
+            crate::idle_accounting::add_wait(SWI as usize);
+            #[cfg(not(feature = "idle-accounting"))]
             esp_hal::interrupt::wait_for_interrupt();
+        }
+    });
+}
+
+/// The core executor `executor` runs on, once it runs.
+#[cfg(feature = "idle-accounting")]
+pub(crate) fn executor_core(executor: usize) -> Option<usize> {
+    let core = EMBASSY_EXECUTOR_CORE[executor].load(Ordering::Acquire);
+    (core != UNASSIGNED_CORE).then_some(core)
+}
+
+/// Raise the software interrupt of the running executor `executor`, waking
+/// its core from its wait.
+#[cfg(feature = "idle-accounting")]
+pub(crate) fn raise(executor: usize) {
+    EMBASSY_INTERRUPTS.with(|interrupts| {
+        if let Some(interrupt) = interrupts[executor].as_ref() {
+            interrupt.raise();
         }
     });
 }

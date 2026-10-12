@@ -62,9 +62,14 @@ pub struct Msdu<'a> {
 }
 
 /// One input of the data machine.
-pub enum DataInput<'a, D: StaDataTokens> {
+pub enum DataInput<'a, 'l, 'v, D: StaDataTokens, T: StaTokens> {
     /// An MSDU from the network stack, on the link it goes on.
-    Msdu(Msdu<'a>),
+    Msdu {
+        /// The MSDU.
+        msdu: Msdu<'a>,
+        /// The station's link.
+        link: &'l mut LinkView<'v, T>,
+    },
     /// A data MPDU's terminal: its ticket and buffer come back.
     TxDone {
         /// Its ticket.
@@ -135,7 +140,8 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities> StaDat
         !self.tickets.is_empty() && !self.buffers.is_empty()
     }
 
-    /// Take one input. An MSDU goes on `link` and becomes an attempt owed.
+    /// Take one input. An MSDU goes on its link and becomes an attempt
+    /// owed.
     ///
     /// # Errors
     ///
@@ -143,8 +149,7 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities> StaDat
     pub fn input<T: StaTokens>(
         &mut self,
         _now: Instant,
-        link: &mut LinkView<'_, T>,
-        input: DataInput<'_, D>,
+        input: DataInput<'_, '_, '_, D, T>,
     ) -> Result<(), DataRefusal> {
         match input {
             DataInput::TxDone { ticket, buffer } => {
@@ -152,7 +157,7 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities> StaDat
                 self.buffers.put(buffer);
                 Ok(())
             }
-            DataInput::Msdu(msdu) => {
+            DataInput::Msdu { msdu, link } => {
                 let ticket = self.tickets.take().ok_or(DataRefusal::NoTokens)?;
                 let Some(mut buffer) = self.buffers.take() else {
                     self.tickets.put(ticket);

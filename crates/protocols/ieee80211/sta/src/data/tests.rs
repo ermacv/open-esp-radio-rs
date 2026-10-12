@@ -125,7 +125,7 @@ fn transmit(data: &mut StaData<Data, Caps>) -> DataTransmit<Data, Caps> {
 fn a_protected_qos_msdu_leaves_room_for_the_ccmp_header_and_contends_by_its_priority() {
     let mut data = machine();
     let mut replay = epoch();
-    data.input(NOW, &mut qos_link(&(), &mut replay), DataInput::Msdu(msdu(6)))
+    data.input(NOW, DataInput::Msdu { msdu: msdu(6), link: &mut qos_link(&(), &mut replay) })
         .unwrap();
     let sent = transmit(&mut data);
     assert!(data.poll_action(NOW).is_none());
@@ -147,7 +147,7 @@ fn a_protected_qos_msdu_leaves_room_for_the_ccmp_header_and_contends_by_its_prio
 fn an_open_non_qos_msdu_takes_the_stations_sequence_number_and_no_ccmp_room() {
     let mut data = machine();
     let mut counter = StaSequenceCounter::new(SequenceNumber::new(42).unwrap());
-    data.input(NOW, &mut open_link(&mut counter), DataInput::Msdu(msdu(0)))
+    data.input(NOW, DataInput::Msdu { msdu: msdu(0), link: &mut open_link(&mut counter) })
         .unwrap();
     let sent = transmit(&mut data);
     let frame = &sent.buffer.0;
@@ -163,17 +163,16 @@ fn msdus_wait_while_the_tokens_are_out() {
     let mut data = machine();
     let mut replay = epoch();
     let mut link = qos_link(&(), &mut replay);
-    data.input(NOW, &mut link, DataInput::Msdu(msdu(0))).unwrap();
-    data.input(NOW, &mut link, DataInput::Msdu(msdu(0))).unwrap();
+    data.input(NOW, DataInput::Msdu { msdu: msdu(0), link: &mut link }).unwrap();
+    data.input(NOW, DataInput::Msdu { msdu: msdu(0), link: &mut link }).unwrap();
     assert!(!data.accepts());
     assert_eq!(
-        data.input(NOW, &mut link, DataInput::Msdu(msdu(0))),
+        data.input(NOW, DataInput::Msdu { msdu: msdu(0), link: &mut link }),
         Err(DataRefusal::NoTokens)
     );
     let first = transmit(&mut data);
-    data.input(
+    data.input::<Station>(
         NOW,
-        &mut link,
         DataInput::TxDone {
             ticket: first.ticket,
             buffer: first.buffer,

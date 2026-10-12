@@ -226,7 +226,7 @@ pub enum StaAction<'a, T: StaTokens, K> {
         /// The slot it takes.
         slot: T::PairwiseSlot,
         /// The access point.
-        peer: [u8; 6],
+        peer: IndividualAddress,
         /// The temporal key.
         key: [u8; 16],
     },
@@ -942,7 +942,7 @@ enum Done {
 enum Owed<T: StaTokens, K> {
     InstallPairwise {
         slot: T::PairwiseSlot,
-        peer: [u8; 6],
+        peer: IndividualAddress,
         key: [u8; 16],
     },
     InstallGroup {
@@ -2136,20 +2136,21 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 Err(Unsent::NoTokens) => (HandshakeStep::Send(message), None),
                 Err(Unsent::Encode) => return (leave_handshake(handshake, REASON_UNSPECIFIED), None),
             },
-            HandshakeStep::Install(request) => match handshake.keys.take_pairwise_slot() {
-                Some(slot) => {
-                    let key = *request.pairwise().key().as_bytes();
-                    (
-                        HandshakeStep::InstallGroup(request),
-                        Some(Owed::InstallPairwise {
-                            slot,
-                            peer: handshake.bssid,
-                            key,
-                        }),
-                    )
+            HandshakeStep::Install(request) => {
+                let Some(peer) = IndividualAddress::new(handshake.bssid) else {
+                    return (leave_handshake(handshake, REASON_UNSPECIFIED), None);
+                };
+                match handshake.keys.take_pairwise_slot() {
+                    Some(slot) => {
+                        let key = *request.pairwise().key().as_bytes();
+                        (
+                            HandshakeStep::InstallGroup(request),
+                            Some(Owed::InstallPairwise { slot, peer, key }),
+                        )
+                    }
+                    None => (HandshakeStep::Install(request), None),
                 }
-                None => (HandshakeStep::Install(request), None),
-            },
+            }
             HandshakeStep::InstallGroup(request) => {
                 // A key index that is no group key's fails the handshake.
                 let Some((key_id, key)) = group_key(request.group()) else {

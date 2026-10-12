@@ -12,7 +12,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use oer_hil_protocol::DeviceImageKeys;
-use oer_hil_schema::image::ImageClass;
+use oer_hil_schema::image::{FeatureDelta, ImageClass};
 
 // Every chip's HIL agent manifest of this tree (`build.rs`).
 include!(concat!(env!("OUT_DIR"), "/manifests.rs"));
@@ -78,11 +78,22 @@ pub fn declares(chip: &str, feature: &str) -> bool {
 /// Every Cargo feature `class`'s runtime on `chip` is built with, or `None`
 /// where the chip's runtime has no such class.
 pub fn enabled_features_on(class: ImageClass, chip: &str) -> Option<BTreeSet<String>> {
+    enabled_features_with(class, chip, &FeatureDelta::default())
+}
+
+/// [`enabled_features_on`] for `class`'s features with an experiment's
+/// `delta` applied.
+fn enabled_features_with(
+    class: ImageClass,
+    chip: &str,
+    delta: &FeatureDelta,
+) -> Option<BTreeSet<String>> {
     let graph = feature_graph(runtime_manifest(chip)?);
     // A class whose own features the chip's runtime lacks is not built
     // there. The network integration's feature gates no key, so the
     // class's own features decide what it reports.
-    let own = class.runtime_features();
+    let own = delta.apply(class.runtime_features());
+    let own = own.as_str();
     let roots: Vec<&str> = own.split(',').filter(|root| !root.is_empty()).collect();
     if !own.split(',').all(|feature| graph.contains_key(feature)) {
         return None;
@@ -98,10 +109,21 @@ pub fn enabled_features_on(class: ImageClass, chip: &str) -> Option<BTreeSet<Str
 /// boot smoke image, which reports none, and for a class the chip does not
 /// build.
 pub fn image_keys_on(class: ImageClass, chip: &str) -> Option<DeviceImageKeys> {
+    image_keys_with(class, chip, &FeatureDelta::default())
+}
+
+/// The image keys `class`'s runtime on `chip` reports when an A/B
+/// experiment builds it with `delta` applied to its features: an arm
+/// without an instrument (`-cpu-load`) reports fewer keys than its class.
+pub fn image_keys_with(
+    class: ImageClass,
+    chip: &str,
+    delta: &FeatureDelta,
+) -> Option<DeviceImageKeys> {
     if class == ImageClass::BootSmoke {
         return None;
     }
-    let enabled = enabled_features_on(class, chip)?;
+    let enabled = enabled_features_with(class, chip, delta)?;
     Some(DeviceImageKeys::of_keys(oer_hil_image_keys::image_keys(
         &|feature| enabled.contains(feature),
     )))
@@ -238,5 +260,21 @@ mod tests {
                 .count();
             assert!(built > 0 && built < ImageClass::ALL.len(), "{chip}");
         }
+    }
+
+    #[test]
+    fn an_arm_without_an_instrument_reports_its_class_s_keys_less_the_instrument_s() {
+        let chip = full_agent();
+        let without: FeatureDelta = "-cpu-load".parse().unwrap();
+        let class = keys(ImageClass::Performance);
+        let arm = image_keys_with(ImageClass::Performance, chip, &without).unwrap();
+        assert!(class.has::<telemetry::CpuLoad>() && !arm.has::<telemetry::CpuLoad>());
+        assert!(arm.has::<network::Udp>());
+        assert!(classify_flashed(chip, &arm).is_none());
+        assert!(
+            image_keys_with(ImageClass::Performance, chip, &FeatureDelta::default())
+                .unwrap()
+                .same_keys(&class)
+        );
     }
 }

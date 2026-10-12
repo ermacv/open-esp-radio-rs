@@ -455,6 +455,13 @@ fn prepare(
     })
 }
 
+/// The runner's argument for a variant's feature delta, none for an empty
+/// one: one `--features=<delta>` word, since a delta that starts with a
+/// removal (`-cpu-load`) would otherwise parse as an option of its own.
+fn features_argument(features: &FeatureDelta) -> Option<String> {
+    (!features.is_empty()).then(|| format!("--features={features}"))
+}
+
 impl PreparedArm {
     /// One run of this arm in `round`, a job of its own, under `grant`
     /// when the experiment holds the stand; the created run's id.
@@ -474,12 +481,7 @@ impl PreparedArm {
                 arguments.push(String::from("--source-snapshot"));
                 arguments.push(self.snapshot.to_string_lossy().into_owned());
                 arguments.extend([String::from("--layout-seed"), seed.to_string()]);
-                if !self.variant.features.is_empty() {
-                    arguments.extend([
-                        String::from("--features"),
-                        self.variant.features.to_string(),
-                    ]);
-                }
+                arguments.extend(features_argument(&self.variant.features));
             }
             Firmware::Replay(run) => {
                 arguments.extend([String::from("--firmware-from"), run.to_string()]);

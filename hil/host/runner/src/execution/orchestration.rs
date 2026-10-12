@@ -1177,6 +1177,13 @@ fn run_scenario(
     let scenario_output = session.scenario_directory(selected.id());
     fs::create_dir_all(&scenario_output)?;
     oer_durable::atomic_json(&scenario_output.join("scenario.json"), selected)?;
+    // An A/B arm's image is its class's with the arm's feature delta.
+    let features = session
+        .manifest()
+        .experiment
+        .as_ref()
+        .map(|experiment| experiment.variant.features.clone())
+        .unwrap_or_default();
     let mut repetitions = Vec::with_capacity(usize::from(selected.repetitions()));
     for number in 1..=selected.repetitions() {
         oer_process::check_cancelled()?;
@@ -1186,7 +1193,7 @@ fn run_scenario(
         let output = session.directory().join(&relative);
         fs::create_dir_all(&output)?;
         repetitions.push(run_scenario_repetition(
-            lab, selected, number, &relative, &output, images, device,
+            lab, selected, &features, number, &relative, &output, images, device,
         )?);
         // The next iteration checks cancellation. After the last repetition,
         // publish its completed boundary before observing campaign cancellation.
@@ -1201,9 +1208,14 @@ fn run_scenario(
     Ok(result)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one argument per input of a repetition: its scenario, image and output"
+)]
 fn run_scenario_repetition(
     lab: &LabConfig,
     selected: &Scenario,
+    features: &oer_hil_schema::image::FeatureDelta,
     repetition: u8,
     artifacts: &Path,
     output: &Path,
@@ -1272,7 +1284,7 @@ fn run_scenario_repetition(
             }
             Ok(())
         })
-        .and_then(|()| preflight::validate_flashed_image(lab, selected, output, device))
+        .and_then(|()| preflight::validate_flashed_image(lab, selected, features, output, device))
     {
         // A board that needs a person must not serve the run's remaining
         // repetitions or the next lease: the run stops.

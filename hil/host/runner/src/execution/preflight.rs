@@ -9,7 +9,7 @@ use oer_hil_lab::config::LabConfig;
 use oer_hil_link::SerialCapture;
 use oer_hil_protocol::DeviceImageKeys;
 use oer_hil_run_bundle_format::run::Failure;
-use oer_hil_schema::image::ImageClass;
+use oer_hil_schema::image::{FeatureDelta, ImageClass};
 
 pub(crate) fn scenario_failure(lab: &LabConfig, selected: &Scenario) -> Option<Failure> {
     fixture::preflight::scenario_precondition(lab, selected).or_else(|| {
@@ -22,6 +22,7 @@ pub(crate) fn scenario_failure(lab: &LabConfig, selected: &Scenario) -> Option<F
 pub(crate) fn validate_flashed_image(
     lab: &LabConfig,
     selected: &Scenario,
+    features: &FeatureDelta,
     output: &Path,
     device: Option<&oer_device_lock::DeviceAccess>,
 ) -> Result<()> {
@@ -31,7 +32,7 @@ pub(crate) fn validate_flashed_image(
     let preflight = output.join("image-preflight");
     let error = match image_keys_of(lab, &preflight) {
         Ok(image_keys) => {
-            return check_flashed_image_keys(lab.chip(), selected, &image_keys);
+            return check_flashed_image_keys(lab.chip(), selected, features, &image_keys);
         }
         Err(error) => error,
     };
@@ -64,7 +65,7 @@ pub(crate) fn validate_flashed_image(
                 "hil: {:?} cleared the boot loop",
                 escalation.ladder.steps.last().map(|step| step.step)
             );
-            check_flashed_image_keys(lab.chip(), selected, &image_keys)
+            check_flashed_image_keys(lab.chip(), selected, features, &image_keys)
         }
         None => Err(format!(
             "{error}; the bootloader reset in a loop ({}) and {} did not clear it: {} (see {})",
@@ -136,17 +137,33 @@ fn image_keys_of(lab: &LabConfig, directory: &Path) -> Result<DeviceImageKeys> {
     capture.finish_with(image_keys)
 }
 
-/// Accept a flashed image only when it is the scenario's class and reports
-/// every role the scenario drives.
+/// Accept a flashed image only when it is the scenario's class, built with
+/// the run's experiment `features` delta when it has one, and reports every
+/// role the scenario drives. An experiment's image is not its class's: it
+/// reports the keys of the class's features with the delta applied.
 fn check_flashed_image_keys(
     chip: &str,
     selected: &Scenario,
+    features: &FeatureDelta,
     image_keys: &DeviceImageKeys,
 ) -> Result<()> {
     let expected = selected.image();
-    let observed = oer_hil_image_class::classify_flashed(chip, image_keys).ok_or_else(|| {
-        format!("the flashed image reports image keys no {chip} image class builds")
-    })?;
+    let observed = if features.is_empty() {
+        oer_hil_image_class::classify_flashed(chip, image_keys).ok_or_else(|| {
+            format!("the flashed image reports image keys no {chip} image class builds")
+        })?
+    } else {
+        let keys = oer_hil_image_class::image_keys_with(expected, chip, features)
+            .ok_or_else(|| format!("{chip} builds no `{}` image", expected.id()))?;
+        if !keys.same_keys(image_keys) {
+            return Err(format!(
+                "the flashed image does not report the image keys of `{}` with features `{features}`",
+                expected.id()
+            )
+            .into());
+        }
+        expected
+    };
     if observed != expected {
         return Err(format!(
             "scenario requires `{}` image but flashed target advertises the image keys of `{}`",

@@ -25,6 +25,7 @@ fn boot_smoke_preflight_never_opens_a_serial_capture() {
     validate_flashed_image(
         &lab,
         catalog().get("boot-smoke").unwrap(),
+        &FeatureDelta::default(),
         output.path(),
         None,
     )
@@ -40,16 +41,34 @@ fn a_flashed_image_must_declare_the_role_its_scenario_drives() {
     check_flashed_image_keys(
         &full,
         catalog.get("bluetooth-dtm-bidirectional").unwrap(),
+        &FeatureDelta::default(),
         &dtm,
     )
     .unwrap();
     let scannable = catalog.get("bluetooth-scannable-advertising").unwrap();
-    check_flashed_image_keys(&full, scannable, &dtm).unwrap();
+    check_flashed_image_keys(&full, scannable, &FeatureDelta::default(), &dtm).unwrap();
     // The advertising workloads drive the Controller over raw HCI.
     let without_hci = DeviceImageKeys::of_keys(dtm.keys().iter().copied().filter(|key| {
         *key != <oer_hil_protocol::bluetooth::Hci as oer_hil_protocol::Message>::KEY
     }));
-    assert!(check_flashed_image_keys(&full, scannable, &without_hci).is_err());
+    assert!(
+        check_flashed_image_keys(&full, scannable, &FeatureDelta::default(), &without_hci).is_err()
+    );
+}
+
+#[test]
+fn an_experiment_arm_s_image_is_its_class_with_the_arm_s_feature_delta() {
+    let catalog = catalog();
+    let (full, _) = chips();
+    let scenario = catalog.get("udp-rx-ht40-ceiling").unwrap();
+    let without: FeatureDelta = "-cpu-load".parse().unwrap();
+    let arm = oer_hil_image_class::image_keys_with(scenario.image(), &full, &without).unwrap();
+    check_flashed_image_keys(&full, scenario, &without, &arm).unwrap();
+    // Without the run's delta the arm's image is no class's; and a class's
+    // own image is not the arm's.
+    assert!(check_flashed_image_keys(&full, scenario, &FeatureDelta::default(), &arm).is_err());
+    let class = oer_hil_image_class::image_keys_on(scenario.image(), &full).unwrap();
+    assert!(check_flashed_image_keys(&full, scenario, &without, &class).is_err());
 }
 
 #[test]
@@ -58,12 +77,12 @@ fn a_partial_agent_s_system_image_is_classified_by_its_chip() {
     let (full, partial) = chips();
     let scenario = catalog.get("system-watchdog").unwrap();
     let keys = oer_hil_image_class::image_keys_on(ImageClass::SystemWatchdog, &partial).unwrap();
-    check_flashed_image_keys(&partial, scenario, &keys).unwrap();
+    check_flashed_image_keys(&partial, scenario, &FeatureDelta::default(), &keys).unwrap();
     // The chip comes from the lab, the class from the keys: the partial
     // agent builds no Wi-Fi image, so a Wi-Fi image's keys name none of its
     // classes.
     let wifi = oer_hil_image_class::image_keys_on(ImageClass::Performance, &full).unwrap();
-    assert!(check_flashed_image_keys(&partial, scenario, &wifi).is_err());
+    assert!(check_flashed_image_keys(&partial, scenario, &FeatureDelta::default(), &wifi).is_err());
 }
 
 #[test]

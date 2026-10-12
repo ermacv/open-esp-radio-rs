@@ -63,6 +63,19 @@ fn enclosing_lease_reaches_preparation_and_replay() {
 }
 
 #[test]
+fn a_feature_delta_reaches_the_runner_as_one_argument_even_when_it_removes_first() {
+    let removal = "features=-cpu-load"
+        .parse::<VariantSpec>()
+        .unwrap()
+        .features;
+    assert_eq!(
+        features_argument(&removal).as_deref(),
+        Some("--features=-cpu-load")
+    );
+    assert_eq!(features_argument(&FeatureDelta::default()), None);
+}
+
+#[test]
 fn a_variant_is_a_revision_and_its_dependency_overrides() {
     assert_eq!(
         "rev=main;override:xarxa=/src/xarxa".parse::<VariantSpec>(),

@@ -48,7 +48,7 @@
 
 use oer_ieee80211_arbiter::{
     AbsenceAnswer, AbsencePlace, Answer, CancelReason, ChannelRequest, Lease, LeaseId, LeasePlace,
-    LeaveReason, Purpose, StationNotice, UpstreamFact,
+    LeaveReason, Purpose, Refusal, StationNotice, UpstreamFact,
 };
 use oer_ieee80211_lower_mac::{
     AckHeader, GroupAddress, HeaderSpec, Ieee80211Capabilities, IndividualAddress, MpduLength,
@@ -294,7 +294,9 @@ pub enum StaDisconnectReason {
         /// The scan ended early.
         partial: bool,
     },
-    /// The arbiter did not let the station on its network's channel.
+    /// The arbiter did not let the station on a channel.
+    Refused(Refusal),
+    /// The arbiter told the station to leave its network.
     Arbiter(LeaveReason),
     /// The access point refused or never answered the authentication.
     AuthenticationFailed,
@@ -819,14 +821,14 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                     state => state,
                 }
             }
-            Answer::Leave(reason, place) => {
+            Answer::Refused(refusal, place) => {
                 self.place = Some(place);
-                match (state, reason) {
-                    (State::Join(mut join), LeaveReason::TooSoon { retry_at }) => {
+                match (state, refusal) {
+                    (State::Join(mut join), Refusal::TooSoon { retry_at }) => {
                         join.step = JoinStep::RetryAt(retry_at);
                         State::Join(join)
                     }
-                    _ => State::Report(StaDisconnectReason::Arbiter(reason)),
+                    _ => State::Report(StaDisconnectReason::Refused(refusal)),
                 }
             }
         };

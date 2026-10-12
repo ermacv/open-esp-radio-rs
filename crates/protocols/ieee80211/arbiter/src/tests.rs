@@ -154,7 +154,7 @@ fn scan(number: u8, dwell: u32) -> ChannelRequest<Caps> {
 fn lease(answer: Answer<Caps>) -> Lease<Caps> {
     match answer {
         Answer::Lease(lease) => lease,
-        Answer::Leave(reason, _) => panic!("left: {reason:?}"),
+        Answer::Refused(refusal, _) => panic!("refused: {refusal:?}"),
     }
 }
 
@@ -401,7 +401,7 @@ fn a_failed_return_or_a_poisoned_port_stops_the_station_and_the_access_point() {
     // A failed port answers every request with a leave and the place.
     assert!(matches!(
         arbiter.request(at(1), scan(6, 10), self::place()),
-        Answer::Leave(LeaveReason::PortFailed, _)
+        Answer::Refused(Refusal::PortFailed, _)
     ));
     let _ = poisoned;
 }
@@ -564,11 +564,11 @@ fn a_second_join_elsewhere_within_the_follow_interval_is_refused_and_the_access_
         Some(Seen::Station(StationNotice::LeaseEnded(_, place))) => place,
         seen => panic!("{seen:?}"),
     };
-    // Within 30 s of the last announcement: refused, with when to retry,
-    // and nothing is announced.
+    // The join failed, so the interval doubled: within 60 s of the last
+    // announcement, refused with when to retry, and nothing is announced.
     let place = match arbiter.request(at(1_000), connect(11), place) {
-        Answer::Leave(LeaveReason::TooSoon { retry_at }, place) => {
-            assert_eq!(retry_at, at(30_000));
+        Answer::Refused(Refusal::TooSoon { retry_at }, place) => {
+            assert_eq!(retry_at, at(60_000));
             place
         }
         answer => panic!("{answer:?}"),
@@ -578,13 +578,93 @@ fn a_second_join_elsewhere_within_the_follow_interval_is_refused_and_the_access_
     // After it, the access point follows again.
     let _ = lease_after(&mut arbiter, place);
     assert!(matches!(
-        run(&mut arbiter, &mut port, at(30_000)).as_slice(),
+        run(&mut arbiter, &mut port, at(60_000)).as_slice(),
         [Seen::AccessPoint(AccessPointCommand::AnnounceSwitch { count: 5, .. })]
     ));
 }
 
+/// Join channel `number` at `now` beside the access point, its move due
+/// at `due`, then give the lease back without connecting; the place comes
+/// back.
+fn failed_follow(
+    arbiter: &mut TestArbiter,
+    port: &mut Port,
+    place: LeasePlace,
+    number: u8,
+    now: Instant,
+    due: Instant,
+) -> LeasePlace {
+    let lease = lease(arbiter.request(now, connect(number), place));
+    run(arbiter, port, now);
+    arbiter.access_point(due, AccessPointFact::SwitchDue(channel(number)));
+    run(arbiter, port, due);
+    arbiter.release(lease);
+    match run(arbiter, port, due).pop() {
+        Some(Seen::Station(StationNotice::LeaseEnded(_, place))) => place,
+        seen => panic!("{seen:?}"),
+    }
+}
+
+fn retry_at(answer: Answer<Caps>) -> (Instant, LeasePlace) {
+    match answer {
+        Answer::Refused(Refusal::TooSoon { retry_at }, place) => (retry_at, place),
+        answer => panic!("{answer:?}"),
+    }
+}
+
+#[test]
+fn the_follow_interval_doubles_after_each_failed_join_and_resets_once_connected() {
+    let (mut arbiter, place) = beside_access_point::<NoReservation>();
+    let mut port = Port::default();
+    // Announced at 0: the next within 30 s; failed, so 60 s from the next.
+    let place = failed_follow(&mut arbiter, &mut port, place, 6, at(0), at(550));
+    let (retry, place) = retry_at(arbiter.request(at(1_000), connect(11), place));
+    assert_eq!(retry, at(60_000));
+    let place = failed_follow(&mut arbiter, &mut port, place, 11, at(60_000), at(60_600));
+    let (retry, place) = retry_at(arbiter.request(at(61_000), connect(1), place));
+    assert_eq!(retry, at(180_000));
+    // The doubling stops at 480 s.
+    let mut now = 180_000;
+    let mut place = place;
+    let mut number = 1;
+    for _ in 0..4 {
+        place = failed_follow(&mut arbiter, &mut port, place, number, at(now), at(now + 600));
+        let (retry, back) = retry_at(arbiter.request(at(now + 1_000), connect(number ^ 7), place));
+        place = back;
+        now = u32::try_from(retry.as_micros() / 1000).unwrap();
+        number ^= 7;
+    }
+    assert_eq!(now - 180_000 - 240_000 - 480_000 * 2, 480_000);
+    // Connected: back to 30 s.
+    let lease = lease(arbiter.request(at(now), connect(number), place));
+    run(&mut arbiter, &mut port, at(now));
+    arbiter.access_point(at(now + 600), AccessPointFact::SwitchDue(channel(number)));
+    run(&mut arbiter, &mut port, at(now + 600));
+    arbiter.upstream(at(now + 700), UpstreamFact::Connected(channel(number)));
+    arbiter.release(lease);
+    let place = match run(&mut arbiter, &mut port, at(now + 800)).pop() {
+        Some(Seen::Station(StationNotice::LeaseEnded(_, place))) => place,
+        seen => panic!("{seen:?}"),
+    };
+    let (retry, _) = retry_at(arbiter.request(at(now + 1_000), connect(number ^ 7), place));
+    assert_eq!(retry, at(now + 30_000));
+}
+
+#[test]
+fn a_lease_names_the_running_access_points_channel() {
+    let (mut arbiter, place) = beside_access_point::<NoReservation>();
+    let lease = lease(arbiter.request(at(0), scan(6, 10), place));
+    assert_eq!(lease.access_point(), Some(channel(1)));
+    let (mut alone, place) = alone::<NoReservation>();
+    assert_eq!(lease_of(&mut alone, place).access_point(), None);
+}
+
+fn lease_of(arbiter: &mut TestArbiter, place: LeasePlace) -> Lease<Caps> {
+    lease(arbiter.request(at(0), scan(6, 10), place))
+}
+
 fn lease_after(arbiter: &mut TestArbiter, place: LeasePlace) -> Lease<Caps> {
-    lease(arbiter.request(at(30_000), connect(11), place))
+    lease(arbiter.request(at(60_000), connect(11), place))
 }
 
 #[test]

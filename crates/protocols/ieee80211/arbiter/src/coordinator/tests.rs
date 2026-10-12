@@ -176,6 +176,7 @@ fn a_channel_that_needs_radar_detection_is_never_served_even_in_an_allowed_band(
         unservable: ApUnservable::LeaveUpstream,
         announce_count: 5,
         min_follow_interval: Duration::from_secs(30),
+        max_follow_interval: Duration::from_secs(480),
     };
     let mut coordinator = running(both, ghz5(36));
     assert_eq!(

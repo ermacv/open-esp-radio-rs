@@ -395,6 +395,26 @@ Regulatory legality is policy, not capability: a channel the region allows
 is its own validated type
 ([#323](https://github.com/ermacv/open-esp-radio-rs/issues/323)).
 
+**The install brand.** Every port-lifetime value of one install carries
+its brand `'id`: the owner, its `Ended`, the resources the body receives
+once, and every token a backend mints for them. The body is generic over
+`'id`, so it names no concrete brand and cannot prove one `'static`: no
+branded value leaves the body, and none reaches another install. The brand
+is invariant and costs nothing at run time; a sans-IO core stays `'static`
+and leaves branded tokens to its body's boundary table.
+
+**Capacity as tokens.** An install's capacity is tokens a stateless
+`Mint<'id>` makes once for the backend's `resources`: slots (`Slot<'id, K>`,
+counting for the capabilities marker `K`), which a caller takes
+synchronously from the ones it holds, an installed resource holding its slot
+until its removal gives it back; and permits (`Permit<'id, K>`), which a
+`PermitPool` hands out to awaiting takers and takes back when the work that
+held one ends with its terminal event, not when a handle drops. A pool's
+free list, its waiters and its order belong to a runtime crate or the
+backend; its order is its documented policy, first in, first out by default,
+which the conformance suite checks. The backend never refuses for capacity:
+a caller that holds no slot turns that into its protocol's decision.
+
 **Port-lifetime and phase-scoped tokens.** A resource that outlives a phase
 (an installed key, a Block Ack agreement, a configured interface, a
 Bluetooth LE set) has its token owned by the port's owner, set up while it

@@ -14,20 +14,20 @@
 //! state is its type:
 //!
 //! ```text
-//! Owner<B, Disabled> ── enable(self).await ──▶ Ok(Owner<B, Enabled>)
-//!        ▲                                    Err(Failed::Refused(Owner<B, Disabled>, refusal))
+//! Owner<'id, B, Disabled> ── enable(self).await ──▶ Ok(Owner<'id, B, Enabled>)
+//!        ▲                                    Err(Failed::Refused(Owner<'id, B, Disabled>, refusal))
 //!        │                                    Err(Failed::Poisoned(PoisonedOwner<B>))
-//!        └── Ok ── disable(self, sink).await ── Owner<B, Enabled>
+//!        └── Ok ── disable(self, sink).await ── Owner<'id, B, Enabled>
 //!                  Err(PoisonedOwner<B>)
 //! uninstall / fail_stop ──▶ Ended<B>
 //! ```
 //!
-//! - [`Owner<B, Disabled>`](Owner) lends the protocol's disabled-only
+//! - [`Owner<'id, B, Disabled>`](Owner) lends the protocol's disabled-only
 //!   settings ([`Owner::setup`]: a permanent channel move, interface
 //!   configuration, port-lifetime resources such as keys and agreements,
 //!   whose tokens the owner keeps and lends into each phase), and is the
 //!   only state that uninstalls.
-//! - [`Owner<B, Enabled>`](Owner) lends one running phase at a time
+//! - [`Owner<'id, B, Enabled>`](Owner) lends one running phase at a time
 //!   ([`Owner::split`]): the phase's one event consumer, its control and
 //!   its interface-scoped clients, each a [`Lent`] of the owner's borrow.
 //! - The transitions take the owner by value and are bounded by contract:
@@ -126,7 +126,7 @@
 //! # use oer_radio_port::{Disabled, Ended, Owner, PortBackend, PortBody};
 //! struct Forget;
 //! impl<B: PortBackend> PortBody<B> for Forget {
-//!     async fn run(self, owner: Owner<B, Disabled>) -> Ended<B> {
+//!     async fn run<'id>(self, owner: Owner<'id, B, Disabled>, _: B::Resources<'id>) -> Ended<'id, B> {
 //!         drop(owner);
 //!         Ended { uninstalled: None }
 //!     }
@@ -139,7 +139,7 @@
 //! # use oer_radio_port::{Disabled, Ended, Owner, PortBackend, PortBody};
 //! struct FailStop;
 //! impl<B: PortBackend> PortBody<B> for FailStop {
-//!     async fn run(self, owner: Owner<B, Disabled>) -> Ended<B> {
+//!     async fn run<'id>(self, owner: Owner<'id, B, Disabled>, _: B::Resources<'id>) -> Ended<'id, B> {
 //!         owner.fail_stop()
 //!     }
 //! }
@@ -149,7 +149,7 @@
 //!
 //! ```compile_fail,E0624
 //! # use oer_radio_port::{Disabled, Owner, PortBackend};
-//! fn forge<B: PortBackend>(backend: B) -> Owner<B, Disabled> {
+//! fn forge<'id, B: PortBackend>(backend: B) -> Owner<'id, B, Disabled> {
 //!     Owner::new(backend)
 //! }
 //! ```
@@ -158,7 +158,7 @@
 //!
 //! ```compile_fail,E0599
 //! # use oer_radio_port::{Disabled, Owner, PortBackend};
-//! fn phase_while_disabled<B: PortBackend>(owner: &mut Owner<B, Disabled>) {
+//! fn phase_while_disabled<'id, B: PortBackend>(owner: &mut Owner<'id, B, Disabled>) {
 //!     let _ = owner.split();
 //! }
 //! ```
@@ -167,14 +167,14 @@
 //!
 //! ```compile_fail,E0599
 //! # use oer_radio_port::{Enabled, Owner, PortBackend};
-//! fn setup_while_enabled<B: PortBackend>(owner: &mut Owner<B, Enabled>) {
+//! fn setup_while_enabled<'id, B: PortBackend>(owner: &mut Owner<'id, B, Enabled>) {
 //!     let _ = owner.setup();
 //! }
 //! ```
 //!
 //! ```compile_fail,E0599
 //! # use oer_radio_port::{Enabled, Owner, PortBackend};
-//! fn uninstall_while_enabled<B: PortBackend>(owner: Owner<B, Enabled>, control: B::Uninstall) {
+//! fn uninstall_while_enabled<'id, B: PortBackend>(owner: Owner<'id, B, Enabled>, control: B::Uninstall) {
 //!     let _ = owner.uninstall(control);
 //! }
 //! ```
@@ -184,7 +184,7 @@
 //!
 //! ```compile_fail,E0382
 //! # use oer_radio_port::{Disabled, Owner, PortBackend};
-//! async fn two_commands<B: PortBackend>(owner: Owner<B, Disabled>) {
+//! async fn two_commands<'id, B: PortBackend>(owner: Owner<'id, B, Disabled>) {
 //!     let enabling = owner.enable();
 //!     let _ = owner.enable();
 //!     let _ = enabling.await;
@@ -195,7 +195,7 @@
 //!
 //! ```compile_fail,E0505
 //! # use oer_radio_port::{Enabled, Owner, PortBackend};
-//! async fn keep_the_control<B: PortBackend>(mut owner: Owner<B, Enabled>) {
+//! async fn keep_the_control<'id, B: PortBackend>(mut owner: Owner<'id, B, Enabled>) {
 //!     let control = owner.split().control;
 //!     let _ = owner.disable(&mut |_| {}).await;
 //!     drop(control);
@@ -206,7 +206,7 @@
 //!
 //! ```compile_fail,E0499
 //! # use oer_radio_port::{Enabled, Owner, PortBackend};
-//! fn two_phases<B: PortBackend>(owner: &mut Owner<B, Enabled>) {
+//! fn two_phases<'id, B: PortBackend>(owner: &mut Owner<'id, B, Enabled>) {
 //!     let first = owner.split();
 //!     let second = owner.split();
 //!     drop((first, second));
@@ -217,7 +217,7 @@
 //!
 //! ```compile_fail,E0616
 //! # use oer_radio_port::{Enabled, Owner, PortBackend};
-//! fn reach_the_backend<B: PortBackend>(owner: &mut Owner<B, Enabled>) {
+//! fn reach_the_backend<'id, B: PortBackend>(owner: &mut Owner<'id, B, Enabled>) {
 //!     let _ = &mut owner.backend;
 //! }
 //! ```
@@ -226,7 +226,7 @@
 //!
 //! ```compile_fail,E0616
 //! # use oer_radio_port::{Enabled, Owner, PortBackend};
-//! fn take_the_part<B: PortBackend>(owner: &mut Owner<B, Enabled>) {
+//! fn take_the_part<'id, B: PortBackend>(owner: &mut Owner<'id, B, Enabled>) {
 //!     let _ = owner.split().control.part;
 //! }
 //! ```
@@ -270,7 +270,7 @@
 //! # use oer_radio_port::{Disabled, Ended, Owner, PortBackend, PortBody, RadioPortClient, Work};
 //! struct OnePhase;
 //! impl<B: PortBackend> PortBody<B> for OnePhase {
-//!     async fn run(self, mut owner: Owner<B, Disabled>) -> Ended<B> {
+//!     async fn run<'id>(self, mut owner: Owner<'id, B, Disabled>, _: B::Resources<'id>) -> Ended<'id, B> {
 //!         let _ = owner.setup();
 //!         let mut enabled = match owner.enable().await {
 //!             Ok(enabled) => enabled,
@@ -302,16 +302,16 @@
 //!
 //! ```
 //! # use oer_radio_port::{Disabled, Enabled, Ended, Owner, PortBackend, PortBody, run_port};
-//! async fn own<B: PortBackend>(backend: B, body: impl PortBody<B>) -> Ended<B> {
+//! async fn own<B: PortBackend>(backend: B, body: impl PortBody<B>) -> Option<B::Uninstalled> {
 //!     run_port(backend, body).await
 //! }
-//! fn uninstall_while_disabled<B: PortBackend>(owner: Owner<B, Disabled>, control: B::Uninstall) {
+//! fn uninstall_while_disabled<'id, B: PortBackend>(owner: Owner<'id, B, Disabled>, control: B::Uninstall) {
 //!     let _ = owner.uninstall(control);
 //! }
-//! fn reach_through_the_owner<B: PortBackend>(owner: &mut Owner<B, Enabled>) {
+//! fn reach_through_the_owner<'id, B: PortBackend>(owner: &mut Owner<'id, B, Enabled>) {
 //!     let _ = owner.now();
 //! }
-//! fn borrow_the_part<B: PortBackend>(owner: &mut Owner<B, Enabled>) {
+//! fn borrow_the_part<'id, B: PortBackend>(owner: &mut Owner<'id, B, Enabled>) {
 //!     let _ = &mut *owner.split().control;
 //! }
 //! ```
@@ -328,7 +328,11 @@ use core::{
 
 use oer_time::RadioInstant;
 
-use crate::{CancelError, ClockError, EventsLost, Poisoned, PortResult};
+use crate::{CancelError, ClockError, EventsLost, Mint, Poisoned, PortResult};
+
+/// The brand of one install: invariant, so no install's brand converts to
+/// another's.
+type Brand<'id> = PhantomData<fn(&'id ()) -> &'id ()>;
 
 /// The state of an owner whose port admits no work and receives nothing.
 pub enum Disabled {}
@@ -354,24 +358,27 @@ pub trait PortBackend: Sized {
     /// outcome, after which the port is disabled.
     type Refusal;
     /// The protocol's disabled-only settings, lent by [`Owner::setup`].
-    type Setup<'a>
+    type Setup<'a, 'id>
     where
         Self: 'a;
     /// The phase's one event consumer.
-    type Events<'a>: RadioPortEvents<Event = Self::Event, Fault = Self::Fault>
+    type Events<'a, 'id>: RadioPortEvents<Event = Self::Event, Fault = Self::Fault>
     where
         Self: 'a;
     /// The phase control: the radio-wide operations that only gate or tune
     /// admission while clients run, as guards on its sub-resources; each
     /// guard proves only its own state (a closed transmit gate proves this
     /// port publishes nothing, `TxGated`, not that the air is quiet).
-    type Control<'a>
+    type Control<'a, 'id>
     where
         Self: 'a;
     /// The protocol's client handles, one per configured interface.
-    type Clients<'a>
+    type Clients<'a, 'id>
     where
         Self: 'a;
+    /// The port-lifetime resources the body receives once with its owner:
+    /// slot pools and permit pools, minted through [`Mint`].
+    type Resources<'id>;
     /// What the uninstall takes beside the backend (the composition's
     /// control).
     type Uninstall;
@@ -394,11 +401,21 @@ pub trait PortBackend: Sized {
         &self,
     ) -> impl Future<Output = PortResult<RadioInstant<Self::Domain>, ClockError, Self::Fault>> + '_;
 
-    /// Lend the disabled-only settings.
-    fn setup(&mut self) -> Lent<'_, Self::Setup<'_>>;
+    /// The port-lifetime resources of the install `'id`, minted with
+    /// `mint`; [`run_port`] calls it once.
+    fn resources<'id>(&mut self, mint: Mint<'id>) -> Self::Resources<'id>;
 
-    /// Lend one running phase of the enabled port.
-    fn split(&mut self) -> PhaseParts<'_, Self::Events<'_>, Self::Control<'_>, Self::Clients<'_>>;
+    /// Lend the disabled-only settings of the install `'id`. An
+    /// implementation names the associated types with both lifetimes
+    /// (`Self::Setup<'a, 'id>`), as the trait does, so its `'id` stays a
+    /// parameter of the method.
+    fn setup<'a, 'id>(&'a mut self) -> Lent<'a, Self::Setup<'a, 'id>>;
+
+    /// Lend one running phase of the enabled port of the install `'id`.
+    #[allow(clippy::type_complexity, reason = "the phase's three parts")]
+    fn split<'a, 'id>(
+        &'a mut self,
+    ) -> PhaseParts<'a, Self::Events<'a, 'id>, Self::Control<'a, 'id>, Self::Clients<'a, 'id>>;
 
     /// Take the disabled or poisoned backend apart with the composition's
     /// `control`.
@@ -416,24 +433,39 @@ pub trait PortBackend: Sized {
 pub trait PortBody<B: PortBackend> {
     /// Run the port: the owner arrives disabled and leaves through an
     /// uninstall or a fail-stop.
-    fn run(self, owner: Owner<B, Disabled>) -> impl Future<Output = Ended<B>>;
+    ///
+    /// The body is generic over the install's brand `'id`: it names no
+    /// concrete one and cannot prove one `'static`, so nothing branded by
+    /// `'id` (the owner, its resources, the tokens its clients mint)
+    /// leaves the body or reaches another install.
+    fn run<'id>(
+        self,
+        owner: Owner<'id, B, Disabled>,
+        resources: B::Resources<'id>,
+    ) -> impl Future<Output = Ended<'id, B>>;
 }
 
 /// Run `body` over a just-installed, disabled `backend`. A backend's install
-/// calls it, in the executor task that runs the port, and receives its end.
-pub async fn run_port<B: PortBackend>(backend: B, body: impl PortBody<B>) -> Ended<B> {
-    body.run(Owner::new(backend)).await
+/// calls it, in the executor task that runs the port, and receives the
+/// hardware owners an uninstall returned, or `None` after a fail-stop.
+pub async fn run_port<B: PortBackend>(
+    mut backend: B,
+    body: impl PortBody<B>,
+) -> Option<B::Uninstalled> {
+    let resources = backend.resources(crate::pool::Mint::new());
+    body.run(Owner::new(backend), resources).await.uninstalled
 }
 
 /// How a port's body ended: its hardware owners, after an uninstall, or
 /// nothing after a fail-stop, which leaves the hardware installed until a
 /// reset. Only the uninstalls and the `fail_stop`s construct it.
 #[must_use = "an ended port returns its hardware owners"]
-pub struct Ended<B: PortBackend> {
+pub struct Ended<'id, B: PortBackend> {
     uninstalled: Option<B::Uninstalled>,
+    brand: Brand<'id>,
 }
 
-impl<B: PortBackend> Ended<B> {
+impl<'id, B: PortBackend> Ended<'id, B> {
     /// The hardware owners an uninstall returned, or `None` after a
     /// fail-stop.
     pub fn into_uninstalled(self) -> Option<B::Uninstalled> {
@@ -444,16 +476,18 @@ impl<B: PortBackend> Ended<B> {
 /// The one authority over an installed port, in state `S`; see the
 /// [module](self) documentation.
 #[must_use = "an owner leaves only through a transition, an uninstall or a fail-stop"]
-pub struct Owner<B: PortBackend, S> {
+pub struct Owner<'id, B: PortBackend, S> {
     /// `None` only once a consuming method took it.
     backend: Option<B>,
+    brand: Brand<'id>,
     state: PhantomData<S>,
 }
 
-impl<B: PortBackend, S> Owner<B, S> {
+impl<'id, B: PortBackend, S> Owner<'id, B, S> {
     fn new(backend: B) -> Self {
         Self {
             backend: Some(backend),
+            brand: PhantomData,
             state: PhantomData,
         }
     }
@@ -475,15 +509,18 @@ impl<B: PortBackend, S> Owner<B, S> {
 
     /// Stop the backend at once and end the port without its uninstall:
     /// the hardware stays installed and unreachable until a reset.
-    pub fn fail_stop(self) -> Ended<B> {
+    pub fn fail_stop(self) -> Ended<'id, B> {
         self.take().abandon();
-        Ended { uninstalled: None }
+        Ended {
+            uninstalled: None,
+            brand: PhantomData,
+        }
     }
 }
 
-impl<B: PortBackend> Owner<B, Disabled> {
+impl<'id, B: PortBackend> Owner<'id, B, Disabled> {
     /// Lend the protocol's disabled-only settings.
-    pub fn setup(&mut self) -> Lent<'_, B::Setup<'_>> {
+    pub fn setup(&mut self) -> Lent<'_, B::Setup<'_, 'id>> {
         self.backend().setup()
     }
 
@@ -492,7 +529,7 @@ impl<B: PortBackend> Owner<B, Disabled> {
     /// # Errors
     ///
     /// The radio's refusal, with the disabled owner, or a poisoned backend.
-    pub async fn enable(mut self) -> Result<Owner<B, Enabled>, Failed<B>> {
+    pub async fn enable(mut self) -> Result<Owner<'id, B, Enabled>, Failed<'id, B>> {
         // The owner holds the backend across the wait, so a dropped future
         // drops the owner and its safety net runs.
         let enabled = self.backend().enable().await;
@@ -505,17 +542,21 @@ impl<B: PortBackend> Owner<B, Disabled> {
     }
 
     /// Take the disabled backend apart with the composition's `control`.
-    pub fn uninstall(self, control: B::Uninstall) -> Ended<B> {
+    pub fn uninstall(self, control: B::Uninstall) -> Ended<'id, B> {
         Ended {
             uninstalled: Some(self.take().uninstall(control)),
+            brand: PhantomData,
         }
     }
 }
 
-impl<B: PortBackend> Owner<B, Enabled> {
+impl<'id, B: PortBackend> Owner<'id, B, Enabled> {
     /// Lend one running phase: its event consumer, its control and its
     /// clients, each a [`Lent`] of this borrow.
-    pub fn split(&mut self) -> PhaseParts<'_, B::Events<'_>, B::Control<'_>, B::Clients<'_>> {
+    #[allow(clippy::type_complexity, reason = "the phase's three parts")]
+    pub fn split(
+        &mut self,
+    ) -> PhaseParts<'_, B::Events<'_, 'id>, B::Control<'_, 'id>, B::Clients<'_, 'id>> {
         self.backend().split()
     }
 
@@ -529,7 +570,7 @@ impl<B: PortBackend> Owner<B, Enabled> {
     pub async fn disable(
         mut self,
         sink: &mut dyn FnMut(B::Event),
-    ) -> Result<Owner<B, Disabled>, PoisonedOwner<B>> {
+    ) -> Result<Owner<'id, B, Disabled>, PoisonedOwner<'id, B>> {
         // The owner holds the backend across the wait, as `enable`'s does.
         let disabled = self.backend().disable(sink).await;
         let backend = self.take();
@@ -540,23 +581,23 @@ impl<B: PortBackend> Owner<B, Enabled> {
     }
 }
 
-impl<B: PortBackend, S> Drop for Owner<B, S> {
+impl<'id, B: PortBackend, S> Drop for Owner<'id, B, S> {
     fn drop(&mut self) {
         abandoned(&mut self.backend);
     }
 }
 
 /// Why `Enable` did not leave an enabled owner.
-pub enum Failed<B: PortBackend> {
+pub enum Failed<'id, B: PortBackend> {
     /// The radio refused; the port is disabled.
-    Refused(Owner<B, Disabled>, B::Refusal),
+    Refused(Owner<'id, B, Disabled>, B::Refusal),
     /// The backend is poisoned.
-    Poisoned(PoisonedOwner<B>),
+    Poisoned(PoisonedOwner<'id, B>),
 }
 
-impl<B: PortBackend> Failed<B> {
+impl<'id, B: PortBackend> Failed<'id, B> {
     /// Stop the backend at once and end the port.
-    pub fn fail_stop(self) -> Ended<B> {
+    pub fn fail_stop(self) -> Ended<'id, B> {
         match self {
             Self::Refused(owner, _) => owner.fail_stop(),
             Self::Poisoned(poisoned) => poisoned.fail_stop(),
@@ -567,17 +608,19 @@ impl<B: PortBackend> Failed<B> {
 /// The one exit of a poisoned backend: its state is unknown, and it leaves
 /// through its uninstall or a fail-stop.
 #[must_use = "a poisoned backend leaves only through its uninstall or a fail-stop"]
-pub struct PoisonedOwner<B: PortBackend> {
+pub struct PoisonedOwner<'id, B: PortBackend> {
     /// `None` only once a consuming method took it.
     backend: Option<B>,
     cause: B::Fault,
+    brand: Brand<'id>,
 }
 
-impl<B: PortBackend> PoisonedOwner<B> {
+impl<'id, B: PortBackend> PoisonedOwner<'id, B> {
     fn new(backend: B, poisoned: Poisoned<B::Fault>) -> Self {
         Self {
             backend: Some(backend),
             cause: poisoned.cause,
+            brand: PhantomData,
         }
     }
 
@@ -591,20 +634,24 @@ impl<B: PortBackend> PoisonedOwner<B> {
     }
 
     /// Take the backend apart with the composition's `control`.
-    pub fn uninstall(self, control: B::Uninstall) -> Ended<B> {
+    pub fn uninstall(self, control: B::Uninstall) -> Ended<'id, B> {
         Ended {
             uninstalled: Some(self.take().uninstall(control)),
+            brand: PhantomData,
         }
     }
 
     /// Stop the backend at once and end the port without its uninstall.
-    pub fn fail_stop(self) -> Ended<B> {
+    pub fn fail_stop(self) -> Ended<'id, B> {
         self.take().abandon();
-        Ended { uninstalled: None }
+        Ended {
+            uninstalled: None,
+            brand: PhantomData,
+        }
     }
 }
 
-impl<B: PortBackend> Drop for PoisonedOwner<B> {
+impl<'id, B: PortBackend> Drop for PoisonedOwner<'id, B> {
     fn drop(&mut self) {
         abandoned(&mut self.backend);
     }

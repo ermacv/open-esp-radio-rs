@@ -280,6 +280,9 @@ struct Model {
     lifecycle: core::cell::RefCell<std::vec::Vec<&'static str>>,
 }
 
+/// The model's capabilities marker.
+struct ModelCaps;
+
 /// The model's backend; only `run_port` wraps it.
 struct Backend<'m>(&'m Model);
 
@@ -328,22 +331,23 @@ impl<'m> PortBackend for Backend<'m> {
     type Domain = Port;
     type Fault = ();
     type Refusal = &'static str;
-    type Setup<'a>
+    type Setup<'a, 'id>
         = Setup
     where
         Self: 'a;
-    type Events<'a>
+    type Events<'a, 'id>
         = Events<'m>
     where
         Self: 'a;
-    type Control<'a>
+    type Control<'a, 'id>
         = Control
     where
         Self: 'a;
-    type Clients<'a>
+    type Clients<'a, 'id>
         = [Client<'m>; 2]
     where
         Self: 'a;
+    type Resources<'id> = [Slot<'id, ModelCaps>; 2];
     type Uninstall = ();
     type Uninstalled = &'m Model;
 
@@ -404,11 +408,17 @@ impl<'m> PortBackend for Backend<'m> {
         core::future::ready(Ok(Err(ClockError::Unavailable)))
     }
 
-    fn setup(&mut self) -> Lent<'_, Setup> {
+    fn resources<'id>(&mut self, mut mint: Mint<'id>) -> [Slot<'id, ModelCaps>; 2] {
+        mint.slots()
+    }
+
+    fn setup<'a, 'id>(&'a mut self) -> Lent<'a, Self::Setup<'a, 'id>> {
         Lent::new(Setup(()))
     }
 
-    fn split(&mut self) -> PhaseParts<'_, Events<'m>, Control, [Client<'m>; 2]> {
+    fn split<'a, 'id>(
+        &'a mut self,
+    ) -> PhaseParts<'a, Self::Events<'a, 'id>, Self::Control<'a, 'id>, Self::Clients<'a, 'id>> {
         let model = self.0;
         let client = |interface| Client { model, interface };
         PhaseParts {
@@ -473,7 +483,11 @@ struct OnePhase<'t> {
 }
 
 impl<'m> PortBody<Backend<'m>> for OnePhase<'_> {
-    async fn run(self, mut owner: Owner<Backend<'m>, Disabled>) -> Ended<Backend<'m>> {
+    async fn run<'id>(
+        self,
+        mut owner: Owner<'id, Backend<'m>, Disabled>,
+        _: [Slot<'id, ModelCaps>; 2],
+    ) -> Ended<'id, Backend<'m>> {
         let _ = owner.setup();
         let mut enabled = match owner.enable().await {
             Ok(enabled) => enabled,
@@ -521,7 +535,7 @@ fn a_port_runs_a_phase_between_its_lifecycle_commands_and_ends_through_its_unins
     ));
     assert_eq!(cancelled.get(), Some(0));
     assert_eq!(*leftovers.borrow(), [1]);
-    assert!(core::ptr::eq(ended.into_uninstalled().unwrap(), &model));
+    assert!(core::ptr::eq(ended.unwrap(), &model));
     assert_eq!(
         *model.lifecycle.borrow(),
         ["enable", "disable", "uninstall"]
@@ -534,7 +548,11 @@ struct EnableOnce<'t> {
 }
 
 impl<'m> PortBody<Backend<'m>> for EnableOnce<'_> {
-    async fn run(self, owner: Owner<Backend<'m>, Disabled>) -> Ended<Backend<'m>> {
+    async fn run<'id>(
+        self,
+        owner: Owner<'id, Backend<'m>, Disabled>,
+        _: [Slot<'id, ModelCaps>; 2],
+    ) -> Ended<'id, Backend<'m>> {
         match owner.enable().await {
             Ok(enabled) => match enabled.disable(&mut |_| {}).await {
                 Ok(disabled) => disabled.uninstall(()),
@@ -557,7 +575,7 @@ fn a_refused_enable_returns_the_disabled_owner_with_the_worlds_cause() {
     let refusal = core::cell::Cell::default();
     let ended = now_ready(run_port(Backend(&model), EnableOnce { refusal: &refusal }));
     assert_eq!(refusal.get(), Some("the radio refused the channel"));
-    assert!(ended.into_uninstalled().is_some());
+    assert!(ended.is_some());
 }
 
 #[test]
@@ -566,7 +584,7 @@ fn a_poisoned_backend_ends_through_a_fail_stop_without_its_uninstall() {
     model.poisoned.set(true);
     let refusal = core::cell::Cell::default();
     let ended = now_ready(run_port(Backend(&model), EnableOnce { refusal: &refusal }));
-    assert!(ended.into_uninstalled().is_none());
+    assert!(ended.is_none());
     assert_eq!(*model.lifecycle.borrow(), ["abandon"]);
 }
 
@@ -575,7 +593,11 @@ fn a_poisoned_backend_ends_through_a_fail_stop_without_its_uninstall() {
 struct DropTheEnable;
 
 impl<'m> PortBody<Backend<'m>> for DropTheEnable {
-    async fn run(self, owner: Owner<Backend<'m>, Disabled>) -> Ended<Backend<'m>> {
+    async fn run<'id>(
+        self,
+        owner: Owner<'id, Backend<'m>, Disabled>,
+        _: [Slot<'id, ModelCaps>; 2],
+    ) -> Ended<'id, Backend<'m>> {
         drop(owner.enable());
         panic!("the dropped owner's safety net asserts first")
     }
@@ -597,7 +619,11 @@ fn a_dropped_owner_abandons_its_backend_and_asserts_in_debug() {
 struct DropTheDisable;
 
 impl<'m> PortBody<Backend<'m>> for DropTheDisable {
-    async fn run(self, owner: Owner<Backend<'m>, Disabled>) -> Ended<Backend<'m>> {
+    async fn run<'id>(
+        self,
+        owner: Owner<'id, Backend<'m>, Disabled>,
+        _: [Slot<'id, ModelCaps>; 2],
+    ) -> Ended<'id, Backend<'m>> {
         let Ok(enabled) = owner.enable().await else {
             panic!("the model enables");
         };
@@ -632,7 +658,11 @@ fn an_owner_dropped_while_its_disable_waits_abandons_its_backend() {
 struct PoisonBetween<'t>(&'t Model);
 
 impl<'m> PortBody<Backend<'m>> for PoisonBetween<'_> {
-    async fn run(self, owner: Owner<Backend<'m>, Disabled>) -> Ended<Backend<'m>> {
+    async fn run<'id>(
+        self,
+        owner: Owner<'id, Backend<'m>, Disabled>,
+        _: [Slot<'id, ModelCaps>; 2],
+    ) -> Ended<'id, Backend<'m>> {
         let Ok(enabled) = owner.enable().await else {
             panic!("the model enables");
         };
@@ -650,7 +680,7 @@ impl<'m> PortBody<Backend<'m>> for PoisonBetween<'_> {
 fn a_poisoned_disable_leaves_through_the_poisoned_owners_uninstall() {
     let model = Model::default();
     let ended = now_ready(run_port(Backend(&model), PoisonBetween(&model)));
-    assert!(core::ptr::eq(ended.into_uninstalled().unwrap(), &model));
+    assert!(core::ptr::eq(ended.unwrap(), &model));
     assert_eq!(*model.lifecycle.borrow(), ["enable", "uninstall"]);
 }
 
@@ -658,7 +688,11 @@ fn a_poisoned_disable_leaves_through_the_poisoned_owners_uninstall() {
 struct FailStopRefused;
 
 impl<'m> PortBody<Backend<'m>> for FailStopRefused {
-    async fn run(self, owner: Owner<Backend<'m>, Disabled>) -> Ended<Backend<'m>> {
+    async fn run<'id>(
+        self,
+        owner: Owner<'id, Backend<'m>, Disabled>,
+        _: [Slot<'id, ModelCaps>; 2],
+    ) -> Ended<'id, Backend<'m>> {
         match owner.enable().await {
             Ok(_) => panic!("the model refuses"),
             Err(failed) => failed.fail_stop(),
@@ -671,6 +705,56 @@ fn a_refused_enable_can_fail_stop_without_an_uninstall() {
     let model = Model::default();
     model.refuse_enable.set(true);
     let ended = now_ready(run_port(Backend(&model), FailStopRefused));
-    assert!(ended.into_uninstalled().is_none());
+    assert!(ended.is_none());
     assert_eq!(*model.lifecycle.borrow(), ["abandon"]);
+}
+
+/// A first-in, first-out pool of the test, over the permits a mint made.
+struct FifoPool<'id> {
+    free: core::cell::RefCell<std::vec::Vec<Permit<'id, ModelCaps>>>,
+    /// The tickets of the waiting takers, in arrival order.
+    line: core::cell::RefCell<std::collections::VecDeque<u32>>,
+    next: core::cell::Cell<u32>,
+}
+
+impl<'id> PermitPool<'id, ModelCaps> for FifoPool<'id> {
+    fn take(&self) -> impl Future<Output = Permit<'id, ModelCaps>> + '_ {
+        let mut ticket = None;
+        core::future::poll_fn(move |_| {
+            let mine = *ticket.get_or_insert_with(|| {
+                let issued = self.next.get();
+                self.next.set(issued + 1);
+                self.line.borrow_mut().push_back(issued);
+                issued
+            });
+            if self.line.borrow().front() != Some(&mine) {
+                return core::task::Poll::Pending;
+            }
+            match self.free.borrow_mut().pop() {
+                Some(permit) => {
+                    self.line.borrow_mut().pop_front();
+                    core::task::Poll::Ready(permit)
+                }
+                None => core::task::Poll::Pending,
+            }
+        })
+    }
+
+    fn release(&self, permit: Permit<'id, ModelCaps>) {
+        self.free.borrow_mut().push(permit);
+    }
+}
+
+#[test]
+fn a_fifo_permit_pool_meets_the_conformance_rule() {
+    let mut mint = Mint::new();
+    let [held, shared] = mint.permits::<ModelCaps, 2>();
+    let pool = FifoPool {
+        free: core::cell::RefCell::new(std::vec![shared]),
+        line: core::cell::RefCell::default(),
+        next: core::cell::Cell::new(0),
+    };
+    crate::conformance::permits_serve_takers_in_arrival_order(&pool, [held]);
+    // The rule handed every permit back.
+    assert_eq!(pool.free.borrow().len(), 2);
 }

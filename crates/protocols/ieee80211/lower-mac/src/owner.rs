@@ -811,6 +811,53 @@ impl<A: ReceiverAddress> HeaderSpec<A> {
     }
 
     /// The header's length in octets.
+    /// The header at the start of `frame`, as an encoder wrote it, with
+    /// its receiver checked by `receiver`; `None` when it is no data or
+    /// management header, or its receiver is of another kind.
+    pub fn decode(frame: &[u8], receiver: impl FnOnce(MacAddress) -> Option<A>) -> Option<Self> {
+        let address = |at: usize| -> Option<MacAddress> { frame.get(at..at + 6)?.try_into().ok() };
+        let word = |at: usize| -> Option<u16> {
+            Some(u16::from_le_bytes(frame.get(at..at + 2)?.try_into().ok()?))
+        };
+        let frame_control = FrameControl::new(word(0)?)?;
+        let mut at = 24;
+        let address4 = if frame_control.is_four_address() {
+            let address4 = address(at)?;
+            at += 6;
+            Some(address4)
+        } else {
+            None
+        };
+        let qos = if frame_control.is_qos_data() {
+            let field = word(at)?;
+            at += 2;
+            Some(QosControl {
+                tid: Tid::new((field & 0x0f) as u8)?,
+                end_of_service_period: field & 0x0010 != 0,
+                amsdu_present: field & 0x0080 != 0,
+                high: (field >> 8) as u8,
+            })
+        } else {
+            None
+        };
+        let ht_control = if frame_control.has_ht_control() {
+            Some(frame.get(at..at + 4)?.try_into().ok()?)
+        } else {
+            None
+        };
+        Self::new(
+            frame_control,
+            word(2)?,
+            receiver(address(4)?)?,
+            address(10)?,
+            address(16)?,
+            word(22)?,
+            address4,
+            qos,
+            ht_control,
+        )
+    }
+
     pub fn len(&self) -> usize {
         24 + 6 * usize::from(self.address4.is_some())
             + 2 * usize::from(self.qos.is_some())

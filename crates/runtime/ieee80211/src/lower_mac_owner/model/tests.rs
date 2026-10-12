@@ -674,3 +674,67 @@ fn an_attempt_the_closing_gate_aborts_comes_back_fresh_without_a_transmission() 
     assert!(seen.untouched, "the MPDU is as it was written");
     assert!(air.sent().is_empty());
 }
+
+/// Cancels `next_event` every way a body can: dropped after a pending
+/// poll, dropped unpolled, and losing a `select` to a ready branch. Each
+/// frame the air brought still arrives once, in order.
+struct CancelTheEvent<'t> {
+    air: &'t ModelAir,
+    received: &'t RefCell<Vec<u8>>,
+}
+
+impl Work for CancelTheEvent<'_> {
+    async fn work<'p, 'id: 'p>(self, phase: &mut ModelPhase<'p, 'id>, _: ModelResources<'id>) {
+        let meta = ModelRxMeta::new(Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap(), -40, -95);
+        let mut context = core::task::Context::from_waker(Waker::noop());
+        // Dropped after a pending poll, before the frame arrives.
+        {
+            let event = core::pin::pin!(phase.next_event());
+            assert!(Future::poll(event, &mut context).is_pending());
+        }
+        self.air.receive(&[0x80, 0, 1, 0], meta);
+        for _ in 0..10 {
+            yield_now().await;
+        }
+        // Dropped unpolled, with the frame queued.
+        drop(phase.next_event());
+        // Losing a select to a branch that is ready first.
+        match embassy_futures::select::select(core::future::ready(()), phase.next_event()).await {
+            embassy_futures::select::Either::First(()) => {}
+            embassy_futures::select::Either::Second(_) => panic!("the ready branch wins"),
+        }
+        self.air.receive(&[0x80, 0, 2, 0], meta);
+        for _ in 0..10 {
+            yield_now().await;
+        }
+        // Each frame once, in order.
+        for _ in 0..2 {
+            match phase.next_event().await {
+                Ok(Ok(LowerMacEvent::Received { frame, .. })) => {
+                    self.received.borrow_mut().push(frame.bytes()[2]);
+                    phase.recycle(frame);
+                }
+                _ => panic!("a received frame"),
+            }
+        }
+        let event = core::pin::pin!(phase.next_event());
+        assert!(
+            Future::poll(event, &mut context).is_pending(),
+            "nothing more"
+        );
+    }
+}
+
+#[test]
+fn a_cancelled_next_event_loses_no_event() {
+    let (backend, air) = backend();
+    let received = RefCell::new(Vec::new());
+    block_on(run_port(
+        backend,
+        Body(CancelTheEvent {
+            air: &air,
+            received: &received,
+        }),
+    ));
+    assert_eq!(*received.borrow(), [1, 2]);
+}

@@ -55,8 +55,9 @@ pub trait PhaseAggregate<'id> {
     /// The phase types whose buffers the subframes take.
     type Types: PhaseTypes<'id>;
 
-    /// Append `frame` in `buffer`, with its body, and lend its body octets
-    /// to write.
+    /// Append the new MPDU `frame` that the fresh `buffer` holds, encoded
+    /// from its header on, with its body. Under a key the backend numbers
+    /// it at its first transmission ([protected frames](crate::phase#protected-frames)).
     ///
     /// # Errors
     ///
@@ -65,10 +66,43 @@ pub trait PhaseAggregate<'id> {
     #[allow(clippy::type_complexity, reason = "the subframe given back")]
     fn push<C>(
         &mut self,
-        buffer: Slot<'id, C>,
+        buffer: <Self::Types as TxBufferPool<'id, C>>::Buffer,
         frame: SizedFrame<AckHeader, Self::Caps>,
         body: Option<Self::Body>,
-    ) -> Result<&mut [u8], (Slot<'id, C>, SizedFrame<AckHeader, Self::Caps>, Option<Self::Body>)>
+    ) -> Result<
+        (),
+        (
+            <Self::Types as TxBufferPool<'id, C>>::Buffer,
+            SizedFrame<AckHeader, Self::Caps>,
+            Option<Self::Body>,
+        ),
+    >
+    where
+        C: TxBufferClass,
+        Self::Types: TxBufferPool<'id, C>;
+
+    /// Append the MPDU a numbered `buffer` holds, again: a subframe its
+    /// Block Ack did not acknowledge. The backend leaves its CCMP header,
+    /// and so its packet number, as it is, and numbers the aggregate's new
+    /// subframes ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6131631789)).
+    ///
+    /// # Errors
+    ///
+    /// The buffer, frame and body, as [`Self::push`]'s.
+    #[allow(clippy::type_complexity, reason = "the subframe given back")]
+    fn push_retransmission<C>(
+        &mut self,
+        buffer: <Self::Types as TxBufferPool<'id, C>>::Numbered,
+        frame: SizedFrame<AckHeader, Self::Caps>,
+        body: Option<Self::Body>,
+    ) -> Result<
+        (),
+        (
+            <Self::Types as TxBufferPool<'id, C>>::Numbered,
+            SizedFrame<AckHeader, Self::Caps>,
+            Option<Self::Body>,
+        ),
+    >
     where
         C: TxBufferClass,
         Self::Types: TxBufferPool<'id, C>;

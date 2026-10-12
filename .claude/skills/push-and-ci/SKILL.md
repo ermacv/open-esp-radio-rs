@@ -33,10 +33,11 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
 5. **Commit** scoped Conventional commits: `feat(scope): …`, `fix(esp32s31): …`.
    A production change needed by Blobray or verification work is its own commit.
    The pull request merges by rebase, so each commit lands on `main` as is.
-6. **Push** with `cargo xtask push` in the background: it fetches
-   `origin/main` and refuses a branch that lacks any of its commits, naming
-   them (rebase with `git rebase origin/main` and push again; a failed fetch
-   refuses too), gates exactly `HEAD`, runs the local Claude review of the branch's diff in a separate
+6. **Push** with `cargo xtask push` in the background: before the gate and
+   again right before `git push`, it fetches `origin/main` and refuses a
+   branch that lacks any of its commits, naming them (rebase with
+   `git rebase origin/main` and push again; a failed fetch refuses too). It
+   gates exactly `HEAD`, runs the local Claude review of the branch's diff in a separate
    Claude Code process (`cargo xtask review`, minutes; an unchanged diff
    reuses its verdict) and refuses a 🔴 or 🟡 finding, pushes the branch, opens the pull request titled by its first
    commit (`gh pr create --fill-first`), files the review's 🔵 wording

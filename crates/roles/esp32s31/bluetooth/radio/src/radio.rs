@@ -44,7 +44,6 @@ use oer_esp32s31_bluetooth_memory::{
 use oer_esp32s31_hal::bluetooth::{
     BluetoothControllerReset, BluetoothControllerTimeScale, BluetoothSchedulerStopped,
 };
-use oer_esp32s31_hal::shared_radio::ClientQuiescence;
 
 /// Reservations may end at most this far after the current time; wrapping
 /// controller time orders windows only within a half-range.
@@ -1038,15 +1037,6 @@ impl<
     /// The stopped receipt the executor holds.
     pub const fn stopped(&self) -> Option<&BluetoothSchedulerStopped> {
         self.executor.stopped()
-    }
-
-    /// Proof for the PHY arbiter that Bluetooth stays quiet while the
-    /// scheduler is stopped. The proof borrows the radio, so nothing can
-    /// resume the scheduler while it lives.
-    pub fn quiescence(&self) -> Option<ClientQuiescence<'_>> {
-        self.executor
-            .stopped()
-            .map(ClientQuiescence::bluetooth_stopped)
     }
 
     /// Consume the stopped receipt against a fresh time sample.

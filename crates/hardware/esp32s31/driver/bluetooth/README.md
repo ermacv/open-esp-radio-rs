@@ -22,7 +22,7 @@ inventory.
 | `controller_hal` | Controller HAL component initialization on the HAL's clocked Bluetooth client of the shared radio |
 | `controller_time` | Event-driven Controller-time latch and scheduler-epoch projection |
 | `ble_phy` | BLE PHY engine initialization, activation into the runtime owners and the retained PHY membership and BLE PHY/DF graph |
-| `phy` | Entry into and exit from the shared PHY domain and BTBB, and the quiescence proof for tracking due at the join |
+| `phy` | Entry into and exit from the shared PHY domain and BTBB |
 | `interrupt` | Chip interrupt state and hardware handling |
 | `modem_timer` | Controller modem low-power timer task over the published timer owner |
 | `scheduler` | Event executor (idle and live insertion, cancellation, list deletion, completion, stopped state), ordered hardware-list mirror, raw windows, timing policy, list-zero hardware execution and finished lists |

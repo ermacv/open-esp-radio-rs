@@ -650,8 +650,6 @@ pub enum Ieee802154SessionPhyMaintenance {
     NotDue,
     /// Tracking ran with the radio running.
     Tracked,
-    /// Tracking is due, but another radio client is active.
-    AwaitingOtherClients,
     /// The domain rejected the maintenance or tracking failed.
     #[default]
     Failed,
@@ -662,7 +660,6 @@ pub enum Ieee802154SessionPhyMaintenance {
 pub struct Ieee802154SessionMaintenanceCounts {
     pub not_due: u16,
     pub tracked: u16,
-    pub awaiting_other_clients: u16,
     /// An attempt failed and background maintenance ended.
     pub failed: bool,
 }

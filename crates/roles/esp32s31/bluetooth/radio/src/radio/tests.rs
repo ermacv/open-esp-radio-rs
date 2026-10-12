@@ -986,26 +986,17 @@ fn a_power_below_the_provider_table_is_not_supported() {
 }
 
 #[test]
-fn a_stopped_scheduler_yields_the_bluetooth_quiescence_proof() {
+fn the_stopped_receipt_is_held_until_resume() {
     let mut radio = radio();
-    assert!(radio.quiescence().is_none());
+    assert!(radio.stopped().is_none());
     radio
         .enter_stopped(oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopped::for_validation())
         .unwrap();
-    let proof = radio.quiescence().expect("the stopped receipt is held");
-    assert_eq!(
-        proof.client(),
-        oer_esp32s31_hal::shared_radio::RadioClient::Bluetooth
-    );
-    assert_eq!(
-        proof.span(),
-        oer_esp32s31_hal::shared_radio::QuiescentSpan::Stopped
-    );
-    drop(proof);
+    assert!(radio.stopped().is_some());
     radio
         .resume(&ControllerTimeSample::for_validation(0))
         .unwrap();
-    assert!(radio.quiescence().is_none());
+    assert!(radio.stopped().is_none());
     assert!(
         radio
             .resume(&ControllerTimeSample::for_validation(0))

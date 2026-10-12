@@ -76,9 +76,7 @@ pub(super) async fn measure(
     let tick = match tick {
         Ok(ConcurrentTrackingTick::Tracked(_)) => PhyTrackingHoldTick::Tracked,
         Ok(ConcurrentTrackingTick::NotDue) => PhyTrackingHoldTick::NotDue,
-        Ok(ConcurrentTrackingTick::Unavailable(_) | ConcurrentTrackingTick::AwaitingQuiescence) => {
-            PhyTrackingHoldTick::Skipped
-        }
+        Ok(ConcurrentTrackingTick::Unavailable(_)) => PhyTrackingHoldTick::Skipped,
         Err(_) => PhyTrackingHoldTick::Failed,
     };
     evidence(tick, clients, &recorder.report())

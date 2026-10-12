@@ -36,7 +36,7 @@ level = "lower-primitive"
 [source-facts.source-contract]
 id = "bluetooth-initial-phy-handoff"
 composition = "production"
-scope = "Common radio power and Bluetooth module clocks through the shared radio arbiter, arbiter-owned PHY registration or RF wake, then Bluetooth-client and BTBB membership with initial tracking inside the Controller's quiescence window when due at the join"
+scope = "Common radio power and Bluetooth module clocks through the shared radio arbiter, arbiter-owned PHY registration or RF wake, then Bluetooth-client and BTBB membership with initial tracking at once under the arbiter lease when due at the join"
 limits = "This bounded handoff retains fail-stop ownership after the first Controller write; the parent also requires periodic maintenance and final physical release"
 source-paths = [
   "crates/hardware/esp32s31/driver/bluetooth/src/phy.rs",
@@ -52,8 +52,8 @@ level = "composed-product"
 [source-facts.source-contract]
 id = "bluetooth-idle-phy-maintenance"
 composition = "production"
-scope = "Run due shared-PHY tracking while the idle Bluetooth Controller is a PHY client, under the vendor policy: the radio system's periodic tracking timer runs the tracking transaction under the PHY lock and grant protection without stopping the Controller's HCI, role or interrupt epochs"
-limits = "The stricter quiesced policy, which would pause the Controller around tracking, is not composed. Thermal and RF qualification remain separate"
+scope = "Run due shared-PHY tracking while the idle Bluetooth Controller is a PHY client, as the vendor does: the radio system's periodic tracking timer runs the tracking transaction under the PHY lock and grant protection without stopping the Controller's HCI, role or interrupt epochs"
+limits = "Thermal and RF qualification remain separate"
 source-paths = [
   "crates/runtime/esp32s31/radio/src/system.rs",
   "crates/hardware/esp32s31/phy/src/concurrent.rs",
@@ -69,7 +69,7 @@ level = "composed-product"
 id = "bluetooth-periodic-phy-maintenance"
 composition = "production"
 scope = "Periodic shared-PHY tracking throughout the Bluetooth Controller lifetime as ESP-IDF's phy_track_pll timer does, without pausing advertising, scanning, connection or Direct Test Mode events"
-limits = "Tracking does not wait for a gap between Bluetooth events; the vendor policy relies on the PHY lock and grant protection. Qualified worst-case execution, thermal and RF bounds remain separate"
+limits = "Tracking does not wait for a gap between Bluetooth events; the vendor admission relies on the PHY lock and grant protection. Qualified worst-case execution, thermal and RF bounds remain separate"
 source-paths = [
   "crates/runtime/esp32s31/radio/src/system.rs",
   "crates/hardware/esp32s31/phy/src/concurrent.rs",
@@ -141,7 +141,6 @@ source-paths = [
   "crates/hardware/esp32s31/phy/src/executor.rs",
   "crates/hardware/esp32s31/phy/src/executor/wait/poll.rs",
   "crates/hardware/esp32s31/phy/src/executor/wait/tx.rs",
-  "crates/hardware/esp32s31/phy/src/tracking/deadline.rs",
 ]
 
 [[source-facts]]
@@ -2016,7 +2015,7 @@ section = "phy-calibration-state-and-tracking"
 title = "Periodic tracking service"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "[Client state](src/state/client.rs) evaluates tracking deadlines, and the radio system's periodic timer runs one `track_concurrent_phy` tick every tracking period under the shared domain's admission policy: by default the vendor admission, which tracks with every protocol running and brackets the RF-sensitive regions with the grant-protect request. There is no protocol-selected maintenance of individual operations. Tracking under concurrent traffic is not HIL-qualified."
+scope-and-limitations = "[Client state](src/state/client.rs) evaluates tracking deadlines, and the radio system's periodic timer runs one `track_concurrent_phy` tick every tracking period; due tracking starts at once under the vendor admission, the domain's only one, which tracks with every protocol running and brackets the RF-sensitive regions with the grant-protect request. There is no protocol-selected maintenance of individual operations. Tracking under concurrent traffic is not HIL-qualified."
 packages = ["oer-esp32s31-phy"]
 
 [[items]]

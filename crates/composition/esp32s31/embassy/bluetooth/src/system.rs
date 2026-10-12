@@ -6,7 +6,6 @@ use core::cell::Cell;
 use critical_section::Mutex;
 use embassy_futures::select::{Either, Either4, select, select4};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
-use embassy_time::Instant;
 use oer_bluetooth_hci::BluetoothPublicDeviceAddress;
 use oer_bluetooth_radio::RadioActivity;
 use oer_esp32s31_bluetooth::{
@@ -101,10 +100,6 @@ const RX_PACKETS: usize = 4;
 /// Worst-case accuracy of the board's sleep clock. 500 ppm is the largest
 /// value the Link Layer defines; the qualified secure GATT peripheral used it.
 const LOCAL_SLEEP_CLOCK_PPM: u16 = 500;
-/// Window the joining Controller grants shared PHY tracking. No scheduler
-/// work can start before the BLE PHY engine is initialized, so the bound
-/// only limits how long tracking may hold the shared PHY.
-const TRACKING_WINDOW_MICROS: u64 = 1_000_000;
 
 type Storage = PublishedEspHalBluetoothInterruptOwners;
 
@@ -911,8 +906,7 @@ fn unwind_powered(
 /// 2. run the Controller HAL, scheduler and modem low-power initialization;
 /// 3. prepare the shared PHY through the radio system (register the domain
 ///    when no client did, or wake its closed RF), join it and the shared
-///    BTBB baseband, and run PHY tracking inside the Controller's quiescence
-///    window when the join makes it due;
+///    BTBB baseband, and run PHY tracking at once when the join makes it due;
 /// 4. enable the BLE base stack and publish the public address;
 /// 5. prepare the Controller output, start the runtime timer, publish both
 ///    interrupt owners and bind the three CPU routes to one dispatcher;
@@ -1021,7 +1015,7 @@ pub async fn start<P, C: PlatformClockProvider>(
     };
     let joined = controller.join_phy(ready, &EmbassyClock);
     let (lease, platform, _) = guard.parts();
-    let (mut joined, acquired) = match joined {
+    let (joined, acquired) = match joined {
         Ok(joined) => joined,
         Err(failure) => {
             let error = BluetoothStartError::PhyClient(failure.error());
@@ -1033,22 +1027,13 @@ pub async fn start<P, C: PlatformClockProvider>(
         }
     };
     if acquired == ConcurrentAcquire::TrackingDue {
-        let issued_at = Instant::now().as_micros();
-        let tracked = match joined.quiescence(issued_at, issued_at + TRACKING_WINDOW_MICROS) {
-            Ok(proof) => {
-                maintain_concurrent_phy::<P, RomShortDelay, _>(
-                    &EmbassyClock,
-                    lease,
-                    platform,
-                    &[proof],
-                    NoopPhyTargetObserver,
-                )
-                .await
-            }
-            Err(_) => Err(ConcurrentPhyTrackingError::Rejected(
-                ConcurrentPhyError::WindowClosed,
-            )),
-        };
+        let tracked = maintain_concurrent_phy::<P, RomShortDelay, _>(
+            &EmbassyClock,
+            lease,
+            platform,
+            NoopPhyTargetObserver,
+        )
+        .await;
         match tracked {
             Ok(_outcome) => {}
             Err(ConcurrentPhyTrackingError::Rejected(error)) => {

@@ -149,26 +149,6 @@ fn the_arbiter_stays_while_btbb_is_held() {
 }
 
 #[test]
-fn an_until_proof_needs_a_non_empty_window() {
-    let mut wifi =
-        oer_esp32s31_pac::WifiRadioRegisters::new(RadioPartitions::for_validation().wifi_mac);
-    assert_eq!(
-        ClientQuiescence::until(&mut wifi, 20, 20).err(),
-        Some(EmptyQuiescentWindow)
-    );
-    let proof = ClientQuiescence::until(&mut wifi, 10, 20)
-        .unwrap_or_else(|_| panic!("a non-empty window is accepted"));
-    assert_eq!(proof.client(), RadioClient::Wifi);
-    assert_eq!(
-        proof.span(),
-        QuiescentSpan::Until {
-            issued_at_micros: 10,
-            release_by_micros: 20
-        }
-    );
-}
-
-#[test]
 fn a_client_cannot_disable_modem_clocks_it_never_enabled() {
     let wifi =
         oer_esp32s31_pac::WifiRadioRegisters::new(RadioPartitions::for_validation().wifi_mac);

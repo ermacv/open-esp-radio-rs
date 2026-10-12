@@ -1,7 +1,7 @@
 use oer_esp32s31_hal::{
     owner::PhyInitializationAccess,
     root::RadioHardware,
-    shared_radio::{ClientQuiescence, QuiescentSpan, RadioClient, SharedRadio},
+    shared_radio::{RadioClient, SharedRadio},
 };
 use oer_time_virtual::VirtualClock;
 
@@ -43,16 +43,6 @@ fn rf_closed_arbiter() -> SharedRadio<ConcurrentPhy> {
         ));
     }
     radio
-}
-
-fn until(client: RadioClient, issued_at: u64, release_by: u64) -> ClientQuiescence<'static> {
-    ClientQuiescence::for_validation(
-        client,
-        QuiescentSpan::Until {
-            issued_at_micros: issued_at,
-            release_by_micros: release_by,
-        },
-    )
 }
 
 #[test]
@@ -108,7 +98,7 @@ fn an_unregistered_domain_rejects_every_client_operation() {
         Err(ConcurrentPhyError::NotRegistered)
     );
     assert_eq!(
-        admit_maintenance(&lease, &[], 0),
+        admit_maintenance(&lease),
         Err(ConcurrentPhyError::NotRegistered)
     );
 }
@@ -124,7 +114,7 @@ fn due_tracking_blocks_clients_until_maintenance_is_admitted() {
         Ok(ConcurrentAcquire::Settled)
     );
     assert_eq!(
-        admit_maintenance(&lease, &[], 0),
+        admit_maintenance(&lease),
         Err(ConcurrentPhyError::NoTrackingPending)
     );
     // One period later the periodic callback requests tracking.
@@ -146,118 +136,8 @@ fn due_tracking_blocks_clients_until_maintenance_is_admitted() {
         ),
         Err(ConcurrentPhyError::TrackingPending)
     );
-    // The vendor policy admits pending tracking with the client running.
-    assert_eq!(
-        lease.attachment().maintenance_policy(),
-        MaintenancePolicy::Vendor
-    );
-    assert_eq!(
-        admit_maintenance(&lease, &[], 5).map(MaintenanceAdmission::release_by_micros),
-        Ok(None)
-    );
-    // The quiesced policy requires a proof from every active client.
-    lease
-        .attachment_mut()
-        .set_maintenance_policy(MaintenancePolicy::Quiesced);
-    assert_eq!(
-        admit_maintenance(&lease, &[], 5),
-        Err(ConcurrentPhyError::MissingQuiescence(RadioClient::Wifi))
-    );
-    assert_eq!(
-        admit_maintenance(&lease, &[until(RadioClient::Wifi, 1, 100)], 5)
-            .map(MaintenanceAdmission::release_by_micros),
-        Ok(Some(100))
-    );
-}
-
-#[test]
-fn the_vendor_policy_ignores_proofs_and_still_needs_pending_tracking() {
-    let radio = registered_arbiter();
-    let mut lease = radio
-        .try_acquire()
-        .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
-    assert_eq!(
-        enter_client(
-            &mut lease,
-            RadioClient::Ieee802154,
-            &VirtualClock::<8>::new()
-        ),
-        Ok(ConcurrentAcquire::Settled)
-    );
-    // Nothing is due: the vendor policy does not invent maintenance.
-    assert_eq!(
-        admit_maintenance(&lease, &[], 0),
-        Err(ConcurrentPhyError::NoTrackingPending)
-    );
-    assert_eq!(
-        evaluate_periodic_tracking(
-            &mut lease,
-            &VirtualClock::<8>::starting_at(oer_time::Instant::from_micros(
-                DEFAULT_PLL_TRACK_PERIOD_MICROS
-            ))
-        ),
-        Ok(true)
-    );
-    // A closed proof window does not matter under the vendor policy.
-    assert_eq!(
-        admit_maintenance(&lease, &[until(RadioClient::Ieee802154, 1, 2)], 5)
-            .map(MaintenanceAdmission::release_by_micros),
-        Ok(None)
-    );
-}
-
-#[test]
-fn admission_takes_the_earliest_window_and_ignores_inactive_clients() {
-    let mut clients = PhyClientState::without_registration(DEFAULT_PLL_TRACK_PERIOD_MICROS);
-    for client in [RadioClient::Wifi, RadioClient::Bluetooth] {
-        clients = clients
-            .acquire(client, &VirtualClock::<8>::new())
-            .unwrap_or_else(|_| panic!("acquisition"))
-            .into_owner()
-            .unwrap_or_else(|_| panic!("no tracking at time zero"));
-    }
-    let active = clients.snapshot();
-    let stopped =
-        || ClientQuiescence::for_validation(RadioClient::Bluetooth, QuiescentSpan::Stopped);
-
-    assert_eq!(
-        admit(active, &[until(RadioClient::Wifi, 1, 100), stopped()], 10)
-            .map(MaintenanceAdmission::release_by_micros),
-        Ok(Some(100))
-    );
-    // An inactive IEEE 802.15.4 proof neither satisfies nor narrows admission.
-    assert_eq!(
-        admit(
-            active,
-            &[
-                until(RadioClient::Wifi, 1, 100),
-                until(RadioClient::Bluetooth, 1, 60),
-                until(RadioClient::Ieee802154, 1, 20),
-            ],
-            10
-        )
-        .map(MaintenanceAdmission::release_by_micros),
-        Ok(Some(60))
-    );
-    assert_eq!(
-        admit(active, &[until(RadioClient::Wifi, 1, 100)], 10),
-        Err(ConcurrentPhyError::MissingQuiescence(
-            RadioClient::Bluetooth
-        ))
-    );
-    assert_eq!(
-        admit(active, &[until(RadioClient::Wifi, 20, 100), stopped()], 10),
-        Err(ConcurrentPhyError::ClockBehindProof)
-    );
-    assert_eq!(
-        admit(active, &[until(RadioClient::Wifi, 1, 10), stopped()], 10),
-        Err(ConcurrentPhyError::WindowClosed)
-    );
-    let wifi_stopped = ClientQuiescence::for_validation(RadioClient::Wifi, QuiescentSpan::Stopped);
-    assert_eq!(
-        admit(active, &[wifi_stopped, stopped()], 10).map(MaintenanceAdmission::release_by_micros),
-        Ok(None)
-    );
+    // Pending tracking is admitted with the client running, as the vendor's.
+    assert_eq!(admit_maintenance(&lease), Ok(()));
 }
 
 #[test]
@@ -286,10 +166,7 @@ fn a_closed_domain_admits_no_client_until_rf_wakes() {
         evaluate_periodic_tracking(&mut lease, &VirtualClock::<8>::new()),
         Err(ConcurrentPhyError::RfClosed)
     );
-    assert_eq!(
-        admit_maintenance(&lease, &[], 0),
-        Err(ConcurrentPhyError::RfClosed)
-    );
+    assert_eq!(admit_maintenance(&lease), Err(ConcurrentPhyError::RfClosed));
     // RF close takes only an open domain; the closed one stays closed.
     assert!(matches!(
         lease.attachment_mut().idle_domain(),

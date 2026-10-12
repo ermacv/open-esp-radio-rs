@@ -4,14 +4,13 @@
 use super::*;
 use crate::{
     concurrent::{
-        ConcurrentPhy, ConcurrentPhyError, MaintenancePolicy, Slot, admit_maintenance,
-        evaluate_periodic_tracking,
+        ConcurrentPhy, ConcurrentPhyError, Slot, admit_maintenance, evaluate_periodic_tracking,
     },
     domain::PhyDomain,
     state::client::RadioClient,
 };
 use oer_esp32s31_hal::shared_radio::{
-    ClientQuiescence, ModemClockError, PhyClockModule, PlatformClockProvider, SharedRadioLease,
+    ModemClockError, PhyClockModule, PlatformClockProvider, SharedRadioLease,
 };
 use oer_phy_trace::{
     ChannelResult, PoisonedBy, Registration, RfLifecycle, RfOperation, RfResult, TrackingTick,
@@ -416,12 +415,13 @@ where
         .map_err(ConcurrentRfError::Clock)
 }
 
-/// Run the pending tracking request once every active client proves
-/// quiescence.
+/// Run the pending tracking request with the protocols running, as the
+/// vendor's tracking does under its PHY lock: the lease is that lock, and the
+/// tracking graph brackets its RF-sensitive regions with the grant-protect
+/// request.
 ///
-/// Admission is checked at the current PHY clock before any register access;
-/// a rejection keeps the domain pending. With a `Until` proof, tracking runs
-/// inside the earliest window: completion at or after it poisons the domain.
+/// A domain without pending tracking is rejected before any register
+/// access.
 ///
 /// # Cancellation
 ///
@@ -432,31 +432,13 @@ pub async fn maintain_concurrent_phy<P, D, O>(
     timer: &impl oer_time::Timer,
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     platform: &mut P,
-    proofs: &[ClientQuiescence<'_>],
     observer: O,
 ) -> Result<PhyParamTrackingOutcome, ConcurrentPhyTrackingError>
 where
     D: PhyShortDelay,
     O: PhyTargetObserver,
 {
-    let now = timer.now().as_micros();
-    let admission =
-        admit_maintenance(lease, proofs, now).map_err(ConcurrentPhyTrackingError::Rejected)?;
-    let deadline = match admission.release_by_micros() {
-        Some(release_by) => {
-            match core::num::NonZeroU64::new(release_by - now)
-                .and_then(|budget| crate::tracking::deadline::TrackingDeadline::new(now, budget))
-            {
-                Some(deadline) => Some(deadline),
-                None => {
-                    return Err(ConcurrentPhyTrackingError::Rejected(
-                        ConcurrentPhyError::WindowClosed,
-                    ));
-                }
-            }
-        }
-        None => None,
-    };
+    admit_maintenance(lease).map_err(ConcurrentPhyTrackingError::Rejected)?;
 
     let (mut registered, pending) = match core::mem::take(lease.attachment_mut().slot_mut()) {
         Slot::Pending {
@@ -499,22 +481,9 @@ where
             timer,
             observer,
         );
-        match deadline {
-            Some(deadline) => crate::tracking::deadline::run(
-                deadline,
-                || Some(timer.now().as_micros()),
-                |remaining| {
-                    delay::<D, _>(timer, crate::executor::wait::Kind::Completion, remaining)
-                },
-                run_phy_param_tracking(&mut tracking, state, &mut port),
-            )
+        run_phy_param_tracking(&mut tracking, state, &mut port)
             .await
-            .map_err(TargetPhyParamTrackingError::Deadline)
-            .and_then(|result| result.map_err(TargetPhyParamTrackingError::Run)),
-            None => run_phy_param_tracking(&mut tracking, state, &mut port)
-                .await
-                .map_err(TargetPhyParamTrackingError::Run),
-        }
+            .map_err(TargetPhyParamTrackingError::Run)
     };
     let outcome = match result {
         Ok(outcome) => outcome,
@@ -564,19 +533,13 @@ pub enum ConcurrentTrackingTick {
     /// The domain cannot track now (not registered, RF closed, or poisoned);
     /// nothing changed.
     Unavailable(ConcurrentPhyError),
-    /// Tracking is due, but the domain's [`MaintenancePolicy::Quiesced`]
-    /// needs client proofs; run [`maintain_concurrent_phy`] with them.
-    AwaitingQuiescence,
 }
 
 /// One tick of ESP-IDF's periodic `phy_track_pll`: evaluate the clients'
-/// tracking period and, when tracking is due, run it under the domain's
-/// admission policy.
-///
-/// Under [`MaintenancePolicy::Vendor`] the tracking transaction runs at once
-/// with protocols running, as the vendor timer callback does under its PHY
-/// lock; the lease is that lock, and the tracking graph brackets its
-/// RF-sensitive regions with the grant-protect request.
+/// tracking period and, when tracking is due, run it at once with the
+/// protocols running, as the vendor timer callback does under its PHY lock;
+/// the lease is that lock, and the tracking graph brackets its RF-sensitive
+/// regions with the grant-protect request.
 ///
 /// # Errors
 ///
@@ -607,7 +570,6 @@ where
         Ok(ConcurrentTrackingTick::Unavailable(error)) => {
             TrackingTick::Unavailable(crate::trace::refusal(*error))
         }
-        Ok(ConcurrentTrackingTick::AwaitingQuiescence) => TrackingTick::AwaitingQuiescence,
         Err(ConcurrentPhyTrackingError::Rejected(error)) => {
             TrackingTick::Refused(crate::trace::refusal(*error))
         }
@@ -650,10 +612,7 @@ where
     if !due {
         return Ok(ConcurrentTrackingTick::NotDue);
     }
-    if lease.attachment().maintenance_policy() == MaintenancePolicy::Quiesced {
-        return Ok(ConcurrentTrackingTick::AwaitingQuiescence);
-    }
-    maintain_concurrent_phy::<P, D, O>(timer, lease, platform, &[], observer)
+    maintain_concurrent_phy::<P, D, O>(timer, lease, platform, observer)
         .await
         .map(ConcurrentTrackingTick::Tracked)
 }

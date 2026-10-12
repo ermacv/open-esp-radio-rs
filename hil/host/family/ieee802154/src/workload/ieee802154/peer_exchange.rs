@@ -17,9 +17,8 @@
 //!    device's acknowledgement of the peer's data request carries frame
 //!    pending, and its enhanced ACK of the peer's 2015 frame is the one
 //!    IEEE 802.15.4-2015 prescribes;
-//! 5. after one tracking period, the device runs shared PHY tracking inside
-//!    its own quiescence window and then exchanges one acknowledged frame in
-//!    each direction again.
+//! 5. after one tracking period, the device runs shared PHY tracking and then
+//!    exchanges one acknowledged frame in each direction again.
 
 use std::{path::Path, time::Duration};
 

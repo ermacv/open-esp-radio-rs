@@ -54,7 +54,7 @@ pub struct PhyTrackingEvidence {
     pub tracked: u32,
     /// Ticks with no tracking due.
     pub not_due: u32,
-    /// Ticks the domain could not serve (not registered, RF closed) or that
-    /// awaited client quiescence.
+    /// Ticks the domain could not serve (not registered, RF closed, or
+    /// poisoned).
     pub skipped: u32,
 }

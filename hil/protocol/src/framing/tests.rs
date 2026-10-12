@@ -1741,7 +1741,6 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
             maintenance: crate::ieee802154::Ieee802154SessionMaintenanceCounts {
                 not_due: u16::MAX,
                 tracked: u16::MAX,
-                awaiting_other_clients: u16::MAX,
                 failed: true,
             },
             coexistence: crate::ieee802154::Ieee802154SessionCoexistence {

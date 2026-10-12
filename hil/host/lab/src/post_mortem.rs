@@ -544,7 +544,7 @@ exit 1
             poison: Poison {
                 by: PoisonedBy::Tracking,
                 fault: Fault {
-                    stage: FaultStage::Deadline,
+                    stage: FaultStage::Hardware,
                     detail: 0xbeef,
                 },
             },

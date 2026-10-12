@@ -53,12 +53,7 @@ pub(crate) const fn refusal(error: ConcurrentPhyError) -> Refusal {
         ConcurrentPhyError::Acquire(_) => Refusal::Acquire,
         ConcurrentPhyError::Release(_) => Refusal::Release,
         ConcurrentPhyError::Time(_) => Refusal::Time,
-        ConcurrentPhyError::MissingQuiescence(missing) => {
-            Refusal::MissingQuiescence(client(missing))
-        }
         ConcurrentPhyError::ClientAbsent(absent) => Refusal::ClientAbsent(client(absent)),
-        ConcurrentPhyError::ClockBehindProof => Refusal::ClockBehindProof,
-        ConcurrentPhyError::WindowClosed => Refusal::WindowClosed,
     }
 }
 

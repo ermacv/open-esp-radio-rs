@@ -12,24 +12,19 @@
 //! tracking transaction runs. A failed or cancelled tracking transaction
 //! poisons the domain until reset.
 //!
-//! [`MaintenancePolicy`] decides when pending tracking may start. The default
-//! [`MaintenancePolicy::Vendor`] follows ESP-IDF: `phy_param_track_tot` runs
+//! Pending tracking starts as ESP-IDF's does: `phy_param_track_tot` runs
 //! from a periodic timer under the PHY lock alone, without pausing any
 //! protocol, and its RF-sensitive regions carry the grant-protect request.
-//! Here the arbiter lease is that lock and the tracking graph emits the
-//! grant brackets. [`MaintenancePolicy::Quiesced`] is a stricter local
-//! policy: tracking starts only when every active client presents a
-//! [`ClientQuiescence`] proof, and it must finish before the earliest window
-//! any proof grants.
+//! Here the arbiter lease is that lock and the tracking graph emits the grant
+//! brackets; a protocol operation that loses RF to it ends with its ordinary
+//! outcome.
 //!
 //! The domain also owns its modem clock modules, as ESP-IDF's `esp_phy_enable`
 //! and `esp_phy_disable` do: `PHY` is held while RF is open, and
 //! `PHY_CALIBRATION` only while registration or RF wake runs. After the last
 //! client leaves, closing RF releases `PHY`; waking RF takes it again.
 
-use oer_esp32s31_hal::shared_radio::{
-    ClientQuiescence, ModemClockError, QuiescentSpan, RadioClient, SharedRadioLease,
-};
+use oer_esp32s31_hal::shared_radio::{ModemClockError, RadioClient, SharedRadioLease};
 
 use crate::{
     PhyState, RegisteredPhyState,
@@ -40,23 +35,10 @@ use crate::{
     },
 };
 
-/// When pending tracking may start.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum MaintenancePolicy {
-    /// ESP-IDF's admission: the arbiter lease alone, with protocols running.
-    /// The tracking graph's grant-protect brackets raise the PHY's
-    /// coexistence priority around its RF-sensitive regions.
-    #[default]
-    Vendor,
-    /// Every active client first proves quiescence for the whole transaction.
-    Quiesced,
-}
-
 /// State of the shared PHY domain kept under the arbiter.
 #[derive(Default)]
 pub struct ConcurrentPhy {
     slot: Slot,
-    policy: MaintenancePolicy,
 }
 
 #[derive(Default)]
@@ -108,14 +90,8 @@ pub enum ConcurrentPhyError {
     Release(PhyClientReleaseError),
     /// The tracking clock was rejected.
     Time(PhyTrackTimeError),
-    /// An active client presented no quiescence proof.
-    MissingQuiescence(RadioClient),
     /// The client this operation serves is not in the domain's client set.
     ClientAbsent(RadioClient),
-    /// The PHY clock is behind a proof's paired sample.
-    ClockBehindProof,
-    /// A proof's window has already closed.
-    WindowClosed,
 }
 
 /// Result of a client acquisition.
@@ -127,95 +103,10 @@ pub enum ConcurrentAcquire {
     TrackingDue,
 }
 
-/// Admitted PHY maintenance window.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MaintenanceAdmission {
-    release_by_micros: Option<u64>,
-}
-
-impl MaintenanceAdmission {
-    /// The instant the shared PHY must be released by, or `None` when every
-    /// active client is stopped for as long as its proof lives.
-    pub const fn release_by_micros(self) -> Option<u64> {
-        self.release_by_micros
-    }
-}
-
-const ALL_CLIENTS: [RadioClient; 3] = [
-    RadioClient::Wifi,
-    RadioClient::Bluetooth,
-    RadioClient::Ieee802154,
-];
-
-/// Admit maintenance under `policy`: at once under the vendor policy, or
-/// when every active client proves quiescence at `now`.
-pub(crate) fn admit_under(
-    policy: MaintenancePolicy,
-    active: PhyClientSnapshot,
-    proofs: &[ClientQuiescence<'_>],
-    now_micros: u64,
-) -> Result<MaintenanceAdmission, ConcurrentPhyError> {
-    match policy {
-        MaintenancePolicy::Vendor => Ok(MaintenanceAdmission {
-            release_by_micros: None,
-        }),
-        MaintenancePolicy::Quiesced => admit(active, proofs, now_micros),
-    }
-}
-
-/// Admit maintenance when every active client proves quiescence at `now`.
-pub(crate) fn admit(
-    active: PhyClientSnapshot,
-    proofs: &[ClientQuiescence<'_>],
-    now_micros: u64,
-) -> Result<MaintenanceAdmission, ConcurrentPhyError> {
-    let mut release_by: Option<u64> = None;
-    for client in ALL_CLIENTS {
-        if !active.contains(client) {
-            continue;
-        }
-        let Some(proof) = proofs.iter().find(|proof| proof.client() == client) else {
-            return Err(ConcurrentPhyError::MissingQuiescence(client));
-        };
-        if let QuiescentSpan::Until {
-            issued_at_micros,
-            release_by_micros,
-        } = proof.span()
-        {
-            if now_micros < issued_at_micros {
-                return Err(ConcurrentPhyError::ClockBehindProof);
-            }
-            if now_micros >= release_by_micros {
-                return Err(ConcurrentPhyError::WindowClosed);
-            }
-            release_by = Some(match release_by {
-                Some(earlier) => earlier.min(release_by_micros),
-                None => release_by_micros,
-            });
-        }
-    }
-    Ok(MaintenanceAdmission {
-        release_by_micros: release_by,
-    })
-}
-
 impl ConcurrentPhy {
-    /// An empty slot for a fresh arbiter, under the vendor policy.
+    /// An empty slot for a fresh arbiter.
     pub const fn new() -> Self {
-        Self {
-            slot: Slot::Empty,
-            policy: MaintenancePolicy::Vendor,
-        }
-    }
-
-    /// The admission policy of pending tracking.
-    pub const fn maintenance_policy(&self) -> MaintenancePolicy {
-        self.policy
-    }
-
-    /// Select the admission policy of pending tracking.
-    pub fn set_maintenance_policy(&mut self, policy: MaintenancePolicy) {
-        self.policy = policy;
+        Self { slot: Slot::Empty }
     }
 
     /// The active client set, when the domain is registered and settled.
@@ -366,7 +257,6 @@ impl ConcurrentPhy {
     pub(crate) fn registered_for_test(domain: PhyDomain) -> Self {
         Self {
             slot: Slot::Registered(domain),
-            policy: MaintenancePolicy::Vendor,
         }
     }
 
@@ -374,7 +264,6 @@ impl ConcurrentPhy {
     pub(crate) fn rf_closed_for_test(domain: PhyDomain) -> Self {
         Self {
             slot: Slot::RfClosed(domain),
-            policy: MaintenancePolicy::Vendor,
         }
     }
 }
@@ -586,28 +475,18 @@ pub fn evaluate_periodic_tracking(
     }
 }
 
-/// Check, without register access, whether pending tracking may start now.
-///
-/// Under [`MaintenancePolicy::Vendor`] pending tracking is admitted at once
-/// and `proofs` are not consulted.
+/// Check, without register access, whether tracking is pending: it then
+/// starts at once, with the protocols running.
 ///
 /// # Errors
 ///
-/// No tracking is pending, or under [`MaintenancePolicy::Quiesced`] an
-/// active client presented no proof or a proof's window is not open at
-/// `now_micros`.
+/// No tracking is pending, or the domain is not registered, RF is closed or
+/// the domain is poisoned.
 pub fn admit_maintenance(
     lease: &SharedRadioLease<'_, ConcurrentPhy>,
-    proofs: &[ClientQuiescence<'_>],
-    now_micros: u64,
-) -> Result<MaintenanceAdmission, ConcurrentPhyError> {
+) -> Result<(), ConcurrentPhyError> {
     match &lease.attachment().slot {
-        Slot::Pending { pending, .. } => admit_under(
-            lease.attachment().policy,
-            pending.snapshot(),
-            proofs,
-            now_micros,
-        ),
+        Slot::Pending { .. } => Ok(()),
         Slot::Poisoned => Err(ConcurrentPhyError::Poisoned),
         Slot::RfClosed(_) => Err(ConcurrentPhyError::RfClosed),
         Slot::Empty => Err(ConcurrentPhyError::NotRegistered),

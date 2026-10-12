@@ -5,7 +5,7 @@ use oer_phy_trace::{Fault, FaultStage, PoisonedBy};
 use super::{TargetPhyParamTrackingError, TargetPhyRegisterError};
 use crate::{
     PhyParamTrackingRunError, PhyRegisterRunError, PhyState, PhyTargetPortError,
-    state::client::PhyClientSnapshot, tracking::deadline::TrackingDeadlineError,
+    state::client::PhyClientSnapshot,
 };
 
 const fn fault(stage: FaultStage, detail: u16) -> Fault {
@@ -38,15 +38,6 @@ pub(crate) const fn tracking_fault(error: &TargetPhyParamTrackingError) -> Fault
         TargetPhyParamTrackingError::Run(PhyParamTrackingRunError::ParentEdgeLimit) => {
             fault(FaultStage::Transition, 0x102)
         }
-        TargetPhyParamTrackingError::Deadline(error) => fault(
-            FaultStage::Deadline,
-            match error {
-                TrackingDeadlineError::ClockUnavailable => 0x200,
-                TrackingDeadlineError::ClockWentBackwards { .. } => 0x201,
-                TrackingDeadlineError::Expired { .. } => 0x202,
-                TrackingDeadlineError::WakeBeforeDeadline { .. } => 0x203,
-            },
-        ),
         TargetPhyParamTrackingError::MissingCompletedOwner => {
             fault(FaultStage::MissingOwner, 0x300)
         }

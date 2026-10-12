@@ -8,7 +8,7 @@ fn round_trip<E: Event + Copy + PartialEq + core::fmt::Debug>(event: E) {
     assert_eq!(E::decode(event.encode()), Some(event));
 }
 
-const REFUSALS: [Refusal; 19] = [
+const REFUSALS: [Refusal; 15] = [
     Refusal::NotRegistered,
     Refusal::AlreadyRegistered,
     Refusal::TrackingPending,
@@ -22,16 +22,12 @@ const REFUSALS: [Refusal; 19] = [
     Refusal::Acquire,
     Refusal::Release,
     Refusal::Time,
-    Refusal::MissingQuiescence(Client::Wifi),
-    Refusal::MissingQuiescence(Client::Ieee802154),
     Refusal::ClientAbsent(Client::Bluetooth),
     Refusal::ClientAbsent(Client::Wifi),
-    Refusal::ClockBehindProof,
-    Refusal::WindowClosed,
 ];
 
 const FAULT: Fault = Fault {
-    stage: FaultStage::Deadline,
+    stage: FaultStage::Hardware,
     detail: 0xbeef,
 };
 
@@ -63,7 +59,6 @@ fn every_phy_event_decodes_to_what_it_encoded() {
     for stage in [
         FaultStage::Transition,
         FaultStage::Hardware,
-        FaultStage::Deadline,
         FaultStage::EpochMismatch,
         FaultStage::MissingOwner,
         FaultStage::Clock,
@@ -77,7 +72,6 @@ fn every_phy_event_decodes_to_what_it_encoded() {
         });
     }
     round_trip(TrackingTick::NotDue);
-    round_trip(TrackingTick::AwaitingQuiescence);
     round_trip(TrackingTick::Tracked(TrackingProgress {
         wifi_requested: true,
         rfpll_corrected: true,

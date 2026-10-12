@@ -314,9 +314,6 @@ impl<I: Copy + Eq, const CAPACITY: usize> SchedulerExecutor<I, CAPACITY> {
     }
 
     /// The stopped receipt the executor holds.
-    ///
-    /// A quiescence proof borrows it through the executor, so the executor
-    /// cannot resume while the proof is alive.
     pub const fn stopped(&self) -> Option<&BluetoothSchedulerStopped> {
         self.stopped.as_ref()
     }

@@ -4,7 +4,6 @@
 pub mod calibration;
 #[cfg(not(feature = "validation-probes"))]
 pub(crate) mod calibration;
-pub mod deadline;
 #[cfg(feature = "validation-probes")]
 pub mod i2c;
 #[cfg(not(feature = "validation-probes"))]

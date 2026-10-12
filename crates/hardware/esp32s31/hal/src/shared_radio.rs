@@ -35,8 +35,8 @@ use core::{
 };
 
 use oer_esp32s31_pac::{
-    BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER, BluetoothSchedulerStopped, BluetoothTaskRegisters,
-    Ieee802154TaskRegisters, RadioPhyRegisters, SharedRadioRegisters, WifiRadioRegisters,
+    BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER, BluetoothTaskRegisters, Ieee802154TaskRegisters,
+    RadioPhyRegisters, SharedRadioRegisters, WifiRadioRegisters,
 };
 
 pub use crate::clock::{
@@ -478,111 +478,6 @@ impl<T> SharedRadio<T> {
     #[cfg(test)]
     pub(crate) fn hold_common_power_for_test(&mut self, client: RadioClient) {
         self.state.get_mut().power.hold_for_test(client);
-    }
-}
-
-/// How long a client performs no RF and does not touch the shared PHY.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum QuiescentSpan {
-    /// Quiet for as long as the proof lives.
-    Stopped,
-    /// The shared PHY must be released by `release_by_micros`.
-    ///
-    /// Both instants are on the image's monotonic time (the PHY timer's
-    /// `oer_time::Clock`, microseconds). `issued_at_micros` is the PHY-clock half of the paired
-    /// sample the issuer used to translate its own schedule; the translation
-    /// and its error bound are the issuer's obligation. `release_by_micros` is
-    /// the last instant the shared PHY may still be held, after the issuer
-    /// subtracted its own sequencing, hardware preparation and restore margins.
-    Until {
-        issued_at_micros: u64,
-        release_by_micros: u64,
-    },
-}
-
-/// A `Until` proof whose window is empty.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct EmptyQuiescentWindow;
-
-/// Proof that one client performs no RF and does not touch the shared PHY for
-/// its span.
-///
-/// The proof borrows the owner that guarantees it for its whole lifetime, so
-/// the client cannot restart or publish new radio work while it lives.
-///
-/// ```compile_fail
-/// use oer_esp32s31_hal::shared_radio::ClientQuiescence;
-/// fn publish_while_quiet<O: oer_esp32s31_hal::shared_radio::RadioClientOwner>(owner: &mut O) {
-///     let proof = ClientQuiescence::until(owner, 10, 20).unwrap();
-///     let _reuse = &mut *owner;
-///     drop(proof);
-/// }
-/// ```
-#[must_use = "a quiescence proof admits PHY maintenance only while it lives"]
-pub struct ClientQuiescence<'client> {
-    client: RadioClient,
-    span: QuiescentSpan,
-    _hold: core::marker::PhantomData<&'client ()>,
-}
-
-impl<'client> ClientQuiescence<'client> {
-    /// Bluetooth is quiet while its scheduler stays stopped.
-    ///
-    /// The receipt comes from the executor's stopped state; restarting needs
-    /// the executor mutably, which this borrow prevents while the proof lives.
-    pub fn bluetooth_stopped(_stopped: &'client BluetoothSchedulerStopped) -> Self {
-        Self {
-            client: RadioClient::Bluetooth,
-            span: QuiescentSpan::Stopped,
-            _hold: core::marker::PhantomData,
-        }
-    }
-
-    /// The client that owns `owner` stays quiet until `release_by_micros`.
-    ///
-    /// The issuer guarantees, from a fresh sample, that no event of its own
-    /// is running now and none starts before the window closes. Every
-    /// hardware action of the client goes through `owner`, which this proof
-    /// borrows mutably.
-    ///
-    /// # Errors
-    ///
-    /// The window is empty (`issued_at_micros >= release_by_micros`).
-    pub fn until<O: RadioClientOwner>(
-        _owner: &'client mut O,
-        issued_at_micros: u64,
-        release_by_micros: u64,
-    ) -> Result<Self, EmptyQuiescentWindow> {
-        if issued_at_micros >= release_by_micros {
-            return Err(EmptyQuiescentWindow);
-        }
-        Ok(Self {
-            client: O::CLIENT,
-            span: QuiescentSpan::Until {
-                issued_at_micros,
-                release_by_micros,
-            },
-            _hold: core::marker::PhantomData,
-        })
-    }
-
-    /// Mint a proof for a validation or host-test image, without any owner.
-    #[cfg(any(test, feature = "validation-probes"))]
-    #[doc(hidden)]
-    pub const fn for_validation(client: RadioClient, span: QuiescentSpan) -> Self {
-        Self {
-            client,
-            span,
-            _hold: core::marker::PhantomData,
-        }
-    }
-
-    pub const fn client(&self) -> RadioClient {
-        self.client
-    }
-
-    pub const fn span(&self) -> QuiescentSpan {
-        self.span
     }
 }
 

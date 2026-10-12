@@ -255,7 +255,7 @@ pub fn power_up_esp32s31_wifi<W>(
 /// system prepared: the second half of the bring-up.
 ///
 /// `platform` is the radio system's PHY platform token. Initial tracking
-/// follows the domain's admission policy without quiescence proofs.
+/// runs at once, as the domain's periodic tracking does.
 ///
 /// # Cancellation
 ///
@@ -299,9 +299,7 @@ where
         }
     };
     let initial_tracking = if acquired == ConcurrentAcquire::TrackingDue {
-        match maintain_concurrent_phy::<P, D, _>(timer, lease, platform, &[], observer.clone())
-            .await
-        {
+        match maintain_concurrent_phy::<P, D, _>(timer, lease, platform, observer.clone()).await {
             Ok(outcome) => Some(outcome),
             Err(error) => {
                 return Err(WifiColdStartFailure {

@@ -168,20 +168,16 @@ serialized by one mechanism:
   restarts the Wi-Fi MAC around the retune;
 - `evaluate_periodic_tracking` and an acquisition that needs initial tracking
   leave the domain pending, and no client operation proceeds until it settles;
-- `admit_maintenance` checks, without register access, whether pending
-  tracking may start under the domain's `MaintenancePolicy`, and
-  `maintain_concurrent_phy` then runs the tracking transaction. A started
-  failure poisons the domain.
-  - `Vendor` (the default) follows ESP-IDF's `phy_common.c`: the periodic
-    timer runs `phy_param_track_tot` under the PHY lock alone, without
-    pausing any protocol. The arbiter lease is that lock, and the tracking
-    graph brackets its RF-sensitive regions with the grant-protect request.
-  - `Quiesced` is a stricter local policy: every active client presents a
-    `ClientQuiescence` proof whose window is open, and tracking runs inside
-    the earliest `release_by` window.
+- `admit_maintenance` checks, without register access, that tracking is
+  pending, and `maintain_concurrent_phy` then runs the tracking transaction;
+  a started failure poisons the domain. The one admission follows ESP-IDF's
+  `phy_common.c`: the periodic timer runs `phy_param_track_tot` under the PHY
+  lock alone, without pausing any protocol. The arbiter lease is that lock,
+  and the tracking graph brackets its RF-sensitive regions with the
+  grant-protect request. A protocol operation that loses RF to it ends with
+  its ordinary outcome.
 - `track_concurrent_phy` is one tick of the vendor `phy_track_pll`: it
-  evaluates the clients' tracking period and runs due tracking under the
-  vendor policy, or reports that the quiesced policy awaits proofs. The
+  evaluates the clients' tracking period and runs due tracking at once. The
   vendor periodic timer that calls it belongs to the composition that owns
   the arbiter, as it belongs to ESP-IDF's `esp_phy` component:
   [`oer-esp32s31-radio-runtime`](../../../runtime/esp32s31/radio/README.md)
@@ -247,8 +243,7 @@ The source interval is not a measured maximum thermally safe deferral.
 
 The vendor periodic tracking is the only runtime maintenance path: the radio
 system runs one `track_concurrent_phy` tick every tracking period under the
-arbiter lease, and the domain's admission policy decides whether due work
-starts. There is no protocol-selected maintenance of individual operations.
+arbiter lease, and due work starts at once. There is no protocol-selected maintenance of individual operations.
 Joint Wi-Fi/Bluetooth/154 maintenance and active-traffic publication of
 individual compensation classes are not qualified execution modes.
 
@@ -276,7 +271,6 @@ The execution limits have different scopes:
 | [DC/IQ estimator](src/calibration/estimator.rs) | Finite readiness samples, then measurement/start cleanup on missing-ready | Cleanup and settle calls must themselves return |
 | [Calibration executor](src/target_port/calibration.rs) | Root operation accounting and finite gain-state loops | Operation counts do not bound IRQ interference or a stalled bus access |
 | [RFPLL search](src/tracking/rfpll/search.rs) | Both search directions terminate after finite samples, including unrecognized status values | Its finite state graph still invokes synchronous bus and settle operations |
-| [Transaction deadline](src/tracking/deadline.rs) | Rejects expired entry and a result returned at or after the absolute deadline | The executor cannot interrupt a child that never returns from `poll` |
 
 The BLE and Wi-Fi compositions arm the independent SoC deadline service around
 physical lifecycle transactions and retain its lease until checked restoration.

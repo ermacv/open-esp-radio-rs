@@ -1,58 +1,5 @@
-//! Values checked against a backend's capabilities when they are built.
-//!
-//! A Controller builds every value it submits as a [`Supported`] of its
-//! capabilities marker `K`: the check runs once, against `K::CAPS`, and
-//! the backend refuses nothing the capabilities exclude. A timed value is
-//! also placed: each of its reservations comes from the one reservation
-//! function both the Controller and the backend use
-//! ([`RadioTiming::reservation`]) and ends within the capabilities'
-//! horizon of the instant it was placed at, so the backend never meets a
-//! window it cannot schedule.
-//!
-//! A [`Supported`] value is neither `Clone`, `Copy` nor `Default` and has no
-//! public constructor but [`Supported::new`] and [`Supported::placed`]:
-//!
-//! ```compile_fail,E0451
-//! # use core::marker::PhantomData;
-//! # use oer_bluetooth_radio::{NoCapabilities, Supported, TxPower};
-//! let forged: Supported<NoCapabilities, TxPower> =
-//!     Supported { value: TxPower::from_dbm(0), caps: PhantomData };
-//! ```
-//!
-//! ```compile_fail,E0599
-//! # use oer_bluetooth_radio::{Supported, TxPower, LeCapabilities};
-//! fn copy<K: LeCapabilities>(power: &Supported<K, TxPower>) -> Supported<K, TxPower> {
-//!     power.clone()
-//! }
-//! ```
-//!
-//! ```compile_fail,E0277
-//! # use oer_bluetooth_radio::{NoCapabilities, Supported, TxPower};
-//! let _: Supported<NoCapabilities, TxPower> = Default::default();
-//! ```
-//!
-//! Nor is a value that occupies the air built without its placement:
-//!
-//! ```compile_fail,E0599
-//! # use oer_bluetooth_radio::{LeCapabilities, ScanWindow, Supported};
-//! fn unplaced<K: LeCapabilities>(window: ScanWindow) -> Supported<K, ScanWindow> {
-//!     Supported::new(window).unwrap()
-//! }
-//! ```
-//!
-//! Its compiling twin builds the value through the check, and a timed one
-//! placed:
-//!
-//! ```
-//! # use oer_bluetooth_radio::{LeCapabilities, Supported, TxPower};
-//! fn build<K: LeCapabilities>(dbm: i8) -> Option<Supported<K, TxPower>> {
-//!     Supported::new(TxPower::from_dbm(dbm)).ok()
-//! }
-//! # use oer_bluetooth_radio::{LeInstant, ScanWindow};
-//! fn place<K: LeCapabilities>(window: ScanWindow, now: LeInstant) -> Option<Supported<K, ScanWindow>> {
-//!     Supported::placed(window, now).ok()
-//! }
-//! ```
+//! Values checked against a backend's capabilities when they are built:
+//! [`Supported`].
 
 use core::marker::PhantomData;
 
@@ -79,8 +26,61 @@ const MAX_PRIORITY: u8 = 15;
 /// The longest LE Test packet payload.
 const TEST_PAYLOAD_MAX: usize = 255;
 
-/// `value`, checked against the capabilities `K::CAPS`; see the
-/// [module](self) documentation.
+/// Values checked against a backend's capabilities when they are built.
+///
+/// A Controller builds every value it submits as a [`Supported`] of its
+/// capabilities marker `K`: the check runs once, against `K::CAPS`, and
+/// the backend refuses nothing the capabilities exclude. A timed value is
+/// also placed: each of its reservations comes from the one reservation
+/// function both the Controller and the backend use
+/// ([`RadioTiming::reservation`]) and ends within the capabilities'
+/// horizon of the instant it was placed at, so the backend never meets a
+/// window it cannot schedule.
+///
+/// It is neither `Clone`, `Copy` nor `Default` and has no
+/// public constructor but [`Supported::new`] and [`Supported::placed`]:
+///
+/// ```compile_fail,E0451
+/// # use core::marker::PhantomData;
+/// # use oer_bluetooth_radio::{NoCapabilities, Supported, TxPower};
+/// let forged: Supported<NoCapabilities, TxPower> =
+///     Supported { value: TxPower::from_dbm(0), caps: PhantomData };
+/// ```
+///
+/// ```compile_fail,E0599
+/// # use oer_bluetooth_radio::{Supported, TxPower, LeCapabilities};
+/// fn copy<K: LeCapabilities>(power: &Supported<K, TxPower>) -> Supported<K, TxPower> {
+///     power.clone()
+/// }
+/// ```
+///
+/// ```compile_fail,E0277
+/// # use oer_bluetooth_radio::{NoCapabilities, Supported, TxPower};
+/// let _: Supported<NoCapabilities, TxPower> = Default::default();
+/// ```
+///
+/// Nor is a value that occupies the air built without its placement:
+///
+/// ```compile_fail,E0599
+/// # use oer_bluetooth_radio::{LeCapabilities, ScanWindow, Supported};
+/// fn unplaced<K: LeCapabilities>(window: ScanWindow) -> Supported<K, ScanWindow> {
+///     Supported::new(window).unwrap()
+/// }
+/// ```
+///
+/// Its compiling twin builds the value through the check, and a timed one
+/// placed:
+///
+/// ```
+/// # use oer_bluetooth_radio::{LeCapabilities, Supported, TxPower};
+/// fn build<K: LeCapabilities>(dbm: i8) -> Option<Supported<K, TxPower>> {
+///     Supported::new(TxPower::from_dbm(dbm)).ok()
+/// }
+/// # use oer_bluetooth_radio::{LeInstant, ScanWindow};
+/// fn place<K: LeCapabilities>(window: ScanWindow, now: LeInstant) -> Option<Supported<K, ScanWindow>> {
+///     Supported::placed(window, now).ok()
+/// }
+/// ```
 pub struct Supported<K: LeCapabilities, T> {
     value: T,
     caps: PhantomData<fn() -> K>,

@@ -34,7 +34,9 @@
 //! Submission and the clock stay asynchronous because each takes a fresh
 //! controller-time latch, which completes only after the hardware latched
 //! the time, and shares the lock the runner holds across scheduler stops.
-//! [`BluetoothRuntime::capabilities`] states LE 1M roles and hardware Link
+//! The port's capabilities
+//! ([`BluetoothCapabilities`](oer_esp32s31_bluetooth_radio::BluetoothCapabilities))
+//! state LE 1M roles and hardware Link
 //! Layer acknowledgement: the hardware keeps SN and NESN, retransmits and
 //! answers with empty PDUs.
 //!

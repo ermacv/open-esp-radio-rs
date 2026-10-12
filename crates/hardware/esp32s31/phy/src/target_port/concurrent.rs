@@ -337,7 +337,7 @@ where
 /// This is a later first `esp_phy_enable`: `PHY` and `PHY_CALIBRATION` are
 /// enabled, the retained registration is restored by `phy_wakeup_init`
 /// without calibration, and `PHY_CALIBRATION` is released. No client is
-/// acquired; the next [`acquire_client`](crate::concurrent::acquire_client)
+/// acquired; the next `acquire_client`
 /// evaluates tracking.
 ///
 /// # Errors

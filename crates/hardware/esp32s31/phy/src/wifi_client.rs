@@ -48,7 +48,7 @@ impl fmt::Debug for WifiPhyMembership {
 ///
 /// `ready` proves the domain prepared and `clocked` the Wi-Fi module
 /// clocks. The returned
-/// [`ConcurrentAcquire::TrackingDue`] means the domain must run its tracking
+/// [`ConcurrentAcquire::TrackingDue`](crate::concurrent::ConcurrentAcquire::TrackingDue) means the domain must run its tracking
 /// before the MAC may use RF.
 ///
 /// # Errors
@@ -210,7 +210,7 @@ pub fn suspend_wifi(
 
 /// Wake Wi-Fi's RF: the vendor modem wake's `wifi_rf_phy_enable`, which is
 /// `esp_phy_enable(PHY_MODEM_WIFI)`. The radio system must have woken closed
-/// RF first, which `ready` proves. The returned [`ConcurrentAcquire::TrackingDue`] means the domain
+/// RF first, which `ready` proves. The returned [`ConcurrentAcquire::TrackingDue`](crate::concurrent::ConcurrentAcquire::TrackingDue) means the domain
 /// must run its tracking before the MAC uses RF.
 ///
 /// # Errors

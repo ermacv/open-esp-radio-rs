@@ -83,14 +83,15 @@ pub use oer_radio_port::{
     Projected, ProjectionError, RelationRate,
 };
 pub use owner::{
-    AccessPoint, AccessPointClient, AckHeader, AddressSetup, AttemptKey, BssColor, Ccmp128Key,
-    FrameControl, FrameHeader, GroupAddress, GroupKeyId, HeaderSpec, Ieee80211Capabilities,
-    IndividualAddress, InterfaceRole, LegacyPhaseRate, LowerMacBackend, LowerMacClient,
-    LowerMacControl, LowerMacEvents, LowerMacSetup, MpduLength, NoAckHeader, PhaseAttempt,
-    PhaseRate, QosControl, QueueGrant, ReceiverAddress, SizedFrame, Station, StationClient,
-    StationReceive, SupportedBackoff, SupportedBlockAck, SupportedChannel, SupportedCoex,
-    SupportedEdca, SupportedFilter, SupportedNoAck, SupportedPower, TX_SEATS, Tid, TxFrame,
-    TxFrameBody, TxGated, TxSeats, seat_access_category,
+    AccessPoint, AccessPointClient, AckHeader, AddressSetup, AmpduClient, AmpduRate, AttemptKey,
+    BeaconTimingClient, BssColor, Ccmp128Key, FrameControl, FrameHeader, GroupAddress, GroupKeyId,
+    HeaderSpec, Ieee80211Capabilities, IndividualAddress, InterfaceRole, LegacyPhaseRate,
+    LowerMacBackend, LowerMacClient, LowerMacControl, LowerMacEvents, LowerMacSetup,
+    MonitorControl, MpduLength, MpduStartSpacing, NoAckHeader, PhaseAmpdu, PhaseAmpduBuffer,
+    PhaseAttempt, PhaseRate, QosControl, QueueGrant, ReceiverAddress, SizedFrame, Station,
+    StationClient, StationReceive, SupportedBackoff, SupportedBlockAck, SupportedChannel,
+    SupportedCoex, SupportedEdca, SupportedFilter, SupportedNoAck, SupportedPower, TX_SEATS,
+    TbttPlan, Tid, TxFrame, TxFrameBody, TxGated, TxSeats, seat_access_category,
 };
 pub use port::{ExtensionKind, LowerMacEvent, MpduAttempt};
 pub use rx::{RxBuffer, RxCryptoStatus, RxEvidence, RxMeta};

@@ -1225,7 +1225,10 @@ pub trait LowerMacClient<'id>:
     type PairwiseKey;
     /// An installed group key; removing it gives its slot back.
     type GroupKey;
-    /// The kind of the client's receive Block Ack slots.
+    /// The kind of the receive Block Ack slots: one pool the backend's
+    /// hardware shares between its roles, so every client of a backend
+    /// names the same kind and a slot one role gives back serves the other
+    /// (owner decision, Claude Code chat with common, 2026-10-12).
     type BlockAckKind;
 
     /// The channel the phase runs on.

@@ -94,7 +94,7 @@ pub const OWNED_MODEL_TX_BUFFERS: usize = 3;
 /// Pairwise and group key slots of each role.
 pub const OWNED_MODEL_KEY_SLOTS: usize = 2;
 /// Receive Block Ack slots of each role.
-pub const OWNED_MODEL_BLOCK_ACK_SLOTS: usize = 2;
+pub const OWNED_MODEL_BLOCK_ACK_SLOTS: usize = 4;
 /// Transmit queues of the model ([`MODEL_CAPABILITIES`]).
 pub const OWNED_MODEL_TX_QUEUES: usize = MODEL_CAPABILITIES.tx_queues as usize;
 
@@ -121,13 +121,13 @@ impl ModelRole for AccessPoint {
 pub struct ModelPairwiseKeys<R>(PhantomData<fn() -> R>);
 /// The kind of a role's group key slots.
 pub struct ModelGroupKeys<R>(PhantomData<fn() -> R>);
-/// The kind of a role's receive Block Ack slots.
-pub struct ModelBlockAcks<R>(PhantomData<fn() -> R>);
+/// The kind of the receive Block Ack slots, which both roles share.
+pub struct ModelBlockAcks;
 
 /// A role's receive Block Ack agreements: one per peer and TID, each with
 /// its slot.
 pub type BlockAckTable<'id, R> =
-    RefCell<Vec<(IndividualAddress, Tid, Slot<'id, ModelBlockAcks<R>>)>>;
+    RefCell<Vec<(IndividualAddress, Tid, Slot<'id, ModelBlockAcks>)>>;
 
 /// Which installed key an attempt uses: its role, whether it is pairwise,
 /// and its slot.
@@ -327,9 +327,9 @@ pub struct ModelResources<'id> {
     pub access_point_pairwise_keys:
         [Slot<'id, ModelPairwiseKeys<AccessPoint>>; OWNED_MODEL_KEY_SLOTS],
     pub access_point_group_keys: [Slot<'id, ModelGroupKeys<AccessPoint>>; OWNED_MODEL_KEY_SLOTS],
-    pub station_block_acks: [Slot<'id, ModelBlockAcks<Station>>; OWNED_MODEL_BLOCK_ACK_SLOTS],
-    pub access_point_block_acks:
-        [Slot<'id, ModelBlockAcks<AccessPoint>>; OWNED_MODEL_BLOCK_ACK_SLOTS],
+    /// The receive Block Ack slots both roles share, as the hardware's
+    /// banks are.
+    pub block_acks: [Slot<'id, ModelBlockAcks>; OWNED_MODEL_BLOCK_ACK_SLOTS],
 }
 
 /// The model's disabled-only settings.
@@ -528,7 +528,7 @@ impl<'a, 'id, R: ModelRole> LowerMacClient<'id> for ModelClient<'a, 'id, R> {
     type GroupKeyKind = ModelGroupKeys<R>;
     type PairwiseKey = ModelPairwiseKey<'id, R>;
     type GroupKey = ModelGroupKey<'id, R>;
-    type BlockAckKind = ModelBlockAcks<R>;
+    type BlockAckKind = ModelBlockAcks;
 
     fn channel(&self) -> Channel {
         self.state.borrow().tuned
@@ -705,9 +705,9 @@ impl<'a, 'id, R: ModelRole> LowerMacClient<'id> for ModelClient<'a, 'id, R> {
 
     fn add_block_ack(
         &self,
-        slot: Slot<'id, ModelBlockAcks<R>>,
+        slot: Slot<'id, ModelBlockAcks>,
         agreement: SupportedBlockAck<ModelCaps>,
-    ) -> Option<Slot<'id, ModelBlockAcks<R>>> {
+    ) -> Option<Slot<'id, ModelBlockAcks>> {
         let (peer, tid, ..) = agreement.get();
         let mut table = R::block_acks(self.held).borrow_mut();
         let replaced = table
@@ -722,7 +722,7 @@ impl<'a, 'id, R: ModelRole> LowerMacClient<'id> for ModelClient<'a, 'id, R> {
         &self,
         peer: IndividualAddress,
         tid: Tid,
-    ) -> Option<Slot<'id, ModelBlockAcks<R>>> {
+    ) -> Option<Slot<'id, ModelBlockAcks>> {
         let mut table = R::block_acks(self.held).borrow_mut();
         let index = table
             .iter()
@@ -945,8 +945,7 @@ impl PortBackend for OwnedModel {
             station_group_keys: mint.slots(),
             access_point_pairwise_keys: mint.slots(),
             access_point_group_keys: mint.slots(),
-            station_block_acks: mint.slots(),
-            access_point_block_acks: mint.slots(),
+            block_acks: mint.slots(),
         };
         (held, resources)
     }

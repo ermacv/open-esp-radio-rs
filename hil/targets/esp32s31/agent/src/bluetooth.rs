@@ -239,8 +239,10 @@ fn exit_reason(exit: oer_esp32s31_bluetooth_system::ServeExit) -> &'static core:
 /// service stopped serving, or that found the port poisoned. The caller
 /// keeps every owner as it is.
 #[cfg(any(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
-fn stop_failure_reason<F>(
-    served: &oer_esp32s31_bluetooth_system::Served<F>,
+fn stop_failure_reason(
+    served: &oer_esp32s31_bluetooth_system::Served<
+        oer_esp32s31_bluetooth_system::BluetoothSystemFault,
+    >,
 ) -> &'static core::ffi::CStr {
     use oer_esp32s31_bluetooth_system::{ServeExit, Served};
     match served {
@@ -251,8 +253,60 @@ fn stop_failure_reason<F>(
         Served::DisableFailed { .. } => {
             c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-hci-service-stop-failed\r\n"
         }
-        Served::Poisoned(_) => c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned\r\n",
+        Served::Poisoned(cause) => poisoned_reason(*cause),
         // A stopped service is no stop failure.
         Served::Stopped(exit) => exit_reason(*exit),
+    }
+}
+
+/// The report of a port poisoned while it served, naming the fault.
+#[cfg(any(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
+fn poisoned_reason(
+    cause: oer_esp32s31_bluetooth_system::BluetoothSystemFault,
+) -> &'static core::ffi::CStr {
+    use oer_esp32s31_bluetooth_system::{
+        BluetoothFault as Fault, BluetoothRuntimeFault as Runtime, RadioFault as Radio,
+    };
+    match cause {
+        Fault::Radio(Radio::UnsupportedHardwareResult) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-radio-unsupported-result\r\n"
+        }
+        Fault::Radio(Radio::MemoryInconsistency) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-radio-memory\r\n"
+        }
+        Fault::Radio(Radio::OutOfOrderCompletion) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-radio-out-of-order\r\n"
+        }
+        Fault::Runner(Runtime::NotInstalled) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-not-installed\r\n"
+        }
+        Fault::Runner(Runtime::Scheduler(_)) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-scheduler\r\n"
+        }
+        Fault::Runner(Runtime::Start(_)) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-start\r\n"
+        }
+        Fault::Runner(Runtime::StopSequence(_)) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-stop-sequence\r\n"
+        }
+        Fault::Runner(Runtime::FinishedLists(_)) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-finished-lists\r\n"
+        }
+        Fault::Runner(Runtime::Stop) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-stop\r\n"
+        }
+        Fault::Runner(Runtime::Time(_)) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-time\r\n"
+        }
+        Fault::Runner(Runtime::TransitionTimedOut) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-transition-timed-out\r\n"
+        }
+        Fault::Runner(Runtime::Abandoned) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-abandoned\r\n"
+        }
+        Fault::Runner(Runtime::Unsettled) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-unsettled\r\n"
+        }
+        Fault::Platform => c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-platform\r\n",
     }
 }

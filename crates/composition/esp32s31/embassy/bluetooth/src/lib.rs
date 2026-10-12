@@ -63,6 +63,10 @@ pub use hci::{
 #[cfg(target_arch = "riscv32")]
 pub use oer_bluetooth_runtime::{Exhaustion, ServeExit, Served};
 #[cfg(target_arch = "riscv32")]
+pub use oer_esp32s31_bluetooth_radio::RadioFault;
+#[cfg(target_arch = "riscv32")]
+pub use oer_esp32s31_bluetooth_runtime::{BluetoothFault, BluetoothRuntimeFault};
+#[cfg(target_arch = "riscv32")]
 pub use system::{
     BluetoothFailStop, BluetoothInterruptFault, BluetoothMemoryError, BluetoothParked,
     BluetoothRunnerFault, BluetoothStartError, BluetoothStartFailure, BluetoothStopError,

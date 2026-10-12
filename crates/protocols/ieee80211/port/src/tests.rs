@@ -19,6 +19,8 @@ struct Model {
     /// `disable` answers `Pending` once before it ends.
     slow_disable: core::cell::Cell<bool>,
     lifecycle: core::cell::RefCell<std::vec::Vec<&'static str>>,
+    /// The phases the handle counted in its own state, at the uninstall.
+    lent: core::cell::Cell<u32>,
     /// The install's held part as the last phase or disable left it.
     held: core::cell::Cell<(u32, u32)>,
     /// How often `run_port` polled the driver.
@@ -86,6 +88,8 @@ impl<'m> PortBackend for Backend<'m> {
     type Resources<'id> = [Slot<'id, ModelCaps>; 2];
     /// The phases lent and the disables run over the install's held part.
     type Held<'id> = core::cell::Cell<(u32, u32)>;
+    /// The phases the handle lent, its own count.
+    type Local<'id> = u32;
     /// The parts reach the state through the model, so the driver owns
     /// none.
     type State = ();
@@ -107,6 +111,7 @@ impl<'m> PortBackend for Backend<'m> {
     fn disable<'a, 'id>(
         &'a mut self,
         held: &'a Self::Held<'id>,
+        _: &'a mut u32,
         sink: &'a mut dyn FnMut(u32),
     ) -> impl Future<Output = Result<(), Poisoned<()>>> + 'a
     where
@@ -159,18 +164,19 @@ impl<'m> PortBackend for Backend<'m> {
     fn resources<'id>(
         &mut self,
         mut mint: Mint<'id>,
-    ) -> (core::cell::Cell<(u32, u32)>, [Slot<'id, ModelCaps>; 2]) {
-        (core::cell::Cell::new((0, 0)), mint.slots())
+    ) -> (core::cell::Cell<(u32, u32)>, u32, [Slot<'id, ModelCaps>; 2]) {
+        (core::cell::Cell::new((0, 0)), 0, mint.slots())
     }
 
-    fn setup<'a, 'id>(&'a mut self) -> Self::Setup<'a, 'id> {
+    fn setup<'a, 'id>(&'a mut self, _: &'a mut u32) -> Self::Setup<'a, 'id> {
         Setup(())
     }
 
-    fn phase<'a, 'id>(&'a mut self, held: &'a Self::Held<'id>) -> Phase<'m>
+    fn phase<'a, 'id>(&'a mut self, held: &'a Self::Held<'id>, lent: &'a mut u32) -> Phase<'m>
     where
         'id: 'a,
     {
+        *lent += 1;
         let model = self.0;
         let (phases, disables) = held.get();
         held.set((phases + 1, disables));
@@ -213,7 +219,8 @@ impl<'m> PortBackend for Backend<'m> {
         self.0.lifecycle.borrow_mut().push("detach");
     }
 
-    fn uninstall<'id>(self, _: Self::Held<'id>, (): (), (): ()) -> &'m Model {
+    fn uninstall<'id>(self, _: Self::Held<'id>, lent: u32, (): (), (): ()) -> &'m Model {
+        self.0.lent.set(lent);
         self.0.lifecycle.borrow_mut().push("uninstall");
         self.0
     }
@@ -336,6 +343,9 @@ fn the_backends_held_part_of_the_install_reaches_every_phase_and_disable() {
     assert!(now_ready(run_port(Backend(&model), TwoPhases)).is_some());
     // One held part travelled through both transitions of both phases.
     assert_eq!(model.held.get(), (2, 2));
+    // The handle's own state travelled with the owner through every
+    // transition to the uninstall.
+    assert_eq!(model.lent.get(), 2);
 }
 
 /// A body that enables once and reports the refusal it met.

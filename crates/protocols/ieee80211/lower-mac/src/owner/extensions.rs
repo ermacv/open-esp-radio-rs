@@ -162,7 +162,7 @@ pub trait AmpduPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id> {
 }
 
 /// The TBTT schedule of an interface: the wake plan the backend carries
-/// out at each TBTT ([owner decisions on #563]).
+/// out at each TBTT ([owner decisions on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129037560)).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TbttPlan {
     /// The TSF of the next TBTT.
@@ -187,8 +187,6 @@ pub struct BeaconWindow {
     /// The priority the window asks the radio's coexistence for.
     pub priority: oer_radio_coex::CoexPriority,
 }
-
-/// [owner decisions on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129037560
 
 /// An interface with a TSF and a TBTT schedule. Its settings take effect
 /// before the next submission; [`Self::sample_tsf`]'s answer and each

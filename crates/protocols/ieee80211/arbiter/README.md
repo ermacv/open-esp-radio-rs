@@ -20,6 +20,12 @@ option, off by default: the gate's closing takes one last frame, a
 CTS-to-self the driver sends with the Duration left
 ([amendments](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129677418)).
 
+A join on another channel beside a running access point starts with the
+access point's announced move there, by the `ApFollowPolicy`; the move is
+never withdrawn, and a second such join within the policy's
+`min_follow_interval` is refused with the moment to retry
+([follow decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6130615564)).
+
 `coordinator` keeps the access point's follow, search and loss policies
 (`ChannelCoordinator`, `ApFollowPolicy`, `ApSearchPolicy`,
 `UpstreamLossPolicy`), and `channel` the channels an access point may not

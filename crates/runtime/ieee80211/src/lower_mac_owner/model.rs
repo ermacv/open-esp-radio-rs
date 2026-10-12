@@ -1,59 +1,31 @@
-//! An in-memory lower-MAC backend on the owner shape
-//! (`oer_ieee80211_lower_mac::owner`), over [`TxPermits`](super::TxPermits),
-//! for host tests of the shape and of the code that drives it.
+//! An in-memory lower-MAC backend on the phase shape
+//! (`oer_ieee80211_lower_mac::phase`), for host tests of the shape and of
+//! the code that drives it.
 //!
-//! [`OwnedModel::new`] takes the install's channel and interface addresses,
-//! so no phase runs untuned, and returns the backend, which a test hands to
-//! [`run_port`](oer_ieee80211_port::run_port), and a [`ModelHandle`] that plays
-//! the air and the world: it ends published attempts, refuses the next
-//! enable or poisons the backend, and wakes the futures that wait on it
-//! (an events consumer, a closing gate) when it does. An end the world
-//! posts is served by the model's driver (`PortBackend::drive`), as an
-//! interrupt's status is: it gives the attempt's permits back, then queues
-//! the completion, so a body that reads no event still gets its queue back. Its held part of the install keeps the
-//! transmit permits in [`ModelPermitPool`]s, first-in, first-out pools,
-//! and the body's resources give each interface its transmit seats
-//! ([`TxSeats`]).
+//! [`ModelBackend::new`] takes the install's channel and interface
+//! addresses and returns the backend, which a test hands to
+//! [`run_port`](oer_ieee80211_port::run_port), and the [`ModelAir`] it
+//! plays on: the air answers each transmission, delivers received frames
+//! and records what the hardware saw.
 //!
-//! Its tokens have no value outside it: no caller mints a key, a key of a
-//! station's client is not an access point's, and a group key is not a
-//! pairwise key.
+//! The backend has the phase's shape ([owner decisions on #563]): the phase
+//! is the body's handle over queues to the model's driver
+//! (`PortBackend::drive`), which alone owns the model's hardware (its
+//! queues of prepared attempts, its key table, its receive rules). The
+//! handle writes commands, in one queue and in order, and setting cells;
+//! the driver takes the cells before its next command, carries the
+//! commands out, retries the head of each queue by its plan and posts the
+//! events. The queues are cells of the one host thread a test runs on: the
+//! stand-ins of a backend's lock-free single-producer single-consumer
+//! queues.
 //!
-//! ```compile_fail,E0451
-//! # use oer_ieee80211_lower_mac::Station;
-//! # use oer_ieee80211_runtime::lower_mac_owner::model::ModelPairwiseKey;
-//! fn forge<'id>() -> ModelPairwiseKey<'id, Station> {
-//!     ModelPairwiseKey { index: 0, slot: todo!() }
-//! }
-//! ```
+//! Capacity is the tokens': every terminal returns a ticket, so no terminal
+//! is ever lost; received frames beyond [`MODEL_RX_EVENTS`] queued are
+//! dropped and the stream says [`EventsLost`] once.
 //!
-//! ```compile_fail,E0308
-//! # use oer_ieee80211_lower_mac::{AccessPoint, LowerMacClient, Station};
-//! # use oer_ieee80211_runtime::lower_mac_owner::model::{ModelClient, ModelPairwiseKey};
-//! fn cross<'id>(client: &ModelClient<'_, 'id, AccessPoint>, key: ModelPairwiseKey<'id, Station>) {
-//!     let _ = client.remove_pairwise_key(key);
-//! }
-//! ```
-//!
-//! ```compile_fail,E0308
-//! # use oer_ieee80211_lower_mac::{LowerMacClient, Station};
-//! # use oer_ieee80211_runtime::lower_mac_owner::model::{ModelClient, ModelGroupKey};
-//! fn scope<'id>(client: &ModelClient<'_, 'id, Station>, key: ModelGroupKey<'id, Station>) {
-//!     let _ = client.remove_pairwise_key(key);
-//! }
-//! ```
-//!
-//! Its compiling twin gives a key back to its own role's client and kind:
-//!
-//! ```
-//! # use oer_ieee80211_lower_mac::{AccessPoint, LowerMacClient};
-//! # use oer_ieee80211_runtime::lower_mac_owner::model::{ModelClient, ModelPairwiseKey};
-//! fn own<'id>(client: &ModelClient<'_, 'id, AccessPoint>, key: ModelPairwiseKey<'id, AccessPoint>) {
-//!     let _ = client.remove_pairwise_key(key);
-//! }
-//! ```
+//! [owner decisions on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129037560
 
-use alloc::{collections::VecDeque, rc::Rc, vec::Vec};
+use alloc::{boxed::Box, collections::VecDeque, rc::Rc, vec::Vec};
 use core::{
     cell::{Cell, RefCell},
     future::{Future, poll_fn},
@@ -61,33 +33,26 @@ use core::{
     task::{Poll, Waker},
 };
 
-use oer_ieee80211_mac::phy::{HeMcs, HtMcs};
-use oer_ieee80211_port::{
-    CancelError, ClockError, EnableResult, Lent, PhaseParts, PortBackend, RadioPortClient,
-    RadioPortEvents, RadioWork, Retire, Work,
-};
-use oer_radio_port::{
-    EventsLost, Line, Mint, Permit, PermitPool, Poisoned, PortResult, Seat, Slot,
-};
+use oer_ieee80211_mac::phy::{HeMcs, HtMcs, PhyRate};
+use oer_ieee80211_port::{ClockError, EnableResult, PortBackend, PortPhase, Retire};
+use oer_radio_port::{EventsLost, Mint, Poisoned, PortResult, Slot};
 use oer_time::RadioInstant;
 
 use oer_ieee80211_lower_mac::{
-    AccessPoint, AccessPointClient, AddressSetup, AttemptKey, BandSet, Ccmp128Key, Channel,
-    CoexPriority, CoexPrioritySet, GroupKeyId, HardwareServices, Ieee80211Capabilities,
-    Ieee80211Radio, IndividualAddress, InterfaceRole, KeyScope, LowerMacBackend,
-    LowerMacCapabilities, LowerMacClient, LowerMacControl, LowerMacEvent, LowerMacEvents,
-    LowerMacSetup, MacAddress, PhaseAttempt, PhyFormatSet, PhyRate, RateSupport, ReceiveFilter,
-    RxBuffer, RxMeta, Station, StationClient, StationReceive, SupportedBlockAck, SupportedChannel,
-    SupportedFilter, TX_SEATS, Tid, TxBody, TxCompletion, TxFrame, TxFrameBody, TxGated, TxId,
-    TxResponse, TxSeats, TxStatus, VifRole, WidthSet,
+    AccessPoint, AccessPointPhase, AttemptKey, BandSet, BssColor, Ccmp128Key, Channel, ClassFrame,
+    CoexPriority, CoexPrioritySet, FrameHeader, GateClosed, GateClosedKind, GateOpen, GateOpenKind,
+    GroupKeyId, HardwareServices, Ieee80211Capabilities, Ieee80211Radio, IndividualAddress,
+    InterfaceAttempt, InterfacePhase, InterfaceRole, LowerMacBackend, LowerMacCapabilities,
+    LowerMacEvent, LowerMacPhase, LowerMacSetup, PhaseRate, PhaseTypes, PhyFormatSet, Protection,
+    RateSupport, ReceiveFilter, RxBuffer, RxMeta, Station, StationPhase, StationReceive,
+    SupportedBlockAck, SupportedChannel, SupportedEdca, SupportedFilter, TxBody, TxBufferClass,
+    TxBufferMemory, TxBufferPool, TxCompletion, TxFrame, TxFrameBody, TxStatus, VifRole, WidthSet,
 };
 
-use super::{BufferPermit, QueuePermit, QueuePool, TxBufferKind, TxPermits, TxQueueKind};
-
-/// The longest MPDU of a model buffer.
+/// The longest MPDU the model's large buffers hold.
 pub const MODEL_MAX_MPDU: usize = 2304;
 
-/// The model's parametric limits.
+/// What the model serves.
 pub const MODEL_CAPABILITIES: LowerMacCapabilities = LowerMacCapabilities {
     bands: BandSet::GHZ2_4.union(BandSet::GHZ5),
     widths: WidthSet::MHZ20.union(WidthSet::MHZ40),
@@ -103,10 +68,9 @@ pub const MODEL_CAPABILITIES: LowerMacCapabilities = LowerMacCapabilities {
     },
     services: HardwareServices::FCS
         .union(HardwareServices::IMMEDIATE_ACK)
-        .union(HardwareServices::BACKOFF_COUNTDOWN)
+        .union(HardwareServices::RETRY_POLICY)
         .union(HardwareServices::CIPHER_TRANSFORM)
-        .union(HardwareServices::RX_BLOCK_ACK_MATCHING)
-        .union(HardwareServices::TX_BLOCK_ACK_CAPTURE),
+        .union(HardwareServices::RX_BLOCK_ACK_MATCHING),
     vifs: 2,
     tx_queues: 4,
     max_mpdu_length: MODEL_MAX_MPDU as u16,
@@ -125,10 +89,150 @@ pub const MODEL_CAPABILITIES: LowerMacCapabilities = LowerMacCapabilities {
     edca_max_cw_exponent: 10,
 };
 
-/// A received frame the model lends: its bytes.
+/// The model's capabilities marker.
+pub struct ModelCaps;
+
+impl Ieee80211Capabilities for ModelCaps {
+    const CAPS: LowerMacCapabilities = MODEL_CAPABILITIES;
+}
+
+/// The model's transmit tickets.
+pub const MODEL_TICKETS: usize = 8;
+/// The model's small transmit buffers.
+pub const MODEL_SMALL_BUFFERS: usize = 4;
+/// The model's large transmit buffers.
+pub const MODEL_LARGE_BUFFERS: usize = 4;
+/// The received frames the event queue holds beside the terminals.
+pub const MODEL_RX_EVENTS: usize = 4;
+/// The key slots of each kind of each role.
+pub const MODEL_KEY_SLOTS: usize = 2;
+/// The receive Block Ack slots both roles share.
+pub const MODEL_BLOCK_ACK_SLOTS: usize = 2;
+
+/// The kind of the model's transmit tickets.
+pub enum ModelTickets {}
+
+/// The small buffer class: management frames.
+pub enum ModelSmall {}
+
+impl TxBufferClass for ModelSmall {
+    const CAPACITY: usize = 256;
+}
+
+/// The large buffer class: any MPDU.
+pub enum ModelLarge {}
+
+impl TxBufferClass for ModelLarge {
+    const CAPACITY: usize = MODEL_MAX_MPDU;
+}
+
+/// The kind of the pairwise key slots of the role `R`.
+pub struct ModelPairwiseKeys<R>(PhantomData<fn() -> R>);
+/// The kind of the group key slots of the role `R`.
+pub struct ModelGroupKeys<R>(PhantomData<fn() -> R>);
+/// The kind of the receive Block Ack slots.
+pub enum ModelBlockAcks {}
+
+/// A transmit buffer of the class `C`: its token and its memory, which
+/// moves with it; only the install mints one.
+pub struct ModelBuffer<'id, C> {
+    slot: Slot<'id, C>,
+    memory: Box<[u8]>,
+}
+
+impl<C> TxBufferMemory for ModelBuffer<'_, C> {
+    fn bytes_mut(&mut self) -> &mut [u8] {
+        &mut self.memory
+    }
+}
+
+impl<C> core::fmt::Debug for ModelBuffer<'_, C> {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_tuple("ModelBuffer")
+            .field(&self.slot.index())
+            .finish()
+    }
+}
+
+/// A transmit buffer of either class.
+#[derive(Debug)]
+pub enum ModelAnyBuffer<'id> {
+    /// A small buffer.
+    Small(ModelBuffer<'id, ModelSmall>),
+    /// A large buffer.
+    Large(ModelBuffer<'id, ModelLarge>),
+}
+
+impl ModelAnyBuffer<'_> {
+    fn memory(&self) -> &[u8] {
+        match self {
+            Self::Small(buffer) => &buffer.memory,
+            Self::Large(buffer) => &buffer.memory,
+        }
+    }
+}
+
+/// The types the model's events carry.
+pub struct ModelTypes;
+
+impl<'id> PhaseTypes<'id> for ModelTypes {
+    type TicketKind = ModelTickets;
+    type AnyTxBuffer = ModelAnyBuffer<'id>;
+    type TxBuffers = Vec<ModelAnyBuffer<'id>>;
+    type TxBodies = core::iter::Empty<(u8, ModelBody)>;
+    type RxBuffer = ModelRxBuffer;
+    type RemovedKey = ModelRemovedKey<'id>;
+}
+
+impl<'id> TxBufferPool<'id, ModelSmall> for ModelTypes {
+    type Buffer = ModelBuffer<'id, ModelSmall>;
+
+    fn erase(buffer: Self::Buffer) -> ModelAnyBuffer<'id> {
+        ModelAnyBuffer::Small(buffer)
+    }
+
+    fn class(buffer: ModelAnyBuffer<'id>) -> Result<Self::Buffer, ModelAnyBuffer<'id>> {
+        match buffer {
+            ModelAnyBuffer::Small(buffer) => Ok(buffer),
+            buffer => Err(buffer),
+        }
+    }
+}
+
+impl<'id> TxBufferPool<'id, ModelLarge> for ModelTypes {
+    type Buffer = ModelBuffer<'id, ModelLarge>;
+
+    fn erase(buffer: Self::Buffer) -> ModelAnyBuffer<'id> {
+        ModelAnyBuffer::Large(buffer)
+    }
+
+    fn class(buffer: ModelAnyBuffer<'id>) -> Result<Self::Buffer, ModelAnyBuffer<'id>> {
+        match buffer {
+            ModelAnyBuffer::Large(buffer) => Ok(buffer),
+            buffer => Err(buffer),
+        }
+    }
+}
+
+/// A removed key's slot.
+pub enum ModelRemovedKey<'id> {
+    /// A station's pairwise key.
+    StationPairwise(Slot<'id, ModelPairwiseKeys<Station>>),
+    /// A station's group key.
+    StationGroup(Slot<'id, ModelGroupKeys<Station>>),
+    /// An access point's pairwise key.
+    AccessPointPairwise(Slot<'id, ModelPairwiseKeys<AccessPoint>>),
+    /// An access point's group key.
+    AccessPointGroup(Slot<'id, ModelGroupKeys<AccessPoint>>),
+}
+
+/// The memory of one received MPDU, which goes back through
+/// [`LowerMacPhase::recycle`]: dropped without it, it panics in a test.
 #[derive(Debug)]
 pub struct ModelRxBuffer {
     bytes: Vec<u8>,
+    recycled: bool,
 }
 
 impl RxBuffer for ModelRxBuffer {
@@ -137,7 +241,16 @@ impl RxBuffer for ModelRxBuffer {
     }
 }
 
-/// A body the model's test owns: its octets.
+impl Drop for ModelRxBuffer {
+    fn drop(&mut self) {
+        #[cfg(any(test, feature = "test-support"))]
+        if !self.recycled && !std::thread::panicking() {
+            panic!("a received buffer was dropped without its recycle");
+        }
+    }
+}
+
+/// The owner of an MPDU's body.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModelBody(pub Vec<u8>);
 
@@ -147,851 +260,304 @@ impl TxBody for ModelBody {
     }
 }
 
-/// The cause of a poisoned model: [`ModelHandle::poison`].
+/// What poisons the model.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ModelFault;
 
-/// The model's capabilities marker.
-pub struct ModelCaps;
-
-impl Ieee80211Capabilities for ModelCaps {
-    const CAPS: LowerMacCapabilities = MODEL_CAPABILITIES;
+/// The tokens the install gives the body once.
+pub struct ModelResources<'id> {
+    /// The transmit tickets.
+    pub tickets: Vec<Slot<'id, ModelTickets>>,
+    /// The small transmit buffers.
+    pub small: Vec<ModelBuffer<'id, ModelSmall>>,
+    /// The large transmit buffers.
+    pub large: Vec<ModelBuffer<'id, ModelLarge>>,
+    /// The station's pairwise key slots.
+    pub station_pairwise: [Slot<'id, ModelPairwiseKeys<Station>>; MODEL_KEY_SLOTS],
+    /// The station's group key slots.
+    pub station_group: [Slot<'id, ModelGroupKeys<Station>>; MODEL_KEY_SLOTS],
+    /// The access point's pairwise key slots.
+    pub access_point_pairwise: [Slot<'id, ModelPairwiseKeys<AccessPoint>>; MODEL_KEY_SLOTS],
+    /// The access point's group key slots.
+    pub access_point_group: [Slot<'id, ModelGroupKeys<AccessPoint>>; MODEL_KEY_SLOTS],
+    /// The receive Block Ack slots both roles share.
+    pub block_acks: [Slot<'id, ModelBlockAcks>; MODEL_BLOCK_ACK_SLOTS],
+    /// The open transmit gate.
+    pub gate: GateOpen<'id>,
 }
 
-/// Transmit buffers the model holds.
-pub const OWNED_MODEL_TX_BUFFERS: usize = 3;
-/// Pairwise and group key slots of each role.
-pub const OWNED_MODEL_KEY_SLOTS: usize = 2;
-/// Receive Block Ack slots, which both roles share.
-pub const OWNED_MODEL_BLOCK_ACK_SLOTS: usize = 4;
-/// Transmit queues of the model ([`MODEL_CAPABILITIES`]).
-pub const OWNED_MODEL_TX_QUEUES: usize = MODEL_CAPABILITIES.tx_queues as usize;
-
-/// An interface role of the model's clients: its table of receive Block
-/// Ack agreements in the held part of the install.
-pub trait ModelRole: InterfaceRole + Sized {
-    #[doc(hidden)]
-    fn block_acks<'a, 'id>(held: &'a ModelHeld<'id>) -> &'a BlockAckTable<'id, Self>;
+/// One transmission the air saw.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AirFrame {
+    /// The interface that sent it.
+    pub role: VifRole,
+    /// The MPDU, header and body, without the FCS.
+    pub frame: Vec<u8>,
+    /// Its rate.
+    pub rate: PhyRate,
+    /// The hardware key it named, and whether that key was installed when
+    /// it went.
+    pub key: Option<(u8, bool)>,
 }
 
-impl ModelRole for Station {
-    fn block_acks<'a, 'id>(held: &'a ModelHeld<'id>) -> &'a BlockAckTable<'id, Self> {
-        &held.station_block_acks
-    }
+/// The air and the world of a model: shared by the backend's driver and
+/// the test.
+#[derive(Default)]
+pub struct ModelAir {
+    sent: RefCell<Vec<AirFrame>>,
+    /// The answers of the next transmissions, in order; once none is
+    /// queued, each is acknowledged.
+    answers: RefCell<VecDeque<bool>>,
+    rx: RefCell<VecDeque<(Vec<u8>, RxMeta)>>,
+    refuse_enable: Cell<bool>,
+    poisoned: Cell<bool>,
+    driver: RefCell<Option<Waker>>,
+    /// The driver's passes.
+    passes: Cell<u32>,
+    /// The commands the driver took, of every kind.
+    commands: Cell<u32>,
+    /// The settings the driver applied.
+    settings: Cell<u32>,
 }
 
-impl ModelRole for AccessPoint {
-    fn block_acks<'a, 'id>(held: &'a ModelHeld<'id>) -> &'a BlockAckTable<'id, Self> {
-        &held.access_point_block_acks
-    }
-}
-
-/// The kind of a role's pairwise key slots.
-pub struct ModelPairwiseKeys<R>(PhantomData<fn() -> R>);
-/// The kind of a role's group key slots.
-pub struct ModelGroupKeys<R>(PhantomData<fn() -> R>);
-/// The kind of the receive Block Ack slots, which both roles share.
-pub struct ModelBlockAcks;
-
-/// A role's receive Block Ack agreements: one per peer and TID, each with
-/// its slot.
-pub type BlockAckTable<'id, R> = RefCell<Vec<(IndividualAddress, Tid, Slot<'id, ModelBlockAcks>)>>;
-
-/// Which installed key an attempt uses: its role, whether it is pairwise,
-/// and its slot.
-type KeyUse = (VifRole, bool, u8);
-
-/// One admitted attempt.
-struct Admission {
-    id: TxId,
-    role: VifRole,
-    key: Option<KeyUse>,
-    published: bool,
-    body: Option<ModelBody>,
-}
-
-struct State {
-    /// The channel the next `Enable` tunes to.
-    next_channel: Channel,
-    /// The channel the last `Enable` tuned to, the install's before one.
-    tuned: Channel,
-    addresses: [MacAddress; 2],
-    gate_open: bool,
-    /// The wakers of the futures waiting on the world or the driver.
-    waiting: Vec<Waker>,
-    /// The ends the world posted, which the driver has not served yet, as
-    /// an interrupt's latched status.
-    posted: Vec<(TxId, TxStatus)>,
-    admitted: Vec<Admission>,
-    events: VecDeque<ModelEvent>,
-    next_id: u32,
-    installed_keys: Vec<(VifRole, u8, KeyScope)>,
-    refuse_enable: bool,
-    poisoned: bool,
-    lifecycle: Vec<&'static str>,
-}
-
-type Shared = Rc<RefCell<State>>;
-
-/// The world's side of an [`OwnedModel`].
-#[derive(Clone)]
-pub struct ModelHandle(Shared);
-
-impl ModelHandle {
-    /// End the published attempt `id` on the air with `status`, as an
-    /// interrupt posts the status: the driver serves it, gives the
-    /// attempt's permits back and queues its completion. `false` when no
-    /// such attempt is published.
-    pub fn complete(&self, id: TxId, status: TxStatus) -> bool {
-        let mut state = self.0.borrow_mut();
-        if !state
-            .admitted
-            .iter()
-            .any(|admitted| admitted.id == id && admitted.published)
-        {
-            return false;
-        }
-        state.posted.push((id, status));
-        wake(&mut state);
-        true
+impl ModelAir {
+    /// Every transmission so far.
+    pub fn sent(&self) -> Vec<AirFrame> {
+        self.sent.borrow().clone()
     }
 
-    /// Refuse the next `Enable`, as a radio that rejects the channel.
-    pub fn refuse_enable(&self, refuse: bool) {
-        self.0.borrow_mut().refuse_enable = refuse;
+    /// Answer the next transmission: acknowledged or not.
+    pub fn answer(&self, acknowledged: bool) {
+        self.answers.borrow_mut().push_back(acknowledged);
+    }
+
+    /// Deliver `frame` to the radio.
+    pub fn receive(&self, frame: &[u8], meta: RxMeta) {
+        self.rx.borrow_mut().push_back((frame.into(), meta));
+        self.wake_driver();
+    }
+
+    /// Refuse the next enable.
+    pub fn refuse_enable(&self) {
+        self.refuse_enable.set(true);
     }
 
     /// Poison the backend.
     pub fn poison(&self) {
-        let mut state = self.0.borrow_mut();
-        state.poisoned = true;
-        wake(&mut state);
+        self.poisoned.set(true);
+        self.wake_driver();
     }
 
-    /// The lifecycle steps the backend took, in order.
-    pub fn lifecycle(&self) -> Vec<&'static str> {
-        self.0.borrow().lifecycle.clone()
+    /// The driver's passes so far.
+    pub fn passes(&self) -> u32 {
+        self.passes.get()
     }
 
-    /// The channel the radio is tuned to.
-    pub fn tuned(&self) -> Channel {
-        self.0.borrow().tuned
+    /// The commands the driver took so far.
+    pub fn commands(&self) -> u32 {
+        self.commands.get()
     }
 
-    /// The address of the interface of `role`.
-    pub fn address(&self, role: VifRole) -> MacAddress {
-        self.0.borrow().addresses[role_index(role)]
+    /// The settings the driver applied so far.
+    pub fn settings(&self) -> u32 {
+        self.settings.get()
     }
 
-    /// Whether the transmit gate is open.
-    pub fn gate_open(&self) -> bool {
-        self.0.borrow().gate_open
+    /// The frames the air holds for the driver yet.
+    pub fn pending_rx(&self) -> usize {
+        self.rx.borrow().len()
     }
 
-    /// The installed keys: their role, slot and scope.
-    pub fn installed_keys(&self) -> Vec<(VifRole, u8, KeyScope)> {
-        self.0.borrow().installed_keys.clone()
+    fn wake_driver(&self) {
+        if let Some(waker) = self.driver.borrow_mut().take() {
+            waker.wake();
+        }
+    }
+
+    fn acknowledges(&self) -> bool {
+        self.answers.borrow_mut().pop_front().unwrap_or(true)
     }
 }
 
-/// End the admitted attempt at `index`: queue its completion with its body.
-fn end(state: &mut State, index: usize, status: TxStatus) {
-    let admitted = state.admitted.remove(index);
-    state.events.push_back(ModelEvent::Completed(
-        TxCompletion {
-            id: admitted.id,
-            status,
-            ack_rssi_dbm: None,
-            ack_snr_db: None,
-            block_ack: None,
-        },
-        admitted.body,
-    ));
-    wake(state);
+/// One stage of a retry plan, as the model's hardware takes it.
+#[derive(Clone, Copy, Debug)]
+struct Stage {
+    rate: PhyRate,
+    transmissions: u8,
 }
 
-/// Serve the ends the world posted: give each attempt's permits back to
-/// `tx`, then queue its completion, as the backend's driver does with an
-/// interrupt's status.
-fn serve(state: &mut State, tx: &ModelTxPermits<'_>) {
-    for (id, status) in core::mem::take(&mut state.posted) {
-        if let Some(index) = state.admitted.iter().position(|admitted| admitted.id == id) {
-            tx.complete(id);
-            end(state, index, status);
+/// A command the handle sends the driver, in the order it made it.
+enum Command<'id> {
+    Submit(Prepared<'id>),
+    InstallKey { index: u8 },
+    RemoveKey { index: u8, removed: ModelRemovedKey<'id> },
+    CloseGate,
+    OpenGate,
+    Recycle(ModelRxBuffer),
+}
+
+/// An attempt prepared for its queue.
+struct Prepared<'id> {
+    role: VifRole,
+    ticket: Slot<'id, ModelTickets>,
+    buffer: ModelAnyBuffer<'id>,
+    len: usize,
+    queue: usize,
+    plan: Vec<Stage>,
+    key: Option<u8>,
+}
+
+/// The settings the handle writes and the driver takes before its next
+/// command; the latest value of each kind wins.
+#[derive(Default)]
+struct Settings {
+    station: bool,
+    access_point: bool,
+    other: bool,
+}
+
+/// The install's queues between the handle and the driver.
+pub struct ModelHeld<'id> {
+    air: Rc<ModelAir>,
+    commands: RefCell<VecDeque<Command<'id>>>,
+    settings: RefCell<Settings>,
+    events: RefCell<VecDeque<LowerMacEvent<'id, ModelTypes>>>,
+    /// Received frames queued in `events`.
+    rx_queued: Cell<usize>,
+    /// Received frames dropped since the stream last said so.
+    lost: Cell<bool>,
+    body: RefCell<Option<Waker>>,
+    /// The closed gate the driver holds while the gate is open.
+    closed: RefCell<Option<GateClosed<'id>>>,
+    /// The open gate the driver holds while the gate is closed.
+    open: RefCell<Option<GateOpen<'id>>>,
+}
+
+impl<'id> ModelHeld<'id> {
+    fn command(&self, command: Command<'id>) {
+        self.commands.borrow_mut().push_back(command);
+        self.air.wake_driver();
+    }
+
+    fn post(&self, event: LowerMacEvent<'id, ModelTypes>) {
+        self.events.borrow_mut().push_back(event);
+        self.wake_body();
+    }
+
+    fn wake_body(&self) {
+        if let Some(waker) = self.body.borrow_mut().take() {
+            waker.wake();
         }
     }
 }
 
-/// Wake every future waiting on the world: the world moved.
-fn wake(state: &mut State) {
-    for waker in state.waiting.drain(..) {
-        waker.wake();
+/// The handle's own state of the install: the hardware key indices it
+/// hands out.
+#[derive(Default)]
+pub struct ModelLocal<'id> {
+    next_key: u8,
+    brand: PhantomData<fn(&'id ()) -> &'id ()>,
+}
+
+/// The model's backend; only [`run_port`](oer_ieee80211_port::run_port)
+/// holds it.
+pub struct ModelBackend {
+    air: Rc<ModelAir>,
+    channel: Channel,
+    addresses: [IndividualAddress; 2],
+}
+
+impl ModelBackend {
+    /// A backend tuned to `channel` with the station's and the access
+    /// point's addresses, and the air it plays on.
+    pub fn new(channel: Channel, addresses: [IndividualAddress; 2]) -> (Self, Rc<ModelAir>) {
+        let air = Rc::new(ModelAir::default());
+        (
+            Self {
+                air: air.clone(),
+                channel,
+                addresses,
+            },
+            air,
+        )
     }
-}
-
-/// One owned event of the model.
-pub enum ModelEvent {
-    /// The completion of one admitted attempt, with its body.
-    Completed(TxCompletion, Option<ModelBody>),
-}
-
-/// The model's backend; only [`run_port`](oer_ieee80211_port::run_port) holds it.
-pub struct OwnedModel(Shared);
-
-impl OwnedModel {
-    /// A disabled backend on `channel` whose station and access-point
-    /// interfaces have `addresses`, and its world.
-    pub fn new(
-        channel: SupportedChannel<ModelCaps>,
-        addresses: [MacAddress; 2],
-    ) -> (Self, ModelHandle) {
-        let state = State {
-            next_channel: channel.channel(),
-            tuned: channel.channel(),
-            addresses,
-            gate_open: true,
-            waiting: Vec::new(),
-            posted: Vec::new(),
-            admitted: Vec::new(),
-            events: VecDeque::new(),
-            next_id: 0,
-            installed_keys: Vec::new(),
-            refuse_enable: false,
-            poisoned: false,
-            lifecycle: Vec::new(),
-        };
-        let shared = Rc::new(RefCell::new(state));
-        (Self(shared.clone()), ModelHandle(shared))
-    }
-}
-
-/// The transmit permits of one install of the model.
-pub type ModelTxPermits<'id> = TxPermits<
-    'id,
-    ModelCaps,
-    ModelPermitPool<'id, TxQueueKind>,
-    ModelPermitPool<'id, TxBufferKind>,
-    OWNED_MODEL_TX_QUEUES,
->;
-
-/// The model's held part of one install: its transmit permits and each
-/// role's receive Block Ack agreements.
-pub struct ModelHeld<'id> {
-    pub tx: ModelTxPermits<'id>,
-    station_block_acks: BlockAckTable<'id, Station>,
-    access_point_block_acks: BlockAckTable<'id, AccessPoint>,
-}
-
-/// The transmit seats of one interface of the model.
-pub type ModelTxSeats<'id> = TxSeats<'id, TxQueueKind, TxBufferKind>;
-
-/// The port-lifetime resources the body of one install of the model
-/// receives: each role's slots and transmit seats.
-pub struct ModelResources<'id> {
-    pub station_tx: ModelTxSeats<'id>,
-    pub access_point_tx: ModelTxSeats<'id>,
-    pub station_pairwise_keys: [Slot<'id, ModelPairwiseKeys<Station>>; OWNED_MODEL_KEY_SLOTS],
-    pub station_group_keys: [Slot<'id, ModelGroupKeys<Station>>; OWNED_MODEL_KEY_SLOTS],
-    pub access_point_pairwise_keys:
-        [Slot<'id, ModelPairwiseKeys<AccessPoint>>; OWNED_MODEL_KEY_SLOTS],
-    pub access_point_group_keys: [Slot<'id, ModelGroupKeys<AccessPoint>>; OWNED_MODEL_KEY_SLOTS],
-    /// The receive Block Ack slots both roles share, as the hardware's
-    /// banks are.
-    pub block_acks: [Slot<'id, ModelBlockAcks>; OWNED_MODEL_BLOCK_ACK_SLOTS],
 }
 
 /// The model's disabled-only settings.
-pub struct ModelSetup(Shared);
+pub struct ModelSetup<'a> {
+    channel: &'a mut Channel,
+}
 
-impl LowerMacSetup for ModelSetup {
+impl LowerMacSetup for ModelSetup<'_> {
     type Caps = ModelCaps;
 
     fn set_channel(&mut self, channel: SupportedChannel<ModelCaps>) {
-        self.0.borrow_mut().next_channel = channel.channel();
+        *self.channel = channel.channel();
     }
 }
 
-impl AddressSetup for ModelSetup {
-    fn set_address(&mut self, role: VifRole, address: IndividualAddress) {
-        self.0.borrow_mut().addresses[role_index(role)] = address.get();
-    }
-}
-
-const fn role_index(role: VifRole) -> usize {
-    match role {
-        VifRole::Station => 0,
-        VifRole::AccessPoint => 1,
-    }
-}
-
-/// The model's phase control.
-pub struct ModelControl(Shared);
-
-/// A gate closing: dropped before it yields its guard, it opens the gate
-/// again.
-struct Closing<'g> {
-    control: Option<&'g ModelControl>,
-}
-
-impl Drop for Closing<'_> {
-    fn drop(&mut self) {
-        if let Some(control) = self.control {
-            open(&mut control.0.borrow_mut());
-        }
-    }
-}
-
-/// Open the gate: the attempts it held are published.
-fn open(state: &mut State) {
-    state.gate_open = true;
-    for admitted in &mut state.admitted {
-        admitted.published = true;
-    }
-}
-
-/// The model's closed transmit gate; dropping it opens the gate and
-/// publishes the attempts it held.
-pub struct ModelGated<'g>(&'g ModelControl);
-
-impl TxGated for ModelGated<'_> {}
-
-impl Drop for ModelGated<'_> {
-    fn drop(&mut self) {
-        open(&mut self.0.0.borrow_mut());
-    }
-}
-
-impl LowerMacControl for ModelControl {
-    type Caps = ModelCaps;
-    type Gated<'g> = ModelGated<'g>;
-
-    fn close_gate(&mut self) -> impl Future<Output = ModelGated<'_>> {
-        // Admission stops at once, before the future is polled.
-        self.0.borrow_mut().gate_open = false;
-        let mut closing = Closing {
-            control: Some(&*self),
-        };
-        poll_fn(move |context| {
-            // The whole guard moves into the future, so dropping the future
-            // drops it; a closure that named only its field would copy that.
-            let closing = &mut closing;
-            let control = closing
-                .control
-                .expect("a closed gate yields its guard once");
-            let mut state = control.0.borrow_mut();
-            if state.admitted.iter().any(|admitted| admitted.published) {
-                state.waiting.push(context.waker().clone());
-                return Poll::Pending;
-            }
-            closing.control = None;
-            Poll::Ready(ModelGated(control))
-        })
-    }
-
-    fn set_edca(&mut self, _: oer_ieee80211_lower_mac::SupportedEdca<ModelCaps>) {}
-
-    fn set_rx_beacon_priority(&mut self, _: oer_ieee80211_lower_mac::RxBeaconPriority) {}
-}
-
-/// The model's client of the interface of role `R` in a phase of the
-/// install `'id`.
-pub struct ModelClient<'a, 'id, R> {
-    state: Shared,
-    held: &'a ModelHeld<'id>,
-    role: PhantomData<fn() -> R>,
-}
-
-/// The model's clients: one per interface role.
-pub struct ModelClients<'a, 'id> {
-    pub station: ModelClient<'a, 'id, Station>,
-    pub access_point: ModelClient<'a, 'id, AccessPoint>,
-}
-
-/// The token of one admitted attempt.
-pub struct ModelToken(TxId);
-
-impl RadioWork for ModelToken {
-    type Id = TxId;
-
-    fn id(&self) -> TxId {
-        self.0
-    }
-}
-
-/// One frame's memory, bound to its buffer permit: the header the request
-/// wrote, then the body the caller writes.
-pub struct ModelTxBuffer<'c, 'id> {
-    pub bytes: Vec<u8>,
-    header: usize,
-    /// The response the frame's kind solicits.
-    pub response: TxResponse,
-    /// The rate the frame's kind took.
-    pub rate: PhyRate,
-    permit: BufferPermit<'c, 'id>,
-}
-
-impl TxFrameBody for ModelTxBuffer<'_, '_> {
-    fn body_mut(&mut self) -> &mut [u8] {
-        &mut self.bytes[self.header..]
-    }
-}
-
-/// An installed pairwise key of a client of role `R`; it holds its slot.
-pub struct ModelPairwiseKey<'id, R> {
-    index: u8,
-    slot: Slot<'id, ModelPairwiseKeys<R>>,
-}
-
-/// An installed group key of a client of role `R`; it holds its slot.
-pub struct ModelGroupKey<'id, R> {
-    index: u8,
-    slot: Slot<'id, ModelGroupKeys<R>>,
-}
-
-impl<R> RadioPortClient for ModelClient<'_, '_, R> {
-    type Token = ModelToken;
+impl PortBackend for ModelBackend {
+    type Event<'id> = LowerMacEvent<'id, ModelTypes>;
     type Domain = Ieee80211Radio;
     type Fault = ModelFault;
-
-    fn now(
-        &self,
-    ) -> impl Future<Output = PortResult<RadioInstant<Ieee80211Radio>, ClockError, ModelFault>> + '_
-    {
-        core::future::ready(Ok(Err(ClockError::Unavailable)))
-    }
-
-    fn end(
-        &self,
-        token: ModelToken,
-    ) -> impl Future<Output = PortResult<(), CancelError, ModelFault>> + '_ {
-        // A cancel is a request: the driver ends the attempt.
-        let mut state = self.state.borrow_mut();
-        let ended = if state.admitted.iter().any(|admitted| admitted.id == token.0) {
-            state.posted.push((token.0, TxStatus::Aborted));
-            wake(&mut state);
-            Ok(())
-        } else {
-            Err(CancelError::NotRunning)
-        };
-        core::future::ready(Ok(ended))
-    }
-}
-
-impl<'a, 'id, R: ModelRole> LowerMacClient<'id> for ModelClient<'a, 'id, R> {
-    type Caps = ModelCaps;
-    type QueueKind = TxQueueKind;
-    type BufferKind = TxBufferKind;
-    type Queue<'c>
-        = QueuePermit<'c, 'id>
+    type Refusal = ();
+    type Setup<'a, 'id>
+        = ModelSetup<'a>
     where
-        Self: 'c,
-        'id: 'c;
-    type TxBuffer<'c>
-        = ModelTxBuffer<'c, 'id>
+        Self: 'a;
+    type Phase<'a, 'id>
+        = ModelPhase<'a, 'id>
     where
-        Self: 'c,
-        'id: 'c;
-    type TxBody = ModelBody;
-    type PairwiseKeyKind = ModelPairwiseKeys<R>;
-    type GroupKeyKind = ModelGroupKeys<R>;
-    type PairwiseKey = ModelPairwiseKey<'id, R>;
-    type GroupKey = ModelGroupKey<'id, R>;
-    type BlockAckKind = ModelBlockAcks;
-
-    fn channel(&self) -> Channel {
-        self.state.borrow().tuned
-    }
-
-    fn address(&self) -> IndividualAddress {
-        IndividualAddress::new(self.state.borrow().addresses[role_index(R::ROLE)])
-            .expect("the model's addresses are individual")
-    }
-
-    fn queue<'c, 's>(
-        &'c self,
-        seat: &'s mut Seat<'id, TxQueueKind>,
-    ) -> impl Future<Output = QueuePermit<'c, 'id>> + 's
-    where
-        'id: 'c,
-        'c: 's,
-    {
-        self.held.tx.queue(seat)
-    }
-
-    async fn tx_buffer<'c, 's>(
-        &'c self,
-        frame: TxFrame<'c, ModelCaps>,
-        seat: &'s mut Seat<'id, TxBufferKind>,
-    ) -> ModelTxBuffer<'c, 'id>
-    where
-        'id: 'c,
-        'c: 's,
-    {
-        let permit = self.held.tx.buffer(seat).await;
-        let (bytes, header, response, rate) = match frame {
-            TxFrame::Individual { frame, rate } => {
-                let header = frame.header().header();
-                let mut bytes = alloc::vec![0; frame.len().get()];
-                let written = header.encode(&mut bytes, false);
-                (bytes, written, TxResponse::Ack, rate.get())
-            }
-            TxFrame::IndividualNoAck { frame, rate } => {
-                let header = frame.header().header();
-                let mut bytes = alloc::vec![0; frame.len().get()];
-                let written = header.encode(&mut bytes, true);
-                (bytes, written, TxResponse::None, rate.rate().get())
-            }
-            TxFrame::Group { frame, rate } => {
-                let mut bytes = alloc::vec![0; frame.len().get()];
-                // A group frame solicits no response: its QoS Ack Policy is
-                // No Ack.
-                let written = frame.header().encode(&mut bytes, true);
-                (bytes, written, TxResponse::None, rate.get())
-            }
-            TxFrame::BlockAckRequest {
-                receiver,
-                transmitter,
-                tid,
-                starting_sequence,
-                rate,
-            } => {
-                let bytes = oer_ieee80211_mac::block_ack::encode_block_ack_request(
-                    receiver.get(),
-                    transmitter,
-                    tid.get(),
-                    starting_sequence,
-                )
-                .to_vec();
-                let header = bytes.len();
-                (bytes, header, TxResponse::BlockAck, rate.rate().get())
-            }
-        };
-        ModelTxBuffer {
-            bytes,
-            header,
-            response,
-            rate,
-            permit,
-        }
-    }
-
-    fn submit<'p>(
-        &'p self,
-        attempt: PhaseAttempt<'p, 'id, Self>,
-    ) -> Result<Work<'p, Self>, Poisoned<ModelFault>>
-    where
-        'id: 'p,
-    {
-        let mut state = self.state.borrow_mut();
-        if state.poisoned {
-            return Err(Poisoned { cause: ModelFault });
-        }
-        let PhaseAttempt {
-            queue,
-            frame,
-            body,
-            key,
-            ..
-        } = attempt;
-        let key = key.map(|key| match key {
-            AttemptKey::Pairwise(key) => (R::ROLE, true, key.index),
-            AttemptKey::Group(key) => (R::ROLE, false, key.index),
-        });
-        let id = TxId(state.next_id);
-        state.next_id += 1;
-        let published = state.gate_open;
-        state.admitted.push(Admission {
-            id,
-            role: R::ROLE,
-            key,
-            published,
-            body,
-        });
-        drop(state);
-        self.held.tx.admit(id, queue, frame.permit);
-        Ok(Work::new(self, ModelToken(id)))
-    }
-
-    fn install_pairwise_key(
-        &self,
-        slot: Slot<'id, ModelPairwiseKeys<R>>,
-        peer: IndividualAddress,
-        _: Ccmp128Key,
-    ) -> ModelPairwiseKey<'id, R> {
-        let index = slot.index();
-        self.state.borrow_mut().installed_keys.push((
-            R::ROLE,
-            index,
-            KeyScope::Pairwise { peer: peer.get() },
-        ));
-        ModelPairwiseKey { index, slot }
-    }
-
-    fn install_group_key(
-        &self,
-        slot: Slot<'id, ModelGroupKeys<R>>,
-        key_id: GroupKeyId,
-        _: Ccmp128Key,
-    ) -> ModelGroupKey<'id, R> {
-        let index = slot.index();
-        self.state.borrow_mut().installed_keys.push((
-            R::ROLE,
-            index,
-            KeyScope::Group {
-                key_id: key_id.get(),
-            },
-        ));
-        ModelGroupKey { index, slot }
-    }
-
-    fn remove_pairwise_key(
-        &self,
-        key: ModelPairwiseKey<'id, R>,
-    ) -> impl Future<Output = Slot<'id, ModelPairwiseKeys<R>>> + '_ {
-        let state = &self.state;
-        let mut key = Some(key);
-        poll_fn(move |context| {
-            let index = key.as_ref().expect("a removal ends once").index;
-            if !unused(state, (R::ROLE, true, index), context) {
-                return Poll::Pending;
-            }
-            uninstall(state, R::ROLE, index, true);
-            Poll::Ready(key.take().expect("a removal ends once").slot)
-        })
-    }
-
-    fn remove_group_key(
-        &self,
-        key: ModelGroupKey<'id, R>,
-    ) -> impl Future<Output = Slot<'id, ModelGroupKeys<R>>> + '_ {
-        let state = &self.state;
-        let mut key = Some(key);
-        poll_fn(move |context| {
-            let index = key.as_ref().expect("a removal ends once").index;
-            if !unused(state, (R::ROLE, false, index), context) {
-                return Poll::Pending;
-            }
-            uninstall(state, R::ROLE, index, false);
-            Poll::Ready(key.take().expect("a removal ends once").slot)
-        })
-    }
-
-    fn add_block_ack(
-        &self,
-        slot: Slot<'id, ModelBlockAcks>,
-        agreement: SupportedBlockAck<ModelCaps>,
-    ) -> Option<Slot<'id, ModelBlockAcks>> {
-        let (peer, tid, ..) = agreement.get();
-        let mut table = R::block_acks(self.held).borrow_mut();
-        let replaced = table
-            .iter()
-            .position(|(other, other_tid, _)| (*other, *other_tid) == (peer, tid))
-            .map(|index| table.swap_remove(index).2);
-        table.push((peer, tid, slot));
-        replaced
-    }
-
-    fn remove_block_ack(
-        &self,
-        peer: IndividualAddress,
-        tid: Tid,
-    ) -> Option<Slot<'id, ModelBlockAcks>> {
-        let mut table = R::block_acks(self.held).borrow_mut();
-        let index = table
-            .iter()
-            .position(|(other, other_tid, _)| (*other, *other_tid) == (peer, tid))?;
-        Some(table.swap_remove(index).2)
-    }
-}
-
-impl<'a, 'id> StationClient<'id> for ModelClient<'a, 'id, Station> {
-    fn configure(&self, _: StationReceive<ModelCaps>) -> impl Future<Output = ()> + '_ {
-        let state = &self.state;
-        poll_fn(move |context| quiet(state, VifRole::Station, context))
-    }
-
-    fn set_bss_color(&self, _: oer_ieee80211_lower_mac::BssColor) {}
-}
-
-impl<'a, 'id> AccessPointClient<'id> for ModelClient<'a, 'id, AccessPoint> {
-    fn configure(
-        &self,
-        _: SupportedFilter<ModelCaps, AccessPoint>,
-    ) -> impl Future<Output = ()> + '_ {
-        let state = &self.state;
-        poll_fn(move |context| quiet(state, VifRole::AccessPoint, context))
-    }
-}
-
-/// Whether no attempt in flight uses `key`: one the closed gate holds is
-/// posted to end as aborted, and a published one is waited for.
-fn unused(state: &Shared, key: KeyUse, context: &mut core::task::Context<'_>) -> bool {
-    settle(state, |admitted| admitted.key == Some(key), context)
-}
-
-/// Whether no admitted attempt matches `uses`: the held ones are posted to
-/// end as aborted, which the driver serves, and the waker waits for the
-/// rest.
-fn settle(
-    state: &Shared,
-    uses: impl Fn(&Admission) -> bool,
-    context: &mut core::task::Context<'_>,
-) -> bool {
-    let mut state = state.borrow_mut();
-    let held: Vec<TxId> = state
-        .admitted
-        .iter()
-        .filter(|admitted| uses(admitted) && !admitted.published)
-        .map(|admitted| admitted.id)
-        .filter(|id| !state.posted.iter().any(|(posted, _)| posted == id))
-        .collect();
-    if !held.is_empty() {
-        for id in held {
-            state.posted.push((id, TxStatus::Aborted));
-        }
-        // The driver serves what was posted: wake it, before this waiter
-        // joins the line.
-        wake(&mut state);
-    }
-    if state.admitted.iter().any(&uses) {
-        state.waiting.push(context.waker().clone());
-        false
-    } else {
-        true
-    }
-}
-
-/// Forget an installed key of `role` in slot `index`.
-fn uninstall(state: &Shared, role: VifRole, index: u8, pairwise: bool) {
-    state
-        .borrow_mut()
-        .installed_keys
-        .retain(|(other, slot, scope)| {
-            (*other, *slot, matches!(scope, KeyScope::Pairwise { .. })) != (role, index, pairwise)
-        });
-}
-
-/// Ready once no attempt of `role` is in flight: held ones end as aborted,
-/// published ones are waited for.
-fn quiet(state: &Shared, role: VifRole, context: &mut core::task::Context<'_>) -> Poll<()> {
-    if settle(state, |admitted| admitted.role == role, context) {
-        Poll::Ready(())
-    } else {
-        Poll::Pending
-    }
-}
-
-/// The model's event consumer: the driver gave each attempt's permits
-/// back before it queued the attempt's completion.
-pub struct ModelEvents(Shared);
-
-impl RadioPortEvents for ModelEvents {
-    type Event = ModelEvent;
-    type Fault = ModelFault;
-
-    fn next_event(
-        &mut self,
-    ) -> impl Future<Output = PortResult<ModelEvent, EventsLost, ModelFault>> + '_ {
-        poll_fn(|context| {
-            let mut state = self.0.borrow_mut();
-            match state.events.pop_front() {
-                Some(event) => Poll::Ready(Ok(Ok(event))),
-                None if state.poisoned => Poll::Ready(Err(Poisoned { cause: ModelFault })),
-                None => {
-                    state.waiting.push(context.waker().clone());
-                    Poll::Pending
-                }
-            }
-        })
-    }
-}
-
-impl LowerMacEvents for ModelEvents {
-    type RxBuffer = ModelRxBuffer;
-    type TxBodies = Option<ModelBody>;
-
-    fn view(event: &ModelEvent) -> LowerMacEvent<'_> {
-        match event {
-            ModelEvent::Completed(completion, _) => LowerMacEvent::TxCompleted(*completion),
-        }
-    }
-
-    fn into_received(event: ModelEvent) -> Result<(ModelRxBuffer, RxMeta), ModelEvent> {
-        Err(event)
-    }
-
-    fn into_completed(event: ModelEvent) -> Result<(TxCompletion, Option<ModelBody>), ModelEvent> {
-        match event {
-            ModelEvent::Completed(completion, body) => Ok((completion, body)),
-        }
-    }
-}
-
-impl PortBackend for OwnedModel {
-    type Event = ModelEvent;
-    type Domain = Ieee80211Radio;
-    type Fault = ModelFault;
-    type Refusal = &'static str;
-    type Setup<'a, 'id> = ModelSetup;
-    type Events<'a, 'id>
-        = ModelEvents
-    where
-        'id: 'a;
-    type Control<'a, 'id>
-        = ModelControl
-    where
-        'id: 'a;
-    type Clients<'a, 'id>
-        = ModelClients<'a, 'id>
-    where
+        Self: 'a,
         'id: 'a;
     type Resources<'id> = ModelResources<'id>;
     type Held<'id> = ModelHeld<'id>;
+    type Local<'id> = ModelLocal<'id>;
     type State = ();
     type Uninstall = ();
-    type Uninstalled = ModelHandle;
+    type Uninstalled = Rc<ModelAir>;
 
-    fn enable(&mut self) -> impl Future<Output = EnableResult<&'static str, ModelFault>> + '_ {
-        let mut state = self.0.borrow_mut();
-        let result = if state.poisoned {
+    fn enable(&mut self) -> impl Future<Output = EnableResult<(), ModelFault>> + '_ {
+        let air = &self.air;
+        core::future::ready(if air.poisoned.get() {
             Err(Poisoned { cause: ModelFault })
-        } else if state.refuse_enable {
-            Ok(Err("the radio refused the channel"))
+        } else if air.refuse_enable.replace(false) {
+            Ok(Err(()))
         } else {
-            // The channel the install or the setup set is tuned now.
-            state.tuned = state.next_channel;
-            state.lifecycle.push("enable");
             Ok(Ok(()))
-        };
-        core::future::ready(result)
+        })
     }
 
     fn disable<'a, 'id>(
         &'a mut self,
-        held: &'a Self::Held<'id>,
-        sink: &'a mut dyn FnMut(ModelEvent),
+        held: &'a ModelHeld<'id>,
+        _: &'a mut ModelLocal<'id>,
+        sink: &'a mut dyn FnMut(LowerMacEvent<'id, ModelTypes>),
     ) -> impl Future<Output = Result<(), Poisoned<ModelFault>>> + 'a
     where
         'id: 'a,
     {
-        let mut state = self.0.borrow_mut();
-        let result = if state.poisoned {
-            Err(Poisoned { cause: ModelFault })
-        } else {
-            serve(&mut state, &held.tx);
-            while let Some(admitted) = state.admitted.first() {
-                let id = admitted.id;
-                end(&mut state, 0, TxStatus::Aborted);
-                held.tx.complete(id);
+        // The driver ends every command it holds; then every event goes to
+        // the sink.
+        poll_fn(move |cx| {
+            if held.air.poisoned.get() {
+                return Poll::Ready(Err(Poisoned { cause: ModelFault }));
             }
-            while let Some(event) = state.events.pop_front() {
-                sink(event);
+            if !held.commands.borrow().is_empty() {
+                *held.body.borrow_mut() = Some(cx.waker().clone());
+                held.air.wake_driver();
+                return Poll::Pending;
             }
-            debug_assert!(held.tx.idle(), "every permit is back");
-            state.lifecycle.push("disable");
-            Ok(())
-        };
-        core::future::ready(result)
+            loop {
+                let event = held.events.borrow_mut().pop_front();
+                match event {
+                    Some(event) => sink(event),
+                    None => break,
+                }
+            }
+            held.rx_queued.set(0);
+            Poll::Ready(Ok(()))
+        })
     }
 
     fn now(
@@ -1001,55 +567,70 @@ impl PortBackend for OwnedModel {
         core::future::ready(Ok(Err(ClockError::Unavailable)))
     }
 
-    fn resources<'id>(&mut self, mut mint: Mint<'id>) -> (Self::Held<'id>, Self::Resources<'id>) {
-        let buffers: [Permit<'id, TxBufferKind>; OWNED_MODEL_TX_BUFFERS] = mint.permits();
-        // The model's buffer line grows on the heap, so it holds a place for
-        // every seat without the line's size.
-        let (queue_line, _, [station_tx, access_point_tx]) = TxSeats::mint(&mut mint);
+    fn resources<'id>(
+        &mut self,
+        mut mint: Mint<'id>,
+    ) -> (ModelHeld<'id>, ModelLocal<'id>, ModelResources<'id>) {
+        let [gate] = mint.slots::<GateOpenKind, 1>();
+        let [closed] = mint.slots::<GateClosedKind, 1>();
+        let tickets: [Slot<'id, ModelTickets>; MODEL_TICKETS] = mint.slots();
+        let small: [Slot<'id, ModelSmall>; MODEL_SMALL_BUFFERS] = mint.slots();
+        let large: [Slot<'id, ModelLarge>; MODEL_LARGE_BUFFERS] = mint.slots();
         let held = ModelHeld {
-            tx: TxPermits::new(&mut mint, queue_line, ModelPermitPool::new(buffers)),
-            station_block_acks: RefCell::new(Vec::new()),
-            access_point_block_acks: RefCell::new(Vec::new()),
+            air: self.air.clone(),
+            commands: RefCell::default(),
+            settings: RefCell::default(),
+            events: RefCell::default(),
+            rx_queued: Cell::new(0),
+            lost: Cell::new(false),
+            body: RefCell::default(),
+            closed: RefCell::new(Some(closed)),
+            open: RefCell::default(),
         };
         let resources = ModelResources {
-            station_tx,
-            access_point_tx,
-            station_pairwise_keys: mint.slots(),
-            station_group_keys: mint.slots(),
-            access_point_pairwise_keys: mint.slots(),
-            access_point_group_keys: mint.slots(),
+            tickets: tickets.into_iter().collect(),
+            small: small
+                .into_iter()
+                .map(|slot| ModelBuffer {
+                    slot,
+                    memory: alloc::vec![0; ModelSmall::CAPACITY].into_boxed_slice(),
+                })
+                .collect(),
+            large: large
+                .into_iter()
+                .map(|slot| ModelBuffer {
+                    slot,
+                    memory: alloc::vec![0; ModelLarge::CAPACITY].into_boxed_slice(),
+                })
+                .collect(),
+            station_pairwise: mint.slots(),
+            station_group: mint.slots(),
+            access_point_pairwise: mint.slots(),
+            access_point_group: mint.slots(),
             block_acks: mint.slots(),
+            gate,
         };
-        (held, resources)
+        (held, ModelLocal::default(), resources)
     }
 
-    fn setup<'a, 'id>(&'a mut self) -> Lent<'a, Self::Setup<'a, 'id>> {
-        Lent::new(ModelSetup(self.0.clone()))
+    fn setup<'a, 'id>(&'a mut self, _: &'a mut Self::Local<'id>) -> Self::Setup<'a, 'id> {
+        ModelSetup {
+            channel: &mut self.channel,
+        }
     }
 
-    fn split<'a, 'id>(
+    fn phase<'a, 'id>(
         &'a mut self,
-        held: &'a Self::Held<'id>,
-    ) -> PhaseParts<'a, Self::Events<'a, 'id>, Self::Control<'a, 'id>, Self::Clients<'a, 'id>>
+        held: &'a ModelHeld<'id>,
+        local: &'a mut ModelLocal<'id>,
+    ) -> ModelPhase<'a, 'id>
     where
         'id: 'a,
     {
-        let state = &self.0;
-        PhaseParts {
-            events: Lent::new(ModelEvents(state.clone())),
-            control: Lent::new(ModelControl(state.clone())),
-            clients: Lent::new(ModelClients {
-                station: ModelClient {
-                    state: state.clone(),
-                    held,
-                    role: PhantomData,
-                },
-                access_point: ModelClient {
-                    state: state.clone(),
-                    held,
-                    role: PhantomData,
-                },
-            }),
+        ModelPhase {
+            backend: self,
+            held,
+            local,
         }
     }
 
@@ -1058,157 +639,532 @@ impl PortBackend for OwnedModel {
         held: &'p Self::Held<'id>,
         retire: Retire<'p>,
     ) -> impl Future<Output = ()> + use<'p, 'id> {
-        let state = self.0.clone();
-        // It serves what the world posted at every poll; an idle poll reads
-        // one vector's length.
-        poll_fn(move |context| {
-            let mut state = state.borrow_mut();
-            serve(&mut state, &held.tx);
-            if retire.is_requested() {
-                state.lifecycle.push("retire");
-                Poll::Ready(())
-            } else {
-                state.waiting.push(context.waker().clone());
-                Poll::Pending
+        let mut driver = Driver {
+            queues: core::array::from_fn(|_| VecDeque::new()),
+            keys: Vec::new(),
+            gate_open: true,
+        };
+        poll_fn(move |cx| {
+            held.air.passes.set(held.air.passes.get() + 1);
+            if held.air.poisoned.get() || retire.is_requested() {
+                return Poll::Ready(());
             }
+            driver.serve(held);
+            *held.air.driver.borrow_mut() = Some(cx.waker().clone());
+            Poll::Pending
         })
     }
 
     fn retire_bound(&self) -> impl Future<Output = ()> + '_ {
-        // The model's driver retires at its next poll: it never misses.
         core::future::pending()
     }
 
-    fn detach<'id>(&mut self, _: &Self::Held<'id>) {
-        self.0.borrow_mut().lifecycle.push("detach");
+    fn detach<'id>(&mut self, _: &ModelHeld<'id>) {}
+
+    fn uninstall<'id>(self, _: ModelHeld<'id>, _: ModelLocal<'id>, (): (), (): ()) -> Rc<ModelAir> {
+        self.air
     }
 
-    fn uninstall<'id>(self, _: Self::Held<'id>, (): (), (): ()) -> ModelHandle {
-        self.0.borrow_mut().lifecycle.push("uninstall");
-        ModelHandle(self.0)
-    }
-
-    fn abandon(&mut self) {
-        self.0.borrow_mut().lifecycle.push("abandon");
-    }
+    fn abandon(&mut self) {}
 }
 
-impl LowerMacBackend for OwnedModel {
+impl LowerMacBackend for ModelBackend {
     type Caps = ModelCaps;
 }
 
-impl<'id> QueuePool<'id> for ModelPermitPool<'id, TxQueueKind> {
-    fn of(permit: Permit<'id, TxQueueKind>, _: Line<'id, TxQueueKind, TX_SEATS>) -> Self {
-        Self::new([permit])
+/// The model's hardware, which only the driver owns.
+struct Driver<'id> {
+    /// The prepared attempts of each queue, the head first.
+    queues: [VecDeque<Prepared<'id>>; 4],
+    /// The installed hardware keys.
+    keys: Vec<u8>,
+    gate_open: bool,
+}
+
+impl<'id> Driver<'id> {
+    /// Serve everything posted: the settings, the commands in order, the
+    /// queues, then the air.
+    fn serve(&mut self, held: &ModelHeld<'id>) {
+        loop {
+            // The settings come before the next command.
+            let settings = core::mem::take(&mut *held.settings.borrow_mut());
+            if settings.station {
+                held.air.settings.set(held.air.settings.get() + 1);
+                held.post(LowerMacEvent::Configured(VifRole::Station));
+            }
+            if settings.access_point {
+                held.air.settings.set(held.air.settings.get() + 1);
+                held.post(LowerMacEvent::Configured(VifRole::AccessPoint));
+            }
+            if settings.other {
+                held.air.settings.set(held.air.settings.get() + 1);
+            }
+            let command = held.commands.borrow_mut().pop_front();
+            let Some(command) = command else {
+                break;
+            };
+            held.air.commands.set(held.air.commands.get() + 1);
+            match command {
+                Command::Submit(prepared) => {
+                    let queue = prepared.queue;
+                    self.queues[queue].push_back(prepared);
+                }
+                Command::InstallKey { index } => self.keys.push(index),
+                Command::RemoveKey { index, removed } => {
+                    self.keys.retain(|key| *key != index);
+                    held.post(LowerMacEvent::KeyRemoved(removed));
+                }
+                Command::CloseGate => {
+                    self.gate_open = false;
+                    // Every prepared, unpublished attempt ends as aborted.
+                    for queue in &mut self.queues {
+                        while let Some(prepared) = queue.pop_front() {
+                            terminal(held, prepared, TxStatus::Aborted, 0, None);
+                        }
+                    }
+                    let closed = held.closed.borrow_mut().take();
+                    if let Some(closed) = closed {
+                        held.post(LowerMacEvent::GateClosed(closed));
+                    }
+                }
+                Command::OpenGate => self.gate_open = true,
+                Command::Recycle(mut buffer) => buffer.recycled = true,
+            }
+            if self.gate_open {
+                self.publish(held);
+            }
+        }
+        self.receive(held);
     }
-}
 
-/// A first-in, first-out pool of permits, whose line grows on the heap: a
-/// place for every seat that waits.
-pub struct ModelPermitPool<'id, Kind> {
-    free: RefCell<Vec<Permit<'id, Kind>>>,
-    /// The waiting takers, in arrival order: each one's ticket and waker.
-    line: Waiting,
-    next: Cell<u32>,
-}
-
-type Waiting = RefCell<VecDeque<(u32, Waker)>>;
-
-/// Wake the taker at the head of `line`, which a free permit now serves.
-fn wake_head(line: &Waiting) {
-    if let Some((_, waker)) = line.borrow().front() {
-        waker.wake_by_ref();
+    /// Publish the head of every queue and carry its retry plan out.
+    fn publish(&mut self, held: &ModelHeld<'id>) {
+        for queue in &mut self.queues {
+            while let Some(prepared) = queue.pop_front() {
+                let mut transmissions = 0_u8;
+                let mut last = None;
+                let mut delivered = false;
+                'plan: for stage in &prepared.plan {
+                    for _ in 0..stage.transmissions {
+                        transmissions = transmissions.saturating_add(1);
+                        last = Some(stage.rate);
+                        held.air.sent.borrow_mut().push(AirFrame {
+                            role: prepared.role,
+                            frame: prepared.buffer.memory()[..prepared.len].into(),
+                            rate: stage.rate,
+                            key: prepared.key.map(|key| (key, self.keys.contains(&key))),
+                        });
+                        if held.air.acknowledges() {
+                            delivered = true;
+                            break 'plan;
+                        }
+                    }
+                }
+                let status = if delivered {
+                    TxStatus::Success
+                } else {
+                    TxStatus::AckTimeout
+                };
+                terminal(held, prepared, status, transmissions, last);
+            }
+        }
     }
-}
 
-impl<'id, Kind> ModelPermitPool<'id, Kind> {
-    /// A pool of `permits`.
-    pub fn new(permits: impl IntoIterator<Item = Permit<'id, Kind>>) -> Self {
-        Self {
-            free: RefCell::new(permits.into_iter().collect()),
-            line: RefCell::default(),
-            next: Cell::new(0),
+    /// Deliver the frames the air brought, as many as the event queue
+    /// holds beside the terminals.
+    fn receive(&mut self, held: &ModelHeld<'id>) {
+        loop {
+            let frame = held.air.rx.borrow_mut().pop_front();
+            let Some((frame, meta)) = frame else {
+                break;
+            };
+            if held.rx_queued.get() < MODEL_RX_EVENTS {
+                held.rx_queued.set(held.rx_queued.get() + 1);
+                held.post(LowerMacEvent::Received {
+                    frame: ModelRxBuffer {
+                        bytes: frame,
+                        recycled: false,
+                    },
+                    meta,
+                });
+            } else {
+                held.lost.set(true);
+                held.wake_body();
+            }
         }
     }
 }
 
-impl<'id, Kind> PermitPool<'id, Kind> for ModelPermitPool<'id, Kind> {
-    fn take<'a>(
-        &'a self,
-        _: &'a mut Seat<'id, Kind>,
-    ) -> impl Future<Output = Permit<'id, Kind>> + 'a {
-        let mut place = Place {
-            line: &self.line,
-            ticket: None,
-        };
-        poll_fn(move |context| {
-            // The whole place moves into the future, so dropping the future
-            // drops it; a closure that named only its field would copy that.
-            let place = &mut place;
-            let mine = match place.ticket {
-                Some(mine) => {
-                    // Keep the latest waker of this taker.
-                    if let Some(entry) = self
-                        .line
-                        .borrow_mut()
-                        .iter_mut()
-                        .find(|(ticket, _)| *ticket == mine)
-                    {
-                        entry.1.clone_from(context.waker());
-                    }
-                    mine
-                }
-                None => {
-                    let issued = self.next.get();
-                    self.next.set(issued + 1);
-                    self.line
-                        .borrow_mut()
-                        .push_back((issued, context.waker().clone()));
-                    place.ticket = Some(issued);
-                    issued
-                }
-            };
-            if self.line.borrow().front().map(|(ticket, _)| *ticket) != Some(mine) {
-                return Poll::Pending;
+/// Post the terminal of `prepared`, with its tokens.
+fn terminal<'id>(
+    held: &ModelHeld<'id>,
+    prepared: Prepared<'id>,
+    status: TxStatus,
+    transmissions: u8,
+    rate: Option<PhyRate>,
+) {
+    held.post(LowerMacEvent::TxCompleted {
+        ticket: prepared.ticket,
+        buffers: alloc::vec![prepared.buffer],
+        completion: TxCompletion {
+            status,
+            ack_rssi_dbm: None,
+            ack_snr_db: None,
+            block_ack: None,
+            transmissions,
+            rate,
+        },
+        bodies: core::iter::empty(),
+    });
+}
+
+/// The model's running phase: the body's handle over the queues.
+pub struct ModelPhase<'a, 'id> {
+    backend: &'a mut ModelBackend,
+    held: &'a ModelHeld<'id>,
+    local: &'a mut ModelLocal<'id>,
+}
+
+impl<'id> PortPhase for ModelPhase<'_, 'id> {
+    type Event = LowerMacEvent<'id, ModelTypes>;
+    type Fault = ModelFault;
+
+    fn next_event(
+        &mut self,
+    ) -> impl Future<Output = PortResult<Self::Event, EventsLost, ModelFault>> + '_ {
+        let held = self.held;
+        // Cancel-safe: the event stays queued until a poll takes it.
+        poll_fn(move |cx| {
+            if held.air.poisoned.get() {
+                return Poll::Ready(Err(Poisoned { cause: ModelFault }));
             }
-            let served = self.free.borrow_mut().pop();
-            match served {
-                Some(permit) => {
-                    self.line.borrow_mut().pop_front();
-                    place.ticket = None;
-                    // A permit still free serves the next taker: wake it.
-                    if !self.free.borrow().is_empty() {
-                        wake_head(&self.line);
-                    }
-                    Poll::Ready(permit)
+            let event = held.events.borrow_mut().pop_front();
+            if let Some(event) = event {
+                if matches!(event, LowerMacEvent::Received { .. }) {
+                    held.rx_queued.set(held.rx_queued.get().saturating_sub(1));
                 }
-                None => Poll::Pending,
+                return Poll::Ready(Ok(Ok(event)));
             }
+            if held.lost.replace(false) {
+                return Poll::Ready(Ok(Err(EventsLost)));
+            }
+            *held.body.borrow_mut() = Some(cx.waker().clone());
+            Poll::Pending
         })
     }
+}
 
-    fn release(&self, permit: Permit<'id, Kind>) {
-        self.free.borrow_mut().push(permit);
-        wake_head(&self.line);
+impl<'p, 'id: 'p> LowerMacPhase<'p, 'id> for ModelPhase<'p, 'id> {
+    type Caps = ModelCaps;
+    type Types = ModelTypes;
+    type Station<'v>
+        = ModelInterface<'v, 'id, Station>
+    where
+        Self: 'v;
+    type AccessPoint<'v>
+        = ModelInterface<'v, 'id, AccessPoint>
+    where
+        Self: 'v;
+
+    fn channel(&self) -> Channel {
+        self.backend.channel
     }
-}
 
-/// A taker's place in a [`ModelPermitPool`]'s line, given up when its
-/// future drops before it is served; the taker behind it then leads.
-struct Place<'p> {
-    line: &'p Waiting,
-    ticket: Option<u32>,
-}
+    fn recycle(&mut self, buffer: ModelRxBuffer) {
+        self.held.command(Command::Recycle(buffer));
+    }
 
-impl Drop for Place<'_> {
-    fn drop(&mut self) {
-        if let Some(ticket) = self.ticket {
-            self.line
-                .borrow_mut()
-                .retain(|(waiting, _)| *waiting != ticket);
-            wake_head(self.line);
+    fn close_gate(&mut self, gate: GateOpen<'id>) {
+        // The open gate waits with the backend while the gate is closed.
+        self.held.open.borrow_mut().replace(gate);
+        self.held.command(Command::CloseGate);
+    }
+
+    fn open_gate(&mut self, gate: GateClosed<'id>) -> GateOpen<'id> {
+        // The closed gate goes back to the backend, the open one it kept to
+        // the caller.
+        self.held.closed.borrow_mut().replace(gate);
+        self.held.command(Command::OpenGate);
+        self.held
+            .open
+            .borrow_mut()
+            .take()
+            .expect("a closed gate's open twin waits with the backend")
+    }
+
+    fn set_edca(&mut self, _: SupportedEdca<ModelCaps>) {
+        self.held.settings.borrow_mut().other = true;
+        self.held.air.wake_driver();
+    }
+
+    fn station(&mut self) -> ModelInterface<'_, 'id, Station> {
+        ModelInterface {
+            held: self.held,
+            local: self.local,
+            address: self.backend.addresses[0],
+            role: PhantomData,
         }
     }
+
+    fn access_point(&mut self) -> ModelInterface<'_, 'id, AccessPoint> {
+        ModelInterface {
+            held: self.held,
+            local: self.local,
+            address: self.backend.addresses[1],
+            role: PhantomData,
+        }
+    }
+}
+
+/// One interface of the model's phase.
+pub struct ModelInterface<'v, 'id, R> {
+    held: &'v ModelHeld<'id>,
+    local: &'v mut ModelLocal<'id>,
+    address: IndividualAddress,
+    role: PhantomData<fn() -> R>,
+}
+
+/// A frame's memory, bound to its frame, ready to submit.
+pub struct ModelTxBuffer<'id> {
+    buffer: <ModelTypes as PhaseTypes<'id>>::AnyTxBuffer,
+    len: usize,
+    header_len: usize,
+    plan: Vec<Stage>,
+}
+
+impl TxFrameBody for ModelTxBuffer<'_> {
+    fn body_mut(&mut self) -> &mut [u8] {
+        let (header, len) = (self.header_len, self.len);
+        match &mut self.buffer {
+            ModelAnyBuffer::Small(buffer) => &mut buffer.memory[header..len],
+            ModelAnyBuffer::Large(buffer) => &mut buffer.memory[header..len],
+        }
+    }
+}
+
+/// A key the model installed.
+pub struct ModelPairwiseKey<'id, R> {
+    index: u8,
+    slot: Slot<'id, ModelPairwiseKeys<R>>,
+}
+
+/// A group key the model installed.
+pub struct ModelGroupKey<'id, R> {
+    index: u8,
+    slot: Slot<'id, ModelGroupKeys<R>>,
+}
+
+/// A receive Block Ack agreement the model keeps.
+pub struct ModelBlockAck<'id> {
+    slot: Slot<'id, ModelBlockAcks>,
+}
+
+/// The removed-key event of a role.
+pub trait ModelRole: InterfaceRole + Sized {
+    #[doc(hidden)]
+    fn pairwise<'id>(slot: Slot<'id, ModelPairwiseKeys<Self>>) -> ModelRemovedKey<'id>;
+    #[doc(hidden)]
+    fn group<'id>(slot: Slot<'id, ModelGroupKeys<Self>>) -> ModelRemovedKey<'id>;
+}
+
+impl ModelRole for Station {
+    fn pairwise<'id>(slot: Slot<'id, ModelPairwiseKeys<Self>>) -> ModelRemovedKey<'id> {
+        ModelRemovedKey::StationPairwise(slot)
+    }
+
+    fn group<'id>(slot: Slot<'id, ModelGroupKeys<Self>>) -> ModelRemovedKey<'id> {
+        ModelRemovedKey::StationGroup(slot)
+    }
+}
+
+impl ModelRole for AccessPoint {
+    fn pairwise<'id>(slot: Slot<'id, ModelPairwiseKeys<Self>>) -> ModelRemovedKey<'id> {
+        ModelRemovedKey::AccessPointPairwise(slot)
+    }
+
+    fn group<'id>(slot: Slot<'id, ModelGroupKeys<Self>>) -> ModelRemovedKey<'id> {
+        ModelRemovedKey::AccessPointGroup(slot)
+    }
+}
+
+/// A retry plan's stages, as the model's hardware takes them.
+fn stages(frame: &TxFrame<'_, ModelCaps>) -> Vec<Stage> {
+    match frame {
+        TxFrame::Individual { plan, .. } => plan
+            .stages()
+            .map(|stage| Stage {
+                rate: stage.rate.get(),
+                transmissions: stage.transmissions.get(),
+            })
+            .collect(),
+        TxFrame::BlockAckRequest { plan, .. } => plan
+            .stages()
+            .map(|stage| Stage {
+                rate: stage.rate.rate().get(),
+                transmissions: stage.transmissions.get(),
+            })
+            .collect(),
+        TxFrame::IndividualNoAck { rate, .. } => alloc::vec![Stage {
+            rate: rate.rate().get(),
+            transmissions: 1,
+        }],
+        TxFrame::Group { rate, .. } => alloc::vec![Stage {
+            rate: rate.get(),
+            transmissions: 1,
+        }],
+    }
+}
+
+fn header_len(frame: &TxFrame<'_, ModelCaps>) -> usize {
+    match frame {
+        TxFrame::Individual { frame, .. } => frame.header().header_len(),
+        TxFrame::IndividualNoAck { frame, .. } => frame.header().header_len(),
+        TxFrame::Group { frame, .. } => frame.header().header_len(),
+        TxFrame::BlockAckRequest { .. } => 20,
+    }
+}
+
+impl<'p, 'v, 'id: 'p, R: ModelRole> InterfacePhase<'p, 'id> for ModelInterface<'v, 'id, R> {
+    type Caps = ModelCaps;
+    type Types = ModelTypes;
+    type Role = R;
+    type Fault = ModelFault;
+    type TxBuffer = ModelTxBuffer<'id>;
+    type TxBody = ModelBody;
+    type PairwiseKeyKind = ModelPairwiseKeys<R>;
+    type GroupKeyKind = ModelGroupKeys<R>;
+    type PairwiseKey = ModelPairwiseKey<'id, R>;
+    type GroupKey = ModelGroupKey<'id, R>;
+    type BlockAckKind = ModelBlockAcks;
+    type BlockAck = ModelBlockAck<'id>;
+
+    fn address(&self) -> IndividualAddress {
+        self.address
+    }
+
+    fn tx_buffer<C>(
+        &mut self,
+        buffer: <ModelTypes as TxBufferPool<'id, C>>::Buffer,
+        frame: ClassFrame<'p, C, ModelCaps>,
+    ) -> ModelTxBuffer<'id>
+    where
+        C: TxBufferClass,
+        ModelTypes: TxBufferPool<'id, C>,
+    {
+        let frame = frame.into_frame();
+        ModelTxBuffer {
+            buffer: <ModelTypes as TxBufferPool<'id, C>>::erase(buffer),
+            len: frame.mpdu_len(),
+            header_len: header_len(&frame),
+            plan: stages(&frame),
+        }
+    }
+
+    fn submit(
+        &mut self,
+        attempt: InterfaceAttempt<'_, 'p, 'id, Self>,
+    ) -> Result<(), Poisoned<ModelFault>> {
+        if self.held.air.poisoned.get() {
+            return Err(Poisoned { cause: ModelFault });
+        }
+        let key = attempt.key.map(|key| match key {
+            AttemptKey::Pairwise(key) => key.index,
+            AttemptKey::Group(key) => key.index,
+        });
+        self.held.command(Command::Submit(Prepared {
+            role: R::ROLE,
+            ticket: attempt.ticket,
+            buffer: attempt.frame.buffer,
+            len: attempt.frame.len,
+            queue: attempt.access_category as usize,
+            plan: attempt.frame.plan,
+            key,
+        }));
+        let _ = Protection::None;
+        Ok(())
+    }
+
+    fn install_pairwise_key(
+        &mut self,
+        slot: Slot<'id, ModelPairwiseKeys<R>>,
+        _: IndividualAddress,
+        _: Ccmp128Key,
+    ) -> ModelPairwiseKey<'id, R> {
+        let index = self.local.next_key;
+        self.local.next_key = index.wrapping_add(1);
+        self.held.command(Command::InstallKey { index });
+        ModelPairwiseKey { index, slot }
+    }
+
+    fn install_group_key(
+        &mut self,
+        slot: Slot<'id, ModelGroupKeys<R>>,
+        _: GroupKeyId,
+        _: Ccmp128Key,
+    ) -> ModelGroupKey<'id, R> {
+        let index = self.local.next_key;
+        self.local.next_key = index.wrapping_add(1);
+        self.held.command(Command::InstallKey { index });
+        ModelGroupKey { index, slot }
+    }
+
+    fn remove_pairwise_key(&mut self, key: ModelPairwiseKey<'id, R>) {
+        self.held.command(Command::RemoveKey {
+            index: key.index,
+            removed: R::pairwise(key.slot),
+        });
+    }
+
+    fn remove_group_key(&mut self, key: ModelGroupKey<'id, R>) {
+        self.held.command(Command::RemoveKey {
+            index: key.index,
+            removed: R::group(key.slot),
+        });
+    }
+
+    fn add_block_ack(
+        &mut self,
+        slot: Slot<'id, ModelBlockAcks>,
+        _: SupportedBlockAck<ModelCaps>,
+    ) -> ModelBlockAck<'id> {
+        ModelBlockAck { slot }
+    }
+
+    fn replace_block_ack(
+        &mut self,
+        running: ModelBlockAck<'id>,
+        _: SupportedBlockAck<ModelCaps>,
+    ) -> ModelBlockAck<'id> {
+        running
+    }
+
+    fn remove_block_ack(&mut self, agreement: ModelBlockAck<'id>) -> Slot<'id, ModelBlockAcks> {
+        agreement.slot
+    }
+}
+
+impl<'p, 'v, 'id: 'p> StationPhase<'p, 'id> for ModelInterface<'v, 'id, Station> {
+    fn configure(&mut self, _: StationReceive<ModelCaps>) {
+        self.held.settings.borrow_mut().station = true;
+        self.held.air.wake_driver();
+    }
+
+    fn set_bss_color(&mut self, _: BssColor) {
+        self.held.settings.borrow_mut().other = true;
+        self.held.air.wake_driver();
+    }
+}
+
+impl<'p, 'v, 'id: 'p> AccessPointPhase<'p, 'id> for ModelInterface<'v, 'id, AccessPoint> {
+    fn configure(&mut self, _: SupportedFilter<ModelCaps, AccessPoint>) {
+        self.held.settings.borrow_mut().access_point = true;
+        self.held.air.wake_driver();
+    }
+}
+
+#[allow(dead_code, reason = "the rate check the service uses")]
+fn rate<'p>(phase: &ModelPhase<'p, '_>, rate: PhyRate) -> Option<PhaseRate<'p>> {
+    phase.rate(rate)
 }
 
 #[cfg(test)]

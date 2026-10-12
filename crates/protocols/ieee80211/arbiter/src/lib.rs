@@ -55,7 +55,7 @@
 //!   ([`ReservationMode`]): an arbiter that reserves the access point's air
 //!   for an absence closes the gate with one last frame, a CTS-to-self the
 //!   driver sends with the Duration left, and only a phase that sends it
-//!   ([`AirReservationPhase`](oer_ieee80211_lower_mac::AirReservationPhase))
+//!   ([`AirReservationPhase`])
 //!   closes its gates ([`CloseGateWith`], [reservation decision]).
 //! - **The upstream** (the access point the station is connected to) is
 //!   the [`coordinator`]'s: the station reports its switch announcements,
@@ -63,6 +63,19 @@
 //!   moves the port, announces the access point's own switch, stops and
 //!   starts the access point, and tells the station where the port went
 //!   ([`StationNotice::Moved`]) or that it must leave.
+//! - **A join elsewhere** beside a running access point follows the
+//!   [`ApFollowPolicy`] ([follow decision]): the access point announces its
+//!   move to the station's channel and the join's lease starts with the
+//!   move; one it may not serve stops it, or refuses the join
+//!   ([`LeaveReason::Unservable`]). The announced move is never withdrawn:
+//!   after a failed join the access point stays there. Within
+//!   [`ApFollowPolicy::min_follow_interval`] of its last such move, a join
+//!   elsewhere is refused with the moment to retry
+//!   ([`LeaveReason::TooSoon`]).
+//! - **The outbox** holds one cell for each kind of notice and command,
+//!   whose capacity the tokens prove: a lease's end carries the one place,
+//!   a start needs a lease of it, and a move or a start happens only in a
+//!   gate's cycle, before which the owner takes every cell.
 //!
 //! # Compile-fail tests
 //!
@@ -116,6 +129,7 @@
 //! [amendments]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129677418
 //! [reservation decision]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129750091
 //! [absence decision]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6130033259
+//! [follow decision]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6130615564
 
 #[cfg(test)]
 extern crate std;
@@ -134,7 +148,7 @@ use oer_time::{Duration, Instant};
 
 use coordinator::{
     ApFollowPolicy, ApSchedule, ApSearchPolicy, ChannelCoordinator, CoordinatorAction,
-    CoordinatorActions, UpstreamLossPolicy,
+    CoordinatorActions, JoinAway, UpstreamLossPolicy,
 };
 
 /// The longest air reservation: the Duration field's limit, in
@@ -264,7 +278,10 @@ pub enum AbsenceRefusal {
 #[derive(Debug)]
 pub enum Answer<K> {
     /// The channel, leased; the arbiter keeps the place until the lease
-    /// ends.
+    /// ends. A join away from the running access point's channel, which
+    /// the access point follows, starts once the access point's announced
+    /// move took the port there: its `from` is the expected switch. The
+    /// move is never withdrawn, whether the station joins or not.
     Lease(Lease<K>),
     /// The station must leave its network, or may not have the channel;
     /// the place comes back.
@@ -274,13 +291,17 @@ pub enum Answer<K> {
 /// Why the station must leave its network, or may not join on a channel.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LeaveReason {
-    /// The upstream moved where the access point may not follow, and the
-    /// policy keeps the access point.
+    /// The upstream moved, or the station joins, where the access point may
+    /// not follow, and the policy keeps the access point.
     Unservable,
-    /// A join away from the running access point's channel: the station
-    /// reports where it found its upstream ([`UpstreamFact::Found`]), and
-    /// the port moves there first.
-    AwayFromAccessPoint,
+    /// A join away from the running access point's channel too soon after
+    /// its last move to where the station joins
+    /// ([`ApFollowPolicy::min_follow_interval`]): the station may ask
+    /// again at `retry_at`.
+    TooSoon {
+        /// When the access point may follow again.
+        retry_at: Instant,
+    },
     /// The port could not return to the access point's channel, or it is
     /// poisoned: the station and the access point stop.
     PortFailed,
@@ -608,6 +629,9 @@ struct Granted<K> {
 enum LeaseStep {
     /// Before its start.
     Waiting { ready: bool },
+    /// A join's lease that starts with the access point's announced move
+    /// onto its channel.
+    AwaitingMove,
     /// The gate cycles onto its channel.
     Starting,
     /// Running on its channel.
@@ -616,10 +640,28 @@ enum LeaseStep {
     Ending,
 }
 
-/// A move of the port no lease asked for.
-struct Move<K> {
-    to: SupportedChannel<K>,
-    at: Instant,
+/// The station and the access point that share the port: whether the
+/// access point runs, whether the port moves without a lease, whether the
+/// upstream is lost.
+enum Pair<K> {
+    /// The station alone on the port.
+    Alone,
+    /// The access point runs on its schedule.
+    Serving { schedule: ApSchedule },
+    /// The port moves to `target` at `at`, for both interfaces; the access
+    /// point's schedule while it runs.
+    Moving {
+        target: SupportedChannel<K>,
+        at: Instant,
+        access_point: Option<ApSchedule>,
+    },
+    /// The upstream is lost since `since` while the access point runs; the
+    /// search's last absence started at `last_search`.
+    UpstreamLost {
+        since: Instant,
+        last_search: Option<Instant>,
+        schedule: ApSchedule,
+    },
 }
 
 /// One cycle of the gate: closing, the port's move when it must, opening,
@@ -640,13 +682,13 @@ impl<K> Clone for Port<K> {
 
 impl<K> Copy for Port<K> {}
 
-impl<K> Clone for Move<K> {
+impl<K> Clone for Pair<K> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<K> Copy for Move<K> {}
+impl<K> Copy for Pair<K> {}
 
 impl<K, Reserve: Copy> Clone for Cycle<K, Reserve> {
     fn clone(&self) -> Self {
@@ -667,36 +709,97 @@ enum CyclePurpose {
     Return,
 }
 
-/// What one transition owes the station and the access point: at most
-/// two notices (a lease's end and a command to leave) and two commands.
+/// What the arbiter owes the station and the access point, until its
+/// owner takes it: one cell for each kind, whose capacity the tokens prove.
+///
+/// - A lease's end carries its place, of which there is one: a second end
+///   waits for a lease, which waits for the place, which comes with the
+///   first end.
+/// - A lease's start needs a lease of the place; its end comes after it,
+///   and the next start needs the end's place.
+/// - The cells are taken whole before the gate's next cycle, and a move or
+///   a lease starts only in a cycle: one of each per cycle.
+/// - A command to leave keeps the port's failure over any other reason.
+/// - The access point's stop withdraws its start and its announcement.
 struct Outbox<K> {
-    notices: [Option<StationNotice<K>>; 3],
-    commands: [Option<AccessPointCommand<K>>; 2],
+    primary_started: Option<LeaseId>,
+    absence_started: Option<LeaseId>,
+    primary_end: Option<(LeaseId, Option<CancelReason>, LeasePlace)>,
+    absence_end: Option<(LeaseId, Option<CancelReason>, AbsencePlace)>,
+    moved: Option<SupportedChannel<K>>,
+    leave: Option<LeaveReason>,
+    stop: bool,
+    start: Option<SupportedChannel<K>>,
+    announce: Option<AccessPointCommand<K>>,
 }
 
 impl<K> Outbox<K> {
     const fn new() -> Self {
         Self {
-            notices: [None, None, None],
-            commands: [None, None],
+            primary_started: None,
+            absence_started: None,
+            primary_end: None,
+            absence_end: None,
+            moved: None,
+            leave: None,
+            stop: false,
+            start: None,
+            announce: None,
         }
     }
 
-    fn tell(&mut self, notice: StationNotice<K>) {
-        let slot = self.notices.iter_mut().find(|slot| slot.is_none());
-        debug_assert!(slot.is_some(), "a transition owes the station at most three notices");
-        if let Some(slot) = slot {
-            *slot = Some(notice);
+    fn leave(&mut self, reason: LeaveReason) {
+        if self.leave != Some(LeaveReason::PortFailed) {
+            self.leave = Some(reason);
         }
     }
 
-    fn command(&mut self, command: AccessPointCommand<K>) {
-        let slot = self.commands.iter_mut().find(|slot| slot.is_none());
-        debug_assert!(slot.is_some(), "a transition owes the access point at most two commands");
-        if let Some(slot) = slot {
-            *slot = Some(command);
-        }
+    fn stop(&mut self) {
+        self.stop = true;
+        self.start = None;
+        self.announce = None;
     }
+
+    /// The next thing owed: the access point's commands, then the
+    /// station's notices, starts before ends and absences before the
+    /// primary lease.
+    fn take(&mut self) -> Option<Owed<K>> {
+        if core::mem::take(&mut self.stop) {
+            return Some(Owed::AccessPoint(AccessPointCommand::Stop));
+        }
+        if let Some(channel) = self.start.take() {
+            return Some(Owed::AccessPoint(AccessPointCommand::Start(channel)));
+        }
+        if let Some(command) = self.announce.take() {
+            return Some(Owed::AccessPoint(command));
+        }
+        let notice = if let Some(id) = self.primary_started.take() {
+            StationNotice::LeaseStarted(id)
+        } else if let Some(id) = self.absence_started.take() {
+            StationNotice::AbsenceStarted(id)
+        } else if let Some((id, reason, place)) = self.absence_end.take() {
+            match reason {
+                Some(reason) => StationNotice::AbsenceCancelled(id, reason, place),
+                None => StationNotice::AbsenceEnded(id, place),
+            }
+        } else if let Some((id, reason, place)) = self.primary_end.take() {
+            match reason {
+                Some(reason) => StationNotice::LeaseCancelled(id, reason, place),
+                None => StationNotice::LeaseEnded(id, place),
+            }
+        } else if let Some(channel) = self.moved.take() {
+            StationNotice::Moved(channel)
+        } else {
+            StationNotice::Leave(self.leave.take()?)
+        };
+        Some(Owed::Station(notice))
+    }
+}
+
+/// One thing the outbox owes.
+enum Owed<K> {
+    Station(StationNotice<K>),
+    AccessPoint(AccessPointCommand<K>),
 }
 
 /// The arbiter.
@@ -706,8 +809,7 @@ pub struct Arbiter<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMo
     coordinator: ChannelCoordinator<'a>,
     gate: Gate<G>,
     port: Port<K>,
-    /// The access point's schedule while it runs.
-    access_point: Option<ApSchedule>,
+    pair: Pair<K>,
     /// The channel the port returns to: the access point's, the primary
     /// lease's, or the port's alone.
     home: SupportedChannel<K>,
@@ -717,13 +819,7 @@ pub struct Arbiter<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMo
     absence: Option<(Granted<K>, AbsencePlace)>,
     /// A command to leave the station hears once its absence ended.
     leave: Option<LeaveReason>,
-    pending: Option<Move<K>>,
     cycle: Option<Cycle<K, R::Reserve>>,
-    /// The upstream is lost since this instant, while the access point
-    /// runs.
-    lost: Option<Instant>,
-    /// The start of the search's last absence.
-    last_search: Option<Instant>,
     next_id: u32,
     outbox: Outbox<K>,
 }
@@ -742,15 +838,12 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
                 coordinator: ChannelCoordinator::new(policy.follow, policy.search),
                 gate: Gate::Open(gate),
                 port: Port::On(channel),
-                access_point: None,
+                pair: Pair::Alone,
                 home: channel,
                 primary: None,
                 absence: None,
                 leave: None,
-                pending: None,
                 cycle: None,
-                lost: None,
-                last_search: None,
                 next_id: 0,
                 outbox: Outbox::new(),
             },
@@ -767,6 +860,42 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
         }
     }
 
+    /// The access point's schedule while it runs.
+    fn schedule(&self) -> Option<ApSchedule> {
+        match self.pair {
+            Pair::Alone => None,
+            Pair::Serving { schedule } | Pair::UpstreamLost { schedule, .. } => Some(schedule),
+            Pair::Moving { access_point, .. } => access_point,
+        }
+    }
+
+    /// The pair once no move runs: alone, serving, or searching for the
+    /// upstream the coordinator searches for.
+    fn settle(&mut self, schedule: Option<ApSchedule>) {
+        self.pair = match (schedule, self.coordinator.search_since()) {
+            (None, _) => Pair::Alone,
+            (Some(schedule), Some(since)) => Pair::UpstreamLost {
+                since,
+                last_search: None,
+                schedule,
+            },
+            (Some(schedule), None) => Pair::Serving { schedule },
+        };
+    }
+
+    /// The access point stopped, or is stopping.
+    fn access_point_gone(&mut self) {
+        match &mut self.pair {
+            Pair::Moving { access_point, .. } => *access_point = None,
+            pair => *pair = Pair::Alone,
+        }
+    }
+
+    /// Whether the port's move is due at `now`.
+    fn move_due(&self, now: Instant) -> bool {
+        matches!(self.pair, Pair::Moving { at, .. } if now >= at)
+    }
+
     fn next_id(&mut self) -> LeaseId {
         let id = LeaseId(self.next_id);
         self.next_id = self.next_id.wrapping_add(1);
@@ -778,8 +907,8 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
     /// the listening and the move back, at most the policy's absence.
     fn absence_window(&self, earliest: Instant, dwell: Option<Duration>) -> (Instant, Instant) {
         let retune = self.policy.retune;
-        let from = match &self.access_point {
-            Some(schedule) => slot(*schedule, earliest, self.policy.guard),
+        let from = match self.schedule() {
+            Some(schedule) => slot(schedule, earliest, self.policy.guard),
             None => earliest,
         };
         let wanted = dwell.map_or(self.policy.absence, |dwell| sum(sum(dwell, retune), retune));
@@ -819,18 +948,60 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
             return Answer::Leave(LeaveReason::PortFailed, place);
         }
         let away = request.channel != self.home;
-        if away && request.purpose == Purpose::Connect && self.access_point.is_some() {
-            return Answer::Leave(LeaveReason::AwayFromAccessPoint, place);
+        let mut follows = None;
+        if away
+            && request.purpose == Purpose::Connect
+            && let Some(schedule) = self.schedule()
+        {
+            match self
+                .coordinator
+                .station_joining_away(request.channel.channel(), now)
+            {
+                JoinAway::Follow { count } => {
+                    self.outbox.announce = Some(AccessPointCommand::AnnounceSwitch {
+                        target: request.channel,
+                        mode: ChannelSwitchMode::Continue,
+                        count,
+                    });
+                    follows = Some(schedule.switch_at(now, count));
+                }
+                JoinAway::StopAccessPoint => {
+                    self.access_point_gone();
+                    self.outbox.stop();
+                }
+                JoinAway::Refused => return Answer::Leave(LeaveReason::Unservable, place),
+                JoinAway::TooSoon { retry_at } => {
+                    return Answer::Leave(LeaveReason::TooSoon { retry_at }, place);
+                }
+            }
         }
         let id = self.next_id();
+        if let Some(switch) = follows {
+            let granted = Granted {
+                id,
+                channel: request.channel,
+                from: switch,
+                until: None,
+                returns: false,
+                end: LeaseEnd::Own,
+                step: LeaseStep::AwaitingMove,
+            };
+            let lease = Self::lease_value(&granted, self.policy.retune);
+            self.primary = Some((granted, place));
+            return Answer::Lease(lease);
+        }
+        let schedule = self.schedule();
         let mut earliest = now;
         let dwell = match request.purpose {
             Purpose::Scan { dwell } => Some(dwell),
             Purpose::Search { dwell } => {
                 // A lost upstream's search spaces its absences: one per
                 // beacon interval while dense, sparser after.
-                if let (Some(since), Some(last), Some(schedule)) =
-                    (self.lost, self.last_search, self.access_point)
+                if let Pair::UpstreamLost {
+                    since,
+                    last_search: Some(last),
+                    schedule,
+                } = self.pair
                 {
                     let dense = since.saturating_add(self.policy.search.dense_period);
                     let spacing = if last < dense {
@@ -847,7 +1018,7 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
             }
             Purpose::Connect => None,
         };
-        let (from, until, returns) = if away && self.access_point.is_some() {
+        let (from, until, returns) = if away && schedule.is_some() {
             // Beside an access point, away from its channel only in an
             // absence after its TBTT.
             let (from, until) = self.absence_window(earliest, dwell);
@@ -860,8 +1031,10 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
                 false,
             )
         };
-        if matches!(request.purpose, Purpose::Search { .. }) {
-            self.last_search = Some(from);
+        if matches!(request.purpose, Purpose::Search { .. })
+            && let Pair::UpstreamLost { last_search, .. } = &mut self.pair
+        {
+            *last_search = Some(from);
         }
         let granted = Granted {
             id,
@@ -977,7 +1150,7 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
             return;
         };
         match granted.step {
-            LeaseStep::Waiting { .. } => {
+            LeaseStep::Waiting { .. } | LeaseStep::AwaitingMove => {
                 let reason = match end {
                     LeaseEnd::Cancelled(reason) => reason,
                     LeaseEnd::Own | LeaseEnd::Released => CancelReason::Released,
@@ -994,14 +1167,12 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
         match which {
             Which::Primary => {
                 if let Some((granted, place)) = self.primary.take() {
-                    self.outbox
-                        .tell(StationNotice::LeaseCancelled(granted.id, reason, place));
+                    self.outbox.primary_end = Some((granted.id, Some(reason), place));
                 }
             }
             Which::Absence => {
                 if let Some((granted, place)) = self.absence.take() {
-                    self.outbox
-                        .tell(StationNotice::AbsenceCancelled(granted.id, reason, place));
+                    self.outbox.absence_end = Some((granted.id, Some(reason), place));
                 }
             }
         }
@@ -1018,13 +1189,12 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
             Some(LeaseEnd::Own | LeaseEnd::Released) => match which {
                 Which::Primary => {
                     if let Some((granted, place)) = self.primary.take() {
-                        self.outbox.tell(StationNotice::LeaseEnded(granted.id, place));
+                        self.outbox.primary_end = Some((granted.id, None, place));
                     }
                 }
                 Which::Absence => {
                     if let Some((granted, place)) = self.absence.take() {
-                        self.outbox
-                            .tell(StationNotice::AbsenceEnded(granted.id, place));
+                        self.outbox.absence_end = Some((granted.id, None, place));
                     }
                 }
             },
@@ -1045,13 +1215,31 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
                     next_tbtt,
                     beacon_interval,
                 };
-                self.access_point = Some(schedule);
+                match &mut self.pair {
+                    Pair::Serving { schedule: running }
+                    | Pair::UpstreamLost {
+                        schedule: running, ..
+                    } => *running = schedule,
+                    Pair::Moving { access_point, .. } => *access_point = Some(schedule),
+                    Pair::Alone => {}
+                }
                 self.home = channel;
                 self.coordinator.access_point_running(schedule);
+                if matches!(self.pair, Pair::Alone) {
+                    self.settle(Some(schedule));
+                }
             }
             AccessPointFact::Stopped => {
-                self.access_point = None;
+                self.access_point_gone();
                 self.coordinator.access_point_stopped();
+                // A join that waited for the access point's move goes
+                // alone.
+                if let Some((granted, _)) = &mut self.primary
+                    && granted.step == LeaseStep::AwaitingMove
+                {
+                    granted.step = LeaseStep::Waiting { ready: true };
+                    granted.from = now;
+                }
                 // A lease away from its channel is cancelled and returns.
                 let reason = LeaseEnd::Cancelled(CancelReason::AccessPointStopped);
                 self.end_lease(Which::Absence, reason);
@@ -1072,8 +1260,9 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
     pub fn upstream(&mut self, now: Instant, fact: UpstreamFact<K>) {
         match fact {
             UpstreamFact::Connected(channel) => {
-                self.lost = None;
-                self.last_search = None;
+                if let Pair::UpstreamLost { schedule, .. } = self.pair {
+                    self.pair = Pair::Serving { schedule };
+                }
                 let actions = self.coordinator.station_connected(channel.channel());
                 self.apply(actions);
             }
@@ -1095,8 +1284,9 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
                 let reason = LeaseEnd::Cancelled(CancelReason::UpstreamLost);
                 self.end_lease(Which::Absence, reason);
                 self.coordinator.upstream_lost(now);
-                self.lost = self.access_point.map(|_| now);
-                self.last_search = None;
+                if !matches!(self.pair, Pair::Moving { .. }) {
+                    self.settle(self.schedule());
+                }
             }
             UpstreamFact::Found(channel) => {
                 let actions = self.coordinator.upstream_found(channel.channel());
@@ -1104,7 +1294,6 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
             }
             UpstreamFact::NotFound => {
                 let actions = self.coordinator.upstream_rescan_failed(now);
-                self.lost = Some(now);
                 self.apply(actions);
             }
         }
@@ -1122,7 +1311,7 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
             self.end_lease(Which::Absence, LeaseEnd::Cancelled(CancelReason::Switch));
             self.leave = Some(reason);
         } else {
-            self.outbox.tell(StationNotice::Leave(reason));
+            self.outbox.leave(reason);
         }
     }
 
@@ -1135,24 +1324,32 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
                     mode,
                     count,
                 } => match SupportedChannel::new(target) {
-                    Some(target) => self.outbox.command(AccessPointCommand::AnnounceSwitch {
-                        target,
-                        mode,
-                        count,
-                    }),
+                    Some(target) => {
+                        self.outbox.announce = Some(AccessPointCommand::AnnounceSwitch {
+                            target,
+                            mode,
+                            count,
+                        });
+                    }
                     None => self.command_leave(LeaveReason::Unservable),
                 },
                 CoordinatorAction::Retune { channel, at } => match SupportedChannel::new(channel) {
-                    Some(to) => self.pending = Some(Move { to, at }),
+                    Some(target) => {
+                        self.pair = Pair::Moving {
+                            target,
+                            at,
+                            access_point: self.schedule(),
+                        };
+                    }
                     None => self.command_leave(LeaveReason::Unservable),
                 },
                 CoordinatorAction::StopAccessPoint => {
-                    self.access_point = None;
-                    self.outbox.command(AccessPointCommand::Stop);
+                    self.access_point_gone();
+                    self.outbox.stop();
                 }
                 CoordinatorAction::StartAccessPoint { channel } => {
                     if let Some(channel) = SupportedChannel::new(channel) {
-                        self.outbox.command(AccessPointCommand::Start(channel));
+                        self.outbox.start = Some(channel);
                     }
                 }
                 CoordinatorAction::LeaveUpstream => self.command_leave(LeaveReason::Unservable),
@@ -1184,7 +1381,7 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
         match cycle.purpose {
             CyclePurpose::LeaseStart(which) => {
                 if which == Which::Primary
-                    && self.access_point.is_none()
+                    && self.schedule().is_none()
                     && let Some((granted, _)) = &self.primary
                     && granted.until.is_none()
                 {
@@ -1193,11 +1390,11 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
                 }
                 if let Some(granted) = self.granted(which) {
                     granted.step = LeaseStep::Running;
-                    let id = granted.id;
-                    self.outbox.tell(match which {
-                        Which::Primary => StationNotice::LeaseStarted(id),
-                        Which::Absence => StationNotice::AbsenceStarted(id),
-                    });
+                    let id = Some(granted.id);
+                    match which {
+                        Which::Primary => self.outbox.primary_started = id,
+                        Which::Absence => self.outbox.absence_started = id,
+                    }
                 }
             }
             CyclePurpose::LeaseEnd(which) => {
@@ -1205,18 +1402,34 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
                 if which == Which::Absence
                     && let Some(reason) = self.leave.take()
                 {
-                    self.outbox.tell(StationNotice::Leave(reason));
+                    self.outbox.leave(reason);
                 }
             }
             CyclePurpose::Move => {
-                // The primary lease moves with the port; the station
-                // exchanges its value for the new one.
-                if let Some((granted, _)) = self.primary.as_mut()
-                    && granted.step == LeaseStep::Running
-                {
-                    granted.channel = cycle.to;
+                let access_point = match self.pair {
+                    Pair::Moving { access_point, .. } => access_point.map(|schedule| ApSchedule {
+                        channel: cycle.to.channel(),
+                        ..schedule
+                    }),
+                    _ => self.schedule(),
+                };
+                self.settle(access_point);
+                match self.primary.as_mut() {
+                    // A join's lease starts with the move onto its channel.
+                    Some((granted, _))
+                        if granted.step == LeaseStep::AwaitingMove && granted.channel == cycle.to =>
+                    {
+                        granted.step = LeaseStep::Running;
+                        self.outbox.primary_started = Some(granted.id);
+                    }
+                    // The primary lease moves with the port; the station
+                    // exchanges its value for the new one.
+                    Some((granted, _)) if granted.step == LeaseStep::Running => {
+                        granted.channel = cycle.to;
+                        self.outbox.moved = Some(cycle.to);
+                    }
+                    _ => self.outbox.moved = Some(cycle.to),
                 }
-                self.outbox.tell(StationNotice::Moved(cycle.to));
             }
             CyclePurpose::Return => {}
         }
@@ -1263,18 +1476,18 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
     fn fail(&mut self) {
         self.port = Port::Failed;
         self.cycle = None;
-        self.pending = None;
+        self.pair = Pair::Alone;
         self.cancel(Which::Absence, CancelReason::PortFailed);
         self.cancel(Which::Primary, CancelReason::PortFailed);
-        self.outbox.tell(StationNotice::Leave(LeaveReason::PortFailed));
-        self.outbox.command(AccessPointCommand::Stop);
+        self.outbox.leave(LeaveReason::PortFailed);
+        self.outbox.stop();
     }
 
     /// The cycle that starts or ends the lease at `now`, if it is due.
     fn lease_cycle(&mut self, which: Which, now: Instant) -> Option<Cycle<K, R::Reserve>> {
         let home = self.home;
         let retune = self.policy.retune;
-        let pending_due = self.pending.is_some_and(|pending| now >= pending.at);
+        let pending_due = self.move_due(now);
         let granted = self.granted(which)?;
         match granted.step {
             LeaseStep::Waiting { ready } if now >= granted.from => {
@@ -1351,12 +1564,12 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
             return;
         }
         if self.absence.is_none()
-            && self.pending.is_some_and(|pending| now >= pending.at)
-            && let Some(pending) = self.pending.take()
+            && self.move_due(now)
+            && let Pair::Moving { target, .. } = self.pair
         {
-            self.home = pending.to;
+            self.home = target;
             self.cycle = Some(Cycle {
-                to: pending.to,
+                to: target,
                 reserve: R::none(),
                 purpose: CyclePurpose::Move,
             });
@@ -1420,14 +1633,10 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
 
     /// A command or a notice owed, the commands first.
     fn owed(&mut self) -> Option<ArbiterAction<G, K, R>> {
-        if let Some(command) = self.outbox.commands.iter_mut().find_map(Option::take) {
-            return Some(ArbiterAction::AccessPoint(command));
-        }
-        self.outbox
-            .notices
-            .iter_mut()
-            .find_map(Option::take)
-            .map(ArbiterAction::Station)
+        self.outbox.take().map(|owed| match owed {
+            Owed::Station(notice) => ArbiterAction::Station(notice),
+            Owed::AccessPoint(command) => ArbiterAction::AccessPoint(command),
+        })
     }
 
     /// Whether the starting lease no longer fits two retunes and the
@@ -1459,7 +1668,10 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
         };
         let primary = self.primary.as_ref().and_then(|(granted, _)| lease(granted));
         let absence = self.absence.as_ref().and_then(|(granted, _)| lease(granted));
-        let pending = self.pending.map(|pending| pending.at);
+        let pending = match self.pair {
+            Pair::Moving { at, .. } => Some(at),
+            _ => None,
+        };
         let loss = self.coordinator.upstream_loss_due(self.policy.loss);
         [primary, absence, pending, loss].into_iter().flatten().min()
     }

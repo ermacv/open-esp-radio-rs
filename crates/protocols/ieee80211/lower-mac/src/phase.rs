@@ -526,7 +526,18 @@ pub trait TxBufferPool<'id, C: TxBufferClass>: PhaseTypes<'id> {
 }
 
 /// The memory of a transmit buffer the body holds: the caller encodes a
-/// frame into it, from its header on, before it hands the buffer in.
+/// frame into it, from its header on, before it hands the buffer in
+/// ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129930775)).
+///
+/// A backend's buffer token keeps four rules:
+///
+/// - it opens only the frame's octets, never the DMA descriptor;
+/// - it is written only while the body holds it, and a submission takes
+///   it by value;
+/// - when its memory is cacheable, the backend makes it coherent at the
+///   submission, before the DMA reads it;
+/// - it is a handle on pinned memory: moving the token never moves the
+///   buffer.
 pub trait TxBufferMemory {
     /// The buffer's octets, as long as its class holds.
     fn bytes_mut(&mut self) -> &mut [u8];

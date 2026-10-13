@@ -2164,3 +2164,13 @@ fn aggregates_outside_the_limits_are_refused_with_their_subframes() {
     assert_eq!(hardware.ht.len(), 1);
     assert_eq!(source.free(), BACKINGS);
 }
+
+#[test]
+fn the_backoff_is_drawn_from_the_category_s_contention_window() {
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    // The vendor defaults: best effort's CWmin is 15 slots.
+    for _ in 0..16 {
+        assert!(core.draw_backoff(WmmAccessCategory::BestEffort) <= 15);
+    }
+}

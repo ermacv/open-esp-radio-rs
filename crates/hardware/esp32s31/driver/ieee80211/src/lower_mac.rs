@@ -853,6 +853,16 @@ where
         &self.tx
     }
 
+    /// A backoff for an attempt of `access_category`, drawn by the vendor's
+    /// policy from the category's contention window: the phase contract
+    /// leaves the backoff to the backend, and the S31 draws it in
+    /// software.
+    pub fn draw_backoff(&mut self, access_category: WmmAccessCategory) -> u16 {
+        self.tx
+            .contention_publication(LegacyTxQueue::from_access_category(access_category))
+            .1
+    }
+
     /// Whether the queue of `access_category` holds an attempt.
     pub fn queue_busy(&self, access_category: WmmAccessCategory) -> bool {
         let queue = LegacyTxQueue::from_access_category(access_category);
@@ -1935,6 +1945,7 @@ pub struct MpduValues<'slot, const BUFFER_SIZE: usize> {
     pub protection: Protection,
     pub key: Option<KeyIndex>,
     pub power_ceiling_dbm: Option<i8>,
+    /// The backoff, drawn by [`LowerMacCore::draw_backoff`].
     pub backoff_slots: u16,
     pub coex: CoexPriority,
     /// A transmission of an MPDU the plan sends again.
@@ -1952,6 +1963,7 @@ pub struct AmpduValues {
     pub protection: Protection,
     pub key: Option<KeyIndex>,
     pub power_ceiling_dbm: Option<i8>,
+    /// The backoff, drawn by [`LowerMacCore::draw_backoff`].
     pub backoff_slots: u16,
     pub coex: CoexPriority,
     /// The recipient's Minimum MPDU Start Spacing encoding, 0 to 7.

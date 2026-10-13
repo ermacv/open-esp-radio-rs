@@ -21,6 +21,7 @@
 //! - [`spawns`]: only entry crates run `cargo hil` or `cargo xtask`;
 //! - [`layouts`]: code relying on a foreign type's layout names the release
 //!   it was reviewed at, and its workspace still locks that release;
+//! - [`lints`]: opted-in crate roots share the canonical deny/test-allow block;
 //! - [`agents`]: every `CLAUDE.md` has its `AGENTS.md` link, skills and
 //!   agent profiles have consistent frontmatter, and agent guidance cites no
 //!   line numbers.
@@ -38,6 +39,7 @@ pub mod components;
 pub mod dependencies;
 pub mod fetch;
 pub mod layouts;
+pub mod lints;
 pub mod reachability;
 pub mod records;
 pub mod sources;
@@ -121,6 +123,10 @@ pub fn run(repo: &Repo) -> Result<Vec<Outcome>> {
         Outcome {
             check: "firmware release profiles",
             problems: workspaces::release_profiles(&context),
+        },
+        Outcome {
+            check: "strict lint policy",
+            problems: lints::check(&context)?,
         },
         Outcome {
             check: "unused dependencies",

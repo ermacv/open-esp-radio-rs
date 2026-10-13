@@ -35,3 +35,9 @@ rate (the ESP32-S31 MAC's `StaTxRatePolicy`, with its certification
 overrides) and programs its own beamforming report-rate registers, and a
 portable station uses it through `EspressifRateControl`, the station's
 `StaRateControl` seam, which decodes its schedules through `rate_code`.
+
+Rate-control schedule literals are bounds-checked at compile time with an
+array-length equality. Dynamic schedule selection still uses its typed
+constructor and the documented vendor clamping rule. HT fallback uses the
+MAC's checked `HtMcs::SINGLE_STREAM_MAX` value; neither path can panic while
+processing a transmission.

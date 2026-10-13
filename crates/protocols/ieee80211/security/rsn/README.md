@@ -39,3 +39,12 @@ SAE (`00-0F-AC:8`). The MAC package names them and the negotiated
 association (`oer_ieee80211_mac::security::AssociationSecurity`); this crate
 owns only their cryptography, each property an exhaustive match over the
 suite.
+
+The strict-lint milestone [#751](https://github.com/ermacv/open-esp-radio-rs/issues/751)
+requires boundary constructors to retain checked fixed-size fields as array
+references obtained with `split_first_chunk`. Variable-length envelopes must
+establish each boundary before those fields reach crypto and handshake
+transitions. Runtime expect/unwrap paths become retained type proofs or typed
+peer-input refusals, without mechanically replacing indexing with `.get()`
+or suppressing the lint. Policy is enabled at the crate root when that
+migration is complete, before step 2 of #563 merges.

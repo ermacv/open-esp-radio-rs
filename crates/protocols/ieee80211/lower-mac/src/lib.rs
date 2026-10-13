@@ -147,6 +147,3 @@ pub use tx::{
 extern crate std;
 
 pub use owner::CheckedPoolAggregate;
-
-mod key_cell;
-pub use key_cell::{KeyCellIndex, KeyCellResource, KeyCellSlot};

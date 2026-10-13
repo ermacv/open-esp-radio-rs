@@ -88,9 +88,9 @@ impl StaTokens for Tokens {
         mpdu
     }
     type PairwiseSlot = Slot;
-    type GroupSlot = oer_ieee80211_lower_mac::KeyCellSlot<Slot>;
+    type GroupSlot = Slot;
     type PairwiseKey = Key;
-    type GroupKey = Key<oer_ieee80211_lower_mac::KeyCellSlot<Slot>>;
+    type GroupKey = Key<Slot>;
     type RxMeta = RxMeta;
 }
 
@@ -269,7 +269,7 @@ impl World {
                 place,
                 absence_place: absence,
                 pairwise: Slot(0),
-                groups: oer_ieee80211_lower_mac::KeyCellSlot::bind(group_slots),
+                groups: group_slots,
             },
         );
         Self {
@@ -1657,39 +1657,32 @@ fn a_rekey_installed_after_disconnect_is_removed_without_group_message_2() {
 }
 
 #[test]
-fn returned_group_slots_free_their_own_cells_without_identifier_matching() {
-    use oer_ieee80211_lower_mac::KeyCellSlot;
-    let mut keys = Keys::<Tokens>::new(Slot(0), KeyCellSlot::bind([Slot(7), Slot(42)]));
-    let mut epochs = LinkEpochSource::for_test(0);
-    let epoch = epochs.begin();
-    let key_id = GroupKeyId::new(1).unwrap();
-    let (a, pending_a) = keys.take_group_slot(epoch, key_id).unwrap();
-    let (b, pending_b) = keys.take_group_slot(epoch, key_id).unwrap();
-    let cell_a = a.cell();
-    let cell_b = b.cell();
-    keys.group_installed(pending_a, Key(a), true);
-    keys.group_installed(pending_b, Key(b), true);
-    let (_, Key(a)) = keys.take_group_key().unwrap();
-    let (_, Key(b)) = keys.take_group_key().unwrap();
-    assert!(matches!(
-        cell_a.select(&mut keys.groups),
-        Some(KeyCell::Removing)
-    ));
-    assert!(matches!(
-        cell_b.select(&mut keys.groups),
-        Some(KeyCell::Removing)
-    ));
-    keys.group_removed(b);
-    assert!(matches!(
-        cell_a.select(&mut keys.groups),
-        Some(KeyCell::Removing)
-    ));
-    assert!(matches!(
-        cell_b.select(&mut keys.groups),
-        Some(KeyCell::Free(_))
-    ));
-    keys.group_removed(a);
-    assert!(keys.clear());
+fn group_slots_are_fungible_and_the_full_pool_proves_all_returns() {
+    for reverse in [false, true] {
+        let mut keys = Keys::<Tokens>::new(Slot(0), [Slot(7), Slot(42)]);
+        let mut epochs = LinkEpochSource::for_test(0);
+        let epoch = epochs.begin();
+        let key_id = GroupKeyId::new(1).unwrap();
+        let (a, pending_a) = keys.take_group_slot(epoch, key_id).unwrap();
+        let (b, pending_b) = keys.take_group_slot(epoch, key_id).unwrap();
+        assert!(keys.take_group_slot(epoch, key_id).is_none());
+        keys.group_installed(pending_a, Key(a), true);
+        keys.group_installed(pending_b, Key(b), true);
+        let (_, Key(a)) = keys.take_group_key().unwrap();
+        let (_, Key(b)) = keys.take_group_key().unwrap();
+        let (first, last) = if reverse { (b, a) } else { (a, b) };
+        assert!(!keys.clear());
+        keys.group_removed(first);
+        assert!(!keys.clear());
+        keys.group_removed(last);
+        assert!(keys.clear());
+        // Either returned raw slot is usable for any next key ID.
+        let new_id = GroupKeyId::new(2).unwrap();
+        let (slot, pending) = keys.take_group_slot(epochs.begin(), new_id).unwrap();
+        assert_eq!(pending.key_id, new_id);
+        assert!(matches!(slot, Slot(7) | Slot(42)));
+        assert!(!keys.clear());
+    }
 }
 
 #[test]

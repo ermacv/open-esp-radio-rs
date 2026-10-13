@@ -256,7 +256,7 @@ fn ampdu_owner_promotes_after_two_clean_vendor_windows() {
     let mut state = AmpduRateControlState::new(RateScheduleKind::Dot11Ax, 1, 0).unwrap();
     assert_eq!(
         state.current_schedule(),
-        schedule(RateScheduleKind::Dot11Ax, 1)
+        literal_schedule!(RateScheduleKind::Dot11Ax, 1)
     );
     assert_eq!(
         state.observe_block_ack(600_000, 500, 500, Some(75)),
@@ -268,15 +268,15 @@ fn ampdu_owner_promotes_after_two_clean_vendor_windows() {
     assert_eq!(
         state.observe_block_ack(700_001, 500, 500, Some(75)),
         Ok(AmpduRateDecision::Promote {
-            from: schedule(RateScheduleKind::Dot11Ax, 1),
-            to: schedule(RateScheduleKind::Dot11Ax, 0),
+            from: literal_schedule!(RateScheduleKind::Dot11Ax, 1),
+            to: literal_schedule!(RateScheduleKind::Dot11Ax, 0),
             raw_success_ratio: 128,
             filtered_success_ratio: 114,
         })
     );
     assert_eq!(
         state.current_schedule(),
-        schedule(RateScheduleKind::Dot11Ax, 0)
+        literal_schedule!(RateScheduleKind::Dot11Ax, 0)
     );
     assert_eq!(state.filtered_success_ratio(), None);
 }
@@ -301,8 +301,8 @@ fn ampdu_owner_lowers_only_after_two_filtered_bad_windows() {
     assert_eq!(
         state.observe_block_ack(300_003, 500, 0, Some(75)),
         Ok(AmpduRateDecision::Lower {
-            from: schedule(RateScheduleKind::Dot11Ax, 0),
-            to: schedule(RateScheduleKind::Dot11Ax, 1),
+            from: literal_schedule!(RateScheduleKind::Dot11Ax, 0),
+            to: literal_schedule!(RateScheduleKind::Dot11Ax, 1),
             raw_success_ratio: 0,
             filtered_success_ratio: 51,
         })
@@ -339,18 +339,21 @@ fn ampdu_initial_rate_uses_the_vendor_index_eight_floor() {
     });
     assert_eq!(
         association.current_schedule(),
-        schedule(RateScheduleKind::Dot11Ax, 13)
+        literal_schedule!(RateScheduleKind::Dot11Ax, 13)
     );
     assert_eq!(
         association.current_ampdu_schedule(),
-        Some(schedule(RateScheduleKind::Dot11Ax, 8))
+        Some(literal_schedule!(RateScheduleKind::Dot11Ax, 8))
     );
 }
 
 #[test]
 fn phy_mode_selector_covers_legacy_p2p_ht_he_and_lora() {
     let dot11b = select_phy_mode(selection_input(0));
-    assert_eq!(dot11b.current, schedule(RateScheduleKind::Dot11B, 3));
+    assert_eq!(
+        dot11b.current,
+        literal_schedule!(RateScheduleKind::Dot11B, 3)
+    );
     assert_eq!(dot11b.maximum_index, 3);
     assert_eq!(dot11b.schedule_count, 6);
 
@@ -358,14 +361,20 @@ fn phy_mode_selector_covers_legacy_p2p_ht_he_and_lora() {
     dot11g_input.metric = 12;
     dot11g_input.p2p = true;
     let dot11g = select_phy_mode(dot11g_input);
-    assert_eq!(dot11g.current, schedule(RateScheduleKind::P2pDot11G, 5));
-    assert_eq!(dot11g.secondary, schedule(RateScheduleKind::P2pDot11G, 7));
+    assert_eq!(
+        dot11g.current,
+        literal_schedule!(RateScheduleKind::P2pDot11G, 5)
+    );
+    assert_eq!(
+        dot11g.secondary,
+        literal_schedule!(RateScheduleKind::P2pDot11G, 7)
+    );
     assert_eq!(dot11g.maximum_index, 7);
 
     let mut ht_input = selection_input(2);
     ht_input.metric = 8;
     let ht = select_phy_mode(ht_input);
-    assert_eq!(ht.current, schedule(RateScheduleKind::Dot11N, 11));
+    assert_eq!(ht.current, literal_schedule!(RateScheduleKind::Dot11N, 11));
     assert_eq!(ht.ampdu_limit_rate, Some(0x10));
 
     let mut he_input = selection_input(4);
@@ -373,13 +382,13 @@ fn phy_mode_selector_covers_legacy_p2p_ht_he_and_lora() {
     he_input.metric = 8;
     he_input.long_range_rates_present = true;
     let he = select_phy_mode(he_input);
-    assert_eq!(he.current, schedule(RateScheduleKind::Dot11Ax, 13));
+    assert_eq!(he.current, literal_schedule!(RateScheduleKind::Dot11Ax, 13));
     assert_eq!(he.maximum_index, 15);
     assert_eq!(he.ampdu_limit_rate, Some(0x12));
-    assert_eq!(he.fallback, schedule(RateScheduleKind::Lora, 1));
+    assert_eq!(he.fallback, literal_schedule!(RateScheduleKind::Lora, 1));
 
     let lora = select_phy_mode(selection_input(6));
-    assert_eq!(lora.current, schedule(RateScheduleKind::Lora, 0));
+    assert_eq!(lora.current, literal_schedule!(RateScheduleKind::Lora, 0));
     assert_eq!(lora.schedule_count, 2);
 }
 
@@ -399,11 +408,11 @@ fn associated_he_owner_joins_schedule_and_report_rate_without_c_layout() {
 
     assert_eq!(
         association.current_schedule(),
-        schedule(RateScheduleKind::Dot11Ax, 7)
+        literal_schedule!(RateScheduleKind::Dot11Ax, 7)
     );
     assert_eq!(
         association.fallback_schedule(),
-        schedule(RateScheduleKind::Lora, 1)
+        literal_schedule!(RateScheduleKind::Lora, 1)
     );
     assert_eq!(association.maximum_schedule_index(), 15);
     assert_eq!(association.schedule_count(), 16);
@@ -429,7 +438,7 @@ fn associated_he_owner_keeps_low_metric_feature_gates_explicit() {
     let ordinary = StaRateControlAssociation::new(input);
     assert_eq!(
         ordinary.current_schedule(),
-        schedule(RateScheduleKind::Dot11Ax, 0)
+        literal_schedule!(RateScheduleKind::Dot11Ax, 0)
     );
     assert_eq!(
         ordinary.beamforming_report(),

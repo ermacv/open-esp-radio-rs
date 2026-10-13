@@ -121,20 +121,21 @@ waits only the current publication; rate selection ignores every withdrawal.
 
 ## Responses to lifecycle actions
 
-`Station` owns key cells across scan/join/handshake/leave transitions. Each
-cell is `Free(slot)`, `Installing`, `Installed(key)` or `Removing`; there is
-no `group_busy` count or separate retiring-key pool. Installation actions
-carry `PendingPairwiseKey` or `PendingGroupKey`, with a private constructor,
-no Clone, the selected cell and `LinkEpoch`. The group token also owns the
-key index; an input cannot independently relabel the installed key.
+`Station` owns keys and free slots across scan/join/handshake/leave
+transitions. The pairwise cell is Free, Installing, Installed or Removing.
+Group slots are fungible credits from the composition's declared pool;
+there are no physical group cells, wrappers or Removing states. Installed
+owners are held by protocol key ID, including a replaced GTK retained until
+Group Message 2 ends and its normal retirement action runs.
 
-An installation response returns its token and key. If its epoch is closed,
-Station removes that key through its normal leave actions. Reconnection
-waits until every installing/removing cell has returned to Free. A returned
-group slot keeps its closed `KeyCellIndex` through the backend's key owner;
-`GroupKeyRemoved(slot)` therefore frees its cell without searching for an
-identifier. Pairwise removal returns the one pairwise slot. Removal actions
-can remain outstanding concurrently, and return in either order.
+Installation actions carry private, non-cloneable `PendingPairwiseKey` or
+`PendingGroupKey`. The pairwise token names its one cell and link epoch;
+the group token names the key ID and link epoch. Inputs cannot independently
+relabel an installed group key. An old epoch's response takes normal removal.
+A raw group slot returns to the free pool regardless of which key it held.
+The full pool proves that every group installation/removal ended. Leaving
+also waits for the pairwise slot before reporting. Removals can remain
+outstanding concurrently and return in either order.
 
 `Configure` carries `PendingConfiguration`. Station grants only one such
 token until it returns in `Configured`; an old epoch's reply releases that
@@ -145,7 +146,7 @@ AbsencePlace or Lease, and Exchanged consumes the old Lease and returns its
 replacement. The service returns these synchronous answers in the same step.
 None of these normal lifecycle paths adds fail-stop behavior.
 
-The [owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6156976885)
+The [owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6157356164)
 also requires that a missing pending token be a compile-time error. Owning
 rustdoc supplies that compile-fail test and its valid counterpart; module
 tests exercise stale handshake/rekey replies, slot return order and stale

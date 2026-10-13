@@ -866,6 +866,23 @@ pub(crate) struct PhyModeSelection {
     pub clamped: bool,
 }
 
+// Constant schedules are constructed only from literal compile-time values.
+// The array equality proves the record bound without a runtime panic path.
+macro_rules! literal_schedule {
+    ($kind:expr, last) => {
+        literal_schedule!($kind, (($kind).record_count() - 1) as u8)
+    };
+    ($kind:expr, $index:expr) => {{
+        const KIND: RateScheduleKind = $kind;
+        const INDEX: u8 = $index;
+        const _: [(); 1] = [(); ((INDEX as usize) < KIND.record_count()) as usize];
+        RateScheduleRef {
+            kind: KIND,
+            index: INDEX,
+        }
+    }};
+}
+
 /// Non-data schedule of an interface whose association has not selected
 /// one: `rc11BSchedTbl` record 3, 1 Mbit/s with a 32-publication budget.
 ///
@@ -873,15 +890,16 @@ pub(crate) struct PhyModeSelection {
 /// (and `+0x64`, `+0x6c`) of the interface's default trc, which every frame
 /// uses until `ic_set_sta` enables the association's own trc; station
 /// authentication and association frames therefore use it.
-pub const DEFAULT_CONTROL_SCHEDULE: RateScheduleRef = schedule(RateScheduleKind::Dot11B, 3);
+pub const DEFAULT_CONTROL_SCHEDULE: RateScheduleRef =
+    literal_schedule!(RateScheduleKind::Dot11B, 3);
 
 /// The literal schedule records the selection names, checked at build.
-const LORA_0: RateScheduleRef = schedule(RateScheduleKind::Lora, 0);
-const LORA_1: RateScheduleRef = schedule(RateScheduleKind::Lora, 1);
-const P2P_DOT11G_7: RateScheduleRef = schedule(RateScheduleKind::P2pDot11G, 7);
-const BASIC_OFDM_0: RateScheduleRef = schedule(RateScheduleKind::BasicOfdm, 0);
+const LORA_0: RateScheduleRef = literal_schedule!(RateScheduleKind::Lora, 0);
+const LORA_1: RateScheduleRef = literal_schedule!(RateScheduleKind::Lora, 1);
+const P2P_DOT11G_7: RateScheduleRef = literal_schedule!(RateScheduleKind::P2pDot11G, 7);
+const BASIC_OFDM_0: RateScheduleRef = literal_schedule!(RateScheduleKind::BasicOfdm, 0);
 const DOT11B_3: RateScheduleRef = DEFAULT_CONTROL_SCHEDULE;
-const DOT11B_0: RateScheduleRef = schedule(RateScheduleKind::Dot11B, 0);
+const DOT11B_0: RateScheduleRef = literal_schedule!(RateScheduleKind::Dot11B, 0);
 
 /// The record `index` of `kind`'s table, which the vendor's selection
 /// computes. Beyond the table it is the table's last record, its slowest
@@ -898,18 +916,15 @@ const fn record(kind: RateScheduleKind, index: u8, clamped: &mut bool) -> RateSc
 
 /// The last record of `kind`'s table, checked at build.
 const fn slowest(kind: RateScheduleKind) -> RateScheduleRef {
-    const fn last(kind: RateScheduleKind) -> RateScheduleRef {
-        schedule(kind, (kind.record_count() - 1) as u8)
-    }
-    const BAR_OFDM: RateScheduleRef = last(RateScheduleKind::BarOfdm);
-    const BASIC_OFDM: RateScheduleRef = last(RateScheduleKind::BasicOfdm);
-    const DOT11AX: RateScheduleRef = last(RateScheduleKind::Dot11Ax);
-    const DOT11B: RateScheduleRef = last(RateScheduleKind::Dot11B);
-    const DOT11G: RateScheduleRef = last(RateScheduleKind::Dot11G);
-    const DOT11N: RateScheduleRef = last(RateScheduleKind::Dot11N);
-    const LORA: RateScheduleRef = last(RateScheduleKind::Lora);
-    const P2P_DOT11G: RateScheduleRef = last(RateScheduleKind::P2pDot11G);
-    const P2P_DOT11N: RateScheduleRef = last(RateScheduleKind::P2pDot11N);
+    const BAR_OFDM: RateScheduleRef = literal_schedule!(RateScheduleKind::BarOfdm, last);
+    const BASIC_OFDM: RateScheduleRef = literal_schedule!(RateScheduleKind::BasicOfdm, last);
+    const DOT11AX: RateScheduleRef = literal_schedule!(RateScheduleKind::Dot11Ax, last);
+    const DOT11B: RateScheduleRef = literal_schedule!(RateScheduleKind::Dot11B, last);
+    const DOT11G: RateScheduleRef = literal_schedule!(RateScheduleKind::Dot11G, last);
+    const DOT11N: RateScheduleRef = literal_schedule!(RateScheduleKind::Dot11N, last);
+    const LORA: RateScheduleRef = literal_schedule!(RateScheduleKind::Lora, last);
+    const P2P_DOT11G: RateScheduleRef = literal_schedule!(RateScheduleKind::P2pDot11G, last);
+    const P2P_DOT11N: RateScheduleRef = literal_schedule!(RateScheduleKind::P2pDot11N, last);
     match kind {
         RateScheduleKind::BarOfdm => BAR_OFDM,
         RateScheduleKind::BasicOfdm => BASIC_OFDM,
@@ -944,15 +959,6 @@ const fn control_schedule(phy: StaRateControlPhy, flagged: bool) -> RateSchedule
         (StaRateControlPhy::Dot11G | StaRateControlPhy::Ht | StaRateControlPhy::He, false) => {
             BASIC_OFDM_0
         }
-    }
-}
-
-/// A literal record, for constants only: an index beyond its table fails
-/// the build. A computed index goes through [`record`].
-const fn schedule(kind: RateScheduleKind, index: u8) -> RateScheduleRef {
-    match RateScheduleRef::new(kind, index) {
-        Some(reference) => reference,
-        None => panic!("invalid recovered rate schedule"),
     }
 }
 
@@ -1323,11 +1329,7 @@ impl RateDecode {
     /// The vendor station's fallback: HT MCS 7 with the long guard interval
     /// on an HT association, at its width, or 54 Mb/s.
     fn fallback(self) -> PhyRate {
-        const MCS_7: HtMcs = match HtMcs::new(7) {
-            Some(mcs) => mcs,
-            None => panic!("HT MCS 7 exists"),
-        };
-        match HtRate::new(MCS_7, self.ht_bandwidth, false) {
+        match HtRate::new(HtMcs::SINGLE_STREAM_MAX, self.ht_bandwidth, false) {
             Some(rate) if self.high_throughput => PhyRate::Ht(rate),
             _ => PhyRate::Legacy(LegacyRate::Ofdm54M),
         }

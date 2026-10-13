@@ -377,7 +377,9 @@ pub struct PmNullFlags {
     power_save_in_flight: bool,
 }
 
-/// Outcome of `pm_go_to_wake`.
+/// Observation of `pm_go_to_wake`; state and actions always retain its effect.
+/// Event handlers only execute that transition. The TX path reads this value
+/// to decide whether its frame must remain held.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum WakeResult {
     NotStarted,
@@ -556,23 +558,27 @@ impl ModemSleep {
         self.beacon_interval_micros
     }
 
-    /// `pm_check_state`: whether the station may leave the air.
-    ///
-    /// Without coexistence a station with sleep type `None` stays awake.
-    /// Under coexistence it sleeps even then.
-    fn may_sleep(&mut self, coex: CoexView, actions: &mut PmActions) -> bool {
+    /// Normalize the state and emit the vendor's wake effects. TBTT needs
+    /// this transition independently of the sleep-admission decision.
+    fn normalize_sleep_state(&mut self, coex: CoexView, actions: &mut PmActions) {
         if self.sleep_type == SleepType::None && !coex.active {
             if self.state != PmState::Awake {
                 self.dream(coex, None, actions);
                 self.enter(PmState::Awake);
             }
-            return false;
+            return;
         }
         if !self.started && self.state != PmState::Awake {
             self.dream(coex, None, actions);
             self.enter(PmState::Awake);
         }
-        self.started
+    }
+
+    /// `pm_check_state`: without coexistence, sleep type None stays awake.
+    /// Under coexistence it may sleep; admission also requires a started link.
+    fn may_sleep(&mut self, coex: CoexView, actions: &mut PmActions) -> bool {
+        self.normalize_sleep_state(coex, actions);
+        self.started && (self.sleep_type != SleepType::None || coex.active)
     }
 
     const fn is_sleeping(&self) -> bool {
@@ -789,9 +795,9 @@ impl ModemSleep {
 
     /// The Null of the last [`PmAction::SendNull`] could not be queued, so
     /// the in-flight flags return to their state before it, as the vendor
-    /// does when its Null callback fails.
-    pub fn null_not_sent(&mut self, power_save: bool, before: PmNullFlags) {
-        let _ = power_save;
+    /// does when its Null callback fails. The saved flags contain the whole
+    /// restoration state; the failed Null's PM bit is not another input.
+    pub fn null_not_sent(&mut self, before: PmNullFlags) {
         self.active_null_in_flight = before.active_in_flight;
         self.power_save_null_in_flight = before.power_save_in_flight;
     }
@@ -986,7 +992,7 @@ impl ModemSleep {
         traffic: PmTraffic,
         actions: &mut PmActions,
     ) {
-        let _ = self.may_sleep(coex, actions);
+        self.normalize_sleep_state(coex, actions);
         if !self.started {
             actions.push(PmAction::Disarm(PmTimer::SliceEnd));
             self.in_slice = true;
@@ -1067,14 +1073,14 @@ impl ModemSleep {
             }
             if self.sleep_type == SleepType::None || self.wake_deferred {
                 self.wake_deferred = false;
-                let _ = self.go_to_wake(false, clock, coex, traffic, actions);
+                self.go_to_wake(false, clock, coex, traffic, actions);
             }
             return;
         }
         if !self.is_sleeping() {
             actions.push(PmAction::UnblockTx);
             if traffic.connection_pending {
-                let _ = self.go_to_wake(true, clock, coex, traffic, actions);
+                self.go_to_wake(true, clock, coex, traffic, actions);
             }
         }
     }
@@ -1122,7 +1128,7 @@ impl ModemSleep {
             // A station without power save that slept only for coexistence
             // wakes when coexistence ends.
             if self.coex_was_active && self.sleep_type == SleepType::None {
-                let _ = self.go_to_wake(false, clock, coex, traffic, actions);
+                self.go_to_wake(false, clock, coex, traffic, actions);
             }
             self.coex_was_active = coex.active;
         }
@@ -1324,7 +1330,7 @@ impl ModemSleep {
                     if self.in_slice_threshold(clock, WAKE_SLICE_THRESHOLD_MICROS, coex, actions) {
                         self.receiving = true;
                         self.request_slice_until_end(clock.now.as_micros(), actions);
-                        let _ = self.go_to_wake(false, clock, coex, traffic, actions);
+                        self.go_to_wake(false, clock, coex, traffic, actions);
                     } else {
                         self.wake_deferred = true;
                     }
@@ -1404,7 +1410,6 @@ impl ModemSleep {
     pub fn tx_data_done(
         &mut self,
         acknowledged: bool,
-        clock: PmClock,
         coex: CoexView,
         traffic: PmTraffic,
         actions: &mut PmActions,
@@ -1422,7 +1427,6 @@ impl ModemSleep {
         if self.state == PmState::Awake {
             self.enable_active_timer(actions);
         }
-        let _ = clock;
     }
 
     /// `pm_rx_data_process`: a data frame of the access point arrived.
@@ -1616,7 +1620,7 @@ impl ModemSleep {
                     if self.state == PmState::Dozing {
                         self.dream(coex, Some(clock), actions);
                     }
-                    let _ = self.go_to_wake(false, clock, coex, traffic, actions);
+                    self.go_to_wake(false, clock, coex, traffic, actions);
                     self.request_slice_until_end(now, actions);
                 } else {
                     actions.push(PmAction::Disarm(PmTimer::Preemption));

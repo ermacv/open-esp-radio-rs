@@ -180,11 +180,8 @@ install. The ESP32-S31 runtime still serves the earlier client shape; its
 port migration and image composition are the next stage of #563.
 
 
-A station's group-key slots are bound to cells once at installation with
-`KeyCellSlot::bind`. The wrapper moves into the backend's installed key and
-returns intact after its removal barrier. It exposes only a borrow of the
-physical slot, so callers cannot detach and rebind it. `KeyTypes` names the
-owned slot types; station group slots implement the sealed `KeyCellResource`.
-Access-point slot representations remain backend-selected. The closed cell
-selector addresses a fixed array; no runtime bounds check or key-ID match
-is needed to return a station's removed slot.
+Station group-key slots are fungible, affine resources. The backend stores
+and returns each raw slot with its installed key; it carries no station-cell
+wrapper. Station returns removed slots to its declared free pool. Its full
+pool proves that no group install or removal remains outstanding. Pending
+installation tokens carry the protocol key ID and connection epoch.

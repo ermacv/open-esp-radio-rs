@@ -90,6 +90,9 @@ impl PpduBandwidth {
 pub struct HtMcs(u8);
 
 impl HtMcs {
+    /// The highest HT MCS using one spatial stream.
+    pub const SINGLE_STREAM_MAX: Self = Self(7);
+
     pub const fn new(index: u8) -> Option<Self> {
         if index <= 31 { Some(Self(index)) } else { None }
     }

@@ -27,11 +27,11 @@
 //! arbiter with tokens of its own. The station encodes each frame straight
 //! into the memory of its buffer token ([`TxBufferMemory`]).
 //!
-//! Station owns the key cells across protocol transitions. Install actions
-//! carry private affine pending tokens (cell and link epoch); their responses
-//! return those tokens with the keys. A stale installation is removed through
-//! the normal leave path. A removal returns its unique cell-bound slot and
-//! frees that cell directly. A leave reports only after every key came back.
+//! Station owns keys and their free slots across protocol transitions. Install
+//! actions carry private affine pending tokens (key ID and link epoch for a
+//! group key); responses return those tokens with the keys. A stale install
+//! is removed normally. Group slots are fungible: removal returns a raw slot
+//! to the free pool, whose fullness proves that every group key came back.
 //!
 //! # Channels
 //!
@@ -71,10 +71,9 @@ use oer_ieee80211_arbiter::{
     Purpose, Refusal, StationNotice, UpstreamFact,
 };
 use oer_ieee80211_lower_mac::{
-    AckHeader, GroupAddress, HeaderSpec, Ieee80211Capabilities, IndividualAddress, KeyCellIndex,
-    KeyCellResource, MpduLength, ReceiveFilter, ReturnedMpdu, RxEvidence, RxMetadata, SizedFrame,
-    Station as StationRole, StationReceive, SupportedChannel, SupportedFilter, TxBufferMemory,
-    TxEndStatus, TxOutcome,
+    AckHeader, GroupAddress, HeaderSpec, Ieee80211Capabilities, IndividualAddress, MpduLength,
+    ReceiveFilter, ReturnedMpdu, RxEvidence, RxMetadata, SizedFrame, Station as StationRole,
+    StationReceive, SupportedChannel, SupportedFilter, TxBufferMemory, TxEndStatus, TxOutcome,
 };
 use oer_ieee80211_mac::ccmp::CcmpRxReplayEpoch;
 use oer_ieee80211_mac::{
@@ -142,8 +141,8 @@ pub trait StaTokens {
     fn renew(mpdu: Self::Sent) -> Self::SmallBuffer;
     /// A pairwise key slot.
     type PairwiseSlot;
-    /// A unique group slot retaining its cell through installation and removal.
-    type GroupSlot: KeyCellResource;
+    /// A unique, fungible group slot retained by the backend until removal.
+    type GroupSlot;
     /// An installed pairwise key, which holds its slot.
     type PairwiseKey;
     /// An installed group key, which holds its slot.
@@ -239,7 +238,7 @@ pub enum StaInput<'f, 'id, T: StaTokens, K> {
     GroupKeyInstalled {
         /// The installed key.
         key: T::GroupKey,
-        /// The original installation action, including cell, epoch and key index.
+        /// The original installation action, including epoch and key index.
         pending: PendingGroupKey<'id>,
     },
     /// A removed pairwise key's slot.
@@ -633,7 +632,7 @@ pub struct PendingPairwiseKey<'id> {
 #[derive(Debug)]
 struct PairwiseCell;
 
-/// A group cell awaiting its installation. Only Station creates this value;
+/// A group-key installation awaiting its response. Only Station creates this value;
 /// moving it into the response proves which transition owns the installed key.
 ///
 /// ```compile_fail,E0063
@@ -661,7 +660,6 @@ struct PairwiseCell;
 /// ```
 #[derive(Debug)]
 pub struct PendingGroupKey<'id> {
-    cell: KeyCellIndex,
     epoch: LinkEpoch<'id>,
     key_id: GroupKeyId,
 }
@@ -693,42 +691,49 @@ enum KeyCell<Key, Slot> {
     Removing,
 }
 
-struct GroupKey<Key> {
-    id: GroupKeyId,
-    key: Key,
-    current: bool,
+/// Free slots are fungible credits from the installation's declared pool.
+/// An install takes one; only its eventual removal returns one. Thus a full
+/// pool proves that no group installation or removal remains outstanding.
+struct GroupSlots<Slot> {
+    free: Pool<Slot>,
+    capacity: usize,
 }
 
-/// Installation resources remain owned while the protocol changes state.
-/// Empty array cells were never granted by composition. Occupied cells have
-/// exactly one of the four lifecycle states; no outstanding-operation counter
-/// or identifier search is required.
-type GroupCells<T> =
-    [Option<KeyCell<GroupKey<<T as StaTokens>::GroupKey>, <T as StaTokens>::GroupSlot>>; 8];
+impl<Slot> GroupSlots<Slot> {
+    fn new<const N: usize>(slots: [Slot; N]) -> Self {
+        Self {
+            free: Pool::new(slots),
+            capacity: N,
+        }
+    }
+    fn is_full(&self) -> bool {
+        self.free.len() == self.capacity
+    }
+}
+
+/// Group owners are identified by protocol key ID, without physical cells.
+/// The replaced owner remains held until Group Message 2 ends and its normal
+/// retirement action can run. The backend owns the raw slot throughout.
+struct GroupKeys<Key> {
+    current: Option<(GroupKeyId, Key)>,
+    retiring: Pool<(GroupKeyId, Key)>,
+}
 
 struct Keys<T: StaTokens> {
     pairwise: KeyCell<T::PairwiseKey, T::PairwiseSlot>,
-    groups: GroupCells<T>,
+    group_slots: GroupSlots<T::GroupSlot>,
+    groups: GroupKeys<T::GroupKey>,
 }
 
 impl<T: StaTokens> Keys<T> {
     fn new<const N: usize>(pairwise: T::PairwiseSlot, groups: [T::GroupSlot; N]) -> Self {
-        const { Self::check_count(N) };
-        let mut cells = core::array::from_fn(|_| None);
-        for slot in groups {
-            let cell = slot.cell();
-            *cell.select(&mut cells) = Some(KeyCell::Free(slot));
-        }
         Self {
             pairwise: KeyCell::Free(pairwise),
-            groups: cells,
-        }
-    }
-
-    #[expect(clippy::panic, reason = "evaluated at build")]
-    const fn check_count(n: usize) {
-        if n > 8 {
-            panic!("a station holds at most eight group-key slots");
+            group_slots: GroupSlots::new(groups),
+            groups: GroupKeys {
+                current: None,
+                retiring: Pool::new([]),
+            },
         }
     }
 
@@ -771,95 +776,47 @@ impl<T: StaTokens> Keys<T> {
         epoch: LinkEpoch<'id>,
         key_id: GroupKeyId,
     ) -> Option<(T::GroupSlot, PendingGroupKey<'id>)> {
-        for cell in self.groups.iter_mut().flatten() {
-            match core::mem::replace(cell, KeyCell::Installing) {
-                KeyCell::Free(slot) => {
-                    let pending = PendingGroupKey {
-                        cell: slot.cell(),
-                        epoch,
-                        key_id,
-                    };
-                    return Some((slot, pending));
-                }
-                occupied => *cell = occupied,
-            }
-        }
-        None
+        let slot = self.group_slots.free.take()?;
+        Some((slot, PendingGroupKey { epoch, key_id }))
     }
 
     fn group_installed(&mut self, pending: PendingGroupKey<'_>, key: T::GroupKey, current: bool) {
         if current {
-            for cell in self.groups.iter_mut().flatten() {
-                if let KeyCell::Installed(group) = cell {
-                    group.current = false;
-                }
+            if let Some(old) = self.groups.current.replace((pending.key_id, key)) {
+                self.groups.retiring.put(old);
             }
+        } else {
+            self.groups.retiring.put((pending.key_id, key));
         }
-        *pending.cell.select(&mut self.groups) = Some(KeyCell::Installed(GroupKey {
-            id: pending.key_id,
-            key,
-            current,
-        }));
     }
 
     fn take_retiring_key(&mut self) -> Option<(GroupKeyId, T::GroupKey)> {
-        self.take_group_where(|group| !group.current)
+        self.groups.retiring.take()
     }
 
     fn take_group_key(&mut self) -> Option<(GroupKeyId, T::GroupKey)> {
         self.take_retiring_key()
-            .or_else(|| self.take_group_where(|_| true))
-    }
-
-    fn take_group_where(
-        &mut self,
-        matches: impl Fn(&GroupKey<T::GroupKey>) -> bool,
-    ) -> Option<(GroupKeyId, T::GroupKey)> {
-        for cell in self.groups.iter_mut().flatten() {
-            match core::mem::replace(cell, KeyCell::Removing) {
-                KeyCell::Installed(group) if matches(&group) => return Some((group.id, group.key)),
-                other => *cell = other,
-            }
-        }
-        None
+            .or_else(|| self.groups.current.take())
     }
 
     fn group_removed(&mut self, slot: T::GroupSlot) {
-        let cell = slot.cell();
-        *cell.select(&mut self.groups) = Some(KeyCell::Free(slot));
+        self.group_slots.free.put(slot);
     }
 
     fn current_group(&self) -> Option<GroupKeyId> {
-        self.groups.iter().flatten().find_map(|cell| match cell {
-            KeyCell::Installed(group) if group.current => Some(group.id),
-            _ => None,
-        })
+        self.groups.current.as_ref().map(|(id, _)| *id)
     }
 
     fn has_retiring(&self) -> bool {
-        self.groups
-            .iter()
-            .flatten()
-            .any(|cell| matches!(cell, KeyCell::Installed(GroupKey { current: false, .. })))
+        !self.groups.retiring.is_empty()
     }
 
     fn installed(&self) -> bool {
-        matches!(self.pairwise, KeyCell::Installed(_))
-            && self.current_group().is_some()
-            && self
-                .groups
-                .iter()
-                .flatten()
-                .all(|cell| matches!(cell, KeyCell::Free(_) | KeyCell::Installed(_)))
+        matches!(self.pairwise, KeyCell::Installed(_)) && self.current_group().is_some()
     }
 
     fn clear(&self) -> bool {
-        matches!(self.pairwise, KeyCell::Free(_))
-            && self
-                .groups
-                .iter()
-                .flatten()
-                .all(|cell| matches!(cell, KeyCell::Free(_)))
+        matches!(self.pairwise, KeyCell::Free(_)) && self.group_slots.is_full()
     }
 }
 
@@ -1321,7 +1278,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     /// #     type Ticket = u8; type SmallBuffer = Buffer; type PairwiseSlot = ();
     /// #     type Sent = core::convert::Infallible;
     /// #     fn renew(mpdu: Self::Sent) -> Buffer { match mpdu {} }
-    /// #     type GroupSlot = oer_ieee80211_lower_mac::KeyCellSlot<()>; type PairwiseKey = (); type GroupKey = (); type RxMeta = RxMeta;
+    /// #     type GroupSlot = (); type PairwiseKey = (); type GroupKey = (); type RxMeta = RxMeta;
     /// # }
     /// fn nine<'id>(
     ///     epochs: LinkEpochSource<'id>,
@@ -1331,7 +1288,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     /// ) -> Station<'id, Tokens, Caps> {
     ///     Station::new(config, StationResources {
     ///         epochs, tickets: [0; 9], buffers: [Buffer], place,
-    ///         absence_place: absence, pairwise: (), groups: KeyCellSlot::bind([()]),
+    ///         absence_place: absence, pairwise: (), groups: [()],
     ///     })
     /// }
     /// let nine: fn(_, _, _, _) -> _ = nine;

@@ -654,7 +654,7 @@ pub struct ModelKeys<'id, R>(PhantomData<fn(&'id ()) -> R>);
 
 impl<'id, R: 'id> KeyTypes<'id> for ModelKeys<'id, R> {
     type PairwiseSlot = Slot<'id, ModelPairwiseKeys<R>>;
-    type GroupSlot = oer_ieee80211_lower_mac::KeyCellSlot<Slot<'id, ModelGroupKeys<R>>>;
+    type GroupSlot = Slot<'id, ModelGroupKeys<R>>;
     type PairwiseKey = ModelPairwiseKey<'id, R>;
     type GroupKey = ModelGroupKey<'id, R>;
     type Identity = KeyIdentity;
@@ -883,14 +883,11 @@ pub struct ModelResources<'id> {
     /// The station's pairwise key slots.
     pub station_pairwise: [Slot<'id, ModelPairwiseKeys<Station>>; MODEL_KEY_SLOTS],
     /// The station's group key slots.
-    pub station_group:
-        [oer_ieee80211_lower_mac::KeyCellSlot<Slot<'id, ModelGroupKeys<Station>>>; MODEL_KEY_SLOTS],
+    pub station_group: [Slot<'id, ModelGroupKeys<Station>>; MODEL_KEY_SLOTS],
     /// The access point's pairwise key slots.
     pub access_point_pairwise: [Slot<'id, ModelPairwiseKeys<AccessPoint>>; MODEL_KEY_SLOTS],
     /// The access point's group key slots.
-    pub access_point_group: [oer_ieee80211_lower_mac::KeyCellSlot<
-        Slot<'id, ModelGroupKeys<AccessPoint>>,
-    >; MODEL_KEY_SLOTS],
+    pub access_point_group: [Slot<'id, ModelGroupKeys<AccessPoint>>; MODEL_KEY_SLOTS],
     /// The receive Block Ack slots both roles share.
     pub block_acks: [Slot<'id, ModelBlockAcks>; MODEL_BLOCK_ACK_SLOTS],
     /// The open transmit gate.
@@ -1439,9 +1436,9 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
                 })
                 .collect(),
             station_pairwise: mint.slots(),
-            station_group: oer_ieee80211_lower_mac::KeyCellSlot::bind(mint.slots()),
+            station_group: mint.slots(),
             access_point_pairwise: mint.slots(),
-            access_point_group: oer_ieee80211_lower_mac::KeyCellSlot::bind(mint.slots()),
+            access_point_group: mint.slots(),
             block_acks: mint.slots(),
             gate,
         };
@@ -2129,7 +2126,7 @@ pub struct ModelPairwiseKey<'id, R> {
 /// A group key the model installed.
 pub struct ModelGroupKey<'id, R> {
     identity: KeyIdentity,
-    slot: oer_ieee80211_lower_mac::KeyCellSlot<Slot<'id, ModelGroupKeys<R>>>,
+    slot: Slot<'id, ModelGroupKeys<R>>,
 }
 
 /// A receive Block Ack agreement the model keeps.
@@ -2366,11 +2363,11 @@ where
 
     fn install_group_key(
         &mut self,
-        slot: oer_ieee80211_lower_mac::KeyCellSlot<Slot<'id, ModelGroupKeys<R>>>,
+        slot: Slot<'id, ModelGroupKeys<R>>,
         key_id: GroupKeyId,
         _: Ccmp128Key,
     ) -> ModelGroupKey<'id, R> {
-        let identity = KeyIdentity::new(slot.slot().index(), key_id.get(), &self.held.air);
+        let identity = KeyIdentity::new(slot.index(), key_id.get(), &self.held.air);
         self.held.command(Command::InstallKey {
             key: identity.clone(),
         });

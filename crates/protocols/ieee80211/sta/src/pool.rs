@@ -34,6 +34,10 @@ impl<X> Pool<X> {
         self.items.iter_mut().find_map(Option::take)
     }
 
+    pub(crate) fn len(&self) -> usize {
+        self.items.iter().flatten().count()
+    }
+
     pub(crate) fn is_empty(&self) -> bool {
         self.items.iter().all(Option::is_none)
     }

@@ -545,13 +545,9 @@ impl ConnectedControlCore {
                         .tx_data(true, clock, coex, traffic, &mut actions);
                 }
                 if let Some(acknowledged) = report.completed {
-                    self.power.engine.tx_data_done(
-                        acknowledged,
-                        clock,
-                        coex,
-                        traffic,
-                        &mut actions,
-                    );
+                    self.power
+                        .engine
+                        .tx_data_done(acknowledged, coex, traffic, &mut actions);
                 }
             }
             PowerInput::NetworkTxOffer => {

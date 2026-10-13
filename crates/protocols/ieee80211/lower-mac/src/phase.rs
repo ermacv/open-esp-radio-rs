@@ -432,7 +432,7 @@ pub trait PhaseTypes<'id>: Sized {
     /// A `Sent` MPDU retains its own body until retry or renewal.
     type TxBodies: IntoIterator<Item = (u8, Self::TxBody)>;
     /// The station's keys and their slots.
-    type StationKeys: KeyTypes<'id, Identity = Self::KeyIdentity, GroupSlot: crate::KeyCellResource>;
+    type StationKeys: KeyTypes<'id, Identity = Self::KeyIdentity>;
     /// The access point's keys and their slots.
     type AccessPointKeys: KeyTypes<'id, Identity = Self::KeyIdentity>;
     /// The kind of the receive Block Ack slots: one pool the backend's

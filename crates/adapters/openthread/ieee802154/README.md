@@ -4,8 +4,9 @@
 [`openthread`](https://crates.io/crates/openthread) crate over the running
 phase of any IEEE 802.15.4 port on the owner shape
 ([`owner`](../../../protocols/ieee802154/src/owner.rs)), so the OpenThread
-stack that crate binds can run on any backend of the portable port. It is portable: it depends on the protocol
-package and the trait crate alone. The ESP32-S31 composition's runtime
+stack that crate binds can run on any backend of the portable port. It is portable: its dependencies are the protocol, shared radio/time values,
+bounded frame storage and the OpenThread radio trait. Host tests cover frame
+conversion directly and require no executor or concrete backend. The ESP32-S31 composition's runtime
 (`oer-espressif-ieee802154-runtime`) is the port the Thread example and the
 HIL target use; the ESP-IDF behaviour described below is that of this
 adapter over that runtime.

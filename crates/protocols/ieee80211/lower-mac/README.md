@@ -41,6 +41,13 @@ back; its operations are synchronous and never wait:
   until the queue frees.
 - **Preparation and submission.** `TxBufferPool::prepare` checks a source
   where its buffer class is concrete and returns a closed `Prepared` value.
+  `TxSource::check` first consumes the raw source into `CheckedTxSource`;
+  layout errors return the source before entering the backend. `HeaderLayout`
+  obtains exactly sized arrays with `split_first_chunk_mut`, then the header
+  encoder writes into `&mut [u8; N]` without a fallible operation. Storage
+  shortage, CCMP shortage and body overlap are `LayoutError`; backend
+  `PreparationError` contains only retransmission identity/kind and aggregate
+  capacity refusals.
   It retains the phase, install, role and key borrow. `ClassSizedFrame`
   carries a portable machine's size proof until the service adds phase-bound
   rates, without rechecking the class. `TxProtection::{Open, Ccmp(key)}` in
@@ -59,8 +66,9 @@ back; its operations are synchronous and never wait:
   Retiring the original installation makes preparation refuse
   `RetransmissionKey`, even if the slot and key material are reused.
   An aggregate builder owns its receiver, TID, role, rate and one protection.
-  `TxBufferPool::push_aggregate` prepares its class-specific `SubframeSource`
-  through that builder. Fresh subframes have no protection argument, and
+  `CheckedAggregate::new` checks the class-specific `SubframeSource` with
+  its builder and owns both until `TxBufferPool::push_aggregate` consumes it.
+  The proof cannot be transferred to another builder. Fresh subframes have no protection argument, and
   their receiver/TID come from the builder. A Sent subframe retains its
   original installation and must match the builder. Refusal returns both
   the unchanged source and the builder with all earlier subframes.
@@ -80,14 +88,23 @@ back; its operations are synchronous and never wait:
   the backend does not republish that MPDU, stop the queue, or return its
   tail. Internal collisions remain driver retries; budget exhaustion is
   `Ended(ContentionLimit)`. Withdrawals name only GateClosed, KeyRemoved or
-  Disabled. Rate selection ignores Indeterminate and ContentionLimit.
+  Disabled. Rate selection ignores withdrawals, Indeterminate and
+  ContentionLimit. A lifecycle barrier waits for one current publication,
+  bounded by `LowerMacBackend::PUBLICATION_BOUND`, not the remaining plan.
+  ACK still ends as `Ended(Delivered)`; a needed retry returns
+  `Withdrawn(cause)` with Sent, retaining SN/PN. An unpublished attempt
+  returns Fresh. Unknown timeout remains Indeterminate. Per-AC terminals
+  precede the barrier confirmation in their original order.
 - **Order.** Every operation reaches the hardware in the order the caller
   made it: an attempt that names a key is published after that key's
   install.
 - **Keys and agreements.** A key holds a slot of its interface's own kind;
   its removal ends with `KeyRemoved`, once no prepared or published attempt names it. A
   receive Block Ack agreement is a token that holds its slot, replaced or
-  removed by value.
+  removed by value. Its slot holds desired state: repeated add/replace/remove
+  writes coalesce to the latest value before the driver's next command.
+  They occupy no command slots; the command bound is tickets + 2 ×
+  (key slots + 1), independent of agreement updates.
 - **Settings.** An interface's receive rules, EDCA, the BSS color, a TBTT
   plan and monitor reception take effect before the next submission; the
   latest value of each wins. A receive configuration and a gate's closing

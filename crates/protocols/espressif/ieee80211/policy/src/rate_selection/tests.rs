@@ -138,7 +138,7 @@ fn completion(status: TxEndStatus, transmissions: u16) -> TxOutcome {
         status,
         transmissions,
         rate: None,
-        ack: (status == TxEndStatus::Success).then_some(oer_ieee80211_lower_mac::TxAck {
+        ack: (status == TxEndStatus::Delivered).then_some(oer_ieee80211_lower_mac::TxAck {
             snr_db: Some(30),
             ..Default::default()
         }),
@@ -344,7 +344,7 @@ fn an_attempt_cut_before_the_air_leaves_the_rate_control_as_it_was() {
         &mut selection,
         Instant::from_micros(0),
         FrameRates::Data,
-        &completion(TxEndStatus::Success, 1),
+        &completion(TxEndStatus::Delivered, 1),
     );
     assert_ne!(state(&selection), before);
 }

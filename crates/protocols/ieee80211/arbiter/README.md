@@ -32,3 +32,9 @@ never withdrawn, and a second such join within the policy's
 (`ChannelCoordinator`, `ApFollowPolicy`, `ApSearchPolicy`,
 `UpstreamLossPolicy`), and `channel` the channels an access point may not
 serve without radar detection.
+
+Composition passes the backend's `PUBLICATION_BOUND` to `Arbiter::new`.
+Absences reserve one current publication plus retune time for each move;
+`listen_until` and the return deadline leave this budget before the absence
+ends. Once the outgoing gate has closed, the late-lease check counts only
+the remaining return publication. Retry-plan length never enters this bound.

@@ -398,9 +398,16 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
                     }
                     _ => {}
                 }
-                // Withdrawn: preserve the original frame description,
-                // TID and order, even after a batch of terminals returns.
-                if matches!(completion, TxOutcome::Withdrawn(_)) {
+                // A gate closure preserves the original MPDU, TID and
+                // order. Disabled keeps its return behavior across a retune;
+                // KeyRemoved releases this MSDU rather than retrying it.
+                if matches!(
+                    completion,
+                    TxOutcome::Withdrawn(
+                        oer_ieee80211_lower_mac::WithdrawCause::GateClosed
+                            | oer_ieee80211_lower_mac::WithdrawCause::Disabled
+                    )
+                ) {
                     let frame = context.frame;
                     let tid = usize::from(context.tid);
                     let again = DataTransmit {

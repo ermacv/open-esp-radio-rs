@@ -103,7 +103,7 @@ fn submit_frame<'k, 'p, 'id: 'p + 'k, C: ModelClass>(
     ticket: Slot<'id, ModelTickets>,
     source: ModelSource<'k, 'p, 'id, C, ModelCaps, Station, ()>,
 ) {
-    let source = prepare_model(source).ok().unwrap();
+    let source = prepare_model(source.check().ok().unwrap()).ok().unwrap();
     phase
         .station()
         .submit(oer_ieee80211_lower_mac::Attempt {
@@ -147,12 +147,16 @@ fn push_subframe<'k, 'p, 'id: 'k + 'p, X: ModelContext, S: AggregateState>(
     body: Option<ModelBody>,
 ) -> ModelAggregate<'k, 'p, 'id, Station, ModelCaps, X, NonEmptyAggregate> {
     <ModelTypes<X> as TxBufferPool<ModelSmall>>::push_aggregate(
-        aggregate,
-        SubframeSource::Fresh {
-            buffer,
-            frame: ClassSubframe::new(frame).ok().unwrap(),
-            body,
-        },
+        CheckedAggregate::new(
+            aggregate,
+            SubframeSource::Fresh {
+                buffer,
+                frame: ClassSubframe::new(frame).ok().unwrap(),
+                body,
+            },
+        )
+        .ok()
+        .unwrap(),
     )
     .ok()
     .unwrap()
@@ -162,8 +166,9 @@ fn push_retry<'k, 'p, 'id: 'k + 'p, X: ModelContext, S: AggregateState>(
     mpdu: ModelSent<'id, ModelSmall>,
 ) -> ModelAggregate<'k, 'p, 'id, Station, ModelCaps, X, NonEmptyAggregate> {
     <ModelTypes<X> as TxBufferPool<ModelSmall>>::push_aggregate(
-        aggregate,
-        SubframeSource::Sent(mpdu),
+        CheckedAggregate::new(aggregate, SubframeSource::Sent(mpdu))
+            .ok()
+            .unwrap(),
     )
     .ok()
     .unwrap()
@@ -1117,7 +1122,7 @@ fn a_timeout_is_final_and_does_not_stop_or_withdraw_the_queue_tail() {
     assert!(matches!(
         outcomes[1],
         TxOutcome::Ended {
-            status: TxEndStatus::Success,
+            status: TxEndStatus::Delivered,
             transmissions: 1,
             ..
         }
@@ -1159,7 +1164,7 @@ fn collisions_retry_the_head_then_end_at_contention_limit_without_air_transmissi
     assert!(matches!(
         outcomes.borrow()[1],
         TxOutcome::Ended {
-            status: TxEndStatus::Success,
+            status: TxEndStatus::Delivered,
             transmissions: 1,
             ..
         }
@@ -1230,7 +1235,7 @@ impl Work for LongRetryPlan<'_> {
                     completion,
                     TxOutcome::Ended {
                         transmissions: 257,
-                        status: TxEndStatus::Success,
+                        status: TxEndStatus::Delivered,
                         ..
                     }
                 ));
@@ -1253,3 +1258,71 @@ fn ended_preserves_exact_counts_above_u8_and_retry_changes_only_on_republication
             .all(|frame| frame.frame[22..24] == sent[0].frame[22..24])
     );
 }
+
+struct ReceiveAgreementState<'a>(&'a ModelAir);
+
+impl Work for ReceiveAgreementState<'_> {
+    async fn work<'p, 'id: 'p>(
+        self,
+        phase: &mut ModelPhase<'p, 'id>,
+        resources: ModelResources<'id>,
+    ) {
+        let ModelResources {
+            block_acks: [first, second],
+            tickets,
+            small,
+            large,
+            ..
+        } = resources;
+        let first_index = first.index();
+        let second_index = second.index();
+        // All TX credits are queued before the driver gets a turn. Agreement
+        // updates must neither exhaust command capacity nor lose those TXs.
+        submit_all(phase, tickets, small, large, |_| {});
+        let agreement = |start| {
+            SupportedBlockAck::new(
+                IndividualAddress::new(PEER).unwrap(),
+                Tid::new(3).unwrap(),
+                SequenceNumber::new(start).unwrap(),
+                32,
+            )
+            .unwrap()
+        };
+        let mut first = phase.station().add_block_ack(first, agreement(0));
+        let second = phase.station().add_block_ack(second, agreement(11));
+        for start in 1..1024 {
+            first = phase.station().replace_block_ack(first, agreement(start));
+        }
+        // Removal and reuse of one slot coalesce; the new role is preserved.
+        let second = phase.station().remove_block_ack(second);
+        let second = phase.access_point().add_block_ack(second, agreement(27));
+        assert!(self.0.receive_agreements().is_empty());
+        yield_now().await;
+        let applied = self.0.receive_agreements();
+        assert_eq!(applied.len(), 2);
+        assert_eq!(applied[0].0, first_index);
+        assert_eq!(applied[0].1.role, VifRole::Station);
+        assert_eq!(applied[0].1.start_sequence.get(), 1023);
+        assert_eq!(applied[1].0, second_index);
+        assert_eq!(applied[1].1.role, VifRole::AccessPoint);
+        assert_eq!(applied[1].1.start_sequence.get(), 27);
+        assert_eq!(self.0.commands(), MODEL_TICKETS as u32);
+        let mut stream = Stream::default();
+        drain(phase, &mut stream);
+        assert_eq!(stream.completions, MODEL_TICKETS);
+        let first = phase.station().remove_block_ack(first);
+        let second = phase.access_point().remove_block_ack(second);
+        assert_eq!((first.index(), second.index()), (first_index, second_index));
+        yield_now().await;
+        assert!(self.0.receive_agreements().is_empty());
+        assert_eq!(self.0.commands(), MODEL_TICKETS as u32);
+    }
+}
+
+#[test]
+fn receive_agreements_apply_latest_state_without_consuming_command_capacity() {
+    let (backend, air) = backend();
+    block_on(run_port(backend, Body(ReceiveAgreementState(&air))));
+}
+
+mod publication;

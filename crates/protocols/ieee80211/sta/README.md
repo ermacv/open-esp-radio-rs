@@ -112,3 +112,8 @@ terminal for this singles-only service is a backend contract violation:
 it takes the Poisoned fail-stop path without a stray-terminal counter or
 resource reuse. `Indeterminate` retires and counts the MSDU; Station treats
 it as unconfirmed. Neither it nor `ContentionLimit` trains rate selection.
+
+A gate withdrawal retains the MPDU at its original TID/order. Fresh memory
+is prepared normally; Sent goes through retransmission with the same SN/PN.
+KeyRemoved retires that MSDU and releases admission and resources. A barrier
+waits only the current publication; rate selection ignores every withdrawal.

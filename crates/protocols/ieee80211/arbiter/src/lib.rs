@@ -826,6 +826,7 @@ enum Owed<K> {
 pub struct Arbiter<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode = NoReservation>
 {
     policy: ArbiterPolicy<'a>,
+    publication_bound: Duration,
     coordinator: ChannelCoordinator<'a>,
     gate: Gate<G>,
     port: Port<K>,
@@ -850,14 +851,18 @@ pub struct Arbiter<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMo
 impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, G, K, R> {
     /// The arbiter of a port on `channel`, holding its open gate, and the
     /// station's places for its primary lease and its absence.
+    /// `publication_bound` comes from the backend's `PUBLICATION_BOUND`, not
+    /// its retry-plan length. Each move reserves this drain plus its retune.
     pub fn new(
         policy: ArbiterPolicy<'a>,
         channel: SupportedChannel<K>,
         gate: G::Open,
+        publication_bound: Duration,
     ) -> (Self, LeasePlace, AbsencePlace) {
         (
             Self {
                 policy,
+                publication_bound,
                 coordinator: ChannelCoordinator::new(policy.follow, policy.search),
                 gate: Gate::Open(gate),
                 port: Port::On(channel),
@@ -930,7 +935,7 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
     /// access point after one of its TBTTs, alone at once; the move there,
     /// the listening and the move back, at most the policy's absence.
     fn absence_window(&self, earliest: Instant, dwell: Option<Duration>) -> (Instant, Instant) {
-        let retune = self.policy.retune;
+        let retune = sum(self.publication_bound, self.policy.retune);
         let from = match self.schedule() {
             Some(schedule) => slot(schedule, earliest, self.policy.guard),
             None => earliest,
@@ -945,7 +950,7 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
     }
 
     fn lease_value(&self, granted: &Granted<K>) -> Lease<K> {
-        let retune = self.policy.retune;
+        let retune = sum(self.publication_bound, self.policy.retune);
         Lease {
             access_point: self.schedule().map(|_| self.home),
             id: granted.id,
@@ -1056,7 +1061,7 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
                 earliest,
                 dwell.map(|dwell| {
                     earliest
-                        .saturating_add(self.policy.retune)
+                        .saturating_add(sum(self.publication_bound, self.policy.retune))
                         .saturating_add(dwell)
                 }),
                 false,
@@ -1543,7 +1548,7 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
     /// The cycle that starts or ends the lease at `now`, if it is due.
     fn lease_cycle(&mut self, which: Which, now: Instant) -> Option<Cycle<K, R::Reserve>> {
         let home = self.home;
-        let retune = self.policy.retune;
+        let retune = sum(self.publication_bound, self.policy.retune);
         let pending_due = self.move_due(now);
         let granted = self.granted(which)?;
         match granted.step {
@@ -1703,6 +1708,7 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
     /// shortest listening before its end.
     fn too_late(&mut self, which: Which, now: Instant) -> bool {
         let policy = self.policy;
+        let publication_bound = self.publication_bound;
         let Some(granted) = self.granted(which) else {
             return false;
         };
@@ -1710,14 +1716,21 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
             return false;
         };
         let retunes = if granted.returns { 2 } else { 1 };
-        let needed = (0..retunes).fold(policy.min_listen, |needed, _| sum(needed, policy.retune));
+        // The outbound gate is already closed at this check. Only the
+        // return move still has a current publication to drain.
+        let listening = if granted.returns {
+            sum(policy.min_listen, publication_bound)
+        } else {
+            policy.min_listen
+        };
+        let needed = (0..retunes).fold(listening, |needed, _| sum(needed, policy.retune));
         now.saturating_add(needed) > until
     }
 
     /// When the arbiter next needs [`Self::poll_action`], even without an
     /// input.
     pub fn poll_deadline(&self) -> Option<Instant> {
-        let retune = self.policy.retune;
+        let retune = sum(self.publication_bound, self.policy.retune);
         let lease = |granted: &Granted<K>| match granted.step {
             LeaseStep::Waiting { .. } => Some(granted.from),
             LeaseStep::Running if granted.returns => granted

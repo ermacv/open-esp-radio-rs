@@ -44,7 +44,7 @@ fn association_runtime_owns_epoch_schedule_sequence_and_timeout() {
                 break;
             }
         }
-        runtime.observe_received_frame().unwrap();
+        runtime.observe_received_frame();
     }
 
     assert_eq!(timed_out_at, Some(1_000));
@@ -100,7 +100,7 @@ fn association_runtime_accepts_only_selected_peer_response() {
         panic!("the first poll requests");
     };
     assert_eq!(first.ordinal, 1);
-    runtime.observe_received_frame().unwrap();
+    runtime.observe_received_frame();
 
     let mut other_peer = association_response(0);
     other_peer[10] ^= 1;
@@ -138,7 +138,7 @@ fn association_runtime_reports_peer_disconnect_and_rejection() {
     let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0).unwrap());
     let mut disconnected = StaAssociationRuntime::new(LOCAL, BSSID, LinkProtection::Ccmp);
     disconnected.poll(at(0), &mut sequence).unwrap();
-    disconnected.observe_received_frame().unwrap();
+    disconnected.observe_received_frame();
     assert_eq!(
         disconnected.observe_management_frame(&deauthentication(7), at(0)),
         Ok(StaAssociationEvent::Failed {

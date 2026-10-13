@@ -6,7 +6,9 @@
 //! addresses and returns the backend, which a test hands to
 //! [`run_port`](oer_ieee80211_port::run_port), and the [`ModelAir`] it
 //! plays on: the air answers each transmission, delivers received frames
-//! and records what the hardware saw.
+//! and records what the hardware saw. Receive Block Ack agreements are
+//! per-slot desired state: updates coalesce before the driver applies them,
+//! without occupying the command queue.
 //!
 //! The backend has the phase's shape ([owner decisions on #563]): the phase
 //! is the body's handle over queues to the model's driver
@@ -50,9 +52,15 @@
 //!
 //! [owner decisions on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129037560
 
+//! Publication and completion are separate owners. Tests may hold a result
+//! while posting gate/key/disable barriers; only that publication can finish.
+//! The model's 1 ms publication bound is synthetic model time, not an S31
+//! timing claim. `set_time` feeds the test's virtual clock. Hardware backends
+//! must declare their own PPDU plus response/timeout bound.
+
 use alloc::{
     boxed::Box,
-    collections::VecDeque,
+    collections::{BTreeMap, VecDeque},
     rc::{Rc, Weak},
     vec::Vec,
 };
@@ -70,12 +78,13 @@ use oer_radio_port::{EventsLost, Mint, Poisoned, PortResult, Slot};
 use oer_time::RadioInstant;
 
 use oer_ieee80211_lower_mac::{
-    AccessPoint, AccessPointPhase, BandSet, BssColor, Ccmp128Key, Channel, CoexPriority,
-    CoexPrioritySet, ConnectionEpochKind, GateClosed, GateClosedKind, GateOpen, GateOpenKind,
-    HardwareServices, Ieee80211Capabilities, Ieee80211Radio, IndeterminateCause, IndividualAddress,
-    InterfaceAggregateAttempt, InterfaceAttempt, InterfacePhase, KeyTypes, LinkMetric,
-    LowerMacBackend, LowerMacCapabilities, LowerMacEvent, LowerMacPhase, LowerMacSetup, MpduKind,
-    MpduLayout, PhaseRate, PhaseTypes, PhyFormatSet, PoolSource, PreparationError,
+    AccessPoint, AccessPointPhase, BandSet, BssColor, Ccmp128Key, Channel, CheckedAggregate,
+    CheckedPoolSource, CheckedSubframe, CheckedTxSource, CoexPriority, CoexPrioritySet,
+    ConnectionEpochKind, FreshSource, FreshSubframe, GateClosed, GateClosedKind, GateOpen,
+    GateOpenKind, HardwareServices, Ieee80211Capabilities, Ieee80211Radio, IndeterminateCause,
+    IndividualAddress, InterfaceAggregateAttempt, InterfaceAttempt, InterfacePhase, KeyTypes,
+    LinkMetric, LowerMacBackend, LowerMacCapabilities, LowerMacEvent, LowerMacPhase, LowerMacSetup,
+    MpduKind, MpduLayout, PhaseRate, PhaseTypes, PhyFormatSet, PreparationError,
     PreparationRefused, PreparedTx, RateSupport, ReceiveFilter, Removed, RemovedKey,
     RetransmissionPlan, RoleKeys, RxBuffer, RxEvidence, RxMeta, RxMetadata, SignalMetadata,
     Station, StationPhase, StationReceive, SupportedBlockAck, SupportedChannel, SupportedEdca,
@@ -165,10 +174,9 @@ const MODEL_ALL_KEY_SLOTS: usize = 4 * MODEL_KEY_SLOTS;
 
 /// The commands the queue from the handle to the driver holds, first in,
 /// first out: what the contract promises, an attempt per ticket and two
-/// commands per key slot, Block Ack slot and the gate, whose install,
-/// addition or closing and removal or opening may wait at once.
-pub const MODEL_COMMANDS: usize =
-    MODEL_TICKETS + 2 * (MODEL_ALL_KEY_SLOTS + MODEL_BLOCK_ACK_SLOTS + 1);
+/// commands per key slot and the gate, whose install/closing and
+/// removal/opening may wait at once. Block Ack uses per-slot settings.
+pub const MODEL_COMMANDS: usize = MODEL_TICKETS + 2 * (MODEL_ALL_KEY_SLOTS + 1);
 /// The events the queue from the driver to the body holds: a terminal per
 /// ticket, a removal per key slot, the gate's closing, one confirmation of
 /// each interface's settings (they coalesce, as the settings do) and the
@@ -242,8 +250,49 @@ pub enum ModelBlockAcks {}
 /// moves with it; only the install mints one.
 pub struct ModelBuffer<'id, C> {
     slot: Slot<'id, C>,
-    memory: Box<[u8]>,
-    preparation_refusal: Rc<Cell<Option<PreparationError>>>,
+    memory: ModelMemory,
+}
+
+enum ModelMemory {
+    Small(Box<[u8; 256]>),
+    Large(Box<[u8; MODEL_MAX_MPDU]>),
+}
+impl core::ops::Deref for ModelMemory {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        match self {
+            Self::Small(bytes) => bytes.as_slice(),
+            Self::Large(bytes) => bytes.as_slice(),
+        }
+    }
+}
+impl core::ops::DerefMut for ModelMemory {
+    fn deref_mut(&mut self) -> &mut [u8] {
+        match self {
+            Self::Small(bytes) => bytes.as_mut_slice(),
+            Self::Large(bytes) => bytes.as_mut_slice(),
+        }
+    }
+}
+impl AsRef<[u8]> for ModelMemory {
+    fn as_ref(&self) -> &[u8] {
+        self
+    }
+}
+impl ModelMemory {
+    fn sequence(&self) -> SequenceNumber {
+        let control = match self {
+            Self::Small(bytes) => [bytes[22], bytes[23]],
+            Self::Large(bytes) => [bytes[22], bytes[23]],
+        };
+        SequenceNumber::from_sequence_control(u16::from_le_bytes(control))
+    }
+    fn retry(&mut self) {
+        match self {
+            Self::Small(bytes) => bytes[1] |= 0x08,
+            Self::Large(bytes) => bytes[1] |= 0x08,
+        }
+    }
 }
 
 impl<C> TxBufferMemory for ModelBuffer<'_, C> {
@@ -325,6 +374,23 @@ pub enum ModelAnyBuffer<'id> {
 }
 
 impl ModelAnyBuffer<'_> {
+    fn sequence(&self) -> SequenceNumber {
+        match self {
+            Self::Small(buffer) => buffer.memory.sequence(),
+            Self::Large(buffer) => buffer.memory.sequence(),
+            Self::SmallSent(mpdu) => mpdu.buffer.memory.sequence(),
+            Self::LargeSent(mpdu) => mpdu.buffer.memory.sequence(),
+        }
+    }
+    fn retry(&mut self) {
+        match self {
+            Self::Small(buffer) => buffer.memory.retry(),
+            Self::Large(buffer) => buffer.memory.retry(),
+            Self::SmallSent(mpdu) => mpdu.buffer.memory.retry(),
+            Self::LargeSent(mpdu) => mpdu.buffer.memory.retry(),
+        }
+    }
+
     fn memory(&self) -> &[u8] {
         match self {
             Self::Small(buffer) => &buffer.memory,
@@ -605,7 +671,7 @@ impl<'id, X: ModelContext> TxBufferPool<'id, ModelSmall> for ModelTypes<X> {
     type Sent = ModelSent<'id, ModelSmall>;
 
     fn prepare<'k, 'p, R: RoleKeys<'id, Self>, K: Ieee80211Capabilities>(
-        source: PoolSource<'k, 'p, 'id, Self, ModelSmall, K, R>,
+        source: CheckedPoolSource<'k, 'p, 'id, Self, ModelSmall, K, R>,
     ) -> oer_ieee80211_lower_mac::PoolPreparation<'k, 'p, 'id, Self, ModelSmall, K, R>
     where
         'id: 'k,
@@ -614,8 +680,16 @@ impl<'id, X: ModelContext> TxBufferPool<'id, ModelSmall> for ModelTypes<X> {
     }
 
     fn push_aggregate<'k, 'p, R, K, S>(
-        aggregate: ModelAggregate<'k, 'p, 'id, R, K, X, S>,
-        source: oer_ieee80211_lower_mac::PoolSubframe<'id, Self, ModelSmall, K>,
+        operation: oer_ieee80211_lower_mac::CheckedPoolAggregate<
+            'k,
+            'p,
+            'id,
+            Self,
+            ModelSmall,
+            R,
+            K,
+            S,
+        >,
     ) -> oer_ieee80211_lower_mac::AggregatePushResult<'k, 'p, 'id, Self, ModelSmall, R, K, S>
     where
         R: RoleKeys<'id, Self>,
@@ -623,7 +697,7 @@ impl<'id, X: ModelContext> TxBufferPool<'id, ModelSmall> for ModelTypes<X> {
         S: AggregateState,
         'id: 'k + 'p,
     {
-        push_model(aggregate, source)
+        push_model(operation)
     }
 
     fn erase(buffer: Self::Buffer) -> ModelAnyBuffer<'id> {
@@ -658,7 +732,7 @@ impl<'id, X: ModelContext> TxBufferPool<'id, ModelLarge> for ModelTypes<X> {
     type Sent = ModelSent<'id, ModelLarge>;
 
     fn prepare<'k, 'p, R: RoleKeys<'id, Self>, K: Ieee80211Capabilities>(
-        source: PoolSource<'k, 'p, 'id, Self, ModelLarge, K, R>,
+        source: CheckedPoolSource<'k, 'p, 'id, Self, ModelLarge, K, R>,
     ) -> oer_ieee80211_lower_mac::PoolPreparation<'k, 'p, 'id, Self, ModelLarge, K, R>
     where
         'id: 'k,
@@ -667,8 +741,16 @@ impl<'id, X: ModelContext> TxBufferPool<'id, ModelLarge> for ModelTypes<X> {
     }
 
     fn push_aggregate<'k, 'p, R, K, S>(
-        aggregate: ModelAggregate<'k, 'p, 'id, R, K, X, S>,
-        source: oer_ieee80211_lower_mac::PoolSubframe<'id, Self, ModelLarge, K>,
+        operation: oer_ieee80211_lower_mac::CheckedPoolAggregate<
+            'k,
+            'p,
+            'id,
+            Self,
+            ModelLarge,
+            R,
+            K,
+            S,
+        >,
     ) -> oer_ieee80211_lower_mac::AggregatePushResult<'k, 'p, 'id, Self, ModelLarge, R, K, S>
     where
         R: RoleKeys<'id, Self>,
@@ -676,7 +758,7 @@ impl<'id, X: ModelContext> TxBufferPool<'id, ModelLarge> for ModelTypes<X> {
         S: AggregateState,
         'id: 'k + 'p,
     {
-        push_model(aggregate, source)
+        push_model(operation)
     }
 
     fn erase(buffer: Self::Buffer) -> ModelAnyBuffer<'id> {
@@ -836,6 +918,34 @@ enum AirResult {
     HardwareTimeout,
 }
 
+/// One receive agreement applied by the model driver, after capability checking.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ModelReceiveAgreement {
+    /// The receiving interface.
+    pub role: VifRole,
+    /// The originator.
+    pub peer: IndividualAddress,
+    /// The receive sequence space.
+    pub tid: Tid,
+    /// The window's start.
+    pub start_sequence: SequenceNumber,
+    /// The receive window in MPDUs.
+    pub window: u16,
+}
+
+impl ModelReceiveAgreement {
+    fn checked<K: Ieee80211Capabilities>(role: VifRole, agreement: SupportedBlockAck<K>) -> Self {
+        let (peer, tid, start_sequence, window) = agreement.get();
+        Self {
+            role,
+            peer,
+            tid,
+            start_sequence,
+            window,
+        }
+    }
+}
+
 /// The air and the world of a model: shared by the backend's driver and
 /// the test.
 #[derive(Default)]
@@ -846,7 +956,6 @@ pub struct ModelAir {
     answers: RefCell<VecDeque<AirResult>>,
     rx: RefCell<VecDeque<(Vec<u8>, ModelRxMeta)>>,
     refuse_enable: Cell<bool>,
-    preparation_refusal: Rc<Cell<Option<PreparationError>>>,
     poisoned: Cell<bool>,
     #[cfg(test)]
     swap_terminals: Cell<bool>,
@@ -861,22 +970,20 @@ pub struct ModelAir {
     settings: Cell<u32>,
     /// The queues the air keeps busy: their attempts wait unpublished.
     held: Cell<[bool; 4]>,
+    /// Keep a published PPDU's result pending, independently of prepublication CCA.
+    held_results: Cell<[bool; 4]>,
+    now_micros: Cell<u64>,
     /// The Block Acks of the next A-MPDUs, in order: bit `n` acknowledges
     /// the aggregate's subframe `n`; once none is queued, every subframe
     /// is acknowledged.
     block_acks: RefCell<VecDeque<u64>>,
+    receive_agreements: RefCell<BTreeMap<u8, ModelReceiveAgreement>>,
 }
 
 impl ModelAir {
     #[cfg(test)]
     pub(crate) fn swap_next_two_single_buffers(&self) {
         self.swap_terminals.set(true);
-    }
-    /// Inject one refusal before admission for a service's failure-path
-    /// scenario. No PN is allocated or TX terminal is posted. Class-pool
-    /// preparation may already have written the checked MPDU.
-    pub fn refuse_preparation(&self, reason: PreparationError) {
-        self.preparation_refusal.set(Some(reason));
     }
     /// Every publication so far, including collisions and unknown outcomes.
     pub fn sent(&self) -> Vec<AirFrame> {
@@ -912,6 +1019,16 @@ impl ModelAir {
         self.block_acks.borrow_mut().push_back(acknowledged);
     }
 
+    /// Applied receive agreements by hardware slot. Pending writes remain
+    /// invisible until the driver takes the latest value of each slot.
+    pub fn receive_agreements(&self) -> Vec<(u8, ModelReceiveAgreement)> {
+        self.receive_agreements
+            .borrow()
+            .iter()
+            .map(|(&slot, &agreement)| (slot, agreement))
+            .collect()
+    }
+
     /// Deliver `frame` to the radio.
     pub fn receive(&self, frame: &[u8], meta: ModelRxMeta) {
         self.rx.borrow_mut().push_back((frame.into(), meta));
@@ -924,6 +1041,26 @@ impl ModelAir {
         let mut queues = self.held.get();
         queues[access_category as usize] = held;
         self.held.set(queues);
+        self.wake_driver();
+    }
+
+    /// Delay the current publication's result until released or its bound
+    /// expires. A queued successor cannot pass this publication.
+    pub fn hold_completion(&self, category: oer_ieee80211_mac::qos::WmmAccessCategory, held: bool) {
+        let mut results = self.held_results.get();
+        match category {
+            oer_ieee80211_mac::qos::WmmAccessCategory::BestEffort => results[0] = held,
+            oer_ieee80211_mac::qos::WmmAccessCategory::Background => results[1] = held,
+            oer_ieee80211_mac::qos::WmmAccessCategory::Video => results[2] = held,
+            oer_ieee80211_mac::qos::WmmAccessCategory::Voice => results[3] = held,
+        }
+        self.held_results.set(results);
+        self.wake_driver();
+    }
+    /// Set model time from the test's monotonic virtual clock. A held result
+    /// becomes a hardware timeout at the backend's publication bound.
+    pub fn set_time(&self, now: oer_time::Instant) {
+        self.now_micros.set(now.as_micros());
         self.wake_driver();
     }
 
@@ -972,13 +1109,6 @@ impl ModelAir {
     }
 }
 
-/// One stage of a retry plan, as the model's hardware takes it.
-#[derive(Clone, Copy, Debug)]
-struct Stage {
-    rate: PhyRate,
-    transmissions: u8,
-}
-
 /// A command the handle sends the driver, in the order it made it.
 /// The host model boxes its larger single-operation owner so small commands
 /// do not reserve that space; the box moves opaque context without cloning.
@@ -1023,6 +1153,7 @@ struct PreparedAggregate<'id, X: ModelContext> {
     role: VifRole,
     ticket: Slot<'id, ModelTickets>,
     subframes: Vec<Subframe<'id>>,
+    start_sequence: SequenceNumber,
     queue: usize,
     rate: PhyRate,
     key: Option<PreparedKey>,
@@ -1035,7 +1166,7 @@ struct Prepared<'id, X: ModelContext> {
     ticket: Slot<'id, ModelTickets>,
     mpdu: ModelMpdu<'id>,
     queue: usize,
-    plan: Vec<Stage>,
+    plan: oer_ieee80211_lower_mac::RetryPlan<PhyRate>,
     key: Option<PreparedKey>,
 }
 
@@ -1046,6 +1177,9 @@ struct Settings {
     station: bool,
     access_point: bool,
     other: bool,
+    /// Minted slots bound the keys to MODEL_BLOCK_ACK_SLOTS. Repeated writes
+    /// replace a slot's pending value instead of occupying command capacity.
+    block_acks: BTreeMap<u8, Option<ModelReceiveAgreement>>,
 }
 
 /// The install's queues between the handle and the driver.
@@ -1291,16 +1425,14 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
                 .into_iter()
                 .map(|slot| ModelBuffer {
                     slot,
-                    preparation_refusal: self.air.preparation_refusal.clone(),
-                    memory: alloc::vec![0; ModelSmall::CAPACITY].into_boxed_slice(),
+                    memory: ModelMemory::Small(Box::new([0; 256])),
                 })
                 .collect(),
             large: large
                 .into_iter()
                 .map(|slot| ModelBuffer {
                     slot,
-                    preparation_refusal: self.air.preparation_refusal.clone(),
-                    memory: alloc::vec![0; ModelLarge::CAPACITY].into_boxed_slice(),
+                    memory: ModelMemory::Large(Box::new([0; MODEL_MAX_MPDU])),
                 })
                 .collect(),
             station_pairwise: mint.slots(),
@@ -1340,10 +1472,14 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
         retire: Retire<'p>,
     ) -> impl Future<Output = ()> + use<'p, 'id, C, X> {
         let mut driver = Driver {
-            queues: core::array::from_fn(|_| VecDeque::new()),
+            queues: core::array::from_fn(|_| TxQueue {
+                waiting: VecDeque::new(),
+                air: None,
+            }),
             keys: Vec::new(),
             removing: Vec::new(),
             gate_open: true,
+            closing_gate: false,
         };
         poll_fn(move |cx| {
             held.air.passes.set(held.air.passes.get() + 1);
@@ -1390,16 +1526,18 @@ pub const MODEL_TX_QUEUE_DEPTH: core::num::NonZeroU8 = match core::num::NonZeroU
 impl<C: Ieee80211Capabilities, X: ModelContext> LowerMacBackend for ModelBackend<C, X> {
     type Caps = C;
     const TX_QUEUE_DEPTH: core::num::NonZeroU8 = MODEL_TX_QUEUE_DEPTH;
+    const PUBLICATION_BOUND: oer_time::Duration = MODEL_PUBLICATION_BOUND;
 }
 
 /// The model's hardware, which only the driver owns.
 struct Driver<'id, X: ModelContext> {
     /// The prepared attempts of each queue, the head first.
-    queues: [VecDeque<Work<'id, X>>; 4],
+    queues: [TxQueue<'id, X>; 4],
     /// The installed hardware keys.
     keys: Vec<KeyIdentity>,
     removing: Vec<(KeyIdentity, Removed<'id, ModelTypes<X>>)>,
     gate_open: bool,
+    closing_gate: bool,
 }
 
 impl<'id, X: ModelContext> Driver<'id, X> {
@@ -1412,6 +1550,17 @@ impl<'id, X: ModelContext> Driver<'id, X> {
             }
             // The settings come before the next command.
             let settings = core::mem::take(&mut *held.settings.borrow_mut());
+            for (slot, wanted) in settings.block_acks {
+                let mut applied = held.air.receive_agreements.borrow_mut();
+                match wanted {
+                    Some(agreement) => {
+                        applied.insert(slot, agreement);
+                    }
+                    None => {
+                        applied.remove(&slot);
+                    }
+                }
+            }
             if settings.station {
                 held.air.settings.set(held.air.settings.get() + 1);
                 held.configured(VifRole::Station);
@@ -1435,37 +1584,41 @@ impl<'id, X: ModelContext> Driver<'id, X> {
             match command {
                 Command::Submit(prepared) => {
                     let queue = prepared.queue;
-                    self.queues[queue].push_back(Work::Single(prepared));
+                    self.queues[queue].waiting.push_back(Work::Single(prepared));
                 }
                 Command::SubmitAmpdu(aggregate) => {
                     let queue = aggregate.queue;
-                    self.queues[queue].push_back(Work::Aggregate(aggregate));
+                    self.queues[queue]
+                        .waiting
+                        .push_back(Work::Aggregate(aggregate));
                 }
                 Command::InstallKey { key } => self.keys.push(key),
                 Command::RemoveKey { key, removed } => {
-                    self.keys.retain(|installed| *installed != key);
                     self.removing.push((key, removed));
                 }
                 Command::CloseGate => {
                     self.gate_open = false;
-                    self.withdraw(held, WithdrawCause::GateClosed);
-                    let closed = held.closed.borrow_mut().take();
-                    if let Some(closed) = closed {
-                        held.post(LowerMacEvent::GateClosed(closed));
-                    }
+                    self.closing_gate = true;
                 }
                 Command::OpenGate => self.gate_open = true,
             }
-            if !held.draining.get() {
-                self.publish(held);
+            self.publish(held);
+        }
+        // A result released by the world makes progress without a command.
+        self.publish(held);
+        let idle = self
+            .queues
+            .iter()
+            .all(|queue| queue.air.is_none() && queue.waiting.is_empty());
+        if idle && self.closing_gate {
+            self.closing_gate = false;
+            if let Some(closed) = held.closed.borrow_mut().take() {
+                held.post(LowerMacEvent::GateClosed(closed));
             }
         }
-        if held.draining.replace(false) {
-            self.withdraw(held, WithdrawCause::Disabled);
+        if idle && held.draining.replace(false) {
             held.wake_body();
         }
-        // A queue the air released publishes without a command.
-        self.publish(held);
         if held.air.poisoned.get() {
             return;
         }
@@ -1473,44 +1626,62 @@ impl<'id, X: ModelContext> Driver<'id, X> {
         self.receive(held);
     }
 
-    /// Return unpublished work in each queue's original order.
-    fn withdraw(&mut self, held: &ModelHeld<'id, X>, cause: WithdrawCause) {
-        for queue in &mut self.queues {
-            while let Some(work) = queue.pop_front() {
-                withdrawn(held, work, cause);
-            }
-        }
-    }
-
-    /// Publish the head of every queue and carry its retry plan out.
+    /// Keep each published head until its result; barriers stop the next
+    /// publication, not just admission of new plans.
     fn publish(&mut self, held: &ModelHeld<'id, X>) {
-        let busy = held.air.held.get();
-        for (queue, busy) in self.queues.iter_mut().zip(busy) {
-            while let Some(work) = queue.pop_front() {
-                // Inspect the owned head. If it cannot run, put that same
-                // owner back; no second lookup reconstructs its identity.
-                let cause = if work.key().is_some_and(|key| !self.keys.contains(key)) {
-                    Some(WithdrawCause::KeyRemoved)
-                } else if !self.gate_open {
-                    Some(WithdrawCause::GateClosed)
-                } else {
-                    None
+        for ((queue, busy), result_held) in self
+            .queues
+            .iter_mut()
+            .zip(held.air.held.get())
+            .zip(held.air.held_results.get())
+        {
+            loop {
+                if let Some(publication) = queue.air.take() {
+                    let elapsed = held
+                        .air
+                        .now_micros
+                        .get()
+                        .saturating_sub(publication.started);
+                    if result_held && elapsed < MODEL_PUBLICATION_BOUND.as_micros() {
+                        queue.air = Some(publication);
+                        break;
+                    }
+                    let cause = withdrawal(
+                        held.draining.get(),
+                        self.gate_open,
+                        publication.work.key().is_some_and(|key| {
+                            self.removing.iter().any(|(removed, _)| removed == key)
+                        }),
+                    );
+                    let result = if result_held {
+                        AirResult::HardwareTimeout
+                    } else {
+                        publication.result
+                    };
+                    queue.air = publication.work.complete(held, &self.keys, result, cause);
+                    if held.air.poisoned.get() {
+                        return;
+                    }
+                    continue;
+                }
+                let Some(work) = queue.waiting.pop_front() else {
+                    break;
                 };
-                if let Some(cause) = cause {
+                if let Some(cause) = withdrawal(
+                    held.draining.get(),
+                    self.gate_open,
+                    work.key()
+                        .is_some_and(|key| self.removing.iter().any(|(removed, _)| removed == key)),
+                ) {
                     withdrawn(held, work, cause);
                 } else if busy {
-                    queue.push_front(work);
+                    queue.waiting.push_front(work);
                     break;
                 } else {
-                    match work {
-                        Work::Single(prepared) => publish_single(held, &self.keys, *prepared),
-                        Work::Aggregate(aggregate) => {
-                            publish_aggregate(held, &self.keys, aggregate)
-                        }
+                    queue.air = start_work(held, &self.keys, work);
+                    if held.air.poisoned.get() {
+                        return;
                     }
-                }
-                if held.air.poisoned.get() {
-                    return;
                 }
             }
         }
@@ -1523,6 +1694,7 @@ impl<'id, X: ModelContext> Driver<'id, X> {
         let mut pending = Vec::new();
         for (key, removed) in self.removing.drain(..) {
             if Rc::strong_count(&key.0.preparations) == 1 {
+                self.keys.retain(|installed| *installed != key);
                 held.post(LowerMacEvent::KeyRemoved(removed));
             } else {
                 pending.push((key, removed));
@@ -1556,72 +1728,180 @@ impl<'id, X: ModelContext> Driver<'id, X> {
     }
 }
 
-/// Publish one MPDU and carry its retry plan out.
+/// Synthetic model latency, in model time; hardware backends declare their
+/// own PPDU + response/timeout bound. It does not scale with retry-plan length.
+pub const MODEL_PUBLICATION_BOUND: oer_time::Duration = oer_time::Duration::from_millis(1);
+
+struct TxQueue<'id, X: ModelContext> {
+    waiting: VecDeque<Work<'id, X>>,
+    air: Option<Publication<'id, X>>,
+}
+struct Publication<'id, X: ModelContext> {
+    started: u64,
+    result: AirResult,
+    work: Published<'id, X>,
+}
+struct SinglePlan<'id, X: ModelContext> {
+    prepared: Box<Prepared<'id, X>>,
+    remaining: VecDeque<PhyRate>,
+    transmissions: u16,
+    last: Option<PhyRate>,
+    rate: PhyRate,
+}
+enum Published<'id, X: ModelContext> {
+    Single(SinglePlan<'id, X>),
+    Aggregate {
+        prepared: PreparedAggregate<'id, X>,
+        report: BlockAckReport,
+    },
+}
+fn withdrawal(disabled: bool, gate_open: bool, key_removed: bool) -> Option<WithdrawCause> {
+    if disabled {
+        Some(WithdrawCause::Disabled)
+    } else if key_removed {
+        Some(WithdrawCause::KeyRemoved)
+    } else if !gate_open {
+        Some(WithdrawCause::GateClosed)
+    } else {
+        None
+    }
+}
+impl<'id, X: ModelContext> Published<'id, X> {
+    fn key(&self) -> Option<&KeyIdentity> {
+        match self {
+            Self::Single(plan) => plan.prepared.key.as_ref(),
+            Self::Aggregate { prepared, .. } => prepared.key.as_ref(),
+        }
+        .map(|key| &key.identity)
+    }
+    fn complete(
+        self,
+        held: &ModelHeld<'id, X>,
+        keys: &[KeyIdentity],
+        result: AirResult,
+        cause: Option<WithdrawCause>,
+    ) -> Option<Publication<'id, X>> {
+        match self {
+            Self::Single(mut plan) => {
+                let status = match result {
+                    AirResult::HardwareTimeout => {
+                        terminal(
+                            held,
+                            *plan.prepared,
+                            TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout),
+                        );
+                        return None;
+                    }
+                    AirResult::Acknowledged => TxEndStatus::Delivered,
+                    AirResult::AckTimeout => TxEndStatus::AckTimeout,
+                    AirResult::Collision => TxEndStatus::ContentionLimit,
+                };
+                if !matches!(result, AirResult::Collision) {
+                    // The closed plan has at most four u8 stages (1020 transmissions).
+                    plan.transmissions = plan.transmissions.saturating_add(1);
+                    plan.last = Some(plan.rate);
+                }
+                if !matches!(result, AirResult::Acknowledged) {
+                    if let Some(cause) = cause {
+                        terminal(held, *plan.prepared, TxOutcome::Withdrawn(cause));
+                        return None;
+                    }
+                    if let Some(rate) = plan.remaining.pop_front() {
+                        plan.rate = rate;
+                        return publish_single(held, keys, plan);
+                    }
+                }
+                terminal(
+                    held,
+                    *plan.prepared,
+                    TxOutcome::Ended {
+                        status,
+                        transmissions: plan.transmissions,
+                        rate: plan.last,
+                        ack: (status == TxEndStatus::Delivered).then_some(TxAck::default()),
+                    },
+                );
+            }
+            Self::Aggregate { prepared, report } => {
+                let outcome = if matches!(result, AirResult::HardwareTimeout) {
+                    TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout)
+                } else {
+                    TxOutcome::Ended {
+                        status: TxEndStatus::Delivered,
+                        transmissions: 1,
+                        rate: Some(prepared.rate),
+                        ack: Some(TxAck {
+                            block_ack: Some(report),
+                            ..TxAck::default()
+                        }),
+                    }
+                };
+                terminal_aggregate(held, prepared, outcome);
+            }
+        }
+        None
+    }
+}
+fn start_work<'id, X: ModelContext>(
+    held: &ModelHeld<'id, X>,
+    keys: &[KeyIdentity],
+    work: Work<'id, X>,
+) -> Option<Publication<'id, X>> {
+    match work {
+        Work::Single(prepared) => {
+            let rate = prepared.plan.first().rate;
+            let remaining = prepared
+                .plan
+                .stages()
+                .flat_map(|stage| {
+                    core::iter::repeat_n(stage.rate, usize::from(stage.transmissions.get()))
+                })
+                .skip(1)
+                .collect();
+            publish_single(
+                held,
+                keys,
+                SinglePlan {
+                    prepared,
+                    remaining,
+                    transmissions: 0,
+                    last: None,
+                    rate,
+                },
+            )
+        }
+        Work::Aggregate(prepared) => publish_aggregate(held, keys, prepared),
+    }
+}
 fn publish_single<'id, X: ModelContext>(
     held: &ModelHeld<'id, X>,
     keys: &[KeyIdentity],
-    mut prepared: Prepared<'id, X>,
-) {
-    prepared.mpdu = match prepared.mpdu.publish(
-        prepared.role,
-        prepared.key.as_ref().map(|key| &key.identity),
+    mut plan: SinglePlan<'id, X>,
+) -> Option<Publication<'id, X>> {
+    plan.prepared.mpdu = match plan.prepared.mpdu.publish(
+        plan.prepared.role,
+        plan.prepared.key.as_ref().map(|key| &key.identity),
     ) {
         Ok(mpdu) => mpdu,
         Err(_) => {
             held.poison();
-            return;
+            return None;
         }
     };
-    // A closed RetryPlan holds at most four u8 stages: u16 retains the
-    // exact count even for a plan longer than 255 transmissions.
-    let mut transmissions = 0_u16;
-    let mut last = None;
-    let mut status = TxEndStatus::AckTimeout;
-    'plan: for stage in &prepared.plan {
-        for _ in 0..stage.transmissions {
-            if transmissions != 0 {
-                prepared.mpdu.buffer.memory_mut()[1] |= 0x08;
-            }
-            held.air.sent.borrow_mut().push(prepared.mpdu.on_air(
-                prepared.role,
-                keys,
-                prepared.key.as_ref().map(|key| &key.identity),
-                stage.rate,
-            ));
-            match held.air.result() {
-                AirResult::HardwareTimeout => {
-                    terminal(
-                        held,
-                        prepared,
-                        TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout),
-                    );
-                    return;
-                }
-                AirResult::Collision => status = TxEndStatus::ContentionLimit,
-                AirResult::Acknowledged => {
-                    transmissions += 1;
-                    last = Some(stage.rate);
-                    status = TxEndStatus::Success;
-                    break 'plan;
-                }
-                AirResult::AckTimeout => {
-                    transmissions += 1;
-                    last = Some(stage.rate);
-                    status = TxEndStatus::AckTimeout;
-                }
-            }
-        }
+    if plan.transmissions != 0 {
+        plan.prepared.mpdu.buffer.retry();
     }
-    terminal(
-        held,
-        prepared,
-        TxOutcome::Ended {
-            status,
-            transmissions,
-            rate: last,
-            ack: (status == TxEndStatus::Success).then_some(TxAck::default()),
-        },
-    );
+    held.air.sent.borrow_mut().push(plan.prepared.mpdu.on_air(
+        plan.prepared.role,
+        keys,
+        plan.prepared.key.as_ref().map(|key| &key.identity),
+        plan.rate,
+    ));
+    Some(Publication {
+        started: held.air.now_micros.get(),
+        result: held.air.result(),
+        work: Published::Single(plan),
+    })
 }
 
 /// Preserve the submission shape and every owner on withdrawal.
@@ -1635,103 +1915,85 @@ fn withdrawn<'id, X: ModelContext>(
             terminal(held, *prepared, TxOutcome::Withdrawn(cause));
         }
         Work::Aggregate(aggregate) => {
-            let mut buffers = Vec::with_capacity(aggregate.subframes.len());
-            let mut bodies = Vec::new();
-            for (index, subframe) in aggregate.subframes.into_iter().enumerate() {
-                buffers.push(subframe.mpdu.buffer);
-                if let Some(body) = subframe.mpdu.body {
-                    bodies.push((index as u8, body));
-                }
-            }
-            held.post(LowerMacEvent::TxCompleted(TxCompleted::Aggregate {
-                context: aggregate.context,
-                ticket: aggregate.ticket,
-                buffers,
-                bodies,
-                completion: TxOutcome::Withdrawn(cause),
-            }));
+            terminal_aggregate(held, aggregate, TxOutcome::Withdrawn(cause))
         }
     }
 }
 
-/// Publish one A-MPDU: its new subframes numbered, its retransmitted ones
-/// with their numbers; the air's Block Ack names the subframes it
-/// acknowledged by their sequence numbers.
+fn terminal_aggregate<'id, X: ModelContext>(
+    held: &ModelHeld<'id, X>,
+    aggregate: PreparedAggregate<'id, X>,
+    completion: TxOutcome,
+) {
+    let mut buffers = Vec::with_capacity(aggregate.subframes.len());
+    let mut bodies = Vec::new();
+    for (index, subframe) in aggregate.subframes.into_iter().enumerate() {
+        buffers.push(subframe.mpdu.buffer);
+        if let Some(body) = subframe.mpdu.body {
+            bodies.push((index as u8, body));
+        }
+    }
+    held.post(LowerMacEvent::TxCompleted(TxCompleted::Aggregate {
+        context: aggregate.context,
+        ticket: aggregate.ticket,
+        buffers,
+        bodies,
+        completion,
+    }));
+}
+
 fn publish_aggregate<'id, X: ModelContext>(
     held: &ModelHeld<'id, X>,
     keys: &[KeyIdentity],
-    aggregate: PreparedAggregate<'id, X>,
-) {
-    let PreparedAggregate {
-        context,
-        role,
-        ticket,
-        subframes,
-        rate,
-        key,
-        ..
-    } = aggregate;
+    mut aggregate: PreparedAggregate<'id, X>,
+) -> Option<Publication<'id, X>> {
     let acknowledged = held
         .air
         .block_acks
         .borrow_mut()
         .pop_front()
         .unwrap_or(u64::MAX);
-    let sequence = |mpdu: &ModelMpdu<'_>| {
-        // Aggregate construction accepts only an AckHeader, at least 24 bytes.
-        u16::from_le_bytes([mpdu.buffer.memory()[22], mpdu.buffer.memory()[23]]) >> 4
-    };
-    let mut buffers = Vec::with_capacity(subframes.len());
-    let mut bodies = Vec::new();
-    let mut start = None;
+    let mut subframes = Vec::with_capacity(aggregate.subframes.len());
     let mut bitmap = 0_u64;
-    for (index, subframe) in subframes.into_iter().enumerate() {
-        let mpdu = match subframe
-            .mpdu
-            .publish(role, key.as_ref().map(|key| &key.identity))
-        {
+    for (index, subframe) in aggregate.subframes.into_iter().enumerate() {
+        let mpdu = match subframe.mpdu.publish(
+            aggregate.role,
+            aggregate.key.as_ref().map(|key| &key.identity),
+        ) {
             Ok(mpdu) => mpdu,
             Err(_) => {
                 held.poison();
-                return;
+                return None;
             }
         };
         held.air.sent.borrow_mut().push(mpdu.on_air(
-            role,
+            aggregate.role,
             keys,
-            key.as_ref().map(|key| &key.identity),
-            rate,
+            aggregate.key.as_ref().map(|key| &key.identity),
+            aggregate.rate,
         ));
-        let sequence = sequence(&mpdu);
-        let start = *start.get_or_insert(sequence);
+        let distance = aggregate
+            .start_sequence
+            .forward_distance(mpdu.buffer.sequence());
         if acknowledged & (1 << index) != 0 {
-            bitmap |= 1 << (sequence.wrapping_sub(start) & 0x0fff).min(63);
+            bitmap |= 1 << distance.min(63);
         }
-        buffers.push(mpdu.buffer);
-        if let Some(body) = mpdu.body {
-            bodies.push((index as u8, body));
-        }
+        subframes.push(Subframe { mpdu });
     }
-    held.post(LowerMacEvent::TxCompleted(TxCompleted::Aggregate {
-        context,
-        ticket,
-        buffers,
-        completion: TxOutcome::Ended {
-            status: TxEndStatus::Success,
-            transmissions: 1,
-            rate: Some(rate),
-            ack: Some(TxAck {
-                block_ack: start.and_then(SequenceNumber::new).map(|start_sequence| {
-                    BlockAckReport {
-                        start_sequence,
-                        bitmap,
-                    }
-                }),
-                ..TxAck::default()
-            }),
+    aggregate.subframes = subframes;
+    // NonEmptyAggregate carries the first sequence into PreparedAggregate below.
+    let report = BlockAckReport {
+        start_sequence: aggregate.start_sequence,
+        bitmap,
+    };
+    Some(Publication {
+        started: held.air.now_micros.get(),
+        result: AirResult::Acknowledged,
+        work: Published::Aggregate {
+            prepared: aggregate,
+            report,
         },
-        bodies,
-    }));
+    })
 }
 
 /// Post the terminal of `prepared`, with its tokens.
@@ -1873,108 +2135,36 @@ pub struct ModelBlockAck<'id> {
 }
 
 /// A retry plan's stages, as the model's hardware takes them.
-fn stages<C: Ieee80211Capabilities>(frame: &TxFrame<'_, C>) -> Vec<Stage> {
-    match frame {
-        TxFrame::Individual { plan, .. } => plan
-            .stages()
-            .map(|stage| Stage {
-                rate: stage.rate.get(),
-                transmissions: stage.transmissions.get(),
-            })
-            .collect(),
-        TxFrame::BlockAckRequest { plan, .. } => plan
-            .stages()
-            .map(|stage| Stage {
-                rate: stage.rate.rate().get(),
-                transmissions: stage.transmissions.get(),
-            })
-            .collect(),
-        TxFrame::IndividualNoAck { rate, .. } => alloc::vec![Stage {
-            rate: rate.rate().get(),
-            transmissions: 1,
-        }],
-        TxFrame::Group { rate, .. } => alloc::vec![Stage {
-            rate: rate.get(),
-            transmissions: 1,
-        }],
-    }
-}
-
-/// The checked frame description is the source of the MAC header and its
-/// QoS Ack Policy. The caller already encoded everything after the header.
-fn write_header<C: Ieee80211Capabilities>(
+fn stages<C: Ieee80211Capabilities>(
     frame: &TxFrame<'_, C>,
-    bytes: &mut [u8],
-    protected: bool,
-) {
+) -> oer_ieee80211_lower_mac::RetryPlan<PhyRate> {
     match frame {
-        TxFrame::Individual { frame, .. } => {
-            frame
-                .header()
-                .header()
-                .with_protection(protected)
-                .encode(bytes, false);
-        }
-        TxFrame::IndividualNoAck { frame, .. } => {
-            frame
-                .header()
-                .header()
-                .with_protection(protected)
-                .encode(bytes, true);
-        }
-        TxFrame::Group { frame, .. } => {
-            frame
-                .header()
-                .with_protection(protected)
-                .encode(bytes, true);
-        }
-        TxFrame::BlockAckRequest {
-            receiver,
-            transmitter,
-            tid,
-            starting_sequence,
-            ..
-        } => {
-            let header = oer_ieee80211_mac::block_ack::encode_block_ack_request(
-                receiver.get(),
-                *transmitter,
-                tid.get(),
-                *starting_sequence,
-            );
-            bytes[..header.len()].copy_from_slice(&header);
-        }
+        TxFrame::Individual { plan, .. } => plan.map(|rate| rate.get()),
+        TxFrame::IndividualNoAck { rate, .. } => one_stage(rate.rate().get()),
+        TxFrame::Group { rate, .. } => one_stage(rate.get()),
+        TxFrame::BlockAckRequest { plan, .. } => plan.map(|rate| rate.rate().get()),
     }
 }
-
-fn copy_body(buffer: &mut ModelAnyBuffer<'_>, layout: MpduLayout, body: Option<&ModelBody>) {
-    if let Some(body) = body {
-        // Layout and this body were checked together against this allocation.
-        buffer.memory_mut()[layout.body_start()..layout.len()].copy_from_slice(body.bytes());
-    }
+fn one_stage(rate: PhyRate) -> oer_ieee80211_lower_mac::RetryPlan<PhyRate> {
+    oer_ieee80211_lower_mac::RetryPlan::new(oer_ieee80211_lower_mac::RetryStage {
+        rate,
+        transmissions: core::num::NonZeroU8::MIN,
+        protection: oer_ieee80211_lower_mac::Protection::None,
+    })
 }
 
 fn retry_stages(
     layout: &MpduLayout,
     plan: &RetransmissionPlan<'_>,
-) -> Result<Vec<Stage>, PreparationError> {
+) -> Result<oer_ieee80211_lower_mac::RetryPlan<PhyRate>, PreparationError> {
     match (layout.kind(), plan) {
-        (MpduKind::Individual, RetransmissionPlan::Individual(plan)) => Ok(plan
-            .stages()
-            .map(|stage| Stage {
-                rate: stage.rate.get(),
-                transmissions: stage.transmissions.get(),
-            })
-            .collect()),
-        (MpduKind::IndividualNoAck, RetransmissionPlan::IndividualNoAck(rate)) => {
-            Ok(alloc::vec![Stage {
-                rate: rate.rate().get(),
-                transmissions: 1,
-            }])
+        (MpduKind::Individual, RetransmissionPlan::Individual(plan)) => {
+            Ok(plan.map(|rate| rate.get()))
         }
-        (MpduKind::Group, RetransmissionPlan::Group(rate)) => Ok(alloc::vec![Stage {
-            rate: rate.get(),
-            transmissions: 1,
-        }]),
+        (MpduKind::IndividualNoAck, RetransmissionPlan::IndividualNoAck(rate)) => {
+            Ok(one_stage(rate.rate().get()))
+        }
+        (MpduKind::Group, RetransmissionPlan::Group(rate)) => Ok(one_stage(rate.get())),
         _ => Err(PreparationError::RetransmissionKind),
     }
 }
@@ -1982,6 +2172,14 @@ fn retry_stages(
 type PhaseProof<'p, T> = PhantomData<fn(&'p ()) -> (&'p (), T)>;
 type TypeProof<T> = PhantomData<fn() -> T>;
 type ModelSource<'k, 'p, 'id, C, K, R, X> = TxSource<
+    'p,
+    ModelBuffer<'id, C>,
+    ModelSent<'id, C>,
+    oer_ieee80211_lower_mac::ClassFrame<'p, C, K>,
+    ModelBody,
+    <R as RoleKeys<'id, ModelTypes<X>>>::TxKey<'k>,
+>;
+type ModelCheckedSource<'k, 'p, 'id, C, K, R, X> = CheckedTxSource<
     'p,
     ModelBuffer<'id, C>,
     ModelSent<'id, C>,
@@ -1999,7 +2197,7 @@ type ModelPreparation<'k, 'p, 'id, R, K, X, C> = Result<
 /// the backend identity, never a reference to a portable machine.
 pub struct ModelPrepared<'k, 'p, 'id, R, K, X: ModelContext = ()> {
     mpdu: ModelMpdu<'id>,
-    plan: Vec<Stage>,
+    plan: oer_ieee80211_lower_mac::RetryPlan<PhyRate>,
     key: Option<PreparedKey>,
     key_borrow: PhantomData<&'k ()>,
     proof: PhaseProof<'p, (R, K, X)>,
@@ -2050,69 +2248,59 @@ fn prepare_model<
     X: ModelContext,
     C: ModelClass,
 >(
-    source: ModelSource<'k, 'p, 'id, C, K, R, X>,
+    source: ModelCheckedSource<'k, 'p, 'id, C, K, R, X>,
 ) -> ModelPreparation<'k, 'p, 'id, R, K, X, C> {
-    let checked = match &source {
-        TxSource::Fresh {
-            buffer,
-            frame,
-            body,
-            protection,
-        } => {
+    let (mpdu, plan, key) = match source {
+        CheckedTxSource::Fresh(fresh) => {
+            let (
+                FreshSource {
+                    buffer,
+                    frame,
+                    body,
+                    protection,
+                },
+                layout,
+            ) = fresh.into_parts();
             let key = match protection {
                 TxProtection::Open => None,
-                TxProtection::Ccmp(key) => Some(R::tx_identity(key)),
+                TxProtection::Ccmp(key) => Some(R::tx_identity(&key)),
             };
-            let layout = MpduLayout::new(
-                frame.frame(),
-                body.as_ref().map_or(0, |body| body.bytes().len()),
-                key.is_some(),
-            );
-            match buffer.preparation_refusal.take() {
-                Some(reason) => Err(reason),
-                None => layout.map(|layout| (layout, stages(frame.frame()), key)),
-            }
+            let plan = stages(frame.frame());
+            (
+                ModelMpdu {
+                    buffer: C::erase(buffer),
+                    layout,
+                    body,
+                },
+                plan,
+                key,
+            )
         }
-        TxSource::Retransmission { mpdu, plan } => {
-            if mpdu.role != R::ROLE {
-                return Err(PreparationRefused {
-                    reason: PreparationError::RetransmissionKind,
-                    operation: source,
-                });
-            }
-            if mpdu.key.as_ref().is_some_and(|key| !key.0.active.get()) {
+        CheckedTxSource::Retransmission { mpdu, plan } => {
+            let checked = if mpdu.role != R::ROLE {
+                Err(PreparationError::RetransmissionKind)
+            } else if mpdu.key.as_ref().is_some_and(|key| !key.0.active.get()) {
                 Err(PreparationError::RetransmissionKey)
             } else {
-                retry_stages(&mpdu.layout, plan).map(|plan| (mpdu.layout, plan, mpdu.key.clone()))
-            }
+                retry_stages(&mpdu.layout, &plan)
+            };
+            let stages = match checked {
+                Ok(stages) => stages,
+                Err(reason) => {
+                    return Err(PreparationRefused {
+                        reason,
+                        operation: TxSource::Retransmission { mpdu, plan },
+                    });
+                }
+            };
+            let key = mpdu.key.clone();
+            let layout = mpdu.layout;
+            (
+                ModelMpdu::from_sent(C::erase_sent(mpdu), layout),
+                stages,
+                key,
+            )
         }
-    };
-    let (layout, plan, key) = match checked {
-        Ok(checked) => checked,
-        Err(reason) => {
-            return Err(PreparationRefused {
-                reason,
-                operation: source,
-            });
-        }
-    };
-    let mpdu = match source {
-        TxSource::Fresh {
-            buffer,
-            frame,
-            body,
-            ..
-        } => {
-            let mut buffer = C::erase(buffer);
-            write_header(frame.frame(), buffer.memory_mut(), key.is_some());
-            copy_body(&mut buffer, layout, body.as_ref());
-            ModelMpdu {
-                buffer,
-                layout,
-                body,
-            }
-        }
-        TxSource::Retransmission { mpdu, .. } => ModelMpdu::from_sent(C::erase_sent(mpdu), layout),
     };
     Ok(ModelPrepared {
         mpdu,
@@ -2205,20 +2393,36 @@ where
     fn add_block_ack(
         &mut self,
         slot: Slot<'id, ModelBlockAcks>,
-        _: SupportedBlockAck<K>,
+        agreement: SupportedBlockAck<K>,
     ) -> ModelBlockAck<'id> {
+        self.held.settings.borrow_mut().block_acks.insert(
+            slot.index(),
+            Some(ModelReceiveAgreement::checked(R::ROLE, agreement)),
+        );
+        self.held.air.wake_driver();
         ModelBlockAck { slot }
     }
 
     fn replace_block_ack(
         &mut self,
         running: ModelBlockAck<'id>,
-        _: SupportedBlockAck<K>,
+        agreement: SupportedBlockAck<K>,
     ) -> ModelBlockAck<'id> {
+        self.held.settings.borrow_mut().block_acks.insert(
+            running.slot.index(),
+            Some(ModelReceiveAgreement::checked(R::ROLE, agreement)),
+        );
+        self.held.air.wake_driver();
         running
     }
 
     fn remove_block_ack(&mut self, agreement: ModelBlockAck<'id>) -> Slot<'id, ModelBlockAcks> {
+        self.held
+            .settings
+            .borrow_mut()
+            .block_acks
+            .insert(agreement.slot.index(), None);
+        self.held.air.wake_driver();
         agreement.slot
     }
 }
@@ -2253,8 +2457,17 @@ pub const MODEL_AMPDU_SUBFRAMES: usize = 8;
 /// use oer_ieee80211_runtime::lower_mac_owner::model::ModelAggregate;
 /// fn same<'k, 'p, 'id, R>(a: ModelAggregate<'k, 'p, 'id, R>) -> ModelAggregate<'k, 'p, 'id, R> { a }
 /// ```
-pub struct ModelAggregate<'k, 'p, 'id, R, K = ModelCaps, X: ModelContext = (), S = EmptyAggregate> {
+pub struct ModelAggregate<
+    'k,
+    'p,
+    'id,
+    R,
+    K = ModelCaps,
+    X: ModelContext = (),
+    S: AggregateState = EmptyAggregate,
+> {
     subframes: Vec<Subframe<'id>>,
+    first: S::Head<SequenceNumber>,
     receiver: IndividualAddress,
     tid: Tid,
     rate: AmpduRate<'p>,
@@ -2262,10 +2475,19 @@ pub struct ModelAggregate<'k, 'p, 'id, R, K = ModelCaps, X: ModelContext = (), S
     key_borrow: PhantomData<&'k ()>,
     caps: TypeProof<(R, K, X, S)>,
 }
-impl<'id, R, K, X: ModelContext, S> PhaseAggregate<'id>
+impl<'id, R, K, X: ModelContext, S: AggregateState> PhaseAggregate<'id>
     for ModelAggregate<'_, '_, 'id, R, K, X, S>
 {
     type Types = ModelTypes<X>;
+    fn receiver(&self) -> IndividualAddress {
+        self.receiver
+    }
+    fn tid(&self) -> Tid {
+        self.tid
+    }
+    fn is_protected(&self) -> bool {
+        self.key.is_some()
+    }
     fn subframes(&self) -> usize {
         self.subframes.len()
     }
@@ -2283,6 +2505,13 @@ impl<'id, R, K, X: ModelContext, S> PhaseAggregate<'id>
 }
 type ModelSubframe<'id, C, K> =
     SubframeSource<ModelBuffer<'id, C>, ModelSent<'id, C>, ClassSubframe<C, K>, ModelBody>;
+type ModelCheckedAggregate<'k, 'p, 'id, R, K, X, S, C> = CheckedAggregate<
+    ModelAggregate<'k, 'p, 'id, R, K, X, S>,
+    ModelBuffer<'id, C>,
+    ModelSent<'id, C>,
+    ClassSubframe<C, K>,
+    ModelBody,
+>;
 type ModelAggregatePush<'k, 'p, 'id, R, K, X, S, C> = Result<
     ModelAggregate<'k, 'p, 'id, R, K, X, NonEmptyAggregate>,
     AggregateRefused<ModelAggregate<'k, 'p, 'id, R, K, X, S>, ModelSubframe<'id, C, K>>,
@@ -2299,74 +2528,51 @@ fn push_model<
     R: oer_ieee80211_lower_mac::InterfaceRole,
     K: Ieee80211Capabilities,
     X: ModelContext,
-    S,
+    S: AggregateState,
     C: ModelClass,
 >(
-    mut aggregate: ModelAggregate<'k, 'p, 'id, R, K, X, S>,
-    source: ModelSubframe<'id, C, K>,
+    operation: ModelCheckedAggregate<'k, 'p, 'id, R, K, X, S, C>,
 ) -> ModelAggregatePush<'k, 'p, 'id, R, K, X, S, C> {
-    let checked = if aggregate.subframes.len() >= MODEL_AMPDU_SUBFRAMES {
-        Err(PreparationError::AggregateFull)
+    let (mut aggregate, source) = operation.into_parts();
+    let refused = if aggregate.subframes.len() >= MODEL_AMPDU_SUBFRAMES {
+        Some(PreparationError::AggregateFull)
+    } else if let CheckedSubframe::Sent(mpdu) = &source {
+        if mpdu.key.as_ref() != aggregate.key.as_ref().map(|key| &key.identity)
+            || mpdu.key.as_ref().is_some_and(|key| !key.0.active.get())
+        {
+            Some(PreparationError::RetransmissionKey)
+        } else if mpdu.role != R::ROLE
+            || mpdu.layout.recipient() != Some((aggregate.receiver, aggregate.tid))
+        {
+            Some(PreparationError::RetransmissionKind)
+        } else {
+            None
+        }
     } else {
-        match &source {
-            SubframeSource::Fresh {
-                buffer,
-                frame,
-                body,
-            } => match buffer.preparation_refusal.take() {
-                Some(reason) => Err(reason),
-                None => MpduLayout::subframe(
-                    frame,
-                    body.as_ref().map_or(0, |body| body.bytes().len()),
-                    aggregate.key.is_some(),
-                    aggregate.receiver,
-                    aggregate.tid,
-                ),
-            },
-            SubframeSource::Sent(mpdu) => {
-                if mpdu.key.as_ref() != aggregate.key.as_ref().map(|key| &key.identity)
-                    || mpdu.key.as_ref().is_some_and(|key| !key.0.active.get())
-                {
-                    Err(PreparationError::RetransmissionKey)
-                } else if mpdu.role != R::ROLE
-                    || mpdu.layout.recipient() != Some((aggregate.receiver, aggregate.tid))
-                {
-                    Err(PreparationError::RetransmissionKind)
-                } else {
-                    Ok(mpdu.layout)
-                }
-            }
-        }
+        None
     };
-    let layout = match checked {
-        Ok(layout) => layout,
-        Err(reason) => {
-            return Err(AggregateRefused {
-                reason,
-                aggregate,
-                subframe: source,
-            });
-        }
-    };
+    if let Some(reason) = refused {
+        return Err(AggregateRefused {
+            reason,
+            aggregate,
+            subframe: source.into_source(),
+        });
+    }
     let mpdu = match source {
-        SubframeSource::Fresh {
-            buffer,
-            frame,
-            body,
-        } => {
-            let mut buffer = C::erase(buffer);
-            frame
-                .header(aggregate.receiver, aggregate.tid, aggregate.key.is_some())
-                .encode(buffer.memory_mut(), false);
-            copy_body(&mut buffer, layout, body.as_ref());
+        CheckedSubframe::Fresh(fresh) => {
+            let (FreshSubframe { buffer, body, .. }, layout) = fresh.into_parts();
             ModelMpdu {
-                buffer,
+                buffer: C::erase(buffer),
                 layout,
                 body,
             }
         }
-        SubframeSource::Sent(mpdu) => ModelMpdu::from_sent(C::erase_sent(mpdu), layout),
+        CheckedSubframe::Sent(mpdu) => {
+            let layout = mpdu.layout;
+            ModelMpdu::from_sent(C::erase_sent(mpdu), layout)
+        }
     };
+    let first = S::retain_head(aggregate.first, mpdu.buffer.sequence());
     aggregate.subframes.push(Subframe { mpdu });
     let ModelAggregate {
         subframes,
@@ -2377,6 +2583,7 @@ fn push_model<
         ..
     } = aggregate;
     Ok(ModelAggregate {
+        first,
         subframes,
         receiver,
         tid,
@@ -2415,6 +2622,7 @@ where
         };
         ModelAggregate {
             subframes: Vec::new(),
+            first: (),
             receiver,
             tid,
             rate,
@@ -2435,6 +2643,7 @@ where
         }
         let ModelAggregate {
             subframes,
+            first,
             tid,
             rate,
             key,
@@ -2449,6 +2658,7 @@ where
             role: R::ROLE,
             ticket: attempt.ticket,
             subframes,
+            start_sequence: first,
             queue,
             rate: rate.rate().get(),
             key,

@@ -73,10 +73,14 @@ fn the_qos_ack_policy_follows_the_frames_response() {
     let header = header(0x0388, Some(A), Some(qos(6)), None).unwrap();
     assert_eq!(header.len(), 32);
     let mut out = [0; 32];
-    assert_eq!(header.encode(&mut out, false), 32);
+    crate::HeaderLayout::new(header, &mut out)
+        .unwrap()
+        .encode(false);
     assert_eq!(out[30] & 0b0110_0000, 0, "Normal Ack");
     assert_eq!(out[30] & 0x0f, 6);
-    header.encode(&mut out, true);
+    crate::HeaderLayout::new(header, &mut out)
+        .unwrap()
+        .encode(true);
     assert_eq!(out[30] & 0b0110_0000, 0b0010_0000, "No Ack");
     assert_eq!(&out[4..10], &B);
 }
@@ -106,10 +110,20 @@ fn a_header_decodes_as_it_was_encoded() {
         (0x8388, Some(A), Some(qos(3)), Some([1, 2, 3, 4])),
     ] {
         let spec = header(control, address4, qos, ht).unwrap();
-        let mut bytes = [0; 40];
-        let len = spec.encode(&mut bytes, false);
-        let decoded =
-            HeaderSpec::<IndividualAddress>::decode(&bytes[..len], IndividualAddress::new).unwrap();
+        let mut bytes = [0; 36];
+        crate::HeaderLayout::new(spec, &mut bytes)
+            .unwrap()
+            .encode(false);
+        let decoded = HeaderSpec::decode(&bytes[..spec.len()], IndividualAddress::new).unwrap();
+        for len in 0..spec.len() {
+            let mut short = [0xa5; 36];
+            assert!(matches!(
+                crate::HeaderLayout::new(spec, &mut short[..len]),
+                Err(crate::LayoutError::StorageTooShort)
+            ));
+            assert_eq!(short, [0xa5; 36]);
+            assert!(HeaderSpec::decode(&bytes[..len], IndividualAddress::new).is_none());
+        }
         assert_eq!(decoded, spec);
     }
     // A group receiver is no individual header, and a control frame no

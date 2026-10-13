@@ -114,14 +114,11 @@ impl StaAuthenticationRuntime {
     }
 
     /// Account for one completed RX descriptor, including a frame which is
-    /// not a valid management input. This preserves the diagnostic count while
+    /// not a valid management input. The station owns this runtime only while
+    /// its exchange is active; accounting has no dynamic refusal. This preserves the diagnostic count while
     /// keeping frame parsing separately typed.
-    pub fn observe_received_frame(&mut self) -> Result<(), StaAuthenticationRuntimeError> {
-        if !self.active {
-            return Err(StaAuthenticationRuntimeError::NoActiveAttempt);
-        }
+    pub fn observe_received_frame(&mut self) {
         self.received_frames = self.received_frames.saturating_add(1);
-        Ok(())
     }
 
     /// Classify one extracted management frame for the active peer exchange.

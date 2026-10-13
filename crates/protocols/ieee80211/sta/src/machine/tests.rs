@@ -242,7 +242,8 @@ impl World {
         let mut channels = [None; 16];
         channels[0] = Some(channel(1));
         channels[1] = Some(channel(6));
-        let (arbiter, place, absence) = Arbiter::new(ArbiterPolicy::DEFAULT, channel(1), Open);
+        let (arbiter, place, absence) =
+            Arbiter::new(ArbiterPolicy::DEFAULT, channel(1), Open, Duration::ZERO);
         let station = Station::new(
             StaConfig {
                 address: LOCAL,
@@ -424,7 +425,7 @@ impl World {
                     buffer: ReturnedMpdu::Sent(buffer),
                     completion: TxOutcome::Ended {
                         status: if self.outcomes.pop_front().unwrap_or(true) {
-                            TxEndStatus::Success
+                            TxEndStatus::Delivered
                         } else {
                             TxEndStatus::AckTimeout
                         },
@@ -852,7 +853,7 @@ fn a_terminal_of_the_previous_connection_only_returns_its_resources() {
             ticket: old.ticket,
             buffer: ReturnedMpdu::Sent(old.buffer),
             completion: TxOutcome::Ended {
-                status: TxEndStatus::Success,
+                status: TxEndStatus::Delivered,
                 ack: None,
                 transmissions: 1,
                 rate: None,
@@ -1379,7 +1380,7 @@ fn eapol_and_data_on_tid_7_share_one_counter_and_tid_0_runs_on_across_a_rekey() 
                 ticket: transmit.ticket,
                 buffer: transmit.buffer,
                 completion: TxOutcome::Ended {
-                    status: TxEndStatus::Success,
+                    status: TxEndStatus::Delivered,
                     ack: None,
                     transmissions: 1,
                     rate: None,

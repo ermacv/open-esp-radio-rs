@@ -22,7 +22,7 @@
 //! | a duplicate attempt identifier | the ticket, which comes back with the terminal |
 //! | an invalid length | [`MpduLength`] and [`ClassFrame`](crate::ClassFrame) |
 //! | no key slot, an unknown key | a key slot ([`Slot`](oer_radio_port::Slot) of the interface's own kind) and the installed key token an attempt names |
-//! | an invalid key | [`Ccmp128Key`], [`GroupKeyId`], an [`IndividualAddress`] peer |
+//! | an invalid key | [`Ccmp128Key`], [`GroupKeyId`](oer_ieee80211_mac::ccmp::GroupKeyId), an [`IndividualAddress`] peer |
 //! | no Block Ack slot, an invalid agreement | a Block Ack slot, [`SupportedBlockAck`] and the agreement token that holds the slot |
 //! | an unsupported EDCA record or BSS color | [`SupportedEdca`], [`BssColor`] |
 //!
@@ -507,22 +507,22 @@ pub struct SupportedEdca<K> {
 impl<K: Ieee80211Capabilities> SupportedEdca<K> {
     /// `parameters`, when `K` applies every record of it.
     pub const fn new(parameters: WmmParameterSet) -> Option<Self> {
-        let categories = [
-            oer_ieee80211_mac::qos::WmmAccessCategory::BestEffort,
-            oer_ieee80211_mac::qos::WmmAccessCategory::Background,
-            oer_ieee80211_mac::qos::WmmAccessCategory::Video,
-            oer_ieee80211_mac::qos::WmmAccessCategory::Voice,
-        ];
-        let mut index = 0;
-        while index < categories.len() {
-            let record = parameters.access_category(categories[index]);
-            if record.aifsn > K::CAPS.edca_max_aifsn
-                || record.ecw_max > K::CAPS.edca_max_cw_exponent
-                || record.ecw_min > record.ecw_max
-            {
-                return None;
-            }
-            index += 1;
+        use oer_ieee80211_mac::qos::WmmAccessCategory;
+        const fn valid<K: Ieee80211Capabilities>(
+            parameters: WmmParameterSet,
+            category: WmmAccessCategory,
+        ) -> bool {
+            let record = parameters.access_category(category);
+            record.aifsn <= K::CAPS.edca_max_aifsn
+                && record.ecw_max <= K::CAPS.edca_max_cw_exponent
+                && record.ecw_min <= record.ecw_max
+        }
+        if !(valid::<K>(parameters, WmmAccessCategory::BestEffort)
+            && valid::<K>(parameters, WmmAccessCategory::Background)
+            && valid::<K>(parameters, WmmAccessCategory::Video)
+            && valid::<K>(parameters, WmmAccessCategory::Voice))
+        {
+            return None;
         }
         Some(Self {
             parameters,
@@ -814,27 +814,29 @@ impl<A: ReceiverAddress> HeaderSpec<A> {
         })
     }
 
-    /// The header's length in octets.
-    /// The header at the start of `frame`, as an encoder wrote it, with
-    /// its receiver checked by `receiver`; `None` when it is no data or
-    /// management header, or its receiver is of another kind.
-    pub fn decode(frame: &[u8], receiver: impl FnOnce(MacAddress) -> Option<A>) -> Option<Self> {
-        let address = |at: usize| -> Option<MacAddress> { frame.get(at..at + 6)?.try_into().ok() };
-        let word = |at: usize| -> Option<u16> {
-            Some(u16::from_le_bytes(frame.get(at..at + 2)?.try_into().ok()?))
-        };
-        let frame_control = FrameControl::new(word(0)?)?;
-        let mut at = 24;
+    /// Decode a data or management header, checking its receiver's kind.
+    pub fn decode(
+        mut frame: &[u8],
+        receiver: impl FnOnce(MacAddress) -> Option<A>,
+    ) -> Option<Self> {
+        fn take<const N: usize>(frame: &mut &[u8]) -> Option<[u8; N]> {
+            let (field, rest) = frame.split_first_chunk()?;
+            *frame = rest;
+            Some(*field)
+        }
+        let frame_control = FrameControl::new(u16::from_le_bytes(take(&mut frame)?))?;
+        let duration = u16::from_le_bytes(take(&mut frame)?);
+        let receiver = receiver(take(&mut frame)?)?;
+        let transmitter = take(&mut frame)?;
+        let address3 = take(&mut frame)?;
+        let sequence_control = u16::from_le_bytes(take(&mut frame)?);
         let address4 = if frame_control.is_four_address() {
-            let address4 = address(at)?;
-            at += 6;
-            Some(address4)
+            Some(take(&mut frame)?)
         } else {
             None
         };
         let qos = if frame_control.is_qos_data() {
-            let field = word(at)?;
-            at += 2;
+            let field = u16::from_le_bytes(take(&mut frame)?);
             Some(QosControl {
                 tid: Tid::new((field & 0x0f) as u8)?,
                 end_of_service_period: field & 0x0010 != 0,
@@ -845,27 +847,42 @@ impl<A: ReceiverAddress> HeaderSpec<A> {
             None
         };
         let ht_control = if frame_control.has_ht_control() {
-            Some(frame.get(at..at + 4)?.try_into().ok()?)
+            Some(take(&mut frame)?)
         } else {
             None
         };
         Self::new(
             frame_control,
-            word(2)?,
-            receiver(address(4)?)?,
-            address(10)?,
-            address(16)?,
-            word(22)?,
+            duration,
+            receiver,
+            transmitter,
+            address3,
+            sequence_control,
             address4,
             qos,
             ht_control,
         )
     }
 
+    pub(crate) fn encoded_length(&self) -> HeaderLength {
+        match (
+            self.address4.is_some(),
+            self.qos.is_some(),
+            self.ht_control.is_some(),
+        ) {
+            (false, false, false) => HeaderLength::L24,
+            (false, true, false) => HeaderLength::L26,
+            (false, false, true) => HeaderLength::L28,
+            (false, true, true) | (true, false, false) => HeaderLength::L30,
+            (true, true, false) => HeaderLength::L32,
+            (true, false, true) => HeaderLength::L34,
+            (true, true, true) => HeaderLength::L36,
+        }
+    }
+
+    /// The header's length in octets.
     pub fn len(&self) -> usize {
-        24 + 6 * usize::from(self.address4.is_some())
-            + 2 * usize::from(self.qos.is_some())
-            + 4 * usize::from(self.ht_control.is_some())
+        self.encoded_length().get()
     }
 
     /// Whether the header is empty: never.
@@ -873,35 +890,81 @@ impl<A: ReceiverAddress> HeaderSpec<A> {
         false
     }
 
-    /// Write the header into `out` with the Ack Policy of a frame that
-    /// solicits no ACK when `no_ack`; a backend's buffer request calls it.
-    ///
-    /// # Panics
-    ///
-    /// `out` is shorter than [`Self::len`].
-    pub fn encode(&self, out: &mut [u8], no_ack: bool) -> usize {
-        let len = self.len();
-        let out = &mut out[..len];
-        out[0..2].copy_from_slice(&self.frame_control.get().to_le_bytes());
-        out[2..4].copy_from_slice(&self.duration.to_le_bytes());
-        out[4..10].copy_from_slice(&self.receiver.address());
-        out[10..16].copy_from_slice(&self.transmitter);
-        out[16..22].copy_from_slice(&self.address3);
-        out[22..24].copy_from_slice(&self.sequence_control.to_le_bytes());
-        let mut at = 24;
-        if let Some(address4) = self.address4 {
-            out[at..at + 6].copy_from_slice(&address4);
-            at += 6;
+    pub(crate) fn encoder<const N: usize>(self) -> HeaderEncoder<A, N> {
+        HeaderEncoder { header: self }
+    }
+}
+
+/// An encoder for one header shape, selected by the portable layout
+/// constructor. Its private construction proves that its fields fill N bytes.
+///
+/// ```compile_fail,E0308
+/// use oer_ieee80211_lower_mac::{IndividualAddress, owner::HeaderEncoder};
+/// fn short(encoder: HeaderEncoder<IndividualAddress, 24>) {
+///     encoder.encode(&mut [0; 23], false);
+/// }
+/// ```
+///
+/// ```
+/// use oer_ieee80211_lower_mac::{IndividualAddress, owner::HeaderEncoder};
+/// fn sized(encoder: HeaderEncoder<IndividualAddress, 24>) {
+///     encoder.encode(&mut [0; 24], false);
+/// }
+/// ```
+pub struct HeaderEncoder<A, const N: usize> {
+    header: HeaderSpec<A>,
+}
+impl<A: ReceiverAddress, const N: usize> HeaderEncoder<A, N> {
+    /// Write this header into exactly its storage. This operation cannot fail.
+    pub fn encode(self, out: &mut [u8; N], no_ack: bool) {
+        let header = self.header;
+        let fields = header
+            .frame_control
+            .get()
+            .to_le_bytes()
+            .into_iter()
+            .chain(header.duration.to_le_bytes())
+            .chain(header.receiver.address())
+            .chain(header.transmitter)
+            .chain(header.address3)
+            .chain(header.sequence_control.to_le_bytes())
+            .chain(header.address4.into_iter().flatten())
+            .chain(
+                header
+                    .qos
+                    .map(|qos| qos.encode(no_ack).to_le_bytes())
+                    .into_iter()
+                    .flatten(),
+            )
+            .chain(header.ht_control.into_iter().flatten());
+        // HeaderLayout selects N from the same closed HeaderSpec shape.
+        // Consequently both iterators contain exactly N bytes.
+        for (out, byte) in out.iter_mut().zip(fields) {
+            *out = byte;
         }
-        if let Some(qos) = self.qos {
-            out[at..at + 2].copy_from_slice(&qos.encode(no_ack).to_le_bytes());
-            at += 2;
+    }
+}
+
+pub(crate) enum HeaderLength {
+    L24,
+    L26,
+    L28,
+    L30,
+    L32,
+    L34,
+    L36,
+}
+impl HeaderLength {
+    const fn get(&self) -> usize {
+        match self {
+            Self::L24 => 24,
+            Self::L26 => 26,
+            Self::L28 => 28,
+            Self::L30 => 30,
+            Self::L32 => 32,
+            Self::L34 => 34,
+            Self::L36 => 36,
         }
-        if let Some(ht_control) = self.ht_control {
-            out[at..at + 4].copy_from_slice(&ht_control);
-            at += 4;
-        }
-        at
     }
 }
 
@@ -1094,6 +1157,11 @@ pub trait LowerMacBackend: PortBackend {
     ///
     /// [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6141039497
     const TX_QUEUE_DEPTH: core::num::NonZeroU8;
+
+    /// Longest current publication: PPDU plus response wait or hardware
+    /// timeout. Gate/key/disable barriers never wait for the remaining plan.
+    /// Composition passes this constant to the channel arbiter.
+    const PUBLICATION_BOUND: oer_time::Duration;
 }
 
 /// The disabled-only settings of a lower-MAC port.
@@ -1121,10 +1189,10 @@ mod extensions;
 
 pub use extensions::{
     AggregateAttempt, AggregateParts, AggregatePushResult, AggregateRefused, AggregateState,
-    AirReservationPhase, AmpduPhase, AmpduRate, BeaconTimingPhase, BeaconWindow, ClassSubframe,
-    EmptyAggregate, InterfaceAggregate, InterfaceAggregateAttempt, InterfaceProtection,
-    MAX_RESERVATION_MICROS, MonitorPhase, MpduStartSpacing, NonEmptyAggregate, PhaseAggregate,
-    PoolSubframe, SubframeSource, TbttPlan,
+    AirReservationPhase, AmpduPhase, AmpduRate, BeaconTimingPhase, BeaconWindow,
+    CheckedPoolAggregate, ClassSubframe, EmptyAggregate, InterfaceAggregate,
+    InterfaceAggregateAttempt, InterfaceProtection, MAX_RESERVATION_MICROS, MonitorPhase,
+    MpduStartSpacing, NonEmptyAggregate, PhaseAggregate, PoolSubframe, SubframeSource, TbttPlan,
 };
 
 #[cfg(test)]

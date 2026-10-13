@@ -1077,8 +1077,13 @@ fn prepare_source<'k, 'p, 'id: 'p + 'k, B: StationPort<'id>, C: TxBufferClass>(
 where
     B::Types: TxBufferPool<'id, C>,
 {
-    <B::Types as TxBufferPool<'id, C>>::prepare(source).map_err(|refused| {
-        let buffer = match refused.operation {
+    let prepared = match source.check() {
+        Ok(source) => <B::Types as TxBufferPool<'id, C>>::prepare(source)
+            .map_err(|refused| (TxRefusal::Preparation(refused.reason), refused.operation)),
+        Err(refused) => Err((TxRefusal::Layout(refused.reason), refused.operation)),
+    };
+    prepared.map_err(|(reason, operation)| {
+        let buffer = match operation {
             TxSource::Fresh { buffer, body, .. } => {
                 drop(body);
                 <B::Types as TxBufferPool<'id, C>>::erase(buffer)
@@ -1087,7 +1092,7 @@ where
                 <B::Types as TxBufferPool<'id, C>>::erase_sent(mpdu)
             }
         };
-        (TxRefusal::Preparation(refused.reason), buffer)
+        (reason, buffer)
     })
 }
 

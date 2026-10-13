@@ -121,6 +121,8 @@ pub enum TxRefusal {
     NoRate,
     /// The pool refused preparation and returned the unchanged source.
     Preparation(oer_ieee80211_lower_mac::PreparationError),
+    /// Portable placement failed before entering the backend.
+    Layout(oer_ieee80211_lower_mac::LayoutError),
 }
 
 /// The tokens a station holds: the port's, or a host test's.
@@ -1362,7 +1364,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     delivered: matches!(
                         completion,
                         TxOutcome::Ended {
-                            status: TxEndStatus::Success,
+                            status: TxEndStatus::Delivered,
                             ..
                         }
                     ),
@@ -2166,7 +2168,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             }
             State::Join(mut join) => match &mut join.step {
                 JoinStep::Authenticate(auth) => {
-                    let _ = auth.runtime.observe_received_frame();
+                    auth.runtime.observe_received_frame();
                     match auth.runtime.observe_management_frame(frame) {
                         Ok(StaAuthenticationEvent::Authenticated { .. }) => {
                             join.step = JoinStep::Associate(StaAssociationRuntime::new(
@@ -2194,7 +2196,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     }
                 }
                 JoinStep::Associate(runtime) => {
-                    let _ = runtime.observe_received_frame();
+                    runtime.observe_received_frame();
                     match runtime.observe_management_frame(frame, now) {
                         Ok(StaAssociationEvent::Associated { response, .. }) => {
                             match StaAssociatedPeer::derive(

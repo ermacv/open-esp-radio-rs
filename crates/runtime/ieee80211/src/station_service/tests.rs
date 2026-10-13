@@ -4,11 +4,10 @@
 //! the association's record (owner decision on #563, a deliberate
 //! departure from the old ESP32-S31 path, which switched once connected).
 
-use core::cell::RefCell;
+use core::cell::{Cell, RefCell};
 use core::future::{Future, poll_fn};
 use core::pin::Pin;
 use core::task::{Poll, Waker};
-use oer_ieee80211_lower_mac::PreparationError;
 
 use embassy_futures::join::join;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
@@ -278,6 +277,7 @@ struct World<'b> {
     commands: CommandChannel<NoopRawMutex, ServiceCommand<ModelCaps24>, 4>,
     outputs: RefCell<Vec<ServiceOutput<ModelCaps24>>>,
     completions: RefCell<Vec<FrameRates>>,
+    refuse_rate: Cell<bool>,
     /// The network stack's end of the transmit queue.
     stack: RefCell<zerocopy_channel::Sender<'b, NoopRawMutex, TxMsdu>>,
     /// The network stack's end of the receive queue.
@@ -289,6 +289,7 @@ struct World<'b> {
 struct RecordingRates<'a> {
     inner: EspressifRateSelection<ModelCaps24>,
     completions: &'a RefCell<Vec<FrameRates>>,
+    refuse_rate: &'a Cell<bool>,
 }
 
 impl RateSelection<ModelRxMeta> for RecordingRates<'_> {
@@ -297,6 +298,9 @@ impl RateSelection<ModelRxMeta> for RecordingRates<'_> {
         frame: FrameRates,
         carried: impl Fn(PhyRate) -> Option<R>,
     ) -> Option<oer_ieee80211_lower_mac::RetryPlan<R>> {
+        if self.refuse_rate.replace(false) {
+            return None;
+        }
         <EspressifRateSelection<ModelCaps24> as RateSelection<ModelRxMeta>>::plan(
             &self.inner,
             frame,
@@ -518,6 +522,7 @@ where
                     ArbiterPolicy::DEFAULT,
                     channel,
                     gate,
+                    <ModelBackend<ModelCaps24, ServiceContexts> as LowerMacBackend>::PUBLICATION_BOUND,
                 );
             let station = Station::new(
                 self.config,
@@ -538,6 +543,7 @@ where
                 RecordingRates {
                     inner: EspressifRateSelection::<ModelCaps24>::new(),
                     completions: &self.world.completions,
+                    refuse_rate: &self.world.refuse_rate,
                 },
             );
             let world = self.world;
@@ -620,6 +626,7 @@ where
         commands: CommandChannel::new(),
         outputs: RefCell::new(Vec::new()),
         completions: RefCell::new(Vec::new()),
+        refuse_rate: Cell::new(false),
         stack: RefCell::new(stack),
         delivered: RefCell::new(delivered),
     };
@@ -752,7 +759,7 @@ fn refusing_m4_releases_handshake_resources_without_connecting_and_service_can_r
                     yield_now().await;
                 }
                 let statistics_before = world.completions.borrow().len();
-                world.air.refuse_preparation(PreparationError::BodyOverlap);
+                world.refuse_rate.set(true);
                 world.air.receive(&message3(&ptk), meta());
                 world
                     .notice(StaNotice::Disconnected(
@@ -763,7 +770,7 @@ fn refusing_m4_releases_handshake_resources_without_connecting_and_service_can_r
                     output,
                     ServiceOutput::TxRefused {
                         operation: TxOperation::Station,
-                        reason: TxRefusal::Preparation(PreparationError::BodyOverlap)
+                        reason: TxRefusal::NoRate
                     }
                 )));
                 assert!(!world.outputs.borrow().iter().any(|output| matches!(
@@ -804,7 +811,7 @@ fn a_data_preparation_refusal_releases_admission_and_the_next_msdu_can_go() {
                     yield_now().await;
                 }
                 let statistics_before = world.completions.borrow().len();
-                world.air.refuse_preparation(PreparationError::BodyOverlap);
+                world.refuse_rate.set(true);
                 world.send_msdu(ACCESS_POINT_ADDRESS);
                 for _ in 0..50 {
                     yield_now().await;
@@ -813,7 +820,7 @@ fn a_data_preparation_refusal_releases_admission_and_the_next_msdu_can_go() {
                     output,
                     ServiceOutput::TxRefused {
                         operation: TxOperation::Data,
-                        reason: TxRefusal::Preparation(PreparationError::BodyOverlap)
+                        reason: TxRefusal::NoRate
                     }
                 )));
                 assert_eq!(world.air.sent().len(), sent_before);

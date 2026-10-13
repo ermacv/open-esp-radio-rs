@@ -335,7 +335,7 @@ impl<K: Ieee80211Capabilities, M: SignalMetadata> RateSelection<M> for Espressif
             return;
         };
         if let Some(control) = &mut self.control {
-            let acknowledged = status == TxEndStatus::Success;
+            let acknowledged = status == TxEndStatus::Delivered;
             control.observe_mpdu(
                 transmissions,
                 acknowledged,

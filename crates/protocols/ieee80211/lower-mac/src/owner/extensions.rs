@@ -36,15 +36,30 @@ mod state {
 
 /// Whether a builder has accepted at least one subframe. Only the two closed
 /// states implement this trait; callers cannot forge the nonempty transition.
-pub trait AggregateState: state::Sealed {}
+pub trait AggregateState: state::Sealed {
+    /// Storage for the first subframe's fact: absent in Empty, owned in NonEmpty.
+    type Head<T>;
+    /// Preserve the first fact while appending, creating it on the first push.
+    fn retain_head<T>(head: Self::Head<T>, next: T) -> T;
+}
 /// A builder which has not accepted a subframe and cannot be submitted.
 pub enum EmptyAggregate {}
 /// A builder with at least one subframe; this is the only submission state.
 pub enum NonEmptyAggregate {}
 impl state::Sealed for EmptyAggregate {}
 impl state::Sealed for NonEmptyAggregate {}
-impl AggregateState for EmptyAggregate {}
-impl AggregateState for NonEmptyAggregate {}
+impl AggregateState for EmptyAggregate {
+    type Head<T> = ();
+    fn retain_head<T>((): (), next: T) -> T {
+        next
+    }
+}
+impl AggregateState for NonEmptyAggregate {
+    type Head<T> = T;
+    fn retain_head<T>(head: T, _: T) -> T {
+        head
+    }
+}
 
 /// A class-checked QoS data description. The builder supplies receiver and
 /// TID when encoding it, together with its one protection. Other header fields
@@ -127,6 +142,15 @@ pub type AggregatePushResult<'k, 'p, 'id, T, C, R, K, S> = Result<
         PoolSubframe<'id, T, C, K>,
     >,
 >;
+/// A builder and subframe whose portable layout was checked together.
+pub type CheckedPoolAggregate<'k, 'p, 'id, T, C, R, K, S> = crate::CheckedAggregate<
+    <T as PhaseTypes<'id>>::Aggregate<'k, 'p, R, K, S>,
+    <T as TxBufferPool<'id, C>>::Buffer,
+    <T as TxBufferPool<'id, C>>::Sent,
+    ClassSubframe<C, K>,
+    <T as PhaseTypes<'id>>::TxBody,
+>;
+
 /// The resources released by cancelling an aggregate builder.
 pub type AggregateParts<'id, T> = (
     <T as PhaseTypes<'id>>::TxBuffers,
@@ -160,7 +184,7 @@ impl<'p> AmpduRate<'p> {
 /// ) where T: TxBufferPool<'id, C>, C: TxBufferClass,
 ///     R: RoleKeys<'id, T>, K: Ieee80211Capabilities, S: AggregateState,
 /// {
-///     let _ = T::push_aggregate(builder, source);
+///     let _ = CheckedAggregate::new(builder, source);
 /// }
 /// ```
 ///
@@ -174,11 +198,17 @@ impl<'p> AmpduRate<'p> {
 /// ) -> AggregatePushResult<'k, 'p, 'id, T, C, R, K, S>
 /// where T: TxBufferPool<'id, C>, C: TxBufferClass,
 ///     R: RoleKeys<'id, T>, K: Ieee80211Capabilities, S: AggregateState,
-/// { T::push_aggregate(builder, source) }
+/// { T::push_aggregate(CheckedAggregate::new(builder, source).ok().unwrap()) }
 /// ```
 pub trait PhaseAggregate<'id> {
     /// The backend resource family.
     type Types: PhaseTypes<'id>;
+    /// The receiver fixed when this builder was created.
+    fn receiver(&self) -> super::IndividualAddress;
+    /// The TID fixed when this builder was created.
+    fn tid(&self) -> Tid;
+    /// Whether the builder reserves CCMP space for all fresh subframes.
+    fn is_protected(&self) -> bool;
     /// Number of subframes currently held.
     fn subframes(&self) -> usize;
     /// Cancel preparation, recovering all original MPDUs and fresh bodies.

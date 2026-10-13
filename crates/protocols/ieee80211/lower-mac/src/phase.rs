@@ -1,5 +1,5 @@
 //! A running lower-MAC phase: one object under `&mut`
-//! ([`PortPhase`](oer_ieee80211_port::PortPhase)), whose event stream and
+//! ([`PortPhase`]), whose event stream and
 //! operations a body's one loop drives ([owner decision on #563]).
 //!
 //! # Tokens
@@ -52,9 +52,10 @@
 //!
 //! The queue is strictly first in, first out: no command replaces another.
 //! Its capacity is the tokens' ([owner decision]): one attempt per ticket,
-//! and two commands per key slot, Block Ack slot and the gate, since each
-//! token's install, addition or closing and its removal or opening may
-//! wait at once — `tickets + 2 × (key slots + Block Ack slots + 1)`.
+//! and two commands per key slot and the gate, since each token's install
+//! or closing and its removal or opening may wait at once —
+//! `tickets + 2 × (key slots + 1)`. Block Ack is per-slot desired state;
+//! repeated writes coalesce and never enter the command queue.
 //!
 //! [owner decision]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6130970169
 //!
@@ -185,7 +186,7 @@
 //! # Poisoned
 //!
 //! A poisoned backend ends the phase: `next_event` returns
-//! [`Poisoned`](oer_radio_port::Poisoned), and the tokens the port holds
+//! [`Poisoned`], and the tokens the port holds
 //! are not given back. The body ends the station whole and leaves through
 //! the poisoned owner; every token ends with the install.
 //!
@@ -491,13 +492,12 @@ pub trait LowerMacPhase<'p, 'id: 'p>:
     /// dropped one panics.
     fn recycle(&mut self, buffer: <Self::Types as PhaseTypes<'id>>::RxBuffer);
 
-    /// Close the transmit gate of every queue: admission of new attempts
-    /// stops at once, and [`LowerMacEvent::GateClosed`] follows once no
-    /// attempt is published. An attempt the gate holds unpublished ends as
-    /// `TxOutcome::Withdrawn(WithdrawCause::GateClosed)`; its buffer
-    /// keeps its submitted Fresh/Sent state and its MPDU unchanged, so the
-    /// caller sends it again with its sequence number
-    /// ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563)).
+    /// Close publication in every queue. A current publication is waited for,
+    /// at most the backend's PUBLICATION_BOUND, before GateClosed is emitted.
+    /// ACK returns Ended(Delivered); unknown timeout returns Indeterminate.
+    /// When a retry would be needed, withdraw the attempt with its Sent MPDU
+    /// instead of starting that retry. Queued fresh MPDUs return Fresh.
+    /// Terminals retain each AC's order and precede the barrier confirmation.
     fn close_gate(&mut self, gate: GateOpen<'id>);
 
     /// Open the closed gate, a register write that cannot fail.
@@ -574,6 +574,16 @@ impl<Key> TxProtection<Key> {
 
 /// The class-specific input to preparation; refusal returns this exact type.
 pub type PoolSource<'k, 'p, 'id, T, C, K, R> = TxSource<
+    'p,
+    <T as TxBufferPool<'id, C>>::Buffer,
+    <T as TxBufferPool<'id, C>>::Sent,
+    ClassFrame<'p, C, K>,
+    <T as PhaseTypes<'id>>::TxBody,
+    <R as RoleKeys<'id, T>>::TxKey<'k>,
+>;
+
+/// Class-specific source whose portable layout has already been checked.
+pub type CheckedPoolSource<'k, 'p, 'id, T, C, K, R> = crate::CheckedTxSource<
     'p,
     <T as TxBufferPool<'id, C>>::Buffer,
     <T as TxBufferPool<'id, C>>::Sent,
@@ -670,10 +680,6 @@ pub struct PreparationRefused<A> {
 /// Dynamic preparation failures, distinct from the outcome of accepted TX.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PreparationError {
-    /// No room immediately after the MAC header for a full CCMP header.
-    CcmpHeaderTooShort,
-    /// The body at the MPDU's tail overlaps the MAC or CCMP header.
-    BodyOverlap,
     /// A retry names a different key installation, even in the same slot.
     RetransmissionKey,
     /// The new rate plan requires a different response kind.
@@ -745,7 +751,9 @@ pub trait InterfacePhase<'p, 'id: 'p> {
 
     /// Start acknowledging A-MPDUs of `agreement` in `slot`; the agreement
     /// holds the slot. A caller holds one agreement per peer and TID: it
-    /// replaces one through [`Self::replace_block_ack`].
+    /// replaces one through [`Self::replace_block_ack`]. This writes the
+    /// slot's desired state; add, replace and remove never enqueue commands.
+    /// The latest value is applied before the driver's next command.
     #[must_use = "an agreement holds its slot; dropping it loses the slot until the next install"]
     fn add_block_ack(
         &mut self,
@@ -762,7 +770,9 @@ pub trait InterfacePhase<'p, 'id: 'p> {
         agreement: SupportedBlockAck<Self::Caps>,
     ) -> <Self::Types as PhaseTypes<'id>>::BlockAck;
 
-    /// End `agreement`, giving its slot back.
+    /// Clear the desired state of `agreement`, giving its slot back. Reuse
+    /// before the driver runs replaces the pending removal with the new
+    /// agreement; no intermediate hardware installation is promised.
     #[must_use = "an ended agreement's slot is capacity; dropping it loses it until the next install"]
     fn remove_block_ack(
         &mut self,
@@ -807,7 +817,7 @@ pub trait TxBufferPool<'id, C: TxBufferClass>: PhaseTypes<'id> {
     /// closed value retains phase, install and role until `submit` or an
     /// aggregate consumes it. A refusal returns the original typed source.
     fn prepare<'k, 'p, R: RoleKeys<'id, Self>, K: Ieee80211Capabilities>(
-        source: PoolSource<'k, 'p, 'id, Self, C, K, R>,
+        source: CheckedPoolSource<'k, 'p, 'id, Self, C, K, R>,
     ) -> PoolPreparation<'k, 'p, 'id, Self, C, K, R>
     where
         'id: 'k;
@@ -816,8 +826,7 @@ pub trait TxBufferPool<'id, C: TxBufferClass>: PhaseTypes<'id> {
     /// Fresh sources have no protection field. Refusal returns both the entire
     /// builder and the unchanged class-specific source, before admission or PN.
     fn push_aggregate<'k, 'p, R, K, S>(
-        aggregate: Self::Aggregate<'k, 'p, R, K, S>,
-        source: crate::PoolSubframe<'id, Self, C, K>,
+        operation: crate::CheckedPoolAggregate<'k, 'p, 'id, Self, C, R, K, S>,
     ) -> crate::AggregatePushResult<'k, 'p, 'id, Self, C, R, K, S>
     where
         R: RoleKeys<'id, Self>,
@@ -831,8 +840,8 @@ pub trait TxBufferPool<'id, C: TxBufferClass>: PhaseTypes<'id> {
     /// A published MPDU, protected or open. It owns the immutable encoded
     /// header, payload, checked description and external body. A protected
     /// MPDU also retains its PN and original key-install identity.
-    /// A withdrawal returns the input state: fresh stays fresh, Sent stays
-    /// Sent. Retransmission preserves SN, PN and payload and sets Retry.
+    /// A withdrawal returns Fresh only if never published; otherwise Sent.
+    /// Retransmission preserves SN, PN and payload and sets Retry.
     /// Only renewal releases the old MPDU for a different frame.
     type Sent;
 
@@ -1096,21 +1105,40 @@ impl<R> RetryPlan<R> {
     /// ```
     pub fn limit(mut self, transmissions: core::num::NonZeroU8) -> Self {
         let first = self.first.transmissions.min(transmissions);
-        let mut left = transmissions.get() - first.get();
+        let mut left = first.get()..transmissions.get();
         self.first.transmissions = first;
         for slot in &mut self.rest {
             let Some(stage) = slot else {
                 break;
             };
-            match core::num::NonZeroU8::new(stage.transmissions.get().min(left)) {
+            let taken = left
+                .by_ref()
+                .take(usize::from(stage.transmissions.get()))
+                .count() as u8;
+            match core::num::NonZeroU8::new(taken) {
                 Some(taken) => {
-                    left -= taken.get();
                     stage.transmissions = taken;
                 }
                 None => *slot = None,
             }
         }
         self
+    }
+
+    /// Map each rate without changing the nonempty plan or its budget.
+    pub fn map<S>(&self, mut rate: impl FnMut(&R) -> S) -> RetryPlan<S> {
+        let mut stage = |stage: &RetryStage<R>| RetryStage {
+            rate: rate(&stage.rate),
+            transmissions: stage.transmissions,
+            protection: stage.protection,
+        };
+        RetryPlan {
+            first: stage(&self.first),
+            rest: self
+                .rest
+                .each_ref()
+                .map(|slot| slot.as_ref().map(&mut stage)),
+        }
     }
 
     /// The plan with each stage's rate turned by `rate`, the stages and

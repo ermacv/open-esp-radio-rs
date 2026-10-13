@@ -121,7 +121,8 @@ fn run<R: ReservationMode>(
 }
 
 fn alone<R: ReservationMode>() -> (TestArbiter<R>, LeasePlace) {
-    let (arbiter, place, _) = Arbiter::new(ArbiterPolicy::DEFAULT, channel(1), Open);
+    let (arbiter, place, _) =
+        Arbiter::new(ArbiterPolicy::DEFAULT, channel(1), Open, Duration::ZERO);
     (arbiter, place)
 }
 
@@ -693,7 +694,8 @@ fn a_join_where_the_access_point_may_not_follow_stops_it_by_the_default_policy()
 /// A station connected on channel 1 beside an access point there, its
 /// primary lease running.
 fn connected() -> (TestArbiter, Lease<Caps>, AbsencePlace, Port) {
-    let (mut arbiter, place, absence) = Arbiter::new(ArbiterPolicy::DEFAULT, channel(1), Open);
+    let (mut arbiter, place, absence) =
+        Arbiter::new(ArbiterPolicy::DEFAULT, channel(1), Open, Duration::ZERO);
     running(&mut arbiter);
     let mut port = Port::default();
     let home = lease(arbiter.request(
@@ -766,7 +768,7 @@ fn a_connected_stations_absence_waits_for_its_readiness_and_returns_home() {
 #[test]
 fn an_absence_needs_the_running_primary_lease() {
     let (mut arbiter, place, absence) =
-        Arbiter::<Gate, Caps>::new(ArbiterPolicy::DEFAULT, channel(1), Open);
+        Arbiter::<Gate, Caps>::new(ArbiterPolicy::DEFAULT, channel(1), Open, Duration::ZERO);
     let waiting = lease(arbiter.request(
         at(0),
         ChannelRequest {
@@ -884,4 +886,34 @@ fn returning_the_unique_place_proves_the_lease_ended_and_admits_the_next_lease()
         place,
     );
     assert!(matches!(answer, Answer::Lease(_)));
+}
+
+#[test]
+fn an_absence_reserves_one_publication_for_each_gate_and_the_return_starts_early() {
+    let publication = Duration::from_millis(3);
+    let (mut arbiter, place, absence_place) =
+        Arbiter::<Gate, Caps>::new(ArbiterPolicy::DEFAULT, channel(1), Open, publication);
+    running(&mut arbiter);
+    let mut port = Port::default();
+    let home = lease(arbiter.request(
+        at(0),
+        ChannelRequest {
+            channel: channel(1),
+            purpose: Purpose::Connect,
+        },
+        place,
+    ));
+    run(&mut arbiter, &mut port, at(0));
+    let away = absence(arbiter.request_absence(at(0), scan(6, 5), &home, absence_place));
+    // 5 ms listening and two moves, each with 3 ms publication + 2 ms retune.
+    assert_eq!(
+        away.until().unwrap().checked_duration_since(away.from()),
+        Some(Duration::from_millis(15))
+    );
+    assert_eq!(
+        away.until()
+            .unwrap()
+            .checked_duration_since(away.listen_until().unwrap()),
+        Some(Duration::from_millis(5))
+    );
 }

@@ -1,23 +1,48 @@
 #![no_std]
 #![forbid(unsafe_code)]
+#![deny(
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::arithmetic_side_effects,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::unreachable,
+    clippy::todo,
+    clippy::unimplemented,
+    clippy::disallowed_macros
+)]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::let_underscore_must_use,
+        clippy::let_underscore_untyped,
+        clippy::arithmetic_side_effects,
+        clippy::indexing_slicing,
+        clippy::panic,
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::disallowed_macros,
+    )
+)]
 
 //! The IEEE 802.11 lower-MAC radio port.
 //!
 //! The port is the contract between portable Wi-Fi MAC logic and the
 //! backend that puts frames on the air, whether a chip, a family driver or
 //! a host model, on the owner shape of `oer-ieee80211-port`: a
-//! [`LowerMacBackend`] runs under its owner, which lends each running phase
-//! its event consumer ([`LowerMacEvents`]), control ([`LowerMacControl`])
-//! and one client per interface ([`LowerMacClient`], [`StationClient`],
-//! [`AccessPointClient`]); its disabled-only settings are a
-//! [`LowerMacSetup`]. Every rule a caller controls is a type
-//! ([`owner`]). One submission is one hardware transmission attempt: the
-//! backend contends for the medium with the caller's backoff, sends the
-//! PPDU at the frame's rate and reports how that single attempt ended.
-//! Retry policy, rate selection, the backoff draw, sequence and packet
-//! numbers, reordering and every other decision software takes stay above
-//! the port, in portable code; the services a backend performs
-//! autonomously are its [`LowerMacCapabilities::services`].
+//! [`LowerMacBackend`] runs under its owner and lends a [`LowerMacPhase`]
+//! with one event stream and role-specific interface phases. Disabled-only
+//! settings are a [`LowerMacSetup`]. One submitted operation owns its context,
+//! ticket and MPDU until its terminal. The backend executes the retry plan;
+//! a lifecycle barrier waits for the current publication alone. Portable
+//! code selects rates and describes frames, while the backend numbers and
+//! publishes them. The services it performs autonomously are its
+//! [`LowerMacCapabilities::services`].
 //!
 //! The values its backends' cores take (attempts, settings, key installs,
 //! A-MPDU and beacon timing values) live beside it ([`tx`], [`control`],
@@ -31,7 +56,10 @@ pub mod capabilities;
 pub mod counter;
 mod layout;
 pub use counter::Counter;
-pub use layout::{MpduKind, MpduLayout};
+pub use layout::{
+    CheckedAggregate, CheckedSubframe, CheckedTxSource, FreshSource, FreshSubframe, HeaderLayout,
+    LaidOut, LayoutError, LayoutRefused, MpduKind, MpduLayout,
+};
 pub mod control;
 pub mod extensions;
 pub mod owner;
@@ -100,12 +128,12 @@ pub use owner::{
     PoolSubframe, SubframeSource, TbttPlan,
 };
 pub use phase::{
-    AccessPointPhase, Attempt, AttemptKey, ClassFrame, ClassSizedFrame, GateClosed, GateClosedKind,
-    GateOpen, GateOpenKind, InterfaceAttempt, InterfaceKeys, InterfacePhase, KeyTypes,
-    LowerMacEvent, LowerMacPhase, PhaseTypes, PoolMpdu, PoolPreparation, PoolSource,
-    PreparationError, PreparationRefused, PreparedTx, RETRY_STAGES, Removed, RemovedKey,
-    RetransmissionPlan, RetryPlan, RetryStage, ReturnedMpdu, RoleKeys, StationPhase, TxBufferClass,
-    TxBufferMemory, TxBufferPool, TxCompleted, TxProtection, TxSource,
+    AccessPointPhase, Attempt, AttemptKey, CheckedPoolSource, ClassFrame, ClassSizedFrame,
+    GateClosed, GateClosedKind, GateOpen, GateOpenKind, InterfaceAttempt, InterfaceKeys,
+    InterfacePhase, KeyTypes, LowerMacEvent, LowerMacPhase, PhaseTypes, PoolMpdu, PoolPreparation,
+    PoolSource, PreparationError, PreparationRefused, PreparedTx, RETRY_STAGES, Removed,
+    RemovedKey, RetransmissionPlan, RetryPlan, RetryStage, ReturnedMpdu, RoleKeys, StationPhase,
+    TxBufferClass, TxBufferMemory, TxBufferPool, TxCompleted, TxProtection, TxSource,
 };
 pub use rx::{
     LinkMetric, RxBuffer, RxCryptoStatus, RxEvidence, RxMeta, RxMetadata, SignalMetadata,
@@ -117,3 +145,5 @@ pub use tx::{
 
 #[cfg(test)]
 extern crate std;
+
+pub use owner::CheckedPoolAggregate;

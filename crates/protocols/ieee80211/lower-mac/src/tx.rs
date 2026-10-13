@@ -159,7 +159,7 @@ impl BlockAckReport {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TxEndStatus {
     /// The solicited response arrived, or the frame solicited none.
-    Success,
+    Delivered,
     /// The plan exhausted its ACK/BlockAck response budget.
     AckTimeout,
     /// The plan exhausted its protection response budget.
@@ -206,7 +206,9 @@ pub struct TxAck {
 /// The next operation in the queue may proceed after every terminal.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TxOutcome {
-    /// Returned in its submitted Fresh/Sent state, retaining SN, PN and body.
+    /// Lifecycle stopped the attempt before its plan ended; no transmission
+    /// delivered it. ReturnedMpdu is Fresh if never published, otherwise Sent,
+    /// retaining the original SN, PN and body. No rate sample.
     Withdrawn(WithdrawCause),
     /// The plan has a known result. Returned MPDUs are `Sent`.
     Ended {
@@ -233,7 +235,7 @@ impl TxOutcome {
         matches!(
             self,
             Self::Ended {
-                status: TxEndStatus::Success | TxEndStatus::AckTimeout | TxEndStatus::CtsTimeout,
+                status: TxEndStatus::Delivered | TxEndStatus::AckTimeout | TxEndStatus::CtsTimeout,
                 transmissions: 1..,
                 ..
             }

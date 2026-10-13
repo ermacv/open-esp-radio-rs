@@ -212,13 +212,11 @@ fn interleaved_returns_keep_the_original_tid_order_and_admission_count() {
             operation.frame.frame().len().get(),
             operation.context.frame.frame().len().get()
         );
+        let spec = operation.frame.frame().header().header();
         let mut header = [0; 26];
-        operation
-            .frame
-            .frame()
-            .header()
-            .header()
-            .encode(&mut header, false);
+        oer_ieee80211_lower_mac::HeaderLayout::new(*spec, &mut header)
+            .unwrap()
+            .encode(false);
         assert_eq!(tid_and_sequence(&header), (tid, sequence));
         data.returned(
             NOW,
@@ -226,7 +224,7 @@ fn interleaved_returns_keep_the_original_tid_order_and_admission_count() {
                 context: operation.context,
                 ticket: operation.ticket,
                 buffer: operation.buffer,
-                completion: ended(TxEndStatus::Success, 1),
+                completion: ended(TxEndStatus::Delivered, 1),
             },
         );
     }
@@ -265,13 +263,11 @@ fn repeated_unpublished_returns_keep_the_checked_frame_and_payload() {
         );
         operation = transmit(&mut data);
         assert_eq!(operation.frame.frame().len().get(), len);
+        let spec = operation.frame.frame().header().header();
         let mut header = [0; 26];
-        operation
-            .frame
-            .frame()
-            .header()
-            .header()
-            .encode(&mut header, false);
+        oer_ieee80211_lower_mac::HeaderLayout::new(*spec, &mut header)
+            .unwrap()
+            .encode(false);
         assert_eq!(tid_and_sequence(&header), (6, 0));
         assert_eq!(&memory(&operation.buffer)[34..len], payload.as_slice());
     }
@@ -281,7 +277,7 @@ fn repeated_unpublished_returns_keep_the_checked_frame_and_payload() {
             context: operation.context,
             ticket: operation.ticket,
             buffer: operation.buffer,
-            completion: ended(TxEndStatus::Success, 1),
+            completion: ended(TxEndStatus::Delivered, 1),
         },
     );
     assert_eq!(core::iter::from_fn(|| data.tickets.take()).count(), 2);
@@ -346,7 +342,7 @@ fn a_late_old_link_terminal_does_not_take_a_new_links_metadata() {
             context: again.context,
             ticket: again.ticket,
             buffer: again.buffer,
-            completion: ended(TxEndStatus::Success, 1),
+            completion: ended(TxEndStatus::Delivered, 1),
         },
     );
     assert_eq!(data.available(WmmAccessCategory::Voice), capacity);
@@ -416,8 +412,8 @@ fn preparation_refusal_ends_only_its_msdu_without_a_radio_terminal_or_retry() {
             context: rejected.context,
             ticket: rejected.ticket,
             buffer: rejected.buffer,
-            reason: crate::machine::TxRefusal::Preparation(
-                oer_ieee80211_lower_mac::PreparationError::BodyOverlap,
+            reason: crate::machine::TxRefusal::Layout(
+                oer_ieee80211_lower_mac::LayoutError::BodyOverlap,
             ),
         },
     );
@@ -431,7 +427,7 @@ fn preparation_refusal_ends_only_its_msdu_without_a_radio_terminal_or_retry() {
             context: accepted.context,
             ticket: accepted.ticket,
             buffer: accepted.buffer,
-            completion: ended(TxEndStatus::Success, 1),
+            completion: ended(TxEndStatus::Delivered, 1),
         },
     );
     assert_eq!(core::iter::from_fn(|| data.tickets.take()).count(), 2);
@@ -566,7 +562,7 @@ fn msdus_wait_while_the_tokens_are_out() {
             context: first.context,
             ticket: first.ticket,
             buffer: first.buffer,
-            completion: ended(TxEndStatus::Success, 1),
+            completion: ended(TxEndStatus::Delivered, 1),
         },
     );
     assert!(data.accepts());
@@ -688,7 +684,7 @@ fn ended(status: TxEndStatus, transmissions: u16) -> TxOutcome {
         status,
         transmissions,
         rate: None,
-        ack: (status == TxEndStatus::Success).then_some(oer_ieee80211_lower_mac::TxAck {
+        ack: (status == TxEndStatus::Delivered).then_some(oer_ieee80211_lower_mac::TxAck {
             snr_db: Some(30),
             ..Default::default()
         }),
@@ -948,4 +944,45 @@ fn indeterminate_and_contention_limit_retire_the_msdu_and_release_admission() {
             "the original credit is reusable once"
         );
     }
+}
+
+#[test]
+fn key_removal_drops_a_published_msdu_and_returns_admission_once() {
+    let mut data = machine();
+    let capacity = data.available(WmmAccessCategory::Voice);
+    let mut replay = epoch();
+    let mut link = qos_link(&(), &mut replay);
+    data.input(
+        NOW,
+        DataInput::Msdu {
+            msdu: msdu(6),
+            link: &mut link,
+        },
+    )
+    .unwrap();
+    let operation = transmit(&mut data);
+    let ReturnedMpdu::Fresh(buffer) = operation.buffer else {
+        unreachable!()
+    };
+    data.returned(
+        NOW,
+        DataReturn::TxDone {
+            context: operation.context,
+            ticket: operation.ticket,
+            buffer: ReturnedMpdu::Sent(buffer),
+            completion: TxOutcome::Withdrawn(WithdrawCause::KeyRemoved),
+        },
+    );
+    assert!(
+        data.poll_action(NOW).is_none(),
+        "the removed key's MSDU is not retried"
+    );
+    assert_eq!(data.available(WmmAccessCategory::Voice), capacity);
+    assert_eq!(data.counters().lost_tokens, 0);
+    for _ in 0..2 {
+        assert!(data.tickets.take().is_some());
+        assert!(data.buffers.take().is_some());
+    }
+    assert!(data.tickets.take().is_none());
+    assert!(data.buffers.take().is_none());
 }

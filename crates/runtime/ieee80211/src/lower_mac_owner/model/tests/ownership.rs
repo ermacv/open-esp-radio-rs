@@ -81,7 +81,7 @@ fn returned(
             let end = match completion {
                 TxOutcome::Ended {
                     transmissions: 1,
-                    status: TxEndStatus::Success,
+                    status: TxEndStatus::Delivered,
                     ..
                 } => End::Completed,
                 TxOutcome::Withdrawn(_) => End::Withdrawn,
@@ -124,14 +124,20 @@ impl PortBody<Backend> for Operations {
                     Class::Small => {
                         let buffer = small.remove(0);
                         let index = buffer.slot.index();
-                        let source = <ModelTypes<Contexts> as TxBufferPool<ModelSmall>>::prepare::<
-                            Station,
-                            ModelCaps,
-                        >(TxSource::Fresh {
+                        let source = TxSource::Fresh {
                             buffer,
                             frame: ClassFrame::new(data_frame(&phase, false)).ok().unwrap(),
                             body: Some(body),
                             protection: TxProtection::Open,
+                        }
+                        .check()
+                        .map(|source| {
+                            <ModelTypes<Contexts> as TxBufferPool<ModelSmall>>::prepare::<
+                                Station,
+                                ModelCaps,
+                            >(source)
+                            .ok()
+                            .unwrap()
                         })
                         .map_err(|refused| match refused.operation {
                             TxSource::Fresh { buffer, body, .. } => {
@@ -144,14 +150,20 @@ impl PortBody<Backend> for Operations {
                     Class::Large => {
                         let buffer = large.remove(0);
                         let index = buffer.slot.index();
-                        let source = <ModelTypes<Contexts> as TxBufferPool<ModelLarge>>::prepare::<
-                            Station,
-                            ModelCaps,
-                        >(TxSource::Fresh {
+                        let source = TxSource::Fresh {
                             buffer,
                             frame: ClassFrame::new(data_frame(&phase, false)).ok().unwrap(),
                             body: Some(body),
                             protection: TxProtection::Open,
+                        }
+                        .check()
+                        .map(|source| {
+                            <ModelTypes<Contexts> as TxBufferPool<ModelLarge>>::prepare::<
+                                Station,
+                                ModelCaps,
+                            >(source)
+                            .ok()
+                            .unwrap()
                         })
                         .map_err(|refused| match refused.operation {
                             TxSource::Fresh { buffer, body, .. } => {

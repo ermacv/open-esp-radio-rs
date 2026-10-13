@@ -1,5 +1,6 @@
 use super::*;
-use oer_ieee80211_lower_mac::{AggregateAttempt, MpduStartSpacing};
+use oer_ieee80211_lower_mac::{AggregateAttempt, LayoutError, MpduStartSpacing, PoolSource};
+use oer_ieee80211_sta::machine::TxRefusal;
 
 fn frame<'p>(
     phase: &ModelPhase<'p, '_>,
@@ -18,7 +19,7 @@ fn frame<'p>(
 }
 
 type RefusedSingle<'id> = (
-    PreparationError,
+    TxRefusal,
     Slot<'id, ModelTickets>,
     ModelAnyBuffer<'id>,
     Option<ModelBody>,
@@ -32,19 +33,23 @@ fn try_source<'k, 'p, 'id: 'p + 'k>(
     ticket: Slot<'id, ModelTickets>,
     source: PoolSource<'k, 'p, 'id, ModelTypes, ModelSmall, ModelCaps, Station>,
 ) -> Result<(), RefusedSingle<'id>> {
-    let source =
-        match <ModelTypes as TxBufferPool<ModelSmall>>::prepare::<Station, ModelCaps>(source) {
-            Ok(source) => source,
-            Err(refused) => {
-                let (buffer, body) = match refused.operation {
-                    TxSource::Fresh { buffer, body, .. } => (ModelAnyBuffer::Small(buffer), body),
-                    TxSource::Retransmission { mpdu, .. } => {
-                        (ModelAnyBuffer::SmallSent(mpdu), None)
-                    }
-                };
-                return Err((refused.reason, ticket, buffer, body));
-            }
-        };
+    let checked = match source.check() {
+        Ok(source) => {
+            <ModelTypes as TxBufferPool<ModelSmall>>::prepare::<Station, ModelCaps>(source)
+                .map_err(|refused| (TxRefusal::Preparation(refused.reason), refused.operation))
+        }
+        Err(refused) => Err((TxRefusal::Layout(refused.reason), refused.operation)),
+    };
+    let source = match checked {
+        Ok(source) => source,
+        Err((reason, operation)) => {
+            let (buffer, body) = match operation {
+                TxSource::Fresh { buffer, body, .. } => (ModelAnyBuffer::Small(buffer), body),
+                TxSource::Retransmission { mpdu, .. } => (ModelAnyBuffer::SmallSent(mpdu), None),
+            };
+            return Err((reason, ticket, buffer, body));
+        }
+    };
     phase
         .station()
         .submit(oer_ieee80211_lower_mac::Attempt {
@@ -81,15 +86,27 @@ impl Work for Boundaries {
         let mut ticket = tickets.remove(0);
         let mut buffer = small.remove(0);
         for (len, body_len, protected_bit, keyed, refusal) in [
-            (40, 16, true, true, Some(PreparationError::BodyOverlap)),
+            (
+                40,
+                16,
+                true,
+                true,
+                Some(TxRefusal::Layout(LayoutError::BodyOverlap)),
+            ),
             (
                 31,
                 0,
                 true,
                 true,
-                Some(PreparationError::CcmpHeaderTooShort),
+                Some(TxRefusal::Layout(LayoutError::CcmpHeaderTooShort)),
             ),
-            (40, 17, false, false, Some(PreparationError::BodyOverlap)),
+            (
+                40,
+                17,
+                false,
+                false,
+                Some(TxRefusal::Layout(LayoutError::BodyOverlap)),
+            ),
             // The bit is now derived solely from TxProtection in preparation.
             (40, 0, true, false, None),
             (40, 0, false, true, None),
@@ -258,7 +275,10 @@ impl Work for RetryIdentity {
         ) else {
             panic!("retired key refuses preparation")
         };
-        assert_eq!(reason, PreparationError::RetransmissionKey);
+        assert_eq!(
+            reason,
+            TxRefusal::Preparation(PreparationError::RetransmissionKey)
+        );
         assert!(body.is_none());
         let ModelAnyBuffer::SmallSent(mpdu) = returned else {
             unreachable!()
@@ -277,8 +297,9 @@ impl Work for RetryIdentity {
             TxProtection::Ccmp(&replacement),
         );
         let refused = <ModelTypes as TxBufferPool<ModelSmall>>::push_aggregate(
-            aggregate,
-            SubframeSource::Sent(mpdu),
+            CheckedAggregate::new(aggregate, SubframeSource::Sent(mpdu))
+                .ok()
+                .unwrap(),
         )
         .err()
         .unwrap();
@@ -330,21 +351,22 @@ impl Work for AggregateBoundaries {
         let memory = buffer.memory.as_ptr();
         let body = ModelBody(alloc::vec![0x99; 16]);
         let body_pointer = body.0.as_ptr();
-        let source = SubframeSource::Fresh {
+        let source: ModelSubframe<ModelSmall, ModelCaps> = SubframeSource::Fresh {
             buffer,
-            frame: ClassSubframe::new(subframe_frame(0)).ok().unwrap(),
+            frame: ClassSubframe::<ModelSmall, _>::new(subframe_frame(0))
+                .ok()
+                .unwrap(),
             body: Some(body),
         };
-        let refused = <ModelTypes as TxBufferPool<ModelSmall>>::push_aggregate(aggregate, source)
-            .err()
-            .unwrap();
-        assert_eq!(refused.reason, PreparationError::BodyOverlap);
-        assert_eq!(refused.aggregate.subframes(), 0);
+        let refused = CheckedAggregate::new(aggregate, source).err().unwrap();
+        assert_eq!(refused.reason, LayoutError::BodyOverlap);
+        let (aggregate, subframe) = refused.operation;
+        assert_eq!(aggregate.subframes(), 0);
         let SubframeSource::Fresh {
             buffer,
             frame,
             body,
-        } = refused.subframe
+        } = subframe
         else {
             unreachable!()
         };
@@ -355,7 +377,7 @@ impl Work for AggregateBoundaries {
         assert!(phase.held.events.is_empty());
         // QoS header 26 + CCMP 8 + body 16: exact boundary is 50.
         let frame = SizedFrame::new(*frame.frame().header(), MpduLength::new(50).unwrap()).unwrap();
-        let aggregate = push_subframe(refused.aggregate, buffer, frame, body);
+        let aggregate = push_subframe(aggregate, buffer, frame, body);
         let (mut buffers, mut bodies) = aggregate.into_parts();
         let ModelAnyBuffer::Small(buffer) = buffers.remove(0) else {
             unreachable!()
@@ -430,10 +452,13 @@ impl Work for PreparedRemoval {
             unreachable!()
         };
         let prepared = <ModelTypes as TxBufferPool<ModelSmall>>::prepare::<Station, ModelCaps>(
-            TxSource::Retransmission {
+            (TxSource::Retransmission {
                 mpdu,
                 plan: RetransmissionPlan::Individual(plan),
-            },
+            })
+            .check()
+            .ok()
+            .unwrap(),
         )
         .ok()
         .unwrap();
@@ -506,12 +531,15 @@ impl Work for RetryRole {
             ..
         } = resources;
         let source = <ModelTypes as TxBufferPool<ModelSmall>>::prepare::<AccessPoint, ModelCaps>(
-            TxSource::Fresh {
+            (TxSource::Fresh {
                 buffer: small.remove(0),
                 frame: frame(phase, 40, false),
                 body: None,
                 protection: TxProtection::Open,
-            },
+            })
+            .check()
+            .ok()
+            .unwrap(),
         )
         .ok()
         .unwrap();
@@ -536,10 +564,13 @@ impl Work for RetryRole {
             unreachable!()
         };
         let refused = <ModelTypes as TxBufferPool<ModelSmall>>::prepare::<Station, ModelCaps>(
-            TxSource::Retransmission {
+            (TxSource::Retransmission {
                 mpdu,
                 plan: RetransmissionPlan::Individual(plan),
-            },
+            })
+            .check()
+            .ok()
+            .unwrap(),
         )
         .err()
         .unwrap();

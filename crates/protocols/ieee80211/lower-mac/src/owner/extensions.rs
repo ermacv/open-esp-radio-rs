@@ -24,19 +24,14 @@
 use oer_ieee80211_mac::tsf::{TsfDuration, TsfInstant};
 use oer_radio_port::Slot;
 
-use super::{
-    AckHeader, Ieee80211Capabilities, PhaseRate, SizedFrame, SupportedCoex, SupportedPower, Tid,
-};
+use super::{Ieee80211Capabilities, PhaseRate, SupportedCoex, SupportedPower, Tid};
 use crate::{
     AmpduCapabilities, PreparationRefused, Protection, SubmitError,
-    phase::{
-        AttemptKey, GateOpen, InterfacePhase, LowerMacPhase, PhaseTypes, TxBufferClass,
-        TxBufferPool,
-    },
+    phase::{AttemptKey, GateOpen, InterfacePhase, LowerMacPhase, PhaseTypes},
 };
 
 /// A rate the backend aggregates at, checked by [`AmpduPhase::ampdu_rate`].
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct AmpduRate<'p>(PhaseRate<'p>);
 
 impl<'p> AmpduRate<'p> {
@@ -57,51 +52,21 @@ pub trait PhaseAggregate<'p, 'id: 'p> {
     /// The interface role that may submit this aggregate.
     type Role: crate::RoleKeys<'id, Self::Types>;
 
-    /// Append the new MPDU `frame` that the fresh `buffer` holds, encoded
-    /// from its header on, with its body. Under a key the backend numbers
-    /// it at its first transmission ([protected frames](crate::phase#protected-frames)).
+    /// Append one prepared individual MPDU, fresh or retransmitted. The
+    /// pool already checked its class and layout; the aggregate retains
+    /// its phase, install and role proof through submission.
     ///
     /// # Errors
     ///
-    /// The buffer, frame and body, when the aggregate holds the backend's
-    /// limit of subframes, the buffer's class does not fit the frame, or
-    /// the external tail body overlaps the MAC/CCMP prefix. The refusal
-    /// carries a reason and the original buffer, frame and body.
-    #[allow(clippy::type_complexity, reason = "the subframe given back")]
-    fn push<C>(
+    /// The unchanged prepared MPDU if the aggregate is full or its response
+    /// kind cannot be aggregated. No ownership is lost on refusal.
+    fn push(
         &mut self,
-        buffer: <Self::Types as TxBufferPool<'id, C>>::Buffer,
-        frame: SizedFrame<AckHeader, Self::Caps>,
-        body: Option<Self::Body>,
+        mpdu: <Self::Types as PhaseTypes<'id>>::Prepared<'p, Self::Role, Self::Caps>,
     ) -> Result<
         (),
-        PreparationRefused<(
-            <Self::Types as TxBufferPool<'id, C>>::Buffer,
-            SizedFrame<AckHeader, Self::Caps>,
-            Option<Self::Body>,
-        )>,
-    >
-    where
-        C: TxBufferClass,
-        Self::Types: TxBufferPool<'id, C>;
-
-    /// Append the MPDU a numbered `buffer` holds, again: a subframe its
-    /// Block Ack did not acknowledge. The backend sets the Retry bit of
-    /// its Frame Control, leaves its CCMP header, and so its packet number,
-    /// as it is, and numbers the aggregate's new subframes ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6131631789)).
-    ///
-    /// # Errors
-    ///
-    /// A typed refusal and the original numbered MPDU (in the backend's
-    /// exhaustive return type), including its description and body.
-    #[allow(clippy::type_complexity, reason = "the subframe given back")]
-    fn push_retransmission<C>(
-        &mut self,
-        mpdu: <Self::Types as TxBufferPool<'id, C>>::Numbered,
-    ) -> Result<(), PreparationRefused<<Self::Types as PhaseTypes<'id>>::AnyTxBuffer>>
-    where
-        C: TxBufferClass,
-        Self::Types: TxBufferPool<'id, C>;
+        PreparationRefused<<Self::Types as PhaseTypes<'id>>::Prepared<'p, Self::Role, Self::Caps>>,
+    >;
 
     /// The subframes pushed.
     fn subframes(&self) -> usize;

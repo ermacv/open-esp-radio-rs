@@ -763,7 +763,6 @@ fn a_link_that_ends_drains_its_queue_and_its_submitted_attempts_never_go_again()
     assert!(!data.accepts());
     // The link ends: the owed ones drain into their tokens, counted.
     data.leave();
-    link.epoch = LinkEpoch::for_test(2);
     assert!(data.poll_action(NOW, |_| true).is_none());
     assert_eq!(data.counters().left_behind, 2);
     // The submitted one, aborted before the air, returns its tokens and

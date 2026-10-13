@@ -98,24 +98,22 @@ fn data_frame<'p, X: ModelContext>(
 }
 
 /// Submit a frame and its class's memory at the same boundary.
-fn submit_frame<'p, 'id: 'p, C>(
+fn submit_frame<'p, 'id: 'p, C: ModelClass>(
     phase: &mut ModelPhase<'p, 'id>,
     ticket: Slot<'id, ModelTickets>,
     source: TxSource<
         'p,
-        <ModelTypes as TxBufferPool<'id, C>>::Buffer,
-        <ModelTypes as TxBufferPool<'id, C>>::Numbered,
+        ModelBuffer<'id, C>,
+        ModelNumbered<'id, C>,
         ClassFrame<'p, C, ModelCaps>,
         ModelBody,
     >,
     key: Option<&ModelPairwiseKey<'id, Station>>,
-) where
-    C: TxBufferClass,
-    ModelTypes: TxBufferPool<'id, C>,
-{
+) {
+    let source = prepare_model(source).ok().unwrap();
     phase
         .station()
-        .submit::<C>(oer_ieee80211_lower_mac::Attempt {
+        .submit(oer_ieee80211_lower_mac::Attempt {
             context: (),
             ticket,
             source,
@@ -128,21 +126,17 @@ fn submit_frame<'p, 'id: 'p, C>(
         .unwrap();
 }
 
-/// A data frame to the peer in `buffer`, submitted with `ticket` and `key`.
-fn submit<'p, 'id: 'p, C>(
+fn submit<'p, 'id: 'p, C: ModelClass>(
     phase: &mut ModelPhase<'p, 'id>,
     ticket: Slot<'id, ModelTickets>,
     mut buffer: ModelBuffer<'id, C>,
     key: Option<&ModelPairwiseKey<'id, Station>>,
-) where
-    C: TxBufferClass,
-    ModelTypes: TxBufferPool<'id, C, Buffer = ModelBuffer<'id, C>>,
-{
+) {
     buffer.bytes_mut()[..40].fill(0x5a);
     let frame = ClassFrame::new(data_frame(phase, key.is_some()))
         .ok()
         .unwrap();
-    submit_frame::<C>(
+    submit_frame(
         phase,
         ticket,
         TxSource::Fresh {
@@ -152,6 +146,48 @@ fn submit<'p, 'id: 'p, C>(
         },
         key,
     );
+}
+
+fn prepare_subframe<'p, 'id, X: ModelContext>(
+    buffer: ModelBuffer<'id, ModelSmall>,
+    frame: SizedFrame<AckHeader, ModelCaps>,
+    body: Option<ModelBody>,
+    rate: &AmpduRate<'p>,
+) -> Result<
+    ModelPrepared<'p, 'id, Station, ModelCaps, X>,
+    PreparationRefused<PoolSource<'p, 'id, ModelTypes<X>, ModelSmall, ModelCaps>>,
+> {
+    let frame = ClassFrame::new(TxFrame::Individual {
+        frame,
+        plan: RetryPlan::new(RetryStage {
+            rate: *rate.rate(),
+            transmissions: NonZeroU8::MIN,
+            protection: Protection::None,
+        }),
+    })
+    .ok()
+    .unwrap();
+    <ModelTypes<X> as TxBufferPool<'id, ModelSmall>>::prepare(TxSource::Fresh {
+        buffer,
+        frame,
+        body,
+    })
+}
+
+fn prepare_retry<'p, 'id, X: ModelContext>(
+    mpdu: ModelNumbered<'id, ModelSmall>,
+    rate: &AmpduRate<'p>,
+) -> ModelPrepared<'p, 'id, Station, ModelCaps, X> {
+    <ModelTypes<X> as TxBufferPool<'id, ModelSmall>>::prepare(TxSource::Retransmission {
+        mpdu,
+        plan: RetransmissionPlan::Individual(RetryPlan::new(RetryStage {
+            rate: *rate.rate(),
+            transmissions: NonZeroU8::MIN,
+            protection: Protection::None,
+        })),
+    })
+    .ok()
+    .unwrap()
 }
 
 /// The next terminal's ticket and buffer.
@@ -916,7 +952,11 @@ impl Work for AggregateRetransmission<'_> {
             let body = ModelBody(alloc::vec![sequence as u8; 4]);
             body_owners.push(body.0.as_ptr());
             aggregate
-                .push::<ModelSmall>(buffer, frame, Some(body))
+                .push(
+                    prepare_subframe(buffer, frame, Some(body), &rate)
+                        .ok()
+                        .unwrap(),
+                )
                 .ok()
                 .unwrap();
         }
@@ -942,13 +982,10 @@ impl Work for AggregateRetransmission<'_> {
         let mut station = phase.station();
         let rate = station.ampdu_rate(rate).ok().unwrap();
         let mut aggregate = station.aggregate(Tid::new(0).unwrap(), rate);
-        aggregate
-            .push_retransmission::<ModelSmall>(numbered)
-            .ok()
-            .unwrap();
+        aggregate.push(prepare_retry(numbered, &rate)).ok().unwrap();
         let (buffer, frame) = subframe(small.remove(0), 3);
         aggregate
-            .push::<ModelSmall>(buffer, frame, None)
+            .push(prepare_subframe(buffer, frame, None, &rate).ok().unwrap())
             .ok()
             .unwrap();
         station.submit_ampdu(attempt(ticket, aggregate)).unwrap();

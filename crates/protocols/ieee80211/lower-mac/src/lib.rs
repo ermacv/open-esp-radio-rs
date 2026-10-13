@@ -90,10 +90,10 @@ pub use owner::{
 };
 pub use phase::{
     AccessPointPhase, Attempt, AttemptKey, ClassFrame, GateClosed, GateClosedKind, GateOpen,
-    GateOpenKind, InterfaceAttempt, InterfaceKeys, InterfacePhase, InterfaceRejected, KeyTypes,
-    LowerMacEvent, LowerMacPhase, PhaseTypes, PreparationError, PreparationRefused, RETRY_STAGES,
-    Removed, RemovedKey, RetransmissionPlan, RetryPlan, RetryStage, RoleKeys, StationPhase,
-    SubmitError, TxBufferClass, TxBufferMemory, TxBufferPool, TxSource,
+    GateOpenKind, InterfaceAttempt, InterfaceKeys, InterfacePhase, KeyTypes, LowerMacEvent,
+    LowerMacPhase, PhaseTypes, PoolSource, PreparationError, PreparationRefused, PreparedTx,
+    RETRY_STAGES, Removed, RemovedKey, RetransmissionPlan, RetryPlan, RetryStage, RoleKeys,
+    StationPhase, SubmitError, TxBufferClass, TxBufferMemory, TxBufferPool, TxSource,
 };
 pub use rx::{
     LinkMetric, RxBuffer, RxCryptoStatus, RxEvidence, RxMeta, RxMetadata, SignalMetadata,

@@ -571,7 +571,7 @@ impl core::fmt::Debug for Ccmp128Key {
 
 /// A rate the phase's channel carries: [`LowerMacPhase::rate`](crate::LowerMacPhase::rate) checks it
 /// against the capabilities and the channel the phase runs on.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct PhaseRate<'p> {
     rate: PhyRate,
     loan: PhantomData<fn(&'p ()) -> &'p ()>,

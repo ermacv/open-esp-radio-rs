@@ -99,14 +99,18 @@ impl PortBody<Backend> for Operations {
                 let frame = ClassFrame::new(data_frame(&phase, false)).ok().unwrap();
                 phase
                     .station()
-                    .submit::<ModelSmall>(oer_ieee80211_lower_mac::Attempt {
+                    .submit(oer_ieee80211_lower_mac::Attempt {
                         context,
                         ticket,
-                        source: TxSource::Fresh {
-                            buffer,
-                            frame,
-                            body: Some(body),
-                        },
+                        source: <ModelTypes<Context> as TxBufferPool<'id, ModelSmall>>::prepare(
+                            TxSource::Fresh {
+                                buffer,
+                                frame,
+                                body: Some(body),
+                            },
+                        )
+                        .ok()
+                        .unwrap(),
                         access_category: if operation == 2 {
                             WmmAccessCategory::Voice
                         } else {
@@ -268,7 +272,11 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
                     context.bodies.push((sequence as u8, body.0.as_ptr()));
                 }
                 aggregate
-                    .push::<ModelSmall>(buffer, subframe_frame(sequence), body)
+                    .push(
+                        prepare_subframe(buffer, subframe_frame(sequence), body, &rate)
+                            .ok()
+                            .unwrap(),
+                    )
                     .ok()
                     .unwrap();
             }

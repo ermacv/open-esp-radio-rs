@@ -151,10 +151,10 @@
 //!
 //! ```compile_fail,E0382
 //! # use oer_ieee80211_lower_mac::*;
-//! fn twice<'p, 'id: 'p, I, C>(interface: &mut I, attempt: InterfaceAttempt<'_, 'p, 'id, I, C>)
-//! where I: InterfacePhase<'p, 'id>, C: TxBufferClass, I::Types: TxBufferPool<'id, C> {
-//!     let _ = interface.submit::<C>(attempt);
-//!     let _ = interface.submit::<C>(attempt);
+//! fn twice<'p, 'id: 'p, I>(interface: &mut I, attempt: InterfaceAttempt<'_, 'p, 'id, I>)
+//! where I: InterfacePhase<'p, 'id> {
+//!     let _ = interface.submit(attempt);
+//!     let _ = interface.submit(attempt);
 //! }
 //! ```
 //!
@@ -162,9 +162,9 @@
 //!
 //! ```
 //! # use oer_ieee80211_lower_mac::*;
-//! fn one<'p, 'id: 'p, I, C>(interface: &mut I, attempt: InterfaceAttempt<'_, 'p, 'id, I, C>)
-//! where I: InterfacePhase<'p, 'id>, C: TxBufferClass, I::Types: TxBufferPool<'id, C> {
-//!     let _ = interface.submit::<C>(attempt);
+//! fn one<'p, 'id: 'p, I>(interface: &mut I, attempt: InterfaceAttempt<'_, 'p, 'id, I>)
+//! where I: InterfacePhase<'p, 'id> {
+//!     let _ = interface.submit(attempt);
 //! }
 //! ```
 //!
@@ -172,14 +172,13 @@
 //!
 //! ```compile_fail
 //! # use oer_ieee80211_lower_mac::*;
-//! fn another_phase<'p, 'q, 'id: 'p + 'q, I, J, C>(
-//!     interface: &mut J, attempt: InterfaceAttempt<'_, 'p, 'id, I, C>,
+//! fn another_phase<'p, 'q, 'id: 'p + 'q, I, J>(
+//!     interface: &mut J, attempt: InterfaceAttempt<'_, 'p, 'id, I>,
 //! ) where
 //!     I: InterfacePhase<'p, 'id>,
 //!     J: InterfacePhase<'q, 'id, Caps = I::Caps, Types = I::Types, Role = I::Role, TxBody = I::TxBody>,
-//!     C: TxBufferClass, I::Types: TxBufferPool<'id, C>,
 //! {
-//!     let _ = interface.submit::<C>(attempt);
+//!     let _ = interface.submit(attempt);
 //! }
 //! ```
 //!
@@ -324,11 +323,13 @@ pub type InterfaceKeys<'p, 'id, I> = <<I as InterfacePhase<'p, 'id>>::Role as Ro
 >>::Keys;
 
 /// The types of one backend's phase that its events carry.
-pub trait PhaseTypes<'id> {
+pub trait PhaseTypes<'id>: Sized {
     /// The composition's operation context. The backend owns and returns
     /// it unchanged, without interpreting or cloning it. It must not
     /// borrow a machine for the duration of an operation.
     type Context;
+    /// A prepared MPDU retaining its phase, install and intended interface role.
+    type Prepared<'p, R, K: Ieee80211Capabilities>: PreparedTx<'id, Types = Self>;
     /// An external MPDU body. A numbered MPDU retains its body internally
     /// for a retry; renewing that MPDU returns the body with its memory.
     type TxBody: crate::TxBody;
@@ -465,17 +466,40 @@ pub enum AttemptKey<'k, P, G> {
     Group(&'k G),
 }
 
-/// The attempt of the interface `I`.
-pub type InterfaceAttempt<'k, 'p, 'id, I, C> = Attempt<
+/// The class-specific input to preparation; refusal returns this exact type.
+pub type PoolSource<'p, 'id, T, C, K> = TxSource<
+    'p,
+    <T as TxBufferPool<'id, C>>::Buffer,
+    <T as TxBufferPool<'id, C>>::Numbered,
+    ClassFrame<'p, C, K>,
+    <T as PhaseTypes<'id>>::TxBody,
+>;
+
+/// A backend's closed preparation proof. Cancellation recovers its owners
+/// without creating a TX terminal; submission consumes the proof itself.
+pub trait PreparedTx<'id> {
+    /// The backend's resource family.
+    type Types: PhaseTypes<'id>;
+    /// Recover the buffer and any external body. A numbered MPDU keeps its
+    /// body nested until renewal.
+    fn into_parts(
+        self,
+    ) -> (
+        <Self::Types as PhaseTypes<'id>>::AnyTxBuffer,
+        Option<<Self::Types as PhaseTypes<'id>>::TxBody>,
+    );
+}
+
+/// The attempt of the interface `I`, after its class pool prepared the MPDU.
+/// It remains bound to this phase, install, capabilities and role.
+pub type InterfaceAttempt<'k, 'p, 'id, I> = Attempt<
     'id,
     'k,
     <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::TicketKind,
-    TxSource<
+    <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::Prepared<
         'p,
-        <<I as InterfacePhase<'p, 'id>>::Types as TxBufferPool<'id, C>>::Buffer,
-        <<I as InterfacePhase<'p, 'id>>::Types as TxBufferPool<'id, C>>::Numbered,
-        ClassFrame<'p, C, <I as InterfacePhase<'p, 'id>>::Caps>,
-        <I as InterfacePhase<'p, 'id>>::TxBody,
+        <I as InterfacePhase<'p, 'id>>::Role,
+        <I as InterfacePhase<'p, 'id>>::Caps,
     >,
     <InterfaceKeys<'p, 'id, I> as KeyTypes<'id>>::PairwiseKey,
     <InterfaceKeys<'p, 'id, I> as KeyTypes<'id>>::GroupKey,
@@ -516,26 +540,6 @@ pub enum RetransmissionPlan<'p> {
     /// A group-addressed MPDU.
     Group(PhaseRate<'p>),
 }
-
-/// A rejected single attempt retains its phase-bound description, key
-/// borrow, context and all resources. Buffer classes are erased only to
-/// the backend's exhaustive return type; no resource is a terminal yet.
-pub type InterfaceRejected<'k, 'p, 'id, I, C> = Attempt<
-    'id,
-    'k,
-    <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::TicketKind,
-    TxSource<
-        'p,
-        <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::AnyTxBuffer,
-        <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::AnyTxBuffer,
-        ClassFrame<'p, C, <I as InterfacePhase<'p, 'id>>::Caps>,
-        <I as InterfacePhase<'p, 'id>>::TxBody,
-    >,
-    <InterfaceKeys<'p, 'id, I> as KeyTypes<'id>>::PairwiseKey,
-    <InterfaceKeys<'p, 'id, I> as KeyTypes<'id>>::GroupKey,
-    <I as InterfacePhase<'p, 'id>>::Caps,
-    <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::Context,
->;
 
 /// Preparation failed before admission; the original operation is returned
 /// without allocating a PN or creating a TX terminal.
@@ -604,11 +608,9 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     /// The interface's own address, which the install gave it.
     fn address(&self) -> IndividualAddress;
 
-    /// Prepare and admit `attempt` together: its buffer class, phase rate,
-    /// install and role's key are checked at this boundary. For a fresh
-    /// MPDU the backend writes the MAC header from `ClassFrame`, leaving
-    /// the caller's octets after it intact. For a retransmission it sets
-    /// Retry without rewriting SN, PN or payload. An optional body remains
+    /// Admit the pool-prepared `attempt`. Its closed preparation proof
+    /// retains phase, install and role; submission has no buffer-class
+    /// parameter. A retransmission retains SN, PN and payload. An optional body remains
     /// owned by the attempt until its terminal, even if copied into DMA memory.
     /// The backend publishes the attempt once its queue is free; its
     /// context, ticket, buffers and bodies return together, exactly once.
@@ -618,13 +620,10 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     /// `SubmitError::Refused` returns the complete operation before admission
     /// and PN allocation. No terminal follows it. A poisoned backend instead
     /// follows fail-stop: the attempt's resources end with the install.
-    fn submit<'k, C>(
+    fn submit<'k>(
         &mut self,
-        attempt: InterfaceAttempt<'k, 'p, 'id, Self, C>,
-    ) -> Result<(), SubmitError<InterfaceRejected<'k, 'p, 'id, Self, C>, Self::Fault>>
-    where
-        C: TxBufferClass,
-        Self::Types: TxBufferPool<'id, C>;
+        attempt: InterfaceAttempt<'k, 'p, 'id, Self>,
+    ) -> Result<(), SubmitError<InterfaceAttempt<'k, 'p, 'id, Self>, Self::Fault>>;
 
     /// Install `key` for frames with `peer` in `slot`.
     fn install_pairwise_key(
@@ -712,6 +711,13 @@ pub trait TxBufferPool<'id, C: TxBufferClass>: PhaseTypes<'id> {
     /// while it is not submitted. The backend owns its type and mints it
     /// only in the install's resources.
     type Buffer: TxBufferMemory;
+
+    /// Prepare a source while its buffer class is concrete. The resulting
+    /// closed value retains phase, install and role until `submit` or an
+    /// aggregate consumes it. A refusal returns the original typed source.
+    fn prepare<'p, R, K: Ieee80211Capabilities>(
+        source: PoolSource<'p, 'id, Self, C, K>,
+    ) -> Result<Self::Prepared<'p, R, K>, PreparationRefused<PoolSource<'p, 'id, Self, C, K>>>;
 
     /// The buffer, as any class's.
     fn erase(buffer: Self::Buffer) -> Self::AnyTxBuffer;

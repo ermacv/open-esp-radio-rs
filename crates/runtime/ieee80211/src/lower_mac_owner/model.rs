@@ -25,8 +25,8 @@
 //! number and gets the Retry bit; the air answers each aggregate with a
 //! Block Ack ([`ModelAir::block_ack`], every subframe by default).
 //!
-//! Preparation constructs a private checked layout against the actual
-//! allocation before any write or admission. It proves disjoint MAC/CCMP
+//! Each concrete class pool constructs a private checked layout against
+//! the actual allocation before writing headers or copying an external body. It proves disjoint MAC/CCMP
 //! headers and tail body. Numbered returns own that layout, body and the
 //! identity of the original key installation. Retry supplies only a new
 //! attempt's rates, never an independently reconstructed MPDU or body.
@@ -62,17 +62,17 @@ use oer_ieee80211_lower_mac::{
     AccessPoint, AccessPointPhase, AttemptKey, BandSet, BssColor, Ccmp128Key, Channel,
     CoexPriority, CoexPrioritySet, FrameHeader, GateClosed, GateClosedKind, GateOpen, GateOpenKind,
     HardwareServices, Ieee80211Capabilities, Ieee80211Radio, IndividualAddress,
-    InterfaceAggregateAttempt, InterfaceAttempt, InterfacePhase, InterfaceRejected, KeyTypes,
-    LinkMetric, LowerMacBackend, LowerMacCapabilities, LowerMacEvent, LowerMacPhase, LowerMacSetup,
-    PhaseRate, PhaseTypes, PhyFormatSet, PreparationError, PreparationRefused, RateSupport,
-    ReceiveFilter, Removed, RemovedKey, RetransmissionPlan, RoleKeys, RxBuffer, RxEvidence, RxMeta,
-    RxMetadata, SignalMetadata, Station, StationPhase, StationReceive, SubmitError,
-    SupportedBlockAck, SupportedChannel, SupportedEdca, SupportedFilter, TxBody, TxBufferClass,
-    TxBufferMemory, TxBufferPool, TxCompletion, TxFrame, TxSource, TxStatus, VifRole, WidthSet,
+    InterfaceAggregateAttempt, InterfaceAttempt, InterfacePhase, KeyTypes, LinkMetric,
+    LowerMacBackend, LowerMacCapabilities, LowerMacEvent, LowerMacPhase, LowerMacSetup, PhaseRate,
+    PhaseTypes, PhyFormatSet, PoolSource, PreparationError, PreparationRefused, PreparedTx,
+    RateSupport, ReceiveFilter, Removed, RemovedKey, RetransmissionPlan, RoleKeys, RxBuffer,
+    RxEvidence, RxMeta, RxMetadata, SignalMetadata, Station, StationPhase, StationReceive,
+    SubmitError, SupportedBlockAck, SupportedChannel, SupportedEdca, SupportedFilter, TxBody,
+    TxBufferClass, TxBufferMemory, TxBufferPool, TxCompletion, TxFrame, TxSource, TxStatus,
+    VifRole, WidthSet,
 };
 use oer_ieee80211_lower_mac::{
-    AckHeader, AmpduCapabilities, AmpduPhase, AmpduRate, BlockAckReport, PhaseAggregate,
-    SizedFrame, Tid,
+    AmpduCapabilities, AmpduPhase, AmpduRate, BlockAckReport, PhaseAggregate, Tid,
 };
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
@@ -537,6 +537,7 @@ pub struct ModelTypes<X: ModelContext = ()>(PhantomData<fn() -> X>);
 
 impl<'id, X: ModelContext> PhaseTypes<'id> for ModelTypes<X> {
     type Context = X::Context<'id>;
+    type Prepared<'p, R, K: Ieee80211Capabilities> = ModelPrepared<'p, 'id, R, K, X>;
     type TxBody = ModelBody;
     type TicketKind = ModelTickets;
     type AnyTxBuffer = ModelAnyBuffer<'id>;
@@ -563,6 +564,15 @@ impl<'id, R> KeyTypes<'id> for ModelKeys<'id, R> {
 impl<'id, X: ModelContext> TxBufferPool<'id, ModelSmall> for ModelTypes<X> {
     type Buffer = ModelBuffer<'id, ModelSmall>;
     type Numbered = ModelNumbered<'id, ModelSmall>;
+
+    fn prepare<'p, R, K: Ieee80211Capabilities>(
+        source: PoolSource<'p, 'id, Self, ModelSmall, K>,
+    ) -> Result<
+        ModelPrepared<'p, 'id, R, K, X>,
+        PreparationRefused<PoolSource<'p, 'id, Self, ModelSmall, K>>,
+    > {
+        prepare_model(source)
+    }
 
     fn erase(buffer: Self::Buffer) -> ModelAnyBuffer<'id> {
         ModelAnyBuffer::Small(buffer)
@@ -594,6 +604,15 @@ impl<'id, X: ModelContext> TxBufferPool<'id, ModelSmall> for ModelTypes<X> {
 impl<'id, X: ModelContext> TxBufferPool<'id, ModelLarge> for ModelTypes<X> {
     type Buffer = ModelBuffer<'id, ModelLarge>;
     type Numbered = ModelNumbered<'id, ModelLarge>;
+
+    fn prepare<'p, R, K: Ieee80211Capabilities>(
+        source: PoolSource<'p, 'id, Self, ModelLarge, K>,
+    ) -> Result<
+        ModelPrepared<'p, 'id, R, K, X>,
+        PreparationRefused<PoolSource<'p, 'id, Self, ModelLarge, K>>,
+    > {
+        prepare_model(source)
+    }
 
     fn erase(buffer: Self::Buffer) -> ModelAnyBuffer<'id> {
         ModelAnyBuffer::Large(buffer)
@@ -773,7 +792,8 @@ pub struct ModelAir {
 
 impl ModelAir {
     /// Inject one refusal before admission for a service's failure-path
-    /// scenario. No bytes change, PN is allocated or TX terminal is posted.
+    /// scenario. No PN is allocated or TX terminal is posted. Class-pool
+    /// preparation may already have written the checked MPDU.
     pub fn refuse_preparation(&self, reason: PreparationError) {
         self.preparation_refusal.set(Some(reason));
     }
@@ -1772,6 +1792,114 @@ fn retry_stages(
     }
 }
 
+/// The pool's checked MPDU, independent of the input class after preparation.
+/// Its private fields retain phase, install, capabilities and role until submit.
+pub struct ModelPrepared<'p, 'id, R, K, X: ModelContext = ()> {
+    mpdu: ModelMpdu<'id>,
+    plan: Vec<Stage>,
+    proof: PhantomData<fn(&'p ()) -> (&'p (), R, K, X)>,
+}
+
+impl<'id, R, K, X: ModelContext> PreparedTx<'id> for ModelPrepared<'_, 'id, R, K, X> {
+    type Types = ModelTypes<X>;
+
+    fn into_parts(self) -> (ModelAnyBuffer<'id>, Option<ModelBody>) {
+        (self.mpdu.buffer, self.mpdu.body)
+    }
+}
+
+trait ModelClass: TxBufferClass {
+    fn erase<'id>(buffer: ModelBuffer<'id, Self>) -> ModelAnyBuffer<'id>
+    where
+        Self: Sized;
+    fn erase_numbered<'id>(mpdu: ModelNumbered<'id, Self>) -> ModelAnyBuffer<'id>
+    where
+        Self: Sized;
+}
+
+impl ModelClass for ModelSmall {
+    fn erase<'id>(buffer: ModelBuffer<'id, Self>) -> ModelAnyBuffer<'id> {
+        ModelAnyBuffer::Small(buffer)
+    }
+    fn erase_numbered<'id>(mpdu: ModelNumbered<'id, Self>) -> ModelAnyBuffer<'id> {
+        ModelAnyBuffer::SmallNumbered(mpdu)
+    }
+}
+impl ModelClass for ModelLarge {
+    fn erase<'id>(buffer: ModelBuffer<'id, Self>) -> ModelAnyBuffer<'id> {
+        ModelAnyBuffer::Large(buffer)
+    }
+    fn erase_numbered<'id>(mpdu: ModelNumbered<'id, Self>) -> ModelAnyBuffer<'id> {
+        ModelAnyBuffer::LargeNumbered(mpdu)
+    }
+}
+
+fn prepare_model<'p, 'id, R, K: Ieee80211Capabilities, X: ModelContext, C: ModelClass>(
+    source: TxSource<
+        'p,
+        ModelBuffer<'id, C>,
+        ModelNumbered<'id, C>,
+        oer_ieee80211_lower_mac::ClassFrame<'p, C, K>,
+        ModelBody,
+    >,
+) -> Result<
+    ModelPrepared<'p, 'id, R, K, X>,
+    PreparationRefused<
+        TxSource<
+            'p,
+            ModelBuffer<'id, C>,
+            ModelNumbered<'id, C>,
+            oer_ieee80211_lower_mac::ClassFrame<'p, C, K>,
+            ModelBody,
+        >,
+    >,
+> {
+    let checked = match &source {
+        TxSource::Fresh {
+            buffer,
+            frame,
+            body,
+        } => frame_layout(frame.frame(), buffer.memory.len(), body.as_ref())
+            .map(|layout| (layout, stages(frame.frame()))),
+        TxSource::Retransmission { mpdu, plan } => {
+            retry_stages(&mpdu.layout, plan).map(|plan| (mpdu.layout, plan))
+        }
+    };
+    let (layout, plan) = match checked {
+        Ok(checked) => checked,
+        Err(reason) => {
+            return Err(PreparationRefused {
+                reason,
+                operation: source,
+            });
+        }
+    };
+    let mpdu = match source {
+        TxSource::Fresh {
+            buffer,
+            frame,
+            body,
+        } => {
+            let mut buffer = C::erase(buffer);
+            write_header(frame.frame(), buffer.memory_mut());
+            copy_body(&mut buffer, layout, body.as_ref());
+            ModelMpdu {
+                buffer,
+                layout,
+                body,
+            }
+        }
+        TxSource::Retransmission { mpdu, .. } => {
+            ModelMpdu::from_numbered(C::erase_numbered(mpdu), layout)
+        }
+    };
+    Ok(ModelPrepared {
+        mpdu,
+        plan,
+        proof: PhantomData,
+    })
+}
+
 impl<'p, 'v, 'id: 'p, R, K: Ieee80211Capabilities, X: ModelContext> InterfacePhase<'p, 'id>
     for ModelInterface<'p, 'v, 'id, R, K, X>
 where
@@ -1787,104 +1915,28 @@ where
         self.address
     }
 
-    fn submit<'k, C>(
+    fn submit<'k>(
         &mut self,
-        attempt: InterfaceAttempt<'k, 'p, 'id, Self, C>,
-    ) -> Result<(), SubmitError<InterfaceRejected<'k, 'p, 'id, Self, C>, ModelFault>>
-    where
-        C: TxBufferClass,
-        ModelTypes<X>: TxBufferPool<'id, C>,
-    {
+        attempt: InterfaceAttempt<'k, 'p, 'id, Self>,
+    ) -> Result<(), SubmitError<InterfaceAttempt<'k, 'p, 'id, Self>, ModelFault>> {
         if self.held.air.poisoned.get() {
             return Err(SubmitError::Poisoned(Poisoned { cause: ModelFault }));
         }
-        let oer_ieee80211_lower_mac::Attempt {
-            context,
-            ticket,
-            source,
-            access_category,
-            protection,
-            key,
-            power,
-            coex,
-        } = attempt;
-        let source = match source {
-            TxSource::Fresh {
-                buffer,
-                frame,
-                body,
-            } => TxSource::Fresh {
-                buffer: <ModelTypes<X> as TxBufferPool<'id, C>>::erase(buffer),
-                frame,
-                body,
-            },
-            TxSource::Retransmission { mpdu, plan } => TxSource::Retransmission {
-                mpdu: <ModelTypes<X> as TxBufferPool<'id, C>>::erase_numbered(mpdu),
-                plan,
-            },
-        };
-        let attempt = oer_ieee80211_lower_mac::Attempt {
-            context,
-            ticket,
-            source,
-            access_category,
-            protection,
-            key,
-            power,
-            coex,
-        };
         let key = attempt.key.as_ref().map(|key| match key {
             AttemptKey::Pairwise(key) => key.identity.clone(),
             AttemptKey::Group(key) => key.identity.clone(),
         });
-        let checked = match &attempt.source {
-            TxSource::Fresh {
-                buffer,
-                frame,
-                body,
-            } => frame_layout(frame.frame(), buffer.memory().len(), body.as_ref()).and_then(
-                |layout| {
-                    layout.check_key(key.as_ref())?;
-                    Ok((layout, stages(frame.frame())))
-                },
-            ),
-            TxSource::Retransmission { mpdu, plan } => match mpdu.numbered_layout() {
-                Some((layout, original)) if Some(original) == key.as_ref() => {
-                    retry_stages(layout, plan).map(|plan| (*layout, plan))
-                }
-                Some(_) => Err(PreparationError::RetransmissionKey),
-                None => Err(PreparationError::RetransmissionKind),
-            },
-        };
         let checked = match self.held.air.preparation_refusal.take() {
             Some(reason) => Err(reason),
-            None => checked,
+            None => attempt.source.mpdu.check_key(key.as_ref()),
         };
-        let (layout, plan) = match checked {
-            Ok(checked) => checked,
-            Err(reason) => {
-                return Err(SubmitError::Refused(PreparationRefused {
-                    reason,
-                    operation: attempt,
-                }));
-            }
-        };
-        let mpdu = match attempt.source {
-            TxSource::Fresh {
-                mut buffer,
-                frame,
-                body,
-            } => {
-                write_header(frame.frame(), buffer.memory_mut());
-                copy_body(&mut buffer, layout, body.as_ref());
-                ModelMpdu {
-                    buffer,
-                    layout,
-                    body,
-                }
-            }
-            TxSource::Retransmission { mpdu, .. } => ModelMpdu::from_numbered(mpdu, layout),
-        };
+        if let Err(reason) = checked {
+            return Err(SubmitError::Refused(PreparationRefused {
+                reason,
+                operation: attempt,
+            }));
+        }
+        let ModelPrepared { mpdu, plan, .. } = attempt.source;
         self.held.command(Command::Submit(Prepared {
             context: attempt.context,
             role: R::ROLE,
@@ -2012,85 +2064,25 @@ where
     type Caps = K;
     type Types = ModelTypes<X>;
 
-    fn push<C>(
+    fn push(
         &mut self,
-        mut buffer: <ModelTypes<X> as TxBufferPool<'id, C>>::Buffer,
-        frame: SizedFrame<AckHeader, K>,
-        body: Option<ModelBody>,
-    ) -> Result<
-        (),
-        PreparationRefused<(
-            <ModelTypes<X> as TxBufferPool<'id, C>>::Buffer,
-            SizedFrame<AckHeader, K>,
-            Option<ModelBody>,
-        )>,
-    >
-    where
-        C: TxBufferClass,
-        ModelTypes<X>: TxBufferPool<'id, C>,
-    {
-        let checked = if self.subframes.len() >= MODEL_AMPDU_SUBFRAMES {
-            Err(PreparationError::AggregateFull)
+        prepared: ModelPrepared<'p, 'id, R, K, X>,
+    ) -> Result<(), PreparationRefused<ModelPrepared<'p, 'id, R, K, X>>> {
+        let reason = if self.subframes.len() >= MODEL_AMPDU_SUBFRAMES {
+            Some(PreparationError::AggregateFull)
+        } else if prepared.mpdu.layout.kind != MpduKind::Individual {
+            Some(PreparationError::RetransmissionKind)
         } else {
-            MpduLayout::new(
-                frame.len().get(),
-                frame.header().header_len(),
-                buffer.bytes_mut().len().min(C::CAPACITY),
-                frame.header().header().protected(),
-                body.as_ref().map_or(0, |body| body.bytes().len()),
-                MpduKind::Individual,
-            )
+            None
         };
-        let layout = match checked {
-            Ok(layout) => layout,
-            Err(reason) => {
-                return Err(PreparationRefused {
-                    reason,
-                    operation: (buffer, frame, body),
-                });
-            }
-        };
-        let mut buffer = <ModelTypes<X> as TxBufferPool<'id, C>>::erase(buffer);
-        frame.header().header().encode(buffer.memory_mut(), false);
-        copy_body(&mut buffer, layout, body.as_ref());
+        if let Some(reason) = reason {
+            return Err(PreparationRefused {
+                reason,
+                operation: prepared,
+            });
+        }
         self.subframes.push(Subframe {
-            mpdu: ModelMpdu {
-                buffer,
-                layout,
-                body,
-            },
-        });
-        Ok(())
-    }
-
-    fn push_retransmission<C>(
-        &mut self,
-        mpdu: <ModelTypes<X> as TxBufferPool<'id, C>>::Numbered,
-    ) -> Result<(), PreparationRefused<ModelAnyBuffer<'id>>>
-    where
-        C: TxBufferClass,
-        ModelTypes<X>: TxBufferPool<'id, C>,
-    {
-        let mpdu = <ModelTypes<X> as TxBufferPool<'id, C>>::erase_numbered(mpdu);
-        let checked = if self.subframes.len() >= MODEL_AMPDU_SUBFRAMES {
-            Err(PreparationError::AggregateFull)
-        } else {
-            match mpdu.numbered_layout() {
-                Some((layout, _)) if layout.kind == MpduKind::Individual => Ok(*layout),
-                _ => Err(PreparationError::RetransmissionKind),
-            }
-        };
-        let layout = match checked {
-            Ok(layout) => layout,
-            Err(reason) => {
-                return Err(PreparationRefused {
-                    reason,
-                    operation: mpdu,
-                });
-            }
-        };
-        self.subframes.push(Subframe {
-            mpdu: ModelMpdu::from_numbered(mpdu, layout),
+            mpdu: prepared.mpdu,
         });
         Ok(())
     }

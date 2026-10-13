@@ -17,6 +17,52 @@ fn frame<'p>(
     .unwrap()
 }
 
+fn try_source<'p, 'id: 'p>(
+    phase: &mut ModelPhase<'p, 'id>,
+    ticket: Slot<'id, ModelTickets>,
+    source: PoolSource<'p, 'id, ModelTypes, ModelSmall, ModelCaps>,
+    key: Option<&ModelPairwiseKey<'id, Station>>,
+) -> Result<
+    (),
+    (
+        PreparationError,
+        Slot<'id, ModelTickets>,
+        ModelAnyBuffer<'id>,
+        Option<ModelBody>,
+    ),
+> {
+    let source = match <ModelTypes as TxBufferPool<'id, ModelSmall>>::prepare(source) {
+        Ok(source) => source,
+        Err(refused) => {
+            let (buffer, body) = match refused.operation {
+                TxSource::Fresh { buffer, body, .. } => (ModelAnyBuffer::Small(buffer), body),
+                TxSource::Retransmission { mpdu, .. } => {
+                    (ModelAnyBuffer::SmallNumbered(mpdu), None)
+                }
+            };
+            return Err((refused.reason, ticket, buffer, body));
+        }
+    };
+    match phase.station().submit(oer_ieee80211_lower_mac::Attempt {
+        context: (),
+        ticket,
+        source,
+        access_category: WmmAccessCategory::BestEffort,
+        protection: Protection::None,
+        key: key.map(AttemptKey::Pairwise),
+        power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+        coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+    }) {
+        Ok(()) => Ok(()),
+        Err(SubmitError::Refused(refused)) => {
+            let operation = refused.operation;
+            let (buffer, body) = operation.source.into_parts();
+            Err((refused.reason, operation.ticket, buffer, body))
+        }
+        Err(SubmitError::Poisoned(_)) => panic!("preparation must not poison the model"),
+    }
+}
+
 struct Boundaries;
 
 impl Work for Boundaries {
@@ -75,48 +121,35 @@ impl Work for Boundaries {
             let before = phase.held.commands.items.borrow().len();
             let pn_before = key.identity.0.last.get();
             let frame = frame(phase, len, protected);
-            let result = phase
-                .station()
-                .submit::<ModelSmall>(oer_ieee80211_lower_mac::Attempt {
-                    context: (),
-                    ticket,
-                    source: TxSource::Fresh {
-                        buffer,
-                        frame,
-                        body: Some(body),
-                    },
-                    access_category: WmmAccessCategory::BestEffort,
-                    protection: Protection::None,
-                    key: keyed.then_some(AttemptKey::Pairwise(&key)),
-                    power: SupportedPower::new(TxPower::Calibrated).unwrap(),
-                    coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
-                });
+            let result = try_source(
+                phase,
+                ticket,
+                TxSource::Fresh {
+                    buffer,
+                    frame,
+                    body: Some(body),
+                },
+                keyed.then_some(&key),
+            );
             if let Some(reason) = refusal {
-                let Err(SubmitError::Refused(refused)) = result else {
+                let Err((returned_reason, returned_ticket, returned, body)) = result else {
                     panic!("typed refusal")
                 };
-                assert_eq!(refused.reason, reason);
+                assert_eq!(returned_reason, reason);
                 assert_eq!(key.identity.0.last.get(), pn_before);
                 assert_eq!(phase.held.commands.items.borrow().len(), before);
                 assert!(phase.held.events.is_empty(), "no synthetic terminal");
-                let operation = refused.operation;
-                ticket = operation.ticket;
-                let TxSource::Fresh {
-                    buffer: returned,
-                    body,
-                    ..
-                } = operation.source
-                else {
-                    unreachable!()
-                };
+                ticket = returned_ticket;
                 let ModelAnyBuffer::Small(returned) = returned else {
                     unreachable!()
                 };
                 buffer = returned;
-                assert!(buffer.memory.iter().all(|byte| *byte == 0xa5));
+                if reason != PreparationError::ProtectionMismatch {
+                    assert!(buffer.memory.iter().all(|byte| *byte == 0xa5));
+                }
                 assert_eq!(body.unwrap().0.as_ptr(), body_pointer);
             } else {
-                result.unwrap();
+                assert!(result.is_ok());
                 let (returned_ticket, mut buffers, bodies, _) = aggregate_completion(phase).await;
                 ticket = returned_ticket;
                 buffer = match buffers.remove(0) {
@@ -149,29 +182,20 @@ impl Work for Boundaries {
         let pointer = buffer.memory.as_ptr();
         let pn = key.identity.0.last.get();
         let frame = frame(phase, 40, true);
-        let result = phase
-            .station()
-            .submit::<ModelSmall>(oer_ieee80211_lower_mac::Attempt {
-                context: (),
-                ticket,
-                source: TxSource::Fresh {
-                    buffer,
-                    frame,
-                    body: None,
-                },
-                access_category: WmmAccessCategory::BestEffort,
-                protection: Protection::None,
-                key: Some(AttemptKey::Pairwise(&key)),
-                power: SupportedPower::new(TxPower::Calibrated).unwrap(),
-                coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
-            });
-        let Err(SubmitError::Refused(refused)) = result else {
+        let result = try_source(
+            phase,
+            ticket,
+            TxSource::Fresh {
+                buffer,
+                frame,
+                body: None,
+            },
+            Some(&key),
+        );
+        let Err((reason, _ticket, buffer, _body)) = result else {
             panic!("actual memory refuses the frame")
         };
-        assert_eq!(refused.reason, PreparationError::BufferTooSmall);
-        let TxSource::Fresh { buffer, .. } = refused.operation.source else {
-            unreachable!()
-        };
+        assert_eq!(reason, PreparationError::BufferTooSmall);
         assert_eq!(buffer.memory().as_ptr(), pointer);
         assert_eq!(key.identity.0.last.get(), pn);
         assert!(phase.held.events.is_empty());
@@ -259,30 +283,30 @@ impl Work for RetryIdentity {
         let TxFrame::Individual { plan, .. } = data_frame(phase, true) else {
             unreachable!()
         };
-        let result = phase
-            .station()
-            .submit::<ModelSmall>(oer_ieee80211_lower_mac::Attempt {
-                context: (),
-                ticket,
-                source: TxSource::Retransmission {
+        let result = phase.station().submit(oer_ieee80211_lower_mac::Attempt {
+            context: (),
+            ticket,
+            source: <ModelTypes as TxBufferPool<'id, ModelSmall>>::prepare(
+                TxSource::Retransmission {
                     mpdu,
                     plan: RetransmissionPlan::Individual(plan),
                 },
-                access_category: WmmAccessCategory::Video,
-                protection: Protection::None,
-                key: Some(AttemptKey::Pairwise(&replacement)),
-                power: SupportedPower::new(TxPower::Calibrated).unwrap(),
-                coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
-            });
+            )
+            .ok()
+            .unwrap(),
+            access_category: WmmAccessCategory::Video,
+            protection: Protection::None,
+            key: Some(AttemptKey::Pairwise(&replacement)),
+            power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+            coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+        });
         let Err(SubmitError::Refused(refused)) = result else {
             panic!("new key installation refuses the old MPDU")
         };
         assert_eq!(refused.reason, PreparationError::RetransmissionKey);
-        let TxSource::Retransmission {
-            mpdu: ModelAnyBuffer::SmallNumbered(mpdu),
-            ..
-        } = refused.operation.source
-        else {
+        let (returned, body) = refused.operation.source.into_parts();
+        assert!(body.is_none());
+        let ModelAnyBuffer::SmallNumbered(mpdu) = returned else {
             unreachable!()
         };
         assert_eq!(mpdu.packet_number(), pn);
@@ -301,10 +325,7 @@ impl Work for RetryIdentity {
         let mut station = phase.station();
         let rate = station.ampdu_rate(rate).ok().unwrap();
         let mut aggregate = station.aggregate(Tid::new(0).unwrap(), rate);
-        aggregate
-            .push_retransmission::<ModelSmall>(mpdu)
-            .ok()
-            .unwrap();
+        aggregate.push(prepare_retry(mpdu, &rate)).ok().unwrap();
         let result = station.submit_ampdu(AggregateAttempt {
             context: (),
             ticket: refused.operation.ticket,
@@ -372,19 +393,31 @@ impl Work for AggregateBoundaries {
         let memory = buffer.memory.as_ptr();
         let body = ModelBody(alloc::vec![0x99; 16]);
         let body_pointer = body.0.as_ptr();
-        let refused = aggregate
-            .push::<ModelSmall>(buffer, subframe_frame(0), Some(body))
+        let refused = prepare_subframe::<()>(buffer, subframe_frame(0), Some(body), &rate)
             .err()
             .unwrap();
         assert_eq!(refused.reason, PreparationError::BodyOverlap);
         assert_eq!(aggregate.subframes(), 0);
-        let (buffer, original, body) = refused.operation;
+        let TxSource::Fresh {
+            buffer,
+            frame,
+            body,
+        } = refused.operation
+        else {
+            unreachable!()
+        };
+        let TxFrame::Individual {
+            frame: original, ..
+        } = frame.into_frame()
+        else {
+            unreachable!()
+        };
         assert_eq!(buffer.memory.as_ptr(), memory);
         assert!(buffer.memory.iter().all(|byte| *byte == 0xa5));
         assert_eq!(body.as_ref().unwrap().0.as_ptr(), body_pointer);
         let frame = SizedFrame::new(*original.header(), MpduLength::new(48).unwrap()).unwrap();
         aggregate
-            .push::<ModelSmall>(buffer, frame, body)
+            .push(prepare_subframe(buffer, frame, body, &rate).ok().unwrap())
             .ok()
             .unwrap();
         let refused = station.submit_ampdu(AggregateAttempt {
@@ -419,7 +452,11 @@ impl Work for AggregateBoundaries {
         let rate = station.ampdu_rate(rate).ok().unwrap();
         let mut aggregate = station.aggregate(Tid::new(0).unwrap(), rate);
         aggregate
-            .push::<ModelSmall>(buffer, frame, Some(body))
+            .push(
+                prepare_subframe(buffer, frame, Some(body), &rate)
+                    .ok()
+                    .unwrap(),
+            )
             .ok()
             .unwrap();
         operation.aggregate = aggregate;

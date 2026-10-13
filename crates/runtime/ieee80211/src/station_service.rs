@@ -45,9 +45,9 @@ use oer_ieee80211_arbiter::{
 use oer_ieee80211_lower_mac::{
     AttemptKey, Ccmp128Key, ClassFrame, CoexPriority, GateClosed, GateOpen, Ieee80211Capabilities,
     InterfacePhase, KeyTypes, LowerMacBackend, LowerMacEvent, LowerMacPhase, PhaseTypes,
-    PreparationError, Protection, Removed, RemovedKey, RxBuffer, RxMetadata, StationPhase,
-    SubmitError, SupportedChannel, SupportedCoex, SupportedPower, TxBufferClass, TxBufferPool,
-    TxCompletion, TxFrame, TxPower, TxSource, VifRole,
+    PoolSource, PreparationError, PreparedTx, Protection, Removed, RemovedKey, RxBuffer,
+    RxMetadata, StationPhase, SubmitError, SupportedChannel, SupportedCoex, SupportedPower,
+    TxBufferClass, TxBufferPool, TxCompletion, TxFrame, TxPower, TxSource, VifRole,
 };
 use oer_ieee80211_mac::qos::{WmmAccessCategory, WmmUserPriority};
 use oer_ieee80211_port::{Disabled, Enabled, Failed, Owner, PoisonedOwner, PortBackend};
@@ -709,92 +709,93 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
             //
             // [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6141039497
             let depth = usize::from(B::TX_QUEUE_DEPTH.get());
-            while let Some(link) = self.station.link()
-                && let Some(DataAction::Transmit(transmit)) = {
+            loop {
+                // This scope owns the short LinkView borrow. Only an owned
+                // follow-up leaves it; handling it may then borrow all of self.
+                let submitted = {
+                    let Some(link) = self.station.link() else {
+                        break;
+                    };
                     let at_port =
                         WmmAccessCategory::ALL.map(|category| self.data.at_port(category));
-                    self.data
+                    let Some(DataAction::Transmit(transmit)) = self
+                        .data
                         .poll_action(now, |category| at_port[category as usize] < depth)
-                }
-            {
-                progress = true;
-                let key = match (&link.protection, transmit.protected) {
-                    (LinkProtection::Ccmp { key, .. }, true) => Some(AttemptKey::Pairwise(*key)),
-                    _ => None,
-                };
-                // A data MPDU no rate of the channel carries, or one that
-                // does not fit its class, does not go: its tokens come back
-                // and it is counted.
-                let frame = self
-                    .rates
-                    .plan(FrameRates::Data, |rate| phase.rate(rate))
-                    .ok_or(PreparationError::NoRate)
-                    .and_then(|plan| {
-                        ClassFrame::<B::Large, B::Caps>::new(TxFrame::Individual {
-                            frame: transmit.frame,
-                            plan,
-                        })
-                        .map_err(|_| PreparationError::BufferTooSmall)
-                    });
-                let frame = match frame {
-                    Ok(frame) => frame,
-                    Err(reason) => {
-                        self.follow(
-                            now,
-                            Follow::Refused {
-                                context: TxContext::Data(transmit.context),
-                                ticket: transmit.ticket,
-                                buffer: <B::Types as TxBufferPool<'id, B::Large>>::erase(
-                                    transmit.buffer,
-                                ),
-                                reason,
-                            },
-                            io,
-                        );
-                        continue;
+                    else {
+                        break;
+                    };
+                    progress = true;
+                    let key = match (&link.protection, transmit.protected) {
+                        (LinkProtection::Ccmp { key, .. }, true) => {
+                            Some(AttemptKey::Pairwise(*key))
+                        }
+                        _ => None,
+                    };
+                    let frame = self
+                        .rates
+                        .plan(FrameRates::Data, |rate| phase.rate(rate))
+                        .ok_or(PreparationError::NoRate)
+                        .and_then(|plan| {
+                            ClassFrame::<B::Large, B::Caps>::new(TxFrame::Individual {
+                                frame: transmit.frame,
+                                plan,
+                            })
+                            .map_err(|_| PreparationError::BufferTooSmall)
+                        });
+                    let prepared = match frame {
+                        Ok(frame) => prepare_source::<B, B::Large>(TxSource::Fresh {
+                            buffer: transmit.buffer,
+                            frame,
+                            body: None,
+                        }),
+                        Err(reason) => Err((
+                            reason,
+                            <B::Types as TxBufferPool<'id, B::Large>>::erase(transmit.buffer),
+                        )),
+                    };
+                    match prepared {
+                        Err((reason, buffer)) => Ok(Follow::Refused {
+                            context: TxContext::Data(transmit.context),
+                            ticket: transmit.ticket,
+                            buffer,
+                            reason,
+                        }),
+                        Ok(source) => {
+                            let submitted =
+                                phase.station().submit(oer_ieee80211_lower_mac::Attempt {
+                                    context: TxContext::Data(transmit.context),
+                                    ticket: transmit.ticket,
+                                    source,
+                                    access_category: transmit.access_category,
+                                    protection: Protection::None,
+                                    key,
+                                    power: Levels::<B::Caps>::POWER,
+                                    coex: Levels::<B::Caps>::NORMAL,
+                                });
+                            match submitted {
+                                Ok(()) => Ok(Follow::Nothing),
+                                Err(SubmitError::Poisoned(_)) => Err(()),
+                                Err(SubmitError::Refused(refused)) => {
+                                    let operation = refused.operation;
+                                    let (buffer, body) = operation.source.into_parts();
+                                    drop(body);
+                                    Ok(Follow::Refused {
+                                        context: operation.context,
+                                        ticket: operation.ticket,
+                                        buffer,
+                                        reason: refused.reason,
+                                    })
+                                }
+                            }
+                        }
                     }
                 };
-                let mut station = phase.station();
-                let submitted = station.submit::<B::Large>(oer_ieee80211_lower_mac::Attempt {
-                    context: TxContext::Data(transmit.context),
-                    ticket: transmit.ticket,
-                    source: TxSource::Fresh {
-                        buffer: transmit.buffer,
-                        frame,
-                        body: None,
-                    },
-                    access_category: transmit.access_category,
-                    protection: Protection::None,
-                    key,
-                    power: Levels::<B::Caps>::POWER,
-                    coex: Levels::<B::Caps>::NORMAL,
-                });
                 match submitted {
-                    Ok(()) => {}
-                    Err(SubmitError::Poisoned(_)) => {
+                    Ok(follow) => self.follow(now, follow, io),
+                    Err(()) => {
                         self.arbiter.poisoned();
                         self.settle(now, io);
                         return Next::Poisoned;
-                    }
-                    Err(SubmitError::Refused(refused)) => {
-                        let operation = refused.operation;
-                        let buffer = match operation.source {
-                            TxSource::Fresh { buffer, body, .. } => {
-                                drop(body);
-                                buffer
-                            }
-                            TxSource::Retransmission { mpdu, .. } => mpdu,
-                        };
-                        self.follow(
-                            now,
-                            Follow::Refused {
-                                context: operation.context,
-                                ticket: operation.ticket,
-                                buffer,
-                                reason: refused.reason,
-                            },
-                            io,
-                        );
                     }
                 }
             }
@@ -1106,9 +1107,32 @@ enum Follow<'id, B: StationPort<'id>> {
     Disconnected,
 }
 
-/// Submit a frame of the station at the rates `rates` selects, under `key`
-/// when it names one. A frame no rate of the channel carries, or one that
-/// does not fit its class, does not go: the station hears so.
+/// Prepare within the class pool; a refusal retains the original owners.
+fn prepare_source<'p, 'id: 'p, B: StationPort<'id>, C: TxBufferClass>(
+    source: PoolSource<'p, 'id, B::Types, C, B::Caps>,
+) -> Result<
+    <B::Types as PhaseTypes<'id>>::Prepared<'p, oer_ieee80211_lower_mac::Station, B::Caps>,
+    (PreparationError, <B::Types as PhaseTypes<'id>>::AnyTxBuffer),
+>
+where
+    B::Types: TxBufferPool<'id, C>,
+{
+    <B::Types as TxBufferPool<'id, C>>::prepare(source).map_err(|refused| {
+        let buffer = match refused.operation {
+            TxSource::Fresh { buffer, body, .. } => {
+                drop(body);
+                <B::Types as TxBufferPool<'id, C>>::erase(buffer)
+            }
+            TxSource::Retransmission { mpdu, .. } => {
+                <B::Types as TxBufferPool<'id, C>>::erase_numbered(mpdu)
+            }
+        };
+        (refused.reason, buffer)
+    })
+}
+
+/// Submit a station frame with its phase rate and optional pairwise key.
+/// Preparation refusal returns the operation to the station without admission.
 fn submit_station<'p, 'id: 'p, B, P, S>(
     phase: &mut P,
     rates: &S,
@@ -1167,19 +1191,30 @@ where
             });
         }
     };
+    let source = match prepare_source::<B, B::Small>(TxSource::Fresh {
+        buffer,
+        frame,
+        body: None,
+    }) {
+        Ok(source) => source,
+        Err((reason, buffer)) => {
+            return Ok(Follow::Refused {
+                context: TxContext::Station(context),
+                ticket,
+                buffer,
+                reason,
+            });
+        }
+    };
     let coex = match class {
         StaFrameClass::Connection => Levels::<B::Caps>::CONNECTION,
         StaFrameClass::Normal => Levels::<B::Caps>::NORMAL,
     };
     let mut station = phase.station();
-    match station.submit::<B::Small>(oer_ieee80211_lower_mac::Attempt {
+    match station.submit(oer_ieee80211_lower_mac::Attempt {
         context: TxContext::Station(context),
         ticket,
-        source: TxSource::Fresh {
-            buffer,
-            frame,
-            body: None,
-        },
+        source,
         access_category: WmmAccessCategory::Voice,
         protection: Protection::None,
         key: key.map(AttemptKey::Pairwise),
@@ -1190,13 +1225,8 @@ where
         Err(SubmitError::Poisoned(_)) => Err(()),
         Err(SubmitError::Refused(refused)) => {
             let operation = refused.operation;
-            let buffer = match operation.source {
-                TxSource::Fresh { buffer, body, .. } => {
-                    drop(body);
-                    buffer
-                }
-                TxSource::Retransmission { mpdu, .. } => mpdu,
-            };
+            let (buffer, body) = operation.source.into_parts();
+            drop(body);
             Ok(Follow::Refused {
                 context: operation.context,
                 ticket: operation.ticket,

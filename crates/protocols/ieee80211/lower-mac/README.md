@@ -29,17 +29,17 @@ back; its operations are synchronous and never wait:
   when the backend copies their octets into DMA memory. An empty pool is the caller's
   own capacity; an occupied queue is the backend's, which keeps the attempt
   until the queue frees.
-- **Submission.** `submit` takes the ticket, context and `TxSource` together.
-  A fresh source owns its class buffer, `ClassFrame` and body. Preparation
-  checks the actual memory, Protected/key agreement, CCMP reserve directly
-  after the MAC header, and placement of the external body at the MPDU's
-  tail. `SubmitError::Refused` returns every resource and parameter before
-  admission or PN allocation; it creates no terminal. Its buffer uses the
-  backend's exhaustive return type, while its `ClassFrame` retains the
-  original class and phase. Poisoning remains the separate fail-stop path.
-  The model retains its checked layout beside that exact allocation through
-  numbering and publication; no unchecked body/CCMP offset crosses a queue.
-  There is no prepared buffer detached from its phase.
+- **Preparation and submission.** `TxBufferPool::prepare` checks a source
+  where its buffer class is concrete and returns a closed `Prepared` value.
+  It retains the phase, install, capabilities and interface role. A refused
+  preparation returns its original typed source, including the class buffer,
+  `ClassFrame` and body. Neither context nor ticket has left the caller yet.
+  `submit` then takes that proof, context, ticket and attempt parameters;
+  it has no class parameter. A refusal returns that whole operation without
+  allocating PN or creating a terminal. Poisoning remains separate fail-stop.
+  The model keeps checked MAC/CCMP and tail-body ranges beside the exact
+  allocation through publication. Its prepared type, rather than a generic
+  `TxBufferPool<C>` projection inside the backend, exposes that checked data.
   A retransmission takes the returned numbered MPDU and a phase-bound
   `RetransmissionPlan`: its header, payload, body and key-install identity
   remain inside the MPDU. There are no independent header/body arguments to
@@ -47,7 +47,8 @@ back; its operations are synchronous and never wait:
   plan, RTS/CTS, power and coexistence are parameters of the new attempt.
   A different key installation is refused even when it reuses the same slot.
   An aggregate builder retains its phase, install and interface role until
-  `submit_ampdu`; push failures return their inputs, and submission refusal
+  `submit_ampdu`; its non-generic `push` takes a prepared fresh or retry MPDU.
+  Push failures return that proof intact, and submission refusal
   returns the entire aggregate, context and ticket. Numbered subframes own
   their bodies on return; fresh subframes return indexed external bodies.
   `PhaseAggregate::into_parts` releases the builder's resources directly,

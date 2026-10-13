@@ -371,12 +371,33 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
         }
     }
 
-    /// The next action at `now`, if any. The service takes every action
-    /// before it waits again.
-    pub fn poll_action(&mut self, _now: Instant) -> Option<DataAction<D, K>> {
-        // The earliest MSDU first, whatever its TID.
+    /// The machine's MPDUs of `access_category` at the port: submitted and
+    /// not yet ended, of the current link or an earlier one.
+    pub fn at_port(&self, access_category: WmmAccessCategory) -> usize {
+        self.in_flight
+            .iter()
+            .flat_map(Fifo::iter)
+            .filter(|in_flight| in_flight.access_category == access_category)
+            .count()
+    }
+
+    /// The next action at `now`, if any, of a category `admit` takes: the
+    /// service admits a category while its data at the port is below the
+    /// backend's queue depth. The service takes every action before it
+    /// waits again.
+    pub fn poll_action(
+        &mut self,
+        _now: Instant,
+        admit: impl Fn(WmmAccessCategory) -> bool,
+    ) -> Option<DataAction<D, K>> {
+        // The earliest MSDU of an admitted category first, whatever its TID.
         let tid = (0..8)
-            .filter_map(|tid| self.owed[tid].front().map(|owed| (owed.order, tid)))
+            .filter_map(|tid| {
+                self.owed[tid]
+                    .front()
+                    .filter(|owed| admit(owed.transmit.access_category))
+                    .map(|owed| (owed.order, tid))
+            })
             .min_by_key(|&(order, _)| order.wrapping_sub(self.next_order))?
             .1;
         let Owed { transmit, order } = self.owed[tid].pop()?;

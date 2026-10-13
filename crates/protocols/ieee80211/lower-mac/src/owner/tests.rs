@@ -118,5 +118,7 @@ fn a_header_decodes_as_it_was_encoded() {
     group[4..10].copy_from_slice(&[0xff; 6]);
     assert!(HeaderSpec::<IndividualAddress>::decode(&group, IndividualAddress::new).is_none());
     assert!(HeaderSpec::<GroupAddress>::decode(&group, GroupAddress::new).is_some());
-    assert!(HeaderSpec::<IndividualAddress>::decode(&[0xd4, 0, 0, 0], IndividualAddress::new).is_none());
+    assert!(
+        HeaderSpec::<IndividualAddress>::decode(&[0xd4, 0, 0, 0], IndividualAddress::new).is_none()
+    );
 }

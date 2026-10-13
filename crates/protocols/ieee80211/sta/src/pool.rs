@@ -103,6 +103,11 @@ impl<X, const N: usize> Fifo<X, N> {
         Ok(())
     }
 
+    /// The items, front first.
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &X> {
+        (0..self.len).filter_map(move |at| self.items[(self.head + at) % N].as_ref())
+    }
+
     /// The front item, in place.
     pub(crate) fn front(&self) -> Option<&X> {
         if self.len == 0 {

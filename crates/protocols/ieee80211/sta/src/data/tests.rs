@@ -123,7 +123,7 @@ fn epoch() -> CcmpRxReplayEpoch {
 }
 
 fn transmit(data: &mut StaData<Data, Caps>) -> DataTransmit<Data, Caps> {
-    match data.poll_action(NOW) {
+    match data.poll_action(NOW, |_| true) {
         Some(DataAction::Transmit(transmit)) => transmit,
         None => panic!("an attempt is owed"),
     }
@@ -142,7 +142,7 @@ fn a_protected_qos_msdu_leaves_room_for_the_ccmp_header_and_contends_by_its_prio
     )
     .unwrap();
     let sent = transmit(&mut data);
-    assert!(data.poll_action(NOW).is_none());
+    assert!(data.poll_action(NOW, |_| true).is_none());
     let frame = &sent.buffer.0;
     // QoS Data, To DS, Protected.
     assert_eq!(u16::from_le_bytes([frame[0], frame[1]]), 0x4188);
@@ -435,7 +435,7 @@ fn an_attempt_aborted_before_the_air_goes_again_first_with_its_sequence_number()
     assert_eq!(tid_and_sequence(&again.buffer.0), sent);
     let newer = transmit(&mut data);
     assert_eq!(tid_and_sequence(&newer.buffer.0), (6, sent.1 + 1));
-    assert!(data.poll_action(NOW).is_none());
+    assert!(data.poll_action(NOW, |_| true).is_none());
     // One that made a transmission ends: its tokens come back.
     data.input::<Station>(
         NOW,
@@ -446,7 +446,7 @@ fn an_attempt_aborted_before_the_air_goes_again_first_with_its_sequence_number()
         },
     )
     .unwrap();
-    assert!(data.poll_action(NOW).is_none());
+    assert!(data.poll_action(NOW, |_| true).is_none());
 }
 
 #[test]
@@ -490,7 +490,7 @@ fn a_link_that_ends_drains_its_queue_and_its_submitted_attempts_never_go_again()
     assert!(!data.accepts());
     // The link ends: the owed ones drain into their tokens, counted.
     data.leave();
-    assert!(data.poll_action(NOW).is_none());
+    assert!(data.poll_action(NOW, |_| true).is_none());
     assert_eq!(data.counters().left_behind, 2);
     // The submitted one, aborted before the air, returns its tokens and
     // does not go again: the retry rule holds within one link.
@@ -503,7 +503,7 @@ fn a_link_that_ends_drains_its_queue_and_its_submitted_attempts_never_go_again()
         },
     )
     .unwrap();
-    assert!(data.poll_action(NOW).is_none());
+    assert!(data.poll_action(NOW, |_| true).is_none());
     assert_eq!(data.counters().left_behind, 3);
     assert_eq!(data.counters().lost_tokens, 0);
     // Every token is back: a new link takes three MSDUs again.
@@ -520,4 +520,45 @@ fn a_link_that_ends_drains_its_queue_and_its_submitted_attempts_never_go_again()
         .unwrap();
     }
     assert!(!data.accepts());
+}
+
+#[test]
+fn a_category_the_service_does_not_admit_waits_and_the_others_go_in_their_order() {
+    let mut data = StaData::<Data, Caps>::new(
+        [1, 2, 3],
+        [
+            Buffer(std::vec![0; 1600]),
+            Buffer(std::vec![0; 1600]),
+            Buffer(std::vec![0; 1600]),
+        ],
+    );
+    let mut replay = epoch();
+    let mut link = qos_link(&(), &mut replay);
+    // Voice (TID 6), then best effort (TID 0), then Voice again.
+    for priority in [6, 0, 7] {
+        data.input(
+            NOW,
+            DataInput::Msdu {
+                msdu: msdu(priority),
+                link: &mut link,
+            },
+        )
+        .unwrap();
+    }
+    // Voice is full at the port: best effort goes, Voice waits.
+    let voice_full = |category| category != WmmAccessCategory::Voice;
+    let first = match data.poll_action(NOW, voice_full) {
+        Some(DataAction::Transmit(transmit)) => transmit,
+        None => panic!("best effort goes"),
+    };
+    assert_eq!(first.access_category, WmmAccessCategory::BestEffort);
+    assert!(data.poll_action(NOW, voice_full).is_none());
+    assert_eq!(data.at_port(WmmAccessCategory::BestEffort), 1);
+    assert_eq!(data.at_port(WmmAccessCategory::Voice), 0);
+    // Voice admitted: its MPDUs go in their order.
+    let voice = transmit(&mut data);
+    assert_eq!(tid_and_sequence(&voice.buffer.0).0, 6);
+    let voice = transmit(&mut data);
+    assert_eq!(tid_and_sequence(&voice.buffer.0).0, 7);
+    assert_eq!(data.at_port(WmmAccessCategory::Voice), 2);
 }

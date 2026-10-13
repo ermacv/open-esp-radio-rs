@@ -954,8 +954,16 @@ impl<C: Ieee80211Capabilities> PortBackend for ModelBackend<C> {
     fn abandon(&mut self) {}
 }
 
+/// The depth of the model driver's software queue of each access
+/// category: the composition's initial value.
+pub const MODEL_TX_QUEUE_DEPTH: core::num::NonZeroU8 = match core::num::NonZeroU8::new(2) {
+    Some(depth) => depth,
+    None => panic!("a queue holds an attempt"),
+};
+
 impl<C: Ieee80211Capabilities> LowerMacBackend for ModelBackend<C> {
     type Caps = C;
+    const TX_QUEUE_DEPTH: core::num::NonZeroU8 = MODEL_TX_QUEUE_DEPTH;
 }
 
 /// The model's hardware, which only the driver owns.

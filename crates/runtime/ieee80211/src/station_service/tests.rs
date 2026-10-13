@@ -37,8 +37,9 @@ use std::vec::Vec;
 
 use super::*;
 use crate::lower_mac_owner::model::{
-    AirFrame, MODEL_RX_EVENTS, ModelAir, ModelAnyBuffer, ModelBackend, ModelCaps24, ModelLarge,
-    ModelPhase, ModelResources, ModelRxMeta, ModelSetup, ModelSmall, ModelTypes,
+    AirFrame, MODEL_RX_EVENTS, MODEL_TX_QUEUE_DEPTH, ModelAir, ModelAnyBuffer, ModelBackend,
+    ModelCaps24, ModelLarge, ModelPhase, ModelResources, ModelRxMeta, ModelSetup, ModelSmall,
+    ModelTypes,
 };
 
 const LOCAL: [u8; 6] = [0x02, 0, 0, 0x12, 0x34, 0x56];
@@ -378,11 +379,17 @@ impl World<'_> {
     /// The network stack sends one Ethernet frame to `destination` if its
     /// queue has room.
     fn try_send_msdu(&self, destination: [u8; 6]) -> bool {
+        self.try_send_msdu_at(destination, 0)
+    }
+
+    /// The network stack sends one Ethernet frame of user `priority` to
+    /// `destination` if its queue has room.
+    fn try_send_msdu_at(&self, destination: [u8; 6], priority: u8) -> bool {
         let mut stack = self.stack.borrow_mut();
         let Some(slot) = stack.try_send() else {
             return false;
         };
-        slot.priority = WmmUserPriority::new(0).unwrap();
+        slot.priority = WmmUserPriority::new(priority).unwrap();
         slot.frame[..6].copy_from_slice(&destination);
         slot.frame[6..12].copy_from_slice(&LOCAL);
         slot.frame[12..14].copy_from_slice(&0x0800_u16.to_be_bytes());
@@ -395,10 +402,21 @@ impl World<'_> {
     /// Scan, authenticate and associate: the probe, the Authentication and
     /// the Association Request as they went.
     async fn associate(&self, seen: &mut usize, protected: bool) -> [AirFrame; 3] {
+        self.associate_with(seen, beacon(protected), protected)
+            .await
+    }
+
+    /// [`Self::associate`] after `beacon`.
+    async fn associate_with(
+        &self,
+        seen: &mut usize,
+        beacon: Vec<u8>,
+        protected: bool,
+    ) -> [AirFrame; 3] {
         self.command(ServiceCommand::Station(StaCommand::Connect))
             .await;
         let probe = self.sent(seen, PROBE_REQUEST).await;
-        self.air.receive(&beacon(protected), meta());
+        self.air.receive(&beacon, meta());
         let authentication = self.sent(seen, AUTHENTICATION).await;
         self.air.receive(&authentication_response(), meta());
         let association = self.sent(seen, ASSOCIATION_REQUEST).await;
@@ -952,4 +970,99 @@ fn beside_an_access_point_msdus_survive_an_absence() {
             }
         })
     });
+}
+
+const QOS_DATA: u16 = 0x0088;
+
+/// A WMM Parameter element: the network is a QoS BSS.
+const WMM: [u8; 26] = [
+    0xdd, 24, 0x00, 0x50, 0xf2, 0x02, 0x01, 0x01, 0x00, 0x00, 0x03, 0xa4, 0x00, 0x00, 0x27, 0xa4,
+    0x00, 0x00, 0x42, 0x43, 0x5e, 0x00, 0x62, 0x32, 0x2f, 0x00,
+];
+
+/// Whether `frame` is a protected QoS Data frame carrying EAPOL.
+fn carries_eapol(frame: &AirFrame) -> bool {
+    kind(frame) == QOS_DATA && frame.frame.get(40..42) == Some(&[0x88, 0x8e][..])
+}
+
+/// The data attempts the air saw from `from` before the first frame
+/// `until` takes.
+fn data_before(air: &[AirFrame], from: usize, until: impl Fn(&AirFrame) -> bool) -> usize {
+    air[from..]
+        .iter()
+        .take_while(|frame| !until(frame))
+        .filter(|frame| kind(frame) == QOS_DATA && !carries_eapol(frame))
+        .count()
+}
+
+/// The station's frames share the Voice queue with data of priority 6–7
+/// and get no queue of their own; the service keeps at most the backend's
+/// queue depth of data attempts at the port, so once a held Voice queue is
+/// released EAPOL and Deauthentication go after at most depth + 1 data
+/// attempts (owner decision on #563, comment 6141039497).
+#[test]
+fn eapol_and_deauthentication_wait_for_at_most_the_queue_depth_and_one_data_attempt() {
+    run(
+        StaSecurity::Wpa2Personal {
+            pmk: Pmk::from_bytes(PMK),
+        },
+        |world| {
+            Box::pin(async move {
+                let bound = usize::from(MODEL_TX_QUEUE_DEPTH.get()) + 1;
+                let destination = [0x02, 0, 0, 0, 0, 0x07];
+                let mut beacon = beacon(true);
+                beacon.extend_from_slice(&WMM);
+                let mut seen = 0;
+                world.associate_with(&mut seen, beacon, true).await;
+                let ptk = world.handshake(&mut seen).await;
+                // Voice held, data of priority 6 fills it to the limit:
+                // the data machine's tickets, then the stack's queue.
+                let fill = async || {
+                    world.air.hold(WmmAccessCategory::Voice, true);
+                    let mut sent = 0;
+                    while world.try_send_msdu_at(destination, 6) {
+                        sent += 1;
+                        for _ in 0..20 {
+                            yield_now().await;
+                        }
+                    }
+                    assert_eq!(sent, 4 + 2);
+                };
+                fill().await;
+                world.air.receive(&group_message1(&ptk, 3, 2), meta());
+                for _ in 0..20 {
+                    yield_now().await;
+                }
+                let released = world.air.sent().len();
+                world.air.hold(WmmAccessCategory::Voice, false);
+                while !world.air.sent()[released..].iter().any(carries_eapol) {
+                    world.sent(&mut seen, QOS_DATA).await;
+                }
+                let before = data_before(&world.air.sent(), released, carries_eapol);
+                assert!(before <= bound, "EAPOL after {before} data attempts");
+
+                // The same for the Deauthentication, the queue full again.
+                for _ in 0..6 {
+                    world.sent(&mut seen, QOS_DATA).await;
+                }
+                fill().await;
+                world
+                    .command(ServiceCommand::Station(StaCommand::Disconnect))
+                    .await;
+                for _ in 0..20 {
+                    yield_now().await;
+                }
+                let released = world.air.sent().len();
+                world.air.hold(WmmAccessCategory::Voice, false);
+                world.sent(&mut seen, DEAUTHENTICATION).await;
+                let before = data_before(&world.air.sent(), released, |frame| {
+                    kind(frame) == DEAUTHENTICATION
+                });
+                assert!(
+                    before <= bound,
+                    "Deauthentication after {before} data attempts"
+                );
+            })
+        },
+    );
 }

@@ -623,9 +623,21 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                 }
             }
             // Data goes only while the link is up: otherwise its MPDUs wait
-            // in the machine, none lost.
+            // in the machine, none lost. At most the backend's queue depth
+            // of data attempts of a category waits at the port, so a
+            // station frame, submitted at once, waits for at most that
+            // depth and the one on the air ([owner decision on #563]); the
+            // limit is the service's, for every data source it runs.
+            //
+            // [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6141039497
+            let depth = usize::from(B::TX_QUEUE_DEPTH.get());
             while let Some(link) = self.station.link()
-                && let Some(DataAction::Transmit(transmit)) = self.data.poll_action(now)
+                && let Some(DataAction::Transmit(transmit)) = {
+                    let at_port =
+                        WmmAccessCategory::ALL.map(|category| self.data.at_port(category));
+                    self.data
+                        .poll_action(now, |category| at_port[category as usize] < depth)
+                }
             {
                 progress = true;
                 let key = match (&link.protection, transmit.protected) {

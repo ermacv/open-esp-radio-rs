@@ -9,9 +9,8 @@ use oer_ieee80211_arbiter::{
     NoReservation,
 };
 use oer_ieee80211_lower_mac::{
-    RxMeta,
     BandSet, Channel, ChannelWidth, CoexPriority, CoexPrioritySet, HardwareServices,
-    LowerMacCapabilities, PhyFormatSet, RateSupport, WidthSet,
+    LowerMacCapabilities, PhyFormatSet, RateSupport, RxMeta, WidthSet,
 };
 use oer_ieee80211_mac::channel_switch::ChannelSwitchMode;
 use oer_ieee80211_mac::phy::{HeMcs, HtMcs};
@@ -349,7 +348,9 @@ impl World {
                     }
                     StaAction::Notify(notice) => self.seen.push(Seen::Notify(notice)),
                     // The frames sent before the station associated.
-                    StaAction::Associated(peer) => self.associated = Some((self.frames.len(), peer)),
+                    StaAction::Associated(peer) => {
+                        self.associated = Some((self.frames.len(), peer))
+                    }
                 }
             }
             while let Some(action) = self.arbiter.poll_action(now) {
@@ -430,8 +431,7 @@ impl World {
         let protected = frame[1] & 0x40 != 0;
         let qos = subtype & 0x0080 != 0;
         let ether_type = 30 + usize::from(qos) * 2 + usize::from(protected) * 8;
-        let eapol = subtype & 0x000c == 0x0008
-            && frame[ether_type..ether_type + 2] == [0x88, 0x8e];
+        let eapol = subtype & 0x000c == 0x0008 && frame[ether_type..ether_type + 2] == [0x88, 0x8e];
         if eapol {
             self.eapol.push((protected, keyed));
         }
@@ -1192,7 +1192,10 @@ impl crate::data::StaDataTokens for Tokens {
 
 /// The TID and sequence number of a QoS Data frame.
 fn tid_and_sequence(frame: &[u8]) -> (u8, u16) {
-    (frame[24] & 0x0f, u16::from_le_bytes([frame[22], frame[23]]) >> 4)
+    (
+        frame[24] & 0x0f,
+        u16::from_le_bytes([frame[22], frame[23]]) >> 4,
+    )
 }
 
 #[test]
@@ -1213,9 +1216,15 @@ fn eapol_and_data_on_tid_7_share_one_counter_and_tid_0_runs_on_across_a_rekey() 
             priority: WmmUserPriority::new(priority).unwrap(),
             payload: &[0xab; 20],
         };
-        data.input(at(60), DataInput::Msdu { msdu, link: &mut link })
-            .unwrap();
-        let Some(DataAction::Transmit(transmit)) = data.poll_action(at(60)) else {
+        data.input(
+            at(60),
+            DataInput::Msdu {
+                msdu,
+                link: &mut link,
+            },
+        )
+        .unwrap();
+        let Some(DataAction::Transmit(transmit)) = data.poll_action(at(60), |_| true) else {
             panic!("an MPDU is owed");
         };
         let sent = tid_and_sequence(&transmit.buffer.0);

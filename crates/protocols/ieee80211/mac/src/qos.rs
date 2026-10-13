@@ -16,6 +16,9 @@ pub enum WmmAccessCategory {
 }
 
 impl WmmAccessCategory {
+    /// Every category, in the order of its ACI (`ALL[c as usize] == c`).
+    pub const ALL: [Self; 4] = [Self::BestEffort, Self::Background, Self::Video, Self::Voice];
+
     pub const fn from_aci(aci: u8) -> Option<Self> {
         match aci {
             0 => Some(Self::BestEffort),

@@ -1052,6 +1052,15 @@ pub trait TxFrameBody {
 pub trait LowerMacBackend: PortBackend {
     /// The backend's capabilities marker.
     type Caps: Ieee80211Capabilities;
+
+    /// The depth of the driver's software queue of each access category, a
+    /// composition parameter ([owner decision on #563]). A service keeps at
+    /// most this many data attempts of a category at the port, across all
+    /// its data sources, so a station frame submitted at once waits for at
+    /// most this depth plus the one on the air.
+    ///
+    /// [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6141039497
+    const TX_QUEUE_DEPTH: core::num::NonZeroU8;
 }
 
 /// The disabled-only settings of a lower-MAC port.

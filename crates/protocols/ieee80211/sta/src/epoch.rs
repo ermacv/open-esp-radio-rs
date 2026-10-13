@@ -3,10 +3,8 @@
 //! Dropping/recreating a station cannot mint another source in that install.
 
 use core::marker::PhantomData;
+use oer_ieee80211_lower_mac::ConnectionEpochKind;
 use oer_radio_port::Slot;
-
-/// The single source slot granted to a station by its install.
-pub enum LinkEpochKind {}
 
 /// An exhausted source cannot begin another connection in this install.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -35,7 +33,7 @@ pub struct LinkEpochSource<'id> {
 
 impl<'id> LinkEpochSource<'id> {
     /// Consume the one station source slot the backend minted at install.
-    pub fn new(_slot: Slot<'id, LinkEpochKind>) -> Self {
+    pub fn new(_slot: Slot<'id, ConnectionEpochKind>) -> Self {
         Self {
             brand: PhantomData,
             last: 0,

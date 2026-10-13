@@ -60,16 +60,16 @@ use oer_time::RadioInstant;
 
 use oer_ieee80211_lower_mac::{
     AccessPoint, AccessPointPhase, AttemptKey, BandSet, BssColor, Ccmp128Key, Channel,
-    CoexPriority, CoexPrioritySet, FrameHeader, GateClosed, GateClosedKind, GateOpen, GateOpenKind,
-    HardwareServices, Ieee80211Capabilities, Ieee80211Radio, IndividualAddress,
-    InterfaceAggregateAttempt, InterfaceAttempt, InterfacePhase, KeyTypes, LinkMetric,
-    LowerMacBackend, LowerMacCapabilities, LowerMacEvent, LowerMacPhase, LowerMacSetup, PhaseRate,
-    PhaseTypes, PhyFormatSet, PoolSource, PreparationError, PreparationRefused, PreparedTx,
-    RateSupport, ReceiveFilter, Removed, RemovedKey, RetransmissionPlan, RoleKeys, RxBuffer,
-    RxEvidence, RxMeta, RxMetadata, SignalMetadata, Station, StationPhase, StationReceive,
-    SubmitError, SupportedBlockAck, SupportedChannel, SupportedEdca, SupportedFilter, TxBody,
-    TxBufferClass, TxBufferMemory, TxBufferPool, TxCompletion, TxFrame, TxSource, TxStatus,
-    VifRole, WidthSet,
+    CoexPriority, CoexPrioritySet, ConnectionEpochKind, FrameHeader, GateClosed, GateClosedKind,
+    GateOpen, GateOpenKind, HardwareServices, Ieee80211Capabilities, Ieee80211Radio,
+    IndividualAddress, InterfaceAggregateAttempt, InterfaceAttempt, InterfacePhase, KeyTypes,
+    LinkMetric, LowerMacBackend, LowerMacCapabilities, LowerMacEvent, LowerMacPhase, LowerMacSetup,
+    PhaseRate, PhaseTypes, PhyFormatSet, PoolSource, PreparationError, PreparationRefused,
+    PreparedTx, RateSupport, ReceiveFilter, Removed, RemovedKey, RetransmissionPlan, RoleKeys,
+    RxBuffer, RxEvidence, RxMeta, RxMetadata, SignalMetadata, Station, StationPhase,
+    StationReceive, SubmitError, SupportedBlockAck, SupportedChannel, SupportedEdca,
+    SupportedFilter, TxBody, TxBufferClass, TxBufferMemory, TxBufferPool, TxCompletion, TxFrame,
+    TxSource, TxStatus, VifRole, WidthSet,
 };
 use oer_ieee80211_lower_mac::{
     AmpduCapabilities, AmpduPhase, AmpduRate, BlockAckReport, PhaseAggregate, Tid,
@@ -522,10 +522,62 @@ fn ccmp_header(number: u64, key_id: u8) -> [u8; 8] {
 }
 
 /// Composition-selected contexts, including the install brand when needed.
-/// The model neither interprets nor clones the associated value.
+/// The model neither interprets nor clones the associated value. Its lifetime
+/// is the install, not the phase loan. A machine created inside the generic
+/// body cannot be borrowed for that lifetime:
+///
+/// ```compile_fail,E0597
+/// use oer_ieee80211_lower_mac::PhaseTypes;
+/// use oer_ieee80211_port::{Disabled, Ended, Owner, PortBody};
+/// use oer_ieee80211_runtime::lower_mac_owner::model::{
+///     ModelBackend, ModelCaps, ModelContext, ModelResources, ModelTypes,
+/// };
+/// struct Machine;
+/// struct Contexts;
+/// impl ModelContext for Contexts { type Context<'id> = &'id Machine; }
+/// type Backend = ModelBackend<ModelCaps, Contexts>;
+/// struct Body;
+/// impl PortBody<Backend> for Body {
+///     async fn run<'id>(self, owner: Owner<'_, 'id, Backend, Disabled>,
+///         _: ModelResources<'id>) -> Ended<'id, Backend> {
+///         let machine = Machine;
+///         let context: <ModelTypes<Contexts> as PhaseTypes<'id>>::Context = &machine;
+///         core::hint::black_box(context);
+///         owner.uninstall(())
+///     }
+/// }
+/// ```
+///
+/// A context can instead own the install-branded connection epoch. `None`
+/// covers operations before Connect, when Station has issued no epoch yet.
+/// The `Rc` also demonstrates that the portable contract imposes no `Send`:
+///
+/// ```
+/// use std::rc::Rc;
+/// use oer_ieee80211_lower_mac::PhaseTypes;
+/// use oer_ieee80211_port::{Disabled, Ended, Owner, PortBody};
+/// use oer_ieee80211_sta::epoch::LinkEpoch;
+/// use oer_ieee80211_runtime::lower_mac_owner::model::{
+///     ModelBackend, ModelCaps, ModelContext, ModelResources, ModelTypes,
+/// };
+/// struct Context<'id> { epoch: Option<LinkEpoch<'id>>, owner: Rc<()> }
+/// struct Contexts;
+/// impl ModelContext for Contexts { type Context<'id> = Context<'id>; }
+/// type Backend = ModelBackend<ModelCaps, Contexts>;
+/// struct Body;
+/// impl PortBody<Backend> for Body {
+///     async fn run<'id>(self, owner: Owner<'_, 'id, Backend, Disabled>,
+///         _: ModelResources<'id>) -> Ended<'id, Backend> {
+///         let context: <ModelTypes<Contexts> as PhaseTypes<'id>>::Context =
+///             Context { epoch: None, owner: Rc::new(()) };
+///         core::hint::black_box(context);
+///         owner.uninstall(())
+///     }
+/// }
+/// ```
 pub trait ModelContext {
     /// One operation's opaque context in the install `'id`.
-    type Context<'id>;
+    type Context<'id>: 'id;
 }
 
 impl ModelContext for () {
@@ -725,8 +777,8 @@ pub struct ModelFault;
 
 /// The tokens the install gives the body once.
 pub struct ModelResources<'id> {
-    /// The station's unique connection-epoch source for this install.
-    pub epochs: oer_ieee80211_sta::epoch::LinkEpochSource<'id>,
+    /// The install's single epoch-source slot; Station constructs its source.
+    pub connection_epoch: Slot<'id, ConnectionEpochKind>,
     /// The transmit tickets.
     pub tickets: Vec<Slot<'id, ModelTickets>>,
     /// The small transmit buffers.
@@ -1131,9 +1183,9 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
             open: RefCell::default(),
             draining: Cell::new(false),
         };
-        let [epoch_slot] = mint.slots::<oer_ieee80211_sta::epoch::LinkEpochKind, 1>();
+        let [epoch_slot] = mint.slots::<ConnectionEpochKind, 1>();
         let resources = ModelResources {
-            epochs: oer_ieee80211_sta::epoch::LinkEpochSource::new(epoch_slot),
+            connection_epoch: epoch_slot,
             tickets: tickets.into_iter().collect(),
             small: small
                 .into_iter()

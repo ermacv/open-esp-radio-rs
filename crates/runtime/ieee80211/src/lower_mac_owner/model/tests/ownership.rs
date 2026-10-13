@@ -1,7 +1,8 @@
 use super::*;
 
 // Deliberately neither Copy nor Clone. The backend can only move it.
-struct Context {
+struct Context<'id> {
+    epoch: Option<oer_ieee80211_sta::epoch::LinkEpoch<'id>>,
     operation: usize,
     ticket: u8,
     buffer: u8,
@@ -9,17 +10,19 @@ struct Context {
     dropped: Rc<Cell<usize>>,
 }
 
-impl ModelContext for Context {
-    type Context<'id> = Self;
+struct Contexts;
+
+impl ModelContext for Contexts {
+    type Context<'id> = Context<'id>;
 }
 
-impl Drop for Context {
+impl Drop for Context<'_> {
     fn drop(&mut self) {
         self.dropped.set(self.dropped.get() + 1);
     }
 }
 
-type Backend = ModelBackend<ModelCaps, Context>;
+type Backend = ModelBackend<ModelCaps, Contexts>;
 
 #[derive(Clone, Copy)]
 enum End {
@@ -36,7 +39,7 @@ struct Operations {
     end: End,
 }
 
-fn returned(event: LowerMacEvent<'_, ModelTypes<Context>>, seen: &RefCell<Vec<(usize, u8)>>) {
+fn returned(event: LowerMacEvent<'_, ModelTypes<Contexts>>, seen: &RefCell<Vec<(usize, u8)>>) {
     if let LowerMacEvent::TxCompleted {
         context,
         ticket,
@@ -45,6 +48,10 @@ fn returned(event: LowerMacEvent<'_, ModelTypes<Context>>, seen: &RefCell<Vec<(u
         mut bodies,
     } = event
     {
+        assert!(
+            context.epoch.is_none(),
+            "pre-Connect operations have no epoch"
+        );
         assert_eq!(ticket.index(), context.ticket);
         assert_eq!(buffers.len(), 1);
         let buffer = buffers.remove(0);
@@ -90,6 +97,7 @@ impl PortBody<Backend> for Operations {
                 let buffer = small.remove(0);
                 let body = ModelBody(alloc::vec![operation as u8; 4]);
                 let context = Context {
+                    epoch: None,
                     operation,
                     ticket: ticket.index(),
                     buffer: buffer.slot.index(),
@@ -102,7 +110,7 @@ impl PortBody<Backend> for Operations {
                     .submit(oer_ieee80211_lower_mac::Attempt {
                         context,
                         ticket,
-                        source: <ModelTypes<Context> as TxBufferPool<'id, ModelSmall>>::prepare(
+                        source: <ModelTypes<Contexts> as TxBufferPool<'id, ModelSmall>>::prepare(
                             TxSource::Fresh {
                                 buffer,
                                 frame,

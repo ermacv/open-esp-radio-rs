@@ -325,9 +325,13 @@ pub type InterfaceKeys<'p, 'id, I> = <<I as InterfacePhase<'p, 'id>>::Role as Ro
 /// The types of one backend's phase that its events carry.
 pub trait PhaseTypes<'id>: Sized {
     /// The composition's operation context. The backend owns and returns
-    /// it unchanged, without interpreting or cloning it. It must not
-    /// borrow a machine for the duration of an operation.
-    type Context;
+    /// it unchanged, without interpreting or cloning it. The install bound
+    /// retains branded values while excluding references to machines local
+    /// to the generic `PortBody::run`. Portable contexts need not be `Send`;
+    /// a backend crossing execution contexts adds that bound itself.
+    ///
+    /// [Owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6155221933).
+    type Context: 'id;
     /// A prepared MPDU retaining its phase, install and intended interface role.
     type Prepared<'p, R, K: Ieee80211Capabilities>: PreparedTx<'id, Types = Self>;
     /// An external MPDU body. A numbered MPDU retains its body internally

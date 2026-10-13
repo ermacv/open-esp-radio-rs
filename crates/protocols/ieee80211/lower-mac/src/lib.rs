@@ -43,6 +43,11 @@ pub use oer_radio_coex::CoexPriority;
 /// mix with another port's.
 pub enum Ieee80211Radio {}
 
+/// The installation's unique slot for the station's connection-epoch source.
+/// A backend mints it once; Station consumes it to issue branded epochs.
+/// The backend does not construct or interpret those protocol identities.
+pub enum ConnectionEpochKind {}
+
 /// An instant on the IEEE 802.11 lower-MAC port's clock.
 pub type Ieee80211Instant = oer_time::RadioInstant<Ieee80211Radio>;
 

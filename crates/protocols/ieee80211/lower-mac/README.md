@@ -23,7 +23,12 @@ back; its operations are synchronous and never wait:
   flight and its terminal's place) and the buffers of its frames, each of a
   class sized by the composition (`TxBufferClass`, `ClassFrame`); its
   `TxCompleted` event gives all of them back with `PhaseTypes::Context`,
-  chosen by the composition. The backend moves that context unchanged;
+  chosen by the composition with `type Context: 'id` in `PhaseTypes<'id>`.
+  The bound retains install-branded epochs and excludes a reference to a
+  machine local to the generic `PortBody::run`. Portable contexts need not
+  be `Send`; only a backend such as S31 crossing execution contexts requires
+  it ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6155221933)).
+  The backend moves that context unchanged;
   no `Clone` bound, frame inspection or parallel lookup identifies the
   original operation. Bodies remain owned until the same terminal, even
   when the backend copies their octets into DMA memory. An empty pool is the caller's
@@ -72,6 +77,10 @@ back; its operations are synchronous and never wait:
   end in events (`Configured`, `GateClosed`).
 - **Reception.** A received frame's buffer goes back through `recycle`; a
   lagging body loses unsolicited frames as `EventsLost`, never a terminal.
+
+The install mints one `Slot<ConnectionEpochKind>` for Station's epoch source.
+This slot kind belongs to the lower-MAC contract; the backend neither depends
+on the station's epoch implementation nor creates connection identities.
 
 A frame's kind (`TxFrame`) fixes its response: an individual frame (an
 `AckHeader` with an `IndividualAddress` receiver, any data or management

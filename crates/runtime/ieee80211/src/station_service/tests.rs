@@ -496,7 +496,7 @@ where
     ) -> Ended<'id, ModelBackend<ModelCaps24, ServiceContexts>> {
         {
             let ModelResources {
-                epochs,
+                connection_epoch,
                 tickets,
                 small,
                 large,
@@ -520,7 +520,7 @@ where
                 );
             let station = Station::new(
                 self.config,
-                epochs,
+                oer_ieee80211_sta::epoch::LinkEpochSource::new(connection_epoch),
                 station_tickets,
                 small,
                 place,

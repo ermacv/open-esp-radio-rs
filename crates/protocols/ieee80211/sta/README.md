@@ -66,8 +66,9 @@ link; the service checks the same epoch before updating rate selection.
 step. No queued context borrows the station or data machine.
 
 Station alone issues `LinkEpoch`, before starting Connect. Its non-cloneable
-`LinkEpochSource` consumes the install's unique station source slot; there
-is no reset or slot extraction. The epoch and contexts carry the invariant
+`LinkEpochSource` consumes the install's unique `Slot<ConnectionEpochKind>`
+from `oer-ieee80211-lower-mac`; there is no reset or slot extraction. The
+backend supplies that slot, while Station constructs and owns its source. The epoch and contexts carry the invariant
 install brand. Recreating Station therefore cannot restart its counter
 while earlier operations can return. Exhaustion emits
 `StaNotice::ConnectRefused(EpochExhausted)` without starting a connection;

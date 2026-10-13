@@ -670,3 +670,20 @@ fn timestamp_wrap_is_bounded_to_half_range() {
         Err(FtmTimestampArithmeticError::AmbiguousResponderWrap)
     );
 }
+
+#[test]
+fn local_timing_proves_a_nonzero_token_through_the_bitmap_boundary() {
+    assert_eq!(
+        FtmLocalExchangeTiming::new(0, ps(100), ps(120)),
+        Err(FtmRequesterError::ZeroLocalDialogToken),
+    );
+    let mut requester = FtmRequester::<4>::new(config(3, 1));
+    for token in [1, 31, 32, 254, 255] {
+        let timing = FtmLocalExchangeTiming::new(token, ps(100), ps(120)).unwrap();
+        assert_eq!(timing.dialog_token.get(), token);
+        assert!(!requester.token_seen(token));
+        requester.remember_dialog_token(timing.dialog_token);
+        assert!(requester.token_seen(token));
+    }
+    assert!(!requester.token_seen(0));
+}

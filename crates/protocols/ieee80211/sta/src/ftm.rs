@@ -6,6 +6,8 @@
 //! RX/TX timestamp capture before publishing the request returned by
 //! [`FtmRequester::service`].
 
+use core::num::NonZeroU8;
+
 use oer_ieee80211_mac::ftm::{
     FTM_INITIAL_REQUEST_BODY_LEN, FtmBurstDuration, FtmFormatAndBandwidth, FtmMeasurement,
     FtmRequestParameters, FtmResponseParameters, FtmResponseStatus, FtmTimestampPs, FtmToaError,
@@ -134,7 +136,8 @@ impl FtmRequesterConfig {
 /// Timestamp capture for the just-received nonterminal FTM frame and its ACK.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FtmLocalExchangeTiming {
-    pub dialog_token: u8,
+    /// A nonterminal exchange always names a nonzero dialog token.
+    pub dialog_token: NonZeroU8,
     pub arrival_t2_ps: FtmTimestampPs,
     pub ack_departure_t3_ps: FtmTimestampPs,
 }
@@ -145,9 +148,9 @@ impl FtmLocalExchangeTiming {
         arrival_t2_ps: FtmTimestampPs,
         ack_departure_t3_ps: FtmTimestampPs,
     ) -> Result<Self, FtmRequesterError> {
-        if dialog_token == 0 {
+        let Some(dialog_token) = NonZeroU8::new(dialog_token) else {
             return Err(FtmRequesterError::ZeroLocalDialogToken);
-        }
+        };
         Ok(Self {
             dialog_token,
             arrival_t2_ps,
@@ -775,7 +778,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             return self.protocol_error(FtmRequesterError::TooManyMeasurements);
         }
         let local_timing = self.validate_new_local_timing(measurement, local_timing)?;
-        self.remember_dialog_token(measurement.fields.dialog_token);
+        self.remember_dialog_token(local_timing.dialog_token);
         self.pending = Some(local_timing);
         self.last_measurement = Some(LastMeasurement {
             fields: measurement.fields,
@@ -823,9 +826,9 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             });
         }
 
-        let sample = if measurement.fields.follow_up_dialog_token == pending.dialog_token {
+        let sample = if measurement.fields.follow_up_dialog_token == pending.dialog_token.get() {
             Some(FtmRawExchange {
-                dialog_token: pending.dialog_token,
+                dialog_token: pending.dialog_token.get(),
                 responder_departure_t1_ps: measurement.fields.tod,
                 initiator_arrival_t2_ps: pending.arrival_t2_ps,
                 initiator_ack_departure_t3_ps: pending.ack_departure_t3_ps,
@@ -858,7 +861,10 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             });
         }
 
-        self.validate_next_dialog_token(pending.dialog_token, measurement.fields.dialog_token)?;
+        self.validate_next_dialog_token(
+            pending.dialog_token.get(),
+            measurement.fields.dialog_token,
+        )?;
         let local_timing = self.validate_new_local_timing(measurement, local_timing)?;
         let maximum_samples = usize::from(negotiated.ftms_per_burst - 1);
         let disposition = if let Some(sample) = sample {
@@ -867,7 +873,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             }
             let sample_index = self.push_sample(sample)?;
             FtmMeasurementDisposition::SampleAccepted {
-                dialog_token: pending.dialog_token,
+                dialog_token: pending.dialog_token.get(),
                 sample_index,
             }
         } else {
@@ -878,7 +884,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
                 dialog_token: measurement.fields.follow_up_dialog_token,
             }
         };
-        self.remember_dialog_token(measurement.fields.dialog_token);
+        self.remember_dialog_token(local_timing.dialog_token);
         self.pending = Some(local_timing);
         self.last_measurement = Some(LastMeasurement {
             fields: measurement.fields,
@@ -911,11 +917,14 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         {
             return self.protocol_error(FtmRequesterError::InitialRetransmissionMismatch);
         }
-        self.validate_next_dialog_token(pending.dialog_token, measurement.fields.dialog_token)?;
+        self.validate_next_dialog_token(
+            pending.dialog_token.get(),
+            measurement.fields.dialog_token,
+        )?;
         let local_timing = self.validate_new_local_timing(measurement, local_timing)?;
         let information_elements =
             self.own_information_elements(measurement.information_elements)?;
-        self.remember_dialog_token(measurement.fields.dialog_token);
+        self.remember_dialog_token(local_timing.dialog_token);
         self.pending = Some(local_timing);
         self.last_measurement = Some(LastMeasurement {
             fields: measurement.fields,
@@ -923,7 +932,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             information_elements,
         });
         Ok(FtmMeasurementDisposition::InitialRetransmissionAccepted {
-            abandoned_dialog_token: pending.dialog_token,
+            abandoned_dialog_token: pending.dialog_token.get(),
             dialog_token: measurement.fields.dialog_token,
         })
     }
@@ -1025,7 +1034,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             self.phase = FtmRequesterPhase::Failed(FtmSessionFailure::ProtocolViolation);
             return Err(FtmRequesterError::MissingLocalTiming);
         };
-        if local_timing.dialog_token != measurement.fields.dialog_token {
+        if local_timing.dialog_token.get() != measurement.fields.dialog_token {
             self.phase = FtmRequesterPhase::Failed(FtmSessionFailure::ProtocolViolation);
             return Err(FtmRequesterError::LocalDialogTokenMismatch);
         }
@@ -1064,10 +1073,10 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         self.dialog_tokens[index] & (1_u32 << bit) != 0
     }
 
-    fn remember_dialog_token(&mut self, token: u8) {
-        debug_assert_ne!(token, 0);
-        let index = usize::from(token) / 32;
-        let bit = u32::from(token) % 32;
+    fn remember_dialog_token(&mut self, token: NonZeroU8) {
+        // Every u8 indexes one of the eight words, including token 255.
+        let index = usize::from(token.get()) / 32;
+        let bit = u32::from(token.get()) % 32;
         self.dialog_tokens[index] |= 1_u32 << bit;
     }
 

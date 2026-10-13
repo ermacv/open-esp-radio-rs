@@ -30,7 +30,9 @@ Module map:
 - `link_monitor`: beacon-loss decisions;
 - `pmksa`: the SAE PMKSA cache a reconnect resumes, and its shared owner;
 - `ftm`, `twt`: bounded requester state and deadlines; their presence does not
-  establish a chip timestamp or wake-schedule implementation. The TWT wake
+  establish a chip timestamp or wake-schedule implementation. FTM local
+  exchange timing carries a `NonZeroU8` dialog token from validation through
+  replay tracking; terminal token zero cannot enter that state. The TWT wake
   plan is computed in `TsfInstant`s of one TSF generation the caller tracks;
   its intervals and guards are `TsfDuration`s. A guard before the epoch is
   `BeforeTsfEpoch`, and an endpoint beyond the epoch is `BeyondTsfRange`;

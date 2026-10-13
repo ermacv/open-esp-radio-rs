@@ -53,8 +53,10 @@ PM transition, probe or rekey); the current state never guesses which
 operation a terminal ended. Connected control admission remains one at a
 time; its flags describe pending policy transitions, not completion identity.
 
-A data context keeps the link epoch, original TID, order, header, length,
-access category and protection. `StaData` keeps only counts of operations
+A data context keeps the link epoch, original TID, order, checked
+`SizedFrame<AckHeader, K>`, access category and protection. The immutable
+frame description preserves its header/length proof through an unpublished
+return; no constructor or frame-byte inspection runs again. `StaData` keeps only counts of operations
 at the port for admission, with no in-flight metadata FIFO or TID decoding
 at completion. An unpublished return is inserted by its original order,
 so a batch of returns preserves both per-TID and shared-AC order. An old

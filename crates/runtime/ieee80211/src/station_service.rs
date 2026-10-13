@@ -68,7 +68,7 @@ const ETHERNET_HEADER: usize = 14;
 /// splits between the station and data.
 pub trait StationPort<'id>: LowerMacBackend {
     /// The types its phase's events carry.
-    type Types: PhaseTypes<'id, Context = TxContext>
+    type Types: PhaseTypes<'id, Context = TxContext<Self::Caps>>
         + TxBufferPool<'id, Self::Small>
         + TxBufferPool<'id, Self::Large>;
     /// The buffer class of the station's frames.
@@ -97,11 +97,11 @@ pub trait StationPort<'id>: LowerMacBackend {
 /// The composition's context for this service. Each variant owns the
 /// original machine operation; the backend treats the entire value as opaque.
 #[derive(Debug)]
-pub enum TxContext {
+pub enum TxContext<K> {
     /// A station protocol operation, including its connection epoch and purpose.
     Station(StaTxContext),
     /// An MSDU operation, including its original link, TID and queue order.
-    Data(DataTxContext),
+    Data(DataTxContext<K>),
 }
 
 /// What the service dropped or could not send, counted.
@@ -831,7 +831,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
     fn completed(
         &mut self,
         now: Instant,
-        context: TxContext,
+        context: TxContext<B::Caps>,
         ticket: Slot<'id, <B::Types as PhaseTypes<'id>>::TicketKind>,
         buffers: <B::Types as PhaseTypes<'id>>::TxBuffers,
         completion: TxCompletion,

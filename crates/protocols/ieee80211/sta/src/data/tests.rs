@@ -173,6 +173,11 @@ fn interleaved_returns_keep_the_original_tid_order_and_admission_count() {
         let operation = transmit(&mut data);
         assert_eq!(operation.ticket, ticket);
         assert_eq!(operation.context.tid, tid);
+        assert_eq!(operation.context.frame.len().get(), 26 + 8 + 8 + 100);
+        assert_eq!(
+            operation.frame.len().get(),
+            operation.context.frame.len().get()
+        );
         let mut header = [0; 26];
         operation.frame.header().header().encode(&mut header, false);
         assert_eq!(tid_and_sequence(&header), (tid, sequence));
@@ -190,6 +195,56 @@ fn interleaved_returns_keep_the_original_tid_order_and_admission_count() {
     assert_eq!(data.counters().lost_tokens, 0);
     assert_eq!(data.counters().overflows, 0);
     assert!(data.accepts());
+}
+
+#[test]
+fn repeated_unpublished_returns_keep_the_checked_frame_and_payload() {
+    let mut data = machine();
+    let mut replay = epoch();
+    let mut link = qos_link(&(), &mut replay);
+    data.input(
+        NOW,
+        DataInput::Msdu {
+            msdu: msdu(6),
+            link: &mut link,
+        },
+    )
+    .unwrap();
+    let mut operation = transmit(&mut data);
+    let len = operation.frame.len().get();
+    let payload = operation.buffer.0[34..len].to_vec();
+    for _ in 0..3 {
+        operation.buffer.0[..26].fill(0);
+        data.input::<Station>(
+            NOW,
+            DataInput::TxDone {
+                context: operation.context,
+                ticket: operation.ticket,
+                buffer: operation.buffer,
+                completion: ended(TxStatus::Aborted, 0),
+            },
+        )
+        .unwrap();
+        operation = transmit(&mut data);
+        assert_eq!(operation.frame.len().get(), len);
+        let mut header = [0; 26];
+        operation.frame.header().header().encode(&mut header, false);
+        assert_eq!(tid_and_sequence(&header), (6, 0));
+        assert_eq!(&operation.buffer.0[34..len], payload.as_slice());
+    }
+    data.input::<Station>(
+        NOW,
+        DataInput::TxDone {
+            context: operation.context,
+            ticket: operation.ticket,
+            buffer: operation.buffer,
+            completion: ended(TxStatus::Success, 1),
+        },
+    )
+    .unwrap();
+    assert_eq!(core::iter::from_fn(|| data.tickets.take()).count(), 2);
+    assert_eq!(core::iter::from_fn(|| data.buffers.take()).count(), 2);
+    assert_eq!(data.at_port(WmmAccessCategory::Voice), 0);
 }
 
 #[test]

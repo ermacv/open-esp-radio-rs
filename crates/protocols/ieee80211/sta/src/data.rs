@@ -62,7 +62,7 @@ pub struct Msdu<'a> {
 }
 
 /// One input of the data machine.
-pub enum DataInput<'a, 'l, 'v, D: StaDataTokens, T: StaTokens> {
+pub enum DataInput<'a, 'l, 'v, D: StaDataTokens, T: StaTokens, K> {
     /// An MSDU from the network stack, on the link it goes on.
     Msdu {
         /// The MSDU.
@@ -80,7 +80,7 @@ pub enum DataInput<'a, 'l, 'v, D: StaDataTokens, T: StaTokens> {
     /// [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6132835650
     TxDone {
         /// The original operation, returned unchanged by the port.
-        context: DataTxContext,
+        context: DataTxContext<K>,
         /// Its ticket.
         ticket: D::Ticket,
         /// Its buffer.
@@ -93,7 +93,7 @@ pub enum DataInput<'a, 'l, 'v, D: StaDataTokens, T: StaTokens> {
     /// none. Its MSDU, if any, is gone; the service counts it.
     Returned {
         /// An operation that ended locally, when these are its resources.
-        context: Option<DataTxContext>,
+        context: Option<DataTxContext<K>>,
         /// A ticket, if one came back.
         ticket: Option<D::Ticket>,
         /// A buffer, if one came back.
@@ -112,7 +112,7 @@ pub enum DataAction<D: StaDataTokens, K> {
 /// link's pairwise key.
 pub struct DataTransmit<D: StaDataTokens, K> {
     /// The operation identity and parameters, moved through the port.
-    pub context: DataTxContext,
+    pub context: DataTxContext<K>,
     /// Its ticket.
     pub ticket: D::Ticket,
     /// The buffer holding the MPDU, from its header on.
@@ -136,12 +136,13 @@ pub enum DataRefusal {
 
 /// The original data operation. It travels by value with the attempt;
 /// completion routing never inspects the returned MPDU's bytes.
+/// Its closed, checked frame description survives every unpublished return;
+/// neither the MPDU length nor its header is reconstructed at completion.
 #[derive(Debug)]
-pub struct DataTxContext {
+pub struct DataTxContext<K> {
     link: u64,
     tid: u8,
-    header: AckHeader,
-    len: usize,
+    frame: SizedFrame<AckHeader, K>,
     access_category: WmmAccessCategory,
     protected: bool,
     order: u32,
@@ -255,7 +256,7 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
     pub fn input<T: StaTokens>(
         &mut self,
         _now: Instant,
-        input: DataInput<'_, '_, '_, D, T>,
+        input: DataInput<'_, '_, '_, D, T, K>,
     ) -> Result<(), DataRefusal> {
         match input {
             DataInput::TxDone {
@@ -276,11 +277,7 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
                 // Never published: preserve the original frame description,
                 // TID and order, even after a batch of terminals returns.
                 if completion.transmissions == 0 {
-                    let frame = SizedFrame::new(
-                        context.header,
-                        MpduLength::new(context.len).expect("the original checked MPDU length"),
-                    )
-                    .expect("the original checked frame contains its header");
+                    let frame = context.frame;
                     let tid = usize::from(context.tid);
                     let again = DataTransmit {
                         ticket,
@@ -360,8 +357,7 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
                         let context = DataTxContext {
                             link: self.link,
                             tid: slot as u8,
-                            header: *frame.header(),
-                            len: frame.len().get(),
+                            frame,
                             access_category,
                             protected,
                             order,
@@ -397,7 +393,7 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
 
     /// Whether this operation belongs to the current link. The service
     /// uses the same guard before updating the link's rate selection.
-    pub fn is_current(&self, context: &DataTxContext) -> bool {
+    pub fn is_current(&self, context: &DataTxContext<K>) -> bool {
         context.link == self.link
     }
 

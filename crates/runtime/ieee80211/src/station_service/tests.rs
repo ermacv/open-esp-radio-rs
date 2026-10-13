@@ -53,14 +53,19 @@ const RSN: [u8; 22] = [
     0x30, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 2, 0, 0,
 ];
 
-impl<'id> StationPort<'id> for ModelBackend<ModelCaps24, TxContext> {
-    type Types = ModelTypes<TxContext>;
+impl<'id> StationPort<'id> for ModelBackend<ModelCaps24, TxContext<ModelCaps24>> {
+    type Types = ModelTypes<TxContext<ModelCaps24>>;
     type Small = ModelSmall;
     type Large = ModelLarge;
 
     fn lend<'a, 'r>(
-        phase: &'r mut ModelPhase<'a, 'id, ModelCaps24, TxContext>,
-    ) -> &'r mut impl LowerMacPhase<'a, 'id, Caps = ModelCaps24, Types = ModelTypes<TxContext>>
+        phase: &'r mut ModelPhase<'a, 'id, ModelCaps24, TxContext<ModelCaps24>>,
+    ) -> &'r mut impl LowerMacPhase<
+        'a,
+        'id,
+        Caps = ModelCaps24,
+        Types = ModelTypes<TxContext<ModelCaps24>>,
+    >
     where
         'id: 'a,
     {
@@ -74,8 +79,8 @@ impl<'id> StationPort<'id> for ModelBackend<ModelCaps24, TxContext> {
     const RX_BUFFERS: usize = MODEL_RX_EVENTS;
 
     fn event(
-        event: LowerMacEvent<'id, ModelTypes<TxContext>>,
-    ) -> LowerMacEvent<'id, ModelTypes<TxContext>> {
+        event: LowerMacEvent<'id, ModelTypes<TxContext<ModelCaps24>>>,
+    ) -> LowerMacEvent<'id, ModelTypes<TxContext<ModelCaps24>>> {
         event
     }
 }
@@ -475,15 +480,15 @@ struct Body<'w, 'b, S> {
 /// A test's script: the access point and the application, on the world.
 type Script<'w> = Pin<Box<dyn Future<Output = ()> + 'w>>;
 
-impl<'w, 'b, S> PortBody<ModelBackend<ModelCaps24, TxContext>> for Body<'w, 'b, S>
+impl<'w, 'b, S> PortBody<ModelBackend<ModelCaps24, TxContext<ModelCaps24>>> for Body<'w, 'b, S>
 where
     S: FnOnce(&'w World<'b>) -> Script<'w>,
 {
     async fn run<'p, 'id>(
         self,
-        owner: Owner<'p, 'id, ModelBackend<ModelCaps24, TxContext>, Disabled>,
+        owner: Owner<'p, 'id, ModelBackend<ModelCaps24, TxContext<ModelCaps24>>, Disabled>,
         resources: ModelResources<'id>,
-    ) -> Ended<'id, ModelBackend<ModelCaps24, TxContext>> {
+    ) -> Ended<'id, ModelBackend<ModelCaps24, TxContext<ModelCaps24>>> {
         {
             let ModelResources {
                 tickets,
@@ -501,12 +506,11 @@ where
             let large: [_; 4] = large.try_into().ok().unwrap();
             let [pairwise, _] = station_pairwise;
             let channel = SupportedChannel::new(channel6()).unwrap();
-            let (arbiter, place, absence) =
-                PortArbiter::<ModelBackend<ModelCaps24, TxContext>>::new(
-                    ArbiterPolicy::DEFAULT,
-                    channel,
-                    gate,
-                );
+            let (arbiter, place, absence) = PortArbiter::<
+                ModelBackend<ModelCaps24, TxContext<ModelCaps24>>,
+            >::new(
+                ArbiterPolicy::DEFAULT, channel, gate
+            );
             let station = Station::new(
                 self.config,
                 station_tickets,
@@ -573,7 +577,7 @@ fn run_with<S>(config: StaConfig<ModelCaps24>, script: S)
 where
     S: for<'w, 'b> FnOnce(&'w World<'b>) -> Script<'w>,
 {
-    let (backend, air) = ModelBackend::<ModelCaps24, TxContext>::new(
+    let (backend, air) = ModelBackend::<ModelCaps24, TxContext<ModelCaps24>>::new(
         channel6(),
         [
             IndividualAddress::new(LOCAL).unwrap(),

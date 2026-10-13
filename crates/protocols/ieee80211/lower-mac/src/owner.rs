@@ -424,6 +424,14 @@ pub struct MpduLength<K> {
     brand: PhantomData<fn() -> K>,
 }
 
+impl<K> Copy for MpduLength<K> {}
+
+impl<K> Clone for MpduLength<K> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
 /// The shortest MPDU: an ACK frame's header.
 const MIN_MPDU: u16 = 10;
 
@@ -1019,6 +1027,17 @@ impl FrameHeader for NoAckHeader {
 pub struct SizedFrame<H, K> {
     header: H,
     len: MpduLength<K>,
+}
+
+// A checked description owns no buffer or admission token. Copying it
+// preserves the length/header proof without requiring a capability marker
+// (or the operation context that holds it) to implement Clone.
+impl<H: Copy, K> Copy for SizedFrame<H, K> {}
+
+impl<H: Copy, K> Clone for SizedFrame<H, K> {
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 
 impl<H: FrameHeader, K: Ieee80211Capabilities> SizedFrame<H, K> {

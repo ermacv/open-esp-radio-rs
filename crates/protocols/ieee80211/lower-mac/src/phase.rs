@@ -293,11 +293,11 @@ pub enum TxCompleted<'id, P: PhaseTypes<'id>> {
 /// depend on the install alone, so a caller holds them across the phase's
 /// lends ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6131533566)).
 pub trait KeyTypes<'id> {
-    /// The kind of the role's pairwise key slots (an access point's: its
+    /// The role's affine pairwise key slots (an access point's: its
     /// association identifiers).
-    type PairwiseKind;
-    /// The kind of the role's group key slots.
-    type GroupKind;
+    type PairwiseSlot: 'id;
+    /// The role's affine group key slots, retained through removal.
+    type GroupSlot: 'id;
     /// An installed pairwise key, which holds its slot.
     type PairwiseKey: 'id;
     /// An installed group key, which holds its slot.
@@ -313,9 +313,9 @@ pub trait KeyTypes<'id> {
 /// A removed key's slot, of its kind.
 pub enum RemovedKey<'id, K: KeyTypes<'id>> {
     /// A pairwise key's slot.
-    Pairwise(Slot<'id, K::PairwiseKind>),
+    Pairwise(K::PairwiseSlot),
     /// A group key's slot.
-    Group(Slot<'id, K::GroupKind>),
+    Group(K::GroupSlot),
 }
 
 /// A removed key's slot, of its role.
@@ -432,7 +432,7 @@ pub trait PhaseTypes<'id>: Sized {
     /// A `Sent` MPDU retains its own body until retry or renewal.
     type TxBodies: IntoIterator<Item = (u8, Self::TxBody)>;
     /// The station's keys and their slots.
-    type StationKeys: KeyTypes<'id, Identity = Self::KeyIdentity>;
+    type StationKeys: KeyTypes<'id, Identity = Self::KeyIdentity, GroupSlot: crate::KeyCellResource>;
     /// The access point's keys and their slots.
     type AccessPointKeys: KeyTypes<'id, Identity = Self::KeyIdentity>;
     /// The kind of the receive Block Ack slots: one pool the backend's
@@ -725,7 +725,7 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     /// Install `key` for frames with `peer` in `slot`.
     fn install_pairwise_key(
         &mut self,
-        slot: Slot<'id, <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::PairwiseKind>,
+        slot: <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::PairwiseSlot,
         peer: IndividualAddress,
         key: Ccmp128Key,
     ) -> <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::PairwiseKey;
@@ -733,7 +733,7 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     /// Install `key` for group frames under `key_id` in `slot`.
     fn install_group_key(
         &mut self,
-        slot: Slot<'id, <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::GroupKind>,
+        slot: <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::GroupSlot,
         key_id: GroupKeyId,
         key: Ccmp128Key,
     ) -> <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::GroupKey;

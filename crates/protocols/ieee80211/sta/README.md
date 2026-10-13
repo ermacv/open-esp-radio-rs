@@ -117,3 +117,36 @@ A gate withdrawal retains the MPDU at its original TID/order. Fresh memory
 is prepared normally; Sent goes through retransmission with the same SN/PN.
 KeyRemoved retires that MSDU and releases admission and resources. A barrier
 waits only the current publication; rate selection ignores every withdrawal.
+
+
+## Responses to lifecycle actions
+
+`Station` owns key cells across scan/join/handshake/leave transitions. Each
+cell is `Free(slot)`, `Installing`, `Installed(key)` or `Removing`; there is
+no `group_busy` count or separate retiring-key pool. Installation actions
+carry `PendingPairwiseKey` or `PendingGroupKey`, with a private constructor,
+no Clone, the selected cell and `LinkEpoch`. The group token also owns the
+key index; an input cannot independently relabel the installed key.
+
+An installation response returns its token and key. If its epoch is closed,
+Station removes that key through its normal leave actions. Reconnection
+waits until every installing/removing cell has returned to Free. A returned
+group slot keeps its closed `KeyCellIndex` through the backend's key owner;
+`GroupKeyRemoved(slot)` therefore frees its cell without searching for an
+identifier. Pairwise removal returns the one pairwise slot. Removal actions
+can remain outstanding concurrently, and return in either order.
+
+`Configure` carries `PendingConfiguration`. Station grants only one such
+token until it returns in `Configured`; an old epoch's reply releases that
+permission without completing the new transition. The service keeps only
+this outstanding action token. Arbiter responses are already proved by
+affine resources: Answer returns LeasePlace or Lease, AbsenceAnswer returns
+AbsencePlace or Lease, and Exchanged consumes the old Lease and returns its
+replacement. The service returns these synchronous answers in the same step.
+None of these normal lifecycle paths adds fail-stop behavior.
+
+The [owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6156976885)
+also requires that a missing pending token be a compile-time error. Owning
+rustdoc supplies that compile-fail test and its valid counterpart; module
+tests exercise stale handshake/rekey replies, slot return order and stale
+configuration replies.

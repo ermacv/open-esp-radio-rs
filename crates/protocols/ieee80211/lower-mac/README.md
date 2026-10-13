@@ -178,3 +178,13 @@ close and normal disable, including queues held by the model air. On
 fail-stop, no terminal is invented: backend-owned resources end with the
 install. The ESP32-S31 runtime still serves the earlier client shape; its
 port migration and image composition are the next stage of #563.
+
+
+A station's group-key slots are bound to cells once at installation with
+`KeyCellSlot::bind`. The wrapper moves into the backend's installed key and
+returns intact after its removal barrier. It exposes only a borrow of the
+physical slot, so callers cannot detach and rebind it. `KeyTypes` names the
+owned slot types; station group slots implement the sealed `KeyCellResource`.
+Access-point slot representations remain backend-selected. The closed cell
+selector addresses a fixed array; no runtime bounds check or key-ID match
+is needed to return a station's removed slot.

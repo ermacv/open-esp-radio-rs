@@ -29,6 +29,10 @@
 //! rate statistics, and the service continues. A `Sent` return retains its
 //! external body until its machine retires the MPDU; service never renews
 //! a completion merely to route it.
+//! Key-install actions carry Station's pending tokens straight back with
+//! installed keys. Configure retains its one pending token until the port
+//! reports it applied; Station cannot issue another before that return.
+//! Arbiter answers return their affine places/leases in the same step.
 //! MSDUs come and go through
 //! single-producer single-consumer queues (`zerocopy_channel`); a received
 //! MSDU the network's full queue cannot take is dropped, as an Ethernet
@@ -171,8 +175,8 @@ where
         drop(body);
         memory
     }
-    type PairwiseSlot = Slot<'id, <Ty::StationKeys as KeyTypes<'id>>::PairwiseKind>;
-    type GroupSlot = Slot<'id, <Ty::StationKeys as KeyTypes<'id>>::GroupKind>;
+    type PairwiseSlot = <Ty::StationKeys as KeyTypes<'id>>::PairwiseSlot;
+    type GroupSlot = <Ty::StationKeys as KeyTypes<'id>>::GroupSlot;
     type PairwiseKey = <Ty::StationKeys as KeyTypes<'id>>::PairwiseKey;
     type GroupKey = <Ty::StationKeys as KeyTypes<'id>>::GroupKey;
     type RxMeta = Ty::RxMeta;
@@ -363,6 +367,7 @@ pub struct StationService<'a, 'id, B: StationPort<'id>, S, const RX: usize> {
     /// What the service dropped or could not send.
     pub counters: ServiceCounters,
     contract_failed: bool,
+    configuring: Option<oer_ieee80211_sta::machine::PendingConfiguration<'id>>,
     held: [Option<<B::Types as PhaseTypes<'id>>::RxBuffer>; RX],
 }
 
@@ -407,6 +412,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
             rates,
             counters: ServiceCounters::default(),
             contract_failed: false,
+            configuring: None,
             held: [const { None }; RX],
         }
     }
@@ -698,9 +704,16 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
             }
             while let Some(action) = self.station.poll_action(now) {
                 progress = true;
-                let submitted =
-                    station_action(now, phase, io, &mut self.arbiter, &self.rates, action)
-                        .and_then(|follow| self.follow(now, follow, io).map_err(|_| ()));
+                let submitted = station_action(
+                    now,
+                    phase,
+                    io,
+                    &mut self.arbiter,
+                    &self.rates,
+                    &mut self.configuring,
+                    action,
+                )
+                .and_then(|follow| self.follow(now, follow, io).map_err(|_| ()));
                 if submitted.is_err() {
                     self.contract_failed = true;
                     self.arbiter.poisoned();
@@ -947,7 +960,9 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                 None
             }
             LowerMacEvent::Configured(VifRole::Station) => {
-                self.station.input(now, StaInput::Configured);
+                if let Some(pending) = self.configuring.take() {
+                    self.station.input(now, StaInput::Configured(pending));
+                }
                 None
             }
             LowerMacEvent::KeyRemoved(Removed::Station(RemovedKey::Pairwise(slot))) => {
@@ -1192,6 +1207,7 @@ fn station_action<'p, 'id: 'p, B, P, M, S>(
     io: &mut ServiceIo<'_, M, B::Caps>,
     arbiter: &mut PortArbiter<'_, 'id, B>,
     rates: &S,
+    configuring: &mut Option<oer_ieee80211_sta::machine::PendingConfiguration<'id>>,
     action: StaAction<'_, 'id, PortStaTokens<'id, B::Types, B::Small>, B::Caps>,
 ) -> Result<Follow<'id, B>, ()>
 where
@@ -1222,20 +1238,32 @@ where
             arbiter.upstream(now, fact);
             return Ok(Follow::Nothing);
         }
-        StaAction::Configure(receive) => {
+        StaAction::Configure(receive, pending) => {
+            *configuring = Some(pending);
             phase.station().configure(receive);
             return Ok(Follow::Nothing);
         }
-        StaAction::InstallPairwiseKey { slot, peer, key } => StaInput::PairwiseKeyInstalled(
-            phase
+        StaAction::InstallPairwiseKey {
+            pending,
+            slot,
+            peer,
+            key,
+        } => StaInput::PairwiseKeyInstalled {
+            pending,
+            key: phase
                 .station()
                 .install_pairwise_key(slot, peer, Ccmp128Key(key)),
-        ),
-        StaAction::InstallGroupKey { slot, key_id, key } => StaInput::GroupKeyInstalled {
+        },
+        StaAction::InstallGroupKey {
+            pending,
+            slot,
+            key_id,
+            key,
+        } => StaInput::GroupKeyInstalled {
             key: phase
                 .station()
                 .install_group_key(slot, key_id, Ccmp128Key(key)),
-            key_id,
+            pending,
         },
         StaAction::RemovePairwiseKey(key) => {
             phase.station().remove_pairwise_key(key);

@@ -95,7 +95,7 @@ impl StaTokens for Station {
         mpdu
     }
     type PairwiseSlot = ();
-    type GroupSlot = ();
+    type GroupSlot = oer_ieee80211_lower_mac::KeyCellSlot<()>;
     type PairwiseKey = ();
     type GroupKey = ();
     type RxMeta = RxMeta;

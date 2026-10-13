@@ -75,7 +75,7 @@ impl TxBufferMemory for Buffer {
 #[derive(Debug, Eq, PartialEq)]
 struct Slot(u8);
 #[derive(Debug, Eq, PartialEq)]
-struct Key(Slot);
+struct Key<S = Slot>(S);
 
 struct Tokens;
 
@@ -88,9 +88,9 @@ impl StaTokens for Tokens {
         mpdu
     }
     type PairwiseSlot = Slot;
-    type GroupSlot = Slot;
+    type GroupSlot = oer_ieee80211_lower_mac::KeyCellSlot<Slot>;
     type PairwiseKey = Key;
-    type GroupKey = Key;
+    type GroupKey = Key<oer_ieee80211_lower_mac::KeyCellSlot<Slot>>;
     type RxMeta = RxMeta;
 }
 
@@ -196,9 +196,11 @@ struct World {
     /// The transmissions in flight, which the port ends in order.
     submitted: Vec<(StaTxContext<'static>, Ticket, Buffer)>,
     /// The receive configurations the port has yet to confirm.
-    configuring: u32,
+    configuring: Option<PendingConfiguration<'static>>,
     /// The configurations wait for the test's confirmation.
     hold_configured: bool,
+    hold_key_installs: bool,
+    pending_installs: Vec<StaInput<'static, 'static, Tokens, Caps>>,
     /// The outcomes of the next transmissions; delivered once none is
     /// queued.
     outcomes: std::collections::VecDeque<bool>,
@@ -267,7 +269,7 @@ impl World {
                 place,
                 absence_place: absence,
                 pairwise: Slot(0),
-                groups: group_slots,
+                groups: oer_ieee80211_lower_mac::KeyCellSlot::bind(group_slots),
             },
         );
         Self {
@@ -275,8 +277,10 @@ impl World {
             arbiter,
             seen: Vec::new(),
             submitted: Vec::new(),
-            configuring: 0,
+            configuring: None,
             hold_configured: false,
+            hold_key_installs: false,
+            pending_installs: Vec::new(),
             outcomes: std::collections::VecDeque::new(),
             deauthentications: Vec::new(),
             eapol: Vec::new(),
@@ -309,18 +313,30 @@ impl World {
                         self.station.input(now, StaInput::AbsenceAnswer(answer));
                     }
                     StaAction::Ready(id) => self.arbiter.ready(id),
-                    StaAction::InstallPairwiseKey { slot, key, .. } => {
+                    StaAction::InstallPairwiseKey {
+                        pending, slot, key, ..
+                    } => {
                         self.seen.push(Seen::InstallPairwise(key));
-                        self.station
-                            .input(now, StaInput::PairwiseKeyInstalled(Key(slot)));
+                        self.installed(
+                            now,
+                            StaInput::PairwiseKeyInstalled {
+                                pending,
+                                key: Key(slot),
+                            },
+                        );
                     }
-                    StaAction::InstallGroupKey { slot, key_id, .. } => {
+                    StaAction::InstallGroupKey {
+                        pending,
+                        slot,
+                        key_id,
+                        ..
+                    } => {
                         self.seen.push(Seen::InstallGroup(key_id.get()));
-                        self.station.input(
+                        self.installed(
                             now,
                             StaInput::GroupKeyInstalled {
                                 key: Key(slot),
-                                key_id,
+                                pending,
                             },
                         );
                     }
@@ -340,7 +356,7 @@ impl World {
                         self.seen.push(Seen::Upstream(fact));
                         self.arbiter.upstream(now, fact);
                     }
-                    StaAction::Configure(receive) => {
+                    StaAction::Configure(receive, pending) => {
                         self.seen.push(Seen::Configure(match receive {
                             StationReceive::Off => "off",
                             StationReceive::OtherBssManagement => "scan",
@@ -351,7 +367,7 @@ impl World {
                             }
                             StationReceive::Bss { .. } => "bss+scan",
                         }));
-                        self.configuring += 1;
+                        assert!(self.configuring.replace(pending).is_none());
                     }
                     StaAction::Transmit(transmit) => self.transmitted(transmit, false),
                     // A frame under the key goes as any other; the world
@@ -387,9 +403,10 @@ impl World {
                     ArbiterAction::OpenGate(Closed) => self.arbiter.gate_opened(Open),
                 }
             }
-            if self.configuring > 0 && !self.hold_configured {
-                self.configuring -= 1;
-                self.station.input(now, StaInput::Configured);
+            if !self.hold_configured
+                && let Some(pending) = self.configuring.take()
+            {
+                self.station.input(now, StaInput::Configured(pending));
                 acted = true;
             }
             if !self.submitted.is_empty() {
@@ -399,6 +416,14 @@ impl World {
             if !acted {
                 return;
             }
+        }
+    }
+
+    fn installed(&mut self, now: Instant, input: StaInput<'static, 'static, Tokens, Caps>) {
+        if self.hold_key_installs {
+            self.pending_installs.push(input);
+        } else {
+            self.station.input(now, input);
         }
     }
 
@@ -1535,4 +1560,163 @@ fn a_candidate_on_the_access_points_channel_wins_within_the_margin() {
     // 14 dB weaker: the strongest wins, and the access point announces its
     // move.
     assert_eq!(joined_beside(-70), (6, true));
+}
+
+#[test]
+fn stale_handshake_installations_are_removed_in_the_order_they_return() {
+    use oer_ieee80211_mac::security::rsn::Akm;
+    use oer_ieee80211_rsn::frames::RsnTxFrame;
+
+    for reverse in [false, true] {
+        let (mut world, ptk) = wpa2_associated(2);
+        let mut plain = Vec::new();
+        plain.extend_from_slice(&RSN);
+        plain.extend_from_slice(&[0xdd, 22, 0x00, 0x0f, 0xac, 0x01, 0x01, 0x00]);
+        plain.extend_from_slice(&[0x99; 16]);
+        plain.extend_from_slice(&[0xdd, 0]);
+        let wrapped = oer_ieee80211_rsn::aes::software_aes128_key_wrap(ptk.kek(), &plain).unwrap();
+        let message3 =
+            RsnTxFrame::<512>::message3(Akm::Psk, LOCAL, 2, ANONCE, [0; 8], wrapped.as_bytes())
+                .unwrap()
+                .authenticate(&ptk);
+        world.hold_key_installs = true;
+        world.receive(at(33), &eapol_frame(message3.as_bytes()));
+        assert_eq!(world.pending_installs.len(), 2);
+        world
+            .station
+            .input(at(34), StaInput::Command(StaCommand::Disconnect));
+        world.run(at(34));
+        assert!(world.station.current_epoch().is_none());
+        assert!(matches!(world.station.state, State::Leave(_)));
+        // Connect cannot replace an installation still reclaiming its keys.
+        world
+            .station
+            .input(at(34), StaInput::Command(StaCommand::Connect));
+        assert!(world.station.current_epoch().is_none());
+        let mut returned = core::mem::take(&mut world.pending_installs);
+        if reverse {
+            returned.reverse();
+        }
+        for (index, input) in returned.into_iter().enumerate() {
+            world.station.input(at(35), input);
+            world.run(at(35));
+            assert_eq!(
+                world
+                    .seen
+                    .iter()
+                    .filter(|event| **event == Seen::RemoveKey)
+                    .count(),
+                index + 1
+            );
+            assert!(!world.station.is_connected());
+        }
+        assert!(world.station.keys.clear());
+        assert!(matches!(world.station.state, State::Idle));
+        assert_eq!(world.station.lost_tokens(), 0);
+        assert!(
+            !world
+                .seen
+                .iter()
+                .any(|event| matches!(event, Seen::Notify(StaNotice::Connected { .. })))
+        );
+        // M2 was the only EAPOL: the stale installations did not cause M4.
+        assert_eq!(world.eapol.len(), 1);
+        world
+            .station
+            .input(at(36), StaInput::Command(StaCommand::Connect));
+        assert!(world.station.current_epoch().is_some());
+    }
+}
+
+#[test]
+fn a_rekey_installed_after_disconnect_is_removed_without_group_message_2() {
+    let (mut world, ptk) = wpa2_connected(2);
+    world.hold_key_installs = true;
+    let eapol = world.eapol.len();
+    world.receive(at(50), &group_message1(&ptk, 3, 2));
+    assert_eq!(world.pending_installs.len(), 1);
+    world
+        .station
+        .input(at(51), StaInput::Command(StaCommand::Disconnect));
+    world.run(at(51));
+    assert!(matches!(world.station.state, State::Leave(_)));
+    let installed = world.pending_installs.pop().unwrap();
+    world.station.input(at(52), installed);
+    world.run(at(52));
+    assert!(world.station.keys.clear());
+    assert_eq!(world.eapol.len(), eapol);
+    assert_eq!(
+        world
+            .seen
+            .iter()
+            .filter(|event| **event == Seen::RemoveKey)
+            .count(),
+        3
+    );
+    assert!(matches!(world.station.state, State::Idle));
+}
+
+#[test]
+fn returned_group_slots_free_their_own_cells_without_identifier_matching() {
+    use oer_ieee80211_lower_mac::KeyCellSlot;
+    let mut keys = Keys::<Tokens>::new(Slot(0), KeyCellSlot::bind([Slot(7), Slot(42)]));
+    let mut epochs = LinkEpochSource::for_test(0);
+    let epoch = epochs.begin();
+    let key_id = GroupKeyId::new(1).unwrap();
+    let (a, pending_a) = keys.take_group_slot(epoch, key_id).unwrap();
+    let (b, pending_b) = keys.take_group_slot(epoch, key_id).unwrap();
+    let cell_a = a.cell();
+    let cell_b = b.cell();
+    keys.group_installed(pending_a, Key(a), true);
+    keys.group_installed(pending_b, Key(b), true);
+    let (_, Key(a)) = keys.take_group_key().unwrap();
+    let (_, Key(b)) = keys.take_group_key().unwrap();
+    assert!(matches!(
+        cell_a.select(&mut keys.groups),
+        Some(KeyCell::Removing)
+    ));
+    assert!(matches!(
+        cell_b.select(&mut keys.groups),
+        Some(KeyCell::Removing)
+    ));
+    keys.group_removed(b);
+    assert!(matches!(
+        cell_a.select(&mut keys.groups),
+        Some(KeyCell::Removing)
+    ));
+    assert!(matches!(
+        cell_b.select(&mut keys.groups),
+        Some(KeyCell::Free(_))
+    ));
+    keys.group_removed(a);
+    assert!(keys.clear());
+}
+
+#[test]
+fn old_configuration_response_releases_permission_without_completing_leave() {
+    let mut world = World::new(2);
+    world.hold_configured = true;
+    world
+        .station
+        .input(at(0), StaInput::Command(StaCommand::Connect));
+    world.run(at(0));
+    let pending_scan = world.configuring.take().unwrap();
+    world
+        .station
+        .input(at(1), StaInput::Command(StaCommand::Disconnect));
+    world.run(at(1));
+    assert!(world.configuring.is_none());
+    assert!(!world.seen.contains(&Seen::Configure("off")));
+    world
+        .station
+        .input(at(2), StaInput::Configured(pending_scan));
+    world.run(at(2));
+    assert!(world.seen.contains(&Seen::Configure("off")));
+    assert!(matches!(world.station.state, State::Leave(_)));
+    let pending_off = world.configuring.take().unwrap();
+    world
+        .station
+        .input(at(3), StaInput::Configured(pending_off));
+    world.run(at(3));
+    assert!(matches!(world.station.state, State::Idle));
 }

@@ -38,3 +38,8 @@ Absences reserve one current publication plus retune time for each move;
 `listen_until` and the return deadline leave this budget before the absence
 ends. Once the outgoing gate has closed, the late-lease check counts only
 the remaining return publication. Retry-plan length never enters this bound.
+
+Each retune carries a private `PendingRetune`, which retains its destination
+and cycle purpose. The service owns it across disable, tuning and enable;
+`retuned` or `retune_refused` consumes that exact action token. A channel
+value alone cannot acknowledge a retune or create an unsolicited response.

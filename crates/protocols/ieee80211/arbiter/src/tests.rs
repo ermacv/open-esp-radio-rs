@@ -103,11 +103,12 @@ fn run<R: ReservationMode>(
                 arbiter.gate_closed(Closed);
                 Seen::CloseGate(reserve)
             }
-            ArbiterAction::Retune(to) => {
+            ArbiterAction::Retune(pending) => {
+                let to = pending.channel();
                 if core::mem::take(&mut port.refuse) {
-                    arbiter.retune_refused();
+                    arbiter.retune_refused(pending);
                 } else {
-                    arbiter.retuned(to);
+                    arbiter.retuned(pending);
                 }
                 Seen::Retune(to.channel().number())
             }
@@ -284,12 +285,12 @@ fn a_released_lease_always_ends_or_is_cancelled() {
         Some(ArbiterAction::CloseGate { .. })
     ));
     arbiter.gate_closed(Closed);
-    assert!(matches!(
-        arbiter.poll_action(at(152)),
-        Some(ArbiterAction::Retune(_))
-    ));
+    let Some(ArbiterAction::Retune(pending)) = arbiter.poll_action(at(152)) else {
+        panic!("the closed gate yields its retune token");
+    };
+    assert_eq!(pending.channel(), channel(6));
     arbiter.release(moving);
-    arbiter.retuned(channel(6));
+    arbiter.retuned(pending);
     let seen = run(&mut arbiter, &mut port, at(152));
     assert_eq!(
         seen.last(),

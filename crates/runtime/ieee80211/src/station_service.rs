@@ -376,7 +376,7 @@ enum Next<K> {
     /// Wait for the next input.
     Wait,
     /// Move the port to the channel.
-    Retune(SupportedChannel<K>),
+    Retune(oer_ieee80211_arbiter::PendingRetune<K>),
     /// The port is poisoned.
     Poisoned,
 }
@@ -478,33 +478,39 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
     async fn enable<'p, M: RawMutex>(
         &mut self,
         mut owner: Owner<'p, 'id, B, Disabled>,
-        mut channel: Option<SupportedChannel<B::Caps>>,
+        mut pending: Option<oer_ieee80211_arbiter::PendingRetune<B::Caps>>,
         io: &mut ServiceIo<'_, M, B::Caps>,
         timer: &impl Timer,
     ) -> Result<Owner<'p, 'id, B, Enabled>, ServiceEnd<'p, 'id, B>> {
         loop {
-            if let Some(channel) = channel {
+            if let Some(pending) = pending.as_ref() {
                 let mut setup = owner.setup();
-                B::tune(&mut setup, channel);
+                B::tune(&mut setup, pending.channel());
             }
             match owner.enable().await {
                 Ok(enabled) => {
-                    if let Some(channel) = channel {
-                        self.arbiter.retuned(channel);
+                    if let Some(pending) = pending {
+                        self.arbiter.retuned(pending);
                     }
                     return Ok(enabled);
                 }
                 Err(Failed::Refused(disabled, _)) => {
                     owner = disabled;
-                    self.arbiter.retune_refused();
+                    let Some(requested) = pending.take() else {
+                        // Initial enable has no retune action to answer.
+                        self.arbiter.poisoned();
+                        self.settle(timer.now(), io);
+                        return Err(ServiceEnd::Failed(owner));
+                    };
+                    self.arbiter.retune_refused(requested);
                     // The arbiter's notices reach the station; its next
                     // action is the move back, or none once it stopped.
-                    channel = None;
+
                     let now = timer.now();
                     while let Some(action) = self.arbiter.poll_action(now) {
                         match action {
                             ArbiterAction::Retune(to) => {
-                                channel = Some(to);
+                                pending = Some(to);
                                 break;
                             }
                             ArbiterAction::Station(notice) => {
@@ -518,7 +524,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                             ArbiterAction::CloseGate { .. } | ArbiterAction::OpenGate(_) => {}
                         }
                     }
-                    if channel.is_none() {
+                    if pending.is_none() {
                         self.settle(now, io);
                         return Err(ServiceEnd::Failed(owner));
                     }
@@ -1298,7 +1304,7 @@ where
 /// What serving a phase ended with.
 enum Served<K> {
     Stop,
-    Retune(SupportedChannel<K>),
+    Retune(oer_ieee80211_arbiter::PendingRetune<K>),
     Poisoned,
 }
 

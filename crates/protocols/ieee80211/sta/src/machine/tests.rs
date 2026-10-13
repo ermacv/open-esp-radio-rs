@@ -397,7 +397,8 @@ impl World {
                         self.arbiter.gate_closed(Closed);
                     }
                     ArbiterAction::Retune(to) => {
-                        self.seen.push(Seen::Retune(to.channel().number()));
+                        self.seen
+                            .push(Seen::Retune(to.channel().channel().number()));
                         self.arbiter.retuned(to);
                     }
                     ArbiterAction::OpenGate(Closed) => self.arbiter.gate_opened(Open),

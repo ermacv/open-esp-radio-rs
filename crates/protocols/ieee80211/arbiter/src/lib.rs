@@ -523,6 +523,31 @@ impl<'p, 'id: 'p, P: AirReservationPhase<'p, 'id>> CloseGateWith<'p, 'id, AirRes
     }
 }
 
+/// Proof of the one retune the arbiter requested.
+///
+/// Only [`Arbiter::poll_action`] creates this token. The service keeps it
+/// through disable, tuning and enable, then consumes it in either
+/// [`Arbiter::retuned`] or [`Arbiter::retune_refused`]. The destination and
+/// cycle purpose remain attached to the answer; no independent channel or
+/// unsolicited answer can be supplied.
+///
+/// ```compile_fail
+/// use oer_ieee80211_arbiter::PendingRetune;
+/// let pending = PendingRetune { to: (), purpose: () };
+/// ```
+#[derive(Debug)]
+pub struct PendingRetune<K> {
+    to: SupportedChannel<K>,
+    purpose: CyclePurpose,
+}
+
+impl<K> PendingRetune<K> {
+    /// The checked channel this action asks the service to tune.
+    pub const fn channel(&self) -> SupportedChannel<K> {
+        self.to
+    }
+}
+
 /// One action of the arbiter.
 #[derive(Debug)]
 pub enum ArbiterAction<G: GateTokens, K, R: ReservationMode> {
@@ -540,7 +565,7 @@ pub enum ArbiterAction<G: GateTokens, K, R: ReservationMode> {
     },
     /// Move the port to the channel: disable, set it, enable
     /// ([`Arbiter::retuned`] or [`Arbiter::retune_refused`] follows).
-    Retune(SupportedChannel<K>),
+    Retune(PendingRetune<K>),
     /// Open the port's transmit gate ([`Arbiter::gate_opened`] takes the
     /// open gate back).
     OpenGate(G::Closed),
@@ -607,7 +632,7 @@ enum Port<K> {
     /// On the channel.
     On(SupportedChannel<K>),
     /// Moving to `to`.
-    Retuning { to: SupportedChannel<K> },
+    Retuning,
     /// Its channel is unknown after a refused move: the next cycle moves
     /// it.
     Unknown,
@@ -1497,37 +1522,29 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
         }
     }
 
-    /// The port runs on `channel`.
-    pub fn retuned(&mut self, channel: SupportedChannel<K>) {
-        if let Port::Retuning { to } = self.port {
-            debug_assert!(to == channel, "the port moved where the arbiter asked");
-        }
-        self.port = Port::On(channel);
-        let actions = self.coordinator.port_moved(channel.channel());
+    /// The requested retune completed and the port runs on its channel.
+    pub fn retuned(&mut self, pending: PendingRetune<K>) {
+        self.port = Port::On(pending.to);
+        let actions = self.coordinator.port_moved(pending.to.channel());
         self.apply(actions);
     }
 
-    /// The port refused the move it was asked for: a move onto a lease's
-    /// channel cancels that lease and the port returns; a failed return
+    /// The requested retune was refused: a move onto a lease's channel
+    /// cancels that lease and returns home; a refused return or shared move
     /// stops the station and the access point.
-    pub fn retune_refused(&mut self) {
-        let Some(Cycle {
-            purpose: CyclePurpose::LeaseStart(which),
-            ..
-        }) = self.cycle
-        else {
-            self.fail();
-            return;
-        };
-        self.cancel(which, CancelReason::Refused);
-        // The port is on no channel it can trust: back home, the gate
-        // still closed.
-        self.port = Port::Unknown;
-        self.cycle = Some(Cycle {
-            to: self.home,
-            reserve: R::none(),
-            purpose: CyclePurpose::Return,
-        });
+    pub fn retune_refused(&mut self, pending: PendingRetune<K>) {
+        match pending.purpose {
+            CyclePurpose::LeaseStart(which) => {
+                self.cancel(which, CancelReason::Refused);
+                self.port = Port::Unknown;
+                self.cycle = Some(Cycle {
+                    to: self.home,
+                    reserve: R::none(),
+                    purpose: CyclePurpose::Return,
+                });
+            }
+            CyclePurpose::LeaseEnd(_) | CyclePurpose::Move | CyclePurpose::Return => self.fail(),
+        }
     }
 
     /// The port is poisoned: the station and the access point stop.
@@ -1684,10 +1701,13 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
                     }
                     Port::On(_) | Port::Unknown => {
                         self.gate = Gate::Closed(closed);
-                        self.port = Port::Retuning { to: cycle.to };
-                        Some(ArbiterAction::Retune(cycle.to))
+                        self.port = Port::Retuning;
+                        Some(ArbiterAction::Retune(PendingRetune {
+                            to: cycle.to,
+                            purpose: cycle.purpose,
+                        }))
                     }
-                    Port::Retuning { .. } | Port::Failed => {
+                    Port::Retuning | Port::Failed => {
                         self.gate = Gate::Closed(closed);
                         None
                     }

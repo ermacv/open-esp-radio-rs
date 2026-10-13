@@ -9,6 +9,10 @@ struct Context {
     dropped: Rc<Cell<usize>>,
 }
 
+impl ModelContext for Context {
+    type Context<'id> = Self;
+}
+
 impl Drop for Context {
     fn drop(&mut self) {
         self.dropped.set(self.dropped.get() + 1);
@@ -192,6 +196,10 @@ struct AggregateContext {
     buffers: Vec<u8>,
     bodies: Vec<(u8, *const u8)>,
     dropped: Rc<Cell<usize>>,
+}
+
+impl ModelContext for AggregateContext {
+    type Context<'id> = Self;
 }
 
 impl Drop for AggregateContext {

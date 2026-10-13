@@ -181,11 +181,11 @@ enum Seen {
 
 /// The loop the thin service runs, with the test as the port.
 struct World {
-    station: Station<Tokens, Caps>,
+    station: Station<'static, Tokens, Caps>,
     arbiter: Arbiter<'static, Gate, Caps, NoReservation>,
     seen: Vec<Seen>,
     /// The transmissions in flight, which the port ends in order.
-    submitted: Vec<(StaTxContext, Ticket, Buffer)>,
+    submitted: Vec<(StaTxContext<'static>, Ticket, Buffer)>,
     /// The receive configurations the port has yet to confirm.
     configuring: u32,
     /// The configurations wait for the test's confirmation.
@@ -250,6 +250,7 @@ impl World {
                 nonce,
                 he_packet_padding: |_| oer_ieee80211_upper_mac::HePacketPadding::None,
             },
+            LinkEpochSource::for_test(0),
             [Ticket(0), Ticket(1)],
             [Buffer([0; 512]), Buffer([0; 512])],
             place,
@@ -428,7 +429,7 @@ impl World {
 
     /// One frame the station sent: the world records it and holds its
     /// tokens.
-    fn transmitted(&mut self, mut transmit: StaTransmit<Tokens, Caps>, keyed: bool) {
+    fn transmitted(&mut self, mut transmit: StaTransmit<'static, Tokens, Caps>, keyed: bool) {
         let frame = transmit.buffer.bytes_mut();
         // A Null's PM bit tells its power state apart.
         let subtype = u16::from_le_bytes([frame[0], frame[1]]) & 0x10fc;
@@ -872,6 +873,60 @@ fn a_terminal_of_the_previous_connection_only_returns_its_resources() {
     assert!(world.station.tokens().is_some());
     assert!(world.station.tokens().is_some());
     assert!(world.station.tokens().is_none());
+    assert_eq!(world.station.lost_tokens(), 0);
+}
+
+#[test]
+fn exhausted_epochs_refuse_connect_while_an_old_operation_still_owns_tokens() {
+    let mut world = connected_world();
+    let old = world
+        .station
+        .encode_null(BSSID, StaPowerManagement::Active)
+        .unwrap();
+    world.station.epochs = LinkEpochSource::for_test(u64::MAX);
+    world
+        .station
+        .input(at(40), StaInput::Command(StaCommand::Disconnect));
+    world.run(at(40));
+    world.take();
+    assert!(!world.station.is_current(&old.context));
+    for now in [50, 60] {
+        world
+            .station
+            .input(at(now), StaInput::Command(StaCommand::Connect));
+        world.run(at(now));
+        assert_eq!(
+            world.take(),
+            [Seen::Notify(StaNotice::ConnectRefused(EpochExhausted))]
+        );
+        assert!(!world.station.is_connected());
+    }
+    world.station.input(
+        at(61),
+        StaInput::TxDone {
+            context: old.context,
+            ticket: old.ticket,
+            buffer: old.buffer,
+            completion: TxCompletion {
+                status: TxStatus::Success,
+                ack_rssi_dbm: None,
+                ack_snr_db: None,
+                block_ack: None,
+                transmissions: 1,
+                rate: None,
+            },
+        },
+    );
+    world.run(at(61));
+    assert!(world.take().is_empty());
+    assert_eq!(
+        core::iter::from_fn(|| world.station.tickets.take()).count(),
+        2
+    );
+    assert_eq!(
+        core::iter::from_fn(|| world.station.buffers.take()).count(),
+        2
+    );
     assert_eq!(world.station.lost_tokens(), 0);
 }
 

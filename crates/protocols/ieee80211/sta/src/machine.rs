@@ -104,6 +104,7 @@ use oer_ieee80211_upper_mac::HePacketPadding;
 use crate::association::StaAssociatedPeer;
 use oer_time::{Duration, Instant};
 
+use crate::epoch::{EpochExhausted, LinkEpoch, LinkEpochSource};
 use crate::pool::Pool;
 use crate::power_save::{PowerSaveDecision, PowerSaveView};
 
@@ -155,7 +156,7 @@ pub enum StaCommand {
 }
 
 /// One input of the station.
-pub enum StaInput<'f, T: StaTokens, K> {
+pub enum StaInput<'f, 'id, T: StaTokens, K> {
     /// A command of the application.
     Command(StaCommand),
     /// A deadline the station named passed.
@@ -170,7 +171,7 @@ pub enum StaInput<'f, T: StaTokens, K> {
     /// The terminal of a transmission: its ticket and buffer come back.
     TxDone {
         /// The original operation, returned by the port.
-        context: StaTxContext,
+        context: StaTxContext<'id>,
         /// The transmission's ticket.
         ticket: T::Ticket,
         /// The transmission's buffer.
@@ -183,7 +184,7 @@ pub enum StaInput<'f, T: StaTokens, K> {
     /// buffer come back, and it counts as undelivered.
     Unsent {
         /// The operation that was not submitted.
-        context: StaTxContext,
+        context: StaTxContext<'id>,
         /// The frame's ticket.
         ticket: T::Ticket,
         /// The frame's buffer.
@@ -225,7 +226,7 @@ pub enum StaInput<'f, T: StaTokens, K> {
 }
 
 /// One action of the station, which the service carries out at once.
-pub enum StaAction<'a, T: StaTokens, K> {
+pub enum StaAction<'a, 'id, T: StaTokens, K> {
     /// Ask the arbiter for a channel, with the station's place; the service
     /// hands the answer back ([`StaInput::Answer`]) in the same step.
     RequestChannel(ChannelRequest<K>, LeasePlace),
@@ -276,14 +277,14 @@ pub enum StaAction<'a, T: StaTokens, K> {
     /// Remove a group key ([`StaInput::GroupKeyRemoved`]).
     RemoveGroupKey(T::GroupKey),
     /// Transmit one MPDU ([`StaInput::TxDone`] follows).
-    Transmit(StaTransmit<T, K>),
+    Transmit(StaTransmit<'id, T, K>),
     /// Transmit one MPDU under the pairwise key its link lends: EAPOL
     /// after the handshake, sent only while the link is up
     /// ([`StaInput::TxDone`] follows). It carries the Protected bit and
     /// the CCMP header's room.
     TransmitProtected {
         /// The MPDU.
-        transmit: StaTransmit<T, K>,
+        transmit: StaTransmit<'id, T, K>,
         /// The pairwise key, as [`Station::link`] lends it.
         key: &'a T::PairwiseKey,
     },
@@ -300,9 +301,9 @@ pub enum StaAction<'a, T: StaTokens, K> {
 
 /// One MPDU to transmit: its ticket, the buffer the station encoded it in,
 /// its kind, its class and its rates.
-pub struct StaTransmit<T: StaTokens, K> {
+pub struct StaTransmit<'id, T: StaTokens, K> {
     /// Its epoch and purpose, moved with the operation through its terminal.
-    pub context: StaTxContext,
+    pub context: StaTxContext<'id>,
     /// Its ticket.
     pub ticket: T::Ticket,
     /// The buffer holding the frame, from its header on.
@@ -319,12 +320,12 @@ pub struct StaTransmit<T: StaTokens, K> {
 /// The identity of one station operation. No frame parsing or current-state
 /// guess assigns a completion to a handshake, power transition or link.
 #[derive(Debug)]
-pub struct StaTxContext {
-    epoch: u64,
+pub struct StaTxContext<'id> {
+    epoch: LinkEpoch<'id>,
     purpose: TxPurpose,
 }
 
-impl StaTxContext {
+impl StaTxContext<'_> {
     /// Whether this operation used the probe rate record.
     pub const fn is_probe(&self) -> bool {
         matches!(
@@ -382,9 +383,11 @@ pub enum StaRatePlan {
 
 /// The station's connected link, as the data machine sees it while data
 /// may go.
-pub struct LinkView<'a, T: StaTokens> {
+pub struct LinkView<'a, 'id, T: StaTokens> {
     /// The station's own address.
     pub address: [u8; 6],
+    /// The connection identity, unchanged during sleep and channel absences.
+    pub epoch: LinkEpoch<'id>,
     /// The access point.
     pub bssid: [u8; 6],
     /// The station's association identifier.
@@ -422,6 +425,8 @@ pub enum LinkProtection<'a, T: StaTokens> {
 /// What the station tells the application.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaNotice {
+    /// No connection began: this install cannot issue another unique epoch.
+    ConnectRefused(EpochExhausted),
     /// The station is connected to `bssid` on `channel`.
     Connected {
         /// The access point.
@@ -544,7 +549,7 @@ impl<K: Ieee80211Capabilities> Rules<K> {
 }
 
 /// The station: its state and its tokens.
-pub struct Station<T: StaTokens, K: Ieee80211Capabilities> {
+pub struct Station<'id, T: StaTokens, K: Ieee80211Capabilities> {
     config: StaConfig<K>,
     state: State<T, K>,
     tickets: Pool<T::Ticket>,
@@ -565,7 +570,8 @@ pub struct Station<T: StaTokens, K: Ieee80211Capabilities> {
     sequence: StaSequenceCounter,
     scan: ScanTable<SCAN_CAPACITY>,
     /// The connection attempt that owns new TX operations.
-    epoch: u64,
+    epoch: Option<LinkEpoch<'id>>,
+    epochs: LinkEpochSource<'id>,
 }
 
 /// The station's lease.
@@ -1083,7 +1089,7 @@ enum Done {
 }
 
 /// An action a state owes.
-enum Owed<T: StaTokens, K> {
+enum Owed<'id, T: StaTokens, K> {
     InstallPairwise {
         slot: T::PairwiseSlot,
         peer: IndividualAddress,
@@ -1107,13 +1113,13 @@ enum Owed<T: StaTokens, K> {
     Release(Lease<K>),
     Upstream(UpstreamFact<K>),
     Configure(StationReceive<K>),
-    Transmit(StaTransmit<T, K>),
+    Transmit(StaTransmit<'id, T, K>),
     /// Under the pairwise key of the connected link.
-    TransmitProtected(StaTransmit<T, K>),
+    TransmitProtected(StaTransmit<'id, T, K>),
     Notify(StaNotice),
 }
 
-impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
+impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     /// An idle station of `config`, with the tickets, small buffers and key
     /// slots the composition granted it and the arbiter's places. It holds
     /// at most eight tokens of a kind, checked at compile time:
@@ -1123,6 +1129,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     /// # use oer_ieee80211_lower_mac::*;
     /// # use oer_ieee80211_mac::phy::{HeMcs, HtMcs};
     /// # use oer_ieee80211_sta::machine::{StaConfig, StaTokens, Station};
+    /// # use oer_ieee80211_sta::epoch::LinkEpochSource;
     /// # struct Caps;
     /// # impl Ieee80211Capabilities for Caps {
     /// #     const CAPS: LowerMacCapabilities = LowerMacCapabilities {
@@ -1148,18 +1155,20 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     /// #     type Ticket = u8; type SmallBuffer = Buffer; type PairwiseSlot = ();
     /// #     type GroupSlot = (); type PairwiseKey = (); type GroupKey = (); type RxMeta = RxMeta;
     /// # }
-    /// fn nine(
+    /// fn nine<'id>(
+    ///     epochs: LinkEpochSource<'id>,
     ///     config: StaConfig<Caps>,
     ///     place: LeasePlace,
     ///     absence: AbsencePlace,
-    /// ) -> Station<Tokens, Caps> {
-    ///     Station::new(config, [0; 9], [Buffer], place, absence, (), [()])
+    /// ) -> Station<'id, Tokens, Caps> {
+    ///     Station::new(config, epochs, [0; 9], [Buffer], place, absence, (), [()])
     /// }
-    /// let nine: fn(_, _, _) -> _ = nine;
+    /// let nine: fn(_, _, _, _) -> _ = nine;
     /// core::hint::black_box(nine);
     /// ```
     pub fn new<const TICKETS: usize, const BUFFERS: usize, const GROUPS: usize>(
         config: StaConfig<K>,
+        epochs: LinkEpochSource<'id>,
         tickets: [T::Ticket; TICKETS],
         buffers: [T::SmallBuffer; BUFFERS],
         place: LeasePlace,
@@ -1182,7 +1191,8 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             associated_owed: None,
             sequence: StaSequenceCounter::new(SequenceNumber::ZERO),
             scan: ScanTable::new(),
-            epoch: 0,
+            epoch: None,
+            epochs,
         }
     }
 
@@ -1199,8 +1209,8 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
 
     /// Whether an operation still belongs to this connection attempt.
     /// Resource return is unconditional; protocol and rate updates use this guard.
-    pub fn is_current(&self, context: &StaTxContext) -> bool {
-        context.epoch == self.epoch
+    pub fn is_current(&self, context: &StaTxContext<'id>) -> bool {
+        Some(context.epoch) == self.epoch
     }
 
     /// Whether the station is connected.
@@ -1223,7 +1233,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     /// link holds its key. It lends the pairwise key, so only the station
     /// removes it, the replay check, and on a non-QoS BSS the station's
     /// sequence space ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6131495971)).
-    pub fn link(&mut self) -> Option<LinkView<'_, T>> {
+    pub fn link(&mut self) -> Option<LinkView<'_, 'id, T>> {
         let State::Connected(connected) = &mut self.state else {
             return None;
         };
@@ -1245,6 +1255,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             (None, None) => LinkProtection::Open,
         };
         Some(LinkView {
+            epoch: self.epoch?,
             address: self.config.address,
             bssid: connected.bssid,
             association_id: connected.association_id,
@@ -1278,7 +1289,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     }
 
     /// Take one input at `now`.
-    pub fn input(&mut self, now: Instant, input: StaInput<'_, T, K>) {
+    pub fn input(&mut self, now: Instant, input: StaInput<'_, 'id, T, K>) {
         let done = match input {
             StaInput::TxDone {
                 context,
@@ -1713,10 +1724,14 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     fn step(&mut self, state: State<T, K>, now: Instant, done: Done) -> State<T, K> {
         match (state, done) {
             (State::Idle(keys) | State::Report(_, keys), Done::Command(StaCommand::Connect)) => {
-                self.epoch = self
-                    .epoch
-                    .checked_add(1)
-                    .expect("station link epoch exhausted");
+                match self.epochs.begin() {
+                    Ok(epoch) => self.epoch = Some(epoch),
+                    Err(exhausted) => {
+                        self.epoch = None;
+                        self.notice_owed = Some(StaNotice::ConnectRefused(exhausted));
+                        return State::Idle(keys);
+                    }
+                }
                 self.scan.clear();
                 self.visit(0, 0, None, keys)
             }
@@ -2218,7 +2233,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
 
     /// The next action to carry out at `now`, if any. The service takes
     /// every action before it waits again.
-    pub fn poll_action(&mut self, now: Instant) -> Option<StaAction<'_, T, K>> {
+    pub fn poll_action(&mut self, now: Instant) -> Option<StaAction<'_, 'id, T, K>> {
         if let Some(peer) = self.associated_owed.take() {
             return Some(StaAction::Associated(peer));
         }
@@ -2280,13 +2295,10 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     }
 
     /// The action `state` owes, and the state that awaits its end.
-    fn owe(&mut self, state: State<T, K>, now: Instant) -> (State<T, K>, Option<Owed<T, K>>) {
+    fn owe(&mut self, state: State<T, K>, now: Instant) -> (State<T, K>, Option<Owed<'id, T, K>>) {
         match state {
             State::Report(reason, keys) => {
-                self.epoch = self
-                    .epoch
-                    .checked_add(1)
-                    .expect("station link epoch exhausted");
+                self.epoch = None;
                 (
                     State::Idle(keys),
                     Some(Owed::Notify(StaNotice::Disconnected(reason))),
@@ -2336,7 +2348,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     }
 
     /// The action the leave owes.
-    fn owe_leave(&mut self, mut leave: Leave<T>) -> (State<T, K>, Option<Owed<T, K>>) {
+    fn owe_leave(&mut self, mut leave: Leave<T>) -> (State<T, K>, Option<Owed<'id, T, K>>) {
         let owed = match leave.step {
             LeaveStep::RemoveKeys(deauthentication) => {
                 if let Some(key) = leave.keys.take_pairwise_key() {
@@ -2453,7 +2465,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     fn owe_handshake(
         &mut self,
         mut handshake: Handshake<T, K>,
-    ) -> (State<T, K>, Option<Owed<T, K>>) {
+    ) -> (State<T, K>, Option<Owed<'id, T, K>>) {
         let (step, owed) = match core::mem::replace(&mut handshake.step, HandshakeStep::Await) {
             HandshakeStep::Send(message) => {
                 match self.encode_eapol(
@@ -2463,7 +2475,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 ) {
                     Ok(transmit) => (HandshakeStep::AwaitSent, Some(Owed::Transmit(transmit))),
                     Err(Unsent::NoTokens) => (HandshakeStep::Send(message), None),
-                    Err(Unsent::Encode) => {
+                    Err(Unsent::Encode | Unsent::NoConnection) => {
                         return (leave_handshake(handshake, REASON_UNSPECIFIED), None);
                     }
                 }
@@ -2507,7 +2519,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                         Some(Owed::Transmit(transmit)),
                     ),
                     Err(Unsent::NoTokens) => (HandshakeStep::SendLast(message, epoch), None),
-                    Err(Unsent::Encode) => {
+                    Err(Unsent::Encode | Unsent::NoConnection) => {
                         return (leave_handshake(handshake, REASON_UNSPECIFIED), None);
                     }
                 }
@@ -2524,7 +2536,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         bssid: [u8; 6],
         eapol: &[u8],
         purpose: TxPurpose,
-    ) -> Result<StaTransmit<T, K>, Unsent> {
+    ) -> Result<StaTransmit<'id, T, K>, Unsent> {
         let address = self.config.address;
         let sequence_number = self.sequence.take();
         self.encode_individual(
@@ -2549,7 +2561,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     fn owe_connected(
         &mut self,
         mut connected: Connected<T, K>,
-    ) -> (State<T, K>, Option<Owed<T, K>>) {
+    ) -> (State<T, K>, Option<Owed<'id, T, K>>) {
         if connected.connected_notice {
             connected.connected_notice = false;
             let notice = StaNotice::Connected {
@@ -2588,7 +2600,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     fn owe_rekey(
         &mut self,
         connected: &mut Connected<T, K>,
-    ) -> Option<Result<Owed<T, K>, StaDisconnectReason>> {
+    ) -> Option<Result<Owed<'id, T, K>, StaDisconnectReason>> {
         let rsn = connected.rsn.as_mut()?;
         let (rekey, owed) = match core::mem::replace(&mut rsn.rekey, Rekey::None) {
             Rekey::Install(request) => {
@@ -2622,7 +2634,9 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                         (Rekey::AwaitSent, Some(Owed::TransmitProtected(transmit)))
                     }
                     Err(Unsent::NoTokens) => (Rekey::Send(message), None),
-                    Err(Unsent::Encode) => return Some(Err(StaDisconnectReason::Encode)),
+                    Err(Unsent::Encode | Unsent::NoConnection) => {
+                        return Some(Err(StaDisconnectReason::Encode));
+                    }
                 }
             }
             Rekey::Retire => match connected.keys.retiring.take() {
@@ -2640,7 +2654,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     }
 
     /// The background scan's action, or a Null the access point is owed.
-    fn owe_background(&mut self, connected: &mut Connected<T, K>) -> Option<Owed<T, K>> {
+    fn owe_background(&mut self, connected: &mut Connected<T, K>) -> Option<Owed<'id, T, K>> {
         let bssid = connected.bssid;
         let home = connected.channel;
         let absence_id = self.absence.as_ref().map(Lease::id);
@@ -2737,7 +2751,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     }
 
     /// A Probe Request of the background scan, marked in flight.
-    fn probe(&mut self, sending: &mut bool) -> Option<Owed<T, K>> {
+    fn probe(&mut self, sending: &mut bool) -> Option<Owed<'id, T, K>> {
         let mut transmit = self.encode_probe()?;
         transmit.context.purpose = TxPurpose::Connected(Sending::Probe);
         *sending = true;
@@ -2749,7 +2763,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         &mut self,
         bssid: [u8; 6],
         power_management: StaPowerManagement,
-    ) -> Option<StaTransmit<T, K>> {
+    ) -> Option<StaTransmit<'id, T, K>> {
         let address = self.config.address;
         let sequence_number = self.sequence.take();
         let mut transmit = self
@@ -2779,7 +2793,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         &mut self,
         mut join: Join<T, K>,
         now: Instant,
-    ) -> (State<T, K>, Option<Owed<T, K>>) {
+    ) -> (State<T, K>, Option<Owed<'id, T, K>>) {
         let connect = ChannelRequest {
             channel: join.channel,
             purpose: Purpose::Connect,
@@ -2828,7 +2842,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                     }
                     // No token now: the next poll tries again.
                     Err(Unsent::NoTokens) => (JoinStep::Authenticate(auth), None),
-                    Err(Unsent::Encode) => {
+                    Err(Unsent::Encode | Unsent::NoConnection) => {
                         return (leave_unkeyed(join.keys, StaDisconnectReason::Encode), None);
                     }
                 }
@@ -2863,7 +2877,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                             (JoinStep::Associate(runtime), Some(Owed::Transmit(transmit)))
                         }
                         Err(Unsent::NoTokens) => (JoinStep::Associate(runtime), None),
-                        Err(Unsent::Encode) => {
+                        Err(Unsent::Encode | Unsent::NoConnection) => {
                             return (leave_unkeyed(join.keys, StaDisconnectReason::Encode), None);
                         }
                     }
@@ -2974,7 +2988,8 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         encode: impl FnOnce(&mut [u8]) -> Option<usize>,
         class: StaFrameClass,
         purpose: TxPurpose,
-    ) -> Result<StaTransmit<T, K>, Unsent> {
+    ) -> Result<StaTransmit<'id, T, K>, Unsent> {
+        let epoch = self.epoch.ok_or(Unsent::NoConnection)?;
         let (ticket, mut buffer) = self.tokens().ok_or(Unsent::NoTokens)?;
         let frame = encode(buffer.bytes_mut()).and_then(|len| {
             let header = HeaderSpec::decode(&buffer.bytes_mut()[..len], IndividualAddress::new)?;
@@ -2982,10 +2997,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         });
         match frame {
             Some(frame) => Ok(StaTransmit {
-                context: StaTxContext {
-                    epoch: self.epoch,
-                    purpose,
-                },
+                context: StaTxContext { epoch, purpose },
                 ticket,
                 buffer,
                 frame: StaFrame::Individual(frame),
@@ -3020,7 +3032,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         bssid: [u8; 6],
         qos: Option<&mut [StaSequenceCounter; 8]>,
         eapol: &[u8],
-    ) -> Result<StaTransmit<T, K>, Unsent> {
+    ) -> Result<StaTransmit<'id, T, K>, Unsent> {
         const PRIORITY: u8 = 7;
         let peer_qos = qos.is_some();
         let sequence_number = match qos {
@@ -3047,7 +3059,8 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
 
     /// A broadcast Probe Request in a buffer, if the station holds tokens
     /// and it encodes.
-    fn encode_probe(&mut self) -> Option<StaTransmit<T, K>> {
+    fn encode_probe(&mut self) -> Option<StaTransmit<'id, T, K>> {
+        let epoch = self.epoch?;
         let (ticket, mut buffer) = self.tokens()?;
         let sequence_number = self.sequence.take();
         let rates = self.config.supported_rates;
@@ -3068,7 +3081,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         match frame {
             Some(frame) => Some(StaTransmit {
                 context: StaTxContext {
-                    epoch: self.epoch,
+                    epoch,
                     purpose: TxPurpose::Probe,
                 },
                 ticket,
@@ -3091,7 +3104,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         subtype: StaManagementSubtype,
         bssid: [u8; 6],
         body: &[u8],
-    ) -> Option<StaTransmit<T, K>> {
+    ) -> Option<StaTransmit<'id, T, K>> {
         let address = self.config.address;
         let sequence_number = self.sequence.take();
         self.encode_individual(
@@ -3271,6 +3284,7 @@ fn connect<T: StaTokens, K>(handshake: Handshake<T, K>) -> State<T, K> {
 
 /// Why a frame was not handed out.
 enum Unsent {
+    NoConnection,
     /// The station holds no ticket or buffer now.
     NoTokens,
     /// The frame did not encode.

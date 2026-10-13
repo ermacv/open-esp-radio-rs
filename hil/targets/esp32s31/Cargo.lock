@@ -2497,6 +2497,7 @@ dependencies = [
  "oer-ieee80211-rsn",
  "oer-ieee80211-trace",
  "oer-ieee80211-upper-mac",
+ "oer-radio-port",
  "oer-time",
  "oer-trace",
 ]

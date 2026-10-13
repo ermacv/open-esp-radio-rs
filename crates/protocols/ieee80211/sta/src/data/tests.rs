@@ -79,8 +79,9 @@ const BSSID: [u8; 6] = [2, 0, 0, 0, 0, 2];
 const PEER: [u8; 6] = [2, 0, 0, 0, 0, 3];
 const NOW: Instant = Instant::from_micros(0);
 
-fn qos_link<'a>(key: &'a (), replay: &'a mut CcmpRxReplayEpoch) -> LinkView<'a, Station> {
+fn qos_link<'a>(key: &'a (), replay: &'a mut CcmpRxReplayEpoch) -> LinkView<'a, 'static, Station> {
     LinkView {
+        epoch: LinkEpoch::for_test(1),
         address: LOCAL,
         bssid: BSSID,
         association_id: 1,
@@ -92,8 +93,9 @@ fn qos_link<'a>(key: &'a (), replay: &'a mut CcmpRxReplayEpoch) -> LinkView<'a, 
     }
 }
 
-fn open_link(counter: &mut StaSequenceCounter) -> LinkView<'_, Station> {
+fn open_link(counter: &mut StaSequenceCounter) -> LinkView<'_, 'static, Station> {
     LinkView {
+        epoch: LinkEpoch::for_test(1),
         address: LOCAL,
         bssid: BSSID,
         association_id: 1,
@@ -102,7 +104,7 @@ fn open_link(counter: &mut StaSequenceCounter) -> LinkView<'_, Station> {
     }
 }
 
-fn machine() -> StaData<Data, Caps> {
+fn machine() -> StaData<'static, Data, Caps> {
     StaData::new(
         [1, 2],
         [Buffer(std::vec![0; 1600]), Buffer(std::vec![0; 1600])],
@@ -122,7 +124,7 @@ fn epoch() -> CcmpRxReplayEpoch {
     CcmpRxReplayEpoch::new([0; 8], GroupKeyId::new(1).unwrap(), [0; 8]).unwrap()
 }
 
-fn transmit(data: &mut StaData<Data, Caps>) -> DataTransmit<Data, Caps> {
+fn transmit(data: &mut StaData<'static, Data, Caps>) -> DataTransmit<'static, Data, Caps> {
     match data.poll_action(NOW, |_| true) {
         Some(DataAction::Transmit(transmit)) => transmit,
         None => panic!("an attempt is owed"),
@@ -262,6 +264,7 @@ fn a_late_old_link_terminal_does_not_take_a_new_links_metadata() {
     .unwrap();
     let old = transmit(&mut data);
     data.leave();
+    link.epoch = LinkEpoch::for_test(2);
     data.input(
         NOW,
         DataInput::Msdu {
@@ -714,6 +717,7 @@ fn a_link_that_ends_drains_its_queue_and_its_submitted_attempts_never_go_again()
     assert!(!data.accepts());
     // The link ends: the owed ones drain into their tokens, counted.
     data.leave();
+    link.epoch = LinkEpoch::for_test(2);
     assert!(data.poll_action(NOW, |_| true).is_none());
     assert_eq!(data.counters().left_behind, 2);
     // The submitted one, aborted before the air, returns its tokens and

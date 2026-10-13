@@ -66,7 +66,7 @@ fn until(open: &Cell<bool>) -> impl Future<Output = ()> + '_ {
 }
 
 /// A data frame to the peer, 40 octets, protected or not.
-fn data_frame<'p, X>(
+fn data_frame<'p, X: ModelContext>(
     phase: &ModelPhase<'p, '_, ModelCaps, X>,
     protected: bool,
 ) -> TxFrame<'p, ModelCaps> {

@@ -70,7 +70,7 @@ const ETHERNET_HEADER: usize = 14;
 /// splits between the station and data.
 pub trait StationPort<'id>: LowerMacBackend {
     /// The types its phase's events carry.
-    type Types: PhaseTypes<'id, Context = TxContext<Self::Caps>>
+    type Types: PhaseTypes<'id, Context = TxContext<'id, Self::Caps>>
         + TxBufferPool<'id, Self::Small>
         + TxBufferPool<'id, Self::Large>;
     /// The buffer class of the station's frames.
@@ -139,11 +139,11 @@ impl<'id, B: StationPort<'id>> StationTxBuffer<'id, B> {
 /// The composition's context for this service. Each variant owns the
 /// original machine operation; the backend treats the entire value as opaque.
 #[derive(Debug)]
-pub enum TxContext<K> {
+pub enum TxContext<'id, K> {
     /// A station protocol operation, including its connection epoch and purpose.
-    Station(StaTxContext),
+    Station(StaTxContext<'id>),
     /// An MSDU operation, including its original link, TID and queue order.
-    Data(DataTxContext<K>),
+    Data(DataTxContext<'id, K>),
 }
 
 /// What the service dropped or could not send, counted.
@@ -212,12 +212,14 @@ pub type PortRxMeta<'id, B> = <<B as StationPort<'id>>::Types as PhaseTypes<'id>
 
 /// The station of the service on the port `B`.
 pub type PortStation<'id, B> = Station<
+    'id,
     PortStaTokens<'id, <B as StationPort<'id>>::Types, <B as StationPort<'id>>::Small>,
     <B as LowerMacBackend>::Caps,
 >;
 
 /// The data machine of the service on the port `B`.
 pub type PortData<'id, B> = StaData<
+    'id,
     PortDataTokens<'id, <B as StationPort<'id>>::Types, <B as StationPort<'id>>::Large>,
     <B as LowerMacBackend>::Caps,
 >;
@@ -873,7 +875,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
     fn completed(
         &mut self,
         now: Instant,
-        context: TxContext<B::Caps>,
+        context: TxContext<'id, B::Caps>,
         ticket: Slot<'id, <B::Types as PhaseTypes<'id>>::TicketKind>,
         buffers: <B::Types as PhaseTypes<'id>>::TxBuffers,
         completion: TxCompletion,
@@ -992,12 +994,12 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
 enum Follow<'id, B: StationPort<'id>> {
     Nothing,
     /// An arbiter's answer or a key, back to the station.
-    Input(StaInput<'static, PortStaTokens<'id, B::Types, B::Small>, B::Caps>),
+    Input(StaInput<'static, 'id, PortStaTokens<'id, B::Types, B::Small>, B::Caps>),
     /// The station associated: the rates start from its peer.
     Associated(Peer<PortRxMeta<'id, B>>),
     /// A frame of the station did not go.
     Unsent {
-        context: StaTxContext,
+        context: StaTxContext<'id>,
         ticket: <PortStaTokens<'id, B::Types, B::Small> as StaTokens>::Ticket,
         buffer: <PortStaTokens<'id, B::Types, B::Small> as StaTokens>::SmallBuffer,
     },
@@ -1012,7 +1014,7 @@ fn submit_station<'p, 'id: 'p, B, P, S>(
     phase: &mut P,
     rates: &S,
     key: Option<&<<B::Types as PhaseTypes<'id>>::StationKeys as KeyTypes<'id>>::PairwiseKey>,
-    transmit: StaTransmit<PortStaTokens<'id, B::Types, B::Small>, B::Caps>,
+    transmit: StaTransmit<'id, PortStaTokens<'id, B::Types, B::Small>, B::Caps>,
 ) -> Result<Follow<'id, B>, ()>
 where
     B: StationPort<'id>,
@@ -1091,7 +1093,7 @@ fn station_action<'p, 'id: 'p, B, P, M, S>(
     io: &mut ServiceIo<'_, M, B::Caps>,
     arbiter: &mut PortArbiter<'_, 'id, B>,
     rates: &S,
-    action: StaAction<'_, PortStaTokens<'id, B::Types, B::Small>, B::Caps>,
+    action: StaAction<'_, 'id, PortStaTokens<'id, B::Types, B::Small>, B::Caps>,
 ) -> Result<Follow<'id, B>, ()>
 where
     B: StationPort<'id>,
@@ -1154,6 +1156,7 @@ where
             (io.output)(ServiceOutput::Notice(notice));
             return Ok(match notice {
                 StaNotice::Disconnected(_) => Follow::Disconnected,
+                StaNotice::ConnectRefused(_) => Follow::Nothing,
                 StaNotice::Connected { .. } | StaNotice::BackgroundScanDone { .. } => {
                     Follow::Nothing
                 }

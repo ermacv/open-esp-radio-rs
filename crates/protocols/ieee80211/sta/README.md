@@ -64,3 +64,13 @@ link's terminal returns its tokens without requeueing or affecting the new
 link; the service checks the same epoch before updating rate selection.
 `LinkView` still borrows sequence/replay/key state only for a synchronous
 step. No queued context borrows the station or data machine.
+
+Station alone issues `LinkEpoch`, before starting Connect. Its non-cloneable
+`LinkEpochSource` consumes the install's unique station source slot; there
+is no reset or slot extraction. The epoch and contexts carry the invariant
+install brand. Recreating Station therefore cannot restart its counter
+while earlier operations can return. Exhaustion emits
+`StaNotice::ConnectRefused(EpochExhausted)` without starting a connection;
+already accepted operations still return their resources. Ending a link
+closes its epoch without allocating another. Data takes this same epoch
+from `LinkView`; temporary sleep or a channel absence does not close it.

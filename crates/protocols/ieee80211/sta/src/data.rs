@@ -33,6 +33,7 @@ use oer_ieee80211_mac::{
 };
 use oer_time::Instant;
 
+use crate::epoch::LinkEpoch;
 use crate::machine::{LinkMode, LinkProtection, LinkView, StaTokens};
 use crate::pool::{Fifo, Pool};
 
@@ -62,13 +63,13 @@ pub struct Msdu<'a> {
 }
 
 /// One input of the data machine.
-pub enum DataInput<'a, 'l, 'v, D: StaDataTokens, T: StaTokens, K> {
+pub enum DataInput<'a, 'l, 'v, 'id, D: StaDataTokens, T: StaTokens, K> {
     /// An MSDU from the network stack, on the link it goes on.
     Msdu {
         /// The MSDU.
         msdu: Msdu<'a>,
         /// The station's link.
-        link: &'l mut LinkView<'v, T>,
+        link: &'l mut LinkView<'v, 'id, T>,
     },
     /// A data MPDU's terminal: its ticket and buffer come back. An attempt
     /// of the current link that ended before any transmission (a closing
@@ -80,7 +81,7 @@ pub enum DataInput<'a, 'l, 'v, D: StaDataTokens, T: StaTokens, K> {
     /// [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6132835650
     TxDone {
         /// The original operation, returned unchanged by the port.
-        context: DataTxContext<K>,
+        context: DataTxContext<'id, K>,
         /// Its ticket.
         ticket: D::Ticket,
         /// Its buffer.
@@ -93,7 +94,7 @@ pub enum DataInput<'a, 'l, 'v, D: StaDataTokens, T: StaTokens, K> {
     /// none. Its MSDU, if any, is gone; the service counts it.
     Returned {
         /// An operation that ended locally, when these are its resources.
-        context: Option<DataTxContext<K>>,
+        context: Option<DataTxContext<'id, K>>,
         /// A ticket, if one came back.
         ticket: Option<D::Ticket>,
         /// A buffer, if one came back.
@@ -102,17 +103,17 @@ pub enum DataInput<'a, 'l, 'v, D: StaDataTokens, T: StaTokens, K> {
 }
 
 /// One action of the data machine.
-pub enum DataAction<D: StaDataTokens, K> {
+pub enum DataAction<'id, D: StaDataTokens, K> {
     /// Submit a data MPDU.
-    Transmit(DataTransmit<D, K>),
+    Transmit(DataTransmit<'id, D, K>),
 }
 
 /// One data MPDU to submit: its tokens, its kind and its access category.
 /// It names no key: on a protected link the service submits it under the
 /// link's pairwise key.
-pub struct DataTransmit<D: StaDataTokens, K> {
+pub struct DataTransmit<'id, D: StaDataTokens, K> {
     /// The operation identity and parameters, moved through the port.
-    pub context: DataTxContext<K>,
+    pub context: DataTxContext<'id, K>,
     /// Its ticket.
     pub ticket: D::Ticket,
     /// The buffer holding the MPDU, from its header on.
@@ -139,8 +140,8 @@ pub enum DataRefusal {
 /// Its closed, checked frame description survives every unpublished return;
 /// neither the MPDU length nor its header is reconstructed at completion.
 #[derive(Debug)]
-pub struct DataTxContext<K> {
-    link: u64,
+pub struct DataTxContext<'id, K> {
+    link: LinkEpoch<'id>,
     tid: u8,
     frame: SizedFrame<AckHeader, K>,
     access_category: WmmAccessCategory,
@@ -165,24 +166,24 @@ pub struct DataCounters {
 /// The connected station's data machine. `CAP` sizes each TID's queues of
 /// owed MPDUs: each holds a ticket, so the machine's tickets
 /// fit (checked at build).
-pub struct StaData<D: StaDataTokens, K, const CAP: usize = 8> {
+pub struct StaData<'id, D: StaDataTokens, K, const CAP: usize = 8> {
     tickets: Pool<D::Ticket>,
     buffers: Pool<D::Buffer>,
     /// The attempts owed, by TID (a non-QoS link's in the first), each in
     /// its order.
-    owed: [Fifo<DataTransmit<D, K>, CAP>; 8],
+    owed: [Fifo<DataTransmit<'id, D, K>, CAP>; 8],
     /// Admission counts only; operation metadata belongs to the attempt.
     at_port: [usize; 4],
     /// The order of the next MSDU.
     next_order: u32,
     /// The current link: [`Self::leave`] ends it.
-    link: u64,
+    link: Option<LinkEpoch<'id>>,
     overflows: u32,
     left_behind: u32,
 }
 
-impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const CAP: usize>
-    StaData<D, K, CAP>
+impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const CAP: usize>
+    StaData<'id, D, K, CAP>
 {
     /// The machine with the tickets and buffers the composition granted it,
     /// at most eight of a kind and no more tickets than its queues hold,
@@ -203,7 +204,7 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
             owed: [const { Fifo::new() }; 8],
             at_port: [0; 4],
             next_order: 0,
-            link: 0,
+            link: None,
             overflows: 0,
             left_behind: 0,
         }
@@ -232,11 +233,11 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
                 self.buffers.put(owed.buffer);
             }
         }
-        self.link = self.link.checked_add(1).expect("data link epoch exhausted");
+        self.link = None;
     }
 
     /// An MPDU a full queue did not take: its tokens come back, counted.
-    fn overflowed(&mut self, transmit: DataTransmit<D, K>) {
+    fn overflowed(&mut self, transmit: DataTransmit<'id, D, K>) {
         self.overflows = self.overflows.saturating_add(1);
         self.tickets.put(transmit.ticket);
         self.buffers.put(transmit.buffer);
@@ -256,7 +257,7 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
     pub fn input<T: StaTokens>(
         &mut self,
         _now: Instant,
-        input: DataInput<'_, '_, '_, D, T, K>,
+        input: DataInput<'_, '_, '_, 'id, D, T, K>,
     ) -> Result<(), DataRefusal> {
         match input {
             DataInput::TxDone {
@@ -317,6 +318,10 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
                 Ok(())
             }
             DataInput::Msdu { msdu, link } => {
+                if self.link != Some(link.epoch) {
+                    self.leave();
+                    self.link = Some(link.epoch);
+                }
                 let ticket = self.tickets.take().ok_or(DataRefusal::NoTokens)?;
                 let Some(mut buffer) = self.buffers.take() else {
                     self.tickets.put(ticket);
@@ -355,7 +360,7 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
                         let order = self.next_order;
                         self.next_order = self.next_order.wrapping_add(1);
                         let context = DataTxContext {
-                            link: self.link,
+                            link: link.epoch,
                             tid: slot as u8,
                             frame,
                             access_category,
@@ -393,8 +398,8 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
 
     /// Whether this operation belongs to the current link. The service
     /// uses the same guard before updating the link's rate selection.
-    pub fn is_current(&self, context: &DataTxContext<K>) -> bool {
-        context.link == self.link
+    pub fn is_current(&self, context: &DataTxContext<'id, K>) -> bool {
+        Some(context.link) == self.link
     }
 
     /// The next action at `now`, if any, of a category `admit` takes: the
@@ -405,7 +410,7 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
         &mut self,
         _now: Instant,
         admit: impl Fn(WmmAccessCategory) -> bool,
-    ) -> Option<DataAction<D, K>> {
+    ) -> Option<DataAction<'id, D, K>> {
         // The earliest MSDU of an admitted category first, whatever its TID.
         let tid = (0..8)
             .filter_map(|tid| {
@@ -433,7 +438,7 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
 /// it and the replay check passed it. An EAPOL frame is the station's, not
 /// the network's.
 pub fn received<'f, T: StaTokens>(
-    link: &mut LinkView<'_, T>,
+    link: &mut LinkView<'_, '_, T>,
     frame: &'f [u8],
     meta: &RxMeta,
 ) -> Option<impl Iterator<Item = EthernetFrameParts<'f>>> {
@@ -506,7 +511,7 @@ const fn mpdu_len(qos: bool, protected: bool, payload: usize) -> usize {
 
 /// The MPDU of `msdu` on `link`, written into `output`.
 fn encode_frame<T: StaTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities>(
-    link: &LinkView<'_, T>,
+    link: &LinkView<'_, '_, T>,
     qos: bool,
     msdu: Msdu<'_>,
     sequence_number: SequenceNumber,

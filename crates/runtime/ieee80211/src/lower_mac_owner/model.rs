@@ -25,6 +25,10 @@
 //! number and gets the Retry bit; the air answers each aggregate with a
 //! Block Ack ([`ModelAir::block_ack`], every subframe by default).
 //!
+//! `ModelContext` selects an opaque context for each install lifetime, so
+//! a station context can retain its `LinkEpoch` brand through every queue
+//! and terminal. The model grants one epoch-source slot in its resources.
+//!
 //! Capacity is the tokens': every terminal returns a ticket, so no terminal
 //! is ever lost; received frames beyond [`MODEL_RX_EVENTS`] queued are
 //! dropped and the stream says [`EventsLost`] once.
@@ -308,11 +312,22 @@ fn ccmp_header(number: u64, key_id: u8) -> [u8; 8] {
     ]
 }
 
-/// The types the model's events carry.
-pub struct ModelTypes<X = ()>(PhantomData<fn() -> X>);
+/// Composition-selected contexts, including the install brand when needed.
+/// The model neither interprets nor clones the associated value.
+pub trait ModelContext {
+    /// One operation's opaque context in the install `'id`.
+    type Context<'id>;
+}
 
-impl<'id, X> PhaseTypes<'id> for ModelTypes<X> {
-    type Context = X;
+impl ModelContext for () {
+    type Context<'id> = ();
+}
+
+/// The types the model's events carry.
+pub struct ModelTypes<X: ModelContext = ()>(PhantomData<fn() -> X>);
+
+impl<'id, X: ModelContext> PhaseTypes<'id> for ModelTypes<X> {
+    type Context = X::Context<'id>;
     type TicketKind = ModelTickets;
     type AnyTxBuffer = ModelAnyBuffer<'id>;
     type TxBuffers = Vec<ModelAnyBuffer<'id>>;
@@ -335,7 +350,7 @@ impl<'id, R> KeyTypes<'id> for ModelKeys<'id, R> {
     type GroupKey = ModelGroupKey<'id, R>;
 }
 
-impl<'id, X> TxBufferPool<'id, ModelSmall> for ModelTypes<X> {
+impl<'id, X: ModelContext> TxBufferPool<'id, ModelSmall> for ModelTypes<X> {
     type Buffer = ModelBuffer<'id, ModelSmall>;
     type Numbered = ModelNumbered<'id, ModelSmall>;
 
@@ -366,7 +381,7 @@ impl<'id, X> TxBufferPool<'id, ModelSmall> for ModelTypes<X> {
     }
 }
 
-impl<'id, X> TxBufferPool<'id, ModelLarge> for ModelTypes<X> {
+impl<'id, X: ModelContext> TxBufferPool<'id, ModelLarge> for ModelTypes<X> {
     type Buffer = ModelBuffer<'id, ModelLarge>;
     type Numbered = ModelNumbered<'id, ModelLarge>;
 
@@ -481,6 +496,8 @@ pub struct ModelFault;
 
 /// The tokens the install gives the body once.
 pub struct ModelResources<'id> {
+    /// The station's unique connection-epoch source for this install.
+    pub epochs: oer_ieee80211_sta::epoch::LinkEpochSource<'id>,
     /// The transmit tickets.
     pub tickets: Vec<Slot<'id, ModelTickets>>,
     /// The small transmit buffers.
@@ -625,7 +642,7 @@ struct Stage {
 }
 
 /// A command the handle sends the driver, in the order it made it.
-enum Command<'id, X> {
+enum Command<'id, X: ModelContext> {
     Submit(Prepared<'id, X>),
     SubmitAmpdu(PreparedAggregate<'id, X>),
     InstallKey {
@@ -640,7 +657,7 @@ enum Command<'id, X> {
 }
 
 /// The work of a queue: one MPDU, or one A-MPDU.
-enum Work<'id, X> {
+enum Work<'id, X: ModelContext> {
     Single(Prepared<'id, X>),
     Aggregate(PreparedAggregate<'id, X>),
 }
@@ -654,8 +671,8 @@ struct Subframe<'id> {
 }
 
 /// An A-MPDU attempt prepared for its queue.
-struct PreparedAggregate<'id, X> {
-    context: X,
+struct PreparedAggregate<'id, X: ModelContext> {
+    context: X::Context<'id>,
     role: VifRole,
     ticket: Slot<'id, ModelTickets>,
     subframes: Vec<Subframe<'id>>,
@@ -665,8 +682,8 @@ struct PreparedAggregate<'id, X> {
 }
 
 /// An attempt prepared for its queue.
-struct Prepared<'id, X> {
-    context: X,
+struct Prepared<'id, X: ModelContext> {
+    context: X::Context<'id>,
     body: Option<ModelBody>,
     role: VifRole,
     ticket: Slot<'id, ModelTickets>,
@@ -688,7 +705,7 @@ struct Settings {
 }
 
 /// The install's queues between the handle and the driver.
-pub struct ModelHeld<'id, X = ()> {
+pub struct ModelHeld<'id, X: ModelContext = ()> {
     air: Rc<ModelAir>,
     commands: Bounded<Command<'id, X>>,
     /// The received buffers the body gives back, at most one per buffer.
@@ -711,7 +728,7 @@ pub struct ModelHeld<'id, X = ()> {
     draining: Cell<bool>,
 }
 
-impl<'id, X> ModelHeld<'id, X> {
+impl<'id, X: ModelContext> ModelHeld<'id, X> {
     fn command(&self, command: Command<'id, X>) {
         self.commands.push(command);
         self.air.wake_driver();
@@ -750,14 +767,14 @@ pub struct ModelLocal<'id> {
 
 /// The model's backend; only [`run_port`](oer_ieee80211_port::run_port)
 /// holds it.
-pub struct ModelBackend<C = ModelCaps, X = ()> {
+pub struct ModelBackend<C = ModelCaps, X: ModelContext = ()> {
     air: Rc<ModelAir>,
     channel: Channel,
     addresses: [IndividualAddress; 2],
     caps: PhantomData<fn() -> (C, X)>,
 }
 
-impl<C, X> ModelBackend<C, X> {
+impl<C, X: ModelContext> ModelBackend<C, X> {
     /// A backend tuned to `channel` with the station's and the access
     /// point's addresses, and the air it plays on.
     pub fn new(channel: Channel, addresses: [IndividualAddress; 2]) -> (Self, Rc<ModelAir>) {
@@ -788,7 +805,7 @@ impl<C: Ieee80211Capabilities> LowerMacSetup for ModelSetup<'_, C> {
     }
 }
 
-impl<C: Ieee80211Capabilities, X> PortBackend for ModelBackend<C, X> {
+impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, X> {
     type Event<'id> = LowerMacEvent<'id, ModelTypes<X>>;
     type Domain = Ieee80211Radio;
     type Fault = ModelFault;
@@ -880,7 +897,9 @@ impl<C: Ieee80211Capabilities, X> PortBackend for ModelBackend<C, X> {
             open: RefCell::default(),
             draining: Cell::new(false),
         };
+        let [epoch_slot] = mint.slots::<oer_ieee80211_sta::epoch::LinkEpochKind, 1>();
         let resources = ModelResources {
+            epochs: oer_ieee80211_sta::epoch::LinkEpochSource::new(epoch_slot),
             tickets: tickets.into_iter().collect(),
             small: small
                 .into_iter()
@@ -978,13 +997,13 @@ pub const MODEL_TX_QUEUE_DEPTH: core::num::NonZeroU8 = match core::num::NonZeroU
     None => panic!("a queue holds an attempt"),
 };
 
-impl<C: Ieee80211Capabilities, X> LowerMacBackend for ModelBackend<C, X> {
+impl<C: Ieee80211Capabilities, X: ModelContext> LowerMacBackend for ModelBackend<C, X> {
     type Caps = C;
     const TX_QUEUE_DEPTH: core::num::NonZeroU8 = MODEL_TX_QUEUE_DEPTH;
 }
 
 /// The model's hardware, which only the driver owns.
-struct Driver<'id, X> {
+struct Driver<'id, X: ModelContext> {
     /// The prepared attempts of each queue, the head first.
     queues: [VecDeque<Work<'id, X>>; 4],
     /// The installed hardware keys.
@@ -994,7 +1013,7 @@ struct Driver<'id, X> {
     gate_open: bool,
 }
 
-impl<'id, X> Driver<'id, X> {
+impl<'id, X: ModelContext> Driver<'id, X> {
     /// Serve everything posted: the settings, the commands in order, the
     /// queues, then the air.
     fn serve(&mut self, held: &ModelHeld<'id, X>) {
@@ -1191,7 +1210,7 @@ fn on_air(
 }
 
 /// Publish one MPDU and carry its retry plan out.
-fn publish_single<'id, X>(
+fn publish_single<'id, X: ModelContext>(
     held: &ModelHeld<'id, X>,
     keys: &[u8],
     packet_numbers: &mut Vec<(u8, u64)>,
@@ -1236,7 +1255,7 @@ fn publish_single<'id, X>(
 /// Publish one A-MPDU: its new subframes numbered, its retransmitted ones
 /// with their numbers; the air's Block Ack names the subframes it
 /// acknowledged by their sequence numbers.
-fn publish_aggregate<'id, X>(
+fn publish_aggregate<'id, X: ModelContext>(
     held: &ModelHeld<'id, X>,
     keys: &[u8],
     packet_numbers: &mut Vec<(u8, u64)>,
@@ -1307,7 +1326,7 @@ fn publish_aggregate<'id, X>(
 }
 
 /// Post the terminal of `prepared`, with its tokens.
-fn terminal<'id, X>(
+fn terminal<'id, X: ModelContext>(
     held: &ModelHeld<'id, X>,
     prepared: Prepared<'id, X>,
     status: TxStatus,
@@ -1331,13 +1350,13 @@ fn terminal<'id, X>(
 }
 
 /// The model's running phase: the body's handle over the queues.
-pub struct ModelPhase<'a, 'id, C = ModelCaps, X = ()> {
+pub struct ModelPhase<'a, 'id, C = ModelCaps, X: ModelContext = ()> {
     backend: &'a mut ModelBackend<C, X>,
     held: &'a ModelHeld<'id, X>,
     local: &'a mut ModelLocal<'id>,
 }
 
-impl<'id, C, X> PortPhase for ModelPhase<'_, 'id, C, X> {
+impl<'id, C, X: ModelContext> PortPhase for ModelPhase<'_, 'id, C, X> {
     type Event = LowerMacEvent<'id, ModelTypes<X>>;
     type Fault = ModelFault;
 
@@ -1367,7 +1386,7 @@ impl<'id, C, X> PortPhase for ModelPhase<'_, 'id, C, X> {
     }
 }
 
-impl<'p, 'id: 'p, C: Ieee80211Capabilities, X> LowerMacPhase<'p, 'id>
+impl<'p, 'id: 'p, C: Ieee80211Capabilities, X: ModelContext> LowerMacPhase<'p, 'id>
     for ModelPhase<'p, 'id, C, X>
 {
     type Caps = C;
@@ -1433,7 +1452,7 @@ impl<'p, 'id: 'p, C: Ieee80211Capabilities, X> LowerMacPhase<'p, 'id>
 }
 
 /// One interface of the model's phase.
-pub struct ModelInterface<'p, 'v, 'id, R, C = ModelCaps, X = ()> {
+pub struct ModelInterface<'p, 'v, 'id, R, C = ModelCaps, X: ModelContext = ()> {
     held: &'v ModelHeld<'id, X>,
     local: &'v mut ModelLocal<'id>,
     address: IndividualAddress,
@@ -1543,7 +1562,7 @@ fn copy_body(
     }
 }
 
-impl<'p, 'v, 'id: 'p, R, K: Ieee80211Capabilities, X> InterfacePhase<'p, 'id>
+impl<'p, 'v, 'id: 'p, R, K: Ieee80211Capabilities, X: ModelContext> InterfacePhase<'p, 'id>
     for ModelInterface<'p, 'v, 'id, R, K, X>
 where
     R: RoleKeys<'id, ModelTypes<X>, Keys = ModelKeys<'id, R>>,
@@ -1700,14 +1719,14 @@ pub const MODEL_AMPDU_SUBFRAMES: usize = 8;
 /// # use oer_ieee80211_runtime::lower_mac_owner::model::ModelAggregate;
 /// fn same<'p, 'id, R>(a: ModelAggregate<'p, 'id, R>) -> ModelAggregate<'p, 'id, R> { a }
 /// ```
-pub struct ModelAggregate<'p, 'id, R, C = ModelCaps, X = ()> {
+pub struct ModelAggregate<'p, 'id, R, C = ModelCaps, X: ModelContext = ()> {
     subframes: Vec<Subframe<'id>>,
     tid: Tid,
     rate: AmpduRate<'p>,
     caps: PhantomData<fn() -> (R, C, X)>,
 }
 
-impl<'p, 'id: 'p, R, K: Ieee80211Capabilities, X> ModelAggregate<'p, 'id, R, K, X> {
+impl<'p, 'id: 'p, R, K: Ieee80211Capabilities, X: ModelContext> ModelAggregate<'p, 'id, R, K, X> {
     /// Append a subframe the caller checked: the aggregate has room and
     /// its class holds the frame.
     fn append(
@@ -1725,7 +1744,7 @@ impl<'p, 'id: 'p, R, K: Ieee80211Capabilities, X> ModelAggregate<'p, 'id, R, K, 
     }
 }
 
-impl<'p, 'id: 'p, R, K: Ieee80211Capabilities, X> PhaseAggregate<'p, 'id>
+impl<'p, 'id: 'p, R, K: Ieee80211Capabilities, X: ModelContext> PhaseAggregate<'p, 'id>
     for ModelAggregate<'p, 'id, R, K, X>
 where
     R: RoleKeys<'id, ModelTypes<X>, Keys = ModelKeys<'id, R>>,
@@ -1796,7 +1815,7 @@ where
     }
 }
 
-impl<'p, 'v, 'id: 'p, R, K: Ieee80211Capabilities, X> AmpduPhase<'p, 'id>
+impl<'p, 'v, 'id: 'p, R, K: Ieee80211Capabilities, X: ModelContext> AmpduPhase<'p, 'id>
     for ModelInterface<'p, 'v, 'id, R, K, X>
 where
     R: RoleKeys<'id, ModelTypes<X>, Keys = ModelKeys<'id, R>>,
@@ -1829,7 +1848,7 @@ where
             ModelAggregate<'p, 'id, R, K, X>,
             ModelPairwiseKey<'id, R>,
             K,
-            X,
+            X::Context<'id>,
         >,
     ) -> Result<(), Poisoned<ModelFault>> {
         if self.held.air.poisoned.get() {
@@ -1858,7 +1877,7 @@ where
     }
 }
 
-impl<'p, 'v, 'id: 'p, C: Ieee80211Capabilities, X> StationPhase<'p, 'id>
+impl<'p, 'v, 'id: 'p, C: Ieee80211Capabilities, X: ModelContext> StationPhase<'p, 'id>
     for ModelInterface<'p, 'v, 'id, Station, C, X>
 {
     fn configure(&mut self, _: StationReceive<C>) {
@@ -1872,7 +1891,7 @@ impl<'p, 'v, 'id: 'p, C: Ieee80211Capabilities, X> StationPhase<'p, 'id>
     }
 }
 
-impl<'p, 'v, 'id: 'p, C: Ieee80211Capabilities, X> AccessPointPhase<'p, 'id>
+impl<'p, 'v, 'id: 'p, C: Ieee80211Capabilities, X: ModelContext> AccessPointPhase<'p, 'id>
     for ModelInterface<'p, 'v, 'id, AccessPoint, C, X>
 {
     fn configure(&mut self, _: SupportedFilter<C, AccessPoint>) {

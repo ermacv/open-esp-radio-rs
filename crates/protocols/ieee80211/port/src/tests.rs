@@ -738,7 +738,7 @@ fn a_port_dropped_while_its_driver_retires_abandons_its_backend() {
         assert!(poll_once(port.as_mut()).is_pending());
         assert!(model.lifecycle.borrow().is_empty());
     }));
-    // The safety net stopped the backend before it asserted in debug.
-    assert_eq!(dropped.is_err(), cfg!(debug_assertions));
+    // Cancellation reaches the once-only fail-stop without unwinding.
+    assert!(dropped.is_ok());
     assert_eq!(*model.lifecycle.borrow(), ["abandon"]);
 }

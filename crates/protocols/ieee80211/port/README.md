@@ -16,3 +16,9 @@ the crate documentation.
 The vocabulary the blocks share (the brand and `Mint`, slots, permits and
 seats, `PortResult`, `Poisoned`, `EventsLost` and the clock relation)
 is `oer-radio-port`'s.
+
+Cancelling `run_port`, including while the driver retires, sets the abandon
+latch and calls the backend's fail-stop once. Cancellation does not panic,
+uninstall hardware, or invent returned owners. The lifecycle crate denies
+panic/unwrap/expect, implicit arithmetic, indexing and unchecked assertions
+in production; its regression tests retain explicit assertion permissions.

@@ -1,6 +1,35 @@
 #![no_std]
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
+#![deny(
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::arithmetic_side_effects,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::unreachable,
+    clippy::todo,
+    clippy::unimplemented,
+    clippy::disallowed_macros
+)]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::let_underscore_must_use,
+        clippy::let_underscore_untyped,
+        clippy::arithmetic_side_effects,
+        clippy::indexing_slicing,
+        clippy::panic,
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::disallowed_macros,
+    )
+)]
 
 //! The lifecycle of the IEEE 802.11 lower-MAC port: the one authority over an installed
 //! port, as types. The Wi-Fi block owns it; the vocabulary it shares with
@@ -832,8 +861,8 @@ async fn install<'id, B: PortBackend>(
 }
 
 /// The install's backend in `run_port`, from the install to its uninstall:
-/// dropped armed with a cancelled `run_port`, it abandons the backend and
-/// asserts in debug builds, as `PlatformClockGuard` does.
+/// dropped armed with a cancelled `run_port`, it abandons the backend through
+/// the same once-only latch as every other fail-stop. Drop never panics.
 struct Armed<'o, 'id, B: PortBackend> {
     owned: &'o mut Owned<'id, B>,
     install: &'o Install<'id, B>,
@@ -859,13 +888,6 @@ impl<B: PortBackend> Drop for Armed<'_, '_, B> {
             return;
         }
         self.install.abandon(&mut self.owned.backend);
-        // A host test unwinding a panic drops its port; asserting then
-        // would abort the test process and hide the first panic.
-        #[cfg(any(test, all(feature = "test-support", not(target_os = "none"))))]
-        if std::thread::panicking() {
-            return;
-        }
-        debug_assert!(false, "a port was dropped before its body ended");
     }
 }
 

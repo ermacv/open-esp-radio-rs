@@ -28,7 +28,7 @@ Module map:
 - `sa_query`: the SA Query procedure of an association under management
   frame protection;
 - `link_monitor`: beacon-loss decisions;
-- `pmksa`: the SAE PMKSA cache a reconnect resumes, and its shared owner;
+- `pmksa`: the owned SAE PMKSA cache a reconnect resumes through an exclusive borrow;
 - `ftm`, `twt`: bounded requester state and deadlines; their presence does not
   establish a chip timestamp or wake-schedule implementation. FTM local
   exchange timing carries a `NonZeroU8` dialog token from validation through

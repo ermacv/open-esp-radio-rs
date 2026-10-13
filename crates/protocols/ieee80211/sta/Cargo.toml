@@ -8,7 +8,6 @@ repository.workspace = true
 description = "Executor- and chip-independent Wi-Fi station MLME and policy"
 
 [dependencies]
-critical-section = "1.2.0"
 oer-trace = { path = "../../../trace" }
 oer-ieee80211-arbiter = { path = "../arbiter" }
 oer-ieee80211-lower-mac = { path = "../lower-mac" }
@@ -18,9 +17,6 @@ oer-ieee80211-trace = { path = "../trace" }
 oer-ieee80211-upper-mac = { path = "../upper-mac" }
 oer-time = { path = "../../../time" }
 oer-radio-port = { path = "../../../radio/port" }
-
-[dev-dependencies]
-critical-section = { version = "1.2.0", features = ["std"] }
 
 [lints]
 workspace = true

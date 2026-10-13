@@ -56,18 +56,15 @@ fn an_overlong_ssid_is_not_an_association() {
 }
 
 #[test]
-fn the_shared_pmksa_resumes_an_sae_association_until_it_is_forgotten() {
-    static PMKSA: StaSharedPmksa = StaSharedPmksa::new();
-    let mut access_point = oer_ieee80211_mac::scan::ScanRecord {
-        bssid: [2, 1, 2, 3, 4, 5],
-        ..oer_ieee80211_mac::scan::ScanRecord::EMPTY
-    };
-    access_point.ssid[..3].copy_from_slice(b"lab");
-    access_point.ssid_len = 3;
-    assert!(PMKSA.resume(&access_point).is_none());
-    PMKSA.insert(&access_point, &Pmk::from_bytes([7; 32]), [9; STA_PMKID_LEN]);
-    let (_, pmkid) = PMKSA.resume(&access_point).unwrap();
-    assert_eq!(pmkid, [9; STA_PMKID_LEN]);
-    PMKSA.remove(access_point.bssid);
-    assert!(PMKSA.resume(&access_point).is_none());
+fn an_owned_cache_outlives_connections_without_shared_state() {
+    let mut cache = StaPmksaCache::new();
+    let bssid = [2, 1, 2, 3, 4, 5];
+    cache.insert(StaPmksa::new(bssid, b"lab", Pmk::from_bytes([7; 32]), [9; 16]).unwrap());
+    // A connection borrows the owner, then returns it for the next one.
+    for _ in 0..2 {
+        let cached = cache.resume(bssid, b"lab").unwrap();
+        assert_eq!(cached.pmkid(), [9; 16]);
+    }
+    cache.remove(bssid);
+    assert!(cache.resume(bssid, b"lab").is_none());
 }

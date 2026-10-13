@@ -400,8 +400,9 @@ its brand `'id`: the owner, its `Ended`, the resources the body receives
 once, and every token a backend mints for them. The body is generic over
 `'id`, so it names no concrete brand and cannot prove one `'static`: no
 branded value leaves the body, and none reaches another install. The brand
-is invariant and costs nothing at run time; a sans-IO core stays `'static`
-and leaves branded tokens to its body's boundary table.
+is invariant and costs nothing at run time. Wi-Fi's sans-IO machines are
+parameterized by branded token types and own them directly; BLE and
+IEEE 802.15.4 retain their existing core and boundary arrangements.
 
 **Capacity as tokens.** An install's capacity is tokens a stateless
 `Mint<'id>` makes once for the backend's `resources`: slots (`Slot<'id, K>`,
@@ -421,8 +422,13 @@ belongs to the backend's held part of the install (`PortBackend::Held<'id>`),
 which `run_port` keeps and the owner lends into each phase and disable: the backend
 takes the permits back when the work ends and before it hands the terminal
 event out, so no caller holds a permit of submitted work, and a terminal
-event dropped unread loses none. The backend never refuses for capacity:
-a caller that holds no slot turns that into its protocol's decision.
+event dropped unread loses none. Wi-Fi instead transfers its owned ticket,
+MPDU and opaque `Context: 'id` into each admitted attempt and returns them
+in its single or aggregate terminal. Its data context also carries the
+access-category admission token; a terminal routes those resources by
+context, without a parallel boundary identity table. BLE and IEEE 802.15.4
+keep their existing permit ownership. A caller that holds no capacity token
+turns that into its protocol's decision.
 
 **Port-lifetime and phase-scoped tokens.** A resource that outlives a phase
 (an installed key, a Block Ack agreement, a configured interface, a
@@ -433,12 +439,18 @@ transmit queue, an operation slot) are phase-scoped: they borrow the phase
 and end with it. Each protocol's refusal-to-type table says which its
 tokens are.
 
-**Sans-IO cores.** A sans-IO core is `'static` and holds no borrow, so it
-never stores a phase-scoped token. The phase keeps a boundary table, a
-phase value created after the split and dropped before the disable, that
-maps the core's own identity (a Bluetooth LE `EventId`) to the token; the
-core decides, and the table carries out its decision with the token. Every
-protocol with a sans-IO core uses this one pattern.
+**Sans-IO cores.** Wi-Fi's core is generic over branded tokens: Station,
+Data and Arbiter hold their resources by value and return owned actions.
+A queued TX context preserves the install brand without borrowing a local
+machine. `LinkView` and other short synchronous borrows remain local to a
+step. The backend transports the context without interpreting it, and a
+terminal returns the original context and exactly its operation's resources.
+The Wi-Fi service therefore needs no completion identity table.
+
+BLE and IEEE 802.15.4 retain their existing arrangement. In particular,
+a `'static` BLE core keeps its own `EventId`; its phase boundary table maps
+that ID to the phase token and carries out the core's decision. Wi-Fi's
+branded core does not require a change to either other block.
 
 **Proofs say exactly what they prove.** A guard proves its own state and no
 more: a closed transmit gate proves that this port publishes no
@@ -455,11 +467,11 @@ ends within its bound or as poisoned, and an unbounded wait (an arbiter's
 lease) is a separate cancel-safe step before it. A transition that ends
 work hands every leftover terminal to a sink it takes and completes only
 when every permit is back. Capacity is permits: a submission moves its
-permit into the backend, which gives it back to its pool in the install's
-held part before it hands the terminal out, so no queue overflows, no
-terminal is lost and no caller holds the permit of submitted work; only
-unsolicited reception may lose events. The body runs joined with the
-backend's driver, its runner, in one task
+permit into the backend in BLE and IEEE 802.15.4; the held pool takes it
+back before delivery. Wi-Fi returns its ticket and admission token in the
+terminal instead. Both forms reserve terminal capacity; only unsolicited
+reception may lose events. BLE and IEEE 802.15.4 retain the body joined with
+the backend's driver, its runner, in one task
 ([#581 decision](https://github.com/ermacv/open-esp-radio-rs/issues/581#issuecomment-6120815544),
 a working shape until Wi-Fi's #271 A/B): the driver progresses whatever the
 body awaits, owns the backend's state by value or reaches it in the held
@@ -472,6 +484,9 @@ calls no port method; an interrupt-owned backend's body runs on its
 routes' core, which the route binding's type states; IEEE 802.15.4's
 interim critical section is the one exception, until #668
 ([decisions](https://github.com/ermacv/open-esp-radio-rs/issues/581#issuecomment-6121016144)).
+Wi-Fi's S31 driver is assigned its own executor and exclusively owns the
+hardware core and TX execution; the body transports owned commands and
+terminals, following [#563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6150013206).
 A retune stays a bounded step of `enable`. The owner's uninstall only asks:
 `run_port` retires the driver within the backend's bound (a missed bound is
 a fail-stop), detaches the interrupt entries synchronously, then takes the

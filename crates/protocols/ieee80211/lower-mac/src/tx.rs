@@ -32,9 +32,10 @@ pub enum TxResponse {
 /// frame's payload, which the caller does not copy.
 ///
 /// The backend holds the body from the attempt's admission until the
-/// attempt's completion event carries it back
-/// (`Ieee80211LowerMacPort::into_completed`),
-/// so a retransmission sends the same owner again. Dropping a body is how
+/// [`crate::LowerMacEvent::TxCompleted`] carries it back. A numbered MPDU
+/// retains its body inside the returned buffer for retransmission;
+/// [`crate::TxBufferPool::renew`] returns both memory and body. Fresh
+/// returned MPDUs carry bodies separately by subframe index. Dropping a body is how
 /// its owner learns it is no longer needed: a consumer that drops the
 /// completion event drops its bodies, and a backend that discards an
 /// attempt, as an uninstall does, drops them with it.
@@ -169,4 +170,3 @@ pub struct TxCompletion {
     /// port; `None` when it made none.
     pub rate: Option<crate::PhyRate>,
 }
-

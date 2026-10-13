@@ -71,6 +71,18 @@ pub enum DataInput<'a, 'l, 'v, 'id, D: StaDataTokens, T: StaTokens, K> {
         /// The station's link.
         link: &'l mut LinkView<'v, 'id, T>,
     },
+    /// Preparation refused before admission: this MSDU ends, its resources
+    /// return and its admission count is released without a radio terminal.
+    Refused {
+        /// Original operation, moved back from submit.
+        context: DataTxContext<'id, K>,
+        /// Its ticket.
+        ticket: D::Ticket,
+        /// Its memory.
+        buffer: D::Buffer,
+        /// The explicit preparation failure.
+        reason: oer_ieee80211_lower_mac::PreparationError,
+    },
     /// A data MPDU's terminal: its ticket and buffer come back. An attempt
     /// of the current link that ended before any transmission (a closing
     /// gate aborts the ones it holds) goes again: back at the head of its
@@ -152,6 +164,8 @@ pub struct DataTxContext<'id, K> {
 /// What the data machine dropped, counted.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct DataCounters {
+    /// Current-link MSDUs ended by a preparation refusal, before admission.
+    pub preparation_refused: u32,
     /// MPDUs a full queue could not hold: their tokens came back, their
     /// MSDUs are gone.
     pub overflows: u32,
@@ -180,6 +194,7 @@ pub struct StaData<'id, D: StaDataTokens, K, const CAP: usize = 8> {
     link: Option<LinkEpoch<'id>>,
     overflows: u32,
     left_behind: u32,
+    preparation_refused: u32,
 }
 
 impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const CAP: usize>
@@ -205,6 +220,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
             at_port: [0; 4],
             next_order: 0,
             link: None,
+            preparation_refused: 0,
             overflows: 0,
             left_behind: 0,
         }
@@ -213,6 +229,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
     /// What the machine dropped.
     pub const fn counters(&self) -> DataCounters {
         DataCounters {
+            preparation_refused: self.preparation_refused,
             overflows: self.overflows,
             lost_tokens: self.tickets.lost().saturating_add(self.buffers.lost()),
             left_behind: self.left_behind,
@@ -260,6 +277,20 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
         input: DataInput<'_, '_, '_, 'id, D, T, K>,
     ) -> Result<(), DataRefusal> {
         match input {
+            DataInput::Refused {
+                context,
+                ticket,
+                buffer,
+                reason: _,
+            } => {
+                self.at_port[context.access_category as usize] -= 1;
+                if self.is_current(&context) {
+                    self.preparation_refused = self.preparation_refused.saturating_add(1);
+                }
+                self.tickets.put(ticket);
+                self.buffers.put(buffer);
+                Ok(())
+            }
             DataInput::TxDone {
                 context,
                 ticket,

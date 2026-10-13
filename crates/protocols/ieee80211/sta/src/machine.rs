@@ -181,8 +181,11 @@ pub enum StaInput<'f, 'id, T: StaTokens, K> {
     },
     /// A frame the service did not send (no rate of its plan is on the
     /// port's channel, or it does not fit its buffer class): its ticket and
-    /// buffer come back, and it counts as undelivered.
+    /// buffer come back with a typed refusal. This is not an accepted TX
+    /// completion and cannot complete the handshake.
     Unsent {
+        /// Refused before admission; no transmission terminal exists.
+        reason: oer_ieee80211_lower_mac::PreparationError,
         /// The operation that was not submitted.
         context: StaTxContext<'id>,
         /// The frame's ticket.
@@ -447,6 +450,8 @@ pub enum StaNotice {
 /// Why the station is not connected.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaDisconnectReason {
+    /// A required frame was refused before admission.
+    TransmitRefused(oer_ieee80211_lower_mac::PreparationError),
     /// The application asked it to leave.
     Requested,
     /// No access point of the network answered the scan; `partial` when
@@ -1078,6 +1083,10 @@ fn forget_group<T: StaTokens>(rsn: &mut ConnectedRsn, keys: &Keys<T>, key_id: Gr
 
 /// What ended in the station's world.
 enum Done {
+    Unsent {
+        purpose: TxPurpose,
+        reason: oer_ieee80211_lower_mac::PreparationError,
+    },
     Command(StaCommand),
     Tick,
     /// A transmission ended: acknowledged, or not.
@@ -1309,6 +1318,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 }
             }
             StaInput::Unsent {
+                reason,
                 context,
                 ticket,
                 buffer,
@@ -1318,9 +1328,9 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 if !self.is_current(&context) {
                     return;
                 }
-                Done::Tx {
+                Done::Unsent {
                     purpose: context.purpose,
-                    delivered: false,
+                    reason,
                 }
             }
             StaInput::Returned { ticket, buffer } => {
@@ -1722,6 +1732,9 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
 
     /// The state after `done` in `state`.
     fn step(&mut self, state: State<T, K>, now: Instant, done: Done) -> State<T, K> {
+        if let Done::Unsent { purpose, reason } = done {
+            return self.unsent(state, now, purpose, reason);
+        }
         match (state, done) {
             (State::Idle(keys) | State::Report(_, keys), Done::Command(StaCommand::Connect)) => {
                 match self.epochs.begin() {
@@ -1819,6 +1832,46 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         }
     }
 
+    /// Refusal is a protocol input of its own. In particular, refusing M4
+    /// never executes the transition for an accepted TX completion.
+    fn unsent(
+        &mut self,
+        state: State<T, K>,
+        now: Instant,
+        purpose: TxPurpose,
+        reason: oer_ieee80211_lower_mac::PreparationError,
+    ) -> State<T, K> {
+        match (state, purpose) {
+            (
+                State::Handshake(handshake),
+                TxPurpose::HandshakeResponse | TxPurpose::HandshakeLast,
+            ) => leave_handshake(handshake, REASON_UNSPECIFIED),
+            (State::Join(join), TxPurpose::Authentication | TxPurpose::Association) => {
+                leave_unkeyed(join.keys, StaDisconnectReason::TransmitRefused(reason))
+            }
+            (State::Scan(scan), TxPurpose::Probe) => {
+                leave_unkeyed(scan.keys, StaDisconnectReason::TransmitRefused(reason))
+            }
+            (State::Connected(connected), TxPurpose::Connected(Sending::GroupResponse)) => {
+                leave_connected(
+                    connected,
+                    StaDisconnectReason::HandshakeFailed,
+                    Some(REASON_UNSPECIFIED),
+                )
+            }
+            (State::Connected(connected), purpose @ TxPurpose::Connected(_)) => {
+                self.connected_step(connected, now, Done::Unsent { purpose, reason })
+            }
+            (State::Leave(mut leave), TxPurpose::Deauthentication) => {
+                if matches!(leave.step, LeaveStep::AwaitDeauthentication) {
+                    leave.step = LeaveStep::NeedConfigure;
+                }
+                State::Leave(leave)
+            }
+            (state, _) => state,
+        }
+    }
+
     /// The connected state after `done`.
     fn connected_step(
         &mut self,
@@ -1826,11 +1879,18 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         now: Instant,
         done: Done,
     ) -> State<T, K> {
-        if let Done::Tx {
-            purpose: TxPurpose::Connected(sending),
-            delivered,
-        } = done
-        {
+        let sent = match done {
+            Done::Tx {
+                purpose: TxPurpose::Connected(sending),
+                delivered,
+            } => Some((sending, delivered)),
+            Done::Unsent {
+                purpose: TxPurpose::Connected(sending),
+                ..
+            } => Some((sending, false)),
+            _ => None,
+        };
+        if let Some((sending, delivered)) = sent {
             connected.sending = false;
             match sending {
                 Sending::Wake => {

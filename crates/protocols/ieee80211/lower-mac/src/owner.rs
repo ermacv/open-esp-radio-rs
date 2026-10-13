@@ -764,6 +764,11 @@ impl ReceiverAddress for GroupAddress {
 }
 
 impl<A: ReceiverAddress> HeaderSpec<A> {
+    /// Whether Frame Control sets Protected. Preparation separately checks
+    /// the TX key and the room for the CCMP header.
+    pub const fn protected(&self) -> bool {
+        self.frame_control.get() & 0x4000 != 0
+    }
     /// The header, when its fields agree with its Frame Control.
     #[allow(clippy::too_many_arguments, reason = "the fields of a MAC header")]
     pub fn new(
@@ -1100,7 +1105,8 @@ mod extensions;
 
 pub use extensions::{
     AggregateAttempt, AggregateKey, AirReservationPhase, AmpduPhase, AmpduRate, BeaconTimingPhase,
-    BeaconWindow, MAX_RESERVATION_MICROS, MonitorPhase, MpduStartSpacing, PhaseAggregate, TbttPlan,
+    BeaconWindow, InterfaceAggregateAttempt, MAX_RESERVATION_MICROS, MonitorPhase,
+    MpduStartSpacing, PhaseAggregate, TbttPlan,
 };
 
 #[cfg(test)]

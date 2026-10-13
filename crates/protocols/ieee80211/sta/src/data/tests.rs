@@ -354,6 +354,52 @@ fn a_local_refusal_releases_admission_with_the_operation_resources() {
 }
 
 #[test]
+fn preparation_refusal_ends_only_its_msdu_without_a_radio_terminal_or_retry() {
+    let mut data = machine();
+    let mut replay = epoch();
+    let mut link = qos_link(&(), &mut replay);
+    for priority in [6, 4] {
+        data.input(
+            NOW,
+            DataInput::Msdu {
+                msdu: msdu(priority),
+                link: &mut link,
+            },
+        )
+        .unwrap();
+    }
+    let rejected = transmit(&mut data);
+    let accepted = transmit(&mut data);
+    data.input::<Station>(
+        NOW,
+        DataInput::Refused {
+            context: rejected.context,
+            ticket: rejected.ticket,
+            buffer: rejected.buffer,
+            reason: oer_ieee80211_lower_mac::PreparationError::BodyOverlap,
+        },
+    )
+    .unwrap();
+    assert_eq!(data.at_port(WmmAccessCategory::Voice), 0);
+    assert_eq!(data.at_port(WmmAccessCategory::Video), 1);
+    assert_eq!(data.counters().preparation_refused, 1);
+    assert!(data.poll_action(NOW, |_| true).is_none());
+    data.input::<Station>(
+        NOW,
+        DataInput::TxDone {
+            context: accepted.context,
+            ticket: accepted.ticket,
+            buffer: accepted.buffer,
+            completion: ended(TxStatus::Success, 1),
+        },
+    )
+    .unwrap();
+    assert_eq!(core::iter::from_fn(|| data.tickets.take()).count(), 2);
+    assert_eq!(core::iter::from_fn(|| data.buffers.take()).count(), 2);
+    assert_eq!(data.counters().lost_tokens, 0);
+}
+
+#[test]
 fn a_protected_qos_msdu_leaves_room_for_the_ccmp_header_and_contends_by_its_priority() {
     let mut data = machine();
     let mut replay = epoch();

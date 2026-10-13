@@ -102,9 +102,11 @@ impl PortBody<Backend> for Operations {
                     .submit::<ModelSmall>(oer_ieee80211_lower_mac::Attempt {
                         context,
                         ticket,
-                        buffer: TxSource::Fresh(buffer),
-                        frame,
-                        body: Some(body),
+                        source: TxSource::Fresh {
+                            buffer,
+                            frame,
+                            body: Some(body),
+                        },
                         access_category: if operation == 2 {
                             WmmAccessCategory::Voice
                         } else {
@@ -307,22 +309,30 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
             assert_eq!(ticket.index(), context.ticket);
             assert_eq!(completion.transmissions, u8::from(!self.withdraw));
             assert_eq!(buffers.len(), 3);
-            assert_eq!(bodies.len(), 2);
+            assert_eq!(bodies.len(), if self.withdraw { 2 } else { 0 });
             for (buffer, index) in buffers.iter().zip(&context.buffers) {
                 let slot = match buffer {
                     ModelAnyBuffer::Small(buffer) if self.withdraw => buffer.slot.index(),
                     ModelAnyBuffer::SmallNumbered(buffer) if !self.withdraw => {
-                        buffer.0.slot.index()
+                        buffer.buffer.slot.index()
                     }
                     _ => panic!("only published subframes are numbered"),
                 };
                 assert_eq!(slot, *index);
             }
-            for ((index, body), (expected_index, pointer)) in bodies.iter().zip(&context.bodies) {
-                assert_eq!(index, expected_index);
+            for (index, pointer) in &context.bodies {
+                let buffer = &buffers[usize::from(*index)];
+                let body = if self.withdraw {
+                    &bodies.iter().find(|(at, _)| at == index).unwrap().1
+                } else {
+                    let ModelAnyBuffer::SmallNumbered(mpdu) = buffer else {
+                        unreachable!()
+                    };
+                    mpdu.body().unwrap()
+                };
                 assert_eq!(body.0.as_ptr(), *pointer);
                 assert_eq!(body.0, [*index; 4]);
-                assert_eq!(&buffers[usize::from(*index)].memory()[36..40], body.bytes());
+                assert_eq!(&buffer.memory()[36..40], body.bytes());
             }
         }
         let mut sink = |event| {

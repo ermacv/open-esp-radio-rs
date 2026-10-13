@@ -74,3 +74,14 @@ while earlier operations can return. Exhaustion emits
 already accepted operations still return their resources. Ending a link
 closes its epoch without allocating another. Data takes this same epoch
 from `LinkView`; temporary sleep or a channel absence does not close it.
+
+Preparation refusal is `StaInput::Unsent { reason, .. }`, distinct from
+`TxDone`. Refusing M2/M4 ends the handshake through key removal and the
+normal leave path; an unsubmitted M4 cannot establish a connection. A
+required join frame refused at preparation ends that join. Connected PM
+frames retain the existing unsuccessful-send policy; refusing a group-key
+response ends the handshake rather than retiring its keys as if it sent.
+Data's `Refused` input ends that MSDU and releases its admission count and
+tokens once, without retrying unchanged invalid input. The service reports
+the typed reason to its application and continues; preparation refusals
+never enter radio/rate statistics.

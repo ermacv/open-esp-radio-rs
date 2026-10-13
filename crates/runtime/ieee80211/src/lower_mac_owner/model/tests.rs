@@ -101,11 +101,13 @@ fn data_frame<'p, X: ModelContext>(
 fn submit_frame<'p, 'id: 'p, C>(
     phase: &mut ModelPhase<'p, 'id>,
     ticket: Slot<'id, ModelTickets>,
-    buffer: TxSource<
+    source: TxSource<
+        'p,
         <ModelTypes as TxBufferPool<'id, C>>::Buffer,
         <ModelTypes as TxBufferPool<'id, C>>::Numbered,
+        ClassFrame<'p, C, ModelCaps>,
+        ModelBody,
     >,
-    frame: ClassFrame<'p, C, ModelCaps>,
     key: Option<&ModelPairwiseKey<'id, Station>>,
 ) where
     C: TxBufferClass,
@@ -116,9 +118,7 @@ fn submit_frame<'p, 'id: 'p, C>(
         .submit::<C>(oer_ieee80211_lower_mac::Attempt {
             context: (),
             ticket,
-            buffer,
-            frame,
-            body: None,
+            source,
             access_category: WmmAccessCategory::BestEffort,
             protection: Protection::None,
             key: key.map(AttemptKey::Pairwise),
@@ -142,7 +142,16 @@ fn submit<'p, 'id: 'p, C>(
     let frame = ClassFrame::new(data_frame(phase, key.is_some()))
         .ok()
         .unwrap();
-    submit_frame::<C>(phase, ticket, TxSource::Fresh(buffer), frame, key);
+    submit_frame::<C>(
+        phase,
+        ticket,
+        TxSource::Fresh {
+            buffer,
+            frame,
+            body: None,
+        },
+        key,
+    );
 }
 
 /// The next terminal's ticket and buffer.
@@ -192,42 +201,51 @@ impl Work for Numbering {
         let (ticket, buffer) = completion(phase).await;
         let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::numbered(buffer)
             .expect("a protected attempt's buffer comes back numbered");
-        let number = numbered.packet_number(24);
+        let number = numbered.packet_number();
         let air = phase.held.air.clone();
         air.hold(WmmAccessCategory::BestEffort, true);
-        let frame = ClassFrame::new(data_frame(phase, true)).ok().unwrap();
+        let TxFrame::Individual { plan, .. } = data_frame(phase, true) else {
+            unreachable!()
+        };
         submit_frame::<ModelSmall>(
             phase,
             ticket,
-            TxSource::Retransmission(numbered),
-            frame,
+            TxSource::Retransmission {
+                mpdu: numbered,
+                plan: RetransmissionPlan::Individual(plan),
+            },
             Some(&key),
         );
         phase.close_gate(gate);
         let (ticket, buffer) = completion(phase).await;
         let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::numbered(buffer)
             .expect("withdrawal preserves an already numbered MPDU");
-        assert_eq!(numbered.packet_number(24), number);
-        assert_ne!(numbered.0.memory[1] & 0x08, 0);
+        assert_eq!(numbered.packet_number(), number);
+        assert_ne!(numbered.buffer.memory[1] & 0x08, 0);
         let Ok(Ok(LowerMacEvent::GateClosed(closed))) = phase.next_event().await else {
             panic!("gate closes after the attempt returns");
         };
         let _gate = phase.open_gate(closed);
         air.hold(WmmAccessCategory::BestEffort, false);
         // The same MPDU again: a retransmission keeps its number.
-        let frame = data_frame(phase, true);
+        let TxFrame::Individual { plan, .. } = data_frame(phase, true) else {
+            unreachable!()
+        };
         submit_frame::<ModelSmall>(
             phase,
             ticket,
-            TxSource::Retransmission(numbered),
-            ClassFrame::new(frame).ok().unwrap(),
+            TxSource::Retransmission {
+                mpdu: numbered,
+                plan: RetransmissionPlan::Individual(plan),
+            },
             Some(&key),
         );
         let (ticket, buffer) = completion(phase).await;
         let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::numbered(buffer)
             .expect("a retransmission's buffer comes back numbered");
         // Renewed, the memory holds a new MPDU, numbered anew.
-        let renewed = <ModelTypes as TxBufferPool<'id, ModelSmall>>::renew(numbered);
+        let (renewed, body) = <ModelTypes as TxBufferPool<'id, ModelSmall>>::renew(numbered);
+        assert!(body.is_none());
         submit(phase, ticket, renewed, Some(&key));
         let _ = completion(phase).await;
         let _ = key;
@@ -905,11 +923,16 @@ impl Work for AggregateRetransmission<'_> {
         station
             .submit_ampdu(attempt(tickets.remove(0), aggregate))
             .unwrap();
-        let (ticket, mut buffers, mut bodies, report) = aggregate_completion(phase).await;
+        let (ticket, mut buffers, bodies, report) = aggregate_completion(phase).await;
         self.report.set(report);
-        for ((index, body), pointer) in bodies.iter().zip(&body_owners) {
+        assert!(bodies.is_empty(), "numbered MPDUs retain their own bodies");
+        for (index, (buffer, pointer)) in buffers.iter().zip(&body_owners).enumerate() {
+            let ModelAnyBuffer::SmallNumbered(mpdu) = buffer else {
+                panic!("numbered subframe")
+            };
+            let body = mpdu.body().unwrap();
             assert_eq!(body.0.as_ptr(), *pointer);
-            assert_eq!(body.0, [*index; 4]);
+            assert_eq!(body.0, [index as u8; 4]);
         }
         // The second again, from its numbered buffer, beside a new one.
         let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::numbered(buffers.remove(1))
@@ -919,9 +942,8 @@ impl Work for AggregateRetransmission<'_> {
         let mut station = phase.station();
         let rate = station.ampdu_rate(rate).ok().unwrap();
         let mut aggregate = station.aggregate(Tid::new(0).unwrap(), rate);
-        let (_, body) = bodies.remove(1);
         aggregate
-            .push_retransmission::<ModelSmall>(numbered, subframe_frame(1), Some(body))
+            .push_retransmission::<ModelSmall>(numbered)
             .ok()
             .unwrap();
         let (buffer, frame) = subframe(small.remove(0), 3);
@@ -930,13 +952,12 @@ impl Work for AggregateRetransmission<'_> {
             .ok()
             .unwrap();
         station.submit_ampdu(attempt(ticket, aggregate)).unwrap();
-        let (_, _, bodies, _) = aggregate_completion(phase).await;
-        assert_eq!(bodies.len(), 1);
-        assert_eq!(
-            bodies[0].0, 0,
-            "the retried body belongs to the new aggregate's first subframe"
-        );
-        assert_eq!(bodies[0].1.0.as_ptr(), body_owners[1]);
+        let (_, buffers, bodies, _) = aggregate_completion(phase).await;
+        assert!(bodies.is_empty());
+        let ModelAnyBuffer::SmallNumbered(mpdu) = &buffers[0] else {
+            panic!("numbered subframe")
+        };
+        assert_eq!(mpdu.body().unwrap().0.as_ptr(), body_owners[1]);
     }
 }
 
@@ -966,3 +987,5 @@ fn a_lost_subframe_goes_again_with_its_packet_number_beside_new_ones_numbered_an
 }
 
 mod ownership;
+
+mod preparation;

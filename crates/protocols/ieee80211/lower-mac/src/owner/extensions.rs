@@ -22,13 +22,13 @@
 //! [owner decisions on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129677418
 
 use oer_ieee80211_mac::tsf::{TsfDuration, TsfInstant};
-use oer_radio_port::{Poisoned, Slot};
+use oer_radio_port::Slot;
 
 use super::{
     AckHeader, Ieee80211Capabilities, PhaseRate, SizedFrame, SupportedCoex, SupportedPower, Tid,
 };
 use crate::{
-    AmpduCapabilities, Protection,
+    AmpduCapabilities, PreparationRefused, Protection, SubmitError,
     phase::{
         AttemptKey, GateOpen, InterfacePhase, LowerMacPhase, PhaseTypes, TxBufferClass,
         TxBufferPool,
@@ -49,11 +49,11 @@ impl<'p> AmpduRate<'p> {
 /// An aggregate being built: its subframes, each in a buffer of its own.
 pub trait PhaseAggregate<'p, 'id: 'p> {
     /// The owner of a subframe's body.
-    type Body;
+    type Body: crate::TxBody;
     /// The backend's capabilities marker.
     type Caps: Ieee80211Capabilities;
     /// The phase types whose buffers the subframes take.
-    type Types: PhaseTypes<'id>;
+    type Types: PhaseTypes<'id, TxBody = Self::Body>;
     /// The interface role that may submit this aggregate.
     type Role: crate::RoleKeys<'id, Self::Types>;
 
@@ -64,7 +64,9 @@ pub trait PhaseAggregate<'p, 'id: 'p> {
     /// # Errors
     ///
     /// The buffer, frame and body, when the aggregate holds the backend's
-    /// limit of subframes or the buffer's class does not fit the frame.
+    /// limit of subframes, the buffer's class does not fit the frame, or
+    /// the external tail body overlaps the MAC/CCMP prefix. The refusal
+    /// carries a reason and the original buffer, frame and body.
     #[allow(clippy::type_complexity, reason = "the subframe given back")]
     fn push<C>(
         &mut self,
@@ -73,11 +75,11 @@ pub trait PhaseAggregate<'p, 'id: 'p> {
         body: Option<Self::Body>,
     ) -> Result<
         (),
-        (
+        PreparationRefused<(
             <Self::Types as TxBufferPool<'id, C>>::Buffer,
             SizedFrame<AckHeader, Self::Caps>,
             Option<Self::Body>,
-        ),
+        )>,
     >
     where
         C: TxBufferClass,
@@ -90,27 +92,31 @@ pub trait PhaseAggregate<'p, 'id: 'p> {
     ///
     /// # Errors
     ///
-    /// The buffer, frame and body, as [`Self::push`]'s.
+    /// A typed refusal and the original numbered MPDU (in the backend's
+    /// exhaustive return type), including its description and body.
     #[allow(clippy::type_complexity, reason = "the subframe given back")]
     fn push_retransmission<C>(
         &mut self,
-        buffer: <Self::Types as TxBufferPool<'id, C>>::Numbered,
-        frame: SizedFrame<AckHeader, Self::Caps>,
-        body: Option<Self::Body>,
-    ) -> Result<
-        (),
-        (
-            <Self::Types as TxBufferPool<'id, C>>::Numbered,
-            SizedFrame<AckHeader, Self::Caps>,
-            Option<Self::Body>,
-        ),
-    >
+        mpdu: <Self::Types as TxBufferPool<'id, C>>::Numbered,
+    ) -> Result<(), PreparationRefused<<Self::Types as PhaseTypes<'id>>::AnyTxBuffer>>
     where
         C: TxBufferClass,
         Self::Types: TxBufferPool<'id, C>;
 
     /// The subframes pushed.
     fn subframes(&self) -> usize;
+
+    /// Cancel preparation and recover every buffer and external body in
+    /// subframe order, including after a refused `submit_ampdu`. Numbered
+    /// MPDUs retain their own bodies until retry or renewal. This consumes
+    /// no ticket and creates no TX terminal.
+    #[allow(clippy::type_complexity, reason = "the aggregate's owned resources")]
+    fn into_parts(
+        self,
+    ) -> (
+        <Self::Types as PhaseTypes<'id>>::TxBuffers,
+        <Self::Types as PhaseTypes<'id>>::TxBodies,
+    );
 }
 
 /// The minimum MPDU start spacing of an aggregate, as the 802.11 encoding
@@ -154,6 +160,18 @@ pub struct AggregateAttempt<'id, 'k, T, A, P, K, X> {
     pub min_mpdu_start_spacing: MpduStartSpacing,
 }
 
+/// The aggregate attempt of this interface, including its context and
+/// every subframe. A preparation refusal returns this same value.
+pub type InterfaceAggregateAttempt<'k, 'p, 'id, I> = AggregateAttempt<
+    'id,
+    'k,
+    <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::TicketKind,
+    <I as AmpduPhase<'p, 'id>>::Aggregate,
+    <crate::InterfaceKeys<'p, 'id, I> as crate::KeyTypes<'id>>::PairwiseKey,
+    <I as InterfacePhase<'p, 'id>>::Caps,
+    <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::Context,
+>;
+
 /// An interface that sends A-MPDUs.
 pub trait AmpduPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id> {
     /// An aggregate being built.
@@ -191,20 +209,14 @@ pub trait AmpduPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id> {
     ///
     /// # Errors
     ///
-    /// A poisoned backend.
+    /// A preparation refusal returns this entire attempt before admission:
+    /// a missing or mismatched key, a retry tied to a different key install,
+    /// or an empty aggregate. Poisoning retains the fail-stop contract.
     #[allow(clippy::type_complexity, reason = "the attempt's own types")]
-    fn submit_ampdu(
+    fn submit_ampdu<'k>(
         &mut self,
-        attempt: AggregateAttempt<
-            'id,
-            '_,
-            <Self::Types as PhaseTypes<'id>>::TicketKind,
-            Self::Aggregate,
-            <crate::InterfaceKeys<'p, 'id, Self> as crate::KeyTypes<'id>>::PairwiseKey,
-            Self::Caps,
-            <Self::Types as PhaseTypes<'id>>::Context,
-        >,
-    ) -> Result<(), Poisoned<Self::Fault>>;
+        attempt: InterfaceAggregateAttempt<'k, 'p, 'id, Self>,
+    ) -> Result<(), SubmitError<InterfaceAggregateAttempt<'k, 'p, 'id, Self>, Self::Fault>>;
 }
 
 /// The TBTT schedule of an interface: the wake plan the backend carries

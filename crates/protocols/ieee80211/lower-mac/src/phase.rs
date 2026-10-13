@@ -242,7 +242,8 @@ pub enum LowerMacEvent<'id, P: PhaseTypes<'id>> {
         buffers: P::TxBuffers,
         /// How the attempt ended.
         completion: TxCompletion,
-        /// The bodies the attempt carried, each with its subframe index.
+        /// Bodies of fresh returned MPDUs, with their subframe index.
+        /// Numbered MPDUs own their bodies inside `buffers` until renewal.
         bodies: P::TxBodies,
     },
     /// A TBTT of an interface's schedule.
@@ -328,6 +329,9 @@ pub trait PhaseTypes<'id> {
     /// it unchanged, without interpreting or cloning it. It must not
     /// borrow a machine for the duration of an operation.
     type Context;
+    /// An external MPDU body. A numbered MPDU retains its body internally
+    /// for a retry; renewing that MPDU returns the body with its memory.
+    type TxBody: crate::TxBody;
     /// The kind of the transmit tickets.
     type TicketKind;
     /// A transmit buffer of any class, as a completion gives it back.
@@ -340,8 +344,9 @@ pub trait PhaseTypes<'id> {
     /// The metadata of one received MPDU: the portable fields and what the
     /// backend's type guarantees beyond them.
     type RxMeta: crate::RxMetadata;
-    /// The bodies a completion carries, each with its subframe index.
-    type TxBodies: IntoIterator;
+    /// External bodies of fresh returned MPDUs, with their subframe index.
+    /// A numbered MPDU retains its own body until retry or renewal.
+    type TxBodies: IntoIterator<Item = (u8, Self::TxBody)>;
     /// The station's keys and their slots.
     type StationKeys: KeyTypes<'id>;
     /// The access point's keys and their slots.
@@ -426,23 +431,19 @@ pub trait LowerMacPhase<'p, 'id: 'p>:
     fn access_point(&mut self) -> Self::AccessPoint<'_>;
 }
 
-/// One attempt, every value of it checked: its ticket, its MPDU in a
+/// One attempt awaiting preparation: its ticket, its MPDU in a
 /// buffer, its context, body, protection, key, power and coexistence level.
 /// The frame's kind sets its response and
 /// its retry plan ([`RetryPlan`]) or one rate; its access category picks
 /// its queue, whose contention the backend draws.
-pub struct Attempt<'id, 'k, T, B, F, O, P, G, K, X> {
+pub struct Attempt<'id, 'k, T, M, P, G, K, X> {
     /// The original operation's context, returned with its terminal.
     pub context: X,
     /// The attempt's place in flight.
     pub ticket: Slot<'id, T>,
-    /// The fresh buffer or the same MPDU's numbered buffer for a retry.
-    pub buffer: B,
-    /// The frame description, still bound to this phase and buffer class.
-    pub frame: F,
-    /// The body the frame carries after its header, owned by the attempt
-    /// until its terminal.
-    pub body: Option<O>,
+    /// Fresh memory with its checked description and body, or the original
+    /// returned MPDU together with this attempt's phase-bound rates.
+    pub source: M,
     /// The access category the attempt contends as.
     pub access_category: oer_ieee80211_mac::qos::WmmAccessCategory,
     /// The control exchange that protects its first transmission; a
@@ -470,24 +471,120 @@ pub type InterfaceAttempt<'k, 'p, 'id, I, C> = Attempt<
     'k,
     <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::TicketKind,
     TxSource<
+        'p,
         <<I as InterfacePhase<'p, 'id>>::Types as TxBufferPool<'id, C>>::Buffer,
         <<I as InterfacePhase<'p, 'id>>::Types as TxBufferPool<'id, C>>::Numbered,
+        ClassFrame<'p, C, <I as InterfacePhase<'p, 'id>>::Caps>,
+        <I as InterfacePhase<'p, 'id>>::TxBody,
     >,
-    ClassFrame<'p, C, <I as InterfacePhase<'p, 'id>>::Caps>,
-    <I as InterfacePhase<'p, 'id>>::TxBody,
     <InterfaceKeys<'p, 'id, I> as KeyTypes<'id>>::PairwiseKey,
     <InterfaceKeys<'p, 'id, I> as KeyTypes<'id>>::GroupKey,
     <I as InterfacePhase<'p, 'id>>::Caps,
     <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::Context,
 >;
 
-/// The memory supplied to a submission. Neither variant is prepared for
-/// a phase: its matching [`ClassFrame`] reaches `submit` in the same attempt.
-pub enum TxSource<B, N> {
+/// The MPDU supplied to a submission. Fresh memory travels with its
+/// `ClassFrame` and body; a numbered MPDU already owns that description and
+/// body, and receives only the new attempt's phase-bound rate plan.
+pub enum TxSource<'p, B, N, F, O> {
     /// A new MPDU, numbered at its first protected transmission.
-    Fresh(B),
+    Fresh {
+        /// Caller-owned memory, writable only before admission.
+        buffer: B,
+        /// The checked, phase-bound frame description.
+        frame: F,
+        /// External octets at the end of the MPDU, retained until its return.
+        body: Option<O>,
+    },
     /// The same numbered MPDU again: keep its SN and PN, set Retry.
-    Retransmission(N),
+    Retransmission {
+        /// The returned MPDU owns its description, payload and body.
+        mpdu: N,
+        /// Only the transmission parameters change, not the MPDU.
+        plan: RetransmissionPlan<'p>,
+    },
+}
+
+/// The phase-bound rates of a new attempt of a numbered MPDU. The backend
+/// checks that its response kind matches the original MPDU's kind.
+#[derive(Debug)]
+pub enum RetransmissionPlan<'p> {
+    /// An individually acknowledged MPDU.
+    Individual(RetryPlan<PhaseRate<'p>>),
+    /// An individually addressed MPDU with no ACK.
+    IndividualNoAck(crate::SupportedNoAck<'p>),
+    /// A group-addressed MPDU.
+    Group(PhaseRate<'p>),
+}
+
+/// A rejected single attempt retains its phase-bound description, key
+/// borrow, context and all resources. Buffer classes are erased only to
+/// the backend's exhaustive return type; no resource is a terminal yet.
+pub type InterfaceRejected<'k, 'p, 'id, I, C> = Attempt<
+    'id,
+    'k,
+    <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::TicketKind,
+    TxSource<
+        'p,
+        <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::AnyTxBuffer,
+        <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::AnyTxBuffer,
+        ClassFrame<'p, C, <I as InterfacePhase<'p, 'id>>::Caps>,
+        <I as InterfacePhase<'p, 'id>>::TxBody,
+    >,
+    <InterfaceKeys<'p, 'id, I> as KeyTypes<'id>>::PairwiseKey,
+    <InterfaceKeys<'p, 'id, I> as KeyTypes<'id>>::GroupKey,
+    <I as InterfacePhase<'p, 'id>>::Caps,
+    <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::Context,
+>;
+
+/// Preparation failed before admission; the original operation is returned
+/// without allocating a PN or creating a TX terminal.
+pub struct PreparationRefused<A> {
+    /// The dynamic incompatibility.
+    pub reason: PreparationError,
+    /// Every resource and parameter of the rejected operation.
+    pub operation: A,
+}
+
+/// Dynamic preparation failures, distinct from the outcome of accepted TX.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PreparationError {
+    /// No rate of the requested plan is supported on this phase's channel.
+    NoRate,
+    /// The actual memory or buffer class cannot hold the MPDU.
+    BufferTooSmall,
+    /// Protected bit and the presence of a TX key disagree.
+    ProtectionMismatch,
+    /// No room immediately after the MAC header for a full CCMP header.
+    CcmpHeaderTooShort,
+    /// The body at the MPDU's tail overlaps the MAC or CCMP header.
+    BodyOverlap,
+    /// A retry names a different key installation, even in the same slot.
+    RetransmissionKey,
+    /// The new rate plan requires a different response kind.
+    RetransmissionKind,
+    /// The aggregate cannot take another subframe.
+    AggregateFull,
+    /// There is no subframe to publish.
+    EmptyAggregate,
+}
+
+/// Refusal returns the operation; poisoning retains the install's existing
+/// fail-stop ownership contract and never invents an operation terminal.
+pub enum SubmitError<A, F> {
+    /// Preparation refused before admission.
+    Refused(PreparationRefused<A>),
+    /// The backend is poisoned; resources end with the installation.
+    Poisoned(Poisoned<F>),
+}
+
+impl<A, F: core::fmt::Debug> core::fmt::Debug for SubmitError<A, F> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Refused(refused) => f.debug_tuple("Refused").field(&refused.reason).finish(),
+            Self::Poisoned(poisoned) => f.debug_tuple("Poisoned").field(poisoned).finish(),
+        }
+    }
 }
 
 /// What one interface of a running phase does: its own frames, keys and
@@ -496,7 +593,7 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     /// The backend's capabilities marker.
     type Caps: Ieee80211Capabilities;
     /// The types the phase's events carry.
-    type Types: PhaseTypes<'id>;
+    type Types: PhaseTypes<'id, TxBody = Self::TxBody>;
     /// The interface's role, which names its keys among the phase's types.
     type Role: RoleKeys<'id, Self::Types>;
     /// What poisons the backend.
@@ -518,11 +615,13 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     ///
     /// # Errors
     ///
-    /// A poisoned backend; the attempt's ticket ends with the install.
-    fn submit<C>(
+    /// `SubmitError::Refused` returns the complete operation before admission
+    /// and PN allocation. No terminal follows it. A poisoned backend instead
+    /// follows fail-stop: the attempt's resources end with the install.
+    fn submit<'k, C>(
         &mut self,
-        attempt: InterfaceAttempt<'_, 'p, 'id, Self, C>,
-    ) -> Result<(), Poisoned<Self::Fault>>
+        attempt: InterfaceAttempt<'k, 'p, 'id, Self, C>,
+    ) -> Result<(), SubmitError<InterfaceRejected<'k, 'p, 'id, Self, C>, Self::Fault>>
     where
         C: TxBufferClass,
         Self::Types: TxBufferPool<'id, C>;
@@ -624,6 +723,8 @@ pub trait TxBufferPool<'id, C: TxBufferClass>: PhaseTypes<'id> {
     /// numbered too. A completion gives it back after a protected attempt;
     /// retransmitted ([`TxSource::Retransmission`]) it keeps its packet
     /// number, and its bytes are not the caller's to write.
+    /// It also owns its checked description, external body and identity of
+    /// the original key installation. Slot reuse must not match that identity.
     type Numbered;
 
     /// The buffer, as any class's.
@@ -645,7 +746,8 @@ pub trait TxBufferPool<'id, C: TxBufferClass>: PhaseTypes<'id> {
 
     /// The memory of a numbered buffer for a new MPDU: its packet number is
     /// forgotten, and the next protected attempt in it is numbered anew.
-    fn renew(buffer: Self::Numbered) -> Self::Buffer;
+    /// The original external body is returned explicitly beside the memory.
+    fn renew(buffer: Self::Numbered) -> (Self::Buffer, Option<Self::TxBody>);
 }
 
 /// The memory of a transmit buffer the body holds: the caller encodes a
@@ -693,6 +795,12 @@ impl<'p, C: TxBufferClass, K: Ieee80211Capabilities> ClassFrame<'p, C, K> {
     /// The frame.
     pub fn into_frame(self) -> TxFrame<'p, K> {
         self.frame
+    }
+
+    /// Borrow the checked description for preparation without consuming
+    /// the original operation, so a refusal can return it intact.
+    pub const fn frame(&self) -> &TxFrame<'p, K> {
+        &self.frame
     }
 }
 

@@ -397,6 +397,7 @@ impl World {
                 self.station.input(
                     now,
                     StaInput::Unsent {
+                        reason: oer_ieee80211_lower_mac::PreparationError::NoRate,
                         context,
                         ticket,
                         buffer,
@@ -861,6 +862,7 @@ fn a_terminal_of_the_previous_connection_only_returns_its_resources() {
     world.station.input(
         at(84),
         StaInput::Unsent {
+            reason: oer_ieee80211_lower_mac::PreparationError::NoRate,
             context: current.context,
             ticket: current.ticket,
             buffer: current.buffer,
@@ -1261,6 +1263,51 @@ fn wpa2_connected_by(group_slots: u8, beacon: &[u8]) -> (World, oer_ieee80211_rs
     assert!(world.station.is_connected());
     world.take();
     (world, ptk)
+}
+
+#[test]
+fn m4_refused_before_admission_never_completes_the_handshake() {
+    use oer_ieee80211_mac::security::rsn::Akm;
+    use oer_ieee80211_rsn::frames::RsnTxFrame;
+
+    let (mut world, ptk) = wpa2_associated(2);
+    let mut plain = Vec::new();
+    plain.extend_from_slice(&RSN);
+    plain.extend_from_slice(&[0xdd, 22, 0x00, 0x0f, 0xac, 0x01, 0x01, 0x00]);
+    plain.extend_from_slice(&[0x99; 16]);
+    plain.extend_from_slice(&[0xdd, 0]);
+    let wrapped = oer_ieee80211_rsn::aes::software_aes128_key_wrap(ptk.kek(), &plain).unwrap();
+    let message3 =
+        RsnTxFrame::<512>::message3(Akm::Psk, LOCAL, 2, ANONCE, [0; 8], wrapped.as_bytes())
+            .unwrap()
+            .authenticate(&ptk);
+    world.unsend_next = true;
+    world.receive(at(33), &eapol_frame(message3.as_bytes()));
+    let seen = world.take();
+    assert!(!world.station.is_connected());
+    assert!(
+        !seen
+            .iter()
+            .any(|event| matches!(event, Seen::Notify(StaNotice::Connected { .. })))
+    );
+    assert!(seen.contains(&Seen::Notify(StaNotice::Disconnected(
+        StaDisconnectReason::HandshakeFailed
+    ))));
+    assert_eq!(
+        seen.iter()
+            .filter(|event| matches!(event, Seen::RemoveKey))
+            .count(),
+        2
+    );
+    assert_eq!(
+        core::iter::from_fn(|| world.station.tickets.take()).count(),
+        2
+    );
+    assert_eq!(
+        core::iter::from_fn(|| world.station.buffers.take()).count(),
+        2
+    );
+    assert_eq!(world.station.lost_tokens(), 0);
 }
 
 /// Group Message 1 of key `key_id` with replay counter `replay`.

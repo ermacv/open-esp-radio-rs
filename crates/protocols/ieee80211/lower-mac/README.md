@@ -29,12 +29,30 @@ back; its operations are synchronous and never wait:
   when the backend copies their octets into DMA memory. An empty pool is the caller's
   own capacity; an occupied queue is the backend's, which keeps the attempt
   until the queue frees.
-- **Submission.** `submit` takes the ticket, context, `TxSource` buffer,
-  `ClassFrame` and remaining parameters together. There is no prepared
-  buffer detached from its phase: a fresh frame's header is written at
-  admission; a numbered retransmission keeps SN and PN and sets Retry.
+- **Submission.** `submit` takes the ticket, context and `TxSource` together.
+  A fresh source owns its class buffer, `ClassFrame` and body. Preparation
+  checks the actual memory, Protected/key agreement, CCMP reserve directly
+  after the MAC header, and placement of the external body at the MPDU's
+  tail. `SubmitError::Refused` returns every resource and parameter before
+  admission or PN allocation; it creates no terminal. Its buffer uses the
+  backend's exhaustive return type, while its `ClassFrame` retains the
+  original class and phase. Poisoning remains the separate fail-stop path.
+  The model retains its checked layout beside that exact allocation through
+  numbering and publication; no unchecked body/CCMP offset crosses a queue.
+  There is no prepared buffer detached from its phase.
+  A retransmission takes the returned numbered MPDU and a phase-bound
+  `RetransmissionPlan`: its header, payload, body and key-install identity
+  remain inside the MPDU. There are no independent header/body arguments to
+  substitute. SN and PN stay; only Retry changes in the MPDU. Rates, retry
+  plan, RTS/CTS, power and coexistence are parameters of the new attempt.
+  A different key installation is refused even when it reuses the same slot.
   An aggregate builder retains its phase, install and interface role until
-  `submit_ampdu`; all its buffers and indexed bodies return in one terminal.
+  `submit_ampdu`; push failures return their inputs, and submission refusal
+  returns the entire aggregate, context and ticket. Numbered subframes own
+  their bodies on return; fresh subframes return indexed external bodies.
+  `PhaseAggregate::into_parts` releases the builder's resources directly,
+  so refusing an aggregate never forces resubmission to recover its memory.
+  `renew` returns both memory and the retained body explicitly.
 - **Retry plans.** An individual frame carries its `RetryPlan`, a sequence
   of rates with their transmissions and protection, as mac80211's rate
   table. The backend retries the head of its queue by the plan before the

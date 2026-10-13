@@ -381,14 +381,14 @@ impl World<'_> {
         frames
     }
 
-    /// Run the 4-way handshake as the access point after the association:
-    /// the pairwise key it derived, once the station is connected.
-    async fn handshake(&self, seen: &mut usize) -> oer_ieee80211_rsn::Ptk {
+    /// Begin the 4-way handshake after association and return the derived
+    /// key once the station has answered Message 1 with Message 2.
+    async fn start_handshake(&self, seen: &mut usize) -> oer_ieee80211_rsn::Ptk {
         let message1 = RsnTxFrame::<512>::message1(Akm::Psk, LOCAL, 1, ANONCE).unwrap();
         self.air.receive(&eapol_frame(message1.as_bytes()), meta());
         let message2 = self.sent(seen, DATA).await;
         assert_eq!(message2.rate, ofdm6());
-        let ptk = Pmk::from_bytes(PMK).derive_ptk(
+        Pmk::from_bytes(PMK).derive_ptk(
             Akm::Psk,
             PtkContext {
                 authenticator_address: BSSID,
@@ -396,18 +396,12 @@ impl World<'_> {
                 authenticator_nonce: ANONCE,
                 supplicant_nonce: SNONCE,
             },
-        );
-        let mut plain = Vec::new();
-        plain.extend_from_slice(&RSN);
-        plain.extend_from_slice(&[0xdd, 22, 0x00, 0x0f, 0xac, 0x01, 0x01, 0x00]);
-        plain.extend_from_slice(&[0x99; 16]);
-        plain.extend_from_slice(&[0xdd, 0]);
-        let wrapped = oer_ieee80211_rsn::aes::software_aes128_key_wrap(ptk.kek(), &plain).unwrap();
-        let message3 =
-            RsnTxFrame::<512>::message3(Akm::Psk, LOCAL, 2, ANONCE, [0; 8], wrapped.as_bytes())
-                .unwrap()
-                .authenticate(&ptk);
-        self.air.receive(&eapol_frame(message3.as_bytes()), meta());
+        )
+    }
+
+    async fn handshake(&self, seen: &mut usize) -> oer_ieee80211_rsn::Ptk {
+        let ptk = self.start_handshake(seen).await;
+        self.air.receive(&message3(&ptk), meta());
         // Message 4: the association's record, and unprotected.
         let message4 = self.sent(seen, DATA).await;
         assert_eq!(message4.rate, ofdm6());
@@ -714,6 +708,110 @@ fn on_wpa2_the_join_goes_on_the_default_record_and_the_handshake_on_the_associat
                     .await;
                 let deauthentication = world.sent(&mut seen, DEAUTHENTICATION).await;
                 assert_eq!(deauthentication.rate, ofdm6());
+            })
+        },
+    );
+}
+
+fn message3(ptk: &oer_ieee80211_rsn::Ptk) -> Vec<u8> {
+    let mut plain = Vec::new();
+    plain.extend_from_slice(&RSN);
+    plain.extend_from_slice(&[0xdd, 22, 0x00, 0x0f, 0xac, 0x01, 0x01, 0x00]);
+    plain.extend_from_slice(&[0x99; 16]);
+    plain.extend_from_slice(&[0xdd, 0]);
+    let wrapped = oer_ieee80211_rsn::aes::software_aes128_key_wrap(ptk.kek(), &plain).unwrap();
+    let message3 =
+        RsnTxFrame::<512>::message3(Akm::Psk, LOCAL, 2, ANONCE, [0; 8], wrapped.as_bytes())
+            .unwrap()
+            .authenticate(ptk);
+    eapol_frame(message3.as_bytes())
+}
+
+#[test]
+fn refusing_m4_releases_handshake_resources_without_connecting_and_service_can_reconnect() {
+    run(
+        StaSecurity::Wpa2Personal {
+            pmk: Pmk::from_bytes(PMK),
+        },
+        |world| {
+            Box::pin(async move {
+                let mut seen = 0;
+                world.associate(&mut seen, true).await;
+                let ptk = world.start_handshake(&mut seen).await;
+                let sent_before = world.air.sent().len();
+                for _ in 0..8 {
+                    yield_now().await;
+                }
+                let statistics_before = world.completions.borrow().len();
+                world.air.refuse_preparation(PreparationError::BodyOverlap);
+                world.air.receive(&message3(&ptk), meta());
+                world
+                    .notice(StaNotice::Disconnected(
+                        oer_ieee80211_sta::machine::StaDisconnectReason::HandshakeFailed,
+                    ))
+                    .await;
+                assert!(world.outputs.borrow().iter().any(|output| matches!(
+                    output,
+                    ServiceOutput::TxRefused {
+                        operation: TxOperation::Station,
+                        reason: PreparationError::BodyOverlap
+                    }
+                )));
+                assert!(!world.outputs.borrow().iter().any(|output| matches!(
+                    output,
+                    ServiceOutput::Notice(StaNotice::Connected { .. })
+                )));
+                let sent = world.air.sent();
+                assert!(
+                    sent[sent_before..]
+                        .iter()
+                        .all(|frame| kind(frame) == DEAUTHENTICATION)
+                );
+                // Only accepted frames (the leave's deauthentication) update rates.
+                assert_eq!(
+                    world.completions.borrow().len() - statistics_before,
+                    sent.len() - sent_before
+                );
+                world.associate(&mut seen, true).await;
+                world.handshake(&mut seen).await;
+            })
+        },
+    );
+}
+
+#[test]
+fn a_data_preparation_refusal_releases_admission_and_the_next_msdu_can_go() {
+    run(
+        StaSecurity::Wpa2Personal {
+            pmk: Pmk::from_bytes(PMK),
+        },
+        |world| {
+            Box::pin(async move {
+                let mut seen = 0;
+                world.associate(&mut seen, true).await;
+                world.handshake(&mut seen).await;
+                let sent_before = world.air.sent().len();
+                for _ in 0..8 {
+                    yield_now().await;
+                }
+                let statistics_before = world.completions.borrow().len();
+                world.air.refuse_preparation(PreparationError::BodyOverlap);
+                world.send_msdu(ACCESS_POINT_ADDRESS);
+                for _ in 0..50 {
+                    yield_now().await;
+                }
+                assert!(world.outputs.borrow().iter().any(|output| matches!(
+                    output,
+                    ServiceOutput::TxRefused {
+                        operation: TxOperation::Data,
+                        reason: PreparationError::BodyOverlap
+                    }
+                )));
+                assert_eq!(world.air.sent().len(), sent_before);
+                assert_eq!(world.completions.borrow().len(), statistics_before);
+                world.send_msdu(ACCESS_POINT_ADDRESS);
+                let frame = world.sent(&mut seen, DATA).await;
+                assert!(frame.packet_number.is_some());
             })
         },
     );

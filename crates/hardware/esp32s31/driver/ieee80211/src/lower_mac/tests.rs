@@ -1212,7 +1212,7 @@ fn keys_install_into_their_role_slots_and_protect_attempts() {
 }
 
 #[test]
-fn a_fresh_protected_mpdu_is_numbered_by_its_key_and_the_station_group_key_numbers_nothing() {
+fn a_fresh_protected_mpdu_is_numbered_by_its_key_and_the_station_group_key_refuses_tx() {
     let mut hardware = Hardware::default();
     let mut core = enabled(&mut hardware);
     static KEY: [u8; 16] = [0x5a; 16];
@@ -1233,17 +1233,106 @@ fn a_fresh_protected_mpdu_is_numbered_by_its_key_and_the_station_group_key_numbe
     let mut slot = slot();
     // The vendor's step of three: a new key emits PN 3, then 6.
     for expected in [3, 6] {
-        core.number(pairwise, &mut slot, 26).unwrap();
+        assert_eq!(core.number(pairwise, &mut slot, 26), Ok(()));
         let header = &slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE + 26..][..8];
-        assert_eq!(header[0], expected);
-        assert_eq!(header[3], 0x20, "ExtIV, key ID zero");
+        assert_eq!(header, &[expected, 0, 0, 0x20, 0, 0, 0, 0]);
     }
-    // The station's group key only receives: the header is left as it is.
+    // The station's group key remains installed for RX, but cannot prepare TX.
     slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE + 26..][..8].fill(0xee);
-    core.number(group, &mut slot, 26).unwrap();
+    assert_eq!(
+        core.number(group, &mut slot, 26),
+        Err(CcmpNumberingError::ReceiveOnlyKey)
+    );
     assert_eq!(
         slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE + 26..][..8],
         [0xee; 8]
+    );
+}
+
+#[test]
+fn numbering_refuses_a_removed_key_without_writing_the_buffer() {
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    static KEY: [u8; 16] = [0x5a; 16];
+    let key = core
+        .install_checked_key(
+            &mut hardware,
+            CheckedKeyScope::StationPairwise { peer: BSSID },
+            &KEY,
+        )
+        .unwrap();
+    core.remove_checked_key(&mut hardware, key);
+    let mut slot = slot();
+    slot.as_mut().buffer_mut().unwrap().fill(0xee);
+
+    assert_eq!(
+        core.number(key, &mut slot, 26),
+        Err(CcmpNumberingError::MissingKey)
+    );
+    assert_eq!(slot.as_mut().buffer_mut().unwrap(), &[0xee; 512]);
+}
+
+#[test]
+fn numbering_refuses_an_unavailable_buffer_without_allocating_a_packet_number() {
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    static KEY: [u8; 16] = [0x5a; 16];
+    let key = core
+        .install_checked_key(
+            &mut hardware,
+            CheckedKeyScope::StationPairwise { peer: BSSID },
+            &KEY,
+        )
+        .unwrap();
+    let mut slot = slot();
+    slot.as_mut().buffer_mut().unwrap().fill(0xee);
+    let cookie = slot.as_mut().reserve(512, 64).unwrap();
+
+    assert_eq!(
+        core.number(key, &mut slot, 26),
+        Err(CcmpNumberingError::BufferUnavailable(TxError::Busy))
+    );
+    slot.as_mut().cancel_reservation(cookie).unwrap();
+    assert_eq!(slot.as_mut().buffer_mut().unwrap(), &[0xee; 512]);
+    assert_eq!(core.number(key, &mut slot, 26), Ok(()));
+    assert_eq!(
+        slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE + 26..][..8],
+        [3, 0, 0, 0x20, 0, 0, 0, 0]
+    );
+}
+
+#[test]
+fn numbering_checks_header_space_and_offset_overflow_before_allocating_a_packet_number() {
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    static KEY: [u8; 16] = [0x5a; 16];
+    let key = core
+        .install_checked_key(
+            &mut hardware,
+            CheckedKeyScope::StationPairwise { peer: BSSID },
+            &KEY,
+        )
+        .unwrap();
+    let mut slot = slot();
+    slot.as_mut().buffer_mut().unwrap().fill(0xee);
+    let last_header_len = 512 - TX_METADATA_SIZE - CCMP_HEADER_LEN;
+
+    for header_len in [
+        last_header_len + 1,
+        512,
+        usize::MAX - TX_METADATA_SIZE,
+        usize::MAX,
+    ] {
+        assert_eq!(
+            core.number(key, &mut slot, header_len),
+            Err(CcmpNumberingError::InsufficientSpace)
+        );
+        assert_eq!(slot.as_mut().buffer_mut().unwrap(), &[0xee; 512]);
+    }
+    assert_eq!(core.number(key, &mut slot, last_header_len), Ok(()));
+    assert_eq!(
+        slot.as_mut().buffer_mut().unwrap()[512 - CCMP_HEADER_LEN..],
+        [3, 0, 0, 0x20, 0, 0, 0, 0]
     );
 }
 

@@ -13,7 +13,7 @@
 //! # Checked operations
 //!
 //! The phase contract's types rule out every refusal a caller controls, so
-//! each operation takes values its caller's types guarantee
+//! each checked operation takes values its caller's types guarantee
 //! ([`MpduValues`], [`CheckedKeyScope`], [`RxBlockAckValues`],
 //! [`CoreVif`]) and refuses nothing: its state preconditions are invariants
 //! the core asserts in debug builds, and what the hardware refuses is a
@@ -27,7 +27,9 @@
 //! and submits it with the attempt; it comes back with the attempt's
 //! completion ([`LowerMacSink::tx_completed`]). The backend numbers a fresh
 //! protected MPDU at its first transmission ([`LowerMacCore::number`]): the
-//! key's software packet-number allocator writes its CCMP header.
+//! key's software packet-number allocator writes its CCMP header. Only
+//! `Ok(())` confirms that write; a [`CcmpNumberingError`] prevents TX
+//! preparation, including when the key only receives.
 //!
 //! # One publication per attempt, one attempt per EDCA queue
 //!
@@ -102,7 +104,7 @@ use oer_esp32s31_ieee80211_mac::{
     },
     sta_ap_registers::StaApRegisterHardware,
     tx::{
-        HeEdcaTxopLimit, HtAmpduDensity, LegacyTxQueue, TxPhyRate, TxSlot,
+        HeEdcaTxopLimit, HtAmpduDensity, LegacyTxQueue, TxError, TxPhyRate, TxSlot,
         ampdu::{HeAmpduPolicy, HtAmpduHardware},
         runtime::he_txop_limit,
     },
@@ -114,6 +116,7 @@ use oer_ieee80211_lower_mac::{
     TbttEvent, TsfTimingError, TxFault, TxStatus, VifRole, VifRoleSet, VifTsf, WidthSet,
 };
 use oer_ieee80211_mac::{
+    ccmp::CCMP_HEADER_LEN,
     channel::WifiChannel,
     management::BROADCAST_ADDRESS,
     phy::{HeMcs, HtMcs},
@@ -544,6 +547,23 @@ fn frame_bssid(frame: &[u8]) -> Option<MacAddress> {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct KeyIndex(u8);
 
+/// Why a fresh MPDU has not received a CCMP header and must not be
+/// submitted as numbered protected TX.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CcmpNumberingError {
+    /// The index no longer names an installed key.
+    MissingKey,
+    /// A station group key is valid for reception only; it cannot prepare TX.
+    ReceiveOnlyKey,
+    /// Software cannot currently write the slot's buffer.
+    BufferUnavailable(TxError),
+    /// The CCMP header does not fit after the metadata and MAC header,
+    /// including when the offset overflows.
+    InsufficientSpace,
+    /// The key cannot allocate another transmit packet number.
+    PacketNumber(CcmpTxPacketNumberError),
+}
+
 /// A receive Block Ack agreement whose values a caller's types guarantee.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RxBlockAckValues {
@@ -610,17 +630,6 @@ impl KeyToken {
             Self::StaGroup(slot) => slot.hardware_index(),
             Self::ApPairwise(slot) => slot.hardware_index(),
             Self::ApGroup(slot) => slot.hardware_index(),
-        }
-    }
-
-    /// The CCMP header of the next MPDU this key protects; `None` for the
-    /// station's group key, which only receives.
-    fn next_ccmp_header(&mut self) -> Option<Result<[u8; 8], CcmpTxPacketNumberError>> {
-        match self {
-            Self::StaPairwise(slot) => Some(slot.next_tx_ccmp_header()),
-            Self::StaGroup(_) => None,
-            Self::ApPairwise(slot) => Some(slot.next_tx_ccmp_header()),
-            Self::ApGroup(slot) => Some(slot.next_tx_ccmp_header()),
         }
     }
 
@@ -891,30 +900,47 @@ where
     /// fresh MPDU in `slot`, after its `header_len` octets of MAC header:
     /// the backend numbers a fresh MPDU at its first transmission.
     ///
+    /// `Ok(())` means the complete CCMP header was written. Buffer access
+    /// and header space are checked before a packet number is allocated.
+    /// On any error the buffer and the key's packet number are unchanged;
+    /// the caller must not submit the MPDU as numbered protected TX.
+    ///
     /// # Errors
     ///
-    /// The key's packet numbers are exhausted.
+    /// A missing key, a receive-only station group key, an unavailable
+    /// buffer, insufficient header space or packet-number exhaustion is a
+    /// distinct [`CcmpNumberingError`]. A receive-only key remains valid
+    /// for reception, but never reports successful TX preparation here.
     pub fn number(
         &mut self,
         key: KeyIndex,
         slot: &mut Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
         header_len: usize,
-    ) -> Result<(), CcmpTxPacketNumberError> {
-        let header = self
+    ) -> Result<(), CcmpNumberingError> {
+        let installed = self
             .keys
             .get_mut(usize::from(key.0))
             .and_then(Option::as_mut)
-            .and_then(|installed| installed.token.next_ccmp_header());
-        let Some(header) = header else {
-            return Ok(());
-        };
-        let header = header?;
-        if let Ok(buffer) = slot.as_mut().buffer_mut() {
-            let at = TX_METADATA_SIZE + header_len;
-            if let Some(place) = buffer.get_mut(at..at + 8) {
-                place.copy_from_slice(&header);
-            }
+            .ok_or(CcmpNumberingError::MissingKey)?;
+        let buffer = slot
+            .as_mut()
+            .buffer_mut()
+            .map_err(CcmpNumberingError::BufferUnavailable)?;
+        let at = TX_METADATA_SIZE
+            .checked_add(header_len)
+            .ok_or(CcmpNumberingError::InsufficientSpace)?;
+        let place = buffer
+            .get_mut(at..)
+            .and_then(|remaining| remaining.get_mut(..CCMP_HEADER_LEN))
+            .ok_or(CcmpNumberingError::InsufficientSpace)?;
+        let header = match &mut installed.token {
+            KeyToken::StaPairwise(key) => key.next_tx_ccmp_header(),
+            KeyToken::StaGroup(_) => return Err(CcmpNumberingError::ReceiveOnlyKey),
+            KeyToken::ApPairwise(key) => key.next_tx_ccmp_header(),
+            KeyToken::ApGroup(key) => key.next_tx_ccmp_header(),
         }
+        .map_err(CcmpNumberingError::PacketNumber)?;
+        place.copy_from_slice(&header);
         Ok(())
     }
 

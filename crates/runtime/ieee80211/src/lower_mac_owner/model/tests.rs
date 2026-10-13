@@ -5,8 +5,8 @@
 use super::*;
 use core::num::NonZeroU8;
 use oer_ieee80211_lower_mac::{
-    AckHeader, ChannelWidth, FrameControl, HeaderSpec, MpduLength, RetryPlan, RetryStage,
-    SizedFrame, SupportedCoex, SupportedPower, TxPower,
+    AckHeader, ChannelWidth, ClassFrame, FrameControl, HeaderSpec, MpduLength, Protection,
+    RetryPlan, RetryStage, SizedFrame, SupportedCoex, SupportedPower, TxPower,
 };
 use oer_ieee80211_mac::ccmp::GroupKeyId;
 use oer_ieee80211_mac::{phy::LegacyRate, qos::WmmAccessCategory};
@@ -66,7 +66,10 @@ fn until(open: &Cell<bool>) -> impl Future<Output = ()> + '_ {
 }
 
 /// A data frame to the peer, 40 octets, protected or not.
-fn data_frame<'p>(phase: &ModelPhase<'p, '_>, protected: bool) -> TxFrame<'p, ModelCaps> {
+fn data_frame<'p, X>(
+    phase: &ModelPhase<'p, '_, ModelCaps, X>,
+    protected: bool,
+) -> TxFrame<'p, ModelCaps> {
     let rate = phase
         .rate(PhyRate::Legacy(LegacyRate::Ofdm6M))
         .expect("the channel carries 6 Mbit/s");
@@ -94,17 +97,26 @@ fn data_frame<'p>(phase: &ModelPhase<'p, '_>, protected: bool) -> TxFrame<'p, Mo
     }
 }
 
-/// Submit `frame`, its memory bound, with `ticket` and `key`.
-fn submit_frame<'p, 'id: 'p>(
+/// Submit a frame and its class's memory at the same boundary.
+fn submit_frame<'p, 'id: 'p, C>(
     phase: &mut ModelPhase<'p, 'id>,
     ticket: Slot<'id, ModelTickets>,
-    frame: ModelTxBuffer<'id>,
+    buffer: TxSource<
+        <ModelTypes as TxBufferPool<'id, C>>::Buffer,
+        <ModelTypes as TxBufferPool<'id, C>>::Numbered,
+    >,
+    frame: ClassFrame<'p, C, ModelCaps>,
     key: Option<&ModelPairwiseKey<'id, Station>>,
-) {
+) where
+    C: TxBufferClass,
+    ModelTypes: TxBufferPool<'id, C>,
+{
     phase
         .station()
-        .submit(oer_ieee80211_lower_mac::Attempt {
+        .submit::<C>(oer_ieee80211_lower_mac::Attempt {
+            context: (),
             ticket,
+            buffer,
             frame,
             body: None,
             access_category: WmmAccessCategory::BestEffort,
@@ -124,15 +136,13 @@ fn submit<'p, 'id: 'p, C>(
     key: Option<&ModelPairwiseKey<'id, Station>>,
 ) where
     C: TxBufferClass,
-    ModelTypes: TxBufferPool<'id, C, Buffer = ModelBuffer<'id, C>>
-        + PhaseTypes<'id, TicketKind = ModelTickets, StationKeys = ModelKeys<'id, Station>>,
+    ModelTypes: TxBufferPool<'id, C, Buffer = ModelBuffer<'id, C>>,
 {
     buffer.bytes_mut()[..40].fill(0x5a);
-    let frame = data_frame(phase, key.is_some());
-    let frame = phase
-        .station()
-        .tx_buffer::<C>(buffer, ClassFrame::new(frame).ok().unwrap());
-    submit_frame(phase, ticket, frame, key);
+    let frame = ClassFrame::new(data_frame(phase, key.is_some()))
+        .ok()
+        .unwrap();
+    submit_frame::<C>(phase, ticket, TxSource::Fresh(buffer), frame, key);
 }
 
 /// The next terminal's ticket and buffer.
@@ -170,6 +180,7 @@ impl Work for Numbering {
             mut tickets,
             mut small,
             station_pairwise: [slot, _],
+            gate,
             ..
         } = resources;
         let key = phase.station().install_pairwise_key(
@@ -181,12 +192,37 @@ impl Work for Numbering {
         let (ticket, buffer) = completion(phase).await;
         let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::numbered(buffer)
             .expect("a protected attempt's buffer comes back numbered");
+        let number = numbered.packet_number(24);
+        let air = phase.held.air.clone();
+        air.hold(WmmAccessCategory::BestEffort, true);
+        let frame = ClassFrame::new(data_frame(phase, true)).ok().unwrap();
+        submit_frame::<ModelSmall>(
+            phase,
+            ticket,
+            TxSource::Retransmission(numbered),
+            frame,
+            Some(&key),
+        );
+        phase.close_gate(gate);
+        let (ticket, buffer) = completion(phase).await;
+        let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::numbered(buffer)
+            .expect("withdrawal preserves an already numbered MPDU");
+        assert_eq!(numbered.packet_number(24), number);
+        assert_ne!(numbered.0.memory[1] & 0x08, 0);
+        let Ok(Ok(LowerMacEvent::GateClosed(closed))) = phase.next_event().await else {
+            panic!("gate closes after the attempt returns");
+        };
+        let _gate = phase.open_gate(closed);
+        air.hold(WmmAccessCategory::BestEffort, false);
         // The same MPDU again: a retransmission keeps its number.
         let frame = data_frame(phase, true);
-        let frame = phase
-            .station()
-            .retransmit::<ModelSmall>(numbered, ClassFrame::new(frame).ok().unwrap());
-        submit_frame(phase, ticket, frame, Some(&key));
+        submit_frame::<ModelSmall>(
+            phase,
+            ticket,
+            TxSource::Retransmission(numbered),
+            ClassFrame::new(frame).ok().unwrap(),
+            Some(&key),
+        );
         let (ticket, buffer) = completion(phase).await;
         let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::numbered(buffer)
             .expect("a retransmission's buffer comes back numbered");
@@ -777,6 +813,7 @@ async fn aggregate_completion<'p, 'id: 'p>(
 ) -> (
     Slot<'id, ModelTickets>,
     Vec<ModelAnyBuffer<'id>>,
+    Vec<(u8, ModelBody)>,
     Option<oer_ieee80211_lower_mac::BlockAckReport>,
 ) {
     loop {
@@ -790,10 +827,16 @@ async fn aggregate_completion<'p, 'id: 'p>(
             ticket,
             buffers,
             completion,
+            bodies,
             ..
         }))) = event
         {
-            return (ticket, buffers.into_iter().collect(), completion.block_ack);
+            return (
+                ticket,
+                buffers.into_iter().collect(),
+                bodies,
+                completion.block_ack,
+            );
         }
     }
 }
@@ -833,6 +876,7 @@ impl Work for AggregateRetransmission<'_> {
         )
         .unwrap();
         let attempt = |ticket, aggregate| AggregateAttempt {
+            context: (),
             ticket,
             aggregate,
             protection: Protection::None,
@@ -848,18 +892,25 @@ impl Work for AggregateRetransmission<'_> {
         let mut station = phase.station();
         let rate = station.ampdu_rate(rate).ok().unwrap();
         let mut aggregate = station.aggregate(Tid::new(0).unwrap(), rate);
+        let mut body_owners = Vec::new();
         for sequence in 0..3 {
             let (buffer, frame) = subframe(small.remove(0), sequence);
+            let body = ModelBody(alloc::vec![sequence as u8; 4]);
+            body_owners.push(body.0.as_ptr());
             aggregate
-                .push::<ModelSmall>(buffer, frame, None)
+                .push::<ModelSmall>(buffer, frame, Some(body))
                 .ok()
                 .unwrap();
         }
         station
             .submit_ampdu(attempt(tickets.remove(0), aggregate))
             .unwrap();
-        let (ticket, mut buffers, report) = aggregate_completion(phase).await;
+        let (ticket, mut buffers, mut bodies, report) = aggregate_completion(phase).await;
         self.report.set(report);
+        for ((index, body), pointer) in bodies.iter().zip(&body_owners) {
+            assert_eq!(body.0.as_ptr(), *pointer);
+            assert_eq!(body.0, [*index; 4]);
+        }
         // The second again, from its numbered buffer, beside a new one.
         let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::numbered(buffers.remove(1))
             .map_err(|_| ())
@@ -868,8 +919,9 @@ impl Work for AggregateRetransmission<'_> {
         let mut station = phase.station();
         let rate = station.ampdu_rate(rate).ok().unwrap();
         let mut aggregate = station.aggregate(Tid::new(0).unwrap(), rate);
+        let (_, body) = bodies.remove(1);
         aggregate
-            .push_retransmission::<ModelSmall>(numbered, subframe_frame(1), None)
+            .push_retransmission::<ModelSmall>(numbered, subframe_frame(1), Some(body))
             .ok()
             .unwrap();
         let (buffer, frame) = subframe(small.remove(0), 3);
@@ -878,7 +930,13 @@ impl Work for AggregateRetransmission<'_> {
             .ok()
             .unwrap();
         station.submit_ampdu(attempt(ticket, aggregate)).unwrap();
-        let _ = aggregate_completion(phase).await;
+        let (_, _, bodies, _) = aggregate_completion(phase).await;
+        assert_eq!(bodies.len(), 1);
+        assert_eq!(
+            bodies[0].0, 0,
+            "the retried body belongs to the new aggregate's first subframe"
+        );
+        assert_eq!(bodies[0].1.0.as_ptr(), body_owners[1]);
     }
 }
 
@@ -906,3 +964,5 @@ fn a_lost_subframe_goes_again_with_its_packet_number_beside_new_ones_numbered_an
         .collect();
     assert_eq!(retry, [false, false, false, true, false]);
 }
+
+mod ownership;

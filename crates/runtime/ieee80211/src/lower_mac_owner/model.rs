@@ -46,15 +46,15 @@ use oer_radio_port::{EventsLost, Mint, Poisoned, PortResult, Slot};
 use oer_time::RadioInstant;
 
 use oer_ieee80211_lower_mac::{
-    AccessPoint, AccessPointPhase, AttemptKey, BandSet, BssColor, Ccmp128Key, Channel, ClassFrame,
+    AccessPoint, AccessPointPhase, AttemptKey, BandSet, BssColor, Ccmp128Key, Channel,
     CoexPriority, CoexPrioritySet, FrameHeader, GateClosed, GateClosedKind, GateOpen, GateOpenKind,
     HardwareServices, Ieee80211Capabilities, Ieee80211Radio, IndividualAddress, InterfaceAttempt,
     InterfacePhase, KeyTypes, LinkMetric, LowerMacBackend, LowerMacCapabilities, LowerMacEvent,
-    LowerMacPhase, LowerMacSetup, PhaseRate, PhaseTypes, PhyFormatSet, Protection, RateSupport,
-    ReceiveFilter, Removed, RemovedKey, RoleKeys, RxBuffer, RxEvidence, RxMeta, RxMetadata,
-    SignalMetadata, Station, StationPhase, StationReceive, SupportedBlockAck, SupportedChannel,
-    SupportedEdca, SupportedFilter, TxBody, TxBufferClass, TxBufferMemory, TxBufferPool,
-    TxCompletion, TxFrame, TxFrameBody, TxStatus, VifRole, WidthSet,
+    LowerMacPhase, LowerMacSetup, PhaseRate, PhaseTypes, PhyFormatSet, RateSupport, ReceiveFilter,
+    Removed, RemovedKey, RoleKeys, RxBuffer, RxEvidence, RxMeta, RxMetadata, SignalMetadata,
+    Station, StationPhase, StationReceive, SupportedBlockAck, SupportedChannel, SupportedEdca,
+    SupportedFilter, TxBody, TxBufferClass, TxBufferMemory, TxBufferPool, TxCompletion, TxFrame,
+    TxSource, TxStatus, VifRole, WidthSet,
 };
 use oer_ieee80211_lower_mac::{
     AckHeader, AggregateAttempt, AmpduCapabilities, AmpduPhase, AmpduRate, BlockAckReport,
@@ -309,13 +309,14 @@ fn ccmp_header(number: u64, key_id: u8) -> [u8; 8] {
 }
 
 /// The types the model's events carry.
-pub struct ModelTypes;
+pub struct ModelTypes<X = ()>(PhantomData<fn() -> X>);
 
-impl<'id> PhaseTypes<'id> for ModelTypes {
+impl<'id, X> PhaseTypes<'id> for ModelTypes<X> {
+    type Context = X;
     type TicketKind = ModelTickets;
     type AnyTxBuffer = ModelAnyBuffer<'id>;
     type TxBuffers = Vec<ModelAnyBuffer<'id>>;
-    type TxBodies = core::iter::Empty<(u8, ModelBody)>;
+    type TxBodies = Vec<(u8, ModelBody)>;
     type RxBuffer = ModelRxBuffer;
     type RxMeta = ModelRxMeta;
     type StationKeys = ModelKeys<'id, Station>;
@@ -334,7 +335,7 @@ impl<'id, R> KeyTypes<'id> for ModelKeys<'id, R> {
     type GroupKey = ModelGroupKey<'id, R>;
 }
 
-impl<'id> TxBufferPool<'id, ModelSmall> for ModelTypes {
+impl<'id, X> TxBufferPool<'id, ModelSmall> for ModelTypes<X> {
     type Buffer = ModelBuffer<'id, ModelSmall>;
     type Numbered = ModelNumbered<'id, ModelSmall>;
 
@@ -365,7 +366,7 @@ impl<'id> TxBufferPool<'id, ModelSmall> for ModelTypes {
     }
 }
 
-impl<'id> TxBufferPool<'id, ModelLarge> for ModelTypes {
+impl<'id, X> TxBufferPool<'id, ModelLarge> for ModelTypes<X> {
     type Buffer = ModelBuffer<'id, ModelLarge>;
     type Numbered = ModelNumbered<'id, ModelLarge>;
 
@@ -624,35 +625,37 @@ struct Stage {
 }
 
 /// A command the handle sends the driver, in the order it made it.
-enum Command<'id> {
-    Submit(Prepared<'id>),
-    SubmitAmpdu(PreparedAggregate<'id>),
+enum Command<'id, X> {
+    Submit(Prepared<'id, X>),
+    SubmitAmpdu(PreparedAggregate<'id, X>),
     InstallKey {
         index: u8,
     },
     RemoveKey {
         index: u8,
-        removed: Removed<'id, ModelTypes>,
+        removed: Removed<'id, ModelTypes<X>>,
     },
     CloseGate,
     OpenGate,
 }
 
 /// The work of a queue: one MPDU, or one A-MPDU.
-enum Work<'id> {
-    Single(Prepared<'id>),
-    Aggregate(PreparedAggregate<'id>),
+enum Work<'id, X> {
+    Single(Prepared<'id, X>),
+    Aggregate(PreparedAggregate<'id, X>),
 }
 
 /// One subframe of an aggregate, in its buffer.
 struct Subframe<'id> {
+    body: Option<ModelBody>,
     buffer: ModelAnyBuffer<'id>,
     len: usize,
     header_len: usize,
 }
 
 /// An A-MPDU attempt prepared for its queue.
-struct PreparedAggregate<'id> {
+struct PreparedAggregate<'id, X> {
+    context: X,
     role: VifRole,
     ticket: Slot<'id, ModelTickets>,
     subframes: Vec<Subframe<'id>>,
@@ -662,7 +665,9 @@ struct PreparedAggregate<'id> {
 }
 
 /// An attempt prepared for its queue.
-struct Prepared<'id> {
+struct Prepared<'id, X> {
+    context: X,
+    body: Option<ModelBody>,
     role: VifRole,
     ticket: Slot<'id, ModelTickets>,
     buffer: ModelAnyBuffer<'id>,
@@ -683,13 +688,13 @@ struct Settings {
 }
 
 /// The install's queues between the handle and the driver.
-pub struct ModelHeld<'id> {
+pub struct ModelHeld<'id, X = ()> {
     air: Rc<ModelAir>,
-    commands: Bounded<Command<'id>>,
+    commands: Bounded<Command<'id, X>>,
     /// The received buffers the body gives back, at most one per buffer.
     recycled: Bounded<ModelRxBuffer>,
     settings: RefCell<Settings>,
-    events: Bounded<LowerMacEvent<'id, ModelTypes>>,
+    events: Bounded<LowerMacEvent<'id, ModelTypes<X>>>,
     /// The receive buffers out with the body, queued or held.
     rx_out: Cell<usize>,
     /// A confirmation of each interface's settings waits in `events`.
@@ -701,15 +706,18 @@ pub struct ModelHeld<'id> {
     closed: RefCell<Option<GateClosed<'id>>>,
     /// The open gate the driver holds while the gate is closed.
     open: RefCell<Option<GateOpen<'id>>>,
+    /// Disable asks the driver to return all queued operations before the
+    /// owner ends the phase. Unlike poison, this is an ordinary terminal.
+    draining: Cell<bool>,
 }
 
-impl<'id> ModelHeld<'id> {
-    fn command(&self, command: Command<'id>) {
+impl<'id, X> ModelHeld<'id, X> {
+    fn command(&self, command: Command<'id, X>) {
         self.commands.push(command);
         self.air.wake_driver();
     }
 
-    fn post(&self, event: LowerMacEvent<'id, ModelTypes>) {
+    fn post(&self, event: LowerMacEvent<'id, ModelTypes<X>>) {
         self.events.push(event);
         self.wake_body();
     }
@@ -742,14 +750,14 @@ pub struct ModelLocal<'id> {
 
 /// The model's backend; only [`run_port`](oer_ieee80211_port::run_port)
 /// holds it.
-pub struct ModelBackend<C = ModelCaps> {
+pub struct ModelBackend<C = ModelCaps, X = ()> {
     air: Rc<ModelAir>,
     channel: Channel,
     addresses: [IndividualAddress; 2],
-    caps: PhantomData<fn() -> C>,
+    caps: PhantomData<fn() -> (C, X)>,
 }
 
-impl<C> ModelBackend<C> {
+impl<C, X> ModelBackend<C, X> {
     /// A backend tuned to `channel` with the station's and the access
     /// point's addresses, and the air it plays on.
     pub fn new(channel: Channel, addresses: [IndividualAddress; 2]) -> (Self, Rc<ModelAir>) {
@@ -780,8 +788,8 @@ impl<C: Ieee80211Capabilities> LowerMacSetup for ModelSetup<'_, C> {
     }
 }
 
-impl<C: Ieee80211Capabilities> PortBackend for ModelBackend<C> {
-    type Event<'id> = LowerMacEvent<'id, ModelTypes>;
+impl<C: Ieee80211Capabilities, X> PortBackend for ModelBackend<C, X> {
+    type Event<'id> = LowerMacEvent<'id, ModelTypes<X>>;
     type Domain = Ieee80211Radio;
     type Fault = ModelFault;
     type Refusal = ();
@@ -790,12 +798,12 @@ impl<C: Ieee80211Capabilities> PortBackend for ModelBackend<C> {
     where
         Self: 'a;
     type Phase<'a, 'id>
-        = ModelPhase<'a, 'id, C>
+        = ModelPhase<'a, 'id, C, X>
     where
         Self: 'a,
         'id: 'a;
     type Resources<'id> = ModelResources<'id>;
-    type Held<'id> = ModelHeld<'id>;
+    type Held<'id> = ModelHeld<'id, X>;
     type Local<'id> = ModelLocal<'id>;
     type State = ();
     type Uninstall = ();
@@ -814,20 +822,22 @@ impl<C: Ieee80211Capabilities> PortBackend for ModelBackend<C> {
 
     fn disable<'a, 'id>(
         &'a mut self,
-        held: &'a ModelHeld<'id>,
+        held: &'a ModelHeld<'id, X>,
         _: &'a mut ModelLocal<'id>,
-        sink: &'a mut dyn FnMut(LowerMacEvent<'id, ModelTypes>),
+        sink: &'a mut dyn FnMut(LowerMacEvent<'id, ModelTypes<X>>),
     ) -> impl Future<Output = Result<(), Poisoned<ModelFault>>> + 'a
     where
         'id: 'a,
     {
         // The driver ends every command it holds and takes every buffer
         // back; then every event goes to the sink.
+        held.draining.set(true);
+        held.air.wake_driver();
         poll_fn(move |cx| {
             if held.air.poisoned.get() {
                 return Poll::Ready(Err(Poisoned { cause: ModelFault }));
             }
-            if !held.commands.is_empty() || !held.recycled.is_empty() {
+            if held.draining.get() || !held.commands.is_empty() || !held.recycled.is_empty() {
                 *held.body.borrow_mut() = Some(cx.waker().clone());
                 held.air.wake_driver();
                 return Poll::Pending;
@@ -850,7 +860,7 @@ impl<C: Ieee80211Capabilities> PortBackend for ModelBackend<C> {
     fn resources<'id>(
         &mut self,
         mut mint: Mint<'id>,
-    ) -> (ModelHeld<'id>, ModelLocal<'id>, ModelResources<'id>) {
+    ) -> (ModelHeld<'id, X>, ModelLocal<'id>, ModelResources<'id>) {
         let [gate] = mint.slots::<GateOpenKind, 1>();
         let [closed] = mint.slots::<GateClosedKind, 1>();
         let tickets: [Slot<'id, ModelTickets>; MODEL_TICKETS] = mint.slots();
@@ -868,6 +878,7 @@ impl<C: Ieee80211Capabilities> PortBackend for ModelBackend<C> {
             body: RefCell::default(),
             closed: RefCell::new(Some(closed)),
             open: RefCell::default(),
+            draining: Cell::new(false),
         };
         let resources = ModelResources {
             tickets: tickets.into_iter().collect(),
@@ -904,9 +915,9 @@ impl<C: Ieee80211Capabilities> PortBackend for ModelBackend<C> {
 
     fn phase<'a, 'id>(
         &'a mut self,
-        held: &'a ModelHeld<'id>,
+        held: &'a ModelHeld<'id, X>,
         local: &'a mut ModelLocal<'id>,
-    ) -> ModelPhase<'a, 'id, C>
+    ) -> ModelPhase<'a, 'id, C, X>
     where
         'id: 'a,
     {
@@ -921,7 +932,7 @@ impl<C: Ieee80211Capabilities> PortBackend for ModelBackend<C> {
         &mut self,
         held: &'p Self::Held<'id>,
         retire: Retire<'p>,
-    ) -> impl Future<Output = ()> + use<'p, 'id, C> {
+    ) -> impl Future<Output = ()> + use<'p, 'id, C, X> {
         let mut driver = Driver {
             queues: core::array::from_fn(|_| VecDeque::new()),
             keys: Vec::new(),
@@ -945,9 +956,15 @@ impl<C: Ieee80211Capabilities> PortBackend for ModelBackend<C> {
         core::future::pending()
     }
 
-    fn detach<'id>(&mut self, _: &ModelHeld<'id>) {}
+    fn detach<'id>(&mut self, _: &ModelHeld<'id, X>) {}
 
-    fn uninstall<'id>(self, _: ModelHeld<'id>, _: ModelLocal<'id>, (): (), (): ()) -> Rc<ModelAir> {
+    fn uninstall<'id>(
+        self,
+        _: ModelHeld<'id, X>,
+        _: ModelLocal<'id>,
+        (): (),
+        (): (),
+    ) -> Rc<ModelAir> {
         self.air
     }
 
@@ -961,15 +978,15 @@ pub const MODEL_TX_QUEUE_DEPTH: core::num::NonZeroU8 = match core::num::NonZeroU
     None => panic!("a queue holds an attempt"),
 };
 
-impl<C: Ieee80211Capabilities> LowerMacBackend for ModelBackend<C> {
+impl<C: Ieee80211Capabilities, X> LowerMacBackend for ModelBackend<C, X> {
     type Caps = C;
     const TX_QUEUE_DEPTH: core::num::NonZeroU8 = MODEL_TX_QUEUE_DEPTH;
 }
 
 /// The model's hardware, which only the driver owns.
-struct Driver<'id> {
+struct Driver<'id, X> {
     /// The prepared attempts of each queue, the head first.
-    queues: [VecDeque<Work<'id>>; 4],
+    queues: [VecDeque<Work<'id, X>>; 4],
     /// The installed hardware keys.
     keys: Vec<u8>,
     /// The last packet number of each key that numbered an MPDU.
@@ -977,10 +994,10 @@ struct Driver<'id> {
     gate_open: bool,
 }
 
-impl<'id> Driver<'id> {
+impl<'id, X> Driver<'id, X> {
     /// Serve everything posted: the settings, the commands in order, the
     /// queues, then the air.
-    fn serve(&mut self, held: &ModelHeld<'id>) {
+    fn serve(&mut self, held: &ModelHeld<'id, X>) {
         loop {
             // The settings come before the next command.
             let settings = core::mem::take(&mut *held.settings.borrow_mut());
@@ -1020,35 +1037,7 @@ impl<'id> Driver<'id> {
                 }
                 Command::CloseGate => {
                     self.gate_open = false;
-                    // Every prepared, unpublished attempt ends as aborted.
-                    for queue in &mut self.queues {
-                        while let Some(work) = queue.pop_front() {
-                            match work {
-                                Work::Single(prepared) => {
-                                    terminal(held, prepared, TxStatus::Aborted, 0, None);
-                                }
-                                Work::Aggregate(aggregate) => {
-                                    held.post(LowerMacEvent::TxCompleted {
-                                        ticket: aggregate.ticket,
-                                        buffers: aggregate
-                                            .subframes
-                                            .into_iter()
-                                            .map(|subframe| subframe.buffer)
-                                            .collect(),
-                                        completion: TxCompletion {
-                                            status: TxStatus::Aborted,
-                                            ack_rssi_dbm: None,
-                                            ack_snr_db: None,
-                                            block_ack: None,
-                                            transmissions: 0,
-                                            rate: None,
-                                        },
-                                        bodies: core::iter::empty(),
-                                    });
-                                }
-                            }
-                        }
-                    }
+                    self.withdraw(held);
                     let closed = held.closed.borrow_mut().take();
                     if let Some(closed) = closed {
                         held.post(LowerMacEvent::GateClosed(closed));
@@ -1056,9 +1045,13 @@ impl<'id> Driver<'id> {
                 }
                 Command::OpenGate => self.gate_open = true,
             }
-            if self.gate_open {
+            if self.gate_open && !held.draining.get() {
                 self.publish(held);
             }
+        }
+        if held.draining.replace(false) {
+            self.withdraw(held);
+            held.wake_body();
         }
         // A queue the air released publishes without a command.
         if self.gate_open {
@@ -1067,8 +1060,45 @@ impl<'id> Driver<'id> {
         self.receive(held);
     }
 
+    /// Return unpublished work in each queue's original order.
+    fn withdraw(&mut self, held: &ModelHeld<'id, X>) {
+        for queue in &mut self.queues {
+            while let Some(work) = queue.pop_front() {
+                match work {
+                    Work::Single(prepared) => {
+                        terminal(held, prepared, TxStatus::Aborted, 0, None);
+                    }
+                    Work::Aggregate(aggregate) => {
+                        let mut buffers = Vec::with_capacity(aggregate.subframes.len());
+                        let mut bodies = Vec::new();
+                        for (index, subframe) in aggregate.subframes.into_iter().enumerate() {
+                            buffers.push(subframe.buffer);
+                            if let Some(body) = subframe.body {
+                                bodies.push((index as u8, body));
+                            }
+                        }
+                        held.post(LowerMacEvent::TxCompleted {
+                            context: aggregate.context,
+                            ticket: aggregate.ticket,
+                            buffers,
+                            bodies,
+                            completion: TxCompletion {
+                                status: TxStatus::Aborted,
+                                ack_rssi_dbm: None,
+                                ack_snr_db: None,
+                                block_ack: None,
+                                transmissions: 0,
+                                rate: None,
+                            },
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     /// Publish the head of every queue and carry its retry plan out.
-    fn publish(&mut self, held: &ModelHeld<'id>) {
+    fn publish(&mut self, held: &ModelHeld<'id, X>) {
         let busy = held.air.held.get();
         for (queue, busy) in self.queues.iter_mut().zip(busy) {
             if busy {
@@ -1089,7 +1119,7 @@ impl<'id> Driver<'id> {
 
     /// Deliver the frames the air brought, as many as the receive buffers
     /// the body does not hold.
-    fn receive(&mut self, held: &ModelHeld<'id>) {
+    fn receive(&mut self, held: &ModelHeld<'id, X>) {
         loop {
             let frame = held.air.rx.borrow_mut().pop_front();
             let Some((frame, meta)) = frame else {
@@ -1161,11 +1191,11 @@ fn on_air(
 }
 
 /// Publish one MPDU and carry its retry plan out.
-fn publish_single<'id>(
-    held: &ModelHeld<'id>,
+fn publish_single<'id, X>(
+    held: &ModelHeld<'id, X>,
     keys: &[u8],
     packet_numbers: &mut Vec<(u8, u64)>,
-    mut prepared: Prepared<'id>,
+    mut prepared: Prepared<'id, X>,
 ) {
     prepared.buffer = number(
         packet_numbers,
@@ -1206,13 +1236,14 @@ fn publish_single<'id>(
 /// Publish one A-MPDU: its new subframes numbered, its retransmitted ones
 /// with their numbers; the air's Block Ack names the subframes it
 /// acknowledged by their sequence numbers.
-fn publish_aggregate<'id>(
-    held: &ModelHeld<'id>,
+fn publish_aggregate<'id, X>(
+    held: &ModelHeld<'id, X>,
     keys: &[u8],
     packet_numbers: &mut Vec<(u8, u64)>,
-    aggregate: PreparedAggregate<'id>,
+    aggregate: PreparedAggregate<'id, X>,
 ) {
     let PreparedAggregate {
+        context,
         role,
         ticket,
         subframes,
@@ -1230,6 +1261,7 @@ fn publish_aggregate<'id>(
         u16::from_le_bytes([buffer.memory()[22], buffer.memory()[23]]) >> 4
     };
     let mut buffers = Vec::with_capacity(subframes.len());
+    let mut bodies = Vec::new();
     let mut start = None;
     let mut bitmap = 0_u64;
     for (index, subframe) in subframes.into_iter().enumerate() {
@@ -1249,8 +1281,12 @@ fn publish_aggregate<'id>(
             bitmap |= 1 << (sequence.wrapping_sub(start) & 0x0fff).min(63);
         }
         buffers.push(buffer);
+        if let Some(body) = subframe.body {
+            bodies.push((index as u8, body));
+        }
     }
     held.post(LowerMacEvent::TxCompleted {
+        context,
         ticket,
         buffers,
         completion: TxCompletion {
@@ -1266,19 +1302,20 @@ fn publish_aggregate<'id>(
             transmissions: 1,
             rate: Some(rate),
         },
-        bodies: core::iter::empty(),
+        bodies,
     });
 }
 
 /// Post the terminal of `prepared`, with its tokens.
-fn terminal<'id>(
-    held: &ModelHeld<'id>,
-    prepared: Prepared<'id>,
+fn terminal<'id, X>(
+    held: &ModelHeld<'id, X>,
+    prepared: Prepared<'id, X>,
     status: TxStatus,
     transmissions: u8,
     rate: Option<PhyRate>,
 ) {
     held.post(LowerMacEvent::TxCompleted {
+        context: prepared.context,
         ticket: prepared.ticket,
         buffers: alloc::vec![prepared.buffer],
         completion: TxCompletion {
@@ -1289,19 +1326,19 @@ fn terminal<'id>(
             transmissions,
             rate,
         },
-        bodies: core::iter::empty(),
+        bodies: prepared.body.into_iter().map(|body| (0, body)).collect(),
     });
 }
 
 /// The model's running phase: the body's handle over the queues.
-pub struct ModelPhase<'a, 'id, C = ModelCaps> {
-    backend: &'a mut ModelBackend<C>,
-    held: &'a ModelHeld<'id>,
+pub struct ModelPhase<'a, 'id, C = ModelCaps, X = ()> {
+    backend: &'a mut ModelBackend<C, X>,
+    held: &'a ModelHeld<'id, X>,
     local: &'a mut ModelLocal<'id>,
 }
 
-impl<'id, C> PortPhase for ModelPhase<'_, 'id, C> {
-    type Event = LowerMacEvent<'id, ModelTypes>;
+impl<'id, C, X> PortPhase for ModelPhase<'_, 'id, C, X> {
+    type Event = LowerMacEvent<'id, ModelTypes<X>>;
     type Fault = ModelFault;
 
     fn next_event(
@@ -1330,15 +1367,17 @@ impl<'id, C> PortPhase for ModelPhase<'_, 'id, C> {
     }
 }
 
-impl<'p, 'id: 'p, C: Ieee80211Capabilities> LowerMacPhase<'p, 'id> for ModelPhase<'p, 'id, C> {
+impl<'p, 'id: 'p, C: Ieee80211Capabilities, X> LowerMacPhase<'p, 'id>
+    for ModelPhase<'p, 'id, C, X>
+{
     type Caps = C;
-    type Types = ModelTypes;
+    type Types = ModelTypes<X>;
     type Station<'v>
-        = ModelInterface<'v, 'id, Station, C>
+        = ModelInterface<'p, 'v, 'id, Station, C, X>
     where
         Self: 'v;
     type AccessPoint<'v>
-        = ModelInterface<'v, 'id, AccessPoint, C>
+        = ModelInterface<'p, 'v, 'id, AccessPoint, C, X>
     where
         Self: 'v;
 
@@ -1374,7 +1413,7 @@ impl<'p, 'id: 'p, C: Ieee80211Capabilities> LowerMacPhase<'p, 'id> for ModelPhas
         self.held.air.wake_driver();
     }
 
-    fn station(&mut self) -> ModelInterface<'_, 'id, Station, C> {
+    fn station(&mut self) -> ModelInterface<'p, '_, 'id, Station, C, X> {
         ModelInterface {
             held: self.held,
             local: self.local,
@@ -1383,7 +1422,7 @@ impl<'p, 'id: 'p, C: Ieee80211Capabilities> LowerMacPhase<'p, 'id> for ModelPhas
         }
     }
 
-    fn access_point(&mut self) -> ModelInterface<'_, 'id, AccessPoint, C> {
+    fn access_point(&mut self) -> ModelInterface<'p, '_, 'id, AccessPoint, C, X> {
         ModelInterface {
             held: self.held,
             local: self.local,
@@ -1394,31 +1433,11 @@ impl<'p, 'id: 'p, C: Ieee80211Capabilities> LowerMacPhase<'p, 'id> for ModelPhas
 }
 
 /// One interface of the model's phase.
-pub struct ModelInterface<'v, 'id, R, C = ModelCaps> {
-    held: &'v ModelHeld<'id>,
+pub struct ModelInterface<'p, 'v, 'id, R, C = ModelCaps, X = ()> {
+    held: &'v ModelHeld<'id, X>,
     local: &'v mut ModelLocal<'id>,
     address: IndividualAddress,
-    role: PhantomData<fn() -> (R, C)>,
-}
-
-/// A frame's memory, bound to its frame, ready to submit.
-pub struct ModelTxBuffer<'id> {
-    buffer: <ModelTypes as PhaseTypes<'id>>::AnyTxBuffer,
-    len: usize,
-    header_len: usize,
-    plan: Vec<Stage>,
-}
-
-impl TxFrameBody for ModelTxBuffer<'_> {
-    fn body_mut(&mut self) -> &mut [u8] {
-        let (header, len) = (self.header_len, self.len);
-        match &mut self.buffer {
-            ModelAnyBuffer::Small(buffer) => &mut buffer.memory[header..len],
-            ModelAnyBuffer::Large(buffer) => &mut buffer.memory[header..len],
-            // A numbered MPDU's bytes are not the caller's to write.
-            ModelAnyBuffer::SmallNumbered(_) | ModelAnyBuffer::LargeNumbered(_) => &mut [],
-        }
-    }
+    role: PhantomData<fn(&'p ()) -> (&'p (), R, C)>,
 }
 
 /// A key the model installed.
@@ -1475,80 +1494,113 @@ fn header_len<C: Ieee80211Capabilities>(frame: &TxFrame<'_, C>) -> usize {
     }
 }
 
-impl<'p, 'v, 'id: 'p, R, K: Ieee80211Capabilities> InterfacePhase<'p, 'id>
-    for ModelInterface<'v, 'id, R, K>
+/// The checked frame description is the source of the MAC header and its
+/// QoS Ack Policy. The caller already encoded everything after the header.
+fn write_header<C: Ieee80211Capabilities>(frame: &TxFrame<'_, C>, bytes: &mut [u8]) {
+    match frame {
+        TxFrame::Individual { frame, .. } => {
+            frame.header().header().encode(bytes, false);
+        }
+        TxFrame::IndividualNoAck { frame, .. } => {
+            frame.header().header().encode(bytes, true);
+        }
+        TxFrame::Group { frame, .. } => {
+            frame.header().encode(bytes, true);
+        }
+        TxFrame::BlockAckRequest {
+            receiver,
+            transmitter,
+            tid,
+            starting_sequence,
+            ..
+        } => {
+            let header = oer_ieee80211_mac::block_ack::encode_block_ack_request(
+                receiver.get(),
+                *transmitter,
+                tid.get(),
+                *starting_sequence,
+            );
+            bytes[..header.len()].copy_from_slice(&header);
+        }
+    }
+}
+
+/// An external body occupies the MPDU's tail and retains its owner even
+/// after the bytes have been copied to the model's DMA memory.
+fn copy_body(
+    buffer: &mut ModelAnyBuffer<'_>,
+    len: usize,
+    header_len: usize,
+    body: Option<&ModelBody>,
+) {
+    if let Some(body) = body {
+        let bytes = body.bytes();
+        assert!(
+            bytes.len() <= len - header_len,
+            "a body fits after its MPDU's header"
+        );
+        buffer.memory_mut()[len - bytes.len()..len].copy_from_slice(bytes);
+    }
+}
+
+impl<'p, 'v, 'id: 'p, R, K: Ieee80211Capabilities, X> InterfacePhase<'p, 'id>
+    for ModelInterface<'p, 'v, 'id, R, K, X>
 where
-    R: RoleKeys<'id, ModelTypes, Keys = ModelKeys<'id, R>>,
+    R: RoleKeys<'id, ModelTypes<X>, Keys = ModelKeys<'id, R>>,
 {
     type Caps = K;
-    type Types = ModelTypes;
+    type Types = ModelTypes<X>;
     type Role = R;
     type Fault = ModelFault;
-    type TxBuffer = ModelTxBuffer<'id>;
     type TxBody = ModelBody;
 
     fn address(&self) -> IndividualAddress {
         self.address
     }
 
-    fn tx_buffer<C>(
+    fn submit<C>(
         &mut self,
-        buffer: <ModelTypes as TxBufferPool<'id, C>>::Buffer,
-        frame: ClassFrame<'p, C, K>,
-    ) -> ModelTxBuffer<'id>
+        attempt: InterfaceAttempt<'_, 'p, 'id, Self, C>,
+    ) -> Result<(), Poisoned<ModelFault>>
     where
         C: TxBufferClass,
-        ModelTypes: TxBufferPool<'id, C>,
+        ModelTypes<X>: TxBufferPool<'id, C>,
     {
-        let frame = frame.into_frame();
-        ModelTxBuffer {
-            buffer: <ModelTypes as TxBufferPool<'id, C>>::erase(buffer),
-            len: frame.mpdu_len(),
-            header_len: header_len(&frame),
-            plan: stages(&frame),
-        }
-    }
-
-    fn retransmit<C>(
-        &mut self,
-        buffer: <ModelTypes as TxBufferPool<'id, C>>::Numbered,
-        frame: ClassFrame<'p, C, K>,
-    ) -> ModelTxBuffer<'id>
-    where
-        C: TxBufferClass,
-        ModelTypes: TxBufferPool<'id, C>,
-    {
-        let frame = frame.into_frame();
-        ModelTxBuffer {
-            buffer: <ModelTypes as TxBufferPool<'id, C>>::erase_numbered(buffer),
-            len: frame.mpdu_len(),
-            header_len: header_len(&frame),
-            plan: stages(&frame),
-        }
-    }
-
-    fn submit(
-        &mut self,
-        attempt: InterfaceAttempt<'_, 'p, 'id, Self>,
-    ) -> Result<(), Poisoned<ModelFault>> {
         if self.held.air.poisoned.get() {
             return Err(Poisoned { cause: ModelFault });
         }
+        let frame = attempt.frame.into_frame();
+        let len = frame.mpdu_len();
+        let header_len = header_len(&frame);
+        let buffer = match attempt.buffer {
+            TxSource::Fresh(buffer) => {
+                let mut buffer = <ModelTypes<X> as TxBufferPool<'id, C>>::erase(buffer);
+                write_header(&frame, buffer.memory_mut());
+                copy_body(&mut buffer, len, header_len, attempt.body.as_ref());
+                buffer
+            }
+            TxSource::Retransmission(buffer) => {
+                let mut buffer = <ModelTypes<X> as TxBufferPool<'id, C>>::erase_numbered(buffer);
+                buffer.memory_mut()[1] |= 0x08;
+                buffer
+            }
+        };
         let key = attempt.key.map(|key| match key {
             AttemptKey::Pairwise(key) => key.index,
             AttemptKey::Group(key) => key.index,
         });
         self.held.command(Command::Submit(Prepared {
+            context: attempt.context,
+            body: attempt.body,
             role: R::ROLE,
             ticket: attempt.ticket,
-            buffer: attempt.frame.buffer,
-            len: attempt.frame.len,
-            header_len: attempt.frame.header_len,
+            buffer,
+            len,
+            header_len,
             queue: attempt.access_category as usize,
-            plan: attempt.frame.plan,
+            plan: stages(&frame),
             key,
         }));
-        let _ = Protection::None;
         Ok(())
     }
 
@@ -1615,23 +1667,57 @@ where
 pub const MODEL_AMPDU_SUBFRAMES: usize = 8;
 
 /// An A-MPDU the model builds: its subframes, each in a buffer of its own.
-pub struct ModelAggregate<'id, C = ModelCaps> {
+/// The rate retains the phase proof and the buffers retain the install;
+/// the interface role also remains part of this intermediate type.
+///
+/// ```compile_fail
+/// # use oer_ieee80211_runtime::lower_mac_owner::model::ModelAggregate;
+/// # use oer_ieee80211_lower_mac::{Station, AccessPoint};
+/// fn other_role<'p, 'id>(a: ModelAggregate<'p, 'id, Station>) -> ModelAggregate<'p, 'id, AccessPoint> {
+///     a
+/// }
+/// ```
+///
+/// ```compile_fail
+/// # use oer_ieee80211_runtime::lower_mac_owner::model::ModelAggregate;
+/// # use oer_ieee80211_lower_mac::Station;
+/// fn other_phase<'p, 'q, 'id>(a: ModelAggregate<'p, 'id, Station>) -> ModelAggregate<'q, 'id, Station> {
+///     a
+/// }
+/// ```
+///
+/// ```compile_fail
+/// # use oer_ieee80211_runtime::lower_mac_owner::model::ModelAggregate;
+/// # use oer_ieee80211_lower_mac::Station;
+/// fn other_install<'p, 'id, 'other>(a: ModelAggregate<'p, 'id, Station>) -> ModelAggregate<'p, 'other, Station> {
+///     a
+/// }
+/// ```
+///
+/// Moving it within the same phase, install and role is permitted:
+///
+/// ```
+/// # use oer_ieee80211_runtime::lower_mac_owner::model::ModelAggregate;
+/// fn same<'p, 'id, R>(a: ModelAggregate<'p, 'id, R>) -> ModelAggregate<'p, 'id, R> { a }
+/// ```
+pub struct ModelAggregate<'p, 'id, R, C = ModelCaps, X = ()> {
     subframes: Vec<Subframe<'id>>,
     tid: Tid,
-    rate: PhyRate,
-    caps: PhantomData<fn() -> C>,
+    rate: AmpduRate<'p>,
+    caps: PhantomData<fn() -> (R, C, X)>,
 }
 
-/// A buffer of any class, as the model's own type.
-fn any<'id>(buffer: <ModelTypes as PhaseTypes<'id>>::AnyTxBuffer) -> ModelAnyBuffer<'id> {
-    buffer
-}
-
-impl<'id, K: Ieee80211Capabilities> ModelAggregate<'id, K> {
+impl<'p, 'id: 'p, R, K: Ieee80211Capabilities, X> ModelAggregate<'p, 'id, R, K, X> {
     /// Append a subframe the caller checked: the aggregate has room and
     /// its class holds the frame.
-    fn append(&mut self, buffer: ModelAnyBuffer<'id>, frame: &SizedFrame<AckHeader, K>) {
+    fn append(
+        &mut self,
+        buffer: ModelAnyBuffer<'id>,
+        frame: &SizedFrame<AckHeader, K>,
+        body: Option<ModelBody>,
+    ) {
         self.subframes.push(Subframe {
+            body,
             buffer,
             len: frame.len().get(),
             header_len: frame.header().header_len(),
@@ -1639,64 +1725,69 @@ impl<'id, K: Ieee80211Capabilities> ModelAggregate<'id, K> {
     }
 }
 
-impl<'id, K: Ieee80211Capabilities> PhaseAggregate<'id> for ModelAggregate<'id, K> {
+impl<'p, 'id: 'p, R, K: Ieee80211Capabilities, X> PhaseAggregate<'p, 'id>
+    for ModelAggregate<'p, 'id, R, K, X>
+where
+    R: RoleKeys<'id, ModelTypes<X>, Keys = ModelKeys<'id, R>>,
+{
     type Body = ModelBody;
+    type Role = R;
     type Caps = K;
-    type Types = ModelTypes;
+    type Types = ModelTypes<X>;
 
     fn push<C>(
         &mut self,
-        buffer: <ModelTypes as TxBufferPool<'id, C>>::Buffer,
+        buffer: <ModelTypes<X> as TxBufferPool<'id, C>>::Buffer,
         frame: SizedFrame<AckHeader, K>,
         body: Option<ModelBody>,
     ) -> Result<
         (),
         (
-            <ModelTypes as TxBufferPool<'id, C>>::Buffer,
+            <ModelTypes<X> as TxBufferPool<'id, C>>::Buffer,
             SizedFrame<AckHeader, K>,
             Option<ModelBody>,
         ),
     >
     where
         C: TxBufferClass,
-        ModelTypes: TxBufferPool<'id, C>,
+        ModelTypes<X>: TxBufferPool<'id, C>,
     {
         let len = frame.len().get();
         if self.subframes.len() >= MODEL_AMPDU_SUBFRAMES || C::CAPACITY < len {
             return Err((buffer, frame, body));
         }
-        self.append(
-            any(<ModelTypes as TxBufferPool<'id, C>>::erase(buffer)),
-            &frame,
-        );
+        let mut buffer = <ModelTypes<X> as TxBufferPool<'id, C>>::erase(buffer);
+        frame.header().header().encode(buffer.memory_mut(), false);
+        copy_body(&mut buffer, len, frame.header().header_len(), body.as_ref());
+        self.append(buffer, &frame, body);
         Ok(())
     }
 
     fn push_retransmission<C>(
         &mut self,
-        buffer: <ModelTypes as TxBufferPool<'id, C>>::Numbered,
+        buffer: <ModelTypes<X> as TxBufferPool<'id, C>>::Numbered,
         frame: SizedFrame<AckHeader, K>,
         body: Option<ModelBody>,
     ) -> Result<
         (),
         (
-            <ModelTypes as TxBufferPool<'id, C>>::Numbered,
+            <ModelTypes<X> as TxBufferPool<'id, C>>::Numbered,
             SizedFrame<AckHeader, K>,
             Option<ModelBody>,
         ),
     >
     where
         C: TxBufferClass,
-        ModelTypes: TxBufferPool<'id, C>,
+        ModelTypes<X>: TxBufferPool<'id, C>,
     {
         let len = frame.len().get();
         if self.subframes.len() >= MODEL_AMPDU_SUBFRAMES || C::CAPACITY < len {
             return Err((buffer, frame, body));
         }
-        let mut erased = any(<ModelTypes as TxBufferPool<'id, C>>::erase_numbered(buffer));
+        let mut erased = <ModelTypes<X> as TxBufferPool<'id, C>>::erase_numbered(buffer);
         // Again: the Retry bit, and the CCMP header as it is.
         erased.memory_mut()[1] |= 0x08;
-        self.append(erased, &frame);
+        self.append(erased, &frame, body);
         Ok(())
     }
 
@@ -1705,12 +1796,12 @@ impl<'id, K: Ieee80211Capabilities> PhaseAggregate<'id> for ModelAggregate<'id, 
     }
 }
 
-impl<'p, 'v, 'id: 'p, R, K: Ieee80211Capabilities> AmpduPhase<'p, 'id>
-    for ModelInterface<'v, 'id, R, K>
+impl<'p, 'v, 'id: 'p, R, K: Ieee80211Capabilities, X> AmpduPhase<'p, 'id>
+    for ModelInterface<'p, 'v, 'id, R, K, X>
 where
-    R: RoleKeys<'id, ModelTypes, Keys = ModelKeys<'id, R>>,
+    R: RoleKeys<'id, ModelTypes<X>, Keys = ModelKeys<'id, R>>,
 {
-    type Aggregate = ModelAggregate<'id, K>;
+    type Aggregate = ModelAggregate<'p, 'id, R, K, X>;
 
     fn ampdu_capabilities(&self) -> AmpduCapabilities {
         AmpduCapabilities {
@@ -1720,11 +1811,11 @@ where
         }
     }
 
-    fn aggregate(&mut self, tid: Tid, rate: AmpduRate<'p>) -> ModelAggregate<'id, K> {
+    fn aggregate(&mut self, tid: Tid, rate: AmpduRate<'p>) -> ModelAggregate<'p, 'id, R, K, X> {
         ModelAggregate {
             subframes: Vec::new(),
             tid,
-            rate: rate.rate().get(),
+            rate,
             caps: PhantomData,
         }
     }
@@ -1735,9 +1826,10 @@ where
             'id,
             '_,
             ModelTickets,
-            ModelAggregate<'id, K>,
+            ModelAggregate<'p, 'id, R, K, X>,
             ModelPairwiseKey<'id, R>,
             K,
+            X,
         >,
     ) -> Result<(), Poisoned<ModelFault>> {
         if self.held.air.poisoned.get() {
@@ -1754,19 +1846,20 @@ where
             None => oer_ieee80211_mac::qos::WmmAccessCategory::BestEffort as usize,
         };
         self.held.command(Command::SubmitAmpdu(PreparedAggregate {
+            context: attempt.context,
             role: R::ROLE,
             ticket: attempt.ticket,
             subframes,
             queue,
-            rate,
+            rate: rate.rate().get(),
             key: attempt.key.map(|key| key.index),
         }));
         Ok(())
     }
 }
 
-impl<'p, 'v, 'id: 'p, C: Ieee80211Capabilities> StationPhase<'p, 'id>
-    for ModelInterface<'v, 'id, Station, C>
+impl<'p, 'v, 'id: 'p, C: Ieee80211Capabilities, X> StationPhase<'p, 'id>
+    for ModelInterface<'p, 'v, 'id, Station, C, X>
 {
     fn configure(&mut self, _: StationReceive<C>) {
         self.held.settings.borrow_mut().station = true;
@@ -1779,8 +1872,8 @@ impl<'p, 'v, 'id: 'p, C: Ieee80211Capabilities> StationPhase<'p, 'id>
     }
 }
 
-impl<'p, 'v, 'id: 'p, C: Ieee80211Capabilities> AccessPointPhase<'p, 'id>
-    for ModelInterface<'v, 'id, AccessPoint, C>
+impl<'p, 'v, 'id: 'p, C: Ieee80211Capabilities, X> AccessPointPhase<'p, 'id>
+    for ModelInterface<'p, 'v, 'id, AccessPoint, C, X>
 {
     fn configure(&mut self, _: SupportedFilter<C, AccessPoint>) {
         self.held.settings.borrow_mut().access_point = true;

@@ -1038,13 +1038,6 @@ impl<H: FrameHeader, K: Ieee80211Capabilities> SizedFrame<H, K> {
     }
 }
 
-/// The body of a frame a buffer holds: the octets after its header, which
-/// the caller writes.
-pub trait TxFrameBody {
-    /// The octets after the header.
-    fn body_mut(&mut self) -> &mut [u8];
-}
-
 /// A lower-MAC backend on the owner shape. Its disabled-only settings are a
 /// [`LowerMacSetup`] and its running phase a
 /// [`LowerMacPhase`](crate::LowerMacPhase); the body's resources give its

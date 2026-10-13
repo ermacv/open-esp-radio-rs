@@ -81,7 +81,7 @@ pub use owner::{
     LegacyPhaseRate, LowerMacBackend, LowerMacSetup, MpduLength, NoAckHeader, PhaseRate,
     QosControl, ReceiverAddress, SizedFrame, Station, StationReceive, SupportedBackoff,
     SupportedBlockAck, SupportedChannel, SupportedCoex, SupportedEdca, SupportedFilter,
-    SupportedNoAck, SupportedPower, Tid, TxFrame, TxFrameBody,
+    SupportedNoAck, SupportedPower, Tid, TxFrame,
 };
 pub use owner::{
     AggregateAttempt, AggregateKey, AirReservationPhase, AmpduPhase, AmpduRate, BeaconTimingPhase,
@@ -91,7 +91,7 @@ pub use phase::{
     AccessPointPhase, Attempt, AttemptKey, ClassFrame, GateClosed, GateClosedKind, GateOpen,
     GateOpenKind, InterfaceAttempt, InterfaceKeys, InterfacePhase, KeyTypes, LowerMacEvent,
     LowerMacPhase, PhaseTypes, RETRY_STAGES, Removed, RemovedKey, RetryPlan, RetryStage, RoleKeys,
-    StationPhase, TxBufferClass, TxBufferMemory, TxBufferPool,
+    StationPhase, TxBufferClass, TxBufferMemory, TxBufferPool, TxSource,
 };
 pub use rx::{
     LinkMetric, RxBuffer, RxCryptoStatus, RxEvidence, RxMeta, RxMetadata, SignalMetadata,

@@ -230,7 +230,7 @@ pub struct LowerMacCapabilities {
     /// `n`; with one, every access category shares it. See
     /// [`Self::tx_queue`].
     pub tx_queues: u8,
-    /// The longest MPDU a [`TxBuffer`](crate::TxBuffer) holds, without FCS
+    /// The longest MPDU a transmit buffer holds, without FCS
     /// and MIC.
     pub max_mpdu_length: u16,
     /// The largest [`Backoff::Slots`] count.

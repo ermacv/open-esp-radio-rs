@@ -47,13 +47,15 @@ impl<'p> AmpduRate<'p> {
 }
 
 /// An aggregate being built: its subframes, each in a buffer of its own.
-pub trait PhaseAggregate<'id> {
+pub trait PhaseAggregate<'p, 'id: 'p> {
     /// The owner of a subframe's body.
     type Body;
     /// The backend's capabilities marker.
     type Caps: Ieee80211Capabilities;
     /// The phase types whose buffers the subframes take.
     type Types: PhaseTypes<'id>;
+    /// The interface role that may submit this aggregate.
+    type Role: crate::RoleKeys<'id, Self::Types>;
 
     /// Append the new MPDU `frame` that the fresh `buffer` holds, encoded
     /// from its header on, with its body. Under a key the backend numbers
@@ -133,7 +135,9 @@ impl MpduStartSpacing {
 }
 
 /// One A-MPDU attempt: its ticket, its aggregate and how it goes.
-pub struct AggregateAttempt<'id, 'k, T, A, P, K> {
+pub struct AggregateAttempt<'id, 'k, T, A, P, K, X> {
+    /// The caller's context for all subframes, returned with their terminal.
+    pub context: X,
     /// The attempt's place in flight.
     pub ticket: Slot<'id, T>,
     /// The aggregate, whose subframes' buffers come back with the terminal.
@@ -153,7 +157,14 @@ pub struct AggregateAttempt<'id, 'k, T, A, P, K> {
 /// An interface that sends A-MPDUs.
 pub trait AmpduPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id> {
     /// An aggregate being built.
-    type Aggregate: PhaseAggregate<'id, Body = Self::TxBody, Caps = Self::Caps, Types = Self::Types>;
+    type Aggregate: PhaseAggregate<
+            'p,
+            'id,
+            Body = Self::TxBody,
+            Caps = Self::Caps,
+            Types = Self::Types,
+            Role = Self::Role,
+        >;
 
     /// What the backend aggregates.
     fn ampdu_capabilities(&self) -> AmpduCapabilities;
@@ -191,6 +202,7 @@ pub trait AmpduPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id> {
             Self::Aggregate,
             <crate::InterfaceKeys<'p, 'id, Self> as crate::KeyTypes<'id>>::PairwiseKey,
             Self::Caps,
+            <Self::Types as PhaseTypes<'id>>::Context,
         >,
     ) -> Result<(), Poisoned<Self::Fault>>;
 }

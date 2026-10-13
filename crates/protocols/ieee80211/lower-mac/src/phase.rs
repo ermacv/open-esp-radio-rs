@@ -14,7 +14,7 @@
 //! | Token | Taken by | Given back by |
 //! | --- | --- | --- |
 //! | a transmit ticket ([`PhaseTypes::TicketKind`]) | [`InterfacePhase::submit`] | [`LowerMacEvent::TxCompleted`] |
-//! | a transmit buffer of a class ([`TxBufferClass`]), its memory ([`TxBufferMemory`]) | [`InterfacePhase::tx_buffer`], once the caller encoded its frame in it, then the submission | [`LowerMacEvent::TxCompleted`], every buffer of the attempt |
+//! | a transmit buffer of a class ([`TxBufferClass`]), its memory ([`TxBufferMemory`]) | [`InterfacePhase::submit`], together with its [`ClassFrame`] | [`LowerMacEvent::TxCompleted`], every buffer of the attempt |
 //! | a key slot of a role's kind | [`InterfacePhase::install_pairwise_key`], [`InterfacePhase::install_group_key`] (the installed key holds it) | [`LowerMacEvent::KeyRemoved`], after a removal |
 //! | a Block Ack slot | [`InterfacePhase::add_block_ack`] (the agreement holds it) | [`InterfacePhase::remove_block_ack`] |
 //! | the open gate ([`GateOpen`]) | [`LowerMacPhase::close_gate`] | [`LowerMacPhase::open_gate`], which takes the closed gate ([`GateClosed`]) that [`LowerMacEvent::GateClosed`] gave |
@@ -67,7 +67,7 @@
 //! the buffer, and the hardware appends the MIC; the plan's transmissions
 //! keep it. The completion gives the buffer back numbered
 //! ([`TxBufferPool::Numbered`]): a retransmission of the same MPDU
-//! ([`InterfacePhase::retransmit`]) keeps its packet number, and only a
+//! ([`TxSource::Retransmission`]) keeps its packet number, and only a
 //! renewed buffer ([`TxBufferPool::renew`]) is numbered anew. A received
 //! frame whose crypto status is
 //! [`RxCryptoStatus::DecryptedAndIntegrityVerified`](crate::RxCryptoStatus)
@@ -147,62 +147,39 @@
 //! }
 //! ```
 //!
-//! An attempt holds its ticket and its buffer, so a submitted ticket is
-//! gone until its terminal:
+//! An attempt moves its context, ticket and buffer once:
 //!
 //! ```compile_fail,E0382
 //! # use oer_ieee80211_lower_mac::*;
-//! # use oer_ieee80211_mac::qos::WmmAccessCategory;
-//! # use oer_radio_port::Slot;
-//! fn two<'p, 'id: 'p, I: InterfacePhase<'p, 'id>>(
-//!     interface: &mut I,
-//!     ticket: Slot<'id, <I::Types as PhaseTypes<'id>>::TicketKind>,
-//!     frame: I::TxBuffer,
-//!     other: I::TxBuffer,
-//!     power: SupportedPower<I::Caps>,
-//!     coex: SupportedCoex<I::Caps>,
-//! ) where
-//!     SupportedPower<I::Caps>: Copy,
-//!     SupportedCoex<I::Caps>: Copy,
-//! {
-//!     let attempt = |frame| Attempt {
-//!         ticket,
-//!         frame,
-//!         body: None,
-//!         access_category: WmmAccessCategory::BestEffort,
-//!         protection: Protection::None,
-//!         key: None,
-//!         power,
-//!         coex,
-//!     };
-//!     let _ = interface.submit(attempt(frame));
-//!     let _ = interface.submit(attempt(other));
+//! fn twice<'p, 'id: 'p, I, C>(interface: &mut I, attempt: InterfaceAttempt<'_, 'p, 'id, I, C>)
+//! where I: InterfacePhase<'p, 'id>, C: TxBufferClass, I::Types: TxBufferPool<'id, C> {
+//!     let _ = interface.submit::<C>(attempt);
+//!     let _ = interface.submit::<C>(attempt);
 //! }
 //! ```
 //!
-//! Its compiling twin submits each ticket once:
+//! Its compiling twin moves each operation once, with no `Clone` bound:
 //!
 //! ```
 //! # use oer_ieee80211_lower_mac::*;
-//! # use oer_ieee80211_mac::qos::WmmAccessCategory;
-//! # use oer_radio_port::Slot;
-//! fn one<'p, 'id: 'p, I: InterfacePhase<'p, 'id>>(
-//!     interface: &mut I,
-//!     ticket: Slot<'id, <I::Types as PhaseTypes<'id>>::TicketKind>,
-//!     frame: I::TxBuffer,
-//!     power: SupportedPower<I::Caps>,
-//!     coex: SupportedCoex<I::Caps>,
-//! ) {
-//!     let _ = interface.submit(Attempt {
-//!         ticket,
-//!         frame,
-//!         body: None,
-//!         access_category: WmmAccessCategory::BestEffort,
-//!         protection: Protection::None,
-//!         key: None,
-//!         power,
-//!         coex,
-//!     });
+//! fn one<'p, 'id: 'p, I, C>(interface: &mut I, attempt: InterfaceAttempt<'_, 'p, 'id, I, C>)
+//! where I: InterfacePhase<'p, 'id>, C: TxBufferClass, I::Types: TxBufferPool<'id, C> {
+//!     let _ = interface.submit::<C>(attempt);
+//! }
+//! ```
+//!
+//! A frame checked on one phase cannot be submitted on an unrelated one:
+//!
+//! ```compile_fail
+//! # use oer_ieee80211_lower_mac::*;
+//! fn another_phase<'p, 'q, 'id: 'p + 'q, I, J, C>(
+//!     interface: &mut J, attempt: InterfaceAttempt<'_, 'p, 'id, I, C>,
+//! ) where
+//!     I: InterfacePhase<'p, 'id>,
+//!     J: InterfacePhase<'q, 'id, Caps = I::Caps, Types = I::Types, Role = I::Role, TxBody = I::TxBody>,
+//!     C: TxBufferClass, I::Types: TxBufferPool<'id, C>,
+//! {
+//!     let _ = interface.submit::<C>(attempt);
 //! }
 //! ```
 //!
@@ -257,6 +234,8 @@ pub enum LowerMacEvent<'id, P: PhaseTypes<'id>> {
     /// The terminal of one attempt: its ticket, its buffers and the bodies
     /// it carried.
     TxCompleted {
+        /// The caller's operation context, moved unchanged from the attempt.
+        context: P::Context,
         /// The attempt's ticket.
         ticket: Slot<'id, P::TicketKind>,
         /// The buffers of the attempt's frames.
@@ -345,6 +324,10 @@ pub type InterfaceKeys<'p, 'id, I> = <<I as InterfacePhase<'p, 'id>>::Role as Ro
 
 /// The types of one backend's phase that its events carry.
 pub trait PhaseTypes<'id> {
+    /// The composition's operation context. The backend owns and returns
+    /// it unchanged, without interpreting or cloning it. It must not
+    /// borrow a machine for the duration of an operation.
+    type Context;
     /// The kind of the transmit tickets.
     type TicketKind;
     /// A transmit buffer of any class, as a completion gives it back.
@@ -444,15 +427,19 @@ pub trait LowerMacPhase<'p, 'id: 'p>:
 }
 
 /// One attempt, every value of it checked: its ticket, its MPDU in a
-/// buffer, its body, its protection, key, power and coexistence level.
-/// The frame's kind, fixed when the buffer was lent, sets its response and
+/// buffer, its context, body, protection, key, power and coexistence level.
+/// The frame's kind sets its response and
 /// its retry plan ([`RetryPlan`]) or one rate; its access category picks
 /// its queue, whose contention the backend draws.
-pub struct Attempt<'id, 'k, T, B, O, P, G, K> {
+pub struct Attempt<'id, 'k, T, B, F, O, P, G, K, X> {
+    /// The original operation's context, returned with its terminal.
+    pub context: X,
     /// The attempt's place in flight.
     pub ticket: Slot<'id, T>,
-    /// The frame in its buffer, whose kind fixes its rate and response.
-    pub frame: B,
+    /// The fresh buffer or the same MPDU's numbered buffer for a retry.
+    pub buffer: B,
+    /// The frame description, still bound to this phase and buffer class.
+    pub frame: F,
     /// The body the frame carries after its header, owned by the attempt
     /// until its terminal.
     pub body: Option<O>,
@@ -478,16 +465,30 @@ pub enum AttemptKey<'k, P, G> {
 }
 
 /// The attempt of the interface `I`.
-pub type InterfaceAttempt<'k, 'p, 'id, I> = Attempt<
+pub type InterfaceAttempt<'k, 'p, 'id, I, C> = Attempt<
     'id,
     'k,
     <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::TicketKind,
-    <I as InterfacePhase<'p, 'id>>::TxBuffer,
+    TxSource<
+        <<I as InterfacePhase<'p, 'id>>::Types as TxBufferPool<'id, C>>::Buffer,
+        <<I as InterfacePhase<'p, 'id>>::Types as TxBufferPool<'id, C>>::Numbered,
+    >,
+    ClassFrame<'p, C, <I as InterfacePhase<'p, 'id>>::Caps>,
     <I as InterfacePhase<'p, 'id>>::TxBody,
     <InterfaceKeys<'p, 'id, I> as KeyTypes<'id>>::PairwiseKey,
     <InterfaceKeys<'p, 'id, I> as KeyTypes<'id>>::GroupKey,
     <I as InterfacePhase<'p, 'id>>::Caps,
+    <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::Context,
 >;
+
+/// The memory supplied to a submission. Neither variant is prepared for
+/// a phase: its matching [`ClassFrame`] reaches `submit` in the same attempt.
+pub enum TxSource<B, N> {
+    /// A new MPDU, numbered at its first protected transmission.
+    Fresh(B),
+    /// The same numbered MPDU again: keep its SN and PN, set Retry.
+    Retransmission(N),
+}
 
 /// What one interface of a running phase does: its own frames, keys and
 /// Block Ack agreements.
@@ -500,53 +501,31 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     type Role: RoleKeys<'id, Self::Types>;
     /// What poisons the backend.
     type Fault: Copy + core::fmt::Debug;
-    /// One frame's memory, which holds its buffer token, with its header,
-    /// kind, rate and response written.
-    type TxBuffer: crate::owner::TxFrameBody;
     /// The owner of an MPDU's body.
     type TxBody: crate::TxBody;
 
     /// The interface's own address, which the install gave it.
     fn address(&self) -> IndividualAddress;
 
-    /// The frame `buffer` holds, the caller's encoding from its header on,
-    /// bound to `frame`, its kind, which the buffer's class fits
-    /// ([`ClassFrame`]): the backend writes the header from `frame` (one
-    /// source of its QoS Ack Policy) and sends the octets after it as
-    /// written. Dropped unsubmitted, the buffer is lost until the next
-    /// install.
-    fn tx_buffer<C>(
-        &mut self,
-        buffer: <Self::Types as TxBufferPool<'id, C>>::Buffer,
-        frame: ClassFrame<'p, C, Self::Caps>,
-    ) -> Self::TxBuffer
-    where
-        C: TxBufferClass,
-        Self::Types: TxBufferPool<'id, C>;
-
-    /// The MPDU a numbered `buffer` holds, again, bound to `frame`, its
-    /// kind: a retransmission (the subframe of an A-MPDU its Block Ack did
-    /// not acknowledge), which keeps its packet number. The backend sets
-    /// the Retry bit of its Frame Control and writes no new CCMP header.
-    fn retransmit<C>(
-        &mut self,
-        buffer: <Self::Types as TxBufferPool<'id, C>>::Numbered,
-        frame: ClassFrame<'p, C, Self::Caps>,
-    ) -> Self::TxBuffer
-    where
-        C: TxBufferClass,
-        Self::Types: TxBufferPool<'id, C>;
-
-    /// Admit `attempt`: the backend publishes it once its queue is free,
-    /// and its ticket and buffers come back with its terminal.
+    /// Prepare and admit `attempt` together: its buffer class, phase rate,
+    /// install and role's key are checked at this boundary. For a fresh
+    /// MPDU the backend writes the MAC header from `ClassFrame`, leaving
+    /// the caller's octets after it intact. For a retransmission it sets
+    /// Retry without rewriting SN, PN or payload. An optional body remains
+    /// owned by the attempt until its terminal, even if copied into DMA memory.
+    /// The backend publishes the attempt once its queue is free; its
+    /// context, ticket, buffers and bodies return together, exactly once.
     ///
     /// # Errors
     ///
     /// A poisoned backend; the attempt's ticket ends with the install.
-    fn submit(
+    fn submit<C>(
         &mut self,
-        attempt: InterfaceAttempt<'_, 'p, 'id, Self>,
-    ) -> Result<(), Poisoned<Self::Fault>>;
+        attempt: InterfaceAttempt<'_, 'p, 'id, Self, C>,
+    ) -> Result<(), Poisoned<Self::Fault>>
+    where
+        C: TxBufferClass,
+        Self::Types: TxBufferPool<'id, C>;
 
     /// Install `key` for frames with `peer` in `slot`.
     fn install_pairwise_key(
@@ -640,9 +619,10 @@ pub trait TxBufferPool<'id, C: TxBufferClass>: PhaseTypes<'id> {
 
     /// A buffer of the class that holds an MPDU the backend numbered: its
     /// CCMP header carries the packet number of the MPDU's first
-    /// transmission. An attempt that made no transmission gives its buffer
-    /// back fresh, never numbered. A completion gives it back after a protected attempt;
-    /// retransmitted ([`InterfacePhase::retransmit`]) it keeps its packet
+    /// transmission. A fresh buffer returned before publication stays
+    /// fresh. A numbered retransmission returned before publication stays
+    /// numbered too. A completion gives it back after a protected attempt;
+    /// retransmitted ([`TxSource::Retransmission`]) it keeps its packet
     /// number, and its bytes are not the caller's to write.
     type Numbered;
 
@@ -840,10 +820,7 @@ impl<R> RetryPlan<R> {
     /// # Errors
     ///
     /// The first error `rate` returned.
-    pub fn try_map<S, E>(
-        self,
-        mut rate: impl FnMut(R) -> Result<S, E>,
-    ) -> Result<RetryPlan<S>, E> {
+    pub fn try_map<S, E>(self, mut rate: impl FnMut(R) -> Result<S, E>) -> Result<RetryPlan<S>, E> {
         let mut turn = |stage: RetryStage<R>| {
             Ok(RetryStage {
                 rate: rate(stage.rate)?,

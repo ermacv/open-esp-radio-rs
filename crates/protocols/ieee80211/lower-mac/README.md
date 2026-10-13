@@ -22,9 +22,19 @@ back; its operations are synchronous and never wait:
 - **Tickets and buffers.** A transmission takes a ticket (a place in
   flight and its terminal's place) and the buffers of its frames, each of a
   class sized by the composition (`TxBufferClass`, `ClassFrame`); its
-  `TxCompleted` event gives all of them back. An empty pool is the caller's
+  `TxCompleted` event gives all of them back with `PhaseTypes::Context`,
+  chosen by the composition. The backend moves that context unchanged;
+  no `Clone` bound, frame inspection or parallel lookup identifies the
+  original operation. Bodies remain owned until the same terminal, even
+  when the backend copies their octets into DMA memory. An empty pool is the caller's
   own capacity; an occupied queue is the backend's, which keeps the attempt
   until the queue frees.
+- **Submission.** `submit` takes the ticket, context, `TxSource` buffer,
+  `ClassFrame` and remaining parameters together. There is no prepared
+  buffer detached from its phase: a fresh frame's header is written at
+  admission; a numbered retransmission keeps SN and PN and sets Retry.
+  An aggregate builder retains its phase, install and interface role until
+  `submit_ampdu`; all its buffers and indexed bodies return in one terminal.
 - **Retry plans.** An individual frame carries its `RetryPlan`, a sequence
   of rates with their transmissions and protection, as mac80211's rate
   table. The backend retries the head of its queue by the plan before the
@@ -100,6 +110,9 @@ vendor stack are the family package `oer-espressif-ieee80211-policy`.
 
 ## Implementers
 
-No backend implements the phase yet: the host model of
-`oer-ieee80211-runtime` and the ESP32-S31 backend of
-`oer-esp32s31-ieee80211-runtime` serve the earlier client shape.
+The host model in `oer-ieee80211-runtime` implements the phase with
+composition-selected context types. It returns queued operations on gate
+close and normal disable, including queues held by the model air. On
+fail-stop, no terminal is invented: backend-owned resources end with the
+install. The ESP32-S31 runtime still serves the earlier client shape; its
+port migration and image composition are the next stage of #563.

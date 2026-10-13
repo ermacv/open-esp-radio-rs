@@ -20,9 +20,10 @@
 //! Cross-AC completion order has no bearing on ownership. Each machine
 //! returns stale-link resources without advancing its current protocol,
 //! and the service excludes those terminals from current-link rate control.
-//! Data admission remains a count per AC, including old-link work until
+//! Data admission is an owned permit per AC, including old-link work until
 //! its terminal, and preserves the station's Voice waiting bound.
-//! `SubmitError::Refused` returns the original operation before admission.
+//! Preparation returns the original typed source on refusal; context and
+//! ticket have not left this service. Submission can refuse only poisoning.
 //! The application hears `ServiceOutput::TxRefused`; Station gets `Unsent`
 //! and Data gets `Refused`. Neither path fabricates a completion or updates
 //! rate statistics, and the service continues. A `Sent` return retains its
@@ -35,6 +36,7 @@
 
 use core::marker::PhantomData;
 use core::num::NonZeroU8;
+use oer_ieee80211_sta::machine::TxRefusal;
 
 use embassy_futures::select::{Either, Either3, select, select3};
 use embassy_sync::blocking_mutex::raw::RawMutex;
@@ -44,12 +46,11 @@ use oer_ieee80211_arbiter::{
     AccessPointCommand, AccessPointFact, Arbiter, ArbiterAction, GateTokens,
 };
 use oer_ieee80211_lower_mac::{
-    AttemptKey, Ccmp128Key, ClassFrame, CoexPriority, GateClosed, GateOpen, Ieee80211Capabilities,
+    Ccmp128Key, ClassFrame, CoexPriority, GateClosed, GateOpen, Ieee80211Capabilities,
     InterfacePhase, KeyTypes, LowerMacBackend, LowerMacEvent, LowerMacPhase, PhaseTypes, PoolMpdu,
-    PoolSource, PreparationError, PreparedTx, Protection, Removed, RemovedKey, RetransmissionPlan,
-    ReturnedMpdu, RxBuffer, RxMetadata, StationPhase, SubmitError, SupportedChannel, SupportedCoex,
-    SupportedPower, TxBufferClass, TxBufferPool, TxCompleted, TxFrame, TxOutcome, TxPower,
-    TxSource, VifRole,
+    PoolSource, Protection, Removed, RemovedKey, RetransmissionPlan, ReturnedMpdu, RxBuffer,
+    RxMetadata, StationPhase, SupportedChannel, SupportedCoex, SupportedPower, TxBufferClass,
+    TxBufferPool, TxCompleted, TxOutcome, TxPower, TxProtection, TxSource, VifRole,
 };
 use oer_ieee80211_mac::qos::{WmmAccessCategory, WmmUserPriority};
 use oer_ieee80211_port::{Disabled, Enabled, Failed, Owner, PoisonedOwner, PortBackend};
@@ -80,7 +81,7 @@ const ETHERNET_HEADER: usize = 14;
 /// splits between the station and data.
 pub trait StationPort<'id>: LowerMacBackend {
     /// The types its phase's events carry.
-    type Types: PhaseTypes<'id, Context = TxContext<'id, Self::Caps>>
+    type Types: PhaseTypes<'id, Context = TxContext<'id, Self::Caps, Self::Large>>
         + TxBufferPool<'id, Self::Small>
         + TxBufferPool<'id, Self::Large>;
     /// The buffer class of the station's frames.
@@ -125,11 +126,11 @@ pub enum StationTxBuffer<'id, B: StationPort<'id>> {
 /// The composition's context for this service. Each variant owns the
 /// original machine operation; the backend treats the entire value as opaque.
 #[derive(Debug)]
-pub enum TxContext<'id, K> {
+pub enum TxContext<'id, K, C> {
     /// A station protocol operation, including its connection epoch and purpose.
     Station(StaTxContext<'id>),
     /// An MSDU operation, including its original link, TID and queue order.
-    Data(DataTxContext<'id, K>),
+    Data(DataTxContext<'id, K, C>),
 }
 
 /// What the service dropped or could not send, counted.
@@ -160,6 +161,7 @@ where
     Ty: PhaseTypes<'id> + TxBufferPool<'id, S>,
     S: TxBufferClass,
 {
+    type Small = S;
     type Ticket = Slot<'id, Ty::TicketKind>;
     type SmallBuffer = <Ty as TxBufferPool<'id, S>>::Buffer;
     type Sent = <Ty as TxBufferPool<'id, S>>::Sent;
@@ -185,6 +187,7 @@ where
     Ty: PhaseTypes<'id> + TxBufferPool<'id, L>,
     L: TxBufferClass,
 {
+    type Class = L;
     type Ticket = Slot<'id, Ty::TicketKind>;
     type Buffer = <Ty as TxBufferPool<'id, L>>::Buffer;
     type Sent = <Ty as TxBufferPool<'id, L>>::Sent;
@@ -293,7 +296,7 @@ pub enum ServiceOutput<K> {
         /// The machine that originated the operation.
         operation: TxOperation,
         /// The preparation failure.
-        reason: PreparationError,
+        reason: TxRefusal,
     },
     /// The station's notice.
     Notice(StaNotice),
@@ -313,7 +316,7 @@ pub enum TxOperation {
 #[derive(Clone, Copy)]
 enum ReturnedTx {
     Completed(TxOutcome),
-    Refused(PreparationError),
+    Refused(TxRefusal),
 }
 
 /// A backend returned owners that cannot belong to the submitted operation.
@@ -725,31 +728,21 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                     };
                     progress = true;
                     let key = match (&link.protection, transmit.protected) {
-                        (LinkProtection::Ccmp { key, .. }, true) => {
-                            Some(AttemptKey::Pairwise(*key))
-                        }
-                        _ => None,
+                        (LinkProtection::Ccmp { key, .. }, true) => TxProtection::Ccmp(*key),
+                        _ => TxProtection::Open,
                     };
                     let plan = self
                         .rates
                         .plan(FrameRates::Data, |rate| phase.rate(rate))
-                        .ok_or(PreparationError::NoRate);
+                        .ok_or(TxRefusal::NoRate);
                     let prepared = match (transmit.buffer, plan) {
                         (ReturnedMpdu::Fresh(buffer), Ok(plan)) => {
-                            match ClassFrame::<B::Large, B::Caps>::new(TxFrame::Individual {
-                                frame: transmit.frame,
-                                plan,
-                            }) {
-                                Ok(frame) => prepare_source::<B, B::Large>(TxSource::Fresh {
-                                    buffer,
-                                    frame,
-                                    body: None,
-                                }),
-                                Err(_) => Err((
-                                    PreparationError::BufferTooSmall,
-                                    <B::Types as TxBufferPool<'id, B::Large>>::erase(buffer),
-                                )),
-                            }
+                            prepare_source::<B, B::Large>(TxSource::Fresh {
+                                buffer,
+                                frame: ClassFrame::individual(transmit.frame, plan),
+                                body: None,
+                                protection: key,
+                            })
                         }
                         (ReturnedMpdu::Sent(mpdu), Ok(plan)) => {
                             prepare_source::<B, B::Large>(TxSource::Retransmission {
@@ -784,24 +777,12 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                                     source,
                                     access_category: transmit.access_category,
                                     protection: Protection::None,
-                                    key,
                                     power: Levels::<B::Caps>::POWER,
                                     coex: Levels::<B::Caps>::NORMAL,
                                 });
                             match submitted {
                                 Ok(()) => Ok(Follow::Nothing),
-                                Err(SubmitError::Poisoned(_)) => Err(()),
-                                Err(SubmitError::Refused(refused)) => {
-                                    let operation = refused.operation;
-                                    let (buffer, body) = operation.source.into_parts();
-                                    drop(body);
-                                    Ok(Follow::Refused {
-                                        context: operation.context,
-                                        ticket: operation.ticket,
-                                        buffer,
-                                        reason: refused.reason,
-                                    })
-                                }
+                                Err(_) => Err(()),
                             }
                         }
                     }
@@ -993,7 +974,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
     fn returned(
         &mut self,
         now: Instant,
-        context: TxContext<'id, B::Caps>,
+        context: TxContext<'id, B::Caps, B::Large>,
         ticket: Slot<'id, <B::Types as PhaseTypes<'id>>::TicketKind>,
         buffer: <B::Types as PhaseTypes<'id>>::AnyTxBuffer,
         end: ReturnedTx,
@@ -1067,31 +1048,32 @@ enum Follow<'id, B: StationPort<'id>> {
     Associated(Peer<PortRxMeta<'id, B>>),
     /// A frame of the station did not go.
     Refused {
-        context: TxContext<'id, B::Caps>,
+        context: TxContext<'id, B::Caps, B::Large>,
         ticket: <PortStaTokens<'id, B::Types, B::Small> as StaTokens>::Ticket,
         buffer: <B::Types as PhaseTypes<'id>>::AnyTxBuffer,
-        reason: PreparationError,
+        reason: TxRefusal,
     },
     /// The station left: the rates leave its peer.
     Disconnected,
 }
 
-type StationPreparation<'p, 'id, B> = Result<
+type StationPreparation<'k, 'p, 'id, B> = Result<
     <<B as StationPort<'id>>::Types as PhaseTypes<'id>>::Prepared<
+        'k,
         'p,
         oer_ieee80211_lower_mac::Station,
         <B as LowerMacBackend>::Caps,
     >,
     (
-        PreparationError,
+        TxRefusal,
         <<B as StationPort<'id>>::Types as PhaseTypes<'id>>::AnyTxBuffer,
     ),
 >;
 
 /// Prepare within the class pool; a refusal retains the original owners.
-fn prepare_source<'p, 'id: 'p, B: StationPort<'id>, C: TxBufferClass>(
-    source: PoolSource<'p, 'id, B::Types, C, B::Caps>,
-) -> StationPreparation<'p, 'id, B>
+fn prepare_source<'k, 'p, 'id: 'p + 'k, B: StationPort<'id>, C: TxBufferClass>(
+    source: PoolSource<'k, 'p, 'id, B::Types, C, B::Caps, oer_ieee80211_lower_mac::Station>,
+) -> StationPreparation<'k, 'p, 'id, B>
 where
     B::Types: TxBufferPool<'id, C>,
 {
@@ -1105,7 +1087,7 @@ where
                 <B::Types as TxBufferPool<'id, C>>::erase_sent(mpdu)
             }
         };
-        (refused.reason, buffer)
+        (TxRefusal::Preparation(refused.reason), buffer)
     })
 }
 
@@ -1144,21 +1126,14 @@ where
                         rates.plan(FrameRates::Control, carried)
                     }
                 };
-                plan.map(|plan| TxFrame::Individual { frame, plan })
+                plan.map(|plan| ClassFrame::individual(frame, plan))
             }
-            StaFrame::Group(frame) => {
-                rates
-                    .plan(FrameRates::Probe, carried)
-                    .map(|plan| TxFrame::Group {
-                        frame,
-                        rate: plan.into_first().rate,
-                    })
-            }
+            StaFrame::Group(frame) => rates
+                .plan(FrameRates::Probe, carried)
+                .map(|plan| ClassFrame::group(frame, plan.into_first().rate)),
         }
     };
-    let frame = match frame.ok_or(PreparationError::NoRate).and_then(|frame| {
-        ClassFrame::<B::Small, B::Caps>::new(frame).map_err(|_| PreparationError::BufferTooSmall)
-    }) {
+    let frame = match frame.ok_or(TxRefusal::NoRate) {
         Ok(frame) => frame,
         Err(reason) => {
             return Ok(Follow::Refused {
@@ -1173,6 +1148,7 @@ where
         buffer,
         frame,
         body: None,
+        protection: key.map_or(TxProtection::Open, TxProtection::Ccmp),
     }) {
         Ok(source) => source,
         Err((reason, buffer)) => {
@@ -1195,23 +1171,11 @@ where
         source,
         access_category: WmmAccessCategory::Voice,
         protection: Protection::None,
-        key: key.map(AttemptKey::Pairwise),
         power: Levels::<B::Caps>::POWER,
         coex,
     }) {
         Ok(()) => Ok(Follow::Nothing),
-        Err(SubmitError::Poisoned(_)) => Err(()),
-        Err(SubmitError::Refused(refused)) => {
-            let operation = refused.operation;
-            let (buffer, body) = operation.source.into_parts();
-            drop(body);
-            Ok(Follow::Refused {
-                context: operation.context,
-                ticket: operation.ticket,
-                buffer,
-                reason: refused.reason,
-            })
-        }
+        Err(_) => Err(()),
     }
 }
 

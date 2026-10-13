@@ -61,6 +61,10 @@ struct Ticket(u8);
 
 struct Buffer([u8; 512]);
 
+impl oer_ieee80211_lower_mac::TxBufferClass for Buffer {
+    const CAPACITY: usize = 512;
+}
+
 impl TxBufferMemory for Buffer {
     fn bytes_mut(&mut self) -> &mut [u8] {
         &mut self.0
@@ -76,6 +80,7 @@ struct Key(Slot);
 struct Tokens;
 
 impl StaTokens for Tokens {
+    type Small = Buffer;
     type Ticket = Ticket;
     type SmallBuffer = Buffer;
     type Sent = Buffer;
@@ -403,7 +408,7 @@ impl World {
                 self.station.input(
                     now,
                     StaInput::Unsent {
-                        reason: oer_ieee80211_lower_mac::PreparationError::NoRate,
+                        reason: crate::machine::TxRefusal::NoRate,
                         context,
                         ticket,
                         buffer: ReturnedMpdu::Fresh(buffer),
@@ -864,7 +869,7 @@ fn a_terminal_of_the_previous_connection_only_returns_its_resources() {
     world.station.input(
         at(84),
         StaInput::Unsent {
-            reason: oer_ieee80211_lower_mac::PreparationError::NoRate,
+            reason: crate::machine::TxRefusal::NoRate,
             context: current.context,
             ticket: current.ticket,
             buffer: ReturnedMpdu::Fresh(current.buffer),
@@ -1316,6 +1321,7 @@ fn the_handshakes_eapol_goes_unprotected_and_group_message_2_under_the_pairwise_
 }
 
 impl crate::data::StaDataTokens for Tokens {
+    type Class = Buffer;
     type Ticket = Ticket;
     type Buffer = Buffer;
     type Sent = Buffer;

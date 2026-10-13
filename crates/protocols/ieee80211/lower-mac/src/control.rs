@@ -1,6 +1,5 @@
 //! Settings, keys and lifecycle of the lower-MAC port.
 
-
 /// A 48-bit IEEE MAC address in transmission order.
 pub type MacAddress = [u8; 6];
 

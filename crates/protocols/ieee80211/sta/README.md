@@ -82,6 +82,12 @@ ticket bound limits concurrent operations, not their age. Ending a link
 closes its epoch without allocating another. Data takes this same epoch
 from `LinkView`; temporary sleep or a channel absence does not close it.
 
+Station and Data construct `ClassSizedFrame` while encoding into their class's
+buffer, then retain that proof through the operation. The service only adds
+the phase's rates; it cannot replace the checked header or length.
+`TxRefusal::NoRate` belongs to service selection, while
+`TxRefusal::Preparation` carries a pool refusal. Neither is a radio terminal.
+
 Preparation refusal is `StaInput::Unsent { reason, .. }`, distinct from
 `TxDone`. Refusing M2/M4 ends the handshake through key removal and the
 normal leave path; an unsubmitted M4 cannot establish a connection. A

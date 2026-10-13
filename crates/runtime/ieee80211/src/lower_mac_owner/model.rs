@@ -25,14 +25,20 @@
 //! number and gets the Retry bit; the air answers each aggregate with a
 //! Block Ack ([`ModelAir::block_ack`], every subframe by default).
 //!
-//! Each concrete class pool constructs a private checked layout against
-//! the actual allocation before writing headers or copying an external body. It proves disjoint MAC/CCMP
-//! headers and tail body. Sent returns own that layout, body and the
+//! Each concrete class pool uses the portable `MpduLayout` proof before
+//! writing headers or copying an external body. Its allocation is privately
+//! minted at the class capacity; `ClassFrame` proves the MPDU fits it.
+//! `TxProtection` alone determines Protected and the MAC/CCMP prefix. Sent returns own that layout, body and the
 //! identity of the original key installation. Retry supplies only a new
 //! attempt's rates, never an independently reconstructed MPDU or body.
 //! Key identity is an allocation identity in this host model; a reused slot
 //! cannot match an earlier installation. A refused attempt returns all its
 //! resources synchronously and allocates no PN or completion event.
+//! Prepared operations retain a use of their key installation through their
+//! terminal or cancellation. `KeyRemoved` waits for these owners; a returned
+//! Sent retains only identity and therefore permits removal and slot reuse.
+//! A prepared retry submitted after removal is withdrawn in its AC's order,
+//! without publication. Cancellation wakes the driver to finish the barrier.
 //!
 //! `ModelContext` selects an opaque context for each install lifetime, so
 //! a station context can retain its `LinkEpoch` brand through every queue
@@ -44,7 +50,12 @@
 //!
 //! [owner decisions on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129037560
 
-use alloc::{boxed::Box, collections::VecDeque, rc::Rc, vec::Vec};
+use alloc::{
+    boxed::Box,
+    collections::VecDeque,
+    rc::{Rc, Weak},
+    vec::Vec,
+};
 use core::{
     cell::{Cell, RefCell},
     future::{Future, poll_fn},
@@ -59,21 +70,22 @@ use oer_radio_port::{EventsLost, Mint, Poisoned, PortResult, Slot};
 use oer_time::RadioInstant;
 
 use oer_ieee80211_lower_mac::{
-    AccessPoint, AccessPointPhase, AttemptKey, BandSet, BssColor, Ccmp128Key, Channel,
-    CoexPriority, CoexPrioritySet, ConnectionEpochKind, FrameHeader, GateClosed, GateClosedKind,
-    GateOpen, GateOpenKind, HardwareServices, Ieee80211Capabilities, Ieee80211Radio,
-    IndeterminateCause, IndividualAddress, InterfaceAggregateAttempt, InterfaceAttempt,
-    InterfacePhase, KeyTypes, LinkMetric, LowerMacBackend, LowerMacCapabilities, LowerMacEvent,
-    LowerMacPhase, LowerMacSetup, PhaseRate, PhaseTypes, PhyFormatSet, PoolSource,
-    PreparationError, PreparationRefused, PreparedTx, RateSupport, ReceiveFilter, Removed,
-    RemovedKey, RetransmissionPlan, RoleKeys, RxBuffer, RxEvidence, RxMeta, RxMetadata,
-    SignalMetadata, Station, StationPhase, StationReceive, SubmitError, SupportedBlockAck,
-    SupportedChannel, SupportedEdca, SupportedFilter, TxAck, TxBody, TxBufferClass, TxBufferMemory,
-    TxBufferPool, TxCompleted, TxEndStatus, TxFrame, TxOutcome, TxSource, VifRole, WidthSet,
-    WithdrawCause,
+    AccessPoint, AccessPointPhase, BandSet, BssColor, Ccmp128Key, Channel, CoexPriority,
+    CoexPrioritySet, ConnectionEpochKind, GateClosed, GateClosedKind, GateOpen, GateOpenKind,
+    HardwareServices, Ieee80211Capabilities, Ieee80211Radio, IndeterminateCause, IndividualAddress,
+    InterfaceAggregateAttempt, InterfaceAttempt, InterfacePhase, KeyTypes, LinkMetric,
+    LowerMacBackend, LowerMacCapabilities, LowerMacEvent, LowerMacPhase, LowerMacSetup, MpduKind,
+    MpduLayout, PhaseRate, PhaseTypes, PhyFormatSet, PoolSource, PreparationError,
+    PreparationRefused, PreparedTx, RateSupport, ReceiveFilter, Removed, RemovedKey,
+    RetransmissionPlan, RoleKeys, RxBuffer, RxEvidence, RxMeta, RxMetadata, SignalMetadata,
+    Station, StationPhase, StationReceive, SupportedBlockAck, SupportedChannel, SupportedEdca,
+    SupportedFilter, TxAck, TxBody, TxBufferClass, TxBufferMemory, TxBufferPool, TxCompleted,
+    TxEndStatus, TxFrame, TxOutcome, TxProtection, TxSource, VifRole, WidthSet, WithdrawCause,
 };
 use oer_ieee80211_lower_mac::{
-    AmpduCapabilities, AmpduPhase, AmpduRate, BlockAckReport, PhaseAggregate, Tid,
+    AggregateRefused, AggregateState, AmpduCapabilities, AmpduPhase, AmpduRate, BlockAckReport,
+    ClassSubframe, EmptyAggregate, InterfaceProtection, NonEmptyAggregate, PhaseAggregate,
+    SubframeSource, Tid,
 };
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
@@ -231,6 +243,7 @@ pub enum ModelBlockAcks {}
 pub struct ModelBuffer<'id, C> {
     slot: Slot<'id, C>,
     memory: Box<[u8]>,
+    preparation_refusal: Rc<Cell<Option<PreparationError>>>,
 }
 
 impl<C> TxBufferMemory for ModelBuffer<'_, C> {
@@ -252,6 +265,7 @@ impl<C> core::fmt::Debug for ModelBuffer<'_, C> {
 /// and external body remain inseparable from the immutable buffer.
 #[derive(Debug)]
 pub struct ModelSent<'id, C> {
+    role: VifRole,
     buffer: ModelBuffer<'id, C>,
     layout: MpduLayout,
     key: Option<KeyIdentity>,
@@ -261,6 +275,7 @@ pub struct ModelSent<'id, C> {
 
 impl<'id, C> ModelSent<'id, C> {
     fn publish(
+        role: VifRole,
         mut buffer: ModelBuffer<'id, C>,
         layout: MpduLayout,
         body: Option<ModelBody>,
@@ -270,13 +285,14 @@ impl<'id, C> ModelSent<'id, C> {
             Some(key) => {
                 let pn = key.allocate()?;
                 // The range was checked against this allocation before admission.
-                buffer.memory[layout.header_len..layout.prefix_len]
+                buffer.memory[layout.header_len()..layout.prefix_len()]
                     .copy_from_slice(&ccmp_header(pn, key.0.key_id));
                 Some(pn)
             }
             None => None,
         };
         Ok(Self {
+            role,
             buffer,
             layout,
             body,
@@ -325,13 +341,6 @@ impl ModelAnyBuffer<'_> {
             Self::LargeSent(mpdu) => &mut mpdu.buffer.memory,
         }
     }
-    fn sent_layout(&self) -> Option<(&MpduLayout, Option<&KeyIdentity>)> {
-        match self {
-            Self::SmallSent(mpdu) => Some((&mpdu.layout, mpdu.key.as_ref())),
-            Self::LargeSent(mpdu) => Some((&mpdu.layout, mpdu.key.as_ref())),
-            Self::Small(_) | Self::Large(_) => None,
-        }
-    }
     fn packet_number(&self) -> Option<u64> {
         match self {
             Self::SmallSent(mpdu) => mpdu.packet_number,
@@ -344,13 +353,16 @@ impl ModelAnyBuffer<'_> {
 /// Identity of an installation of a key, not its reusable slot index.
 /// Rc is the host model's allocation identity; only the driver allocates PN.
 #[derive(Clone, Debug)]
-struct KeyIdentity(Rc<KeyInstall>);
+pub struct KeyIdentity(Rc<KeyInstall>);
 
 #[derive(Debug)]
 struct KeyInstall {
     index: u8,
     key_id: u8,
     last: Cell<u64>,
+    active: Cell<bool>,
+    preparations: Rc<()>,
+    air: Weak<ModelAir>,
 }
 
 impl PartialEq for KeyIdentity {
@@ -361,11 +373,14 @@ impl PartialEq for KeyIdentity {
 impl Eq for KeyIdentity {}
 
 impl KeyIdentity {
-    fn new(index: u8, key_id: u8) -> Self {
+    fn new(index: u8, key_id: u8, air: &Rc<ModelAir>) -> Self {
         Self(Rc::new(KeyInstall {
             index,
             key_id,
             last: Cell::new(0),
+            active: Cell::new(true),
+            preparations: Rc::new(()),
+            air: Rc::downgrade(air),
         }))
     }
     fn allocate(&self) -> Result<u64, ModelFault> {
@@ -381,65 +396,28 @@ impl KeyIdentity {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum MpduKind {
-    Individual,
-    IndividualNoAck,
-    Group,
-    BlockAckRequest,
+/// A preparation owns a use of this installed key until cancellation or its
+/// terminal. Sent MPDUs retain identity without retaining a preparation use.
+/// The model uses Rc ownership counts, not a parallel operation lookup table.
+struct PreparedKey {
+    identity: KeyIdentity,
+    _lease: Rc<()>,
 }
-
-/// This proof is private and stays beside the exact immutable allocation
-/// it checked. All later ranges are within that allocation; neither a body
-/// length nor a CCMP offset is reconstructed after admission.
-#[derive(Clone, Copy, Debug)]
-struct MpduLayout {
-    len: usize,
-    header_len: usize,
-    prefix_len: usize,
-    body_start: usize,
-    protected: bool,
-    kind: MpduKind,
-}
-
-impl MpduLayout {
-    fn new(
-        len: usize,
-        header_len: usize,
-        capacity: usize,
-        protected: bool,
-        body_len: usize,
-        kind: MpduKind,
-    ) -> Result<Self, PreparationError> {
-        if len > capacity || header_len > len {
-            return Err(PreparationError::BufferTooSmall);
+impl PreparedKey {
+    fn new(identity: KeyIdentity) -> Self {
+        let lease = identity.0.preparations.clone();
+        Self {
+            identity,
+            _lease: lease,
         }
-        let prefix = if protected {
-            header_len
-                .checked_add(8)
-                .filter(|end| *end <= len)
-                .ok_or(PreparationError::CcmpHeaderTooShort)?
-        } else {
-            header_len
-        };
-        let body_start = len
-            .checked_sub(body_len)
-            .filter(|start| *start >= prefix)
-            .ok_or(PreparationError::BodyOverlap)?;
-        Ok(Self {
-            len,
-            header_len,
-            prefix_len: prefix,
-            body_start,
-            protected,
-            kind,
-        })
     }
-    fn check_key(&self, key: Option<&KeyIdentity>) -> Result<(), PreparationError> {
-        if self.protected == key.is_some() {
-            Ok(())
-        } else {
-            Err(PreparationError::ProtectionMismatch)
+}
+impl Drop for PreparedKey {
+    fn drop(&mut self) {
+        // A pending removal may now finish, including cancellation of an
+        // externally held preparation, which enqueues no command of its own.
+        if let Some(air) = self.identity.0.air.upgrade() {
+            air.wake_driver();
         }
     }
 }
@@ -461,16 +439,7 @@ impl<'id> ModelMpdu<'id> {
             body: None,
         }
     }
-    fn check_key(&self, key: Option<&KeyIdentity>) -> Result<(), PreparationError> {
-        self.layout.check_key(key)?;
-        if let Some((_, original)) = self.buffer.sent_layout()
-            && original != key
-        {
-            return Err(PreparationError::RetransmissionKey);
-        }
-        Ok(())
-    }
-    fn publish(self, key: Option<&KeyIdentity>) -> Result<Self, ModelFault> {
+    fn publish(self, role: VifRole, key: Option<&KeyIdentity>) -> Result<Self, ModelFault> {
         let Self {
             buffer,
             layout,
@@ -478,10 +447,10 @@ impl<'id> ModelMpdu<'id> {
         } = self;
         let buffer = match buffer {
             ModelAnyBuffer::Small(buffer) => {
-                ModelAnyBuffer::SmallSent(ModelSent::publish(buffer, layout, body, key)?)
+                ModelAnyBuffer::SmallSent(ModelSent::publish(role, buffer, layout, body, key)?)
             }
             ModelAnyBuffer::Large(buffer) => {
-                ModelAnyBuffer::LargeSent(ModelSent::publish(buffer, layout, body, key)?)
+                ModelAnyBuffer::LargeSent(ModelSent::publish(role, buffer, layout, body, key)?)
             }
             ModelAnyBuffer::SmallSent(mpdu) => ModelAnyBuffer::SmallSent(mpdu),
             ModelAnyBuffer::LargeSent(mpdu) => ModelAnyBuffer::LargeSent(mpdu),
@@ -501,7 +470,7 @@ impl<'id> ModelMpdu<'id> {
     ) -> AirFrame {
         AirFrame {
             role,
-            frame: self.buffer.memory()[..self.layout.len].into(),
+            frame: self.buffer.memory()[..self.layout.len()].into(),
             rate,
             key: key.map(|key| (key.0.index, keys.contains(key))),
             packet_number: self.buffer.packet_number(),
@@ -592,7 +561,15 @@ pub struct ModelTypes<X: ModelContext = ()>(PhantomData<fn() -> X>);
 
 impl<'id, X: ModelContext> PhaseTypes<'id> for ModelTypes<X> {
     type Context = X::Context<'id>;
-    type Prepared<'p, R, K: Ieee80211Capabilities> = ModelPrepared<'p, 'id, R, K, X>;
+    type Prepared<'k, 'p, R, K: Ieee80211Capabilities> = ModelPrepared<'k, 'p, 'id, R, K, X>;
+    type KeyIdentity = KeyIdentity;
+    type Aggregate<'k, 'p, R, K, S>
+        = ModelAggregate<'k, 'p, 'id, R, K, X, S>
+    where
+        R: RoleKeys<'id, Self>,
+        K: Ieee80211Capabilities,
+        S: AggregateState,
+        'id: 'k;
     type TxBody = ModelBody;
     type TicketKind = ModelTickets;
     type AnyTxBuffer = ModelAnyBuffer<'id>;
@@ -609,24 +586,44 @@ impl<'id, X: ModelContext> PhaseTypes<'id> for ModelTypes<X> {
 /// The keys of the role `R` and their slots.
 pub struct ModelKeys<'id, R>(PhantomData<fn(&'id ()) -> R>);
 
-impl<'id, R> KeyTypes<'id> for ModelKeys<'id, R> {
+impl<'id, R: 'id> KeyTypes<'id> for ModelKeys<'id, R> {
     type PairwiseKind = ModelPairwiseKeys<R>;
     type GroupKind = ModelGroupKeys<R>;
     type PairwiseKey = ModelPairwiseKey<'id, R>;
     type GroupKey = ModelGroupKey<'id, R>;
+    type Identity = KeyIdentity;
+    fn pairwise_identity(key: &Self::PairwiseKey) -> KeyIdentity {
+        key.identity.clone()
+    }
+    fn group_identity(key: &Self::GroupKey) -> KeyIdentity {
+        key.identity.clone()
+    }
 }
 
 impl<'id, X: ModelContext> TxBufferPool<'id, ModelSmall> for ModelTypes<X> {
     type Buffer = ModelBuffer<'id, ModelSmall>;
     type Sent = ModelSent<'id, ModelSmall>;
 
-    fn prepare<'p, R, K: Ieee80211Capabilities>(
-        source: PoolSource<'p, 'id, Self, ModelSmall, K>,
-    ) -> Result<
-        ModelPrepared<'p, 'id, R, K, X>,
-        PreparationRefused<PoolSource<'p, 'id, Self, ModelSmall, K>>,
-    > {
+    fn prepare<'k, 'p, R: RoleKeys<'id, Self>, K: Ieee80211Capabilities>(
+        source: PoolSource<'k, 'p, 'id, Self, ModelSmall, K, R>,
+    ) -> oer_ieee80211_lower_mac::PoolPreparation<'k, 'p, 'id, Self, ModelSmall, K, R>
+    where
+        'id: 'k,
+    {
         prepare_model(source)
+    }
+
+    fn push_aggregate<'k, 'p, R, K, S>(
+        aggregate: ModelAggregate<'k, 'p, 'id, R, K, X, S>,
+        source: oer_ieee80211_lower_mac::PoolSubframe<'id, Self, ModelSmall, K>,
+    ) -> oer_ieee80211_lower_mac::AggregatePushResult<'k, 'p, 'id, Self, ModelSmall, R, K, S>
+    where
+        R: RoleKeys<'id, Self>,
+        K: Ieee80211Capabilities,
+        S: AggregateState,
+        'id: 'k + 'p,
+    {
+        push_model(aggregate, source)
     }
 
     fn erase(buffer: Self::Buffer) -> ModelAnyBuffer<'id> {
@@ -660,13 +657,26 @@ impl<'id, X: ModelContext> TxBufferPool<'id, ModelLarge> for ModelTypes<X> {
     type Buffer = ModelBuffer<'id, ModelLarge>;
     type Sent = ModelSent<'id, ModelLarge>;
 
-    fn prepare<'p, R, K: Ieee80211Capabilities>(
-        source: PoolSource<'p, 'id, Self, ModelLarge, K>,
-    ) -> Result<
-        ModelPrepared<'p, 'id, R, K, X>,
-        PreparationRefused<PoolSource<'p, 'id, Self, ModelLarge, K>>,
-    > {
+    fn prepare<'k, 'p, R: RoleKeys<'id, Self>, K: Ieee80211Capabilities>(
+        source: PoolSource<'k, 'p, 'id, Self, ModelLarge, K, R>,
+    ) -> oer_ieee80211_lower_mac::PoolPreparation<'k, 'p, 'id, Self, ModelLarge, K, R>
+    where
+        'id: 'k,
+    {
         prepare_model(source)
+    }
+
+    fn push_aggregate<'k, 'p, R, K, S>(
+        aggregate: ModelAggregate<'k, 'p, 'id, R, K, X, S>,
+        source: oer_ieee80211_lower_mac::PoolSubframe<'id, Self, ModelLarge, K>,
+    ) -> oer_ieee80211_lower_mac::AggregatePushResult<'k, 'p, 'id, Self, ModelLarge, R, K, S>
+    where
+        R: RoleKeys<'id, Self>,
+        K: Ieee80211Capabilities,
+        S: AggregateState,
+        'id: 'k + 'p,
+    {
+        push_model(aggregate, source)
     }
 
     fn erase(buffer: Self::Buffer) -> ModelAnyBuffer<'id> {
@@ -836,7 +846,7 @@ pub struct ModelAir {
     answers: RefCell<VecDeque<AirResult>>,
     rx: RefCell<VecDeque<(Vec<u8>, ModelRxMeta)>>,
     refuse_enable: Cell<bool>,
-    preparation_refusal: Cell<Option<PreparationError>>,
+    preparation_refusal: Rc<Cell<Option<PreparationError>>>,
     poisoned: Cell<bool>,
     #[cfg(test)]
     swap_terminals: Cell<bool>,
@@ -970,8 +980,10 @@ struct Stage {
 }
 
 /// A command the handle sends the driver, in the order it made it.
+/// The host model boxes its larger single-operation owner so small commands
+/// do not reserve that space; the box moves opaque context without cloning.
 enum Command<'id, X: ModelContext> {
-    Submit(Prepared<'id, X>),
+    Submit(Box<Prepared<'id, X>>),
     SubmitAmpdu(PreparedAggregate<'id, X>),
     InstallKey {
         key: KeyIdentity,
@@ -986,8 +998,18 @@ enum Command<'id, X: ModelContext> {
 
 /// The work of a queue: one MPDU, or one A-MPDU.
 enum Work<'id, X: ModelContext> {
-    Single(Prepared<'id, X>),
+    Single(Box<Prepared<'id, X>>),
     Aggregate(PreparedAggregate<'id, X>),
+}
+
+impl<X: ModelContext> Work<'_, X> {
+    fn key(&self) -> Option<&KeyIdentity> {
+        match self {
+            Self::Single(prepared) => prepared.key.as_ref(),
+            Self::Aggregate(prepared) => prepared.key.as_ref(),
+        }
+        .map(|key| &key.identity)
+    }
 }
 
 /// One subframe of an aggregate, in its buffer.
@@ -1003,7 +1025,7 @@ struct PreparedAggregate<'id, X: ModelContext> {
     subframes: Vec<Subframe<'id>>,
     queue: usize,
     rate: PhyRate,
-    key: Option<KeyIdentity>,
+    key: Option<PreparedKey>,
 }
 
 /// An attempt prepared for its queue.
@@ -1014,7 +1036,7 @@ struct Prepared<'id, X: ModelContext> {
     mpdu: ModelMpdu<'id>,
     queue: usize,
     plan: Vec<Stage>,
-    key: Option<KeyIdentity>,
+    key: Option<PreparedKey>,
 }
 
 /// The settings the handle writes and the driver takes before its next
@@ -1269,6 +1291,7 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
                 .into_iter()
                 .map(|slot| ModelBuffer {
                     slot,
+                    preparation_refusal: self.air.preparation_refusal.clone(),
                     memory: alloc::vec![0; ModelSmall::CAPACITY].into_boxed_slice(),
                 })
                 .collect(),
@@ -1276,6 +1299,7 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
                 .into_iter()
                 .map(|slot| ModelBuffer {
                     slot,
+                    preparation_refusal: self.air.preparation_refusal.clone(),
                     memory: alloc::vec![0; ModelLarge::CAPACITY].into_boxed_slice(),
                 })
                 .collect(),
@@ -1318,6 +1342,7 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
         let mut driver = Driver {
             queues: core::array::from_fn(|_| VecDeque::new()),
             keys: Vec::new(),
+            removing: Vec::new(),
             gate_open: true,
         };
         poll_fn(move |cx| {
@@ -1373,6 +1398,7 @@ struct Driver<'id, X: ModelContext> {
     queues: [VecDeque<Work<'id, X>>; 4],
     /// The installed hardware keys.
     keys: Vec<KeyIdentity>,
+    removing: Vec<(KeyIdentity, Removed<'id, ModelTypes<X>>)>,
     gate_open: bool,
 }
 
@@ -1418,7 +1444,7 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                 Command::InstallKey { key } => self.keys.push(key),
                 Command::RemoveKey { key, removed } => {
                     self.keys.retain(|installed| *installed != key);
-                    held.post(LowerMacEvent::KeyRemoved(removed));
+                    self.removing.push((key, removed));
                 }
                 Command::CloseGate => {
                     self.gate_open = false;
@@ -1430,7 +1456,7 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                 }
                 Command::OpenGate => self.gate_open = true,
             }
-            if self.gate_open && !held.draining.get() {
+            if !held.draining.get() {
                 self.publish(held);
             }
         }
@@ -1439,12 +1465,11 @@ impl<'id, X: ModelContext> Driver<'id, X> {
             held.wake_body();
         }
         // A queue the air released publishes without a command.
-        if self.gate_open {
-            self.publish(held);
-        }
+        self.publish(held);
         if held.air.poisoned.get() {
             return;
         }
+        self.finish_removals(held);
         self.receive(held);
     }
 
@@ -1452,28 +1477,7 @@ impl<'id, X: ModelContext> Driver<'id, X> {
     fn withdraw(&mut self, held: &ModelHeld<'id, X>, cause: WithdrawCause) {
         for queue in &mut self.queues {
             while let Some(work) = queue.pop_front() {
-                match work {
-                    Work::Single(prepared) => {
-                        terminal(held, prepared, TxOutcome::Withdrawn(cause));
-                    }
-                    Work::Aggregate(aggregate) => {
-                        let mut buffers = Vec::with_capacity(aggregate.subframes.len());
-                        let mut bodies = Vec::new();
-                        for (index, subframe) in aggregate.subframes.into_iter().enumerate() {
-                            buffers.push(subframe.mpdu.buffer);
-                            if let Some(body) = subframe.mpdu.body {
-                                bodies.push((index as u8, body));
-                            }
-                        }
-                        held.post(LowerMacEvent::TxCompleted(TxCompleted::Aggregate {
-                            context: aggregate.context,
-                            ticket: aggregate.ticket,
-                            buffers,
-                            bodies,
-                            completion: TxOutcome::Withdrawn(cause),
-                        }));
-                    }
-                }
+                withdrawn(held, work, cause);
             }
         }
     }
@@ -1482,19 +1486,49 @@ impl<'id, X: ModelContext> Driver<'id, X> {
     fn publish(&mut self, held: &ModelHeld<'id, X>) {
         let busy = held.air.held.get();
         for (queue, busy) in self.queues.iter_mut().zip(busy) {
-            if busy {
-                continue;
-            }
             while let Some(work) = queue.pop_front() {
-                match work {
-                    Work::Single(prepared) => publish_single(held, &self.keys, prepared),
-                    Work::Aggregate(aggregate) => publish_aggregate(held, &self.keys, aggregate),
+                // Inspect the owned head. If it cannot run, put that same
+                // owner back; no second lookup reconstructs its identity.
+                let cause = if work.key().is_some_and(|key| !self.keys.contains(key)) {
+                    Some(WithdrawCause::KeyRemoved)
+                } else if !self.gate_open {
+                    Some(WithdrawCause::GateClosed)
+                } else {
+                    None
+                };
+                if let Some(cause) = cause {
+                    withdrawn(held, work, cause);
+                } else if busy {
+                    queue.push_front(work);
+                    break;
+                } else {
+                    match work {
+                        Work::Single(prepared) => publish_single(held, &self.keys, *prepared),
+                        Work::Aggregate(aggregate) => {
+                            publish_aggregate(held, &self.keys, aggregate)
+                        }
+                    }
                 }
                 if held.air.poisoned.get() {
                     return;
                 }
             }
         }
+    }
+
+    fn finish_removals(&mut self, held: &ModelHeld<'id, X>) {
+        // The single reference belongs to KeyInstall. Additional owners are
+        // actual prepared/queued/published attempts. Returned Sent identities
+        // do not keep a preparation alive and do not delay key-slot reuse.
+        let mut pending = Vec::new();
+        for (key, removed) in self.removing.drain(..) {
+            if Rc::strong_count(&key.0.preparations) == 1 {
+                held.post(LowerMacEvent::KeyRemoved(removed));
+            } else {
+                pending.push((key, removed));
+            }
+        }
+        self.removing = pending;
     }
 
     /// Deliver the frames the air brought, as many as the receive buffers
@@ -1528,7 +1562,10 @@ fn publish_single<'id, X: ModelContext>(
     keys: &[KeyIdentity],
     mut prepared: Prepared<'id, X>,
 ) {
-    prepared.mpdu = match prepared.mpdu.publish(prepared.key.as_ref()) {
+    prepared.mpdu = match prepared.mpdu.publish(
+        prepared.role,
+        prepared.key.as_ref().map(|key| &key.identity),
+    ) {
         Ok(mpdu) => mpdu,
         Err(_) => {
             held.poison();
@@ -1548,7 +1585,7 @@ fn publish_single<'id, X: ModelContext>(
             held.air.sent.borrow_mut().push(prepared.mpdu.on_air(
                 prepared.role,
                 keys,
-                prepared.key.as_ref(),
+                prepared.key.as_ref().map(|key| &key.identity),
                 stage.rate,
             ));
             match held.air.result() {
@@ -1587,6 +1624,36 @@ fn publish_single<'id, X: ModelContext>(
     );
 }
 
+/// Preserve the submission shape and every owner on withdrawal.
+fn withdrawn<'id, X: ModelContext>(
+    held: &ModelHeld<'id, X>,
+    work: Work<'id, X>,
+    cause: WithdrawCause,
+) {
+    match work {
+        Work::Single(prepared) => {
+            terminal(held, *prepared, TxOutcome::Withdrawn(cause));
+        }
+        Work::Aggregate(aggregate) => {
+            let mut buffers = Vec::with_capacity(aggregate.subframes.len());
+            let mut bodies = Vec::new();
+            for (index, subframe) in aggregate.subframes.into_iter().enumerate() {
+                buffers.push(subframe.mpdu.buffer);
+                if let Some(body) = subframe.mpdu.body {
+                    bodies.push((index as u8, body));
+                }
+            }
+            held.post(LowerMacEvent::TxCompleted(TxCompleted::Aggregate {
+                context: aggregate.context,
+                ticket: aggregate.ticket,
+                buffers,
+                bodies,
+                completion: TxOutcome::Withdrawn(cause),
+            }));
+        }
+    }
+}
+
 /// Publish one A-MPDU: its new subframes numbered, its retransmitted ones
 /// with their numbers; the air's Block Ack names the subframes it
 /// acknowledged by their sequence numbers.
@@ -1619,17 +1686,22 @@ fn publish_aggregate<'id, X: ModelContext>(
     let mut start = None;
     let mut bitmap = 0_u64;
     for (index, subframe) in subframes.into_iter().enumerate() {
-        let mpdu = match subframe.mpdu.publish(key.as_ref()) {
+        let mpdu = match subframe
+            .mpdu
+            .publish(role, key.as_ref().map(|key| &key.identity))
+        {
             Ok(mpdu) => mpdu,
             Err(_) => {
                 held.poison();
                 return;
             }
         };
-        held.air
-            .sent
-            .borrow_mut()
-            .push(mpdu.on_air(role, keys, key.as_ref(), rate));
+        held.air.sent.borrow_mut().push(mpdu.on_air(
+            role,
+            keys,
+            key.as_ref().map(|key| &key.identity),
+            rate,
+        ));
         let sequence = sequence(&mpdu);
         let start = *start.get_or_insert(sequence);
         if acknowledged & (1 << index) != 0 {
@@ -1828,27 +1900,33 @@ fn stages<C: Ieee80211Capabilities>(frame: &TxFrame<'_, C>) -> Vec<Stage> {
     }
 }
 
-fn header_len<C: Ieee80211Capabilities>(frame: &TxFrame<'_, C>) -> usize {
-    match frame {
-        TxFrame::Individual { frame, .. } => frame.header().header_len(),
-        TxFrame::IndividualNoAck { frame, .. } => frame.header().header_len(),
-        TxFrame::Group { frame, .. } => frame.header().header_len(),
-        TxFrame::BlockAckRequest { .. } => 20,
-    }
-}
-
 /// The checked frame description is the source of the MAC header and its
 /// QoS Ack Policy. The caller already encoded everything after the header.
-fn write_header<C: Ieee80211Capabilities>(frame: &TxFrame<'_, C>, bytes: &mut [u8]) {
+fn write_header<C: Ieee80211Capabilities>(
+    frame: &TxFrame<'_, C>,
+    bytes: &mut [u8],
+    protected: bool,
+) {
     match frame {
         TxFrame::Individual { frame, .. } => {
-            frame.header().header().encode(bytes, false);
+            frame
+                .header()
+                .header()
+                .with_protection(protected)
+                .encode(bytes, false);
         }
         TxFrame::IndividualNoAck { frame, .. } => {
-            frame.header().header().encode(bytes, true);
+            frame
+                .header()
+                .header()
+                .with_protection(protected)
+                .encode(bytes, true);
         }
         TxFrame::Group { frame, .. } => {
-            frame.header().encode(bytes, true);
+            frame
+                .header()
+                .with_protection(protected)
+                .encode(bytes, true);
         }
         TxFrame::BlockAckRequest {
             receiver,
@@ -1868,36 +1946,10 @@ fn write_header<C: Ieee80211Capabilities>(frame: &TxFrame<'_, C>, bytes: &mut [u
     }
 }
 
-fn frame_layout<K: Ieee80211Capabilities>(
-    frame: &TxFrame<'_, K>,
-    capacity: usize,
-    body: Option<&ModelBody>,
-) -> Result<MpduLayout, PreparationError> {
-    let (protected, kind) = match frame {
-        TxFrame::Individual { frame, .. } => {
-            (frame.header().header().protected(), MpduKind::Individual)
-        }
-        TxFrame::IndividualNoAck { frame, .. } => (
-            frame.header().header().protected(),
-            MpduKind::IndividualNoAck,
-        ),
-        TxFrame::Group { frame, .. } => (frame.header().protected(), MpduKind::Group),
-        TxFrame::BlockAckRequest { .. } => (false, MpduKind::BlockAckRequest),
-    };
-    MpduLayout::new(
-        frame.mpdu_len(),
-        header_len(frame),
-        capacity,
-        protected,
-        body.map_or(0, |body| body.bytes().len()),
-        kind,
-    )
-}
-
 fn copy_body(buffer: &mut ModelAnyBuffer<'_>, layout: MpduLayout, body: Option<&ModelBody>) {
     if let Some(body) = body {
         // Layout and this body were checked together against this allocation.
-        buffer.memory_mut()[layout.body_start..layout.len].copy_from_slice(body.bytes());
+        buffer.memory_mut()[layout.body_start()..layout.len()].copy_from_slice(body.bytes());
     }
 }
 
@@ -1905,7 +1957,7 @@ fn retry_stages(
     layout: &MpduLayout,
     plan: &RetransmissionPlan<'_>,
 ) -> Result<Vec<Stage>, PreparationError> {
-    match (layout.kind, plan) {
+    match (layout.kind(), plan) {
         (MpduKind::Individual, RetransmissionPlan::Individual(plan)) => Ok(plan
             .stages()
             .map(|stage| Stage {
@@ -1929,27 +1981,31 @@ fn retry_stages(
 
 type PhaseProof<'p, T> = PhantomData<fn(&'p ()) -> (&'p (), T)>;
 type TypeProof<T> = PhantomData<fn() -> T>;
-type ModelSource<'p, 'id, C, K> = TxSource<
+type ModelSource<'k, 'p, 'id, C, K, R, X> = TxSource<
     'p,
     ModelBuffer<'id, C>,
     ModelSent<'id, C>,
     oer_ieee80211_lower_mac::ClassFrame<'p, C, K>,
     ModelBody,
+    <R as RoleKeys<'id, ModelTypes<X>>>::TxKey<'k>,
 >;
-type ModelPreparation<'p, 'id, R, K, X, C> =
-    Result<ModelPrepared<'p, 'id, R, K, X>, PreparationRefused<ModelSource<'p, 'id, C, K>>>;
+type ModelPreparation<'k, 'p, 'id, R, K, X, C> = Result<
+    ModelPrepared<'k, 'p, 'id, R, K, X>,
+    PreparationRefused<ModelSource<'k, 'p, 'id, C, K, R, X>>,
+>;
 
-/// The pool's checked MPDU, independent of the input class after preparation.
-/// Its private fields retain phase, install, capabilities and role until submit.
-pub struct ModelPrepared<'p, 'id, R, K, X: ModelContext = ()> {
+/// Closed preparation proof retaining role, phase, install and the key borrow.
+/// Dropping or submitting it ends that borrow; a queued operation owns only
+/// the backend identity, never a reference to a portable machine.
+pub struct ModelPrepared<'k, 'p, 'id, R, K, X: ModelContext = ()> {
     mpdu: ModelMpdu<'id>,
     plan: Vec<Stage>,
+    key: Option<PreparedKey>,
+    key_borrow: PhantomData<&'k ()>,
     proof: PhaseProof<'p, (R, K, X)>,
 }
-
-impl<'id, R, K, X: ModelContext> PreparedTx<'id> for ModelPrepared<'_, 'id, R, K, X> {
+impl<'id, R, K, X: ModelContext> PreparedTx<'id> for ModelPrepared<'_, '_, 'id, R, K, X> {
     type Types = ModelTypes<X>;
-
     fn into_parts(self) -> (ModelAnyBuffer<'id>, Option<ModelBody>) {
         (self.mpdu.buffer, self.mpdu.body)
     }
@@ -1985,21 +2041,53 @@ impl ModelClass for ModelLarge {
     clippy::result_large_err,
     reason = "a refusal returns the whole operation by value"
 )]
-fn prepare_model<'p, 'id, R, K: Ieee80211Capabilities, X: ModelContext, C: ModelClass>(
-    source: ModelSource<'p, 'id, C, K>,
-) -> ModelPreparation<'p, 'id, R, K, X, C> {
+fn prepare_model<
+    'k,
+    'p,
+    'id: 'k,
+    R: RoleKeys<'id, ModelTypes<X>>,
+    K: Ieee80211Capabilities,
+    X: ModelContext,
+    C: ModelClass,
+>(
+    source: ModelSource<'k, 'p, 'id, C, K, R, X>,
+) -> ModelPreparation<'k, 'p, 'id, R, K, X, C> {
     let checked = match &source {
         TxSource::Fresh {
             buffer,
             frame,
             body,
-        } => frame_layout(frame.frame(), buffer.memory.len(), body.as_ref())
-            .map(|layout| (layout, stages(frame.frame()))),
+            protection,
+        } => {
+            let key = match protection {
+                TxProtection::Open => None,
+                TxProtection::Ccmp(key) => Some(R::tx_identity(key)),
+            };
+            let layout = MpduLayout::new(
+                frame.frame(),
+                body.as_ref().map_or(0, |body| body.bytes().len()),
+                key.is_some(),
+            );
+            match buffer.preparation_refusal.take() {
+                Some(reason) => Err(reason),
+                None => layout.map(|layout| (layout, stages(frame.frame()), key)),
+            }
+        }
         TxSource::Retransmission { mpdu, plan } => {
-            retry_stages(&mpdu.layout, plan).map(|plan| (mpdu.layout, plan))
+            if mpdu.role != R::ROLE {
+                return Err(PreparationRefused {
+                    reason: PreparationError::RetransmissionKind,
+                    operation: source,
+                });
+            }
+            if mpdu.key.as_ref().is_some_and(|key| !key.0.active.get()) {
+                Err(PreparationError::RetransmissionKey)
+            } else {
+                retry_stages(&mpdu.layout, plan).map(|plan| (mpdu.layout, plan, mpdu.key.clone()))
+            }
         }
     };
-    let (layout, plan) = match checked {
+    let (layout, plan, key) = match checked {
         Ok(checked) => checked,
         Err(reason) => {
             return Err(PreparationRefused {
@@ -2013,9 +2101,10 @@ fn prepare_model<'p, 'id, R, K: Ieee80211Capabilities, X: ModelContext, C: Model
             buffer,
             frame,
             body,
+            ..
         } => {
             let mut buffer = C::erase(buffer);
-            write_header(frame.frame(), buffer.memory_mut());
+            write_header(frame.frame(), buffer.memory_mut(), key.is_some());
             copy_body(&mut buffer, layout, body.as_ref());
             ModelMpdu {
                 buffer,
@@ -2028,6 +2117,8 @@ fn prepare_model<'p, 'id, R, K: Ieee80211Capabilities, X: ModelContext, C: Model
     Ok(ModelPrepared {
         mpdu,
         plan,
+        key: key.map(PreparedKey::new),
+        key_borrow: PhantomData,
         proof: PhantomData,
     })
 }
@@ -2050,26 +2141,14 @@ where
     fn submit<'k>(
         &mut self,
         attempt: InterfaceAttempt<'k, 'p, 'id, Self>,
-    ) -> Result<(), SubmitError<InterfaceAttempt<'k, 'p, 'id, Self>, ModelFault>> {
+    ) -> Result<(), Poisoned<ModelFault>> {
         if self.held.air.poisoned.get() {
-            return Err(SubmitError::Poisoned(Poisoned { cause: ModelFault }));
+            return Err(Poisoned { cause: ModelFault });
         }
-        let key = attempt.key.as_ref().map(|key| match key {
-            AttemptKey::Pairwise(key) => key.identity.clone(),
-            AttemptKey::Group(key) => key.identity.clone(),
-        });
-        let checked = match self.held.air.preparation_refusal.take() {
-            Some(reason) => Err(reason),
-            None => attempt.source.mpdu.check_key(key.as_ref()),
-        };
-        if let Err(reason) = checked {
-            return Err(SubmitError::Refused(PreparationRefused {
-                reason,
-                operation: attempt,
-            }));
-        }
-        let ModelPrepared { mpdu, plan, .. } = attempt.source;
-        self.held.command(Command::Submit(Prepared {
+        let ModelPrepared {
+            mpdu, plan, key, ..
+        } = attempt.source;
+        self.held.command(Command::Submit(Box::new(Prepared {
             context: attempt.context,
             role: R::ROLE,
             ticket: attempt.ticket,
@@ -2077,7 +2156,7 @@ where
             queue: attempt.access_category as usize,
             plan,
             key,
-        }));
+        })));
         Ok(())
     }
 
@@ -2087,7 +2166,7 @@ where
         _: IndividualAddress,
         _: Ccmp128Key,
     ) -> ModelPairwiseKey<'id, R> {
-        let identity = KeyIdentity::new(slot.index(), 0);
+        let identity = KeyIdentity::new(slot.index(), 0, &self.held.air);
         self.held.command(Command::InstallKey {
             key: identity.clone(),
         });
@@ -2100,7 +2179,7 @@ where
         key_id: GroupKeyId,
         _: Ccmp128Key,
     ) -> ModelGroupKey<'id, R> {
-        let identity = KeyIdentity::new(slot.index(), key_id.get());
+        let identity = KeyIdentity::new(slot.index(), key_id.get(), &self.held.air);
         self.held.command(Command::InstallKey {
             key: identity.clone(),
         });
@@ -2108,6 +2187,7 @@ where
     }
 
     fn remove_pairwise_key(&mut self, key: ModelPairwiseKey<'id, R>) {
+        key.identity.0.active.set(false);
         self.held.command(Command::RemoveKey {
             key: key.identity,
             removed: R::removed(RemovedKey::Pairwise(key.slot)),
@@ -2115,6 +2195,7 @@ where
     }
 
     fn remove_group_key(&mut self, key: ModelGroupKey<'id, R>) {
+        key.identity.0.active.set(false);
         self.held.command(Command::RemoveKey {
             key: key.identity,
             removed: R::removed(RemovedKey::Group(key.slot)),
@@ -2145,84 +2226,49 @@ where
 /// The subframes one model A-MPDU holds.
 pub const MODEL_AMPDU_SUBFRAMES: usize = 8;
 
-/// An A-MPDU the model builds: its subframes, each in a buffer of its own.
-/// The rate retains the phase proof and the buffers retain the install;
-/// the interface role also remains part of this intermediate type.
+/// Builder retaining receiver, TID, role and one installed protection.
+/// Only `push_aggregate` can create the nonempty state accepted by submission.
 ///
-/// ```compile_fail
-/// # use oer_ieee80211_runtime::lower_mac_owner::model::ModelAggregate;
-/// # use oer_ieee80211_lower_mac::{Station, AccessPoint};
-/// fn other_role<'p, 'id>(a: ModelAggregate<'p, 'id, Station>) -> ModelAggregate<'p, 'id, AccessPoint> {
-///     a
-/// }
+/// Role, phase and install stay in the builder through submission:
+///
+/// ```compile_fail,E0308
+/// use oer_ieee80211_runtime::lower_mac_owner::model::ModelAggregate;
+/// use oer_ieee80211_lower_mac::{Station, AccessPoint};
+/// fn role<'k, 'p, 'id>(a: ModelAggregate<'k, 'p, 'id, Station>) -> ModelAggregate<'k, 'p, 'id, AccessPoint> { a }
 /// ```
 ///
 /// ```compile_fail
-/// # use oer_ieee80211_runtime::lower_mac_owner::model::ModelAggregate;
-/// # use oer_ieee80211_lower_mac::Station;
-/// fn other_phase<'p, 'q, 'id>(a: ModelAggregate<'p, 'id, Station>) -> ModelAggregate<'q, 'id, Station> {
-///     a
-/// }
+/// use oer_ieee80211_runtime::lower_mac_owner::model::ModelAggregate;
+/// use oer_ieee80211_lower_mac::Station;
+/// fn phase<'k, 'p, 'q, 'id>(a: ModelAggregate<'k, 'p, 'id, Station>) -> ModelAggregate<'k, 'q, 'id, Station> { a }
 /// ```
 ///
 /// ```compile_fail
-/// # use oer_ieee80211_runtime::lower_mac_owner::model::ModelAggregate;
-/// # use oer_ieee80211_lower_mac::Station;
-/// fn other_install<'p, 'id, 'other>(a: ModelAggregate<'p, 'id, Station>) -> ModelAggregate<'p, 'other, Station> {
-///     a
-/// }
+/// use oer_ieee80211_runtime::lower_mac_owner::model::ModelAggregate;
+/// use oer_ieee80211_lower_mac::Station;
+/// fn install<'k, 'p, 'id, 'other>(a: ModelAggregate<'k, 'p, 'id, Station>) -> ModelAggregate<'k, 'p, 'other, Station> { a }
 /// ```
 ///
-/// Moving it within the same phase, install and role is permitted:
-///
 /// ```
-/// # use oer_ieee80211_runtime::lower_mac_owner::model::ModelAggregate;
-/// fn same<'p, 'id, R>(a: ModelAggregate<'p, 'id, R>) -> ModelAggregate<'p, 'id, R> { a }
+/// use oer_ieee80211_runtime::lower_mac_owner::model::ModelAggregate;
+/// fn same<'k, 'p, 'id, R>(a: ModelAggregate<'k, 'p, 'id, R>) -> ModelAggregate<'k, 'p, 'id, R> { a }
 /// ```
-pub struct ModelAggregate<'p, 'id, R, C = ModelCaps, X: ModelContext = ()> {
+pub struct ModelAggregate<'k, 'p, 'id, R, K = ModelCaps, X: ModelContext = (), S = EmptyAggregate> {
     subframes: Vec<Subframe<'id>>,
+    receiver: IndividualAddress,
     tid: Tid,
     rate: AmpduRate<'p>,
-    caps: TypeProof<(R, C, X)>,
+    key: Option<PreparedKey>,
+    key_borrow: PhantomData<&'k ()>,
+    caps: TypeProof<(R, K, X, S)>,
 }
-
-impl<'p, 'id: 'p, R, K: Ieee80211Capabilities, X: ModelContext> PhaseAggregate<'p, 'id>
-    for ModelAggregate<'p, 'id, R, K, X>
-where
-    R: RoleKeys<'id, ModelTypes<X>, Keys = ModelKeys<'id, R>>,
+impl<'id, R, K, X: ModelContext, S> PhaseAggregate<'id>
+    for ModelAggregate<'_, '_, 'id, R, K, X, S>
 {
-    type Body = ModelBody;
-    type Role = R;
-    type Caps = K;
     type Types = ModelTypes<X>;
-
-    fn push(
-        &mut self,
-        prepared: ModelPrepared<'p, 'id, R, K, X>,
-    ) -> Result<(), PreparationRefused<ModelPrepared<'p, 'id, R, K, X>>> {
-        let reason = if self.subframes.len() >= MODEL_AMPDU_SUBFRAMES {
-            Some(PreparationError::AggregateFull)
-        } else if prepared.mpdu.layout.kind != MpduKind::Individual {
-            Some(PreparationError::RetransmissionKind)
-        } else {
-            None
-        };
-        if let Some(reason) = reason {
-            return Err(PreparationRefused {
-                reason,
-                operation: prepared,
-            });
-        }
-        self.subframes.push(Subframe {
-            mpdu: prepared.mpdu,
-        });
-        Ok(())
-    }
-
     fn subframes(&self) -> usize {
         self.subframes.len()
     }
-
     fn into_parts(self) -> (Vec<ModelAnyBuffer<'id>>, Vec<(u8, ModelBody)>) {
         let mut buffers = Vec::with_capacity(self.subframes.len());
         let mut bodies = Vec::new();
@@ -2235,14 +2281,117 @@ where
         (buffers, bodies)
     }
 }
+type ModelSubframe<'id, C, K> =
+    SubframeSource<ModelBuffer<'id, C>, ModelSent<'id, C>, ClassSubframe<C, K>, ModelBody>;
+type ModelAggregatePush<'k, 'p, 'id, R, K, X, S, C> = Result<
+    ModelAggregate<'k, 'p, 'id, R, K, X, NonEmptyAggregate>,
+    AggregateRefused<ModelAggregate<'k, 'p, 'id, R, K, X, S>, ModelSubframe<'id, C, K>>,
+>;
+
+#[expect(
+    clippy::result_large_err,
+    reason = "a refusal returns the whole operation by value"
+)]
+fn push_model<
+    'k,
+    'p,
+    'id,
+    R: oer_ieee80211_lower_mac::InterfaceRole,
+    K: Ieee80211Capabilities,
+    X: ModelContext,
+    S,
+    C: ModelClass,
+>(
+    mut aggregate: ModelAggregate<'k, 'p, 'id, R, K, X, S>,
+    source: ModelSubframe<'id, C, K>,
+) -> ModelAggregatePush<'k, 'p, 'id, R, K, X, S, C> {
+    let checked = if aggregate.subframes.len() >= MODEL_AMPDU_SUBFRAMES {
+        Err(PreparationError::AggregateFull)
+    } else {
+        match &source {
+            SubframeSource::Fresh {
+                buffer,
+                frame,
+                body,
+            } => match buffer.preparation_refusal.take() {
+                Some(reason) => Err(reason),
+                None => MpduLayout::subframe(
+                    frame,
+                    body.as_ref().map_or(0, |body| body.bytes().len()),
+                    aggregate.key.is_some(),
+                    aggregate.receiver,
+                    aggregate.tid,
+                ),
+            },
+            SubframeSource::Sent(mpdu) => {
+                if mpdu.key.as_ref() != aggregate.key.as_ref().map(|key| &key.identity)
+                    || mpdu.key.as_ref().is_some_and(|key| !key.0.active.get())
+                {
+                    Err(PreparationError::RetransmissionKey)
+                } else if mpdu.role != R::ROLE
+                    || mpdu.layout.recipient() != Some((aggregate.receiver, aggregate.tid))
+                {
+                    Err(PreparationError::RetransmissionKind)
+                } else {
+                    Ok(mpdu.layout)
+                }
+            }
+        }
+    };
+    let layout = match checked {
+        Ok(layout) => layout,
+        Err(reason) => {
+            return Err(AggregateRefused {
+                reason,
+                aggregate,
+                subframe: source,
+            });
+        }
+    };
+    let mpdu = match source {
+        SubframeSource::Fresh {
+            buffer,
+            frame,
+            body,
+        } => {
+            let mut buffer = C::erase(buffer);
+            frame
+                .header(aggregate.receiver, aggregate.tid, aggregate.key.is_some())
+                .encode(buffer.memory_mut(), false);
+            copy_body(&mut buffer, layout, body.as_ref());
+            ModelMpdu {
+                buffer,
+                layout,
+                body,
+            }
+        }
+        SubframeSource::Sent(mpdu) => ModelMpdu::from_sent(C::erase_sent(mpdu), layout),
+    };
+    aggregate.subframes.push(Subframe { mpdu });
+    let ModelAggregate {
+        subframes,
+        receiver,
+        tid,
+        rate,
+        key,
+        ..
+    } = aggregate;
+    Ok(ModelAggregate {
+        subframes,
+        receiver,
+        tid,
+        rate,
+        key,
+        key_borrow: PhantomData,
+        caps: PhantomData,
+    })
+}
 
 impl<'p, 'v, 'id: 'p, R, K: Ieee80211Capabilities, X: ModelContext> AmpduPhase<'p, 'id>
     for ModelInterface<'p, 'v, 'id, R, K, X>
 where
     R: RoleKeys<'id, ModelTypes<X>, Keys = ModelKeys<'id, R>>,
 {
-    type Aggregate = ModelAggregate<'p, 'id, R, K, X>;
-
     fn ampdu_capabilities(&self) -> AmpduCapabilities {
         AmpduCapabilities {
             max_subframes: MODEL_AMPDU_SUBFRAMES as u16,
@@ -2250,43 +2399,45 @@ where
             max_length: 65_535,
         }
     }
-
-    fn aggregate(&mut self, tid: Tid, rate: AmpduRate<'p>) -> ModelAggregate<'p, 'id, R, K, X> {
+    fn aggregate<'k>(
+        &mut self,
+        receiver: IndividualAddress,
+        tid: Tid,
+        rate: AmpduRate<'p>,
+        protection: InterfaceProtection<'k, 'p, 'id, Self>,
+    ) -> ModelAggregate<'k, 'p, 'id, R, K, X>
+    where
+        'id: 'k,
+    {
+        let key = match &protection {
+            TxProtection::Open => None,
+            TxProtection::Ccmp(key) => Some(R::tx_identity(key)),
+        };
         ModelAggregate {
             subframes: Vec::new(),
+            receiver,
             tid,
             rate,
+            key: key.map(PreparedKey::new),
+            key_borrow: PhantomData,
             caps: PhantomData,
         }
     }
-
     fn submit_ampdu<'k>(
         &mut self,
         attempt: InterfaceAggregateAttempt<'k, 'p, 'id, Self>,
-    ) -> Result<(), SubmitError<InterfaceAggregateAttempt<'k, 'p, 'id, Self>, ModelFault>> {
+    ) -> Result<(), Poisoned<ModelFault>>
+    where
+        'id: 'k,
+    {
         if self.held.air.poisoned.get() {
-            return Err(SubmitError::Poisoned(Poisoned { cause: ModelFault }));
-        }
-        let key = attempt.key.map(|key| key.identity.clone());
-        let checked = if attempt.aggregate.subframes.is_empty() {
-            Err(PreparationError::EmptyAggregate)
-        } else {
-            attempt
-                .aggregate
-                .subframes
-                .iter()
-                .try_for_each(|subframe| subframe.mpdu.check_key(key.as_ref()))
-        };
-        if let Err(reason) = checked {
-            return Err(SubmitError::Refused(PreparationRefused {
-                reason,
-                operation: attempt,
-            }));
+            return Err(Poisoned { cause: ModelFault });
         }
         let ModelAggregate {
             subframes,
             tid,
             rate,
+            key,
             ..
         } = attempt.aggregate;
         let queue = match oer_ieee80211_mac::qos::WmmUserPriority::new(tid.get()) {

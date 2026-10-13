@@ -41,30 +41,35 @@ back; its operations are synchronous and never wait:
   until the queue frees.
 - **Preparation and submission.** `TxBufferPool::prepare` checks a source
   where its buffer class is concrete and returns a closed `Prepared` value.
-  It retains the phase, install, capabilities and interface role. A refused
-  preparation returns its original typed source, including the class buffer,
-  `ClassFrame` and body. Neither context nor ticket has left the caller yet.
-  `submit` then takes that proof, context, ticket and attempt parameters;
-  it has no class parameter. A refusal returns that whole operation without
-  allocating PN or creating a terminal. Poisoning remains separate fail-stop.
-  The model keeps checked MAC/CCMP and tail-body ranges beside the exact
-  allocation through publication. Its prepared type, rather than a generic
-  `TxBufferPool<C>` projection inside the backend, exposes that checked data.
+  It retains the phase, install, role and key borrow. `ClassSizedFrame`
+  carries a portable machine's size proof until the service adds phase-bound
+  rates, without rechecking the class. `TxProtection::{Open, Ccmp(key)}` in
+  the fresh source is the sole source of the Protected bit. Station TX keys
+  are pairwise; AP TX may use pairwise or group keys. The portable
+  `MpduLayout` constructor checks CCMP room and tail-body overlap once,
+  before any header/body write, admission or PN allocation.
+  A refused preparation returns the original typed source and its owners;
+  the caller still holds context and ticket. `submit` takes the prepared
+  proof, context, ticket and attempt parameters and can refuse only poisoning.
+  The queued operation owns backend data, never a borrow of a local machine.
   A retransmission takes the returned `Sent` MPDU and a phase-bound
-  `RetransmissionPlan`: its header, payload, body and key-install identity
-  remain inside the MPDU. There are no independent header/body arguments to
-  substitute. SN and PN stay; only Retry changes in the MPDU. Rates, retry
-  plan, RTS/CTS, power and coexistence are parameters of the new attempt.
-  A different key installation is refused even when it reuses the same slot.
-  An aggregate builder retains its phase, install and interface role until
-  `submit_ampdu`; its non-generic `push` takes a prepared fresh or retry MPDU.
-  Push failures return that proof intact, and submission refusal
-  returns the entire aggregate, context and ticket. `Sent` subframes own
-  their bodies on return; fresh subframes return indexed external bodies.
-  `PhaseAggregate::into_parts` releases the builder's resources directly,
-  so refusing an aggregate never forces resubmission to recover its memory.
-  `Sent` covers open MPDUs too. `renew` returns both memory and the retained
-  body explicitly; the owning machine chooses when to retire that MPDU.
+  `RetransmissionPlan`: header, payload, body and installed-key identity
+  remain inside that MPDU. SN and PN stay; only Retry changes in its bytes.
+  Rate, retry plan, RTS/CTS, power and coexistence belong to the new attempt.
+  Retiring the original installation makes preparation refuse
+  `RetransmissionKey`, even if the slot and key material are reused.
+  An aggregate builder owns its receiver, TID, role, rate and one protection.
+  `TxBufferPool::push_aggregate` prepares its class-specific `SubframeSource`
+  through that builder. Fresh subframes have no protection argument, and
+  their receiver/TID come from the builder. A Sent subframe retains its
+  original installation and must match the builder. Refusal returns both
+  the unchanged source and the builder with all earlier subframes.
+  A successful push returns `NonEmptyAggregate`; only this state can be
+  submitted. `AggregateFull` remains a push refusal, and an empty aggregate
+  has no submit operation ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6156247280)).
+  `PhaseAggregate::into_parts` cancels either state without a ticket or TX
+  terminal. Sent subframes retain their bodies; fresh subframes return
+  indexed external bodies. `renew` returns memory and body explicitly.
 - **Retry plans.** An individual frame carries its `RetryPlan`, a sequence
   of rates with their transmissions and protection, as mac80211's rate
   table. The backend retries the head of its queue by the plan before the
@@ -80,7 +85,7 @@ back; its operations are synchronous and never wait:
   made it: an attempt that names a key is published after that key's
   install.
 - **Keys and agreements.** A key holds a slot of its interface's own kind;
-  its removal ends with `KeyRemoved`, once no attempt in flight names it. A
+  its removal ends with `KeyRemoved`, once no prepared or published attempt names it. A
   receive Block Ack agreement is a token that holds its slot, replaced or
   removed by value.
 - **Settings.** An interface's receive rules, EDCA, the BSS color, a TBTT

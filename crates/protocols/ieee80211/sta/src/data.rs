@@ -43,6 +43,8 @@ const EAPOL_ETHER_TYPE: u16 = 0x888e;
 /// The tokens of the data machine: the port's tickets and the buffers of
 /// the class that holds an MSDU's MPDU.
 pub trait StaDataTokens {
+    /// The checked class carried by the MPDU description and context.
+    type Class: oer_ieee80211_lower_mac::TxBufferClass;
     /// A transmit ticket.
     type Ticket;
     /// A transmit buffer: its memory, which the machine encodes into.
@@ -83,13 +85,13 @@ pub enum DataReturn<'id, D: StaDataTokens, K> {
     /// return and its admission count is released without a radio terminal.
     Refused {
         /// Original operation, moved back from submit.
-        context: DataTxContext<'id, K>,
+        context: DataTxContext<'id, K, D::Class>,
         /// Its ticket.
         ticket: D::Ticket,
         /// Its memory.
         buffer: ReturnedMpdu<D::Buffer, D::Sent>,
         /// The explicit preparation failure.
-        reason: oer_ieee80211_lower_mac::PreparationError,
+        reason: crate::machine::TxRefusal,
     },
     /// A data MPDU's terminal: its ticket and buffer come back. An attempt
     /// of the current link that ended before any transmission (a closing
@@ -101,7 +103,7 @@ pub enum DataReturn<'id, D: StaDataTokens, K> {
     /// [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6132835650
     TxDone {
         /// The original operation, returned unchanged by the port.
-        context: DataTxContext<'id, K>,
+        context: DataTxContext<'id, K, D::Class>,
         /// Its ticket.
         ticket: D::Ticket,
         /// Its buffer.
@@ -122,13 +124,13 @@ pub enum DataAction<'id, D: StaDataTokens, K> {
 /// link's pairwise key.
 pub struct DataTransmit<'id, D: StaDataTokens, K, A = AcPermit> {
     /// The operation identity and parameters, moved through the port.
-    pub context: DataTxContext<'id, K, A>,
+    pub context: DataTxContext<'id, K, D::Class, A>,
     /// Its ticket.
     pub ticket: D::Ticket,
     /// The buffer holding the MPDU, from its header on.
     pub buffer: ReturnedMpdu<D::Buffer, D::Sent>,
     /// Its kind: an individual frame to the access point.
-    pub frame: SizedFrame<AckHeader, K>,
+    pub frame: oer_ieee80211_lower_mac::ClassSizedFrame<D::Class, AckHeader, K>,
     /// The access category of its priority.
     pub access_category: WmmAccessCategory,
     /// It goes under the link's pairwise key.
@@ -149,11 +151,11 @@ pub enum DataRefusal {
 /// Its closed, checked frame description survives every unpublished return;
 /// neither the MPDU length nor its header is reconstructed at completion.
 #[derive(Debug)]
-pub struct DataTxContext<'id, K, A = AcPermit> {
+pub struct DataTxContext<'id, K, C, A = AcPermit> {
     admission: A,
     link: LinkEpoch<'id>,
     tid: u8,
-    frame: SizedFrame<AckHeader, K>,
+    frame: oer_ieee80211_lower_mac::ClassSizedFrame<C, AckHeader, K>,
     access_category: WmmAccessCategory,
     protected: bool,
     order: u32,
@@ -219,8 +221,8 @@ impl Admissions {
     }
 }
 
-impl<'id, K, A> DataTxContext<'id, K, A> {
-    fn admission<B>(self, admission: B) -> (DataTxContext<'id, K, B>, A) {
+impl<'id, K, C, A> DataTxContext<'id, K, C, A> {
+    fn admission<B>(self, admission: B) -> (DataTxContext<'id, K, C, B>, A) {
         (
             DataTxContext {
                 admission,
@@ -466,7 +468,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
                     LinkMode::Qos(counters) => counters[usize::from(tid)].take(),
                     LinkMode::NonQos(counter) => counter.take(),
                 };
-                let frame = encode_frame(
+                let frame = encode_frame::<_, K, D::Class>(
                     link,
                     qos,
                     msdu,
@@ -518,7 +520,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
 
     /// Whether this operation belongs to the current link. The service
     /// uses the same guard before updating the link's rate selection.
-    pub fn is_current<A>(&self, context: &DataTxContext<'id, K, A>) -> bool {
+    pub fn is_current<A>(&self, context: &DataTxContext<'id, K, D::Class, A>) -> bool {
         Some(context.link) == self.link
     }
 
@@ -638,14 +640,18 @@ const fn mpdu_len(qos: bool, protected: bool, payload: usize) -> usize {
 }
 
 /// The MPDU of `msdu` on `link`, written into `output`.
-fn encode_frame<T: StaTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities>(
+fn encode_frame<
+    T: StaTokens,
+    K: oer_ieee80211_lower_mac::Ieee80211Capabilities,
+    C: oer_ieee80211_lower_mac::TxBufferClass,
+>(
     link: &LinkView<'_, '_, T>,
     qos: bool,
     msdu: Msdu<'_>,
     sequence_number: SequenceNumber,
     protected: bool,
     output: &mut [u8],
-) -> Option<SizedFrame<AckHeader, K>> {
+) -> Option<oer_ieee80211_lower_mac::ClassSizedFrame<C, AckHeader, K>> {
     let len = StaProtectedDataFrame {
         source: link.address,
         bssid: link.bssid,
@@ -670,11 +676,18 @@ fn encode_frame<T: StaTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities>
     sized(&output[..len])
 }
 
-fn sized<K: oer_ieee80211_lower_mac::Ieee80211Capabilities>(
+fn sized<
+    K: oer_ieee80211_lower_mac::Ieee80211Capabilities,
+    C: oer_ieee80211_lower_mac::TxBufferClass,
+>(
     frame: &[u8],
-) -> Option<SizedFrame<AckHeader, K>> {
+) -> Option<oer_ieee80211_lower_mac::ClassSizedFrame<C, AckHeader, K>> {
     let header = HeaderSpec::decode(frame, IndividualAddress::new)?;
-    SizedFrame::new(AckHeader::new(header)?, MpduLength::new(frame.len())?)
+    oer_ieee80211_lower_mac::ClassSizedFrame::new(SizedFrame::new(
+        AckHeader::new(header)?,
+        MpduLength::new(frame.len())?,
+    )?)
+    .ok()
 }
 
 #[cfg(test)]

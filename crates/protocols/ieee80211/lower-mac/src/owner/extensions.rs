@@ -22,30 +22,120 @@
 //! [owner decisions on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129677418
 
 use oer_ieee80211_mac::tsf::{TsfDuration, TsfInstant};
-use oer_radio_port::Slot;
+use oer_radio_port::{Poisoned, Slot};
 
 use super::{Ieee80211Capabilities, PhaseRate, SupportedCoex, SupportedPower, Tid};
 use crate::{
-    AmpduCapabilities, PreparationRefused, Protection, SubmitError,
-    phase::{AttemptKey, GateOpen, InterfacePhase, LowerMacPhase, PhaseTypes},
+    AmpduCapabilities, PreparationError, Protection, TxBufferClass, TxBufferPool, TxProtection,
+    phase::{GateOpen, InterfacePhase, LowerMacPhase, PhaseTypes, RoleKeys},
 };
 
-/// The prepared subframe family retained by one aggregate builder.
-pub type AggregateMpdu<'p, 'id, A> =
-    <<A as PhaseAggregate<'p, 'id>>::Types as PhaseTypes<'id>>::Prepared<
-        'p,
-        <A as PhaseAggregate<'p, 'id>>::Role,
-        <A as PhaseAggregate<'p, 'id>>::Caps,
-    >;
+mod state {
+    pub trait Sealed {}
+}
 
-/// Appending a subframe preserves that entire value on refusal.
-pub type AggregatePushResult<'p, 'id, A> =
-    Result<(), PreparationRefused<AggregateMpdu<'p, 'id, A>>>;
+/// Whether a builder has accepted at least one subframe. Only the two closed
+/// states implement this trait; callers cannot forge the nonempty transition.
+pub trait AggregateState: state::Sealed {}
+/// A builder which has not accepted a subframe and cannot be submitted.
+pub enum EmptyAggregate {}
+/// A builder with at least one subframe; this is the only submission state.
+pub enum NonEmptyAggregate {}
+impl state::Sealed for EmptyAggregate {}
+impl state::Sealed for NonEmptyAggregate {}
+impl AggregateState for EmptyAggregate {}
+impl AggregateState for NonEmptyAggregate {}
+
+/// A class-checked QoS data description. The builder supplies receiver and
+/// TID when encoding it, together with its one protection. Other header fields
+/// and the MPDU length remain this subframe's own.
+pub struct ClassSubframe<C, K> {
+    frame: super::SizedFrame<super::AckHeader, K>,
+    qos: super::QosControl,
+    class: core::marker::PhantomData<C>,
+}
+impl<C: TxBufferClass, K: Ieee80211Capabilities> ClassSubframe<C, K> {
+    /// Check that a QoS MPDU fits this class. The input is returned on refusal.
+    pub fn new(
+        frame: super::SizedFrame<super::AckHeader, K>,
+    ) -> Result<Self, super::SizedFrame<super::AckHeader, K>> {
+        match frame.header().header().qos() {
+            Some(qos) if frame.len().get() <= C::CAPACITY => Ok(Self {
+                frame,
+                qos,
+                class: core::marker::PhantomData,
+            }),
+            _ => Err(frame),
+        }
+    }
+    /// Checked description; receiver and TID will be supplied by the builder.
+    pub const fn frame(&self) -> &super::SizedFrame<super::AckHeader, K> {
+        &self.frame
+    }
+    /// Bind the checked QoS header to the builder's recipient and protection.
+    pub fn header(
+        &self,
+        receiver: super::IndividualAddress,
+        tid: Tid,
+        protected: bool,
+    ) -> super::HeaderSpec<super::IndividualAddress> {
+        let mut qos = self.qos;
+        qos.tid = tid;
+        self.frame
+            .header()
+            .header()
+            .in_aggregate(receiver, qos)
+            .with_protection(protected)
+    }
+}
+
+/// Resources of a subframe. Fresh subframes deliberately have no key or
+/// protection argument. Sent subframes own their installed-key identity.
+pub enum SubframeSource<B, N, F, O> {
+    /// Unpublished memory and its description/body, prepared by the builder.
+    Fresh {
+        buffer: B,
+        frame: F,
+        body: Option<O>,
+    },
+    /// The exact returned MPDU; no replacement header, key or body is accepted.
+    Sent(N),
+}
+
+/// Class-specific input to the builder; a refusal retains this exact type.
+pub type PoolSubframe<'id, T, C, K> = SubframeSource<
+    <T as TxBufferPool<'id, C>>::Buffer,
+    <T as TxBufferPool<'id, C>>::Sent,
+    ClassSubframe<C, K>,
+    <T as PhaseTypes<'id>>::TxBody,
+>;
+
+/// A refused push returns the builder and all of the rejected subframe.
+pub struct AggregateRefused<A, M> {
+    /// Preparation or capacity refusal, before admission and PN allocation.
+    pub reason: PreparationError,
+    /// Every subframe already held, with the original empty/nonempty state.
+    pub aggregate: A,
+    /// The unchanged rejected subframe, retaining its class.
+    pub subframe: M,
+}
+/// Result of preparing and adding through a class pool. Success is nonempty.
+pub type AggregatePushResult<'k, 'p, 'id, T, C, R, K, S> = Result<
+    <T as PhaseTypes<'id>>::Aggregate<'k, 'p, R, K, NonEmptyAggregate>,
+    AggregateRefused<
+        <T as PhaseTypes<'id>>::Aggregate<'k, 'p, R, K, S>,
+        PoolSubframe<'id, T, C, K>,
+    >,
+>;
+/// The resources released by cancelling an aggregate builder.
+pub type AggregateParts<'id, T> = (
+    <T as PhaseTypes<'id>>::TxBuffers,
+    <T as PhaseTypes<'id>>::TxBodies,
+);
 
 /// A rate the backend aggregates at, checked by [`AmpduPhase::ampdu_rate`].
 #[derive(Clone, Copy, Debug)]
 pub struct AmpduRate<'p>(PhaseRate<'p>);
-
 impl<'p> AmpduRate<'p> {
     /// The rate.
     pub const fn rate(&self) -> &PhaseRate<'p> {
@@ -53,44 +143,47 @@ impl<'p> AmpduRate<'p> {
     }
 }
 
-/// An aggregate being built: its subframes, each in a buffer of its own.
-pub trait PhaseAggregate<'p, 'id: 'p> {
-    /// The owner of a subframe's body.
-    type Body: crate::TxBody;
-    /// The backend's capabilities marker.
-    type Caps: Ieee80211Capabilities;
-    /// The phase types whose buffers the subframes take.
-    type Types: PhaseTypes<'id, TxBody = Self::Body>;
-    /// The interface role that may submit this aggregate.
-    type Role: crate::RoleKeys<'id, Self::Types>;
-
-    /// Append one prepared individual MPDU, fresh or retransmitted. The
-    /// pool already checked its class and layout; the aggregate retains
-    /// its phase, install and role proof through submission.
-    ///
-    /// # Errors
-    ///
-    /// The unchanged prepared MPDU if the aggregate is full or its response
-    /// kind cannot be aggregated. No ownership is lost on refusal.
-    fn push(
-        &mut self,
-        mpdu: <Self::Types as PhaseTypes<'id>>::Prepared<'p, Self::Role, Self::Caps>,
-    ) -> AggregatePushResult<'p, 'id, Self>;
-
-    /// The subframes pushed.
+/// A builder owns its receiver, TID, role and ONE protection. A class pool's
+/// [`TxBufferPool::push_aggregate`] prepares fresh subframes through that
+/// builder; it never accepts an independently protected prepared MPDU.
+/// Sent subframes must retain the same installed key, even after slot reuse.
+///
+/// [Owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6156247280).
+///
+/// A fresh source with its own protection cannot enter the builder:
+///
+/// ```compile_fail,E0308
+/// use oer_ieee80211_lower_mac::*;
+/// fn independent<'k, 'p, 'id: 'k + 'p, T, C, R, K, S>(
+///     builder: T::Aggregate<'k, 'p, R, K, S>,
+///     source: PoolSource<'k, 'p, 'id, T, C, K, R>,
+/// ) where T: TxBufferPool<'id, C>, C: TxBufferClass,
+///     R: RoleKeys<'id, T>, K: Ieee80211Capabilities, S: AggregateState,
+/// {
+///     let _ = T::push_aggregate(builder, source);
+/// }
+/// ```
+///
+/// Its compiling twin has no independent protection in the source:
+///
+/// ```
+/// use oer_ieee80211_lower_mac::*;
+/// fn through_builder<'k, 'p, 'id: 'k + 'p, T, C, R, K, S>(
+///     builder: T::Aggregate<'k, 'p, R, K, S>,
+///     source: PoolSubframe<'id, T, C, K>,
+/// ) -> AggregatePushResult<'k, 'p, 'id, T, C, R, K, S>
+/// where T: TxBufferPool<'id, C>, C: TxBufferClass,
+///     R: RoleKeys<'id, T>, K: Ieee80211Capabilities, S: AggregateState,
+/// { T::push_aggregate(builder, source) }
+/// ```
+pub trait PhaseAggregate<'id> {
+    /// The backend resource family.
+    type Types: PhaseTypes<'id>;
+    /// Number of subframes currently held.
     fn subframes(&self) -> usize;
-
-    /// Cancel preparation and recover every buffer and external body in
-    /// subframe order, including after a refused `submit_ampdu`. Sent
-    /// MPDUs retain their own bodies until retry or renewal. This consumes
-    /// no ticket and creates no TX terminal.
-    #[allow(clippy::type_complexity, reason = "the aggregate's owned resources")]
-    fn into_parts(
-        self,
-    ) -> (
-        <Self::Types as PhaseTypes<'id>>::TxBuffers,
-        <Self::Types as PhaseTypes<'id>>::TxBodies,
-    );
+    /// Cancel preparation, recovering all original MPDUs and fresh bodies.
+    /// No ticket was taken and no TX terminal is created.
+    fn into_parts(self) -> AggregateParts<'id, Self::Types>;
 }
 
 /// The minimum MPDU start spacing of an aggregate, as the 802.11 encoding
@@ -115,7 +208,7 @@ impl MpduStartSpacing {
 }
 
 /// One A-MPDU attempt: its ticket, its aggregate and how it goes.
-pub struct AggregateAttempt<'id, 'k, T, A, P, K, X> {
+pub struct AggregateAttempt<'id, T, A, K, X> {
     /// The caller's context for all subframes, returned with their terminal.
     pub context: X,
     /// The attempt's place in flight.
@@ -124,8 +217,6 @@ pub struct AggregateAttempt<'id, 'k, T, A, P, K, X> {
     pub aggregate: A,
     /// The control exchange that protects it.
     pub protection: Protection,
-    /// The pairwise key that protects every subframe, or none.
-    pub key: Option<&'k P>,
     /// Its transmit power.
     pub power: SupportedPower<K>,
     /// Its coexistence level.
@@ -138,34 +229,47 @@ pub struct AggregateAttempt<'id, 'k, T, A, P, K, X> {
 /// every subframe. A preparation refusal returns this same value.
 pub type InterfaceAggregateAttempt<'k, 'p, 'id, I> = AggregateAttempt<
     'id,
-    'k,
     <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::TicketKind,
-    <I as AmpduPhase<'p, 'id>>::Aggregate,
-    <crate::InterfaceKeys<'p, 'id, I> as crate::KeyTypes<'id>>::PairwiseKey,
+    InterfaceAggregate<'k, 'p, 'id, I, NonEmptyAggregate>,
     <I as InterfacePhase<'p, 'id>>::Caps,
     <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::Context,
 >;
 
-/// An interface that sends A-MPDUs.
-pub trait AmpduPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id> {
-    /// An aggregate being built.
-    type Aggregate: PhaseAggregate<
-            'p,
-            'id,
-            Body = Self::TxBody,
-            Caps = Self::Caps,
-            Types = Self::Types,
-            Role = Self::Role,
-        >;
+/// An interface's builder, with its role, phase, install and occupancy state.
+pub type InterfaceAggregate<'k, 'p, 'id, I, S> =
+    <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::Aggregate<
+        'k,
+        'p,
+        <I as InterfacePhase<'p, 'id>>::Role,
+        <I as InterfacePhase<'p, 'id>>::Caps,
+        S,
+    >;
+/// The protection this interface's role may use.
+pub type InterfaceProtection<'k, 'p, 'id, I> = TxProtection<
+    <<I as InterfacePhase<'p, 'id>>::Role as RoleKeys<
+        'id,
+        <I as InterfacePhase<'p, 'id>>::Types,
+    >>::TxKey<'k>,
+>;
 
+/// An interface that sends A-MPDUs. Empty builders cannot be submitted.
+///
+/// An empty builder cannot be submitted:
+///
+/// ```compile_fail,E0308
+/// use oer_ieee80211_lower_mac::*;
+/// fn empty<'k, 'p, 'id: 'k + 'p, I: AmpduPhase<'p, 'id>>(
+///     port: &mut I,
+///     attempt: AggregateAttempt<'id, <I::Types as PhaseTypes<'id>>::TicketKind,
+///         InterfaceAggregate<'k, 'p, 'id, I, EmptyAggregate>, I::Caps,
+///         <I::Types as PhaseTypes<'id>>::Context>,
+/// ) { let _ = port.submit_ampdu(attempt); }
+/// ```
+pub trait AmpduPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id> {
     /// What the backend aggregates.
     fn ampdu_capabilities(&self) -> AmpduCapabilities;
 
-    /// The rate, when the backend aggregates at it.
-    ///
-    /// # Errors
-    ///
-    /// The rate, when it does not.
+    /// Check that the backend aggregates at this phase's rate.
     fn ampdu_rate(&self, rate: PhaseRate<'p>) -> Result<AmpduRate<'p>, PhaseRate<'p>> {
         if self.ampdu_capabilities().formats.contains_rate(rate.get()) {
             Ok(AmpduRate(rate))
@@ -174,23 +278,26 @@ pub trait AmpduPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id> {
         }
     }
 
-    /// An empty aggregate of `tid` at `rate`.
-    fn aggregate(&mut self, tid: Tid, rate: AmpduRate<'p>) -> Self::Aggregate;
+    /// An empty builder with one receiver, TID, role and protection.
+    /// Every fresh subframe is prepared through these fixed values.
+    fn aggregate<'k>(
+        &mut self,
+        receiver: super::IndividualAddress,
+        tid: Tid,
+        rate: AmpduRate<'p>,
+        protection: InterfaceProtection<'k, 'p, 'id, Self>,
+    ) -> InterfaceAggregate<'k, 'p, 'id, Self, EmptyAggregate>
+    where
+        'id: 'k;
 
-    /// Admit `attempt`, as [`InterfacePhase::submit`]: its ticket and its
-    /// subframes' buffers come back with its terminal, whose Block Ack
-    /// report names the subframes the recipient acknowledged.
-    ///
-    /// # Errors
-    ///
-    /// A preparation refusal returns this entire attempt before admission:
-    /// a missing or mismatched key, a retry tied to a different key install,
-    /// or an empty aggregate. Poisoning retains the fail-stop contract.
-    #[allow(clippy::type_complexity, reason = "the attempt's own types")]
+    /// Submit a nonempty aggregate. All preparation refusals happen at push;
+    /// only poisoning can refuse this operation, with the usual fail-stop.
     fn submit_ampdu<'k>(
         &mut self,
         attempt: InterfaceAggregateAttempt<'k, 'p, 'id, Self>,
-    ) -> Result<(), SubmitError<InterfaceAggregateAttempt<'k, 'p, 'id, Self>, Self::Fault>>;
+    ) -> Result<(), Poisoned<Self::Fault>>
+    where
+        'id: 'k;
 }
 
 /// The TBTT schedule of an interface: the wake plan the backend carries
@@ -261,6 +368,3 @@ pub trait MonitorPhase<'p, 'id: 'p>: LowerMacPhase<'p, 'id> {
     /// Receive every frame the radio hears, or only the interfaces' own.
     fn set_monitor(&mut self, enabled: bool);
 }
-
-/// An attempt key of a pairwise key alone, for an aggregate.
-pub type AggregateKey<'k, P> = AttemptKey<'k, P, core::convert::Infallible>;

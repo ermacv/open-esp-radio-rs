@@ -113,8 +113,20 @@ use crate::join::{
     authentication::{StaAuthenticationEvent, StaAuthenticationRuntime},
 };
 
+/// A refusal before admission, delivered by the service to the owning machine.
+/// It is not a radio terminal and never updates transmission statistics.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TxRefusal {
+    /// Service rate selection found no rate for the current phase.
+    NoRate,
+    /// The pool refused preparation and returned the unchanged source.
+    Preparation(oer_ieee80211_lower_mac::PreparationError),
+}
+
 /// The tokens a station holds: the port's, or a host test's.
 pub trait StaTokens {
+    /// The checked size class of management frames.
+    type Small: oer_ieee80211_lower_mac::TxBufferClass;
     /// A transmit ticket: a place in flight and a place for its terminal.
     type Ticket;
     /// A transmit buffer of the small class, for management frames: its
@@ -189,7 +201,7 @@ pub enum StaInput<'f, 'id, T: StaTokens, K> {
     /// completion and cannot complete the handshake.
     Unsent {
         /// Refused before admission; no transmission terminal exists.
-        reason: oer_ieee80211_lower_mac::PreparationError,
+        reason: TxRefusal,
         /// The operation that was not submitted.
         context: StaTxContext<'id>,
         /// The frame's ticket.
@@ -308,7 +320,7 @@ pub struct StaTransmit<'id, T: StaTokens, K> {
     /// The buffer holding the frame, from its header on.
     pub buffer: T::SmallBuffer,
     /// The frame's kind: its receiver, header and length.
-    pub frame: StaFrame<K>,
+    pub frame: StaFrame<K, T::Small>,
     /// What the frame is for, which the service turns into the port's
     /// coexistence priority.
     pub class: StaFrameClass,
@@ -357,11 +369,11 @@ pub enum StaFrameClass {
 }
 
 /// The kind of a station frame, as the port's frame kinds take it.
-pub enum StaFrame<K> {
+pub enum StaFrame<K, C> {
     /// An individual frame that solicits an ACK.
-    Individual(SizedFrame<AckHeader, K>),
+    Individual(oer_ieee80211_lower_mac::ClassSizedFrame<C, AckHeader, K>),
     /// A group frame.
-    Group(SizedFrame<HeaderSpec<GroupAddress>, K>),
+    Group(oer_ieee80211_lower_mac::ClassSizedFrame<C, HeaderSpec<GroupAddress>, K>),
 }
 
 /// The rates a station frame goes at, which the service turns into the
@@ -445,7 +457,7 @@ pub enum StaNotice {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaDisconnectReason {
     /// A required frame was refused before admission.
-    TransmitRefused(oer_ieee80211_lower_mac::PreparationError),
+    TransmitRefused(TxRefusal),
     /// The application asked it to leave.
     Requested,
     /// No access point of the network answered the scan; `partial` when
@@ -1079,7 +1091,7 @@ fn forget_group<T: StaTokens>(rsn: &mut ConnectedRsn, keys: &Keys<T>, key_id: Gr
 enum Done {
     Unsent {
         purpose: TxPurpose,
-        reason: oer_ieee80211_lower_mac::PreparationError,
+        reason: TxRefusal,
     },
     Command(StaCommand),
     Tick,
@@ -1179,7 +1191,9 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     /// # struct Buffer;
     /// # impl TxBufferMemory for Buffer { fn bytes_mut(&mut self) -> &mut [u8] { &mut [] } }
     /// # struct Tokens;
+    /// # impl oer_ieee80211_lower_mac::TxBufferClass for Buffer { const CAPACITY: usize = 256; }
     /// # impl StaTokens for Tokens {
+    /// #     type Small = Buffer;
     /// #     type Ticket = u8; type SmallBuffer = Buffer; type PairwiseSlot = ();
     /// #     type Sent = core::convert::Infallible;
     /// #     fn renew(mpdu: Self::Sent) -> Buffer { match mpdu {} }
@@ -1851,7 +1865,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         state: State<T, K>,
         now: Instant,
         purpose: TxPurpose,
-        reason: oer_ieee80211_lower_mac::PreparationError,
+        reason: TxRefusal,
     ) -> State<T, K> {
         match (state, purpose) {
             (
@@ -3065,7 +3079,11 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         let (ticket, mut buffer) = self.tokens().ok_or(Unsent::NoTokens)?;
         let frame = encode(buffer.bytes_mut()).and_then(|len| {
             let header = HeaderSpec::decode(&buffer.bytes_mut()[..len], IndividualAddress::new)?;
-            SizedFrame::new(AckHeader::new(header)?, MpduLength::new(len)?)
+            oer_ieee80211_lower_mac::ClassSizedFrame::new(SizedFrame::new(
+                AckHeader::new(header)?,
+                MpduLength::new(len)?,
+            )?)
+            .ok()
         });
         match frame {
             Some(frame) => Ok(StaTransmit {
@@ -3148,7 +3166,11 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         .ok();
         let frame = len.and_then(|len| {
             let header = HeaderSpec::decode(&buffer.bytes_mut()[..len], GroupAddress::new)?;
-            SizedFrame::new(header, MpduLength::new(len)?)
+            oer_ieee80211_lower_mac::ClassSizedFrame::new(SizedFrame::new(
+                header,
+                MpduLength::new(len)?,
+            )?)
+            .ok()
         });
         match frame {
             Some(frame) => Some(StaTransmit {

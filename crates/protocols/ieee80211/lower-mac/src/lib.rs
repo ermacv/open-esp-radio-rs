@@ -29,7 +29,9 @@
 
 pub mod capabilities;
 pub mod counter;
+mod layout;
 pub use counter::Counter;
+pub use layout::{MpduKind, MpduLayout};
 pub mod control;
 pub mod extensions;
 pub mod owner;
@@ -91,17 +93,19 @@ pub use owner::{
     SupportedNoAck, SupportedPower, Tid, TxFrame,
 };
 pub use owner::{
-    AggregateAttempt, AggregateKey, AirReservationPhase, AmpduPhase, AmpduRate, BeaconTimingPhase,
-    BeaconWindow, InterfaceAggregateAttempt, MAX_RESERVATION_MICROS, MonitorPhase,
-    MpduStartSpacing, PhaseAggregate, TbttPlan,
+    AggregateAttempt, AggregateParts, AggregatePushResult, AggregateRefused, AggregateState,
+    AirReservationPhase, AmpduPhase, AmpduRate, BeaconTimingPhase, BeaconWindow, ClassSubframe,
+    EmptyAggregate, InterfaceAggregate, InterfaceAggregateAttempt, InterfaceProtection,
+    MAX_RESERVATION_MICROS, MonitorPhase, MpduStartSpacing, NonEmptyAggregate, PhaseAggregate,
+    PoolSubframe, SubframeSource, TbttPlan,
 };
 pub use phase::{
-    AccessPointPhase, Attempt, AttemptKey, ClassFrame, GateClosed, GateClosedKind, GateOpen,
-    GateOpenKind, InterfaceAttempt, InterfaceKeys, InterfacePhase, KeyTypes, LowerMacEvent,
-    LowerMacPhase, PhaseTypes, PoolMpdu, PoolPreparation, PoolSource, PreparationError,
-    PreparationRefused, PreparedTx, RETRY_STAGES, Removed, RemovedKey, RetransmissionPlan,
-    RetryPlan, RetryStage, ReturnedMpdu, RoleKeys, StationPhase, SubmitError, TxBufferClass,
-    TxBufferMemory, TxBufferPool, TxCompleted, TxSource,
+    AccessPointPhase, Attempt, AttemptKey, ClassFrame, ClassSizedFrame, GateClosed, GateClosedKind,
+    GateOpen, GateOpenKind, InterfaceAttempt, InterfaceKeys, InterfacePhase, KeyTypes,
+    LowerMacEvent, LowerMacPhase, PhaseTypes, PoolMpdu, PoolPreparation, PoolSource,
+    PreparationError, PreparationRefused, PreparedTx, RETRY_STAGES, Removed, RemovedKey,
+    RetransmissionPlan, RetryPlan, RetryStage, ReturnedMpdu, RoleKeys, StationPhase, TxBufferClass,
+    TxBufferMemory, TxBufferPool, TxCompleted, TxProtection, TxSource,
 };
 pub use rx::{
     LinkMetric, RxBuffer, RxCryptoStatus, RxEvidence, RxMeta, RxMetadata, SignalMetadata,

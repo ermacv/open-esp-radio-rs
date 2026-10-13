@@ -98,17 +98,10 @@ fn data_frame<'p, X: ModelContext>(
 }
 
 /// Submit a frame and its class's memory at the same boundary.
-fn submit_frame<'p, 'id: 'p, C: ModelClass>(
+fn submit_frame<'k, 'p, 'id: 'p + 'k, C: ModelClass>(
     phase: &mut ModelPhase<'p, 'id>,
     ticket: Slot<'id, ModelTickets>,
-    source: TxSource<
-        'p,
-        ModelBuffer<'id, C>,
-        ModelSent<'id, C>,
-        ClassFrame<'p, C, ModelCaps>,
-        ModelBody,
-    >,
-    key: Option<&ModelPairwiseKey<'id, Station>>,
+    source: ModelSource<'k, 'p, 'id, C, ModelCaps, Station, ()>,
 ) {
     let source = prepare_model(source).ok().unwrap();
     phase
@@ -119,7 +112,6 @@ fn submit_frame<'p, 'id: 'p, C: ModelClass>(
             source,
             access_category: WmmAccessCategory::BestEffort,
             protection: Protection::None,
-            key: key.map(AttemptKey::Pairwise),
             power: SupportedPower::new(TxPower::Calibrated).unwrap(),
             coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
         })
@@ -143,50 +135,36 @@ fn submit<'p, 'id: 'p, C: ModelClass>(
             buffer,
             frame,
             body: None,
+            protection: key.map_or(TxProtection::Open, TxProtection::Ccmp),
         },
-        key,
     );
 }
 
-#[expect(
-    clippy::result_large_err,
-    reason = "a refusal returns the whole operation by value"
-)]
-fn prepare_subframe<'p, 'id, X: ModelContext>(
+fn push_subframe<'k, 'p, 'id: 'k + 'p, X: ModelContext, S: AggregateState>(
+    aggregate: ModelAggregate<'k, 'p, 'id, Station, ModelCaps, X, S>,
     buffer: ModelBuffer<'id, ModelSmall>,
     frame: SizedFrame<AckHeader, ModelCaps>,
     body: Option<ModelBody>,
-    rate: &AmpduRate<'p>,
-) -> ModelPreparation<'p, 'id, Station, ModelCaps, X, ModelSmall> {
-    let frame = ClassFrame::new(TxFrame::Individual {
-        frame,
-        plan: RetryPlan::new(RetryStage {
-            rate: *rate.rate(),
-            transmissions: NonZeroU8::MIN,
-            protection: Protection::None,
-        }),
-    })
+) -> ModelAggregate<'k, 'p, 'id, Station, ModelCaps, X, NonEmptyAggregate> {
+    <ModelTypes<X> as TxBufferPool<ModelSmall>>::push_aggregate(
+        aggregate,
+        SubframeSource::Fresh {
+            buffer,
+            frame: ClassSubframe::new(frame).ok().unwrap(),
+            body,
+        },
+    )
     .ok()
-    .unwrap();
-    <ModelTypes<X> as TxBufferPool<'id, ModelSmall>>::prepare(TxSource::Fresh {
-        buffer,
-        frame,
-        body,
-    })
+    .unwrap()
 }
-
-fn prepare_retry<'p, 'id, X: ModelContext>(
+fn push_retry<'k, 'p, 'id: 'k + 'p, X: ModelContext, S: AggregateState>(
+    aggregate: ModelAggregate<'k, 'p, 'id, Station, ModelCaps, X, S>,
     mpdu: ModelSent<'id, ModelSmall>,
-    rate: &AmpduRate<'p>,
-) -> ModelPrepared<'p, 'id, Station, ModelCaps, X> {
-    <ModelTypes<X> as TxBufferPool<'id, ModelSmall>>::prepare(TxSource::Retransmission {
-        mpdu,
-        plan: RetransmissionPlan::Individual(RetryPlan::new(RetryStage {
-            rate: *rate.rate(),
-            transmissions: NonZeroU8::MIN,
-            protection: Protection::None,
-        })),
-    })
+) -> ModelAggregate<'k, 'p, 'id, Station, ModelCaps, X, NonEmptyAggregate> {
+    <ModelTypes<X> as TxBufferPool<ModelSmall>>::push_aggregate(
+        aggregate,
+        SubframeSource::Sent(mpdu),
+    )
     .ok()
     .unwrap()
 }
@@ -255,7 +233,6 @@ impl Work for Numbering {
                 mpdu: numbered,
                 plan: RetransmissionPlan::Individual(plan),
             },
-            key,
         );
         phase.close_gate(gate);
         let (ticket, buffer) = completion(phase).await;
@@ -279,7 +256,6 @@ impl Work for Numbering {
                 mpdu: numbered,
                 plan: RetransmissionPlan::Individual(plan),
             },
-            key,
         );
         let (ticket, buffer) = completion(phase).await;
         let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::sent(buffer)
@@ -867,14 +843,19 @@ fn subframe<'id, C>(
 /// octets.
 fn subframe_frame(sequence: u16) -> SizedFrame<AckHeader, ModelCaps> {
     let header = HeaderSpec::new(
-        FrameControl::new(0x4108).unwrap(),
+        FrameControl::new(0x4188).unwrap(),
         0,
         IndividualAddress::new(PEER).unwrap(),
         STATION,
         PEER,
         sequence << 4,
         None,
-        None,
+        Some(oer_ieee80211_lower_mac::QosControl {
+            tid: Tid::new(0).unwrap(),
+            end_of_service_period: false,
+            amsdu_present: false,
+            high: 0,
+        }),
         None,
     )
     .and_then(AckHeader::new)
@@ -933,9 +914,7 @@ impl Work for AggregateRetransmission<'_> {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
-        use oer_ieee80211_lower_mac::{
-            AggregateAttempt, AmpduPhase, MpduStartSpacing, PhaseAggregate, Tid,
-        };
+        use oer_ieee80211_lower_mac::{AggregateAttempt, AmpduPhase, MpduStartSpacing, Tid};
         let ModelResources {
             mut tickets,
             mut small,
@@ -958,7 +937,6 @@ impl Work for AggregateRetransmission<'_> {
             ticket,
             aggregate,
             protection: Protection::None,
-            key: Some(&key),
             power: SupportedPower::new(TxPower::Calibrated).unwrap(),
             coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
             min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
@@ -969,20 +947,25 @@ impl Work for AggregateRetransmission<'_> {
         let rate = phase.rate(PhyRate::Ht(ht)).unwrap();
         let mut station = phase.station();
         let rate = station.ampdu_rate(rate).ok().unwrap();
-        let mut aggregate = station.aggregate(Tid::new(0).unwrap(), rate);
-        let mut body_owners = Vec::new();
-        for sequence in 0..3 {
+        let aggregate = station.aggregate(
+            IndividualAddress::new(PEER).unwrap(),
+            Tid::new(0).unwrap(),
+            rate,
+            TxProtection::Ccmp(&key),
+        );
+        let first_body = ModelBody(alloc::vec![0; 4]);
+        let mut body_owners = alloc::vec![first_body.0.as_ptr()];
+        let mut aggregate = push_subframe(
+            aggregate,
+            small.remove(0),
+            subframe_frame(0),
+            Some(first_body),
+        );
+        for sequence in 1..3 {
             let (buffer, frame) = subframe(small.remove(0), sequence);
             let body = ModelBody(alloc::vec![sequence as u8; 4]);
             body_owners.push(body.0.as_ptr());
-            aggregate
-                .push(
-                    prepare_subframe(buffer, frame, Some(body), &rate)
-                        .ok()
-                        .unwrap(),
-                )
-                .ok()
-                .unwrap();
+            aggregate = push_subframe(aggregate, buffer, frame, Some(body));
         }
         station
             .submit_ampdu(attempt(tickets.remove(0), aggregate))
@@ -1005,13 +988,15 @@ impl Work for AggregateRetransmission<'_> {
         let rate = phase.rate(PhyRate::Ht(ht)).unwrap();
         let mut station = phase.station();
         let rate = station.ampdu_rate(rate).ok().unwrap();
-        let mut aggregate = station.aggregate(Tid::new(0).unwrap(), rate);
-        aggregate.push(prepare_retry(numbered, &rate)).ok().unwrap();
+        let aggregate = station.aggregate(
+            IndividualAddress::new(PEER).unwrap(),
+            Tid::new(0).unwrap(),
+            rate,
+            TxProtection::Ccmp(&key),
+        );
+        let aggregate = push_retry(aggregate, numbered);
         let (buffer, frame) = subframe(small.remove(0), 3);
-        aggregate
-            .push(prepare_subframe(buffer, frame, None, &rate).ok().unwrap())
-            .ok()
-            .unwrap();
+        let aggregate = push_subframe(aggregate, buffer, frame, None);
         station.submit_ampdu(attempt(ticket, aggregate)).unwrap();
         let (_, buffers, bodies, _) = aggregate_completion(phase).await;
         assert!(bodies.is_empty());
@@ -1233,8 +1218,8 @@ impl Work for LongRetryPlan<'_> {
                     .ok()
                     .unwrap(),
                 body: None,
+                protection: TxProtection::Open,
             },
-            None,
         );
         loop {
             let Ok(Ok(event)) = phase.next_event().await else {

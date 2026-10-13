@@ -18,4 +18,3 @@ pub(crate) mod test_support;
 /// association branch `.L356`, both arm their software timer with immediate
 /// `0x3e8`.
 pub const STA_RESPONSE_TIMEOUT: oer_time::Duration = oer_time::Duration::from_secs(1);
-

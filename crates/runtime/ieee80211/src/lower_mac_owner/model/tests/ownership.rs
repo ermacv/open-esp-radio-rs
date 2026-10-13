@@ -131,6 +131,7 @@ impl PortBody<Backend> for Operations {
                             buffer,
                             frame: ClassFrame::new(data_frame(&phase, false)).ok().unwrap(),
                             body: Some(body),
+                            protection: TxProtection::Open,
                         })
                         .map_err(|refused| match refused.operation {
                             TxSource::Fresh { buffer, body, .. } => {
@@ -150,6 +151,7 @@ impl PortBody<Backend> for Operations {
                             buffer,
                             frame: ClassFrame::new(data_frame(&phase, false)).ok().unwrap(),
                             body: Some(body),
+                            protection: TxProtection::Open,
                         })
                         .map_err(|refused| match refused.operation {
                             TxSource::Fresh { buffer, body, .. } => {
@@ -187,7 +189,6 @@ impl PortBody<Backend> for Operations {
                                 source,
                                 access_category: operation.category,
                                 protection: Protection::None,
-                                key: None,
                                 power: SupportedPower::new(TxPower::Calibrated).unwrap(),
                                 coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
                             })
@@ -304,9 +305,7 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
         owner: Owner<'_, 'id, ModelBackend<ModelCaps, AggregateContext>, Disabled>,
         resources: ModelResources<'id>,
     ) -> Ended<'id, ModelBackend<ModelCaps, AggregateContext>> {
-        use oer_ieee80211_lower_mac::{
-            AggregateAttempt, AmpduPhase, MpduStartSpacing, PhaseAggregate, Tid,
-        };
+        use oer_ieee80211_lower_mac::{AggregateAttempt, AmpduPhase, MpduStartSpacing, Tid};
         let Ok(mut owner) = owner.enable().await else {
             panic!("the model enables")
         };
@@ -333,7 +332,12 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
                 Ccmp128Key([7; 16]),
             );
             let rate = station.ampdu_rate(rate).ok().unwrap();
-            let mut aggregate = station.aggregate(Tid::new(6).unwrap(), rate);
+            let aggregate = station.aggregate(
+                IndividualAddress::new(PEER).unwrap(),
+                Tid::new(6).unwrap(),
+                rate,
+                TxProtection::Ccmp(&key),
+            );
             let ticket = tickets.remove(0);
             let mut context = AggregateContext {
                 ticket: ticket.index(),
@@ -341,7 +345,12 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
                 bodies: Vec::new(),
                 dropped: self.dropped.clone(),
             };
-            for sequence in 0..3 {
+            let first = small.remove(0);
+            let body = ModelBody(alloc::vec![0; 4]);
+            context.buffers.push(first.slot.index());
+            context.bodies.push((0, body.0.as_ptr()));
+            let mut aggregate = push_subframe(aggregate, first, subframe_frame(0), Some(body));
+            for sequence in 1..3 {
                 let buffer = small.remove(0);
                 context.buffers.push(buffer.slot.index());
                 // A missing body does not renumber the following body's index.
@@ -349,14 +358,7 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
                 if let Some(body) = &body {
                     context.bodies.push((sequence as u8, body.0.as_ptr()));
                 }
-                aggregate
-                    .push(
-                        prepare_subframe(buffer, subframe_frame(sequence), body, &rate)
-                            .ok()
-                            .unwrap(),
-                    )
-                    .ok()
-                    .unwrap();
+                aggregate = push_subframe(aggregate, buffer, subframe_frame(sequence), body);
             }
             self.air.hold(WmmAccessCategory::Voice, self.withdraw);
             station
@@ -365,7 +367,6 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
                     ticket,
                     aggregate,
                     protection: Protection::None,
-                    key: Some(&key),
                     power: SupportedPower::new(TxPower::Calibrated).unwrap(),
                     coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
                     min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),

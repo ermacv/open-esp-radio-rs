@@ -50,6 +50,10 @@ impl Ieee80211Capabilities for Caps {
 
 struct Buffer(Vec<u8>);
 
+impl oer_ieee80211_lower_mac::TxBufferClass for Buffer {
+    const CAPACITY: usize = 1600;
+}
+
 impl TxBufferMemory for Buffer {
     fn bytes_mut(&mut self) -> &mut [u8] {
         &mut self.0
@@ -71,6 +75,7 @@ fn fresh_memory(buffer: &mut ReturnedMpdu<Buffer, Buffer>) -> &mut [u8] {
 struct Data;
 
 impl StaDataTokens for Data {
+    type Class = Buffer;
     type Ticket = u8;
     type Buffer = Buffer;
     type Sent = Buffer;
@@ -82,6 +87,7 @@ impl StaDataTokens for Data {
 struct Station;
 
 impl StaTokens for Station {
+    type Small = Buffer;
     type Ticket = u8;
     type SmallBuffer = Buffer;
     type Sent = Buffer;
@@ -198,13 +204,21 @@ fn interleaved_returns_keep_the_original_tid_order_and_admission_count() {
         let operation = transmit(&mut data);
         assert_eq!(operation.ticket, ticket);
         assert_eq!(operation.context.tid, tid);
-        assert_eq!(operation.context.frame.len().get(), 26 + 8 + 8 + 100);
         assert_eq!(
-            operation.frame.len().get(),
-            operation.context.frame.len().get()
+            operation.context.frame.frame().len().get(),
+            26 + 8 + 8 + 100
+        );
+        assert_eq!(
+            operation.frame.frame().len().get(),
+            operation.context.frame.frame().len().get()
         );
         let mut header = [0; 26];
-        operation.frame.header().header().encode(&mut header, false);
+        operation
+            .frame
+            .frame()
+            .header()
+            .header()
+            .encode(&mut header, false);
         assert_eq!(tid_and_sequence(&header), (tid, sequence));
         data.returned(
             NOW,
@@ -236,7 +250,7 @@ fn repeated_unpublished_returns_keep_the_checked_frame_and_payload() {
     )
     .unwrap();
     let mut operation = transmit(&mut data);
-    let len = operation.frame.len().get();
+    let len = operation.frame.frame().len().get();
     let payload = memory(&operation.buffer)[34..len].to_vec();
     for _ in 0..3 {
         fresh_memory(&mut operation.buffer)[..26].fill(0);
@@ -250,9 +264,14 @@ fn repeated_unpublished_returns_keep_the_checked_frame_and_payload() {
             },
         );
         operation = transmit(&mut data);
-        assert_eq!(operation.frame.len().get(), len);
+        assert_eq!(operation.frame.frame().len().get(), len);
         let mut header = [0; 26];
-        operation.frame.header().header().encode(&mut header, false);
+        operation
+            .frame
+            .frame()
+            .header()
+            .header()
+            .encode(&mut header, false);
         assert_eq!(tid_and_sequence(&header), (6, 0));
         assert_eq!(&memory(&operation.buffer)[34..len], payload.as_slice());
     }
@@ -363,7 +382,7 @@ fn a_local_refusal_releases_admission_with_the_operation_resources() {
                 context: operation.context,
                 ticket: operation.ticket,
                 buffer: operation.buffer,
-                reason: oer_ieee80211_lower_mac::PreparationError::NoRate,
+                reason: crate::machine::TxRefusal::NoRate,
             },
         );
         assert_eq!(data.available(WmmAccessCategory::Voice), capacity);
@@ -397,7 +416,9 @@ fn preparation_refusal_ends_only_its_msdu_without_a_radio_terminal_or_retry() {
             context: rejected.context,
             ticket: rejected.ticket,
             buffer: rejected.buffer,
-            reason: oer_ieee80211_lower_mac::PreparationError::BodyOverlap,
+            reason: crate::machine::TxRefusal::Preparation(
+                oer_ieee80211_lower_mac::PreparationError::BodyOverlap,
+            ),
         },
     );
     assert_eq!(data.available(WmmAccessCategory::Voice), capacity);
@@ -440,7 +461,7 @@ fn a_protected_qos_msdu_leaves_room_for_the_ccmp_header_and_contends_by_its_prio
     // The TID in the QoS Control field.
     assert_eq!(frame[24] & 0x0f, 6);
     // Header, the CCMP header's room, LLC/SNAP, payload; no MIC.
-    assert_eq!(sent.frame.len().get(), 26 + 8 + 8 + 100);
+    assert_eq!(sent.frame.frame().len().get(), 26 + 8 + 8 + 100);
     assert_eq!(&frame[34..42], &[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x00]);
     assert_eq!(sent.access_category, WmmAccessCategory::Voice);
     assert!(sent.protected);
@@ -463,7 +484,7 @@ fn an_open_non_qos_msdu_takes_the_stations_sequence_number_and_no_ccmp_room() {
     assert_eq!(u16::from_le_bytes([frame[0], frame[1]]), 0x0108);
     assert_eq!(u16::from_le_bytes([frame[22], frame[23]]) >> 4, 42);
     assert_eq!(counter.peek(), SequenceNumber::new(43).unwrap());
-    assert_eq!(sent.frame.len().get(), 24 + 8 + 100);
+    assert_eq!(sent.frame.frame().len().get(), 24 + 8 + 100);
     assert!(!sent.protected);
 }
 

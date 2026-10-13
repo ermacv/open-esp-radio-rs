@@ -8,6 +8,7 @@ use core::cell::RefCell;
 use core::future::{Future, poll_fn};
 use core::pin::Pin;
 use core::task::{Poll, Waker};
+use oer_ieee80211_lower_mac::PreparationError;
 
 use embassy_futures::join::join;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
@@ -57,7 +58,7 @@ const RSN: [u8; 22] = [
 struct ServiceContexts;
 
 impl crate::lower_mac_owner::model::ModelContext for ServiceContexts {
-    type Context<'id> = TxContext<'id, ModelCaps24>;
+    type Context<'id> = TxContext<'id, ModelCaps24, ModelLarge>;
 }
 
 impl<'id> StationPort<'id> for ModelBackend<ModelCaps24, ServiceContexts> {
@@ -762,7 +763,7 @@ fn refusing_m4_releases_handshake_resources_without_connecting_and_service_can_r
                     output,
                     ServiceOutput::TxRefused {
                         operation: TxOperation::Station,
-                        reason: PreparationError::BodyOverlap
+                        reason: TxRefusal::Preparation(PreparationError::BodyOverlap)
                     }
                 )));
                 assert!(!world.outputs.borrow().iter().any(|output| matches!(
@@ -812,7 +813,7 @@ fn a_data_preparation_refusal_releases_admission_and_the_next_msdu_can_go() {
                     output,
                     ServiceOutput::TxRefused {
                         operation: TxOperation::Data,
-                        reason: PreparationError::BodyOverlap
+                        reason: TxRefusal::Preparation(PreparationError::BodyOverlap)
                     }
                 )));
                 assert_eq!(world.air.sent().len(), sent_before);

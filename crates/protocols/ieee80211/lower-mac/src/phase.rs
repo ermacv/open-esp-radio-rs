@@ -60,7 +60,7 @@
 //!
 //! # Protected frames
 //!
-//! A frame under a key ([`Attempt::key`]) carries the Protected bit and
+//! Preparation derives the Protected bit from [`TxProtection`] and
 //! leaves the 8 octets of its CCMP header after its MAC header; its length
 //! counts them, not the MIC. At the first transmission of the MPDU the
 //! backend writes the CCMP header with a new packet number of the key into
@@ -298,9 +298,15 @@ pub trait KeyTypes<'id> {
     /// The kind of the role's group key slots.
     type GroupKind;
     /// An installed pairwise key, which holds its slot.
-    type PairwiseKey;
+    type PairwiseKey: 'id;
     /// An installed group key, which holds its slot.
-    type GroupKey;
+    type GroupKey: 'id;
+    /// Backend identity of one installation, distinct from its reusable slot.
+    type Identity;
+    /// Retain the installed pairwise identity while preparing an operation.
+    fn pairwise_identity(key: &Self::PairwiseKey) -> Self::Identity;
+    /// Retain the installed group identity (transmit-capable on an AP only).
+    fn group_identity(key: &Self::GroupKey) -> Self::Identity;
 }
 
 /// A removed key's slot, of its kind.
@@ -322,7 +328,15 @@ pub enum Removed<'id, P: PhaseTypes<'id>> {
 /// The keys of a role in the phase types `P`.
 pub trait RoleKeys<'id, P: PhaseTypes<'id>>: InterfaceRole {
     /// The role's keys.
-    type Keys: KeyTypes<'id>;
+    type Keys: KeyTypes<'id, Identity = P::KeyIdentity>;
+    /// Keys this role may use for TX. Station has only a pairwise key.
+    type TxKey<'k>
+    where
+        'id: 'k;
+    /// Retain an opaque backend identity, without inspecting key material.
+    fn tx_identity<'k>(key: &Self::TxKey<'k>) -> P::KeyIdentity
+    where
+        'id: 'k;
 
     /// The removed key's slot, as the event names it.
     fn removed(key: RemovedKey<'id, Self::Keys>) -> Removed<'id, P>;
@@ -330,6 +344,16 @@ pub trait RoleKeys<'id, P: PhaseTypes<'id>>: InterfaceRole {
 
 impl<'id, P: PhaseTypes<'id>> RoleKeys<'id, P> for Station {
     type Keys = P::StationKeys;
+    type TxKey<'k>
+        = &'k <P::StationKeys as KeyTypes<'id>>::PairwiseKey
+    where
+        'id: 'k;
+    fn tx_identity<'k>(key: &Self::TxKey<'k>) -> P::KeyIdentity
+    where
+        'id: 'k,
+    {
+        P::StationKeys::pairwise_identity(key)
+    }
 
     fn removed(key: RemovedKey<'id, Self::Keys>) -> Removed<'id, P> {
         Removed::Station(key)
@@ -338,6 +362,23 @@ impl<'id, P: PhaseTypes<'id>> RoleKeys<'id, P> for Station {
 
 impl<'id, P: PhaseTypes<'id>> RoleKeys<'id, P> for AccessPoint {
     type Keys = P::AccessPointKeys;
+    type TxKey<'k>
+        = AttemptKey<
+        'k,
+        <P::AccessPointKeys as KeyTypes<'id>>::PairwiseKey,
+        <P::AccessPointKeys as KeyTypes<'id>>::GroupKey,
+    >
+    where
+        'id: 'k;
+    fn tx_identity<'k>(key: &Self::TxKey<'k>) -> P::KeyIdentity
+    where
+        'id: 'k,
+    {
+        match key {
+            AttemptKey::Pairwise(key) => P::AccessPointKeys::pairwise_identity(key),
+            AttemptKey::Group(key) => P::AccessPointKeys::group_identity(key),
+        }
+    }
 
     fn removed(key: RemovedKey<'id, Self::Keys>) -> Removed<'id, P> {
         Removed::AccessPoint(key)
@@ -361,7 +402,16 @@ pub trait PhaseTypes<'id>: Sized {
     /// [Owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6155221933).
     type Context: 'id;
     /// A prepared MPDU retaining its phase, install and intended interface role.
-    type Prepared<'p, R, K: Ieee80211Capabilities>: PreparedTx<'id, Types = Self>;
+    type Prepared<'k, 'p, R, K: Ieee80211Capabilities>: PreparedTx<'id, Types = Self>;
+    /// Opaque installed-key identity, retained by prepared and sent MPDUs.
+    type KeyIdentity;
+    /// Aggregate storage with a compile-time empty/nonempty state.
+    type Aggregate<'k, 'p, R, K, S>: crate::PhaseAggregate<'id, Types = Self>
+    where
+        R: RoleKeys<'id, Self>,
+        K: Ieee80211Capabilities,
+        S: crate::AggregateState,
+        'id: 'k;
     /// An external MPDU body. A `Sent` MPDU retains its body internally
     /// for a retry; renewing that MPDU returns the body with its memory.
     type TxBody: crate::TxBody;
@@ -381,9 +431,9 @@ pub trait PhaseTypes<'id>: Sized {
     /// A `Sent` MPDU retains its own body until retry or renewal.
     type TxBodies: IntoIterator<Item = (u8, Self::TxBody)>;
     /// The station's keys and their slots.
-    type StationKeys: KeyTypes<'id>;
+    type StationKeys: KeyTypes<'id, Identity = Self::KeyIdentity>;
     /// The access point's keys and their slots.
-    type AccessPointKeys: KeyTypes<'id>;
+    type AccessPointKeys: KeyTypes<'id, Identity = Self::KeyIdentity>;
     /// The kind of the receive Block Ack slots: one pool the backend's
     /// hardware shares between its roles (owner decision, Claude Code chat
     /// with common, 2026-10-12).
@@ -468,7 +518,7 @@ pub trait LowerMacPhase<'p, 'id: 'p>:
 /// The frame's kind sets its response and
 /// its retry plan ([`RetryPlan`]) or one rate; its access category picks
 /// its queue, whose contention the backend draws.
-pub struct Attempt<'id, 'k, T, M, P, G, K, X> {
+pub struct Attempt<'id, T, M, K, X> {
     /// The original operation's context, returned with its terminal.
     pub context: X,
     /// The attempt's place in flight.
@@ -481,8 +531,6 @@ pub struct Attempt<'id, 'k, T, M, P, G, K, X> {
     /// The control exchange that protects its first transmission; a
     /// retry plan's stages name their own.
     pub protection: Protection,
-    /// The installed key that protects the frame, or none.
-    pub key: Option<AttemptKey<'k, P, G>>,
     /// Its transmit power.
     pub power: SupportedPower<K>,
     /// Its coexistence level.
@@ -497,19 +545,47 @@ pub enum AttemptKey<'k, P, G> {
     Group(&'k G),
 }
 
+/// The only source of the MPDU's Protected bit and installed TX key.
+/// A station's `Key` is a borrowed pairwise key; it cannot supply a group key.
+///
+/// A station's receive group key is not a transmit key:
+///
+/// ```compile_fail,E0308
+/// use oer_ieee80211_lower_mac::*;
+/// fn group<'k, 'id: 'k, T: PhaseTypes<'id>>(
+///     key: &'k <T::StationKeys as KeyTypes<'id>>::GroupKey,
+/// ) -> TxProtection<<Station as RoleKeys<'id, T>>::TxKey<'k>> {
+///     TxProtection::Ccmp(key)
+/// }
+/// ```
+pub enum TxProtection<Key> {
+    /// No encryption; the backend clears Protected even in an encoded input header.
+    Open,
+    /// CCMP under this installation; the backend sets Protected.
+    Ccmp(Key),
+}
+
+impl<Key> TxProtection<Key> {
+    /// Whether preparation reserves and writes a CCMP header.
+    pub const fn is_protected(&self) -> bool {
+        matches!(self, Self::Ccmp(_))
+    }
+}
+
 /// The class-specific input to preparation; refusal returns this exact type.
-pub type PoolSource<'p, 'id, T, C, K> = TxSource<
+pub type PoolSource<'k, 'p, 'id, T, C, K, R> = TxSource<
     'p,
     <T as TxBufferPool<'id, C>>::Buffer,
     <T as TxBufferPool<'id, C>>::Sent,
     ClassFrame<'p, C, K>,
     <T as PhaseTypes<'id>>::TxBody,
+    <R as RoleKeys<'id, T>>::TxKey<'k>,
 >;
 
 /// Preparation returns a phase-bound MPDU or its unchanged class-specific source.
-pub type PoolPreparation<'p, 'id, T, C, K, R> = Result<
-    <T as PhaseTypes<'id>>::Prepared<'p, R, K>,
-    PreparationRefused<PoolSource<'p, 'id, T, C, K>>,
+pub type PoolPreparation<'k, 'p, 'id, T, C, K, R> = Result<
+    <T as PhaseTypes<'id>>::Prepared<'k, 'p, R, K>,
+    PreparationRefused<PoolSource<'k, 'p, 'id, T, C, K, R>>,
 >;
 
 /// A class's fresh allocation or its retained published MPDU.
@@ -535,15 +611,13 @@ pub trait PreparedTx<'id> {
 /// It remains bound to this phase, install, capabilities and role.
 pub type InterfaceAttempt<'k, 'p, 'id, I> = Attempt<
     'id,
-    'k,
     <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::TicketKind,
     <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::Prepared<
+        'k,
         'p,
         <I as InterfacePhase<'p, 'id>>::Role,
         <I as InterfacePhase<'p, 'id>>::Caps,
     >,
-    <InterfaceKeys<'p, 'id, I> as KeyTypes<'id>>::PairwiseKey,
-    <InterfaceKeys<'p, 'id, I> as KeyTypes<'id>>::GroupKey,
     <I as InterfacePhase<'p, 'id>>::Caps,
     <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::Context,
 >;
@@ -551,7 +625,7 @@ pub type InterfaceAttempt<'k, 'p, 'id, I> = Attempt<
 /// The MPDU supplied to a submission. Fresh memory travels with its
 /// `ClassFrame` and body; a `Sent` MPDU already owns that description and
 /// body, and receives only the new attempt's phase-bound rate plan.
-pub enum TxSource<'p, B, N, F, O> {
+pub enum TxSource<'p, B, N, F, O, Key> {
     /// A new MPDU, numbered at its first protected transmission.
     Fresh {
         /// Caller-owned memory, writable only before admission.
@@ -560,6 +634,8 @@ pub enum TxSource<'p, B, N, F, O> {
         frame: F,
         /// External octets at the end of the MPDU, retained until its return.
         body: Option<O>,
+        /// The role's TX protection; the encoded Protected bit is derived from it.
+        protection: TxProtection<Key>,
     },
     /// The same published MPDU again: keep its SN and PN, set Retry.
     Retransmission {
@@ -594,12 +670,6 @@ pub struct PreparationRefused<A> {
 /// Dynamic preparation failures, distinct from the outcome of accepted TX.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PreparationError {
-    /// No rate of the requested plan is supported on this phase's channel.
-    NoRate,
-    /// The actual memory or buffer class cannot hold the MPDU.
-    BufferTooSmall,
-    /// Protected bit and the presence of a TX key disagree.
-    ProtectionMismatch,
     /// No room immediately after the MAC header for a full CCMP header.
     CcmpHeaderTooShort,
     /// The body at the MPDU's tail overlaps the MAC or CCMP header.
@@ -610,26 +680,6 @@ pub enum PreparationError {
     RetransmissionKind,
     /// The aggregate cannot take another subframe.
     AggregateFull,
-    /// There is no subframe to publish.
-    EmptyAggregate,
-}
-
-/// Refusal returns the operation; poisoning retains the install's existing
-/// fail-stop ownership contract and never invents an operation terminal.
-pub enum SubmitError<A, F> {
-    /// Preparation refused before admission.
-    Refused(PreparationRefused<A>),
-    /// The backend is poisoned; resources end with the installation.
-    Poisoned(Poisoned<F>),
-}
-
-impl<A, F: core::fmt::Debug> core::fmt::Debug for SubmitError<A, F> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Refused(refused) => f.debug_tuple("Refused").field(&refused.reason).finish(),
-            Self::Poisoned(poisoned) => f.debug_tuple("Poisoned").field(poisoned).finish(),
-        }
-    }
 }
 
 /// What one interface of a running phase does: its own frames, keys and
@@ -658,13 +708,13 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     ///
     /// # Errors
     ///
-    /// `SubmitError::Refused` returns the complete operation before admission
-    /// and PN allocation. No terminal follows it. A poisoned backend instead
-    /// follows fail-stop: the attempt's resources end with the install.
+    /// Only a poisoned backend refuses submission. Preparation already
+    /// established the layout and key; fail-stop retains the operation until
+    /// the installation ends, without inventing a terminal.
     fn submit<'k>(
         &mut self,
         attempt: InterfaceAttempt<'k, 'p, 'id, Self>,
-    ) -> Result<(), SubmitError<InterfaceAttempt<'k, 'p, 'id, Self>, Self::Fault>>;
+    ) -> Result<(), Poisoned<Self::Fault>>;
 
     /// Install `key` for frames with `peer` in `slot`.
     fn install_pairwise_key(
@@ -756,9 +806,24 @@ pub trait TxBufferPool<'id, C: TxBufferClass>: PhaseTypes<'id> {
     /// Prepare a source while its buffer class is concrete. The resulting
     /// closed value retains phase, install and role until `submit` or an
     /// aggregate consumes it. A refusal returns the original typed source.
-    fn prepare<'p, R, K: Ieee80211Capabilities>(
-        source: PoolSource<'p, 'id, Self, C, K>,
-    ) -> PoolPreparation<'p, 'id, Self, C, K, R>;
+    fn prepare<'k, 'p, R: RoleKeys<'id, Self>, K: Ieee80211Capabilities>(
+        source: PoolSource<'k, 'p, 'id, Self, C, K, R>,
+    ) -> PoolPreparation<'k, 'p, 'id, Self, C, K, R>
+    where
+        'id: 'k;
+
+    /// Prepare and append through this builder's receiver, TID and protection.
+    /// Fresh sources have no protection field. Refusal returns both the entire
+    /// builder and the unchanged class-specific source, before admission or PN.
+    fn push_aggregate<'k, 'p, R, K, S>(
+        aggregate: Self::Aggregate<'k, 'p, R, K, S>,
+        source: crate::PoolSubframe<'id, Self, C, K>,
+    ) -> crate::AggregatePushResult<'k, 'p, 'id, Self, C, R, K, S>
+    where
+        R: RoleKeys<'id, Self>,
+        K: Ieee80211Capabilities,
+        S: crate::AggregateState,
+        'id: 'k + 'p;
 
     /// The buffer, as any class's.
     fn erase(buffer: Self::Buffer) -> Self::AnyTxBuffer;
@@ -867,6 +932,66 @@ impl<'p, C: TxBufferClass, K: Ieee80211Capabilities> ClassFrame<'p, C, K> {
     /// the original operation, so a refusal can return it intact.
     pub const fn frame(&self) -> &TxFrame<'p, K> {
         &self.frame
+    }
+}
+
+/// A phase-independent checked description that fits its buffer class.
+/// Portable machines retain it in the operation context. Adding the phase's
+/// rates cannot lose or re-check the established size proof.
+#[derive(Debug)]
+pub struct ClassSizedFrame<C, H, K> {
+    frame: crate::SizedFrame<H, K>,
+    class: core::marker::PhantomData<C>,
+}
+impl<C, H: Copy, K> Copy for ClassSizedFrame<C, H, K> {}
+impl<C, H: Copy, K> Clone for ClassSizedFrame<C, H, K> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<C: TxBufferClass, H: crate::FrameHeader, K: Ieee80211Capabilities> ClassSizedFrame<C, H, K> {
+    /// Establish the class-size proof while constructing the operation.
+    pub fn new(frame: crate::SizedFrame<H, K>) -> Result<Self, crate::SizedFrame<H, K>> {
+        if frame.len().get() <= C::CAPACITY {
+            Ok(Self {
+                frame,
+                class: core::marker::PhantomData,
+            })
+        } else {
+            Err(frame)
+        }
+    }
+    /// The already checked description.
+    pub const fn frame(&self) -> &crate::SizedFrame<H, K> {
+        &self.frame
+    }
+}
+impl<'p, C, K> ClassFrame<'p, C, K> {
+    /// Add only the phase-bound retry plan to an individually acknowledged MPDU.
+    pub fn individual(
+        frame: ClassSizedFrame<C, crate::AckHeader, K>,
+        plan: RetryPlan<PhaseRate<'p>>,
+    ) -> Self {
+        Self {
+            frame: TxFrame::Individual {
+                frame: frame.frame,
+                plan,
+            },
+            class: core::marker::PhantomData,
+        }
+    }
+    /// Add only the phase-bound rate to a group MPDU.
+    pub fn group(
+        frame: ClassSizedFrame<C, crate::HeaderSpec<crate::GroupAddress>, K>,
+        rate: PhaseRate<'p>,
+    ) -> Self {
+        Self {
+            frame: TxFrame::Group {
+                frame: frame.frame,
+                rate,
+            },
+            class: core::marker::PhantomData,
+        }
     }
 }
 

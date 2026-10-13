@@ -252,7 +252,7 @@ impl<K> core::fmt::Debug for SupportedChannel<K> {
 }
 
 /// An interface role, as a type.
-pub trait InterfaceRole {
+pub trait InterfaceRole: 'static {
     /// The role.
     const ROLE: VifRole;
 }
@@ -764,10 +764,26 @@ impl ReceiverAddress for GroupAddress {
 }
 
 impl<A: ReceiverAddress> HeaderSpec<A> {
-    /// Whether Frame Control sets Protected. Preparation separately checks
-    /// the TX key and the room for the CCMP header.
-    pub const fn protected(&self) -> bool {
-        self.frame_control.get() & 0x4000 != 0
+    /// QoS fields, when this is a QoS data header.
+    pub const fn qos(&self) -> Option<QosControl> {
+        self.qos
+    }
+    /// Receiver of this checked header.
+    pub const fn receiver(&self) -> A {
+        self.receiver
+    }
+    /// Derive the Protected bit from the preparation's sole protection value.
+    pub fn with_protection(mut self, protected: bool) -> Self {
+        self.frame_control.0 =
+            (self.frame_control.0 & !0x4000) | if protected { 0x4000 } else { 0 };
+        self
+    }
+    /// Encode a fresh aggregate subframe with its builder's receiver and TID.
+    /// `ClassSubframe` retains the proven QoS value through this write.
+    pub(crate) fn in_aggregate(mut self, receiver: A, qos: QosControl) -> Self {
+        self.receiver = receiver;
+        self.qos = Some(qos);
+        self
     }
     /// The header, when its fields agree with its Frame Control.
     #[allow(clippy::too_many_arguments, reason = "the fields of a MAC header")]
@@ -1104,9 +1120,11 @@ pub trait AddressSetup: LowerMacSetup {
 mod extensions;
 
 pub use extensions::{
-    AggregateAttempt, AggregateKey, AirReservationPhase, AmpduPhase, AmpduRate, BeaconTimingPhase,
-    BeaconWindow, InterfaceAggregateAttempt, MAX_RESERVATION_MICROS, MonitorPhase,
-    MpduStartSpacing, PhaseAggregate, TbttPlan,
+    AggregateAttempt, AggregateParts, AggregatePushResult, AggregateRefused, AggregateState,
+    AirReservationPhase, AmpduPhase, AmpduRate, BeaconTimingPhase, BeaconWindow, ClassSubframe,
+    EmptyAggregate, InterfaceAggregate, InterfaceAggregateAttempt, InterfaceProtection,
+    MAX_RESERVATION_MICROS, MonitorPhase, MpduStartSpacing, NonEmptyAggregate, PhaseAggregate,
+    PoolSubframe, SubframeSource, TbttPlan,
 };
 
 #[cfg(test)]

@@ -88,17 +88,22 @@ impl<X, const N: usize> Fifo<X, N> {
         Ok(())
     }
 
-    /// Queue `item` at the front.
-    ///
-    /// # Errors
-    ///
-    /// The item, when the queue holds `N`.
-    pub(crate) fn push_front(&mut self, item: X) -> Result<(), X> {
+    /// Insert by the operation's original order. Returning several older
+    /// operations must not reverse them as repeated `push_front` would.
+    pub(crate) fn insert_by(&mut self, item: X, before: impl Fn(&X, &X) -> bool) -> Result<(), X> {
         if self.len >= N {
             return Err(item);
         }
-        self.head = (self.head + N - 1) % N;
-        self.items[self.head] = Some(item);
+        let at = self
+            .iter()
+            .position(|other| before(&item, other))
+            .unwrap_or(self.len);
+        for offset in (at..self.len).rev() {
+            let from = (self.head + offset) % N;
+            let to = (self.head + offset + 1) % N;
+            self.items[to] = self.items[from].take();
+        }
+        self.items[(self.head + at) % N] = Some(item);
         self.len += 1;
         Ok(())
     }

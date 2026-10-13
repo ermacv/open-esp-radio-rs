@@ -130,6 +130,172 @@ fn transmit(data: &mut StaData<Data, Caps>) -> DataTransmit<Data, Caps> {
 }
 
 #[test]
+fn interleaved_returns_keep_the_original_tid_order_and_admission_count() {
+    let mut data = StaData::<Data, Caps>::new(
+        [1, 2, 3, 4],
+        core::array::from_fn::<_, 4, _>(|_| Buffer(std::vec![0; 1600])),
+    );
+    let mut replay = epoch();
+    let mut link = qos_link(&(), &mut replay);
+    for priority in [6, 4, 6, 7] {
+        data.input(
+            NOW,
+            DataInput::Msdu {
+                msdu: msdu(priority),
+                link: &mut link,
+            },
+        )
+        .unwrap();
+    }
+    let mut operations: Vec<_> = (0..4).map(|_| transmit(&mut data)).collect();
+    assert_eq!(data.at_port(WmmAccessCategory::Voice), 3);
+    assert_eq!(data.at_port(WmmAccessCategory::Video), 1);
+    // Video may finish first. Voice returns in FIFO order, including two
+    // frames of TID 6. Destroy the bytes that formerly identified a terminal.
+    let video = operations.remove(1);
+    operations.insert(0, video);
+    for mut operation in operations {
+        operation.buffer.0[..26].fill(0);
+        data.input::<Station>(
+            NOW,
+            DataInput::TxDone {
+                context: operation.context,
+                ticket: operation.ticket,
+                buffer: operation.buffer,
+                completion: ended(TxStatus::Aborted, 0),
+            },
+        )
+        .unwrap();
+    }
+    assert_eq!(data.at_port(WmmAccessCategory::Voice), 0);
+    assert_eq!(data.at_port(WmmAccessCategory::Video), 0);
+    for (ticket, tid, sequence) in [(1, 6, 0), (2, 4, 0), (3, 6, 1), (4, 7, 0)] {
+        let operation = transmit(&mut data);
+        assert_eq!(operation.ticket, ticket);
+        assert_eq!(operation.context.tid, tid);
+        let mut header = [0; 26];
+        operation.frame.header().header().encode(&mut header, false);
+        assert_eq!(tid_and_sequence(&header), (tid, sequence));
+        data.input::<Station>(
+            NOW,
+            DataInput::TxDone {
+                context: operation.context,
+                ticket: operation.ticket,
+                buffer: operation.buffer,
+                completion: ended(TxStatus::Success, 1),
+            },
+        )
+        .unwrap();
+    }
+    assert_eq!(data.counters().lost_tokens, 0);
+    assert_eq!(data.counters().overflows, 0);
+    assert!(data.accepts());
+}
+
+#[test]
+fn a_late_old_link_terminal_does_not_take_a_new_links_metadata() {
+    let mut data = machine();
+    let mut replay = epoch();
+    let mut link = qos_link(&(), &mut replay);
+    data.input(
+        NOW,
+        DataInput::Msdu {
+            msdu: msdu(6),
+            link: &mut link,
+        },
+    )
+    .unwrap();
+    let old = transmit(&mut data);
+    data.leave();
+    data.input(
+        NOW,
+        DataInput::Msdu {
+            msdu: msdu(6),
+            link: &mut link,
+        },
+    )
+    .unwrap();
+    let new = transmit(&mut data);
+    assert!(!data.is_current(&old.context));
+    assert!(data.is_current(&new.context));
+    data.input::<Station>(
+        NOW,
+        DataInput::TxDone {
+            context: new.context,
+            ticket: new.ticket,
+            buffer: new.buffer,
+            completion: ended(TxStatus::Aborted, 0),
+        },
+    )
+    .unwrap();
+    data.input::<Station>(
+        NOW,
+        DataInput::TxDone {
+            context: old.context,
+            ticket: old.ticket,
+            buffer: old.buffer,
+            completion: ended(TxStatus::Aborted, 0),
+        },
+    )
+    .unwrap();
+    let again = transmit(&mut data);
+    assert_eq!(again.ticket, 2);
+    assert_eq!(again.context.order, 1);
+    assert!(data.poll_action(NOW, |_| true).is_none());
+    assert_eq!(data.counters().left_behind, 1);
+    data.input::<Station>(
+        NOW,
+        DataInput::TxDone {
+            context: again.context,
+            ticket: again.ticket,
+            buffer: again.buffer,
+            completion: ended(TxStatus::Success, 1),
+        },
+    )
+    .unwrap();
+    assert_eq!(data.at_port(WmmAccessCategory::Voice), 0);
+    assert!(data.tickets.take().is_some());
+    assert!(data.tickets.take().is_some());
+    assert!(data.tickets.take().is_none());
+    assert!(data.buffers.take().is_some());
+    assert!(data.buffers.take().is_some());
+    assert!(data.buffers.take().is_none());
+    assert_eq!(data.counters().lost_tokens, 0);
+}
+
+#[test]
+fn a_local_refusal_releases_admission_with_the_operation_resources() {
+    let mut data = machine();
+    let mut replay = epoch();
+    let mut link = qos_link(&(), &mut replay);
+    for _ in 0..8 {
+        data.input(
+            NOW,
+            DataInput::Msdu {
+                msdu: msdu(6),
+                link: &mut link,
+            },
+        )
+        .unwrap();
+        let operation = transmit(&mut data);
+        assert_eq!(data.at_port(WmmAccessCategory::Voice), 1);
+        data.input::<Station>(
+            NOW,
+            DataInput::Returned {
+                context: Some(operation.context),
+                ticket: Some(operation.ticket),
+                buffer: Some(operation.buffer),
+            },
+        )
+        .unwrap();
+        assert_eq!(data.at_port(WmmAccessCategory::Voice), 0);
+        assert!(data.accepts());
+        assert!(data.poll_action(NOW, |_| true).is_none());
+    }
+    assert_eq!(data.counters().lost_tokens, 0);
+}
+
+#[test]
 fn a_protected_qos_msdu_leaves_room_for_the_ccmp_header_and_contends_by_its_priority() {
     let mut data = machine();
     let mut replay = epoch();
@@ -249,6 +415,7 @@ fn msdus_wait_while_the_tokens_are_out() {
     data.input::<Station>(
         NOW,
         DataInput::TxDone {
+            context: first.context,
             ticket: first.ticket,
             buffer: first.buffer,
             completion: ended(TxStatus::Success, 1),
@@ -423,6 +590,7 @@ fn an_attempt_aborted_before_the_air_goes_again_first_with_its_sequence_number()
     data.input::<Station>(
         NOW,
         DataInput::TxDone {
+            context: first.context,
             ticket: first.ticket,
             buffer: first.buffer,
             completion: ended(TxStatus::Aborted, 0),
@@ -440,6 +608,7 @@ fn an_attempt_aborted_before_the_air_goes_again_first_with_its_sequence_number()
     data.input::<Station>(
         NOW,
         DataInput::TxDone {
+            context: again.context,
             ticket: again.ticket,
             buffer: again.buffer,
             completion: ended(TxStatus::AckTimeout, 3),
@@ -497,6 +666,7 @@ fn a_link_that_ends_drains_its_queue_and_its_submitted_attempts_never_go_again()
     data.input::<Station>(
         NOW,
         DataInput::TxDone {
+            context: submitted.context,
             ticket: submitted.ticket,
             buffer: submitted.buffer,
             completion: ended(TxStatus::Aborted, 0),

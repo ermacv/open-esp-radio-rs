@@ -42,3 +42,23 @@ and hardware ownership belong in `crates/roles/esp32s31/ieee80211/sta`; clocks, 
 DMA wakeups and network leases belong to the radio runtime; final resource
 claims and board composition belong to integration.
 
+
+## Transmit ownership
+
+Every `StaTransmit` or `DataTransmit` carries an owned context alongside its
+buffer and ticket. The service puts that context in the port attempt and
+returns it through `TxDone` or the local unsent path. A station context
+names the connection epoch and purpose (authentication, handshake message,
+PM transition, probe or rekey); the current state never guesses which
+operation a terminal ended. Connected control admission remains one at a
+time; its flags describe pending policy transitions, not completion identity.
+
+A data context keeps the link epoch, original TID, order, header, length,
+access category and protection. `StaData` keeps only counts of operations
+at the port for admission, with no in-flight metadata FIFO or TID decoding
+at completion. An unpublished return is inserted by its original order,
+so a batch of returns preserves both per-TID and shared-AC order. An old
+link's terminal returns its tokens without requeueing or affecting the new
+link; the service checks the same epoch before updating rate selection.
+`LinkView` still borrows sequence/replay/key state only for a synchronous
+step. No queued context borrows the station or data machine.

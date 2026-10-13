@@ -79,6 +79,8 @@ pub enum DataInput<'a, 'l, 'v, D: StaDataTokens, T: StaTokens> {
     ///
     /// [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6132835650
     TxDone {
+        /// The original operation, returned unchanged by the port.
+        context: DataTxContext,
         /// Its ticket.
         ticket: D::Ticket,
         /// Its buffer.
@@ -90,6 +92,8 @@ pub enum DataInput<'a, 'l, 'v, D: StaDataTokens, T: StaTokens> {
     /// service did not send, or a terminal that carried a buffer more or
     /// none. Its MSDU, if any, is gone; the service counts it.
     Returned {
+        /// An operation that ended locally, when these are its resources.
+        context: Option<DataTxContext>,
         /// A ticket, if one came back.
         ticket: Option<D::Ticket>,
         /// A buffer, if one came back.
@@ -107,6 +111,8 @@ pub enum DataAction<D: StaDataTokens, K> {
 /// It names no key: on a protected link the service submits it under the
 /// link's pairwise key.
 pub struct DataTransmit<D: StaDataTokens, K> {
+    /// The operation identity and parameters, moved through the port.
+    pub context: DataTxContext,
     /// Its ticket.
     pub ticket: D::Ticket,
     /// The buffer holding the MPDU, from its header on.
@@ -128,17 +134,13 @@ pub enum DataRefusal {
     TooLong,
 }
 
-/// An attempt owed, with its place in the order MSDUs came.
-struct Owed<D: StaDataTokens, K> {
-    transmit: DataTransmit<D, K>,
-    order: u32,
-}
-
-/// What the machine keeps of a submitted MPDU to send it again: its
-/// buffer holds the frame.
-struct InFlight {
-    /// The link it was encoded for.
-    link: u32,
+/// The original data operation. It travels by value with the attempt;
+/// completion routing never inspects the returned MPDU's bytes.
+#[derive(Debug)]
+pub struct DataTxContext {
+    link: u64,
+    tid: u8,
+    header: AckHeader,
     len: usize,
     access_category: WmmAccessCategory,
     protected: bool,
@@ -160,21 +162,20 @@ pub struct DataCounters {
 }
 
 /// The connected station's data machine. `CAP` sizes each TID's queues of
-/// owed and submitted MPDUs: each holds a ticket, so the machine's tickets
+/// owed MPDUs: each holds a ticket, so the machine's tickets
 /// fit (checked at build).
 pub struct StaData<D: StaDataTokens, K, const CAP: usize = 8> {
     tickets: Pool<D::Ticket>,
     buffers: Pool<D::Buffer>,
     /// The attempts owed, by TID (a non-QoS link's in the first), each in
     /// its order.
-    owed: [Fifo<Owed<D, K>, CAP>; 8],
-    /// The submitted MPDUs, by TID, in their order: a port ends a queue's
-    /// attempts in order.
-    in_flight: [Fifo<InFlight, CAP>; 8],
+    owed: [Fifo<DataTransmit<D, K>, CAP>; 8],
+    /// Admission counts only; operation metadata belongs to the attempt.
+    at_port: [usize; 4],
     /// The order of the next MSDU.
     next_order: u32,
     /// The current link: [`Self::leave`] ends it.
-    link: u32,
+    link: u64,
     overflows: u32,
     left_behind: u32,
 }
@@ -199,7 +200,7 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
             tickets: Pool::new(tickets),
             buffers: Pool::new(buffers),
             owed: [const { Fifo::new() }; 8],
-            in_flight: [const { Fifo::new() }; 8],
+            at_port: [0; 4],
             next_order: 0,
             link: 0,
             overflows: 0,
@@ -226,11 +227,11 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
         for tid in 0..8 {
             while let Some(owed) = self.owed[tid].pop() {
                 self.left_behind = self.left_behind.saturating_add(1);
-                self.tickets.put(owed.transmit.ticket);
-                self.buffers.put(owed.transmit.buffer);
+                self.tickets.put(owed.ticket);
+                self.buffers.put(owed.buffer);
             }
         }
-        self.link = self.link.wrapping_add(1);
+        self.link = self.link.checked_add(1).expect("data link epoch exhausted");
     }
 
     /// An MPDU a full queue did not take: its tokens come back, counted.
@@ -258,16 +259,13 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
     ) -> Result<(), DataRefusal> {
         match input {
             DataInput::TxDone {
+                context,
                 ticket,
-                mut buffer,
+                buffer,
                 completion,
             } => {
-                let tid = tid_of(buffer.bytes_mut());
-                let in_flight = self.in_flight[tid].pop();
-                // Of a link that ended: its tokens come back, nothing more.
-                if let Some(InFlight { link, .. }) = in_flight
-                    && link != self.link
-                {
+                self.at_port[context.access_category as usize] -= 1;
+                if !self.is_current(&context) {
                     if completion.transmissions == 0 {
                         self.left_behind = self.left_behind.saturating_add(1);
                     }
@@ -275,23 +273,29 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
                     self.buffers.put(buffer);
                     return Ok(());
                 }
-                // Never on the air: the same MPDU goes again, first.
-                if completion.transmissions == 0
-                    && let Some(in_flight) = in_flight
-                    && let Some(frame) = sized::<K>(&buffer.bytes_mut()[..in_flight.len])
-                {
-                    let again = Owed {
-                        transmit: DataTransmit {
-                            ticket,
-                            buffer,
-                            frame,
-                            access_category: in_flight.access_category,
-                            protected: in_flight.protected,
-                        },
-                        order: in_flight.order,
+                // Never published: preserve the original frame description,
+                // TID and order, even after a batch of terminals returns.
+                if completion.transmissions == 0 {
+                    let frame = SizedFrame::new(
+                        context.header,
+                        MpduLength::new(context.len).expect("the original checked MPDU length"),
+                    )
+                    .expect("the original checked frame contains its header");
+                    let tid = usize::from(context.tid);
+                    let again = DataTransmit {
+                        ticket,
+                        buffer,
+                        frame,
+                        access_category: context.access_category,
+                        protected: context.protected,
+                        context,
                     };
-                    if let Err(again) = self.owed[tid].push_front(again) {
-                        self.overflowed(again.transmit);
+                    let next_order = self.next_order;
+                    if let Err(again) = self.owed[tid].insert_by(again, |a, b| {
+                        a.context.order.wrapping_sub(next_order)
+                            < b.context.order.wrapping_sub(next_order)
+                    }) {
+                        self.overflowed(again);
                     }
                     return Ok(());
                 }
@@ -299,7 +303,14 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
                 self.buffers.put(buffer);
                 Ok(())
             }
-            DataInput::Returned { ticket, buffer } => {
+            DataInput::Returned {
+                context,
+                ticket,
+                buffer,
+            } => {
+                if let Some(context) = context {
+                    self.at_port[context.access_category as usize] -= 1;
+                }
                 if let Some(ticket) = ticket {
                     self.tickets.put(ticket);
                 }
@@ -346,18 +357,25 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
                     Some(frame) => {
                         let order = self.next_order;
                         self.next_order = self.next_order.wrapping_add(1);
-                        let owed = Owed {
-                            transmit: DataTransmit {
-                                ticket,
-                                buffer,
-                                frame,
-                                access_category,
-                                protected,
-                            },
+                        let context = DataTxContext {
+                            link: self.link,
+                            tid: slot as u8,
+                            header: *frame.header(),
+                            len: frame.len().get(),
+                            access_category,
+                            protected,
                             order,
                         };
+                        let owed = DataTransmit {
+                            context,
+                            ticket,
+                            buffer,
+                            frame,
+                            access_category,
+                            protected,
+                        };
                         if let Err(owed) = self.owed[slot].push(owed) {
-                            self.overflowed(owed.transmit);
+                            self.overflowed(owed);
                         }
                         Ok(())
                     }
@@ -374,11 +392,13 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
     /// The machine's MPDUs of `access_category` at the port: submitted and
     /// not yet ended, of the current link or an earlier one.
     pub fn at_port(&self, access_category: WmmAccessCategory) -> usize {
-        self.in_flight
-            .iter()
-            .flat_map(Fifo::iter)
-            .filter(|in_flight| in_flight.access_category == access_category)
-            .count()
+        self.at_port[access_category as usize]
+    }
+
+    /// Whether this operation belongs to the current link. The service
+    /// uses the same guard before updating the link's rate selection.
+    pub fn is_current(&self, context: &DataTxContext) -> bool {
+        context.link == self.link
     }
 
     /// The next action at `now`, if any, of a category `admit` takes: the
@@ -395,24 +415,13 @@ impl<D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const 
             .filter_map(|tid| {
                 self.owed[tid]
                     .front()
-                    .filter(|owed| admit(owed.transmit.access_category))
-                    .map(|owed| (owed.order, tid))
+                    .filter(|owed| admit(owed.access_category))
+                    .map(|owed| (owed.context.order, tid))
             })
             .min_by_key(|&(order, _)| order.wrapping_sub(self.next_order))?
             .1;
-        let Owed { transmit, order } = self.owed[tid].pop()?;
-        let in_flight = InFlight {
-            link: self.link,
-            len: transmit.frame.len().get(),
-            access_category: transmit.access_category,
-            protected: transmit.protected,
-            order,
-        };
-        // Untracked, an MPDU could not go again: it does not go.
-        if self.in_flight[tid].push(in_flight).is_err() {
-            self.overflowed(transmit);
-            return None;
-        }
+        let transmit = self.owed[tid].pop()?;
+        self.at_port[transmit.access_category as usize] += 1;
         Some(DataAction::Transmit(transmit))
     }
 
@@ -530,17 +539,6 @@ fn encode_frame<T: StaTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities>
         return sized(&output[..len - 8]);
     }
     sized(&output[..len])
-}
-
-/// The queue of an MPDU in its buffer: its TID on QoS Data, the first
-/// otherwise.
-fn tid_of(frame: &[u8]) -> usize {
-    match frame {
-        [control, _, ..] if control & 0x80 != 0 => {
-            frame.get(24).map_or(0, |qos| usize::from(qos & 0x07))
-        }
-        _ => 0,
-    }
 }
 
 fn sized<K: oer_ieee80211_lower_mac::Ieee80211Capabilities>(

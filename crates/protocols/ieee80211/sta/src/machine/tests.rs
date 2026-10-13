@@ -185,7 +185,7 @@ struct World {
     arbiter: Arbiter<'static, Gate, Caps, NoReservation>,
     seen: Vec<Seen>,
     /// The transmissions in flight, which the port ends in order.
-    in_flight: Vec<(Ticket, Buffer)>,
+    submitted: Vec<(StaTxContext, Ticket, Buffer)>,
     /// The receive configurations the port has yet to confirm.
     configuring: u32,
     /// The configurations wait for the test's confirmation.
@@ -261,7 +261,7 @@ impl World {
             station,
             arbiter,
             seen: Vec::new(),
-            in_flight: Vec::new(),
+            submitted: Vec::new(),
             configuring: 0,
             hold_configured: false,
             outcomes: std::collections::VecDeque::new(),
@@ -379,7 +379,7 @@ impl World {
                 self.station.input(now, StaInput::Configured);
                 acted = true;
             }
-            if !self.in_flight.is_empty() {
+            if !self.submitted.is_empty() {
                 self.end_transmissions(now);
                 acted = true;
             }
@@ -390,15 +390,23 @@ impl World {
     }
 
     fn end_transmissions(&mut self, now: Instant) {
-        for (ticket, buffer) in self.in_flight.drain(..).collect::<Vec<_>>() {
+        for (context, ticket, buffer) in self.submitted.drain(..).collect::<Vec<_>>() {
             // The service did not send it: its tokens come back unsent.
             if core::mem::take(&mut self.unsend_next) {
-                self.station.input(now, StaInput::Unsent { ticket, buffer });
+                self.station.input(
+                    now,
+                    StaInput::Unsent {
+                        context,
+                        ticket,
+                        buffer,
+                    },
+                );
                 continue;
             }
             self.station.input(
                 now,
                 StaInput::TxDone {
+                    context,
                     ticket,
                     buffer,
                     completion: TxCompletion {
@@ -451,7 +459,8 @@ impl World {
         }
         let on = self.arbiter.channel().map_or(0, |c| c.channel().number());
         self.seen.push(Seen::Transmit { subtype, on });
-        self.in_flight.push((transmit.ticket, transmit.buffer));
+        self.submitted
+            .push((transmit.context, transmit.ticket, transmit.buffer));
     }
 
     fn receive(&mut self, now: Instant, frame: &[u8]) {
@@ -582,7 +591,7 @@ fn a_station_alone_scans_joins_an_open_network_and_leaves_it() {
         ]
     );
     // Every token came back.
-    assert!(world.in_flight.is_empty());
+    assert!(world.submitted.is_empty());
     assert!(world.station.place.is_some());
 }
 
@@ -796,6 +805,77 @@ fn connected_world() -> World {
 }
 
 #[test]
+fn a_terminal_of_the_previous_connection_only_returns_its_resources() {
+    let mut world = connected_world();
+    let old = world
+        .station
+        .encode_null(BSSID, StaPowerManagement::Active)
+        .unwrap();
+    world
+        .station
+        .input(at(40), StaInput::Command(StaCommand::Disconnect));
+    world.run(at(40));
+    world
+        .station
+        .input(at(50), StaInput::Command(StaCommand::Connect));
+    world.run(at(50));
+    world.advance();
+    world.receive(at(63), &beacon());
+    world.advance();
+    world.receive(at(80), &authentication_response(0));
+    world.receive(at(81), &open_association_response());
+    assert!(world.station.is_connected());
+    let State::Connected(connected) = &mut world.station.state else {
+        unreachable!()
+    };
+    connected.wake = true;
+    let Some(StaAction::Transmit(current)) = world.station.poll_action(at(82)) else {
+        panic!("the new connection owes its own wake Null");
+    };
+    assert!(!world.station.is_current(&old.context));
+    assert!(world.station.is_current(&current.context));
+    world.station.input(
+        at(83),
+        StaInput::TxDone {
+            context: old.context,
+            ticket: old.ticket,
+            buffer: old.buffer,
+            completion: TxCompletion {
+                status: TxStatus::Success,
+                ack_rssi_dbm: None,
+                ack_snr_db: None,
+                block_ack: None,
+                transmissions: 1,
+                rate: None,
+            },
+        },
+    );
+    let State::Connected(connected) = &world.station.state else {
+        unreachable!()
+    };
+    assert!(
+        connected.sending && connected.waking,
+        "the new Null is still outstanding"
+    );
+    world.station.input(
+        at(84),
+        StaInput::Unsent {
+            context: current.context,
+            ticket: current.ticket,
+            buffer: current.buffer,
+        },
+    );
+    let State::Connected(connected) = &world.station.state else {
+        unreachable!()
+    };
+    assert!(!connected.sending && !connected.waking);
+    assert!(world.station.tokens().is_some());
+    assert!(world.station.tokens().is_some());
+    assert!(world.station.tokens().is_none());
+    assert_eq!(world.station.lost_tokens(), 0);
+}
+
+#[test]
 fn a_connected_station_scans_in_an_absence_announced_with_nulls() {
     let mut world = connected_world();
     world
@@ -897,7 +977,7 @@ fn an_unsent_sleep_null_is_undelivered_and_the_station_stays() {
         subtype: NULL_ACTIVE,
         on: 6
     }));
-    assert!(world.in_flight.is_empty());
+    assert!(world.submitted.is_empty());
 }
 
 #[test]
@@ -1231,6 +1311,7 @@ fn eapol_and_data_on_tid_7_share_one_counter_and_tid_0_runs_on_across_a_rekey() 
         data.input::<Tokens>(
             at(60),
             DataInput::TxDone {
+                context: transmit.context,
                 ticket: transmit.ticket,
                 buffer: transmit.buffer,
                 completion: TxCompletion {

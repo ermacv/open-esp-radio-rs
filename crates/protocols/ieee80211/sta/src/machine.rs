@@ -169,6 +169,8 @@ pub enum StaInput<'f, T: StaTokens, K> {
     },
     /// The terminal of a transmission: its ticket and buffer come back.
     TxDone {
+        /// The original operation, returned by the port.
+        context: StaTxContext,
         /// The transmission's ticket.
         ticket: T::Ticket,
         /// The transmission's buffer.
@@ -180,6 +182,8 @@ pub enum StaInput<'f, T: StaTokens, K> {
     /// port's channel, or it does not fit its buffer class): its ticket and
     /// buffer come back, and it counts as undelivered.
     Unsent {
+        /// The operation that was not submitted.
+        context: StaTxContext,
         /// The frame's ticket.
         ticket: T::Ticket,
         /// The frame's buffer.
@@ -297,6 +301,8 @@ pub enum StaAction<'a, T: StaTokens, K> {
 /// One MPDU to transmit: its ticket, the buffer the station encoded it in,
 /// its kind, its class and its rates.
 pub struct StaTransmit<T: StaTokens, K> {
+    /// Its epoch and purpose, moved with the operation through its terminal.
+    pub context: StaTxContext,
     /// Its ticket.
     pub ticket: T::Ticket,
     /// The buffer holding the frame, from its header on.
@@ -308,6 +314,35 @@ pub struct StaTransmit<T: StaTokens, K> {
     pub class: StaFrameClass,
     /// Its rate and retry plan.
     pub plan: StaRatePlan,
+}
+
+/// The identity of one station operation. No frame parsing or current-state
+/// guess assigns a completion to a handshake, power transition or link.
+#[derive(Debug)]
+pub struct StaTxContext {
+    epoch: u64,
+    purpose: TxPurpose,
+}
+
+impl StaTxContext {
+    /// Whether this operation used the probe rate record.
+    pub const fn is_probe(&self) -> bool {
+        matches!(
+            self.purpose,
+            TxPurpose::Probe | TxPurpose::Connected(Sending::Probe)
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TxPurpose {
+    Probe,
+    Authentication,
+    Association,
+    HandshakeResponse,
+    HandshakeLast,
+    Deauthentication,
+    Connected(Sending),
 }
 
 /// What a station frame is for.
@@ -443,8 +478,7 @@ const CHANNEL_CAPACITY: usize = 16;
 const SCAN_CAPACITY: usize = 16;
 
 /// A new association's QoS sequence spaces.
-const QOS_SEQUENCES: [StaSequenceCounter; 8] =
-    [StaSequenceCounter::new(SequenceNumber::ZERO); 8];
+const QOS_SEQUENCES: [StaSequenceCounter; 8] = [StaSequenceCounter::new(SequenceNumber::ZERO); 8];
 
 /// The reason codes of the station's Deauthentication (IEEE 802.11-2020
 /// Table 9-90).
@@ -530,6 +564,8 @@ pub struct Station<T: StaTokens, K: Ieee80211Capabilities> {
     associated_owed: Option<Peer<T::RxMeta>>,
     sequence: StaSequenceCounter,
     scan: ScanTable<SCAN_CAPACITY>,
+    /// The connection attempt that owns new TX operations.
+    epoch: u64,
 }
 
 /// The station's lease.
@@ -837,8 +873,10 @@ struct Connected<T: StaTokens, K> {
     power: PowerSaveView,
     /// A Null with PM=0 the station owes its access point.
     wake: bool,
-    /// The station's one transmission in flight, by what it is for.
-    sending: Option<Sending>,
+    /// Admission: at most one connected control transmission at a time.
+    sending: bool,
+    /// A PM=0 transition is outstanding; beacons need not request another.
+    waking: bool,
     /// The background scan, if one runs.
     background: Option<Background>,
     /// The application has yet to hear the station connected.
@@ -1038,6 +1076,7 @@ enum Done {
     Tick,
     /// A transmission ended: acknowledged, or not.
     Tx {
+        purpose: TxPurpose,
         delivered: bool,
     },
     Configured,
@@ -1143,6 +1182,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             associated_owed: None,
             sequence: StaSequenceCounter::new(SequenceNumber::ZERO),
             scan: ScanTable::new(),
+            epoch: 0,
         }
     }
 
@@ -1155,6 +1195,12 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             .lost()
             .saturating_add(self.buffers.lost())
             .saturating_add(keys)
+    }
+
+    /// Whether an operation still belongs to this connection attempt.
+    /// Resource return is unconditional; protocol and rate updates use this guard.
+    pub fn is_current(&self, context: &StaTxContext) -> bool {
+        context.epoch == self.epoch
     }
 
     /// Whether the station is connected.
@@ -1235,6 +1281,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     pub fn input(&mut self, now: Instant, input: StaInput<'_, T, K>) {
         let done = match input {
             StaInput::TxDone {
+                context,
                 ticket,
                 buffer,
                 completion,
@@ -1242,14 +1289,28 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 // A transmission's tokens come back whatever the state.
                 self.tickets.put(ticket);
                 self.buffers.put(buffer);
+                if !self.is_current(&context) {
+                    return;
+                }
                 Done::Tx {
+                    purpose: context.purpose,
                     delivered: matches!(completion.status, TxStatus::Success),
                 }
             }
-            StaInput::Unsent { ticket, buffer } => {
+            StaInput::Unsent {
+                context,
+                ticket,
+                buffer,
+            } => {
                 self.tickets.put(ticket);
                 self.buffers.put(buffer);
-                Done::Tx { delivered: false }
+                if !self.is_current(&context) {
+                    return;
+                }
+                Done::Tx {
+                    purpose: context.purpose,
+                    delivered: false,
+                }
             }
             StaInput::Returned { ticket, buffer } => {
                 if let Some(ticket) = ticket {
@@ -1652,6 +1713,10 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     fn step(&mut self, state: State<T, K>, now: Instant, done: Done) -> State<T, K> {
         match (state, done) {
             (State::Idle(keys) | State::Report(_, keys), Done::Command(StaCommand::Connect)) => {
+                self.epoch = self
+                    .epoch
+                    .checked_add(1)
+                    .expect("station link epoch exhausted");
                 self.scan.clear();
                 self.visit(0, 0, None, keys)
             }
@@ -1693,12 +1758,24 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 leave_handshake(handshake, REASON_LEAVING)
             }
             (State::Handshake(mut handshake), done) => match (&handshake.step, done) {
-                (HandshakeStep::AwaitSent, Done::Tx { .. }) => {
+                (
+                    HandshakeStep::AwaitSent,
+                    Done::Tx {
+                        purpose: TxPurpose::HandshakeResponse,
+                        ..
+                    },
+                ) => {
                     handshake.step = HandshakeStep::Await;
                     State::Handshake(handshake)
                 }
                 // Message 4 went: connected, the supplicant's keys held.
-                (HandshakeStep::AwaitLast(_), Done::Tx { .. }) => connect(handshake),
+                (
+                    HandshakeStep::AwaitLast(_),
+                    Done::Tx {
+                        purpose: TxPurpose::HandshakeLast,
+                        ..
+                    },
+                ) => connect(handshake),
                 (HandshakeStep::Await, Done::Tick)
                     if matches!(
                         handshake.deadline.poll(now),
@@ -1711,7 +1788,13 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             },
             (State::Leave(mut leave), done) => {
                 leave.step = match (leave.step, done) {
-                    (LeaveStep::AwaitDeauthentication, Done::Tx { .. }) => LeaveStep::NeedConfigure,
+                    (
+                        LeaveStep::AwaitDeauthentication,
+                        Done::Tx {
+                            purpose: TxPurpose::Deauthentication,
+                            ..
+                        },
+                    ) => LeaveStep::NeedConfigure,
                     (LeaveStep::AwaitConfigured, Done::Configured) => LeaveStep::NeedRelease,
                     (step, _) => step,
                 };
@@ -1728,9 +1811,15 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         now: Instant,
         done: Done,
     ) -> State<T, K> {
-        if let Done::Tx { delivered } = done {
-            match connected.sending.take() {
-                Some(Sending::Wake) => {
+        if let Done::Tx {
+            purpose: TxPurpose::Connected(sending),
+            delivered,
+        } = done
+        {
+            connected.sending = false;
+            match sending {
+                Sending::Wake => {
+                    connected.waking = false;
                     connected
                         .power
                         .null_sent(StaPowerManagement::Active, delivered);
@@ -1740,7 +1829,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                         self.next_visit(background);
                     }
                 }
-                Some(Sending::Sleep) => {
+                Sending::Sleep => {
                     connected
                         .power
                         .null_sent(StaPowerManagement::PowerSave, delivered);
@@ -1756,7 +1845,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                         };
                     }
                 }
-                Some(Sending::GroupResponse) => {
+                Sending::GroupResponse => {
                     if let Some(rsn) = &mut connected.rsn
                         && matches!(rsn.rekey, Rekey::AwaitSent)
                     {
@@ -1767,7 +1856,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                         };
                     }
                 }
-                Some(Sending::Probe) | None => {}
+                Sending::Probe => {}
             }
             if let Some(background) = &connected.background
                 && background.step == BackgroundStep::NeedAbsence
@@ -1913,14 +2002,26 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             }),
             (JoinStep::Authenticate(mut auth), done) => {
                 let timed_out = match (auth.stage, done) {
-                    (AuthStage::AwaitSent { response_timeout }, Done::Tx { delivered: true }) => {
+                    (
+                        AuthStage::AwaitSent { response_timeout },
+                        Done::Tx {
+                            purpose: TxPurpose::Authentication,
+                            delivered: true,
+                        },
+                    ) => {
                         auth.stage = AuthStage::AwaitResponse {
                             until: now.checked_add(response_timeout).unwrap_or(now),
                         };
                         false
                     }
                     // Unacknowledged or unanswered: as a timeout.
-                    (AuthStage::AwaitSent { .. }, Done::Tx { delivered: false }) => true,
+                    (
+                        AuthStage::AwaitSent { .. },
+                        Done::Tx {
+                            purpose: TxPurpose::Authentication,
+                            delivered: false,
+                        },
+                    ) => true,
                     (AuthStage::AwaitResponse { until }, Done::Tick) => now >= until,
                     _ => false,
                 };
@@ -2075,7 +2176,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         }
         if let Ok(beacon) = parse_sta_beacon(frame, connected.bssid, connected.association_id)
             && connected.power.beacon(beacon.tim) == PowerSaveDecision::SendActive
-            && connected.sending != Some(Sending::Wake)
+            && !connected.waking
         {
             connected.wake = true;
         }
@@ -2181,10 +2282,16 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     /// The action `state` owes, and the state that awaits its end.
     fn owe(&mut self, state: State<T, K>, now: Instant) -> (State<T, K>, Option<Owed<T, K>>) {
         match state {
-            State::Report(reason, keys) => (
-                State::Idle(keys),
-                Some(Owed::Notify(StaNotice::Disconnected(reason))),
-            ),
+            State::Report(reason, keys) => {
+                self.epoch = self
+                    .epoch
+                    .checked_add(1)
+                    .expect("station link epoch exhausted");
+                (
+                    State::Idle(keys),
+                    Some(Owed::Notify(StaNotice::Disconnected(reason))),
+                )
+            }
             State::Scan(mut scan) => {
                 let owed = match scan.step {
                     ScanStep::NeedLease if self.place.is_some() => {
@@ -2349,7 +2456,11 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     ) -> (State<T, K>, Option<Owed<T, K>>) {
         let (step, owed) = match core::mem::replace(&mut handshake.step, HandshakeStep::Await) {
             HandshakeStep::Send(message) => {
-                match self.encode_eapol(handshake.bssid, message.as_bytes()) {
+                match self.encode_eapol(
+                    handshake.bssid,
+                    message.as_bytes(),
+                    TxPurpose::HandshakeResponse,
+                ) {
                     Ok(transmit) => (HandshakeStep::AwaitSent, Some(Owed::Transmit(transmit))),
                     Err(Unsent::NoTokens) => (HandshakeStep::Send(message), None),
                     Err(Unsent::Encode) => {
@@ -2386,7 +2497,11 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 }
             }
             HandshakeStep::SendLast(message, epoch) => {
-                match self.encode_eapol(handshake.bssid, message.as_bytes()) {
+                match self.encode_eapol(
+                    handshake.bssid,
+                    message.as_bytes(),
+                    TxPurpose::HandshakeLast,
+                ) {
                     Ok(transmit) => (
                         HandshakeStep::AwaitLast(epoch),
                         Some(Owed::Transmit(transmit)),
@@ -2404,7 +2519,12 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     }
 
     /// An EAPOL frame to `bssid` in a data frame, in a buffer.
-    fn encode_eapol(&mut self, bssid: [u8; 6], eapol: &[u8]) -> Result<StaTransmit<T, K>, Unsent> {
+    fn encode_eapol(
+        &mut self,
+        bssid: [u8; 6],
+        eapol: &[u8],
+        purpose: TxPurpose,
+    ) -> Result<StaTransmit<T, K>, Unsent> {
         let address = self.config.address;
         let sequence_number = self.sequence.take();
         self.encode_individual(
@@ -2421,6 +2541,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 .ok()
             },
             StaFrameClass::Connection,
+            purpose,
         )
     }
 
@@ -2492,13 +2613,12 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             // the old ESP32-S31 path (`transmit_protected_data`): only while
             // the link is up.
             Rekey::Send(message)
-                if connected.sending.is_none()
-                    && self.link_up(&connected.power, &connected.keys) =>
+                if !connected.sending && self.link_up(&connected.power, &connected.keys) =>
             {
                 let qos = connected.qos.then_some(&mut connected.qos_sequences);
                 match self.encode_protected_eapol(connected.bssid, qos, message.as_bytes()) {
                     Ok(transmit) => {
-                        connected.sending = Some(Sending::GroupResponse);
+                        connected.sending = true;
                         (Rekey::AwaitSent, Some(Owed::TransmitProtected(transmit)))
                     }
                     Err(Unsent::NoTokens) => (Rekey::Send(message), None),
@@ -2553,7 +2673,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                     }
                     _ => step,
                 },
-                BackgroundStep::NeedSleep if connected.sending.is_none() => {
+                BackgroundStep::NeedSleep if !connected.sending => {
                     power = Some((StaPowerManagement::PowerSave, Sending::Sleep));
                     BackgroundStep::AwaitSleep
                 }
@@ -2565,7 +2685,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                     owed = Some(Owed::Configure(StationReceive::OtherBssManagement));
                     BackgroundStep::AwaitConfigured
                 }
-                BackgroundStep::NeedProbe if connected.sending.is_none() => {
+                BackgroundStep::NeedProbe if !connected.sending => {
                     owed = self.probe(&mut connected.sending);
                     BackgroundStep::Listen
                 }
@@ -2573,11 +2693,11 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                     owed = bss_rules(bssid, Rules::<K>::MEMBER).map(Owed::Configure);
                     BackgroundStep::AwaitHome
                 }
-                BackgroundStep::NeedWake if connected.sending.is_none() => {
+                BackgroundStep::NeedWake if !connected.sending => {
                     power = Some((StaPowerManagement::Active, Sending::Wake));
                     BackgroundStep::AwaitWake
                 }
-                BackgroundStep::HomeProbe { until } if connected.sending.is_none() => {
+                BackgroundStep::HomeProbe { until } if !connected.sending => {
                     owed = self.probe(&mut connected.sending);
                     BackgroundStep::HomeListen { until }
                 }
@@ -2587,7 +2707,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 }
                 step => step,
             };
-        } else if connected.wake && !connected.power.asleep() && connected.sending.is_none() {
+        } else if connected.wake && !connected.power.asleep() && !connected.sending {
             // The access point buffers for an awake station: PM=0 again.
             connected.wake = false;
             power = Some((StaPowerManagement::Active, Sending::Wake));
@@ -2595,7 +2715,8 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         if let Some((power_management, sending)) = power {
             match self.encode_null(bssid, power_management) {
                 Some(transmit) => {
-                    connected.sending = Some(sending);
+                    connected.sending = true;
+                    connected.waking = sending == Sending::Wake;
                     owed = Some(Owed::Transmit(transmit));
                 }
                 // No token now: the step waits for the next poll.
@@ -2616,9 +2737,10 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     }
 
     /// A Probe Request of the background scan, marked in flight.
-    fn probe(&mut self, sending: &mut Option<Sending>) -> Option<Owed<T, K>> {
-        let transmit = self.encode_probe()?;
-        *sending = Some(Sending::Probe);
+    fn probe(&mut self, sending: &mut bool) -> Option<Owed<T, K>> {
+        let mut transmit = self.encode_probe()?;
+        transmit.context.purpose = TxPurpose::Connected(Sending::Probe);
+        *sending = true;
         Some(Owed::Transmit(transmit))
     }
 
@@ -2643,6 +2765,10 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                     .ok()
                 },
                 StaFrameClass::Normal,
+                TxPurpose::Connected(match power_management {
+                    StaPowerManagement::Active => Sending::Wake,
+                    StaPowerManagement::PowerSave => Sending::Sleep,
+                }),
             )
             .ok()?;
         transmit.plan = StaRatePlan::Null;
@@ -2691,6 +2817,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                         .ok()
                     },
                     StaFrameClass::Connection,
+                    TxPurpose::Authentication,
                 );
                 match encoded {
                     Ok(transmit) => {
@@ -2729,6 +2856,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                             .ok()
                         },
                         StaFrameClass::Connection,
+                        TxPurpose::Association,
                     );
                     match encoded {
                         Ok(transmit) => {
@@ -2787,7 +2915,8 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 exchange: false,
                 power: PowerSaveView::awake(),
                 wake: false,
-                sending: None,
+                sending: false,
+                waking: false,
                 background: None,
                 connected_notice: true,
                 rsn: None,
@@ -2844,6 +2973,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         &mut self,
         encode: impl FnOnce(&mut [u8]) -> Option<usize>,
         class: StaFrameClass,
+        purpose: TxPurpose,
     ) -> Result<StaTransmit<T, K>, Unsent> {
         let (ticket, mut buffer) = self.tokens().ok_or(Unsent::NoTokens)?;
         let frame = encode(buffer.bytes_mut()).and_then(|len| {
@@ -2852,6 +2982,10 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         });
         match frame {
             Some(frame) => Ok(StaTransmit {
+                context: StaTxContext {
+                    epoch: self.epoch,
+                    purpose,
+                },
                 ticket,
                 buffer,
                 frame: StaFrame::Individual(frame),
@@ -2869,9 +3003,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     /// Whether the connected link is up: the station is home and awake,
     /// and holds its pairwise key ([`Self::link`]'s rule).
     fn link_up(&self, power: &PowerSaveView, keys: &Keys<T>) -> bool {
-        self.absence.is_none()
-            && !power.asleep()
-            && matches!(keys.pairwise, KeyCell::Installed(_))
+        self.absence.is_none() && !power.asleep() && matches!(keys.pairwise, KeyCell::Installed(_))
     }
 
     /// An EAPOL frame of the connected station under its pairwise key: the
@@ -2906,7 +3038,11 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
             ether_type: EAPOL_ETHER_TYPE,
             payload: eapol,
         };
-        self.encode_individual(|buffer| frame.encode(buffer).ok(), StaFrameClass::Connection)
+        self.encode_individual(
+            |buffer| frame.encode(buffer).ok(),
+            StaFrameClass::Connection,
+            TxPurpose::Connected(Sending::GroupResponse),
+        )
     }
 
     /// A broadcast Probe Request in a buffer, if the station holds tokens
@@ -2931,6 +3067,10 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         });
         match frame {
             Some(frame) => Some(StaTransmit {
+                context: StaTxContext {
+                    epoch: self.epoch,
+                    purpose: TxPurpose::Probe,
+                },
                 ticket,
                 buffer,
                 frame: StaFrame::Group(frame),
@@ -2967,6 +3107,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 .ok()
             },
             StaFrameClass::Normal,
+            TxPurpose::Deauthentication,
         )
         .ok()
     }
@@ -3106,7 +3247,8 @@ fn connect<T: StaTokens, K>(handshake: Handshake<T, K>) -> State<T, K> {
             exchange: false,
             power: PowerSaveView::awake(),
             wake: false,
-            sending: None,
+            sending: false,
+            waking: false,
             background: None,
             connected_notice: true,
             rsn: Some(ConnectedRsn {

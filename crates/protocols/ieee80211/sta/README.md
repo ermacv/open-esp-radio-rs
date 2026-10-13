@@ -86,3 +86,9 @@ Data's `Refused` input ends that MSDU and releases its admission count and
 tokens once, without retrying unchanged invalid input. The service reports
 the typed reason to its application and continues; preparation refusals
 never enter radio/rate statistics.
+
+`StationResources` groups the epoch source, ticket and small-buffer pools,
+channel places and key slots transferred into Station. Completion inputs
+carry `ReturnedMpdu::Fresh` or `Sent`; service preserves that state. Only
+the machine renews a published MPDU when retiring it, releasing its body
+and returning fresh memory to its pool.

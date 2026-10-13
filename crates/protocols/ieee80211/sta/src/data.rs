@@ -21,8 +21,8 @@
 //! the replay check and, on a non-QoS BSS, the station's sequence space.
 
 use oer_ieee80211_lower_mac::{
-    AckHeader, HeaderSpec, IndividualAddress, MpduLength, RxCryptoStatus, RxEvidence, RxMeta,
-    SizedFrame, TxBufferMemory, TxCompletion,
+    AckHeader, HeaderSpec, IndividualAddress, MpduLength, ReturnedMpdu, RxCryptoStatus, RxEvidence,
+    RxMeta, SizedFrame, TxBufferMemory, TxCompletion,
 };
 use oer_ieee80211_mac::{
     ccmp::{CcmpHeader, CcmpRxProtection},
@@ -47,6 +47,10 @@ pub trait StaDataTokens {
     type Ticket;
     /// A transmit buffer: its memory, which the machine encodes into.
     type Buffer: TxBufferMemory;
+    /// An immutable published MPDU. Data retains it until retry or retirement.
+    type Sent;
+    /// Retire an MPDU and release its body before reusing the allocation.
+    fn renew(mpdu: Self::Sent) -> Self::Buffer;
 }
 
 /// One MSDU from the network stack.
@@ -79,7 +83,7 @@ pub enum DataInput<'a, 'l, 'v, 'id, D: StaDataTokens, T: StaTokens, K> {
         /// Its ticket.
         ticket: D::Ticket,
         /// Its memory.
-        buffer: D::Buffer,
+        buffer: ReturnedMpdu<D::Buffer, D::Sent>,
         /// The explicit preparation failure.
         reason: oer_ieee80211_lower_mac::PreparationError,
     },
@@ -97,7 +101,7 @@ pub enum DataInput<'a, 'l, 'v, 'id, D: StaDataTokens, T: StaTokens, K> {
         /// Its ticket.
         ticket: D::Ticket,
         /// Its buffer.
-        buffer: D::Buffer,
+        buffer: ReturnedMpdu<D::Buffer, D::Sent>,
         /// How it ended.
         completion: TxCompletion,
     },
@@ -110,7 +114,7 @@ pub enum DataInput<'a, 'l, 'v, 'id, D: StaDataTokens, T: StaTokens, K> {
         /// A ticket, if one came back.
         ticket: Option<D::Ticket>,
         /// A buffer, if one came back.
-        buffer: Option<D::Buffer>,
+        buffer: Option<ReturnedMpdu<D::Buffer, D::Sent>>,
     },
 }
 
@@ -129,7 +133,7 @@ pub struct DataTransmit<'id, D: StaDataTokens, K> {
     /// Its ticket.
     pub ticket: D::Ticket,
     /// The buffer holding the MPDU, from its header on.
-    pub buffer: D::Buffer,
+    pub buffer: ReturnedMpdu<D::Buffer, D::Sent>,
     /// Its kind: an individual frame to the access point.
     pub frame: SizedFrame<AckHeader, K>,
     /// The access category of its priority.
@@ -247,7 +251,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
             while let Some(owed) = self.owed[tid].pop() {
                 self.left_behind = self.left_behind.saturating_add(1);
                 self.tickets.put(owed.ticket);
-                self.buffers.put(owed.buffer);
+                self.buffers.put(owed.buffer.into_fresh(D::renew));
             }
         }
         self.link = None;
@@ -257,7 +261,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
     fn overflowed(&mut self, transmit: DataTransmit<'id, D, K>) {
         self.overflows = self.overflows.saturating_add(1);
         self.tickets.put(transmit.ticket);
-        self.buffers.put(transmit.buffer);
+        self.buffers.put(transmit.buffer.into_fresh(D::renew));
     }
 
     /// Whether the machine takes one more MSDU now.
@@ -288,7 +292,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
                     self.preparation_refused = self.preparation_refused.saturating_add(1);
                 }
                 self.tickets.put(ticket);
-                self.buffers.put(buffer);
+                self.buffers.put(buffer.into_fresh(D::renew));
                 Ok(())
             }
             DataInput::TxDone {
@@ -303,7 +307,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
                         self.left_behind = self.left_behind.saturating_add(1);
                     }
                     self.tickets.put(ticket);
-                    self.buffers.put(buffer);
+                    self.buffers.put(buffer.into_fresh(D::renew));
                     return Ok(());
                 }
                 // Never published: preserve the original frame description,
@@ -329,7 +333,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
                     return Ok(());
                 }
                 self.tickets.put(ticket);
-                self.buffers.put(buffer);
+                self.buffers.put(buffer.into_fresh(D::renew));
                 Ok(())
             }
             DataInput::Returned {
@@ -344,7 +348,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
                     self.tickets.put(ticket);
                 }
                 if let Some(buffer) = buffer {
-                    self.buffers.put(buffer);
+                    self.buffers.put(buffer.into_fresh(D::renew));
                 }
                 Ok(())
             }
@@ -401,7 +405,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
                         let owed = DataTransmit {
                             context,
                             ticket,
-                            buffer,
+                            buffer: ReturnedMpdu::Fresh(buffer),
                             frame,
                             access_category,
                             protected,

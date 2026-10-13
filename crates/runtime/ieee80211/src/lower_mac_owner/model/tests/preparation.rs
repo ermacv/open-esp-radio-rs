@@ -17,6 +17,10 @@ fn frame<'p>(
     .unwrap()
 }
 
+#[expect(
+    clippy::result_large_err,
+    reason = "a refusal returns the whole operation by value"
+)]
 fn try_source<'p, 'id: 'p>(
     phase: &mut ModelPhase<'p, 'id>,
     ticket: Slot<'id, ModelTickets>,
@@ -36,9 +40,7 @@ fn try_source<'p, 'id: 'p>(
         Err(refused) => {
             let (buffer, body) = match refused.operation {
                 TxSource::Fresh { buffer, body, .. } => (ModelAnyBuffer::Small(buffer), body),
-                TxSource::Retransmission { mpdu, .. } => {
-                    (ModelAnyBuffer::SmallNumbered(mpdu), None)
-                }
+                TxSource::Retransmission { mpdu, .. } => (ModelAnyBuffer::SmallSent(mpdu), None),
             };
             return Err((refused.reason, ticket, buffer, body));
         }
@@ -153,13 +155,14 @@ impl Work for Boundaries {
                 let (returned_ticket, mut buffers, bodies, _) = aggregate_completion(phase).await;
                 ticket = returned_ticket;
                 buffer = match buffers.remove(0) {
-                    ModelAnyBuffer::SmallNumbered(mpdu) => {
+                    ModelAnyBuffer::SmallSent(mpdu) => {
                         assert_eq!(mpdu.body().unwrap().0.as_ptr(), body_pointer);
                         assert_eq!(
                             &mpdu.buffer.memory[len - body_len..len],
                             &[0x5a; 16][..body_len]
                         );
-                        assert_eq!(mpdu.packet_number(), pn_before + 1);
+                        assert_eq!(mpdu.packet_number(), protected.then_some(pn_before + 1));
+                        assert!(bodies.is_empty());
                         let (buffer, body) =
                             <ModelTypes as TxBufferPool<'id, ModelSmall>>::renew(mpdu);
                         assert_eq!(body.unwrap().0.as_ptr(), body_pointer);
@@ -236,7 +239,7 @@ impl Work for RetryIdentity {
         };
         submit_frame::<ModelSmall>(phase, tickets.remove(0), source, Some(&key));
         let (ticket, buffer) = completion(phase).await;
-        let ModelAnyBuffer::SmallNumbered(mpdu) = buffer else {
+        let ModelAnyBuffer::SmallSent(mpdu) = buffer else {
             unreachable!()
         };
         let before = mpdu.buffer.memory[..40].to_vec();
@@ -256,7 +259,7 @@ impl Work for RetryIdentity {
             Some(&key),
         );
         let (ticket, buffer) = completion(phase).await;
-        let ModelAnyBuffer::SmallNumbered(mpdu) = buffer else {
+        let ModelAnyBuffer::SmallSent(mpdu) = buffer else {
             unreachable!()
         };
         let mut expected = before;
@@ -306,7 +309,7 @@ impl Work for RetryIdentity {
         assert_eq!(refused.reason, PreparationError::RetransmissionKey);
         let (returned, body) = refused.operation.source.into_parts();
         assert!(body.is_none());
-        let ModelAnyBuffer::SmallNumbered(mpdu) = returned else {
+        let ModelAnyBuffer::SmallSent(mpdu) = returned else {
             unreachable!()
         };
         assert_eq!(mpdu.packet_number(), pn);
@@ -344,7 +347,7 @@ impl Work for RetryIdentity {
         assert_eq!(replacement.identity.0.last.get(), 0);
         let (mut buffers, bodies) = refused.operation.aggregate.into_parts();
         assert!(bodies.is_empty());
-        let ModelAnyBuffer::SmallNumbered(mpdu) = buffers.remove(0) else {
+        let ModelAnyBuffer::SmallSent(mpdu) = buffers.remove(0) else {
             unreachable!()
         };
         let (_, body) = <ModelTypes as TxBufferPool<'id, ModelSmall>>::renew(mpdu);
@@ -464,13 +467,13 @@ impl Work for AggregateBoundaries {
         station.submit_ampdu(operation).unwrap();
         let (_, mut buffers, bodies, _) = aggregate_completion(phase).await;
         assert!(bodies.is_empty());
-        let ModelAnyBuffer::SmallNumbered(mpdu) = buffers.remove(0) else {
+        let ModelAnyBuffer::SmallSent(mpdu) = buffers.remove(0) else {
             unreachable!()
         };
         assert_eq!(mpdu.buffer.memory.as_ptr(), memory);
         assert_eq!(mpdu.body().unwrap().0.as_ptr(), body_pointer);
         assert_eq!(&mpdu.buffer.memory[32..48], &[0x99; 16]);
-        assert_eq!(mpdu.packet_number(), 1);
+        assert_eq!(mpdu.packet_number(), Some(1));
     }
 }
 

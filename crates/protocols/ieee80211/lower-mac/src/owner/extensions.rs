@@ -30,6 +30,18 @@ use crate::{
     phase::{AttemptKey, GateOpen, InterfacePhase, LowerMacPhase, PhaseTypes},
 };
 
+/// The prepared subframe family retained by one aggregate builder.
+pub type AggregateMpdu<'p, 'id, A> =
+    <<A as PhaseAggregate<'p, 'id>>::Types as PhaseTypes<'id>>::Prepared<
+        'p,
+        <A as PhaseAggregate<'p, 'id>>::Role,
+        <A as PhaseAggregate<'p, 'id>>::Caps,
+    >;
+
+/// Appending a subframe preserves that entire value on refusal.
+pub type AggregatePushResult<'p, 'id, A> =
+    Result<(), PreparationRefused<AggregateMpdu<'p, 'id, A>>>;
+
 /// A rate the backend aggregates at, checked by [`AmpduPhase::ampdu_rate`].
 #[derive(Clone, Copy, Debug)]
 pub struct AmpduRate<'p>(PhaseRate<'p>);
@@ -63,16 +75,13 @@ pub trait PhaseAggregate<'p, 'id: 'p> {
     fn push(
         &mut self,
         mpdu: <Self::Types as PhaseTypes<'id>>::Prepared<'p, Self::Role, Self::Caps>,
-    ) -> Result<
-        (),
-        PreparationRefused<<Self::Types as PhaseTypes<'id>>::Prepared<'p, Self::Role, Self::Caps>>,
-    >;
+    ) -> AggregatePushResult<'p, 'id, Self>;
 
     /// The subframes pushed.
     fn subframes(&self) -> usize;
 
     /// Cancel preparation and recover every buffer and external body in
-    /// subframe order, including after a refused `submit_ampdu`. Numbered
+    /// subframe order, including after a refused `submit_ampdu`. Sent
     /// MPDUs retain their own bodies until retry or renewal. This consumes
     /// no ticket and creates no TX terminal.
     #[allow(clippy::type_complexity, reason = "the aggregate's owned resources")]

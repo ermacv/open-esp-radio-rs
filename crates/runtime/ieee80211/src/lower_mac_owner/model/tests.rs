@@ -104,7 +104,7 @@ fn submit_frame<'p, 'id: 'p, C: ModelClass>(
     source: TxSource<
         'p,
         ModelBuffer<'id, C>,
-        ModelNumbered<'id, C>,
+        ModelSent<'id, C>,
         ClassFrame<'p, C, ModelCaps>,
         ModelBody,
     >,
@@ -148,15 +148,16 @@ fn submit<'p, 'id: 'p, C: ModelClass>(
     );
 }
 
+#[expect(
+    clippy::result_large_err,
+    reason = "a refusal returns the whole operation by value"
+)]
 fn prepare_subframe<'p, 'id, X: ModelContext>(
     buffer: ModelBuffer<'id, ModelSmall>,
     frame: SizedFrame<AckHeader, ModelCaps>,
     body: Option<ModelBody>,
     rate: &AmpduRate<'p>,
-) -> Result<
-    ModelPrepared<'p, 'id, Station, ModelCaps, X>,
-    PreparationRefused<PoolSource<'p, 'id, ModelTypes<X>, ModelSmall, ModelCaps>>,
-> {
+) -> ModelPreparation<'p, 'id, Station, ModelCaps, X, ModelSmall> {
     let frame = ClassFrame::new(TxFrame::Individual {
         frame,
         plan: RetryPlan::new(RetryStage {
@@ -175,7 +176,7 @@ fn prepare_subframe<'p, 'id, X: ModelContext>(
 }
 
 fn prepare_retry<'p, 'id, X: ModelContext>(
-    mpdu: ModelNumbered<'id, ModelSmall>,
+    mpdu: ModelSent<'id, ModelSmall>,
     rate: &AmpduRate<'p>,
 ) -> ModelPrepared<'p, 'id, Station, ModelCaps, X> {
     <ModelTypes<X> as TxBufferPool<'id, ModelSmall>>::prepare(TxSource::Retransmission {
@@ -213,7 +214,9 @@ async fn completion<'p, 'id: 'p>(
 
 /// A protected attempt, its retransmission from the numbered buffer, then
 /// a new MPDU in the renewed buffer.
-struct Numbering;
+struct Numbering {
+    protected: bool,
+}
 
 impl Work for Numbering {
     async fn work<'p, 'id: 'p>(
@@ -233,14 +236,15 @@ impl Work for Numbering {
             IndividualAddress::new(PEER).unwrap(),
             Ccmp128Key([7; 16]),
         );
-        submit(phase, tickets.remove(0), small.remove(0), Some(&key));
+        let key = self.protected.then_some(&key);
+        submit(phase, tickets.remove(0), small.remove(0), key);
         let (ticket, buffer) = completion(phase).await;
-        let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::numbered(buffer)
+        let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::sent(buffer)
             .expect("a protected attempt's buffer comes back numbered");
         let number = numbered.packet_number();
         let air = phase.held.air.clone();
         air.hold(WmmAccessCategory::BestEffort, true);
-        let TxFrame::Individual { plan, .. } = data_frame(phase, true) else {
+        let TxFrame::Individual { plan, .. } = data_frame(phase, self.protected) else {
             unreachable!()
         };
         submit_frame::<ModelSmall>(
@@ -250,11 +254,11 @@ impl Work for Numbering {
                 mpdu: numbered,
                 plan: RetransmissionPlan::Individual(plan),
             },
-            Some(&key),
+            key,
         );
         phase.close_gate(gate);
         let (ticket, buffer) = completion(phase).await;
-        let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::numbered(buffer)
+        let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::sent(buffer)
             .expect("withdrawal preserves an already numbered MPDU");
         assert_eq!(numbered.packet_number(), number);
         assert_ne!(numbered.buffer.memory[1] & 0x08, 0);
@@ -264,7 +268,7 @@ impl Work for Numbering {
         let _gate = phase.open_gate(closed);
         air.hold(WmmAccessCategory::BestEffort, false);
         // The same MPDU again: a retransmission keeps its number.
-        let TxFrame::Individual { plan, .. } = data_frame(phase, true) else {
+        let TxFrame::Individual { plan, .. } = data_frame(phase, self.protected) else {
             unreachable!()
         };
         submit_frame::<ModelSmall>(
@@ -274,15 +278,15 @@ impl Work for Numbering {
                 mpdu: numbered,
                 plan: RetransmissionPlan::Individual(plan),
             },
-            Some(&key),
+            key,
         );
         let (ticket, buffer) = completion(phase).await;
-        let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::numbered(buffer)
+        let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::sent(buffer)
             .expect("a retransmission's buffer comes back numbered");
         // Renewed, the memory holds a new MPDU, numbered anew.
         let (renewed, body) = <ModelTypes as TxBufferPool<'id, ModelSmall>>::renew(numbered);
         assert!(body.is_none());
-        submit(phase, ticket, renewed, Some(&key));
+        submit(phase, ticket, renewed, key);
         let _ = completion(phase).await;
         let _ = key;
     }
@@ -291,9 +295,26 @@ impl Work for Numbering {
 #[test]
 fn a_retransmitted_mpdu_keeps_its_packet_number_and_a_renewed_buffer_takes_a_new_one() {
     let (backend, air) = backend();
-    block_on(run_port(backend, Body(Numbering)));
+    block_on(run_port(backend, Body(Numbering { protected: true })));
     let numbers: Vec<_> = air.sent().iter().map(|frame| frame.packet_number).collect();
     assert_eq!(numbers, [Some(1), Some(1), Some(2)]);
+}
+
+#[test]
+fn an_open_sent_mpdu_retransmits_without_rebuilding_its_sn_or_payload() {
+    let (backend, air) = backend();
+    block_on(run_port(backend, Body(Numbering { protected: false })));
+    let frames = air.sent();
+    assert_eq!(frames.len(), 3);
+    assert_eq!(frames[0].packet_number, None);
+    assert_eq!(frames[1].packet_number, None);
+    let mut original = frames[0].frame.clone();
+    original[1] |= 0x08;
+    assert_eq!(frames[1].frame, original);
+    assert_eq!(
+        frames[0].frame, frames[2].frame,
+        "renewal starts a fresh MPDU"
+    );
 }
 
 /// Submit an attempt for every ticket, in every buffer of either class,
@@ -967,7 +988,7 @@ impl Work for AggregateRetransmission<'_> {
         self.report.set(report);
         assert!(bodies.is_empty(), "numbered MPDUs retain their own bodies");
         for (index, (buffer, pointer)) in buffers.iter().zip(&body_owners).enumerate() {
-            let ModelAnyBuffer::SmallNumbered(mpdu) = buffer else {
+            let ModelAnyBuffer::SmallSent(mpdu) = buffer else {
                 panic!("numbered subframe")
             };
             let body = mpdu.body().unwrap();
@@ -975,7 +996,7 @@ impl Work for AggregateRetransmission<'_> {
             assert_eq!(body.0, [index as u8; 4]);
         }
         // The second again, from its numbered buffer, beside a new one.
-        let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::numbered(buffers.remove(1))
+        let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::sent(buffers.remove(1))
             .map_err(|_| ())
             .expect("a protected subframe comes back numbered");
         let rate = phase.rate(PhyRate::Ht(ht)).unwrap();
@@ -991,7 +1012,7 @@ impl Work for AggregateRetransmission<'_> {
         station.submit_ampdu(attempt(ticket, aggregate)).unwrap();
         let (_, buffers, bodies, _) = aggregate_completion(phase).await;
         assert!(bodies.is_empty());
-        let ModelAnyBuffer::SmallNumbered(mpdu) = &buffers[0] else {
+        let ModelAnyBuffer::SmallSent(mpdu) = &buffers[0] else {
             panic!("numbered subframe")
         };
         assert_eq!(mpdu.body().unwrap().0.as_ptr(), body_owners[1]);

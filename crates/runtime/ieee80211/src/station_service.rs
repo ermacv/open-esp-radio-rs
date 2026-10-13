@@ -15,8 +15,8 @@
 //! data. A completion carries `TxContext`, which routes its ticket and
 //! resources to the original machine and link. Buffer classes are used
 //! only to recover their memory types; `StationTxBuffer` exhaustively
-//! represents both classes and both numbering states at this boundary.
-//! Numbered buffers are renewed after the terminal.
+//! represents both classes and both publication states at this boundary.
+//! Machines receive `ReturnedMpdu::Fresh` or `Sent` and decide when to renew.
 //! Cross-AC completion order has no bearing on ownership. Each machine
 //! returns stale-link resources without advancing its current protocol,
 //! and the service excludes those terminals from current-link rate control.
@@ -25,8 +25,9 @@
 //! `SubmitError::Refused` returns the original operation before admission.
 //! The application hears `ServiceOutput::TxRefused`; Station gets `Unsent`
 //! and Data gets `Refused`. Neither path fabricates a completion or updates
-//! rate statistics, and the service continues. A numbered return retains
-//! its external body; renewal explicitly releases that body at this boundary.
+//! rate statistics, and the service continues. A `Sent` return retains its
+//! external body until its machine retires the MPDU; service never renews
+//! a completion merely to route it.
 //! MSDUs come and go through
 //! single-producer single-consumer queues (`zerocopy_channel`); a received
 //! MSDU the network's full queue cannot take is dropped, as an Ethernet
@@ -44,10 +45,10 @@ use oer_ieee80211_arbiter::{
 };
 use oer_ieee80211_lower_mac::{
     AttemptKey, Ccmp128Key, ClassFrame, CoexPriority, GateClosed, GateOpen, Ieee80211Capabilities,
-    InterfacePhase, KeyTypes, LowerMacBackend, LowerMacEvent, LowerMacPhase, PhaseTypes,
-    PoolSource, PreparationError, PreparedTx, Protection, Removed, RemovedKey, RxBuffer,
-    RxMetadata, StationPhase, SubmitError, SupportedChannel, SupportedCoex, SupportedPower,
-    TxBufferClass, TxBufferPool, TxCompletion, TxFrame, TxPower, TxSource, VifRole,
+    InterfacePhase, KeyTypes, LowerMacBackend, LowerMacEvent, LowerMacPhase, PhaseTypes, PoolMpdu,
+    PoolSource, PreparationError, PreparedTx, Protection, Removed, RemovedKey, RetransmissionPlan,
+    ReturnedMpdu, RxBuffer, RxMetadata, StationPhase, SubmitError, SupportedChannel, SupportedCoex,
+    SupportedPower, TxBufferClass, TxBufferPool, TxCompletion, TxFrame, TxPower, TxSource, VifRole,
 };
 use oer_ieee80211_mac::qos::{WmmAccessCategory, WmmUserPriority};
 use oer_ieee80211_port::{Disabled, Enabled, Failed, Owner, PoisonedOwner, PortBackend};
@@ -113,34 +114,26 @@ pub trait StationPort<'id>: LowerMacBackend {
 pub enum StationTxBuffer<'id, B: StationPort<'id>> {
     /// Fresh station memory, including an unpublished return.
     Small(<B::Types as TxBufferPool<'id, B::Small>>::Buffer),
-    /// Station memory whose original MPDU has a packet number.
-    SmallNumbered(<B::Types as TxBufferPool<'id, B::Small>>::Numbered),
+    /// Station memory owning the published MPDU, including an unprotected one.
+    SmallSent(<B::Types as TxBufferPool<'id, B::Small>>::Sent),
     /// Fresh data memory, including an unpublished return.
     Large(<B::Types as TxBufferPool<'id, B::Large>>::Buffer),
-    /// Data memory whose original MPDU has a packet number.
-    LargeNumbered(<B::Types as TxBufferPool<'id, B::Large>>::Numbered),
+    /// Data memory owning the published MPDU, including an unprotected one.
+    LargeSent(<B::Types as TxBufferPool<'id, B::Large>>::Sent),
 }
 
 enum ReturnedMemory<'id, B: StationPort<'id>> {
-    Small(<B::Types as TxBufferPool<'id, B::Small>>::Buffer),
-    Large(<B::Types as TxBufferPool<'id, B::Large>>::Buffer),
+    Small(PoolMpdu<'id, B::Types, B::Small>),
+    Large(PoolMpdu<'id, B::Types, B::Large>),
 }
 
 impl<'id, B: StationPort<'id>> StationTxBuffer<'id, B> {
-    fn renew(self) -> ReturnedMemory<'id, B> {
+    fn into_returned(self) -> ReturnedMemory<'id, B> {
         match self {
-            Self::Small(buffer) => ReturnedMemory::Small(buffer),
-            Self::SmallNumbered(buffer) => {
-                let (buffer, body) = <B::Types as TxBufferPool<'id, B::Small>>::renew(buffer);
-                drop(body);
-                ReturnedMemory::Small(buffer)
-            }
-            Self::Large(buffer) => ReturnedMemory::Large(buffer),
-            Self::LargeNumbered(buffer) => {
-                let (buffer, body) = <B::Types as TxBufferPool<'id, B::Large>>::renew(buffer);
-                drop(body);
-                ReturnedMemory::Large(buffer)
-            }
+            Self::Small(buffer) => ReturnedMemory::Small(ReturnedMpdu::Fresh(buffer)),
+            Self::SmallSent(mpdu) => ReturnedMemory::Small(ReturnedMpdu::Sent(mpdu)),
+            Self::Large(buffer) => ReturnedMemory::Large(ReturnedMpdu::Fresh(buffer)),
+            Self::LargeSent(mpdu) => ReturnedMemory::Large(ReturnedMpdu::Sent(mpdu)),
         }
     }
 }
@@ -188,6 +181,13 @@ where
 {
     type Ticket = Slot<'id, Ty::TicketKind>;
     type SmallBuffer = <Ty as TxBufferPool<'id, S>>::Buffer;
+    type Sent = <Ty as TxBufferPool<'id, S>>::Sent;
+
+    fn renew(mpdu: Self::Sent) -> Self::SmallBuffer {
+        let (memory, body) = <Ty as TxBufferPool<'id, S>>::renew(mpdu);
+        drop(body);
+        memory
+    }
     type PairwiseSlot = Slot<'id, <Ty::StationKeys as KeyTypes<'id>>::PairwiseKind>;
     type GroupSlot = Slot<'id, <Ty::StationKeys as KeyTypes<'id>>::GroupKind>;
     type PairwiseKey = <Ty::StationKeys as KeyTypes<'id>>::PairwiseKey;
@@ -206,6 +206,13 @@ where
 {
     type Ticket = Slot<'id, Ty::TicketKind>;
     type Buffer = <Ty as TxBufferPool<'id, L>>::Buffer;
+    type Sent = <Ty as TxBufferPool<'id, L>>::Sent;
+
+    fn renew(mpdu: Self::Sent) -> Self::Buffer {
+        let (memory, body) = <Ty as TxBufferPool<'id, L>>::renew(mpdu);
+        drop(body);
+        memory
+    }
 }
 
 /// The arbiter's gate tokens on a port of the install `'id`.
@@ -731,27 +738,44 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                         }
                         _ => None,
                     };
-                    let frame = self
+                    let plan = self
                         .rates
                         .plan(FrameRates::Data, |rate| phase.rate(rate))
-                        .ok_or(PreparationError::NoRate)
-                        .and_then(|plan| {
-                            ClassFrame::<B::Large, B::Caps>::new(TxFrame::Individual {
+                        .ok_or(PreparationError::NoRate);
+                    let prepared = match (transmit.buffer, plan) {
+                        (ReturnedMpdu::Fresh(buffer), Ok(plan)) => {
+                            match ClassFrame::<B::Large, B::Caps>::new(TxFrame::Individual {
                                 frame: transmit.frame,
                                 plan,
+                            }) {
+                                Ok(frame) => prepare_source::<B, B::Large>(TxSource::Fresh {
+                                    buffer,
+                                    frame,
+                                    body: None,
+                                }),
+                                Err(_) => Err((
+                                    PreparationError::BufferTooSmall,
+                                    <B::Types as TxBufferPool<'id, B::Large>>::erase(buffer),
+                                )),
+                            }
+                        }
+                        (ReturnedMpdu::Sent(mpdu), Ok(plan)) => {
+                            prepare_source::<B, B::Large>(TxSource::Retransmission {
+                                mpdu,
+                                plan: RetransmissionPlan::Individual(plan),
                             })
-                            .map_err(|_| PreparationError::BufferTooSmall)
-                        });
-                    let prepared = match frame {
-                        Ok(frame) => prepare_source::<B, B::Large>(TxSource::Fresh {
-                            buffer: transmit.buffer,
-                            frame,
-                            body: None,
-                        }),
-                        Err(reason) => Err((
-                            reason,
-                            <B::Types as TxBufferPool<'id, B::Large>>::erase(transmit.buffer),
-                        )),
+                        }
+                        (buffer, Err(reason)) => {
+                            let buffer = match buffer {
+                                ReturnedMpdu::Fresh(buffer) => {
+                                    <B::Types as TxBufferPool<'id, B::Large>>::erase(buffer)
+                                }
+                                ReturnedMpdu::Sent(mpdu) => {
+                                    <B::Types as TxBufferPool<'id, B::Large>>::erase_sent(mpdu)
+                                }
+                            };
+                            Err((reason, buffer))
+                        }
                     };
                     match prepared {
                         Err((reason, buffer)) => Ok(Follow::Refused {
@@ -962,7 +986,9 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
         end: ReturnedTx,
     ) {
         let mut buffers = buffers.into_iter();
-        let first = buffers.next().map(|buffer| B::tx_buffer(buffer).renew());
+        let first = buffers
+            .next()
+            .map(|buffer| B::tx_buffer(buffer).into_returned());
         match context {
             TxContext::Station(context) => {
                 let buffer = first.and_then(|memory| match memory {
@@ -1060,7 +1086,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
         // memory pools without being mistaken for another operation.
         for buffer in buffers {
             self.counters.stray_terminals += 1;
-            self.return_memory(now, B::tx_buffer(buffer).renew());
+            self.return_memory(now, B::tx_buffer(buffer).into_returned());
         }
     }
 
@@ -1107,13 +1133,22 @@ enum Follow<'id, B: StationPort<'id>> {
     Disconnected,
 }
 
+type StationPreparation<'p, 'id, B> = Result<
+    <<B as StationPort<'id>>::Types as PhaseTypes<'id>>::Prepared<
+        'p,
+        oer_ieee80211_lower_mac::Station,
+        <B as LowerMacBackend>::Caps,
+    >,
+    (
+        PreparationError,
+        <<B as StationPort<'id>>::Types as PhaseTypes<'id>>::AnyTxBuffer,
+    ),
+>;
+
 /// Prepare within the class pool; a refusal retains the original owners.
 fn prepare_source<'p, 'id: 'p, B: StationPort<'id>, C: TxBufferClass>(
     source: PoolSource<'p, 'id, B::Types, C, B::Caps>,
-) -> Result<
-    <B::Types as PhaseTypes<'id>>::Prepared<'p, oer_ieee80211_lower_mac::Station, B::Caps>,
-    (PreparationError, <B::Types as PhaseTypes<'id>>::AnyTxBuffer),
->
+) -> StationPreparation<'p, 'id, B>
 where
     B::Types: TxBufferPool<'id, C>,
 {
@@ -1124,7 +1159,7 @@ where
                 <B::Types as TxBufferPool<'id, C>>::erase(buffer)
             }
             TxSource::Retransmission { mpdu, .. } => {
-                <B::Types as TxBufferPool<'id, C>>::erase_numbered(mpdu)
+                <B::Types as TxBufferPool<'id, C>>::erase_sent(mpdu)
             }
         };
         (refused.reason, buffer)

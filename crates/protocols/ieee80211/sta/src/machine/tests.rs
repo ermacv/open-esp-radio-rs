@@ -78,6 +78,10 @@ struct Tokens;
 impl StaTokens for Tokens {
     type Ticket = Ticket;
     type SmallBuffer = Buffer;
+    type Sent = Buffer;
+    fn renew(mpdu: Self::Sent) -> Buffer {
+        mpdu
+    }
     type PairwiseSlot = Slot;
     type GroupSlot = Slot;
     type PairwiseKey = Key;
@@ -250,13 +254,15 @@ impl World {
                 nonce,
                 he_packet_padding: |_| oer_ieee80211_upper_mac::HePacketPadding::None,
             },
-            LinkEpochSource::for_test(0),
-            [Ticket(0), Ticket(1)],
-            [Buffer([0; 512]), Buffer([0; 512])],
-            place,
-            absence,
-            Slot(0),
-            group_slots,
+            StationResources {
+                epochs: LinkEpochSource::for_test(0),
+                tickets: [Ticket(0), Ticket(1)],
+                buffers: [Buffer([0; 512]), Buffer([0; 512])],
+                place,
+                absence_place: absence,
+                pairwise: Slot(0),
+                groups: group_slots,
+            },
         );
         Self {
             station,
@@ -400,7 +406,7 @@ impl World {
                         reason: oer_ieee80211_lower_mac::PreparationError::NoRate,
                         context,
                         ticket,
-                        buffer,
+                        buffer: ReturnedMpdu::Fresh(buffer),
                     },
                 );
                 continue;
@@ -410,7 +416,7 @@ impl World {
                 StaInput::TxDone {
                     context,
                     ticket,
-                    buffer,
+                    buffer: ReturnedMpdu::Sent(buffer),
                     completion: TxCompletion {
                         status: if self.outcomes.pop_front().unwrap_or(true) {
                             TxStatus::Success
@@ -841,7 +847,7 @@ fn a_terminal_of_the_previous_connection_only_returns_its_resources() {
         StaInput::TxDone {
             context: old.context,
             ticket: old.ticket,
-            buffer: old.buffer,
+            buffer: ReturnedMpdu::Sent(old.buffer),
             completion: TxCompletion {
                 status: TxStatus::Success,
                 ack_rssi_dbm: None,
@@ -865,7 +871,7 @@ fn a_terminal_of_the_previous_connection_only_returns_its_resources() {
             reason: oer_ieee80211_lower_mac::PreparationError::NoRate,
             context: current.context,
             ticket: current.ticket,
-            buffer: current.buffer,
+            buffer: ReturnedMpdu::Fresh(current.buffer),
         },
     );
     let State::Connected(connected) = &world.station.state else {
@@ -908,7 +914,7 @@ fn exhausted_epochs_refuse_connect_while_an_old_operation_still_owns_tokens() {
         StaInput::TxDone {
             context: old.context,
             ticket: old.ticket,
-            buffer: old.buffer,
+            buffer: ReturnedMpdu::Sent(old.buffer),
             completion: TxCompletion {
                 status: TxStatus::Success,
                 ack_rssi_dbm: None,
@@ -1370,6 +1376,10 @@ fn the_handshakes_eapol_goes_unprotected_and_group_message_2_under_the_pairwise_
 impl crate::data::StaDataTokens for Tokens {
     type Ticket = Ticket;
     type Buffer = Buffer;
+    type Sent = Buffer;
+    fn renew(mpdu: Self::Sent) -> Buffer {
+        mpdu
+    }
 }
 
 /// The TID and sequence number of a QoS Data frame.
@@ -1409,7 +1419,10 @@ fn eapol_and_data_on_tid_7_share_one_counter_and_tid_0_runs_on_across_a_rekey() 
         let Some(DataAction::Transmit(transmit)) = data.poll_action(at(60), |_| true) else {
             panic!("an MPDU is owed");
         };
-        let sent = tid_and_sequence(&transmit.buffer.0);
+        let frame = match &transmit.buffer {
+            ReturnedMpdu::Fresh(buffer) | ReturnedMpdu::Sent(buffer) => &buffer.0,
+        };
+        let sent = tid_and_sequence(frame);
         data.input::<Tokens>(
             at(60),
             DataInput::TxDone {

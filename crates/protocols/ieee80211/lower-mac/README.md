@@ -45,7 +45,7 @@ back; its operations are synchronous and never wait:
   The model keeps checked MAC/CCMP and tail-body ranges beside the exact
   allocation through publication. Its prepared type, rather than a generic
   `TxBufferPool<C>` projection inside the backend, exposes that checked data.
-  A retransmission takes the returned numbered MPDU and a phase-bound
+  A retransmission takes the returned `Sent` MPDU and a phase-bound
   `RetransmissionPlan`: its header, payload, body and key-install identity
   remain inside the MPDU. There are no independent header/body arguments to
   substitute. SN and PN stay; only Retry changes in the MPDU. Rates, retry
@@ -54,11 +54,12 @@ back; its operations are synchronous and never wait:
   An aggregate builder retains its phase, install and interface role until
   `submit_ampdu`; its non-generic `push` takes a prepared fresh or retry MPDU.
   Push failures return that proof intact, and submission refusal
-  returns the entire aggregate, context and ticket. Numbered subframes own
+  returns the entire aggregate, context and ticket. `Sent` subframes own
   their bodies on return; fresh subframes return indexed external bodies.
   `PhaseAggregate::into_parts` releases the builder's resources directly,
   so refusing an aggregate never forces resubmission to recover its memory.
-  `renew` returns both memory and the retained body explicitly.
+  `Sent` covers open MPDUs too. `renew` returns both memory and the retained
+  body explicitly; the owning machine chooses when to retire that MPDU.
 - **Retry plans.** An individual frame carries its `RetryPlan`, a sequence
   of rates with their transmissions and protection, as mac80211's rate
   table. The backend retries the head of its queue by the plan before the

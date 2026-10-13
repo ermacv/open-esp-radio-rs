@@ -55,11 +55,27 @@ impl TxBufferMemory for Buffer {
     }
 }
 
+fn memory(buffer: &ReturnedMpdu<Buffer, Buffer>) -> &[u8] {
+    match buffer {
+        ReturnedMpdu::Fresh(buffer) | ReturnedMpdu::Sent(buffer) => &buffer.0,
+    }
+}
+fn fresh_memory(buffer: &mut ReturnedMpdu<Buffer, Buffer>) -> &mut [u8] {
+    let ReturnedMpdu::Fresh(buffer) = buffer else {
+        panic!("only fresh memory is mutable")
+    };
+    &mut buffer.0
+}
+
 struct Data;
 
 impl StaDataTokens for Data {
     type Ticket = u8;
     type Buffer = Buffer;
+    type Sent = Buffer;
+    fn renew(mpdu: Self::Sent) -> Buffer {
+        mpdu
+    }
 }
 
 struct Station;
@@ -67,6 +83,10 @@ struct Station;
 impl StaTokens for Station {
     type Ticket = u8;
     type SmallBuffer = Buffer;
+    type Sent = Buffer;
+    fn renew(mpdu: Self::Sent) -> Buffer {
+        mpdu
+    }
     type PairwiseSlot = ();
     type GroupSlot = ();
     type PairwiseKey = ();
@@ -157,7 +177,7 @@ fn interleaved_returns_keep_the_original_tid_order_and_admission_count() {
     let video = operations.remove(1);
     operations.insert(0, video);
     for mut operation in operations {
-        operation.buffer.0[..26].fill(0);
+        fresh_memory(&mut operation.buffer)[..26].fill(0);
         data.input::<Station>(
             NOW,
             DataInput::TxDone {
@@ -214,9 +234,9 @@ fn repeated_unpublished_returns_keep_the_checked_frame_and_payload() {
     .unwrap();
     let mut operation = transmit(&mut data);
     let len = operation.frame.len().get();
-    let payload = operation.buffer.0[34..len].to_vec();
+    let payload = memory(&operation.buffer)[34..len].to_vec();
     for _ in 0..3 {
-        operation.buffer.0[..26].fill(0);
+        fresh_memory(&mut operation.buffer)[..26].fill(0);
         data.input::<Station>(
             NOW,
             DataInput::TxDone {
@@ -232,7 +252,7 @@ fn repeated_unpublished_returns_keep_the_checked_frame_and_payload() {
         let mut header = [0; 26];
         operation.frame.header().header().encode(&mut header, false);
         assert_eq!(tid_and_sequence(&header), (6, 0));
-        assert_eq!(&operation.buffer.0[34..len], payload.as_slice());
+        assert_eq!(&memory(&operation.buffer)[34..len], payload.as_slice());
     }
     data.input::<Station>(
         NOW,
@@ -413,7 +433,7 @@ fn a_protected_qos_msdu_leaves_room_for_the_ccmp_header_and_contends_by_its_prio
     .unwrap();
     let sent = transmit(&mut data);
     assert!(data.poll_action(NOW, |_| true).is_none());
-    let frame = &sent.buffer.0;
+    let frame = memory(&sent.buffer);
     // QoS Data, To DS, Protected.
     assert_eq!(u16::from_le_bytes([frame[0], frame[1]]), 0x4188);
     assert_eq!(&frame[4..10], &BSSID);
@@ -440,7 +460,7 @@ fn an_open_non_qos_msdu_takes_the_stations_sequence_number_and_no_ccmp_room() {
     )
     .unwrap();
     let sent = transmit(&mut data);
-    let frame = &sent.buffer.0;
+    let frame = memory(&sent.buffer);
     assert_eq!(u16::from_le_bytes([frame[0], frame[1]]), 0x0108);
     assert_eq!(u16::from_le_bytes([frame[22], frame[23]]) >> 4, 42);
     assert_eq!(counter.peek(), SequenceNumber::new(43).unwrap());
@@ -478,7 +498,7 @@ fn an_msdu_too_long_for_its_buffer_takes_no_sequence_number() {
     .unwrap();
     let sent = transmit(&mut data);
     assert_eq!(
-        u16::from_le_bytes([sent.buffer.0[22], sent.buffer.0[23]]) >> 4,
+        u16::from_le_bytes([memory(&sent.buffer)[22], memory(&sent.buffer)[23]]) >> 4,
         42
     );
 }
@@ -681,7 +701,7 @@ fn an_attempt_aborted_before_the_air_goes_again_first_with_its_sequence_number()
     )
     .unwrap();
     let first = transmit(&mut data);
-    let sent = tid_and_sequence(&first.buffer.0);
+    let sent = tid_and_sequence(memory(&first.buffer));
     data.input(
         NOW,
         DataInput::Msdu {
@@ -704,9 +724,9 @@ fn an_attempt_aborted_before_the_air_goes_again_first_with_its_sequence_number()
     // It goes again at the head of its TID's queue, before the newer MSDU,
     // with the same sequence number, in its buffer.
     let again = transmit(&mut data);
-    assert_eq!(tid_and_sequence(&again.buffer.0), sent);
+    assert_eq!(tid_and_sequence(memory(&again.buffer)), sent);
     let newer = transmit(&mut data);
-    assert_eq!(tid_and_sequence(&newer.buffer.0), (6, sent.1 + 1));
+    assert_eq!(tid_and_sequence(memory(&newer.buffer)), (6, sent.1 + 1));
     assert!(data.poll_action(NOW, |_| true).is_none());
     // One that made a transmission ends: its tokens come back.
     data.input::<Station>(
@@ -831,8 +851,8 @@ fn a_category_the_service_does_not_admit_waits_and_the_others_go_in_their_order(
     assert_eq!(data.at_port(WmmAccessCategory::Voice), 0);
     // Voice admitted: its MPDUs go in their order.
     let voice = transmit(&mut data);
-    assert_eq!(tid_and_sequence(&voice.buffer.0).0, 6);
+    assert_eq!(tid_and_sequence(memory(&voice.buffer)).0, 6);
     let voice = transmit(&mut data);
-    assert_eq!(tid_and_sequence(&voice.buffer.0).0, 7);
+    assert_eq!(tid_and_sequence(memory(&voice.buffer)).0, 7);
     assert_eq!(data.at_port(WmmAccessCategory::Voice), 2);
 }

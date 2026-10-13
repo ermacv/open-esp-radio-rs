@@ -55,13 +55,25 @@ fn returned(event: LowerMacEvent<'_, ModelTypes<Contexts>>, seen: &RefCell<Vec<(
         assert_eq!(ticket.index(), context.ticket);
         assert_eq!(buffers.len(), 1);
         let buffer = buffers.remove(0);
-        let ModelAnyBuffer::Small(buffer) = buffer else {
-            panic!("an unprotected small MPDU")
+        let (buffer, body) = match buffer {
+            ModelAnyBuffer::Small(buffer) => {
+                assert_eq!(completion.transmissions, 0);
+                assert_eq!(bodies.len(), 1);
+                let (index, body) = bodies.remove(0);
+                assert_eq!(index, 0);
+                (buffer, body)
+            }
+            ModelAnyBuffer::SmallSent(mpdu) => {
+                assert_ne!(completion.transmissions, 0);
+                assert!(bodies.is_empty());
+                assert_eq!(mpdu.packet_number(), None, "an open MPDU is also Sent");
+                let (buffer, body) =
+                    <ModelTypes<Contexts> as TxBufferPool<ModelSmall>>::renew(mpdu);
+                (buffer, body.unwrap())
+            }
+            _ => panic!("a small MPDU"),
         };
         assert_eq!(buffer.slot.index(), context.buffer);
-        assert_eq!(bodies.len(), 1);
-        let (index, body) = bodies.remove(0);
-        assert_eq!(index, 0);
         assert_eq!(
             body.0.as_ptr(),
             context.body,
@@ -181,8 +193,7 @@ fn operations(end: End) -> Vec<(usize, u8)> {
         },
     ));
     assert_eq!(dropped.get(), 3, "every owned context ends exactly once");
-    let result = seen.borrow().clone();
-    result
+    seen.borrow().clone()
 }
 
 #[test]
@@ -329,7 +340,7 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
             for (buffer, index) in buffers.iter().zip(&context.buffers) {
                 let slot = match buffer {
                     ModelAnyBuffer::Small(buffer) if self.withdraw => buffer.slot.index(),
-                    ModelAnyBuffer::SmallNumbered(buffer) if !self.withdraw => {
+                    ModelAnyBuffer::SmallSent(buffer) if !self.withdraw => {
                         buffer.buffer.slot.index()
                     }
                     _ => panic!("only published subframes are numbered"),
@@ -341,7 +352,7 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
                 let body = if self.withdraw {
                     &bodies.iter().find(|(at, _)| at == index).unwrap().1
                 } else {
-                    let ModelAnyBuffer::SmallNumbered(mpdu) = buffer else {
+                    let ModelAnyBuffer::SmallSent(mpdu) = buffer else {
                         unreachable!()
                     };
                     mpdu.body().unwrap()

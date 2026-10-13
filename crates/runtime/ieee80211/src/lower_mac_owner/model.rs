@@ -27,7 +27,7 @@
 //!
 //! Each concrete class pool constructs a private checked layout against
 //! the actual allocation before writing headers or copying an external body. It proves disjoint MAC/CCMP
-//! headers and tail body. Numbered returns own that layout, body and the
+//! headers and tail body. Sent returns own that layout, body and the
 //! identity of the original key installation. Retry supplies only a new
 //! attempt's rates, never an independently reconstructed MPDU or body.
 //! Key identity is an allocation identity in this host model; a reused slot
@@ -247,40 +247,45 @@ impl<C> core::fmt::Debug for ModelBuffer<'_, C> {
     }
 }
 
-/// A returned numbered MPDU. Its checked layout, installed-key identity,
+/// A returned published MPDU (open or protected). Its checked layout, installed-key identity,
 /// and external body remain inseparable from the immutable buffer.
 #[derive(Debug)]
-pub struct ModelNumbered<'id, C> {
+pub struct ModelSent<'id, C> {
     buffer: ModelBuffer<'id, C>,
     layout: MpduLayout,
-    key: KeyIdentity,
+    key: Option<KeyIdentity>,
     body: Option<ModelBody>,
-    packet_number: u64,
+    packet_number: Option<u64>,
 }
 
-impl<'id, C> ModelNumbered<'id, C> {
-    fn number(
+impl<'id, C> ModelSent<'id, C> {
+    fn publish(
         mut buffer: ModelBuffer<'id, C>,
         layout: MpduLayout,
         body: Option<ModelBody>,
-        key: &KeyIdentity,
+        key: Option<&KeyIdentity>,
     ) -> Result<Self, ModelFault> {
-        let packet_number = key.allocate()?;
-        // Both ends belong to the layout checked against this allocation
-        // and body before admission; numbering performs no new arithmetic.
-        buffer.memory[layout.header_len..layout.prefix_len]
-            .copy_from_slice(&ccmp_header(packet_number, key.0.key_id));
+        let packet_number = match key {
+            Some(key) => {
+                let pn = key.allocate()?;
+                // The range was checked against this allocation before admission.
+                buffer.memory[layout.header_len..layout.prefix_len]
+                    .copy_from_slice(&ccmp_header(pn, key.0.key_id));
+                Some(pn)
+            }
+            None => None,
+        };
         Ok(Self {
             buffer,
             layout,
             body,
-            key: key.clone(),
+            key: key.cloned(),
             packet_number,
         })
     }
 
-    /// The original PN; a caller supplies no unchecked header offset.
-    pub const fn packet_number(&self) -> u64 {
+    /// The original PN for a protected MPDU, otherwise `None`; a caller supplies no unchecked header offset.
+    pub const fn packet_number(&self) -> Option<u64> {
         self.packet_number
     }
     /// The retained external body, available read-only until renewal.
@@ -289,17 +294,17 @@ impl<'id, C> ModelNumbered<'id, C> {
     }
 }
 
-/// A transmit buffer of either class, fresh or numbered.
+/// A transmit buffer of either class, fresh or published.
 #[derive(Debug)]
 pub enum ModelAnyBuffer<'id> {
     /// Fresh small memory.
     Small(ModelBuffer<'id, ModelSmall>),
     /// Fresh large memory.
     Large(ModelBuffer<'id, ModelLarge>),
-    /// The original small numbered MPDU, including its body.
-    SmallNumbered(ModelNumbered<'id, ModelSmall>),
-    /// The original large numbered MPDU, including its body.
-    LargeNumbered(ModelNumbered<'id, ModelLarge>),
+    /// The original small published MPDU, including its body.
+    SmallSent(ModelSent<'id, ModelSmall>),
+    /// The original large published MPDU, including its body.
+    LargeSent(ModelSent<'id, ModelLarge>),
 }
 
 impl ModelAnyBuffer<'_> {
@@ -307,29 +312,29 @@ impl ModelAnyBuffer<'_> {
         match self {
             Self::Small(buffer) => &buffer.memory,
             Self::Large(buffer) => &buffer.memory,
-            Self::SmallNumbered(mpdu) => &mpdu.buffer.memory,
-            Self::LargeNumbered(mpdu) => &mpdu.buffer.memory,
+            Self::SmallSent(mpdu) => &mpdu.buffer.memory,
+            Self::LargeSent(mpdu) => &mpdu.buffer.memory,
         }
     }
     fn memory_mut(&mut self) -> &mut [u8] {
         match self {
             Self::Small(buffer) => &mut buffer.memory,
             Self::Large(buffer) => &mut buffer.memory,
-            Self::SmallNumbered(mpdu) => &mut mpdu.buffer.memory,
-            Self::LargeNumbered(mpdu) => &mut mpdu.buffer.memory,
+            Self::SmallSent(mpdu) => &mut mpdu.buffer.memory,
+            Self::LargeSent(mpdu) => &mut mpdu.buffer.memory,
         }
     }
-    fn numbered_layout(&self) -> Option<(&MpduLayout, &KeyIdentity)> {
+    fn sent_layout(&self) -> Option<(&MpduLayout, Option<&KeyIdentity>)> {
         match self {
-            Self::SmallNumbered(mpdu) => Some((&mpdu.layout, &mpdu.key)),
-            Self::LargeNumbered(mpdu) => Some((&mpdu.layout, &mpdu.key)),
+            Self::SmallSent(mpdu) => Some((&mpdu.layout, mpdu.key.as_ref())),
+            Self::LargeSent(mpdu) => Some((&mpdu.layout, mpdu.key.as_ref())),
             Self::Small(_) | Self::Large(_) => None,
         }
     }
     fn packet_number(&self) -> Option<u64> {
         match self {
-            Self::SmallNumbered(mpdu) => Some(mpdu.packet_number),
-            Self::LargeNumbered(mpdu) => Some(mpdu.packet_number),
+            Self::SmallSent(mpdu) => mpdu.packet_number,
+            Self::LargeSent(mpdu) => mpdu.packet_number,
             Self::Small(_) | Self::Large(_) => None,
         }
     }
@@ -441,12 +446,12 @@ impl MpduLayout {
 struct ModelMpdu<'id> {
     buffer: ModelAnyBuffer<'id>,
     layout: MpduLayout,
-    // Present for fresh MPDUs; numbered MPDUs own it within their buffer.
+    // Present for fresh MPDUs; `Sent` MPDUs own it within their buffer.
     body: Option<ModelBody>,
 }
 
 impl<'id> ModelMpdu<'id> {
-    fn from_numbered(mut buffer: ModelAnyBuffer<'id>, layout: MpduLayout) -> Self {
+    fn from_sent(mut buffer: ModelAnyBuffer<'id>, layout: MpduLayout) -> Self {
         // The closed layout contains at least the checked MAC header.
         buffer.memory_mut()[1] |= 0x08;
         Self {
@@ -457,17 +462,14 @@ impl<'id> ModelMpdu<'id> {
     }
     fn check_key(&self, key: Option<&KeyIdentity>) -> Result<(), PreparationError> {
         self.layout.check_key(key)?;
-        if let Some((_, original)) = self.buffer.numbered_layout()
-            && Some(original) != key
+        if let Some((_, original)) = self.buffer.sent_layout()
+            && original != key
         {
             return Err(PreparationError::RetransmissionKey);
         }
         Ok(())
     }
-    fn number(self, key: Option<&KeyIdentity>) -> Result<Self, ModelFault> {
-        let Some(key) = key else {
-            return Ok(self);
-        };
+    fn publish(self, key: Option<&KeyIdentity>) -> Result<Self, ModelFault> {
         let Self {
             buffer,
             layout,
@@ -475,13 +477,13 @@ impl<'id> ModelMpdu<'id> {
         } = self;
         let buffer = match buffer {
             ModelAnyBuffer::Small(buffer) => {
-                ModelAnyBuffer::SmallNumbered(ModelNumbered::number(buffer, layout, body, key)?)
+                ModelAnyBuffer::SmallSent(ModelSent::publish(buffer, layout, body, key)?)
             }
             ModelAnyBuffer::Large(buffer) => {
-                ModelAnyBuffer::LargeNumbered(ModelNumbered::number(buffer, layout, body, key)?)
+                ModelAnyBuffer::LargeSent(ModelSent::publish(buffer, layout, body, key)?)
             }
-            ModelAnyBuffer::SmallNumbered(mpdu) => ModelAnyBuffer::SmallNumbered(mpdu),
-            ModelAnyBuffer::LargeNumbered(mpdu) => ModelAnyBuffer::LargeNumbered(mpdu),
+            ModelAnyBuffer::SmallSent(mpdu) => ModelAnyBuffer::SmallSent(mpdu),
+            ModelAnyBuffer::LargeSent(mpdu) => ModelAnyBuffer::LargeSent(mpdu),
         };
         Ok(Self {
             buffer,
@@ -615,7 +617,7 @@ impl<'id, R> KeyTypes<'id> for ModelKeys<'id, R> {
 
 impl<'id, X: ModelContext> TxBufferPool<'id, ModelSmall> for ModelTypes<X> {
     type Buffer = ModelBuffer<'id, ModelSmall>;
-    type Numbered = ModelNumbered<'id, ModelSmall>;
+    type Sent = ModelSent<'id, ModelSmall>;
 
     fn prepare<'p, R, K: Ieee80211Capabilities>(
         source: PoolSource<'p, 'id, Self, ModelSmall, K>,
@@ -630,8 +632,8 @@ impl<'id, X: ModelContext> TxBufferPool<'id, ModelSmall> for ModelTypes<X> {
         ModelAnyBuffer::Small(buffer)
     }
 
-    fn erase_numbered(buffer: Self::Numbered) -> ModelAnyBuffer<'id> {
-        ModelAnyBuffer::SmallNumbered(buffer)
+    fn erase_sent(buffer: Self::Sent) -> ModelAnyBuffer<'id> {
+        ModelAnyBuffer::SmallSent(buffer)
     }
 
     fn class(buffer: ModelAnyBuffer<'id>) -> Result<Self::Buffer, ModelAnyBuffer<'id>> {
@@ -641,21 +643,21 @@ impl<'id, X: ModelContext> TxBufferPool<'id, ModelSmall> for ModelTypes<X> {
         }
     }
 
-    fn numbered(buffer: ModelAnyBuffer<'id>) -> Result<Self::Numbered, ModelAnyBuffer<'id>> {
+    fn sent(buffer: ModelAnyBuffer<'id>) -> Result<Self::Sent, ModelAnyBuffer<'id>> {
         match buffer {
-            ModelAnyBuffer::SmallNumbered(buffer) => Ok(buffer),
+            ModelAnyBuffer::SmallSent(buffer) => Ok(buffer),
             buffer => Err(buffer),
         }
     }
 
-    fn renew(mpdu: Self::Numbered) -> (Self::Buffer, Option<ModelBody>) {
+    fn renew(mpdu: Self::Sent) -> (Self::Buffer, Option<ModelBody>) {
         (mpdu.buffer, mpdu.body)
     }
 }
 
 impl<'id, X: ModelContext> TxBufferPool<'id, ModelLarge> for ModelTypes<X> {
     type Buffer = ModelBuffer<'id, ModelLarge>;
-    type Numbered = ModelNumbered<'id, ModelLarge>;
+    type Sent = ModelSent<'id, ModelLarge>;
 
     fn prepare<'p, R, K: Ieee80211Capabilities>(
         source: PoolSource<'p, 'id, Self, ModelLarge, K>,
@@ -670,8 +672,8 @@ impl<'id, X: ModelContext> TxBufferPool<'id, ModelLarge> for ModelTypes<X> {
         ModelAnyBuffer::Large(buffer)
     }
 
-    fn erase_numbered(buffer: Self::Numbered) -> ModelAnyBuffer<'id> {
-        ModelAnyBuffer::LargeNumbered(buffer)
+    fn erase_sent(buffer: Self::Sent) -> ModelAnyBuffer<'id> {
+        ModelAnyBuffer::LargeSent(buffer)
     }
 
     fn class(buffer: ModelAnyBuffer<'id>) -> Result<Self::Buffer, ModelAnyBuffer<'id>> {
@@ -681,14 +683,14 @@ impl<'id, X: ModelContext> TxBufferPool<'id, ModelLarge> for ModelTypes<X> {
         }
     }
 
-    fn numbered(buffer: ModelAnyBuffer<'id>) -> Result<Self::Numbered, ModelAnyBuffer<'id>> {
+    fn sent(buffer: ModelAnyBuffer<'id>) -> Result<Self::Sent, ModelAnyBuffer<'id>> {
         match buffer {
-            ModelAnyBuffer::LargeNumbered(buffer) => Ok(buffer),
+            ModelAnyBuffer::LargeSent(buffer) => Ok(buffer),
             buffer => Err(buffer),
         }
     }
 
-    fn renew(mpdu: Self::Numbered) -> (Self::Buffer, Option<ModelBody>) {
+    fn renew(mpdu: Self::Sent) -> (Self::Buffer, Option<ModelBody>) {
         (mpdu.buffer, mpdu.body)
     }
 }
@@ -1457,7 +1459,7 @@ fn publish_single<'id, X: ModelContext>(
     keys: &[KeyIdentity],
     mut prepared: Prepared<'id, X>,
 ) {
-    prepared.mpdu = match prepared.mpdu.number(prepared.key.as_ref()) {
+    prepared.mpdu = match prepared.mpdu.publish(prepared.key.as_ref()) {
         Ok(mpdu) => mpdu,
         Err(_) => {
             held.poison();
@@ -1523,7 +1525,7 @@ fn publish_aggregate<'id, X: ModelContext>(
     let mut start = None;
     let mut bitmap = 0_u64;
     for (index, subframe) in subframes.into_iter().enumerate() {
-        let mpdu = match subframe.mpdu.number(key.as_ref()) {
+        let mpdu = match subframe.mpdu.publish(key.as_ref()) {
             Ok(mpdu) => mpdu,
             Err(_) => {
                 held.poison();
@@ -1697,7 +1699,7 @@ impl<'p, 'id: 'p, C: Ieee80211Capabilities, X: ModelContext> LowerMacPhase<'p, '
 pub struct ModelInterface<'p, 'v, 'id, R, C = ModelCaps, X: ModelContext = ()> {
     held: &'v ModelHeld<'id, X>,
     address: IndividualAddress,
-    role: PhantomData<fn(&'p ()) -> (&'p (), R, C)>,
+    role: PhaseProof<'p, (R, C)>,
 }
 
 /// A key the model installed.
@@ -1844,12 +1846,24 @@ fn retry_stages(
     }
 }
 
+type PhaseProof<'p, T> = PhantomData<fn(&'p ()) -> (&'p (), T)>;
+type TypeProof<T> = PhantomData<fn() -> T>;
+type ModelSource<'p, 'id, C, K> = TxSource<
+    'p,
+    ModelBuffer<'id, C>,
+    ModelSent<'id, C>,
+    oer_ieee80211_lower_mac::ClassFrame<'p, C, K>,
+    ModelBody,
+>;
+type ModelPreparation<'p, 'id, R, K, X, C> =
+    Result<ModelPrepared<'p, 'id, R, K, X>, PreparationRefused<ModelSource<'p, 'id, C, K>>>;
+
 /// The pool's checked MPDU, independent of the input class after preparation.
 /// Its private fields retain phase, install, capabilities and role until submit.
 pub struct ModelPrepared<'p, 'id, R, K, X: ModelContext = ()> {
     mpdu: ModelMpdu<'id>,
     plan: Vec<Stage>,
-    proof: PhantomData<fn(&'p ()) -> (&'p (), R, K, X)>,
+    proof: PhaseProof<'p, (R, K, X)>,
 }
 
 impl<'id, R, K, X: ModelContext> PreparedTx<'id> for ModelPrepared<'_, 'id, R, K, X> {
@@ -1864,7 +1878,7 @@ trait ModelClass: TxBufferClass {
     fn erase<'id>(buffer: ModelBuffer<'id, Self>) -> ModelAnyBuffer<'id>
     where
         Self: Sized;
-    fn erase_numbered<'id>(mpdu: ModelNumbered<'id, Self>) -> ModelAnyBuffer<'id>
+    fn erase_sent<'id>(mpdu: ModelSent<'id, Self>) -> ModelAnyBuffer<'id>
     where
         Self: Sized;
 }
@@ -1873,39 +1887,26 @@ impl ModelClass for ModelSmall {
     fn erase<'id>(buffer: ModelBuffer<'id, Self>) -> ModelAnyBuffer<'id> {
         ModelAnyBuffer::Small(buffer)
     }
-    fn erase_numbered<'id>(mpdu: ModelNumbered<'id, Self>) -> ModelAnyBuffer<'id> {
-        ModelAnyBuffer::SmallNumbered(mpdu)
+    fn erase_sent<'id>(mpdu: ModelSent<'id, Self>) -> ModelAnyBuffer<'id> {
+        ModelAnyBuffer::SmallSent(mpdu)
     }
 }
 impl ModelClass for ModelLarge {
     fn erase<'id>(buffer: ModelBuffer<'id, Self>) -> ModelAnyBuffer<'id> {
         ModelAnyBuffer::Large(buffer)
     }
-    fn erase_numbered<'id>(mpdu: ModelNumbered<'id, Self>) -> ModelAnyBuffer<'id> {
-        ModelAnyBuffer::LargeNumbered(mpdu)
+    fn erase_sent<'id>(mpdu: ModelSent<'id, Self>) -> ModelAnyBuffer<'id> {
+        ModelAnyBuffer::LargeSent(mpdu)
     }
 }
 
+#[expect(
+    clippy::result_large_err,
+    reason = "a refusal returns the whole operation by value"
+)]
 fn prepare_model<'p, 'id, R, K: Ieee80211Capabilities, X: ModelContext, C: ModelClass>(
-    source: TxSource<
-        'p,
-        ModelBuffer<'id, C>,
-        ModelNumbered<'id, C>,
-        oer_ieee80211_lower_mac::ClassFrame<'p, C, K>,
-        ModelBody,
-    >,
-) -> Result<
-    ModelPrepared<'p, 'id, R, K, X>,
-    PreparationRefused<
-        TxSource<
-            'p,
-            ModelBuffer<'id, C>,
-            ModelNumbered<'id, C>,
-            oer_ieee80211_lower_mac::ClassFrame<'p, C, K>,
-            ModelBody,
-        >,
-    >,
-> {
+    source: ModelSource<'p, 'id, C, K>,
+) -> ModelPreparation<'p, 'id, R, K, X, C> {
     let checked = match &source {
         TxSource::Fresh {
             buffer,
@@ -1941,9 +1942,7 @@ fn prepare_model<'p, 'id, R, K: Ieee80211Capabilities, X: ModelContext, C: Model
                 body,
             }
         }
-        TxSource::Retransmission { mpdu, .. } => {
-            ModelMpdu::from_numbered(C::erase_numbered(mpdu), layout)
-        }
+        TxSource::Retransmission { mpdu, .. } => ModelMpdu::from_sent(C::erase_sent(mpdu), layout),
     };
     Ok(ModelPrepared {
         mpdu,
@@ -2103,7 +2102,7 @@ pub struct ModelAggregate<'p, 'id, R, C = ModelCaps, X: ModelContext = ()> {
     subframes: Vec<Subframe<'id>>,
     tid: Tid,
     rate: AmpduRate<'p>,
-    caps: PhantomData<fn() -> (R, C, X)>,
+    caps: TypeProof<(R, C, X)>,
 }
 
 impl<'p, 'id: 'p, R, K: Ieee80211Capabilities, X: ModelContext> PhaseAggregate<'p, 'id>

@@ -71,8 +71,8 @@ use oer_ieee80211_arbiter::{
 };
 use oer_ieee80211_lower_mac::{
     AckHeader, GroupAddress, HeaderSpec, Ieee80211Capabilities, IndividualAddress, MpduLength,
-    ReceiveFilter, RxEvidence, RxMetadata, SizedFrame, Station as StationRole, StationReceive,
-    SupportedChannel, SupportedFilter, TxBufferMemory, TxCompletion, TxStatus,
+    ReceiveFilter, ReturnedMpdu, RxEvidence, RxMetadata, SizedFrame, Station as StationRole,
+    StationReceive, SupportedChannel, SupportedFilter, TxBufferMemory, TxCompletion, TxStatus,
 };
 use oer_ieee80211_mac::ccmp::CcmpRxReplayEpoch;
 use oer_ieee80211_mac::{
@@ -120,6 +120,10 @@ pub trait StaTokens {
     /// A transmit buffer of the small class, for management frames: its
     /// memory, which the station encodes into.
     type SmallBuffer: TxBufferMemory;
+    /// An immutable published MPDU, including its body and original description.
+    type Sent;
+    /// Release a completed MPDU for a new frame, ending its retained body owner.
+    fn renew(mpdu: Self::Sent) -> Self::SmallBuffer;
     /// A pairwise key slot.
     type PairwiseSlot;
     /// A group key slot.
@@ -175,7 +179,7 @@ pub enum StaInput<'f, 'id, T: StaTokens, K> {
         /// The transmission's ticket.
         ticket: T::Ticket,
         /// The transmission's buffer.
-        buffer: T::SmallBuffer,
+        buffer: ReturnedMpdu<T::SmallBuffer, T::Sent>,
         /// How it ended.
         completion: TxCompletion,
     },
@@ -191,7 +195,7 @@ pub enum StaInput<'f, 'id, T: StaTokens, K> {
         /// The frame's ticket.
         ticket: T::Ticket,
         /// The frame's buffer.
-        buffer: T::SmallBuffer,
+        buffer: ReturnedMpdu<T::SmallBuffer, T::Sent>,
     },
     /// Tokens of the station that came back without a frame's end: a
     /// terminal that carried a buffer more or none.
@@ -199,7 +203,7 @@ pub enum StaInput<'f, 'id, T: StaTokens, K> {
         /// A ticket, if one came back.
         ticket: Option<T::Ticket>,
         /// A buffer, if one came back.
-        buffer: Option<T::SmallBuffer>,
+        buffer: Option<ReturnedMpdu<T::SmallBuffer, T::Sent>>,
     },
     /// The arbiter's answer to the station's request.
     Answer(Answer<K>),
@@ -1128,6 +1132,31 @@ enum Owed<'id, T: StaTokens, K> {
     Notify(StaNotice),
 }
 
+/// The affine resources composition grants to one station. Epoch issuance,
+/// frame pools, channel admission and key slots move into it together.
+pub struct StationResources<
+    'id,
+    T: StaTokens,
+    const TICKETS: usize,
+    const BUFFERS: usize,
+    const GROUPS: usize,
+> {
+    /// The installation's only station epoch source.
+    pub epochs: LinkEpochSource<'id>,
+    /// Ticket credits, each reserving a terminal.
+    pub tickets: [T::Ticket; TICKETS],
+    /// Fresh small allocations for protocol frames.
+    pub buffers: [T::SmallBuffer; BUFFERS],
+    /// Primary-channel lease admission.
+    pub place: LeasePlace,
+    /// Temporary channel-absence admission.
+    pub absence_place: AbsencePlace,
+    /// Pairwise-key installation slot.
+    pub pairwise: T::PairwiseSlot,
+    /// Receive group-key installation slots.
+    pub groups: [T::GroupSlot; GROUPS],
+}
+
 impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     /// An idle station of `config`, with the tickets, small buffers and key
     /// slots the composition granted it and the arbiter's places. It holds
@@ -1137,7 +1166,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     /// # use oer_ieee80211_arbiter::{AbsencePlace, LeasePlace};
     /// # use oer_ieee80211_lower_mac::*;
     /// # use oer_ieee80211_mac::phy::{HeMcs, HtMcs};
-    /// # use oer_ieee80211_sta::machine::{StaConfig, StaTokens, Station};
+    /// # use oer_ieee80211_sta::machine::{StaConfig, StaTokens, Station, StationResources};
     /// # use oer_ieee80211_sta::epoch::LinkEpochSource;
     /// # struct Caps;
     /// # impl Ieee80211Capabilities for Caps {
@@ -1162,6 +1191,8 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     /// # struct Tokens;
     /// # impl StaTokens for Tokens {
     /// #     type Ticket = u8; type SmallBuffer = Buffer; type PairwiseSlot = ();
+    /// #     type Sent = core::convert::Infallible;
+    /// #     fn renew(mpdu: Self::Sent) -> Buffer { match mpdu {} }
     /// #     type GroupSlot = (); type PairwiseKey = (); type GroupKey = (); type RxMeta = RxMeta;
     /// # }
     /// fn nine<'id>(
@@ -1170,21 +1201,27 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     ///     place: LeasePlace,
     ///     absence: AbsencePlace,
     /// ) -> Station<'id, Tokens, Caps> {
-    ///     Station::new(config, epochs, [0; 9], [Buffer], place, absence, (), [()])
+    ///     Station::new(config, StationResources {
+    ///         epochs, tickets: [0; 9], buffers: [Buffer], place,
+    ///         absence_place: absence, pairwise: (), groups: [()],
+    ///     })
     /// }
     /// let nine: fn(_, _, _, _) -> _ = nine;
     /// core::hint::black_box(nine);
     /// ```
     pub fn new<const TICKETS: usize, const BUFFERS: usize, const GROUPS: usize>(
         config: StaConfig<K>,
-        epochs: LinkEpochSource<'id>,
-        tickets: [T::Ticket; TICKETS],
-        buffers: [T::SmallBuffer; BUFFERS],
-        place: LeasePlace,
-        absence_place: AbsencePlace,
-        pairwise: T::PairwiseSlot,
-        groups: [T::GroupSlot; GROUPS],
+        resources: StationResources<'id, T, TICKETS, BUFFERS, GROUPS>,
     ) -> Self {
+        let StationResources {
+            epochs,
+            tickets,
+            buffers,
+            place,
+            absence_place,
+            pairwise,
+            groups,
+        } = resources;
         // The port's receive rules, checked as the type is built.
         let _ = (Rules::<K>::MEMBER, Rules::<K>::WIDENED);
         Self {
@@ -1308,7 +1345,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             } => {
                 // A transmission's tokens come back whatever the state.
                 self.tickets.put(ticket);
-                self.buffers.put(buffer);
+                self.buffers.put(buffer.into_fresh(T::renew));
                 if !self.is_current(&context) {
                     return;
                 }
@@ -1324,7 +1361,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 buffer,
             } => {
                 self.tickets.put(ticket);
-                self.buffers.put(buffer);
+                self.buffers.put(buffer.into_fresh(T::renew));
                 if !self.is_current(&context) {
                     return;
                 }
@@ -1338,7 +1375,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     self.tickets.put(ticket);
                 }
                 if let Some(buffer) = buffer {
-                    self.buffers.put(buffer);
+                    self.buffers.put(buffer.into_fresh(T::renew));
                 }
                 return;
             }

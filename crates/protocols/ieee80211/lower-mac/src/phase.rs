@@ -65,8 +65,8 @@
 //! counts them, not the MIC. At the first transmission of the MPDU the
 //! backend writes the CCMP header with a new packet number of the key into
 //! the buffer, and the hardware appends the MIC; the plan's transmissions
-//! keep it. The completion gives the buffer back numbered
-//! ([`TxBufferPool::Numbered`]): a retransmission of the same MPDU
+//! keep it. The completion gives the buffer back as `Sent`
+//! ([`TxBufferPool::Sent`]): a retransmission of the same MPDU
 //! ([`TxSource::Retransmission`]) keeps its packet number, and only a
 //! renewed buffer ([`TxBufferPool::renew`]) is numbered anew. A received
 //! frame whose crypto status is
@@ -242,7 +242,7 @@ pub enum LowerMacEvent<'id, P: PhaseTypes<'id>> {
         /// How the attempt ended.
         completion: TxCompletion,
         /// Bodies of fresh returned MPDUs, with their subframe index.
-        /// Numbered MPDUs own their bodies inside `buffers` until renewal.
+        /// Sent MPDUs own their bodies inside `buffers` until renewal.
         bodies: P::TxBodies,
     },
     /// A TBTT of an interface's schedule.
@@ -334,7 +334,7 @@ pub trait PhaseTypes<'id>: Sized {
     type Context: 'id;
     /// A prepared MPDU retaining its phase, install and intended interface role.
     type Prepared<'p, R, K: Ieee80211Capabilities>: PreparedTx<'id, Types = Self>;
-    /// An external MPDU body. A numbered MPDU retains its body internally
+    /// An external MPDU body. A `Sent` MPDU retains its body internally
     /// for a retry; renewing that MPDU returns the body with its memory.
     type TxBody: crate::TxBody;
     /// The kind of the transmit tickets.
@@ -350,7 +350,7 @@ pub trait PhaseTypes<'id>: Sized {
     /// backend's type guarantees beyond them.
     type RxMeta: crate::RxMetadata;
     /// External bodies of fresh returned MPDUs, with their subframe index.
-    /// A numbered MPDU retains its own body until retry or renewal.
+    /// A `Sent` MPDU retains its own body until retry or renewal.
     type TxBodies: IntoIterator<Item = (u8, Self::TxBody)>;
     /// The station's keys and their slots.
     type StationKeys: KeyTypes<'id>;
@@ -474,17 +474,27 @@ pub enum AttemptKey<'k, P, G> {
 pub type PoolSource<'p, 'id, T, C, K> = TxSource<
     'p,
     <T as TxBufferPool<'id, C>>::Buffer,
-    <T as TxBufferPool<'id, C>>::Numbered,
+    <T as TxBufferPool<'id, C>>::Sent,
     ClassFrame<'p, C, K>,
     <T as PhaseTypes<'id>>::TxBody,
 >;
+
+/// Preparation returns a phase-bound MPDU or its unchanged class-specific source.
+pub type PoolPreparation<'p, 'id, T, C, K, R> = Result<
+    <T as PhaseTypes<'id>>::Prepared<'p, R, K>,
+    PreparationRefused<PoolSource<'p, 'id, T, C, K>>,
+>;
+
+/// A class's fresh allocation or its retained published MPDU.
+pub type PoolMpdu<'id, T, C> =
+    ReturnedMpdu<<T as TxBufferPool<'id, C>>::Buffer, <T as TxBufferPool<'id, C>>::Sent>;
 
 /// A backend's closed preparation proof. Cancellation recovers its owners
 /// without creating a TX terminal; submission consumes the proof itself.
 pub trait PreparedTx<'id> {
     /// The backend's resource family.
     type Types: PhaseTypes<'id>;
-    /// Recover the buffer and any external body. A numbered MPDU keeps its
+    /// Recover the buffer and any external body. A `Sent` MPDU keeps its
     /// body nested until renewal.
     fn into_parts(
         self,
@@ -512,7 +522,7 @@ pub type InterfaceAttempt<'k, 'p, 'id, I> = Attempt<
 >;
 
 /// The MPDU supplied to a submission. Fresh memory travels with its
-/// `ClassFrame` and body; a numbered MPDU already owns that description and
+/// `ClassFrame` and body; a `Sent` MPDU already owns that description and
 /// body, and receives only the new attempt's phase-bound rate plan.
 pub enum TxSource<'p, B, N, F, O> {
     /// A new MPDU, numbered at its first protected transmission.
@@ -524,7 +534,7 @@ pub enum TxSource<'p, B, N, F, O> {
         /// External octets at the end of the MPDU, retained until its return.
         body: Option<O>,
     },
-    /// The same numbered MPDU again: keep its SN and PN, set Retry.
+    /// The same published MPDU again: keep its SN and PN, set Retry.
     Retransmission {
         /// The returned MPDU owns its description, payload and body.
         mpdu: N,
@@ -533,7 +543,7 @@ pub enum TxSource<'p, B, N, F, O> {
     },
 }
 
-/// The phase-bound rates of a new attempt of a numbered MPDU. The backend
+/// The phase-bound rates of a new attempt of a `Sent` MPDU. The backend
 /// checks that its response kind matches the original MPDU's kind.
 #[derive(Debug)]
 pub enum RetransmissionPlan<'p> {
@@ -721,43 +731,62 @@ pub trait TxBufferPool<'id, C: TxBufferClass>: PhaseTypes<'id> {
     /// aggregate consumes it. A refusal returns the original typed source.
     fn prepare<'p, R, K: Ieee80211Capabilities>(
         source: PoolSource<'p, 'id, Self, C, K>,
-    ) -> Result<Self::Prepared<'p, R, K>, PreparationRefused<PoolSource<'p, 'id, Self, C, K>>>;
+    ) -> PoolPreparation<'p, 'id, Self, C, K, R>;
 
     /// The buffer, as any class's.
     fn erase(buffer: Self::Buffer) -> Self::AnyTxBuffer;
 
-    /// A buffer of the class that holds an MPDU the backend numbered: its
-    /// CCMP header carries the packet number of the MPDU's first
-    /// transmission. A fresh buffer returned before publication stays
-    /// fresh. A numbered retransmission returned before publication stays
-    /// numbered too. A completion gives it back after a protected attempt;
-    /// retransmitted ([`TxSource::Retransmission`]) it keeps its packet
-    /// number, and its bytes are not the caller's to write.
-    /// It also owns its checked description, external body and identity of
-    /// the original key installation. Slot reuse must not match that identity.
-    type Numbered;
+    /// A published MPDU, protected or open. It owns the immutable encoded
+    /// header, payload, checked description and external body. A protected
+    /// MPDU also retains its PN and original key-install identity.
+    /// A withdrawal returns the input state: fresh stays fresh, Sent stays
+    /// Sent. Retransmission preserves SN, PN and payload and sets Retry.
+    /// Only renewal releases the old MPDU for a different frame.
+    type Sent;
 
     /// The buffer, as any class's.
-    fn erase_numbered(buffer: Self::Numbered) -> Self::AnyTxBuffer;
+    fn erase_sent(buffer: Self::Sent) -> Self::AnyTxBuffer;
 
     /// The fresh buffer of the class `C` a completion gave back.
     ///
     /// # Errors
     ///
-    /// The buffer, when it is of another class or numbered.
+    /// The buffer, when it is of another class or `Sent`.
     fn class(buffer: Self::AnyTxBuffer) -> Result<Self::Buffer, Self::AnyTxBuffer>;
 
-    /// The numbered buffer of the class `C` a completion gave back.
+    /// The `Sent` buffer of the class `C` a completion gave back.
     ///
     /// # Errors
     ///
     /// The buffer, when it is of another class or fresh.
-    fn numbered(buffer: Self::AnyTxBuffer) -> Result<Self::Numbered, Self::AnyTxBuffer>;
+    fn sent(buffer: Self::AnyTxBuffer) -> Result<Self::Sent, Self::AnyTxBuffer>;
 
-    /// The memory of a numbered buffer for a new MPDU: its packet number is
+    /// The memory of a `Sent` buffer for a new MPDU: its packet number is
     /// forgotten, and the next protected attempt in it is numbered anew.
     /// The original external body is returned explicitly beside the memory.
-    fn renew(buffer: Self::Numbered) -> (Self::Buffer, Option<Self::TxBody>);
+    fn renew(buffer: Self::Sent) -> (Self::Buffer, Option<Self::TxBody>);
+}
+
+/// A returned MPDU retains whether it has ever been published, independently
+/// of encryption. `Sent` owns the immutable MPDU, its description and body.
+/// Only the owning machine decides to renew it for a different MPDU.
+#[derive(Debug)]
+pub enum ReturnedMpdu<B, S> {
+    /// Original writable allocation; this MPDU was never published.
+    Fresh(B),
+    /// Published MPDU, including an unprotected one.
+    Sent(S),
+}
+
+impl<B, S> ReturnedMpdu<B, S> {
+    /// Release the old MPDU through its owner's renewal policy. A fresh
+    /// allocation needs no renewal. The operation consumes either owner once.
+    pub fn into_fresh(self, renew: impl FnOnce(S) -> B) -> B {
+        match self {
+            Self::Fresh(buffer) => buffer,
+            Self::Sent(mpdu) => renew(mpdu),
+        }
+    }
 }
 
 /// The memory of a transmit buffer the body holds: the caller encodes a

@@ -37,8 +37,9 @@ use std::vec::Vec;
 
 use super::*;
 use crate::lower_mac_owner::model::{
-    AirFrame, MODEL_RX_EVENTS, MODEL_TX_QUEUE_DEPTH, ModelAir, ModelBackend, ModelCaps24,
-    ModelLarge, ModelPhase, ModelResources, ModelRxMeta, ModelSetup, ModelSmall, ModelTypes,
+    AirFrame, MODEL_RX_EVENTS, MODEL_TX_QUEUE_DEPTH, ModelAir, ModelAnyBuffer, ModelBackend,
+    ModelCaps24, ModelLarge, ModelPhase, ModelResources, ModelRxMeta, ModelSetup, ModelSmall,
+    ModelTypes,
 };
 
 const LOCAL: [u8; 6] = [0x02, 0, 0, 0x12, 0x34, 0x56];
@@ -82,6 +83,15 @@ impl<'id> StationPort<'id> for ModelBackend<ModelCaps24, TxContext<ModelCaps24>>
         event: LowerMacEvent<'id, ModelTypes<TxContext<ModelCaps24>>>,
     ) -> LowerMacEvent<'id, ModelTypes<TxContext<ModelCaps24>>> {
         event
+    }
+
+    fn tx_buffer(buffer: ModelAnyBuffer<'id>) -> StationTxBuffer<'id, Self> {
+        match buffer {
+            ModelAnyBuffer::Small(buffer) => StationTxBuffer::Small(buffer),
+            ModelAnyBuffer::SmallNumbered(buffer) => StationTxBuffer::SmallNumbered(buffer),
+            ModelAnyBuffer::Large(buffer) => StationTxBuffer::Large(buffer),
+            ModelAnyBuffer::LargeNumbered(buffer) => StationTxBuffer::LargeNumbered(buffer),
+        }
     }
 }
 

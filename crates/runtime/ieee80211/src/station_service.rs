@@ -14,7 +14,9 @@
 //! classes, the small one for the station's frames and the large one for
 //! data. A completion carries `TxContext`, which routes its ticket and
 //! resources to the original machine and link. Buffer classes are used
-//! only to recover their memory types; numbered buffers are renewed.
+//! only to recover their memory types; `StationTxBuffer` exhaustively
+//! represents both classes and both numbering states at this boundary.
+//! Numbered buffers are renewed after the terminal.
 //! Cross-AC completion order has no bearing on ownership. Each machine
 //! returns stale-link resources without advancing its current protocol,
 //! and the service excludes those terminals from current-link rate control.
@@ -92,6 +94,46 @@ pub trait StationPort<'id>: LowerMacBackend {
 
     /// One event of the port, as the contract's.
     fn event(event: Self::Event<'id>) -> LowerMacEvent<'id, Self::Types>;
+
+    /// Recover the exhaustive resource type of this composition. Every
+    /// returned buffer belongs to one of these two pools; no unknown-class
+    /// branch or fallible downcast remains in the service.
+    fn tx_buffer(
+        buffer: <Self::Types as PhaseTypes<'id>>::AnyTxBuffer,
+    ) -> StationTxBuffer<'id, Self>;
+}
+
+/// The only TX memory a station service's port returns. This describes
+/// resources, not operation identity: only `TxContext` selects the operation.
+pub enum StationTxBuffer<'id, B: StationPort<'id>> {
+    /// Fresh station memory, including an unpublished return.
+    Small(<B::Types as TxBufferPool<'id, B::Small>>::Buffer),
+    /// Station memory whose original MPDU has a packet number.
+    SmallNumbered(<B::Types as TxBufferPool<'id, B::Small>>::Numbered),
+    /// Fresh data memory, including an unpublished return.
+    Large(<B::Types as TxBufferPool<'id, B::Large>>::Buffer),
+    /// Data memory whose original MPDU has a packet number.
+    LargeNumbered(<B::Types as TxBufferPool<'id, B::Large>>::Numbered),
+}
+
+enum ReturnedMemory<'id, B: StationPort<'id>> {
+    Small(<B::Types as TxBufferPool<'id, B::Small>>::Buffer),
+    Large(<B::Types as TxBufferPool<'id, B::Large>>::Buffer),
+}
+
+impl<'id, B: StationPort<'id>> StationTxBuffer<'id, B> {
+    fn renew(self) -> ReturnedMemory<'id, B> {
+        match self {
+            Self::Small(buffer) => ReturnedMemory::Small(buffer),
+            Self::SmallNumbered(buffer) => {
+                ReturnedMemory::Small(<B::Types as TxBufferPool<'id, B::Small>>::renew(buffer))
+            }
+            Self::Large(buffer) => ReturnedMemory::Large(buffer),
+            Self::LargeNumbered(buffer) => {
+                ReturnedMemory::Large(<B::Types as TxBufferPool<'id, B::Large>>::renew(buffer))
+            }
+        }
+    }
 }
 
 /// The composition's context for this service. Each variant owns the
@@ -837,17 +879,16 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
         completion: TxCompletion,
     ) {
         let mut buffers = buffers.into_iter();
-        let first = buffers.next();
+        let first = buffers.next().map(|buffer| B::tx_buffer(buffer).renew());
         match context {
             TxContext::Station(context) => {
-                let buffer =
-                    first.and_then(|buffer| match fresh_buffer::<B::Types, B::Small>(buffer) {
-                        Ok(buffer) => Some(buffer),
-                        Err(buffer) => {
-                            self.return_buffer(now, buffer);
-                            None
-                        }
-                    });
+                let buffer = first.and_then(|memory| match memory {
+                    ReturnedMemory::Small(buffer) => Some(buffer),
+                    memory @ ReturnedMemory::Large(_) => {
+                        self.return_memory(now, memory);
+                        None
+                    }
+                });
                 match buffer {
                     Some(buffer) => {
                         if self.station.is_current(&context) {
@@ -881,14 +922,13 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                 }
             }
             TxContext::Data(context) => {
-                let buffer =
-                    first.and_then(|buffer| match fresh_buffer::<B::Types, B::Large>(buffer) {
-                        Ok(buffer) => Some(buffer),
-                        Err(buffer) => {
-                            self.return_buffer(now, buffer);
-                            None
-                        }
-                    });
+                let buffer = first.and_then(|memory| match memory {
+                    ReturnedMemory::Large(buffer) => Some(buffer),
+                    memory @ ReturnedMemory::Small(_) => {
+                        self.return_memory(now, memory);
+                        None
+                    }
+                });
                 let input = match buffer {
                     Some(buffer) => {
                         if self.data.is_current(&context) {
@@ -919,13 +959,13 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
         // memory pools without being mistaken for another operation.
         for buffer in buffers {
             self.counters.stray_terminals += 1;
-            self.return_buffer(now, buffer);
+            self.return_memory(now, B::tx_buffer(buffer).renew());
         }
     }
 
-    fn return_buffer(&mut self, now: Instant, buffer: <B::Types as PhaseTypes<'id>>::AnyTxBuffer) {
-        let buffer = match fresh_buffer::<B::Types, B::Small>(buffer) {
-            Ok(buffer) => {
+    fn return_memory(&mut self, now: Instant, memory: ReturnedMemory<'id, B>) {
+        match memory {
+            ReturnedMemory::Small(buffer) => {
                 self.station.input(
                     now,
                     StaInput::Returned {
@@ -933,12 +973,8 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                         buffer: Some(buffer),
                     },
                 );
-                return;
             }
-            Err(buffer) => buffer,
-        };
-        match fresh_buffer::<B::Types, B::Large>(buffer) {
-            Ok(buffer) => {
+            ReturnedMemory::Large(buffer) => {
                 let _ = self.data.input::<PortStaTokens<'id, B::Types, B::Small>>(
                     now,
                     DataInput::Returned {
@@ -948,18 +984,8 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                     },
                 );
             }
-            Err(_) => panic!("a station port returns only its two buffer classes"),
         }
     }
-}
-
-/// Recover a class's memory after completion, renewing a numbered buffer.
-fn fresh_buffer<'id, Ty, C>(buffer: Ty::AnyTxBuffer) -> Result<Ty::Buffer, Ty::AnyTxBuffer>
-where
-    C: TxBufferClass,
-    Ty: TxBufferPool<'id, C>,
-{
-    Ty::class(buffer).or_else(|buffer| Ty::numbered(buffer).map(Ty::renew))
 }
 
 /// What follows a station's action.

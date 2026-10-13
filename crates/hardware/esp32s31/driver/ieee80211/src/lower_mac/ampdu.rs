@@ -1,10 +1,17 @@
-//! HT A-MPDU attempts of the lower-MAC core.
+//! The A-MPDU hardware sequence of the lower-MAC core.
 //!
-//! One aggregate is one attempt: [`RetainedDmaAmpduTx`] begins it, commits
-//! every subframe with `commit_ht` and publishes it once with `submit`. Its
-//! completion reports the recipient's BlockAck; the aggregate is never
-//! retained for a retry (`retain_for_ampdu_retry`), since selecting what a
-//! later aggregate retransmits is the portable layer's.
+//! One aggregate is one attempt: the core plans it
+//! ([`LowerMacCore::plan_ampdu`](super::LowerMacCore::plan_ampdu)),
+//! [`publish`] has [`RetainedDmaAmpduTx`] begin it, commit every subframe
+//! with `commit_ht` or `commit_he` and publish it once, and [`service`]
+//! ends it. Its completion reports the recipient's BlockAck; the aggregate
+//! is never retained for a retry (`retain_for_ampdu_retry`), since
+//! selecting what a later aggregate retransmits is the portable layer's.
+//!
+//! The backend's driver does not submit aggregates yet: A-MPDU
+//! transmission is not in the first image of the ESP32-S31 backend and
+//! returns in step 2 before the merge (#563), in the phase contract's form
+//! (`PhaseAggregate`, numbered subframes).
 //!
 //! # Buffers
 //!
@@ -37,10 +44,7 @@ use oer_esp32s31_ieee80211_mac::tx::{
         TX_AMPDU_METADATA_SIZE,
     },
 };
-use oer_ieee80211_lower_mac::{
-    AmpduAttempt, AmpduBuffer, AmpduCapabilities, BlockAckReport, PhyFormatSet, TxCompletion, TxId,
-    TxStatus,
-};
+use oer_ieee80211_lower_mac::{AmpduCapabilities, BlockAckReport, PhyFormatSet, TxStatus};
 use oer_memory::{PinnedDmaTxRadioLease, StableDmaBacking};
 
 use crate::{
@@ -115,11 +119,9 @@ struct Subframe<B> {
     len: usize,
 }
 
-/// One lent aggregate: an idle aggregate owner and the subframes appended so
-/// far. It goes back to the core by submission or
-/// [`LowerMacCore::release_ampdu_buffer`](super::LowerMacCore::release_ampdu_buffer);
-/// a dropped buffer returns its subframes to their source and loses its
-/// aggregate owner until the core is rebuilt.
+/// One aggregate being built: an idle aggregate owner and the subframes
+/// appended so far. [`publish`] takes it; [`Self::into_owner`] gives the
+/// owner back unpublished, its subframes returned to their source.
 pub struct Esp32s31AmpduBuffer<'slot, S: AmpduBacking, const SLOTS: usize> {
     pub(super) owner: Esp32s31AmpduOwner<'slot, S::Backing, SLOTS>,
     source: &'slot S,
@@ -128,32 +130,45 @@ pub struct Esp32s31AmpduBuffer<'slot, S: AmpduBacking, const SLOTS: usize> {
 }
 
 impl<'slot, S: AmpduBacking, const SLOTS: usize> Esp32s31AmpduBuffer<'slot, S, SLOTS> {
-    pub(super) fn new(
-        owner: Esp32s31AmpduOwner<'slot, S::Backing, SLOTS>,
+    /// An empty aggregate over the idle `owner`, its subframes from
+    /// `source`, the owner configured to [`ESP32S31_AMPDU_MAX_LENGTH`].
+    ///
+    /// # Errors
+    ///
+    /// The owner, when it is not idle.
+    #[allow(clippy::result_large_err, reason = "the owner goes back by value")]
+    pub fn new(
+        mut owner: Esp32s31AmpduOwner<'slot, S::Backing, SLOTS>,
         source: &'slot S,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, Esp32s31AmpduOwner<'slot, S::Backing, SLOTS>> {
+        if owner
+            .configure_max_aggregate_bytes(ESP32S31_AMPDU_MAX_LENGTH)
+            .is_err()
+        {
+            return Err(owner);
+        }
+        Ok(Self {
             owner,
             source,
             subframes: [const { None }; SLOTS],
             count: 0,
-        }
+        })
     }
 
     /// The appended MPDU lengths, in order.
-    pub(super) fn lengths(&self) -> impl Iterator<Item = usize> + '_ {
+    pub fn lengths(&self) -> impl Iterator<Item = usize> + '_ {
         self.subframes.iter().flatten().map(|subframe| subframe.len)
     }
 
     /// Return the subframes to their source and give the owner back.
-    pub(super) fn into_owner(self) -> Esp32s31AmpduOwner<'slot, S::Backing, SLOTS> {
+    pub fn into_owner(self) -> Esp32s31AmpduOwner<'slot, S::Backing, SLOTS> {
         self.owner
     }
 }
 
 impl<S: AmpduBacking, const SLOTS: usize> Esp32s31AmpduBuffer<'_, S, SLOTS> {
     /// The first MPDU, for the checks of admission.
-    pub(super) fn first_mpdu(&mut self) -> Option<&[u8]> {
+    pub fn first_mpdu(&mut self) -> Option<&[u8]> {
         let subframe = self.subframes.first_mut()?.as_mut()?;
         let len = subframe.len;
         let region = subframe.backing.stable_dma_region().into_mut_slice();
@@ -170,35 +185,34 @@ const fn subframe_capacity(len: usize) -> Option<usize> {
     }
 }
 
-/// The core's aggregate takes no body: the backend in front of it places a
-/// body after its header in the MPDU it pushes.
-impl<S: AmpduBackingSource, const SLOTS: usize> AmpduBuffer for Esp32s31AmpduBuffer<'_, S, SLOTS> {
-    type Body = core::convert::Infallible;
-
-    /// Refused also when the source has no free backing or its backing is
-    /// too short for the MPDU with its metadata, MIC and FCS.
-    fn push_mpdu(
-        &mut self,
-        len: usize,
-        _body: Option<core::convert::Infallible>,
-    ) -> Result<&mut [u8], Option<core::convert::Infallible>> {
+impl<S: AmpduBackingSource, const SLOTS: usize> Esp32s31AmpduBuffer<'_, S, SLOTS> {
+    /// Append a subframe of `len` MPDU octets: the memory to encode it into.
+    /// `None` when the aggregate holds `SLOTS`, the length is zero, the
+    /// source has no free backing, or its backing is too short for the MPDU
+    /// with its metadata, MIC and FCS.
+    pub fn push_mpdu(&mut self, len: usize) -> Option<&mut [u8]> {
         if self.count >= SLOTS || len == 0 {
-            return Err(None);
+            return None;
         }
-        let capacity = subframe_capacity(len).ok_or(None)?;
-        let mut backing = self.source.backing().ok_or(None)?;
+        let capacity = subframe_capacity(len)?;
+        let mut backing = self.source.backing()?;
         if backing.stable_dma_region().len() < capacity {
             // Dropping the backing returns it.
-            return Err(None);
+            return None;
         }
-        let index = self.count;
-        let subframe = self.subframes[index].insert(Subframe { backing, len });
+        let subframe = self
+            .subframes
+            .get_mut(self.count)?
+            .insert(Subframe { backing, len });
         self.count += 1;
         let region = subframe.backing.stable_dma_region().into_mut_slice();
-        Ok(&mut region[TX_AMPDU_METADATA_SIZE..TX_AMPDU_METADATA_SIZE + len])
+        region.get_mut(TX_AMPDU_METADATA_SIZE..TX_AMPDU_METADATA_SIZE + len)
     }
+}
 
-    fn subframes(&self) -> usize {
+impl<S: AmpduBacking, const SLOTS: usize> Esp32s31AmpduBuffer<'_, S, SLOTS> {
+    /// The subframes appended.
+    pub const fn subframes(&self) -> usize {
         self.count
     }
 }
@@ -212,13 +226,9 @@ impl<S: AmpduBacking, const SLOTS: usize> fmt::Debug for Esp32s31AmpduBuffer<'_,
     }
 }
 
-/// An aggregate submission of the core.
-pub type Esp32s31AmpduAttempt<'slot, S, const SLOTS: usize> =
-    AmpduAttempt<Esp32s31AmpduBuffer<'slot, S, SLOTS>>;
-
 /// The queue-state choices of one admitted aggregate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct AmpduPlan {
+pub struct AmpduPlan {
     pub queue: LegacyTxQueue,
     pub format: AmpduFormat,
     pub role: AmpduTxRoleAdapter,
@@ -230,7 +240,7 @@ pub(super) struct AmpduPlan {
 
 /// The PPDU format of an aggregate and what it alone needs.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum AmpduFormat {
+pub enum AmpduFormat {
     Ht {
         rate: HtRate,
         protection_spacing: HtProtectionSpacing,
@@ -245,7 +255,7 @@ pub(super) enum AmpduFormat {
 
 /// What an aggregate's publication shares in both formats.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct AmpduPublication {
+pub struct AmpduPublication {
     pub data_power_primary: u8,
     pub data_power_alternate: u8,
     pub control: TxControlFrame,
@@ -257,14 +267,14 @@ pub(super) struct AmpduPublication {
 
 /// The owner's protection spacing for a recipient's Minimum MPDU Start
 /// Spacing encoding (IEEE 0-7, bits 4:2 of its A-MPDU Parameters).
-pub(super) const fn protection_spacing(min_mpdu_start_spacing: u8) -> HtProtectionSpacing {
+pub const fn protection_spacing(min_mpdu_start_spacing: u8) -> HtProtectionSpacing {
     HtProtectionSpacing::from_density(HtAmpduDensity::from_ampdu_parameters(
         (min_mpdu_start_spacing & 0x07) << 2,
     ))
 }
 
 /// A published aggregate on its queue.
-pub(super) struct PublishedAmpdu<'slot, B, const SLOTS: usize> {
+pub struct PublishedAmpdu<'slot, B, const SLOTS: usize> {
     owner: Esp32s31AmpduOwner<'slot, B, SLOTS>,
     cookie: TxCookie,
     /// The publication deadline, or the end of the abort settle.
@@ -289,7 +299,7 @@ impl<B, const SLOTS: usize> PublishedAmpdu<'_, B, SLOTS> {
 }
 
 /// How a published aggregate ended.
-pub(super) enum AmpduOutcome {
+pub enum AmpduOutcome {
     Completed(HtAmpduTxCompletion),
     Collision,
     /// The queue's hardware timeout and its abort.
@@ -297,12 +307,12 @@ pub(super) enum AmpduOutcome {
 }
 
 impl AmpduOutcome {
-    /// The portable completion. A valid BlockAck is the solicited response,
-    /// so the attempt succeeded whatever the completion status says
-    /// ([`HtAmpduTxCompletion::valid_block_ack`]); a completion without one
-    /// is its failure, and a success status without one is `AckTimeout`.
-    pub fn completion(self, id: TxId) -> TxCompletion {
-        let (status, ack_snr_db, block_ack) = match self {
+    /// How the aggregate ended. A valid BlockAck is the solicited
+    /// response, so the attempt succeeded whatever the completion status
+    /// says ([`HtAmpduTxCompletion::valid_block_ack`]); a completion without
+    /// one is its failure, and a success status without one is `AckTimeout`.
+    pub fn end(self) -> super::PublicationEnd {
+        match self {
             Self::Completed(completion) => {
                 let block_ack = completion.valid_block_ack();
                 let status = match (block_ack, completion.tx.tx_status()) {
@@ -310,29 +320,22 @@ impl AmpduOutcome {
                     (None, TxStatus::Success) => TxStatus::AckTimeout,
                     (None, failure) => failure,
                 };
-                (
+                super::PublicationEnd::Completed {
                     status,
-                    completion.tx.ack_snr_sample(),
-                    block_ack.map(|block_ack| BlockAckReport {
+                    ack_snr_db: completion.tx.ack_snr_sample(),
+                    block_ack: block_ack.map(|block_ack| BlockAckReport {
                         start_sequence: block_ack.starting_sequence,
                         bitmap: block_ack.bitmap,
                     }),
-                )
+                }
             }
-            Self::Collision => (TxStatus::Collision, None, None),
-            Self::Aborted => (TxStatus::Aborted, None, None),
-        };
-        TxCompletion {
-            id,
-            status,
-            ack_rssi_dbm: None,
-            ack_snr_db,
-            block_ack,
+            Self::Collision => super::PublicationEnd::Collision,
+            Self::Aborted => super::PublicationEnd::TimedOut,
         }
     }
 }
 
-pub(super) enum AmpduProgress<'slot, B, const SLOTS: usize> {
+pub enum AmpduProgress<'slot, B, const SLOTS: usize> {
     Pending(PublishedAmpdu<'slot, B, SLOTS>),
     /// The aggregate ended and released its subframes; the owner is idle.
     Complete {
@@ -344,7 +347,7 @@ pub(super) enum AmpduProgress<'slot, B, const SLOTS: usize> {
 /// Commit the buffer's subframes to its owner and publish the aggregate
 /// once. An error leaves the owner to be dropped: a reserved aggregate
 /// returns its subframes, a published one is quarantined.
-pub(super) fn publish<'slot, S, H, const SLOTS: usize>(
+pub fn publish<'slot, S, H, const SLOTS: usize>(
     hardware: &mut H,
     buffer: Esp32s31AmpduBuffer<'slot, S, SLOTS>,
     plan: AmpduPlan,
@@ -445,7 +448,7 @@ where
 /// queue's BlockAck completion, then its collision detach on a collision
 /// edge, then its timeout abort on a timeout edge or the expired deadline,
 /// begun only while no other queue's abort forces CCA.
-pub(super) fn service<'slot, B, H, const SLOTS: usize>(
+pub fn service<'slot, B, H, const SLOTS: usize>(
     hardware: &mut H,
     mut published: PublishedAmpdu<'slot, B, SLOTS>,
     wake: WifiTxWake,

@@ -382,9 +382,7 @@ fn named_scenarios_keep_their_order_and_replay_needs_one_image_class() {
     let other = catalog
         .all()
         .iter()
-        .find(|scenario| {
-            scenario.image() != first.image() && scenario.header.unsupported.is_none()
-        })
+        .find(|scenario| scenario.image() != first.image() && scenario.header.unsupported.is_none())
         .unwrap();
     let mixed = named_scenarios(&catalog, &[first.id().to_owned(), other.id().to_owned()]).unwrap();
     assert!(single_image_class(&mixed).is_err());

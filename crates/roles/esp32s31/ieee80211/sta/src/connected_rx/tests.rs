@@ -191,12 +191,8 @@ fn same_key_id_begin_refreshes_all_lanes_advanced_after_prepare() {
     for tid in core::iter::once(None).chain((0_u8..16).map(Some)) {
         let packet_number = 40 + u64::from(tid.unwrap_or(16));
         drop(
-            rx.prepare_publication(
-                CcmpRxProtection::Group,
-                tid,
-                ccmp_header(packet_number, 1),
-            )
-            .unwrap(),
+            rx.prepare_publication(CcmpRxProtection::Group, tid, ccmp_header(packet_number, 1))
+                .unwrap(),
         );
     }
 
@@ -205,11 +201,7 @@ fn same_key_id_begin_refreshes_all_lanes_advanced_after_prepare() {
     for tid in core::iter::once(None).chain((0_u8..16).map(Some)) {
         let packet_number = 40 + u64::from(tid.unwrap_or(16));
         assert!(matches!(
-            rx.prepare_publication(
-                CcmpRxProtection::Group,
-                tid,
-                ccmp_header(packet_number, 1),
-            ),
+            rx.prepare_publication(CcmpRxProtection::Group, tid, ccmp_header(packet_number, 1),),
             Err(StaCcmpRxReplayError::Replay(
                 CcmpReplayError::Replayed { .. }
             ))

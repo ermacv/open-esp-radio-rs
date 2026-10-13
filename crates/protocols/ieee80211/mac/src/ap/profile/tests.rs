@@ -46,10 +46,12 @@ pub(crate) const TEST_ADVERTISEMENT: crate::ap::profile::Advertisement = {
                     txop_limit_units_32_us: 47,
                 },
             ],
-        ).unwrap(),
+        )
+        .unwrap(),
         // ESS, Short Preamble and Short Slot Time. Privacy follows AP security.
         0x0421,
-    ).unwrap()
+    )
+    .unwrap()
 };
 
 #[test]
@@ -120,7 +122,8 @@ fn beacon_association_and_peer_rate_admission_use_the_supplied_profile() {
         TEST_ADVERTISEMENT.ht,
         TEST_ADVERTISEMENT.wmm,
         1,
-    ).unwrap();
+    )
+    .unwrap();
     let protection = crate::protection::ApBssProtection {
         non_erp_present: true,
         erp: crate::protection::ErpProtection::new(true, false),

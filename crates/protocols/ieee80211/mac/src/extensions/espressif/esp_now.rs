@@ -626,11 +626,13 @@ impl<'frame> EspNowProtectedV1Envelope<'frame> {
             ));
         }
 
-        let Some(ccmp_header) = input[ESP_NOW_MANAGEMENT_HEADER_LEN..]
-            .first_chunk::<ESP_NOW_CCMP_HEADER_LEN>()
+        let Some(ccmp_header) =
+            input[ESP_NOW_MANAGEMENT_HEADER_LEN..].first_chunk::<ESP_NOW_CCMP_HEADER_LEN>()
         else {
             return Err(EspNowProtectedV1WireError::FrameTooShort {
-                minimum: ESP_NOW_MANAGEMENT_HEADER_LEN + ESP_NOW_CCMP_HEADER_LEN + ESP_NOW_CCMP_MIC_LEN,
+                minimum: ESP_NOW_MANAGEMENT_HEADER_LEN
+                    + ESP_NOW_CCMP_HEADER_LEN
+                    + ESP_NOW_CCMP_MIC_LEN,
             });
         };
         if ccmp_header[2] != 0 || ccmp_header[3] & CCMP_RESERVED_CONTROL_MASK != 0 {
@@ -656,12 +658,16 @@ impl<'frame> EspNowProtectedV1Envelope<'frame> {
         let Some((ciphertext, mic)) = protected_body.split_last_chunk::<ESP_NOW_CCMP_MIC_LEN>()
         else {
             return Err(EspNowProtectedV1WireError::FrameTooShort {
-                minimum: ESP_NOW_MANAGEMENT_HEADER_LEN + ESP_NOW_CCMP_HEADER_LEN + ESP_NOW_CCMP_MIC_LEN,
+                minimum: ESP_NOW_MANAGEMENT_HEADER_LEN
+                    + ESP_NOW_CCMP_HEADER_LEN
+                    + ESP_NOW_CCMP_MIC_LEN,
             });
         };
         let Some(management_header) = input.first_chunk::<ESP_NOW_MANAGEMENT_HEADER_LEN>() else {
             return Err(EspNowProtectedV1WireError::FrameTooShort {
-                minimum: ESP_NOW_MANAGEMENT_HEADER_LEN + ESP_NOW_CCMP_HEADER_LEN + ESP_NOW_CCMP_MIC_LEN,
+                minimum: ESP_NOW_MANAGEMENT_HEADER_LEN
+                    + ESP_NOW_CCMP_HEADER_LEN
+                    + ESP_NOW_CCMP_MIC_LEN,
             });
         };
 

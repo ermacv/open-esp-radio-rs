@@ -38,7 +38,6 @@
 //! 2026-10-12). Beside the base contract the backend serves A-MPDU
 //! aggregates, the station's beacon timing and monitor reception.
 
-use oer_ieee80211_mac::ccmp::GroupKeyId;
 use core::{
     cell::{Cell, RefCell},
     convert::Infallible,
@@ -47,6 +46,7 @@ use core::{
     ops::Range,
     task::{Poll, Waker},
 };
+use oer_ieee80211_mac::ccmp::GroupKeyId;
 
 use embassy_futures::select::{Either3, Either4, select, select3, select4};
 use embassy_sync::{
@@ -71,7 +71,8 @@ use oer_esp32s31_ieee80211_mac::{
 };
 use oer_ieee80211_lower_mac::{
     AccessPoint, AccessPointClient, AckHeader, AmpduClient, AmpduRate, AttemptKey, Backoff,
-    BeaconTimingClient, BssColor, CancelError, Ccmp128Key, ClockError, EventsLost, Ieee80211Capabilities, Ieee80211Instant, Ieee80211Radio, IndividualAddress, InterfaceRole,
+    BeaconTimingClient, BssColor, CancelError, Ccmp128Key, ClockError, EventsLost,
+    Ieee80211Capabilities, Ieee80211Instant, Ieee80211Radio, IndividualAddress, InterfaceRole,
     KeyHandle, LifecycleEvent, LowerMacBackend, LowerMacCapabilities, LowerMacClient,
     LowerMacControl, LowerMacEvent, LowerMacEvents, LowerMacSetting, LowerMacSetup, MacAddress,
     MonitorControl, PhaseAmpdu, PhaseAmpduBuffer, PhaseAttempt, Poisoned, PortResult,
@@ -1606,9 +1607,9 @@ where
     /// Place the units the pass staged in the stream, after every event
     /// queued before it.
     fn rx_ready(&self) {
-        let staged = self.receiver.lock(|receiver| {
-            receiver.borrow().as_ref().map_or(0, PortRxReceiver::len)
-        });
+        let staged = self
+            .receiver
+            .lock(|receiver| receiver.borrow().as_ref().map_or(0, PortRxReceiver::len));
         self.rx_placed.lock(|placed| {
             let new = staged.saturating_sub(placed.get());
             if new > 0 {
@@ -3478,7 +3479,6 @@ where
 {
     type Caps = Esp32s31Caps<B>;
 }
-
 
 #[cfg(target_arch = "riscv32")]
 mod install;

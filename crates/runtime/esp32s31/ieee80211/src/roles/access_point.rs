@@ -107,18 +107,16 @@ use crate::{
     },
 };
 
-use crate::{
-    datapath::{
-        DatapathControlContext, DatapathControlProgress, DatapathRunner, DatapathRxProgress,
-        DatapathRxServiceContext, DatapathServices, DatapathStopProgress,
-        irq::{InterruptEpoch, MacInterruptEpochActivateError, MacInterruptEpochQuiesceError},
-        network::{DatapathNetworkLink, DatapathNetworkRx},
-        rx::{
-            reorder::{RX_REORDER_BACKING_SLOT_COUNT, RxReorderFrameStorage},
-            staging::StagedEthernetPublication,
-        },
-        tx::aggregate::AggregateTxServiceEvent,
+use crate::datapath::{
+    DatapathControlContext, DatapathControlProgress, DatapathRunner, DatapathRxProgress,
+    DatapathRxServiceContext, DatapathServices, DatapathStopProgress,
+    irq::{InterruptEpoch, MacInterruptEpochActivateError, MacInterruptEpochQuiesceError},
+    network::{DatapathNetworkLink, DatapathNetworkRx},
+    rx::{
+        reorder::{RX_REORDER_BACKING_SLOT_COUNT, RxReorderFrameStorage},
+        staging::StagedEthernetPublication,
     },
+    tx::aggregate::AggregateTxServiceEvent,
 };
 #[cfg(any(feature = "diagnostics", test))]
 use oer_esp32s31_ieee80211_ap::ampdu::ApAmpduCompletion;

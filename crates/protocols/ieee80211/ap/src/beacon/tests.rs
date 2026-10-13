@@ -31,9 +31,9 @@ const ADVERTISEMENT: Advertisement = match Advertisement::new(
     },
     0x0421,
 ) {
-        Some(value) => value,
-        None => panic!("the advertisement leaves Privacy to the security mode"),
-    };
+    Some(value) => value,
+    None => panic!("the advertisement leaves Privacy to the security mode"),
+};
 
 const fn at(micros: u64) -> Instant {
     Instant::from_micros(micros)

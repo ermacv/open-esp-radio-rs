@@ -67,7 +67,10 @@ fn an_experiment_arm_s_image_is_its_class_with_the_arm_s_feature_delta() {
     // a station while the roles return on the port (#563), so only the
     // role check refuses it.
     let error = check_flashed_image_keys(&full, scenario, &without, &arm).unwrap_err();
-    assert!(error.to_string().contains("does not declare a role"), "{error}");
+    assert!(
+        error.to_string().contains("does not declare a role"),
+        "{error}"
+    );
     // Without the run's delta the arm's image is no class's; and a class's
     // own image is not the arm's.
     assert!(check_flashed_image_keys(&full, scenario, &FeatureDelta::default(), &arm).is_err());

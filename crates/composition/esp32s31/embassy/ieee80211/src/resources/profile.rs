@@ -6,10 +6,7 @@
 //! belongs in initialized PSRAM while DMA-visible and latency-critical state
 //! remains in SRAM.
 
-use core::{
-    sync::atomic::{AtomicBool, Ordering},
-};
-
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use oer_esp32s31_ieee80211_dma::tx_storage::TxDmaStorage;
 

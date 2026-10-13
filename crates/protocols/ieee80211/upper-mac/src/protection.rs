@@ -143,7 +143,6 @@ impl BasicRates {
 const _: () = assert!(BasicRates::ERP_MANDATORY.0 & 1 != 0);
 
 impl BasicRates {
-
     /// Collect rates marked basic (bit seven) in Supported Rates and
     /// Extended Supported Rates element bodies, in 500-kb/s units.
     pub fn from_rate_elements(supported: &[u8], extended: &[u8]) -> Self {
@@ -461,9 +460,7 @@ impl ProtectionPolicy {
         }
         // The ERP mandatory set holds 1 Mb/s, eligible under any protection:
         // the slowest rate a basic set falls back to (checked at build).
-        let rate = fastest_not_faster
-            .or(slowest)
-            .unwrap_or(LegacyRate::Dsss1M);
+        let rate = fastest_not_faster.or(slowest).unwrap_or(LegacyRate::Dsss1M);
         let short = self.bss.short_preamble && !self.bss.erp.long_preamble_required();
         match (rate, short) {
             (LegacyRate::Dsss2M(_), true) => LegacyRate::Dsss2M(DsssPreamble::Short),

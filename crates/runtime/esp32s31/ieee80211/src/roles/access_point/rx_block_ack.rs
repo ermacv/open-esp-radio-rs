@@ -13,7 +13,6 @@ use oer_esp32s31_ieee80211_mac::{
     },
 };
 
-
 /// One upstream station peer plus every peer admitted by the SoftAP policy.
 pub const STA_AP_RX_BLOCK_ACK_PEER_CAPACITY: usize =
     oer_esp32s31_ieee80211_ap::protocol::AP_MAX_CLIENTS + 1;

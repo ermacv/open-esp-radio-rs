@@ -9,20 +9,18 @@ use core::{
 };
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
-use crate::{
-    datapath::{
-        DatapathRxServiceContext,
-        irq::EmbassyMacIrqRuntime,
-        network::{DatapathNetworkRx, DatapathNetworkRxSet},
-        paired::DatapathPairedRxService,
-        rx::{
-            reorder::{
-                RxBlockAckSnapshot, RxReorderCommand, RxReorderCommandResources,
-                try_send_rx_reorder_command,
-            },
-            routed::StaApStagedRxQueue,
-            staging::{StagedRxFrame, StagedRxQueue},
+use crate::datapath::{
+    DatapathRxServiceContext,
+    irq::EmbassyMacIrqRuntime,
+    network::{DatapathNetworkRx, DatapathNetworkRxSet},
+    paired::DatapathPairedRxService,
+    rx::{
+        reorder::{
+            RxBlockAckSnapshot, RxReorderCommand, RxReorderCommandResources,
+            try_send_rx_reorder_command,
         },
+        routed::StaApStagedRxQueue,
+        staging::{StagedRxFrame, StagedRxQueue},
     },
 };
 
@@ -1322,4 +1320,3 @@ fn finite_service_accepts_a_unit_within_a_wider_negotiated_stage() {
 
 mod credit_policy;
 mod transaction;
-

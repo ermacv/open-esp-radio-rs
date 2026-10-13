@@ -953,7 +953,8 @@ pub fn write_ht_association_response_frame_for_security(
     let frame = &mut output[..AP_ASSOCIATION_RESPONSE_LEN];
     frame.fill(0);
     write_management_header(frame, 0x0010, access_point, peer, management_sequence);
-    let Some(body) = frame[MANAGEMENT_HEADER_LEN..].first_chunk_mut::<AP_ASSOCIATION_RESPONSE_BODY_LEN>()
+    let Some(body) =
+        frame[MANAGEMENT_HEADER_LEN..].first_chunk_mut::<AP_ASSOCIATION_RESPONSE_BODY_LEN>()
     else {
         return Err(ApAssociationResponseError::OutputTooSmall {
             required: AP_ASSOCIATION_RESPONSE_LEN,

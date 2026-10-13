@@ -248,7 +248,9 @@ mod tests {
         assert!(!has::<system::MemoryBenchmark>(&performance));
         assert!(has::<phy::RegisterImage>(&performance));
         // No image serves a Wi-Fi role or its traffic (#563).
-        assert!(!has::<network::Udp>(&performance) && !has::<wifi::StationEpochControl>(&performance));
+        assert!(
+            !has::<network::Udp>(&performance) && !has::<wifi::StationEpochControl>(&performance)
+        );
     }
 
     #[test]

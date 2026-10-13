@@ -10,8 +10,8 @@ use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use crate::connected::management_protection::StationManagementProtection;
 use crate::connected_rx::StaCcmpRxReplayError;
-use oer_ieee80211_mac::ccmp::CcmpRxReplayEpoch;
 use crate::connection_coex::{ConnectionFrame, ConnectionFrameCoex, ReconnectFramePriority};
+use oer_ieee80211_mac::ccmp::CcmpRxReplayEpoch;
 
 use oer_esp32s31_ieee80211_mac::{
     crypto::{

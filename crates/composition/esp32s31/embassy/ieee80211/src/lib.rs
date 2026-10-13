@@ -115,7 +115,6 @@ pub mod exit_evidence;
 #[cfg(target_arch = "riscv32")]
 mod interrupts;
 
-
 #[cfg(feature = "diagnostics")]
 #[cfg(target_arch = "riscv32")]
 pub use diagnostics::{

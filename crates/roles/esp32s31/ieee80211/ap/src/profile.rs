@@ -79,9 +79,9 @@ pub const ADVERTISEMENT: oer_ieee80211_mac::ap::profile::Advertisement = {
                 },
             ],
         ) {
-        Some(value) => value,
-        None => panic!("the WMM parameters fit their fields"),
-    },
+            Some(value) => value,
+            None => panic!("the WMM parameters fit their fields"),
+        },
         // ESS, Short Preamble and Short Slot Time. Privacy follows AP security.
         // ERP and HT protection follow the associated peers.
         0x0421,

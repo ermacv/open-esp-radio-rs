@@ -196,7 +196,6 @@ impl crate::mac_clock::MacClockReader for Timer {
     }
 }
 
-
 impl oer_esp32s31_ieee80211_mac::ap_policy::ApRxPolicyHardware for Hardware {
     fn apply_ap_link_policy(&mut self, _: [u8; 6]) {}
     fn disable_ap_link_policy(&mut self) {}

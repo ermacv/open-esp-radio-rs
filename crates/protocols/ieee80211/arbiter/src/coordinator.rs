@@ -284,8 +284,9 @@ impl ApSchedule {
     /// due: at the TBTT after the last of them.
     pub fn switch_at(self, now: Instant, count: u8) -> Instant {
         let interval = self.beacon_interval.as_micros();
-        self.tbtt_from(now)
-            .saturating_add(Duration::from_micros(interval.saturating_mul(u64::from(count))))
+        self.tbtt_from(now).saturating_add(Duration::from_micros(
+            interval.saturating_mul(u64::from(count)),
+        ))
     }
 
     /// The first TBTT at or after `instant`.

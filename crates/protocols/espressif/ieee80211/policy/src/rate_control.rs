@@ -1404,7 +1404,7 @@ impl RateControl for EspressifRateControl {
         )
     }
 
-    fn observe_mpdu(&mut self, attempts: u8, acknowledged: bool, ack_snr_db: Option<i8>) {
+    fn observe_mpdu(&mut self, attempts: u16, acknowledged: bool, ack_snr_db: Option<i8>) {
         if acknowledged && let Some(sample) = ack_snr_db {
             self.association.update_ack_snr(sample);
         }

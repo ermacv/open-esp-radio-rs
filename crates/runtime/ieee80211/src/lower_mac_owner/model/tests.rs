@@ -202,12 +202,13 @@ async fn completion<'p, 'id: 'p>(
             let mut context = core::task::Context::from_waker(Waker::noop());
             Future::poll(event, &mut context)
         };
-        if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted {
-            ticket, buffers, ..
-        }))) = event
+        if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Single {
+            ticket,
+            buffer,
+            ..
+        })))) = event
         {
-            let mut buffers = buffers.into_iter();
-            return (ticket, buffers.next().unwrap());
+            return (ticket, buffer);
         }
     }
 }
@@ -359,7 +360,7 @@ fn drain<'p, 'id: 'p>(phase: &mut ModelPhase<'p, 'id>, stream: &mut Stream) {
             }
         };
         match event {
-            Ok(Ok(LowerMacEvent::TxCompleted { .. })) => stream.completions += 1,
+            Ok(Ok(LowerMacEvent::TxCompleted(_))) => stream.completions += 1,
             Ok(Ok(LowerMacEvent::Received { frame, .. })) => {
                 stream.received += 1;
                 phase.recycle(frame);
@@ -484,7 +485,7 @@ impl Work for KeyAttemptRemoval {
                 Future::poll(event, &mut context)
             };
             match event {
-                Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted { .. }))) => events.push("completed"),
+                Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted(_)))) => events.push("completed"),
                 Poll::Ready(Ok(Ok(LowerMacEvent::KeyRemoved(_)))) => events.push("removed"),
                 _ => {}
             }
@@ -697,8 +698,7 @@ fn as_much_work_as_allowed_while_every_setting_changes_loses_no_command() {
 /// What an attempt the closing gate aborted came back as.
 #[derive(Debug, Default)]
 struct Aborted {
-    status: Option<TxStatus>,
-    transmissions: u8,
+    outcome: Option<TxOutcome>,
     fresh: bool,
     untouched: bool,
 }
@@ -740,16 +740,14 @@ impl Work for AbortHeld<'_> {
                 let mut context = core::task::Context::from_waker(Waker::noop());
                 Future::poll(event, &mut context)
             };
-            if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted {
-                buffers,
+            if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Single {
+                buffer,
                 completion,
                 ..
-            }))) = event
+            })))) = event
             {
                 let mut seen = self.seen.borrow_mut();
-                seen.status = Some(completion.status);
-                seen.transmissions = completion.transmissions;
-                let buffer = buffers.into_iter().next().unwrap();
+                seen.outcome = Some(completion);
                 if let Ok(mut fresh) = <ModelTypes as TxBufferPool<'id, ModelLarge>>::class(buffer)
                 {
                     seen.fresh = true;
@@ -779,8 +777,10 @@ fn an_attempt_the_closing_gate_aborts_comes_back_fresh_without_a_transmission() 
     let seen = seen.into_inner();
     // Contract (owner decision on #563): aborted with no transmission, its
     // buffer fresh, never numbered, its MPDU untouched.
-    assert_eq!(seen.status, Some(TxStatus::Aborted));
-    assert_eq!(seen.transmissions, 0);
+    assert_eq!(
+        seen.outcome,
+        Some(TxOutcome::Withdrawn(WithdrawCause::GateClosed))
+    );
     assert!(seen.fresh, "the buffer comes back fresh");
     assert!(seen.untouched, "the MPDU is as it was written");
     assert!(air.sent().is_empty());
@@ -898,19 +898,22 @@ async fn aggregate_completion<'p, 'id: 'p>(
             let mut context = core::task::Context::from_waker(Waker::noop());
             Future::poll(event, &mut context)
         };
-        if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted {
+        if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Aggregate {
             ticket,
             buffers,
             completion,
             bodies,
             ..
-        }))) = event
+        })))) = event
         {
             return (
                 ticket,
                 buffers.into_iter().collect(),
                 bodies,
-                completion.block_ack,
+                match completion {
+                    TxOutcome::Ended { ack, .. } => ack.and_then(|ack| ack.block_ack),
+                    other => panic!("aggregate did not end: {other:?}"),
+                },
             );
         }
     }
@@ -1047,3 +1050,221 @@ fn a_lost_subframe_goes_again_with_its_packet_number_beside_new_ones_numbered_an
 mod ownership;
 
 mod preparation;
+
+struct TerminalOutcomes<'a> {
+    air: &'a ModelAir,
+    outcomes: &'a RefCell<Vec<TxOutcome>>,
+    collision: bool,
+}
+
+impl Work for TerminalOutcomes<'_> {
+    async fn work<'p, 'id: 'p>(
+        self,
+        phase: &mut ModelPhase<'p, 'id>,
+        resources: ModelResources<'id>,
+    ) {
+        let ModelResources {
+            mut tickets,
+            mut large,
+            station_pairwise: [slot, _],
+            ..
+        } = resources;
+        let key = phase.station().install_pairwise_key(
+            slot,
+            IndividualAddress::new(PEER).unwrap(),
+            Ccmp128Key([7; 16]),
+        );
+        if self.collision {
+            self.air.collision();
+            self.air.collision();
+        } else {
+            self.air.timeout();
+        }
+        let expected_tickets = [tickets[0].index(), tickets[1].index()];
+        submit(phase, tickets.remove(0), large.remove(0), Some(&key));
+        submit(phase, tickets.remove(0), large.remove(0), Some(&key));
+        for expected in expected_tickets {
+            loop {
+                yield_now().await;
+                let next = core::pin::pin!(phase.next_event());
+                let mut cx = core::task::Context::from_waker(Waker::noop());
+                if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Single {
+                    ticket,
+                    buffer,
+                    completion,
+                    body,
+                    ..
+                })))) = Future::poll(next, &mut cx)
+                {
+                    assert_eq!(
+                        ticket.index(),
+                        expected,
+                        "head's terminal precedes its tail"
+                    );
+
+                    assert!(matches!(&buffer, ModelAnyBuffer::LargeSent(_)));
+                    assert!(body.is_none());
+                    self.outcomes.borrow_mut().push(completion);
+                    break;
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_timeout_is_final_and_does_not_stop_or_withdraw_the_queue_tail() {
+    let (backend, air) = backend();
+    let outcomes = RefCell::default();
+    block_on(run_port(
+        backend,
+        Body(TerminalOutcomes {
+            air: &air,
+            outcomes: &outcomes,
+            collision: false,
+        }),
+    ));
+    let outcomes = outcomes.borrow();
+    assert_eq!(
+        outcomes[0],
+        TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout)
+    );
+    assert!(matches!(
+        outcomes[1],
+        TxOutcome::Ended {
+            status: TxEndStatus::Success,
+            transmissions: 1,
+            ..
+        }
+    ));
+    let sent = air.sent();
+    assert_eq!(
+        sent.len(),
+        2,
+        "no timeout retry, despite the unused second plan entry"
+    );
+    assert_eq!(
+        (sent[0].packet_number, sent[1].packet_number),
+        (Some(1), Some(2))
+    );
+    assert!(sent.iter().all(|frame| frame.frame[1] & 0x08 == 0));
+}
+
+#[test]
+fn collisions_retry_the_head_then_end_at_contention_limit_without_air_transmissions() {
+    let (backend, air) = backend();
+    let outcomes = RefCell::default();
+    block_on(run_port(
+        backend,
+        Body(TerminalOutcomes {
+            air: &air,
+            outcomes: &outcomes,
+            collision: true,
+        }),
+    ));
+    assert!(matches!(
+        outcomes.borrow()[0],
+        TxOutcome::Ended {
+            status: TxEndStatus::ContentionLimit,
+            transmissions: 0,
+            rate: None,
+            ..
+        }
+    ));
+    assert!(matches!(
+        outcomes.borrow()[1],
+        TxOutcome::Ended {
+            status: TxEndStatus::Success,
+            transmissions: 1,
+            ..
+        }
+    ));
+    let sent = air.sent();
+    assert_eq!(sent.len(), 3);
+    assert_eq!(
+        sent[0].frame, sent[1].frame,
+        "collision keeps SN, PN, payload and Retry bit"
+    );
+    assert_eq!(
+        sent.iter()
+            .map(|frame| frame.packet_number)
+            .collect::<Vec<_>>(),
+        [Some(1), Some(1), Some(2)]
+    );
+}
+
+struct LongRetryPlan<'a>(&'a ModelAir);
+impl Work for LongRetryPlan<'_> {
+    async fn work<'p, 'id: 'p>(
+        self,
+        phase: &mut ModelPhase<'p, 'id>,
+        resources: ModelResources<'id>,
+    ) {
+        let ModelResources {
+            mut tickets,
+            mut large,
+            ..
+        } = resources;
+        for _ in 0..256 {
+            self.0.answer(false);
+        }
+        self.0.answer(true);
+        let rate = phase.rate(PhyRate::Legacy(LegacyRate::Ofdm6M)).unwrap();
+        let plan = RetryPlan::new(RetryStage {
+            rate,
+            transmissions: core::num::NonZeroU8::new(255).unwrap(),
+            protection: Protection::None,
+        })
+        .then(RetryStage {
+            rate,
+            transmissions: core::num::NonZeroU8::new(2).unwrap(),
+            protection: Protection::None,
+        })
+        .unwrap();
+        let TxFrame::Individual { frame, .. } = data_frame(phase, false) else {
+            unreachable!()
+        };
+        submit_frame::<ModelLarge>(
+            phase,
+            tickets.remove(0),
+            TxSource::Fresh {
+                buffer: large.remove(0),
+                frame: ClassFrame::new(TxFrame::Individual { frame, plan })
+                    .ok()
+                    .unwrap(),
+                body: None,
+            },
+            None,
+        );
+        loop {
+            let Ok(Ok(event)) = phase.next_event().await else {
+                panic!("terminal")
+            };
+            if let LowerMacEvent::TxCompleted(TxCompleted::Single { completion, .. }) = event {
+                assert!(matches!(
+                    completion,
+                    TxOutcome::Ended {
+                        transmissions: 257,
+                        status: TxEndStatus::Success,
+                        ..
+                    }
+                ));
+                break;
+            }
+        }
+    }
+}
+
+#[test]
+fn ended_preserves_exact_counts_above_u8_and_retry_changes_only_on_republication() {
+    let (backend, air) = backend();
+    block_on(run_port(backend, Body(LongRetryPlan(&air))));
+    let sent = air.sent();
+    assert_eq!(sent.len(), 257);
+    assert_eq!(sent[0].frame[1] & 8, 0);
+    assert!(sent[1..].iter().all(|frame| frame.frame[1] & 8 != 0));
+    assert!(
+        sent.iter()
+            .all(|frame| frame.frame[22..24] == sent[0].frame[22..24])
+    );
+}

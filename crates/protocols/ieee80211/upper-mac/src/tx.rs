@@ -8,7 +8,7 @@
 //! [`ProtectionPolicy`] selects, the backoff the access category's
 //! [`EdcaContention`] draws from the caller's entropy, and which frame
 //! content with which Retry bits the attempt carries. [`TxPlanner::complete`]
-//! takes that attempt's [`TxCompletion`] and returns either the next plan or
+//! takes that attempt's [`PublicationReport`] and returns either the next plan or
 //! the exchange's [`TxReport`]:
 //!
 //! - an MPDU follows [`MpduRetryState`]: retried at the ladder's next rate
@@ -26,7 +26,7 @@
 
 use oer_ieee80211_lower_mac::Ieee80211Instant;
 use oer_ieee80211_lower_mac::{
-    Backoff, BlockAckReport, CoexPriority, TxCompletion, TxPower, TxResponse, TxStatus,
+    Backoff, BlockAckReport, CoexPriority, TxPower, TxResponse, TxStatus,
 };
 use oer_ieee80211_mac::{phy::PhyRate, qos::WmmAccessCategory, sequence::SequenceNumber};
 use oer_ieee80211_softmac::{
@@ -48,6 +48,19 @@ use crate::{
         RetryOutcome, RetryStateError,
     },
 };
+
+/// One publication observed by this planner, before it decides whether
+/// its exchange continues. The port's terminal `TxOutcome` is separate:
+/// retry observations must not be mistaken for resource-return terminals.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PublicationReport {
+    /// The publication's hardware result.
+    pub status: TxStatus,
+    /// The solicited ACK/BlockAck's SNR.
+    pub ack_snr_db: Option<i8>,
+    /// The BlockAck received by this publication.
+    pub block_ack: Option<BlockAckReport>,
+}
 
 /// Octets an A-MPDU subframe adds before its MPDU: the MPDU delimiter.
 const AMPDU_DELIMITER: u32 = 4;
@@ -382,7 +395,7 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
     pub fn complete(
         &mut self,
         exchange: &mut TxExchange,
-        completion: &TxCompletion,
+        completion: &PublicationReport,
         now: Ieee80211Instant,
         ladder: &impl RateLadder,
         entropy: &mut impl BackoffEntropy,

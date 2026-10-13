@@ -197,7 +197,7 @@ use oer_ieee80211_port::PortPhase;
 use oer_radio_port::{Poisoned, Slot};
 
 use crate::{
-    Channel, PhyRate, Protection, TbttEvent, TxCompletion, VifRole,
+    Channel, PhyRate, Protection, TbttEvent, TxOutcome, VifRole,
     owner::{
         AccessPoint, BssColor, Ccmp128Key, Ieee80211Capabilities, IndividualAddress, InterfaceRole,
         PhaseRate, Station, StationReceive, SupportedBlockAck, SupportedCoex, SupportedEdca,
@@ -230,21 +230,8 @@ pub enum LowerMacEvent<'id, P: PhaseTypes<'id>> {
         /// What the hardware observed of it.
         meta: P::RxMeta,
     },
-    /// The terminal of one attempt: its ticket, its buffers and the bodies
-    /// it carried.
-    TxCompleted {
-        /// The caller's operation context, moved unchanged from the attempt.
-        context: P::Context,
-        /// The attempt's ticket.
-        ticket: Slot<'id, P::TicketKind>,
-        /// The buffers of the attempt's frames.
-        buffers: P::TxBuffers,
-        /// How the attempt ended.
-        completion: TxCompletion,
-        /// Bodies of fresh returned MPDUs, with their subframe index.
-        /// Sent MPDUs own their bodies inside `buffers` until renewal.
-        bodies: P::TxBodies,
-    },
+    /// The terminal preserves the submitted shape and all of its owners.
+    TxCompleted(TxCompleted<'id, P>),
     /// A TBTT of an interface's schedule.
     Tbtt(TbttEvent),
     /// The paired TSF reading a
@@ -258,6 +245,47 @@ pub enum LowerMacEvent<'id, P: PhaseTypes<'id>> {
     /// A removed key's slot, of its role and kind, once no attempt in
     /// flight uses the key.
     KeyRemoved(Removed<'id, P>),
+}
+
+/// An accepted attempt's terminal, with the shape of its submission.
+///
+/// The backend must return exactly the original context, ticket and MPDU
+/// for a single attempt, or the original subframes for an aggregate, once.
+/// It moves the opaque context unchanged, including on withdrawal and during
+/// disable. Classes may share an AC queue, but may never exchange owners.
+/// The Rust shape guarantees cardinality for singles; identity remains a
+/// backend obligation, covered by the common backend conformance scenarios.
+/// A consumer detecting a context/resource mismatch must fail-stop just as
+/// for a poisoned backend. It must not count and continue with swapped owners.
+///
+/// [Owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6155986511).
+pub enum TxCompleted<'id, P: PhaseTypes<'id>> {
+    /// Exactly one submitted MPDU, never an empty or multi-buffer list.
+    Single {
+        /// Original opaque context.
+        context: P::Context,
+        /// Original ticket.
+        ticket: Slot<'id, P::TicketKind>,
+        /// Original MPDU, fresh if unpublished or retaining its sent image.
+        buffer: P::AnyTxBuffer,
+        /// A fresh MPDU's external body; sent MPDUs retain theirs internally.
+        body: Option<P::TxBody>,
+        /// Terminal outcome.
+        completion: TxOutcome,
+    },
+    /// The aggregate's original subframes, in submitted order.
+    Aggregate {
+        /// Original opaque context.
+        context: P::Context,
+        /// Original ticket.
+        ticket: Slot<'id, P::TicketKind>,
+        /// Original subframes.
+        buffers: P::TxBuffers,
+        /// Fresh subframes' bodies by subframe index; sent MPDUs retain theirs.
+        bodies: P::TxBodies,
+        /// Terminal outcome, including any Block Ack report.
+        completion: TxOutcome,
+    },
 }
 
 /// The keys of one role and their slots, which a phase's types name: they
@@ -416,9 +444,8 @@ pub trait LowerMacPhase<'p, 'id: 'p>:
     /// Close the transmit gate of every queue: admission of new attempts
     /// stops at once, and [`LowerMacEvent::GateClosed`] follows once no
     /// attempt is published. An attempt the gate holds unpublished ends as
-    /// [`TxStatus::Aborted`](crate::TxStatus::Aborted) with no
-    /// transmission; its buffer comes back fresh (a protected attempt is
-    /// numbered at its first transmission), its MPDU untouched, so the
+    /// `TxOutcome::Withdrawn(WithdrawCause::GateClosed)`; its buffer
+    /// keeps its submitted Fresh/Sent state and its MPDU unchanged, so the
     /// caller sends it again with its sequence number
     /// ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563)).
     fn close_gate(&mut self, gate: GateOpen<'id>);
@@ -655,8 +682,8 @@ pub trait InterfacePhase<'p, 'id: 'p> {
         key: Ccmp128Key,
     ) -> <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::GroupKey;
 
-    /// Remove `key`: an attempt that uses it and that the closed gate holds
-    /// ends as aborted at once, a published one is waited for, and
+    /// Remove `key`: queued attempts that use it return as
+    /// `Withdrawn(KeyRemoved)`, a published one is waited for, and
     /// [`LowerMacEvent::KeyRemoved`] gives its slot back.
     fn remove_pairwise_key(
         &mut self,

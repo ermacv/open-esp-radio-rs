@@ -152,9 +152,9 @@ impl Work for Boundaries {
                 assert_eq!(body.unwrap().0.as_ptr(), body_pointer);
             } else {
                 assert!(result.is_ok());
-                let (returned_ticket, mut buffers, bodies, _) = aggregate_completion(phase).await;
+                let (returned_ticket, returned_buffer) = completion(phase).await;
                 ticket = returned_ticket;
-                buffer = match buffers.remove(0) {
+                buffer = match returned_buffer {
                     ModelAnyBuffer::SmallSent(mpdu) => {
                         assert_eq!(mpdu.body().unwrap().0.as_ptr(), body_pointer);
                         assert_eq!(
@@ -162,15 +162,9 @@ impl Work for Boundaries {
                             &[0x5a; 16][..body_len]
                         );
                         assert_eq!(mpdu.packet_number(), protected.then_some(pn_before + 1));
-                        assert!(bodies.is_empty());
                         let (buffer, body) =
                             <ModelTypes as TxBufferPool<'id, ModelSmall>>::renew(mpdu);
                         assert_eq!(body.unwrap().0.as_ptr(), body_pointer);
-                        buffer
-                    }
-                    ModelAnyBuffer::Small(buffer) => {
-                        assert_eq!(bodies.len(), 1);
-                        assert_eq!(bodies[0].1.0.as_ptr(), body_pointer);
                         buffer
                     }
                     _ => unreachable!(),

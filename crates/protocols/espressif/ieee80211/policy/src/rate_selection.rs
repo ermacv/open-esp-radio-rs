@@ -34,7 +34,7 @@ use core::num::NonZeroU8;
 
 use oer_ieee80211_lower_mac::{
     Band, Ieee80211Capabilities, Protection, RETRY_STAGES, RetryPlan, RetryStage, SignalMetadata,
-    TxCompletion, TxStatus,
+    TxEndStatus, TxOutcome,
 };
 use oer_ieee80211_mac::phy::{LegacyRate, PhyRate};
 use oer_ieee80211_upper_mac::{
@@ -310,25 +310,36 @@ impl<K: Ieee80211Capabilities, M: SignalMetadata> RateSelection<M> for Espressif
     }
 
     fn associated(&mut self, peer: &RatePeer, response: &M) {
-        self.control = Some(EspressifRateControl::for_peer((), peer, response.link_metric()));
+        self.control = Some(EspressifRateControl::for_peer(
+            (),
+            peer,
+            response.link_metric(),
+        ));
     }
 
     fn disconnected(&mut self) {
         self.control = None;
     }
 
-    fn completed(&mut self, _now: Instant, frame: FrameRates, completion: &TxCompletion) {
-        // As the vendor station: a data MPDU's exchange adapts the control;
-        // one that never reached the air teaches nothing.
-        if frame != FrameRates::Data || completion.transmissions == 0 {
+    fn completed(&mut self, _now: Instant, frame: FrameRates, completion: &TxOutcome) {
+        if frame != FrameRates::Data || !completion.is_rate_sample() {
             return;
         }
+        let TxOutcome::Ended {
+            status,
+            transmissions,
+            ack,
+            ..
+        } = *completion
+        else {
+            return;
+        };
         if let Some(control) = &mut self.control {
-            let acknowledged = completion.status == TxStatus::Success;
+            let acknowledged = status == TxEndStatus::Success;
             control.observe_mpdu(
-                completion.transmissions,
+                transmissions,
                 acknowledged,
-                completion.ack_snr_db.filter(|_| acknowledged),
+                ack.and_then(|ack| ack.snr_db).filter(|_| acknowledged),
             );
         }
     }

@@ -46,9 +46,9 @@ pub trait RateControl: Sized {
     /// The rate of an A-MPDU's first attempt.
     fn ampdu_rate(&self) -> PhyRate;
 
-    /// A single data MPDU's exchange ended after `attempts` publications,
+    /// A single data MPDU's exchange ended after `attempts` known MPDU transmissions,
     /// `acknowledged` or not, with the ACK SNR of a valid sample.
-    fn observe_mpdu(&mut self, attempts: u8, acknowledged: bool, ack_snr_db: Option<i8>);
+    fn observe_mpdu(&mut self, attempts: u16, acknowledged: bool, ack_snr_db: Option<i8>);
 
     /// An A-MPDU exchange ended at `now` with `acknowledged` of its
     /// `attempted` subframes in its BlockAck, with the BlockAck's ACK SNR
@@ -81,7 +81,7 @@ impl RateControl for FixedRateControl {
         self.0
     }
 
-    fn observe_mpdu(&mut self, _attempts: u8, _acknowledged: bool, _ack_snr_db: Option<i8>) {}
+    fn observe_mpdu(&mut self, _attempts: u16, _acknowledged: bool, _ack_snr_db: Option<i8>) {}
 
     fn observe_ampdu(
         &mut self,

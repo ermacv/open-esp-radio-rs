@@ -8,7 +8,9 @@ Only the arbiter changes the port's channel: it closes the transmit gate,
 retunes the port and opens the gate again. The station asks it for a channel
 (`Arbiter::request`) and gets its answer in the same step: a named `Lease`
 of the channel from `from` until `until`, or a command to leave. Notices of
-the lease (`LeaseStarted`, `LeaseEnded`, `LeaseCancelled`) name it. Beside a
+the lease start (`LeaseStarted`) names it. End and cancellation return the
+unique `LeasePlace` without an ID: possession proves the sole lease ended.
+Absence end and cancellation likewise return the unique `AbsencePlace`. Beside a
 running access point, the station leaves the access point's channel only in
 absences after its TBTTs; a station that tells its access point it leaves
 says it is ready, or the lease is cancelled at its start. The lease's

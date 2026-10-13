@@ -5,8 +5,8 @@ extern crate std;
 use std::vec::Vec;
 
 use oer_ieee80211_lower_mac::{
-    BandSet, CoexPriority, CoexPrioritySet, HardwareServices, LowerMacCapabilities,
-    PhyFormatSet, RateSupport, ReceiveFilter, WidthSet,
+    BandSet, CoexPriority, CoexPrioritySet, HardwareServices, LowerMacCapabilities, PhyFormatSet,
+    RateSupport, ReceiveFilter, WidthSet,
 };
 use oer_ieee80211_mac::{
     ht::ht_peer_capabilities,
@@ -15,8 +15,9 @@ use oer_ieee80211_mac::{
 };
 
 use super::*;
-use oer_ieee80211_lower_mac::{Channel, ChannelWidth, LinkMetric, RxMeta, RxMetadata};
 use crate::rate_schedule::{RateScheduleKind, schedule_state};
+use oer_ieee80211_lower_mac::{Channel, ChannelWidth, LinkMetric, RxMeta, RxMetadata};
+use oer_ieee80211_lower_mac::{IndeterminateCause, WithdrawCause};
 
 struct Caps;
 
@@ -77,7 +78,6 @@ fn metric(db: i8) -> Measured {
     )
 }
 
-
 fn legacy_peer() -> RatePeer {
     RatePeer {
         phy: PhyMode::Legacy,
@@ -133,14 +133,15 @@ fn plan_walk(plan: &RetryPlan<PhyRate>) -> Vec<PhyRate> {
         .collect()
 }
 
-fn completion(status: TxStatus, transmissions: u8) -> TxCompletion {
-    TxCompletion {
+fn completion(status: TxEndStatus, transmissions: u16) -> TxOutcome {
+    TxOutcome::Ended {
         status,
-        ack_rssi_dbm: None,
-        ack_snr_db: Some(30),
-        block_ack: None,
         transmissions,
         rate: None,
+        ack: (status == TxEndStatus::Success).then_some(oer_ieee80211_lower_mac::TxAck {
+            snr_db: Some(30),
+            ..Default::default()
+        }),
     }
 }
 
@@ -158,20 +159,36 @@ fn until_associated_control_frames_walk_the_default_record() {
     let selection = EspressifRateSelection::<Caps>::new();
     let plan = plan_of(&selection, FrameRates::Control);
     assert_eq!(plan_walk(&plan), record_walk(DEFAULT_CONTROL_SCHEDULE));
-    assert_eq!(plan.stages().next().unwrap().rate, PhyRate::Legacy(LegacyRate::Dsss1M));
-    assert_eq!(plan.transmissions(), u16::from(schedule_publication_limit(DEFAULT_CONTROL_SCHEDULE)));
+    assert_eq!(
+        plan.stages().next().unwrap().rate,
+        PhyRate::Legacy(LegacyRate::Dsss1M)
+    );
+    assert_eq!(
+        plan.transmissions(),
+        u16::from(schedule_publication_limit(DEFAULT_CONTROL_SCHEDULE))
+    );
 }
 
 #[test]
 fn associated_control_frames_walk_the_association_record_and_leaving_restores_the_default() {
     let mut selection = EspressifRateSelection::<Caps>::new();
     RateSelection::<Measured>::associated(&mut selection, &legacy_peer(), &metric(40));
-    let schedule = selection.control().unwrap().association().control_schedule();
+    let schedule = selection
+        .control()
+        .unwrap()
+        .association()
+        .control_schedule();
     // An 802.11g association: the vendor's BasicOFDMSched, from 6 Mb/s.
-    assert_eq!(schedule, RateScheduleRef::new(RateScheduleKind::BasicOfdm, 0).unwrap());
+    assert_eq!(
+        schedule,
+        RateScheduleRef::new(RateScheduleKind::BasicOfdm, 0).unwrap()
+    );
     let plan = plan_of(&selection, FrameRates::Control);
     assert_eq!(plan_walk(&plan), record_walk(schedule));
-    assert_eq!(plan.stages().next().unwrap().rate, PhyRate::Legacy(LegacyRate::Ofdm6M));
+    assert_eq!(
+        plan.stages().next().unwrap().rate,
+        PhyRate::Legacy(LegacyRate::Ofdm6M)
+    );
     RateSelection::<Measured>::disconnected(&mut selection);
     assert_eq!(
         plan_walk(&plan_of(&selection, FrameRates::Control)),
@@ -204,21 +221,51 @@ fn data_completions_adapt_the_rate_as_the_vendor_control_does() {
     let mut selection = EspressifRateSelection::<Caps>::new();
     let mut reference = EspressifRateControl::for_peer((), &ht20_peer(), LinkMetric::new(60, 0));
     RateSelection::<Measured>::associated(&mut selection, &ht20_peer(), &metric(60));
-    let before = plan_of(&selection, FrameRates::Data).stages().next().unwrap().rate;
+    let before = plan_of(&selection, FrameRates::Data)
+        .stages()
+        .next()
+        .unwrap()
+        .rate;
     for _ in 0..64 {
-        RateSelection::<Measured>::completed(&mut selection, Instant::from_micros(0), FrameRates::Data, &completion(TxStatus::AckTimeout, 8));
+        RateSelection::<Measured>::completed(
+            &mut selection,
+            Instant::from_micros(0),
+            FrameRates::Data,
+            &completion(TxEndStatus::AckTimeout, 8),
+        );
         reference.observe_mpdu(8, false, None);
         // Control frames and ones that never went teach nothing.
-        RateSelection::<Measured>::completed(&mut selection, Instant::from_micros(0), FrameRates::Control, &completion(TxStatus::AckTimeout, 8));
-        RateSelection::<Measured>::completed(&mut selection, Instant::from_micros(0), FrameRates::Data, &completion(TxStatus::Aborted, 0));
+        RateSelection::<Measured>::completed(
+            &mut selection,
+            Instant::from_micros(0),
+            FrameRates::Control,
+            &completion(TxEndStatus::AckTimeout, 8),
+        );
+        RateSelection::<Measured>::completed(
+            &mut selection,
+            Instant::from_micros(0),
+            FrameRates::Data,
+            &TxOutcome::Withdrawn(WithdrawCause::GateClosed),
+        );
     }
-    let after = plan_of(&selection, FrameRates::Data).stages().next().unwrap().rate;
+    let after = plan_of(&selection, FrameRates::Data)
+        .stages()
+        .next()
+        .unwrap()
+        .rate;
     assert_eq!(after, reference.mpdu_rate());
     assert_eq!(
-        selection.control().unwrap().association().current_schedule(),
+        selection
+            .control()
+            .unwrap()
+            .association()
+            .current_schedule(),
         reference.association().current_schedule()
     );
-    assert!(after.nominal_kbps() < before.nominal_kbps(), "{before:?} -> {after:?}");
+    assert!(
+        after.nominal_kbps() < before.nominal_kbps(),
+        "{before:?} -> {after:?}"
+    );
 }
 
 #[test]
@@ -227,7 +274,10 @@ fn the_control_records_a_station_uses_start_with_a_legacy_rate() {
         DEFAULT_CONTROL_SCHEDULE,
         RateScheduleRef::new(RateScheduleKind::BasicOfdm, 0).unwrap(),
     ] {
-        assert!(legacy_rate(schedule_state(schedule).rate).is_some(), "{schedule:?}");
+        assert!(
+            legacy_rate(schedule_state(schedule).rate).is_some(),
+            "{schedule:?}"
+        );
     }
 }
 
@@ -249,7 +299,9 @@ fn on_a_20_mhz_channel_an_ht40_records_plan_keeps_its_20_mhz_stages() {
     RateSelection::<Measured>::associated(&mut selection, &ht40_peer(), &metric(60));
     let vendor = plan_of(&selection, FrameRates::Data);
     assert!(
-        vendor.stages().any(|stage| stage.rate.bandwidth().mhz() == 40),
+        vendor
+            .stages()
+            .any(|stage| stage.rate.bandwidth().mhz() == 40),
         "the record starts at HT40: {vendor:?}"
     );
     // A 20 MHz channel carries no 40 MHz rate: those stages are left out,
@@ -284,7 +336,7 @@ fn an_attempt_cut_before_the_air_leaves_the_rate_control_as_it_was() {
         &mut selection,
         Instant::from_micros(0),
         FrameRates::Data,
-        &completion(TxStatus::Aborted, 0),
+        &TxOutcome::Withdrawn(WithdrawCause::GateClosed),
     );
     assert_eq!(state(&selection), before);
     // One transmission on the air is a sample.
@@ -292,7 +344,33 @@ fn an_attempt_cut_before_the_air_leaves_the_rate_control_as_it_was() {
         &mut selection,
         Instant::from_micros(0),
         FrameRates::Data,
-        &completion(TxStatus::Success, 1),
+        &completion(TxEndStatus::Success, 1),
     );
     assert_ne!(state(&selection), before);
+}
+
+#[test]
+fn unknown_outcomes_and_contention_exhaustion_never_change_rate_state() {
+    let mut selection = EspressifRateSelection::<Caps>::new();
+    RateSelection::<Measured>::associated(&mut selection, &ht20_peer(), &metric(60));
+    let before = std::format!("{:?}", selection.control().unwrap().association());
+    for outcome in [
+        TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout),
+        TxOutcome::Withdrawn(WithdrawCause::KeyRemoved),
+        completion(TxEndStatus::ContentionLimit, 0),
+        completion(TxEndStatus::ContentionLimit, 3),
+    ] {
+        for _ in 0..64 {
+            RateSelection::<Measured>::completed(
+                &mut selection,
+                Instant::from_micros(0),
+                FrameRates::Data,
+                &outcome,
+            );
+        }
+        assert_eq!(
+            std::format!("{:?}", selection.control().unwrap().association()),
+            before
+        );
+    }
 }

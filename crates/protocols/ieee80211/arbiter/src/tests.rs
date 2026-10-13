@@ -189,7 +189,7 @@ fn a_station_alone_leases_a_scan_channel_at_once_and_ends_it_in_place() {
         [
             Seen::CloseGate(()),
             Seen::OpenGate,
-            Seen::Station(StationNotice::LeaseEnded(id, self::place())),
+            Seen::Station(StationNotice::LeaseEnded(self::place())),
         ]
     );
     let _ = lease;
@@ -223,7 +223,7 @@ fn beside_an_access_point_a_scan_goes_in_an_absence_with_the_air_reserved() {
             Seen::CloseGate(None),
             Seen::Retune(1),
             Seen::OpenGate,
-            Seen::Station(StationNotice::LeaseEnded(id, self::place())),
+            Seen::Station(StationNotice::LeaseEnded(self::place())),
         ]
     );
     let _ = lease;
@@ -251,12 +251,10 @@ fn a_released_lease_always_ends_or_is_cancelled() {
     // Before its start: cancelled.
     let (mut arbiter, place) = beside_access_point::<NoReservation>();
     let waiting = lease(arbiter.request(at(0), scan(6, 10), place));
-    let id = waiting.id();
     arbiter.release(waiting);
     assert_eq!(
         run(&mut arbiter, &mut port, at(0)),
         [Seen::Station(StationNotice::LeaseCancelled(
-            id,
             CancelReason::Released,
             self::place()
         ))]
@@ -265,7 +263,6 @@ fn a_released_lease_always_ends_or_is_cancelled() {
     // While its gate closes: the cycle onto its channel ends, then the
     // lease's, back home.
     let closing = lease(arbiter.request(at(0), scan(6, 10), self::place()));
-    let id = closing.id();
     assert!(matches!(
         arbiter.poll_action(at(52)),
         Some(ArbiterAction::CloseGate { .. })
@@ -275,13 +272,12 @@ fn a_released_lease_always_ends_or_is_cancelled() {
     let seen = run(&mut arbiter, &mut port, at(52));
     assert_eq!(
         seen.last(),
-        Some(&Seen::Station(StationNotice::LeaseEnded(id, self::place())))
+        Some(&Seen::Station(StationNotice::LeaseEnded(self::place())))
     );
     assert_eq!(arbiter.channel(), Some(channel(1)));
 
     // While the port retunes onto its channel.
     let moving = lease(arbiter.request(at(100), scan(6, 10), self::place()));
-    let id = moving.id();
     assert!(matches!(
         arbiter.poll_action(at(152)),
         Some(ArbiterAction::CloseGate { .. })
@@ -296,7 +292,7 @@ fn a_released_lease_always_ends_or_is_cancelled() {
     let seen = run(&mut arbiter, &mut port, at(152));
     assert_eq!(
         seen.last(),
-        Some(&Seen::Station(StationNotice::LeaseEnded(id, self::place())))
+        Some(&Seen::Station(StationNotice::LeaseEnded(self::place())))
     );
     assert_eq!(arbiter.channel(), Some(channel(1)));
 
@@ -309,7 +305,6 @@ fn a_released_lease_always_ends_or_is_cancelled() {
         },
         self::place(),
     ));
-    let id = home.id();
     run(&mut arbiter, &mut port, at(200));
     arbiter.release(home);
     assert_eq!(
@@ -317,7 +312,7 @@ fn a_released_lease_always_ends_or_is_cancelled() {
         [
             Seen::CloseGate(()),
             Seen::OpenGate,
-            Seen::Station(StationNotice::LeaseEnded(id, self::place())),
+            Seen::Station(StationNotice::LeaseEnded(self::place())),
         ]
     );
 }
@@ -327,7 +322,6 @@ fn an_access_point_that_stops_during_an_absence_cancels_it_and_the_port_returns(
     let (mut arbiter, place) = beside_access_point::<NoReservation>();
     let mut port = Port::default();
     let lease = lease(arbiter.request(at(0), scan(6, 10), place));
-    let id = lease.id();
     run(&mut arbiter, &mut port, at(52));
     arbiter.access_point(at(55), AccessPointFact::Stopped);
     assert_eq!(
@@ -337,7 +331,6 @@ fn an_access_point_that_stops_during_an_absence_cancels_it_and_the_port_returns(
             Seen::Retune(1),
             Seen::OpenGate,
             Seen::Station(StationNotice::LeaseCancelled(
-                id,
                 CancelReason::AccessPointStopped,
                 self::place()
             )),
@@ -351,14 +344,12 @@ fn a_refused_move_cancels_the_lease_and_the_port_returns() {
     let (mut arbiter, place) = beside_access_point::<NoReservation>();
     let mut port = Port { refuse: true };
     let lease = lease(arbiter.request(at(0), scan(6, 10), place));
-    let id = lease.id();
     assert_eq!(
         run(&mut arbiter, &mut port, at(52)),
         [
             Seen::CloseGate(()),
             Seen::Retune(6),
             Seen::Station(StationNotice::LeaseCancelled(
-                id,
                 CancelReason::Refused,
                 self::place()
             )),
@@ -375,12 +366,10 @@ fn a_failed_return_or_a_poisoned_port_stops_the_station_and_the_access_point() {
     let (mut arbiter, place) = beside_access_point::<NoReservation>();
     let mut port = Port::default();
     let returning = lease(arbiter.request(at(0), scan(6, 10), place));
-    let id = returning.id();
     run(&mut arbiter, &mut port, at(52));
     port.refuse = true;
     let seen = run(&mut arbiter, &mut port, at(64));
     assert!(seen.contains(&Seen::Station(StationNotice::LeaseCancelled(
-        id,
         CancelReason::PortFailed,
         self::place()
     ))));
@@ -411,7 +400,6 @@ fn a_gate_that_closes_too_late_for_two_retunes_and_the_shortest_listening_cancel
     let (mut arbiter, place) = beside_access_point::<NoReservation>();
     let mut port = Port::default();
     let lease = lease(arbiter.request(at(0), scan(6, 10), place));
-    let id = lease.id();
     assert!(matches!(
         arbiter.poll_action(at(52)),
         Some(ArbiterAction::CloseGate { .. })
@@ -422,7 +410,6 @@ fn a_gate_that_closes_too_late_for_two_retunes_and_the_shortest_listening_cancel
         run(&mut arbiter, &mut port, at(58)),
         [
             Seen::Station(StationNotice::LeaseCancelled(
-                id,
                 CancelReason::Late,
                 self::place()
             )),
@@ -484,7 +471,7 @@ fn a_lost_upstream_is_searched_for_in_absences_and_its_loss_stops_the_access_poi
     assert_eq!(first.from(), at(52));
     run(&mut arbiter, &mut port, at(52));
     let seen = run(&mut arbiter, &mut port, at(64));
-    let Some(Seen::Station(StationNotice::LeaseEnded(_, place))) = seen.into_iter().last() else {
+    let Some(Seen::Station(StationNotice::LeaseEnded(place))) = seen.into_iter().last() else {
         panic!("the absence ends");
     };
     let _ = first;
@@ -545,7 +532,7 @@ fn a_join_away_from_the_access_point_starts_with_its_announced_move_and_it_stays
         [
             Seen::CloseGate(()),
             Seen::OpenGate,
-            Seen::Station(StationNotice::LeaseEnded(id, self::place())),
+            Seen::Station(StationNotice::LeaseEnded(self::place())),
         ]
     );
     assert_eq!(arbiter.channel(), Some(channel(6)));
@@ -561,7 +548,7 @@ fn a_second_join_elsewhere_within_the_follow_interval_is_refused_and_the_access_
     run(&mut arbiter, &mut port, at(550));
     arbiter.release(lease);
     let place = match run(&mut arbiter, &mut port, at(600)).pop() {
-        Some(Seen::Station(StationNotice::LeaseEnded(_, place))) => place,
+        Some(Seen::Station(StationNotice::LeaseEnded(place))) => place,
         seen => panic!("{seen:?}"),
     };
     // The join failed, so the interval doubled: within 60 s of the last
@@ -579,7 +566,10 @@ fn a_second_join_elsewhere_within_the_follow_interval_is_refused_and_the_access_
     let _ = lease_after(&mut arbiter, place);
     assert!(matches!(
         run(&mut arbiter, &mut port, at(60_000)).as_slice(),
-        [Seen::AccessPoint(AccessPointCommand::AnnounceSwitch { count: 5, .. })]
+        [Seen::AccessPoint(AccessPointCommand::AnnounceSwitch {
+            count: 5,
+            ..
+        })]
     ));
 }
 
@@ -600,7 +590,7 @@ fn failed_follow(
     run(arbiter, port, due);
     arbiter.release(lease);
     match run(arbiter, port, due).pop() {
-        Some(Seen::Station(StationNotice::LeaseEnded(_, place))) => place,
+        Some(Seen::Station(StationNotice::LeaseEnded(place))) => place,
         seen => panic!("{seen:?}"),
     }
 }
@@ -628,7 +618,14 @@ fn the_follow_interval_doubles_after_each_failed_join_and_resets_once_connected(
     let mut place = place;
     let mut number = 1;
     for _ in 0..4 {
-        place = failed_follow(&mut arbiter, &mut port, place, number, at(now), at(now + 600));
+        place = failed_follow(
+            &mut arbiter,
+            &mut port,
+            place,
+            number,
+            at(now),
+            at(now + 600),
+        );
         let (retry, back) = retry_at(arbiter.request(at(now + 1_000), connect(number ^ 7), place));
         place = back;
         now = u32::try_from(retry.as_micros() / 1000).unwrap();
@@ -643,7 +640,7 @@ fn the_follow_interval_doubles_after_each_failed_join_and_resets_once_connected(
     arbiter.upstream(at(now + 700), UpstreamFact::Connected(channel(number)));
     arbiter.release(lease);
     let place = match run(&mut arbiter, &mut port, at(now + 800)).pop() {
-        Some(Seen::Station(StationNotice::LeaseEnded(_, place))) => place,
+        Some(Seen::Station(StationNotice::LeaseEnded(place))) => place,
         seen => panic!("{seen:?}"),
     };
     let (retry, _) = retry_at(arbiter.request(at(now + 1_000), connect(number ^ 7), place));
@@ -733,12 +730,10 @@ fn a_connected_stations_absence_waits_for_its_readiness_and_returns_home() {
     // 52 ms: the absence follows the next TBTT.
     let late = absence(arbiter.request_absence(at(45), scan(6, 10), &home, place));
     assert_eq!(late.from(), at(152));
-    let id = late.id();
     // The station never said it was ready: cancelled at its start.
     assert_eq!(
         run(&mut arbiter, &mut port, at(152)),
         [Seen::Station(StationNotice::AbsenceCancelled(
-            id,
             CancelReason::NotReady,
             absence_place()
         ))]
@@ -762,7 +757,7 @@ fn a_connected_stations_absence_waits_for_its_readiness_and_returns_home() {
             Seen::CloseGate(()),
             Seen::Retune(1),
             Seen::OpenGate,
-            Seen::Station(StationNotice::AbsenceEnded(ready.id(), absence_place())),
+            Seen::Station(StationNotice::AbsenceEnded(absence_place())),
         ]
     );
     let _ = (ready, home);
@@ -770,7 +765,8 @@ fn a_connected_stations_absence_waits_for_its_readiness_and_returns_home() {
 
 #[test]
 fn an_absence_needs_the_running_primary_lease() {
-    let (mut arbiter, place, absence) = Arbiter::<Gate, Caps>::new(ArbiterPolicy::DEFAULT, channel(1), Open);
+    let (mut arbiter, place, absence) =
+        Arbiter::<Gate, Caps>::new(ArbiterPolicy::DEFAULT, channel(1), Open);
     let waiting = lease(arbiter.request(
         at(0),
         ChannelRequest {
@@ -793,7 +789,6 @@ fn a_release_of_the_primary_lease_during_an_absence_ends_the_absence_first() {
     let away = absence(arbiter.request_absence(at(0), scan(6, 10), &home, place));
     arbiter.ready(away.id());
     run(&mut arbiter, &mut port, at(52));
-    let (home_id, away_id) = (home.id(), away.id());
     arbiter.release(home);
     let seen = run(&mut arbiter, &mut port, at(55));
     let ends: Vec<_> = seen
@@ -804,11 +799,10 @@ fn a_release_of_the_primary_lease_during_an_absence_ends_the_absence_first() {
         ends,
         [
             Seen::Station(StationNotice::AbsenceCancelled(
-                away_id,
                 CancelReason::Released,
                 absence_place()
             )),
-            Seen::Station(StationNotice::LeaseEnded(home_id, self::place())),
+            Seen::Station(StationNotice::LeaseEnded(self::place())),
         ]
     );
     let _ = away;
@@ -840,9 +834,9 @@ fn a_switch_during_an_absence_cancels_it_and_replaces_the_primary_lease() {
     assert!(matches!(
         &notices[..],
         [
-            Seen::Station(StationNotice::AbsenceCancelled(cancelled, CancelReason::Switch, _)),
+            Seen::Station(StationNotice::AbsenceCancelled(CancelReason::Switch, _)),
             Seen::Station(StationNotice::Moved(moved)),
-        ] if *cancelled == away.id() && *moved == channel(11)
+        ] if *moved == channel(11)
     ));
     assert_eq!(arbiter.channel(), Some(channel(11)));
     // The station exchanges its primary lease: the old one goes, a new one
@@ -870,3 +864,24 @@ fn an_exchange_without_a_move_gives_the_same_lease_back() {
     assert_eq!(home.channel(), channel(1));
 }
 
+#[test]
+fn returning_the_unique_place_proves_the_lease_ended_and_admits_the_next_lease() {
+    let (mut arbiter, home, _, mut port) = connected();
+    arbiter.release(home);
+    let place = run(&mut arbiter, &mut port, at(56))
+        .into_iter()
+        .find_map(|event| match event {
+            Seen::Station(StationNotice::LeaseEnded(place)) => Some(place),
+            _ => None,
+        })
+        .expect("the sole lease returns its place without an ID");
+    let answer = arbiter.request(
+        at(57),
+        ChannelRequest {
+            channel: channel(1),
+            purpose: Purpose::Connect,
+        },
+        place,
+    );
+    assert!(matches!(answer, Answer::Lease(_)));
+}

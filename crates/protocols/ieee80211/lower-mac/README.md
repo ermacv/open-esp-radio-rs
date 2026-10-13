@@ -28,6 +28,11 @@ back; its operations are synchronous and never wait:
   machine local to the generic `PortBody::run`. Portable contexts need not
   be `Send`; only a backend such as S31 crossing execution contexts requires
   it ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6155221933)).
+  `TxCompleted::Single` contains exactly one MPDU; `Aggregate` contains
+  its submitted subframes. The backend must return the original owners,
+  including when different classes share an AC queue. The common suite in
+  runtime `lower_mac_owner::conformance` checks this obligation against the
+  model now and is required of the S31 adapter at its runtime rewrite.
   The backend moves that context unchanged;
   no `Clone` bound, frame inspection or parallel lookup identifies the
   original operation. Bodies remain owned until the same terminal, even
@@ -65,6 +70,12 @@ back; its operations are synchronous and never wait:
   table. The backend retries the head of its queue by the plan before the
   next attempt of that queue; the completion reports the transmissions made
   and the last rate, for the rate control above the port.
+  `Ended.transmissions` is exact (`u16` covers all four 255-transmission
+  stages). A hardware timeout with no completion ends as `Indeterminate`;
+  the backend does not republish that MPDU, stop the queue, or return its
+  tail. Internal collisions remain driver retries; budget exhaustion is
+  `Ended(ContentionLimit)`. Withdrawals name only GateClosed, KeyRemoved or
+  Disabled. Rate selection ignores Indeterminate and ContentionLimit.
 - **Order.** Every operation reaches the hardware in the order the caller
   made it: an attempt that names a key is published after that key's
   install.

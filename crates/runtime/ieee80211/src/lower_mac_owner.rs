@@ -6,3 +6,6 @@
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod model;
+
+#[cfg(any(test, feature = "test-support"))]
+pub mod conformance;

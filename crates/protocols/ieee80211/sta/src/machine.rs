@@ -72,7 +72,7 @@ use oer_ieee80211_arbiter::{
 use oer_ieee80211_lower_mac::{
     AckHeader, GroupAddress, HeaderSpec, Ieee80211Capabilities, IndividualAddress, MpduLength,
     ReceiveFilter, ReturnedMpdu, RxEvidence, RxMetadata, SizedFrame, Station as StationRole,
-    StationReceive, SupportedChannel, SupportedFilter, TxBufferMemory, TxCompletion, TxStatus,
+    StationReceive, SupportedChannel, SupportedFilter, TxBufferMemory, TxEndStatus, TxOutcome,
 };
 use oer_ieee80211_mac::ccmp::CcmpRxReplayEpoch;
 use oer_ieee80211_mac::{
@@ -104,7 +104,7 @@ use oer_ieee80211_upper_mac::HePacketPadding;
 use crate::association::StaAssociatedPeer;
 use oer_time::{Duration, Instant};
 
-use crate::epoch::{EpochExhausted, LinkEpoch, LinkEpochSource};
+use crate::epoch::{LinkEpoch, LinkEpochSource};
 use crate::pool::Pool;
 use crate::power_save::{PowerSaveDecision, PowerSaveView};
 
@@ -181,7 +181,7 @@ pub enum StaInput<'f, 'id, T: StaTokens, K> {
         /// The transmission's buffer.
         buffer: ReturnedMpdu<T::SmallBuffer, T::Sent>,
         /// How it ended.
-        completion: TxCompletion,
+        completion: TxOutcome,
     },
     /// A frame the service did not send (no rate of its plan is on the
     /// port's channel, or it does not fit its buffer class): its ticket and
@@ -196,14 +196,6 @@ pub enum StaInput<'f, 'id, T: StaTokens, K> {
         ticket: T::Ticket,
         /// The frame's buffer.
         buffer: ReturnedMpdu<T::SmallBuffer, T::Sent>,
-    },
-    /// Tokens of the station that came back without a frame's end: a
-    /// terminal that carried a buffer more or none.
-    Returned {
-        /// A ticket, if one came back.
-        ticket: Option<T::Ticket>,
-        /// A buffer, if one came back.
-        buffer: Option<ReturnedMpdu<T::SmallBuffer, T::Sent>>,
     },
     /// The arbiter's answer to the station's request.
     Answer(Answer<K>),
@@ -432,8 +424,6 @@ pub enum LinkProtection<'a, T: StaTokens> {
 /// What the station tells the application.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaNotice {
-    /// No connection began: this install cannot issue another unique epoch.
-    ConnectRefused(EpochExhausted),
     /// The station is connected to `bssid` on `channel`.
     Connected {
         /// The access point.
@@ -1244,13 +1234,17 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
 
     /// Tokens given back beyond the station's own: dropped, counted.
     pub fn lost_tokens(&self) -> u32 {
-        let keys = self.state.keys().map_or(0, |keys| {
-            keys.free_groups.lost().saturating_add(keys.retiring.lost())
-        });
+        let keys = self
+            .state
+            .keys()
+            .map_or(oer_ieee80211_lower_mac::Counter::ZERO, |keys| {
+                keys.free_groups.lost().combined(keys.retiring.lost())
+            });
         self.tickets
             .lost()
-            .saturating_add(self.buffers.lost())
-            .saturating_add(keys)
+            .combined(self.buffers.lost())
+            .combined(keys)
+            .get()
     }
 
     /// Whether an operation still belongs to this connection attempt.
@@ -1351,7 +1345,13 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 }
                 Done::Tx {
                     purpose: context.purpose,
-                    delivered: matches!(completion.status, TxStatus::Success),
+                    delivered: matches!(
+                        completion,
+                        TxOutcome::Ended {
+                            status: TxEndStatus::Success,
+                            ..
+                        }
+                    ),
                 }
             }
             StaInput::Unsent {
@@ -1369,15 +1369,6 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     purpose: context.purpose,
                     reason,
                 }
-            }
-            StaInput::Returned { ticket, buffer } => {
-                if let Some(ticket) = ticket {
-                    self.tickets.put(ticket);
-                }
-                if let Some(buffer) = buffer {
-                    self.buffers.put(buffer.into_fresh(T::renew));
-                }
-                return;
             }
             StaInput::Command(command) => Done::Command(command),
             StaInput::Tick => Done::Tick,
@@ -1628,12 +1619,12 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 }
                 return;
             }
-            StationNotice::AbsenceEnded(_, place) => {
+            StationNotice::AbsenceEnded(place) => {
                 self.absence_place = Some(place);
                 self.absence_over(false);
                 return;
             }
-            StationNotice::AbsenceCancelled(_, _, place) => {
+            StationNotice::AbsenceCancelled(_, place) => {
                 self.absence_place = Some(place);
                 self.absence_over(true);
                 return;
@@ -1660,21 +1651,12 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     }
                 }
             }
-            StationNotice::LeaseEnded(id, place) | StationNotice::LeaseCancelled(id, _, place)
-                if self.lease.id() != Some(id) =>
-            {
-                // A notice of an earlier lease: its place came back long
-                // ago, so this one is the arbiter's mistake.
-                debug_assert!(false, "a notice names a lease the station does not hold");
-                let _ = place;
-                state
-            }
-            StationNotice::LeaseEnded(_, place) => {
+            StationNotice::LeaseEnded(place) => {
                 self.lease = Held::None;
                 self.place = Some(place);
                 self.lease_ended(state, false)
             }
-            StationNotice::LeaseCancelled(_, _, place) => {
+            StationNotice::LeaseCancelled(_, place) => {
                 self.lease = Held::None;
                 self.place = Some(place);
                 self.lease_ended(state, true)
@@ -1774,14 +1756,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         }
         match (state, done) {
             (State::Idle(keys) | State::Report(_, keys), Done::Command(StaCommand::Connect)) => {
-                match self.epochs.begin() {
-                    Ok(epoch) => self.epoch = Some(epoch),
-                    Err(exhausted) => {
-                        self.epoch = None;
-                        self.notice_owed = Some(StaNotice::ConnectRefused(exhausted));
-                        return State::Idle(keys);
-                    }
-                }
+                self.epoch = Some(self.epochs.begin());
                 self.scan.clear();
                 self.visit(0, 0, None, keys)
             }

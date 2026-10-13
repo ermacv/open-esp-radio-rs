@@ -28,6 +28,8 @@
 //! the port and its values; it never waits on it.
 
 pub mod capabilities;
+pub mod counter;
+pub use counter::Counter;
 pub mod control;
 pub mod extensions;
 pub mod owner;
@@ -99,14 +101,14 @@ pub use phase::{
     LowerMacPhase, PhaseTypes, PoolMpdu, PoolPreparation, PoolSource, PreparationError,
     PreparationRefused, PreparedTx, RETRY_STAGES, Removed, RemovedKey, RetransmissionPlan,
     RetryPlan, RetryStage, ReturnedMpdu, RoleKeys, StationPhase, SubmitError, TxBufferClass,
-    TxBufferMemory, TxBufferPool, TxSource,
+    TxBufferMemory, TxBufferPool, TxCompleted, TxSource,
 };
 pub use rx::{
     LinkMetric, RxBuffer, RxCryptoStatus, RxEvidence, RxMeta, RxMetadata, SignalMetadata,
 };
 pub use tx::{
-    Backoff, BlockAckReport, Protection, TxBody, TxCompletion, TxFault, TxPower, TxResponse,
-    TxStatus,
+    Backoff, BlockAckReport, IndeterminateCause, Protection, TxAck, TxBody, TxEndStatus, TxFault,
+    TxOutcome, TxPower, TxResponse, TxStatus, WithdrawCause,
 };
 
 #[cfg(test)]

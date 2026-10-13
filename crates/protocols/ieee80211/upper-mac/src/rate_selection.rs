@@ -11,7 +11,7 @@
 //!
 //! [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6132066470
 
-use oer_ieee80211_lower_mac::{RetryPlan, RxMetadata, TxCompletion};
+use oer_ieee80211_lower_mac::{RetryPlan, RxMetadata, TxOutcome};
 use oer_ieee80211_mac::phy::PhyRate;
 use oer_time::Instant;
 
@@ -37,8 +37,11 @@ pub trait RateSelection<M: RxMetadata> {
     /// port's channel carries: `carried` turns a rate into the phase's, or
     /// refuses it. The selection's own rule decides what a refused stage
     /// becomes; `None` when no stage is left, and the frame does not go.
-    fn plan<R>(&self, frame: FrameRates, carried: impl Fn(PhyRate) -> Option<R>)
-    -> Option<RetryPlan<R>>;
+    fn plan<R>(
+        &self,
+        frame: FrameRates,
+        carried: impl Fn(PhyRate) -> Option<R>,
+    ) -> Option<RetryPlan<R>>;
 
     /// The interface associated with `peer`, whose frame that made the link
     /// (the station's Association Response) arrived with `response`: from
@@ -50,5 +53,5 @@ pub trait RateSelection<M: RxMetadata> {
 
     /// A frame for `frame` ended at `now` with `completion`: its
     /// transmissions, the rate of the last, whether it was acknowledged.
-    fn completed(&mut self, now: Instant, frame: FrameRates, completion: &TxCompletion);
+    fn completed(&mut self, now: Instant, frame: FrameRates, completion: &TxOutcome);
 }

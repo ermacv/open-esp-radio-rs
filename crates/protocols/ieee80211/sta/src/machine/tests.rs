@@ -417,15 +417,13 @@ impl World {
                     context,
                     ticket,
                     buffer: ReturnedMpdu::Sent(buffer),
-                    completion: TxCompletion {
+                    completion: TxOutcome::Ended {
                         status: if self.outcomes.pop_front().unwrap_or(true) {
-                            TxStatus::Success
+                            TxEndStatus::Success
                         } else {
-                            TxStatus::AckTimeout
+                            TxEndStatus::AckTimeout
                         },
-                        ack_rssi_dbm: None,
-                        ack_snr_db: None,
-                        block_ack: None,
+                        ack: None,
                         transmissions: 1,
                         rate: None,
                     },
@@ -848,11 +846,9 @@ fn a_terminal_of_the_previous_connection_only_returns_its_resources() {
             context: old.context,
             ticket: old.ticket,
             buffer: ReturnedMpdu::Sent(old.buffer),
-            completion: TxCompletion {
-                status: TxStatus::Success,
-                ack_rssi_dbm: None,
-                ack_snr_db: None,
-                block_ack: None,
+            completion: TxOutcome::Ended {
+                status: TxEndStatus::Success,
+                ack: None,
                 transmissions: 1,
                 rate: None,
             },
@@ -881,60 +877,6 @@ fn a_terminal_of_the_previous_connection_only_returns_its_resources() {
     assert!(world.station.tokens().is_some());
     assert!(world.station.tokens().is_some());
     assert!(world.station.tokens().is_none());
-    assert_eq!(world.station.lost_tokens(), 0);
-}
-
-#[test]
-fn exhausted_epochs_refuse_connect_while_an_old_operation_still_owns_tokens() {
-    let mut world = connected_world();
-    let old = world
-        .station
-        .encode_null(BSSID, StaPowerManagement::Active)
-        .unwrap();
-    world.station.epochs = LinkEpochSource::for_test(u64::MAX);
-    world
-        .station
-        .input(at(40), StaInput::Command(StaCommand::Disconnect));
-    world.run(at(40));
-    world.take();
-    assert!(!world.station.is_current(&old.context));
-    for now in [50, 60] {
-        world
-            .station
-            .input(at(now), StaInput::Command(StaCommand::Connect));
-        world.run(at(now));
-        assert_eq!(
-            world.take(),
-            [Seen::Notify(StaNotice::ConnectRefused(EpochExhausted))]
-        );
-        assert!(!world.station.is_connected());
-    }
-    world.station.input(
-        at(61),
-        StaInput::TxDone {
-            context: old.context,
-            ticket: old.ticket,
-            buffer: ReturnedMpdu::Sent(old.buffer),
-            completion: TxCompletion {
-                status: TxStatus::Success,
-                ack_rssi_dbm: None,
-                ack_snr_db: None,
-                block_ack: None,
-                transmissions: 1,
-                rate: None,
-            },
-        },
-    );
-    world.run(at(61));
-    assert!(world.take().is_empty());
-    assert_eq!(
-        core::iter::from_fn(|| world.station.tickets.take()).count(),
-        2
-    );
-    assert_eq!(
-        core::iter::from_fn(|| world.station.buffers.take()).count(),
-        2
-    );
     assert_eq!(world.station.lost_tokens(), 0);
 }
 
@@ -1399,7 +1341,8 @@ fn eapol_and_data_on_tid_7_share_one_counter_and_tid_0_runs_on_across_a_rekey() 
     let mut beacon = wpa2_beacon().to_vec();
     beacon.extend_from_slice(&[0xdd, 7, 0x00, 0x50, 0xf2, 0x02, 0x00, 0x01, 0x00]);
     let (mut world, ptk) = wpa2_connected_by(2, &beacon);
-    let mut data = StaData::<Tokens, Caps>::new([Ticket(10)], [Buffer([0; 512])]);
+    let mut data =
+        StaData::<Tokens, Caps>::new([Ticket(10)], [Buffer([0; 512])], core::num::NonZeroU8::MIN);
     let mut send = |world: &mut World, priority: u8| {
         let mut link = world.station.link().expect("the link is up");
         let msdu = Msdu {
@@ -1416,30 +1359,27 @@ fn eapol_and_data_on_tid_7_share_one_counter_and_tid_0_runs_on_across_a_rekey() 
             },
         )
         .unwrap();
-        let Some(DataAction::Transmit(transmit)) = data.poll_action(at(60), |_| true) else {
+        let Some(DataAction::Transmit(transmit)) = data.poll_action(at(60)) else {
             panic!("an MPDU is owed");
         };
         let frame = match &transmit.buffer {
             ReturnedMpdu::Fresh(buffer) | ReturnedMpdu::Sent(buffer) => &buffer.0,
         };
         let sent = tid_and_sequence(frame);
-        data.input::<Tokens>(
+        data.returned(
             at(60),
-            DataInput::TxDone {
+            crate::data::DataReturn::TxDone {
                 context: transmit.context,
                 ticket: transmit.ticket,
                 buffer: transmit.buffer,
-                completion: TxCompletion {
-                    status: TxStatus::Success,
-                    ack_rssi_dbm: None,
-                    ack_snr_db: None,
-                    block_ack: None,
+                completion: TxOutcome::Ended {
+                    status: TxEndStatus::Success,
+                    ack: None,
                     transmissions: 1,
                     rate: None,
                 },
             },
-        )
-        .unwrap();
+        );
         sent
     };
     assert_eq!(send(&mut world, 7), (7, 0));

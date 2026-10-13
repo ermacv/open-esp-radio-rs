@@ -2,7 +2,7 @@
 //!
 //! An attempt of the phase ([`Attempt`](crate::Attempt)) is one frame
 //! exchange by its retry plan ([`RetryPlan`](crate::RetryPlan)), which the
-//! backend carries out below the port; its one [`TxCompletion`] reports how
+//! backend carries out below the port; its one [`TxOutcome`] reports how
 //! it ended, how many transmissions it made and at which rate the last
 //! went. The header the caller encodes lives in a transmit buffer of the
 //! phase; the body, such as a network frame's payload, travels by
@@ -103,7 +103,9 @@ pub enum TxFault {
     Unrecognized,
 }
 
-/// How one attempt ended.
+/// One hardware publication observed by a retry planner. This is not a
+/// terminal of a port attempt: the backend carries its plan through to
+/// [`TxOutcome`].
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum TxStatus {
     /// The PPDU went out and the solicited response, if any, arrived.
@@ -153,20 +155,88 @@ impl BlockAckReport {
     }
 }
 
-/// The terminal event of one attempt.
+/// A known result after the backend has finished the attempt's plan.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct TxCompletion {
-    pub status: TxStatus,
-    /// RSSI of the received ACK or BlockAck, when the hardware reports it.
-    pub ack_rssi_dbm: Option<i8>,
-    /// SNR of the received ACK or BlockAck, when the hardware reports it.
-    pub ack_snr_db: Option<i8>,
-    /// The BlockAck of a successful A-MPDU or BlockAckReq attempt.
+pub enum TxEndStatus {
+    /// The solicited response arrived, or the frame solicited none.
+    Success,
+    /// The plan exhausted its ACK/BlockAck response budget.
+    AckTimeout,
+    /// The plan exhausted its protection response budget.
+    CtsTimeout,
+    /// Internal contention exhausted the backend's budget. No rate sample.
+    ContentionLimit,
+}
+
+/// Why an admitted attempt was returned without publishing it again.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WithdrawCause {
+    /// The transmit gate closed.
+    GateClosed,
+    /// The attempt's key is being removed.
+    KeyRemoved,
+    /// The port is being disabled.
+    Disabled,
+}
+
+/// Why a published MPDU's outcome cannot be established.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IndeterminateCause {
+    /// Hardware timed out and no completion arrived before detachment.
+    HardwareTimeout,
+}
+
+/// Evidence carried by the solicited ACK or BlockAck.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TxAck {
+    /// The response's RSSI, when measured.
+    pub rssi_dbm: Option<i8>,
+    /// The response's SNR, when measured.
+    pub snr_db: Option<i8>,
+    /// A BlockAck's sequence window.
     pub block_ack: Option<BlockAckReport>,
-    /// The transmissions the attempt made by its retry plan, the first
-    /// included; 0 when it ended before its first.
-    pub transmissions: u8,
-    /// The rate of its last transmission, for the rate control above the
-    /// port; `None` when it made none.
-    pub rate: Option<crate::PhyRate>,
+}
+
+/// The sole terminal of an admitted operation, beside its owned resources.
+///
+/// A hardware timeout is final: the backend does not republish the MPDU.
+/// A completion already observed takes priority over the timeout. Only
+/// `Ended` claims an exact transmission count; rate selection ignores
+/// withdrawals, indeterminate outcomes, faults and contention exhaustion.
+/// The next operation in the queue may proceed after every terminal.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TxOutcome {
+    /// Returned in its submitted Fresh/Sent state, retaining SN, PN and body.
+    Withdrawn(WithdrawCause),
+    /// The plan has a known result. Returned MPDUs are `Sent`.
+    Ended {
+        /// The known result, including known failure without an MPDU on air.
+        status: TxEndStatus,
+        /// Exact MPDU transmissions, including the first; zero is possible
+        /// after protection or contention failure. Never publication count.
+        transmissions: u16,
+        /// The rate of the last MPDU transmitted, absent when none was.
+        rate: Option<crate::PhyRate>,
+        /// Evidence from the solicited response.
+        ack: Option<TxAck>,
+    },
+    /// Final unknown outcome. Returned MPDUs are `Sent`; Data retires them.
+    Indeterminate(IndeterminateCause),
+    /// An operation-local hardware fault. Poisoning the install is a
+    /// separate fail-stop and returns no terminal or retained resources.
+    Fault(TxFault),
+}
+
+impl TxOutcome {
+    /// Whether this terminal supplies a usable radio-rate observation.
+    pub const fn is_rate_sample(self) -> bool {
+        matches!(
+            self,
+            Self::Ended {
+                status: TxEndStatus::Success | TxEndStatus::AckTimeout | TxEndStatus::CtsTimeout,
+                transmissions: 1..,
+                ..
+            }
+        )
+    }
 }

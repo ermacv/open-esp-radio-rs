@@ -63,14 +63,11 @@ fn mpdu(length: u32) -> TxRequest {
     }
 }
 
-fn completion(status: TxStatus, block_ack: Option<BlockAckReport>) -> TxCompletion {
-    TxCompletion {
+fn completion(status: TxStatus, block_ack: Option<BlockAckReport>) -> PublicationReport {
+    PublicationReport {
         status,
-        ack_rssi_dbm: None,
         ack_snr_db: (status == TxStatus::Success).then_some(17),
         block_ack,
-        transmissions: 1,
-        rate: None,
     }
 }
 

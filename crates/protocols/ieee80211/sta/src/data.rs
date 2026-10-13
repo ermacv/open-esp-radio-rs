@@ -21,8 +21,8 @@
 //! the replay check and, on a non-QoS BSS, the station's sequence space.
 
 use oer_ieee80211_lower_mac::{
-    AckHeader, HeaderSpec, IndividualAddress, MpduLength, ReturnedMpdu, RxCryptoStatus, RxEvidence,
-    RxMeta, SizedFrame, TxBufferMemory, TxCompletion,
+    AckHeader, Counter, HeaderSpec, IndividualAddress, MpduLength, ReturnedMpdu, RxCryptoStatus,
+    RxEvidence, RxMeta, SizedFrame, TxBufferMemory, TxOutcome,
 };
 use oer_ieee80211_mac::{
     ccmp::{CcmpHeader, CcmpRxProtection},
@@ -67,7 +67,7 @@ pub struct Msdu<'a> {
 }
 
 /// One input of the data machine.
-pub enum DataInput<'a, 'l, 'v, 'id, D: StaDataTokens, T: StaTokens, K> {
+pub enum DataInput<'a, 'l, 'v, 'id, T: StaTokens> {
     /// An MSDU from the network stack, on the link it goes on.
     Msdu {
         /// The MSDU.
@@ -75,6 +75,10 @@ pub enum DataInput<'a, 'l, 'v, 'id, D: StaDataTokens, T: StaTokens, K> {
         /// The station's link.
         link: &'l mut LinkView<'v, 'id, T>,
     },
+}
+
+/// Ownership returned from one operation; consuming it cannot refuse resources.
+pub enum DataReturn<'id, D: StaDataTokens, K> {
     /// Preparation refused before admission: this MSDU ends, its resources
     /// return and its admission count is released without a radio terminal.
     Refused {
@@ -103,18 +107,7 @@ pub enum DataInput<'a, 'l, 'v, 'id, D: StaDataTokens, T: StaTokens, K> {
         /// Its buffer.
         buffer: ReturnedMpdu<D::Buffer, D::Sent>,
         /// How it ended.
-        completion: TxCompletion,
-    },
-    /// Tokens that came back without an MPDU's terminal: an MPDU the
-    /// service did not send, or a terminal that carried a buffer more or
-    /// none. Its MSDU, if any, is gone; the service counts it.
-    Returned {
-        /// An operation that ended locally, when these are its resources.
-        context: Option<DataTxContext<'id, K>>,
-        /// A ticket, if one came back.
-        ticket: Option<D::Ticket>,
-        /// A buffer, if one came back.
-        buffer: Option<ReturnedMpdu<D::Buffer, D::Sent>>,
+        completion: TxOutcome,
     },
 }
 
@@ -127,9 +120,9 @@ pub enum DataAction<'id, D: StaDataTokens, K> {
 /// One data MPDU to submit: its tokens, its kind and its access category.
 /// It names no key: on a protected link the service submits it under the
 /// link's pairwise key.
-pub struct DataTransmit<'id, D: StaDataTokens, K> {
+pub struct DataTransmit<'id, D: StaDataTokens, K, A = AcPermit> {
     /// The operation identity and parameters, moved through the port.
-    pub context: DataTxContext<'id, K>,
+    pub context: DataTxContext<'id, K, A>,
     /// Its ticket.
     pub ticket: D::Ticket,
     /// The buffer holding the MPDU, from its header on.
@@ -156,7 +149,8 @@ pub enum DataRefusal {
 /// Its closed, checked frame description survives every unpublished return;
 /// neither the MPDU length nor its header is reconstructed at completion.
 #[derive(Debug)]
-pub struct DataTxContext<'id, K> {
+pub struct DataTxContext<'id, K, A = AcPermit> {
+    admission: A,
     link: LinkEpoch<'id>,
     tid: u8,
     frame: SizedFrame<AckHeader, K>,
@@ -165,11 +159,92 @@ pub struct DataTxContext<'id, K> {
     order: u32,
 }
 
+/// One non-cloneable permission for a data attempt in an access category.
+/// Only the data machine's depth pool creates it; the context returns it.
+#[derive(Debug)]
+pub struct AcPermit {
+    category: WmmAccessCategory,
+    bit: core::num::NonZeroU8,
+}
+
+/// At most eight tickets can exist in this machine. One bit represents
+/// one actual permission; taking clears it, returning the owned token sets
+/// it. No increment/decrement or metadata lookup reconstructs admission.
+struct Admissions {
+    best_effort: u8,
+    background: u8,
+    video: u8,
+    voice: u8,
+}
+
+impl Admissions {
+    fn new(depth: core::num::NonZeroU8, tickets: usize) -> Self {
+        let count = usize::from(depth.get()).min(tickets);
+        let mask = (0..count).fold(0u8, |mask, _| (mask << 1) | 1);
+        Self {
+            best_effort: mask,
+            background: mask,
+            video: mask,
+            voice: mask,
+        }
+    }
+
+    fn available(&self, category: WmmAccessCategory) -> u8 {
+        match category {
+            WmmAccessCategory::BestEffort => self.best_effort,
+            WmmAccessCategory::Background => self.background,
+            WmmAccessCategory::Video => self.video,
+            WmmAccessCategory::Voice => self.voice,
+        }
+    }
+
+    fn pool(&mut self, category: WmmAccessCategory) -> &mut u8 {
+        match category {
+            WmmAccessCategory::BestEffort => &mut self.best_effort,
+            WmmAccessCategory::Background => &mut self.background,
+            WmmAccessCategory::Video => &mut self.video,
+            WmmAccessCategory::Voice => &mut self.voice,
+        }
+    }
+
+    fn take(&mut self, category: WmmAccessCategory) -> Option<AcPermit> {
+        let pool = self.pool(category);
+        let bit = core::num::NonZeroU8::new(*pool & pool.wrapping_neg())?;
+        *pool &= !bit.get();
+        Some(AcPermit { category, bit })
+    }
+
+    fn put(&mut self, permit: AcPermit) {
+        *self.pool(permit.category) |= permit.bit.get();
+    }
+}
+
+impl<'id, K, A> DataTxContext<'id, K, A> {
+    fn admission<B>(self, admission: B) -> (DataTxContext<'id, K, B>, A) {
+        (
+            DataTxContext {
+                admission,
+                link: self.link,
+                tid: self.tid,
+                frame: self.frame,
+                access_category: self.access_category,
+                protected: self.protected,
+                order: self.order,
+            },
+            self.admission,
+        )
+    }
+}
+
 /// What the data machine dropped, counted.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct DataCounters {
     /// Current-link MSDUs ended by a preparation refusal, before admission.
     pub preparation_refused: u32,
+    /// Current-link MSDUs retired after an unknown hardware outcome.
+    pub indeterminate: u32,
+    /// Current-link MSDUs retired after contention budget exhaustion.
+    pub contention_limited: u32,
     /// MPDUs a full queue could not hold: their tokens came back, their
     /// MSDUs are gone.
     pub overflows: u32,
@@ -189,16 +264,17 @@ pub struct StaData<'id, D: StaDataTokens, K, const CAP: usize = 8> {
     buffers: Pool<D::Buffer>,
     /// The attempts owed, by TID (a non-QoS link's in the first), each in
     /// its order.
-    owed: [Fifo<DataTransmit<'id, D, K>, CAP>; 8],
-    /// Admission counts only; operation metadata belongs to the attempt.
-    at_port: [usize; 4],
+    owed: [Fifo<DataTransmit<'id, D, K, ()>, CAP>; 8],
+    admission: Admissions,
     /// The order of the next MSDU.
     next_order: u32,
     /// The current link: [`Self::leave`] ends it.
     link: Option<LinkEpoch<'id>>,
-    overflows: u32,
-    left_behind: u32,
-    preparation_refused: u32,
+    overflows: Counter,
+    left_behind: Counter,
+    preparation_refused: Counter,
+    indeterminate: Counter,
+    contention_limited: Counter,
 }
 
 impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const CAP: usize>
@@ -210,6 +286,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
     pub fn new<const TICKETS: usize, const BUFFERS: usize>(
         tickets: [D::Ticket; TICKETS],
         buffers: [D::Buffer; BUFFERS],
+        depth: core::num::NonZeroU8,
     ) -> Self {
         const {
             assert!(
@@ -221,22 +298,26 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
             tickets: Pool::new(tickets),
             buffers: Pool::new(buffers),
             owed: [const { Fifo::new() }; 8],
-            at_port: [0; 4],
+            admission: Admissions::new(depth, TICKETS),
             next_order: 0,
             link: None,
-            preparation_refused: 0,
-            overflows: 0,
-            left_behind: 0,
+            preparation_refused: Counter::ZERO,
+            indeterminate: Counter::ZERO,
+            contention_limited: Counter::ZERO,
+            overflows: Counter::ZERO,
+            left_behind: Counter::ZERO,
         }
     }
 
     /// What the machine dropped.
     pub const fn counters(&self) -> DataCounters {
         DataCounters {
-            preparation_refused: self.preparation_refused,
-            overflows: self.overflows,
-            lost_tokens: self.tickets.lost().saturating_add(self.buffers.lost()),
-            left_behind: self.left_behind,
+            preparation_refused: self.preparation_refused.get(),
+            indeterminate: self.indeterminate.get(),
+            contention_limited: self.contention_limited.get(),
+            overflows: self.overflows.get(),
+            lost_tokens: self.tickets.lost().combined(self.buffers.lost()).get(),
+            left_behind: self.left_behind.get(),
         }
     }
 
@@ -249,7 +330,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
     pub fn leave(&mut self) {
         for tid in 0..8 {
             while let Some(owed) = self.owed[tid].pop() {
-                self.left_behind = self.left_behind.saturating_add(1);
+                self.left_behind.increment();
                 self.tickets.put(owed.ticket);
                 self.buffers.put(owed.buffer.into_fresh(D::renew));
             }
@@ -258,8 +339,8 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
     }
 
     /// An MPDU a full queue did not take: its tokens come back, counted.
-    fn overflowed(&mut self, transmit: DataTransmit<'id, D, K>) {
-        self.overflows = self.overflows.saturating_add(1);
+    fn overflowed(&mut self, transmit: DataTransmit<'id, D, K, ()>) {
+        self.overflows.increment();
         self.tickets.put(transmit.ticket);
         self.buffers.put(transmit.buffer.into_fresh(D::renew));
     }
@@ -269,50 +350,55 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
         !self.tickets.is_empty() && !self.buffers.is_empty()
     }
 
-    /// Take one input. An MSDU goes on its link and becomes an attempt
-    /// owed.
-    ///
-    /// # Errors
-    ///
-    /// Why an MSDU did not become an MPDU: it waits, or is too long.
-    pub fn input<T: StaTokens>(
-        &mut self,
-        _now: Instant,
-        input: DataInput<'_, '_, '_, 'id, D, T, K>,
-    ) -> Result<(), DataRefusal> {
+    /// Return an accepted terminal or a local refusal and all its owners.
+    /// This operation always consumes the resources; it has no refusal result.
+    pub fn returned(&mut self, _now: Instant, input: DataReturn<'id, D, K>) {
         match input {
-            DataInput::Refused {
+            DataReturn::Refused {
                 context,
                 ticket,
                 buffer,
                 reason: _,
             } => {
-                self.at_port[context.access_category as usize] -= 1;
+                let (context, permit) = context.admission(());
+                self.admission.put(permit);
                 if self.is_current(&context) {
-                    self.preparation_refused = self.preparation_refused.saturating_add(1);
+                    self.preparation_refused.increment();
                 }
                 self.tickets.put(ticket);
                 self.buffers.put(buffer.into_fresh(D::renew));
-                Ok(())
             }
-            DataInput::TxDone {
+            DataReturn::TxDone {
                 context,
                 ticket,
                 buffer,
                 completion,
             } => {
-                self.at_port[context.access_category as usize] -= 1;
+                let (context, permit) = context.admission(());
+                self.admission.put(permit);
                 if !self.is_current(&context) {
-                    if completion.transmissions == 0 {
-                        self.left_behind = self.left_behind.saturating_add(1);
+                    if matches!(completion, TxOutcome::Withdrawn(_)) {
+                        self.left_behind.increment();
                     }
                     self.tickets.put(ticket);
                     self.buffers.put(buffer.into_fresh(D::renew));
-                    return Ok(());
+                    return;
                 }
-                // Never published: preserve the original frame description,
+                match completion {
+                    TxOutcome::Indeterminate(_) => {
+                        self.indeterminate.increment();
+                    }
+                    TxOutcome::Ended {
+                        status: oer_ieee80211_lower_mac::TxEndStatus::ContentionLimit,
+                        ..
+                    } => {
+                        self.contention_limited.increment();
+                    }
+                    _ => {}
+                }
+                // Withdrawn: preserve the original frame description,
                 // TID and order, even after a batch of terminals returns.
-                if completion.transmissions == 0 {
+                if matches!(completion, TxOutcome::Withdrawn(_)) {
                     let frame = context.frame;
                     let tid = usize::from(context.tid);
                     let again = DataTransmit {
@@ -330,28 +416,26 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
                     }) {
                         self.overflowed(again);
                     }
-                    return Ok(());
+                    return;
                 }
                 self.tickets.put(ticket);
                 self.buffers.put(buffer.into_fresh(D::renew));
-                Ok(())
             }
-            DataInput::Returned {
-                context,
-                ticket,
-                buffer,
-            } => {
-                if let Some(context) = context {
-                    self.at_port[context.access_category as usize] -= 1;
-                }
-                if let Some(ticket) = ticket {
-                    self.tickets.put(ticket);
-                }
-                if let Some(buffer) = buffer {
-                    self.buffers.put(buffer.into_fresh(D::renew));
-                }
-                Ok(())
-            }
+        }
+    }
+
+    /// Take one input. An MSDU goes on its link and becomes an attempt
+    /// owed.
+    ///
+    /// # Errors
+    ///
+    /// Why an MSDU did not become an MPDU: it waits, or is too long.
+    pub fn input<T: StaTokens>(
+        &mut self,
+        _now: Instant,
+        input: DataInput<'_, '_, '_, 'id, T>,
+    ) -> Result<(), DataRefusal> {
+        match input {
             DataInput::Msdu { msdu, link } => {
                 if self.link != Some(link.epoch) {
                     self.leave();
@@ -395,6 +479,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
                         let order = self.next_order;
                         self.next_order = self.next_order.wrapping_add(1);
                         let context = DataTxContext {
+                            admission: (),
                             link: link.epoch,
                             tid: slot as u8,
                             frame,
@@ -425,40 +510,48 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
         }
     }
 
-    /// The machine's MPDUs of `access_category` at the port: submitted and
-    /// not yet ended, of the current link or an earlier one.
-    pub fn at_port(&self, access_category: WmmAccessCategory) -> usize {
-        self.at_port[access_category as usize]
+    /// Free data permissions in this category, bounded by the backend's
+    /// declared queue depth and the number of tickets granted to Data.
+    pub fn available(&self, category: WmmAccessCategory) -> u32 {
+        self.admission.available(category).count_ones()
     }
 
     /// Whether this operation belongs to the current link. The service
     /// uses the same guard before updating the link's rate selection.
-    pub fn is_current(&self, context: &DataTxContext<'id, K>) -> bool {
+    pub fn is_current<A>(&self, context: &DataTxContext<'id, K, A>) -> bool {
         Some(context.link) == self.link
     }
 
-    /// The next action at `now`, if any, of a category `admit` takes: the
-    /// service admits a category while its data at the port is below the
-    /// backend's queue depth. The service takes every action before it
-    /// waits again.
-    pub fn poll_action(
-        &mut self,
-        _now: Instant,
-        admit: impl Fn(WmmAccessCategory) -> bool,
-    ) -> Option<DataAction<'id, D, K>> {
+    /// The next action whose category owns a free admission permission.
+    /// The context carries that permission until its return; queued work
+    /// consumes none. The service takes every action before waiting.
+    pub fn poll_action(&mut self, _now: Instant) -> Option<DataAction<'id, D, K>> {
         // The earliest MSDU of an admitted category first, whatever its TID.
         let tid = (0..8)
             .filter_map(|tid| {
                 self.owed[tid]
                     .front()
-                    .filter(|owed| admit(owed.access_category))
+                    .filter(|owed| self.admission.available(owed.access_category) != 0)
                     .map(|owed| (owed.context.order, tid))
             })
             .min_by_key(|&(order, _)| order.wrapping_sub(self.next_order))?
             .1;
-        let transmit = self.owed[tid].pop()?;
-        self.at_port[transmit.access_category as usize] += 1;
-        Some(DataAction::Transmit(transmit))
+        // A queue can be empty or an AC can have no free permit: both are
+        // normal polling states. Reserve and pop under the same exclusive
+        // borrow; no actor can change either between these operations.
+        let category = self.owed[tid].front()?.access_category;
+        let permit = self.admission.take(category)?;
+        self.owed[tid].pop().map(|transmit| {
+            let (context, ()) = transmit.context.admission(permit);
+            DataAction::Transmit(DataTransmit {
+                context,
+                ticket: transmit.ticket,
+                buffer: transmit.buffer,
+                frame: transmit.frame,
+                access_category: transmit.access_category,
+                protected: transmit.protected,
+            })
+        })
     }
 
     /// When the machine next needs [`Self::poll_action`] without an input:

@@ -58,9 +58,12 @@ time; its flags describe pending policy transitions, not completion identity.
 A data context keeps the link epoch, original TID, order, checked
 `SizedFrame<AckHeader, K>`, access category and protection. The immutable
 frame description preserves its header/length proof through an unpublished
-return; no constructor or frame-byte inspection runs again. `StaData` keeps only counts of operations
-at the port for admission, with no in-flight metadata FIFO or TID decoding
-at completion. An unpublished return is inserted by its original order,
+return; no constructor or frame-byte inspection runs again. A submitted
+context owns an `AcPermit` from the pool sized by backend queue depth
+(and bounded by the tickets granted to Data). Returning the context returns
+that permission; there is no `at_port` counter, in-flight metadata FIFO or
+TID decoding at completion. Voice keeps the same data depth bound, so a
+station operation waits for at most that depth plus one on-air attempt. An unpublished return is inserted by its original order,
 so a batch of returns preserves both per-TID and shared-AC order. An old
 link's terminal returns its tokens without requeueing or affecting the new
 link; the service checks the same epoch before updating rate selection.
@@ -72,9 +75,10 @@ Station alone issues `LinkEpoch`, before starting Connect. Its non-cloneable
 from `oer-ieee80211-lower-mac`; there is no reset or slot extraction. The
 backend supplies that slot, while Station constructs and owns its source. The epoch and contexts carry the invariant
 install brand. Recreating Station therefore cannot restart its counter
-while earlier operations can return. Exhaustion emits
-`StaNotice::ConnectRefused(EpochExhausted)` without starting a connection;
-already accepted operations still return their resources. Ending a link
+while earlier operations can return. Issuance is total with a wrapping `u64`.
+An outstanding operation must not survive an entire cycle of 2^64 connections;
+this lifecycle condition is documented on `LinkEpochSource::begin`. The
+ticket bound limits concurrent operations, not their age. Ending a link
 closes its epoch without allocating another. Data takes this same epoch
 from `LinkView`; temporary sleep or a channel absence does not close it.
 
@@ -84,7 +88,7 @@ normal leave path; an unsubmitted M4 cannot establish a connection. A
 required join frame refused at preparation ends that join. Connected PM
 frames retain the existing unsuccessful-send policy; refusing a group-key
 response ends the handshake rather than retiring its keys as if it sent.
-Data's `Refused` input ends that MSDU and releases its admission count and
+Data's `DataReturn::Refused` ends that MSDU and releases its permission and
 tokens once, without retrying unchanged invalid input. The service reports
 the typed reason to its application and continues; preparation refusals
 never enter radio/rate statistics.
@@ -94,3 +98,11 @@ channel places and key slots transferred into Station. Completion inputs
 carry `ReturnedMpdu::Fresh` or `Sent`; service preserves that state. Only
 the machine renews a published MPDU when retiring it, releasing its body
 and returning fresh memory to its pool.
+
+`StaData::returned` consumes a complete terminal or preparation refusal and
+has no `Result`. The service exhaustively pairs `TxContext` with the closed
+Small/Large fresh-or-sent buffer enum. A mismatched pair or an aggregate
+terminal for this singles-only service is a backend contract violation:
+it takes the Poisoned fail-stop path without a stray-terminal counter or
+resource reuse. `Indeterminate` retires and counts the MSDU; Station treats
+it as unconfirmed. Neither it nor `ContentionLimit` trains rate selection.

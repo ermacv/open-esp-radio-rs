@@ -48,12 +48,16 @@ use oer_ieee80211_lower_mac::{
     InterfacePhase, KeyTypes, LowerMacBackend, LowerMacEvent, LowerMacPhase, PhaseTypes, PoolMpdu,
     PoolSource, PreparationError, PreparedTx, Protection, Removed, RemovedKey, RetransmissionPlan,
     ReturnedMpdu, RxBuffer, RxMetadata, StationPhase, SubmitError, SupportedChannel, SupportedCoex,
-    SupportedPower, TxBufferClass, TxBufferPool, TxCompletion, TxFrame, TxPower, TxSource, VifRole,
+    SupportedPower, TxBufferClass, TxBufferPool, TxCompleted, TxFrame, TxOutcome, TxPower,
+    TxSource, VifRole,
 };
 use oer_ieee80211_mac::qos::{WmmAccessCategory, WmmUserPriority};
 use oer_ieee80211_port::{Disabled, Enabled, Failed, Owner, PoisonedOwner, PortBackend};
 use oer_ieee80211_sta::{
-    data::{self, DataAction, DataInput, DataRefusal, DataTxContext, Msdu, StaData, StaDataTokens},
+    data::{
+        self, DataAction, DataInput, DataRefusal, DataReturn, DataTxContext, Msdu, StaData,
+        StaDataTokens,
+    },
     machine::{
         LinkProtection, Peer, StaAction, StaCommand, StaFrame, StaFrameClass, StaInput, StaNotice,
         StaRatePlan, StaTokens, StaTransmit, StaTxContext, Station,
@@ -112,30 +116,10 @@ pub trait StationPort<'id>: LowerMacBackend {
 /// The only TX memory a station service's port returns. This describes
 /// resources, not operation identity: only `TxContext` selects the operation.
 pub enum StationTxBuffer<'id, B: StationPort<'id>> {
-    /// Fresh station memory, including an unpublished return.
-    Small(<B::Types as TxBufferPool<'id, B::Small>>::Buffer),
-    /// Station memory owning the published MPDU, including an unprotected one.
-    SmallSent(<B::Types as TxBufferPool<'id, B::Small>>::Sent),
-    /// Fresh data memory, including an unpublished return.
-    Large(<B::Types as TxBufferPool<'id, B::Large>>::Buffer),
-    /// Data memory owning the published MPDU, including an unprotected one.
-    LargeSent(<B::Types as TxBufferPool<'id, B::Large>>::Sent),
-}
-
-enum ReturnedMemory<'id, B: StationPort<'id>> {
+    /// The station's fresh allocation or its published MPDU.
     Small(PoolMpdu<'id, B::Types, B::Small>),
+    /// Data's fresh allocation or its published MPDU.
     Large(PoolMpdu<'id, B::Types, B::Large>),
-}
-
-impl<'id, B: StationPort<'id>> StationTxBuffer<'id, B> {
-    fn into_returned(self) -> ReturnedMemory<'id, B> {
-        match self {
-            Self::Small(buffer) => ReturnedMemory::Small(ReturnedMpdu::Fresh(buffer)),
-            Self::SmallSent(mpdu) => ReturnedMemory::Small(ReturnedMpdu::Sent(mpdu)),
-            Self::Large(buffer) => ReturnedMemory::Large(ReturnedMpdu::Fresh(buffer)),
-            Self::LargeSent(mpdu) => ReturnedMemory::Large(ReturnedMpdu::Sent(mpdu)),
-        }
-    }
 }
 
 /// The composition's context for this service. Each variant owns the
@@ -153,18 +137,15 @@ pub enum TxContext<'id, K> {
 pub struct ServiceCounters {
     /// Frames not sent: no rate of their plan is on the port's channel, or
     /// they do not fit their buffer class. Their tokens came back.
-    pub unsent_frames: u32,
+    pub unsent_frames: oer_ieee80211_lower_mac::Counter,
     /// MSDUs the network stack sent that do not fit a buffer.
-    pub tx_msdus_too_long: u32,
+    pub tx_msdus_too_long: oer_ieee80211_lower_mac::Counter,
     /// Received MSDUs the network stack's full queue could not take.
-    pub rx_msdus_queue_full: u32,
-    /// Terminals that carried a buffer more, or none, than their one MPDU:
-    /// their tokens came back alone.
-    pub stray_terminals: u32,
+    pub rx_msdus_queue_full: oer_ieee80211_lower_mac::Counter,
     /// Received buffers a disable returned beyond the port's
     /// [`StationPort::RX_BUFFERS`]: dropped, reception is that much smaller
     /// until the next install.
-    pub rx_buffers_lost: u32,
+    pub rx_buffers_lost: oer_ieee80211_lower_mac::Counter,
 }
 
 /// A marker of the install `'id` and two types.
@@ -331,9 +312,13 @@ pub enum TxOperation {
 
 #[derive(Clone, Copy)]
 enum ReturnedTx {
-    Completed(TxCompletion),
+    Completed(TxOutcome),
     Refused(PreparationError),
 }
+
+/// A backend returned owners that cannot belong to the submitted operation.
+#[derive(Debug)]
+struct BackendContractViolation;
 
 /// The service's ends to the application and the network stack.
 pub struct ServiceIo<'c, M: RawMutex, K> {
@@ -374,6 +359,7 @@ pub struct StationService<'a, 'id, B: StationPort<'id>, S, const RX: usize> {
     pub rates: S,
     /// What the service dropped or could not send.
     pub counters: ServiceCounters,
+    contract_failed: bool,
     held: [Option<<B::Types as PhaseTypes<'id>>::RxBuffer>; RX],
 }
 
@@ -417,6 +403,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
             arbiter,
             rates,
             counters: ServiceCounters::default(),
+            contract_failed: false,
             held: [const { None }; RX],
         }
     }
@@ -429,6 +416,9 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
         io: &mut ServiceIo<'_, M, B::Caps>,
         timer: &impl Timer,
     ) -> ServiceEnd<'p, 'id, B> {
+        if self.contract_failed {
+            return ServiceEnd::Failed(owner);
+        }
         let mut owner = match self.enable(owner, None, io, timer).await {
             Ok(owner) => owner,
             Err(end) => return end,
@@ -442,6 +432,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
             match next {
                 Served::Stop => {
                     return match self.disable(owner, io, timer).await {
+                        Ok(owner) if self.contract_failed => ServiceEnd::Failed(owner),
                         Ok(owner) => ServiceEnd::Stopped(owner),
                         Err(poisoned) => ServiceEnd::Poisoned(poisoned),
                     };
@@ -461,6 +452,9 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                             return ServiceEnd::Poisoned(poisoned);
                         }
                     };
+                    if self.contract_failed {
+                        return ServiceEnd::Failed(disabled);
+                    }
                     owner = match self.enable(disabled, Some(channel), io, timer).await {
                         Ok(owner) => owner,
                         Err(end) => return end,
@@ -543,7 +537,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                     Some(slot) => *slot = Some(buffer),
                     // More than the port said it lends: the buffer is lost
                     // to reception until the next install.
-                    None => self.counters.rx_buffers_lost += 1,
+                    None => self.counters.rx_buffers_lost.increment(),
                 }
             }
         };
@@ -605,6 +599,9 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                     if let Some(buffer) = self.event(now, event, io) {
                         phase.recycle(buffer);
                     }
+                    if self.contract_failed {
+                        return Served::Poisoned;
+                    }
                 }
                 // Received frames were dropped; the machines' timers cover
                 // what they lose.
@@ -660,7 +657,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                 },
             );
             if let Err(DataRefusal::TooLong) = taken {
-                self.counters.tx_msdus_too_long += 1;
+                self.counters.tx_msdus_too_long.increment();
             }
         }
         io.transmit.receive_done();
@@ -700,8 +697,9 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                 progress = true;
                 let submitted =
                     station_action(now, phase, io, &mut self.arbiter, &self.rates, action)
-                        .map(|follow| self.follow(now, follow, io));
+                        .and_then(|follow| self.follow(now, follow, io).map_err(|_| ()));
                 if submitted.is_err() {
+                    self.contract_failed = true;
                     self.arbiter.poisoned();
                     self.settle(now, io);
                     return Next::Poisoned;
@@ -715,7 +713,6 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
             // limit is the service's, for every data source it runs.
             //
             // [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6141039497
-            let depth = usize::from(B::TX_QUEUE_DEPTH.get());
             loop {
                 // This scope owns the short LinkView borrow. Only an owned
                 // follow-up leaves it; handling it may then borrow all of self.
@@ -723,12 +720,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                     let Some(link) = self.station.link() else {
                         break;
                     };
-                    let at_port =
-                        WmmAccessCategory::ALL.map(|category| self.data.at_port(category));
-                    let Some(DataAction::Transmit(transmit)) = self
-                        .data
-                        .poll_action(now, |category| at_port[category as usize] < depth)
-                    else {
+                    let Some(DataAction::Transmit(transmit)) = self.data.poll_action(now) else {
                         break;
                     };
                     progress = true;
@@ -815,7 +807,14 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                     }
                 };
                 match submitted {
-                    Ok(follow) => self.follow(now, follow, io),
+                    Ok(follow) => {
+                        if self.follow(now, follow, io).is_err() {
+                            self.contract_failed = true;
+                            self.arbiter.poisoned();
+                            self.settle(now, io);
+                            return Next::Poisoned;
+                        }
+                    }
                     Err(()) => {
                         self.arbiter.poisoned();
                         self.settle(now, io);
@@ -836,7 +835,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
         now: Instant,
         follow: Follow<'id, B>,
         io: &mut ServiceIo<'_, M, B::Caps>,
-    ) {
+    ) -> Result<(), BackendContractViolation> {
         match follow {
             Follow::Nothing => {}
             Follow::Input(input) => self.station.input(now, input),
@@ -855,21 +854,16 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                 buffer,
                 reason,
             } => {
-                self.counters.unsent_frames += 1;
+                self.counters.unsent_frames.increment();
                 let operation = match &context {
                     TxContext::Station(_) => TxOperation::Station,
                     TxContext::Data(_) => TxOperation::Data,
                 };
                 (io.output)(ServiceOutput::TxRefused { operation, reason });
-                self.returned(
-                    now,
-                    context,
-                    ticket,
-                    core::iter::once(buffer),
-                    ReturnedTx::Refused(reason),
-                );
+                self.returned(now, context, ticket, buffer, ReturnedTx::Refused(reason))?;
             }
         }
+        Ok(())
     }
 
     /// Carry out the actions that need no phase once the port failed: the
@@ -908,6 +902,9 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
         event: LowerMacEvent<'id, B::Types>,
         io: &mut ServiceIo<'_, M, B::Caps>,
     ) -> Option<<B::Types as PhaseTypes<'id>>::RxBuffer> {
+        if self.contract_failed {
+            return None;
+        }
         match event {
             LowerMacEvent::Received { frame, meta } => {
                 let bytes = frame.bytes();
@@ -920,7 +917,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                         // A full queue drops the MSDU, as an Ethernet
                         // receiver does, counted.
                         let Some(slot) = io.receive.try_send() else {
-                            self.counters.rx_msdus_queue_full += 1;
+                            self.counters.rx_msdus_queue_full.increment();
                             continue;
                         };
                         if let Ok(len) = parts.copy_to(&mut slot.frame) {
@@ -931,23 +928,37 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                 }
                 Some(frame)
             }
-            LowerMacEvent::TxCompleted {
+            LowerMacEvent::TxCompleted(TxCompleted::Single {
                 context,
                 ticket,
-                buffers,
+                buffer,
                 completion,
-                bodies,
-            } => {
-                self.returned(
-                    now,
-                    context,
-                    ticket,
-                    buffers,
-                    ReturnedTx::Completed(completion),
-                );
-                // This service submits encoded MPDUs with no external body.
-                // Any body owner returned by the backend ends at this terminal.
-                drop(bodies);
+                body,
+            }) => {
+                if self
+                    .returned(
+                        now,
+                        context,
+                        ticket,
+                        buffer,
+                        ReturnedTx::Completed(completion),
+                    )
+                    .is_err()
+                {
+                    self.contract_failed = true;
+                    self.arbiter.poisoned();
+                    self.settle(now, io);
+                }
+                // This service submits no external bodies. Sent MPDUs own theirs.
+                drop(body);
+                None
+            }
+            LowerMacEvent::TxCompleted(TxCompleted::Aggregate { .. }) => {
+                // This service submits only singles. Cardinality is represented
+                // by the terminal type, but origin is the backend's obligation.
+                self.contract_failed = true;
+                self.arbiter.poisoned();
+                self.settle(now, io);
                 None
             }
             LowerMacEvent::GateClosed(closed) => {
@@ -975,142 +986,74 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
         }
     }
 
-    /// The context chooses the operation and its ticket's owner. No frame
-    /// bytes, buffer class or order of terminals identifies the operation.
+    /// The context identifies the operation. Class is checked exactly once
+    /// against that identity; a mismatch violates the backend contract and
+    /// takes the same fail-stop path as Poisoned. A shared AC queue erases
+    /// classes, so this identity obligation cannot be proved by this API.
     fn returned(
         &mut self,
         now: Instant,
         context: TxContext<'id, B::Caps>,
         ticket: Slot<'id, <B::Types as PhaseTypes<'id>>::TicketKind>,
-        buffers: impl IntoIterator<Item = <B::Types as PhaseTypes<'id>>::AnyTxBuffer>,
+        buffer: <B::Types as PhaseTypes<'id>>::AnyTxBuffer,
         end: ReturnedTx,
-    ) {
-        let mut buffers = buffers.into_iter();
-        let first = buffers
-            .next()
-            .map(|buffer| B::tx_buffer(buffer).into_returned());
-        match context {
-            TxContext::Station(context) => {
-                let buffer = first.and_then(|memory| match memory {
-                    ReturnedMemory::Small(buffer) => Some(buffer),
-                    memory @ ReturnedMemory::Large(_) => {
-                        self.return_memory(now, memory);
-                        None
-                    }
-                });
-                match buffer {
-                    Some(buffer) => {
-                        if self.station.is_current(&context)
-                            && let ReturnedTx::Completed(completion) = end
-                        {
-                            let rates = if context.is_probe() {
-                                FrameRates::Probe
-                            } else {
-                                FrameRates::Control
-                            };
-                            self.rates.completed(now, rates, &completion);
-                        }
-                        let input = match end {
-                            ReturnedTx::Completed(completion) => StaInput::TxDone {
-                                context,
-                                ticket,
-                                buffer,
-                                completion,
-                            },
-                            ReturnedTx::Refused(reason) => StaInput::Unsent {
-                                context,
-                                ticket,
-                                buffer,
-                                reason,
-                            },
-                        };
-                        self.station.input(now, input);
-                    }
-                    None => {
-                        self.counters.stray_terminals += 1;
-                        self.station.input(
-                            now,
-                            StaInput::Returned {
-                                ticket: Some(ticket),
-                                buffer: None,
-                            },
-                        );
-                    }
+    ) -> Result<(), BackendContractViolation> {
+        match (context, B::tx_buffer(buffer)) {
+            (TxContext::Station(context), StationTxBuffer::Small(buffer)) => {
+                if self.station.is_current(&context)
+                    && let ReturnedTx::Completed(completion) = end
+                    && completion.is_rate_sample()
+                {
+                    let rates = if context.is_probe() {
+                        FrameRates::Probe
+                    } else {
+                        FrameRates::Control
+                    };
+                    self.rates.completed(now, rates, &completion);
                 }
-            }
-            TxContext::Data(context) => {
-                let buffer = first.and_then(|memory| match memory {
-                    ReturnedMemory::Large(buffer) => Some(buffer),
-                    memory @ ReturnedMemory::Small(_) => {
-                        self.return_memory(now, memory);
-                        None
-                    }
-                });
-                let input = match buffer {
-                    Some(buffer) => {
-                        if self.data.is_current(&context)
-                            && let ReturnedTx::Completed(completion) = end
-                        {
-                            self.rates.completed(now, FrameRates::Data, &completion);
-                        }
-                        match end {
-                            ReturnedTx::Completed(completion) => DataInput::TxDone {
-                                context,
-                                ticket,
-                                buffer,
-                                completion,
-                            },
-                            ReturnedTx::Refused(reason) => DataInput::Refused {
-                                context,
-                                ticket,
-                                buffer,
-                                reason,
-                            },
-                        }
-                    }
-                    None => {
-                        self.counters.stray_terminals += 1;
-                        DataInput::Returned {
-                            context: Some(context),
-                            ticket: Some(ticket),
-                            buffer: None,
-                        }
-                    }
+                let input = match end {
+                    ReturnedTx::Completed(completion) => StaInput::TxDone {
+                        context,
+                        ticket,
+                        buffer,
+                        completion,
+                    },
+                    ReturnedTx::Refused(reason) => StaInput::Unsent {
+                        context,
+                        ticket,
+                        buffer,
+                        reason,
+                    },
                 };
-                let _ = self
-                    .data
-                    .input::<PortStaTokens<'id, B::Types, B::Small>>(now, input);
+                self.station.input(now, input);
+                Ok(())
             }
-        }
-        // Neither machine aggregates yet. Extra buffers return to their
-        // memory pools without being mistaken for another operation.
-        for buffer in buffers {
-            self.counters.stray_terminals += 1;
-            self.return_memory(now, B::tx_buffer(buffer).into_returned());
-        }
-    }
-
-    fn return_memory(&mut self, now: Instant, memory: ReturnedMemory<'id, B>) {
-        match memory {
-            ReturnedMemory::Small(buffer) => {
-                self.station.input(
-                    now,
-                    StaInput::Returned {
-                        ticket: None,
-                        buffer: Some(buffer),
+            (TxContext::Data(context), StationTxBuffer::Large(buffer)) => {
+                if self.data.is_current(&context)
+                    && let ReturnedTx::Completed(completion) = end
+                    && completion.is_rate_sample()
+                {
+                    self.rates.completed(now, FrameRates::Data, &completion);
+                }
+                let input = match end {
+                    ReturnedTx::Completed(completion) => DataReturn::TxDone {
+                        context,
+                        ticket,
+                        buffer,
+                        completion,
                     },
-                );
-            }
-            ReturnedMemory::Large(buffer) => {
-                let _ = self.data.input::<PortStaTokens<'id, B::Types, B::Small>>(
-                    now,
-                    DataInput::Returned {
-                        context: None,
-                        ticket: None,
-                        buffer: Some(buffer),
+                    ReturnedTx::Refused(reason) => DataReturn::Refused {
+                        context,
+                        ticket,
+                        buffer,
+                        reason,
                     },
-                );
+                };
+                self.data.returned(now, input);
+                Ok(())
             }
+            (TxContext::Station(_), StationTxBuffer::Large(_))
+            | (TxContext::Data(_), StationTxBuffer::Small(_)) => Err(BackendContractViolation),
         }
     }
 }
@@ -1343,7 +1286,6 @@ where
             (io.output)(ServiceOutput::Notice(notice));
             return Ok(match notice {
                 StaNotice::Disconnected(_) => Follow::Disconnected,
-                StaNotice::ConnectRefused(_) => Follow::Nothing,
                 StaNotice::Connected { .. } | StaNotice::BackgroundScanDone { .. } => {
                     Follow::Nothing
                 }

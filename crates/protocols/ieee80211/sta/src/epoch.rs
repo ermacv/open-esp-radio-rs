@@ -6,10 +6,6 @@ use core::marker::PhantomData;
 use oer_ieee80211_lower_mac::ConnectionEpochKind;
 use oer_radio_port::Slot;
 
-/// An exhausted source cannot begin another connection in this install.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct EpochExhausted;
-
 /// A connection identity, invariant in the installation's brand. Only the
 /// station's source issues one; neither callers nor Data reconstruct it.
 ///
@@ -40,13 +36,23 @@ impl<'id> LinkEpochSource<'id> {
         }
     }
 
-    pub(crate) fn begin(&mut self) -> Result<LinkEpoch<'id>, EpochExhausted> {
-        let next = self.last.checked_add(1).ok_or(EpochExhausted)?;
-        self.last = next;
-        Ok(LinkEpoch {
-            sequence: next,
+    /// Issue the next connection identity, including across `u64::MAX`.
+    ///
+    /// Only the current connection and operations still owned by the backend
+    /// need distinct identities. Tickets bound the number of those operations,
+    /// and teardown returns all of them before the installation ends. An old
+    /// identity can coincide with a new one only if an operation survives a
+    /// full 2^64 reconnections in this installation. The lifecycle excludes
+    /// that survival; the ticket bound alone bounds count, not lifetime.
+    /// This is the owner's modular-epoch contract, not a Rust proof of age.
+    ///
+    /// [Owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6155932498).
+    pub(crate) fn begin(&mut self) -> LinkEpoch<'id> {
+        self.last = self.last.wrapping_add(1);
+        LinkEpoch {
+            sequence: self.last,
             brand: PhantomData,
-        })
+        }
     }
 }
 
@@ -75,12 +81,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_last_epoch_is_issued_once_and_exhaustion_never_resets_it() {
+    fn adjacent_live_epochs_remain_distinct_across_wrap() {
         let mut source = LinkEpochSource::for_test(u64::MAX - 1);
-        let last = source.begin().unwrap();
+        let last = source.begin();
+        let wrapped = source.begin();
+        let next = source.begin();
         assert_eq!(last.sequence, u64::MAX);
-        assert_eq!(source.begin(), Err(EpochExhausted));
-        assert_eq!(source.begin(), Err(EpochExhausted));
-        assert_eq!(source.last, u64::MAX);
+        assert_eq!(wrapped.sequence, 0);
+        assert_eq!(next.sequence, 1);
+        assert_ne!(last, wrapped);
+        assert_ne!(wrapped, next);
     }
 }

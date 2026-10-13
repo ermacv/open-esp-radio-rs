@@ -62,14 +62,15 @@ use oer_ieee80211_lower_mac::{
     AccessPoint, AccessPointPhase, AttemptKey, BandSet, BssColor, Ccmp128Key, Channel,
     CoexPriority, CoexPrioritySet, ConnectionEpochKind, FrameHeader, GateClosed, GateClosedKind,
     GateOpen, GateOpenKind, HardwareServices, Ieee80211Capabilities, Ieee80211Radio,
-    IndividualAddress, InterfaceAggregateAttempt, InterfaceAttempt, InterfacePhase, KeyTypes,
-    LinkMetric, LowerMacBackend, LowerMacCapabilities, LowerMacEvent, LowerMacPhase, LowerMacSetup,
-    PhaseRate, PhaseTypes, PhyFormatSet, PoolSource, PreparationError, PreparationRefused,
-    PreparedTx, RateSupport, ReceiveFilter, Removed, RemovedKey, RetransmissionPlan, RoleKeys,
-    RxBuffer, RxEvidence, RxMeta, RxMetadata, SignalMetadata, Station, StationPhase,
-    StationReceive, SubmitError, SupportedBlockAck, SupportedChannel, SupportedEdca,
-    SupportedFilter, TxBody, TxBufferClass, TxBufferMemory, TxBufferPool, TxCompletion, TxFrame,
-    TxSource, TxStatus, VifRole, WidthSet,
+    IndeterminateCause, IndividualAddress, InterfaceAggregateAttempt, InterfaceAttempt,
+    InterfacePhase, KeyTypes, LinkMetric, LowerMacBackend, LowerMacCapabilities, LowerMacEvent,
+    LowerMacPhase, LowerMacSetup, PhaseRate, PhaseTypes, PhyFormatSet, PoolSource,
+    PreparationError, PreparationRefused, PreparedTx, RateSupport, ReceiveFilter, Removed,
+    RemovedKey, RetransmissionPlan, RoleKeys, RxBuffer, RxEvidence, RxMeta, RxMetadata,
+    SignalMetadata, Station, StationPhase, StationReceive, SubmitError, SupportedBlockAck,
+    SupportedChannel, SupportedEdca, SupportedFilter, TxAck, TxBody, TxBufferClass, TxBufferMemory,
+    TxBufferPool, TxCompleted, TxEndStatus, TxFrame, TxOutcome, TxSource, VifRole, WidthSet,
+    WithdrawCause,
 };
 use oer_ieee80211_lower_mac::{
     AmpduCapabilities, AmpduPhase, AmpduRate, BlockAckReport, PhaseAggregate, Tid,
@@ -817,6 +818,14 @@ pub struct AirFrame {
     pub packet_number: Option<u64>,
 }
 
+#[derive(Clone, Copy)]
+enum AirResult {
+    Acknowledged,
+    AckTimeout,
+    Collision,
+    HardwareTimeout,
+}
+
 /// The air and the world of a model: shared by the backend's driver and
 /// the test.
 #[derive(Default)]
@@ -824,11 +833,15 @@ pub struct ModelAir {
     sent: RefCell<Vec<AirFrame>>,
     /// The answers of the next transmissions, in order; once none is
     /// queued, each is acknowledged.
-    answers: RefCell<VecDeque<bool>>,
+    answers: RefCell<VecDeque<AirResult>>,
     rx: RefCell<VecDeque<(Vec<u8>, ModelRxMeta)>>,
     refuse_enable: Cell<bool>,
     preparation_refusal: Cell<Option<PreparationError>>,
     poisoned: Cell<bool>,
+    #[cfg(test)]
+    swap_terminals: Cell<bool>,
+    #[cfg(test)]
+    pub(crate) corrupted_terminal: Cell<bool>,
     driver: RefCell<Option<Waker>>,
     /// The driver's passes.
     passes: Cell<u32>,
@@ -845,20 +858,42 @@ pub struct ModelAir {
 }
 
 impl ModelAir {
+    #[cfg(test)]
+    pub(crate) fn swap_next_two_single_buffers(&self) {
+        self.swap_terminals.set(true);
+    }
     /// Inject one refusal before admission for a service's failure-path
     /// scenario. No PN is allocated or TX terminal is posted. Class-pool
     /// preparation may already have written the checked MPDU.
     pub fn refuse_preparation(&self, reason: PreparationError) {
         self.preparation_refusal.set(Some(reason));
     }
-    /// Every transmission so far.
+    /// Every publication so far, including collisions and unknown outcomes.
     pub fn sent(&self) -> Vec<AirFrame> {
         self.sent.borrow().clone()
     }
 
     /// Answer the next transmission: acknowledged or not.
     pub fn answer(&self, acknowledged: bool) {
-        self.answers.borrow_mut().push_back(acknowledged);
+        self.answers.borrow_mut().push_back(if acknowledged {
+            AirResult::Acknowledged
+        } else {
+            AirResult::AckTimeout
+        });
+    }
+
+    /// End the next publication with no completion. A timeout is final:
+    /// the MPDU becomes Indeterminate and the next queued attempt may run.
+    pub fn timeout(&self) {
+        self.answers
+            .borrow_mut()
+            .push_back(AirResult::HardwareTimeout);
+    }
+
+    /// An internal collision before the MPDU reached the air. The driver
+    /// consumes the next step of the plan without returning its resources.
+    pub fn collision(&self) {
+        self.answers.borrow_mut().push_back(AirResult::Collision);
     }
 
     /// Answer the next A-MPDU with a Block Ack of the subframes whose
@@ -919,8 +954,11 @@ impl ModelAir {
         }
     }
 
-    fn acknowledges(&self) -> bool {
-        self.answers.borrow_mut().pop_front().unwrap_or(true)
+    fn result(&self) -> AirResult {
+        self.answers
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or(AirResult::Acknowledged)
     }
 }
 
@@ -996,6 +1034,8 @@ pub struct ModelHeld<'id, X: ModelContext = ()> {
     recycled: Bounded<ModelRxBuffer>,
     settings: RefCell<Settings>,
     events: Bounded<LowerMacEvent<'id, ModelTypes<X>>>,
+    #[cfg(test)]
+    held_terminal: RefCell<Option<TxCompleted<'id, ModelTypes<X>>>>,
     /// The receive buffers out with the body, queued or held.
     rx_out: Cell<usize>,
     /// A confirmation of each interface's settings waits in `events`.
@@ -1019,6 +1059,40 @@ impl<'id, X: ModelContext> ModelHeld<'id, X> {
     }
 
     fn post(&self, event: LowerMacEvent<'id, ModelTypes<X>>) {
+        #[cfg(test)]
+        let event = match event {
+            LowerMacEvent::TxCompleted(mut current @ TxCompleted::Single { .. })
+                if self.air.swap_terminals.get() =>
+            {
+                let Some(mut previous) = self.held_terminal.borrow_mut().take() else {
+                    *self.held_terminal.borrow_mut() = Some(current);
+                    return;
+                };
+                match (&mut previous, &mut current) {
+                    (
+                        TxCompleted::Single {
+                            buffer: a,
+                            body: ab,
+                            ..
+                        },
+                        TxCompleted::Single {
+                            buffer: b,
+                            body: bb,
+                            ..
+                        },
+                    ) => {
+                        core::mem::swap(a, b);
+                        core::mem::swap(ab, bb);
+                    }
+                    _ => panic!("test injector holds only Single terminals"),
+                }
+                self.air.swap_terminals.set(false);
+                self.air.corrupted_terminal.set(true);
+                self.events.push(LowerMacEvent::TxCompleted(previous));
+                LowerMacEvent::TxCompleted(current)
+            }
+            event => event,
+        };
         self.events.push(event);
         self.wake_body();
     }
@@ -1177,6 +1251,8 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
             recycled: Bounded::new(MODEL_RX_EVENTS, "recycle"),
             settings: RefCell::default(),
             events: Bounded::new(MODEL_EVENTS, "event"),
+            #[cfg(test)]
+            held_terminal: RefCell::new(None),
             rx_out: Cell::new(0),
             configured: Cell::new([false; 2]),
             lost: Cell::new(false),
@@ -1346,7 +1422,7 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                 }
                 Command::CloseGate => {
                     self.gate_open = false;
-                    self.withdraw(held);
+                    self.withdraw(held, WithdrawCause::GateClosed);
                     let closed = held.closed.borrow_mut().take();
                     if let Some(closed) = closed {
                         held.post(LowerMacEvent::GateClosed(closed));
@@ -1359,7 +1435,7 @@ impl<'id, X: ModelContext> Driver<'id, X> {
             }
         }
         if held.draining.replace(false) {
-            self.withdraw(held);
+            self.withdraw(held, WithdrawCause::Disabled);
             held.wake_body();
         }
         // A queue the air released publishes without a command.
@@ -1373,12 +1449,12 @@ impl<'id, X: ModelContext> Driver<'id, X> {
     }
 
     /// Return unpublished work in each queue's original order.
-    fn withdraw(&mut self, held: &ModelHeld<'id, X>) {
+    fn withdraw(&mut self, held: &ModelHeld<'id, X>, cause: WithdrawCause) {
         for queue in &mut self.queues {
             while let Some(work) = queue.pop_front() {
                 match work {
                     Work::Single(prepared) => {
-                        terminal(held, prepared, TxStatus::Aborted, 0, None);
+                        terminal(held, prepared, TxOutcome::Withdrawn(cause));
                     }
                     Work::Aggregate(aggregate) => {
                         let mut buffers = Vec::with_capacity(aggregate.subframes.len());
@@ -1389,20 +1465,13 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                                 bodies.push((index as u8, body));
                             }
                         }
-                        held.post(LowerMacEvent::TxCompleted {
+                        held.post(LowerMacEvent::TxCompleted(TxCompleted::Aggregate {
                             context: aggregate.context,
                             ticket: aggregate.ticket,
                             buffers,
                             bodies,
-                            completion: TxCompletion {
-                                status: TxStatus::Aborted,
-                                ack_rssi_dbm: None,
-                                ack_snr_db: None,
-                                block_ack: None,
-                                transmissions: 0,
-                                rate: None,
-                            },
-                        });
+                            completion: TxOutcome::Withdrawn(cause),
+                        }));
                     }
                 }
             }
@@ -1466,31 +1535,56 @@ fn publish_single<'id, X: ModelContext>(
             return;
         }
     };
-    let mut transmissions = 0_u8;
+    // A closed RetryPlan holds at most four u8 stages: u16 retains the
+    // exact count even for a plan longer than 255 transmissions.
+    let mut transmissions = 0_u16;
     let mut last = None;
-    let mut delivered = false;
+    let mut status = TxEndStatus::AckTimeout;
     'plan: for stage in &prepared.plan {
         for _ in 0..stage.transmissions {
-            transmissions = transmissions.saturating_add(1);
-            last = Some(stage.rate);
+            if transmissions != 0 {
+                prepared.mpdu.buffer.memory_mut()[1] |= 0x08;
+            }
             held.air.sent.borrow_mut().push(prepared.mpdu.on_air(
                 prepared.role,
                 keys,
                 prepared.key.as_ref(),
                 stage.rate,
             ));
-            if held.air.acknowledges() {
-                delivered = true;
-                break 'plan;
+            match held.air.result() {
+                AirResult::HardwareTimeout => {
+                    terminal(
+                        held,
+                        prepared,
+                        TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout),
+                    );
+                    return;
+                }
+                AirResult::Collision => status = TxEndStatus::ContentionLimit,
+                AirResult::Acknowledged => {
+                    transmissions += 1;
+                    last = Some(stage.rate);
+                    status = TxEndStatus::Success;
+                    break 'plan;
+                }
+                AirResult::AckTimeout => {
+                    transmissions += 1;
+                    last = Some(stage.rate);
+                    status = TxEndStatus::AckTimeout;
+                }
             }
         }
     }
-    let status = if delivered {
-        TxStatus::Success
-    } else {
-        TxStatus::AckTimeout
-    };
-    terminal(held, prepared, status, transmissions, last);
+    terminal(
+        held,
+        prepared,
+        TxOutcome::Ended {
+            status,
+            transmissions,
+            rate: last,
+            ack: (status == TxEndStatus::Success).then_some(TxAck::default()),
+        },
+    );
 }
 
 /// Publish one A-MPDU: its new subframes numbered, its retransmitted ones
@@ -1546,54 +1640,41 @@ fn publish_aggregate<'id, X: ModelContext>(
             bodies.push((index as u8, body));
         }
     }
-    held.post(LowerMacEvent::TxCompleted {
+    held.post(LowerMacEvent::TxCompleted(TxCompleted::Aggregate {
         context,
         ticket,
         buffers,
-        completion: TxCompletion {
-            status: TxStatus::Success,
-            ack_rssi_dbm: None,
-            ack_snr_db: None,
-            block_ack: start
-                .and_then(SequenceNumber::new)
-                .map(|start_sequence| BlockAckReport {
-                    start_sequence,
-                    bitmap,
-                }),
+        completion: TxOutcome::Ended {
+            status: TxEndStatus::Success,
             transmissions: 1,
             rate: Some(rate),
+            ack: Some(TxAck {
+                block_ack: start.and_then(SequenceNumber::new).map(|start_sequence| {
+                    BlockAckReport {
+                        start_sequence,
+                        bitmap,
+                    }
+                }),
+                ..TxAck::default()
+            }),
         },
         bodies,
-    });
+    }));
 }
 
 /// Post the terminal of `prepared`, with its tokens.
 fn terminal<'id, X: ModelContext>(
     held: &ModelHeld<'id, X>,
     prepared: Prepared<'id, X>,
-    status: TxStatus,
-    transmissions: u8,
-    rate: Option<PhyRate>,
+    outcome: TxOutcome,
 ) {
-    held.post(LowerMacEvent::TxCompleted {
+    held.post(LowerMacEvent::TxCompleted(TxCompleted::Single {
         context: prepared.context,
         ticket: prepared.ticket,
-        buffers: alloc::vec![prepared.mpdu.buffer],
-        completion: TxCompletion {
-            status,
-            ack_rssi_dbm: None,
-            ack_snr_db: None,
-            block_ack: None,
-            transmissions,
-            rate,
-        },
-        bodies: prepared
-            .mpdu
-            .body
-            .into_iter()
-            .map(|body| (0, body))
-            .collect(),
-    });
+        buffer: prepared.mpdu.buffer,
+        completion: outcome,
+        body: prepared.mpdu.body,
+    }));
 }
 
 /// The model's running phase: the body's handle over the queues.

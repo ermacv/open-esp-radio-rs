@@ -88,10 +88,10 @@ impl<'id> StationPort<'id> for ModelBackend<ModelCaps24, ServiceContexts> {
 
     fn tx_buffer(buffer: ModelAnyBuffer<'id>) -> StationTxBuffer<'id, Self> {
         match buffer {
-            ModelAnyBuffer::Small(buffer) => StationTxBuffer::Small(buffer),
-            ModelAnyBuffer::SmallSent(buffer) => StationTxBuffer::SmallSent(buffer),
-            ModelAnyBuffer::Large(buffer) => StationTxBuffer::Large(buffer),
-            ModelAnyBuffer::LargeSent(buffer) => StationTxBuffer::LargeSent(buffer),
+            ModelAnyBuffer::Small(buffer) => StationTxBuffer::Small(ReturnedMpdu::Fresh(buffer)),
+            ModelAnyBuffer::SmallSent(buffer) => StationTxBuffer::Small(ReturnedMpdu::Sent(buffer)),
+            ModelAnyBuffer::Large(buffer) => StationTxBuffer::Large(ReturnedMpdu::Fresh(buffer)),
+            ModelAnyBuffer::LargeSent(buffer) => StationTxBuffer::Large(ReturnedMpdu::Sent(buffer)),
         }
     }
 }
@@ -317,7 +317,7 @@ impl RateSelection<ModelRxMeta> for RecordingRates<'_> {
         );
     }
 
-    fn completed(&mut self, now: Instant, frame: FrameRates, completion: &TxCompletion) {
+    fn completed(&mut self, now: Instant, frame: FrameRates, completion: &TxOutcome) {
         self.completions.borrow_mut().push(frame);
         <EspressifRateSelection<ModelCaps24> as RateSelection<ModelRxMeta>>::completed(
             &mut self.inner,
@@ -532,7 +532,7 @@ where
             );
             let mut service = StationService::<_, _, 4>::new(
                 station,
-                StaData::new(data_tickets, large),
+                StaData::new(data_tickets, large, MODEL_TX_QUEUE_DEPTH),
                 arbiter,
                 RecordingRates {
                     inner: EspressifRateSelection::<ModelCaps24>::new(),
@@ -553,14 +553,20 @@ where
                 world.command(ServiceCommand::Stop).await;
             })
             .await;
-            assert_eq!(service.counters.stray_terminals, 0);
             assert_eq!(service.station.lost_tokens(), 0);
             assert_eq!(service.data.counters().lost_tokens, 0);
-            if !matches!(&end, ServiceEnd::Poisoned(_)) {
+            if world.air.corrupted_terminal.get() {
+                assert!(
+                    matches!(&end, ServiceEnd::Failed(_) | ServiceEnd::Poisoned(_)),
+                    "class mismatch uses fail-stop"
+                );
+                assert!(service.contract_failed);
+            }
+            if matches!(&end, ServiceEnd::Stopped(_)) {
                 for category in WmmAccessCategory::ALL {
                     assert_eq!(
-                        service.data.at_port(category),
-                        0,
+                        service.data.available(category),
+                        u32::from(MODEL_TX_QUEUE_DEPTH.get()),
                         "disable returns every attempt"
                     );
                 }
@@ -1313,4 +1319,39 @@ fn eapol_and_deauthentication_wait_for_at_most_the_queue_depth_and_one_data_atte
             })
         },
     );
+}
+
+#[test]
+fn a_context_buffer_class_mismatch_stops_service_without_rate_updates_or_reuse() {
+    run(StaSecurity::Open, |world| {
+        Box::pin(async move {
+            let mut seen = 0;
+            world.associate_with(&mut seen, beacon(false), false).await;
+            for _ in 0..20 {
+                yield_now().await;
+            }
+            let baseline = world.completions.borrow().len();
+            world.air.swap_next_two_single_buffers();
+            world.send_msdu(ACCESS_POINT_ADDRESS);
+            world.sent(&mut seen, DATA).await;
+            world
+                .command(ServiceCommand::Station(StaCommand::Disconnect))
+                .await;
+            world.sent(&mut seen, DEAUTHENTICATION).await;
+            for _ in 0..20 {
+                yield_now().await;
+            }
+            assert!(world.air.corrupted_terminal.get());
+            assert_eq!(world.completions.borrow().len(), baseline);
+            let publications = world.air.sent().len();
+            world.send_msdu(ACCESS_POINT_ADDRESS);
+            world
+                .command(ServiceCommand::Station(StaCommand::Connect))
+                .await;
+            for _ in 0..20 {
+                yield_now().await;
+            }
+            assert_eq!(world.air.sent().len(), publications);
+        })
+    });
 }

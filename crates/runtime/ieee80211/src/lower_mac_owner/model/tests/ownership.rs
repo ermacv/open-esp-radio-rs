@@ -1,88 +1,98 @@
 use super::*;
+use crate::lower_mac_owner::conformance::{
+    self, Class, End, Harness, Operation, Resources, Scenario, Trace,
+};
 
-// Deliberately neither Copy nor Clone. The backend can only move it.
+// Deliberately neither Copy nor Clone, and branded by the installation.
 struct Context<'id> {
     epoch: Option<oer_ieee80211_sta::epoch::LinkEpoch<'id>>,
-    operation: usize,
-    ticket: u8,
-    buffer: u8,
-    body: *const u8,
+    operation: Operation,
+    resources: Resources,
     dropped: Rc<Cell<usize>>,
 }
-
 struct Contexts;
-
 impl ModelContext for Contexts {
     type Context<'id> = Context<'id>;
 }
-
 impl Drop for Context<'_> {
     fn drop(&mut self) {
         self.dropped.set(self.dropped.get() + 1);
     }
 }
-
 type Backend = ModelBackend<ModelCaps, Contexts>;
-
-#[derive(Clone, Copy)]
-enum End {
-    Air,
-    Gate,
-    Disable,
-    Poison,
-}
 
 struct Operations {
     air: Rc<ModelAir>,
     dropped: Rc<Cell<usize>>,
-    seen: Rc<RefCell<Vec<(usize, u8)>>>,
-    end: End,
+    seen: Rc<RefCell<Vec<conformance::Returned>>>,
+    scenario: Scenario,
 }
 
-fn returned(event: LowerMacEvent<'_, ModelTypes<Contexts>>, seen: &RefCell<Vec<(usize, u8)>>) {
-    if let LowerMacEvent::TxCompleted {
-        context,
-        ticket,
-        mut buffers,
-        completion,
-        mut bodies,
-    } = event
-    {
-        assert!(
-            context.epoch.is_none(),
-            "pre-Connect operations have no epoch"
-        );
-        assert_eq!(ticket.index(), context.ticket);
-        assert_eq!(buffers.len(), 1);
-        let buffer = buffers.remove(0);
-        let (buffer, body) = match buffer {
-            ModelAnyBuffer::Small(buffer) => {
-                assert_eq!(completion.transmissions, 0);
-                assert_eq!(bodies.len(), 1);
-                let (index, body) = bodies.remove(0);
-                assert_eq!(index, 0);
-                (buffer, body)
-            }
-            ModelAnyBuffer::SmallSent(mpdu) => {
-                assert_ne!(completion.transmissions, 0);
-                assert!(bodies.is_empty());
-                assert_eq!(mpdu.packet_number(), None, "an open MPDU is also Sent");
-                let (buffer, body) =
-                    <ModelTypes<Contexts> as TxBufferPool<ModelSmall>>::renew(mpdu);
-                (buffer, body.unwrap())
-            }
-            _ => panic!("a small MPDU"),
-        };
-        assert_eq!(buffer.slot.index(), context.buffer);
-        assert_eq!(
-            body.0.as_ptr(),
-            context.body,
-            "the original body owner returns"
-        );
-        assert_eq!(body.0, [context.operation as u8; 4]);
-        assert_eq!(&buffer.memory[36..40], body.bytes());
-        seen.borrow_mut()
-            .push((context.operation, completion.transmissions));
+fn observe(
+    context: Context<'_>,
+    ticket: Slot<'_, ModelTickets>,
+    buffer: ModelAnyBuffer<'_>,
+    body: Option<ModelBody>,
+    end: End,
+    seen: &RefCell<Vec<conformance::Returned>>,
+) {
+    assert!(context.epoch.is_none());
+    let (class, index, body) = match buffer {
+        ModelAnyBuffer::Small(buffer) => (Class::Small, buffer.slot.index(), body),
+        ModelAnyBuffer::Large(buffer) => (Class::Large, buffer.slot.index(), body),
+        ModelAnyBuffer::SmallSent(mpdu) => {
+            assert!(body.is_none());
+            let (buffer, body) = <ModelTypes<Contexts> as TxBufferPool<ModelSmall>>::renew(mpdu);
+            (Class::Small, buffer.slot.index(), body)
+        }
+        ModelAnyBuffer::LargeSent(mpdu) => {
+            assert!(body.is_none());
+            let (buffer, body) = <ModelTypes<Contexts> as TxBufferPool<ModelLarge>>::renew(mpdu);
+            (Class::Large, buffer.slot.index(), body)
+        }
+    };
+    let body = body.unwrap();
+    assert!(body.0.iter().all(|byte| *byte == context.operation.id));
+    seen.borrow_mut().push(conformance::Returned {
+        operation: context.operation,
+        expected: context.resources,
+        actual: Resources {
+            ticket: ticket.index(),
+            buffer: index,
+            class,
+            body: body.0.as_ptr() as usize,
+        },
+        end,
+    });
+}
+
+fn returned(
+    event: LowerMacEvent<'_, ModelTypes<Contexts>>,
+    seen: &RefCell<Vec<conformance::Returned>>,
+) {
+    match event {
+        LowerMacEvent::TxCompleted(TxCompleted::Single {
+            context,
+            ticket,
+            buffer,
+            completion,
+            body,
+        }) => {
+            let end = match completion {
+                TxOutcome::Ended {
+                    transmissions: 1,
+                    status: TxEndStatus::Success,
+                    ..
+                } => End::Completed,
+                TxOutcome::Withdrawn(_) => End::Withdrawn,
+                other => panic!("unexpected outcome {other:?}"),
+            };
+            observe(context, ticket, buffer, body, end, seen);
+        }
+        LowerMacEvent::TxCompleted(TxCompleted::Aggregate { .. }) => {
+            panic!("single submission must return Single")
+        }
+        _ => {}
     }
 }
 
@@ -93,75 +103,130 @@ impl PortBody<Backend> for Operations {
         resources: ModelResources<'id>,
     ) -> Ended<'id, Backend> {
         let Ok(mut owner) = owner.enable().await else {
-            panic!("the model enables")
+            panic!("model enables")
         };
         let ModelResources {
             mut tickets,
             mut small,
+            mut large,
             gate,
             ..
         } = resources;
         {
             let mut phase = owner.phase();
             self.air.hold(WmmAccessCategory::BestEffort, true);
-            for operation in 0..3 {
+            for operation in conformance::OPERATIONS {
                 let ticket = tickets.remove(0);
-                let buffer = small.remove(0);
-                let body = ModelBody(alloc::vec![operation as u8; 4]);
+                let body = ModelBody(
+                    alloc::vec![operation.id; if self.scenario == Scenario::Refuse { 17 } else { 4 }],
+                );
+                let (index, source) = match operation.class {
+                    Class::Small => {
+                        let buffer = small.remove(0);
+                        let index = buffer.slot.index();
+                        let source = <ModelTypes<Contexts> as TxBufferPool<ModelSmall>>::prepare::<
+                            Station,
+                            ModelCaps,
+                        >(TxSource::Fresh {
+                            buffer,
+                            frame: ClassFrame::new(data_frame(&phase, false)).ok().unwrap(),
+                            body: Some(body),
+                        })
+                        .map_err(|refused| match refused.operation {
+                            TxSource::Fresh { buffer, body, .. } => {
+                                (ModelAnyBuffer::Small(buffer), body)
+                            }
+                            TxSource::Retransmission { .. } => unreachable!(),
+                        });
+                        (index, source)
+                    }
+                    Class::Large => {
+                        let buffer = large.remove(0);
+                        let index = buffer.slot.index();
+                        let source = <ModelTypes<Contexts> as TxBufferPool<ModelLarge>>::prepare::<
+                            Station,
+                            ModelCaps,
+                        >(TxSource::Fresh {
+                            buffer,
+                            frame: ClassFrame::new(data_frame(&phase, false)).ok().unwrap(),
+                            body: Some(body),
+                        })
+                        .map_err(|refused| match refused.operation {
+                            TxSource::Fresh { buffer, body, .. } => {
+                                (ModelAnyBuffer::Large(buffer), body)
+                            }
+                            TxSource::Retransmission { .. } => unreachable!(),
+                        });
+                        (index, source)
+                    }
+                };
+                // Identity comes from the actual prepared/refused owner, before transfer.
+                let body_pointer = match &source {
+                    Ok(source) => source.mpdu.body.as_ref().unwrap().0.as_ptr(),
+                    Err((_, body)) => body.as_ref().unwrap().0.as_ptr(),
+                };
                 let context = Context {
                     epoch: None,
                     operation,
-                    ticket: ticket.index(),
-                    buffer: buffer.slot.index(),
-                    body: body.0.as_ptr(),
+                    resources: Resources {
+                        ticket: ticket.index(),
+                        buffer: index,
+                        class: operation.class,
+                        body: body_pointer as usize,
+                    },
                     dropped: self.dropped.clone(),
                 };
-                let frame = ClassFrame::new(data_frame(&phase, false)).ok().unwrap();
-                phase
-                    .station()
-                    .submit(oer_ieee80211_lower_mac::Attempt {
-                        context,
-                        ticket,
-                        source: <ModelTypes<Contexts> as TxBufferPool<'id, ModelSmall>>::prepare(
-                            TxSource::Fresh {
-                                buffer,
-                                frame,
-                                body: Some(body),
-                            },
-                        )
-                        .ok()
-                        .unwrap(),
-                        access_category: if operation == 2 {
-                            WmmAccessCategory::Voice
-                        } else {
-                            WmmAccessCategory::BestEffort
-                        },
-                        protection: Protection::None,
-                        key: None,
-                        power: SupportedPower::new(TxPower::Calibrated).unwrap(),
-                        coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
-                    })
-                    .unwrap();
+                match source {
+                    Ok(source) => {
+                        assert_ne!(self.scenario, Scenario::Refuse);
+                        phase
+                            .station()
+                            .submit(oer_ieee80211_lower_mac::Attempt {
+                                context,
+                                ticket,
+                                source,
+                                access_category: operation.category,
+                                protection: Protection::None,
+                                key: None,
+                                power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+                                coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+                            })
+                            .unwrap();
+                    }
+                    Err((buffer, body)) => {
+                        assert_eq!(self.scenario, Scenario::Refuse);
+                        observe(context, ticket, buffer, body, End::Refused, &self.seen);
+                    }
+                }
             }
-            yield_now().await;
-            let Ok(Ok(event)) = phase.next_event().await else {
-                panic!("Voice completes first")
-            };
-            returned(event, &self.seen);
-            assert_eq!(&*self.seen.borrow(), &[(2, 1)]);
-            assert_eq!(self.dropped.get(), 1);
-            match self.end {
-                End::Air => self.air.hold(WmmAccessCategory::BestEffort, false),
-                End::Gate => phase.close_gate(gate),
-                End::Disable => {}
-                End::Poison => self.air.poison(),
-            }
-            if matches!(self.end, End::Air | End::Gate) {
-                while self.seen.borrow().len() < 3 {
+            if self.scenario != Scenario::Refuse {
+                while self.seen.borrow().len() < 2 {
                     let Ok(Ok(event)) = phase.next_event().await else {
-                        panic!("an operation terminal")
+                        panic!("unheld AC completes")
                     };
                     returned(event, &self.seen);
+                }
+                assert!(
+                    self.seen
+                        .borrow()
+                        .iter()
+                        .all(|observation| observation.operation.category
+                            != WmmAccessCategory::BestEffort)
+                );
+                match self.scenario {
+                    Scenario::Complete => self.air.hold(WmmAccessCategory::BestEffort, false),
+                    Scenario::CloseGate => phase.close_gate(gate),
+                    Scenario::Disable => {}
+                    Scenario::Poison => self.air.poison(),
+                    Scenario::Refuse => unreachable!(),
+                }
+                if matches!(self.scenario, Scenario::Complete | Scenario::CloseGate) {
+                    while self.seen.borrow().len() < 4 {
+                        let Ok(Ok(event)) = phase.next_event().await else {
+                            panic!("terminal")
+                        };
+                        returned(event, &self.seen);
+                    }
                 }
             }
         }
@@ -173,47 +238,41 @@ impl PortBody<Backend> for Operations {
     }
 }
 
-fn operations(end: End) -> Vec<(usize, u8)> {
-    let (backend, air) = Backend::new(
-        Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap(),
-        [
-            IndividualAddress::new(STATION).unwrap(),
-            IndividualAddress::new(ACCESS_POINT).unwrap(),
-        ],
-    );
-    let dropped = Rc::new(Cell::new(0));
-    let seen = Rc::new(RefCell::new(Vec::new()));
-    block_on(run_port(
-        backend,
-        Operations {
-            air,
-            dropped: dropped.clone(),
-            seen: seen.clone(),
-            end,
-        },
-    ));
-    assert_eq!(dropped.get(), 3, "every owned context ends exactly once");
-    seen.borrow().clone()
+struct ModelHarness;
+impl Harness for ModelHarness {
+    async fn exercise(&mut self, scenario: Scenario) -> Trace {
+        let (backend, air) = Backend::new(
+            Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap(),
+            [
+                IndividualAddress::new(STATION).unwrap(),
+                IndividualAddress::new(ACCESS_POINT).unwrap(),
+            ],
+        );
+        let dropped = Rc::new(Cell::new(0));
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        run_port(
+            backend,
+            Operations {
+                air: air.clone(),
+                dropped: dropped.clone(),
+                seen: seen.clone(),
+                scenario,
+            },
+        )
+        .await;
+        Trace {
+            returned: core::mem::take(&mut *seen.borrow_mut()),
+            contexts_dropped: dropped.get(),
+            publications: air.sent().len(),
+        }
+    }
 }
 
 #[test]
-fn interleaved_acs_return_their_own_context_ticket_buffer_and_body() {
-    assert_eq!(operations(End::Air), [(2, 1), (0, 1), (1, 1)]);
-}
-
-#[test]
-fn gate_returns_unpublished_operations_in_ac_order_with_all_their_resources() {
-    assert_eq!(operations(End::Gate), [(2, 1), (0, 0), (1, 0)]);
-}
-
-#[test]
-fn disable_returns_held_operations_before_uninstall() {
-    assert_eq!(operations(End::Disable), [(2, 1), (0, 0), (1, 0)]);
-}
-
-#[test]
-fn fail_stop_ends_held_ownership_with_the_install_without_inventing_terminals() {
-    assert_eq!(operations(End::Poison), [(2, 1)]);
+fn common_backend_tx_ownership_suite() {
+    block_on(async {
+        conformance::check(&mut ModelHarness).await.unwrap();
+    });
 }
 
 struct AggregateContext {
@@ -319,22 +378,22 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
                 let Ok(Ok(event)) = phase.next_event().await else {
                     panic!("the aggregate ends")
                 };
-                if matches!(&event, LowerMacEvent::TxCompleted { .. }) {
+                if matches!(&event, LowerMacEvent::TxCompleted(_)) {
                     break event;
                 }
             };
-            let LowerMacEvent::TxCompleted {
+            let LowerMacEvent::TxCompleted(TxCompleted::Aggregate {
                 context,
                 ticket,
                 buffers,
                 bodies,
                 completion,
-            } = event
+            }) = event
             else {
                 unreachable!()
             };
             assert_eq!(ticket.index(), context.ticket);
-            assert_eq!(completion.transmissions, u8::from(!self.withdraw));
+            assert_eq!(matches!(completion, TxOutcome::Withdrawn(_)), self.withdraw);
             assert_eq!(buffers.len(), 3);
             assert_eq!(bodies.len(), if self.withdraw { 2 } else { 0 });
             for (buffer, index) in buffers.iter().zip(&context.buffers) {
@@ -364,7 +423,7 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
         }
         let mut sink = |event| {
             assert!(
-                !matches!(event, LowerMacEvent::TxCompleted { .. }),
+                !matches!(event, LowerMacEvent::TxCompleted(_)),
                 "each attempt has one terminal"
             )
         };

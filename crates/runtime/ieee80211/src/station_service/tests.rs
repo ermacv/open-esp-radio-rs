@@ -37,9 +37,8 @@ use std::vec::Vec;
 
 use super::*;
 use crate::lower_mac_owner::model::{
-    AirFrame, MODEL_RX_EVENTS, MODEL_TX_QUEUE_DEPTH, ModelAir, ModelAnyBuffer, ModelBackend,
-    ModelCaps24, ModelLarge, ModelPhase, ModelResources, ModelRxMeta, ModelSetup, ModelSmall,
-    ModelTypes,
+    AirFrame, MODEL_RX_EVENTS, MODEL_TX_QUEUE_DEPTH, ModelAir, ModelBackend, ModelCaps24,
+    ModelLarge, ModelPhase, ModelResources, ModelRxMeta, ModelSetup, ModelSmall, ModelTypes,
 };
 
 const LOCAL: [u8; 6] = [0x02, 0, 0, 0x12, 0x34, 0x56];
@@ -54,14 +53,14 @@ const RSN: [u8; 22] = [
     0x30, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 2, 0, 0,
 ];
 
-impl<'id> StationPort<'id> for ModelBackend<ModelCaps24> {
-    type Types = ModelTypes;
+impl<'id> StationPort<'id> for ModelBackend<ModelCaps24, TxContext> {
+    type Types = ModelTypes<TxContext>;
     type Small = ModelSmall;
     type Large = ModelLarge;
 
     fn lend<'a, 'r>(
-        phase: &'r mut ModelPhase<'a, 'id, ModelCaps24>,
-    ) -> &'r mut impl LowerMacPhase<'a, 'id, Caps = ModelCaps24, Types = ModelTypes>
+        phase: &'r mut ModelPhase<'a, 'id, ModelCaps24, TxContext>,
+    ) -> &'r mut impl LowerMacPhase<'a, 'id, Caps = ModelCaps24, Types = ModelTypes<TxContext>>
     where
         'id: 'a,
     {
@@ -74,17 +73,10 @@ impl<'id> StationPort<'id> for ModelBackend<ModelCaps24> {
 
     const RX_BUFFERS: usize = MODEL_RX_EVENTS;
 
-    fn event(event: LowerMacEvent<'id, ModelTypes>) -> LowerMacEvent<'id, ModelTypes> {
+    fn event(
+        event: LowerMacEvent<'id, ModelTypes<TxContext>>,
+    ) -> LowerMacEvent<'id, ModelTypes<TxContext>> {
         event
-    }
-
-    fn sort(buffer: ModelAnyBuffer<'id>) -> Sorted<'id, Self> {
-        match buffer {
-            ModelAnyBuffer::Small(buffer) => Sorted::Small(buffer),
-            ModelAnyBuffer::SmallNumbered(buffer) => Sorted::SmallNumbered(buffer),
-            ModelAnyBuffer::Large(buffer) => Sorted::Large(buffer),
-            ModelAnyBuffer::LargeNumbered(buffer) => Sorted::LargeNumbered(buffer),
-        }
     }
 }
 
@@ -268,10 +260,56 @@ struct World<'b> {
     clock: VirtualClock,
     commands: CommandChannel<NoopRawMutex, ServiceCommand<ModelCaps24>, 4>,
     outputs: RefCell<Vec<ServiceOutput<ModelCaps24>>>,
+    completions: RefCell<Vec<FrameRates>>,
     /// The network stack's end of the transmit queue.
     stack: RefCell<zerocopy_channel::Sender<'b, NoopRawMutex, TxMsdu>>,
     /// The network stack's end of the receive queue.
     delivered: RefCell<zerocopy_channel::Receiver<'b, NoopRawMutex, RxMsdu>>,
+}
+
+/// Observe the operation class supplied by the service, independently of
+/// the transmitted bytes and the order in which the model ends queues.
+struct RecordingRates<'a> {
+    inner: EspressifRateSelection<ModelCaps24>,
+    completions: &'a RefCell<Vec<FrameRates>>,
+}
+
+impl RateSelection<ModelRxMeta> for RecordingRates<'_> {
+    fn plan<R>(
+        &self,
+        frame: FrameRates,
+        carried: impl Fn(PhyRate) -> Option<R>,
+    ) -> Option<oer_ieee80211_lower_mac::RetryPlan<R>> {
+        <EspressifRateSelection<ModelCaps24> as RateSelection<ModelRxMeta>>::plan(
+            &self.inner,
+            frame,
+            carried,
+        )
+    }
+
+    fn associated(
+        &mut self,
+        peer: &oer_ieee80211_upper_mac::rate_control::RatePeer,
+        response: &ModelRxMeta,
+    ) {
+        self.inner.associated(peer, response);
+    }
+
+    fn disconnected(&mut self) {
+        <EspressifRateSelection<ModelCaps24> as RateSelection<ModelRxMeta>>::disconnected(
+            &mut self.inner,
+        );
+    }
+
+    fn completed(&mut self, now: Instant, frame: FrameRates, completion: &TxCompletion) {
+        self.completions.borrow_mut().push(frame);
+        <EspressifRateSelection<ModelCaps24> as RateSelection<ModelRxMeta>>::completed(
+            &mut self.inner,
+            now,
+            frame,
+            completion,
+        );
+    }
 }
 
 impl World<'_> {
@@ -437,15 +475,15 @@ struct Body<'w, 'b, S> {
 /// A test's script: the access point and the application, on the world.
 type Script<'w> = Pin<Box<dyn Future<Output = ()> + 'w>>;
 
-impl<'w, 'b, S> PortBody<ModelBackend<ModelCaps24>> for Body<'w, 'b, S>
+impl<'w, 'b, S> PortBody<ModelBackend<ModelCaps24, TxContext>> for Body<'w, 'b, S>
 where
     S: FnOnce(&'w World<'b>) -> Script<'w>,
 {
     async fn run<'p, 'id>(
         self,
-        owner: Owner<'p, 'id, ModelBackend<ModelCaps24>, Disabled>,
+        owner: Owner<'p, 'id, ModelBackend<ModelCaps24, TxContext>, Disabled>,
         resources: ModelResources<'id>,
-    ) -> Ended<'id, ModelBackend<ModelCaps24>> {
+    ) -> Ended<'id, ModelBackend<ModelCaps24, TxContext>> {
         {
             let ModelResources {
                 tickets,
@@ -463,11 +501,12 @@ where
             let large: [_; 4] = large.try_into().ok().unwrap();
             let [pairwise, _] = station_pairwise;
             let channel = SupportedChannel::new(channel6()).unwrap();
-            let (arbiter, place, absence) = PortArbiter::<ModelBackend<ModelCaps24>>::new(
-                ArbiterPolicy::DEFAULT,
-                channel,
-                gate,
-            );
+            let (arbiter, place, absence) =
+                PortArbiter::<ModelBackend<ModelCaps24, TxContext>>::new(
+                    ArbiterPolicy::DEFAULT,
+                    channel,
+                    gate,
+                );
             let station = Station::new(
                 self.config,
                 station_tickets,
@@ -481,7 +520,10 @@ where
                 station,
                 StaData::new(data_tickets, large),
                 arbiter,
-                EspressifRateSelection::<ModelCaps24>::new(),
+                RecordingRates {
+                    inner: EspressifRateSelection::<ModelCaps24>::new(),
+                    completions: &self.world.completions,
+                },
             );
             let world = self.world;
             let mut output = |output| world.outputs.borrow_mut().push(output);
@@ -497,6 +539,18 @@ where
                 world.command(ServiceCommand::Stop).await;
             })
             .await;
+            assert_eq!(service.counters.stray_terminals, 0);
+            assert_eq!(service.station.lost_tokens(), 0);
+            assert_eq!(service.data.counters().lost_tokens, 0);
+            if !matches!(&end, ServiceEnd::Poisoned(_)) {
+                for category in WmmAccessCategory::ALL {
+                    assert_eq!(
+                        service.data.at_port(category),
+                        0,
+                        "disable returns every attempt"
+                    );
+                }
+            }
             match end {
                 ServiceEnd::Stopped(owner) | ServiceEnd::Failed(owner) => owner.uninstall(()),
                 ServiceEnd::Poisoned(poisoned) => poisoned.uninstall(()),
@@ -519,7 +573,7 @@ fn run_with<S>(config: StaConfig<ModelCaps24>, script: S)
 where
     S: for<'w, 'b> FnOnce(&'w World<'b>) -> Script<'w>,
 {
-    let (backend, air) = ModelBackend::<ModelCaps24>::new(
+    let (backend, air) = ModelBackend::<ModelCaps24, TxContext>::new(
         channel6(),
         [
             IndividualAddress::new(LOCAL).unwrap(),
@@ -544,6 +598,7 @@ where
         clock: VirtualClock::new(),
         commands: CommandChannel::new(),
         outputs: RefCell::new(Vec::new()),
+        completions: RefCell::new(Vec::new()),
         stack: RefCell::new(stack),
         delivered: RefCell::new(delivered),
     };
@@ -993,6 +1048,81 @@ fn data_before(air: &[AirFrame], from: usize, until: impl Fn(&AirFrame) -> bool)
         .take_while(|frame| !until(frame))
         .filter(|frame| kind(frame) == QOS_DATA && !carries_eapol(frame))
         .count()
+}
+
+#[test]
+fn interleaved_station_and_data_terminals_keep_their_owner_and_voice_order() {
+    run(
+        StaSecurity::Wpa2Personal {
+            pmk: Pmk::from_bytes(PMK),
+        },
+        |world| {
+            Box::pin(async move {
+                let mut beacon = beacon(true);
+                beacon.extend_from_slice(&WMM);
+                let mut seen = 0;
+                world.associate_with(&mut seen, beacon, true).await;
+                let ptk = world.handshake(&mut seen).await;
+                let baseline = world.completions.borrow().len();
+                for category in WmmAccessCategory::ALL {
+                    world.air.hold(category, true);
+                }
+                // Two TIDs share Voice, while Video and BE can complete first.
+                // Distinct destinations let the script observe the original
+                // order; the service never reads them to route a terminal.
+                for (index, priority) in [6, 0, 7, 4].into_iter().enumerate() {
+                    assert!(world.try_send_msdu_at([2, 0, 0, 0, 0, index as u8], priority));
+                    for _ in 0..20 {
+                        yield_now().await;
+                    }
+                }
+                world.air.receive(&group_message1(&ptk, 3, 2), meta());
+                for _ in 0..20 {
+                    yield_now().await;
+                }
+                assert_eq!(world.completions.borrow().len(), baseline);
+
+                for (category, destination) in [
+                    (WmmAccessCategory::Video, 3),
+                    (WmmAccessCategory::BestEffort, 1),
+                ] {
+                    world.air.hold(category, false);
+                    let frame = world.sent(&mut seen, QOS_DATA).await;
+                    assert_eq!(frame.frame[21], destination);
+                    assert!(!carries_eapol(&frame));
+                }
+                world.air.hold(WmmAccessCategory::Voice, false);
+                for (destination, tid) in [(0, 6), (2, 7)] {
+                    let frame = world.sent(&mut seen, QOS_DATA).await;
+                    assert_eq!(frame.frame[21], destination);
+                    assert_eq!(frame.frame[24] & 0x0f, tid);
+                    assert!(!carries_eapol(&frame));
+                }
+                assert!(carries_eapol(&world.sent(&mut seen, QOS_DATA).await));
+                assert_eq!(
+                    &world.completions.borrow()[baseline..],
+                    &[
+                        FrameRates::Data,
+                        FrameRates::Data,
+                        FrameRates::Data,
+                        FrameRates::Data,
+                        FrameRates::Control,
+                    ]
+                );
+
+                // All four data owners and the station owner are reusable.
+                for priority in [0, 4, 6, 7] {
+                    assert!(world.try_send_msdu_at([2, 0, 0, 0, 1, priority], priority));
+                    let frame = world.sent(&mut seen, QOS_DATA).await;
+                    assert_eq!(frame.frame[21], priority);
+                }
+                world
+                    .command(ServiceCommand::Station(StaCommand::Disconnect))
+                    .await;
+                world.sent(&mut seen, DEAUTHENTICATION).await;
+            })
+        },
+    );
 }
 
 /// The station's frames share the Voice queue with data of priority 6–7

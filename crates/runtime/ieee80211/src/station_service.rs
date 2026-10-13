@@ -12,8 +12,15 @@
 //!
 //! The tokens the machines hold are the port's: tickets and buffers of two
 //! classes, the small one for the station's frames and the large one for
-//! data. A completion goes back to the machine whose buffer class it
-//! carries, a numbered data buffer renewed. MSDUs come and go through
+//! data. A completion carries `TxContext`, which routes its ticket and
+//! resources to the original machine and link. Buffer classes are used
+//! only to recover their memory types; numbered buffers are renewed.
+//! Cross-AC completion order has no bearing on ownership. Each machine
+//! returns stale-link resources without advancing its current protocol,
+//! and the service excludes those terminals from current-link rate control.
+//! Data admission remains a count per AC, including old-link work until
+//! its terminal, and preserves the station's Voice waiting bound.
+//! MSDUs come and go through
 //! single-producer single-consumer queues (`zerocopy_channel`); a received
 //! MSDU the network's full queue cannot take is dropped, as an Ethernet
 //! receiver drops one.
@@ -33,15 +40,15 @@ use oer_ieee80211_lower_mac::{
     InterfacePhase, KeyTypes, LowerMacBackend, LowerMacEvent, LowerMacPhase, PhaseTypes,
     Protection, Removed, RemovedKey, RxBuffer, RxMetadata, StationPhase, SupportedChannel,
     SupportedCoex, SupportedPower, TxBufferClass, TxBufferPool, TxCompletion, TxFrame, TxPower,
-    VifRole,
+    TxSource, VifRole,
 };
 use oer_ieee80211_mac::qos::{WmmAccessCategory, WmmUserPriority};
 use oer_ieee80211_port::{Disabled, Enabled, Failed, Owner, PoisonedOwner, PortBackend};
 use oer_ieee80211_sta::{
-    data::{self, DataAction, DataInput, DataRefusal, Msdu, StaData, StaDataTokens},
+    data::{self, DataAction, DataInput, DataRefusal, DataTxContext, Msdu, StaData, StaDataTokens},
     machine::{
         LinkProtection, Peer, StaAction, StaCommand, StaFrame, StaFrameClass, StaInput, StaNotice,
-        StaRatePlan, StaTokens, StaTransmit, Station,
+        StaRatePlan, StaTokens, StaTransmit, StaTxContext, Station,
     },
     power_save::NULL_TRANSMISSIONS,
 };
@@ -61,7 +68,9 @@ const ETHERNET_HEADER: usize = 14;
 /// splits between the station and data.
 pub trait StationPort<'id>: LowerMacBackend {
     /// The types its phase's events carry.
-    type Types: PhaseTypes<'id> + TxBufferPool<'id, Self::Small> + TxBufferPool<'id, Self::Large>;
+    type Types: PhaseTypes<'id, Context = TxContext>
+        + TxBufferPool<'id, Self::Small>
+        + TxBufferPool<'id, Self::Large>;
     /// The buffer class of the station's frames.
     type Small: TxBufferClass;
     /// The buffer class of data.
@@ -83,23 +92,16 @@ pub trait StationPort<'id>: LowerMacBackend {
 
     /// One event of the port, as the contract's.
     fn event(event: Self::Event<'id>) -> LowerMacEvent<'id, Self::Types>;
-
-    /// A completed attempt's buffer, by the service's class: every buffer
-    /// of the port is one of them.
-    fn sort(buffer: <Self::Types as PhaseTypes<'id>>::AnyTxBuffer) -> Sorted<'id, Self>;
 }
 
-/// A completed buffer of the service's port `B`, by its class: fresh, or
-/// numbered by a protected attempt.
-pub enum Sorted<'id, B: StationPort<'id>> {
-    /// The station's.
-    Small(<B::Types as TxBufferPool<'id, B::Small>>::Buffer),
-    /// The station's, numbered.
-    SmallNumbered(<B::Types as TxBufferPool<'id, B::Small>>::Numbered),
-    /// The data machine's.
-    Large(<B::Types as TxBufferPool<'id, B::Large>>::Buffer),
-    /// The data machine's, numbered.
-    LargeNumbered(<B::Types as TxBufferPool<'id, B::Large>>::Numbered),
+/// The composition's context for this service. Each variant owns the
+/// original machine operation; the backend treats the entire value as opaque.
+#[derive(Debug)]
+pub enum TxContext {
+    /// A station protocol operation, including its connection epoch and purpose.
+    Station(StaTxContext),
+    /// An MSDU operation, including its original link, TID and queue order.
+    Data(DataTxContext),
 }
 
 /// What the service dropped or could not send, counted.
@@ -662,6 +664,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                     let _ = self.data.input::<PortStaTokens<'id, B::Types, B::Small>>(
                         now,
                         DataInput::Returned {
+                            context: Some(transmit.context),
                             ticket: Some(transmit.ticket),
                             buffer: Some(transmit.buffer),
                         },
@@ -669,9 +672,10 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                     continue;
                 };
                 let mut station = phase.station();
-                let frame = station.tx_buffer::<B::Large>(transmit.buffer, frame);
-                let submitted = station.submit(oer_ieee80211_lower_mac::Attempt {
+                let submitted = station.submit::<B::Large>(oer_ieee80211_lower_mac::Attempt {
+                    context: TxContext::Data(transmit.context),
                     ticket: transmit.ticket,
+                    buffer: TxSource::Fresh(transmit.buffer),
                     frame,
                     body: None,
                     access_category: transmit.access_category,
@@ -707,9 +711,20 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                 self.rates.disconnected();
                 self.data.leave();
             }
-            Follow::Unsent { ticket, buffer } => {
+            Follow::Unsent {
+                context,
+                ticket,
+                buffer,
+            } => {
                 self.counters.unsent_frames += 1;
-                self.station.input(now, StaInput::Unsent { ticket, buffer });
+                self.station.input(
+                    now,
+                    StaInput::Unsent {
+                        context,
+                        ticket,
+                        buffer,
+                    },
+                );
             }
         }
     }
@@ -774,12 +789,16 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                 Some(frame)
             }
             LowerMacEvent::TxCompleted {
+                context,
                 ticket,
                 buffers,
                 completion,
-                ..
+                bodies,
             } => {
-                self.completed(now, ticket, buffers, completion);
+                self.completed(now, context, ticket, buffers, completion);
+                // This service submits encoded MPDUs with no external body.
+                // Any body owner returned by the backend ends at this terminal.
+                drop(bodies);
                 None
             }
             LowerMacEvent::GateClosed(closed) => {
@@ -807,104 +826,140 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
         }
     }
 
-    /// An attempt's terminal: its ticket and buffer go back to the machine
-    /// whose buffer class it carries.
+    /// The context chooses the operation and its ticket's owner. No frame
+    /// bytes, buffer class or order of terminals identifies the operation.
     fn completed(
         &mut self,
         now: Instant,
+        context: TxContext,
         ticket: Slot<'id, <B::Types as PhaseTypes<'id>>::TicketKind>,
         buffers: <B::Types as PhaseTypes<'id>>::TxBuffers,
         completion: TxCompletion,
     ) {
-        // The station and data send one MPDU an attempt: its ticket goes
-        // with its buffer. A terminal that carries a buffer more, or none,
-        // gives its tokens back alone, counted.
-        let mut ticket = Some(ticket);
+        let mut buffers = buffers.into_iter();
+        let first = buffers.next();
+        match context {
+            TxContext::Station(context) => {
+                let buffer =
+                    first.and_then(|buffer| match fresh_buffer::<B::Types, B::Small>(buffer) {
+                        Ok(buffer) => Some(buffer),
+                        Err(buffer) => {
+                            self.return_buffer(now, buffer);
+                            None
+                        }
+                    });
+                match buffer {
+                    Some(buffer) => {
+                        if self.station.is_current(&context) {
+                            let rates = if context.is_probe() {
+                                FrameRates::Probe
+                            } else {
+                                FrameRates::Control
+                            };
+                            self.rates.completed(now, rates, &completion);
+                        }
+                        self.station.input(
+                            now,
+                            StaInput::TxDone {
+                                context,
+                                ticket,
+                                buffer,
+                                completion,
+                            },
+                        );
+                    }
+                    None => {
+                        self.counters.stray_terminals += 1;
+                        self.station.input(
+                            now,
+                            StaInput::Returned {
+                                ticket: Some(ticket),
+                                buffer: None,
+                            },
+                        );
+                    }
+                }
+            }
+            TxContext::Data(context) => {
+                let buffer =
+                    first.and_then(|buffer| match fresh_buffer::<B::Types, B::Large>(buffer) {
+                        Ok(buffer) => Some(buffer),
+                        Err(buffer) => {
+                            self.return_buffer(now, buffer);
+                            None
+                        }
+                    });
+                let input = match buffer {
+                    Some(buffer) => {
+                        if self.data.is_current(&context) {
+                            self.rates.completed(now, FrameRates::Data, &completion);
+                        }
+                        DataInput::TxDone {
+                            context,
+                            ticket,
+                            buffer,
+                            completion,
+                        }
+                    }
+                    None => {
+                        self.counters.stray_terminals += 1;
+                        DataInput::Returned {
+                            context: Some(context),
+                            ticket: Some(ticket),
+                            buffer: None,
+                        }
+                    }
+                };
+                let _ = self
+                    .data
+                    .input::<PortStaTokens<'id, B::Types, B::Small>>(now, input);
+            }
+        }
+        // Neither machine aggregates yet. Extra buffers return to their
+        // memory pools without being mistaken for another operation.
         for buffer in buffers {
-            let owner = ticket.take();
-            if owner.is_none() {
-                self.counters.stray_terminals += 1;
-            }
-            match B::sort(buffer) {
-                Sorted::Small(buffer) => self.station_done(now, owner, buffer, completion),
-                Sorted::SmallNumbered(buffer) => self.station_done(
-                    now,
-                    owner,
-                    <B::Types as TxBufferPool<'id, B::Small>>::renew(buffer),
-                    completion,
-                ),
-                Sorted::Large(buffer) => self.data_done(now, owner, buffer, completion),
-                Sorted::LargeNumbered(buffer) => self.data_done(
-                    now,
-                    owner,
-                    <B::Types as TxBufferPool<'id, B::Large>>::renew(buffer),
-                    completion,
-                ),
-            }
-        }
-        if let Some(ticket) = ticket {
             self.counters.stray_terminals += 1;
-            let _ = self.data.input::<PortStaTokens<'id, B::Types, B::Small>>(
-                now,
-                DataInput::Returned {
-                    ticket: Some(ticket),
-                    buffer: None,
-                },
-            );
+            self.return_buffer(now, buffer);
         }
     }
 
-    /// A station frame's end, or its buffer back alone.
-    fn station_done(
-        &mut self,
-        now: Instant,
-        ticket: Option<Slot<'id, <B::Types as PhaseTypes<'id>>::TicketKind>>,
-        buffer: <B::Types as TxBufferPool<'id, B::Small>>::Buffer,
-        completion: TxCompletion,
-    ) {
-        let input = match ticket {
-            Some(ticket) => {
-                self.rates.completed(now, FrameRates::Control, &completion);
-                StaInput::TxDone {
-                    ticket,
-                    buffer,
-                    completion,
-                }
+    fn return_buffer(&mut self, now: Instant, buffer: <B::Types as PhaseTypes<'id>>::AnyTxBuffer) {
+        let buffer = match fresh_buffer::<B::Types, B::Small>(buffer) {
+            Ok(buffer) => {
+                self.station.input(
+                    now,
+                    StaInput::Returned {
+                        ticket: None,
+                        buffer: Some(buffer),
+                    },
+                );
+                return;
             }
-            None => StaInput::Returned {
-                ticket: None,
-                buffer: Some(buffer),
-            },
+            Err(buffer) => buffer,
         };
-        self.station.input(now, input);
+        match fresh_buffer::<B::Types, B::Large>(buffer) {
+            Ok(buffer) => {
+                let _ = self.data.input::<PortStaTokens<'id, B::Types, B::Small>>(
+                    now,
+                    DataInput::Returned {
+                        context: None,
+                        ticket: None,
+                        buffer: Some(buffer),
+                    },
+                );
+            }
+            Err(_) => panic!("a station port returns only its two buffer classes"),
+        }
     }
+}
 
-    /// A data MPDU's end, or its buffer back alone.
-    fn data_done(
-        &mut self,
-        now: Instant,
-        ticket: Option<Slot<'id, <B::Types as PhaseTypes<'id>>::TicketKind>>,
-        buffer: <B::Types as TxBufferPool<'id, B::Large>>::Buffer,
-        completion: TxCompletion,
-    ) {
-        let input = match ticket {
-            Some(ticket) => {
-                self.rates.completed(now, FrameRates::Data, &completion);
-                DataInput::TxDone {
-                    ticket,
-                    buffer,
-                    completion,
-                }
-            }
-            None => DataInput::Returned {
-                ticket: None,
-                buffer: Some(buffer),
-            },
-        };
-        let _ = self
-            .data
-            .input::<PortStaTokens<'id, B::Types, B::Small>>(now, input);
-    }
+/// Recover a class's memory after completion, renewing a numbered buffer.
+fn fresh_buffer<'id, Ty, C>(buffer: Ty::AnyTxBuffer) -> Result<Ty::Buffer, Ty::AnyTxBuffer>
+where
+    C: TxBufferClass,
+    Ty: TxBufferPool<'id, C>,
+{
+    Ty::class(buffer).or_else(|buffer| Ty::numbered(buffer).map(Ty::renew))
 }
 
 /// What follows a station's action.
@@ -916,6 +971,7 @@ enum Follow<'id, B: StationPort<'id>> {
     Associated(Peer<PortRxMeta<'id, B>>),
     /// A frame of the station did not go.
     Unsent {
+        context: StaTxContext,
         ticket: <PortStaTokens<'id, B::Types, B::Small> as StaTokens>::Ticket,
         buffer: <PortStaTokens<'id, B::Types, B::Small> as StaTokens>::SmallBuffer,
     },
@@ -938,6 +994,7 @@ where
     S: RateSelection<PortRxMeta<'id, B>>,
 {
     let StaTransmit {
+        context,
         ticket,
         buffer,
         frame,
@@ -972,17 +1029,22 @@ where
     };
     let Some(frame) = frame.and_then(|frame| ClassFrame::<B::Small, B::Caps>::new(frame).ok())
     else {
-        return Ok(Follow::Unsent { ticket, buffer });
+        return Ok(Follow::Unsent {
+            context,
+            ticket,
+            buffer,
+        });
     };
     let coex = match class {
         StaFrameClass::Connection => Levels::<B::Caps>::CONNECTION,
         StaFrameClass::Normal => Levels::<B::Caps>::NORMAL,
     };
     let mut station = phase.station();
-    let frame = station.tx_buffer::<B::Small>(buffer, frame);
     station
-        .submit(oer_ieee80211_lower_mac::Attempt {
+        .submit::<B::Small>(oer_ieee80211_lower_mac::Attempt {
+            context: TxContext::Station(context),
             ticket,
+            buffer: TxSource::Fresh(buffer),
             frame,
             body: None,
             access_category: WmmAccessCategory::Voice,

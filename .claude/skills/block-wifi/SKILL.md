@@ -50,6 +50,9 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   cancellation iterates them without creating an admitted aggregate. Check
   custody before teardown when injecting a publication fault: counting all
   destructors only after `run_port` ends cannot detect an early owner drop.
+  Preflight an aggregate's whole fresh-PN range before changing any subframe;
+  retries consume no new PN. A poisoned submission still owns the transferred
+  context, ticket and MPDUs until teardown, even when its call reports poison.
 
 - CCMP replay preparation returns an exclusive borrow of the selected
   frontier. Commit the token itself before publication, or drop it to cancel.

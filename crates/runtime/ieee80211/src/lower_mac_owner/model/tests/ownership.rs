@@ -322,6 +322,7 @@ struct AggregateOwners {
     air: Rc<ModelAir>,
     dropped: Rc<Cell<usize>>,
     withdraw: bool,
+    initial_pn: u64,
 }
 
 impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
@@ -356,6 +357,7 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
                 IndividualAddress::new(PEER).unwrap(),
                 Ccmp128Key([7; 16]),
             );
+            key.identity.0.last.set(self.initial_pn);
             let rate = station.ampdu_rate(rate).ok().unwrap();
             let aggregate = station.aggregate(
                 IndividualAddress::new(PEER).unwrap(),
@@ -422,6 +424,16 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
             assert_eq!(matches!(completion, TxOutcome::Withdrawn(_)), self.withdraw);
             assert_eq!(subframes.len(), 3);
             assert_eq!(
+                key.identity.0.last.get(),
+                self.initial_pn + if self.withdraw { 0 } else { 3 },
+            );
+            for (index, (buffer, _)) in subframes.iter().enumerate() {
+                assert_eq!(
+                    buffer.packet_number(),
+                    (!self.withdraw).then_some(self.initial_pn + index as u64 + 1),
+                );
+            }
+            assert_eq!(
                 subframes.iter().filter(|(_, body)| body.is_some()).count(),
                 if self.withdraw { 2 } else { 0 }
             );
@@ -465,7 +477,11 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
 
 #[test]
 fn aggregate_terminal_returns_its_context_and_each_subframes_resources_on_air_or_withdrawal() {
-    for withdraw in [false, true] {
+    for (withdraw, initial_pn) in [
+        (false, 0),
+        (true, 0),
+        (false, oer_ieee80211_mac::ccmp::CCMP_PACKET_NUMBER_MAX - 3),
+    ] {
         let (backend, air) = ModelBackend::<ModelCaps, AggregateContext>::new(
             Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap(),
             [
@@ -480,6 +496,7 @@ fn aggregate_terminal_returns_its_context_and_each_subframes_resources_on_air_or
                 air,
                 dropped: dropped.clone(),
                 withdraw,
+                initial_pn,
             },
         ));
         assert_eq!(dropped.get(), 1);
@@ -497,6 +514,8 @@ impl Drop for FaultContext {
 }
 struct PublicationFault {
     aggregate: bool,
+    remaining: u64,
+    poisoned_before_submit: bool,
     dropped: Rc<Cell<usize>>,
 }
 impl PortBody<ModelBackend<ModelCaps, FaultContext>> for PublicationFault {
@@ -520,13 +539,8 @@ impl PortBody<ModelBackend<ModelCaps, FaultContext>> for PublicationFault {
                 IndividualAddress::new(PEER).unwrap(),
                 Ccmp128Key([7; 16]),
             );
-            // In the aggregate case the second fresh subframe exhausts PN;
-            // the first has already changed state but still belongs to this
-            // same operation. Neither owner may disappear on that failure.
-            key.identity
-                .0
-                .last
-                .set(oer_ieee80211_mac::ccmp::CCMP_PACKET_NUMBER_MAX - u64::from(self.aggregate));
+            let last = oer_ieee80211_mac::ccmp::CCMP_PACKET_NUMBER_MAX - self.remaining;
+            key.identity.0.last.set(last);
             let ticket = tickets.remove(0);
             let ticket_index = ticket.index();
             let context = FaultContext(self.dropped.clone());
@@ -557,17 +571,19 @@ impl PortBody<ModelBackend<ModelCaps, FaultContext>> for PublicationFault {
                     subframe_frame(1),
                     Some(ModelBody(alloc::vec![0x4b; 4])),
                 );
-                station
-                    .submit_ampdu(AggregateAttempt {
-                        context,
-                        ticket,
-                        aggregate,
-                        protection: Protection::None,
-                        power: SupportedPower::new(TxPower::Calibrated).unwrap(),
-                        coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
-                        min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
-                    })
-                    .unwrap();
+                if self.poisoned_before_submit {
+                    station.held.poison();
+                }
+                let submitted = station.submit_ampdu(AggregateAttempt {
+                    context,
+                    ticket,
+                    aggregate,
+                    protection: Protection::None,
+                    power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+                    coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+                    min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
+                });
+                assert_eq!(submitted.is_err(), self.poisoned_before_submit);
             } else {
                 let source = TxSource::Fresh {
                     buffer: first,
@@ -581,18 +597,19 @@ impl PortBody<ModelBackend<ModelCaps, FaultContext>> for PublicationFault {
                 >(source.check().ok().unwrap())
                 .ok()
                 .unwrap();
-                phase
-                    .station()
-                    .submit(oer_ieee80211_lower_mac::Attempt {
-                        context,
-                        ticket,
-                        source,
-                        access_category: WmmAccessCategory::BestEffort,
-                        protection: Protection::None,
-                        power: SupportedPower::new(TxPower::Calibrated).unwrap(),
-                        coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
-                    })
-                    .unwrap();
+                if self.poisoned_before_submit {
+                    phase.held.poison();
+                }
+                let submitted = phase.station().submit(oer_ieee80211_lower_mac::Attempt {
+                    context,
+                    ticket,
+                    source,
+                    access_category: WmmAccessCategory::BestEffort,
+                    protection: Protection::None,
+                    power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+                    coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+                });
+                assert_eq!(submitted.is_err(), self.poisoned_before_submit);
             }
             assert!(phase.next_event().await.is_err());
             assert_eq!(
@@ -602,23 +619,49 @@ impl PortBody<ModelBackend<ModelCaps, FaultContext>> for PublicationFault {
             );
             assert!(phase.held.events.is_empty(), "poison invents no terminal");
             assert!(phase.held.air.sent().is_empty());
+            assert_eq!(
+                key.identity.0.last.get(),
+                last,
+                "failed PPDU consumes no PN"
+            );
             let quarantined = phase.held.quarantined.items.borrow();
-            assert_eq!(quarantined.len(), 1);
-            let mpdu = match quarantined.front().unwrap() {
-                super::super::Work::Single(operation) => {
+            let commands = phase.held.commands.items.borrow();
+            let (single, aggregate) = if self.poisoned_before_submit {
+                assert!(quarantined.is_empty());
+                match commands.back().unwrap() {
+                    super::super::Command::Submit(operation) => (Some(operation), None),
+                    super::super::Command::SubmitAmpdu(operation) => (None, Some(operation)),
+                    _ => panic!("poisoned submission stays owned in the command queue"),
+                }
+            } else {
+                assert_eq!(quarantined.len(), 1);
+                match quarantined.front().unwrap() {
+                    super::super::Work::Single(operation) => (Some(operation), None),
+                    super::super::Work::Aggregate(operation) => (None, Some(operation)),
+                }
+            };
+            let mpdu = match (single, aggregate) {
+                (Some(operation), None) => {
                     assert!(!self.aggregate);
                     assert_eq!(operation.operation.ticket().index(), ticket_index);
                     operation.operation.payload()
                 }
-                super::super::Work::Aggregate(operation) => {
+                (None, Some(operation)) => {
                     assert!(self.aggregate);
                     assert_eq!(operation.operation.ticket().index(), ticket_index);
                     let subframes = &operation.operation.payload().0;
                     assert_eq!(subframes.len(), 2);
                     assert_eq!(subframes[1].mpdu.body.as_ref().unwrap().0, [0x4b; 4]);
+                    assert!(
+                        subframes
+                            .iter()
+                            .all(|subframe| subframe.mpdu.published.is_none())
+                    );
                     &subframes[0].mpdu
                 }
+                _ => unreachable!(),
             };
+            assert!(mpdu.published.is_none());
             let ModelAnyBuffer::Small(buffer) = &mpdu.buffer else {
                 panic!("original allocation")
             };
@@ -632,7 +675,13 @@ impl PortBody<ModelBackend<ModelCaps, FaultContext>> for PublicationFault {
 
 #[test]
 fn publication_fault_keeps_the_complete_single_or_aggregate_until_teardown() {
-    for aggregate in [false, true] {
+    for (aggregate, remaining, poisoned_before_submit) in [
+        (false, 0, false),
+        (true, 0, false),
+        (true, 1, false),
+        (false, 10, true),
+        (true, 10, true),
+    ] {
         let dropped = Rc::new(Cell::new(0));
         let (backend, _) = ModelBackend::<ModelCaps, FaultContext>::new(
             Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap(),
@@ -646,6 +695,8 @@ fn publication_fault_keeps_the_complete_single_or_aggregate_until_teardown() {
                 backend,
                 PublicationFault {
                     aggregate,
+                    remaining,
+                    poisoned_before_submit,
                     dropped: dropped.clone()
                 }
             ))

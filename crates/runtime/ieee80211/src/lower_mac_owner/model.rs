@@ -53,6 +53,9 @@
 //! Sent retains only identity and therefore permits removal and slot reuse.
 //! A prepared retry submitted after removal is withdrawn in its AC's order,
 //! without publication. Cancellation wakes the driver to finish the barrier.
+//! An aggregate preflights every MPDU and the entire fresh-PN range before
+//! changing any subframe. A publication refusal retains the complete operation;
+//! submission after poisoning likewise transfers its owners to teardown custody.
 //!
 //! `ModelContext` selects an opaque context for each install lifetime, so
 //! a station context can retain its `LinkEpoch` brand through every queue
@@ -573,6 +576,17 @@ impl KeyIdentity {
             air: Rc::downgrade(air),
         }))
     }
+    fn check_packet_numbers(&self, count: usize) -> Result<(), ModelFault> {
+        let count = u64::try_from(count).map_err(|_| ModelFault)?;
+        self.0
+            .last
+            .get()
+            .checked_add(count)
+            .filter(|pn| *pn <= oer_ieee80211_mac::ccmp::CCMP_PACKET_NUMBER_MAX)
+            .ok_or(ModelFault)?;
+        Ok(())
+    }
+
     fn allocate(&self) -> Result<u64, ModelFault> {
         let next = self
             .0
@@ -644,6 +658,7 @@ impl<'id> ExecutionPayload for ModelMpdu<'id> {
 impl ModelMpduExecution<'_, '_> {
     fn publish(&mut self, role: VifRole, key: Option<&KeyIdentity>) -> Result<(), ModelFault> {
         let mpdu = &mut *self.mpdu;
+        mpdu.preflight(key.is_some())?;
         if mpdu.published.is_some() {
             return Ok(());
         }
@@ -728,6 +743,31 @@ impl<'id> TxMpdu for ModelMpdu<'id> {
     }
 }
 impl<'id> ModelMpdu<'id> {
+    /// Validate all fallible geometry before any PN or publication state changes.
+    /// Only a fresh protected MPDU consumes a new PN; Sent retries retain theirs.
+    fn preflight(&self, protected: bool) -> Result<usize, ModelFault> {
+        let memory = self.buffer.memory();
+        memory
+            .split_at_checked(self.layout.mpdu_len())
+            .ok_or(ModelFault)?;
+        let fresh = self.published.is_none()
+            && matches!(
+                self.buffer,
+                ModelAnyBuffer::Small(_) | ModelAnyBuffer::Large(_)
+            );
+        if protected && fresh {
+            memory
+                .split_at_checked(self.layout.header_len())
+                .ok_or(ModelFault)?
+                .1
+                .first_chunk::<8>()
+                .ok_or(ModelFault)?;
+            Ok(1)
+        } else {
+            Ok(0)
+        }
+    }
+
     fn from_sent(mut buffer: ModelAnyBuffer<'id>, layout: MpduLayout) -> Self {
         buffer.retry();
         Self {
@@ -1477,6 +1517,16 @@ impl ModelSubframesExecution<'_, '_> {
         key: Option<&KeyIdentity>,
         rate: PhyRate,
     ) -> Result<Vec<AirFrame>, ModelFault> {
+        let fresh = self.subframes.iter().try_fold(0_usize, |count, subframe| {
+            count
+                .checked_add(subframe.mpdu.preflight(key.is_some())?)
+                .ok_or(ModelFault)
+        })?;
+        if let Some(key) = key {
+            key.check_packet_numbers(fresh)?;
+        }
+        // This driver step is synchronous and exclusively owns PN allocation.
+        // No other publication can consume the checked range before this loop.
         let mut frames = Vec::with_capacity(self.subframes.len());
         for subframe in &mut *self.subframes {
             subframe.mpdu.execution().publish(role, key)?;
@@ -2956,9 +3006,6 @@ where
         &mut self,
         attempt: InterfaceAttempt<'k, 'p, 'id, Self>,
     ) -> Result<(), Poisoned<ModelFault>> {
-        if self.held.air.poisoned.get() {
-            return Err(Poisoned { cause: ModelFault });
-        }
         let ModelPrepared {
             mpdu, plan, key, ..
         } = attempt.source;
@@ -2969,7 +3016,11 @@ where
             plan,
             key,
         })));
-        Ok(())
+        if self.held.air.poisoned.get() {
+            Err(Poisoned { cause: ModelFault })
+        } else {
+            Ok(())
+        }
     }
 
     fn install_pairwise_key(
@@ -3327,9 +3378,6 @@ where
     where
         'id: 'k,
     {
-        if self.held.air.poisoned.get() {
-            return Err(Poisoned { cause: ModelFault });
-        }
         let ModelAggregate {
             subframes,
             first,
@@ -3350,7 +3398,11 @@ where
             rate: rate.rate().get(),
             key,
         }));
-        Ok(())
+        if self.held.air.poisoned.get() {
+            Err(Poisoned { cause: ModelFault })
+        } else {
+            Ok(())
+        }
     }
 }
 

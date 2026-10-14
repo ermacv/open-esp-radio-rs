@@ -243,9 +243,7 @@ impl<'id> World<'id> {
         security: StaSecurity,
         group_slots: [Slot; G],
     ) -> Self {
-        let mut channels = [None; 16];
-        channels[0] = Some(channel(1));
-        channels[1] = Some(channel(6));
+        let channels = heapless::Vec::from_slice(&[channel(1), channel(6)]).unwrap();
         let (gate, gate_issuer) = GatePlace::mint(mint);
         let (arbiter, place, absence) =
             Arbiter::new(ArbiterPolicy::DEFAULT, channel(1), gate, Duration::ZERO);
@@ -2058,7 +2056,7 @@ fn association_waits_for_credit_without_consuming_a_request_and_still_expires() 
         let join = || Join {
             rsn: select_association_rsn(&access_point, world.station.policy()).unwrap(),
             access_point,
-            channel: world.station.config.channels[0].unwrap(),
+            channel: world.station.config.channels[0],
             step: JoinStep::Associate(StaAssociationRuntime::new(
                 LOCAL,
                 BSSID,

@@ -113,8 +113,8 @@ fn channel6() -> Channel {
 }
 
 fn config(security: StaSecurity) -> StaConfig<ModelCaps24> {
-    let mut channels = [None; 16];
-    channels[0] = SupportedChannel::new(channel6());
+    let channels =
+        heapless::Vec::from_slice(&[SupportedChannel::new(channel6()).unwrap()]).unwrap();
     StaConfig {
         address: oer_ieee80211_mac::address::OwnAddress::new(
             oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
@@ -955,7 +955,10 @@ fn data_takes_all_its_tokens_and_eapol_null_and_deauthentication_still_go() {
     let mut config = config(StaSecurity::Wpa2Personal {
         pmk: Pmk::from_bytes(PMK),
     });
-    config.channels[1] = SupportedChannel::new(Channel::ghz2_4(1, ChannelWidth::Mhz20).unwrap());
+    config
+        .channels
+        .push(SupportedChannel::new(Channel::ghz2_4(1, ChannelWidth::Mhz20).unwrap()).unwrap())
+        .unwrap();
     run_with(config, |world| {
         Box::pin(async move {
             let mut seen = 0;
@@ -1027,7 +1030,10 @@ fn a_passed_station_deadline_ticks_the_station() {
 #[test]
 fn a_disconnection_during_an_absence_leaves_no_old_frame_to_go_after_the_reconnection() {
     let mut config = config(StaSecurity::Open);
-    config.channels[1] = SupportedChannel::new(Channel::ghz2_4(1, ChannelWidth::Mhz20).unwrap());
+    config
+        .channels
+        .push(SupportedChannel::new(Channel::ghz2_4(1, ChannelWidth::Mhz20).unwrap()).unwrap())
+        .unwrap();
     run_with(config, |world| {
         Box::pin(async move {
             const OLD: [u8; 6] = [0x02, 0, 0, 0, 0, 0x0a];
@@ -1105,7 +1111,10 @@ fn a_disconnection_during_an_absence_leaves_no_old_frame_to_go_after_the_reconne
 fn beside_an_access_point_msdus_survive_an_absence() {
     use oer_time::Clock as _;
     let mut config = config(StaSecurity::Open);
-    config.channels[1] = SupportedChannel::new(Channel::ghz2_4(1, ChannelWidth::Mhz20).unwrap());
+    config
+        .channels
+        .push(SupportedChannel::new(Channel::ghz2_4(1, ChannelWidth::Mhz20).unwrap()).unwrap())
+        .unwrap();
     run_with(config, |world| {
         Box::pin(async move {
             let mut seen = 0;

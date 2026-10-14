@@ -45,7 +45,10 @@ DMA wakeups and network leases belong to the radio runtime; final resource
 claims and board composition belong to integration.
 
 The station's SSID and SAE bodies own their bounded lengths in heapless
-vectors. WMM priorities and TWT flow IDs select exact arrays without numeric
+vectors. The SSID bound comes from MAC's `MAX_SSID_LEN`. Scan channels form
+a bounded, contiguous vector of checked `SupportedChannel` values, so a
+hole cannot terminate a scan before its remaining channels.
+WMM priorities and TWT flow IDs select exact arrays without numeric
 indexing; an unpublished data return retains its checked frame description.
 Data writes an open MAC header directly into its proven span, so it fits an
 exact-size buffer without a temporary CCMP gap or a second payload move.

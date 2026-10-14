@@ -80,7 +80,7 @@ use oer_ieee80211_lower_mac::{
 use oer_ieee80211_mac::address::{Bssid, IndividualAddress, OwnAddress};
 use oer_ieee80211_mac::ccmp::CcmpRxReplayEpoch;
 use oer_ieee80211_mac::{
-    management::ProbeRequest,
+    management::{MAX_SSID_LEN, ProbeRequest},
     scan::{ScanRecord, ScanTable},
     security::StaSecurityPolicy,
     sequence::SequenceNumber,
@@ -511,8 +511,6 @@ pub enum StaDisconnectReason {
     HandshakeFailed,
 }
 
-/// The longest SSID.
-const SSID_CAPACITY: usize = 32;
 /// The scan list's channels at most.
 const CHANNEL_CAPACITY: usize = 16;
 /// The BSSs a scan keeps at most.
@@ -528,13 +526,33 @@ const REASON_LEAVING: u16 = 3;
 const REASON_HANDSHAKE_TIMEOUT: u16 = 15;
 
 /// What the station connects to and how.
+///
+/// A scan list is a contiguous sequence of checked channels. A hole that
+/// could terminate a scan before its later channels is not representable:
+///
+/// ```compile_fail,E0308
+/// use oer_ieee80211_sta::machine::StaConfig;
+/// fn holes<K>(config: &mut StaConfig<K>) {
+///     config.channels = [None; 16];
+/// }
+/// ```
+///
+/// A bounded, contiguous list uses the same checked channel values:
+///
+/// ```
+/// use oer_ieee80211_sta::machine::StaConfig;
+/// use oer_ieee80211_lower_mac::SupportedChannel;
+/// fn one<K>(config: &mut StaConfig<K>, channel: SupportedChannel<K>) {
+///     config.channels = heapless::Vec::from_slice(&[channel]).unwrap();
+/// }
+/// ```
 pub struct StaConfig<K> {
     /// The interface's own address.
     pub address: OwnAddress,
     /// The network's SSID.
-    pub ssid: heapless::Vec<u8, SSID_CAPACITY>,
+    pub ssid: heapless::Vec<u8, MAX_SSID_LEN>,
     /// The channels the scan visits, in order.
-    pub channels: [Option<SupportedChannel<K>>; CHANNEL_CAPACITY],
+    pub channels: heapless::Vec<SupportedChannel<K>, CHANNEL_CAPACITY>,
     /// How long the scan listens on each channel.
     pub dwell: Duration,
     /// The consecutive cancelled leases after which a scan ends with a
@@ -542,7 +560,7 @@ pub struct StaConfig<K> {
     pub skipped_absences: u8,
     /// How much weaker than the strongest a candidate on the channel of
     /// the access point beside the station may be and still win, in dB:
-    /// 6 by the owner's decision on #563.
+    /// a composition policy independent of the number of scan channels.
     pub access_point_margin_db: u8,
     /// The rates the Probe Request offers.
     pub supported_rates: [u8; 8],
@@ -1453,7 +1471,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     }
 
     fn channel(&self, visit: usize) -> Option<SupportedChannel<K>> {
-        self.config.channels.get(visit).copied().flatten()
+        self.config.channels.get(visit).copied()
     }
 
     fn take_state(&mut self) -> State<T, K> {
@@ -2193,7 +2211,6 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             .config
             .channels
             .iter()
-            .flatten()
             .copied()
             .find(|channel| channel.channel().number() == access_point.channel)
         else {

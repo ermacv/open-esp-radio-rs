@@ -3,8 +3,8 @@
 //! A port's capacity is never a refusal ([ownership and refusals]). What
 //! the hardware holds at once (key slots, Block Ack slots, accept-list
 //! entries, a transmit queue, the one operation of a radio) is a set of
-//! tokens the install mints once, through the [`Mint`] that
-//! [`run_port`](crate::run_port) hands its backend, branded by the install
+//! tokens the install mints once, through the [`Mint`] that [`branded`]
+//! makes for each block's `run_port` to hand its backend, branded by the install
 //! (`'id`) and by the pool's kind marker `Kind`, which keeps pools apart
 //! (a Wi-Fi station's key slots and an access point's; a Bluetooth LE
 //! advertising set and a connection).

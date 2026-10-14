@@ -57,6 +57,11 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   solicits Block Ack, while Group and IndividualNoAck complete without an ACK.
   Preserve the checked frame's response policy through Sent retries and barriers.
 
+- Task-group shutdown observations never transfer resources into the waiting
+  future. Each controller keeps its returned owner until consuming `try_finish`;
+  an auxiliary group retains either child's early result across cancellation
+  and deadline expiry. Readiness is repeatable and does not release storage.
+
 - CCMP replay preparation returns an exclusive borrow of the selected
   frontier. Commit the token itself before publication, or drop it to cancel.
   Never replace this with a transferable PN/revision pair: resetting a key

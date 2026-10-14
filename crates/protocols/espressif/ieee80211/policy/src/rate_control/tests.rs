@@ -1,6 +1,10 @@
 use super::*;
 use crate::rate_schedule::{RateScheduleKind, RateScheduleRef};
 
+fn tally(attempted: u16, acknowledged: u16) -> BlockAckTally {
+    BlockAckTally::new(NonZeroU16::new(attempted).unwrap(), acknowledged).unwrap()
+}
+
 fn state() -> RateControlState {
     RateControlState {
         retry_pressure: 4,
@@ -259,20 +263,20 @@ fn ampdu_owner_promotes_after_two_clean_vendor_windows() {
         literal_schedule!(RateScheduleKind::Dot11Ax, 1)
     );
     assert_eq!(
-        state.observe_block_ack(600_000, 500, 500, Some(75)),
-        Ok(AmpduRateDecision::Retain {
+        state.observe_block_ack(600_000, tally(500, 500), Some(75)),
+        AmpduRateDecision::Retain {
             raw_success_ratio: 128,
             filtered_success_ratio: 110,
-        })
+        }
     );
     assert_eq!(
-        state.observe_block_ack(700_001, 500, 500, Some(75)),
-        Ok(AmpduRateDecision::Promote {
+        state.observe_block_ack(700_001, tally(500, 500), Some(75)),
+        AmpduRateDecision::Promote {
             from: literal_schedule!(RateScheduleKind::Dot11Ax, 1),
             to: literal_schedule!(RateScheduleKind::Dot11Ax, 0),
             raw_success_ratio: 128,
             filtered_success_ratio: 114,
-        })
+        }
     );
     assert_eq!(
         state.current_schedule(),
@@ -285,45 +289,45 @@ fn ampdu_owner_promotes_after_two_clean_vendor_windows() {
 fn ampdu_owner_lowers_only_after_two_filtered_bad_windows() {
     let mut state = AmpduRateControlState::new(RateScheduleKind::Dot11Ax, 0, 0).unwrap();
     assert!(matches!(
-        state.observe_block_ack(100_001, 500, 0, Some(75)),
-        Ok(AmpduRateDecision::Retain {
+        state.observe_block_ack(100_001, tally(500, 0), Some(75)),
+        AmpduRateDecision::Retain {
             filtered_success_ratio: 93,
             ..
-        })
+        }
     ));
     assert!(matches!(
-        state.observe_block_ack(200_002, 500, 0, Some(75)),
-        Ok(AmpduRateDecision::Retain {
+        state.observe_block_ack(200_002, tally(500, 0), Some(75)),
+        AmpduRateDecision::Retain {
             filtered_success_ratio: 69,
             ..
-        })
+        }
     ));
     assert_eq!(
-        state.observe_block_ack(300_003, 500, 0, Some(75)),
-        Ok(AmpduRateDecision::Lower {
+        state.observe_block_ack(300_003, tally(500, 0), Some(75)),
+        AmpduRateDecision::Lower {
             from: literal_schedule!(RateScheduleKind::Dot11Ax, 0),
             to: literal_schedule!(RateScheduleKind::Dot11Ax, 1),
             raw_success_ratio: 0,
             filtered_success_ratio: 51,
-        })
+        }
     );
 }
 
 #[test]
-fn ampdu_owner_accumulates_and_rejects_impossible_block_ack_counts() {
+fn ampdu_owner_accepts_checked_counts_without_a_post_mutation_error() {
     let mut state = AmpduRateControlState::new(RateScheduleKind::Dot11Ax, 0, 0).unwrap();
     assert_eq!(
-        state.observe_block_ack(10, 16, 16, None),
-        Ok(AmpduRateDecision::Accumulating)
+        state.observe_block_ack(10, tally(16, 16), None),
+        AmpduRateDecision::Accumulating
     );
-    assert_eq!(
-        state.observe_block_ack(11, 0, 0, None),
-        Err(AmpduRateObservationError::NoAttemptedMpdu)
-    );
-    assert_eq!(
-        state.observe_block_ack(12, 15, 16, None),
-        Err(AmpduRateObservationError::AcknowledgedExceedsAttempted)
-    );
+    let decision = state.observe_block_ack(11, tally(u16::MAX, u16::MAX), None);
+    assert!(matches!(
+        decision,
+        AmpduRateDecision::Retain {
+            raw_success_ratio: 128,
+            ..
+        }
+    ));
     assert_eq!(vendor_duration(4, u32::MAX - 5), 9);
 }
 
@@ -524,7 +528,11 @@ mod seam {
         phy::{HtMcs, HtRate, PhyRate, PpduBandwidth},
         station::association::PhyMode,
     };
-    use oer_ieee80211_upper_mac::rate_control::{RateControl, RatePeer};
+    use oer_ieee80211_upper_mac::rate_control::{
+        AmpduUnavailable, MpduOutcome, RateControl, RatePeer,
+    };
+
+    use super::{NonZeroU16, tally};
 
     use super::super::{EspressifRateControl, RateScheduleKind, RateScheduleRef, schedule_state};
 
@@ -591,7 +599,11 @@ mod seam {
         // Exchanges of ten attempts each add two to the retry pressure; past
         // six the controller moves to the next, slower schedule.
         for _ in 0..4 {
-            control.observe_mpdu(10, false, None);
+            control.observe_mpdu(
+                NonZeroU16::new(10).unwrap(),
+                MpduOutcome::Unacknowledged,
+                None,
+            );
         }
         assert!(control.mpdu_rate().nominal_kbps() < before);
     }
@@ -600,35 +612,29 @@ mod seam {
     fn a_block_ack_s_ack_snr_feeds_the_filter() {
         let mut control = EspressifRateControl::for_peer((), &ht20_peer(true), metric(60));
         assert_eq!(control.association().filtered_ack_snr(), None);
-        control.observe_ampdu(oer_time::Instant::from_micros(1_000), 4, 4, Some(30));
+        assert_eq!(
+            control.observe_ampdu(oer_time::Instant::from_micros(1_000), tally(4, 4), Some(30)),
+            Ok(())
+        );
         assert!(control.association().filtered_ack_snr().is_some());
     }
 
     #[test]
-    fn refused_block_ack_counts_are_observable_and_do_not_update_the_rate_filter() {
-        use crate::rate_control::AmpduRateObservationError;
-        let mut control = EspressifRateControl::for_peer((), &ht20_peer(true), metric(60));
+    fn an_unavailable_aggregate_controller_returns_the_refusal_without_mutation() {
+        let peer = RatePeer {
+            phy: PhyMode::Legacy,
+            ht_capabilities: None,
+            he_capabilities: None,
+            he_peer_state: None,
+        };
+        let mut control = EspressifRateControl::for_peer((), &peer, metric(60));
         let before = control.ampdu_rate();
-        control.observe_ampdu(oer_time::Instant::from_micros(1_000), 0, 0, Some(30));
-        assert_eq!(control.refused_observations(), 1);
         assert_eq!(
-            control.take_observation_refusal(),
-            Some(AmpduRateObservationError::NoAttemptedMpdu)
+            control.observe_ampdu(oer_time::Instant::from_micros(1_000), tally(4, 4), Some(30)),
+            Err(AmpduUnavailable)
         );
-        assert_eq!(control.take_observation_refusal(), None);
         assert_eq!(control.association().filtered_ack_snr(), None);
         assert_eq!(control.ampdu_rate(), before);
-
-        control.observe_ampdu(oer_time::Instant::from_micros(2_000), 3, 4, Some(40));
-        assert_eq!(control.refused_observations(), 2);
-        assert_eq!(
-            control.take_observation_refusal(),
-            Some(AmpduRateObservationError::AcknowledgedExceedsAttempted)
-        );
-        assert_eq!(control.association().filtered_ack_snr(), None);
-        control.observe_ampdu(oer_time::Instant::from_micros(3_000), 4, 4, Some(30));
-        assert!(control.association().filtered_ack_snr().is_some());
-        assert_eq!(control.refused_observations(), 2);
     }
 }
 

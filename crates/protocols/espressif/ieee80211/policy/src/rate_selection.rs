@@ -30,7 +30,7 @@
 //! [owner decisions on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6132066470
 
 use core::marker::PhantomData;
-use core::num::NonZeroU8;
+use core::num::{NonZeroU8, NonZeroU16};
 
 use oer_ieee80211_lower_mac::{
     Band, Ieee80211Capabilities, Protection, RETRY_STAGES, RetryPlan, RetryStage, SignalMetadata,
@@ -38,7 +38,7 @@ use oer_ieee80211_lower_mac::{
 };
 use oer_ieee80211_mac::phy::{LegacyRate, PhyRate};
 use oer_ieee80211_upper_mac::{
-    rate_control::{RateControl, RatePeer},
+    rate_control::{MpduOutcome, RateControl, RatePeer},
     rate_selection::{FrameRates, RateSelection},
 };
 use oer_time::Instant;
@@ -322,7 +322,7 @@ impl<K: Ieee80211Capabilities, M: SignalMetadata> RateSelection<M> for Espressif
     }
 
     fn completed(&mut self, _now: Instant, frame: FrameRates, completion: &TxOutcome) {
-        if frame != FrameRates::Data || !completion.is_rate_sample() {
+        if frame != FrameRates::Data {
             return;
         }
         let TxOutcome::Ended {
@@ -334,13 +334,16 @@ impl<K: Ieee80211Capabilities, M: SignalMetadata> RateSelection<M> for Espressif
         else {
             return;
         };
+        let Some(transmissions) = NonZeroU16::new(transmissions) else {
+            return;
+        };
+        let outcome = match status {
+            TxEndStatus::Delivered => MpduOutcome::Acknowledged,
+            TxEndStatus::AckTimeout | TxEndStatus::CtsTimeout => MpduOutcome::Unacknowledged,
+            TxEndStatus::ContentionLimit => return,
+        };
         if let Some(control) = &mut self.control {
-            let acknowledged = status == TxEndStatus::Delivered;
-            control.observe_mpdu(
-                transmissions,
-                acknowledged,
-                ack.and_then(|ack| ack.snr_db).filter(|_| acknowledged),
-            );
+            control.observe_mpdu(transmissions, outcome, ack.and_then(|ack| ack.snr_db));
         }
     }
 }

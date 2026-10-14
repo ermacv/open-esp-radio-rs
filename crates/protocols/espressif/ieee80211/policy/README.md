@@ -49,7 +49,11 @@ records and consumers destructure fixed record arrays. On the 32-bit S31 a
 handle occupies eight bytes instead of the former two-byte kind/index pair;
 the table bytes and publication budgets stay the same.
 
-The legacy A-MPDU report counters are validated before rate or ACK-SNR state
-changes. A refusal is observable through `take_observation_refusal()` and the
-saturating `refused_observations()` diagnostic; it does not train rate control.
+Rate observations carry a nonzero MPDU count and an explicit ACK outcome, or
+a `BlockAckTally` whose acknowledgements cannot exceed its attempted MPDUs.
+Those proofs survive through the vendor window's division; observing a
+checked tally has no error path after mutation. An association without an
+A-MPDU controller returns `AmpduUnavailable` directly before changing its
+rate or ACK-SNR state. There is no separate refusal counter or pending error
+slot for a caller to poll.
 The crate uses the canonical strict lint block checked by tidy.

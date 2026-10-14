@@ -22,6 +22,12 @@ access category inside the planner: doubled after each failed attempt that
 is retried, reset when the frame ends. Reports are the softmac contract's
 `MacTxStatus` and `MacAmpduTxStatus`.
 
+`RateControl` observes a `NonZeroU16` transmission count with `MpduOutcome`
+for an ordinary MPDU, or a checked `BlockAckTally` for an aggregate. A tally
+cannot contain zero attempts or more acknowledgements than attempts. The
+controller returns `AmpduUnavailable` directly when it has no aggregate
+state, before changing its rate or ACK-SNR filter.
+
 ## Parameters and profiles
 
 What differs between implementations is a parameter, never a branch on a

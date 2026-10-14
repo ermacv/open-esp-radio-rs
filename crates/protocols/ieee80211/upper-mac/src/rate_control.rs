@@ -9,6 +9,8 @@
 //! controller of `oer-espressif-ieee80211-policy::rate_control` adapts as the
 //! vendor does.
 
+use core::num::NonZeroU16;
+
 use oer_ieee80211_lower_mac::LinkMetric;
 use oer_ieee80211_mac::{
     he::{He20Capabilities, He20PeerState},
@@ -30,7 +32,102 @@ pub struct RatePeer {
     pub he_peer_state: Option<He20PeerState>,
 }
 
+/// Whether the peer acknowledged an MPDU whose transmission count is known.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MpduOutcome {
+    /// The expected ACK arrived.
+    Acknowledged,
+    /// The exchange ended without the expected ACK.
+    Unacknowledged,
+}
+
+/// A BlockAck observation of at least one attempted MPDU.
+///
+/// Acknowledgements cannot exceed attempts. Only [`Self::new`] constructs
+/// this proof, before a controller's rate or SNR state changes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BlockAckTally {
+    attempted: NonZeroU16,
+    acknowledged: u16,
+}
+
+/// A BlockAck count that exceeds the number of attempted MPDUs.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExcessAcknowledgements {
+    /// The nonzero number of attempted MPDUs.
+    pub attempted: NonZeroU16,
+    /// The impossible number of acknowledgements.
+    pub acknowledged: u16,
+}
+
+impl BlockAckTally {
+    /// Validate the counts of one completed aggregate observation.
+    pub const fn new(
+        attempted: NonZeroU16,
+        acknowledged: u16,
+    ) -> Result<Self, ExcessAcknowledgements> {
+        if acknowledged > attempted.get() {
+            return Err(ExcessAcknowledgements {
+                attempted,
+                acknowledged,
+            });
+        }
+        Ok(Self {
+            attempted,
+            acknowledged,
+        })
+    }
+
+    /// How many MPDUs were attempted, including unacknowledged ones.
+    pub const fn attempted(self) -> NonZeroU16 {
+        self.attempted
+    }
+
+    /// How many of the attempted MPDUs were acknowledged.
+    pub const fn acknowledged(self) -> u16 {
+        self.acknowledged
+    }
+}
+
+/// This peer's controller has no A-MPDU state to observe an exchange with.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AmpduUnavailable;
+
 /// The rate control of one peer.
+///
+/// A zero-count observation cannot reach a controller:
+///
+/// ```compile_fail,E0061
+/// use oer_ieee80211_upper_mac::rate_control::RateControl;
+/// fn empty<C: RateControl>(control: &mut C, now: oer_time::Instant) {
+///     control.observe_ampdu(now, 0, 0, None);
+/// }
+/// ```
+///
+/// Single-frame observations also require a nonzero transmission count:
+///
+/// ```compile_fail,E0308
+/// use oer_ieee80211_upper_mac::rate_control::RateControl;
+/// fn empty<C: RateControl>(control: &mut C) {
+///     control.observe_mpdu(0, false, None);
+/// }
+/// ```
+///
+/// A caller carries checked counts and an explicit MPDU outcome:
+///
+/// ```
+/// use core::num::NonZeroU16;
+/// use oer_ieee80211_upper_mac::rate_control::{
+///     AmpduUnavailable, BlockAckTally, MpduOutcome, RateControl,
+/// };
+/// fn observe<C: RateControl>(control: &mut C, now: oer_time::Instant)
+///     -> Result<(), AmpduUnavailable>
+/// {
+///     control.observe_mpdu(NonZeroU16::MIN, MpduOutcome::Acknowledged, Some(30));
+///     let tally = BlockAckTally::new(NonZeroU16::MIN, 1).unwrap();
+///     control.observe_ampdu(now, tally, Some(30))
+/// }
+/// ```
 pub trait RateControl: Sized {
     /// What the integrator configures every peer's controller with.
     type Config: Copy;
@@ -47,19 +144,19 @@ pub trait RateControl: Sized {
     fn ampdu_rate(&self) -> PhyRate;
 
     /// A single data MPDU's exchange ended after `attempts` known MPDU transmissions,
-    /// `acknowledged` or not, with the ACK SNR of a valid sample.
-    fn observe_mpdu(&mut self, attempts: u16, acknowledged: bool, ack_snr_db: Option<i8>);
+    /// with `outcome` and the ACK SNR of a valid sample.
+    fn observe_mpdu(&mut self, attempts: NonZeroU16, outcome: MpduOutcome, ack_snr_db: Option<i8>);
 
-    /// An A-MPDU exchange ended at `now` with `acknowledged` of its
-    /// `attempted` subframes in its BlockAck, with the BlockAck's ACK SNR
-    /// when the backend reported a valid one.
+    /// An A-MPDU exchange ended at `now` with checked counts and the
+    /// BlockAck's ACK SNR when the backend reported a valid one. A controller
+    /// without A-MPDU state returns [`AmpduUnavailable`] without changing
+    /// rate or SNR state; the caller receives this refusal directly.
     fn observe_ampdu(
         &mut self,
         now: Instant,
-        attempted: u16,
-        acknowledged: u16,
+        tally: BlockAckTally,
         ack_snr_db: Option<i8>,
-    );
+    ) -> Result<(), AmpduUnavailable>;
 }
 
 /// Every data frame at one configured rate, whatever its exchanges show.
@@ -81,15 +178,21 @@ impl RateControl for FixedRateControl {
         self.0
     }
 
-    fn observe_mpdu(&mut self, _attempts: u16, _acknowledged: bool, _ack_snr_db: Option<i8>) {}
+    fn observe_mpdu(
+        &mut self,
+        _attempts: NonZeroU16,
+        _outcome: MpduOutcome,
+        _ack_snr_db: Option<i8>,
+    ) {
+    }
 
     fn observe_ampdu(
         &mut self,
         _now: Instant,
-        _attempted: u16,
-        _acknowledged: u16,
+        _tally: BlockAckTally,
         _ack_snr_db: Option<i8>,
-    ) {
+    ) -> Result<(), AmpduUnavailable> {
+        Ok(())
     }
 }
 
@@ -109,7 +212,33 @@ mod tests {
             he_peer_state: None,
         };
         let mut control = FixedRateControl::for_peer(rate, &peer, LinkMetric::new(-40, -50));
-        control.observe_mpdu(7, false, None);
+        control.observe_mpdu(
+            NonZeroU16::new(7).unwrap(),
+            MpduOutcome::Unacknowledged,
+            None,
+        );
         assert_eq!((control.mpdu_rate(), control.ampdu_rate()), (rate, rate));
+    }
+
+    #[test]
+    fn block_ack_counts_are_checked_before_the_controller_observes_them() {
+        for attempts in [
+            NonZeroU16::MIN,
+            NonZeroU16::new(64).unwrap(),
+            NonZeroU16::MAX,
+        ] {
+            for acknowledged in [0, attempts.get()] {
+                let tally = BlockAckTally::new(attempts, acknowledged).unwrap();
+                assert_eq!(tally.attempted(), attempts);
+                assert_eq!(tally.acknowledged(), acknowledged);
+            }
+        }
+        assert_eq!(
+            BlockAckTally::new(NonZeroU16::MIN, 2),
+            Err(ExcessAcknowledgements {
+                attempted: NonZeroU16::MIN,
+                acknowledged: 2
+            })
+        );
     }
 }

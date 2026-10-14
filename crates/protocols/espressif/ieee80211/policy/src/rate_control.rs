@@ -11,6 +11,8 @@
 //! only: a backend turns a schedule into its PHY rate and programs its own
 //! report-rate registers.
 
+use core::num::{NonZeroU16, NonZeroU32};
+
 use crate::rate_schedule::{RateScheduleKind, RateScheduleRef, schedule_state};
 use oer_ieee80211_lower_mac::LinkMetric;
 use oer_ieee80211_mac::{
@@ -19,7 +21,9 @@ use oer_ieee80211_mac::{
     phy::{FecCoding, HeGiLtf, HeMcs, HeRate, HtMcs, HtRate, LegacyRate, PhyRate, PpduBandwidth},
     station::association::PhyMode,
 };
-use oer_ieee80211_upper_mac::rate_control::{RateControl, RatePeer};
+use oer_ieee80211_upper_mac::rate_control::{
+    AmpduUnavailable, BlockAckTally, MpduOutcome, RateControl, RatePeer,
+};
 use oer_time::Instant;
 
 /// Instruction-evidenced fields of one 12-byte rate schedule record.
@@ -161,13 +165,6 @@ pub enum AmpduRateDecision {
     },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AmpduRateObservationError {
-    Unavailable,
-    NoAttemptedMpdu,
-    AcknowledgedExceedsAttempted,
-}
-
 /// Independent rate state used by the vendor A-MPDU schedule getter.
 ///
 /// This is intentionally not folded into [`RateControlState`]:
@@ -256,28 +253,18 @@ impl AmpduRateControlState {
     pub fn observe_block_ack(
         &mut self,
         now_us: u32,
-        attempted_mpdu: u16,
-        acknowledged_mpdu: u16,
+        tally: BlockAckTally,
         filtered_ack_snr: Option<i8>,
-    ) -> Result<AmpduRateDecision, AmpduRateObservationError> {
-        if attempted_mpdu == 0 {
-            return Err(AmpduRateObservationError::NoAttemptedMpdu);
-        }
-        if acknowledged_mpdu > attempted_mpdu {
-            return Err(AmpduRateObservationError::AcknowledgedExceedsAttempted);
-        }
-
-        let attempted_mpdu = u32::from(attempted_mpdu);
-        let acknowledged_mpdu = u32::from(acknowledged_mpdu);
+    ) -> AmpduRateDecision {
+        let positive = NonZeroU32::from(tally.attempted());
+        let acknowledged_mpdu = u32::from(tally.acknowledged());
         if self.acknowledged_mpdu.wrapping_add(acknowledged_mpdu) >= Self::COUNTER_RESCALE_LIMIT {
             self.attempted_mpdu >>= 1;
             self.acknowledged_mpdu >>= 1;
         }
-        // The input check established a positive observation. Keep its
-        // nonzero witness through division; prior accumulating windows hold
-        // fewer than EVALUATION_MPDU (500) frames and inputs are u16.
-        let positive = core::num::NonZeroU32::new(attempted_mpdu)
-            .ok_or(AmpduRateObservationError::NoAttemptedMpdu)?;
+        // Keep the input's nonzero witness through division. Accumulating
+        // windows hold fewer than EVALUATION_MPDU (500) frames, and an input
+        // holds at most u16::MAX: this sum cannot saturate a u32.
         let accumulated = positive.saturating_add(self.attempted_mpdu);
         self.attempted_mpdu = accumulated.get();
         self.acknowledged_mpdu = self.acknowledged_mpdu.wrapping_add(acknowledged_mpdu);
@@ -285,7 +272,7 @@ impl AmpduRateControlState {
         if self.attempted_mpdu < Self::EVALUATION_MPDU
             && vendor_duration(now_us, self.last_evaluation_us) < Self::EVALUATION_US
         {
-            return Ok(AmpduRateDecision::Accumulating);
+            return AmpduRateDecision::Accumulating;
         }
 
         let raw_success_ratio = ((self.acknowledged_mpdu << 7) / accumulated) as u8;
@@ -332,27 +319,27 @@ impl AmpduRateControlState {
                     self.current_schedule = to;
                     self.last_lower_us = now_us;
                     self.clear_after_schedule_change();
-                    return Ok(AmpduRateDecision::Lower {
+                    return AmpduRateDecision::Lower {
                         from,
                         to,
                         raw_success_ratio,
                         filtered_success_ratio,
-                    });
+                    };
                 }
             }
-            return Ok(AmpduRateDecision::Retain {
+            return AmpduRateDecision::Retain {
                 raw_success_ratio,
                 filtered_success_ratio,
-            });
+            };
         }
 
         if self.promotion_probe {
             self.promotion_probe = false;
             self.promote_cooldown_us = Self::INITIAL_PROMOTE_COOLDOWN_US;
-            return Ok(AmpduRateDecision::Retain {
+            return AmpduRateDecision::Retain {
                 raw_success_ratio,
                 filtered_success_ratio,
-            });
+            };
         }
 
         let up_threshold = ampdu_up_threshold(rate, ack_snr);
@@ -367,19 +354,19 @@ impl AmpduRateControlState {
                 self.last_promote_us = now_us;
                 self.promotion_probe = true;
                 self.clear_after_schedule_change();
-                return Ok(AmpduRateDecision::Promote {
+                return AmpduRateDecision::Promote {
                     from,
                     to,
                     raw_success_ratio,
                     filtered_success_ratio,
-                });
+                };
             }
         }
 
-        Ok(AmpduRateDecision::Retain {
+        AmpduRateDecision::Retain {
             raw_success_ratio,
             filtered_success_ratio,
-        })
+        }
     }
 
     fn clear_after_schedule_change(&mut self) {
@@ -817,22 +804,21 @@ impl StaRateControlAssociation {
         update
     }
 
+    /// Apply a checked aggregate observation, or return its unavailable
+    /// controller before changing ACK-SNR or rate state.
     pub fn observe_ampdu_block_ack(
         &mut self,
         now_us: u32,
-        attempted_mpdu: u16,
-        acknowledged_mpdu: u16,
-    ) -> Result<AmpduRateDecision, AmpduRateObservationError> {
-        let filtered_ack_snr = self.ack_snr.filtered();
+        tally: BlockAckTally,
+        ack_snr_db: Option<i8>,
+    ) -> Result<AmpduRateDecision, AmpduUnavailable> {
         let Some(runtime) = &mut self.ampdu_runtime else {
-            return Err(AmpduRateObservationError::Unavailable);
+            return Err(AmpduUnavailable);
         };
-        let decision = runtime.observe_block_ack(
-            now_us,
-            attempted_mpdu,
-            acknowledged_mpdu,
-            filtered_ack_snr,
-        )?;
+        if let Some(sample) = ack_snr_db {
+            self.ack_snr.update(sample);
+        }
+        let decision = runtime.observe_block_ack(now_us, tally, self.ack_snr.filtered());
         if matches!(
             decision,
             AmpduRateDecision::Promote { .. } | AmpduRateDecision::Lower { .. }
@@ -1301,8 +1287,6 @@ pub const fn beamforming_report_rate_for_metric(
 pub struct EspressifRateControl {
     association: StaRateControlAssociation,
     decode: RateDecode,
-    refused_observations: oer_ieee80211_lower_mac::Counter,
-    observation_refusal: Option<AmpduRateObservationError>,
 }
 
 /// What turns a schedule into a rate the association can send.
@@ -1397,8 +1381,6 @@ impl RateControl for EspressifRateControl {
         };
         Self {
             association,
-            refused_observations: oer_ieee80211_lower_mac::Counter::ZERO,
-            observation_refusal: None,
             decode: RateDecode {
                 high_throughput: peer.phy != PhyMode::Legacy,
                 ht_bandwidth,
@@ -1427,57 +1409,29 @@ impl RateControl for EspressifRateControl {
         )
     }
 
-    fn observe_mpdu(&mut self, attempts: u16, acknowledged: bool, ack_snr_db: Option<i8>) {
-        if acknowledged && let Some(sample) = ack_snr_db {
+    fn observe_mpdu(&mut self, attempts: NonZeroU16, outcome: MpduOutcome, ack_snr_db: Option<i8>) {
+        if outcome == MpduOutcome::Acknowledged
+            && let Some(sample) = ack_snr_db
+        {
             self.association.update_ack_snr(sample);
         }
-        self.association
-            .update_tx_per(u32::from(attempts.saturating_sub(1)));
+        let retries = attempts.get() - 1;
+        self.association.update_tx_per(u32::from(retries));
     }
 
     fn observe_ampdu(
         &mut self,
         now: Instant,
-        attempted: u16,
-        acknowledged: u16,
+        tally: BlockAckTally,
         ack_snr_db: Option<i8>,
-    ) {
-        // These public legacy report counters are not a checked observation:
-        // unavailable AMPDU state and invalid counts are real typed refusals.
-        // Preserve their reason for the owner, rather than discarding Result.
-        if attempted != 0
-            && acknowledged <= attempted
-            && self.association.ampdu_runtime.is_some()
-            && let Some(sample) = ack_snr_db
-        {
-            self.association.update_ack_snr(sample);
-        }
-        match self.association.observe_ampdu_block_ack(
-            now.as_micros() as u32,
-            attempted,
-            acknowledged,
-        ) {
-            Ok(_) => {}
-            Err(reason) => {
-                self.refused_observations.increment();
-                self.observation_refusal = Some(reason);
-            }
-        }
+    ) -> Result<(), AmpduUnavailable> {
+        self.association
+            .observe_ampdu_block_ack(now.as_micros() as u32, tally, ack_snr_db)
+            .map(|_| ())
     }
 }
 
 impl EspressifRateControl {
-    /// Reports refused by the checked A-MPDU observation boundary. This
-    /// diagnostic counter is separate from transmission/rate statistics.
-    pub const fn refused_observations(&self) -> u32 {
-        self.refused_observations.get()
-    }
-
-    /// Take the most recent typed observation refusal.
-    pub fn take_observation_refusal(&mut self) -> Option<AmpduRateObservationError> {
-        self.observation_refusal.take()
-    }
-
     /// The association's rate control, as the vendor holds it.
     pub const fn association(&self) -> &StaRateControlAssociation {
         &self.association

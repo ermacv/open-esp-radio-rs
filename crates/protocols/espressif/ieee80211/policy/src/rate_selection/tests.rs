@@ -233,7 +233,11 @@ fn data_completions_adapt_the_rate_as_the_vendor_control_does() {
             FrameRates::Data,
             &completion(TxEndStatus::AckTimeout, 8),
         );
-        reference.observe_mpdu(8, false, None);
+        reference.observe_mpdu(
+            NonZeroU16::new(8).unwrap(),
+            MpduOutcome::Unacknowledged,
+            None,
+        );
         // Control frames and ones that never went teach nothing.
         RateSelection::<Measured>::completed(
             &mut selection,

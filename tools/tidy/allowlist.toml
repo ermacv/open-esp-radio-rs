@@ -239,3 +239,11 @@ reason = "Compiled as positive and negative UI twins on host and RV32 by cargo x
 [[uncompiled]]
 path = "crates/runtime/ieee80211/tests/ui/group_installation.rs"
 reason = "Compiled as positive and negative UI twins on host and RV32 by cargo xtask check ui"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/sta/tests/ui/group_removal_installation.rs"
+reason = "Compiled as positive and negative UI twins on host and RV32 by cargo xtask check ui"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/sta/tests/ui/group_removal_path.rs"
+reason = "Compiled as positive and negative UI twins on host and RV32 by cargo xtask check ui"

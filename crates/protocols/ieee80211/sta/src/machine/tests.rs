@@ -3689,3 +3689,154 @@ fn repeated_m3_selects_retained_material_and_restores_each_live_replay_frontier(
         assert!(world.station.keys.group_permission.is_some());
     });
 }
+
+fn take_group_removal<'id>(
+    world: &mut World<'id>,
+    ptk: &oer_ieee80211_rsn::Ptk,
+    counter: u64,
+    key_id: u8,
+    now: Instant,
+) -> (PendingGroupRemoval<'id>, Slot, GroupPermission) {
+    world.hold_key_installs = true;
+    world.receive_verified(now, &group_message1(ptk, counter, key_id));
+    assert_eq!(world.pending_installs.len(), 1);
+    world
+        .station
+        .input(now, world.pending_installs.pop().unwrap());
+    let Some(StaAction::TransmitProtected { transmit, .. }) = world.station.poll_action(now) else {
+        panic!("the installed GTK owes group message 2");
+    };
+    world.transmitted(transmit, true);
+    world.end_transmissions(now);
+    let Some(StaAction::RemoveGroupKey {
+        pending,
+        key: Key(slot),
+        permission,
+    }) = world.station.poll_action(now)
+    else {
+        panic!("the successful group response owes the superseded key's removal");
+    };
+    (pending, slot, permission)
+}
+
+#[test]
+fn each_removal_preserves_its_stations_current_replay() {
+    installed(|mint_a| {
+        let (mut a, ptk_a) = wpa2_connected(mint_a, 2);
+        // A first completed one rekey: its next removal owns a different
+        // private record place and wire KeyID from B's first removal.
+        a.receive_verified(at(50), &group_message1(&ptk_a, 3, 2));
+        installed(|mint_b| {
+            let (mut b, ptk_b) = wpa2_connected(mint_b, 2);
+            let (pending_a, slot_a, permission_a) =
+                take_group_removal(&mut a, &ptk_a, 4, 3, at(51));
+            let (pending_b, slot_b, permission_b) =
+                take_group_removal(&mut b, &ptk_b, 3, 2, at(51));
+            let current_b = GroupKeyId::new(2).unwrap();
+            assert!(
+                active_replay(&mut b.station.state)
+                    .unwrap()
+                    .has_group(current_b)
+            );
+            // Every physical slot and permission returns to its own Station.
+            // Each private pending token also returns to its original station.
+            a.station.input(
+                at(52),
+                StaInput::GroupKeyRemoved {
+                    pending: pending_a,
+                    slot: slot_a,
+                    permission: permission_a,
+                },
+            );
+            b.station.input(
+                at(52),
+                StaInput::GroupKeyRemoved {
+                    pending: pending_b,
+                    slot: slot_b,
+                    permission: permission_b,
+                },
+            );
+            assert!(
+                b.station
+                    .keys
+                    .groups
+                    .current_material(current_b, &[0x77; 16])
+            );
+            assert!(
+                active_replay(&mut b.station.state)
+                    .unwrap()
+                    .has_group(current_b),
+                "returning a retiring record preserves current replay"
+            );
+        });
+    });
+}
+
+#[test]
+fn returned_removal_places_are_reused_without_losing_installed_slots() {
+    installed(|mint_a| {
+        let (mut a, ptk_a) = wpa2_connected(mint_a, 2);
+        a.receive_verified(at(50), &group_message1(&ptk_a, 3, 2));
+        installed(|mint_b| {
+            let (mut b, ptk_b) = wpa2_connected(mint_b, 2);
+            let (pending_a, slot_a, permission_a) =
+                take_group_removal(&mut a, &ptk_a, 4, 3, at(51));
+            let (pending_b, slot_b, permission_b) =
+                take_group_removal(&mut b, &ptk_b, 3, 2, at(51));
+            a.station.input(
+                at(52),
+                StaInput::GroupKeyRemoved {
+                    pending: pending_a,
+                    slot: slot_a,
+                    permission: permission_a,
+                },
+            );
+            b.station.input(
+                at(52),
+                StaInput::GroupKeyRemoved {
+                    pending: pending_b,
+                    slot: slot_b,
+                    permission: permission_b,
+                },
+            );
+            // A subsequent installation reuses the returned vacant place without
+            // overwriting the still-current record or losing its slot.
+            a.hold_key_installs = false;
+            a.receive_verified(at(53), &group_message1(&ptk_a, 5, 0));
+            a.station
+                .command(at(54), StaRequest::new(2, StaCommand::Disconnect))
+                .unwrap();
+            a.run(at(54));
+            assert!(
+                a.station.keys.clear(),
+                "every physical key slot returns before Leave completes"
+            );
+            assert!(matches!(a.station.state, State::Idle));
+        });
+    });
+}
+
+#[test]
+fn a_removal_issued_before_leave_returns_its_record_and_permission_after_leave() {
+    installed(|mint| {
+        let (mut world, ptk) = wpa2_connected(mint, 2);
+        let (pending, slot, permission) = take_group_removal(&mut world, &ptk, 3, 2, at(51));
+        world
+            .station
+            .command(at(52), StaRequest::new(2, StaCommand::Disconnect))
+            .unwrap();
+        world.run(at(52));
+        assert!(matches!(world.station.state, State::Leave(_)));
+        world.station.input(
+            at(53),
+            StaInput::GroupKeyRemoved {
+                pending,
+                slot,
+                permission,
+            },
+        );
+        world.run(at(53));
+        assert!(world.station.keys.clear());
+        assert!(matches!(world.station.state, State::Idle));
+    });
+}

@@ -86,7 +86,7 @@ cases = ["crates/protocols/ieee80211/sta/tests/ui/command_request.rs"]
 
 [[suite]]
 name = "group-mutation-owner"
-packages = ["oer-ieee80211-lower-mac", "oer-ieee80211-runtime"]
+packages = ["oer-ieee80211-lower-mac", "oer-ieee80211-runtime", "oer-ieee80211-sta"]
 features = ["oer-ieee80211-runtime/test-support"]
 targets = ["host", "esp32s31"]
 cases = [
@@ -94,4 +94,6 @@ cases = [
     "crates/runtime/ieee80211/tests/ui/participating_group_owner.rs",
     "crates/runtime/ieee80211/tests/ui/group_role_permission.rs",
     "crates/runtime/ieee80211/tests/ui/group_installation.rs",
+    "crates/protocols/ieee80211/sta/tests/ui/group_removal_installation.rs",
+    "crates/protocols/ieee80211/sta/tests/ui/group_removal_path.rs",
 ]

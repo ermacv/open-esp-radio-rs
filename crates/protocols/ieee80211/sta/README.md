@@ -313,7 +313,11 @@ separate ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/56
 
 Installation actions carry private pending tokens naming their cell, key ID
 and link epoch. An old epoch's terminal returns its resources for normal
-removal. Leaving waits for all slots and the GTK permission before reporting.
+removal. Its private pending token is invariant in the port installation and
+the station's epoch pool path, so another station's token cannot free a local
+record or erase its replay frontier. It remains valid after the connection
+leaves; completion does not require a current link epoch. Leaving waits for
+all slots and the GTK permission before reporting.
 
 `Configure` carries `PendingConfiguration`. Station grants only one such
 token until it returns in `Configured`; an old epoch's reply releases that

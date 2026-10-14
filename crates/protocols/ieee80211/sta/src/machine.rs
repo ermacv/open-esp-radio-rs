@@ -272,7 +272,7 @@ pub enum StaInput<'id, T: StaTokens, K> {
     PairwiseKeyRemoved(T::PairwiseSlot),
     /// A removed group key's slot and its unique mutation permission.
     GroupKeyRemoved {
-        pending: PendingGroupRemoval,
+        pending: PendingGroupRemoval<'id, T::EpochPath>,
         slot: T::GroupSlot,
         permission: T::GroupPermission,
     },
@@ -375,7 +375,7 @@ pub enum StaAction<'a, 'id, T: StaTokens, K> {
     RemovePairwiseKey(T::PairwiseKey),
     /// Remove a group key ([`StaInput::GroupKeyRemoved`]).
     RemoveGroupKey {
-        pending: PendingGroupRemoval,
+        pending: PendingGroupRemoval<'id, T::EpochPath>,
         key: T::GroupKey,
         permission: T::GroupPermission,
     },
@@ -815,12 +815,15 @@ pub struct PendingGroupSelection<'id, Path: PoolPath = Root> {
 }
 
 /// A record cannot be reused until the physical removal terminal returns.
+/// Its invariant installation and pool path belong to the station that issued
+/// the action, independently of whether that connection has since left.
 #[must_use = "return with the matching removal terminal"]
-pub struct PendingGroupRemoval {
+pub struct PendingGroupRemoval<'id, Path: PoolPath = Root> {
     key_id: GroupKeyId,
     place: GroupPlace,
     _material: CcmpKey,
     replay: GroupReplay,
+    installation: core::marker::PhantomData<fn(&'id Path) -> &'id Path>,
 }
 
 /// A receive-configuration response must return this action token. Station
@@ -1384,7 +1387,7 @@ enum Owed<'id, T: StaTokens, K> {
         permission: T::GroupPermission,
     },
     RemoveGroup {
-        pending: PendingGroupRemoval,
+        pending: PendingGroupRemoval<'id, T::EpochPath>,
         key: T::GroupKey,
         permission: T::GroupPermission,
     },
@@ -3553,6 +3556,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 key_id,
                 _material: material,
                 replay,
+                installation: core::marker::PhantomData,
             },
             key,
             permission,

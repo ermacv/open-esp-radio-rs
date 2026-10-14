@@ -480,7 +480,7 @@ enum PendingGroupAction<'id, Path: oer_radio_port::PoolPath> {
     Install(oer_ieee80211_sta::machine::PendingGroupKey<'id, Path>),
     Replace(oer_ieee80211_sta::machine::PendingGroupReplacement<'id, Path>),
     Select(oer_ieee80211_sta::machine::PendingGroupSelection<'id, Path>),
-    Remove(oer_ieee80211_sta::machine::PendingGroupRemoval),
+    Remove(oer_ieee80211_sta::machine::PendingGroupRemoval<'id, Path>),
 }
 
 /// What a step left the loop to do.

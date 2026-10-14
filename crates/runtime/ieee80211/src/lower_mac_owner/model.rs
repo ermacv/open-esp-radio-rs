@@ -739,6 +739,7 @@ impl ModelContext for () {
 pub struct ModelTypes<X: ModelContext = ()>(PhantomData<fn() -> X>);
 
 impl<'id, X: ModelContext> PhaseTypes<'id> for ModelTypes<X> {
+    type Fault = ModelFault;
     type Context = X::Context<'id>;
     type Prepared<'k, 'p, R, K: Ieee80211Capabilities> = ModelPrepared<'k, 'p, 'id, R, K, X>;
     type KeyIdentity = KeyIdentity;
@@ -2512,8 +2513,6 @@ where
     type Caps = K;
     type Types = ModelTypes<X>;
     type Role = R;
-    type Fault = ModelFault;
-    type TxBody = ModelBody;
 
     fn address(&self) -> IndividualAddress {
         self.address

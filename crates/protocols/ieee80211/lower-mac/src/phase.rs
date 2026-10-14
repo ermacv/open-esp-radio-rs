@@ -176,7 +176,7 @@
 //!     interface: &mut J, attempt: InterfaceAttempt<'_, 'p, 'id, I>,
 //! ) where
 //!     I: InterfacePhase<'p, 'id>,
-//!     J: InterfacePhase<'q, 'id, Caps = I::Caps, Types = I::Types, Role = I::Role, TxBody = I::TxBody>,
+//!     J: InterfacePhase<'q, 'id, Caps = I::Caps, Types = I::Types, Role = I::Role>,
 //! {
 //!     let _ = interface.submit(attempt);
 //! }
@@ -478,6 +478,8 @@ pub type InterfaceKeys<'p, 'id, I> = <<I as InterfacePhase<'p, 'id>>::Role as Ro
 
 /// The types of one backend's phase that its events carry.
 pub trait PhaseTypes<'id>: Sized {
+    /// The backend fault shared by the event stream and every interface.
+    type Fault: Copy + core::fmt::Debug;
     /// The composition's operation context. The backend owns and returns
     /// it unchanged, without interpreting or cloning it. The install bound
     /// retains branded values while excluding references to machines local
@@ -529,7 +531,10 @@ pub trait PhaseTypes<'id>: Sized {
 
 /// A running lower-MAC phase of the install `'id`, lent for `'p`.
 pub trait LowerMacPhase<'p, 'id: 'p>:
-    PortPhase<Event = LowerMacEvent<'id, Self::Types>> + Sized
+    PortPhase<
+        Event = LowerMacEvent<'id, Self::Types>,
+        Fault = <Self::Types as PhaseTypes<'id>>::Fault,
+    > + Sized
 {
     /// The backend's capabilities marker.
     type Caps: Ieee80211Capabilities;
@@ -780,18 +785,37 @@ pub enum PreparationError {
 
 /// What one interface of a running phase does: its own frames, keys and
 /// Block Ack agreements.
+///
+/// The body and fault belong to the phase's resource family, with no
+/// independent interface-level declarations:
+///
+/// ```compile_fail,E0220
+/// use oer_ieee80211_lower_mac::InterfacePhase;
+/// fn body<'p, 'id: 'p, I: InterfacePhase<'p, 'id>>() -> Option<I::TxBody> { None }
+/// ```
+///
+/// ```compile_fail,E0220
+/// use oer_ieee80211_lower_mac::InterfacePhase;
+/// fn fault<'p, 'id: 'p, I: InterfacePhase<'p, 'id>>() -> Option<I::Fault> { None }
+/// ```
+///
+/// ```
+/// use oer_ieee80211_lower_mac::{InterfaceAttempt, InterfacePhase, PhaseTypes, Poisoned};
+/// fn body<'p, 'id: 'p, I: InterfacePhase<'p, 'id>>()
+///     -> Option<<I::Types as PhaseTypes<'id>>::TxBody> { None }
+/// fn submit<'k, 'p, 'id: 'k + 'p, I: InterfacePhase<'p, 'id>>(
+///     interface: &mut I, attempt: InterfaceAttempt<'k, 'p, 'id, I>,
+/// ) -> Result<(), Poisoned<<I::Types as PhaseTypes<'id>>::Fault>> {
+///     interface.submit(attempt)
+/// }
+/// ```
 pub trait InterfacePhase<'p, 'id: 'p> {
     /// The backend's capabilities marker.
     type Caps: Ieee80211Capabilities;
     /// The types the phase's events carry.
-    type Types: PhaseTypes<'id, TxBody = Self::TxBody>;
+    type Types: PhaseTypes<'id>;
     /// The interface's role, which names its keys among the phase's types.
     type Role: RoleKeys<'id, Self::Types>;
-    /// What poisons the backend.
-    type Fault: Copy + core::fmt::Debug;
-    /// The owner of an MPDU's body.
-    type TxBody: crate::TxBody;
-
     /// The interface's own address, which the install gave it.
     fn address(&self) -> IndividualAddress;
 
@@ -810,7 +834,7 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     fn submit<'k>(
         &mut self,
         attempt: InterfaceAttempt<'k, 'p, 'id, Self>,
-    ) -> Result<(), Poisoned<Self::Fault>>;
+    ) -> Result<(), Poisoned<<Self::Types as PhaseTypes<'id>>::Fault>>;
 
     /// Install `key` for frames with `peer` in `slot`.
     fn install_pairwise_key(

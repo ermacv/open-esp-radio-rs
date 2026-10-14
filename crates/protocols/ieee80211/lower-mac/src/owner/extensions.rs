@@ -345,7 +345,7 @@ pub trait AmpduPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id> {
     fn submit_ampdu<'k>(
         &mut self,
         attempt: InterfaceAggregateAttempt<'k, 'p, 'id, Self>,
-    ) -> Result<(), Poisoned<Self::Fault>>
+    ) -> Result<(), Poisoned<<Self::Types as PhaseTypes<'id>>::Fault>>
     where
         'id: 'k;
 }

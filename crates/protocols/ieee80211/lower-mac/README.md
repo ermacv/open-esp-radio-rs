@@ -28,6 +28,9 @@ back; its operations are synchronous and never wait:
   machine local to the generic `PortBody::run`. Portable contexts need not
   be `Send`; only a backend such as S31 crossing execution contexts requires
   it ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6155221933)).
+  `PhaseTypes` also owns the single body type and backend fault type for
+  the phase and both of its interfaces; interface submission and the event
+  stream report that same fault.
   `TxCompleted::Single` contains exactly one MPDU; `Aggregate` contains
   its submitted subframes. The backend must return the original owners,
   including when different classes share an AC queue. The common suite in

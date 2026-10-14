@@ -47,10 +47,11 @@ fn minimal_element_exposes_suites_without_optional_fields() {
     assert_eq!(parsed.group_data_cipher(), CCMP);
     assert!(parsed.pairwise_ciphers().contains(CCMP));
     assert_eq!(parsed.akm_suites().len(), 2);
-    assert_eq!(parsed.akm_suites().iter().next(), Some(SAE));
+    assert!(parsed.akm_suites().iter().eq([SAE, PSK]));
     assert!(parsed.akm_suites().contains(PSK));
     assert_eq!(parsed.capabilities(), None);
     assert_eq!(parsed.pmkid_count(), None);
+    assert!(parsed.pmkids().next().is_none());
     assert_eq!(parsed.group_management_cipher(), None);
 }
 
@@ -59,6 +60,7 @@ fn complete_optional_tail_is_exposed_without_policy() {
     let mut tail = [0; 2 + 2 + RSN_PMKID_LEN + 4];
     tail[..2].copy_from_slice(&(RSN_CAPABILITY_MFPR | RSN_CAPABILITY_MFPC).to_le_bytes());
     tail[2..4].copy_from_slice(&1_u16.to_le_bytes());
+    tail[4..4 + RSN_PMKID_LEN].fill(0xa5);
     tail[4 + RSN_PMKID_LEN..].copy_from_slice(&BIP);
     let (bytes, length) = with_tail(&[PSK], &tail);
     let parsed = RsnElement::parse(&bytes[..length]).unwrap();
@@ -68,6 +70,7 @@ fn complete_optional_tail_is_exposed_without_policy() {
         Some(RSN_CAPABILITY_MFPR | RSN_CAPABILITY_MFPC)
     );
     assert_eq!(parsed.pmkid_count(), Some(1));
+    assert!(parsed.pmkids().eq([[0xa5; RSN_PMKID_LEN]]));
     assert_eq!(parsed.group_management_cipher(), Some(BIP));
 }
 

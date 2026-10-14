@@ -11,7 +11,7 @@ description = "Portable Wi-Fi execution primitives: monitor handoffs, task shutd
 default = []
 # The in-memory lower-MAC backend on the owner shape (`lower_mac_owner::model`),
 # for host tests of the code that drives it.
-test-support = []
+test-support = ["dep:oer-ieee80211-rsn"]
 
 [dependencies]
 atomic-waker = "1.1.2"
@@ -28,6 +28,8 @@ oer-time = { path = "../../time" }
 oer-ieee80211-arbiter = { path = "../../protocols/ieee80211/arbiter" }
 oer-ieee80211-sta = { path = "../../protocols/ieee80211/sta" }
 oer-ieee80211-upper-mac = { path = "../../protocols/ieee80211/upper-mac" }
+
+oer-ieee80211-rsn = { path = "../../protocols/ieee80211/security/rsn", optional = true }
 
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }

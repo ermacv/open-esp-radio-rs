@@ -9,6 +9,9 @@
 //! Changed MPDU bytes report `MpduChanged`, separately from `Owners` for
 //! a context, ticket or buffer identity mismatch.
 
+/// GTK installation, replacement and selection RX boundaries.
+pub mod group_keys;
+
 use alloc::vec::Vec;
 use oer_ieee80211_lower_mac::{IndeterminateCause, TxEndStatus, TxOutcome, WithdrawCause};
 use oer_ieee80211_mac::qos::WmmAccessCategory;

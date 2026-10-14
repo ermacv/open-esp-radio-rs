@@ -223,3 +223,19 @@ reason = "bt_hci::cmd! in the open-radio-bluetooth fixture expands to paths in e
 [[uncompiled]]
 path = "crates/protocols/ieee80211/sta/tests/ui/command_request.rs"
 reason = "Positive and negative twins compiled by cargo xtask check ui on host and RV32."
+
+[[uncompiled]]
+path = "crates/runtime/ieee80211/tests/ui/group_permission.rs"
+reason = "Compiled as positive and negative UI twins on host and RV32 by cargo xtask check ui"
+
+[[uncompiled]]
+path = "crates/runtime/ieee80211/tests/ui/participating_group_owner.rs"
+reason = "Compiled as positive and negative UI twins on host and RV32 by cargo xtask check ui"
+
+[[uncompiled]]
+path = "crates/runtime/ieee80211/tests/ui/group_role_permission.rs"
+reason = "Compiled as positive and negative UI twins on host and RV32 by cargo xtask check ui"
+
+[[uncompiled]]
+path = "crates/runtime/ieee80211/tests/ui/group_installation.rs"
+reason = "Compiled as positive and negative UI twins on host and RV32 by cargo xtask check ui"

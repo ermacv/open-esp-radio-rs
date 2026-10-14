@@ -1,7 +1,8 @@
 //! Installed group owners and reserved record places. A pending installation
 //! owns its vacant place, so its return cannot overflow a retirement pool.
 
-use super::{CcmpKey, GroupKeyId, Pool};
+use super::{CcmpKey, CcmpRxReplayEpoch, GroupKeyId, Pool};
+use oer_ieee80211_mac::ccmp::CcmpRxReplayState;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Index {
@@ -20,44 +21,42 @@ mod tests {
     use super::*;
 
     #[test]
-    fn replacement_selects_its_id_or_the_oldest_non_current_owner() {
+    fn replacement_evicts_the_oldest_non_current_installation() {
         let mut keys = GroupKeys::new();
-        let id = |id| GroupKeyId::new(id).unwrap();
+        let id = GroupKeyId::new(1).unwrap();
         for value in 0..3 {
             let place = keys.reserve().unwrap();
             keys.install(
                 Installed {
                     place,
-                    key_id: id(value),
+                    key_id: id,
                     material: CcmpKey::new([value; 16]),
                     key: value,
+                    replay: Replay::Retained(
+                        CcmpRxReplayState::from_receive_sequence([0; 8]).unwrap(),
+                    ),
                 },
                 true,
             );
         }
-        assert_eq!(keys.current_id(), Some(id(2)));
-        let old = keys.replace(id(3), false).unwrap();
+        // A selection round trip does not renew the installation's age.
+        let selected = keys.take_matching(id, &[0; 16]).unwrap();
+        keys.restore(selected, true);
+        let selected = keys.take_matching(id, &[2; 16]).unwrap();
+        keys.restore(selected, true);
+        let old = keys.replace(false).unwrap();
         assert_eq!(old.key, 0);
-        assert_eq!(keys.current_id(), Some(id(2)));
-        keys.install(
-            Installed {
-                place: old.place,
-                key_id: id(3),
-                material: CcmpKey::new([3; 16]),
-                key: 3,
-            },
-            true,
-        );
-        let same_id = keys.replace(id(2), false).unwrap();
-        assert_eq!(same_id.key, 2);
-        keys.install(same_id, false);
-        assert_eq!(keys.take_retiring(), Some((id(1), 1)));
-        assert_eq!(keys.take_retiring(), Some((id(2), 2)));
-        assert_eq!(keys.replace(id(0), false).map(|entry| entry.key), None);
-        let single = keys.replace(id(0), true).unwrap();
-        assert_eq!(single.key, 3);
+        assert_eq!(keys.current_id(), Some(id));
+        keys.release(old.place);
+        let next = keys.take_retiring().unwrap();
+        assert_eq!(next.key, 1);
+        keys.release(next.place);
+        assert!(keys.replace(false).is_none());
+        let single = keys.replace(true).unwrap();
+        assert_eq!(single.key, 2);
         keys.install(single, true);
-        assert_eq!(keys.take_any(), Some((id(3), 3)));
+        let last = keys.take_any().unwrap();
+        keys.release(last.place);
         assert_eq!(keys.vacant.len(), 8);
     }
 }
@@ -112,6 +111,15 @@ pub(super) struct Installed<Key> {
     pub(super) key_id: GroupKeyId,
     pub(super) material: CcmpKey,
     pub(super) key: Key,
+    pub(super) replay: Replay,
+}
+
+/// An active record lends its frontier to the association RX epoch. A retained
+/// record owns the exact frontier taken back at the next selection boundary.
+#[derive(Debug)]
+pub(super) enum Replay {
+    Active,
+    Retained(CcmpRxReplayState),
 }
 
 pub(super) struct GroupKeys<Key> {
@@ -138,12 +146,7 @@ impl<Key> GroupKeys<Key> {
 
     pub(super) fn install(&mut self, entry: Installed<Key>, current: bool) {
         let index = entry.place.0;
-        // The affine place proves this cell is empty. It can leave entries
-        // only through take/replacement, both of which empty that same cell.
-        *index.select_mut(&mut self.entries) = Some(entry);
-        if current {
-            self.current = Some(index);
-        }
+        self.restore(entry, current);
         let mut carry = index;
         for position in self.order.iter_mut().rev() {
             if *position == index {
@@ -154,12 +157,74 @@ impl<Key> GroupKeys<Key> {
         }
     }
 
+    /// Selection restores an existing record without changing its physical
+    /// installation age, used to choose the oldest non-current eviction.
+    pub(super) fn restore(&mut self, entry: Installed<Key>, current: bool) {
+        let index = entry.place.0;
+        *index.select_mut(&mut self.entries) = Some(entry);
+        if current {
+            self.current = Some(index);
+        }
+    }
+
+    pub(super) fn activate(&mut self, entry: &mut Installed<Key>, replay: &mut CcmpRxReplayEpoch) {
+        let Replay::Retained(next) = core::mem::replace(&mut entry.replay, Replay::Active) else {
+            // It was already RX-active under this ID; selecting it changes
+            // neither counters nor the per-ID replay frontier.
+            return;
+        };
+        if let Some(previous) = replay.exchange_group(entry.key_id, next)
+            && let Some(old) = self
+                .entries
+                .iter_mut()
+                .flatten()
+                .find(|old| old.key_id == entry.key_id && matches!(old.replay, Replay::Active))
+        {
+            old.replay = Replay::Retained(previous);
+        }
+        // No old retained record means the old physical installation was
+        // replaced; its frontier legitimately ends with that installation.
+    }
+
+    pub(super) fn release(&mut self, place: GroupPlace) {
+        self.vacant.put(place);
+    }
+
+    pub(super) fn has_active(&self, id: GroupKeyId) -> bool {
+        self.entries
+            .iter()
+            .flatten()
+            .any(|entry| entry.key_id == id && matches!(entry.replay, Replay::Active))
+    }
+
+    pub(super) fn current_material(&self, id: GroupKeyId, material: &[u8; 16]) -> bool {
+        self.current
+            .and_then(|index| index.select(&self.entries).as_ref())
+            .is_some_and(|entry| entry.key_id == id && entry.material.as_bytes() == material)
+    }
+
+    pub(super) fn take_matching(
+        &mut self,
+        id: GroupKeyId,
+        material: &[u8; 16],
+    ) -> Option<Installed<Key>> {
+        self.entries
+            .iter_mut()
+            .find(|entry| {
+                entry.as_ref().is_some_and(|entry| {
+                    entry.key_id == id && entry.material.as_bytes() == material
+                })
+            })?
+            .take()
+    }
+
     pub(super) fn current_id(&self) -> Option<GroupKeyId> {
         self.current
             .and_then(|index| index.select(&self.entries).as_ref())
             .map(|entry| entry.key_id)
     }
 
+    #[cfg(test)]
     pub(super) fn same_material(&self, id: GroupKeyId, material: &[u8; 16]) -> bool {
         self.entries
             .iter()
@@ -178,39 +243,29 @@ impl<Key> GroupKeys<Key> {
             .find(|index| Some(*index) != self.current && index.select(&self.entries).is_some())
     }
 
-    pub(super) fn take_retiring(&mut self) -> Option<(GroupKeyId, Key)> {
+    pub(super) fn take_retiring(&mut self) -> Option<Installed<Key>> {
         self.take(self.oldest_retiring()?)
     }
 
-    pub(super) fn take_any(&mut self) -> Option<(GroupKeyId, Key)> {
+    pub(super) fn take_any(&mut self) -> Option<Installed<Key>> {
         let index = self.oldest_retiring().or(self.current)?;
         self.take(index)
     }
 
-    fn take(&mut self, index: Index) -> Option<(GroupKeyId, Key)> {
-        let Installed {
-            place, key_id, key, ..
-        } = index.select_mut(&mut self.entries).take()?;
+    fn take(&mut self, index: Index) -> Option<Installed<Key>> {
+        let entry = index.select_mut(&mut self.entries).take()?;
         if self.current == Some(index) {
             self.current = None;
         }
-        // Only these eight private places can enter this pool. No installed
-        // key owner is ever passed to Pool::put.
-        self.vacant.put(place);
-        Some((key_id, key))
+        // The removal token keeps this record place until its terminal.
+        Some(entry)
     }
 
-    /// Replace the same ID, otherwise the oldest non-current record. Only a
-    /// backend with one physical slot may replace its sole current record.
-    pub(super) fn replace(&mut self, id: GroupKeyId, single_slot: bool) -> Option<Installed<Key>> {
-        let same_id = self.order.iter().rev().copied().find(|index| {
-            index
-                .select(&self.entries)
-                .as_ref()
-                .is_some_and(|entry| entry.key_id == id)
-        });
-        let index = same_id
-            .or_else(|| self.oldest_retiring())
+    /// Replace the oldest non-current record. A backend with only one
+    /// physical slot replaces its sole current installation atomically.
+    pub(super) fn replace(&mut self, single_slot: bool) -> Option<Installed<Key>> {
+        let index = self
+            .oldest_retiring()
             .or_else(|| single_slot.then_some(self.current).flatten())?;
         index.select_mut(&mut self.entries).take()
     }

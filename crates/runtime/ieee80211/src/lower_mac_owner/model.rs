@@ -93,6 +93,7 @@ use core::{
     task::{Poll, Waker},
 };
 use oer_ieee80211_mac::ccmp::GroupKeyId;
+use oer_ieee80211_rsn::keys::CcmpKey;
 
 use oer_ieee80211_mac::phy::{HeMcs, HtMcs, PhyRate};
 use oer_ieee80211_port::{ClockError, EnableResult, PortBackend, PortPhase, Retire};
@@ -104,15 +105,15 @@ use oer_ieee80211_lower_mac::{
     CheckedPoolSource, CheckedSubframe, CheckedTxSource, CoexPriority, CoexPrioritySet,
     ConnectionEpochKind, ExecutionPayload, FreshSource, FreshSubframe, GateClosed, GateIssuer,
     GateOpen, GatePool, HardwareServices, Ieee80211Capabilities, Ieee80211Radio, InFlight,
-    IndeterminateCause, InterfaceAggregateAttempt, InterfaceAttempt, InterfacePhase, KeyTypes,
-    LinkMetric, LowerMacBackend, LowerMacCapabilities, LowerMacEvent, LowerMacPhase, LowerMacSetup,
-    MpduKind, MpduLayout, PhaseRate, PhaseTypes, PhyFormatSet, PreparationError,
-    PreparationRefused, PreparedTx, RateSupport, ReceiveFilter, Removed, RemovedKey,
-    RetransmissionPlan, RoleKeys, RxBuffer, RxEvidence, RxMeta, RxMetadata, SignalMetadata,
-    Station, StationPhase, StationReceive, SupportedBlockAck, SupportedChannel, SupportedEdca,
-    SupportedFilter, TxAck, TxBody, TxBufferClass, TxBufferMemory, TxBufferPool, TxCompleted,
-    TxEndStatus, TxFrame, TxMpdu, TxOutcome, TxProtection, TxSource, VifRole, WidthSet,
-    WithdrawCause,
+    IndeterminateCause, InstalledGroup, InterfaceAggregateAttempt, InterfaceAttempt,
+    InterfacePhase, KeyTypes, LinkMetric, LowerMacBackend, LowerMacCapabilities, LowerMacEvent,
+    LowerMacPhase, LowerMacSetup, MpduKind, MpduLayout, PhaseRate, PhaseTypes, PhyFormatSet,
+    PreparationError, PreparationRefused, PreparedTx, RateSupport, ReceiveFilter, Removed,
+    RemovedKey, RetransmissionPlan, RoleKeys, RxBuffer, RxEvidence, RxMeta, RxMetadata,
+    SignalMetadata, Station, StationPhase, StationReceive, SupportedBlockAck, SupportedChannel,
+    SupportedEdca, SupportedFilter, TxAck, TxBody, TxBufferClass, TxBufferMemory, TxBufferPool,
+    TxCompleted, TxEndStatus, TxFrame, TxMpdu, TxOutcome, TxProtection, TxSource, VifRole,
+    WidthSet, WithdrawCause,
 };
 use oer_ieee80211_lower_mac::{
     AggregateRefused, AggregateState, AmpduCapabilities, AmpduPhase, AmpduRate, BlockAckReport,
@@ -194,19 +195,14 @@ pub const MODEL_RX_EVENTS: usize = 4;
 pub const MODEL_KEY_SLOTS: usize = 2;
 /// The receive Block Ack slots both roles share.
 pub const MODEL_BLOCK_ACK_SLOTS: usize = 2;
-/// The key slots of both roles, of both kinds.
-const MODEL_ALL_KEY_SLOTS: usize = 4 * MODEL_KEY_SLOTS;
 
-/// The commands the queue from the handle to the driver holds, first in,
-/// first out: what the contract promises, an attempt per ticket and two
-/// commands per key slot and the gate, whose install/closing and
-/// removal/opening may wait at once. Block Ack uses per-slot settings.
-pub const MODEL_COMMANDS: usize = MODEL_TICKETS + 2 * (MODEL_ALL_KEY_SLOTS + 1);
-/// The events the queue from the driver to the body holds: a terminal per
-/// ticket, a removal per key slot, the gate's closing, one confirmation of
-/// each interface's settings (they coalesce, as the settings do) and the
-/// received frames.
-pub const MODEL_EVENTS: usize = MODEL_TICKETS + MODEL_ALL_KEY_SLOTS + 1 + 2 + MODEL_RX_EVENTS;
+/// FIFO commands: each ticket, install/remove for every pairwise slot,
+/// one GTK mutation per interface permission, and close/open of the gate.
+/// Receive agreements and configurations are coalesced settings.
+pub const MODEL_COMMANDS: usize = MODEL_TICKETS + 2 * (2 * MODEL_KEY_SLOTS) + 2 + 2;
+/// Reserved terminals: tickets, pairwise removals, the two GTK permissions,
+/// gate closing, two configuration confirmations and the bounded RX owners.
+pub const MODEL_EVENTS: usize = MODEL_TICKETS + 2 * MODEL_KEY_SLOTS + 2 + 1 + 2 + MODEL_RX_EVENTS;
 
 /// A queue of the contract's capacity: an overflow is a broken promise and
 /// poisons the install while retaining every owner.
@@ -291,20 +287,26 @@ pub trait ModelRole: oer_ieee80211_lower_mac::InterfaceRole {
     type PairwisePath: oer_radio_port::PoolPath;
     /// Component containing the role's group slots.
     type GroupPath: oer_radio_port::PoolPath;
+    /// Component containing the unique GTK mutation permission.
+    type GroupPermissionPath: oer_radio_port::PoolPath;
 }
 impl ModelRole for Station {
     type PairwisePath = ModelPool<5>;
     type GroupPath = ModelPool<6>;
+    type GroupPermissionPath = ModelPool<10>;
 }
 impl ModelRole for AccessPoint {
     type PairwisePath = ModelPool<7>;
     type GroupPath = ModelPool<8>;
+    type GroupPermissionPath = ModelPool<11>;
 }
 
 /// The kind of the pairwise key slots of the role `R`.
 pub struct ModelPairwiseKeys<R>(PhantomData<fn() -> R>);
 /// The kind of the group key slots of the role `R`.
 pub struct ModelGroupKeys<R>(PhantomData<fn() -> R>);
+/// The kind of the one GTK mutation permission per interface.
+pub struct ModelGroupPermission<R>(PhantomData<fn() -> R>);
 /// The kind of the receive Block Ack slots.
 pub enum ModelBlockAcks {}
 
@@ -521,8 +523,16 @@ struct KeyInstall {
     key_id: u8,
     last: Cell<u64>,
     active: Cell<bool>,
+    group: Option<GroupMaterial>,
+    rx_active: Cell<bool>,
     preparations: Rc<()>,
     air: Weak<ModelAir>,
+}
+
+#[derive(Debug)]
+struct GroupMaterial {
+    role: VifRole,
+    key: CcmpKey,
 }
 
 impl PartialEq for KeyIdentity {
@@ -539,6 +549,26 @@ impl KeyIdentity {
             key_id,
             last: Cell::new(0),
             active: Cell::new(true),
+            group: None,
+            rx_active: Cell::new(false),
+            preparations: Rc::new(()),
+            air: Rc::downgrade(air),
+        }))
+    }
+    fn group(
+        index: u8,
+        key_id: GroupKeyId,
+        role: VifRole,
+        key: CcmpKey,
+        air: &Rc<ModelAir>,
+    ) -> Self {
+        Self(Rc::new(KeyInstall {
+            index,
+            key_id: key_id.get(),
+            last: Cell::new(0),
+            active: Cell::new(true),
+            group: Some(GroupMaterial { role, key }),
+            rx_active: Cell::new(false),
             preparations: Rc::new(()),
             air: Rc::downgrade(air),
         }))
@@ -852,6 +882,7 @@ impl<'id, R: ModelRole + 'id> KeyTypes<'id> for ModelKeys<'id, R> {
     type GroupSlot = Slot<'id, ModelGroupKeys<R>, R::GroupPath>;
     type PairwiseKey = ModelPairwiseKey<'id, R>;
     type GroupKey = ModelGroupKey<'id, R>;
+    type GroupPermission = Slot<'id, ModelGroupPermission<R>, R::GroupPermissionPath>;
     type Identity = KeyIdentity;
     type GroupSlotIdentity = u8;
     fn pairwise_identity(key: &Self::PairwiseKey) -> KeyIdentity {
@@ -862,6 +893,9 @@ impl<'id, R: ModelRole + 'id> KeyTypes<'id> for ModelKeys<'id, R> {
     }
     fn group_slot_identity(key: &Self::GroupKey) -> u8 {
         key.slot.index()
+    }
+    fn vacant_group_slot_identity(slot: &Self::GroupSlot) -> u8 {
+        slot.index()
     }
 }
 
@@ -1018,6 +1052,10 @@ pub struct ModelResources<'id> {
         [Slot<'id, ModelPairwiseKeys<AccessPoint>, ModelPool<7>>; MODEL_KEY_SLOTS],
     /// The access point's group key slots.
     pub access_point_group: [Slot<'id, ModelGroupKeys<AccessPoint>, ModelPool<8>>; MODEL_KEY_SLOTS],
+    /// The station's sole GTK mutation permission.
+    pub station_group_permission: Slot<'id, ModelGroupPermission<Station>, ModelPool<10>>,
+    /// The access point's sole GTK mutation permission.
+    pub access_point_group_permission: Slot<'id, ModelGroupPermission<AccessPoint>, ModelPool<11>>,
     /// The receive Block Ack slots both roles share.
     pub block_acks: [Slot<'id, ModelBlockAcks, ModelPool<9>>; MODEL_BLOCK_ACK_SLOTS],
     /// The open transmit gate.
@@ -1080,6 +1118,29 @@ impl ModelReceiveAgreement {
     }
 }
 
+/// Hardware uncertainty injected at a concrete mutation boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GroupFaultStage {
+    Before,
+    After,
+}
+
+/// A receive fact deliberately delayed in the modeled ingress pipeline.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GroupRxStage {
+    Dma,
+    Interrupt,
+    Software,
+    Ready,
+}
+
+struct CapturedGroupRx {
+    frame: Vec<u8>,
+    meta: ModelRxMeta,
+    installation: KeyIdentity,
+    stage: GroupRxStage,
+}
+
 /// The air and the world of a model: shared by the backend's driver and
 /// the test.
 #[derive(Default)]
@@ -1091,7 +1152,11 @@ pub struct ModelAir {
     rx: RefCell<VecDeque<(Vec<u8>, ModelRxMeta)>>,
     rx_stream: RefCell<Option<(Vec<u8>, ModelRxMeta)>>,
     refuse_enable: Cell<bool>,
-    reject_group_replacement: Cell<bool>,
+    group_failure: Cell<Option<GroupFaultStage>>,
+    group_held: Cell<bool>,
+    group_installations: RefCell<Vec<Weak<KeyInstall>>>,
+    group_rx: RefCell<VecDeque<CapturedGroupRx>>,
+    group_writes: Cell<usize>,
     poisoned: Cell<bool>,
     driver: RefCell<Option<Waker>>,
     /// The driver's passes.
@@ -1109,10 +1174,62 @@ pub struct ModelAir {
 }
 
 impl ModelAir {
-    /// Fail the next GTK hardware replacement. The driver retains the slot
-    /// until fail-stop ends the installation and emits no success terminal.
-    pub fn reject_next_group_replacement(&self) {
-        self.reject_group_replacement.set(true);
+    /// Inject uncertainty before or after a GTK hardware mutation. No success
+    /// owner or ordinary permission leaves the poisoned installation.
+    pub fn fail_next_group_change(&self, stage: GroupFaultStage) {
+        self.group_failure.set(Some(stage));
+        self.wake_driver();
+    }
+
+    /// Delay commands while RX continues. `set_time` supplies the deadline
+    /// wake; the driver poisons at GROUP_COMMAND_BOUND. Normal disable finishes
+    /// admitted commands instead of waiting for this test hold to be released.
+    pub fn hold_group_commands(&self, held: bool) {
+        self.group_held.set(held);
+        self.wake_driver();
+    }
+
+    /// Actual material writes, including replacement and excluding selection.
+    pub fn group_writes(&self) -> usize {
+        self.group_writes.get()
+    }
+
+    /// Capture a group frame against the current modeled hardware key table.
+    /// Delayed DMA/ISR/software stages retain the original installation inside
+    /// the backend; no installation identity is added to public RX metadata.
+    pub fn receive_group(
+        &self,
+        frame: &[u8],
+        meta: ModelRxMeta,
+        role: VifRole,
+        key_id: GroupKeyId,
+        material: &[u8; 16],
+        stage: GroupRxStage,
+    ) -> bool {
+        let installation =
+            self.group_installations
+                .borrow()
+                .iter()
+                .filter_map(Weak::upgrade)
+                .find(|key| {
+                    key.active.get()
+                        && key.rx_active.get()
+                        && key.key_id == key_id.get()
+                        && key.group.as_ref().is_some_and(|group| {
+                            group.role == role && group.key.as_bytes() == material
+                        })
+                });
+        let Some(installation) = installation else {
+            return false;
+        };
+        self.group_rx.borrow_mut().push_back(CapturedGroupRx {
+            frame: frame.into(),
+            meta,
+            installation: KeyIdentity(installation),
+            stage,
+        });
+        self.wake_driver();
+        true
     }
 
     /// Every publication so far, including collisions and unknown outcomes.
@@ -1248,9 +1365,9 @@ enum Command<'id, X: ModelContext> {
     InstallKey {
         key: KeyIdentity,
     },
-    ReplaceGroupKey {
-        installed: ModelGroupKey<'id, Station>,
-        key_id: GroupKeyId,
+    Group {
+        admitted_at: u64,
+        change: GroupChange<'id, X>,
     },
     RemoveKey {
         key: KeyIdentity,
@@ -1258,6 +1375,27 @@ enum Command<'id, X: ModelContext> {
     },
     CloseGate(GateOpen<'id, ModelPool<0>>),
     OpenGate,
+}
+
+type StationGroupPermission<'id> = Slot<'id, ModelGroupPermission<Station>, ModelPool<10>>;
+
+/// Whole command custody, including permission, material and physical owner.
+enum GroupChange<'id, X: ModelContext> {
+    Install(InstalledGroup<'id, ModelTypes<X>>),
+    Replace {
+        permission: StationGroupPermission<'id>,
+        installed: ModelGroupKey<'id, Station>,
+        key_id: GroupKeyId,
+        key: CcmpKey,
+    },
+    Select {
+        permission: StationGroupPermission<'id>,
+        installed: ModelGroupKey<'id, Station>,
+    },
+    Remove {
+        key: KeyIdentity,
+        removed: Removed<'id, ModelTypes<X>>,
+    },
 }
 
 /// The work of a queue: one MPDU, or one A-MPDU.
@@ -1388,12 +1526,15 @@ struct Settings {
 /// draining events does not acknowledge that separate loss indication.
 pub struct ModelHeld<'id, X: ModelContext = ()> {
     air: Rc<ModelAir>,
+    driver_state: RefCell<Driver<'id, X>>,
     commands: Bounded<Command<'id, X>>,
     /// The received buffers the body gives back, at most one per buffer.
     recycled: Bounded<ModelRxBuffer>,
     settings: RefCell<Settings>,
     events: Bounded<LowerMacEvent<'id, ModelTypes<X>>>,
     quarantined: Bounded<Work<'id, X>>,
+    failed_group: Bounded<GroupChange<'id, X>>,
+    failed_group_terminal: Bounded<LowerMacEvent<'id, ModelTypes<X>>>,
     /// The receive buffers out with the body, queued or held.
     rx_out: Cell<usize>,
     /// A confirmation of each interface's settings waits in `events`.
@@ -1538,6 +1679,8 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
         oer_radio_port::Slots<ModelPairwiseKeys<AccessPoint>, MODEL_KEY_SLOTS>,
         oer_radio_port::Slots<ModelGroupKeys<AccessPoint>, MODEL_KEY_SLOTS>,
         oer_radio_port::Slots<ModelBlockAcks, MODEL_BLOCK_ACK_SLOTS>,
+        oer_radio_port::Slots<ModelGroupPermission<Station>, 1>,
+        oer_radio_port::Slots<ModelGroupPermission<AccessPoint>, 1>,
     );
     type Resources<'id> = ModelResources<'id>;
     type Held<'id> = ModelHeld<'id, X>;
@@ -1611,14 +1754,27 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
             access_point_pairwise,
             access_point_group,
             block_acks,
+            [station_group_permission],
+            [access_point_group_permission],
         ) = mint.into_pools();
         let held = ModelHeld {
             air: self.air.clone(),
+            driver_state: RefCell::new(Driver {
+                queues: core::array::from_fn(|_| TxQueue {
+                    waiting: VecDeque::new(),
+                    air: None,
+                }),
+                keys: Vec::new(),
+                removing: Vec::new(),
+                gate: DriverGate::Open,
+            }),
             commands: Bounded::new(MODEL_COMMANDS, "command"),
             recycled: Bounded::new(MODEL_RX_EVENTS, "recycle"),
             settings: RefCell::default(),
             events: Bounded::new(MODEL_EVENTS, "event"),
             quarantined: Bounded::new(1, "answer shape rejection"),
+            failed_group: Bounded::new(2, "failed GTK command"),
+            failed_group_terminal: Bounded::new(2, "uncertain GTK terminal"),
             rx_out: Cell::new(0),
             configured: Cell::new([false; 2]),
             lost: Cell::new(false),
@@ -1648,6 +1804,8 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
             access_point_pairwise,
             access_point_group,
             block_acks,
+            station_group_permission,
+            access_point_group_permission,
             gate,
         };
         (held, ModelLocal::default(), resources)
@@ -1679,16 +1837,6 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
         held: &'p Self::Held<'id>,
         retire: Retire<'p>,
     ) -> impl Future<Output = ()> + use<'p, 'id, C, X> {
-        let mut driver = Driver {
-            queues: core::array::from_fn(|_| TxQueue {
-                waiting: VecDeque::new(),
-                air: None,
-            }),
-            keys: Vec::new(),
-            removing: Vec::new(),
-            failed_replacement: None,
-            gate: DriverGate::Open,
-        };
         poll_fn(move |cx| {
             held.air.passes.set(held.air.passes.get().saturating_add(1));
             // A driver that sees the abandon latch publishes nothing and
@@ -1696,7 +1844,7 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
             if held.air.poisoned.get() || retire.is_requested() || retire.is_abandoned() {
                 return Poll::Ready(());
             }
-            driver.serve(held);
+            held.driver_state.borrow_mut().serve(held);
             if held.air.poisoned.get() {
                 return Poll::Ready(());
             }
@@ -1735,6 +1883,7 @@ impl<C: Ieee80211Capabilities, X: ModelContext> LowerMacBackend for ModelBackend
     type Caps = C;
     const TX_QUEUE_DEPTH: core::num::NonZeroU8 = MODEL_TX_QUEUE_DEPTH;
     const PUBLICATION_BOUND: oer_time::Duration = MODEL_PUBLICATION_BOUND;
+    const GROUP_COMMAND_BOUND: oer_time::Duration = MODEL_GROUP_COMMAND_BOUND;
 }
 
 /// The driver retains the unique open place throughout the closing barrier.
@@ -1744,14 +1893,19 @@ enum DriverGate<'id> {
     Closed,
 }
 
+struct Removal<'id, X: ModelContext> {
+    key: KeyIdentity,
+    removed: Removed<'id, ModelTypes<X>>,
+    group_admitted_at: Option<u64>,
+}
+
 /// The model's hardware, which only the driver owns.
 struct Driver<'id, X: ModelContext> {
     /// The prepared attempts of each queue, the head first.
     queues: [TxQueue<'id, X>; WmmAccessCategory::ALL.len()],
     /// The installed hardware keys.
     keys: Vec<KeyIdentity>,
-    removing: Vec<(KeyIdentity, Removed<'id, ModelTypes<X>>)>,
-    failed_replacement: Option<ModelGroupKey<'id, Station>>,
+    removing: Vec<Removal<'id, X>>,
     gate: DriverGate<'id>,
 }
 
@@ -1820,28 +1974,39 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                         .push_back(Work::Aggregate(aggregate));
                 }
                 Command::InstallKey { key } => self.keys.push(key),
-                Command::ReplaceGroupKey { installed, key_id } => {
-                    // RX already observed under the old installation precedes
-                    // the terminal, even when the command and RX arrive in one
-                    // driver step.
-                    self.receive(held);
-                    if held.air.reject_group_replacement.replace(false) {
-                        self.failed_replacement = Some(installed);
+                Command::Group {
+                    admitted_at,
+                    change,
+                } => {
+                    if admitted_at
+                        .checked_add(MODEL_GROUP_COMMAND_BOUND.as_micros())
+                        .is_none_or(|deadline| held.air.now_micros.get() >= deadline)
+                        || held.air.group_failure.get() == Some(GroupFaultStage::Before)
+                    {
+                        let _capacity_fault = held.failed_group.push(change);
                         held.poison();
                         return;
                     }
-                    installed.identity.0.active.set(false);
-                    self.keys.retain(|key| *key != installed.identity);
-                    let identity =
-                        KeyIdentity::new(installed.slot.index(), key_id.get(), &held.air);
-                    self.keys.push(identity.clone());
-                    held.post(LowerMacEvent::GroupKeyReplaced(ModelGroupKey {
-                        identity,
-                        slot: installed.slot,
-                    }));
+                    if held.air.group_held.get() && !held.draining.get() {
+                        // We popped exactly this cell; restore it without creating
+                        // capacity or allowing a later command to pass it.
+                        held.commands.items.borrow_mut().push_front(Command::Group {
+                            admitted_at,
+                            change,
+                        });
+                        break;
+                    }
+                    self.group_change(held, admitted_at, change);
+                    if held.air.poisoned.get() {
+                        return;
+                    }
                 }
                 Command::RemoveKey { key, removed } => {
-                    self.removing.push((key, removed));
+                    self.removing.push(Removal {
+                        key,
+                        removed,
+                        group_admitted_at: None,
+                    });
                 }
                 Command::CloseGate(gate) => self.gate = DriverGate::Closing(gate),
                 Command::OpenGate => self.gate = DriverGate::Open,
@@ -1864,14 +2029,126 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                 state => state,
             };
         }
-        if idle && held.draining.replace(false) {
-            held.wake_body();
-        }
         if held.air.poisoned.get() {
             return;
         }
         self.finish_removals(held);
+        if held.air.poisoned.get() {
+            return;
+        }
+        if idle
+            && self.removing.is_empty()
+            && held.commands.is_empty()
+            && held.draining.replace(false)
+        {
+            held.wake_body();
+        }
         self.receive(held);
+    }
+
+    fn activate_group(&mut self, held: &ModelHeld<'id, X>, identity: &KeyIdentity, write: bool) {
+        let Some(selected) = identity.0.group.as_ref() else {
+            return;
+        };
+        for key in &self.keys {
+            if key.0.key_id == identity.0.key_id
+                && key
+                    .0
+                    .group
+                    .as_ref()
+                    .is_some_and(|group| group.role == selected.role)
+            {
+                key.0.rx_active.set(false);
+            }
+        }
+        identity.0.rx_active.set(true);
+        if write {
+            held.air
+                .group_writes
+                .set(held.air.group_writes.get().saturating_add(1));
+            let mut installations = held.air.group_installations.borrow_mut();
+            installations.retain(|key| key.upgrade().is_some_and(|key| key.active.get()));
+            installations.push(Rc::downgrade(&identity.0));
+            self.keys.push(identity.clone());
+        }
+    }
+
+    fn group_change(
+        &mut self,
+        held: &ModelHeld<'id, X>,
+        admitted_at: u64,
+        change: GroupChange<'id, X>,
+    ) {
+        // A finite capture of all old ingress stages. Continuous RX is a
+        // separate source; no drain-to-idle loop can postpone this boundary.
+        self.receive(held);
+        let captured = core::mem::take(&mut *held.air.group_rx.borrow_mut());
+        for received in captured {
+            self.deliver(held, received.frame, received.meta);
+        }
+        let terminal = match change {
+            GroupChange::Install(installed) => {
+                let identity = match &installed {
+                    InstalledGroup::Station { key, .. } => &key.identity,
+                    InstalledGroup::AccessPoint { key, .. } => &key.identity,
+                };
+                self.activate_group(held, identity, true);
+                LowerMacEvent::GroupKeyInstalled(installed)
+            }
+            GroupChange::Replace {
+                permission,
+                installed,
+                key_id,
+                key,
+            } => {
+                installed.identity.0.active.set(false);
+                installed.identity.0.rx_active.set(false);
+                self.keys.retain(|key| *key != installed.identity);
+                let identity = KeyIdentity::group(
+                    installed.slot.index(),
+                    key_id,
+                    VifRole::Station,
+                    key,
+                    &held.air,
+                );
+                self.activate_group(held, &identity, true);
+                LowerMacEvent::GroupKeyReplaced {
+                    key: ModelGroupKey {
+                        identity,
+                        slot: installed.slot,
+                    },
+                    permission,
+                }
+            }
+            GroupChange::Select {
+                permission,
+                installed,
+            } => {
+                self.activate_group(held, &installed.identity, false);
+                LowerMacEvent::GroupKeySelected {
+                    key: installed,
+                    permission,
+                }
+            }
+            GroupChange::Remove { key, removed } => {
+                key.0.active.set(false);
+                key.0.rx_active.set(false);
+                self.removing.push(Removal {
+                    key,
+                    removed,
+                    group_admitted_at: Some(admitted_at),
+                });
+                // AP removal can still wait for a published TX to end. Its
+                // permission remains in removing, not in a success terminal.
+                return;
+            }
+        };
+        if held.air.group_failure.get() == Some(GroupFaultStage::After) {
+            let _capacity_fault = held.failed_group_terminal.push(terminal);
+            held.poison();
+        } else {
+            held.post(terminal);
+        }
     }
 
     /// Keep each published head until its result; barriers stop the next
@@ -1930,39 +2207,61 @@ impl<'id, X: ModelContext> Driver<'id, X> {
         // actual prepared/queued/published attempts. Returned Sent identities
         // do not keep a preparation alive and do not delay key-slot reuse.
         let mut pending = Vec::new();
-        for (key, removed) in self.removing.drain(..) {
-            if Rc::strong_count(&key.0.preparations) == 1 {
-                self.keys.retain(|installed| *installed != key);
-                held.post(LowerMacEvent::KeyRemoved(removed));
+        for removal in self.removing.drain(..) {
+            let overdue = removal.group_admitted_at.is_some_and(|admitted| {
+                admitted
+                    .checked_add(MODEL_GROUP_COMMAND_BOUND.as_micros())
+                    .is_none_or(|deadline| held.air.now_micros.get() >= deadline)
+            });
+            let uncertain = removal.group_admitted_at.is_some()
+                && held.air.group_failure.get() == Some(GroupFaultStage::After);
+            if overdue || uncertain || held.air.poisoned.get() {
+                pending.push(removal);
+                held.poison();
+            } else if Rc::strong_count(&removal.key.0.preparations) == 1 {
+                self.keys.retain(|installed| *installed != removal.key);
+                held.post(LowerMacEvent::KeyRemoved(removal.removed));
             } else {
-                pending.push((key, removed));
+                pending.push(removal);
             }
         }
         self.removing = pending;
     }
 
-    /// Deliver the frames the air brought, as many as the receive buffers
-    /// the body does not hold.
+    fn deliver(&mut self, held: &ModelHeld<'id, X>, frame: Vec<u8>, meta: ModelRxMeta) {
+        if held.rx_out.get() < MODEL_RX_EVENTS {
+            held.rx_out.set(held.rx_out.get().saturating_add(1));
+            held.post(LowerMacEvent::Received {
+                frame: ModelRxBuffer {
+                    bytes: frame,
+                    recycled: false,
+                    air: Rc::downgrade(&held.air),
+                    streamed: false,
+                },
+                meta,
+            });
+        } else {
+            held.lost.set(true);
+            held.wake_body();
+        }
+    }
+
+    /// Capture only this finite batch; newly arriving traffic belongs to the
+    /// next pass. Delayed ingress is forced through before a GTK boundary.
     fn receive(&mut self, held: &ModelHeld<'id, X>) {
-        loop {
-            let frame = held.air.rx.borrow_mut().pop_front();
-            let Some((frame, meta)) = frame else {
-                break;
-            };
-            if held.rx_out.get() < MODEL_RX_EVENTS {
-                held.rx_out.set(held.rx_out.get().saturating_add(1));
-                held.post(LowerMacEvent::Received {
-                    frame: ModelRxBuffer {
-                        bytes: frame,
-                        recycled: false,
-                        air: Rc::downgrade(&held.air),
-                        streamed: false,
-                    },
-                    meta,
-                });
+        let captured = core::mem::take(&mut *held.air.rx.borrow_mut());
+        for (frame, meta) in captured {
+            self.deliver(held, frame, meta);
+        }
+        let captured = core::mem::take(&mut *held.air.group_rx.borrow_mut());
+        for received in captured {
+            if received.stage == GroupRxStage::Ready {
+                // Integrity was established at capture under this owner.
+                // Retain it through delivery even if the slot is later reused.
+                let _installation = received.installation;
+                self.deliver(held, received.frame, received.meta);
             } else {
-                held.lost.set(true);
-                held.wake_body();
+                held.air.group_rx.borrow_mut().push_back(received);
             }
         }
     }
@@ -1971,6 +2270,8 @@ impl<'id, X: ModelContext> Driver<'id, X> {
 /// Synthetic model latency, in model time; hardware backends declare their
 /// own PPDU + response/timeout bound. It does not scale with retry-plan length.
 pub const MODEL_PUBLICATION_BOUND: oer_time::Duration = oer_time::Duration::from_millis(1);
+/// Synthetic admission-to-GTK-terminal bound, driven by `ModelAir::set_time`.
+pub const MODEL_GROUP_COMMAND_BOUND: oer_time::Duration = oer_time::Duration::from_millis(2);
 
 struct TxQueue<'id, X: ModelContext> {
     waiting: VecDeque<Work<'id, X>>,
@@ -2001,11 +2302,11 @@ fn withdrawal<'id, X: ModelContext>(
     held: &ModelHeld<'id, X>,
     gate: &DriverGate<'id>,
     key: Option<&KeyIdentity>,
-    removals: &[(KeyIdentity, Removed<'id, ModelTypes<X>>)],
+    removals: &[Removal<'id, X>],
 ) -> Option<WithdrawCause> {
     if held.draining.get() {
         Some(WithdrawCause::Disabled)
-    } else if key.is_some_and(|key| removals.iter().any(|(removed, _)| removed == key)) {
+    } else if key.is_some_and(|key| removals.iter().any(|removal| &removal.key == key)) {
         Some(WithdrawCause::KeyRemoved)
     } else {
         match gate {
@@ -2686,15 +2987,25 @@ where
 
     fn install_group_key(
         &mut self,
+        permission: Slot<'id, ModelGroupPermission<R>, R::GroupPermissionPath>,
         slot: Slot<'id, ModelGroupKeys<R>, R::GroupPath>,
         key_id: GroupKeyId,
-        _: Ccmp128Key,
-    ) -> ModelGroupKey<'id, R> {
-        let identity = KeyIdentity::new(slot.index(), key_id.get(), &self.held.air);
-        self.held.command(Command::InstallKey {
-            key: identity.clone(),
+        key: Ccmp128Key,
+    ) {
+        let identity = KeyIdentity::group(
+            slot.index(),
+            key_id,
+            R::ROLE,
+            CcmpKey::new(key.0),
+            &self.held.air,
+        );
+        self.held.command(Command::Group {
+            admitted_at: self.held.air.now_micros.get(),
+            change: GroupChange::Install(R::installed_group(
+                ModelGroupKey { identity, slot },
+                permission,
+            )),
         });
-        ModelGroupKey { identity, slot }
     }
 
     fn remove_pairwise_key(&mut self, key: ModelPairwiseKey<'id, R>) {
@@ -2705,11 +3016,20 @@ where
         });
     }
 
-    fn remove_group_key(&mut self, key: ModelGroupKey<'id, R>) {
-        key.identity.0.active.set(false);
-        self.held.command(Command::RemoveKey {
-            key: key.identity,
-            removed: R::removed(RemovedKey::Group(key.slot)),
+    fn remove_group_key(
+        &mut self,
+        permission: Slot<'id, ModelGroupPermission<R>, R::GroupPermissionPath>,
+        key: ModelGroupKey<'id, R>,
+    ) {
+        self.held.command(Command::Group {
+            admitted_at: self.held.air.now_micros.get(),
+            change: GroupChange::Remove {
+                key: key.identity,
+                removed: R::removed(RemovedKey::Group {
+                    slot: key.slot,
+                    permission,
+                }),
+            },
         });
     }
 
@@ -3039,12 +3359,34 @@ impl<'p, 'v, 'id: 'p, C: Ieee80211Capabilities, X: ModelContext> StationPhase<'p
 {
     fn replace_group_key(
         &mut self,
+        permission: StationGroupPermission<'id>,
         installed: ModelGroupKey<'id, Station>,
         key_id: GroupKeyId,
-        _: Ccmp128Key,
+        key: Ccmp128Key,
     ) {
-        self.held
-            .command(Command::ReplaceGroupKey { installed, key_id });
+        self.held.command(Command::Group {
+            admitted_at: self.held.air.now_micros.get(),
+            change: GroupChange::Replace {
+                permission,
+                installed,
+                key_id,
+                key: CcmpKey::new(key.0),
+            },
+        });
+    }
+
+    fn select_group_key(
+        &mut self,
+        permission: StationGroupPermission<'id>,
+        installed: ModelGroupKey<'id, Station>,
+    ) {
+        self.held.command(Command::Group {
+            admitted_at: self.held.air.now_micros.get(),
+            change: GroupChange::Select {
+                permission,
+                installed,
+            },
+        });
     }
 
     fn configure(&mut self, _: StationReceive<C>) {

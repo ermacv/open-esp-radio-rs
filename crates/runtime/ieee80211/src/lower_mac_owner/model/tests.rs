@@ -541,17 +541,26 @@ impl Work for GroupReplacement<'_> {
     ) {
         let [slot, _] = resources.station_group;
         let slot_id = slot.index();
-        let installed = phase.station().install_group_key(
+        phase.station().install_group_key(
+            resources.station_group_permission,
             slot,
             GroupKeyId::new(1).unwrap(),
             Ccmp128Key([1; 16]),
         );
+        let Ok(Ok(LowerMacEvent::GroupKeyInstalled(InstalledGroup::Station {
+            key: installed,
+            permission,
+        }))) = phase.next_event().await
+        else {
+            panic!("installation must complete before replacement")
+        };
         let meta = ModelRxMeta::new(Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap(), -50, -90);
         self.air.receive(&[1], meta);
         if self.reject {
-            self.air.reject_next_group_replacement();
+            self.air.fail_next_group_change(GroupFaultStage::Before);
         }
         phase.station().replace_group_key(
+            permission,
             installed,
             GroupKeyId::new(2).unwrap(),
             Ccmp128Key([2; 16]),
@@ -565,7 +574,8 @@ impl Work for GroupReplacement<'_> {
         };
         assert_eq!(frame.bytes, [1]);
         phase.recycle(frame);
-        let Ok(Ok(LowerMacEvent::GroupKeyReplaced(key))) = phase.next_event().await else {
+        let Ok(Ok(LowerMacEvent::GroupKeyReplaced { key, permission })) = phase.next_event().await
+        else {
             panic!("replacement returns its installed owner");
         };
         assert_eq!(key.slot.index(), slot_id);
@@ -576,8 +586,8 @@ impl Work for GroupReplacement<'_> {
         };
         assert_eq!(frame.bytes, [2]);
         phase.recycle(frame);
-        phase.station().remove_group_key(key);
-        let Ok(Ok(LowerMacEvent::KeyRemoved(Removed::Station(RemovedKey::Group(slot))))) =
+        phase.station().remove_group_key(permission, key);
+        let Ok(Ok(LowerMacEvent::KeyRemoved(Removed::Station(RemovedKey::Group { slot, .. })))) =
             phase.next_event().await
         else {
             panic!("the replaced slot returns once");
@@ -750,8 +760,10 @@ impl Work for MaxWork<'_> {
             large,
             station_pairwise,
             station_group,
+            station_group_permission,
             access_point_pairwise,
             access_point_group,
+            access_point_group_permission,
             gate,
             ..
         } = resources;
@@ -783,13 +795,14 @@ impl Work for MaxWork<'_> {
                         .install_pairwise_key(slot, peer, Ccmp128Key([1; 16]));
                 keys += 1;
             }
-            for slot in station_group {
-                let _installed =
-                    phase
-                        .station()
-                        .install_group_key(slot, group, Ccmp128Key([2; 16]));
-                keys += 1;
-            }
+            let [slot, _] = station_group;
+            phase.station().install_group_key(
+                station_group_permission,
+                slot,
+                group,
+                Ccmp128Key([2; 16]),
+            );
+            keys += 1;
             for slot in access_point_pairwise {
                 let _installed =
                     phase
@@ -797,14 +810,15 @@ impl Work for MaxWork<'_> {
                         .install_pairwise_key(slot, peer, Ccmp128Key([3; 16]));
                 keys += 1;
             }
-            for slot in access_point_group {
-                let _installed =
-                    phase
-                        .access_point()
-                        .install_group_key(slot, group, Ccmp128Key([4; 16]));
-                keys += 1;
-            }
-            assert_eq!(keys, MODEL_ALL_KEY_SLOTS);
+            let [slot, _] = access_point_group;
+            phase.access_point().install_group_key(
+                access_point_group_permission,
+                slot,
+                group,
+                Ccmp128Key([4; 16]),
+            );
+            keys += 1;
+            assert_eq!(keys, 2 * MODEL_KEY_SLOTS + 2);
             phase.close_gate(gate);
         } else {
             let _ = gate;
@@ -849,7 +863,7 @@ fn as_much_work_as_allowed_while_every_setting_changes_loses_no_command() {
     assert_eq!(stream.borrow().completions, MODEL_TICKETS);
     assert_eq!(
         air.commands(),
-        (MODEL_TICKETS + MODEL_ALL_KEY_SLOTS + 1) as u32
+        (MODEL_TICKETS + 2 * MODEL_KEY_SLOTS + 2 + 1) as u32
     );
     assert!(air.settings() >= 3);
 }
@@ -1623,3 +1637,5 @@ mod configure;
 mod results;
 
 mod block_ack;
+
+mod group_keys;

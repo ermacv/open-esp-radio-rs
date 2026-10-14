@@ -150,8 +150,10 @@ back; its operations are synchronous and never wait:
   receive Block Ack agreement is a token that holds its slot, replaced or
   removed by value. Its slot holds desired state: repeated add/replace/remove
   writes coalesce to the latest value before the driver's next command.
-  They occupy no command slots; the command bound is tickets + 2 ×
-  (key slots + 1), independent of agreement updates.
+  They occupy no command slots. The command bound is tickets + twice the
+  pairwise slots + one GTK permission per interface + two gate commands;
+  the terminal bound is tickets + pairwise slots + GTK permissions + gate
+  closing + coalesced configuration confirmations + RX buffers.
 - **Settings.** An interface's receive rules, EDCA, the BSS color, a TBTT
   plan and monitor reception take effect before the next submission; the
   latest value of each wins. A receive configuration and a gate's closing
@@ -167,15 +169,36 @@ back; its operations are synchronous and never wait:
 - **Reception.** A received frame's buffer goes back through `recycle`; a
   lagging body loses unsolicited frames as `EventsLost`, never a terminal.
 
-Station GTK replacement consumes the installed owner and its slot in one
-FIFO command. That slot reserves one `GroupKeyReplaced` terminal under the
-key-slot capacity bound, and the terminal returns the new key in the same
-slot. Old-installation RX precedes it and new-installation RX follows it.
-The station owns replay state and switches it at that boundary. A rejected
-hardware write poisons the backend; an internal rollback is not a portable
-terminal. `KeyTypes::GroupSlotIdentity` correlates the operation and terminal
-without confusing slot reuse with `Identity`, which names key material's
-installation for prepared TX.
+Each interface receives one affine `KeyTypes::GroupPermission`, minted once
+with the installation and branded to that port and interface. Every GTK
+install, replacement, selection and removal consumes it and reserves a FIFO
+terminal. The synchronous call transfers resources; `GroupKeyInstalled`,
+`GroupKeyReplaced` or `GroupKeySelected` alone proves success and returns the
+installed owner and permission. `KeyRemoved` returns the vacant slot and
+permission. There is no Busy result or timer retry for admission.
+
+Exactly one installation per association/wire KeyID decrypts at a time;
+other IDs may stay active. Each successful GTK terminal is a real RX cut:
+all delivered old-installation frames precede it, including facts retained
+in hardware, DMA, ISR and software queues; selected-installation frames
+follow it. The cut is finite under continuous ingress. The backend supplies
+completion and deadline wakeups and declares `GROUP_COMMAND_BOUND` from
+admission through terminal or Poisoned. Normal disable completes accepted
+GTK operations within the same bound. The API exposes no cancellation;
+uncertain operations retain their owners and permission for teardown.
+
+`select_group_key` consumes a concrete retained installed owner. It neither
+writes material nor creates an installation nor resets counters, including
+when already current. A higher layer retains each saved key's replay owner
+and exchanges it at the terminal. The port knows no replay state.
+`KeyTypes::GroupSlotIdentity` correlates pending actions with their terminal;
+`Identity` still names the actual material installation used for TX.
+
+The model covers retained same-ID selection and delayed ingress through the
+shared conformance harness. S31 has one STA group slot: an evicted key is no
+longer installed and cannot be selected from a RAM copy. Its hardware cut
+still requires proof with the compiling S31 form; these portable tests do
+not establish it ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6169527922)).
 
 The install mints one `Slot<ConnectionEpochKind>` for Station's epoch source.
 This slot kind belongs to the lower-MAC contract; the backend neither depends

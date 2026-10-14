@@ -69,6 +69,9 @@ impl Ieee80211Capabilities for Caps {
 #[derive(Debug, Eq, PartialEq)]
 struct Ticket(u8);
 
+#[derive(Debug)]
+struct GroupPermission;
+
 struct Buffer([u8; 512], usize);
 
 impl oer_ieee80211_lower_mac::TxBufferClass for Buffer {
@@ -102,6 +105,7 @@ impl StaTokens for Tokens {
     type GroupSlot = Slot;
     type PairwiseKey = Key;
     type GroupKey = Key<Slot>;
+    type GroupPermission = GroupPermission;
     type RxMeta = RxMeta;
 }
 
@@ -204,6 +208,7 @@ enum Seen {
     InstallPairwise([u8; 16]),
     InstallGroup(u8),
     ReplaceGroup(u8),
+    SelectGroup,
     RemoveKey,
 }
 
@@ -310,6 +315,7 @@ impl<'id> World<'id> {
                 absence_place: absence,
                 pairwise: Slot(0),
                 groups: group_slots,
+                group_permission: GroupPermission,
             },
         )
         .unwrap_or_else(|_| panic!("protected fixture has group slots"));
@@ -369,6 +375,7 @@ impl<'id> World<'id> {
                         );
                     }
                     StaAction::InstallGroupKey {
+                        permission,
                         pending,
                         slot,
                         key_id,
@@ -378,6 +385,7 @@ impl<'id> World<'id> {
                         self.installed(
                             now,
                             StaInput::GroupKeyInstalled {
+                                permission,
                                 key: Key(slot),
                                 pending,
                             },
@@ -387,11 +395,38 @@ impl<'id> World<'id> {
                         self.seen.push(Seen::RemoveKey);
                         self.station.input(now, StaInput::PairwiseKeyRemoved(slot));
                     }
-                    StaAction::RemoveGroupKey(Key(slot)) => {
+                    StaAction::RemoveGroupKey {
+                        pending,
+                        key: Key(slot),
+                        permission,
+                    } => {
                         self.seen.push(Seen::RemoveKey);
-                        self.station.input(now, StaInput::GroupKeyRemoved(slot));
+                        self.station.input(
+                            now,
+                            StaInput::GroupKeyRemoved {
+                                pending,
+                                slot,
+                                permission,
+                            },
+                        );
+                    }
+                    StaAction::SelectGroupKey {
+                        pending,
+                        installed,
+                        permission,
+                    } => {
+                        self.seen.push(Seen::SelectGroup);
+                        self.installed(
+                            now,
+                            StaInput::GroupKeySelected {
+                                pending,
+                                key: installed,
+                                permission,
+                            },
+                        );
                     }
                     StaAction::ReplaceGroupKey {
+                        permission,
                         pending,
                         installed,
                         key_id,
@@ -401,6 +436,7 @@ impl<'id> World<'id> {
                         self.installed(
                             now,
                             StaInput::GroupKeyReplaced {
+                                permission,
                                 pending,
                                 key: installed,
                             },
@@ -2281,43 +2317,34 @@ fn a_replacement_terminal_after_disconnect_returns_its_slot_through_removal() {
 }
 
 #[test]
-fn group_slots_are_fungible_and_the_full_pool_proves_all_returns() {
-    installed(|_mint| {
-        for reverse in [false, true] {
-            let mut keys = Keys::<Tokens>::new(Slot(0), [Slot(7), Slot(42)]);
-            let mut epochs = LinkEpochSource::for_test(0);
-            let epoch = epochs.begin();
-            let key_id = GroupKeyId::new(1).unwrap();
-            let (a, pending_a) = keys
-                .take_group_slot(epoch, key_id, &CcmpKey::new([0; 16]))
-                .unwrap();
-            let (b, pending_b) = keys
-                .take_group_slot(epoch, key_id, &CcmpKey::new([0; 16]))
-                .unwrap();
-            assert!(
-                keys.take_group_slot(epoch, key_id, &CcmpKey::new([0; 16]))
-                    .is_none()
-            );
-            keys.group_installed(pending_a, Key(a), true);
-            keys.group_installed(pending_b, Key(b), true);
-            let (_, Key(a)) = keys.take_group_key().unwrap();
-            let (_, Key(b)) = keys.take_group_key().unwrap();
-            let (first, last) = if reverse { (b, a) } else { (a, b) };
-            assert!(!keys.clear());
-            keys.group_removed(first);
-            assert!(!keys.clear());
-            keys.group_removed(last);
-            assert!(keys.clear());
-            // Either returned raw slot is usable for any next key ID.
-            let new_id = GroupKeyId::new(2).unwrap();
-            let (slot, pending) = keys
-                .take_group_slot(epochs.begin(), new_id, &CcmpKey::new([1; 16]))
-                .unwrap();
-            assert_eq!(pending.key_id, new_id);
-            assert!(matches!(slot, Slot(7) | Slot(42)));
-            assert!(!keys.clear());
-        }
-    });
+fn group_removal_returns_permission_before_another_owner_can_leave() {
+    let mut keys = Keys::<Tokens>::new(Slot(0), [Slot(7), Slot(42)], GroupPermission);
+    for (id, slot) in [(1, 7), (2, 42)] {
+        let place = keys.groups.reserve().unwrap();
+        let free = keys.group_slots.free.take().unwrap();
+        assert!(matches!(free, Slot(7) | Slot(42)));
+        keys.groups.install(
+            InstalledGroup {
+                place,
+                key_id: GroupKeyId::new(id).unwrap(),
+                material: CcmpKey::new([id; 16]),
+                key: Key(Slot(slot)),
+                replay: GroupReplay::Retained(
+                    oer_ieee80211_mac::ccmp::CcmpRxReplayState::from_receive_sequence([0; 8])
+                        .unwrap(),
+                ),
+            },
+            true,
+        );
+    }
+    let (permission, entry) = keys.take_group_key(false).unwrap();
+    assert!(keys.take_group_key(false).is_none());
+    assert!(!keys.clear());
+    keys.group_removed(entry.key.0, permission, entry.place);
+    let (permission, entry) = keys.take_group_key(false).unwrap();
+    assert!(!keys.clear());
+    keys.group_removed(entry.key.0, permission, entry.place);
+    assert!(keys.clear());
 }
 
 #[test]
@@ -2805,12 +2832,17 @@ fn handshake_deadline_covers_every_message_key_and_tx_wait() {
                 });
             }
             if point >= 5 {
-                let Some(StaAction::InstallGroupKey { pending, slot, .. }) =
-                    world.station.poll_action(at(33))
+                let Some(StaAction::InstallGroupKey {
+                    pending,
+                    slot,
+                    permission,
+                    ..
+                }) = world.station.poll_action(at(33))
                 else {
                     panic!("GTK")
                 };
                 world.pending_installs.push(StaInput::GroupKeyInstalled {
+                    permission,
                     pending,
                     key: Key(slot),
                 });
@@ -3468,6 +3500,7 @@ fn protected_construction_without_group_slots_returns_resources_for_open_mode() 
             absence_place: absence_place.unwrap(),
             pairwise: Slot(0),
             groups: [],
+            group_permission: GroupPermission,
         };
         let Err(MissingGroupSlot {
             mut config,
@@ -3539,19 +3572,120 @@ fn probe_encoding_failure_returns_credit_and_missing_epoch_reports_link_change()
 #[test]
 fn pending_group_material_is_redacted_and_moves_into_the_installed_record() {
     installed(|_mint| {
-        let mut keys = Keys::<Tokens>::new(Slot(0), [Slot(1)]);
+        let mut keys = Keys::<Tokens>::new(Slot(0), [Slot(1)], GroupPermission);
         let mut epochs = LinkEpochSource::for_test(0);
         let id = GroupKeyId::new(1).unwrap();
         let material = CcmpKey::new([173; 16]);
-        let (slot, pending) = keys.take_group_slot(epochs.begin(), id, &material).unwrap();
+        let slot = keys.group_slots.free.take().unwrap();
+        let pending = PendingGroupKey {
+            epoch: epochs.begin(),
+            key_id: id,
+            material: CcmpKey::new(*material.as_bytes()),
+            place: keys.groups.reserve().unwrap(),
+            replay: GroupReplay::Retained(
+                oer_ieee80211_mac::ccmp::CcmpRxReplayState::from_receive_sequence([0; 8]).unwrap(),
+            ),
+        };
         let printed = std::format!("{pending:?}");
         assert!(printed.contains("[REDACTED]"));
         assert!(!printed.contains("173"));
-        keys.group_installed(pending, Key(slot), true);
+        let permission = keys.group_permission.take().unwrap();
+        keys.group_installed(pending, Key(slot), permission, true, None, false);
         assert!(keys.groups.same_material(id, material.as_bytes()));
-        let (_, Key(slot)) = keys.take_group_key().unwrap();
+        let (permission, entry) = keys.take_group_key(false).unwrap();
         assert!(!keys.groups.same_material(id, material.as_bytes()));
-        keys.group_removed(slot);
+        keys.group_removed(entry.key.0, permission, entry.place);
         assert!(keys.clear());
+    });
+}
+
+#[test]
+fn repeated_m3_selects_retained_material_and_restores_each_live_replay_frontier() {
+    use oer_ieee80211_mac::ccmp::{CcmpHeader, CcmpPacketNumber, CcmpRxProtection};
+    installed(|mint| {
+        let (mut world, ptk) = wpa2_associated(mint, 2);
+        let id = GroupKeyId::new(1).unwrap();
+        let header = |pn| CcmpHeader::new(CcmpPacketNumber::new(pn).unwrap(), id.key_id());
+        let lanes = core::iter::once(None)
+            .chain((0..16).map(Some))
+            .collect::<Vec<_>>();
+        world
+            .outcomes
+            .push_back((ended(TxEndStatus::AckTimeout), true));
+        world.receive(at(33), &retry_message3(&ptk, 2, 0x99));
+        for &tid in &lanes {
+            active_replay(&mut world.station.state)
+                .unwrap()
+                .check(CcmpRxProtection::Group, tid, header(500))
+                .unwrap();
+        }
+        world.hold_key_installs = true;
+        world
+            .outcomes
+            .push_back((ended(TxEndStatus::AckTimeout), true));
+        world.receive(at(34), &retry_message3(&ptk, 3, 0x55));
+        assert_eq!(world.pending_installs.len(), 1);
+        assert!(world.station.keys.groups.current_material(id, &[0x99; 16]));
+        // RX A after install(B) was admitted but before its terminal.
+        for &tid in &lanes {
+            active_replay(&mut world.station.state)
+                .unwrap()
+                .check(CcmpRxProtection::Group, tid, header(700))
+                .unwrap();
+        }
+        world
+            .station
+            .input(at(35), world.pending_installs.pop().unwrap());
+        world.run(at(35));
+        assert!(!world.station.is_connected());
+        assert!(world.station.keys.groups.current_material(id, &[0x55; 16]));
+        for &tid in &lanes {
+            active_replay(&mut world.station.state)
+                .unwrap()
+                .check(CcmpRxProtection::Group, tid, header(1))
+                .unwrap();
+        }
+        world.take();
+        world.receive(at(36), &retry_message3(&ptk, 4, 0x99));
+        assert_eq!(world.pending_installs.len(), 1);
+        assert_eq!(
+            world
+                .seen
+                .iter()
+                .filter(|seen| **seen == Seen::SelectGroup)
+                .count(),
+            1
+        );
+        assert!(!world.seen.iter().any(|seen| matches!(
+            seen,
+            Seen::InstallGroup(_) | Seen::ReplaceGroup(_) | Seen::InstallPairwise(_)
+        )));
+        assert!(world.station.keys.groups.current_material(id, &[0x55; 16]));
+        // RX B still advances B while select(A) waits. A must retain 700.
+        for &tid in &lanes {
+            active_replay(&mut world.station.state)
+                .unwrap()
+                .check(CcmpRxProtection::Group, tid, header(900))
+                .unwrap();
+        }
+        world
+            .station
+            .input(at(37), world.pending_installs.pop().unwrap());
+        world.run(at(37));
+        assert!(world.station.is_connected());
+        assert!(world.station.keys.groups.current_material(id, &[0x99; 16]));
+        assert!(!world.station.keys.groups.same_material(id, &[0x55; 16]));
+        for &tid in &lanes {
+            let replay = active_replay(&mut world.station.state).unwrap();
+            assert!(
+                replay
+                    .check(CcmpRxProtection::Group, tid, header(700))
+                    .is_err()
+            );
+            replay
+                .check(CcmpRxProtection::Group, tid, header(701))
+                .unwrap();
+        }
+        assert!(world.station.keys.group_permission.is_some());
     });
 }

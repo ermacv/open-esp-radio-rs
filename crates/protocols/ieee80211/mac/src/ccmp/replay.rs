@@ -3,8 +3,9 @@
 //! each installed group key by its index, each with one lane for non-QoS
 //! frames and one per TID ([`CcmpRxReplayState`]). A group key's frontiers
 //! start from its receive sequence when it is installed and leave with its
-//! removal, so the old and the new key of a rekey are both checked while
-//! both are installed.
+//! removal. Only one installation of each wire ID is active; the station
+//! retains other installations' frontiers and exchanges them at a backend
+//! RX terminal without reinitializing their counters.
 //!
 //! The receive path checks a frame here once it is decrypted and verified,
 //! and after the reorder of its TID, when the receiver has one: within a
@@ -72,14 +73,32 @@ impl CcmpRxReplayEpoch {
         group_key_id: GroupKeyId,
         group_receive_sequence: [u8; 8],
     ) -> Result<Self, CcmpRxReplayError> {
-        let pairwise = CcmpRxReplayState::from_receive_sequence(pairwise_receive_sequence)
-            .map_err(|_| CcmpRxReplayError::InvalidPairwiseReceiveSequence)?;
-        let mut epoch = Self {
-            pairwise,
-            groups: [None, None, None, None],
-        };
+        let mut epoch = Self::pairwise(pairwise_receive_sequence)?;
         epoch.install_group(group_key_id, group_receive_sequence)?;
         Ok(epoch)
+    }
+
+    /// Start an association's pairwise frontier before the first GTK terminal.
+    /// No group frame is admitted until its actual installation succeeds.
+    pub fn pairwise(receive_sequence: [u8; 8]) -> Result<Self, CcmpRxReplayError> {
+        let pairwise = CcmpRxReplayState::from_receive_sequence(receive_sequence)
+            .map_err(|_| CcmpRxReplayError::InvalidPairwiseReceiveSequence)?;
+        Ok(Self {
+            pairwise,
+            groups: [None, None, None, None],
+        })
+    }
+
+    /// Exchange the active installation of this wire ID at the backend's RX
+    /// boundary. The caller retains the returned frontier with its old key;
+    /// reselecting it exchanges that same owner back, never reinitializing RSC.
+    #[must_use = "retain the old frontier if its installed key is retained"]
+    pub fn exchange_group(
+        &mut self,
+        key_id: GroupKeyId,
+        state: CcmpRxReplayState,
+    ) -> Option<CcmpRxReplayState> {
+        key_id.select_mut(&mut self.groups).replace(state)
     }
 
     /// Whether the group key of `key_id` is installed.

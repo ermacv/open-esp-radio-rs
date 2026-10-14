@@ -60,6 +60,7 @@ impl StaTokens for Tokens {
     type GroupSlot = ();
     type PairwiseKey = ();
     type GroupKey = ();
+    type GroupPermission = ();
     type RxMeta = RxMeta;
 }
 fn construct<'id, const T: usize, const B: usize, const G: usize>(
@@ -78,6 +79,7 @@ fn construct<'id, const T: usize, const B: usize, const G: usize>(
             absence_place: absence,
             pairwise: (),
             groups: [(); G],
+            group_permission: (),
         },
     )
     .unwrap_or_else(|_| panic!("protected fixture has group slots"))

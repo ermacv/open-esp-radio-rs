@@ -271,7 +271,7 @@ installed owners occupy private reserved records in installation order. A
 pending install owns a vacant record; returning it cannot overflow a pool
 of retiring keys. With a free physical slot the new GTK installs first and
 the superseded key retires after Group Message 2. A full pool uses
-`replace_group_key`, selecting the same ID or the oldest non-current owner;
+`replace_group_key`, evicting the oldest non-current installation;
 only a one-slot backend replaces its sole current key for a new ID.
 
 Key actions and pending/installed GTK records keep material in RSN's
@@ -280,22 +280,40 @@ owned bytes when a record retires or an unfinished action is dropped.
 Material comparison borrows those bytes; this makes no claim about
 arbitrary compiler temporaries or copies made inside hardware adapters.
 
-The service retains `PendingGroupReplacement` and matches the port's
-`GroupKeyReplaced` terminal by slot identity. Until that terminal RX uses
-the previous epoch; the successor starts at KeyRSC there, even when its PN
-is lower. Identical ID and material produce a response without reinstalling
-or changing replay. Hardware rejection poisons the port; rollback is a
-driver detail, never a portable success result. The model verifies the RX
-ordering and returned slot; the S31 runtime migration is still separate.
+Each station receives one non-cloneable GTK mutation permission. Install,
+replace, select and remove all consume it, so a pending operation excludes
+another mutation without blocking RX. Each call reserves its FIFO terminal
+and wakes the backend. The backend's `GROUP_COMMAND_BOUND` covers admission
+through success or Poisoned, including the finite DMA/ISR/software RX cut.
+Normal disable completes accepted commands within that bound. The interface
+exposes no cancellation command; uncertain work remains owned for teardown.
 
-Installation actions carry private, non-cloneable `PendingPairwiseKey` or
-`PendingGroupKey`. The pairwise token names its one cell and link epoch;
-the group token names the key ID and link epoch. Inputs cannot independently
-relabel an installed group key. An old epoch's response takes normal removal.
-A raw group slot returns to the free pool regardless of which key it held.
-The full pool proves that every group installation/removal ended. Leaving
-also waits for the pairwise slot before reporting. Removals can remain
-outstanding concurrently and return in either order.
+The service retains the private pending action and matches its terminal by
+physical slot. It never fabricates `GroupKeyInstalled` at command submission.
+Until the terminal RX updates the old epoch. New material starts at KeyRSC
+there, even below the old frontier. Selecting retained identical material
+consumes its concrete installed owner and restores that record's live replay
+frontiers; it performs no material write or counter initialization. Repeating
+the current material leaves its installation and frontiers unchanged.
+
+Exactly one installation of each association/wire KeyID can decrypt; other
+IDs can remain active. Retained records of the same ID keep their own replay
+state outside the active RX epoch. M4, group response and retirement resume
+only after the matching terminal. Selection does not change physical
+installation age. Every removal keeps its record place and material until
+the terminal returns the slot and permission. Pairwise removal can overlap
+a group mutation; two group mutations cannot overlap.
+
+Hardware rejection poisons the port; internal rollback is not a success
+terminal. The model and shared conformance exercise delayed ingress and
+fault/disable custody. This does not prove S31's hardware boundary: its one
+STA group slot cannot retain an evicted installation. A RAM material copy is
+not a selectable installed owner. S31's compiling form and migration remain
+separate ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6169527922)).
+
+Installation actions carry private pending tokens naming their cell, key ID
+and link epoch. An old epoch's terminal returns its resources for normal
+removal. Leaving waits for all slots and the GTK permission before reporting.
 
 `Configure` carries `PendingConfiguration`. Station grants only one such
 token until it returns in `Configured`; an old epoch's reply releases that

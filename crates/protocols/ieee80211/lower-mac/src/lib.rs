@@ -131,11 +131,12 @@ pub use owner::{
 };
 pub use phase::{
     AccessPointPhase, AggregateCompleted, Attempt, AttemptKey, CheckedPoolSource, ClassFrame,
-    ClassSizedFrame, GateClosed, GateIssuer, GateOpen, GatePool, InterfaceAttempt, InterfaceKeys,
-    InterfacePhase, KeyTypes, LowerMacEvent, LowerMacPhase, PhaseTypes, PoolMpdu, PoolPreparation,
-    PoolSource, PreparationError, PreparationRefused, PreparedTx, RETRY_STAGES, Removed,
-    RemovedKey, RetransmissionPlan, RetryPlan, RetryStage, ReturnedMpdu, RoleKeys, SingleCompleted,
-    StationPhase, TxBufferClass, TxBufferMemory, TxBufferPool, TxCompleted, TxProtection, TxSource,
+    ClassSizedFrame, GateClosed, GateIssuer, GateOpen, GatePool, InstalledGroup, InterfaceAttempt,
+    InterfaceKeys, InterfacePhase, KeyTypes, LowerMacEvent, LowerMacPhase, PhaseTypes, PoolMpdu,
+    PoolPreparation, PoolSource, PreparationError, PreparationRefused, PreparedTx, RETRY_STAGES,
+    Removed, RemovedKey, RetransmissionPlan, RetryPlan, RetryStage, ReturnedMpdu, RoleKeys,
+    SingleCompleted, StationPhase, TxBufferClass, TxBufferMemory, TxBufferPool, TxCompleted,
+    TxProtection, TxSource,
 };
 pub use rx::{
     LinkMetric, RxBuffer, RxCryptoStatus, RxEvidence, RxMeta, RxMetadata, SignalMetadata,

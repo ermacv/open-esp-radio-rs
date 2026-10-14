@@ -41,8 +41,10 @@
 //! rate statistics, and the service continues. A `Sent` return retains its
 //! external body until its machine retires the MPDU; service never renews
 //! a completion merely to route it.
-//! Key-install actions carry Station's pending tokens straight back with
-//! installed keys. Configure retains its one pending token until the port
+//! GTK actions move the unique mutation permission into the port. Their
+//! private pending token stays here until the matching FIFO slot terminal;
+//! admission never fabricates installation success. RX continues through the
+//! old replay epoch while the command is pending. Configure retains its one pending token until the port
 //! reports it applied; Station cannot issue another before that return.
 //! Arbiter answers return their affine places/leases in the same step.
 //! Commands and MSDUs use affine SPSC queues with atomic wakeups. Each
@@ -68,9 +70,9 @@ use oer_ieee80211_arbiter::{
     AccessPointCommand, AccessPointFact, Arbiter, ArbiterAction, ArbiterNotice,
 };
 use oer_ieee80211_lower_mac::{
-    Ccmp128Key, ClassFrame, CoexPriority, Ieee80211Capabilities, InterfacePhase, KeyTypes,
-    LowerMacBackend, LowerMacEvent, LowerMacPhase, PhaseTypes, PoolMpdu, PoolSource, Protection,
-    Removed, RemovedKey, RetransmissionPlan, ReturnedMpdu, RxBuffer, StationPhase,
+    Ccmp128Key, ClassFrame, CoexPriority, Ieee80211Capabilities, InstalledGroup, InterfacePhase,
+    KeyTypes, LowerMacBackend, LowerMacEvent, LowerMacPhase, PhaseTypes, PoolMpdu, PoolSource,
+    Protection, Removed, RemovedKey, RetransmissionPlan, ReturnedMpdu, RxBuffer, StationPhase,
     SupportedChannel, SupportedCoex, SupportedPower, TxBufferClass, TxBufferPool, TxCompleted,
     TxMpdu, TxOutcome, TxPower, TxProtection, TxSource, VifRole,
 };
@@ -205,6 +207,7 @@ where
     type GroupSlot = <Ty::StationKeys as KeyTypes<'id>>::GroupSlot;
     type PairwiseKey = <Ty::StationKeys as KeyTypes<'id>>::PairwiseKey;
     type GroupKey = <Ty::StationKeys as KeyTypes<'id>>::GroupKey;
+    type GroupPermission = <Ty::StationKeys as KeyTypes<'id>>::GroupPermission;
     type RxMeta = Ty::RxMeta;
 }
 
@@ -465,15 +468,19 @@ struct PendingActions<'id, B: StationPort<'id>> {
             <B::Types as PhaseTypes<'id>>::EpochPath,
         >,
     >,
-    replacing: Option<PendingReplacement<'id, B>>,
+    group: Option<PendingGroup<'id, B>>,
 }
 
-struct PendingReplacement<'id, B: StationPort<'id>> {
+struct PendingGroup<'id, B: StationPort<'id>> {
     slot: <<B::Types as PhaseTypes<'id>>::StationKeys as KeyTypes<'id>>::GroupSlotIdentity,
-    pending: oer_ieee80211_sta::machine::PendingGroupReplacement<
-        'id,
-        <B::Types as PhaseTypes<'id>>::EpochPath,
-    >,
+    action: PendingGroupAction<'id, <B::Types as PhaseTypes<'id>>::EpochPath>,
+}
+
+enum PendingGroupAction<'id, Path: oer_radio_port::PoolPath> {
+    Install(oer_ieee80211_sta::machine::PendingGroupKey<'id, Path>),
+    Replace(oer_ieee80211_sta::machine::PendingGroupReplacement<'id, Path>),
+    Select(oer_ieee80211_sta::machine::PendingGroupSelection<'id, Path>),
+    Remove(oer_ieee80211_sta::machine::PendingGroupRemoval),
 }
 
 /// What a step left the loop to do.
@@ -521,7 +528,7 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
             counters: ServiceCounters::default(),
             pending: PendingActions {
                 configuring: None,
-                replacing: None,
+                group: None,
             },
             held: [const { None }; RX],
         }
@@ -1150,26 +1157,82 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
                 self.station.input(now, StaInput::PairwiseKeyRemoved(slot));
                 None
             }
-            LowerMacEvent::KeyRemoved(Removed::Station(RemovedKey::Group(slot))) => {
-                self.station.input(now, StaInput::GroupKeyRemoved(slot));
+            LowerMacEvent::KeyRemoved(Removed::Station(RemovedKey::Group { slot, permission })) => {
+                let pending = self.pending.group.take().ok_or(BackendContractViolation)?;
+                if pending.slot
+                    != <B::Types as PhaseTypes<'id>>::StationKeys::vacant_group_slot_identity(&slot)
+                {
+                    return Err(BackendContractViolation);
+                }
+                let PendingGroupAction::Remove(pending) = pending.action else {
+                    return Err(BackendContractViolation);
+                };
+                self.station.input(
+                    now,
+                    StaInput::GroupKeyRemoved {
+                        pending,
+                        slot,
+                        permission,
+                    },
+                );
                 None
             }
-            LowerMacEvent::GroupKeyReplaced(key) => {
-                let replacement = self
-                    .pending
-                    .replacing
-                    .take()
-                    .ok_or(BackendContractViolation)?;
-                if replacement.slot
+            LowerMacEvent::GroupKeyInstalled(InstalledGroup::Station { key, permission }) => {
+                let pending = self.pending.group.take().ok_or(BackendContractViolation)?;
+                if pending.slot
                     != <B::Types as PhaseTypes<'id>>::StationKeys::group_slot_identity(&key)
                 {
                     return Err(BackendContractViolation);
                 }
+                let PendingGroupAction::Install(pending) = pending.action else {
+                    return Err(BackendContractViolation);
+                };
+                self.station.input(
+                    now,
+                    StaInput::GroupKeyInstalled {
+                        pending,
+                        key,
+                        permission,
+                    },
+                );
+                None
+            }
+            LowerMacEvent::GroupKeyReplaced { key, permission } => {
+                let pending = self.pending.group.take().ok_or(BackendContractViolation)?;
+                if pending.slot
+                    != <B::Types as PhaseTypes<'id>>::StationKeys::group_slot_identity(&key)
+                {
+                    return Err(BackendContractViolation);
+                }
+                let PendingGroupAction::Replace(pending) = pending.action else {
+                    return Err(BackendContractViolation);
+                };
                 self.station.input(
                     now,
                     StaInput::GroupKeyReplaced {
-                        pending: replacement.pending,
+                        pending,
                         key,
+                        permission,
+                    },
+                );
+                None
+            }
+            LowerMacEvent::GroupKeySelected { key, permission } => {
+                let pending = self.pending.group.take().ok_or(BackendContractViolation)?;
+                if pending.slot
+                    != <B::Types as PhaseTypes<'id>>::StationKeys::group_slot_identity(&key)
+                {
+                    return Err(BackendContractViolation);
+                }
+                let PendingGroupAction::Select(pending) = pending.action else {
+                    return Err(BackendContractViolation);
+                };
+                self.station.input(
+                    now,
+                    StaInput::GroupKeySelected {
+                        pending,
+                        key,
+                        permission,
                     },
                 );
                 None
@@ -1178,6 +1241,7 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
             // TBTT or TSF sample yet.
             LowerMacEvent::Configured(VifRole::AccessPoint)
             | LowerMacEvent::KeyRemoved(Removed::AccessPoint(_))
+            | LowerMacEvent::GroupKeyInstalled(InstalledGroup::AccessPoint { .. })
             | LowerMacEvent::Tbtt(_)
             | LowerMacEvent::TsfSampled(_) => None,
         })
@@ -1469,37 +1533,73 @@ where
         },
         StaAction::InstallGroupKey {
             pending,
+            permission,
             slot,
             key_id,
             key,
-        } => StaInput::GroupKeyInstalled {
-            key: phase
-                .station()
-                .install_group_key(slot, key_id, Ccmp128Key(*key.as_bytes())),
-            pending,
-        },
+        } => {
+            let identity =
+                <B::Types as PhaseTypes<'id>>::StationKeys::vacant_group_slot_identity(&slot);
+            pending_actions.group = Some(PendingGroup {
+                slot: identity,
+                action: PendingGroupAction::Install(pending),
+            });
+            phase.station().install_group_key(
+                permission,
+                slot,
+                key_id,
+                Ccmp128Key(*key.as_bytes()),
+            );
+            return Ok(Follow::Nothing);
+        }
         StaAction::RemovePairwiseKey(key) => {
             phase.station().remove_pairwise_key(key);
             return Ok(Follow::Nothing);
         }
         StaAction::ReplaceGroupKey {
             pending,
+            permission,
             installed,
             key_id,
             key,
         } => {
-            if pending_actions.replacing.is_some() {
-                return Err(());
-            }
             let slot = <B::Types as PhaseTypes<'id>>::StationKeys::group_slot_identity(&installed);
-            pending_actions.replacing = Some(PendingReplacement { slot, pending });
-            phase
-                .station()
-                .replace_group_key(installed, key_id, Ccmp128Key(*key.as_bytes()));
+            pending_actions.group = Some(PendingGroup {
+                slot,
+                action: PendingGroupAction::Replace(pending),
+            });
+            phase.station().replace_group_key(
+                permission,
+                installed,
+                key_id,
+                Ccmp128Key(*key.as_bytes()),
+            );
             return Ok(Follow::Nothing);
         }
-        StaAction::RemoveGroupKey(key) => {
-            phase.station().remove_group_key(key);
+        StaAction::SelectGroupKey {
+            pending,
+            permission,
+            installed,
+        } => {
+            let slot = <B::Types as PhaseTypes<'id>>::StationKeys::group_slot_identity(&installed);
+            pending_actions.group = Some(PendingGroup {
+                slot,
+                action: PendingGroupAction::Select(pending),
+            });
+            phase.station().select_group_key(permission, installed);
+            return Ok(Follow::Nothing);
+        }
+        StaAction::RemoveGroupKey {
+            pending,
+            key,
+            permission,
+        } => {
+            let slot = <B::Types as PhaseTypes<'id>>::StationKeys::group_slot_identity(&key);
+            pending_actions.group = Some(PendingGroup {
+                slot,
+                action: PendingGroupAction::Remove(pending),
+            });
+            phase.station().remove_group_key(permission, key);
             return Ok(Follow::Nothing);
         }
         StaAction::Transmit(transmit) => {

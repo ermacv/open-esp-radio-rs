@@ -16,6 +16,7 @@
 //! | a transmit ticket ([`PhaseTypes::TicketKind`]) | [`InterfacePhase::submit`] | [`LowerMacEvent::TxCompleted`] |
 //! | a transmit buffer of a class ([`TxBufferClass`]), its memory ([`TxBufferMemory`]) | [`InterfacePhase::submit`], together with its [`ClassFrame`] | [`LowerMacEvent::TxCompleted`], every buffer of the attempt |
 //! | a key slot of a role's kind | [`InterfacePhase::install_pairwise_key`], [`InterfacePhase::install_group_key`] (the installed key holds it) | [`LowerMacEvent::KeyRemoved`], after a removal |
+//! | one GTK mutation permission per interface ([`KeyTypes::GroupPermission`]) | install/replace/select/remove GTK | the corresponding FIFO success terminal; uncertainty keeps it for teardown |
 //! | a Block Ack slot | [`InterfacePhase::add_block_ack`] (the agreement holds it) | [`InterfacePhase::remove_block_ack`] |
 //! | the open gate ([`GateOpen`]) | [`LowerMacPhase::close_gate`] | [`LowerMacPhase::open_gate`], which takes the closed gate ([`GateClosed`]) that [`LowerMacEvent::GateClosed`] gave |
 //! | a received frame's buffer | [`LowerMacEvent::Received`] | [`LowerMacPhase::recycle`] |
@@ -345,7 +346,23 @@ pub enum LowerMacEvent<'id, P: PhaseTypes<'id>> {
     /// A station GTK replacement completed in the same slot. RX before this
     /// terminal belongs to the previous installation; RX after it belongs to
     /// this one. Replay state is owned above the port.
-    GroupKeyReplaced(<P::StationKeys as KeyTypes<'id>>::GroupKey),
+    GroupKeyReplaced {
+        /// The installed owner, returned exactly once.
+        key: <P::StationKeys as KeyTypes<'id>>::GroupKey,
+        /// Exclusive admission for the next GTK mutation.
+        permission: <P::StationKeys as KeyTypes<'id>>::GroupPermission,
+    },
+    /// A new installation is effective. This terminal is an RX boundary,
+    /// including frames already captured by DMA/ISR/software queues.
+    GroupKeyInstalled(InstalledGroup<'id, P>),
+    /// A retained installation is selected without writing material or
+    /// resetting counters. It is the sole RX-active installation of its ID.
+    GroupKeySelected {
+        /// The installed owner, returned exactly once.
+        key: <P::StationKeys as KeyTypes<'id>>::GroupKey,
+        /// Exclusive admission for the next GTK mutation.
+        permission: <P::StationKeys as KeyTypes<'id>>::GroupPermission,
+    },
 }
 
 /// An accepted attempt's terminal, retaining its closed operation owner.
@@ -387,6 +404,10 @@ pub trait KeyTypes<'id> {
     type PairwiseKey: 'id;
     /// An installed group key, which holds its slot.
     type GroupKey: 'id;
+    /// The installation mints exactly one affine mutation permission per
+    /// interface. It has no public constructor, Copy or Clone implementation.
+    /// Every group operation holds it until its terminal; RX needs no loan.
+    type GroupPermission: 'id;
     /// Backend identity of one installation, distinct from its reusable slot.
     type Identity;
     /// Stable identity of a group slot within this installation, retained
@@ -398,6 +419,8 @@ pub trait KeyTypes<'id> {
     fn group_identity(key: &Self::GroupKey) -> Self::Identity;
     /// The group key's slot identity, independent of its key installation.
     fn group_slot_identity(key: &Self::GroupKey) -> Self::GroupSlotIdentity;
+    /// Correlate a pending installation before an installed owner exists.
+    fn vacant_group_slot_identity(slot: &Self::GroupSlot) -> Self::GroupSlotIdentity;
 }
 
 /// A removed key's slot, of its kind.
@@ -405,7 +428,31 @@ pub enum RemovedKey<'id, K: KeyTypes<'id>> {
     /// A pairwise key's slot.
     Pairwise(K::PairwiseSlot),
     /// A group key's slot.
-    Group(K::GroupSlot),
+    Group {
+        /// The now-vacant physical slot.
+        slot: K::GroupSlot,
+        /// Exclusive admission for the next GTK mutation.
+        permission: K::GroupPermission,
+    },
+}
+
+/// The successful installation and the permission for the next mutation.
+/// Only the driver creates this proof after establishing the RX boundary.
+pub enum InstalledGroup<'id, P: PhaseTypes<'id>> {
+    /// The station's group installation.
+    Station {
+        /// The installed owner, returned exactly once.
+        key: <P::StationKeys as KeyTypes<'id>>::GroupKey,
+        /// Exclusive admission for the next GTK mutation.
+        permission: <P::StationKeys as KeyTypes<'id>>::GroupPermission,
+    },
+    /// The access point's group installation.
+    AccessPoint {
+        /// The installed owner, returned exactly once.
+        key: <P::AccessPointKeys as KeyTypes<'id>>::GroupKey,
+        /// Exclusive admission for the next GTK mutation.
+        permission: <P::AccessPointKeys as KeyTypes<'id>>::GroupPermission,
+    },
 }
 
 /// A removed key's slot, of its role.
@@ -431,6 +478,11 @@ pub trait RoleKeys<'id, P: PhaseTypes<'id>>: InterfaceRole {
 
     /// The removed key's slot, as the event names it.
     fn removed(key: RemovedKey<'id, Self::Keys>) -> Removed<'id, P>;
+    /// Preserve role when publishing an actual group installation terminal.
+    fn installed_group(
+        key: <Self::Keys as KeyTypes<'id>>::GroupKey,
+        permission: <Self::Keys as KeyTypes<'id>>::GroupPermission,
+    ) -> InstalledGroup<'id, P>;
 }
 
 impl<'id, P: PhaseTypes<'id>> RoleKeys<'id, P> for Station {
@@ -448,6 +500,12 @@ impl<'id, P: PhaseTypes<'id>> RoleKeys<'id, P> for Station {
 
     fn removed(key: RemovedKey<'id, Self::Keys>) -> Removed<'id, P> {
         Removed::Station(key)
+    }
+    fn installed_group(
+        key: <Self::Keys as KeyTypes<'id>>::GroupKey,
+        permission: <Self::Keys as KeyTypes<'id>>::GroupPermission,
+    ) -> InstalledGroup<'id, P> {
+        InstalledGroup::Station { key, permission }
     }
 }
 
@@ -473,6 +531,12 @@ impl<'id, P: PhaseTypes<'id>> RoleKeys<'id, P> for AccessPoint {
 
     fn removed(key: RemovedKey<'id, Self::Keys>) -> Removed<'id, P> {
         Removed::AccessPoint(key)
+    }
+    fn installed_group(
+        key: <Self::Keys as KeyTypes<'id>>::GroupKey,
+        permission: <Self::Keys as KeyTypes<'id>>::GroupPermission,
+    ) -> InstalledGroup<'id, P> {
+        InstalledGroup::AccessPoint { key, permission }
     }
 }
 
@@ -866,13 +930,29 @@ pub trait InterfacePhase<'p, 'id: 'p> {
         key: Ccmp128Key,
     ) -> <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::PairwiseKey;
 
-    /// Install `key` for group frames under `key_id` in `slot`.
+    /// Enqueue a group installation, consuming its vacant slot and the
+    /// interface's unique permission. The call reserves a FIFO terminal.
+    /// Only `GroupKeyInstalled` returns an installed owner and permission.
+    ///
+    /// Exactly one installation per interface/association and wire KeyID
+    /// participates in decryption; other IDs stay active. At the terminal,
+    /// older installations of this ID remain retained but become inactive.
+    /// All delivered old-installation RX, including delayed DMA/ISR facts,
+    /// precedes it; selected-installation RX follows it. Traffic cannot delay
+    /// completion indefinitely: `LowerMacBackend::GROUP_COMMAND_BOUND` covers
+    /// admission through terminal or Poisoned, with a backend-owned wake.
+    ///
+    /// Hardware uncertainty retains every resource for teardown and returns
+    /// no ordinary permission. Disable completes accepted commands within
+    /// the same bound. This contract exposes no cancellation command: teardown
+    /// retains any operation that cannot complete, never fabricating success.
     fn install_group_key(
         &mut self,
+        permission: <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::GroupPermission,
         slot: <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::GroupSlot,
         key_id: GroupKeyId,
         key: Ccmp128Key,
-    ) -> <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::GroupKey;
+    );
 
     /// Remove `key`: queued attempts that use it return as
     /// `Withdrawn(KeyRemoved)`, a published one is waited for, and
@@ -883,7 +963,11 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     );
 
     /// Remove `key`, as [`Self::remove_pairwise_key`].
-    fn remove_group_key(&mut self, key: <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::GroupKey);
+    fn remove_group_key(
+        &mut self,
+        permission: <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::GroupPermission,
+        key: <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::GroupKey,
+    );
 
     /// Start acknowledging A-MPDUs of `agreement` in `slot`; the agreement
     /// holds the slot. A caller holds one agreement per peer and TID: it
@@ -927,9 +1011,10 @@ pub trait InterfacePhase<'p, 'id: 'p> {
 /// The station interface of a running phase.
 pub trait StationPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id, Role = Station> {
     /// Consume an installed GTK and enqueue its replacement in command order.
-    /// The slot reserves one terminal place at this call, under the same
-    /// key-slot capacity bound as removal. No separate removal is possible
-    /// while the operation holds the key and slot.
+    /// Its unique interface permission reserves one terminal place at this
+    /// call. No removal or competing mutation is possible while the operation
+    /// holds that permission and the installed owner. The same finite RX cut
+    /// and GROUP_COMMAND_BOUND as ordinary group installation apply.
     ///
     /// [`LowerMacEvent::GroupKeyReplaced`] returns the new installed key with
     /// the same slot. Its position in the event stream is the installation
@@ -937,9 +1022,22 @@ pub trait StationPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id, Role = Station> {
     /// internal hardware rollback is not a successful port terminal.
     fn replace_group_key(
         &mut self,
+        permission: <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::GroupPermission,
         installed: <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::GroupKey,
         key_id: GroupKeyId,
         key: Ccmp128Key,
+    );
+
+    /// Select this concrete retained installation. No material write, new
+    /// installation or counter reset occurs, including when already current.
+    /// The same RX boundary and completion bound as installation apply.
+    /// The owner and permission return exactly once in `GroupKeySelected`.
+    /// An evicted hardware entry is not an installed owner and cannot be
+    /// restored by this operation (S31 has one station group slot).
+    fn select_group_key(
+        &mut self,
+        permission: <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::GroupPermission,
+        installed: <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::GroupKey,
     );
 
     /// Set what the station receives once none of its frames is in flight:

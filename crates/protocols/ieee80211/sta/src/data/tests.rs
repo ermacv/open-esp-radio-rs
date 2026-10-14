@@ -102,6 +102,7 @@ impl StaTokens for Station {
     type GroupSlot = ();
     type PairwiseKey = ();
     type GroupKey = ();
+    type GroupPermission = ();
     type RxMeta = RxMeta;
 }
 

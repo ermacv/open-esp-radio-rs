@@ -1,0 +1,562 @@
+use super::*;
+use crate::lower_mac_owner::conformance::group_keys as contract;
+
+fn id() -> GroupKeyId {
+    GroupKeyId::new(1).unwrap()
+}
+fn meta() -> ModelRxMeta {
+    ModelRxMeta::new(Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap(), -50, -90)
+}
+fn snapshot(key: &ModelGroupKey<'_, Station>) -> contract::Installation {
+    contract::Installation {
+        identity: Rc::as_ptr(&key.identity.0).addr(),
+        slot: key.slot.index(),
+        counter: key.identity.0.last.get(),
+    }
+}
+async fn installed<'p, 'id: 'p>(
+    phase: &mut ModelPhase<'p, 'id>,
+) -> (ModelGroupKey<'id, Station>, StationGroupPermission<'id>) {
+    match phase.next_event().await {
+        Ok(Ok(LowerMacEvent::GroupKeyInstalled(InstalledGroup::Station { key, permission }))) => {
+            (key, permission)
+        }
+        _ => panic!("expected the real installation terminal"),
+    }
+}
+async fn removed<'p, 'id: 'p>(phase: &mut ModelPhase<'p, 'id>) -> StationGroupPermission<'id> {
+    match phase.next_event().await {
+        Ok(Ok(LowerMacEvent::KeyRemoved(Removed::Station(RemovedKey::Group {
+            permission,
+            ..
+        })))) => permission,
+        _ => panic!("expected the real removal terminal"),
+    }
+}
+
+struct Boundary<'a> {
+    case: contract::Case,
+    air: &'a ModelAir,
+    trace: &'a RefCell<Option<contract::Trace>>,
+}
+impl Work for Boundary<'_> {
+    async fn work<'p, 'id: 'p>(
+        self,
+        phase: &mut ModelPhase<'p, 'id>,
+        resources: ModelResources<'id>,
+    ) {
+        use contract::Case;
+        let [a_slot, b_slot] = resources.station_group;
+        phase.station().install_group_key(
+            resources.station_group_permission,
+            a_slot,
+            id(),
+            Ccmp128Key([1; 16]),
+        );
+        let (a, mut permission) = installed(phase).await;
+        let mut spare = Some(b_slot);
+        a.identity.0.last.set(73);
+        let original = snapshot(&a);
+        let mut retained = None;
+        let (old_material, new_material) = if self.case == Case::SelectRetained {
+            phase.station().install_group_key(
+                permission,
+                spare.take().unwrap(),
+                id(),
+                Ccmp128Key([2; 16]),
+            );
+            let (b, returned) = installed(phase).await;
+            permission = returned;
+            b.identity.0.last.set(81);
+            retained = Some(b);
+            ([2; 16], [1; 16])
+        } else {
+            (
+                [1; 16],
+                if self.case == Case::SelectCurrent {
+                    [1; 16]
+                } else {
+                    [2; 16]
+                },
+            )
+        };
+        let writes = self.air.group_writes();
+        self.air.hold_group_commands(true);
+        match self.case {
+            Case::InstallBeside => {
+                phase.station().install_group_key(
+                    permission,
+                    spare.take().unwrap(),
+                    id(),
+                    Ccmp128Key([2; 16]),
+                );
+                retained = Some(a);
+            }
+            Case::Replace => {
+                phase
+                    .station()
+                    .replace_group_key(permission, a, id(), Ccmp128Key([2; 16]))
+            }
+            Case::SelectRetained | Case::SelectCurrent => {
+                phase.station().select_group_key(permission, a)
+            }
+        }
+        self.finish(
+            phase,
+            original,
+            writes,
+            old_material,
+            new_material,
+            retained,
+        )
+        .await;
+    }
+}
+
+impl Boundary<'_> {
+    async fn finish<'p, 'id: 'p>(
+        self,
+        phase: &mut ModelPhase<'p, 'id>,
+        original: contract::Installation,
+        writes: usize,
+        old: [u8; 16],
+        new: [u8; 16],
+        retained: Option<ModelGroupKey<'id, Station>>,
+    ) {
+        use contract::Event;
+        let mut events = Vec::new();
+        assert!(self.air.receive_group(
+            &[1],
+            meta(),
+            VifRole::Station,
+            id(),
+            &old,
+            GroupRxStage::Ready
+        ));
+        let Ok(Ok(LowerMacEvent::Received { frame, .. })) = phase.next_event().await else {
+            panic!("RX continues while the mutation waits")
+        };
+        assert_eq!(frame.bytes(), &[1]);
+        phase.recycle(frame);
+        events.push(Event::OldRx);
+        for stage in [
+            GroupRxStage::Dma,
+            GroupRxStage::Interrupt,
+            GroupRxStage::Software,
+        ] {
+            assert!(
+                self.air
+                    .receive_group(&[1], meta(), VifRole::Station, id(), &old, stage)
+            );
+        }
+        self.air.receive_continuously(&[0], meta());
+        self.air.hold_group_commands(false);
+        let (key, permission) = loop {
+            yield_now().await;
+            match phase.next_event().await {
+                Ok(Ok(LowerMacEvent::Received { frame, .. })) => {
+                    if frame.bytes() == [1] {
+                        events.push(Event::OldRx);
+                    } else {
+                        assert_eq!(frame.bytes(), &[0]);
+                    }
+                    phase.recycle(frame);
+                }
+                Ok(Ok(LowerMacEvent::GroupKeyInstalled(InstalledGroup::Station {
+                    key,
+                    permission,
+                })))
+                | Ok(Ok(LowerMacEvent::GroupKeyReplaced { key, permission }))
+                | Ok(Ok(LowerMacEvent::GroupKeySelected { key, permission })) => {
+                    break (key, permission);
+                }
+                _ => panic!("lost or misrouted boundary"),
+            }
+        };
+        events.push(Event::Terminal(snapshot(&key)));
+        let continuous_rx_at_terminal = self.air.rx_stream.borrow().is_some();
+        self.air.stop_continuous_receive();
+        let inactive = if self.case == contract::Case::SelectCurrent {
+            [3; 16]
+        } else {
+            old
+        };
+        let inactive_material_accepted = self.air.receive_group(
+            &[3],
+            meta(),
+            VifRole::Station,
+            id(),
+            &inactive,
+            GroupRxStage::Ready,
+        );
+        assert!(self.air.receive_group(
+            &[2],
+            meta(),
+            VifRole::Station,
+            id(),
+            &new,
+            GroupRxStage::Ready
+        ));
+        let Ok(Ok(LowerMacEvent::Received { frame, .. })) = phase.next_event().await else {
+            panic!("new installation RX follows terminal")
+        };
+        assert_eq!(frame.bytes(), &[2]);
+        phase.recycle(frame);
+        events.push(Event::NewRx);
+        self.trace.replace(Some(contract::Trace {
+            original,
+            events,
+            writes: self.air.group_writes() - writes,
+            inactive_material_accepted,
+            continuous_rx_at_terminal,
+        }));
+        phase.station().remove_group_key(permission, key);
+        let permission = removed(phase).await;
+        if let Some(key) = retained {
+            phase.station().remove_group_key(permission, key);
+            let _permission = removed(phase).await;
+        }
+    }
+}
+
+struct Harness;
+impl contract::Harness for Harness {
+    async fn exercise(&mut self, case: contract::Case) -> contract::Trace {
+        let (backend, air) = backend();
+        let trace = RefCell::new(None);
+        let boundary = Boundary {
+            case,
+            air: &air,
+            trace: &trace,
+        };
+        run_port(backend, Body(boundary)).await;
+        assert!(!air.poisoned.get());
+        trace.into_inner().unwrap()
+    }
+}
+#[test]
+fn common_gtk_boundary_suite_covers_delayed_ingress_and_retained_selection() {
+    block_on(contract::check(&mut Harness)).unwrap();
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Mutation {
+    Install,
+    Replace,
+    Select,
+    Remove,
+}
+impl Mutation {
+    const ALL: [Self; 4] = [Self::Install, Self::Replace, Self::Select, Self::Remove];
+}
+
+fn terminal_slot(event: &LowerMacEvent<'_, ModelTypes>) -> Option<u8> {
+    match event {
+        LowerMacEvent::GroupKeyInstalled(InstalledGroup::Station { key, permission })
+        | LowerMacEvent::GroupKeyReplaced { key, permission }
+        | LowerMacEvent::GroupKeySelected { key, permission } => {
+            assert_eq!(permission.index(), 0);
+            Some(key.slot.index())
+        }
+        LowerMacEvent::KeyRemoved(Removed::Station(RemovedKey::Group { slot, permission })) => {
+            assert_eq!(permission.index(), 0);
+            Some(slot.index())
+        }
+        _ => None,
+    }
+}
+fn change_slot(change: &GroupChange<'_, ()>) -> u8 {
+    match change {
+        GroupChange::Install(InstalledGroup::Station { key, permission })
+        | GroupChange::Replace {
+            installed: key,
+            permission,
+            ..
+        }
+        | GroupChange::Select {
+            installed: key,
+            permission,
+        } => {
+            assert_eq!(permission.index(), 0);
+            key.slot.index()
+        }
+        GroupChange::Remove {
+            removed: Removed::Station(RemovedKey::Group { slot, permission }),
+            ..
+        } => {
+            assert_eq!(permission.index(), 0);
+            slot.index()
+        }
+        _ => panic!("station fixture returned another role"),
+    }
+}
+fn held_slots(phase: &ModelPhase<'_, '_>) -> Vec<u8> {
+    let held = phase.held;
+    let mut slots = Vec::new();
+    for command in held.commands.items.borrow().iter() {
+        if let Command::Group { change, .. } = command {
+            slots.push(change_slot(change));
+        }
+    }
+    slots.extend(held.failed_group.items.borrow().iter().map(change_slot));
+    slots.extend(
+        held.failed_group_terminal
+            .items
+            .borrow()
+            .iter()
+            .filter_map(terminal_slot),
+    );
+    slots.extend(held.events.items.borrow().iter().filter_map(terminal_slot));
+    for removal in &held.driver_state.borrow().removing {
+        if let Removed::Station(RemovedKey::Group { slot, permission }) = &removal.removed {
+            assert_eq!(permission.index(), 0);
+            slots.push(slot.index());
+        }
+    }
+    slots
+}
+
+struct Interrupted<'a> {
+    air: &'a ModelAir,
+    mutation: Mutation,
+    fault: Option<GroupFaultStage>,
+    applied: bool,
+}
+impl PortBody<ModelBackend> for Interrupted<'_> {
+    async fn run<'id>(
+        self,
+        owner: Owner<'_, 'id, ModelBackend, Disabled>,
+        resources: ModelResources<'id>,
+    ) -> Ended<'id, ModelBackend> {
+        let mut owner = owner.enable().await.ok().unwrap();
+        let [slot, _] = resources.station_group;
+        let expected_slot = slot.index();
+        {
+            let mut phase = owner.phase();
+            let (permission, key, vacant) = if matches!(self.mutation, Mutation::Install) {
+                (resources.station_group_permission, None, Some(slot))
+            } else {
+                phase.station().install_group_key(
+                    resources.station_group_permission,
+                    slot,
+                    id(),
+                    Ccmp128Key([1; 16]),
+                );
+                let (key, permission) = installed(&mut phase).await;
+                (permission, Some(key), None)
+            };
+            if let Some(fault) = self.fault {
+                self.air.fail_next_group_change(fault);
+            }
+            self.air
+                .hold_group_commands(!self.applied && self.fault.is_none());
+            match self.mutation {
+                Mutation::Install => phase.station().install_group_key(
+                    permission,
+                    vacant.unwrap(),
+                    id(),
+                    Ccmp128Key([2; 16]),
+                ),
+                Mutation::Replace => phase.station().replace_group_key(
+                    permission,
+                    key.unwrap(),
+                    id(),
+                    Ccmp128Key([2; 16]),
+                ),
+                Mutation::Select => phase.station().select_group_key(permission, key.unwrap()),
+                Mutation::Remove => phase.station().remove_group_key(permission, key.unwrap()),
+            }
+            if self.fault.is_some() {
+                assert!(phase.next_event().await.is_err());
+            } else if self.applied {
+                for _ in 0..3 {
+                    yield_now().await;
+                }
+            }
+            assert_eq!(
+                held_slots(&phase),
+                [expected_slot],
+                "the admitted owner and permission stay together before teardown"
+            );
+        }
+        let mut terminals = Vec::new();
+        let disabled = owner.disable(&mut |event| terminals.push(event)).await;
+        if self.fault.is_some() {
+            assert!(terminals.is_empty());
+            let Err(poisoned) = disabled else {
+                panic!("hardware uncertainty cannot return an ordinary owner")
+            };
+            poisoned.fail_stop()
+        } else {
+            let Ok(disabled) = disabled else {
+                panic!("disable completes the admitted mutation")
+            };
+            assert_eq!(terminals.len(), 1);
+            assert_eq!(terminal_slot(&terminals[0]), Some(expected_slot));
+            drop(terminals);
+            disabled.uninstall(())
+        }
+    }
+}
+#[test]
+fn fault_and_disable_keep_each_gtk_mutations_owner_and_permission() {
+    for mutation in Mutation::ALL {
+        for fault in [
+            Some(GroupFaultStage::Before),
+            Some(GroupFaultStage::After),
+            None,
+        ] {
+            for applied in [false, true] {
+                let (backend, air) = backend();
+                block_on(run_port(
+                    backend,
+                    Interrupted {
+                        air: &air,
+                        mutation,
+                        fault,
+                        applied,
+                    },
+                ));
+                assert!(
+                    air.group_installations
+                        .borrow()
+                        .iter()
+                        .all(|key| key.upgrade().is_none())
+                );
+            }
+        }
+    }
+}
+
+struct Deadline<'a>(&'a ModelAir);
+impl Work for Deadline<'_> {
+    async fn work<'p, 'id: 'p>(
+        self,
+        phase: &mut ModelPhase<'p, 'id>,
+        resources: ModelResources<'id>,
+    ) {
+        let [slot, _] = resources.station_group;
+        let expected = slot.index();
+        self.0.hold_group_commands(true);
+        phase.station().install_group_key(
+            resources.station_group_permission,
+            slot,
+            id(),
+            Ccmp128Key([1; 16]),
+        );
+        for _ in 0..3 {
+            yield_now().await;
+        }
+        assert_eq!(self.0.group_writes(), 0);
+        assert!(phase.next_event().await.is_err());
+        assert_eq!(held_slots(phase), [expected]);
+        assert_eq!(self.0.group_writes(), 0);
+    }
+}
+#[test]
+fn a_stalled_group_command_has_a_deadline_wake_and_retains_resources_on_expiry() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    struct Wakes(AtomicUsize);
+    impl std::task::Wake for Wakes {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+        fn wake_by_ref(self: &Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let (backend, air) = backend();
+    let wakes = Arc::new(Wakes(AtomicUsize::new(0)));
+    let waker = Waker::from(wakes.clone());
+    let mut cx = core::task::Context::from_waker(&waker);
+    let mut running = core::pin::pin!(run_port(backend, Body(Deadline(&air))));
+    for _ in 0..5 {
+        assert!(running.as_mut().poll(&mut cx).is_pending());
+    }
+    let before = wakes.0.load(Ordering::SeqCst);
+    air.set_time(oer_time::Instant::from_micros(
+        MODEL_GROUP_COMMAND_BOUND.as_micros(),
+    ));
+    assert!(
+        wakes.0.load(Ordering::SeqCst) > before,
+        "expiry wakes the registered driver"
+    );
+    block_on(running);
+    assert!(air.poisoned.get());
+}
+
+struct IndependentIds<'a>(&'a ModelAir);
+impl Work for IndependentIds<'_> {
+    async fn work<'p, 'id: 'p>(
+        self,
+        phase: &mut ModelPhase<'p, 'id>,
+        resources: ModelResources<'id>,
+    ) {
+        let [a, b] = resources.station_group;
+        phase.station().install_group_key(
+            resources.station_group_permission,
+            a,
+            id(),
+            Ccmp128Key([1; 16]),
+        );
+        let (a, permission) = installed(phase).await;
+        let second = GroupKeyId::new(2).unwrap();
+        phase
+            .station()
+            .install_group_key(permission, b, second, Ccmp128Key([2; 16]));
+        let (b, permission) = installed(phase).await;
+        phase.station().select_group_key(permission, a);
+        let Ok(Ok(LowerMacEvent::GroupKeySelected { key: a, permission })) =
+            phase.next_event().await
+        else {
+            panic!()
+        };
+        assert!(self.0.receive_group(
+            &[1],
+            meta(),
+            VifRole::Station,
+            id(),
+            &[1; 16],
+            GroupRxStage::Ready
+        ));
+        assert!(self.0.receive_group(
+            &[2],
+            meta(),
+            VifRole::Station,
+            second,
+            &[2; 16],
+            GroupRxStage::Ready
+        ));
+        for _ in 0..2 {
+            let Ok(Ok(LowerMacEvent::Received { frame, .. })) = phase.next_event().await else {
+                panic!()
+            };
+            phase.recycle(frame);
+        }
+        phase.station().remove_group_key(permission, a);
+        let permission = removed(phase).await;
+        assert!(self.0.receive_group(
+            &[2],
+            meta(),
+            VifRole::Station,
+            second,
+            &[2; 16],
+            GroupRxStage::Ready
+        ));
+        let Ok(Ok(LowerMacEvent::Received { frame, .. })) = phase.next_event().await else {
+            panic!()
+        };
+        phase.recycle(frame);
+        phase.station().remove_group_key(permission, b);
+        let _permission = removed(phase).await;
+    }
+}
+#[test]
+fn selection_and_removal_leave_other_wire_key_ids_active() {
+    let (backend, air) = backend();
+    block_on(run_port(backend, Body(IndependentIds(&air))));
+    assert!(!air.poisoned.get());
+}

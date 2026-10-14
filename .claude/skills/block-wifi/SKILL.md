@@ -110,7 +110,20 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
 - Association's deadline starts at entry, before its first TX credit. A temporary comeback starts the next deadline at the scheduled return, so an occupied credit cannot leave either wait unbounded. Open station construction may have no group slots; protected construction returns its config and resources if the slot is missing.
 - Portable station RX enters `Station::receive` once. MAC's `DecodedHeader` and `AdmittedData` locate QoS/HT/CCMP, require integrity evidence and commit replay before EAPOL/MSDU dispatch. The old data receive entry point exists only as a test helper; production cannot commit the same PN through a second API. `FrameControl` lives in MAC's `frame` module, shared by RX and lower-MAC header encoding.
 - GTK's two-bit wire ID includes zero (IEEE 802.11-2020, 12.7.2 and the pinned ESP-IDF `wpa.c:1064`). Frame addressing distinguishes PTK from GTK; group replay records use `GroupKeyId::select`, separately from the backend's slot pool. S31 STA accepts `GroupKeyId`, including zero, in hardware slot 1. Its AP installation takes `ApGroupKeyId` (1 through 3), validated before hardware. S31 AP's `1 + key_id` layout excludes zero because it would collide with that station slot; do not impose this AP restriction on the portable station.
-- A station GTK replacement is a FIFO command consuming its installed key and slot. `GroupKeyReplaced` returns the successor in the same slot and separates old/new RX epochs; never switch replay at submission. The service matches its private pending owner by `GroupSlotIdentity`, not the material installation's TX `Identity`. Hardware rejection is Poisoned; S31 rollback stays internal. Identical ID/material skips installation; new material starts at KeyRSC, even below the old frontier ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6169527922)).
+- Every GTK mutation consumes the installation's one permission for that
+  interface; only its FIFO success terminal returns an ordinary permission.
+  Never synthesize `GroupKeyInstalled` at submission. The RX boundary includes
+  delayed hardware/DMA/ISR/software facts and must finish under continuous
+  ingress within `GROUP_COMMAND_BOUND`, with completion/deadline wakeups.
+  Exactly one installation per association/wire KeyID decrypts; other IDs may
+  stay active. Select a real retained installed owner without material writes
+  or counter resets, and exchange its saved replay state only at the terminal.
+  Selection does not renew installation age for eviction. A full multi-slot
+  pool replaces the oldest non-current key; a single-slot backend replaces
+  its sole owner atomically. S31 cannot select an evicted entry from a RAM
+  copy: its hardware boundary still needs proof in the new form. Hardware
+  uncertainty retains resources for teardown, never an ordinary permission
+  ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6169527922)).
 
 The MSDU/command SPSC sender's readiness returns a `SendPermit`. Keep the
 permit through publication: its exclusive sender borrow is the capacity

@@ -540,6 +540,7 @@ where
                 large,
                 station_pairwise,
                 station_group,
+                station_group_permission,
                 gate,
                 ..
             } = resources;
@@ -569,6 +570,7 @@ where
                     absence_place: absence,
                     pairwise,
                     groups,
+                    group_permission: station_group_permission,
                 },
             )
             .unwrap_or_else(|_| panic!("protected fixture has group slots"));
@@ -1661,4 +1663,41 @@ fn protected_qos_ht_group_message_rekeys_once_after_integrity_and_replay_admissi
         },
     );
     assert_eq!(counters.rx_frames_rejected.get(), 2);
+}
+
+#[test]
+fn message4_waits_for_the_actual_group_installation_terminal() {
+    run(
+        StaSecurity::Wpa2Personal {
+            pmk: Pmk::from_bytes(PMK),
+        },
+        |world| {
+            Box::pin(async move {
+                let mut seen = 0;
+                world.associate(&mut seen, true).await;
+                let ptk = world.start_handshake(&mut seen).await;
+                let before = world.air.sent().len();
+                world.air.hold_group_commands(true);
+                world.air.receive(&message3(&ptk), meta());
+                for _ in 0..20 {
+                    yield_now().await;
+                }
+                assert_eq!(world.air.group_writes(), 0);
+                assert_eq!(
+                    world.air.sent().len(),
+                    before,
+                    "acceptance alone cannot authorize M4"
+                );
+                assert!(
+                    !world.outputs.borrow().iter().any(|out| matches!(
+                        out,
+                        ServiceOutput::Notice(StaNotice::Connected { .. })
+                    ))
+                );
+                world.air.hold_group_commands(false);
+                world.sent(&mut seen, DATA).await;
+                assert_eq!(world.air.group_writes(), 1);
+            })
+        },
+    );
 }

@@ -576,9 +576,9 @@ pub trait LowerMacPhase<'p, 'id: 'p>:
         }
     }
 
-    /// Give a received frame's buffer back to reception. A buffer never
-    /// given back only shrinks reception; in tests and debug builds a
-    /// dropped one panics.
+    /// Return an owned receive buffer to the backend's receive pool. Keeping
+    /// it occupies that capacity; dropping it does not recycle it. The host
+    /// model poisons the installation when an unrecycled owner is dropped.
     fn recycle(&mut self, buffer: <Self::Types as PhaseTypes<'id>>::RxBuffer);
 
     /// Close publication in every queue. A current publication is waited for,

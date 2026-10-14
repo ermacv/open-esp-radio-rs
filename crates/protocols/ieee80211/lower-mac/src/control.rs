@@ -18,14 +18,19 @@ pub enum VifRole {
 pub struct VifRoleSet(u8);
 
 impl VifRoleSet {
+    /// No interface roles.
     pub const NONE: Self = Self(0);
+    /// The non-AP station role.
     pub const STATION: Self = Self(1 << 0);
+    /// The access-point role.
     pub const ACCESS_POINT: Self = Self(1 << 1);
 
+    /// All roles present in either set.
     pub const fn union(self, other: Self) -> Self {
         Self(self.0 | other.0)
     }
 
+    /// Whether this set includes `role`.
     pub const fn contains(self, role: VifRole) -> bool {
         let bit = match role {
             VifRole::Station => Self::STATION.0,
@@ -44,7 +49,7 @@ impl VifRoleSet {
 /// frames. The rules of [`Self::BSS_MEMBER`] belong to a BSS: a station
 /// without a BSSID can request only [`Self::OTHER_BSS_MANAGEMENT`].
 /// Receiving every frame regardless of address is
-/// `LowerMacMonitor`, not a filter rule.
+/// [`MonitorPhase`](crate::MonitorPhase), not a filter rule.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct ReceiveFilter(u8);
 
@@ -70,18 +75,22 @@ impl ReceiveFilter {
         Self::OWN_UNICAST.0 | Self::OWN_BSS_GROUP.0 | Self::OWN_BSS_BEACONS.0 | Self::OWN_CONTROL.0,
     );
 
+    /// All admission rules present in either filter.
     pub const fn union(self, other: Self) -> Self {
         Self(self.0 | other.0)
     }
 
+    /// Admission rules common to both filters.
     pub const fn intersection(self, other: Self) -> Self {
         Self(self.0 & other.0)
     }
 
+    /// Whether every admission rule in `other` is present.
     pub const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
     }
 
+    /// Whether no admission rule is enabled.
     pub const fn is_empty(self) -> bool {
         self.0 == 0
     }

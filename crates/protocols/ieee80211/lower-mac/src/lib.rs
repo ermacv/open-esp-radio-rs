@@ -1,5 +1,6 @@
 #![no_std]
 #![forbid(unsafe_code)]
+#![deny(missing_docs)]
 #![deny(
     clippy::let_underscore_must_use,
     clippy::let_underscore_untyped,

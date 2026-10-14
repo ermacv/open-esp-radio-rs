@@ -57,6 +57,7 @@ impl TxBody for core::convert::Infallible {
 /// Medium protection sent ahead of the PPDU in the same attempt.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Protection {
+    /// No RTS/CTS or CTS-to-self exchange before the PPDU.
     None,
     /// RTS/CTS exchange with the receiver.
     RtsCts,
@@ -88,7 +89,10 @@ pub enum Backoff {
     /// Let the hardware draw from a contention window of
     /// `2^cw_exponent - 1` slots. Valid only when the backend reports
     /// [`HardwareServices::BACKOFF_DRAW`](crate::HardwareServices::BACKOFF_DRAW).
-    HardwareDraw { cw_exponent: u8 },
+    HardwareDraw {
+        /// Contention-window exponent: draw from zero through `2^cw_exponent - 1`.
+        cw_exponent: u8,
+    },
 }
 
 /// One hardware publication observed by a retry planner. This is not a
@@ -112,6 +116,7 @@ pub enum TxStatus {
 /// The BlockAck the recipient answered an A-MPDU or BlockAckReq with.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct BlockAckReport {
+    /// The sequence number represented by bit zero of `bitmap`.
     pub start_sequence: SequenceNumber,
     /// Bit `n` acknowledges `start_sequence + n`.
     pub bitmap: u64,

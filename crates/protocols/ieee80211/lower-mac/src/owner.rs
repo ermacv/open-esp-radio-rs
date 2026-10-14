@@ -317,10 +317,15 @@ impl<K, R> core::fmt::Debug for SupportedFilter<K, R> {
 /// What a station receives: nothing, other BSSs' management only (outside
 /// a BSS), or a BSS with its rules.
 pub enum StationReceive<K> {
+    /// Deliver no station frames.
     Off,
+    /// Deliver beacons and Probe Responses from every BSS for scanning.
     OtherBssManagement,
+    /// Apply the station's receive rules within the named BSS.
     Bss {
+        /// The BSS whose group traffic and beacons the station recognizes.
         bssid: IndividualAddress,
+        /// Receive rules supported for this station interface.
         filter: SupportedFilter<K, Station>,
     },
 }
@@ -702,8 +707,11 @@ pub enum QosAckPolicy {
 /// (its [`TxFrame`] kind), the one source of it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct QosControl {
+    /// The traffic identifier of this QoS data frame.
     pub tid: Tid,
+    /// Whether this frame ends the current service period.
     pub end_of_service_period: bool,
+    /// Whether the body carries an A-MSDU.
     pub amsdu_present: bool,
     /// The field's high octet (TXOP limit, queue size or mesh control).
     pub high: u8,
@@ -1140,26 +1148,37 @@ impl ResponseHeader for HeaderSpec<GroupAddress> {
 pub enum TxFrame<'p, K> {
     /// An individual data or management frame, which solicits an ACK.
     Individual {
+        /// Checked acknowledged header and complete MPDU length.
         frame: SizedFrame<AckHeader, K>,
+        /// The phase-bound rates and retry budget of this attempt.
         plan: crate::RetryPlan<PhaseRate<'p>>,
     },
     /// An individual frame that solicits no ACK and says so, at a rate that
     /// carries one without it.
     IndividualNoAck {
+        /// Checked unacknowledged header and complete MPDU length.
         frame: SizedFrame<NoAckHeader, K>,
+        /// A phase-bound rate that supports individual No Ack frames.
         rate: SupportedNoAck<'p>,
     },
     /// A group data or management frame, which solicits no response.
     Group {
+        /// Checked group receiver, header and complete MPDU length.
         frame: SizedFrame<HeaderSpec<GroupAddress>, K>,
+        /// The phase-bound rate of this group transmission.
         rate: PhaseRate<'p>,
     },
     /// A BlockAckReq, which solicits a BlockAck, at a non-HT rate.
     BlockAckRequest {
+        /// The peer asked to return its Block Ack state.
         receiver: IndividualAddress,
+        /// The address of the requesting transmitter.
         transmitter: MacAddress,
+        /// The traffic identifier of the Block Ack agreement.
         tid: Tid,
+        /// The first sequence number requested in the Block Ack window.
         starting_sequence: SequenceNumber,
+        /// The non-HT rates and retry budget of the request.
         plan: crate::RetryPlan<LegacyPhaseRate<'p>>,
     },
 }

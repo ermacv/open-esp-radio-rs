@@ -129,8 +129,11 @@ impl<C: TxBufferClass, K: Ieee80211Capabilities> ClassSubframe<C, K> {
 pub enum SubframeSource<B, N, F, O> {
     /// Unpublished memory and its description/body, prepared by the builder.
     Fresh {
+        /// Fresh memory of this subframe's buffer class.
         buffer: B,
+        /// The class-checked QoS header and complete MPDU length.
         frame: F,
+        /// The optional external body, retained until cancellation or its terminal.
         body: Option<O>,
     },
     /// The exact returned MPDU; no replacement header, key or body is accepted.

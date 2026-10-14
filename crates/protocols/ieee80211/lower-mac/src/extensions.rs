@@ -16,7 +16,7 @@ pub struct AmpduCapabilities {
     /// Subframes of one A-MPDU attempt.
     pub max_subframes: u16,
     /// The PPDU formats an A-MPDU attempt is sent in; an attempt at a rate
-    /// of another format is refused as `Unsupported`.
+    /// of another format has no checked aggregate rate.
     pub formats: PhyFormatSet,
     /// The longest A-MPDU in octets, delimiters and padding included, that
     /// the backend sends at every rate of `formats`. The recipient's own
@@ -32,25 +32,32 @@ pub struct AmpduCapabilities {
 /// arithmetic between values of different interfaces is an error.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct VifTsf {
+    /// The interface whose TSF this value belongs to.
     pub vif: VifRole,
+    /// The reading in that interface's TSF epoch.
     pub at: TsfInstant,
 }
 
 /// Two TSF values of different interfaces were combined.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct TsfVifMismatch {
+    /// The interface of the left-hand operand.
     pub left: VifRole,
+    /// The interface of the right-hand operand.
     pub right: VifRole,
 }
 
 /// Failure of arithmetic between interface-scoped TSF values.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TsfArithmeticError {
+    /// The operands refer to different interfaces.
     VifMismatch(TsfVifMismatch),
+    /// The purported earlier value lies after the later one.
     ReversedTime,
 }
 
 impl VifTsf {
+    /// Associate a TSF reading with its interface.
     pub const fn new(vif: VifRole, at: TsfInstant) -> Self {
         Self { vif, at }
     }
@@ -108,6 +115,7 @@ pub const TSF_DRIFT_PPM: u32 = 200;
 /// of the radio clock itself (its stamp's generation).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TsfSample {
+    /// The interface's TSF reading beside `local`.
     pub tsf: VifTsf,
     /// The port's radio clock beside it.
     pub local: crate::Ieee80211Stamp,
@@ -160,7 +168,9 @@ pub enum TsfSetKind {
 /// A TSF set could not establish a representable timing relation.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum TsfTimingError {
+    /// An elapsed span could not order its current and earlier samples.
     ReversedTime,
+    /// Drift plus sample uncertainty exceeds the TSF duration range.
     ToleranceOverflow,
 }
 

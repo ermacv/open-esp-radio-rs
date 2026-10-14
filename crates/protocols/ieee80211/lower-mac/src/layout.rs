@@ -354,7 +354,9 @@ pub enum CheckedTxSource<'p, B, N, F, O, Key> {
     Fresh(LaidOut<FreshSource<B, F, O, Key>>),
     /// The original published MPDU and only the new attempt's plan.
     Retransmission {
+        /// The original published MPDU, including its header, body and key identity.
         mpdu: N,
+        /// Only the new attempt's rates, retry budget and medium protection.
         plan: crate::RetransmissionPlan<'p>,
     },
 }

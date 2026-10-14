@@ -1377,6 +1377,100 @@ impl Bench {
 }
 
 /// An engine built with multi-PAN gives the radio its interfaces; each
+/// `configure` applies a configuration in any state, as the vendor's
+/// setters do: disabled, and during an operation, without changing the
+/// radio's state; only a full pending table refuses.
+#[test]
+fn configure_applies_in_every_state() {
+    let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
+    let levels = Ieee802154TxPowerLevels::new(&LEVELS).unwrap();
+    let mut engine = Ieee802154Engine::new_multipan(
+        buffers,
+        levels,
+        Ieee802154PibDefaults::default(),
+        Ieee802154Interfaces::new(2).unwrap(),
+    );
+    let mut hw = Ieee802154LlModel::default();
+    engine.enable();
+    engine.mac_init(&mut hw, Ieee802154PibDefaults::default());
+    let mut radio = Ieee802154Radio::new(engine, FixedRandom);
+    let interface = |setting| Configuration::Interface {
+        interface: Interface::new(1),
+        setting,
+    };
+    radio
+        .configure(&mut hw, interface(InterfaceSetting::Enabled(true)))
+        .unwrap();
+    radio
+        .configure(&mut hw, interface(InterfaceSetting::PanId(0xabcd)))
+        .unwrap();
+    radio
+        .configure(&mut hw, Configuration::Promiscuous(true))
+        .unwrap();
+    assert_eq!(radio.state(), RadioState::Disabled);
+    assert!(
+        hw.multipan_enable
+            .contains(Ieee802154MultipanIndex::CONTEXT1)
+    );
+    assert_eq!(hw.panid[1], 0xabcd);
+    assert!(radio.engine().pib().promiscuous());
+
+    let mut bench = Bench {
+        radio,
+        hw,
+        clock: oer_time_virtual::VirtualClock::starting_at(oer_time::Instant::from_micros(42)),
+        sink: Sink::default(),
+    };
+    bench
+        .radio
+        .enable(&mut bench.hw, &bench.clock, &mut bench.sink)
+        .unwrap();
+    bench
+        .transmit(
+            5,
+            &[0x41, 0x98, 0x01, 0x34, 0x12, 0xff, 0xff, 0x78, 0x56],
+            20,
+            TxMode::Direct,
+        )
+        .unwrap();
+    let transmitting = bench.radio.state();
+    assert!(matches!(transmitting, RadioState::Transmitting { .. }));
+    let short = FrameAddress::Short([0x22, 0x00]);
+    bench
+        .radio
+        .configure(&mut bench.hw, Configuration::PanId(0x1234))
+        .unwrap();
+    bench
+        .radio
+        .configure(
+            &mut bench.hw,
+            interface(InterfaceSetting::AddPendingAddress(short)),
+        )
+        .unwrap();
+    assert_eq!(bench.radio.state(), transmitting);
+    assert_eq!(bench.hw.panid[0], 0x1234);
+    assert!(
+        bench
+            .radio
+            .engine()
+            .pending_table_for(Ieee802154MultipanIndex::CONTEXT1)
+            .contains(short)
+    );
+    for index in 0..PENDING_TABLE_SIZE {
+        let address = FrameAddress::Short([index as u8, 0x10]);
+        let _ = bench
+            .radio
+            .configure(&mut bench.hw, Configuration::AddPendingAddress(address));
+    }
+    assert_eq!(
+        bench.radio.configure(
+            &mut bench.hw,
+            Configuration::AddPendingAddress(FrameAddress::Short([0xff, 0xff])),
+        ),
+        Err(CommandError::PendingTableFull)
+    );
+}
+
 /// interface setting reaches that interface's identity, enable bit and
 /// frame-pending table, as `esp_ieee802154_set_multipan_*` and
 /// `esp_ieee802154_multipan_*` do.

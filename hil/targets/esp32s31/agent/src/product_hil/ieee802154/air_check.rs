@@ -28,7 +28,7 @@ use oer_ieee802154::{
         Transmission,
     },
 };
-use oer_ieee802154_port::{Disabled, Ended, Owner, PortBody, RadioPortEvents, RadioWork, run_port};
+use oer_ieee802154_port::{Disabled, Ended, Owner, PortBody, RadioPortEvents, run_port};
 use oer_radio_port::Seat;
 
 use super::client::{Backend, Client, now_micros, tx_outcome};

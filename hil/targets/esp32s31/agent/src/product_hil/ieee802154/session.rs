@@ -30,7 +30,7 @@ use oer_hil_protocol::{
 };
 use oer_ieee802154::{
     Channel,
-    owner::{Ieee802154Clients, Ieee802154Setup},
+    owner::{Ieee802154Client, Ieee802154Clients, Ieee802154Setup},
 };
 use oer_ieee802154_port::{Disabled, Ended, Owner, PortBackend, PortBody, run_port};
 

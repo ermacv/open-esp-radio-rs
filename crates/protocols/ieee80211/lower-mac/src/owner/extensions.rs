@@ -40,7 +40,7 @@ pub trait AggregateState: state::Sealed {
     /// Storage for the first subframe's fact: absent in Empty, owned in NonEmpty.
     type Head<T>;
     /// Preserve the first fact while appending, creating it on the first push.
-    fn retain_head<T>(head: Self::Head<T>, next: T) -> T;
+    fn retain_head<T: Copy>(head: &Self::Head<T>, next: T) -> T;
 }
 /// A builder which has not accepted a subframe and cannot be submitted.
 pub enum EmptyAggregate {}
@@ -50,14 +50,14 @@ impl state::Sealed for EmptyAggregate {}
 impl state::Sealed for NonEmptyAggregate {}
 impl AggregateState for EmptyAggregate {
     type Head<T> = ();
-    fn retain_head<T>((): (), next: T) -> T {
+    fn retain_head<T: Copy>((): &(), next: T) -> T {
         next
     }
 }
 impl AggregateState for NonEmptyAggregate {
     type Head<T> = T;
-    fn retain_head<T>(head: T, _: T) -> T {
-        head
+    fn retain_head<T: Copy>(head: &T, _: T) -> T {
+        *head
     }
 }
 

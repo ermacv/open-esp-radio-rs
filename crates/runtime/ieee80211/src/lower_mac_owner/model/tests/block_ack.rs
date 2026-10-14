@@ -151,7 +151,13 @@ fn bitmap_matches_acknowledged_sequence_set_across_wrap_and_reordering() {
 
 #[test]
 fn review_aggregate_does_not_alias_blockack_bit63() {
-    for (start, refused) in [(&[0][..], 64), (&[4095][..], 63), (&[0][..], 4095)] {
+    for (start, refused) in [
+        (&[0][..], 64),
+        (&[4095][..], 63),
+        (&[0][..], 4095),
+        (&[40][..], 39),
+        (&[40, 43][..], 43),
+    ] {
         let (backend, _) = backend();
         block_on(run_port(
             backend,
@@ -161,5 +167,101 @@ fn review_aggregate_does_not_alias_blockack_bit63() {
                 refused: Some(refused),
             }),
         ));
+    }
+}
+
+struct RefusedSent(u16);
+impl Work for RefusedSent {
+    async fn work<'p, 'id: 'p>(
+        self,
+        phase: &mut ModelPhase<'p, 'id>,
+        resources: ModelResources<'id>,
+    ) {
+        let ModelResources {
+            mut tickets,
+            mut small,
+            ..
+        } = resources;
+        let rate = phase
+            .rate(PhyRate::Ht(
+                oer_ieee80211_mac::phy::HtRate::new(
+                    HtMcs::new(7).unwrap(),
+                    oer_ieee80211_mac::phy::PpduBandwidth::Mhz20,
+                    false,
+                )
+                .unwrap(),
+            ))
+            .unwrap();
+        let mut station = phase.station();
+        let rate = station.ampdu_rate(rate).ok().unwrap();
+        let aggregate = station.aggregate(
+            IndividualAddress::new(PEER).unwrap(),
+            Tid::new(0).unwrap(),
+            rate,
+            TxProtection::Open,
+        );
+        let original = small.remove(0);
+        let index = original.slot.index();
+        let aggregate = push_subframe(
+            aggregate,
+            original,
+            subframe_frame(40),
+            Some(ModelBody(alloc::vec![0x7a])),
+        );
+        station
+            .submit_ampdu(AggregateAttempt {
+                context: (),
+                ticket: tickets.remove(0),
+                aggregate,
+                protection: Protection::None,
+                power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+                coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+                min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
+            })
+            .unwrap();
+        let (_, mut buffers, _, _) = aggregate_completion(phase).await;
+        let ModelAnyBuffer::SmallSent(mpdu) = buffers.remove(0) else {
+            panic!()
+        };
+        let mut station = phase.station();
+        let aggregate = station.aggregate(
+            IndividualAddress::new(PEER).unwrap(),
+            Tid::new(0).unwrap(),
+            rate,
+            TxProtection::Open,
+        );
+        let aggregate = push_subframe(aggregate, small.remove(0), subframe_frame(self.0), None);
+        let operation = CheckedAggregate::new(aggregate, SubframeSource::Sent(mpdu))
+            .ok()
+            .unwrap();
+        let Err(AggregateRefused {
+            reason,
+            aggregate,
+            subframe,
+        }) = <ModelTypes as TxBufferPool<ModelSmall>>::push_aggregate(operation)
+        else {
+            panic!("duplicate or lower-than-head Sent is refused")
+        };
+        assert_eq!(reason, PreparationError::BlockAckWindow);
+        assert_eq!(aggregate.subframes(), 1);
+        let SubframeSource::Sent(mpdu) = subframe else {
+            panic!("refusal preserves Sent")
+        };
+        let (buffer, body) = <ModelTypes as TxBufferPool<ModelSmall>>::renew(mpdu);
+        assert_eq!(buffer.slot.index(), index);
+        assert_eq!(body.unwrap().0, [0x7a]);
+        assert_eq!(
+            phase.held.air.sent().len(),
+            1,
+            "no second publication on refusal"
+        );
+    }
+}
+
+#[test]
+fn a_duplicate_or_out_of_window_sent_subframe_returns_its_owner_and_body() {
+    for head in [40, 41] {
+        let (backend, _) = backend();
+        block_on(run_port(backend, Body(RefusedSent(head))));
     }
 }

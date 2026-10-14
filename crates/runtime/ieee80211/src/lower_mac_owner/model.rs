@@ -31,7 +31,8 @@
 //! hardware timeout. ACK/BA shape mismatch poisons before publication and
 //! quarantines the rejected operation until teardown. There is no separate
 //! BA queue whose injection could escape to a later aggregate.
-//! The builder rejects subframes outside the 64-sequence BA window rooted at
+//! The builder rejects duplicate sequence numbers and subframes outside the
+//! 64-sequence BA window rooted at
 //! its first subframe, using sequence arithmetic modulo 4096. Refusal returns
 //! both the unchanged builder and the rejected subframe before publication.
 //!
@@ -2709,10 +2710,14 @@ pub struct ModelAggregate<
 }
 impl<R, K, X: ModelContext, S: AggregateState> ModelAggregate<'_, '_, '_, R, K, X, S> {
     fn acknowledgement_bit(&self, sequence: SequenceNumber) -> Option<u64> {
-        let distance = self.subframes.first().map_or(0, |first| {
-            first.mpdu.buffer.sequence().forward_distance(sequence)
-        });
-        1_u64.checked_shl(u32::from(distance))
+        let first = S::retain_head(&self.first, sequence);
+        let distance = first.forward_distance(sequence);
+        let bit = 1_u64.checked_shl(u32::from(distance))?;
+        (!self
+            .subframes
+            .iter()
+            .any(|subframe| subframe.acknowledgement_bit == bit))
+        .then_some(bit)
     }
 }
 impl<'id, R, K, X: ModelContext, S: AggregateState> PhaseAggregate<'id>
@@ -2843,7 +2848,7 @@ fn push_model<
             (ModelMpdu::from_sent(C::erase_sent(mpdu), layout), bit)
         }
     };
-    let first = S::retain_head(aggregate.first, mpdu.buffer.sequence());
+    let first = S::retain_head(&aggregate.first, mpdu.buffer.sequence());
     aggregate.subframes.push(Subframe {
         mpdu,
         acknowledgement_bit,

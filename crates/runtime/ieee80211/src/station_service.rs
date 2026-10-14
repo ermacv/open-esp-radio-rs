@@ -12,6 +12,9 @@
 //! Each step consumes at most one input per source and polls all sources even
 //! when RX is ready. Batches stop after eight steps and yield, so a continuous
 //! RX stream cannot suppress application commands, data TX or driver progress.
+//! Station requests retain the application's correlation through either a
+//! synchronous `CommandRefused` or their reserved `CommandCompleted` output;
+//! link notices describe lifecycle independently of application requests.
 //! `event` returns a typed contract error directly; no sticky failure flag
 //! changes later event handling. A disable carries its delivery result with
 //! the disabled owner, preserving the existing fail-stop boundary.
@@ -79,8 +82,8 @@ use oer_ieee80211_sta::{
         StaDataTokens,
     },
     machine::{
-        Peer, StaAction, StaCommand, StaFrame, StaFrameClass, StaInput, StaNotice, StaRatePlan,
-        StaTokens, StaTransmit, StaTxContext, Station,
+        Peer, StaAction, StaCommandRefused, StaCommandTerminal, StaFrame, StaFrameClass, StaInput,
+        StaNotice, StaRatePlan, StaRequest, StaTokens, StaTransmit, StaTxContext, Station,
     },
     power_save::NULL_TRANSMISSIONS,
 };
@@ -307,10 +310,10 @@ pub struct TxMsdu {
 }
 
 /// What the application asks of the service.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum ServiceCommand<K> {
     /// A command of the station.
-    Station(StaCommand),
+    Station(StaRequest),
     /// A fact of the access point beside the station.
     AccessPoint(AccessPointFact<K>),
     /// The access point beside the station is wanted.
@@ -342,6 +345,10 @@ pub enum ServiceOutput<K> {
     },
     /// The station's notice.
     Notice(StaNotice),
+    /// A request refused synchronously, with its original correlation.
+    CommandRefused(StaCommandRefused),
+    /// The unique terminal of one admitted station request.
+    CommandCompleted(StaCommandTerminal),
     /// The arbiter's command to the access point beside the station.
     AccessPoint(AccessPointCommand<K>),
 }
@@ -765,7 +772,9 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
             if command_ready && let Some(command) = io.commands.try_receive() {
                 match command {
                     ServiceCommand::Station(command) => {
-                        self.station.input(now, StaInput::Command(command))
+                        if let Err(refused) = self.station.command(now, command) {
+                            (io.output)(ServiceOutput::CommandRefused(refused));
+                        }
                     }
                     ServiceCommand::AccessPoint(fact) => self.arbiter.access_point(now, fact),
                     ServiceCommand::WantAccessPoint => self.arbiter.want_access_point(),
@@ -1053,12 +1062,18 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
     ) {
         self.deliver_arbiter_notices(now, io);
         while let Some(action) = self.station.poll_action(now) {
-            if let StaAction::Notify(notice) = action {
-                (io.output)(ServiceOutput::Notice(notice));
-                if let StaNotice::Disconnected(_) = notice {
-                    self.rates.disconnected();
-                    self.data.leave();
+            match action {
+                StaAction::CommandCompleted(terminal) => {
+                    (io.output)(ServiceOutput::CommandCompleted(terminal))
                 }
+                StaAction::Notify(notice) => {
+                    (io.output)(ServiceOutput::Notice(notice));
+                    if let StaNotice::Disconnected(_) = notice {
+                        self.rates.disconnected();
+                        self.data.leave();
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -1497,10 +1512,12 @@ where
             (io.output)(ServiceOutput::Notice(notice));
             return Ok(match notice {
                 StaNotice::Disconnected(_) => Follow::Disconnected,
-                StaNotice::Connected { .. } | StaNotice::BackgroundScanDone { .. } => {
-                    Follow::Nothing
-                }
+                StaNotice::Connected { .. } => Follow::Nothing,
             });
+        }
+        StaAction::CommandCompleted(terminal) => {
+            (io.output)(ServiceOutput::CommandCompleted(terminal));
+            return Ok(Follow::Nothing);
         }
         StaAction::Associated(peer) => {
             return Ok(Follow::Associated(peer));

@@ -13,6 +13,17 @@ the consumer performs or forwards them before waiting again. Rust can still
 explicitly drop an affine value; the annotation diagnoses accidentally
 discarded results and does not replace terminal resource handling.
 
+`Station::command` consumes a non-cloneable `StaRequest` with the application's
+correlation value. Refusal returns the request synchronously with its reason;
+admission reserves one terminal cell for its command kind. Connect,
+background scan and Disconnect have separate cells. A duplicate request is
+refused while its operation or undelivered terminal owns that cell, so a
+Disconnect cannot overwrite a pending scan result. `CommandCompleted` returns
+the original request. Lifecycle Connected/Disconnected notices remain distinct
+from request completion. A scan result retains partial observations and names
+the exact absence refusal, cancelled-absence limit or link-ending reason.
+The correlation value is caller data and confers no resource authority.
+
 The local transmitter is `OwnAddress`; a scan record validates its individual
 BSS address as `Bssid` before it can enter Join. Authentication, Association,
 SAE, the handshake, the connected link and station frame encoders keep those

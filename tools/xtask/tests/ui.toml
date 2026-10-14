@@ -76,3 +76,10 @@ packages = ["oer-ieee80211-mac", "oer-ieee80211-sta"]
 features = []
 targets = ["host", "esp32s31"]
 cases = ["crates/protocols/ieee80211/sta/tests/ui/authentication_attempt.rs"]
+
+[[suite]]
+name = "station-command"
+packages = ["oer-ieee80211-lower-mac", "oer-ieee80211-sta", "oer-time"]
+features = []
+targets = ["host", "esp32s31"]
+cases = ["crates/protocols/ieee80211/sta/tests/ui/command_request.rs"]

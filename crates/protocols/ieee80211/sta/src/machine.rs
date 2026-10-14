@@ -111,8 +111,14 @@ use oer_time::{Duration, Instant};
 use crate::epoch::{LinkEpoch, LinkEpochSource};
 use crate::pool::Pool;
 use oer_radio_port::{PoolPath, Root};
+mod commands;
 mod group_keys;
 use crate::power_save::{NullOutcome, PowerSaveDecision, PowerSaveView};
+use commands::Commands;
+pub use commands::{
+    BackgroundScanEnd, CommandRefusal, StaCommandOutcome, StaCommandRefused, StaCommandTerminal,
+    StaRequest,
+};
 use group_keys::{GroupKeys, GroupPlace, Installed as InstalledGroup};
 
 use crate::join::{
@@ -187,8 +193,6 @@ pub enum StaCommand {
 
 /// One input of the station.
 pub enum StaInput<'id, T: StaTokens, K> {
-    /// A command of the application.
-    Command(StaCommand),
     /// A deadline the station named passed.
     Tick,
     /// The terminal of a transmission: its ticket and buffer come back.
@@ -366,6 +370,8 @@ pub enum StaAction<'a, 'id, T: StaTokens, K> {
     Associated(Peer<T::RxMeta>),
     /// Tell the application what happened.
     Notify(StaNotice),
+    /// Return one accepted application's request and its final outcome.
+    CommandCompleted(StaCommandTerminal),
 }
 
 /// One MPDU to transmit: its ticket, the buffer the station encoded it in,
@@ -511,12 +517,6 @@ pub enum StaNotice {
     },
     /// The station left its network, or failed to join one.
     Disconnected(StaDisconnectReason),
-    /// The background scan ended; `partial` when it ended early after
-    /// cancelled absences.
-    BackgroundScanDone {
-        /// It ended early.
-        partial: bool,
-    },
 }
 
 /// Why the station is not connected.
@@ -670,9 +670,8 @@ pub struct Station<'id, T: StaTokens, K: Ieee80211Capabilities> {
     absence_place: Option<AbsencePlace>,
     /// The absence the station holds.
     absence: Option<Lease<K>>,
-    /// A notice for the application the station owes outside its state's
-    /// steps.
-    notice_owed: Option<StaNotice>,
+    /// Each admitted application request reserves its own terminal cell.
+    commands: Commands,
     sequence: StaSequenceCounter,
     scan: ScanTable<SCAN_CAPACITY>,
     /// The connection attempt that owns new TX operations.
@@ -1460,7 +1459,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             lease: Held::None,
             absence_place: Some(absence_place),
             absence: None,
-            notice_owed: None,
+            commands: Commands::new(),
             sequence: StaSequenceCounter::new(SequenceNumber::ZERO),
             scan: ScanTable::new(),
             epoch: None,
@@ -1568,8 +1567,77 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         core::mem::replace(&mut self.state, State::Taken)
     }
 
+    /// Admit a request and reserve its terminal before changing protocol state.
+    /// Refusal returns that same request immediately and owes no terminal.
+    pub fn command(&mut self, now: Instant, request: StaRequest) -> Result<(), StaCommandRefused> {
+        self.complete_commands();
+        let command = request.command();
+        let reason = match (command, &self.state) {
+            (StaCommand::Connect, State::Idle) => None,
+            (StaCommand::Connect, State::Connected(_)) => Some(CommandRefusal::AlreadyConnected),
+            (StaCommand::Connect, _) => Some(CommandRefusal::Transitioning),
+            (
+                StaCommand::Disconnect,
+                State::Connected(_) | State::Scan(_) | State::Join(_) | State::Handshake(_),
+            ) => None,
+            (StaCommand::Disconnect, State::Idle) => Some(CommandRefusal::NotConnected),
+            (StaCommand::Disconnect, _) => Some(CommandRefusal::Transitioning),
+            (StaCommand::BackgroundScan, State::Connected(_)) => None,
+            (StaCommand::BackgroundScan, _) => Some(CommandRefusal::NotConnected),
+        };
+        if let Some(reason) = reason {
+            return Err(StaCommandRefused { request, reason });
+        }
+        self.commands.reserve(request)?;
+        let state = self.take_state();
+        self.state = self.step(state, now, Done::Command(command));
+        self.complete_commands();
+        Ok(())
+    }
+
+    /// Record terminal outcomes before a later input can change their state.
+    fn complete_commands(&mut self) {
+        match &self.state {
+            State::Connected(connected) => self.commands.complete(
+                StaCommand::Connect,
+                StaCommandOutcome::Connected {
+                    bssid: connected.bssid,
+                    channel: connected.channel.channel().number(),
+                },
+            ),
+            State::Leave(leave) => self.commands.complete(
+                StaCommand::BackgroundScan,
+                StaCommandOutcome::BackgroundScan {
+                    interrupted: Some(BackgroundScanEnd::LinkEnded(leave.reason)),
+                },
+            ),
+            State::Report(reason) => {
+                self.commands.complete(
+                    StaCommand::Connect,
+                    StaCommandOutcome::ConnectFailed(*reason),
+                );
+                self.commands.complete(
+                    StaCommand::BackgroundScan,
+                    StaCommandOutcome::BackgroundScan {
+                        interrupted: Some(BackgroundScanEnd::LinkEnded(*reason)),
+                    },
+                );
+                self.commands.complete(
+                    StaCommand::Disconnect,
+                    StaCommandOutcome::Disconnected(*reason),
+                );
+            }
+            _ => {}
+        }
+    }
+
     /// Take one input at `now`.
     pub fn input(&mut self, now: Instant, input: StaInput<'id, T, K>) {
+        self.input_event(now, input);
+        self.complete_commands();
+    }
+
+    fn input_event(&mut self, now: Instant, input: StaInput<'id, T, K>) {
         let done = match input {
             StaInput::TxDone {
                 context,
@@ -1604,7 +1672,6 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     reason,
                 }
             }
-            StaInput::Command(command) => Done::Command(command),
             StaInput::Tick => Done::Tick,
             StaInput::Configured(pending) => {
                 self.configuration = Some(pending.place);
@@ -1826,10 +1893,15 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 self.absence = Some(lease);
                 background.step = BackgroundStep::NeedSleep;
             }
-            // Not connected after all: the background scan ends.
-            AbsenceAnswer::Refused(_, place) => {
+            AbsenceAnswer::Refused(reason, place) => {
                 self.absence_place = Some(place);
                 connected.background = None;
+                self.commands.complete(
+                    StaCommand::BackgroundScan,
+                    StaCommandOutcome::BackgroundScan {
+                        interrupted: Some(BackgroundScanEnd::AbsenceRefused(reason)),
+                    },
+                );
             }
         }
     }
@@ -1852,7 +1924,12 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 BackgroundStep::NeedWake
             } else if background.skipped >= limit {
                 connected.background = None;
-                self.notice_owed = Some(StaNotice::BackgroundScanDone { partial: true });
+                self.commands.complete(
+                    StaCommand::BackgroundScan,
+                    StaCommandOutcome::BackgroundScan {
+                        interrupted: Some(BackgroundScanEnd::CancelledAbsences),
+                    },
+                );
                 return;
             } else {
                 BackgroundStep::NeedAbsence
@@ -2042,7 +2119,10 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                         step: BackgroundStep::NeedAbsence,
                     });
                 } else {
-                    self.notice_owed = Some(StaNotice::BackgroundScanDone { partial: false });
+                    self.commands.complete(
+                        StaCommand::BackgroundScan,
+                        StaCommandOutcome::BackgroundScan { interrupted: None },
+                    );
                 }
                 State::Connected(connected)
             }
@@ -2241,7 +2321,12 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 && background.skipped >= self.config.skipped_absences
             {
                 connected.background = None;
-                self.notice_owed = Some(StaNotice::BackgroundScanDone { partial: true });
+                self.commands.complete(
+                    StaCommand::BackgroundScan,
+                    StaCommandOutcome::BackgroundScan {
+                        interrupted: Some(BackgroundScanEnd::CancelledAbsences),
+                    },
+                );
             }
             return self.background_done(connected);
         }
@@ -2285,10 +2370,18 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         {
             if background.skipped >= self.config.skipped_absences {
                 connected.background = None;
-                self.notice_owed = Some(StaNotice::BackgroundScanDone { partial: true });
+                self.commands.complete(
+                    StaCommand::BackgroundScan,
+                    StaCommandOutcome::BackgroundScan {
+                        interrupted: Some(BackgroundScanEnd::CancelledAbsences),
+                    },
+                );
             } else if self.channel(background.visit).is_none() {
                 connected.background = None;
-                self.notice_owed = Some(StaNotice::BackgroundScanDone { partial: false });
+                self.commands.complete(
+                    StaCommand::BackgroundScan,
+                    StaCommandOutcome::BackgroundScan { interrupted: None },
+                );
             }
         }
         State::Connected(connected)
@@ -2439,6 +2532,18 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     /// }
     /// ```
     pub fn receive<'frame>(
+        &mut self,
+        now: Instant,
+        frame: &'frame [u8],
+        meta: T::RxMeta,
+        mut deliver: impl FnMut(oer_ieee80211_mac::data::EthernetFrameParts<'frame>),
+    ) -> Result<(), oer_ieee80211_mac::receive::RxDropReason> {
+        let result = self.receive_frame(now, frame, meta, &mut deliver);
+        self.complete_commands();
+        result
+    }
+
+    fn receive_frame<'frame>(
         &mut self,
         now: Instant,
         frame: &'frame [u8],
@@ -2740,8 +2845,9 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     #[must_use = "perform the returned action before waiting for another input"]
     pub fn poll_action(&mut self, now: Instant) -> Option<StaAction<'_, 'id, T, K>> {
         let owed = loop {
-            if let Some(notice) = self.notice_owed.take() {
-                return Some(StaAction::Notify(notice));
+            self.complete_commands();
+            if let Some(terminal) = self.commands.poll() {
+                return Some(StaAction::CommandCompleted(terminal));
             }
             let state = self.take_state();
             let (state, progress) = self.owe(state, now);

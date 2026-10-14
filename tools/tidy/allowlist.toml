@@ -219,3 +219,7 @@ reason = "bt_hci::cmd! in the open-radio-bluetooth fixture expands to paths in e
 manifest = "hil/host/fixture/Cargo.toml"
 dependency = "embedded-io-async"
 reason = "bt_hci::cmd! in the open-radio-bluetooth fixture expands to paths in embedded_io_async"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/sta/tests/ui/command_request.rs"
+reason = "Positive and negative twins compiled by cargo xtask check ui on host and RV32."

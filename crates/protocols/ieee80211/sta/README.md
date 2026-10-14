@@ -55,6 +55,14 @@ Data writes an open MAC header directly into its proven span, so it fits an
 exact-size buffer without a temporary CCMP gap or a second payload move.
 The PM owner retains a NonZero beacon period through its divisions. Vendor
 timer arithmetic keeps its original wrapping width; diagnostics saturate.
+Each modem-sleep input returns a fresh `PmActions` batch. Before changing
+state, its helpers receive fixed arrays of affine effect places: writing
+consumes a place, so neither overflow nor overwriting another effect is
+possible. TBTT reserves the largest batch: 1 normalization + 1 RF wake +
+13 coexistence + 1 interval + 8 parameter effects, totaling 24. Other inputs
+reserve fewer places. Consumers execute each returned batch in order;
+separate inputs cannot append into the same batch. The TX offer returns its
+hold decision alongside the effects, including when the frame must wait.
 The station owns `Counter`, the saturating diagnostic value its data path
 and service loop report. It carries no lower-MAC contract, resource capacity
 or protocol-state decision.

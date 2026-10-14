@@ -475,13 +475,11 @@ impl ConnectedControlCore {
         let coex = self.power.coex_view();
         let traffic = self.power_traffic(context, control_event_pending);
         let clock = power_clock(tx);
-        let mut actions = PmActions::new();
         match input {
             PowerInput::Start(join) => {
                 self.power.start = None;
-                // The TBTT schedule is in the access point's TSF, so the
-                // station takes it before power management places its first
-                // TBTT, as the vendor does on the Association Response.
+                // The first TBTT follows the access point's TSF, just as the
+                // vendor takes it on the Association Response.
                 let Ok(join_tsf) = join.access_point_tsf_at(clock.now) else {
                     return Ok(Some(DatapathControlProgress::Exit(
                         ConnectedDisconnectReason::JoinTsfUnrepresentable,
@@ -492,7 +490,8 @@ impl ConnectedControlCore {
                         .set(hardware, tsf)
                         .map_err(ConnectedControlError::TsfTiming)?;
                 }
-                self.power.engine.start(join.beacon, coex, &mut actions);
+                let actions = self.power.engine.start(join.beacon, coex);
+                self.apply_power_actions(hardware, tx, actions)?;
             }
             PowerInput::Null(power_save) => {
                 self.power.nulls = [self.power.nulls[1], None];
@@ -500,66 +499,52 @@ impl ConnectedControlCore {
             }
             PowerInput::Tbtt => {
                 self.power.tbtt = false;
-                self.power.engine.tbtt(clock, coex, traffic, &mut actions);
+                let actions = self.power.engine.tbtt(clock, coex, traffic);
+                self.apply_power_actions(hardware, tx, actions)?;
             }
             PowerInput::Phase(phase) => {
                 self.power.phase = None;
-                self.power
-                    .engine
-                    .coex_phase(phase, clock, coex, &mut actions);
+                let actions = self.power.engine.coex_phase(phase, clock, coex);
+                self.apply_power_actions(hardware, tx, actions)?;
             }
             PowerInput::Preemption(end) => {
                 self.power.preemption = None;
-                self.power
-                    .engine
-                    .preemption_end(end, clock, coex, traffic, &mut actions);
+                let actions = self.power.engine.preemption_end(end, clock, coex, traffic);
+                self.apply_power_actions(hardware, tx, actions)?;
             }
             PowerInput::Timer(index) => {
                 self.power.deadlines[index] = None;
-                match TIMERS[index] {
-                    PmTimer::SliceEnd => {
-                        self.power
-                            .engine
-                            .slice_end_timer(coex, traffic, &mut actions)
-                    }
-                    PmTimer::Active => self.power.engine.active_timer(coex, traffic, &mut actions),
+                let actions = match TIMERS[index] {
+                    PmTimer::SliceEnd => self.power.engine.slice_end_timer(coex, traffic),
+                    PmTimer::Active => self.power.engine.active_timer(coex, traffic),
                     PmTimer::SleepDelay => {
-                        self.power
-                            .engine
-                            .sleep_delay_timer(clock, coex, traffic, &mut actions)
+                        self.power.engine.sleep_delay_timer(clock, coex, traffic)
                     }
-                    PmTimer::Dream => self.power.engine.dream_timer(&mut actions),
-                    PmTimer::Preemption => {
-                        self.power
-                            .engine
-                            .preemption_timer(coex, traffic, &mut actions)
-                    }
-                }
+                    PmTimer::Dream => self.power.engine.dream_timer(),
+                    PmTimer::Preemption => self.power.engine.preemption_timer(coex, traffic),
+                };
+                self.apply_power_actions(hardware, tx, actions)?;
             }
             PowerInput::NetworkTxReport => {
                 let report = tx.take_network_tx_report();
                 if report.started && !core::mem::take(&mut self.power.network_offered) {
-                    let _ = self
-                        .power
-                        .engine
-                        .tx_data(true, clock, coex, traffic, &mut actions);
+                    let (_hold, actions) = self.power.engine.tx_data(true, clock, coex, traffic);
+                    // The frame already started; only offer admission can
+                    // hold it. Still perform every effect of this report.
+                    self.apply_power_actions(hardware, tx, actions)?;
                 }
                 if let Some(acknowledged) = report.completed {
-                    self.power
-                        .engine
-                        .tx_data_done(acknowledged, coex, traffic, &mut actions);
+                    let actions = self.power.engine.tx_data_done(acknowledged, coex, traffic);
+                    self.apply_power_actions(hardware, tx, actions)?;
                 }
             }
             PowerInput::NetworkTxOffer => {
                 self.power.network_offered = true;
-                let hold = self
-                    .power
-                    .engine
-                    .tx_data(true, clock, coex, traffic, &mut actions);
+                let (hold, actions) = self.power.engine.tx_data(true, clock, coex, traffic);
                 self.power.network_held = hold;
+                self.apply_power_actions(hardware, tx, actions)?;
             }
         }
-        self.apply_power_actions(hardware, tx, actions)?;
         Ok(Some(self.start_queued_null(hardware, tx)?))
     }
 
@@ -613,7 +598,7 @@ impl ConnectedControlCore {
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
     {
-        for action in actions.iter() {
+        for action in actions {
             match action {
                 PmAction::SendNull { power_save } => {
                     let slot = self

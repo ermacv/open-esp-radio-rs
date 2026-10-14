@@ -16,7 +16,7 @@ use crate::{
     connected_rx::{AssociatedHeControlIdentity, ConnectedRxControlEvent},
     ftm::{StationFtmHardwareError, station_ftm_request_frontier},
     hardware::control::{ConnectedControlHardware, StationIndividualTwtHardwareError},
-    modem_sleep::{PmActions, PmBeacon, PmTim},
+    modem_sleep::{PmBeacon, PmTim},
     single_mpdu_tx::{ActionTxConfig, SingleMpduTx, SingleMpduTxError, SingleMpduTxOutcome},
 };
 use oer_ieee80211_mac::sequence::SequenceNumber;
@@ -969,9 +969,8 @@ impl ConnectedControlCore {
                 }
             }
         }
-        let mut actions = PmActions::new();
         let coex = self.power.coex_view();
-        self.power.engine.stop(coex, &mut actions);
+        let actions = self.power.engine.stop(coex);
         self.apply_power_actions(hardware, tx, actions)?;
 
         let mut rx_block_ack_agreements = 0_u8;
@@ -1086,14 +1085,12 @@ impl ConnectedControlCore {
                     let traffic = self.power_traffic(context, control_event_pending);
                     let clock = power_clock(tx);
                     let coex = self.power.coex_view();
-                    let mut actions = PmActions::new();
-                    self.power.engine.null_done(
+                    let actions = self.power.engine.null_done(
                         advertised == StaPowerManagement::PowerSave,
                         success,
                         clock,
                         coex,
                         traffic,
-                        &mut actions,
                     );
                     self.apply_power_actions(hardware, tx, actions)?;
                     return Ok(DatapathControlProgress::More);
@@ -1310,10 +1307,7 @@ impl ConnectedControlCore {
         }
         if let ConnectedRxControlEvent::PowerSaveData(data) = event {
             let coex = self.power.coex_view();
-            let mut actions = PmActions::new();
-            self.power
-                .engine
-                .rx_data(data.group, data.more_data, coex, &mut actions);
+            let actions = self.power.engine.rx_data(data.group, data.more_data, coex);
             self.apply_power_actions(hardware, tx, actions)?;
             return Ok(DatapathControlProgress::More);
         }
@@ -1361,10 +1355,7 @@ impl ConnectedControlCore {
             let traffic = self.power_traffic(context, control_event_pending);
             let clock = power_clock(tx);
             let coex = self.power.coex_view();
-            let mut actions = PmActions::new();
-            self.power
-                .engine
-                .beacon(beacon, clock, coex, traffic, &mut actions);
+            let actions = self.power.engine.beacon(beacon, clock, coex, traffic);
             self.apply_power_actions(hardware, tx, actions)?;
             return Ok(DatapathControlProgress::More);
         }
@@ -1930,9 +1921,8 @@ impl ConnectedControlCore {
         if self.left {
             return Ok(DatapathControlProgress::Idle);
         }
-        let mut actions = PmActions::new();
         let coex = self.power.coex_view();
-        self.power.engine.stop(coex, &mut actions);
+        let actions = self.power.engine.stop(coex);
         self.apply_power_actions(hardware, tx, actions)?;
         self.clear_power_inputs();
         tx.start_deauthentication(hardware, DEAUTHENTICATION_REASON_LEAVING)?;

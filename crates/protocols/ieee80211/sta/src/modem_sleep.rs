@@ -250,63 +250,85 @@ pub enum PmAction {
     },
 }
 
-/// Capacity of one input's effect list.
+/// Maximum reserved places for one input's effects. TBTT reserves
+/// 1 normalization + 1 RF wake + 13 coexistence + 1 interval + 8 parameter
+/// effects. Every other input reserves fewer places. Helpers take fixed-size
+/// arrays of affine places, so exceeding either bound fails to compile.
 pub const PM_ACTION_CAPACITY: usize = 24;
 
 /// The ordered effects of one input.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+///
+/// Each public input returns a fresh batch. There is no append operation;
+/// helpers reserve their complete output before changing state. Unused
+/// places are skipped without changing the order of the occupied places.
+///
+/// ```
+/// use oer_ieee80211_sta::modem_sleep::{CoexView, ModemSleep, PmBeacon, SleepType};
+/// use oer_ieee80211_mac::tsf::TsfInstant;
+/// let mut pm = ModemSleep::new(SleepType::None);
+/// let beacon = PmBeacon { timestamp_tsf: TsfInstant::from_micros(0), interval_tu: 100, tim: None };
+/// let start = pm.start(beacon, CoexView::INACTIVE);
+/// assert!(!start.is_empty());
+/// let stop = pm.stop(CoexView::INACTIVE);
+/// assert!(!stop.is_empty());
+/// for effect in start.into_iter().chain(stop) { let _ = effect; }
+/// ```
+///
+/// Callers cannot accumulate several inputs in one batch:
+///
+/// ```compile_fail,E0599
+/// use oer_ieee80211_sta::modem_sleep::{CoexView, ModemSleep, PmActions, PmBeacon, SleepType};
+/// use oer_ieee80211_mac::tsf::TsfInstant;
+/// let mut pm = ModemSleep::new(SleepType::None);
+/// let beacon = PmBeacon { timestamp_tsf: TsfInstant::from_micros(0), interval_tu: 100, tim: None };
+/// let mut actions = PmActions::new();
+/// pm.start(beacon, CoexView::INACTIVE, &mut actions);
+/// pm.stop(CoexView::INACTIVE, &mut actions);
+/// ```
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "perform this input's effects in order"]
 pub struct PmActions {
     items: [Option<PmAction>; PM_ACTION_CAPACITY],
-    len: usize,
-    dropped: u32,
-}
-
-impl Default for PmActions {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl PmActions {
-    pub const fn new() -> Self {
-        Self {
-            items: [None; PM_ACTION_CAPACITY],
-            len: 0,
-            dropped: 0,
-        }
-    }
-
-    /// Owe `action`; one beyond the capacity is dropped and counted.
-    fn push(&mut self, action: PmAction) {
-        match self.items.get_mut(self.len) {
-            Some(slot) => {
-                *slot = Some(action);
-                self.len = self.len.saturating_add(1);
-            }
-            None => self.dropped = self.dropped.saturating_add(1),
-        }
-    }
-
-    /// Actions dropped because one input owed more than the capacity.
-    pub const fn dropped(&self) -> u32 {
-        self.dropped
-    }
-
+    /// Number of effects this input produced.
     pub fn len(&self) -> usize {
-        self.len
+        self.iter().count()
     }
 
+    /// Whether this input produced no effects.
     pub fn is_empty(&self) -> bool {
-        self.len == 0
+        self.iter().next().is_none()
     }
 
+    /// Inspect the effects in execution order.
     pub fn iter(&self) -> impl Iterator<Item = PmAction> + '_ {
-        self.items
-            .iter()
-            .take(self.len)
-            .filter_map(|action| *action)
+        self.items.iter().flatten().copied()
     }
 }
+
+impl IntoIterator for PmActions {
+    type Item = PmAction;
+    type IntoIter =
+        core::iter::Flatten<core::array::IntoIter<Option<PmAction>, PM_ACTION_CAPACITY>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.into_iter().flatten()
+    }
+}
+
+/// One reserved output place. Writing consumes it; a helper can neither
+/// append beyond its reservation nor overwrite another helper's effect.
+struct EffectPlace<'a>(&'a mut Option<PmAction>);
+
+impl EffectPlace<'_> {
+    fn write(self, action: PmAction) {
+        *self.0 = Some(action);
+    }
+}
+
+type Places<'a, const N: usize> = [EffectPlace<'a>; N];
 
 /// Coexistence as Wi-Fi reads it at one instant.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -513,6 +535,19 @@ pub struct ModemSleep {
 }
 
 impl ModemSleep {
+    /// Reserve the complete effect batch before an input changes state.
+    /// Every place is minted once and consumed by exactly one helper write.
+    fn transition<R>(
+        &mut self,
+        step: impl FnOnce(&mut Self, Places<'_, PM_ACTION_CAPACITY>) -> R,
+    ) -> (R, PmActions) {
+        let mut actions = PmActions {
+            items: [None; PM_ACTION_CAPACITY],
+        };
+        let result = step(self, actions.items.each_mut().map(EffectPlace));
+        (result, actions)
+    }
+
     /// Stopped power management with the vendor attach defaults.
     ///
     /// SOURCE(esp32s31): `pm_attach`.
@@ -582,24 +617,26 @@ impl ModemSleep {
 
     /// Normalize the state and emit the vendor's wake effects. TBTT needs
     /// this transition independently of the sleep-admission decision.
-    fn normalize_sleep_state(&mut self, coex: CoexView, actions: &mut PmActions) {
+    fn normalize_sleep_state(&mut self, coex: CoexView, places: Places<'_, 1>) {
+        let [wake] = places;
         if self.sleep_type == SleepType::None && !coex.active {
             if self.state != PmState::Awake {
-                self.dream(coex, None, actions);
+                self.dream(coex, None, [wake]);
                 self.enter(PmState::Awake);
             }
             return;
         }
         if !self.started && self.state != PmState::Awake {
-            self.dream(coex, None, actions);
+            self.dream(coex, None, [wake]);
             self.enter(PmState::Awake);
         }
     }
 
     /// `pm_check_state`: without coexistence, sleep type None stays awake.
     /// Under coexistence it may sleep; admission also requires a started link.
-    fn may_sleep(&mut self, coex: CoexView, actions: &mut PmActions) -> bool {
-        self.normalize_sleep_state(coex, actions);
+    fn may_sleep(&mut self, coex: CoexView, places: Places<'_, 1>) -> bool {
+        let [normalize] = places;
+        self.normalize_sleep_state(coex, [normalize]);
         self.started && (self.sleep_type != SleepType::None || coex.active)
     }
 
@@ -618,7 +655,24 @@ impl ModemSleep {
     /// point's last beacon or probe response before the association; its
     /// timestamp places the first TBTT schedule, as the vendor passes its
     /// node timestamp without a TIM.
-    pub fn start(&mut self, join_beacon: PmBeacon, coex: CoexView, actions: &mut PmActions) {
+    pub fn start(&mut self, join_beacon: PmBeacon, coex: CoexView) -> PmActions {
+        self.transition(|this, [a, b, c, d, e, f, g, h, ..]| {
+            this.start_into(join_beacon, coex, [a, b, c, d, e, f, g, h])
+        })
+        .1
+    }
+
+    fn start_into(&mut self, join_beacon: PmBeacon, coex: CoexView, places: Places<'_, 8>) {
+        let [
+            interval,
+            scale,
+            power,
+            tbtt,
+            priority,
+            time,
+            active0,
+            active1,
+        ] = places;
         if self.started {
             return;
         }
@@ -627,13 +681,13 @@ impl ModemSleep {
         self.activity = 0;
         self.beacon_interval_micros = beacon_period(join_beacon.interval_tu);
         if coex.active {
-            actions.push(PmAction::Coex(PmCoexAction::SetInterval(
+            interval.write(PmAction::Coex(PmCoexAction::SetInterval(
                 self.beacon_interval_micros.get() / SCHEDULE_INTERVAL_UNIT_MICROS,
             )));
         }
         self.dtim_period = 1;
-        self.scale_listen_interval(coex, actions);
-        self.coex_pwr_update(coex, actions);
+        self.scale_listen_interval(coex, [scale]);
+        self.coex_pwr_update(coex, [power]);
         self.coex_was_active = coex.active;
         self.update_tbtt_at_next_beacon = true;
         self.cycle_anchor = 0;
@@ -643,47 +697,67 @@ impl ModemSleep {
                 ..join_beacon
             },
             coex,
-            actions,
+            [tbtt],
         );
-        actions.push(PmAction::RxBeaconPriority(true));
-        actions.push(PmAction::RxBeaconTime {
+        priority.write(PmAction::RxBeaconPriority(true));
+        time.write(PmAction::RxBeaconTime {
             window_micros: self.beacon_window_micros,
             time_micros: BEACON_TIME_MICROS,
         });
-        self.enable_active_timer(actions);
+        self.enable_active_timer([active0, active1]);
         self.started = true;
         self.preempted = false;
     }
 
     /// `pm_stop`: the association ends.
-    pub fn stop(&mut self, coex: CoexView, actions: &mut PmActions) {
+    pub fn stop(&mut self, coex: CoexView) -> PmActions {
+        self.transition(|this, [a, b, c, d, e, f, g, h, i, j, ..]| {
+            this.stop_into(coex, [a, b, c, d, e, f, g, h, i, j])
+        })
+        .1
+    }
+
+    fn stop_into(&mut self, coex: CoexView, places: Places<'_, 10>) {
+        let [
+            unblock,
+            delay,
+            active,
+            tbtt,
+            priority,
+            dream_timer,
+            wake,
+            held,
+            slice,
+            power,
+        ] = places;
         if !self.started {
             return;
         }
-        actions.push(PmAction::UnblockTx);
-        self.disable_sleep_delay_timer(actions);
-        actions.push(PmAction::Disarm(PmTimer::Active));
-        actions.push(PmAction::StopTbtt);
-        actions.push(PmAction::RxBeaconPriority(false));
-        actions.push(PmAction::Disarm(PmTimer::Dream));
+        unblock.write(PmAction::UnblockTx);
+        self.disable_sleep_delay_timer([delay]);
+        active.write(PmAction::Disarm(PmTimer::Active));
+        tbtt.write(PmAction::StopTbtt);
+        priority.write(PmAction::RxBeaconPriority(false));
+        dream_timer.write(PmAction::Disarm(PmTimer::Dream));
         if self.state != PmState::Awake {
-            self.dream(coex, None, actions);
+            self.dream(coex, None, [wake]);
             self.enter(PmState::Awake);
-            actions.push(PmAction::ReleaseHeldFrames);
+            held.write(PmAction::ReleaseHeldFrames);
         }
         self.dtim_period = 1;
         self.in_slice = true;
         self.wake_deferred = false;
         self.started = false;
         self.beacon_parsed = false;
-        actions.push(PmAction::Disarm(PmTimer::SliceEnd));
-        self.coex_pwr_update(coex, actions);
+        slice.write(PmAction::Disarm(PmTimer::SliceEnd));
+        self.coex_pwr_update(coex, [power]);
     }
 
     /// `pm_coex_pwr_update` with the vendor default coexistence power
     /// configuration off: the flexible period is one.
-    fn coex_pwr_update(&mut self, coex: CoexView, actions: &mut PmActions) {
-        actions.push(PmAction::Coex(PmCoexAction::SetFlexiblePeriod(1)));
+    fn coex_pwr_update(&mut self, coex: CoexView, places: Places<'_, 1>) {
+        let [flexible] = places;
+        flexible.write(PmAction::Coex(PmCoexAction::SetFlexiblePeriod(1)));
         let coex = CoexView {
             flexible_period: 1,
             ..coex
@@ -694,33 +768,37 @@ impl ModemSleep {
         }
     }
 
-    fn enable_active_timer(&mut self, actions: &mut PmActions) {
-        actions.push(PmAction::Disarm(PmTimer::Active));
+    fn enable_active_timer(&mut self, places: Places<'_, 2>) {
+        let [disarm, arm] = places;
+        disarm.write(PmAction::Disarm(PmTimer::Active));
         if self.sleep_type != SleepType::None {
-            actions.push(PmAction::Arm {
+            arm.write(PmAction::Arm {
                 timer: PmTimer::Active,
                 after: Duration::from_micros(u64::from(self.active_timeout_micros)),
             });
         }
     }
 
-    fn enable_sleep_delay_timer(&mut self, actions: &mut PmActions) {
-        actions.push(PmAction::Disarm(PmTimer::SleepDelay));
-        actions.push(PmAction::Arm {
+    fn enable_sleep_delay_timer(&mut self, places: Places<'_, 2>) {
+        let [disarm, arm] = places;
+        disarm.write(PmAction::Disarm(PmTimer::SleepDelay));
+        arm.write(PmAction::Arm {
             timer: PmTimer::SleepDelay,
             after: Duration::from_micros(u64::from(SLEEP_DELAY_MICROS)),
         });
         self.sleep_delay_armed = true;
     }
 
-    fn disable_sleep_delay_timer(&mut self, actions: &mut PmActions) {
-        actions.push(PmAction::Disarm(PmTimer::SleepDelay));
+    fn disable_sleep_delay_timer(&mut self, places: Places<'_, 1>) {
+        let [disarm] = places;
+        disarm.write(PmAction::Disarm(PmTimer::SleepDelay));
         self.sleep_delay_armed = false;
     }
 
-    fn enable_dream_timer(&mut self, actions: &mut PmActions) {
-        actions.push(PmAction::Disarm(PmTimer::Dream));
-        actions.push(PmAction::Arm {
+    fn enable_dream_timer(&mut self, places: Places<'_, 2>) {
+        let [disarm, arm] = places;
+        disarm.write(PmAction::Disarm(PmTimer::Dream));
+        arm.write(PmAction::Arm {
             timer: PmTimer::Dream,
             after: Duration::from_micros(u64::from(DREAM_TIMEOUT_MICROS)),
         });
@@ -728,9 +806,10 @@ impl ModemSleep {
 
     /// `pm_dream`: wake a dozing station's RF and return to advertised power
     /// save; the slice-end timer is re-armed when still inside the slice.
-    fn dream(&mut self, _coex: CoexView, _clock: Option<PmClock>, actions: &mut PmActions) {
+    fn dream(&mut self, _coex: CoexView, _clock: Option<PmClock>, places: Places<'_, 1>) {
+        let [wake] = places;
         if self.state == PmState::Dozing {
-            actions.push(PmAction::RfWake);
+            wake.write(PmAction::RfWake);
         }
         self.enter(PmState::PowerSave);
     }
@@ -742,8 +821,9 @@ impl ModemSleep {
         clock: PmClock,
         force: bool,
         coex: CoexView,
-        actions: &mut PmActions,
+        places: Places<'_, 2>,
     ) {
+        let [disarm, arm] = places;
         if !coex.active {
             return;
         }
@@ -766,10 +846,10 @@ impl ModemSleep {
             u64::from(IDLE_SLICE_MARGIN_MICROS)
         });
         self.cycle_remainder = cycle.wrapping_sub(slice);
-        actions.push(PmAction::Disarm(PmTimer::SliceEnd));
+        disarm.write(PmAction::Disarm(PmTimer::SliceEnd));
         if now < self.slice_deadline {
             self.in_slice = true;
-            actions.push(PmAction::Arm {
+            arm.write(PmAction::Arm {
                 timer: PmTimer::SliceEnd,
                 after: Duration::from_micros(self.slice_deadline.saturating_sub(now)),
             });
@@ -785,9 +865,10 @@ impl ModemSleep {
         clock: PmClock,
         threshold: u32,
         coex: CoexView,
-        actions: &mut PmActions,
+        places: Places<'_, 2>,
     ) -> bool {
-        self.recalculate_slice(clock, false, coex, actions);
+        let [disarm, arm] = places;
+        self.recalculate_slice(clock, false, coex, [disarm, arm]);
         if !coex.active {
             return true;
         }
@@ -806,10 +887,11 @@ impl ModemSleep {
 
     /// `pm_send_nullfunc`: send a Null advertising `power_save`. The caller
     /// reports a frame it could not queue with [`Self::null_not_sent`].
-    fn send_null(&mut self, power_save: bool, actions: &mut PmActions) {
+    fn send_null(&mut self, power_save: bool, places: Places<'_, 1>) {
+        let [send] = places;
         self.power_save_null_in_flight = power_save;
         self.active_null_in_flight = !power_save;
-        actions.push(PmAction::SendNull { power_save });
+        send.write(PmAction::SendNull { power_save });
     }
 
     /// The Null of the last [`PmAction::SendNull`] could not be queued, so
@@ -830,13 +912,14 @@ impl ModemSleep {
     }
 
     /// `pm_go_to_sleep`: advertise power save.
-    fn go_to_sleep(&mut self, coex: CoexView, actions: &mut PmActions) {
-        if !self.may_sleep(coex, actions) || self.state == PmState::Dozing {
+    fn go_to_sleep(&mut self, coex: CoexView, places: Places<'_, 2>) {
+        let [normalize, send] = places;
+        if !self.may_sleep(coex, [normalize]) || self.state == PmState::Dozing {
             return;
         }
         self.enter(PmState::PowerSave);
         if !self.power_save_null_in_flight {
-            self.send_null(true, actions);
+            self.send_null(true, [send]);
         }
     }
 
@@ -852,8 +935,9 @@ impl ModemSleep {
         clock: PmClock,
         coex: CoexView,
         traffic: PmTraffic,
-        actions: &mut PmActions,
+        places: Places<'_, 7>,
     ) -> WakeResult {
+        let [wake, active0, active1, held, slice0, slice1, send] = places;
         if !self.started {
             return WakeResult::NotStarted;
         }
@@ -862,20 +946,20 @@ impl ModemSleep {
             return WakeResult::Deferred;
         }
         if self.state == PmState::Dozing {
-            self.dream(coex, Some(clock), actions);
+            self.dream(coex, Some(clock), [wake]);
         }
         if self.active_null_in_flight || tx_wake {
             self.active_null_in_flight = true;
-            self.null_done(false, true, clock, coex, traffic, actions);
+            self.active_wake_acknowledged([active0, active1, held]);
             return WakeResult::Awake;
         }
         let pending = traffic.connection_pending;
         if pending {
             self.active_null_in_flight = true;
-            self.null_done(false, true, clock, coex, traffic, actions);
+            self.active_wake_acknowledged([active0, active1, held]);
         }
-        if self.in_slice_threshold(clock, WAKE_SLICE_THRESHOLD_MICROS, coex, actions) {
-            self.send_null(false, actions);
+        if self.in_slice_threshold(clock, WAKE_SLICE_THRESHOLD_MICROS, coex, [slice0, slice1]) {
+            self.send_null(false, [send]);
             return WakeResult::Waking;
         }
         if pending {
@@ -885,14 +969,29 @@ impl ModemSleep {
         WakeResult::Deferred
     }
 
+    /// Complete an acknowledged active Null. Callers already woke a dozing
+    /// RF. go_to_wake also established started + in_slice, so bypassing
+    /// null_done's normalization emits no fewer effects: that normalization
+    /// could only enter Awake here, which this transition itself does.
+    fn active_wake_acknowledged(&mut self, [disarm, arm, held]: Places<'_, 3>) {
+        self.active_null_failures = 0;
+        if !self.active_null_in_flight {
+            return;
+        }
+        self.active_null_in_flight = false;
+        if self.in_slice {
+            self.receiving = false;
+            self.enter(PmState::Awake);
+            self.enable_active_timer([disarm, arm]);
+            held.write(PmAction::ReleaseHeldFrames);
+        } else {
+            self.wake_deferred = true;
+        }
+    }
+
     /// `pm_sleep`: doze when nothing keeps the station awake.
-    fn sleep(
-        &mut self,
-        clock: PmClock,
-        coex: CoexView,
-        traffic: PmTraffic,
-        actions: &mut PmActions,
-    ) {
+    fn sleep(&mut self, clock: PmClock, coex: CoexView, traffic: PmTraffic, places: Places<'_, 5>) {
+        let [slice, group, beacon, priority, sleep] = places;
         let quiet = self.beacon_parsed
             && !self.beacon_expected
             && !self.receiving
@@ -910,15 +1009,15 @@ impl ModemSleep {
         if !may {
             return;
         }
-        for event in [
-            PmCoexEvent::Slice,
+        slice.write(PmAction::Coex(PmCoexAction::Release(PmCoexEvent::Slice)));
+        group.write(PmAction::Coex(PmCoexAction::Release(
             PmCoexEvent::GroupTraffic,
+        )));
+        beacon.write(PmAction::Coex(PmCoexAction::Release(
             PmCoexEvent::BeaconWindow,
-        ] {
-            actions.push(PmAction::Coex(PmCoexAction::Release(event)));
-        }
-        actions.push(PmAction::ClearRxBeaconPriority);
-        actions.push(PmAction::RfSleep);
+        )));
+        priority.write(PmAction::ClearRxBeaconPriority);
+        sleep.write(PmAction::RfSleep);
         self.enter(PmState::Dozing);
     }
 
@@ -930,11 +1029,33 @@ impl ModemSleep {
         clock: PmClock,
         coex: CoexView,
         traffic: PmTraffic,
-        actions: &mut PmActions,
+    ) -> PmActions {
+        self.transition(|this, [a, b, c, d, e, f, g, ..]| {
+            this.null_done_into(
+                power_save,
+                acknowledged,
+                clock,
+                coex,
+                traffic,
+                [a, b, c, d, e, f, g],
+            )
+        })
+        .1
+    }
+
+    fn null_done_into(
+        &mut self,
+        power_save: bool,
+        acknowledged: bool,
+        clock: PmClock,
+        coex: CoexView,
+        traffic: PmTraffic,
+        places: Places<'_, 7>,
     ) {
+        let [normalize, wake, a, b, c, d, e] = places;
         let succeeded =
             acknowledged || (!power_save && self.active_null_failures > NULL_RETRY_LIMIT);
-        if !self.may_sleep(coex, actions) && !self.started {
+        if !self.may_sleep(coex, [normalize]) && !self.started {
             return;
         }
         if !self.active_null_in_flight && !self.power_save_null_in_flight {
@@ -942,24 +1063,10 @@ impl ModemSleep {
         }
         if succeeded {
             if self.state == PmState::Dozing {
-                self.dream(coex, Some(clock), actions);
+                self.dream(coex, Some(clock), [wake]);
             }
             if !power_save {
-                self.active_null_failures = 0;
-                if !self.active_null_in_flight {
-                    return;
-                }
-                self.active_null_in_flight = false;
-                if self.in_slice {
-                    // `pm_tx_null_data_done_quick_wake_process` without TBTT
-                    // quick wake admits the wake.
-                    self.receiving = false;
-                    self.enter(PmState::Awake);
-                    self.enable_active_timer(actions);
-                    actions.push(PmAction::ReleaseHeldFrames);
-                } else {
-                    self.wake_deferred = true;
-                }
+                self.active_wake_acknowledged([a, b, c]);
                 return;
             }
             self.power_save_null_failures = 0;
@@ -968,9 +1075,9 @@ impl ModemSleep {
             }
             self.power_save_null_in_flight = false;
             if self.preempted && clock.now.as_micros() >= self.preemption_end {
-                self.sleep(clock, coex, traffic, actions);
+                self.sleep(clock, coex, traffic, [a, b, c, d, e]);
             } else {
-                self.enable_sleep_delay_timer(actions);
+                self.enable_sleep_delay_timer([a, b]);
             }
             return;
         }
@@ -979,9 +1086,9 @@ impl ModemSleep {
                 return;
             }
             self.active_null_in_flight = false;
-            if self.in_slice_threshold(clock, WAKE_SLICE_THRESHOLD_MICROS, coex, actions) {
+            if self.in_slice_threshold(clock, WAKE_SLICE_THRESHOLD_MICROS, coex, [a, b]) {
                 self.active_null_failures = self.active_null_failures.saturating_add(1);
-                self.send_null(false, actions);
+                self.send_null(false, [c]);
             } else {
                 self.active_null_failures = 0;
                 self.wake_deferred = true;
@@ -994,34 +1101,65 @@ impl ModemSleep {
         self.power_save_null_in_flight = false;
         if self.in_slice {
             self.power_save_null_failures = self.power_save_null_failures.saturating_add(1);
-            self.send_null(true, actions);
+            self.send_null(true, [a]);
         } else {
             self.power_save_null_failures = 0;
             self.wake_deferred = true;
-            self.enable_sleep_delay_timer(actions);
+            self.enable_sleep_delay_timer([a, b]);
         }
     }
 
     /// `pm_tbtt_process` with `pm_coex_tbtt_process`, `pm_set_next_tbtt`
     /// and `pm_update_params`: the station TBTT event fired.
-    pub fn tbtt(
+    pub fn tbtt(&mut self, clock: PmClock, coex: CoexView, traffic: PmTraffic) -> PmActions {
+        self.transition(|this, places| this.tbtt_into(clock, coex, traffic, places))
+            .1
+    }
+
+    fn tbtt_into(
         &mut self,
         clock: PmClock,
         coex: CoexView,
         traffic: PmTraffic,
-        actions: &mut PmActions,
+        places: Places<'_, 24>,
     ) {
-        self.normalize_sleep_state(coex, actions);
+        let [
+            normalize,
+            wake,
+            c0,
+            c1,
+            c2,
+            c3,
+            c4,
+            c5,
+            c6,
+            c7,
+            c8,
+            c9,
+            c10,
+            c11,
+            c12,
+            next,
+            u0,
+            u1,
+            u2,
+            u3,
+            u4,
+            u5,
+            u6,
+            u7,
+        ] = places;
+        self.normalize_sleep_state(coex, [normalize]);
         if !self.started {
-            actions.push(PmAction::Disarm(PmTimer::SliceEnd));
+            c0.write(PmAction::Disarm(PmTimer::SliceEnd));
             self.in_slice = true;
-            actions.push(PmAction::UnblockTx);
+            c1.write(PmAction::UnblockTx);
             return;
         }
         let beacon_was_expected = self.beacon_expected;
         self.beacon_expected = true;
         if self.state == PmState::Dozing {
-            self.dream(coex, Some(clock), actions);
+            self.dream(coex, Some(clock), [wake]);
             self.receiving = false;
         }
         // The cycle counts from the handling of this TBTT unless the
@@ -1058,9 +1196,14 @@ impl ModemSleep {
         if !keep_anchor {
             self.cycle_anchor = clock.now.as_micros();
         }
-        self.coex_tbtt(clock, coex, traffic, actions);
-        self.set_next_tbtt(coex, actions);
-        self.update_params(clock, coex, traffic, actions);
+        self.coex_tbtt(
+            clock,
+            coex,
+            traffic,
+            [c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12],
+        );
+        self.set_next_tbtt(coex, [next]);
+        self.update_params(clock, coex, traffic, [u0, u1, u2, u3, u4, u5, u6, u7]);
     }
 
     /// `pm_coex_tbtt_process`.
@@ -1069,50 +1212,66 @@ impl ModemSleep {
         clock: PmClock,
         coex: CoexView,
         traffic: PmTraffic,
-        actions: &mut PmActions,
+        places: Places<'_, 13>,
     ) {
-        actions.push(PmAction::Disarm(PmTimer::SliceEnd));
+        let [
+            disarm,
+            interval,
+            restart,
+            priority,
+            request,
+            unblock,
+            w0,
+            w1,
+            w2,
+            w3,
+            w4,
+            w5,
+            w6,
+        ] = places;
+        disarm.write(PmAction::Disarm(PmTimer::SliceEnd));
         self.in_slice = true;
         if coex.active {
             self.slice_deadline = clock.now.as_micros().wrapping_add(
                 u64::from(coex.overall_period())
                     .saturating_mul(u64::from(self.beacon_interval_micros.get())),
             );
-            actions.push(PmAction::Coex(PmCoexAction::SetInterval(
+            interval.write(PmAction::Coex(PmCoexAction::SetInterval(
                 self.beacon_interval_micros.get() / SCHEDULE_INTERVAL_UNIT_MICROS,
             )));
-            actions.push(PmAction::Coex(PmCoexAction::RestartPhases));
-            actions.push(PmAction::RxBeaconPriority(true));
-            actions.push(PmAction::Coex(PmCoexAction::Request {
+            restart.write(PmAction::Coex(PmCoexAction::RestartPhases));
+            priority.write(PmAction::RxBeaconPriority(true));
+            request.write(PmAction::Coex(PmCoexAction::Request {
                 event: PmCoexEvent::BeaconWindow,
                 duration_micros: self.beacon_window_micros,
             }));
             self.activity = 0;
             if !self.is_sleeping() {
-                actions.push(PmAction::UnblockTx);
+                unblock.write(PmAction::UnblockTx);
             }
             if self.sleep_type == SleepType::None || self.wake_deferred {
                 self.wake_deferred = false;
-                self.go_to_wake(false, clock, coex, traffic, actions);
+                self.go_to_wake(false, clock, coex, traffic, [w0, w1, w2, w3, w4, w5, w6]);
             }
             return;
         }
         if !self.is_sleeping() {
-            actions.push(PmAction::UnblockTx);
+            unblock.write(PmAction::UnblockTx);
             if traffic.connection_pending {
-                self.go_to_wake(true, clock, coex, traffic, actions);
+                self.go_to_wake(true, clock, coex, traffic, [w0, w1, w2, w3, w4, w5, w6]);
             }
         }
     }
 
     /// `pm_set_next_tbtt`: follow a changed schedule period.
-    fn set_next_tbtt(&mut self, coex: CoexView, actions: &mut PmActions) {
+    fn set_next_tbtt(&mut self, coex: CoexView, places: Places<'_, 1>) {
+        let [interval] = places;
         let period = coex.overall_period();
         if !coex.active || self.tbtt_period == period {
             return;
         }
         self.tbtt_period = period;
-        actions.push(PmAction::SetTbttInterval(
+        interval.write(PmAction::SetTbttInterval(
             u32::from(period).wrapping_mul(self.beacon_interval_micros.get()),
         ));
         self.update_tbtt_at_next_beacon = true;
@@ -1124,8 +1283,9 @@ impl ModemSleep {
         clock: PmClock,
         coex: CoexView,
         traffic: PmTraffic,
-        actions: &mut PmActions,
+        places: Places<'_, 8>,
     ) {
+        let [set_ahead, w0, w1, w2, w3, w4, w5, w6] = places;
         let (active_timeout, ahead) = if coex.active {
             (
                 u32::from(coex.overall_period()).wrapping_mul(self.beacon_interval_micros.get()),
@@ -1138,7 +1298,7 @@ impl ModemSleep {
         if self.tbtt_ahead_micros != ahead || self.tbtt_window_micros != TBTT_WAKE_WINDOW_MICROS {
             self.tbtt_ahead_micros = ahead;
             self.tbtt_window_micros = TBTT_WAKE_WINDOW_MICROS;
-            actions.push(PmAction::SetTbttAhead {
+            set_ahead.write(PmAction::SetTbttAhead {
                 ahead_micros: ahead,
                 wake_ahead_micros: TBTT_WAKE_WINDOW_MICROS.wrapping_add(ahead),
             });
@@ -1148,7 +1308,7 @@ impl ModemSleep {
             // A station without power save that slept only for coexistence
             // wakes when coexistence ends.
             if self.coex_was_active && self.sleep_type == SleepType::None {
-                self.go_to_wake(false, clock, coex, traffic, actions);
+                self.go_to_wake(false, clock, coex, traffic, [w0, w1, w2, w3, w4, w5, w6]);
             }
             self.coex_was_active = coex.active;
         }
@@ -1163,13 +1323,52 @@ impl ModemSleep {
         clock: PmClock,
         coex: CoexView,
         traffic: PmTraffic,
-        actions: &mut PmActions,
+    ) -> PmActions {
+        self.transition(
+            |this, [a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, ..]| {
+                this.beacon_into(
+                    beacon,
+                    clock,
+                    coex,
+                    traffic,
+                    [a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p],
+                )
+            },
+        )
+        .1
+    }
+
+    fn beacon_into(
+        &mut self,
+        beacon: PmBeacon,
+        clock: PmClock,
+        coex: CoexView,
+        traffic: PmTraffic,
+        places: Places<'_, 16>,
     ) {
+        let [
+            p0,
+            p1,
+            p2,
+            tbtt,
+            t0,
+            t1,
+            t2,
+            t3,
+            t4,
+            t5,
+            t6,
+            t7,
+            t8,
+            t9,
+            release,
+            priority,
+        ] = places;
         if !self.started {
             return;
         }
-        self.parse_beacon(beacon, coex, actions);
-        self.update_next_tbtt(beacon, coex, actions);
+        self.parse_beacon(beacon, coex, [p0, p1, p2]);
+        self.update_next_tbtt(beacon, coex, [tbtt]);
         self.beacon_expected_at_slice_end = false;
         self.beacon_expected = false;
         let tim = beacon.tim;
@@ -1179,16 +1378,17 @@ impl ModemSleep {
             clock,
             coex,
             traffic,
-            actions,
+            [t0, t1, t2, t3, t4, t5, t6, t7, t8, t9],
         );
-        actions.push(PmAction::Coex(PmCoexAction::Release(
+        release.write(PmAction::Coex(PmCoexAction::Release(
             PmCoexEvent::BeaconWindow,
         )));
-        actions.push(PmAction::ClearRxBeaconPriority);
+        priority.write(PmAction::ClearRxBeaconPriority);
     }
 
     /// `pm_parse_beacon`.
-    fn parse_beacon(&mut self, beacon: PmBeacon, coex: CoexView, actions: &mut PmActions) {
+    fn parse_beacon(&mut self, beacon: PmBeacon, coex: CoexView, places: Places<'_, 3>) {
+        let [scale, set_interval, dtim] = places;
         let interval = beacon_period(beacon.interval_tu);
         let dtim_period = beacon
             .tim
@@ -1196,9 +1396,9 @@ impl ModemSleep {
         if !self.beacon_parsed {
             self.beacon_interval_micros = interval;
             self.dtim_period = dtim_period;
-            self.scale_listen_interval(coex, actions);
+            self.scale_listen_interval(coex, [scale]);
             if coex.active {
-                actions.push(PmAction::Coex(PmCoexAction::SetInterval(
+                set_interval.write(PmAction::Coex(PmCoexAction::SetInterval(
                     interval.get() / SCHEDULE_INTERVAL_UNIT_MICROS,
                 )));
             }
@@ -1208,9 +1408,9 @@ impl ModemSleep {
         }
         if self.beacon_interval_micros != interval {
             self.beacon_interval_micros = interval;
-            self.scale_listen_interval(coex, actions);
+            self.scale_listen_interval(coex, [scale]);
             if coex.active {
-                actions.push(PmAction::Coex(PmCoexAction::SetInterval(
+                set_interval.write(PmAction::Coex(PmCoexAction::SetInterval(
                     interval.get() / SCHEDULE_INTERVAL_UNIT_MICROS,
                 )));
             }
@@ -1218,7 +1418,7 @@ impl ModemSleep {
         }
         if self.dtim_period != dtim_period {
             self.dtim_period = dtim_period;
-            self.scale_listen_interval(coex, actions);
+            self.scale_listen_interval(coex, [dtim]);
             if self.sleep_type != SleepType::None {
                 self.update_tbtt_at_next_beacon = true;
             }
@@ -1258,7 +1458,8 @@ impl ModemSleep {
     /// script only provides (not checked against the pinned script). The
     /// ROM's beacon parser, which calls through such tables, is not
     /// reviewed.
-    fn scale_listen_interval(&mut self, coex: CoexView, actions: &mut PmActions) {
+    fn scale_listen_interval(&mut self, coex: CoexView, places: Places<'_, 1>) {
+        let [power] = places;
         let scaled = scaled_listen_interval(
             self.sleep_type.listen_interval().get(),
             self.beacon_interval_micros,
@@ -1270,7 +1471,7 @@ impl ModemSleep {
         self.listen_interval_beacons = scaled;
         if matches!(self.sleep_type, SleepType::MaxModem(_)) {
             self.update_tbtt_at_next_beacon = true;
-            self.coex_pwr_update(coex, actions);
+            self.coex_pwr_update(coex, [power]);
         }
     }
 
@@ -1296,7 +1497,8 @@ impl ModemSleep {
     }
 
     /// `pm_update_next_tbtt`: program the TBTT schedule from this beacon.
-    fn update_next_tbtt(&mut self, beacon: PmBeacon, coex: CoexView, actions: &mut PmActions) {
+    fn update_next_tbtt(&mut self, beacon: PmBeacon, coex: CoexView, places: Places<'_, 1>) {
+        let [tbtt] = places;
         if !self.update_tbtt_at_next_beacon {
             return;
         }
@@ -1323,7 +1525,7 @@ impl ModemSleep {
         };
         let timestamp = beacon.timestamp_tsf.as_micros();
         let phase = timestamp % core::num::NonZeroU64::from(self.beacon_interval_micros);
-        actions.push(PmAction::StartTbtt(PmTbttSchedule {
+        tbtt.write(PmAction::StartTbtt(PmTbttSchedule {
             first_tbtt: TsfInstant::from_micros(timestamp.saturating_sub(phase)),
             interval_micros: interval,
             ahead_micros: ahead,
@@ -1339,27 +1541,28 @@ impl ModemSleep {
         clock: PmClock,
         coex: CoexView,
         traffic: PmTraffic,
-        actions: &mut PmActions,
+        places: Places<'_, 10>,
     ) {
+        let [a, b, c, d, e, f, g, h, i, j] = places;
         match self.state {
             PmState::PowerSave => {
                 if unicast {
-                    if self.in_slice_threshold(clock, WAKE_SLICE_THRESHOLD_MICROS, coex, actions) {
+                    if self.in_slice_threshold(clock, WAKE_SLICE_THRESHOLD_MICROS, coex, [a, b]) {
                         self.receiving = true;
-                        self.request_slice_until_end(clock.now.as_micros(), actions);
-                        self.go_to_wake(false, clock, coex, traffic, actions);
+                        self.request_slice_until_end(clock.now.as_micros(), [c]);
+                        self.go_to_wake(false, clock, coex, traffic, [d, e, f, g, h, i, j]);
                     } else {
                         self.wake_deferred = true;
                     }
                 } else if group {
-                    if self.in_slice_threshold(clock, GROUP_SLICE_THRESHOLD_MICROS, coex, actions) {
+                    if self.in_slice_threshold(clock, GROUP_SLICE_THRESHOLD_MICROS, coex, [a, b]) {
                         self.receiving = true;
-                        self.enable_dream_timer(actions);
+                        self.enable_dream_timer([c, d]);
                         let now = clock.now.as_micros();
                         if now < self.slice_end {
                             let remaining = u32::try_from(self.slice_end.saturating_sub(now))
                                 .unwrap_or(u32::MAX);
-                            actions.push(PmAction::Coex(PmCoexAction::Request {
+                            e.write(PmAction::Coex(PmCoexAction::Request {
                                 event: PmCoexEvent::GroupTraffic,
                                 duration_micros: remaining.min(self.beacon_window_micros),
                             }));
@@ -1368,8 +1571,8 @@ impl ModemSleep {
                 } else {
                     self.receiving = false;
                     if !self.active_null_in_flight && !self.power_save_null_in_flight {
-                        self.disable_sleep_delay_timer(actions);
-                        self.sleep(clock, coex, traffic, actions);
+                        self.disable_sleep_delay_timer([a]);
+                        self.sleep(clock, coex, traffic, [b, c, d, e, f]);
                     }
                 }
             }
@@ -1378,29 +1581,51 @@ impl ModemSleep {
     }
 
     /// `pm_tx_data_process`: the TX path offers a frame. Returns whether the
-    /// frame must wait for the station to leave power save.
+    /// frame must wait for the station to leave power save, together with
+    /// this input's complete ordered effects.
+    #[must_use = "honor the hold decision and perform this input's effects"]
     pub fn tx_data(
         &mut self,
         is_data: bool,
         clock: PmClock,
         coex: CoexView,
         traffic: PmTraffic,
-        actions: &mut PmActions,
+    ) -> (bool, PmActions) {
+        self.transition(|this, [a, b, c, d, e, f, g, h, i, j, k, l, ..]| {
+            this.tx_data_into(
+                is_data,
+                clock,
+                coex,
+                traffic,
+                [a, b, c, d, e, f, g, h, i, j, k, l],
+            )
+        })
+    }
+
+    fn tx_data_into(
+        &mut self,
+        is_data: bool,
+        clock: PmClock,
+        coex: CoexView,
+        traffic: PmTraffic,
+        places: Places<'_, 12>,
     ) -> bool {
-        if !self.may_sleep(coex, actions) {
+        let [normalize, a, b, c, d, e, f, g, h, i, j, k] = places;
+        if !self.may_sleep(coex, [normalize]) {
             return false;
         }
         match self.state {
             PmState::PowerSave | PmState::Dozing => {
                 let dozing = self.state == PmState::Dozing;
                 let mut hold = false;
-                if self.in_slice_threshold(clock, WAKE_SLICE_THRESHOLD_MICROS, coex, actions) {
-                    self.request_slice_until_end(clock.now.as_micros(), actions);
+                if self.in_slice_threshold(clock, WAKE_SLICE_THRESHOLD_MICROS, coex, [a, b]) {
+                    self.request_slice_until_end(clock.now.as_micros(), [c]);
                     if dozing {
-                        self.dream(coex, Some(clock), actions);
+                        self.dream(coex, Some(clock), [d]);
                     }
                     if is_data {
-                        let woke = self.go_to_wake(true, clock, coex, traffic, actions);
+                        let woke =
+                            self.go_to_wake(true, clock, coex, traffic, [e, f, g, h, i, j, k]);
                         hold = matches!(woke, WakeResult::NotStarted | WakeResult::Deferred);
                     }
                 } else if is_data {
@@ -1415,7 +1640,7 @@ impl ModemSleep {
             PmState::Awake => {
                 if is_data {
                     if self.sleep_type != SleepType::None {
-                        self.enable_active_timer(actions);
+                        self.enable_active_timer([a, b]);
                     }
                     self.incr_activity();
                 }
@@ -1430,12 +1655,25 @@ impl ModemSleep {
         acknowledged: bool,
         coex: CoexView,
         traffic: PmTraffic,
-        actions: &mut PmActions,
+    ) -> PmActions {
+        self.transition(|this, [a, b, c, d, e, ..]| {
+            this.tx_data_done_into(acknowledged, coex, traffic, [a, b, c, d, e])
+        })
+        .1
+    }
+
+    fn tx_data_done_into(
+        &mut self,
+        acknowledged: bool,
+        coex: CoexView,
+        traffic: PmTraffic,
+        places: Places<'_, 5>,
     ) {
+        let [delay0, delay1, normalize, active0, active1] = places;
         if !traffic.tx_pending && self.state == PmState::PowerSave {
-            self.enable_sleep_delay_timer(actions);
+            self.enable_sleep_delay_timer([delay0, delay1]);
         }
-        if !self.may_sleep(coex, actions) || !acknowledged {
+        if !self.may_sleep(coex, [normalize]) || !acknowledged {
             return;
         }
         self.incr_activity();
@@ -1443,19 +1681,27 @@ impl ModemSleep {
             self.wake_deferred = true;
         }
         if self.state == PmState::Awake {
-            self.enable_active_timer(actions);
+            self.enable_active_timer([active0, active1]);
         }
     }
 
     /// `pm_rx_data_process`: a data frame of the access point arrived.
-    pub fn rx_data(
+    pub fn rx_data(&mut self, group: bool, more_data: bool, coex: CoexView) -> PmActions {
+        self.transition(|this, [a, b, c, d, ..]| {
+            this.rx_data_into(group, more_data, coex, [a, b, c, d])
+        })
+        .1
+    }
+
+    fn rx_data_into(
         &mut self,
         group: bool,
         more_data: bool,
         coex: CoexView,
-        actions: &mut PmActions,
+        places: Places<'_, 4>,
     ) {
-        if !self.may_sleep(coex, actions) {
+        let [normalize, a, b, c] = places;
+        if !self.may_sleep(coex, [normalize]) {
             return;
         }
         self.incr_activity();
@@ -1467,17 +1713,17 @@ impl ModemSleep {
                 if group {
                     if more_data {
                         self.receiving = true;
-                        self.enable_dream_timer(actions);
+                        self.enable_dream_timer([a, b]);
                     } else {
                         self.receiving = false;
-                        actions.push(PmAction::Disarm(PmTimer::Dream));
-                        self.enable_sleep_delay_timer(actions);
+                        a.write(PmAction::Disarm(PmTimer::Dream));
+                        self.enable_sleep_delay_timer([b, c]);
                     }
                 } else {
                     self.receiving = more_data;
                 }
             }
-            PmState::Awake => self.enable_active_timer(actions),
+            PmState::Awake => self.enable_active_timer([a, b]),
             PmState::Dozing => {}
         }
     }
@@ -1489,15 +1735,28 @@ impl ModemSleep {
         phase: CoexPhaseView,
         clock: PmClock,
         coex: CoexView,
-        actions: &mut PmActions,
+    ) -> PmActions {
+        self.transition(|this, [a, b, c, d, e, f, ..]| {
+            this.coex_phase_into(phase, clock, coex, [a, b, c, d, e, f])
+        })
+        .1
+    }
+
+    fn coex_phase_into(
+        &mut self,
+        phase: CoexPhaseView,
+        clock: PmClock,
+        coex: CoexView,
+        places: Places<'_, 6>,
     ) {
+        let [request, unblock, disarm, arm, shared, block] = places;
         let now = clock.now.as_micros();
         let slice = u64::from(phase.share_percent)
             .saturating_mul(u64::from(coex.interval))
             .saturating_mul(u64::from(coex.current_period));
         let slice_end = now.wrapping_add(slice);
         if phase.wifi & CoexPhaseView::WIFI_SLICE != 0 {
-            actions.push(PmAction::Coex(PmCoexAction::Request {
+            request.write(PmAction::Coex(PmCoexAction::Request {
                 event: PmCoexEvent::Slice,
                 duration_micros: u32::try_from(slice).unwrap_or(u32::MAX),
             }));
@@ -1505,30 +1764,30 @@ impl ModemSleep {
             self.slice_end = slice_end;
             self.cycle_remainder = coex.cycle_micros().wrapping_sub(slice);
             if !self.is_sleeping() {
-                actions.push(PmAction::UnblockTx);
+                unblock.write(PmAction::UnblockTx);
             }
         }
         if phase.wifi & CoexPhaseView::SLICE_END != 0 {
-            actions.push(PmAction::Disarm(PmTimer::SliceEnd));
+            disarm.write(PmAction::Disarm(PmTimer::SliceEnd));
             let margin = if self.started {
                 u64::from(SLEEP_DELAY_MICROS)
             } else {
                 u64::from(IDLE_SLICE_MARGIN_MICROS)
             };
             self.slice_deadline = slice_end.wrapping_sub(margin);
-            actions.push(PmAction::Arm {
+            arm.write(PmAction::Arm {
                 timer: PmTimer::SliceEnd,
                 after: Duration::from_micros(self.slice_deadline.wrapping_sub(now)),
             });
         }
         if phase.wifi & CoexPhaseView::SHARED != 0 {
             if !self.is_sleeping() {
-                actions.push(PmAction::Coex(PmCoexAction::Request {
+                shared.write(PmAction::Coex(PmCoexAction::Request {
                     event: PmCoexEvent::Slice,
                     duration_micros: u32::try_from(slice).unwrap_or(u32::MAX),
                 }));
             }
-            actions.push(PmAction::BlockTx);
+            block.write(PmAction::BlockTx);
         }
     }
 
@@ -1538,8 +1797,9 @@ impl ModemSleep {
         from_slice_end: bool,
         coex: CoexView,
         traffic: PmTraffic,
-        actions: &mut PmActions,
+        places: Places<'_, 3>,
     ) {
+        let [block, a, b] = places;
         if !self.started || !coex.active {
             return;
         }
@@ -1549,44 +1809,57 @@ impl ModemSleep {
         self.beacon_expected_at_slice_end = self.beacon_expected;
         self.beacon_expected = false;
         self.receiving = false;
-        actions.push(PmAction::BlockTx);
+        block.write(PmAction::BlockTx);
         if self.state != PmState::Awake && !self.active_null_in_flight {
             if self.state == PmState::PowerSave {
-                self.enable_sleep_delay_timer(actions);
+                self.enable_sleep_delay_timer([a, b]);
             }
             return;
         }
         if self.activity != 0 || traffic.connection_pending {
             self.wake_deferred = true;
         }
-        self.go_to_sleep(coex, actions);
+        self.go_to_sleep(coex, [a, b]);
     }
 
     /// The slice-end timer expired (`pm_coex_slice_timeout_process`).
-    pub fn slice_end_timer(&mut self, coex: CoexView, traffic: PmTraffic, actions: &mut PmActions) {
-        self.coex_go_to_sleep(true, coex, traffic, actions);
+    pub fn slice_end_timer(&mut self, coex: CoexView, traffic: PmTraffic) -> PmActions {
+        self.transition(|this, [a, b, c, ..]| this.slice_end_timer_into(coex, traffic, [a, b, c]))
+            .1
+    }
+
+    fn slice_end_timer_into(&mut self, coex: CoexView, traffic: PmTraffic, places: Places<'_, 3>) {
+        let [block, a, b] = places;
+        self.coex_go_to_sleep(true, coex, traffic, [block, a, b]);
     }
 
     /// The preemption timer expired (`pm_coex_preemption_timeout_process`).
-    pub fn preemption_timer(
-        &mut self,
-        coex: CoexView,
-        traffic: PmTraffic,
-        actions: &mut PmActions,
-    ) {
-        self.coex_go_to_sleep(false, coex, traffic, actions);
+    pub fn preemption_timer(&mut self, coex: CoexView, traffic: PmTraffic) -> PmActions {
+        self.transition(|this, [a, b, c, ..]| this.preemption_timer_into(coex, traffic, [a, b, c]))
+            .1
+    }
+
+    fn preemption_timer_into(&mut self, coex: CoexView, traffic: PmTraffic, places: Places<'_, 3>) {
+        let [block, a, b] = places;
+        self.coex_go_to_sleep(false, coex, traffic, [block, a, b]);
     }
 
     /// The active timer expired (`pm_active_timeout_process`).
-    pub fn active_timer(&mut self, coex: CoexView, traffic: PmTraffic, actions: &mut PmActions) {
+    pub fn active_timer(&mut self, coex: CoexView, traffic: PmTraffic) -> PmActions {
+        self.transition(|this, [a, b, ..]| this.active_timer_into(coex, traffic, [a, b]))
+            .1
+    }
+
+    fn active_timer_into(&mut self, coex: CoexView, traffic: PmTraffic, places: Places<'_, 2>) {
+        let [a, b] = places;
         if !self.started || self.state != PmState::Awake {
             return;
         }
         if self.receiving || traffic.tx_pending {
-            self.enable_active_timer(actions);
+            self.enable_active_timer([a, b]);
             return;
         }
-        self.go_to_sleep(coex, actions);
+        self.go_to_sleep(coex, [a, b]);
     }
 
     /// The sleep-delay timer expired (`pm_sleep_delay_timeout_process`).
@@ -1595,18 +1868,37 @@ impl ModemSleep {
         clock: PmClock,
         coex: CoexView,
         traffic: PmTraffic,
-        actions: &mut PmActions,
+    ) -> PmActions {
+        self.transition(|this, [a, b, c, d, e, ..]| {
+            this.sleep_delay_timer_into(clock, coex, traffic, [a, b, c, d, e])
+        })
+        .1
+    }
+
+    fn sleep_delay_timer_into(
+        &mut self,
+        clock: PmClock,
+        coex: CoexView,
+        traffic: PmTraffic,
+        places: Places<'_, 5>,
     ) {
+        let [a, b, c, d, e] = places;
         self.sleep_delay_armed = false;
         if self.state == PmState::PowerSave {
-            self.sleep(clock, coex, traffic, actions);
+            self.sleep(clock, coex, traffic, [a, b, c, d, e]);
         }
     }
 
     /// The dream timer expired (`pm_dream_timeout_process`).
-    pub fn dream_timer(&mut self, actions: &mut PmActions) {
+    pub fn dream_timer(&mut self) -> PmActions {
+        self.transition(|this, [a, b, ..]| this.dream_timer_into([a, b]))
+            .1
+    }
+
+    fn dream_timer_into(&mut self, places: Places<'_, 2>) {
+        let [disarm, arm] = places;
         self.receiving = false;
-        self.enable_sleep_delay_timer(actions);
+        self.enable_sleep_delay_timer([disarm, arm]);
     }
 
     /// `pm_on_coex_preemption_end`: Bluetooth reports when its isochronous
@@ -1617,34 +1909,54 @@ impl ModemSleep {
         clock: PmClock,
         coex: CoexView,
         traffic: PmTraffic,
-        actions: &mut PmActions,
+    ) -> PmActions {
+        self.transition(|this, [a, b, c, d, e, f, g, h, i, j, k, l, m, n, ..]| {
+            this.preemption_end_into(
+                end_micros,
+                clock,
+                coex,
+                traffic,
+                [a, b, c, d, e, f, g, h, i, j, k, l, m, n],
+            )
+        })
+        .1
+    }
+
+    fn preemption_end_into(
+        &mut self,
+        end_micros: Option<u64>,
+        clock: PmClock,
+        coex: CoexView,
+        traffic: PmTraffic,
+        places: Places<'_, 14>,
     ) {
+        let [disarm, arm, a, b, c, d, e, f, g, h, i, j, k, set_time] = places;
         let now = clock.now.as_micros();
         let was_preempted = self.preempted;
         self.preempted = end_micros.is_some();
         let margin = if self.started { 2_000 } else { 1_000 };
         self.preemption_end = end_micros.unwrap_or(now).wrapping_sub(margin);
-        actions.push(PmAction::Disarm(PmTimer::Preemption));
+        disarm.write(PmAction::Disarm(PmTimer::Preemption));
         if self.preempted && now < self.preemption_end {
-            actions.push(PmAction::Arm {
+            arm.write(PmAction::Arm {
                 timer: PmTimer::Preemption,
                 after: Duration::from_micros(self.preemption_end.saturating_sub(now)),
             });
         }
         if self.started {
             if self.state != PmState::Awake {
-                if self.wake_deferred && self.in_slice_threshold(clock, 2_000, coex, actions) {
+                if self.wake_deferred && self.in_slice_threshold(clock, 2_000, coex, [a, b]) {
                     self.wake_deferred = false;
                     if self.state == PmState::Dozing {
-                        self.dream(coex, Some(clock), actions);
+                        self.dream(coex, Some(clock), [c]);
                     }
-                    self.go_to_wake(false, clock, coex, traffic, actions);
-                    self.request_slice_until_end(now, actions);
+                    self.go_to_wake(false, clock, coex, traffic, [d, e, f, g, h, i, j]);
+                    self.request_slice_until_end(now, [k]);
                 } else {
-                    actions.push(PmAction::Disarm(PmTimer::Preemption));
+                    c.write(PmAction::Disarm(PmTimer::Preemption));
                 }
             } else if self.preempted && now >= self.preemption_end {
-                self.preemption_timer(coex, traffic, actions);
+                self.preemption_timer_into(coex, traffic, [a, b, c]);
             }
         }
         if self.preempted != was_preempted {
@@ -1654,7 +1966,7 @@ impl ModemSleep {
                 (BEACON_WINDOW_MICROS, BEACON_TIME_MICROS)
             };
             self.beacon_window_micros = window;
-            actions.push(PmAction::RxBeaconTime {
+            set_time.write(PmAction::RxBeaconTime {
                 window_micros: window,
                 time_micros: time,
             });
@@ -1662,9 +1974,10 @@ impl ModemSleep {
     }
 
     /// Request the slice until its end when it has not ended.
-    fn request_slice_until_end(&mut self, now: u64, actions: &mut PmActions) {
+    fn request_slice_until_end(&mut self, now: u64, places: Places<'_, 1>) {
+        let [request] = places;
         if now < self.slice_end {
-            actions.push(PmAction::Coex(PmCoexAction::Request {
+            request.write(PmAction::Coex(PmCoexAction::Request {
                 event: PmCoexEvent::Slice,
                 duration_micros: u32::try_from(self.slice_end.saturating_sub(now))
                     .unwrap_or(u32::MAX),

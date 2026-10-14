@@ -34,6 +34,9 @@ Module map:
 `crates/protocols/ieee80211/sta` owns portable MLME, reconnect and association
 preference policy. The chip profile determines eligible modes and lowers the
 selected mode to S31 PHY parameters.
+Connected control consumes a fresh ordered `PmActions` batch for each power
+input. A network report containing both TX start and TX completion applies
+the start's batch before producing and applying the completion's batch.
 `crates/runtime/esp32s31/ieee80211` supplies concrete timers, DMA/TX
 owners, IRQ wakeups and task/network composition. HIL may observe those public
 boundaries but must not implement a second driver path.

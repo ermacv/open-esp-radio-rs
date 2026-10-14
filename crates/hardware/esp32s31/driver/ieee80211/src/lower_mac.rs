@@ -1,7 +1,6 @@
 //! The hardware side of the ESP32-S31 lower-MAC backend.
 //!
-//! [`LowerMacCore`] is the state the backend's driver owns by value (#563,
-//! variant B): the interfaces, the installed keys, the receive Block Ack
+//! [`LowerMacCore`] is the state the backend's driver owns by value: the interfaces, the installed keys, the receive Block Ack
 //! banks, and the one published attempt of each EDCA queue. It drives the
 //! ESP32-S31 register seams through a caller-supplied [`LowerMacHardware`]
 //! and never waits: the runtime owns the event queues, the interrupt
@@ -56,7 +55,7 @@
 //! (`ppTxPkt` maps user priorities onto them) and handles their collisions
 //! and timeouts per queue (`lmacProcessCollisions`,
 //! `lmacProcessAllTxTimeout`). The core holds one attempt per queue
-//! ([`LowerMacCore::queue_busy`]); the driver's software queue holds the
+//! within the core; the driver's software queue holds the
 //! next ones.
 //!
 //! The MAC interrupt's task events do not name a queue, so one
@@ -85,6 +84,7 @@
 
 use core::pin::Pin;
 
+#[cfg(test)]
 use oer_time::Clock;
 
 use oer_esp32s31_hal::types::{MacPti, StaTbttSchedule};
@@ -120,9 +120,9 @@ use oer_esp32s31_ieee80211_mac::{
 };
 use oer_ieee80211_lower_mac::{
     BandSet, BeaconTimingCapabilities, BlockAckReport, Channel, CoexPriority, CoexPrioritySet,
-    LinkMetric, LowerMacCapabilities, MacAddress, MonitorCapabilities, PhyFormatSet, PhyRate,
-    Protection, RateSupport, ReceiveFilter, RxEvidence, RxMeta, RxMetadata, SignalMetadata,
-    TbttEvent, TsfTimingError, TxStatus, VifRole, VifRoleSet, VifTsf, WidthSet,
+    LinkMetric, LowerMacCapabilities, MacAddress, PhyFormatSet, PhyRate, Protection, RateSupport,
+    ReceiveFilter, RxEvidence, RxMeta, RxMetadata, SignalMetadata, TbttEvent, TsfTimingError,
+    TxStatus, VifRole, VifRoleSet, VifTsf, WidthSet,
 };
 use oer_ieee80211_mac::{
     ccmp::CCMP_HEADER_LEN,
@@ -194,22 +194,11 @@ const STATION_TBTT_WAKE_WINDOW_MICROS: u16 = 1_500;
 const STATION_RECEIVE_FILTERS: ReceiveFilter =
     ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::OTHER_BSS_MANAGEMENT);
 
-/// What the ESP32-S31 lower MAC accepts through this core, with TX slots of
-/// `buffer_size` bytes.
-///
-/// The rates are those `TxPhyRate::try_from(PhyRate)` accepts: DSSS/CCK and
-/// OFDM, HT MCS 0-7 at 20 and 40 MHz, and HE SU MCS 0-9 at 20 MHz with BCC
-/// or LDPC and DCM; the DCM MCS limits are checked at submission. The
-/// services are exactly the hardware-owned operations of
-/// [`ESP32S31_MAC_SERVICE_CAPABILITIES`]. The longest MPDU leaves room for
-/// the TX metadata word, the CCMP MIC and the FCS in the four-byte-aligned
-/// descriptor capacity, and with the MIC and the FCS fits the transmit
-/// programs' PSDU length field (the legacy program's 12 bits). Each of the four ordinary EDCA queues holds one
 /// One received MPDU's metadata on the ESP32-S31: the portable fields, and
 /// the frame's RSSI from its receive prefix and the PHY's noise floor when
 /// it was received, which every frame carries. The S31 therefore measures
 /// every frame's signal ([`SignalMetadata`]), and a rate selection that
-/// needs it builds for this port (owner decision on #563).
+/// needs it can use this port's metadata directly.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31RxMeta {
     common: RxMeta,
@@ -241,7 +230,18 @@ impl SignalMetadata for Esp32s31RxMeta {
     }
 }
 
-/// attempt. 5 GHz is absent from the ESP32-S31.
+/// What the ESP32-S31 lower MAC accepts through this core, with TX slots of
+/// `buffer_size` bytes.
+///
+/// The rates are those `TxPhyRate::try_from(PhyRate)` accepts: DSSS/CCK and
+/// OFDM, HT MCS 0-7 at 20 and 40 MHz, and HE SU MCS 0-9 at 20 MHz with BCC
+/// or LDPC and DCM; the DCM MCS limits are checked at submission. The
+/// services are exactly the hardware-owned operations of
+/// [`ESP32S31_MAC_SERVICE_CAPABILITIES`]. The longest MPDU leaves room for
+/// the TX metadata word, the CCMP MIC and the FCS in the four-byte-aligned
+/// descriptor capacity, and with the MIC and the FCS fits the transmit
+/// programs' PSDU length field (the legacy program's 12 bits). Each ordinary
+/// EDCA queue holds one attempt. 5 GHz is absent from the ESP32-S31.
 // CAPABILITY: wifi-interfaces-and-operating-modes-lower-mac-port-concurrent-queue-attempts
 pub const fn esp32s31_lower_mac_capabilities(buffer_size: usize) -> LowerMacCapabilities {
     let buffered =
@@ -304,12 +304,6 @@ pub const ESP32S31_BEACON_TIMING_CAPABILITIES: BeaconTimingCapabilities =
         tbtt: VifRoleSet::STATION,
     };
 
-/// The open promiscuous policy replaces the role receive policies, so it
-/// runs only while no interface receives.
-pub const ESP32S31_MONITOR_CAPABILITIES: MonitorCapabilities = MonitorCapabilities {
-    with_receiving_interfaces: false,
-};
-
 /// The station TBTT schedule of the MAC's interface-zero timer, whose event
 /// fires on the power interrupt (`MacPowerWakeCause::StaTbtt`).
 pub trait StationTbttHardware {
@@ -357,7 +351,7 @@ pub struct ConnectionFramePriorities {
 
 /// The priority count the vendor publishes beside a connection frame's
 /// priority under the reconnect policy.
-pub const CONNECTION_FRAME_PRIORITY_COUNT: u16 = 4_000;
+const CONNECTION_FRAME_PRIORITY_COUNT: u16 = 4_000;
 
 /// Every register seam the core drives; [`HtAmpduHardware`] includes the
 /// ordinary queues' `TxHardware`.
@@ -721,6 +715,26 @@ impl StationTbtt {
 
 /// The ESP32-S31 lower-MAC state the backend's driver owns: the hardware
 /// side of the port, one published attempt per EDCA queue.
+/// Diagnostic callers cannot borrow the nested transmitter:
+/// ```compile_fail,E0599
+/// use oer_esp32s31_ieee80211::lower_mac::LowerMacCore;
+/// use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile};
+/// fn borrow_tx<P: WifiTxPowerProfile, E: WifiTxEntropy, T: oer_time::Timer, const N: usize>(
+///     core: &LowerMacCore<'_, P, E, T, N>,
+/// ) {
+///     core.tx();
+/// }
+/// ```
+/// A diagnostic can read the next publication deadline directly:
+/// ```
+/// use oer_esp32s31_ieee80211::lower_mac::LowerMacCore;
+/// use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile};
+/// fn deadline<P: WifiTxPowerProfile, E: WifiTxEntropy, T: oer_time::Timer, const N: usize>(
+///     core: &LowerMacCore<'_, P, E, T, N>,
+/// ) -> Option<oer_time::Instant> {
+///     core.next_deadline()
+/// }
+/// ```
 pub struct LowerMacCore<'slot, P, E, T, const BUFFER_SIZE: usize> {
     tx: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
     config: LowerMacConfig,
@@ -808,10 +822,6 @@ where
         })
     }
 
-    pub const fn capabilities(&self) -> LowerMacCapabilities {
-        esp32s31_lower_mac_capabilities(BUFFER_SIZE)
-    }
-
     /// The channel the radio is tuned to: the configured one unless an
     /// `Enable` still awaits its retune.
     pub const fn tuned_channel(&self) -> WifiChannel {
@@ -842,7 +852,8 @@ where
     }
 
     /// The radio clock: the ordinary TX owner's timer.
-    pub fn now(&self) -> oer_time::Instant {
+    #[cfg(test)]
+    fn now(&self) -> oer_time::Instant {
         self.tx.now()
     }
 
@@ -866,23 +877,20 @@ where
             .min()
     }
 
-    /// Borrow the ordinary TX owner, for diagnostics.
-    pub const fn tx(&self) -> &OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE> {
-        &self.tx
-    }
-
     /// A backoff for an attempt of `access_category`, drawn by the vendor's
     /// policy from the category's contention window: the phase contract
     /// leaves the backoff to the backend, and the S31 draws it in
     /// software.
-    pub fn draw_backoff(&mut self, access_category: WmmAccessCategory) -> u16 {
+    #[cfg(test)]
+    fn draw_backoff(&mut self, access_category: WmmAccessCategory) -> u16 {
         self.tx
             .contention_publication(LegacyTxQueue::from_access_category(access_category))
             .1
     }
 
     /// Whether the queue of `access_category` holds an attempt.
-    pub fn queue_busy(&self, access_category: WmmAccessCategory) -> bool {
+    #[cfg(test)]
+    fn queue_busy(&self, access_category: WmmAccessCategory) -> bool {
         let queue = LegacyTxQueue::from_access_category(access_category);
         self.queues[usize::from(queue.hardware_index())].is_some()
     }
@@ -1453,8 +1461,9 @@ where
         sink.tx_completed(queue_category(index), slot, PublicationEnd::Withdrawn, rate);
     }
 
-    /// End every held attempt as aborted: the closed gate gives them back.
-    pub fn abort_held_attempts<K: LowerMacSink<'slot, BUFFER_SIZE>>(&mut self, sink: &mut K) {
+    /// Return every held attempt without publishing it.
+    #[cfg(test)]
+    fn withdraw_held_attempts<K: LowerMacSink<'slot, BUFFER_SIZE>>(&mut self, sink: &mut K) {
         for index in 0..LOWER_MAC_TX_QUEUES {
             self.abort_held(index, sink);
         }
@@ -1600,7 +1609,7 @@ where
     }
 
     /// Whether an attempt in flight uses `key`.
-    pub fn key_in_use(&self, key: KeyIndex) -> bool {
+    fn key_in_use(&self, key: KeyIndex) -> bool {
         self.attempts().any(|attempt| attempt.key == Some(key))
     }
 
@@ -1900,6 +1909,7 @@ const PRIORITY_ZERO: MacPti = match MacPti::new(0) {
 
 /// A publication the transmit owner refused: its fault, and the slot that
 /// goes back.
+#[must_use = "retain the returned transmit slot and handle the publication fault"]
 pub struct SubmitFault<'slot, const BUFFER_SIZE: usize> {
     pub fault: LowerMacFault,
     pub slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
@@ -1981,7 +1991,7 @@ pub struct MpduValues<'slot, const BUFFER_SIZE: usize> {
     pub protection: Protection,
     pub key: Option<KeyIndex>,
     pub power_ceiling_dbm: Option<i8>,
-    /// The backoff, drawn by [`LowerMacCore::draw_backoff`].
+    /// The backoff selected for this publication, in slots.
     pub backoff_slots: u16,
     pub coex: CoexPriority,
     /// A transmission of an MPDU the plan sends again.
@@ -1999,7 +2009,7 @@ pub struct AmpduValues {
     pub protection: Protection,
     pub key: Option<KeyIndex>,
     pub power_ceiling_dbm: Option<i8>,
-    /// The backoff, drawn by [`LowerMacCore::draw_backoff`].
+    /// The backoff selected for this publication, in slots.
     pub backoff_slots: u16,
     pub coex: CoexPriority,
     /// The recipient's Minimum MPDU Start Spacing encoding, 0 to 7.

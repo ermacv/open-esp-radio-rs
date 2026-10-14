@@ -356,6 +356,7 @@ pub const MAX_SINGLE_ATTEMPT_BACKOFF_SLOTS: u16 = 0x03ff;
 /// deadline and phase. Only [`OrdinaryTxOwner::service_queued_single_attempt`]
 /// advances it; dropping it forgets a descriptor the hardware may still
 /// own, which only a radio reset recovers.
+#[must_use = "service the published attempt until its slot returns"]
 pub struct QueuedSingleAttempt<'slot, const BUFFER_SIZE: usize> {
     slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
     active: ActiveTx,
@@ -386,6 +387,7 @@ impl<const BUFFER_SIZE: usize> QueuedSingleAttempt<'_, BUFFER_SIZE> {
 }
 
 /// How a serviced [`QueuedSingleAttempt`] stands.
+#[must_use = "retain the pending attempt or its completed slot"]
 pub enum QueuedSingleAttemptProgress<'slot, const BUFFER_SIZE: usize> {
     /// The hardware still owns the attempt.
     Pending(QueuedSingleAttempt<'slot, BUFFER_SIZE>),
@@ -397,6 +399,7 @@ pub enum QueuedSingleAttemptProgress<'slot, const BUFFER_SIZE: usize> {
 }
 
 /// A queued attempt that was not published; its slot comes back.
+#[must_use = "retain the unpublished slot and handle the refusal"]
 pub struct QueuedSingleAttemptRefused<'slot, const BUFFER_SIZE: usize> {
     pub error: OrdinaryTxError,
     pub slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,

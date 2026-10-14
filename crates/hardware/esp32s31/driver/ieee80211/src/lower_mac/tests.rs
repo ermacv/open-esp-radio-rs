@@ -603,7 +603,6 @@ fn queued(core: &Core, index: usize) -> &QueuedSingleAttempt<'static, 512> {
 #[test]
 fn capabilities_are_the_s31_limits_on_2_4_ghz() {
     let caps = esp32s31_lower_mac_capabilities(512);
-    assert_eq!(caps, core().capabilities());
     assert_eq!(
         caps.services,
         ESP32S31_MAC_SERVICE_CAPABILITIES
@@ -1588,7 +1587,7 @@ fn a_closed_gate_blocks_the_queues_and_holds_the_attempt_until_it_opens() {
     core.block_held_queues(&mut hardware);
     submit(&mut core, &mut hardware, values(&frame, false)).unwrap();
     let mut events = Events::default();
-    core.abort_held_attempts(&mut events);
+    core.withdraw_held_attempts(&mut events);
     assert_eq!(events.completions, [PublicationEnd::Withdrawn]);
     assert_eq!(events.slots.len(), 1);
     assert_eq!(hardware.publications(), 1);
@@ -1760,7 +1759,7 @@ fn an_elevated_mpdu_carries_the_radio_system_s_connection_priorities() {
     let mut hardware = Hardware::default();
     let mut core = enabled(&mut hardware);
     assert!(
-        core.capabilities()
+        esp32s31_lower_mac_capabilities(512)
             .coex_priorities
             .contains(CoexPriority::Elevated)
     );

@@ -617,7 +617,6 @@ impl Core0PerformanceSnapshot {
 }
 
 pub struct Core0PerformanceCounters {
-    rx_interrupt_posts: AtomicU32,
     radio_polls: AtomicU32,
     radio_cycles: AtomicU32,
     radio_instructions: AtomicU32,
@@ -740,7 +739,6 @@ pub struct Core0PerformanceCounters {
 impl Core0PerformanceCounters {
     pub const fn new() -> Self {
         Self {
-            rx_interrupt_posts: AtomicU32::new(0),
             radio_polls: AtomicU32::new(0),
             radio_cycles: AtomicU32::new(0),
             radio_instructions: AtomicU32::new(0),
@@ -859,14 +857,6 @@ impl Core0PerformanceCounters {
             dma_exhaustion_active: AtomicU32::new(0),
             dma_exhaustion_started_cycles: AtomicU32::new(0),
         }
-    }
-
-    #[inline(always)]
-    pub(crate) fn record_rx_interrupt_post(&self) {
-        if !COARSE {
-            return;
-        }
-        self.rx_interrupt_posts.fetch_add(1, Ordering::Relaxed);
     }
 
     #[inline(always)]
@@ -1358,9 +1348,11 @@ impl Core0PerformanceCounters {
         }
     }
 
-    pub fn snapshot(&self) -> Core0PerformanceSnapshot {
+    /// Read task counters together with the IRQ consumer's publication count.
+    /// The IRQ component owns that counter; no ISR calls into this runtime.
+    pub fn snapshot(&self, irq_rx_posts: u32) -> Core0PerformanceSnapshot {
         Core0PerformanceSnapshot {
-            rx_interrupt_posts: self.rx_interrupt_posts.load(Ordering::Relaxed),
+            rx_interrupt_posts: if COARSE { irq_rx_posts } else { 0 },
             radio_polls: self.radio_polls.load(Ordering::Relaxed),
             radio_cycles: self.radio_cycles.load(Ordering::Relaxed),
             radio_instructions: self.radio_instructions.load(Ordering::Relaxed),

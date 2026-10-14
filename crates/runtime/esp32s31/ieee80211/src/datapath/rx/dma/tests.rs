@@ -11,7 +11,6 @@ use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use crate::datapath::{
     DatapathRxServiceContext,
-    irq::EmbassyMacIrqRuntime,
     network::{DatapathNetworkRx, DatapathNetworkRxSet},
     paired::DatapathPairedRxService,
     rx::{

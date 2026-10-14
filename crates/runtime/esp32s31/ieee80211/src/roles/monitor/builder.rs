@@ -3,10 +3,7 @@
 #![forbid(unsafe_code)]
 
 use crate::{
-    datapath::{
-        irq::InterruptEpoch,
-        rx::{dma::ReceiveDmaStorage, frontier::RxFrontierError},
-    },
+    datapath::rx::{dma::ReceiveDmaStorage, frontier::RxFrontierError},
     roles::monitor::{
         MonitorCommandReceiver, MonitorCompletion, MonitorControlError, MonitorControlResources,
         MonitorController,
@@ -19,6 +16,7 @@ use crate::{
 };
 
 use embassy_futures::select::{Either, select};
+use oer_esp32s31_ieee80211_mac::irq::{consumer::Moderated, epoch::InterruptEpoch};
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
@@ -101,17 +99,17 @@ impl<const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORAGE_SIZE: u
 ///
 /// The interrupt epoch is deliberately already materialized. Logical role
 /// changes never uninstall its CPU route while the MAC remains powered.
-pub struct MonitorRadio<'runtime, P, Membership, R, M: RawMutex>
+pub struct MonitorRadio<'runtime, P, Membership, R>
 where
     R: MacInterruptRoute<Platform = P>,
     P: Sized,
 {
     pub owner: WifiRoleOwner<P, Membership>,
     pub registers: RadioRuntimeOwner,
-    pub interrupts: InterruptEpoch<'runtime, R, M>,
+    pub interrupts: InterruptEpoch<'runtime, R, Moderated>,
 }
 
-impl<'runtime, P, Membership, R, M: RawMutex> MonitorRadio<'runtime, P, Membership, R, M>
+impl<'runtime, P, Membership, R> MonitorRadio<'runtime, P, Membership, R>
 where
     R: MacInterruptRoute<Platform = P>,
     P: Sized,
@@ -119,7 +117,7 @@ where
     pub fn new(
         owner: WifiRoleOwner<P, Membership>,
         registers: RadioRuntimeOwner,
-        interrupts: InterruptEpoch<'runtime, R, M>,
+        interrupts: InterruptEpoch<'runtime, R, Moderated>,
     ) -> Self {
         Self {
             owner,
@@ -183,7 +181,6 @@ struct MonitorBuildFailure<
     P,
     Membership,
     R,
-    M: RawMutex,
     S,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
@@ -195,7 +192,7 @@ struct MonitorBuildFailure<
 {
     pub error: MonitorBuildError,
     pub plan: WifiStandaloneMonitorPlan,
-    pub radio: MonitorRadio<'runtime, P, Membership, R, M>,
+    pub radio: MonitorRadio<'runtime, P, Membership, R>,
     pub resources: MonitorResources<S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
 }
 
@@ -228,7 +225,6 @@ struct MonitorOwner<
     P,
     Membership,
     R,
-    M: RawMutex,
     S,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
@@ -243,7 +239,7 @@ struct MonitorOwner<
         'runtime,
         RadioRuntimeOwner,
         R,
-        M,
+        Moderated,
         S,
         COUNT,
         DMA_BUFFER_SIZE,
@@ -262,12 +258,11 @@ impl<
     P,
     Membership,
     R,
-    M: RawMutex,
     S,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
-> MonitorOwner<'runtime, P, Membership, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
+> MonitorOwner<'runtime, P, Membership, R, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 where
     R: MacInterruptRoute<Platform = P>,
     P: Sized,
@@ -291,7 +286,7 @@ where
         clippy::result_large_err,
         reason = "failure retains the exact radio, IRQ and DMA owners without heap allocation"
     )]
-    fn try_into_stopped(
+    fn try_into_stopped<M: RawMutex>(
         self,
         control: &'runtime MonitorControlResources<M>,
     ) -> Result<
@@ -348,7 +343,7 @@ where
     /// for shutdown. Completion is published only after IRQ and DMA are
     /// confirmed quiescent, or as `Faulted` while this task still retains every
     /// hardware-visible owner in quarantine for explicit board recovery.
-    pub async fn run_controlled(
+    pub async fn run_controlled<M: RawMutex>(
         &mut self,
         control: &mut MonitorCommandReceiver<'_, M>,
         timer: &impl Timer,
@@ -436,18 +431,17 @@ fn prepare_esp32s31_monitor<
     P,
     Membership,
     R,
-    M: RawMutex,
     S,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
 >(
     plan: WifiStandaloneMonitorPlan,
-    mut radio: MonitorRadio<'runtime, P, Membership, R, M>,
+    mut radio: MonitorRadio<'runtime, P, Membership, R>,
     mut resources: MonitorResources<S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
 ) -> Result<
-    MonitorOwner<'runtime, P, Membership, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
-    MonitorBuildFailure<'runtime, P, Membership, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    MonitorOwner<'runtime, P, Membership, R, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    MonitorBuildFailure<'runtime, P, Membership, R, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
 >
 where
     R: MacInterruptRoute<Platform = P>,
@@ -660,7 +654,7 @@ pub struct MonitorStopped<
     P: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
-    pub radio: MonitorRadio<'runtime, P, Membership, R, M>,
+    pub radio: MonitorRadio<'runtime, P, Membership, R>,
     pub plan: WifiStandaloneMonitorPlan,
     pub resources:
         MonitorStoppedExecutionResources<'runtime, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
@@ -684,7 +678,7 @@ pub struct MonitorTaskBuildFailure<
 {
     pub error: MonitorBuildError,
     pub plan: WifiStandaloneMonitorPlan,
-    pub radio: MonitorRadio<'runtime, P, Membership, R, M>,
+    pub radio: MonitorRadio<'runtime, P, Membership, R>,
     pub resources:
         MonitorExecutionResources<'runtime, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
 }
@@ -709,7 +703,7 @@ pub struct MonitorTask<
     P: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
-    owner: MonitorOwner<'runtime, P, Membership, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    owner: MonitorOwner<'runtime, P, Membership, R, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     control: MonitorCommandReceiver<'runtime, M>,
 }
 
@@ -1027,7 +1021,7 @@ pub fn prepare_esp32s31_monitor_task<
     const DMA_STORAGE_SIZE: usize,
 >(
     plan: WifiStandaloneMonitorPlan,
-    radio: MonitorRadio<'runtime, P, Membership, R, M>,
+    radio: MonitorRadio<'runtime, P, Membership, R>,
     resources: MonitorExecutionResources<'runtime, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
 ) -> Result<
     (

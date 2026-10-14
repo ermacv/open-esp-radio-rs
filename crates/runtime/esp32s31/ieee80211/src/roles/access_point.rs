@@ -94,7 +94,7 @@ use crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE;
 use crate::diagnostics::network::{RxNetworkDeliveryEvent, RxNetworkDeliveryObserver};
 #[cfg(any(feature = "diagnostics", test))]
 use crate::{
-    datapath::{irq::MacInterruptEpochDrain, rx::frontier::RxFrontierSchedulerSnapshot},
+    datapath::rx::frontier::RxFrontierSchedulerSnapshot,
     diagnostics::{
         access_point::{
             AccessPointObservationStorage, AccessPointTerminalObservation,
@@ -106,6 +106,8 @@ use crate::{
         },
     },
 };
+#[cfg(any(feature = "diagnostics", test))]
+use oer_esp32s31_ieee80211_mac::irq::epoch::MacInterruptEpochDrain;
 
 use crate::datapath::{
     DatapathControlContext, DatapathControlProgress, DatapathRunner, DatapathRxProgress,

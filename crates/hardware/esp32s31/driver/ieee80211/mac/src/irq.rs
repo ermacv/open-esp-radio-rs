@@ -1,6 +1,7 @@
-//! Allocation-free MAC ISR to Embassy-task event handoff.
+//! Allocation-free MAC interrupt acknowledgement and ordered event handoff.
 
-use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+pub mod consumer;
+pub mod epoch;
 
 use oer_esp32s31_hal::{
     owner::{MacInterruptRegisters, MacPowerInterruptRegisters},
@@ -158,12 +159,6 @@ impl IrqWork {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct IrqEvent {
-    /// Driver-local task event mask, never a hardware register image.
-    pub events: u32,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct IrqSnapshot {
     /// Whether the generated PAC observed at least one asserted STATUS field.
     pub had_status: bool,
@@ -210,66 +205,6 @@ pub enum PowerIrqDisposition {
     Spurious,
 }
 
-/// Executor-neutral coalescing state shared by the ISR and its task.
-///
-/// The executor integration decides how a posted edge wakes the task. This
-/// keeps the MAC crate independent of Embassy while retaining the exact
-/// interrupt/event mapping.
-pub struct IrqState {
-    pending_events: AtomicU32,
-    observed_unhandled: AtomicBool,
-}
-
-impl IrqState {
-    pub const fn new() -> Self {
-        Self {
-            pending_events: AtomicU32::new(0),
-            observed_unhandled: AtomicBool::new(false),
-        }
-    }
-
-    #[inline]
-    pub fn post(&self, events: u32) {
-        self.pending_events.fetch_or(events, Ordering::Release);
-    }
-
-    #[inline]
-    pub fn record_unhandled_event(&self) {
-        self.observed_unhandled.store(true, Ordering::Relaxed);
-    }
-
-    pub fn observed_unhandled(&self) -> bool {
-        self.observed_unhandled.load(Ordering::Relaxed)
-    }
-
-    /// Take one pending action in the instruction-exact vendor ISR order.
-    ///
-    /// Duplicate edges still coalesce by task event kind, matching `pp_post` for
-    /// these event kinds. Unlike [`try_take`](Self::try_take), this method
-    /// preserves the ordering between different kinds and is suitable for a
-    /// run-to-completion Embassy dispatcher.
-    pub fn try_take_next(&self) -> Option<IrqWork> {
-        let mut pending = self.pending_events.load(Ordering::Acquire);
-        loop {
-            let work = next_irq_work(pending)?;
-            match self.pending_events.compare_exchange_weak(
-                pending,
-                pending & !work.event_bit(),
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => return Some(work),
-                Err(current) => pending = current,
-            }
-        }
-    }
-
-    pub fn try_take(&self) -> Option<IrqEvent> {
-        let events = self.pending_events.swap(0, Ordering::AcqRel);
-        (events != 0).then_some(IrqEvent { events })
-    }
-}
-
 /// Select one action from a driver-local task event set in recovered vendor order.
 ///
 /// Keeping selection pure lets validation probes exercise the same production
@@ -285,22 +220,6 @@ pub const fn next_irq_work(pending: u32) -> Option<IrqWork> {
         Some(IrqWork::Collision)
     } else {
         None
-    }
-}
-
-impl IrqSink for IrqState {
-    fn post(&self, events: u32) {
-        IrqState::post(self, events);
-    }
-
-    fn record_unhandled_event(&self) {
-        IrqState::record_unhandled_event(self);
-    }
-}
-
-impl Default for IrqState {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

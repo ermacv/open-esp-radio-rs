@@ -13,7 +13,7 @@ use embassy_time::Duration;
     feature = "core0-rx-cycle-telemetry",
     feature = "core0-rx-coarse-telemetry"
 ))]
-use oer_esp32s31_ieee80211_system::CORE0_PERFORMANCE;
+use oer_esp32s31_ieee80211_system::core0_performance_snapshot;
 #[cfg(feature = "core0-rx-cycle-telemetry")]
 use oer_esp32s31_ieee80211_system::{
     CORE0_AP_RX_CYCLES, CORE0_REORDER_CYCLES, CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM,
@@ -184,7 +184,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             feature = "core0-rx-cycle-telemetry",
             feature = "core0-rx-coarse-telemetry"
         ))]
-        let core0_performance_start = CORE0_PERFORMANCE.snapshot();
+        let core0_performance_start = core0_performance_snapshot();
         #[cfg(feature = "core0-rx-cycle-telemetry")]
         let core0_reorder_start = CORE0_REORDER_CYCLES.snapshot();
         #[cfg(feature = "core0-rx-cycle-telemetry")]

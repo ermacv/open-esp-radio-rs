@@ -5,17 +5,14 @@ use core::{
     task::{Context, Poll, Waker},
 };
 
-use crate::{
-    datapath::{
-        irq::{EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime, InterruptEpoch},
-        rx::dma::ReceiveDmaStorage,
-    },
-    roles::monitor::rx::MonitorRx,
-};
+use crate::{datapath::rx::dma::ReceiveDmaStorage, roles::monitor::rx::MonitorRx};
 
 use embassy_futures::block_on;
 
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use oer_esp32s31_ieee80211_mac::irq::{
+    consumer::{IrqConsumer, Moderated, PowerIrqConsumer},
+    epoch::InterruptEpoch,
+};
 
 use oer_esp32s31_ieee80211_dma::{
     descriptor::{BIT_30, BIT_31, LENGTH_SHIFT},
@@ -200,8 +197,8 @@ struct Route<'state> {
 
 struct RuntimeFixture {
     platform: (),
-    irq: EmbassyMacIrqRuntime<NoopRawMutex>,
-    power: EmbassyPowerIrqRuntime<NoopRawMutex>,
+    irq: IrqConsumer<Moderated>,
+    power: PowerIrqConsumer,
     active: Cell<bool>,
     event_mask: Cell<u32>,
     walker_when_dropped: Rc<Cell<Option<bool>>>,
@@ -211,8 +208,8 @@ impl RuntimeFixture {
     fn new() -> Self {
         Self {
             platform: (),
-            irq: EmbassyMacIrqRuntime::new_with_rx_moderation(restore_test_rx_delivery),
-            power: EmbassyPowerIrqRuntime::new(),
+            irq: IrqConsumer::new(Moderated::new(restore_test_rx_delivery)),
+            power: PowerIrqConsumer::new(),
             active: Cell::new(false),
             event_mask: Cell::new(0),
             walker_when_dropped: Rc::new(Cell::new(None)),
@@ -332,7 +329,7 @@ fn service<'storage, 'runtime>(
     'runtime,
     Hardware,
     Route<'runtime>,
-    NoopRawMutex,
+    Moderated,
     Sink,
     RX_COUNT,
     RX_BUFFER_SIZE,
@@ -352,7 +349,7 @@ fn service_with_plan<'storage, 'runtime>(
     'runtime,
     Hardware,
     Route<'runtime>,
-    NoopRawMutex,
+    Moderated,
     Sink,
     RX_COUNT,
     RX_BUFFER_SIZE,

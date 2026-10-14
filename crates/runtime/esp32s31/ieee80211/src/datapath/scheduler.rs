@@ -35,7 +35,7 @@ use crate::diagnostics::core0_rx_cycles::{
     cycle_count,
 };
 
-impl<'irq, M: RawMutex, N, B, R, K> DatapathRunner<'irq, M, N, B, R, K>
+impl<'irq, M: RxDelivery, N, B, R, K> DatapathRunner<'irq, M, N, B, R, K>
 where
     N: DatapathNetwork,
     B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,

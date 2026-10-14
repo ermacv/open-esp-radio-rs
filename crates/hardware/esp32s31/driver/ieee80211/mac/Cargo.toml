@@ -18,8 +18,11 @@ validation-raw-dma = ["oer-esp32s31-ieee80211-dma/validation-raw-dma"]
 validation-probes = ["oer-esp32s31-hal/validation-probes"]
 # Record the RX slot trace points into the image's installed trace.
 trace = ["oer-trace/record"]
+# Count actual RX interrupt publications for the selected diagnostic consumers.
+irq-counters = []
 
 [dependencies]
+atomic-waker = "1.1.2"
 bytemuck = { version = "1.25.2", default-features = false, features = ["derive", "min_const_generics", "zeroable_atomics", "zeroable_maybe_uninit"] }
 oer-time = { path = "../../../../../time" }
 oer-memory = { path = "../../../../../memory" }

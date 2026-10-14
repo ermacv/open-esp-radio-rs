@@ -87,7 +87,7 @@ fn exercise_stop(active: bool, fail_completion: bool) {
     let pool = PinnedTxPool::<64, 16, 8, 1>::pin_static(Box::leak(Box::new(PinnedTxPool::new())));
     let network = owned::OwnedDatapathNetwork::new(owned, resources.split(pool));
     network.set_link_state(interface, LinkState::Up);
-    let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+    let irq = IrqConsumer::new(oer_esp32s31_ieee80211_mac::irq::consumer::Unmoderated);
     let completion = Signal::new();
     let mut runner = DatapathRunner::new(
         &irq,
@@ -175,7 +175,7 @@ fn control_exchange_waits_for_each_terminal_event_without_admitting_prepared_dat
     let pool = PinnedTxPool::<64, 16, 8, 1>::pin_static(Box::leak(Box::new(PinnedTxPool::new())));
     let network = owned::OwnedDatapathNetwork::new(owned, resources.split(pool));
     network.set_link_state(interface, LinkState::Up);
-    let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+    let irq = IrqConsumer::new(oer_esp32s31_ieee80211_mac::irq::consumer::Unmoderated);
     let completion = Signal::new();
     let mut runner = DatapathRunner::new(
         &irq,
@@ -350,7 +350,7 @@ fn partial_successors_publish_without_waiting_but_yield_to_ready_control() {
     frame.fill(0);
     frame[..6].fill(4);
     device.transmit(frame).unwrap();
-    let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+    let irq = IrqConsumer::new(oer_esp32s31_ieee80211_mac::irq::consumer::Unmoderated);
     let completion = Signal::new();
     let finished = Signal::<NoopRawMutex, ()>::new();
     let mut runner = DatapathRunner::new(
@@ -417,7 +417,7 @@ fn saturated_successors_yield_to_a_received_frame_within_one_transaction() {
     frame.fill(0);
     frame[..6].fill(4);
     device.transmit(frame).unwrap();
-    let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+    let irq = IrqConsumer::new(oer_esp32s31_ieee80211_mac::irq::consumer::Unmoderated);
     let completion = Signal::new();
     let finished = Signal::<NoopRawMutex, ()>::new();
     let mut runner = DatapathRunner::new(
@@ -555,7 +555,7 @@ fn control_that_never_consumes_its_input_cannot_starve_a_sibling_task() {
     ));
     let pool = PinnedTxPool::<64, 16, 8, 1>::pin_static(Box::leak(Box::new(PinnedTxPool::new())));
     let network = owned::OwnedDatapathNetwork::new(owned, resources.split(pool));
-    let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+    let irq = IrqConsumer::new(oer_esp32s31_ieee80211_mac::irq::consumer::Unmoderated);
     let mut runner = DatapathRunner::new(
         &irq,
         network,
@@ -672,7 +672,7 @@ fn a_frame_queued_while_the_station_dozes_wakes_control_once() {
     let pool = PinnedTxPool::<64, 16, 8, 1>::pin_static(Box::leak(Box::new(PinnedTxPool::new())));
     let network = owned::OwnedDatapathNetwork::new(owned, resources.split(pool));
     network.set_link_state(interface, LinkState::Up);
-    let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+    let irq = IrqConsumer::new(oer_esp32s31_ieee80211_mac::irq::consumer::Unmoderated);
     let control_steps = core::cell::Cell::new(0);
     let mut runner = DatapathRunner::new(
         &irq,

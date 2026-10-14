@@ -41,16 +41,26 @@ fn exhaustion_episode_requires_a_proven_nonzero_resolution() {
     counters.record_dma_entry_remaining(Some(0));
     counters.record_dma_entry_remaining(Some(0));
     counters.record_dma_entry_remaining(None);
-    let active = counters.snapshot();
+    let active = counters.snapshot(0);
     assert_eq!(active.dma_exhaustion_episodes, 1);
     assert_eq!(active.dma_exhaustion_resolved_le_64us, 0);
 
     counters.record_dma_entry_remaining(Some(8));
     counters.record_dma_entry_remaining(Some(9));
-    let resolved = counters.snapshot();
+    let resolved = counters.snapshot(0);
     assert_eq!(resolved.dma_exhaustion_episodes, 1);
     assert_eq!(resolved.dma_exhaustion_resolved_le_64us, 1);
     assert_eq!(resolved.dma_exhaustion_resolved_le_256us, 0);
     assert_eq!(resolved.dma_exhaustion_resolved_le_1024us, 0);
     assert_eq!(resolved.dma_exhaustion_resolved_gt_1024us, 0);
+}
+
+#[test]
+fn irq_publication_count_is_sampled_only_when_coarse_telemetry_is_enabled() {
+    let counters = super::Core0PerformanceCounters::new();
+    let snapshot = counters.snapshot(41);
+    assert_eq!(
+        snapshot.rx_interrupt_posts,
+        if super::COARSE { 41 } else { 0 }
+    );
 }

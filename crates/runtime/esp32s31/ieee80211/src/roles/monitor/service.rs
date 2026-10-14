@@ -13,13 +13,7 @@
 use core::{future::Future, pin::pin};
 
 use crate::{
-    datapath::{
-        irq::{
-            InterruptEpoch, MacInterruptEpochActivateError, MacInterruptEpochDrain,
-            MacInterruptEpochQuiesceError,
-        },
-        rx::frontier::{RxFrontierError, RxFrontierPhase},
-    },
+    datapath::rx::frontier::{RxFrontierError, RxFrontierPhase},
     roles::monitor::rx::{MonitorRx, MonitorRxProgress},
 };
 
@@ -28,7 +22,13 @@ use embassy_futures::{
     yield_now,
 };
 
-use embassy_sync::blocking_mutex::raw::RawMutex;
+use oer_esp32s31_ieee80211_mac::irq::{
+    consumer::CanModerate,
+    epoch::{
+        InterruptEpoch, MacInterruptEpochActivateError, MacInterruptEpochDrain,
+        MacInterruptEpochQuiesceError,
+    },
+};
 
 use oer_time::Timer;
 
@@ -186,7 +186,7 @@ pub struct MonitorService<
     'runtime,
     H,
     R,
-    M: RawMutex,
+    M: CanModerate,
     S,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
@@ -211,7 +211,7 @@ impl<
     'runtime,
     H,
     R,
-    M: RawMutex,
+    M: CanModerate,
     S,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
@@ -390,7 +390,7 @@ impl<
     'runtime,
     H,
     R,
-    M: RawMutex,
+    M: CanModerate,
     S,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
@@ -432,7 +432,7 @@ where
     {
         let mut report = MonitorRunReport::default();
         #[cfg(any(feature = "diagnostics", test))]
-        let interrupt_posts_at_start = self.interrupts().mac_runtime().rx_post_count();
+        let interrupt_posts_at_start = self.interrupts().consumer().rx_post_count();
         activate_promiscuous_receive(
             self.hardware
                 .as_mut()
@@ -455,7 +455,7 @@ where
             #[cfg(any(feature = "diagnostics", test))]
             report.record_interrupt_posts(
                 interrupt_posts_at_start,
-                self.interrupts().mac_runtime().rx_post_count(),
+                self.interrupts().consumer().rx_post_count(),
             );
             return Err(MonitorRunFailure {
                 error: MonitorRunError::Start(error),
@@ -492,7 +492,7 @@ where
             #[cfg(any(feature = "diagnostics", test))]
             report.record_interrupt_posts(
                 interrupt_posts_at_start,
-                self.interrupts().mac_runtime().rx_post_count(),
+                self.interrupts().consumer().rx_post_count(),
             );
             return Err(MonitorRunFailure { error, report });
         }
@@ -500,10 +500,10 @@ where
 
         // A descriptor may have completed before route activation. The ring,
         // not this synthetic wake, remains the source of multiplicity.
-        self.interrupts().mac_runtime().notify_rx_handoff();
+        self.interrupts().consumer().notify_rx_handoff();
         let mut boundary = pin!(boundary);
         let boundary = loop {
-            match select(boundary.as_mut(), self.interrupts().mac_runtime().wait_rx()).await {
+            match select(boundary.as_mut(), self.interrupts().consumer().wait_rx()).await {
                 Either::First(boundary) => break boundary,
                 Either::Second(()) => {
                     report.rx_service_wakes = report.rx_service_wakes.saturating_add(1);
@@ -528,12 +528,12 @@ where
                                 // produce another interrupt, so keep this
                                 // finite bottom half runnable cooperatively.
                                 yield_now().await;
-                                self.interrupts().mac_runtime().notify_rx_handoff();
+                                self.interrupts().consumer().notify_rx_handoff();
                             } else {
                                 // The complete durable frontier has been
                                 // recycled. Restore RX delivery only after
                                 // that proof, matching connected STA/AP.
-                                let _ = self.interrupts().mac_runtime().unmask_rx_after_drain();
+                                let _ = self.interrupts().consumer().unmask_rx_after_drain();
                             }
                         }
                         Err(error) => {
@@ -541,7 +541,7 @@ where
                             #[cfg(any(feature = "diagnostics", test))]
                             report.record_interrupt_posts(
                                 interrupt_posts_at_start,
-                                self.interrupts().mac_runtime().rx_post_count(),
+                                self.interrupts().consumer().rx_post_count(),
                             );
                             return Err(MonitorRunFailure {
                                 error: MonitorRunError::Service { error, stop },
@@ -559,7 +559,7 @@ where
                 #[cfg(any(feature = "diagnostics", test))]
                 report.record_interrupt_posts(
                     interrupt_posts_at_start,
-                    self.interrupts().mac_runtime().rx_post_count(),
+                    self.interrupts().consumer().rx_post_count(),
                 );
                 Ok((report, boundary))
             }
@@ -567,7 +567,7 @@ where
                 #[cfg(any(feature = "diagnostics", test))]
                 report.record_interrupt_posts(
                     interrupt_posts_at_start,
-                    self.interrupts().mac_runtime().rx_post_count(),
+                    self.interrupts().consumer().rx_post_count(),
                 );
                 Err(MonitorRunFailure {
                     error: MonitorRunError::Stop(error),
@@ -698,7 +698,7 @@ where
 impl<
     H,
     R,
-    M: RawMutex,
+    M: CanModerate,
     S,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,

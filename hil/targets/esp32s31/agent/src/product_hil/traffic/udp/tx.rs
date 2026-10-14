@@ -4,9 +4,9 @@ use crate::product_hil::network::sockets::{Ipv4Addr, Stack, UdpSocket, UdpTxStor
 use core::sync::atomic::{AtomicU8, Ordering};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
 #[cfg(feature = "core0-rx-coarse-telemetry")]
-use oer_esp32s31_ieee80211_system::CORE0_PERFORMANCE;
-#[cfg(feature = "core0-rx-coarse-telemetry")]
 use oer_esp32s31_ieee80211_system::TX_PERFORMANCE;
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+use oer_esp32s31_ieee80211_system::core0_performance_snapshot;
 #[cfg(any(
     feature = "core0-rx-cycle-telemetry",
     feature = "core0-rx-coarse-telemetry"
@@ -321,7 +321,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         #[cfg(feature = "task-poll-telemetry")]
         let pacing_wait = oer_hil_esp32s31_telemetry::wait::Counters::new();
         #[cfg(feature = "core0-rx-coarse-telemetry")]
-        let core0_performance_start = CORE0_PERFORMANCE.snapshot();
+        let core0_performance_start = core0_performance_snapshot();
         #[cfg(feature = "core0-rx-coarse-telemetry")]
         let tx_promotion_start = TX_PERFORMANCE.snapshot();
         // TX owns this diagnostic interval. Socket admission does not prove

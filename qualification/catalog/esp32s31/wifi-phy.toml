@@ -89,15 +89,14 @@ level = "lower-primitive"
 [source-facts.source-contract]
 id = "wifi-interrupt-epoch-owners"
 composition = "production"
-scope = "Typed MAC acknowledgement and priority dispatch, finite platform route lifetime and Embassy wake coalescing"
+scope = "Typed MAC acknowledgement and priority dispatch, finite platform route lifetime and atomic IRQ wake coalescing"
 limits = "Route quiescence does not establish MAC or DMA idle; the supervisor composes it with physical stop and receive ownership"
 source-paths = [
   "crates/hardware/esp32s31/driver/ieee80211/mac/src/irq.rs",
   "crates/adapters/esp-hal/esp32s31/ieee80211/src/mac_interrupt_epoch.rs",
   "crates/adapters/esp-hal/esp32s31/ieee80211/src/mac_interrupt_epoch/storage.rs",
-  "crates/runtime/esp32s31/ieee80211/src/datapath/irq/epoch.rs",
-  "crates/runtime/esp32s31/ieee80211/src/datapath/irq/mac_runtime.rs",
-  "crates/runtime/esp32s31/ieee80211/src/datapath/irq/power_runtime.rs",
+  "crates/hardware/esp32s31/driver/ieee80211/mac/src/irq/epoch.rs",
+  "crates/hardware/esp32s31/driver/ieee80211/mac/src/irq/consumer.rs",
 ]
 
 [[source-facts]]
@@ -372,7 +371,7 @@ limitations = "The declared source boundary is exact; vendor and HIL readiness r
 id = "interrupt-recovery"
 source-fact-refs = ["wifi-interrupt-epoch-owners"]
 title = "Interrupt acknowledgement and recovery ordering"
-scope = "Finite CPU route epoch hard MAC acknowledgement priority dispatch and Embassy wake coalescing"
+scope = "Finite CPU route epoch hard MAC acknowledgement priority dispatch and atomic IRQ wake coalescing"
 implementation = "complete"
 host = "covered"
 async = "bounded"
@@ -388,8 +387,8 @@ gaps = [
 
 
 [capabilities.development]
-knowledge = ["crates/runtime/esp32s31/ieee80211/src/datapath/irq.rs"]
-host-tests = [{ manifest = "crates/runtime/esp32s31/ieee80211/Cargo.toml", filter = "datapath::irq::tests", source = "crates/runtime/esp32s31/ieee80211/src/datapath/irq/tests.rs" }]
+knowledge = ["crates/hardware/esp32s31/driver/ieee80211/mac/src/irq/consumer.rs"]
+host-tests = [{ manifest = "crates/hardware/esp32s31/driver/ieee80211/mac/Cargo.toml", filter = "irq::consumer::tests", source = "crates/hardware/esp32s31/driver/ieee80211/mac/src/irq/consumer/tests.rs" }]
 
 [capabilities.catalog-scope]
 chip = "esp32s31"
@@ -398,8 +397,8 @@ phy = "wifi-2g4"
 security = ["independent-of-link-security"]
 composition = "connected-station-interrupts"
 level = "composed-product"
-activation-boundary = "Finite CPU route epoch hard MAC acknowledgement priority dispatch and Embassy wake coalescing"
-limitations = "Vendor proof covers MAC interrupt masks, acknowledgement ordering, pending state and rearm preconditions. CPU route epoch ownership, dispatch priority and Embassy wake coalescing use their own host and HIL contracts"
+activation-boundary = "Finite CPU route epoch hard MAC acknowledgement priority dispatch and atomic IRQ wake coalescing"
+limitations = "Vendor proof covers MAC interrupt masks, acknowledgement ordering, pending state and rearm preconditions. CPU route epoch ownership, dispatch priority and atomic IRQ wake coalescing use their own host and HIL contracts"
 
 [[capabilities]]
 id = "authentication-association"

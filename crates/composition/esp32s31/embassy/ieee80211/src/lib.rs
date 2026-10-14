@@ -140,6 +140,13 @@ pub use oer_esp32s31_ieee80211_runtime::datapath::{
 pub use oer_esp32s31_ieee80211_runtime::diagnostics::core0_rx_performance::{
     CORE0_PERFORMANCE, Core0PerformanceSample, Core0PerformanceSnapshot,
 };
+/// Read runtime diagnostics and the interrupt owner's wrapping RX count.
+#[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
+#[cfg(target_arch = "riscv32")]
+pub fn core0_performance_snapshot() -> Core0PerformanceSnapshot {
+    CORE0_PERFORMANCE.snapshot(interrupts::IRQ_RUNTIME.rx_post_count())
+}
+
 #[cfg(feature = "diagnostics")]
 #[cfg(target_arch = "riscv32")]
 pub use oer_esp32s31_ieee80211_runtime::diagnostics::network::{

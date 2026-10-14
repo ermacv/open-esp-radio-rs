@@ -7,7 +7,6 @@ use core::future::{Future, pending, ready};
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-use crate::datapath::irq::EmbassyMacIrqRuntime;
 use crate::datapath::network::{DatapathNetwork, DatapathNetworkRxSet};
 #[cfg(any(feature = "diagnostics", test))]
 use crate::diagnostics::aggregate_tx::PreparedTxSchedulerPhase;
@@ -21,10 +20,10 @@ pub use oer_esp32s31_ieee80211::datapath::{
     DatapathStopProgress,
 };
 pub use oer_esp32s31_ieee80211::tx::{WifiTxProgress, WifiTxWake};
+use oer_esp32s31_ieee80211_mac::irq::consumer::{IrqConsumer, RxDelivery};
 use oer_network_interface::{LinkState, NetworkInterfaceId};
 use oer_time::{Duration, Instant, Timer};
 
-pub mod irq;
 pub mod network;
 #[cfg(feature = "owned-network")]
 pub mod owned;
@@ -508,8 +507,8 @@ where {
 }
 
 /// Single Embassy owner for RX DMA, control, network TX and MAC IRQ order.
-pub struct DatapathRunner<'irq, M: RawMutex, N, B, R, K> {
-    irq: &'irq EmbassyMacIrqRuntime<M>,
+pub struct DatapathRunner<'irq, M: RxDelivery, N, B, R, K> {
+    irq: &'irq IrqConsumer<M>,
     /// Monotonic clock of every scheduling deadline this owner keeps.
     clock: K,
     network: N,

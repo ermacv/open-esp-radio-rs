@@ -13,7 +13,7 @@
 //! [`run_port`](oer_ieee80211_port::run_port) with the port's body.
 //!
 //! The interrupts only post: the MAC and power interrupt handlers publish
-//! into [`EmbassyMacIrqRuntime`] and [`EmbassyPowerIrqRuntime`], and the
+//! into [`IrqConsumer`] and [`PowerIrqConsumer`], and the
 //! backend's driver ([`PortBackend::drive`]), joined with the body, serves
 //! them in the vendor's order: RX success first, as budgeted drains of the
 //! RX DMA epoch into the staging queue while the RX interrupt stays masked,
@@ -94,8 +94,10 @@ use oer_radio_permit_pool::FifoPermitPool;
 use oer_radio_port::{Mint, Permit, PermitPool, Seat, Slot};
 use oer_time::Duration;
 
-use crate::datapath::irq::{EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime};
 use crate::mac_clock::ReceptionClock;
+use oer_esp32s31_ieee80211_mac::irq::consumer::{
+    IrqConsumer, Moderated, PowerIrqConsumer, RxDelivery,
+};
 use oer_ieee80211_mac::channel::WifiChannel;
 
 /// The radio system's coexistence priorities, as its last released guard
@@ -757,8 +759,8 @@ where
             AMPDU_BUFFERS,
         >,
         rx: (U, U::Service),
-        irq: &'r EmbassyMacIrqRuntime<M>,
-        power: &'r EmbassyPowerIrqRuntime<M>,
+        irq: &'r IrqConsumer<Moderated>,
+        power: &'r PowerIrqConsumer<Moderated>,
         channel: SupportedChannel<Esp32s31Caps<BUFFER_SIZE>>,
         access_point: IndividualAddress,
     ) -> Result<
@@ -1090,10 +1092,10 @@ where
 
 /// Serve the RX frontier until it is drained or blocked: a budgeted pass
 /// while the interrupt stays masked, the unmask once drained.
-async fn serve_rx<V: PortRxService, R: RawMutex>(
+async fn serve_rx<V: PortRxService, R: RxDelivery>(
     rx: &mut Option<V>,
     ready: &impl RxReady,
-    irq: &EmbassyMacIrqRuntime<R>,
+    irq: &IrqConsumer<R>,
 ) {
     loop {
         let pass = match rx.as_mut() {
@@ -1400,9 +1402,9 @@ pub struct Esp32s31Backend<
         O,
     >,
     /// The MAC interrupt's posts: RX first, then TX events.
-    irq: &'r EmbassyMacIrqRuntime<M>,
+    irq: &'r IrqConsumer<Moderated>,
     /// The power interrupt's posts: the station TBTT.
-    power: &'r EmbassyPowerIrqRuntime<M>,
+    power: &'r PowerIrqConsumer<Moderated>,
 }
 
 /// The backend's disabled-only settings.

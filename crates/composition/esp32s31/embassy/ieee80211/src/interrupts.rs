@@ -1,4 +1,4 @@
-//! Concrete esp-hal ISR bindings and shared Embassy interrupt publication.
+//! Concrete esp-hal ISR bindings and shared atomic interrupt publication.
 //!
 //! The supervisor transfers each typed interrupt setup into an epoch borrowing
 //! these exact runtimes. Station, paired roles and diagnostics share the same
@@ -6,7 +6,6 @@
 //! Handler code retains its IRAM placement while the runtime storage keeps its
 //! original static lifetime and memory placement.
 
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 #[cfg(feature = "mac-irq-diagnostics")]
 use embassy_sync::once_lock::OnceLock;
 #[cfg(feature = "mac-irq-diagnostics")]
@@ -16,26 +15,34 @@ use oer_esp32s31_ieee80211_mac::irq::{
 
 use oer_esp32s31_hal::owner::MacInterruptSetup;
 
-use oer_esp32s31_ieee80211_runtime::datapath::irq::{
-    EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime, InterruptEpoch,
+use oer_esp32s31_ieee80211_mac::irq::{
+    consumer::{IrqConsumer, Moderated, PowerIrqConsumer},
+    epoch::InterruptEpoch,
 };
 
 use oer_esp32s31_ieee80211_esp_hal::mac_interrupt_epoch::{
     EspHalMacInterruptRoute, service_mac_interrupt, service_power_interrupt,
 };
 
-pub type MacInterruptEpoch =
-    InterruptEpoch<'static, EspHalMacInterruptRoute, CriticalSectionRawMutex>;
+pub type MacInterruptEpoch = InterruptEpoch<'static, EspHalMacInterruptRoute, Moderated>;
 
-pub(crate) static IRQ_RUNTIME: EmbassyMacIrqRuntime<CriticalSectionRawMutex> =
-    EmbassyMacIrqRuntime::new_with_rx_moderation(
-        oer_esp32s31_ieee80211_esp_hal::mac_interrupt_epoch::unmask_active_mac_rx_delivery_interrupts,
-    );
-static POWER_IRQ_RUNTIME: EmbassyPowerIrqRuntime<CriticalSectionRawMutex> =
-    EmbassyPowerIrqRuntime::new();
+#[allow(
+    unsafe_code,
+    reason = "ISR publication state must remain in internal SRAM"
+)]
+#[unsafe(link_section = ".critical.data.open_radio_irq")]
+pub(crate) static IRQ_RUNTIME: IrqConsumer<Moderated> = IrqConsumer::new(Moderated::new(
+    oer_esp32s31_ieee80211_esp_hal::mac_interrupt_epoch::unmask_active_mac_rx_delivery_interrupts,
+));
+#[allow(
+    unsafe_code,
+    reason = "ISR publication state must remain in internal SRAM"
+)]
+#[unsafe(link_section = ".critical.data.open_radio_irq")]
+static POWER_IRQ_RUNTIME: PowerIrqConsumer = PowerIrqConsumer::new();
 
 /// The power interrupt's executor handoff, for the station power agent.
-pub(crate) fn power_irq_runtime() -> &'static EmbassyPowerIrqRuntime<CriticalSectionRawMutex> {
+pub(crate) fn power_irq_runtime() -> &'static PowerIrqConsumer {
     &POWER_IRQ_RUNTIME
 }
 

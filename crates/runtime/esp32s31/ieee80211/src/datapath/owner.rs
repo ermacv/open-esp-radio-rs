@@ -1,6 +1,6 @@
 use super::*;
 
-impl<'irq, M: RawMutex, N, B, R, K> DatapathRunner<'irq, M, N, B, R, K> {
+impl<'irq, M: RxDelivery, N, B, R, K> DatapathRunner<'irq, M, N, B, R, K> {
     /// Run a fallible owner transition, retaining the entire runner on either
     /// branch. The error service owns any partially transitioned resources.
     #[allow(clippy::type_complexity, clippy::result_large_err)]
@@ -133,14 +133,14 @@ fn charge_pair_tx_frames(served: &mut [u64; 2], slot: usize, frames: usize, peer
     served[1] -= shared;
 }
 
-impl<'irq, M: RawMutex, N, B, R, K> DatapathRunner<'irq, M, N, B, R, K>
+impl<'irq, M: RxDelivery, N, B, R, K> DatapathRunner<'irq, M, N, B, R, K>
 where
     N: DatapathNetwork,
     B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
     R: DatapathNetworkRxSet,
 {
     pub fn new_with_rx_set(
-        irq: &'irq EmbassyMacIrqRuntime<M>,
+        irq: &'irq IrqConsumer<M>,
         network: N,
         interface: NetworkInterfaceId,
         network_rx: R,
@@ -159,7 +159,7 @@ where
 
     /// Construct one physical DATAPATH scheduling two permanent logical VIFs.
     pub fn new_with_scope(
-        irq: &'irq EmbassyMacIrqRuntime<M>,
+        irq: &'irq IrqConsumer<M>,
         network: N,
         interfaces: DatapathInterfaceScope,
         network_rx: R,
@@ -383,13 +383,13 @@ where
     }
 }
 
-impl<'irq, M: RawMutex, N, B, K> DatapathRunner<'irq, M, N, B, N::RxPublisher, K>
+impl<'irq, M: RxDelivery, N, B, K> DatapathRunner<'irq, M, N, B, N::RxPublisher, K>
 where
     N: DatapathNetwork,
     B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
 {
     pub fn new(
-        irq: &'irq EmbassyMacIrqRuntime<M>,
+        irq: &'irq IrqConsumer<M>,
         network: N,
         interface: NetworkInterfaceId,
         services: B,

@@ -6,7 +6,7 @@ use crate::diagnostics::core0_rx_performance::{
 
 use crate::diagnostics::profile::RxRunnerProfile;
 
-impl<'irq, M: RawMutex, N, B, R, K> DatapathRunner<'irq, M, N, B, R, K>
+impl<'irq, M: RxDelivery, N, B, R, K> DatapathRunner<'irq, M, N, B, R, K>
 where
     N: DatapathNetwork,
     B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,

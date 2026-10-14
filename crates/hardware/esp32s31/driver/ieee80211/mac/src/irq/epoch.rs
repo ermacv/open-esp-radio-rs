@@ -1,15 +1,10 @@
-#![expect(
-    clippy::type_complexity,
-    reason = "the IRQ teardown result exposes the exact affine route, setup, and owner frontier"
-)]
+//! Finite platform route ownership around the executor-independent IRQ consumer.
 
-use embassy_sync::blocking_mutex::raw::RawMutex;
+use super::consumer::{CanModerate, IrqConsumer, IrqDrain, PowerIrqConsumer, RxDelivery};
 
 use oer_esp32s31_hal::types::{MacInterruptMask, MacPowerInterruptObservation};
 
-use oer_esp32s31_ieee80211_mac::irq::MacInterruptRoute;
-
-use super::{EmbassyMacIrqDrain, EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime};
+use super::MacInterruptRoute;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MacInterruptEpochStateError {
@@ -33,7 +28,7 @@ pub enum MacInterruptEpochQuiesceError<E> {
 /// epoch is closed.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct MacInterruptEpochDrain {
-    pub mac: EmbassyMacIrqDrain,
+    pub mac: IrqDrain,
     pub power_events: MacPowerInterruptObservation,
 }
 
@@ -41,10 +36,10 @@ pub struct MacInterruptEpochDrain {
 ///
 /// The inactive state contains the task-side setup token. The active state
 /// lends that token to a platform route. Quiescence first recovers the exact
-/// token and only then drains coalesced Embassy publications, preventing one
+/// token and only then drains coalesced IRQ publications, preventing one
 /// epoch's wake from becoming work in the next epoch.
 // CAPABILITY: wifi-interrupt-epoch-owners
-pub struct InterruptEpoch<'runtime, R, M: RawMutex>
+pub struct InterruptEpoch<'runtime, R, M: RxDelivery>
 where
     R: MacInterruptRoute,
 {
@@ -53,28 +48,26 @@ where
     // without running `R::drop` while hardware can still observe it.
     pub(super) route: Option<R>,
     pub(super) setup: Option<R::Setup>,
-    pub(super) mac_runtime: &'runtime EmbassyMacIrqRuntime<M>,
-    pub(super) power_runtime: &'runtime EmbassyPowerIrqRuntime<M>,
-    pub(super) rx_moderated: bool,
+    pub(super) mac_consumer: &'runtime IrqConsumer<M>,
+    pub(super) power_consumer: &'runtime PowerIrqConsumer,
 }
 
 impl<'runtime, R, M> InterruptEpoch<'runtime, R, M>
 where
     R: MacInterruptRoute,
-    M: RawMutex,
+    M: RxDelivery,
 {
     pub const fn new(
         route: R,
         setup: R::Setup,
-        mac_runtime: &'runtime EmbassyMacIrqRuntime<M>,
-        power_runtime: &'runtime EmbassyPowerIrqRuntime<M>,
+        mac_consumer: &'runtime IrqConsumer<M>,
+        power_consumer: &'runtime PowerIrqConsumer,
     ) -> Self {
         Self {
             route: Some(route),
             setup: Some(setup),
-            mac_runtime,
-            power_runtime,
-            rx_moderated: false,
+            mac_consumer,
+            power_consumer,
         }
     }
 
@@ -87,8 +80,8 @@ where
     /// The reference cannot activate or quiesce the platform route; it only
     /// lets the finite service owning this epoch await and publish handoff
     /// probes through the matching coalesced wake state.
-    pub const fn mac_runtime(&self) -> &'runtime EmbassyMacIrqRuntime<M> {
-        self.mac_runtime
+    pub const fn consumer(&self) -> &'runtime IrqConsumer<M> {
+        self.mac_consumer
     }
 
     /// Whether this active route owns the RX source-moderation contract.
@@ -96,8 +89,8 @@ where
     /// The bit is lifecycle state retained by the IRQ epoch, not a caller
     /// convention. A successful [`Self::quiesce`] always clears it after the
     /// hardware route has returned its setup token.
-    pub const fn is_rx_moderated(&self) -> bool {
-        self.rx_moderated
+    pub fn is_rx_moderated(&self) -> bool {
+        self.is_active() && self.mac_consumer.is_rx_moderation_active()
     }
 
     /// Borrow the task-side capability for polling-only scan/auth phases.
@@ -146,19 +139,19 @@ where
         &mut self,
         platform: &R::Platform,
         event_mask: MacInterruptMask,
-    ) -> Result<(), MacInterruptEpochActivateError<R::Error>> {
+    ) -> Result<(), MacInterruptEpochActivateError<R::Error>>
+    where
+        M: CanModerate,
+    {
         if self.is_active() {
             return Err(MacInterruptEpochActivateError::AlreadyActive);
         }
-        debug_assert!(!self.rx_moderated);
-        self.mac_runtime.begin_rx_moderation();
+        debug_assert!(!self.mac_consumer.is_rx_moderation_active());
+        self.mac_consumer.begin_rx_moderation();
         match self.activate(platform, event_mask) {
-            Ok(()) => {
-                self.rx_moderated = true;
-                Ok(())
-            }
+            Ok(()) => Ok(()),
             Err(error) => {
-                self.mac_runtime.end_rx_moderation();
+                self.mac_consumer.end_rx_moderation();
                 Err(error)
             }
         }
@@ -174,10 +167,13 @@ where
         &mut self,
         platform: &R::Platform,
         event_mask: MacInterruptMask,
-    ) -> Result<(), MacInterruptEpochActivateError<R::Error>> {
+    ) -> Result<(), MacInterruptEpochActivateError<R::Error>>
+    where
+        M: CanModerate,
+    {
         if self.is_active() {
             assert!(
-                self.rx_moderated,
+                self.mac_consumer.is_rx_moderation_active(),
                 "an active production MAC route retains RX moderation"
             );
             return Ok(());
@@ -198,8 +194,8 @@ where
             return Err(MacInterruptEpochQuiesceError::AlreadyQuiesced);
         }
         Ok(MacInterruptEpochDrain {
-            mac: self.mac_runtime.drain_pending(),
-            power_events: self.power_runtime.drain_pending(),
+            mac: self.mac_consumer.drain_pending(),
+            power_events: self.power_consumer.drain_pending(),
         })
     }
 
@@ -217,13 +213,10 @@ where
             .quiesce(platform)
             .map_err(MacInterruptEpochQuiesceError::Route)?;
         self.setup = Some(setup);
-        if self.rx_moderated {
-            self.mac_runtime.end_rx_moderation();
-            self.rx_moderated = false;
-        }
+        self.mac_consumer.end_rx_moderation();
         Ok(MacInterruptEpochDrain {
-            mac: self.mac_runtime.drain_pending(),
-            power_events: self.power_runtime.drain_pending(),
+            mac: self.mac_consumer.drain_pending(),
+            power_events: self.power_consumer.drain_pending(),
         })
     }
 
@@ -232,17 +225,7 @@ where
     ///
     /// An active epoch is returned unchanged. Consequently no caller can
     /// extract or drop an installed route through this API.
-    pub fn try_into_inactive_parts(
-        mut self,
-    ) -> Result<
-        (
-            R,
-            R::Setup,
-            &'runtime EmbassyMacIrqRuntime<M>,
-            &'runtime EmbassyPowerIrqRuntime<M>,
-        ),
-        Self,
-    > {
+    pub fn try_into_inactive_parts(mut self) -> Result<InactiveIrqParts<'runtime, R, M>, Self> {
         if self.is_active() {
             return Err(self);
         }
@@ -251,14 +234,19 @@ where
             .setup
             .take()
             .expect("inactive epoch retains its setup token");
-        Ok((route, setup, self.mac_runtime, self.power_runtime))
+        Ok(InactiveIrqParts {
+            route,
+            setup,
+            mac: self.mac_consumer,
+            power: self.power_consumer,
+        })
     }
 }
 
 impl<R, M> Drop for InterruptEpoch<'_, R, M>
 where
     R: MacInterruptRoute,
-    M: RawMutex,
+    M: RxDelivery,
 {
     fn drop(&mut self) {
         if self.is_active() {
@@ -270,4 +258,12 @@ where
             core::mem::forget(self.route.take());
         }
     }
+}
+
+/// Every recovered resource after the route is detached and its facts drained.
+pub struct InactiveIrqParts<'irq, R: MacInterruptRoute, M: RxDelivery> {
+    pub route: R,
+    pub setup: R::Setup,
+    pub mac: &'irq IrqConsumer<M>,
+    pub power: &'irq PowerIrqConsumer,
 }

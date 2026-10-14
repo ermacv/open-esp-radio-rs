@@ -205,8 +205,10 @@ pub fn install_esp32s31_wifi_port<
     core: LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
     retune: R,
     rx: (U, U::Service),
-    irq: &'r crate::datapath::irq::EmbassyMacIrqRuntime<M>,
-    power: &'r crate::datapath::irq::EmbassyPowerIrqRuntime<M>,
+    irq: &'r oer_esp32s31_ieee80211_mac::irq::consumer::IrqConsumer<
+        oer_esp32s31_ieee80211_mac::irq::consumer::Moderated,
+    >,
+    power: &'r oer_esp32s31_ieee80211_mac::irq::consumer::PowerIrqConsumer,
     channel: SupportedChannel<Esp32s31Caps<BUFFER_SIZE>>,
     access_point: IndividualAddress,
 ) -> Result<

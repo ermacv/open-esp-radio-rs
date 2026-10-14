@@ -25,10 +25,7 @@ use oer_esp32s31_ieee80211_mac::{
         MacTxPowerTable, StaLinkRxPolicyHardware, activate_promiscuous_receive,
         configure_sta_link_receive_policy, initialize_wifi_mac,
     },
-    irq::{
-        EVENT_RX_SUCCESS, EVENT_TX_COMPLETE, IrqDisposition, IrqState, IrqWork, MacInterrupt,
-        handle_mac_irq,
-    },
+    irq::{IrqDisposition, IrqWork, MacInterrupt, consumer::IrqConsumer, handle_mac_irq},
     rate::schedule::{RateScheduleKind, RateScheduleRef},
     rx::{
         HeBandwidth, HeGuardIntervalAndLtf, HeMuBandwidth, HeMuSignal, HeSuSignal,

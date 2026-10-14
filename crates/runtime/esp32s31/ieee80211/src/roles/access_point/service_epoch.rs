@@ -88,7 +88,7 @@ where
     >(
         &mut self,
         hardware: &mut H,
-        interrupts: &mut InterruptEpoch<'_, IR, NM>,
+        interrupts: &mut oer_esp32s31_ieee80211_mac::irq::epoch::InterruptEpoch<'_, IR, oer_esp32s31_ieee80211_mac::irq::consumer::Moderated>,
         platform: &IR::Platform,
         network: &mut NR,
         aggregate: &mut AccessPointAmpdu<
@@ -174,7 +174,7 @@ where
             }
             return Err(AccessPointRunError::InterruptActivate(error));
         }
-        interrupts.mac_runtime().notify_rx_handoff();
+        interrupts.consumer().notify_rx_handoff();
         let now = self.now();
         self.publish_beacon(hardware, now)
             .map_err(AccessPointRunError::Control)?;
@@ -238,7 +238,7 @@ where
             next_control_deadline: oer_time::Instant::EPOCH,
         };
         let mut runner = DatapathRunner::new(
-            interrupts.mac_runtime(),
+            interrupts.consumer(),
             network,
             crate::datapath::network::AP_NETWORK_INTERFACE_ID,
             services,

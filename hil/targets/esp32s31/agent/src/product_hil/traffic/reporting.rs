@@ -15,7 +15,7 @@ use oer_esp32s31_ieee80211_system::{
     feature = "core0-rx-coarse-telemetry"
 ))]
 use oer_esp32s31_ieee80211_system::{
-    CORE0_PERFORMANCE, Core0PerformanceSample, Core0PerformanceSnapshot,
+    CORE0_PERFORMANCE, Core0PerformanceSample, Core0PerformanceSnapshot, core0_performance_snapshot,
 };
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 use oer_esp32s31_ieee80211_system::{TX_PERFORMANCE, TxPerformanceSnapshot};
@@ -695,9 +695,7 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_cycles(
     let ap = CORE0_AP_RX_CYCLES
         .snapshot()
         .wrapping_delta_since(ap_earlier);
-    let performance = CORE0_PERFORMANCE
-        .snapshot()
-        .wrapping_delta_since(performance_earlier);
+    let performance = core0_performance_snapshot().wrapping_delta_since(performance_earlier);
     let reorder = CORE0_REORDER_CYCLES
         .snapshot()
         .wrapping_delta_since(reorder_earlier);
@@ -1037,7 +1035,7 @@ pub(in crate::product_hil) async fn log_open_radio_l1_cache_interval(
 pub(in crate::product_hil) async fn log_open_radio_core0_rx_coarse(
     earlier: Core0PerformanceSnapshot,
 ) {
-    let performance = CORE0_PERFORMANCE.snapshot().wrapping_delta_since(earlier);
+    let performance = core0_performance_snapshot().wrapping_delta_since(earlier);
     runtime_log_reliably(format_args!(
         "ORC0C rx_irq_posts={} radio_polls={} radio_cycles={} radio_instret={} poll_to_runner_cycles={} poll_to_runner_instret={} runner_to_exit_cycles={} runner_to_exit_instret={} runner_calls={} runner_cycles={} runner_instret={}",
         performance.rx_interrupt_posts,

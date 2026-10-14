@@ -633,6 +633,8 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                         None => core::future::pending::<()>().await,
                     }
                 };
+                let transmit_ready = io.transmit.ready();
+                let mut transmit_ready = core::pin::pin!(transmit_ready);
                 let mut event = core::pin::pin!(event);
                 let mut command = core::pin::pin!(command);
                 let mut alarm = core::pin::pin!(alarm);
@@ -646,7 +648,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                         Poll::Pending => None,
                     };
                     let tick = alarm.as_mut().poll(cx).is_ready();
-                    let transmit = sending && io.transmit.poll_ready(cx).is_ready();
+                    let transmit = sending && transmit_ready.as_mut().poll(cx).is_ready();
                     if event.is_some() || command.is_some() || tick || transmit {
                         Poll::Ready((event, command, tick, transmit))
                     } else {

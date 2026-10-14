@@ -49,6 +49,7 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
 - The fourth RTS-handler argument suppresses ending FES for `0xc0` when nonzero (`+0xd2`); do not derive it from the hardware Trigger-flow flag. The discovered ordinary completion callers pass zero: `libpp[lmac.o]::lmacProcessTxComplete +0x19a` and `rom[]::lmacProcessTxComplete +0x152`. `libpp[wdev.o]::wdev_funcs_init +0x900` installs the library handler in the ROM dispatch table.
 - Handler queue `10` resolves through `our_tx_eb`, then its descriptor at `+52`, then queue bits `7:4` of descriptor word `+4` (`lmacProcessTxRtsError +0x1a..+0x2c`). It is not ordinary queue ten. Cite `lmacProcessTxseckiderr +0x26` for its FES end; `+0x98` is its call site inside `lmacProcessTxError`.
 - `affine_spsc::split` takes `&mut` storage. The endpoints retain that exclusive borrow, so another pair cannot coexist. A new pair may receive values left by its predecessor; the queue owns them until receipt or destruction. Move the receiver itself across lifecycle boundaries; the producer cannot create one.
+- Each MSDU queue endpoint has one `AtomicWaker`. Its readiness future borrows the endpoint exclusively until completion or cancellation, registers before inspecting the queue, and owns no value or credit. Keep an outgoing value with its caller until `try_send` publishes it; cancellation of readiness cannot discard it.
 
 ## Checks
 

@@ -2,7 +2,7 @@
 
 use atomic_waker::AtomicWaker;
 use core::future::poll_fn;
-use core::task::{Context, Poll};
+use core::task::Poll;
 use oer_memory::{AffineSpscQueue, AffineSpscReceiver, AffineSpscSender, AffineSpscTrySendError};
 
 /// Queue storage and atomic wake state. The composition splits it once and
@@ -63,23 +63,41 @@ impl<T, const DEPTH: usize> MsduSender<'_, T, DEPTH> {
         Ok(())
     }
 
-    pub async fn send(&self, value: T) {
-        let mut value = value;
-        loop {
-            match self.try_send(value) {
-                Ok(()) => return,
-                Err(AffineSpscTrySendError(returned)) => value = returned,
+    /// Wait for capacity while retaining the sole producer wake registration.
+    /// The caller keeps its value until `try_send`; cancellation owns no value
+    /// and consumes no credit. With one sender, a free cell stays free until
+    /// that sender publishes.
+    ///
+    /// ```compile_fail,E0499
+    /// use oer_ieee80211_runtime::station_service::MsduQueue;
+    /// let mut queue = MsduQueue::<u8, 1>::new();
+    /// let (mut sender, receiver) = queue.split();
+    /// let first = sender.ready();
+    /// let second = sender.ready();
+    /// drop((first, second));
+    /// ```
+    ///
+    /// ```
+    /// use oer_ieee80211_runtime::station_service::MsduQueue;
+    /// async fn sequential() {
+    ///     let mut queue = MsduQueue::<u8, 1>::new();
+    ///     let (mut sender, receiver) = queue.split();
+    ///     sender.ready().await;
+    ///     sender.try_send(1).unwrap();
+    ///     assert_eq!(receiver.try_receive(), Some(1));
+    ///     sender.ready().await;
+    /// }
+    /// ```
+    pub async fn ready(&mut self) {
+        poll_fn(|cx| {
+            self.producer.register(cx.waker());
+            if self.sender.free_capacity() == 0 {
+                Poll::Pending
+            } else {
+                Poll::Ready(())
             }
-            poll_fn(|cx| {
-                self.producer.register(cx.waker());
-                if self.sender.free_capacity() == 0 {
-                    Poll::Pending
-                } else {
-                    Poll::Ready(())
-                }
-            })
-            .await;
-        }
+        })
+        .await;
     }
 }
 
@@ -90,21 +108,48 @@ pub struct MsduReceiver<'a, T, const DEPTH: usize> {
 }
 
 impl<T, const DEPTH: usize> MsduReceiver<'_, T, DEPTH> {
+    #[must_use]
     pub fn try_receive(&self) -> Option<T> {
         let value = self.receiver.try_receive().ok()?;
         self.producer.wake();
         Some(value)
     }
 
-    /// Register before checking so publication cannot lose a wake. Polling
-    /// readiness consumes no frame until the data machine can accept it.
-    pub fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<()> {
-        self.consumer.register(cx.waker());
-        if self.receiver.is_empty() {
-            Poll::Pending
-        } else {
-            Poll::Ready(())
-        }
+    /// Wait for a value without consuming it. The exclusive borrow lasts for
+    /// the entire future, so the queue's sole consumer waker cannot be replaced
+    /// by another outstanding wait. Cancellation leaves the value in the queue.
+    ///
+    /// ```compile_fail,E0499
+    /// use oer_ieee80211_runtime::station_service::MsduQueue;
+    /// let mut queue = MsduQueue::<u8, 1>::new();
+    /// let (sender, mut receiver) = queue.split();
+    /// let first = receiver.ready();
+    /// let second = receiver.ready();
+    /// drop((first, second));
+    /// ```
+    ///
+    /// ```
+    /// use oer_ieee80211_runtime::station_service::MsduQueue;
+    /// async fn sequential() {
+    ///     let mut queue = MsduQueue::<u8, 1>::new();
+    ///     let (sender, mut receiver) = queue.split();
+    ///     sender.try_send(1).unwrap();
+    ///     receiver.ready().await;
+    ///     assert_eq!(receiver.try_receive(), Some(1));
+    /// }
+    /// ```
+    pub async fn ready(&mut self) {
+        // Register before testing the queue: a publication before registration
+        // is found by the load; a later one wakes this registration.
+        poll_fn(|cx| {
+            self.consumer.register(cx.waker());
+            if self.receiver.is_empty() {
+                Poll::Pending
+            } else {
+                Poll::Ready(())
+            }
+        })
+        .await;
     }
 }
 
@@ -113,6 +158,7 @@ mod tests {
     use super::*;
     use core::future::Future;
     use core::sync::atomic::{AtomicUsize, Ordering};
+    use core::task::Context;
     use std::sync::Arc;
     use std::task::{Wake, Waker};
 
@@ -146,22 +192,62 @@ mod tests {
     fn publication_wakes_the_consumer_and_reclaim_wakes_the_blocked_producer() {
         struct Owner(u8);
         let mut queue = MsduQueue::<Owner, 1>::new();
-        let (sender, receiver) = queue.split();
+        let (mut sender, mut receiver) = queue.split();
         let wakes = Arc::new(Wakes(AtomicUsize::new(0)));
         let waker = Waker::from(Arc::clone(&wakes));
         let mut cx = Context::from_waker(&waker);
-        assert!(receiver.poll_ready(&mut cx).is_pending());
-        assert!(sender.try_send(Owner(1)).is_ok());
-        assert_eq!(wakes.0.load(Ordering::Relaxed), 1);
-        assert!(receiver.poll_ready(&mut cx).is_ready());
-
-        let mut send = core::pin::pin!(sender.send(Owner(2)));
-        assert!(send.as_mut().poll(&mut cx).is_pending());
-        assert_eq!(receiver.try_receive().unwrap().0, 1);
-        assert_eq!(wakes.0.load(Ordering::Relaxed), 2);
-        assert!(send.as_mut().poll(&mut cx).is_ready());
+        {
+            let mut ready = core::pin::pin!(receiver.ready());
+            assert!(ready.as_mut().poll(&mut cx).is_pending());
+            assert!(sender.try_send(Owner(1)).is_ok());
+            assert_eq!(wakes.0.load(Ordering::Relaxed), 1);
+            assert!(ready.as_mut().poll(&mut cx).is_ready());
+        }
+        let owner = Owner(2);
+        {
+            let mut ready = core::pin::pin!(sender.ready());
+            assert!(ready.as_mut().poll(&mut cx).is_pending());
+            assert_eq!(receiver.try_receive().unwrap().0, 1);
+            assert_eq!(wakes.0.load(Ordering::Relaxed), 2);
+            assert!(ready.as_mut().poll(&mut cx).is_ready());
+        }
+        assert!(sender.try_send(owner).is_ok());
         assert_eq!(receiver.try_receive().unwrap().0, 2);
         assert!(receiver.try_receive().is_none());
+    }
+
+    #[test]
+    fn cancellation_keeps_the_owner_and_both_endpoints_can_wait_again() {
+        struct Owner(u8);
+        let mut queue = MsduQueue::<Owner, 1>::new();
+        let (mut sender, mut receiver) = queue.split();
+        let wakes = Arc::new(Wakes(AtomicUsize::new(0)));
+        let waker = Waker::from(wakes);
+        let mut cx = Context::from_waker(&waker);
+        assert!(sender.try_send(Owner(1)).is_ok());
+        let owner = Owner(2);
+        {
+            let mut wait = core::pin::pin!(sender.ready());
+            assert!(wait.as_mut().poll(&mut cx).is_pending());
+        }
+        assert_eq!(owner.0, 2);
+        assert_eq!(receiver.try_receive().unwrap().0, 1);
+        {
+            let mut wait = core::pin::pin!(sender.ready());
+            // Reclamation before registration is seen without another wake.
+            assert!(wait.as_mut().poll(&mut cx).is_ready());
+        }
+        {
+            let mut wait = core::pin::pin!(receiver.ready());
+            assert!(wait.as_mut().poll(&mut cx).is_pending());
+        }
+        assert!(sender.try_send(owner).is_ok());
+        {
+            let mut wait = core::pin::pin!(receiver.ready());
+            // Publication before registration is seen without another wake.
+            assert!(wait.as_mut().poll(&mut cx).is_ready());
+        }
+        assert_eq!(receiver.try_receive().unwrap().0, 2);
     }
 
     #[test]

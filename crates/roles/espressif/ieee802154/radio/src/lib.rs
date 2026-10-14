@@ -670,20 +670,28 @@ const fn multipan_index(interface: Interface) -> Option<Ieee802154MultipanIndex>
 /// the next operation publishes.
 pub fn writes_registers(command: &RadioCommand<'_>) -> bool {
     match command {
-        RadioCommand::Configure { configuration, .. } => match configuration {
-            Configuration::PanId(_)
-            | Configuration::ShortAddress(_)
-            | Configuration::ExtendedAddress(_) => true,
-            Configuration::Interface { setting, .. } => matches!(
-                setting,
-                InterfaceSetting::PanId(_)
-                    | InterfaceSetting::ShortAddress(_)
-                    | InterfaceSetting::ExtendedAddress(_)
-                    | InterfaceSetting::Enabled(_)
-            ),
-            _ => false,
-        },
+        RadioCommand::Configure { configuration, .. } => {
+            configuration_writes_registers(configuration)
+        }
         _ => true,
+    }
+}
+
+/// Whether `configuration` writes the MAC registers rather than the PIB or
+/// the frame-pending table.
+const fn configuration_writes_registers(configuration: &Configuration) -> bool {
+    match configuration {
+        Configuration::PanId(_)
+        | Configuration::ShortAddress(_)
+        | Configuration::ExtendedAddress(_) => true,
+        Configuration::Interface { setting, .. } => matches!(
+            setting,
+            InterfaceSetting::PanId(_)
+                | InterfaceSetting::ShortAddress(_)
+                | InterfaceSetting::ExtendedAddress(_)
+                | InterfaceSetting::Enabled(_)
+        ),
+        _ => false,
     }
 }
 
@@ -1082,7 +1090,9 @@ impl<'storage, R: Ieee802154Random> Ieee802154Radio<'storage, R> {
         command: RadioCommand<'_>,
         sink: &mut S,
     ) -> Result<AcceptedCommand, CommandError> {
-        self.check_pending_room(command)?;
+        if let RadioCommand::Configure { configuration, .. } = command {
+            self.check_pending_room(configuration)?;
+        }
         let accepted = self.machine.admit(command)?;
         let mut collector = Collector::new(clock, &mut self.enhanced_ack, &mut self.security);
         let engine = &mut self.engine;
@@ -1194,33 +1204,73 @@ impl<'storage, R: Ieee802154Random> Ieee802154Radio<'storage, R> {
             !writes_registers(&command),
             "a register configuration needs the hardware"
         );
-        self.check_pending_room(command)?;
+        self.check_pending_room(configuration)?;
         let accepted = self.machine.admit(command)?;
         configure_software(&mut self.engine, configuration);
         Ok(accepted)
     }
 
+    /// Apply `configuration` in any radio state, disabled or during an
+    /// operation, as ESP-IDF's `esp_ieee802154_set_*` setters do: a register
+    /// configuration writes the MAC registers, any other the PIB or the
+    /// frame-pending table. It changes no radio state, so the state machine
+    /// does not admit it; an owner-shape backend, whose types state the
+    /// capability and the interface, applies its configurations here.
+    ///
+    /// # Errors
+    ///
+    /// [`CommandError::PendingTableFull`]: the table has no room for an
+    /// added source.
+    ///
+    /// # Panics
+    ///
+    /// The capabilities do not state the configuration, or its interface
+    /// is not one of the radio's.
+    pub fn configure<L: Ieee802154LowLevel + ?Sized>(
+        &mut self,
+        ll: &mut L,
+        configuration: Configuration,
+    ) -> Result<(), CommandError> {
+        assert!(
+            self.machine
+                .capabilities()
+                .supports_configuration(configuration),
+            "the capabilities state the configuration"
+        );
+        if let Configuration::Interface { interface, .. } = configuration {
+            assert!(
+                interface.index() < self.machine.interfaces(),
+                "the interface is one of the radio's"
+            );
+        }
+        self.check_pending_room(configuration)?;
+        if configuration_writes_registers(&configuration) {
+            configure_registers(&mut self.engine, ll, configuration);
+        } else {
+            configure_software(&mut self.engine, configuration);
+        }
+        Ok(())
+    }
+
     /// Refuse an added pending source the table has no room for.
-    fn check_pending_room(&mut self, command: RadioCommand<'_>) -> Result<(), CommandError> {
+    fn check_pending_room(&mut self, configuration: Configuration) -> Result<(), CommandError> {
         // The pending table's room is the backend's to judge, after the
         // capability and interface the state machine checks.
-        if let RadioCommand::Configure { configuration, .. } = command
-            && let Some((index, address)) = match configuration {
-                Configuration::AddPendingAddress(address) => {
-                    Some((Ieee802154MultipanIndex::CONTEXT0, address))
-                }
-                Configuration::Interface {
-                    interface,
-                    setting: InterfaceSetting::AddPendingAddress(address),
-                } if interface.index() < self.machine.interfaces() => {
-                    multipan_index(interface).map(|index| (index, address))
-                }
-                _ => None,
+        if let Some((index, address)) = match configuration {
+            Configuration::AddPendingAddress(address) => {
+                Some((Ieee802154MultipanIndex::CONTEXT0, address))
             }
-            && self
-                .machine
-                .capabilities()
-                .contains(RadioCapabilities::SOURCE_MATCH)
+            Configuration::Interface {
+                interface,
+                setting: InterfaceSetting::AddPendingAddress(address),
+            } if interface.index() < self.machine.interfaces() => {
+                multipan_index(interface).map(|index| (index, address))
+            }
+            _ => None,
+        } && self
+            .machine
+            .capabilities()
+            .contains(RadioCapabilities::SOURCE_MATCH)
             && !self.engine.pending_table_for(index).has_room(address)
         {
             return Err(CommandError::PendingTableFull);

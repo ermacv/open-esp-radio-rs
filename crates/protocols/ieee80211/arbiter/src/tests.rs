@@ -1307,11 +1307,7 @@ fn a_cancelled_starting_absence_delivers_its_pending_leave_and_both_places() {
                 away.until().unwrap()
             };
             let events = run(&mut arbiter, &mut port, now);
-            let reason = if refuse {
-                CancelReason::Refused
-            } else {
-                CancelReason::Late
-            };
+            let reason = CancelReason::Switch;
             assert_eq!(
                 events
                     .iter()

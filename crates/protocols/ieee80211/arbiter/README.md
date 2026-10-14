@@ -75,8 +75,10 @@ admitted, its completion cannot charge the outbound budget again; the lease
 ends on its original return deadline. Refused and late moves capture the
 return channel in `CyclePurpose::Return { to }`. One `listen_end` calculation supplies the
 lease, timer and return transition. A leave
-command deferred by an absence belongs to that absence's terminal, including
-refusal and late cancellation, so returning its place also releases the command.
+command deferred by an absence belongs to its `AbsenceTerminal`, never a
+primary lease. Cancellation during Closing retains its original cause and
+skips the cancelled outgoing retune. Every terminal, including
+refusal and late cancellation, returns its place and releases the command.
 A refused lease move returns the next `PendingRetune` directly and enters
 `Retuning` before handing it out. `None` means the port stopped. Without an
 enabled phase, consumers poll `ArbiterNotice` through `poll_notice`; that

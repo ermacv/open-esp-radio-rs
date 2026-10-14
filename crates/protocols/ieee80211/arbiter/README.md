@@ -49,6 +49,11 @@ Each retune carries a private `PendingRetune`, which retains its destination
 and cycle purpose. The service owns it across disable, tuning and enable;
 `retuned` or `retune_refused` consumes that exact action token. A channel
 value alone cannot acknowledge a retune or create an unsolicited response.
+While a gate cycle runs, the next input is its gate or retune terminal;
+`poll_deadline` returns no timer. Planning a shared move consumes its deadline
+and transfers the access-point schedule into the cycle. A waiting absence
+is cancelled when that move becomes due. Lease and upstream-loss deadlines
+resume after the cycle ends, and an elapsed deadline causes a finite transition.
 A refused lease move returns the next `PendingRetune` directly and enters
 `Retuning` before handing it out. `None` means the port stopped. Without an
 enabled phase, consumers poll `ArbiterNotice` through `poll_notice`; that

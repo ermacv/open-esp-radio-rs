@@ -245,6 +245,15 @@ impl<'id> World<'id> {
         security: StaSecurity,
         group_slots: [Slot; G],
     ) -> Self {
+        Self::with_pools::<2, G>(mint, skipped_absences, security, group_slots)
+    }
+
+    fn with_pools<const TX: usize, const G: usize>(
+        mint: &mut Mint<'id>,
+        skipped_absences: u8,
+        security: StaSecurity,
+        group_slots: [Slot; G],
+    ) -> Self {
         let channels = heapless::Vec::from_slice(&[channel(1), channel(6)]).unwrap();
         let (gate, gate_issuer) = GatePlace::mint(mint);
         let (arbiter, place, absence) =
@@ -268,8 +277,10 @@ impl<'id> World<'id> {
             },
             StationResources {
                 epochs: LinkEpochSource::for_test(0),
-                tickets: [Ticket(0), Ticket(1)],
-                buffers: [Buffer([0; 512], 512), Buffer([0; 512], 512)],
+                tickets: core::array::from_fn::<_, TX, _>(|index| {
+                    Ticket(u8::try_from(index).unwrap())
+                }),
+                buffers: core::array::from_fn::<_, TX, _>(|_| Buffer([0; 512], 512)),
                 place,
                 absence_place: absence,
                 pairwise: Slot(0),
@@ -866,7 +877,11 @@ const NULL_POWER_SAVE: u16 = 0x1048;
 /// A world whose station is connected to the open network on channel 6,
 /// alone on the port.
 fn connected_world<'id>(mint: &mut Mint<'id>) -> World<'id> {
-    let mut world = World::new(mint, 3);
+    let world = World::new(mint, 3);
+    connect_open_world(world)
+}
+
+fn connect_open_world(mut world: World<'_>) -> World<'_> {
     world
         .station
         .input(at(0), StaInput::Command(StaCommand::Connect));
@@ -2082,9 +2097,10 @@ fn review_leave_without_lease_reports_before_waiting() {
 #[test]
 fn deauthentication_waits_for_the_ticket_and_buffer_of_an_accepted_transmission() {
     installed(|mint| {
-        let mut world = connected_world(mint);
+        let mut world =
+            connect_open_world(World::with_pools::<1, 0>(mint, 3, StaSecurity::Open, []));
         let mut pending = Vec::new();
-        for _ in 0..2 {
+        for _ in 0..1 {
             pending.push(
                 world
                     .station
@@ -2129,8 +2145,8 @@ fn deauthentication_waits_for_the_ticket_and_buffer_of_an_accepted_transmission(
             world.transmitted(transmit, false);
         }
         world.run(at(51));
-        assert_eq!(world.station.tickets.len(), 2);
-        assert_eq!(world.station.buffers.len(), 2);
+        assert_eq!(world.station.tickets.len(), 1);
+        assert_eq!(world.station.buffers.len(), 1);
         assert!(world.take().contains(&Seen::Notify(StaNotice::Disconnected(
             StaDisconnectReason::Requested
         ))));

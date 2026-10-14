@@ -64,7 +64,25 @@ fn an_owned_cache_outlives_connections_without_shared_state() {
     for _ in 0..2 {
         let cached = cache.resume(bssid, b"lab").unwrap();
         assert_eq!(cached.pmkid(), [9; 16]);
+        let binding = cached.pmk().bind_association_security_ies(b"association");
+        assert!(binding.matches(&Pmk::from_bytes([7; 32]), b"association"));
     }
     cache.remove(bssid);
     assert!(cache.resume(bssid, b"lab").is_none());
+}
+
+#[test]
+fn a_changed_ssid_compacts_the_cache_without_changing_other_entries_ages() {
+    let mut cache = StaPmksaCache::new();
+    for last in 0..STA_PMKSA_CAPACITY as u8 {
+        cache.insert(entry(last, b"lab"));
+    }
+    assert!(cache.resume([2, 0, 0, 0, 0, 5], b"other").is_none());
+    cache.insert(entry(100, b"lab"));
+    assert!(cache.resume([2, 0, 0, 0, 0, 0], b"lab").is_some());
+    cache.insert(entry(101, b"lab"));
+    assert!(cache.resume([2, 0, 0, 0, 0, 0], b"lab").is_none());
+    for last in [1, 2, 3, 4, 6, 7, 8, 9, 100, 101] {
+        assert!(cache.resume([2, 0, 0, 0, 0, last], b"lab").is_some());
+    }
 }

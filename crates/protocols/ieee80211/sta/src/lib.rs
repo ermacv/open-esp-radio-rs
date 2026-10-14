@@ -38,6 +38,14 @@
 //! power-save decisions and the application's station vocabulary
 //! ([`station`]). It never waits: a thin service loop over the port, the
 //! channel arbiter and time drives it.
+//!
+//! The SAE PMKSA cache remains a unit-tested prototype until the station's
+//! SAE path owns it. Production callers cannot construct an unused cache:
+//!
+//! ```compile_fail,E0432
+//! use oer_ieee80211_sta::pmksa::StaPmksaCache;
+//! let cache = StaPmksaCache::new();
+//! ```
 
 #[cfg(test)]
 extern crate std;
@@ -47,7 +55,8 @@ pub mod join;
 pub mod link_monitor;
 pub mod machine;
 pub mod modem_sleep;
-pub mod pmksa;
+#[cfg(test)]
+mod pmksa;
 mod pool;
 pub mod power_save;
 pub mod request;

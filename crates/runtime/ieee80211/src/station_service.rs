@@ -57,7 +57,9 @@ use core::future::{Future, poll_fn};
 use core::task::Poll;
 use embassy_futures::yield_now;
 use embassy_sync::channel::DynamicReceiver;
-use oer_ieee80211_arbiter::{AccessPointCommand, AccessPointFact, Arbiter, ArbiterAction};
+use oer_ieee80211_arbiter::{
+    AccessPointCommand, AccessPointFact, Arbiter, ArbiterAction, ArbiterNotice,
+};
 use oer_ieee80211_lower_mac::{
     Ccmp128Key, ClassFrame, CoexPriority, Ieee80211Capabilities, InterfacePhase, KeyTypes,
     LowerMacBackend, LowerMacEvent, LowerMacPhase, PhaseTypes, PoolMpdu, PoolSource, Protection,
@@ -143,9 +145,16 @@ pub enum TxContext<'id, K, C> {
     Data(DataTxContext<'id, K, C>),
 }
 
+/// Each step polls every source and consumes at most one input from each.
+/// Eight steps amortize wakeup cost while forcing a cooperative yield before
+/// a continuously ready source can monopolize the executor.
+const MAX_INPUT_STEPS_PER_BATCH: u8 = 8;
+
 /// What the service dropped or could not send, counted.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ServiceCounters {
+    /// Indications of lost port events; EventsLost carries no frame count.
+    pub events_lost: oer_ieee80211_lower_mac::Counter,
     /// RX payloads larger than the network's checked Ethernet contract.
     pub rx_msdus_too_long: oer_ieee80211_lower_mac::Counter,
     /// Frames not sent: no rate of their plan is on the port's channel, or
@@ -474,17 +483,16 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                         Err(poisoned) => ServiceEnd::Poisoned(poisoned),
                     };
                 }
-                Served::Retune(channel) => {
+                Served::Retune(pending) => {
                     let disabled = match self.disable(owner, io, timer).await {
                         Ok((owner, Ok(()))) => owner,
                         Ok((owner, Err(_))) => return ServiceEnd::Failed(owner),
                         Err(poisoned) => {
-                            self.arbiter.poisoned();
-                            self.settle(timer.now(), io);
+                            self.fail_stop(timer.now(), io);
                             return ServiceEnd::Poisoned(poisoned);
                         }
                     };
-                    owner = match self.enable(disabled, Some(channel), io, timer).await {
+                    owner = match self.enable(disabled, Some(pending), io, timer).await {
                         Ok(owner) => owner,
                         Err(end) => return end,
                     };
@@ -518,39 +526,22 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                     owner = disabled;
                     let Some(requested) = pending.take() else {
                         // Initial enable has no retune action to answer.
-                        self.arbiter.poisoned();
-                        self.settle(timer.now(), io);
+                        self.fail_stop(timer.now(), io);
                         return Err(ServiceEnd::Failed(owner));
                     };
-                    self.arbiter.retune_refused(requested);
-                    // The arbiter's notices reach the station; its next
-                    // action is the move back, or none once it stopped.
-
+                    pending = self.arbiter.retune_refused(requested);
                     let now = timer.now();
-                    while let Some(action) = self.arbiter.poll_action(now) {
-                        match action {
-                            ArbiterAction::Retune(to) => {
-                                pending = Some(to);
-                                break;
-                            }
-                            ArbiterAction::Station(notice) => {
-                                self.station.input(now, StaInput::Arbiter(notice));
-                            }
-                            ArbiterAction::AccessPoint(command) => {
-                                (io.output)(ServiceOutput::AccessPoint(command));
-                            }
-                            // The gate stays closed while the port is
-                            // disabled.
-                            ArbiterAction::CloseGate { .. } | ArbiterAction::OpenGate(_) => {}
-                        }
-                    }
+                    // A disabled port receives only notices. The return retune
+                    // came directly with its affine token, without polling
+                    // actions that could consume a gate.
+                    self.deliver_arbiter_notices(now, io);
                     if pending.is_none() {
                         self.settle(now, io);
                         return Err(ServiceEnd::Failed(owner));
                     }
                 }
                 Err(Failed::Poisoned(poisoned)) => {
-                    self.arbiter.poisoned();
+                    self.fail_stop(timer.now(), io);
                     return Err(ServiceEnd::Poisoned(poisoned));
                 }
             }
@@ -593,8 +584,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
         };
         let disabled = owner.disable(&mut sink).await?;
         if delivery.is_err() {
-            self.arbiter.poisoned();
-            self.settle(timer.now(), io);
+            self.fail_stop(timer.now(), io);
         }
         Ok((disabled, delivery))
     }
@@ -671,15 +661,14 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                     Ok(Some(buffer)) => phase.recycle(buffer),
                     Ok(None) => {}
                     Err(_) => {
-                        self.arbiter.poisoned();
-                        self.settle(now, io);
+                        self.fail_stop(now, io);
                         return Served::Poisoned;
                     }
                 },
-                Some(Ok(Err(_))) | None => {}
+                Some(Ok(Err(_))) => self.counters.events_lost.increment(),
+                None => {}
                 Some(Err(_)) => {
-                    self.arbiter.poisoned();
-                    self.settle(now, io);
+                    self.fail_stop(now, io);
                     return Served::Poisoned;
                 }
             }
@@ -700,7 +689,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                 self.send(now, io);
             }
             batch = batch.saturating_add(1);
-            if batch == 8 {
+            if batch == MAX_INPUT_STEPS_PER_BATCH {
                 batch = 0;
                 yield_now().await;
             }
@@ -772,7 +761,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                         (io.output)(ServiceOutput::AccessPoint(command));
                     }
                     ArbiterAction::CloseGate { gate, reserve: () } => phase.close_gate(gate),
-                    ArbiterAction::Retune(channel) => return Next::Retune(channel),
+                    ArbiterAction::Retune(pending) => return Next::Retune(pending),
                     ArbiterAction::OpenGate(closed) => {
                         let open = phase.open_gate(closed);
                         self.arbiter.gate_opened(open);
@@ -792,8 +781,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                 )
                 .and_then(|follow| self.follow(now, follow, io).map_err(|_| ()));
                 if submitted.is_err() {
-                    self.arbiter.poisoned();
-                    self.settle(now, io);
+                    self.fail_stop(now, io);
                     return Next::Poisoned;
                 }
             }
@@ -879,14 +867,12 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                 match submitted {
                     Ok(follow) => {
                         if self.follow(now, follow, io).is_err() {
-                            self.arbiter.poisoned();
-                            self.settle(now, io);
+                            self.fail_stop(now, io);
                             return Next::Poisoned;
                         }
                     }
                     Err(()) => {
-                        self.arbiter.poisoned();
-                        self.settle(now, io);
+                        self.fail_stop(now, io);
                         return Next::Poisoned;
                     }
                 }
@@ -935,6 +921,34 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
         Ok(())
     }
 
+    /// Report service termination without converting a recoverable enable
+    /// refusal into hardware poisoning. The caller retains its typed owner.
+    fn fail_stop<const TX_DEPTH: usize, const RX_DEPTH: usize>(
+        &mut self,
+        now: Instant,
+        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
+    ) {
+        self.arbiter.port_failed();
+        self.settle(now, io);
+    }
+
+    fn deliver_arbiter_notices<const TX_DEPTH: usize, const RX_DEPTH: usize>(
+        &mut self,
+        now: Instant,
+        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
+    ) {
+        while let Some(notice) = self.arbiter.poll_notice(now) {
+            match notice {
+                ArbiterNotice::Station(notice) => {
+                    self.station.input(now, StaInput::Arbiter(notice))
+                }
+                ArbiterNotice::AccessPoint(command) => {
+                    (io.output)(ServiceOutput::AccessPoint(command))
+                }
+            }
+        }
+    }
+
     /// Carry out the actions that need no phase once the port failed: the
     /// arbiter's notices reach the station, the station's notices the
     /// application.
@@ -943,19 +957,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
         now: Instant,
         io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
     ) {
-        while let Some(action) = self.arbiter.poll_action(now) {
-            match action {
-                ArbiterAction::Station(notice) => {
-                    self.station.input(now, StaInput::Arbiter(notice));
-                }
-                ArbiterAction::AccessPoint(command) => {
-                    (io.output)(ServiceOutput::AccessPoint(command));
-                }
-                ArbiterAction::CloseGate { .. }
-                | ArbiterAction::Retune(_)
-                | ArbiterAction::OpenGate(_) => {}
-            }
-        }
+        self.deliver_arbiter_notices(now, io);
         while let Some(action) = self.station.poll_action(now) {
             if let StaAction::Notify(notice) = action {
                 (io.output)(ServiceOutput::Notice(notice));

@@ -90,27 +90,37 @@ fn run<'id, R: ReservationMode>(
 ) -> Vec<Seen<R::Reserve>> {
     let mut seen = Vec::new();
     while let Some(action) = arbiter.poll_action(now) {
-        seen.push(match action {
-            ArbiterAction::Station(notice) => Seen::Station(notice),
-            ArbiterAction::AccessPoint(command) => Seen::AccessPoint(command),
+        match action {
+            ArbiterAction::Station(notice) => seen.push(Seen::Station(notice)),
+            ArbiterAction::AccessPoint(command) => seen.push(Seen::AccessPoint(command)),
             ArbiterAction::CloseGate { gate, reserve } => {
                 arbiter.gate_closed(port.issuer.close(gate));
-                Seen::CloseGate(reserve)
+                seen.push(Seen::CloseGate(reserve));
             }
             ArbiterAction::Retune(pending) => {
-                let to = pending.channel();
+                seen.push(Seen::Retune(pending.channel().channel().number()));
                 if core::mem::take(&mut port.refuse) {
-                    arbiter.retune_refused(pending);
+                    if let Some(returning) = arbiter.retune_refused(pending) {
+                        while let Some(notice) = arbiter.poll_notice(now) {
+                            match notice {
+                                ArbiterNotice::Station(notice) => seen.push(Seen::Station(notice)),
+                                ArbiterNotice::AccessPoint(command) => {
+                                    seen.push(Seen::AccessPoint(command))
+                                }
+                            }
+                        }
+                        seen.push(Seen::Retune(returning.channel().channel().number()));
+                        arbiter.retuned(returning);
+                    }
                 } else {
                     arbiter.retuned(pending);
                 }
-                Seen::Retune(to.channel().number())
             }
             ArbiterAction::OpenGate(closed) => {
                 arbiter.gate_opened(port.issuer.open(closed));
-                Seen::OpenGate
+                seen.push(Seen::OpenGate);
             }
-        });
+        }
     }
     seen
 }
@@ -374,6 +384,58 @@ fn a_refused_move_cancels_the_lease_and_the_port_returns() {
 }
 
 #[test]
+fn refusal_returns_the_home_retune_without_taking_another_gate_action() {
+    installed(|mint| {
+        let (mut arbiter, place, mut port) = beside_access_point::<NoReservation>(mint);
+        let _lease = lease(arbiter.request(at(0), scan(6, 10), place));
+        let Some(ArbiterAction::CloseGate { gate, .. }) = arbiter.poll_action(at(52)) else {
+            panic!("close the lease gate");
+        };
+        arbiter.gate_closed(port.issuer.close(gate));
+        let Some(ArbiterAction::Retune(outbound)) = arbiter.poll_action(at(52)) else {
+            panic!("outbound retune");
+        };
+        let returning = arbiter
+            .retune_refused(outbound)
+            .expect("the return token is delivered directly");
+        assert_eq!(returning.channel(), channel(1));
+        assert!(matches!(arbiter.port, super::Port::Retuning));
+        assert!(matches!(
+            arbiter.poll_notice(at(52)),
+            Some(ArbiterNotice::Station(StationNotice::LeaseCancelled(
+                CancelReason::Refused,
+                _
+            )))
+        ));
+        assert!(arbiter.poll_notice(at(52)).is_none());
+        assert!(
+            arbiter.poll_action(at(52)).is_none(),
+            "a pending return cannot issue another retune or open"
+        );
+        arbiter.retuned(returning);
+        let Some(ArbiterAction::OpenGate(closed)) = arbiter.poll_action(at(52)) else {
+            panic!("return the same gate place");
+        };
+        arbiter.gate_opened(port.issuer.open(closed));
+        assert_eq!(arbiter.channel(), Some(channel(1)));
+        assert!(arbiter.poll_action(at(52)).is_none());
+    });
+}
+
+#[test]
+fn notices_without_a_phase_cannot_take_the_open_gate() {
+    installed(|mint| {
+        let (mut arbiter, place, _port) = alone::<NoReservation>(mint);
+        let _lease = lease(arbiter.request(at(0), scan(6, 10), place));
+        while arbiter.poll_notice(at(0)).is_some() {}
+        assert!(matches!(
+            arbiter.poll_action(at(0)),
+            Some(ArbiterAction::CloseGate { .. })
+        ));
+    });
+}
+
+#[test]
 fn a_failed_return_or_a_poisoned_port_stops_the_station_and_the_access_point() {
     installed(|mint| {
         let (mut arbiter, place, mut port) = beside_access_point::<NoReservation>(mint);
@@ -393,7 +455,7 @@ fn a_failed_return_or_a_poisoned_port_stops_the_station_and_the_access_point() {
 
         let (mut arbiter, place, mut port) = beside_access_point::<NoReservation>(mint);
         let poisoned = lease(arbiter.request(at(0), scan(6, 10), place));
-        arbiter.poisoned();
+        arbiter.port_failed();
         let seen = run(&mut arbiter, &mut port, at(0));
         assert!(seen.contains(&Seen::Station(StationNotice::Leave(
             LeaveReason::PortFailed

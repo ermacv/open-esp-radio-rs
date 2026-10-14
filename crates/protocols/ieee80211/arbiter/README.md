@@ -49,6 +49,11 @@ Each retune carries a private `PendingRetune`, which retains its destination
 and cycle purpose. The service owns it across disable, tuning and enable;
 `retuned` or `retune_refused` consumes that exact action token. A channel
 value alone cannot acknowledge a retune or create an unsolicited response.
+A refused lease move returns the next `PendingRetune` directly and enters
+`Retuning` before handing it out. `None` means the port stopped. Without an
+enabled phase, consumers poll `ArbiterNotice` through `poll_notice`; that
+exhaustive type contains only station/AP notices and cannot take a gate or
+retune token. `port_failed` covers both enable refusal and poisoning.
 
 The coordinator advances its bounded channel-search cursor with checked
 arithmetic; an empty search has no cursor. The crate uses the canonical

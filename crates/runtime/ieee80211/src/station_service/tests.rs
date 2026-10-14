@@ -275,6 +275,7 @@ struct World<'b> {
     outputs: RefCell<Vec<ServiceOutput<ModelCaps24>>>,
     completions: RefCell<Vec<FrameRates>>,
     refuse_rate: Cell<bool>,
+    counters: Cell<Option<ServiceCounters>>,
     /// The network stack's end of the transmit queue.
     stack: RefCell<MsduSender<'b, TxMsdu, 2>>,
     /// The network stack's end of the receive queue.
@@ -553,6 +554,7 @@ where
                 world.command(ServiceCommand::Stop).await;
             })
             .await;
+            world.counters.set(Some(service.counters));
             assert_eq!(service.station.lost_tokens(), 0);
             assert_eq!(service.data.counters().lost_tokens, 0);
             if world.air.corrupted_terminal.get() {
@@ -588,7 +590,7 @@ where
 }
 
 /// Run the service on a 2.4 GHz model with `config`.
-fn run_with<S>(config: StaConfig<ModelCaps24>, script: S)
+fn run_with<S>(config: StaConfig<ModelCaps24>, script: S) -> ServiceCounters
 where
     S: for<'w, 'b> FnOnce(&'w World<'b>) -> Script<'w>,
 {
@@ -610,6 +612,7 @@ where
         outputs: RefCell::new(Vec::new()),
         completions: RefCell::new(Vec::new()),
         refuse_rate: Cell::new(false),
+        counters: Cell::new(None),
         stack: RefCell::new(stack),
         delivered: RefCell::new(delivered),
     };
@@ -624,6 +627,7 @@ where
         },
     ));
     assert!(uninstalled.is_some(), "the port ends through its uninstall");
+    world.counters.get().expect("service returned its counters")
 }
 
 fn dsss1() -> PhyRate {
@@ -1390,4 +1394,30 @@ fn continuous_rx_cannot_starve_data_tx_or_application_commands() {
             world.air.stop_continuous_receive();
         })
     });
+}
+
+#[test]
+fn lost_port_events_are_counted_and_the_service_keeps_running() {
+    let counters = run_with(config(StaSecurity::Open), |world| {
+        Box::pin(async move {
+            let mut seen = 0;
+            world.associate(&mut seen, false).await;
+            world
+                .notice(StaNotice::Connected {
+                    bssid: BSSID,
+                    channel: 6,
+                })
+                .await;
+            for _ in 0..MODEL_RX_EVENTS + 5 {
+                world.air.receive(&beacon(false), meta());
+            }
+            for _ in 0..64 {
+                yield_now().await;
+            }
+            world.send_msdu(ACCESS_POINT_ADDRESS);
+            let data = world.sent(&mut seen, DATA).await;
+            assert_eq!(data.frame[4..10], BSSID);
+        })
+    });
+    assert_eq!(counters.events_lost.get(), 1);
 }

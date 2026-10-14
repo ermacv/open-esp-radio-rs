@@ -654,9 +654,6 @@ enum Port<K> {
     On(SupportedChannel<K>),
     /// Moving to `to`.
     Retuning,
-    /// Its channel is unknown after a refused move: the next cycle moves
-    /// it.
-    Unknown,
     /// Failed: the arbiter stopped the station and the access point.
     Failed,
 }
@@ -829,15 +826,17 @@ impl<K> Outbox<K> {
     /// The next thing owed: the access point's commands, then the
     /// station's notices, starts before ends and absences before the
     /// primary lease.
-    fn take(&mut self) -> Option<Owed<K>> {
+    fn take(&mut self) -> Option<ArbiterNotice<K>> {
         if core::mem::take(&mut self.stop) {
-            return Some(Owed::AccessPoint(AccessPointCommand::Stop));
+            return Some(ArbiterNotice::AccessPoint(AccessPointCommand::Stop));
         }
         if let Some(channel) = self.start.take() {
-            return Some(Owed::AccessPoint(AccessPointCommand::Start(channel)));
+            return Some(ArbiterNotice::AccessPoint(AccessPointCommand::Start(
+                channel,
+            )));
         }
         if let Some(command) = self.announce.take() {
-            return Some(Owed::AccessPoint(command));
+            return Some(ArbiterNotice::AccessPoint(command));
         }
         let notice = if let Some(id) = self.primary_started.take() {
             StationNotice::LeaseStarted(id)
@@ -858,12 +857,13 @@ impl<K> Outbox<K> {
         } else {
             StationNotice::Leave(self.leave.take()?)
         };
-        Some(Owed::Station(notice))
+        Some(ArbiterNotice::Station(notice))
     }
 }
 
-/// One thing the outbox owes.
-enum Owed<K> {
+/// A notice deliverable without owning an enabled port phase.
+#[derive(Debug)]
+pub enum ArbiterNotice<K> {
     Station(StationNotice<K>),
     AccessPoint(AccessPointCommand<K>),
 }
@@ -1552,23 +1552,31 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
     /// The requested retune was refused: a move onto a lease's channel
     /// cancels that lease and returns home; a refused return or shared move
     /// stops the station and the access point.
-    pub fn retune_refused(&mut self, pending: PendingRetune<K>) {
+    #[must_use = "the next retune owns the return move; None means the port stopped"]
+    pub fn retune_refused(&mut self, pending: PendingRetune<K>) -> Option<PendingRetune<K>> {
         match pending.purpose {
             CyclePurpose::LeaseStart(which) => {
                 self.cancel(which, CancelReason::Refused);
-                self.port = Port::Unknown;
+                self.port = Port::Retuning;
                 self.cycle = Some(Cycle {
                     to: self.home,
                     reserve: R::none(),
                     purpose: CyclePurpose::Return,
                 });
+                Some(PendingRetune {
+                    to: self.home,
+                    purpose: CyclePurpose::Return,
+                })
             }
-            CyclePurpose::LeaseEnd(_) | CyclePurpose::Move | CyclePurpose::Return => self.fail(),
+            CyclePurpose::LeaseEnd(_) | CyclePurpose::Move | CyclePurpose::Return => {
+                self.fail();
+                None
+            }
         }
     }
 
-    /// The port is poisoned: the station and the access point stop.
-    pub fn poisoned(&mut self) {
+    /// The port cannot run, through either refusal or poisoning: stop roles.
+    pub fn port_failed(&mut self) {
         self.fail();
     }
 
@@ -1681,12 +1689,11 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
     /// The next action at `now`, if any. The service takes every action
     /// before it waits again.
     pub fn poll_action(&mut self, now: Instant) -> Option<ArbiterAction<'id, K, R>> {
-        if let Some(action) = self.owed() {
-            return Some(action);
-        }
-        self.plan(now);
-        if let Some(action) = self.owed() {
-            return Some(action);
+        if let Some(notice) = self.poll_notice(now) {
+            return Some(match notice {
+                ArbiterNotice::Station(notice) => ArbiterAction::Station(notice),
+                ArbiterNotice::AccessPoint(command) => ArbiterAction::AccessPoint(command),
+            });
         }
         let cycle = self.cycle?;
         match core::mem::replace(&mut self.gate, Gate::Closing) {
@@ -1719,7 +1726,7 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
                         self.gate = Gate::Opening;
                         Some(ArbiterAction::OpenGate(closed))
                     }
-                    Port::On(_) | Port::Unknown => {
+                    Port::On(_) => {
                         self.gate = Gate::Closed(closed);
                         self.port = Port::Retuning;
                         Some(ArbiterAction::Retune(PendingRetune {
@@ -1736,12 +1743,15 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
         }
     }
 
-    /// A command or a notice owed, the commands first.
-    fn owed(&mut self) -> Option<ArbiterAction<'id, K, R>> {
-        self.outbox.take().map(|owed| match owed {
-            Owed::Station(notice) => ArbiterAction::Station(notice),
-            Owed::AccessPoint(command) => ArbiterAction::AccessPoint(command),
-        })
+    /// Notices available without a running port phase. Planning may update
+    /// deadlines, but this API never takes a gate or issues a retune token.
+    /// Access-point notices precede station notices, as in `poll_action`.
+    pub fn poll_notice(&mut self, now: Instant) -> Option<ArbiterNotice<K>> {
+        if let Some(notice) = self.outbox.take() {
+            return Some(notice);
+        }
+        self.plan(now);
+        self.outbox.take()
     }
 
     /// Whether the starting lease no longer fits two retunes and the

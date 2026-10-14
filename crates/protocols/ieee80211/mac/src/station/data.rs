@@ -1,6 +1,7 @@
 //! Station data encapsulation into caller-owned output and Ethernet allocations.
 
 use super::*;
+use crate::address::{Bssid, OwnAddress};
 
 mod amsdu;
 pub use amsdu::{
@@ -13,8 +14,8 @@ pub use amsdu::{
 /// The caller owns the Ethernet payload and the output DMA buffer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaDataFrame<'a> {
-    pub source: [u8; 6],
-    pub bssid: [u8; 6],
+    pub source: OwnAddress,
+    pub bssid: Bssid,
     pub destination: [u8; 6],
     pub sequence_number: SequenceNumber,
     pub ether_type: u16,
@@ -23,12 +24,12 @@ pub struct StaDataFrame<'a> {
 
 impl StaDataFrame<'_> {
     pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
-        validate_peer(self.bssid)?;
-        let ethernet = ethernet_header(self.destination, self.source, self.ether_type);
+        validate_peer(self.bssid.get())?;
+        let ethernet = ethernet_header(self.destination, self.source.get(), self.ether_type);
         let plan = plan_data_encapsulation(
             DataInterfaceRole::Station,
-            self.bssid,
-            self.source,
+            self.bssid.get(),
+            self.source.get(),
             ethernet,
             WmmUserPriority::UP7,
             false,
@@ -65,8 +66,8 @@ impl StaDataFrame<'_> {
 /// boundary as the recovered `net80211_encap::plan_data_encapsulation` path.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaProtectedDataFrame<'a> {
-    pub source: [u8; 6],
-    pub bssid: [u8; 6],
+    pub source: OwnAddress,
+    pub bssid: Bssid,
     pub destination: [u8; 6],
     pub sequence_number: SequenceNumber,
     pub user_priority: u8,
@@ -91,7 +92,7 @@ impl StaProtectedDataFrame<'_> {
         he_control: DataHeControl,
         output: &mut [u8],
     ) -> Result<usize, StationFrameError> {
-        validate_peer(self.bssid)?;
+        validate_peer(self.bssid.get())?;
         let priority = WmmUserPriority::new(self.user_priority)
             .ok_or(StationFrameError::UserPriorityOutOfRange)?;
         if !self.peer_qos
@@ -102,11 +103,11 @@ impl StaProtectedDataFrame<'_> {
         {
             return Err(StationFrameError::HeControlRequiresQos);
         }
-        let ethernet = ethernet_header(self.destination, self.source, self.ether_type);
+        let ethernet = ethernet_header(self.destination, self.source.get(), self.ether_type);
         let mut plan = plan_data_encapsulation_with_he_control(
             DataInterfaceRole::Station,
-            self.bssid,
-            self.source,
+            self.bssid.get(),
+            self.source.get(),
             ethernet,
             priority,
             self.peer_qos,

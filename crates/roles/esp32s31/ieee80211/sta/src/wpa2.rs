@@ -6,6 +6,7 @@
 //! board fixture.
 
 use core::future::Future;
+use oer_ieee80211_mac::address::{Bssid, OwnAddress};
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use crate::connected::management_protection::StationManagementProtection;
@@ -73,12 +74,12 @@ pub trait HandshakeTransmit<H> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 // CAPABILITY: wpa2
 pub struct Wpa2Station {
-    station_address: [u8; 6],
-    bssid: [u8; 6],
+    station_address: OwnAddress,
+    bssid: Bssid,
 }
 
 impl Wpa2Station {
-    pub const fn new(station_address: [u8; 6], bssid: [u8; 6]) -> Self {
+    pub const fn new(station_address: OwnAddress, bssid: Bssid) -> Self {
         Self {
             station_address,
             bssid,
@@ -94,8 +95,8 @@ pub fn copy_station_eapol(
     station: Wpa2Station,
 ) -> Option<OwnedEapolFrame<DEFAULT_EAPOL_FRAME_CAPACITY>> {
     if mpdu_length < 24
-        || frame.get(4..10) != Some(&station.station_address)
-        || frame.get(10..16) != Some(&station.bssid)
+        || frame.get(4..10) != Some(&station.station_address.get())
+        || frame.get(10..16) != Some(&station.bssid.get())
     {
         return None;
     }
@@ -105,7 +106,7 @@ pub fn copy_station_eapol(
     }
     OwnedEapolFrame::try_copy(
         RsnInterface::Station,
-        station.bssid,
+        station.bssid.get(),
         frame.get(eapol_offset..mpdu_length)?,
     )
     .ok()
@@ -237,7 +238,7 @@ where
                 StaDataFrame {
                     source: self.station.station_address,
                     bssid: self.station.bssid,
-                    destination: self.station.bssid,
+                    destination: self.station.bssid.get(),
                     sequence_number,
                     ether_type: 0x888e,
                     payload: frame.as_bytes(),
@@ -469,7 +470,7 @@ where
                         StaDataFrame {
                             source: self.session.station.station_address,
                             bssid: self.session.station.bssid,
-                            destination: self.session.station.bssid,
+                            destination: self.session.station.bssid.get(),
                             sequence_number: self.session.sequences.take_non_qos(),
                             ether_type: 0x888e,
                             payload: frame.as_bytes(),
@@ -490,7 +491,7 @@ where
                         StaProtectedDataFrame {
                             source: self.session.station.station_address,
                             bssid: self.session.station.bssid,
-                            destination: self.session.station.bssid,
+                            destination: self.session.station.bssid.get(),
                             sequence_number: self
                                 .session
                                 .sequences

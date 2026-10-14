@@ -44,8 +44,12 @@ fn access_point_commit(access_point: &SaeCommit) -> Vec<u8> {
 fn a_full_exchange_yields_the_access_point_pmk() {
     let access_point = commit(BSSID, LOCAL, 0x40);
     let mut station = StaSaeAuthentication::new(
-        LOCAL,
-        BSSID,
+        oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+        ),
         commit(LOCAL, BSSID, 0x20),
         SaePwe::HuntingAndPecking,
     );
@@ -76,8 +80,12 @@ fn a_full_exchange_yields_the_access_point_pmk() {
 #[test]
 fn an_anti_clogging_refusal_repeats_the_commit_with_the_token() {
     let mut station = StaSaeAuthentication::new(
-        LOCAL,
-        BSSID,
+        oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+        ),
         commit(LOCAL, BSSID, 0x20),
         SaePwe::HuntingAndPecking,
     );
@@ -97,8 +105,12 @@ fn the_timer_is_four_seconds_then_two_after_the_confirm() {
     use oer_time::{Duration, Instant};
 
     let mut station = StaSaeAuthentication::new(
-        LOCAL,
-        BSSID,
+        oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+        ),
         commit(LOCAL, BSSID, 0x20),
         SaePwe::HuntingAndPecking,
     );
@@ -138,8 +150,12 @@ fn the_timer_is_four_seconds_then_two_after_the_confirm() {
 #[test]
 fn a_wrong_password_or_a_refusal_fails() {
     let mut station = StaSaeAuthentication::new(
-        LOCAL,
-        BSSID,
+        oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+        ),
         commit(LOCAL, BSSID, 0x20),
         SaePwe::HuntingAndPecking,
     );
@@ -164,8 +180,12 @@ fn a_wrong_password_or_a_refusal_fails() {
     );
 
     let mut refused = StaSaeAuthentication::new(
-        LOCAL,
-        BSSID,
+        oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+        ),
         commit(LOCAL, BSSID, 0x20),
         SaePwe::HuntingAndPecking,
     );
@@ -178,8 +198,12 @@ fn a_wrong_password_or_a_refusal_fails() {
     );
     // An H2E station refuses a hunting-and-pecking commit.
     let mut h2e = StaSaeAuthentication::new(
-        LOCAL,
-        BSSID,
+        oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+        ),
         commit(LOCAL, BSSID, 0x20),
         SaePwe::HashToElement,
     );

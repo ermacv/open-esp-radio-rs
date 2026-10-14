@@ -4,7 +4,14 @@ use oer_ieee80211_mac::station::StaDisconnectKind;
 
 #[test]
 fn authentication_runtime_owns_attempt_sequence_deadline_and_timeout_limit() {
-    let mut runtime = StaAuthenticationRuntime::new(LOCAL, BSSID);
+    let mut runtime = StaAuthenticationRuntime::new(
+        oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+        ),
+    );
     let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0x0ffe).unwrap());
 
     for ordinal in 1..=STA_AUTHENTICATION_ATTEMPT_LIMIT {
@@ -46,7 +53,14 @@ fn authentication_runtime_owns_attempt_sequence_deadline_and_timeout_limit() {
 
 #[test]
 fn authentication_runtime_ignores_other_management_and_accepts_selected_peer() {
-    let mut runtime = StaAuthenticationRuntime::new(LOCAL, BSSID);
+    let mut runtime = StaAuthenticationRuntime::new(
+        oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+        ),
+    );
     let mut sequence = StaSequenceCounter::new(SequenceNumber::new(7).unwrap());
     let attempt = runtime.begin_attempt(&mut sequence).unwrap();
     runtime.observe_received_frame();
@@ -69,7 +83,14 @@ fn authentication_runtime_ignores_other_management_and_accepts_selected_peer() {
 
 #[test]
 fn authentication_runtime_retries_disconnect_but_not_status_rejection() {
-    let mut runtime = StaAuthenticationRuntime::new(LOCAL, BSSID);
+    let mut runtime = StaAuthenticationRuntime::new(
+        oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+        ),
+    );
     let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0).unwrap());
     runtime.begin_attempt(&mut sequence).unwrap();
     runtime.observe_received_frame();

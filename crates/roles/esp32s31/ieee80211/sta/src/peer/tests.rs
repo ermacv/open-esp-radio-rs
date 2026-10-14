@@ -148,7 +148,9 @@ impl StaPeerTransmit for MockTransmit {
 
 fn he20_access_point() -> ScanRecord {
     let mut access_point = ScanRecord::EMPTY;
-    access_point.bssid = [2, 3, 4, 5, 6, 7];
+    access_point.bssid = oer_ieee80211_mac::address::Bssid::new(
+        oer_ieee80211_mac::address::IndividualAddress::new([2, 3, 4, 5, 6, 7]).unwrap(),
+    );
     access_point.ssid[..4].copy_from_slice(b"test");
     access_point.ssid_len = 4;
     access_point.beacon_interval_tu = 100;
@@ -176,7 +178,9 @@ fn ht40_mcs32_access_point() -> ScanRecord {
     );
 
     let mut access_point = ScanRecord::EMPTY;
-    access_point.bssid = [2, 3, 4, 5, 6, 7];
+    access_point.bssid = oer_ieee80211_mac::address::Bssid::new(
+        oer_ieee80211_mac::address::IndividualAddress::new([2, 3, 4, 5, 6, 7]).unwrap(),
+    );
     access_point.ssid[..4].copy_from_slice(b"test");
     access_point.ssid_len = 4;
     access_point.channel = channel.primary();
@@ -223,7 +227,7 @@ fn port_owns_scan_and_association_peer_programming() {
     )
     .unwrap();
 
-    assert_eq!(programmed.peer.link.bssid, access_point.bssid);
+    assert_eq!(programmed.peer.link.bssid, access_point.bssid.get());
     assert_eq!(programmed.peer.link.ssid.as_bytes(), b"test");
     assert_eq!(programmed.peer.link.association_id, 7);
     let threshold = HeTxopDurationRtsThreshold::new(64).unwrap();

@@ -14,6 +14,7 @@
 //! `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`
 //! `components/wpa_supplicant/esp_supplicant/src/esp_wpa3.c`.
 
+use oer_ieee80211_mac::address::{Bssid, OwnAddress};
 use oer_ieee80211_mac::security::SaePwe;
 use oer_time::{Duration, Instant};
 
@@ -104,8 +105,8 @@ enum StaSaePhase {
 /// The SAE Authentication exchange of one attempt.
 // CAPABILITY: wifi-security-wpa3-personal-wpa3-enterprise
 pub struct StaSaeAuthentication {
-    local: [u8; 6],
-    bssid: [u8; 6],
+    local: OwnAddress,
+    bssid: Bssid,
     commit: SaeCommit,
     pwe: SaePwe,
     token: heapless::Vec<u8, STA_SAE_TOKEN_CAPACITY>,
@@ -118,7 +119,7 @@ pub struct StaSaeAuthentication {
 impl StaSaeAuthentication {
     /// Start with this station's commit, derived with the password element
     /// method `pwe`.
-    pub fn new(local: [u8; 6], bssid: [u8; 6], commit: SaeCommit, pwe: SaePwe) -> Self {
+    pub fn new(local: OwnAddress, bssid: Bssid, commit: SaeCommit, pwe: SaePwe) -> Self {
         Self {
             local,
             bssid,
@@ -187,10 +188,11 @@ impl StaSaeAuthentication {
         if matches!(self.phase, StaSaePhase::Terminal) {
             return StaSaeEvent::Irrelevant;
         }
-        if let Some(disconnect) = parse_sta_disconnect(frame, self.local, self.bssid) {
+        if let Some(disconnect) = parse_sta_disconnect(frame, self.local.get(), self.bssid.get()) {
             return self.fail(StaSaeFailure::PeerDisconnect(disconnect));
         }
-        let Some(frame) = parse_sae_authentication(frame, self.local, self.bssid) else {
+        let Some(frame) = parse_sae_authentication(frame, self.local.get(), self.bssid.get())
+        else {
             return StaSaeEvent::Irrelevant;
         };
         match (frame.transaction, &self.phase) {

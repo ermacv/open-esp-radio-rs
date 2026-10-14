@@ -21,7 +21,9 @@ fn access_point_with_rsn(akms: &[[u8; 4]], capabilities: u16) -> ScanRecord {
     let mut record = ScanRecord::EMPTY;
     record.ssid[..4].copy_from_slice(b"test");
     record.ssid_len = 4;
-    record.bssid = BSSID;
+    record.bssid = oer_ieee80211_mac::address::Bssid::new(
+        oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+    );
     record.channel = 6;
     record.privacy = true;
     record.rsn = true;
@@ -70,7 +72,9 @@ fn ht20_association_request_reproduces_the_migration_capabilities() {
     record.ht_capability_ie_present = true;
     let mut output = [0; 160];
     let length = AssociationRequest {
-        source: LOCAL,
+        source: oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
         access_point: &record,
         sequence_number: SequenceNumber::new(2).unwrap(),
         listen_interval: 1,
@@ -102,7 +106,9 @@ fn ht40_request_claims_width_short_gi_without_unqualified_mcs32() {
     record.ht_operation_ie[0..4].copy_from_slice(&[61, 22, 6, 0x05]);
     let mut output = [0; 160];
     let length = AssociationRequest {
-        source: LOCAL,
+        source: oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
         access_point: &record,
         sequence_number: SequenceNumber::new(2).unwrap(),
         listen_interval: 1,
@@ -192,7 +198,9 @@ fn he20_request_masks_unowned_power_save_and_feedback_claims() {
 
     let mut output = [0; 192];
     let length = AssociationRequest {
-        source: LOCAL,
+        source: oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
         access_point: &record,
         sequence_number: SequenceNumber::new(2).unwrap(),
         listen_interval: 3,

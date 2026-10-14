@@ -7,6 +7,7 @@
 
 use core::future::Future;
 use oer_espressif_ieee80211_policy::rate_control::DEFAULT_CONTROL_SCHEDULE;
+use oer_ieee80211_mac::address::{Bssid, OwnAddress};
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_esp32s31_ieee80211::{
@@ -63,8 +64,8 @@ use oer_esp32s31_ieee80211::tx::{WifiTxProgress, WifiTxWake};
 /// Association-derived inputs for the first ordinary connected-data slice.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SingleMpduTxConfig {
-    pub station_address: [u8; 6],
-    pub bssid: [u8; 6],
+    pub station_address: OwnAddress,
+    pub bssid: Bssid,
     /// The SSID the station associated with, which its reachability probes
     /// name.
     pub ssid: oer_ieee80211_mac::ssid::WifiSsid,
@@ -529,7 +530,7 @@ where
             .take_data(Some(tid))
             .expect("validated QoS sequence space remains owned");
         Ok(Some(StaProtectedEthernetFrame {
-            bssid: self.config.bssid,
+            bssid: self.config.bssid.get(),
             sequence_number,
             user_priority: tid,
             peer_qos: self.config.peer_qos,
@@ -631,8 +632,8 @@ where
             .ok_or(SingleMpduTxError::InvalidTid(tid))?
             .access_category();
         let frame = encode_block_ack_request(
-            self.config.bssid,
-            self.config.station_address,
+            self.config.bssid.get(),
+            self.config.station_address.get(),
             tid,
             starting_sequence,
         );
@@ -728,9 +729,7 @@ where
         let destination: [u8; 6] = ethernet[..6]
             .try_into()
             .expect("validated Ethernet destination");
-        let source = ethernet[6..12]
-            .try_into()
-            .expect("validated Ethernet source");
+        let source = self.config.station_address;
         let ether_type = u16::from_be_bytes([ethernet[12], ethernet[13]]);
         let sequence_number = self
             .sequences
@@ -820,7 +819,7 @@ where
             StaProtectedDataFrame {
                 source: self.config.station_address,
                 bssid: self.config.bssid,
-                destination: self.config.bssid,
+                destination: self.config.bssid.get(),
                 sequence_number,
                 user_priority: 7,
                 peer_qos: self.config.peer_qos,
@@ -1092,13 +1091,13 @@ where
         let frame_length = {
             let buffer = self.ordinary.buffer_mut()?;
             let address = if directed {
-                self.config.bssid
+                self.config.bssid.get()
             } else {
                 [0xff; 6]
             };
             ProbeRequest {
                 destination: address,
-                source: self.config.station_address,
+                source: self.config.station_address.get(),
                 bssid: address,
                 sequence_number,
                 ssid: self.config.ssid.as_bytes(),

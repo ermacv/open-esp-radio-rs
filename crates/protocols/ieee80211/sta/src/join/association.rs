@@ -1,5 +1,6 @@
 //! Association epoch, retransmission schedule and terminal response policy.
 
+use oer_ieee80211_mac::address::{Bssid, OwnAddress};
 use oer_ieee80211_mac::sequence::SequenceNumber;
 use oer_ieee80211_mac::{
     security::LinkProtection,
@@ -120,8 +121,8 @@ pub enum StaAssociationPoll {
 /// [`StaAssociationRetrySchedule`] pending recovery of the vendor timer body.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaAssociationRuntime {
-    local: [u8; 6],
-    bssid: [u8; 6],
+    local: OwnAddress,
+    bssid: Bssid,
     security: LinkProtection,
     /// Start of the current request epoch: `None` before the first poll and
     /// while the station waits out a temporary refusal.
@@ -147,7 +148,7 @@ const COMEBACK_MARGIN_TU: u32 = 100;
 const MICROS_PER_TU: u64 = 1_024;
 
 impl StaAssociationRuntime {
-    pub const fn new(local: [u8; 6], bssid: [u8; 6], security: LinkProtection) -> Self {
+    pub const fn new(local: OwnAddress, bssid: Bssid, security: LinkProtection) -> Self {
         Self {
             local,
             bssid,
@@ -243,10 +244,11 @@ impl StaAssociationRuntime {
         now: Instant,
     ) -> Result<StaAssociationEvent, StaAssociationRuntimeError> {
         self.require_running()?;
-        if let Some(disconnect) = parse_sta_disconnect(frame, self.local, self.bssid) {
+        if let Some(disconnect) = parse_sta_disconnect(frame, self.local.get(), self.bssid.get()) {
             return Ok(self.fail(StaAssociationFailure::PeerDisconnect(disconnect)));
         }
-        let Some(response) = parse_association_response(frame, self.local, self.bssid) else {
+        let Some(response) = parse_association_response(frame, self.local.get(), self.bssid.get())
+        else {
             return Ok(StaAssociationEvent::Irrelevant);
         };
         if response.status_code == REJECTED_TEMPORARILY

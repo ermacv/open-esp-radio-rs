@@ -6,6 +6,8 @@
 pub struct IndividualAddress([u8; 6]);
 
 impl IndividualAddress {
+    pub(crate) const ZERO: Self = Self([0; 6]);
+
     /// `address`, when its group bit is clear.
     pub const fn new(address: [u8; 6]) -> Option<Self> {
         if address[0] & 1 == 0 {

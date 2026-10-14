@@ -25,7 +25,15 @@ fn association_retry_schedule_is_finite_inside_vendor_deadline() {
 
 #[test]
 fn association_runtime_owns_epoch_schedule_sequence_and_timeout() {
-    let mut runtime = StaAssociationRuntime::new(LOCAL, BSSID, LinkProtection::Ccmp);
+    let mut runtime = StaAssociationRuntime::new(
+        oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+        ),
+        LinkProtection::Ccmp,
+    );
     let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0x0ffc).unwrap());
     let mut attempts = std::vec::Vec::new();
     let mut timed_out_at = None;
@@ -70,7 +78,15 @@ fn association_runtime_owns_epoch_schedule_sequence_and_timeout() {
 
 #[test]
 fn the_next_deadline_is_the_next_request_or_the_epoch_deadline() {
-    let mut runtime = StaAssociationRuntime::new(LOCAL, BSSID, LinkProtection::Ccmp);
+    let mut runtime = StaAssociationRuntime::new(
+        oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+        ),
+        LinkProtection::Ccmp,
+    );
     let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0).unwrap());
     assert_eq!(runtime.next_deadline(), None);
     assert!(matches!(
@@ -94,7 +110,15 @@ fn the_next_deadline_is_the_next_request_or_the_epoch_deadline() {
 
 #[test]
 fn association_runtime_accepts_only_selected_peer_response() {
-    let mut runtime = StaAssociationRuntime::new(LOCAL, BSSID, LinkProtection::Ccmp);
+    let mut runtime = StaAssociationRuntime::new(
+        oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+        ),
+        LinkProtection::Ccmp,
+    );
     let mut sequence = StaSequenceCounter::new(SequenceNumber::new(7).unwrap());
     let StaAssociationPoll::Transmit(first) = runtime.poll(at(0), &mut sequence).unwrap() else {
         panic!("the first poll requests");
@@ -136,7 +160,15 @@ fn association_runtime_accepts_only_selected_peer_response() {
 #[test]
 fn association_runtime_reports_peer_disconnect_and_rejection() {
     let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0).unwrap());
-    let mut disconnected = StaAssociationRuntime::new(LOCAL, BSSID, LinkProtection::Ccmp);
+    let mut disconnected = StaAssociationRuntime::new(
+        oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+        ),
+        LinkProtection::Ccmp,
+    );
     disconnected.poll(at(0), &mut sequence).unwrap();
     disconnected.observe_received_frame();
     assert_eq!(
@@ -150,7 +182,15 @@ fn association_runtime_reports_peer_disconnect_and_rejection() {
         })
     );
 
-    let mut rejected = StaAssociationRuntime::new(LOCAL, BSSID, LinkProtection::Ccmp);
+    let mut rejected = StaAssociationRuntime::new(
+        oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+        ),
+        LinkProtection::Ccmp,
+    );
     rejected.poll(at(0), &mut sequence).unwrap();
     assert_eq!(
         rejected.observe_management_frame(&association_response(17), at(0)),
@@ -188,7 +228,15 @@ fn millis_until_attempt(
 #[test]
 fn a_temporary_refusal_comes_back_once_after_its_comeback_time() {
     let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0).unwrap());
-    let mut runtime = StaAssociationRuntime::new(LOCAL, BSSID, LinkProtection::Ccmp);
+    let mut runtime = StaAssociationRuntime::new(
+        oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+        ),
+        LinkProtection::Ccmp,
+    );
     let (_, first) = millis_until_attempt(&mut runtime, &mut sequence, 0);
     assert_eq!(first.ordinal, 1);
     // 1000 TUs, as hostapd names while it confirms the old association.
@@ -219,7 +267,15 @@ fn a_temporary_refusal_comes_back_once_after_its_comeback_time() {
 #[test]
 fn a_long_or_unnamed_temporary_refusal_ends_the_association() {
     let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0).unwrap());
-    let mut long = StaAssociationRuntime::new(LOCAL, BSSID, LinkProtection::Ccmp);
+    let mut long = StaAssociationRuntime::new(
+        oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+        ),
+        LinkProtection::Ccmp,
+    );
     long.poll(at(0), &mut sequence).unwrap();
     assert_eq!(
         long.observe_management_frame(&refused_temporarily(5_001), at(0)),
@@ -228,7 +284,15 @@ fn a_long_or_unnamed_temporary_refusal_ends_the_association() {
             total_received_frames: 0,
         })
     );
-    let mut unnamed = StaAssociationRuntime::new(LOCAL, BSSID, LinkProtection::Ccmp);
+    let mut unnamed = StaAssociationRuntime::new(
+        oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+        ),
+        LinkProtection::Ccmp,
+    );
     unnamed.poll(at(0), &mut sequence).unwrap();
     assert_eq!(
         unnamed.observe_management_frame(&association_response(30), at(0)),

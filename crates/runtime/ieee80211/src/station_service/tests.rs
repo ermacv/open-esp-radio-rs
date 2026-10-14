@@ -419,7 +419,9 @@ impl World<'_> {
         assert_eq!(message4.key, None);
         assert_eq!(message4.frame[1] & 0x40, 0);
         self.notice(StaNotice::Connected {
-            bssid: BSSID,
+            bssid: oer_ieee80211_mac::address::Bssid::new(
+                oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+            ),
             channel: 6,
         })
         .await;
@@ -717,7 +719,9 @@ fn on_an_open_network_the_join_goes_on_the_default_record_and_then_the_associati
             assert_eq!(association.rate, dsss1());
             world
                 .notice(StaNotice::Connected {
-                    bssid: BSSID,
+                    bssid: oer_ieee80211_mac::address::Bssid::new(
+                        oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+                    ),
                     channel: 6,
                 })
                 .await;
@@ -1126,7 +1130,9 @@ fn a_disconnection_during_an_absence_leaves_no_old_frame_to_go_after_the_reconne
             world.associate(&mut seen, false).await;
             world
                 .notice(StaNotice::Connected {
-                    bssid: BSSID,
+                    bssid: oer_ieee80211_mac::address::Bssid::new(
+                        oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+                    ),
                     channel: 6,
                 })
                 .await;
@@ -1202,7 +1208,9 @@ fn beside_an_access_point_msdus_survive_an_absence() {
             world.associate(&mut seen, false).await;
             world
                 .notice(StaNotice::Connected {
-                    bssid: BSSID,
+                    bssid: oer_ieee80211_mac::address::Bssid::new(
+                        oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+                    ),
                     channel: 6,
                 })
                 .await;
@@ -1465,7 +1473,9 @@ fn continuous_rx_cannot_starve_data_tx_or_application_commands() {
             world.associate(&mut seen, false).await;
             world
                 .notice(StaNotice::Connected {
-                    bssid: BSSID,
+                    bssid: oer_ieee80211_mac::address::Bssid::new(
+                        oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+                    ),
                     channel: 6,
                 })
                 .await;
@@ -1510,7 +1520,9 @@ fn lost_port_events_are_counted_and_the_service_keeps_running() {
             world.associate(&mut seen, false).await;
             world
                 .notice(StaNotice::Connected {
-                    bssid: BSSID,
+                    bssid: oer_ieee80211_mac::address::Bssid::new(
+                        oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+                    ),
                     channel: 6,
                 })
                 .await;

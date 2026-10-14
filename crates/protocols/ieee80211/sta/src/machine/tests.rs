@@ -631,7 +631,9 @@ fn a_station_alone_scans_joins_an_open_network_and_leaves_it() {
             world.take(),
             [
                 Seen::Notify(StaNotice::Connected {
-                    bssid: BSSID,
+                    bssid: oer_ieee80211_mac::address::Bssid::new(
+                        oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap()
+                    ),
                     channel: 6
                 }),
                 Seen::Upstream(UpstreamFact::Connected(channel(6))),
@@ -924,7 +926,12 @@ fn a_terminal_of_the_previous_connection_only_returns_its_resources() {
         let mut world = connected_world(mint);
         let old = world
             .station
-            .encode_null(BSSID, StaPowerManagement::Active)
+            .encode_null(
+                oer_ieee80211_mac::address::Bssid::new(
+                    oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+                ),
+                StaPowerManagement::Active,
+            )
             .unwrap();
         world
             .station
@@ -1237,7 +1244,9 @@ fn a_station_joins_a_wpa2_network_through_the_four_way_handshake() {
                     on: 6
                 },
                 Seen::Notify(StaNotice::Connected {
-                    bssid: BSSID,
+                    bssid: oer_ieee80211_mac::address::Bssid::new(
+                        oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap()
+                    ),
                     channel: 6
                 }),
                 Seen::Upstream(UpstreamFact::Connected(channel(6))),
@@ -2078,7 +2087,12 @@ fn deauthentication_waits_for_the_ticket_and_buffer_of_an_accepted_transmission(
             pending.push(
                 world
                     .station
-                    .encode_null(BSSID, StaPowerManagement::Active)
+                    .encode_null(
+                        oer_ieee80211_mac::address::Bssid::new(
+                            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+                        ),
+                        StaPowerManagement::Active,
+                    )
                     .unwrap(),
             );
         }
@@ -2238,8 +2252,12 @@ fn association_waits_for_credit_without_consuming_a_request_and_still_expires() 
             access_point,
             channel: world.station.config.channels[0],
             step: JoinStep::Associate(StaAssociationRuntime::new(
-                LOCAL,
-                BSSID,
+                oer_ieee80211_mac::address::OwnAddress::new(
+                    oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+                ),
+                oer_ieee80211_mac::address::Bssid::new(
+                    oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+                ),
                 oer_ieee80211_mac::security::LinkProtection::Open,
             )),
         };
@@ -2481,16 +2499,52 @@ fn every_control_encoder_reserves_credit_before_consuming_its_sequence() {
                 ) -> Option<StaTransmit<'id, Tokens, Caps>> {
                     match encoding {
                         0 => station
-                            .encode_eapol(BSSID, &[], TxPurpose::HandshakeResponse)
+                            .encode_eapol(
+                                oer_ieee80211_mac::address::Bssid::new(
+                                    oer_ieee80211_mac::address::IndividualAddress::new(BSSID)
+                                        .unwrap(),
+                                ),
+                                &[],
+                                TxPurpose::HandshakeResponse,
+                            )
                             .ok(),
-                        1 => station.encode_null(BSSID, StaPowerManagement::Active).ok(),
-                        2 => station.encode_protected_eapol(BSSID, None, &[]).ok(),
-                        3 => station.encode_protected_eapol(BSSID, Some(qos), &[]).ok(),
+                        1 => station
+                            .encode_null(
+                                oer_ieee80211_mac::address::Bssid::new(
+                                    oer_ieee80211_mac::address::IndividualAddress::new(BSSID)
+                                        .unwrap(),
+                                ),
+                                StaPowerManagement::Active,
+                            )
+                            .ok(),
+                        2 => station
+                            .encode_protected_eapol(
+                                oer_ieee80211_mac::address::Bssid::new(
+                                    oer_ieee80211_mac::address::IndividualAddress::new(BSSID)
+                                        .unwrap(),
+                                ),
+                                None,
+                                &[],
+                            )
+                            .ok(),
+                        3 => station
+                            .encode_protected_eapol(
+                                oer_ieee80211_mac::address::Bssid::new(
+                                    oer_ieee80211_mac::address::IndividualAddress::new(BSSID)
+                                        .unwrap(),
+                                ),
+                                Some(qos),
+                                &[],
+                            )
+                            .ok(),
                         4 => station.encode_probe(),
                         5 => station
                             .encode_management(
                                 StaManagementSubtype::Deauthentication,
-                                BSSID,
+                                oer_ieee80211_mac::address::Bssid::new(
+                                    oer_ieee80211_mac::address::IndividualAddress::new(BSSID)
+                                        .unwrap(),
+                                ),
                                 &REASON_UNSPECIFIED.to_le_bytes(),
                                 TxPurpose::Deauthentication,
                             )

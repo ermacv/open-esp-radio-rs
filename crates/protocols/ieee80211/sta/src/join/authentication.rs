@@ -1,5 +1,6 @@
 //! Open Authentication attempts, deadline results and retry ownership.
 
+use oer_ieee80211_mac::address::{Bssid, OwnAddress};
 use oer_ieee80211_mac::sequence::SequenceNumber;
 use oer_ieee80211_mac::station::{
     StaDisconnect, StaSequenceCounter, parse_open_authentication_response, parse_sta_disconnect,
@@ -68,8 +69,8 @@ pub enum StaAuthenticationRuntimeError {
 /// authentication attempts, including sequence allocation and timer outcomes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaAuthenticationRuntime {
-    local: [u8; 6],
-    bssid: [u8; 6],
+    local: OwnAddress,
+    bssid: Bssid,
     attempts_started: u16,
     active: bool,
     terminal: bool,
@@ -78,7 +79,7 @@ pub struct StaAuthenticationRuntime {
 }
 
 impl StaAuthenticationRuntime {
-    pub const fn new(local: [u8; 6], bssid: [u8; 6]) -> Self {
+    pub const fn new(local: OwnAddress, bssid: Bssid) -> Self {
         Self {
             local,
             bssid,
@@ -129,10 +130,11 @@ impl StaAuthenticationRuntime {
         if !self.active {
             return Err(StaAuthenticationRuntimeError::NoActiveAttempt);
         }
-        if let Some(disconnect) = parse_sta_disconnect(frame, self.local, self.bssid) {
+        if let Some(disconnect) = parse_sta_disconnect(frame, self.local.get(), self.bssid.get()) {
             return Ok(self.finish_retryable(StaAuthenticationFailure::PeerDisconnect(disconnect)));
         }
-        let Some(response) = parse_open_authentication_response(frame, self.local, self.bssid)
+        let Some(response) =
+            parse_open_authentication_response(frame, self.local.get(), self.bssid.get())
         else {
             return Ok(StaAuthenticationEvent::Irrelevant);
         };

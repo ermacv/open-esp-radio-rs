@@ -5,11 +5,25 @@ use super::{
 use oer_time::Instant;
 
 #[test]
+fn a_group_bssid_cannot_enter_the_scan_table() {
+    let mut frame = [0_u8; 42];
+    frame[0] = 0x80;
+    frame[16..22].copy_from_slice(&[3, 2, 3, 4, 5, 6]);
+    frame[36..42].copy_from_slice(&[0, 4, b't', b'e', b's', b't']);
+    assert!(parse_management(&frame, 1, -40).is_none());
+    frame[16] = 2;
+    assert_eq!(
+        parse_management(&frame, 1, -40).unwrap().bssid.get(),
+        [2, 2, 3, 4, 5, 6]
+    );
+}
+
+#[test]
 fn a_record_keeps_the_time_of_its_latest_observation() {
     let mut table = ScanTable::<1>::new();
     let mut frame = [0_u8; 42];
     frame[0] = 0x80;
-    frame[16..22].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
+    frame[16..22].copy_from_slice(&[2, 2, 3, 4, 5, 6]);
     frame[36..42].copy_from_slice(&[0, 4, b't', b'e', b's', b't']);
     table.observe_management(&frame, 1, -70, Some(Instant::from_micros(1_000)));
     assert_eq!(
@@ -60,7 +74,7 @@ fn extracts_ersu_argument_from_complete_he_operation_ie() {
 fn parses_beacon_into_owned_bounded_record() {
     let mut frame = [0_u8; 64];
     frame[0] = 0x80;
-    frame[16..22].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
+    frame[16..22].copy_from_slice(&[2, 2, 3, 4, 5, 6]);
     frame[24..32].copy_from_slice(&0x0123_4567_89ab_cdef_u64.to_le_bytes());
     frame[32..34].copy_from_slice(&100_u16.to_le_bytes());
     frame[34] = 0x10;
@@ -69,7 +83,12 @@ fn parses_beacon_into_owned_bounded_record() {
     frame[45..47].copy_from_slice(&[48, 0]);
     let record = parse_management(&frame[..47], 3, -42).unwrap();
     assert_eq!(record.ssid_bytes(), b"test");
-    assert_eq!(record.bssid, [1, 2, 3, 4, 5, 6]);
+    assert_eq!(
+        record.bssid,
+        crate::address::Bssid::new(
+            crate::address::IndividualAddress::new([2, 2, 3, 4, 5, 6]).unwrap()
+        )
+    );
     assert_eq!(record.channel, 11);
     assert_eq!(record.rssi, -42);
     assert_eq!(record.timestamp.as_micros(), 0x0123_4567_89ab_cdef);
@@ -82,7 +101,7 @@ fn parses_beacon_into_owned_bounded_record() {
 fn retains_erp_use_protection_without_confusing_the_element_header() {
     let mut frame = [0_u8; 43];
     frame[0] = 0x80;
-    frame[16..22].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
+    frame[16..22].copy_from_slice(&[2, 2, 3, 4, 5, 6]);
     frame[36..40].copy_from_slice(&[0, 2, b'a', b'p']);
     frame[40..43].copy_from_slice(&[42, 1, 0x03]);
     let record = parse_management(&frame, 6, -42).unwrap();
@@ -133,7 +152,7 @@ fn table_deduplicates_by_bssid_and_retains_latest_record() {
     let mut table = ScanTable::<1>::new();
     let mut frame = [0_u8; 42];
     frame[0] = 0x80;
-    frame[16..22].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
+    frame[16..22].copy_from_slice(&[2, 2, 3, 4, 5, 6]);
     frame[36..42].copy_from_slice(&[0, 4, b't', b'e', b's', b't']);
     assert_eq!(
         table.observe_management(&frame, 1, -70, None),
@@ -157,7 +176,7 @@ fn weaker_latest_beacon_replaces_stale_ht_protection() {
     let mut table = ScanTable::<1>::new();
     let mut frame = [0_u8; 69];
     frame[0] = 0x80;
-    frame[16..22].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
+    frame[16..22].copy_from_slice(&[2, 2, 3, 4, 5, 6]);
     frame[36..42].copy_from_slice(&[0, 4, b't', b'e', b's', b't']);
     frame[42..45].copy_from_slice(&[3, 1, 11]);
     frame[45..69].copy_from_slice(&[
@@ -184,7 +203,7 @@ fn latest_hidden_beacon_preserves_probe_response_ssid() {
     let mut table = ScanTable::<1>::new();
     let mut probe = [0_u8; 42];
     probe[0] = 0x50;
-    probe[16..22].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
+    probe[16..22].copy_from_slice(&[2, 2, 3, 4, 5, 6]);
     probe[36..42].copy_from_slice(&[0, 4, b't', b'e', b's', b't']);
     assert_eq!(
         table.observe_management(&probe, 1, -40, None),
@@ -193,7 +212,7 @@ fn latest_hidden_beacon_preserves_probe_response_ssid() {
 
     let mut beacon = [0_u8; 38];
     beacon[0] = 0x80;
-    beacon[16..22].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
+    beacon[16..22].copy_from_slice(&[2, 2, 3, 4, 5, 6]);
     beacon[36..38].copy_from_slice(&[0, 0]);
     assert_eq!(
         table.observe_management(&beacon, 1, -55, None),

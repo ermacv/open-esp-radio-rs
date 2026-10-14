@@ -264,7 +264,7 @@ impl StaPeerPort {
         let he_capabilities = plan.he_capabilities;
         let link = StaConnectedLink {
             station_address: station.station_address,
-            bssid: prepared.access_point.bssid,
+            bssid: prepared.access_point.bssid.get(),
             ssid,
             association_id: response.association_id,
             beacon_interval_tu: prepared.access_point.beacon_interval_tu,

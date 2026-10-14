@@ -198,23 +198,32 @@ fn erp_protected_join_eapol_leaves_at_the_dsss_schedule_rate_without_protection(
         erp: ErpProtection::new(true, false),
         ..BssProtection::UNPROTECTED
     });
-    let result = crate::test_support::block_on(tx.transmit_protected_data(
-        &mut hardware,
-        StaProtectedDataFrame {
-            source: [2, 3, 4, 5, 6, 7],
-            bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-            destination: [0xff; 6],
-            sequence_number: SequenceNumber::new(7).unwrap(),
-            user_priority: 0,
-            peer_qos: true,
-            ccmp_header: [1, 0, 0, 0x20, 0, 0, 0, 0],
-            ether_type: 0x888e,
-            payload: &[1, 2, 3, 4],
-        },
-        LegacyTxQueue::Voice,
-        1,
-        None,
-    ));
+    let result = crate::test_support::block_on(
+        tx.transmit_protected_data(
+            &mut hardware,
+            StaProtectedDataFrame {
+                source: oer_ieee80211_mac::address::OwnAddress::new(
+                    oer_ieee80211_mac::address::IndividualAddress::new([2, 3, 4, 5, 6, 7]).unwrap(),
+                ),
+                bssid: oer_ieee80211_mac::address::Bssid::new(
+                    oer_ieee80211_mac::address::IndividualAddress::new([
+                        0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
+                    ])
+                    .unwrap(),
+                ),
+                destination: [0xff; 6],
+                sequence_number: SequenceNumber::new(7).unwrap(),
+                user_priority: 0,
+                peer_qos: true,
+                ccmp_header: [1, 0, 0, 0x20, 0, 0, 0, 0],
+                ether_type: 0x888e,
+                payload: &[1, 2, 3, 4],
+            },
+            LegacyTxQueue::Voice,
+            1,
+            None,
+        ),
+    );
     assert!(result.is_ok());
     assert_eq!(hardware.publications, 1);
     let (_, program) = hardware.legacy.unwrap();
@@ -270,18 +279,27 @@ fn eapol_uses_the_recovered_voice_data_priority() {
     };
     let mut tx = make_tx(slot.as_mut());
 
-    let result = crate::test_support::block_on(tx.transmit_unprotected_data(
-        &mut hardware,
-        StaDataFrame {
-            source: [2, 3, 4, 5, 6, 7],
-            bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-            destination: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-            sequence_number: SequenceNumber::new(8).unwrap(),
-            ether_type: 0x888e,
-            payload: &[1, 2, 3, 4],
-        },
-        None,
-    ));
+    let result = crate::test_support::block_on(
+        tx.transmit_unprotected_data(
+            &mut hardware,
+            StaDataFrame {
+                source: oer_ieee80211_mac::address::OwnAddress::new(
+                    oer_ieee80211_mac::address::IndividualAddress::new([2, 3, 4, 5, 6, 7]).unwrap(),
+                ),
+                bssid: oer_ieee80211_mac::address::Bssid::new(
+                    oer_ieee80211_mac::address::IndividualAddress::new([
+                        0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
+                    ])
+                    .unwrap(),
+                ),
+                destination: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
+                sequence_number: SequenceNumber::new(8).unwrap(),
+                ether_type: 0x888e,
+                payload: &[1, 2, 3, 4],
+            },
+            None,
+        ),
+    );
 
     assert!(result.is_ok());
     let (_, program) = hardware.legacy.expect("EAPOL publication");
@@ -400,8 +418,15 @@ fn connected_handoff_preserves_the_descriptor_and_association_policy() {
             security: ConnectedTxSecurity::Wpa2Personal(key),
             sequences: StaTxSequenceCounters::new(SequenceNumber::new(9).unwrap()),
             config: SingleMpduTxConfig {
-                station_address: [2, 3, 4, 5, 6, 7],
-                bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
+                station_address: oer_ieee80211_mac::address::OwnAddress::new(
+                    oer_ieee80211_mac::address::IndividualAddress::new([2, 3, 4, 5, 6, 7]).unwrap(),
+                ),
+                bssid: oer_ieee80211_mac::address::Bssid::new(
+                    oer_ieee80211_mac::address::IndividualAddress::new([
+                        0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
+                    ])
+                    .unwrap(),
+                ),
                 ssid: oer_ieee80211_mac::ssid::WifiSsid::new(b"test").unwrap(),
                 peer_qos: true,
                 management_protection: false,
@@ -482,8 +507,15 @@ fn active_handoff_returns_tx_and_crypto_resources_for_later_retry() {
         security: ConnectedTxSecurity::Wpa2Personal(key),
         sequences: StaTxSequenceCounters::new(SequenceNumber::new(9).unwrap()),
         config: SingleMpduTxConfig {
-            station_address: [2, 3, 4, 5, 6, 7],
-            bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
+            station_address: oer_ieee80211_mac::address::OwnAddress::new(
+                oer_ieee80211_mac::address::IndividualAddress::new([2, 3, 4, 5, 6, 7]).unwrap(),
+            ),
+            bssid: oer_ieee80211_mac::address::Bssid::new(
+                oer_ieee80211_mac::address::IndividualAddress::new([
+                    0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
+                ])
+                .unwrap(),
+            ),
             ssid: oer_ieee80211_mac::ssid::WifiSsid::new(b"test").unwrap(),
             peer_qos: true,
             management_protection: false,

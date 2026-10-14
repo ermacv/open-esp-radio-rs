@@ -13,6 +13,12 @@ the consumer performs or forwards them before waiting again. Rust can still
 explicitly drop an affine value; the annotation diagnoses accidentally
 discarded results and does not replace terminal resource handling.
 
+The local transmitter is `OwnAddress`; a scan record validates its individual
+BSS address as `Bssid` before it can enter Join. Authentication, Association,
+SAE, the handshake, the connected link and station frame encoders keep those
+roles. Wire writers unwrap the octets at the encoding boundary, so beginning
+an attempt cannot uncover a previously unchecked address.
+
 Module map:
 
 - `machine`: the station, its tokens (`StaTokens`) and its host slice tests

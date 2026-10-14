@@ -6,8 +6,10 @@ const BSSID: [u8; 6] = [0x20, 0x21, 0x22, 0x23, 0x24, 0x25];
 
 fn frame(power_management: StaPowerManagement) -> StaNullDataFrame {
     StaNullDataFrame {
-        station_address: STATION,
-        bssid: BSSID,
+        station_address: crate::address::OwnAddress::new(
+            crate::address::IndividualAddress::new(STATION).unwrap(),
+        ),
+        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap()),
         sequence_number: seq(0x123),
         power_management,
     }
@@ -52,7 +54,9 @@ fn validation_happens_before_output_is_mutated() {
     let mut output = [0xa5; STA_NULL_DATA_FRAME_LEN];
     assert_eq!(
         StaNullDataFrame {
-            bssid: [0xff; 6],
+            bssid: crate::address::Bssid::new(
+                crate::address::IndividualAddress::new([0; 6]).unwrap()
+            ),
             ..frame(StaPowerManagement::PowerSave)
         }
         .encode(&mut output),

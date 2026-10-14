@@ -719,7 +719,7 @@ pub fn received<'f, T: StaTokens>(
     if (control >> 2) & 0b11 != 2 || control & 0x0300 != 0x0200 {
         return None;
     }
-    if [b0, b1, b2, b3, b4, b5] != link.bssid {
+    if [b0, b1, b2, b3, b4, b5] != link.bssid.get() {
         return None;
     }
     let destination = [d0, d1, d2, d3, d4, d5];
@@ -750,7 +750,7 @@ pub fn received<'f, T: StaTokens>(
             let (ccmp, rest) = payload.split_first_chunk::<8>()?;
             let header = CcmpHeader::parse(*ccmp).ok()?;
             payload = rest;
-            let protection = if destination == link.address {
+            let protection = if destination == link.address.get() {
                 CcmpRxProtection::Pairwise
             } else if d0 & 1 == 1 {
                 CcmpRxProtection::Group
@@ -760,7 +760,7 @@ pub fn received<'f, T: StaTokens>(
             replay.check(protection, tid, header).ok()?;
         }
         LinkProtection::Open => {
-            if control & 0x4000 != 0 || (destination != link.address && d0 & 1 == 0) {
+            if control & 0x4000 != 0 || (destination != link.address.get() && d0 & 1 == 0) {
                 return None;
             }
         }
@@ -805,7 +805,7 @@ fn encode_frame<
         // Write the open encoding directly; it never needs a temporary CCMP
         // gap or a second move of the payload. The exact sized header is
         // validated once and written by the portable array encoder.
-        if link.bssid == [0; 6] {
+        if link.bssid.get() == [0; 6] {
             return None;
         }
         let length = mpdu_len(qos, DataProtection::Open, msdu.payload.len())?;
@@ -813,8 +813,8 @@ fn encode_frame<
         let header = HeaderSpec::new(
             oer_ieee80211_lower_mac::FrameControl::new(if qos { 0x0188 } else { 0x0108 })?,
             0,
-            IndividualAddress::new(link.bssid)?,
-            link.address,
+            link.bssid.individual(),
+            link.address.get(),
             msdu.destination,
             sequence_number.sequence_control(),
             None,

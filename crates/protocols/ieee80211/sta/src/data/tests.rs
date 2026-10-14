@@ -109,8 +109,12 @@ const PEER: [u8; 6] = [2, 0, 0, 0, 0, 3];
 fn qos_link<'a>(key: &'a (), replay: &'a mut CcmpRxReplayEpoch) -> LinkView<'a, 'static, Station> {
     LinkView {
         epoch: LinkEpoch::for_test(1),
-        address: LOCAL,
-        bssid: BSSID,
+        address: oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        bssid: oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+        ),
         association_id: 1,
         // The station's QoS sequence spaces, which the link lends.
         mode: LinkMode::Qos(std::boxed::Box::leak(std::boxed::Box::new(
@@ -123,8 +127,12 @@ fn qos_link<'a>(key: &'a (), replay: &'a mut CcmpRxReplayEpoch) -> LinkView<'a, 
 fn open_link(counter: &mut StaSequenceCounter) -> LinkView<'_, 'static, Station> {
     LinkView {
         epoch: LinkEpoch::for_test(1),
-        address: LOCAL,
-        bssid: BSSID,
+        address: oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        bssid: oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+        ),
         association_id: 1,
         mode: LinkMode::NonQos(counter),
         protection: LinkProtection::Open,

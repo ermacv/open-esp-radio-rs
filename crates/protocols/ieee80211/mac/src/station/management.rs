@@ -110,15 +110,15 @@ impl StaManagementSubtype {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaManagementFrame<'a> {
     pub subtype: StaManagementSubtype,
-    pub source: [u8; 6],
-    pub bssid: [u8; 6],
+    pub source: OwnAddress,
+    pub bssid: Bssid,
     pub sequence_number: SequenceNumber,
     pub body: &'a [u8],
 }
 
 impl StaManagementFrame<'_> {
     pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
-        validate_peer(self.bssid)?;
+        validate_peer(self.bssid.get())?;
         let required = MANAGEMENT_HEADER_LEN.checked_add(self.body.len()).ok_or(
             StationFrameError::OutputTooSmall {
                 required: usize::MAX,
@@ -133,9 +133,9 @@ impl StaManagementFrame<'_> {
         write_management_header(
             frame,
             self.subtype.frame_control(),
-            self.bssid,
-            self.source,
-            self.bssid,
+            self.bssid.get(),
+            self.source.get(),
+            self.bssid.get(),
             self.sequence_number,
         );
         frame[MANAGEMENT_HEADER_LEN..].copy_from_slice(self.body);
@@ -154,8 +154,8 @@ impl StaManagementFrame<'_> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaProtectedManagementFrame<'a> {
     pub subtype: StaManagementSubtype,
-    pub source: [u8; 6],
-    pub bssid: [u8; 6],
+    pub source: OwnAddress,
+    pub bssid: Bssid,
     pub sequence_number: SequenceNumber,
     pub ccmp_header: [u8; CCMP_HEADER_LEN],
     pub body: &'a [u8],
@@ -163,7 +163,7 @@ pub struct StaProtectedManagementFrame<'a> {
 
 impl StaProtectedManagementFrame<'_> {
     pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
-        validate_peer(self.bssid)?;
+        validate_peer(self.bssid.get())?;
         let body_start = MANAGEMENT_HEADER_LEN + CCMP_HEADER_LEN;
         let required =
             body_start
@@ -180,9 +180,9 @@ impl StaProtectedManagementFrame<'_> {
         write_management_header(
             frame,
             self.subtype.frame_control() | PROTECTED_FRAME,
-            self.bssid,
-            self.source,
-            self.bssid,
+            self.bssid.get(),
+            self.source.get(),
+            self.bssid.get(),
             self.sequence_number,
         );
         frame[MANAGEMENT_HEADER_LEN..body_start].copy_from_slice(&self.ccmp_header);
@@ -201,8 +201,8 @@ pub const SAE_CONFIRM_TRANSACTION: u16 = 2;
 /// One SAE Authentication frame this station sends: a Commit or a Confirm.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SaeAuthenticationFrame<'a> {
-    pub source: [u8; 6],
-    pub bssid: [u8; 6],
+    pub source: OwnAddress,
+    pub bssid: Bssid,
     pub sequence_number: SequenceNumber,
     pub transaction: u16,
     pub status_code: u16,
@@ -211,7 +211,7 @@ pub struct SaeAuthenticationFrame<'a> {
 
 impl SaeAuthenticationFrame<'_> {
     pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
-        validate_peer(self.bssid)?;
+        validate_peer(self.bssid.get())?;
         let body_start = MANAGEMENT_HEADER_LEN + 6;
         let required =
             body_start
@@ -227,9 +227,9 @@ impl SaeAuthenticationFrame<'_> {
         write_management_header(
             frame,
             OPEN_AUTHENTICATION_FRAME_CONTROL,
-            self.bssid,
-            self.source,
-            self.bssid,
+            self.bssid.get(),
+            self.source.get(),
+            self.bssid.get(),
             self.sequence_number,
         );
         frame[24..26].copy_from_slice(&SAE_AUTHENTICATION_ALGORITHM.to_le_bytes());

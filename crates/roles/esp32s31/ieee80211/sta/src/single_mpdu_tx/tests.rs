@@ -201,8 +201,12 @@ fn make_tx<'a>(
             security: ConnectedTxSecurity::Wpa2Personal(key),
             sequences: StaTxSequenceCounters::new(SequenceNumber::new(7).unwrap()),
             config: SingleMpduTxConfig {
-                station_address: [2, 3, 4, 5, 6, 7],
-                bssid: BSSID,
+                station_address: oer_ieee80211_mac::address::OwnAddress::new(
+                    oer_ieee80211_mac::address::IndividualAddress::new([2, 3, 4, 5, 6, 7]).unwrap(),
+                ),
+                bssid: oer_ieee80211_mac::address::Bssid::new(
+                    oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+                ),
                 ssid: oer_ieee80211_mac::ssid::WifiSsid::new(b"test").unwrap(),
                 peer_qos: true,
                 management_protection: false,

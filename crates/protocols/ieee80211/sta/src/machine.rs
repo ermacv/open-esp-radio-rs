@@ -466,11 +466,11 @@ pub enum StaRatePlan {
 /// may go.
 pub struct LinkView<'a, 'id, T: StaTokens> {
     /// The station's own address.
-    pub address: [u8; 6],
+    pub address: OwnAddress,
     /// The connection identity, unchanged during sleep and channel absences.
     pub epoch: LinkEpoch<'id>,
     /// The access point.
-    pub bssid: [u8; 6],
+    pub bssid: Bssid,
     /// The station's association identifier.
     pub association_id: u16,
     /// How data is sequenced on the BSS.
@@ -509,7 +509,7 @@ pub enum StaNotice {
     /// The station is connected to `bssid` on `channel`.
     Connected {
         /// The access point.
-        bssid: [u8; 6],
+        bssid: Bssid,
         /// Its primary channel number.
         channel: u8,
     },
@@ -1050,7 +1050,7 @@ enum AuthStage {
 
 /// The WPA2 four-way handshake with the joined access point.
 struct Handshake<T: StaTokens, K> {
-    bssid: [u8; 6],
+    bssid: Bssid,
     channel: SupportedChannel<K>,
     association_id: u16,
     qos: bool,
@@ -1086,7 +1086,7 @@ enum HandshakeStep {
 
 /// The connected station.
 struct Connected<T: StaTokens, K> {
-    bssid: [u8; 6],
+    bssid: Bssid,
     channel: SupportedChannel<K>,
     association_id: u16,
     /// The access point's BSS is a QoS BSS (it advertised WMM).
@@ -1201,7 +1201,7 @@ struct Leave {
 /// A Deauthentication to send.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Deauthentication {
-    bssid: [u8; 6],
+    bssid: Bssid,
     reason_code: u16,
 }
 
@@ -1230,7 +1230,7 @@ const LLC_SNAP_EAPOL: [u8; 8] = [0xaa, 0xaa, 0x03, 0, 0, 0, 0x88, 0x8e];
 fn received_eapol(
     frame: &[u8],
     address: [u8; 6],
-    bssid: [u8; 6],
+    bssid: Bssid,
 ) -> Option<OwnedEapolFrame<DEFAULT_EAPOL_FRAME_CAPACITY>> {
     let (header, mut payload) = frame.split_first_chunk::<24>()?;
     let [
@@ -1256,7 +1256,7 @@ fn received_eapol(
     if (control >> 2) & 0b11 != 2 || control & 0x0300 != 0x0200 {
         return None;
     }
-    if [d0, d1, d2, d3, d4, d5] != address || [b0, b1, b2, b3, b4, b5] != bssid {
+    if [d0, d1, d2, d3, d4, d5] != address || [b0, b1, b2, b3, b4, b5] != bssid.get() {
         return None;
     }
     if control & 0x0080 != 0 {
@@ -1266,7 +1266,7 @@ fn received_eapol(
     if *llc != LLC_SNAP_EAPOL {
         return None;
     }
-    OwnedEapolFrame::try_copy(RsnInterface::Station, bssid, eapol).ok()
+    OwnedEapolFrame::try_copy(RsnInterface::Station, bssid.get(), eapol).ok()
 }
 
 /// The frame control of a Deauthentication and of a Disassociation.
@@ -1274,12 +1274,12 @@ const DEAUTHENTICATION: u16 = 0x00c0;
 const DISASSOCIATION: u16 = 0x00a0;
 
 /// The disconnect `frame` carries from `bssid`, if it is one.
-fn peer_disconnect(frame: &[u8], bssid: [u8; 6]) -> Option<u16> {
+fn peer_disconnect(frame: &[u8], bssid: Bssid) -> Option<u16> {
     let control = u16::from_le_bytes(frame.get(0..2)?.try_into().ok()?) & 0x00fc;
     if control != DEAUTHENTICATION && control != DISASSOCIATION {
         return None;
     }
-    if frame.get(10..16)? != bssid {
+    if frame.get(10..16)? != bssid.get() {
         return None;
     }
     Some(u16::from_le_bytes(frame.get(24..26)?.try_into().ok()?))
@@ -1537,7 +1537,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         };
         Some(LinkView {
             epoch: self.epoch?,
-            address: self.config.address.get(),
+            address: self.config.address,
             bssid: connected.bssid,
             association_id: connected.association_id,
             mode: if connected.qos {
@@ -2349,7 +2349,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         ) {
             (JoinStep::AwaitConfigured, Done::Configured) => JoinStep::Authenticate(Authenticate {
                 runtime: StaAuthenticationRuntime::new(
-                    self.config.address.get(),
+                    self.config.address,
                     join.access_point.bssid,
                 ),
                 stage: AuthStage::NeedSend,
@@ -2424,7 +2424,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     match auth.runtime.observe_management_frame(frame) {
                         Ok(StaAuthenticationEvent::Authenticated { .. }) => {
                             join.step = JoinStep::Associate(StaAssociationRuntime::new(
-                                self.config.address.get(),
+                                self.config.address,
                                 join.access_point.bssid,
                                 match self.config.security {
                                     StaSecurity::Open => {
@@ -2527,7 +2527,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             self.scan
                 .observe_management(frame, channel, rssi, Some(now));
         }
-        if let Ok(beacon) = parse_sta_beacon(frame, connected.bssid, connected.association_id)
+        if let Ok(beacon) = parse_sta_beacon(frame, connected.bssid.get(), connected.association_id)
             && connected.power.beacon(beacon.tim) == PowerSaveDecision::SendActive
             && !connected.waking
         {
@@ -2869,12 +2869,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 }
             }
             HandshakeStep::Install(request) => {
-                let Some(peer) = IndividualAddress::new(handshake.bssid) else {
-                    return (
-                        leave_handshake(handshake, REASON_UNSPECIFIED),
-                        ActionProgress::Transition,
-                    );
-                };
+                let peer = handshake.bssid.individual();
                 match self
                     .current_epoch()
                     .and_then(|epoch| self.keys.take_pairwise_slot(epoch))
@@ -2946,12 +2941,12 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     /// An EAPOL frame to `bssid` in a data frame, in a buffer.
     fn encode_eapol(
         &mut self,
-        bssid: [u8; 6],
+        bssid: Bssid,
         eapol: &[u8],
         purpose: TxPurpose,
     ) -> Result<StaTransmit<'id, T, K>, Unsent> {
         let credit = self.reserve_transmit()?;
-        let address = self.config.address.get();
+        let address = self.config.address;
         let sequence_number = self.sequence.take();
         Ok(self.encode_reserved(
             credit,
@@ -2959,7 +2954,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 oer_ieee80211_mac::station::StaDataFrame {
                     source: address,
                     bssid,
-                    destination: bssid,
+                    destination: bssid.get(),
                     sequence_number,
                     ether_type: EAPOL_ETHER_TYPE,
                     payload: eapol,
@@ -3145,8 +3140,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 BackgroundStep::NeedAbsence => match self.channel(background.visit) {
                     // The network's own channel: no absence.
                     Some(channel) if channel == home => {
-                        owed = bss_rules(bssid, Rules::<K>::WIDENED)
-                            .and_then(|receive| self.configure(receive));
+                        owed = self.configure(bss_rules(bssid, Rules::<K>::WIDENED));
                         if owed.is_some() {
                             BackgroundStep::AwaitWidened
                         } else {
@@ -3188,8 +3182,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     BackgroundStep::Listen
                 }
                 BackgroundStep::NeedHome if self.configuration.is_some() => {
-                    owed = bss_rules(bssid, Rules::<K>::MEMBER)
-                        .and_then(|receive| self.configure(receive));
+                    owed = self.configure(bss_rules(bssid, Rules::<K>::MEMBER));
                     BackgroundStep::AwaitHome
                 }
                 BackgroundStep::NeedWake if !connected.sending => {
@@ -3201,8 +3194,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     BackgroundStep::HomeListen { until }
                 }
                 BackgroundStep::Narrow if self.configuration.is_some() => {
-                    owed = bss_rules(bssid, Rules::<K>::MEMBER)
-                        .and_then(|receive| self.configure(receive));
+                    owed = self.configure(bss_rules(bssid, Rules::<K>::MEMBER));
                     BackgroundStep::AwaitNarrowed
                 }
                 step => step,
@@ -3251,11 +3243,11 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     /// A Null to `bssid` with `power_management`, in a buffer.
     fn encode_null(
         &mut self,
-        bssid: [u8; 6],
+        bssid: Bssid,
         power_management: StaPowerManagement,
     ) -> Result<StaTransmit<'id, T, K>, Unsent> {
         let credit = self.reserve_transmit()?;
-        let address = self.config.address.get();
+        let address = self.config.address;
         let sequence_number = self.sequence.take();
         let mut transmit = self.encode_reserved(
             credit,
@@ -3294,15 +3286,8 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 None => (JoinStep::NeedLease, None),
             },
             JoinStep::NeedConfigure if self.configuration.is_some() => {
-                match bss_rules(join.access_point.bssid, Rules::<K>::MEMBER) {
-                    Some(receive) => (JoinStep::AwaitConfigured, self.configure(receive)),
-                    None => {
-                        return (
-                            leave_unkeyed(StaDisconnectReason::Encode),
-                            ActionProgress::Transition,
-                        );
-                    }
-                }
+                let receive = bss_rules(join.access_point.bssid, Rules::<K>::MEMBER);
+                (JoinStep::AwaitConfigured, self.configure(receive))
             }
             JoinStep::Authenticate(mut auth) if auth.stage == AuthStage::NeedSend => {
                 let credit = match self.reserve_transmit() {
@@ -3325,14 +3310,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                         ActionProgress::Transition,
                     );
                 };
-                let Some(bssid) = IndividualAddress::new(join.access_point.bssid).map(Bssid::new)
-                else {
-                    self.return_credit(credit);
-                    return (
-                        leave_unkeyed(StaDisconnectReason::Encode),
-                        ActionProgress::Transition,
-                    );
-                };
+                let bssid = join.access_point.bssid;
                 let address = self.config.address;
                 let encoded = self.encode_reserved(
                     credit,
@@ -3390,7 +3368,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     Ok(StaAssociationPoll::Transmit(attempt)) => {
                         let capabilities = self.config.association;
                         let phy = self.config.phy;
-                        let address = self.config.address.get();
+                        let address = self.config.address;
                         let access_point = &join.access_point;
                         let rsn = &join.rsn;
                         let encoded = self.encode_reserved(
@@ -3494,7 +3472,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         }
         let supplicant = RsnStaSupplicant::try_new(
             self.config.address.get(),
-            bssid,
+            bssid.get(),
             (self.config.nonce)(),
             join.rsn.as_bytes(),
             join.access_point.rsn_ie_bytes(),
@@ -3608,7 +3586,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     /// #563).
     fn encode_protected_eapol(
         &mut self,
-        bssid: [u8; 6],
+        bssid: Bssid,
         qos: Option<&mut [StaSequenceCounter; 8]>,
         eapol: &[u8],
     ) -> Result<StaTransmit<'id, T, K>, Unsent> {
@@ -3623,9 +3601,9 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             None => self.sequence.take(),
         };
         let frame = oer_ieee80211_mac::station::StaProtectedDataFrame {
-            source: self.config.address.get(),
+            source: self.config.address,
             bssid,
-            destination: bssid,
+            destination: bssid.get(),
             sequence_number,
             user_priority: PRIORITY,
             peer_qos,
@@ -3693,12 +3671,12 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     fn encode_management(
         &mut self,
         subtype: StaManagementSubtype,
-        bssid: [u8; 6],
+        bssid: Bssid,
         body: &[u8],
         purpose: TxPurpose,
     ) -> Result<StaTransmit<'id, T, K>, Unsent> {
         let credit = self.reserve_transmit()?;
-        let address = self.config.address.get();
+        let address = self.config.address;
         let sequence_number = self.sequence.take();
         Ok(self.encode_reserved(
             credit,
@@ -3760,14 +3738,11 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
 }
 
 /// The network's receive rules of `filter` for `bssid`.
-fn bss_rules<K>(
-    bssid: [u8; 6],
-    filter: SupportedFilter<K, StationRole>,
-) -> Option<StationReceive<K>> {
-    Some(StationReceive::Bss {
-        bssid: IndividualAddress::new(bssid)?,
+fn bss_rules<K>(bssid: Bssid, filter: SupportedFilter<K, StationRole>) -> StationReceive<K> {
+    StationReceive::Bss {
+        bssid: bssid.individual(),
         filter,
-    })
+    }
 }
 
 /// Leave a network the station holds no key of: receive off, the lease

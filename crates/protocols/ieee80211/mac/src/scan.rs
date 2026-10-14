@@ -6,6 +6,7 @@
 //! implementation is chip-independent and forms the maintained upper-stack
 //! extraction.
 
+use crate::address::{Bssid, IndividualAddress};
 use crate::ht::{HtPeerCapabilities, ht_peer_capabilities};
 use crate::security::LinkProtection;
 use oer_time::Instant;
@@ -68,7 +69,8 @@ pub fn he_extended_range_single_user_disabled(he_operation_ie: &[u8]) -> Option<
 pub struct ScanRecord {
     pub ssid: [u8; 32],
     pub ssid_len: u8,
-    pub bssid: [u8; 6],
+    /// Individual infrastructure BSS address, validated while parsing.
+    pub bssid: Bssid,
     pub channel: u8,
     pub rssi: i8,
     pub privacy: bool,
@@ -113,7 +115,7 @@ impl ScanRecord {
     pub const EMPTY: Self = Self {
         ssid: [0; 32],
         ssid_len: 0,
-        bssid: [0; 6],
+        bssid: Bssid::new(IndividualAddress::ZERO),
         channel: 0,
         rssi: i8::MIN,
         privacy: false,
@@ -440,7 +442,7 @@ pub fn parse_management(frame: &[u8], fallback_channel: u8, rssi: i8) -> Option<
     }
 
     let mut record = ScanRecord::EMPTY;
-    record.bssid.copy_from_slice(&header[16..22]);
+    record.bssid = Bssid::new(IndividualAddress::new(header[16..22].try_into().ok()?)?);
     record.channel = fallback_channel;
     record.rssi = rssi;
     let [.., t0, t1, t2, t3, t4, t5, t6, t7, b0, b1, c0, c1] = *header;

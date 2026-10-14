@@ -1,6 +1,7 @@
 //! Station association request construction and response admission.
 
 use super::*;
+use crate::address::OwnAddress;
 
 /// Relative HE UL-MU transmit-power capability for MAC rates 16 through 25.
 ///
@@ -158,7 +159,7 @@ pub struct AssociationCapabilities {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AssociationRequest<'a> {
-    pub source: [u8; 6],
+    pub source: OwnAddress,
     pub access_point: &'a ScanRecord,
     pub sequence_number: SequenceNumber,
     pub listen_interval: u16,
@@ -179,7 +180,7 @@ impl AssociationRequest<'_> {
         output: &mut [u8],
         capabilities: &AssociationCapabilities,
     ) -> Result<usize, AssociationRequestError> {
-        validate_peer(self.access_point.bssid).map_err(AssociationRequestError::Frame)?;
+        validate_peer(self.access_point.bssid.get()).map_err(AssociationRequestError::Frame)?;
         let ssid = self.access_point.ssid_bytes();
         if ssid.len() > MAX_SSID_LEN {
             return Err(AssociationRequestError::Frame(
@@ -277,9 +278,9 @@ impl AssociationRequest<'_> {
         write_management_header(
             frame,
             ASSOCIATION_REQUEST_FRAME_CONTROL,
-            self.access_point.bssid,
-            self.source,
-            self.access_point.bssid,
+            self.access_point.bssid.get(),
+            self.source.get(),
+            self.access_point.bssid.get(),
             self.sequence_number,
         );
         // Derive Privacy from the exact requested mode, rather than merely

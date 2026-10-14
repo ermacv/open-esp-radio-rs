@@ -72,7 +72,9 @@ changing the active move's home destination. Lease and upstream-loss deadlines
 resume after the cycle ends, and an elapsed deadline causes a finite transition.
 Late admission is checked before the outgoing retune. Once that move is
 admitted, its completion cannot charge the outbound budget again; the lease
-ends on its original return deadline and restores the home channel. A leave
+ends on its original return deadline. Refused and late moves capture the
+return channel in `CyclePurpose::Return { to }`. One `listen_end` calculation supplies the
+lease, timer and return transition. A leave
 command deferred by an absence belongs to that absence's terminal, including
 refusal and late cancellation, so returning its place also releases the command.
 A refused lease move returns the next `PendingRetune` directly and enters

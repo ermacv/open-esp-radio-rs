@@ -718,6 +718,19 @@ struct Granted<K> {
     then_leave: Option<LeaveReason>,
 }
 
+impl<K> Granted<K> {
+    /// Leave enough time to close the gate and restore the return channel.
+    fn listen_end(&self, retune: Duration) -> Option<Instant> {
+        self.until.map(|until| {
+            if self.returns {
+                until.checked_sub(retune).unwrap_or(until)
+            } else {
+                until
+            }
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LeaseStep {
     /// Before its start.
@@ -804,7 +817,9 @@ enum CyclePurpose<K> {
     },
     /// The return after a refused move or a late lease; the station heard
     /// of its lease's end already.
-    Return,
+    Return {
+        to: SupportedChannel<K>,
+    },
 }
 
 impl<K> Copy for CyclePurpose<K> {}
@@ -1043,13 +1058,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
             channel: granted.channel,
             from: granted.from,
             until: granted.until,
-            listen_until: granted.until.map(|until| {
-                if granted.returns {
-                    until.checked_sub(retune).unwrap_or(until)
-                } else {
-                    until
-                }
-            }),
+            listen_until: granted.listen_end(retune),
         }
     }
 
@@ -1598,7 +1607,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
                     _ => self.outbox.moved = Some(cycle.to),
                 }
             }
-            CyclePurpose::Return => {}
+            CyclePurpose::Return { to } => self.home = to,
         }
     }
 
@@ -1621,14 +1630,14 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
                 self.cycle = Some(Cycle {
                     to: self.home,
                     reserve: R::none(),
-                    purpose: CyclePurpose::Return,
+                    purpose: CyclePurpose::Return { to: self.home },
                 });
                 Some(PendingRetune {
                     to: self.home,
-                    purpose: CyclePurpose::Return,
+                    purpose: CyclePurpose::Return { to: self.home },
                 })
             }
-            CyclePurpose::LeaseEnd(_) | CyclePurpose::Move { .. } | CyclePurpose::Return => {
+            CyclePurpose::LeaseEnd(_) | CyclePurpose::Move { .. } | CyclePurpose::Return { .. } => {
                 self.fail();
                 None
             }
@@ -1677,13 +1686,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
                 })
             }
             LeaseStep::Running => {
-                let ends = granted.until.map(|until| {
-                    if granted.returns {
-                        until.checked_sub(retune).unwrap_or(until)
-                    } else {
-                        until
-                    }
-                });
+                let ends = granted.listen_end(retune);
                 // An absence ends before the port moves with the upstream.
                 let moving = which == Which::Absence && pending_due;
                 if granted.end != LeaseEnd::Own || moving || ends.is_some_and(|ends| now >= ends) {
@@ -1791,7 +1794,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
                     self.cancel(which, CancelReason::Late);
                     self.cycle = Some(Cycle {
                         to: self.home,
-                        purpose: CyclePurpose::Return,
+                        purpose: CyclePurpose::Return { to: self.home },
                         ..cycle
                     });
                     self.gate = Gate::Closed(closed);
@@ -1872,10 +1875,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
         let retune = sum(self.publication_bound, self.policy.retune);
         let lease = |granted: &Granted<K>| match granted.step {
             LeaseStep::Waiting { .. } => Some(granted.from),
-            LeaseStep::Running if granted.returns => granted
-                .until
-                .map(|until| until.checked_sub(retune).unwrap_or(until)),
-            LeaseStep::Running => granted.until,
+            LeaseStep::Running => granted.listen_end(retune),
             _ => None,
         };
         let primary = self

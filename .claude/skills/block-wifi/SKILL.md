@@ -28,6 +28,10 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
 
 ## Traps
 
+- Keep each package's `clippy.toml` as a regular source file. HIL source
+  snapshots retain lint configuration and reject build-input symlinks; a
+  symlink to a shared configuration prevents image capture before compilation.
+
 - A backend declares its complete `PortBackend::Pools` layout and consumes `Mint::into_pools(self)` once. Include one `GatePool`; it yields `GateOpen` and the backend's `GateIssuer`, with no public `GatePlace` constructor. Test worlds that need another gate must use another branded installation.
 
 - Time follows [clocks, stamps and alarms](../../../docs/architecture.md#clocks-stamps-and-alarms).

@@ -3,12 +3,18 @@ ENTRY(_start)
 MEMORY
 {
   TRACE (rwx) : ORIGIN = 0x10000000, LENGTH = 2M
-  DMA (rw)    : ORIGIN = 0x2f000000, LENGTH = 512K
+  DMA (rw)    : ORIGIN = 0x2f000000, LENGTH = 384K
+  IRAM (rx)   : ORIGIN = 0x2f060000, LENGTH = 0x1afc0
 }
 
 SECTIONS
 {
   .blobray.probes : { KEEP(*(.blobray.probes)) } > TRACE
+
+  .rwtext : ALIGN(4)
+  {
+    *(.rwtext .rwtext.*)
+  } > IRAM
 
   .text : ALIGN(4)
   {

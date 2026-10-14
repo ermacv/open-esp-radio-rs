@@ -14,9 +14,7 @@ cargo verification probes --chip esp32s31
 The images `oer-esp32s31-probe-radio-elf`, `oer-esp32s31-probe-register-elf`
 and `oer-esp32s31-probe-bluetooth-elf` are built for
 `riscv32imafc-unknown-none-elf` into
-`target/verification/esp32s31-probes/`,
-`target/verification/esp32s31-register-probes/` and
-`target/verification/esp32s31-bluetooth-probes/`, and each image's
+`target/verification/esp32s31/`, and each image's
 `.blobray.probes` catalog is validated against its executable symbols. A plain
 `cargo build` of one package produces the same image without that validation.
 
@@ -27,6 +25,15 @@ C-layout projections; `elf/` owns only the comparison image entry point and
 linker layout. Neither is a board test, runtime adapter or public driver API.
 The separate Bluetooth pair keeps BLE verification independent of the Wi-Fi/PHY
 probe wrappers.
+
+The radio probe uses the MAC's executor-neutral `irq::consumer` directly;
+its graph contains neither the Wi-Fi runtime nor role-sta. The retained
+`open_mac_irq_publication` entry calls the production MAC and power handoffs
+through opaque borrows, preserving their waker paths under LTO. Their
+`.rwtext` functions link inside the S31 SRAM window, separately from the
+synthetic trace code. Inspect symbols and function records with Blobray;
+registered waker callbacks remain indirect and need the final composition's
+placement proof. This probe does not establish that executor callback proof.
 
 ## Declaration and validated build
 

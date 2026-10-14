@@ -23,6 +23,29 @@ mod i2c;
 mod production_trace;
 mod rx_append;
 
+// Keep the same production publication functions visible to the final RV32
+// placement audit. Black-box the borrow so LTO cannot specialize away the
+// registered-waker paths just because this comparison image has no executor.
+static IRQ_HANDOFF: oer_esp32s31_ieee80211_mac::irq::consumer::IrqConsumer<
+    oer_esp32s31_ieee80211_mac::irq::consumer::Moderated,
+> = oer_esp32s31_ieee80211_mac::irq::consumer::IrqConsumer::new(
+    oer_esp32s31_ieee80211_mac::irq::consumer::Moderated::new(|| {}),
+);
+static POWER_HANDOFF: oer_esp32s31_ieee80211_mac::irq::consumer::PowerIrqConsumer =
+    oer_esp32s31_ieee80211_mac::irq::consumer::PowerIrqConsumer::new();
+
+oer_probe_macros::probe! {
+    /// Retain real MAC and power publication paths for SRAM placement checks.
+    pub fn open_mac_irq_publication(events: u32) {
+        core::hint::black_box(&IRQ_HANDOFF).publish(events);
+        core::hint::black_box(&POWER_HANDOFF).publish(
+            oer_esp32s31_hal::types::MacPowerInterruptObservation::from_semantic_events(
+                true, false, false, false, false, false,
+            ),
+        );
+    }
+}
+
 /// Expose externally supplied PHY registers through the HAL shared-PHY port
 /// with a fresh per-call restore slot.
 fn shared_phy(
@@ -1685,12 +1708,10 @@ fn ordinary_tx_ack_timeout_state(output_address: u32) -> u32 {
     }
     // SAFETY: the branch above initializes the state before every read.
     let state = unsafe { storage.1.assume_init_mut() };
-    // Route the hardware completion through the exact production Embassy
+    // Route the hardware completion through the exact production atomic
     // interrupt handoff. This keeps the compiled comparison from bypassing
     // the adapter boundary by constructing `WifiTxWake` directly.
-    let irq = oer_esp32s31_ieee80211_runtime::datapath::irq::EmbassyMacIrqRuntime::<
-        embassy_sync::blocking_mutex::raw::NoopRawMutex,
-    >::new();
+    let irq = oer_esp32s31_ieee80211_mac::irq::consumer::IrqConsumer::default();
     irq.publish(oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE);
     let Some(events) = irq.try_take_tx() else {
         return 8;

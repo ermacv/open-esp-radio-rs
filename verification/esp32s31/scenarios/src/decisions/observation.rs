@@ -4,17 +4,18 @@ use crate::observation::Decision;
 /// Reviewed unobserved lines.
 pub const DECISIONS: &[Decision] = &[
     Decision {
-        reason: "status-four transmit-error classification, compared through the stop goal: \
+        reason: "ordinary status-four transmit-error classification (dispatcher argument zero), \
+            compared through the stop goal: \
             each dispatch case completes only at its reviewed retry leaf, which dependence on \
             compared effects does not record",
         places: &[
             (
                 "driver/ieee80211/mac/src/tx/completion.rs",
-                "4 => tx_error(raw.detail, raw.handler_argument),",
+                "4 => tx_error(raw.detail),",
             ),
             (
                 "driver/ieee80211/mac/src/tx/completion.rs",
-                "1 | 3..=5 if selector == 0 => Ok(Observed(TxStatus::Collision)),",
+                "1 | 3..=5 => Ok(Observed(TxStatus::Collision)),",
             ),
         ],
     },

@@ -1428,7 +1428,7 @@ pub const LEAVES: &[Leaf] = &[
                     &[
                         ("queue", Domain::Words(TX_ERROR_QUEUES)),
                         ("detail", Domain::Words(TX_ERROR_DETAILS)),
-                        ("_selector", Domain::Words(&[0])),
+                        ("selector", Domain::Words(&[0])),
                     ],
                     false,
                 ),

@@ -1085,7 +1085,7 @@ fn an_absence_reserves_one_publication_for_each_gate_and_the_return_starts_early
 }
 
 #[test]
-fn review_gate_wait_has_no_expired_deadline() {
+fn a_gate_wait_has_no_expired_deadline() {
     installed(|mint| {
         let (mut arbiter, _, mut port) = beside_access_point::<NoReservation>(mint);
         arbiter.upstream(at(0), UpstreamFact::Connected(channel(1)));
@@ -1110,6 +1110,65 @@ fn review_gate_wait_has_no_expired_deadline() {
             "expired timer would spin while gate is closing"
         );
         let _ = gate;
+    });
+}
+
+#[test]
+fn a_move_keeps_the_next_coordinator_retune_until_its_gate_opens() {
+    installed(|mint| {
+        for after_retune in [false, true] {
+            let (mut arbiter, _, mut port) = beside_access_point::<NoReservation>(mint);
+            arbiter.access_point(at(50), AccessPointFact::SwitchDue(channel(6)));
+            let Some(ArbiterAction::CloseGate { gate, .. }) = arbiter.poll_action(at(50)) else {
+                panic!("the first move closes its gate");
+            };
+            arbiter.gate_closed(port.issuer.close(gate));
+            let Some(ArbiterAction::Retune(pending)) = arbiter.poll_action(at(50)) else {
+                panic!("the first move is admitted");
+            };
+            if after_retune {
+                arbiter.retuned(pending);
+                arbiter.access_point(at(51), AccessPointFact::SwitchDue(channel(11)));
+            } else {
+                arbiter.access_point(at(51), AccessPointFact::SwitchDue(channel(11)));
+                arbiter.retuned(pending);
+            }
+            let events = run(&mut arbiter, &mut port, at(52));
+            assert!(events.contains(&Seen::Retune(11)), "{events:?}");
+            assert!(events.contains(&Seen::Station(StationNotice::Moved(channel(6)))));
+            assert!(events.contains(&Seen::Station(StationNotice::Moved(channel(11)))));
+            assert_eq!(arbiter.channel(), Some(channel(11)));
+            assert_eq!(arbiter.home, channel(11));
+            assert_eq!(arbiter.poll_deadline(), None);
+        }
+    });
+}
+
+#[test]
+fn an_old_channel_tbtt_during_a_move_does_not_change_the_return_channel() {
+    installed(|mint| {
+        let (mut arbiter, home, place, mut port) = connected(mint);
+        arbiter.access_point(at(50), AccessPointFact::SwitchDue(channel(6)));
+        let Some(ArbiterAction::CloseGate { gate, .. }) = arbiter.poll_action(at(50)) else {
+            panic!("the move closes its gate");
+        };
+        arbiter.access_point(
+            at(51),
+            AccessPointFact::Running {
+                channel: channel(1),
+                next_tbtt: at(150),
+                beacon_interval: Duration::from_millis(100),
+            },
+        );
+        arbiter.gate_closed(port.issuer.close(gate));
+        run(&mut arbiter, &mut port, at(52));
+        assert_eq!(arbiter.home, channel(6));
+        let home = arbiter.exchange(home);
+        let away = absence(arbiter.request_absence(at(53), scan(11, 5), &home, place));
+        arbiter.ready(away.id());
+        run(&mut arbiter, &mut port, away.from());
+        run(&mut arbiter, &mut port, away.until().unwrap());
+        assert_eq!(arbiter.channel(), Some(channel(6)));
     });
 }
 

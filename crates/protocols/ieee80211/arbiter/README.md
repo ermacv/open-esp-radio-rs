@@ -62,7 +62,10 @@ value alone cannot acknowledge a retune or create an unsolicited response.
 While a gate cycle runs, the next input is its gate or retune terminal;
 `poll_deadline` returns no timer. Planning a shared move consumes its deadline
 and transfers the access-point schedule into the cycle. A waiting absence
-is cancelled when that move becomes due. Lease and upstream-loss deadlines
+is cancelled when that move becomes due. The active move retains a subsequent
+coordinator retune until its gate opens; completing the first move then arms
+the next one. A TBTT fact on the old channel updates beacon timing without
+changing the active move's home destination. Lease and upstream-loss deadlines
 resume after the cycle ends, and an elapsed deadline causes a finite transition.
 Late admission is checked before the outgoing retune. Once that move is
 admitted, its completion cannot charge the outbound budget again; the lease

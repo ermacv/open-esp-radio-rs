@@ -798,6 +798,8 @@ enum CyclePurpose<K> {
     /// A move no lease asked for; the station hears of it.
     Move {
         access_point: Option<ApSchedule<K>>,
+        /// A coordinator move received while this cycle owns the gate.
+        next: Option<(SupportedChannel<K>, Instant)>,
     },
     /// The return after a refused move or a late lease; the station heard
     /// of its lease's end already.
@@ -975,7 +977,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
     /// The access point's schedule while it runs.
     fn schedule(&self) -> Option<ApSchedule<K>> {
         if let Some(Cycle {
-            purpose: CyclePurpose::Move { access_point },
+            purpose: CyclePurpose::Move { access_point, .. },
             ..
         }) = self.cycle
         {
@@ -1005,7 +1007,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
     /// The access point stopped, or is stopping.
     fn access_point_gone(&mut self) {
         if let Some(Cycle {
-            purpose: CyclePurpose::Move { access_point },
+            purpose: CyclePurpose::Move { access_point, .. },
             ..
         }) = &mut self.cycle
         {
@@ -1374,7 +1376,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
                     beacon_interval,
                 };
                 if let Some(Cycle {
-                    purpose: CyclePurpose::Move { access_point },
+                    purpose: CyclePurpose::Move { access_point, .. },
                     ..
                 }) = &mut self.cycle
                 {
@@ -1388,9 +1390,18 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
                     Pair::Moving { access_point, .. } => *access_point = Some(schedule),
                     Pair::Alone => {}
                 }
-                self.home = channel;
+                let moving = matches!(
+                    self.cycle,
+                    Some(Cycle {
+                        purpose: CyclePurpose::Move { .. },
+                        ..
+                    })
+                );
+                if !moving {
+                    self.home = channel;
+                }
                 self.coordinator.access_point_running(schedule);
-                if matches!(self.pair, Pair::Alone) {
+                if !moving && matches!(self.pair, Pair::Alone) {
                     self.settle(Some(schedule));
                 }
             }
@@ -1503,11 +1514,19 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
                     });
                 }
                 CoordinatorAction::Retune { channel, at } => {
-                    self.pair = Pair::Moving {
-                        target: channel,
-                        at,
-                        access_point: self.schedule(),
-                    };
+                    if let Some(Cycle {
+                        purpose: CyclePurpose::Move { next, .. },
+                        ..
+                    }) = &mut self.cycle
+                    {
+                        *next = Some((channel, at));
+                    } else {
+                        self.pair = Pair::Moving {
+                            target: channel,
+                            at,
+                            access_point: self.schedule(),
+                        };
+                    }
                 }
                 CoordinatorAction::StopAccessPoint => {
                     self.access_point_gone();
@@ -1559,12 +1578,21 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
             CyclePurpose::LeaseEnd(which) => {
                 self.ended(which);
             }
-            CyclePurpose::Move { access_point } => {
+            CyclePurpose::Move { access_point, next } => {
                 let access_point = access_point.map(|schedule| ApSchedule {
                     channel: cycle.to,
                     ..schedule
                 });
-                self.settle(access_point);
+                match next {
+                    Some((target, at)) => {
+                        self.pair = Pair::Moving {
+                            target,
+                            at,
+                            access_point,
+                        }
+                    }
+                    None => self.settle(access_point),
+                }
                 match self.primary.as_mut() {
                     // A join's lease starts with the move onto its channel.
                     Some((granted, _))
@@ -1741,7 +1769,10 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
             self.cycle = Some(Cycle {
                 to: target,
                 reserve: R::none(),
-                purpose: CyclePurpose::Move { access_point },
+                purpose: CyclePurpose::Move {
+                    access_point,
+                    next: None,
+                },
             });
         }
     }

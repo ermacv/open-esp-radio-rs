@@ -203,7 +203,7 @@ impl<M: RawMutex, const CAPACITY: usize, const FRAME_CAPACITY: usize>
             slot.header = None;
         }
         *self.active_binding.get_mut().get_mut() = None;
-        let epoch = current + 1;
+        let epoch = current.saturating_add(1);
         self.next_request.store(0, Ordering::Release);
         self.outstanding.store(0, Ordering::Release);
         self.publishers.store(0, Ordering::Release);
@@ -314,12 +314,16 @@ impl<M: RawMutex, const CAPACITY: usize, const FRAME_CAPACITY: usize>
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
                 current.checked_add(1)
             })
-            .map(|previous| previous + 1)
+            .map(|previous| previous.saturating_add(1))
             .map_err(|_| MonitorInjectionBackpressure::RequestIdExhausted)?;
         if self
             .outstanding
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
-                (usize::try_from(current).unwrap_or(usize::MAX) < CAPACITY).then_some(current + 1)
+                if usize::try_from(current).unwrap_or(usize::MAX) < CAPACITY {
+                    current.checked_add(1)
+                } else {
+                    None
+                }
             })
             .is_err()
         {
@@ -332,9 +336,15 @@ impl<M: RawMutex, const CAPACITY: usize, const FRAME_CAPACITY: usize>
         };
         let slot = self.slots.lock(|slots| {
             let mut slots = slots.borrow_mut();
-            let index = slots.iter().position(|slot| slot.header.is_none())?;
-            slots[index].bytes[..requested_length].copy_from_slice(request.mpdu().bytes());
-            slots[index].header = Some(MonitorInjectionSlotHeader {
+            let (index, slot) = slots
+                .iter_mut()
+                .enumerate()
+                .find(|(_, slot)| slot.header.is_none())?;
+            let output = slot.bytes.split_at_mut_checked(requested_length)?.0;
+            for (to, from) in output.iter_mut().zip(request.mpdu().bytes()) {
+                *to = *from;
+            }
+            slot.header = Some(MonitorInjectionSlotHeader {
                 ticket,
                 binding: request.binding(),
                 rate: request.rate(),
@@ -376,12 +386,15 @@ impl<M: RawMutex, const CAPACITY: usize, const FRAME_CAPACITY: usize>
     fn release_slot(&self, queued: QueuedMonitorInjection) {
         self.slots.lock(|slots| {
             let mut slots = slots.borrow_mut();
-            if slots
-                .get(queued.slot)
-                .and_then(|slot| slot.header)
-                .is_some_and(|header| header.ticket == queued.ticket)
+            if let Some((_, slot)) = slots
+                .iter_mut()
+                .enumerate()
+                .find(|(index, _)| *index == queued.slot)
+                && slot
+                    .header
+                    .is_some_and(|header| header.ticket == queued.ticket)
             {
-                slots[queued.slot].header = None;
+                slot.header = None;
             }
         });
     }
@@ -593,12 +606,21 @@ impl<M: RawMutex, const CAPACITY: usize, const FRAME_CAPACITY: usize>
         if !self.open {
             return;
         }
-        let _ = self.generation.compare_exchange(
+        match self.generation.compare_exchange(
             self.epoch,
-            self.epoch + 1,
+            self.epoch.saturating_add(1),
             Ordering::AcqRel,
             Ordering::Acquire,
-        );
+        ) {
+            Ok(_) => self.finish_close(),
+            // Another invalidation already closed this epoch. begin_epoch
+            // needs these resources exclusively and cannot overlap this
+            // borrow, so both outcomes retire this same mailbox binding.
+            Err(_) => self.finish_close(),
+        }
+    }
+
+    fn finish_close(&mut self) {
         self.active_binding
             .lock(|binding| *binding.borrow_mut() = None);
         self.open = false;
@@ -667,20 +689,29 @@ impl<M: RawMutex, const CAPACITY: usize, const FRAME_CAPACITY: usize>
         queued: QueuedMonitorInjection,
         terminal: MonitorInjectionTerminal,
     ) -> Result<(), MonitorInjectionMailboxInvariantError> {
-        let header = self.header(queued)?;
-        self.completions
-            .try_send(MonitorInjectionCompletion {
-                ticket: queued.ticket,
-                binding: header.binding,
-                terminal,
-            })
-            .map_err(|TrySendError::Full(_)| {
-                MonitorInjectionMailboxInvariantError::CompletionQueueFull
-            })?;
         self.slots.lock(|slots| {
-            slots.borrow_mut()[queued.slot].header = None;
-        });
-        Ok(())
+            let mut slots = slots.borrow_mut();
+            let (_, slot) = slots
+                .iter_mut()
+                .enumerate()
+                .find(|(index, _)| *index == queued.slot)
+                .ok_or(MonitorInjectionMailboxInvariantError::MissingPayloadSlot)?;
+            let header = slot
+                .header
+                .filter(|header| header.ticket == queued.ticket)
+                .ok_or(MonitorInjectionMailboxInvariantError::MissingPayloadSlot)?;
+            self.completions
+                .try_send(MonitorInjectionCompletion {
+                    ticket: queued.ticket,
+                    binding: header.binding,
+                    terminal,
+                })
+                .map_err(|TrySendError::Full(_)| {
+                    MonitorInjectionMailboxInvariantError::CompletionQueueFull
+                })?;
+            slot.header = None;
+            Ok(())
+        })
     }
 }
 

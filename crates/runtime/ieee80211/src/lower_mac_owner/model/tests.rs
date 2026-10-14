@@ -16,6 +16,26 @@ const STATION: [u8; 6] = [2, 0, 0, 0, 0, 1];
 const ACCESS_POINT: [u8; 6] = [2, 0, 0, 0, 0, 2];
 const PEER: [u8; 6] = [2, 0, 0, 0, 0, 9];
 
+#[test]
+fn queue_accounting_fault_retains_every_owner_until_teardown() {
+    struct Owner(Rc<Cell<usize>>);
+    impl Drop for Owner {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+    let drops = Rc::new(Cell::new(0));
+    {
+        let queue = Bounded::new(1, "test");
+        assert!(queue.push(Owner(drops.clone())).is_ok());
+        let fault = queue.push(Owner(drops.clone())).unwrap_err();
+        assert_eq!(fault.queue, "test");
+        assert_eq!(fault.capacity, 1);
+        assert_eq!(drops.get(), 0, "no admitted owner vanishes at fail-stop");
+    }
+    assert_eq!(drops.get(), 2);
+}
+
 fn backend() -> (ModelBackend, Rc<ModelAir>) {
     ModelBackend::new(
         Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap(),

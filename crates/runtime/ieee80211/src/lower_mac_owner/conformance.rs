@@ -3,9 +3,186 @@
 //! Harnesses submit the operations in `OPERATIONS`, retain the original
 //! identities in opaque contexts, and report identities of actual returned
 //! resources. No observation may be synthesized from the expected identity.
+//! `check_barriers` uses the same captured publication/event trace for held
+//! ACK, retry, timeout and key-removal cases. A Sent repeat differs only in
+//! Retry, so the shared comparison covers the original SN, PN and payload.
 
 use alloc::vec::Vec;
+use oer_ieee80211_lower_mac::{IndeterminateCause, TxEndStatus, TxOutcome, WithdrawCause};
 use oer_ieee80211_mac::qos::WmmAccessCategory;
+
+/// Result supplied to a publication already held when its barrier arrives.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BarrierCase {
+    GateAck,
+    GateRetry,
+    GateTimeout,
+    RemoveKey,
+}
+
+/// Counts sampled from the real backend while its publication result is held.
+#[derive(Clone, Copy, Debug)]
+pub struct HeldSnapshot {
+    pub publications: usize,
+    pub events: usize,
+}
+
+/// The actual state of a returned single MPDU.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MpduState {
+    Fresh,
+    Sent,
+}
+
+/// Actual terminal/barrier observations, in delivery order.
+pub enum BarrierEvent {
+    Tx {
+        ticket: u8,
+        state: MpduState,
+        outcome: TxOutcome,
+    },
+    GateClosed,
+    KeyRemoved,
+}
+
+/// One published head and one queued successor on the same AC. Fixtures
+/// capture counts and frame bytes from their actual publication observer;
+/// terminals come through the port, never from an expected identity.
+pub struct BarrierTrace {
+    pub tickets: [u8; 2],
+    pub before_request: HeldSnapshot,
+    pub before_result: HeldSnapshot,
+    pub just_before_timeout: Option<HeldSnapshot>,
+    pub publications_at_barrier: usize,
+    pub events: Vec<BarrierEvent>,
+    /// Encoded MPDU after numbering, excluding hardware-generated trailers.
+    /// Capture it from the actual publication's owner, before hardware owns it.
+    pub first_frame: Vec<u8>,
+    /// The same encoded extent for each real Sent republication.
+    pub retried_frames: Vec<Vec<u8>>,
+}
+
+/// The same publication/barrier suite for the model and the S31 Held fixture.
+pub trait BarrierHarness {
+    fn exercise_barrier(
+        &mut self,
+        case: BarrierCase,
+    ) -> impl core::future::Future<Output = BarrierTrace>;
+}
+
+pub async fn check_barriers(
+    harness: &mut impl BarrierHarness,
+) -> Result<(), (BarrierCase, Violation)> {
+    for case in [
+        BarrierCase::GateAck,
+        BarrierCase::GateRetry,
+        BarrierCase::GateTimeout,
+        BarrierCase::RemoveKey,
+    ] {
+        verify_barrier(case, harness.exercise_barrier(case).await).map_err(|why| (case, why))?;
+    }
+    Ok(())
+}
+
+/// Verify real observations of a held publication, its barrier and a Sent retry.
+pub fn verify_barrier(case: BarrierCase, trace: BarrierTrace) -> Result<(), Violation> {
+    for snapshot in [trace.before_request, trace.before_result]
+        .into_iter()
+        .chain(trace.just_before_timeout)
+    {
+        if snapshot.publications != 1 || snapshot.events != 0 {
+            return Err(Violation::Publication);
+        }
+    }
+    if (case == BarrierCase::GateTimeout) != trace.just_before_timeout.is_some()
+        || trace.publications_at_barrier != 1
+    {
+        return Err(Violation::Publication);
+    }
+    let [head, tail] = trace.tickets;
+    let [
+        BarrierEvent::Tx {
+            ticket: returned_head,
+            state: MpduState::Sent,
+            outcome,
+        },
+        BarrierEvent::Tx {
+            ticket: returned_tail,
+            state: MpduState::Fresh,
+            outcome: tail_outcome,
+        },
+        barrier,
+    ] = trace.events.as_slice()
+    else {
+        return Err(Violation::Order);
+    };
+    if head == tail || *returned_head != head || *returned_tail != tail {
+        return Err(Violation::Owners);
+    }
+    let cause = match case {
+        BarrierCase::RemoveKey => WithdrawCause::KeyRemoved,
+        _ => WithdrawCause::GateClosed,
+    };
+    if *tail_outcome != TxOutcome::Withdrawn(cause)
+        || !matches!(
+            (case, barrier),
+            (BarrierCase::RemoveKey, BarrierEvent::KeyRemoved)
+                | (
+                    BarrierCase::GateAck | BarrierCase::GateRetry | BarrierCase::GateTimeout,
+                    BarrierEvent::GateClosed
+                )
+        )
+    {
+        return Err(Violation::TerminalKind);
+    }
+    let correct_head = match case {
+        BarrierCase::GateAck => matches!(
+            outcome,
+            TxOutcome::Ended {
+                status: TxEndStatus::Delivered,
+                transmissions: 1,
+                ..
+            }
+        ),
+        BarrierCase::GateRetry | BarrierCase::RemoveKey => *outcome == TxOutcome::Withdrawn(cause),
+        BarrierCase::GateTimeout => {
+            *outcome == TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout)
+        }
+    };
+    if !correct_head {
+        return Err(Violation::TerminalKind);
+    }
+    match case {
+        BarrierCase::GateRetry if trace.retried_frames.is_empty() => {
+            return Err(Violation::Publication);
+        }
+        BarrierCase::GateAck | BarrierCase::GateTimeout | BarrierCase::RemoveKey
+            if !trace.retried_frames.is_empty() =>
+        {
+            return Err(Violation::Publication);
+        }
+        _ => {}
+    }
+    for retry in trace.retried_frames {
+        let Some(([f0, f1], original)) = trace.first_frame.split_first_chunk::<2>() else {
+            return Err(Violation::Publication);
+        };
+        let Some(([r0, r1], repeated)) = retry.split_first_chunk::<2>() else {
+            return Err(Violation::Publication);
+        };
+        // Everything after Frame Control includes the original SN, CCMP PN
+        // and payload. Attempt policy may change; MPDU contents may not.
+        if f0 != r0
+            || f1 & 0x08 != 0
+            || r1 & 0x08 == 0
+            || f1 & !0x08 != r1 & !0x08
+            || original != repeated
+        {
+            return Err(Violation::Owners);
+        }
+    }
+    Ok(())
+}
 
 /// Resource classes deliberately sharing an AC queue.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

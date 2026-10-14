@@ -2,13 +2,19 @@
 //! and carries out what the sans-IO machines decide (owner request on
 //! #563).
 //!
-//! It waits at one point, on the port's next event, the machines' next
+//! It polls every input source at each waiting point: the port's next event, the machines' next
 //! deadline and the application (a command, or an MSDU while the data
 //! machine takes one). After each input it takes every action of the
 //! arbiter ([`Arbiter`]), the station ([`Station`]) and its data machine
 //! ([`StaData`]) until none owes one; an answer of the arbiter goes back to
 //! the station in the same step. A retune leaves the phase: the port is
 //! disabled, tuned and enabled, and the arbiter hears how it went.
+//! Each step consumes at most one input per source and polls all sources even
+//! when RX is ready. Batches stop after eight steps and yield, so a continuous
+//! RX stream cannot suppress application commands, data TX or driver progress.
+//! `event` returns a typed contract error directly; no sticky failure flag
+//! changes later event handling. A disable carries its delivery result with
+//! the disabled owner, preserving the existing fail-stop boundary.
 //!
 //! The tokens the machines hold are the port's: tickets and buffers of two
 //! classes, the small one for the station's frames and the large one for
@@ -34,27 +40,31 @@
 //! reports it applied; Station cannot issue another before that return.
 //! Arbiter answers return their affine places/leases in the same step.
 //! MSDUs come and go through
-//! single-producer single-consumer queues (`zerocopy_channel`); a received
+//! affine SPSC queues with atomic wakeups; a received
 //! MSDU the network's full queue cannot take is dropped, as an Ethernet
 //! receiver drops one.
+//! `MsduQueue::split` consumes a private fresh-storage witness. A second
+//! split returns `AlreadySplit` and preserves queued values, including when
+//! an earlier endpoint pair has been dropped or forgotten. The shared
+//! affine queue's splitting assertions therefore have proven preconditions.
+//! `EthernetFrame` retains its fixed header and bounded payload; malformed
+//! lengths refuse at construction, and received payloads are never clipped.
 
 use core::marker::PhantomData;
 use core::num::NonZeroU8;
 use oer_ieee80211_sta::machine::TxRefusal;
 
-use embassy_futures::select::{Either, Either3, select, select3};
-use embassy_sync::blocking_mutex::raw::RawMutex;
+use core::future::{Future, poll_fn};
+use core::task::Poll;
+use embassy_futures::yield_now;
 use embassy_sync::channel::DynamicReceiver;
-use embassy_sync::zerocopy_channel;
-use oer_ieee80211_arbiter::{
-    AccessPointCommand, AccessPointFact, Arbiter, ArbiterAction, GateTokens,
-};
+use oer_ieee80211_arbiter::{AccessPointCommand, AccessPointFact, Arbiter, ArbiterAction};
 use oer_ieee80211_lower_mac::{
-    Ccmp128Key, ClassFrame, CoexPriority, GateClosed, GateOpen, Ieee80211Capabilities,
-    InterfacePhase, KeyTypes, LowerMacBackend, LowerMacEvent, LowerMacPhase, PhaseTypes, PoolMpdu,
-    PoolSource, Protection, Removed, RemovedKey, RetransmissionPlan, ReturnedMpdu, RxBuffer,
-    RxMetadata, StationPhase, SupportedChannel, SupportedCoex, SupportedPower, TxBufferClass,
-    TxBufferPool, TxCompleted, TxOutcome, TxPower, TxProtection, TxSource, VifRole,
+    Ccmp128Key, ClassFrame, CoexPriority, Ieee80211Capabilities, InterfacePhase, KeyTypes,
+    LowerMacBackend, LowerMacEvent, LowerMacPhase, PhaseTypes, PoolMpdu, PoolSource, Protection,
+    Removed, RemovedKey, RetransmissionPlan, ReturnedMpdu, RxBuffer, RxMetadata, StationPhase,
+    SupportedChannel, SupportedCoex, SupportedPower, TxBufferClass, TxBufferPool, TxCompleted,
+    TxOutcome, TxPower, TxProtection, TxSource, VifRole,
 };
 use oer_ieee80211_mac::qos::{WmmAccessCategory, WmmUserPriority};
 use oer_ieee80211_port::{Disabled, Enabled, Failed, Owner, PoisonedOwner, PortBackend};
@@ -76,9 +86,6 @@ use oer_time::{Instant, Timer};
 /// The longest Ethernet frame a queue's slot holds: its 14-octet header and
 /// a 1500-octet payload.
 pub const ETHERNET_FRAME: usize = 1514;
-
-/// The Ethernet header: destination, source and EtherType.
-const ETHERNET_HEADER: usize = 14;
 
 /// A backend the station's service drives: its phase, settings and events
 /// as the lower-MAC contract's, and the two buffer classes the service
@@ -140,6 +147,8 @@ pub enum TxContext<'id, K, C> {
 /// What the service dropped or could not send, counted.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ServiceCounters {
+    /// RX payloads larger than the network's checked Ethernet contract.
+    pub rx_msdus_too_long: oer_ieee80211_lower_mac::Counter,
     /// Frames not sent: no rate of their plan is on the port's channel, or
     /// they do not fit their buffer class. Their tokens came back.
     pub unsent_frames: oer_ieee80211_lower_mac::Counter,
@@ -147,10 +156,6 @@ pub struct ServiceCounters {
     pub tx_msdus_too_long: oer_ieee80211_lower_mac::Counter,
     /// Received MSDUs the network stack's full queue could not take.
     pub rx_msdus_queue_full: oer_ieee80211_lower_mac::Counter,
-    /// Received buffers a disable returned beyond the port's
-    /// [`StationPort::RX_BUFFERS`]: dropped, reception is that much smaller
-    /// until the next install.
-    pub rx_buffers_lost: oer_ieee80211_lower_mac::Counter,
 }
 
 /// A marker of the install `'id` and two types.
@@ -203,14 +208,6 @@ where
     }
 }
 
-/// The arbiter's gate tokens on a port of the install `'id`.
-pub struct PortGate<'id>(PhantomData<fn(&'id ()) -> &'id ()>);
-
-impl<'id> GateTokens for PortGate<'id> {
-    type Open = GateOpen<'id>;
-    type Closed = GateClosed<'id>;
-}
-
 /// The metadata the port `B` gives a received frame.
 pub type PortRxMeta<'id, B> = <<B as StationPort<'id>>::Types as PhaseTypes<'id>>::RxMeta;
 
@@ -229,53 +226,73 @@ pub type PortData<'id, B> = StaData<
 >;
 
 /// The arbiter of the service on the port `B`.
-pub type PortArbiter<'a, 'id, B> = Arbiter<'a, PortGate<'id>, <B as LowerMacBackend>::Caps>;
+pub type PortArbiter<'a, 'id, B> = Arbiter<'a, 'id, <B as LowerMacBackend>::Caps>;
 
 /// The levels the service's attempts take, which its port must offer:
 /// checked when the service's type is built, so a port without them builds
 /// no service.
 struct Levels<K>(PhantomData<fn() -> K>);
 
+type CheckedLevels<K> = (SupportedCoex<K>, SupportedCoex<K>, SupportedPower<K>);
+
 impl<K: Ieee80211Capabilities> Levels<K> {
     /// The station's connection frames (Authentication, Association,
     /// EAPOL), which a coexisting radio lets through first.
-    const CONNECTION: SupportedCoex<K> = match SupportedCoex::new(CoexPriority::Elevated) {
-        Some(level) => level,
-        None => panic!("a station's port raises its connection frames' coexistence level"),
+    const CONNECTION: SupportedCoex<K> = {
+        #[cfg_attr(not(test), expect(clippy::panic, reason = "evaluated at build"))]
+        const fn checked<K: Ieee80211Capabilities>() -> SupportedCoex<K> {
+            match SupportedCoex::new(CoexPriority::Elevated) {
+                Some(level) => level,
+                None => panic!("a station's port raises its connection frames' coexistence level"),
+            }
+        }
+        checked::<K>()
     };
     /// Every other frame.
-    const NORMAL: SupportedCoex<K> = match SupportedCoex::new(CoexPriority::Normal) {
-        Some(level) => level,
-        None => panic!("a station's port sends at its normal coexistence level"),
+    const NORMAL: SupportedCoex<K> = {
+        #[cfg_attr(not(test), expect(clippy::panic, reason = "evaluated at build"))]
+        const fn checked<K: Ieee80211Capabilities>() -> SupportedCoex<K> {
+            match SupportedCoex::new(CoexPriority::Normal) {
+                Some(level) => level,
+                None => panic!("a station's port sends at its normal coexistence level"),
+            }
+        }
+        checked::<K>()
     };
     /// The calibrated power.
-    const POWER: SupportedPower<K> = match SupportedPower::new(TxPower::Calibrated) {
-        Some(power) => power,
-        None => panic!("a station's port sends at its calibrated power"),
+    const POWER: SupportedPower<K> = {
+        #[cfg_attr(not(test), expect(clippy::panic, reason = "evaluated at build"))]
+        const fn checked<K: Ieee80211Capabilities>() -> SupportedPower<K> {
+            match SupportedPower::new(TxPower::Calibrated) {
+                Some(power) => power,
+                None => panic!("a station's port sends at its calibrated power"),
+            }
+        }
+        checked::<K>()
     };
     /// A Null's transmissions.
-    const NULL: NonZeroU8 = match NonZeroU8::new(NULL_TRANSMISSIONS) {
-        Some(transmissions) => transmissions,
-        None => panic!("a Null is sent at least once"),
+    const NULL: NonZeroU8 = {
+        #[cfg_attr(not(test), expect(clippy::panic, reason = "evaluated at build"))]
+        const fn checked() -> NonZeroU8 {
+            match NonZeroU8::new(NULL_TRANSMISSIONS) {
+                Some(transmissions) => transmissions,
+                None => panic!("a Null is sent at least once"),
+            }
+        }
+        checked()
     };
 }
 
-/// One Ethernet frame the network stack sends, with its user priority.
-pub struct TxMsdu {
-    /// Its user priority.
-    pub priority: WmmUserPriority,
-    /// The frame's length.
-    pub len: usize,
-    /// The frame, from its header on.
-    pub frame: [u8; ETHERNET_FRAME],
-}
+mod ethernet;
+mod msdu_queue;
+pub use ethernet::{EthernetFrame, EthernetFrameError};
+pub use msdu_queue::{AlreadySplit, MsduQueue, MsduReceiver, MsduSender};
 
-/// One Ethernet frame the station received for the network stack.
-pub struct RxMsdu {
-    /// The frame's length.
-    pub len: usize,
-    /// The frame, from its header on.
-    pub frame: [u8; ETHERNET_FRAME],
+/// One checked, owned Ethernet frame with its user priority.
+#[derive(Debug)]
+pub struct TxMsdu {
+    pub priority: WmmUserPriority,
+    pub frame: EthernetFrame,
 }
 
 /// What the application asks of the service.
@@ -292,8 +309,16 @@ pub enum ServiceCommand<K> {
 }
 
 /// What the service tells the application.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "a refusal returns the original owned packet without allocation"
+)]
 pub enum ServiceOutput<K> {
+    /// The original network operation refused before data admission.
+    MsduRefused { packet: TxMsdu, reason: DataRefusal },
+    /// A received MSDU cannot fit the checked Ethernet contract.
+    RxMsduRefused(EthernetFrameError),
     /// An operation refused before admission. Its resources return and the
     /// service continues; this is not a TX completion or radio statistic.
     TxRefused {
@@ -328,13 +353,13 @@ enum ReturnedTx {
 struct BackendContractViolation;
 
 /// The service's ends to the application and the network stack.
-pub struct ServiceIo<'c, M: RawMutex, K> {
+pub struct ServiceIo<'c, K, const TX_DEPTH: usize, const RX_DEPTH: usize> {
     /// The application's commands.
     pub commands: DynamicReceiver<'c, ServiceCommand<K>>,
     /// The MSDUs the network stack sends.
-    pub transmit: zerocopy_channel::Receiver<'c, M, TxMsdu>,
+    pub transmit: MsduReceiver<'c, TxMsdu, TX_DEPTH>,
     /// The MSDUs the station received for the network stack.
-    pub receive: zerocopy_channel::Sender<'c, M, RxMsdu>,
+    pub receive: MsduSender<'c, EthernetFrame, RX_DEPTH>,
     /// What the service tells the application.
     pub output: &'c mut dyn FnMut(ServiceOutput<K>),
 }
@@ -366,7 +391,6 @@ pub struct StationService<'a, 'id, B: StationPort<'id>, S, const RX: usize> {
     pub rates: S,
     /// What the service dropped or could not send.
     pub counters: ServiceCounters,
-    contract_failed: bool,
     configuring: Option<oer_ieee80211_sta::machine::PendingConfiguration<'id>>,
     held: [Option<<B::Types as PhaseTypes<'id>>::RxBuffer>; RX],
 }
@@ -394,13 +418,16 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
     ) -> Self {
         // The port's received buffers fit the held ones.
         const {
-            assert!(
-                RX >= B::RX_BUFFERS,
-                "the service holds every received buffer its port lends"
-            );
+            #[cfg_attr(not(test), expect(clippy::panic, reason = "evaluated at build"))]
+            const fn checked<'id, B: StationPort<'id>, const RX: usize>() {
+                if RX < B::RX_BUFFERS {
+                    panic!("the service holds every received buffer its port lends");
+                }
+            }
+            checked::<'id, B, RX>();
         };
         // The port's levels, checked as the type is built.
-        let _ = (
+        let _: CheckedLevels<B::Caps> = (
             Levels::<B::Caps>::CONNECTION,
             Levels::<B::Caps>::NORMAL,
             Levels::<B::Caps>::POWER,
@@ -411,7 +438,6 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
             arbiter,
             rates,
             counters: ServiceCounters::default(),
-            contract_failed: false,
             configuring: None,
             held: [const { None }; RX],
         }
@@ -419,15 +445,12 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
 
     /// Run the service on the disabled port until the application stops it
     /// or the port fails.
-    pub async fn run<'p, M: RawMutex>(
+    pub async fn run<'p, const TX_DEPTH: usize, const RX_DEPTH: usize>(
         &mut self,
         owner: Owner<'p, 'id, B, Disabled>,
-        io: &mut ServiceIo<'_, M, B::Caps>,
+        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
         timer: &impl Timer,
     ) -> ServiceEnd<'p, 'id, B> {
-        if self.contract_failed {
-            return ServiceEnd::Failed(owner);
-        }
         let mut owner = match self.enable(owner, None, io, timer).await {
             Ok(owner) => owner,
             Err(end) => return end,
@@ -441,29 +464,27 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
             match next {
                 Served::Stop => {
                     return match self.disable(owner, io, timer).await {
-                        Ok(owner) if self.contract_failed => ServiceEnd::Failed(owner),
-                        Ok(owner) => ServiceEnd::Stopped(owner),
+                        Ok((owner, Ok(()))) => ServiceEnd::Stopped(owner),
+                        Ok((owner, Err(_))) => ServiceEnd::Failed(owner),
                         Err(poisoned) => ServiceEnd::Poisoned(poisoned),
                     };
                 }
                 Served::Poisoned => {
                     return match self.disable(owner, io, timer).await {
-                        Ok(owner) => ServiceEnd::Failed(owner),
+                        Ok((owner, _)) => ServiceEnd::Failed(owner),
                         Err(poisoned) => ServiceEnd::Poisoned(poisoned),
                     };
                 }
                 Served::Retune(channel) => {
                     let disabled = match self.disable(owner, io, timer).await {
-                        Ok(owner) => owner,
+                        Ok((owner, Ok(()))) => owner,
+                        Ok((owner, Err(_))) => return ServiceEnd::Failed(owner),
                         Err(poisoned) => {
                             self.arbiter.poisoned();
                             self.settle(timer.now(), io);
                             return ServiceEnd::Poisoned(poisoned);
                         }
                     };
-                    if self.contract_failed {
-                        return ServiceEnd::Failed(disabled);
-                    }
                     owner = match self.enable(disabled, Some(channel), io, timer).await {
                         Ok(owner) => owner,
                         Err(end) => return end,
@@ -475,11 +496,11 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
 
     /// Enable the port, tuned to `channel` first when it moves; a refused
     /// move goes back to the arbiter, which names the next.
-    async fn enable<'p, M: RawMutex>(
+    async fn enable<'p, const TX_DEPTH: usize, const RX_DEPTH: usize>(
         &mut self,
         mut owner: Owner<'p, 'id, B, Disabled>,
         mut pending: Option<oer_ieee80211_arbiter::PendingRetune<B::Caps>>,
-        io: &mut ServiceIo<'_, M, B::Caps>,
+        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
         timer: &impl Timer,
     ) -> Result<Owner<'p, 'id, B, Enabled>, ServiceEnd<'p, 'id, B>> {
         loop {
@@ -539,31 +560,51 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
 
     /// Disable the port: the work it ends comes back as events, its
     /// received buffers held for the next phase.
-    async fn disable<'p, M: RawMutex>(
+    async fn disable<'p, const TX_DEPTH: usize, const RX_DEPTH: usize>(
         &mut self,
         owner: Owner<'p, 'id, B, Enabled>,
-        io: &mut ServiceIo<'_, M, B::Caps>,
+        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
         timer: &impl Timer,
-    ) -> Result<Owner<'p, 'id, B, Disabled>, PoisonedOwner<'p, 'id, B>> {
+    ) -> Result<
+        (
+            Owner<'p, 'id, B, Disabled>,
+            Result<(), BackendContractViolation>,
+        ),
+        PoisonedOwner<'p, 'id, B>,
+    > {
+        let mut delivery = Ok(());
         let mut sink = |event: B::Event<'id>| {
             let now = timer.now();
-            if let Some(buffer) = self.event(now, B::event(event), io) {
-                match self.held.iter_mut().find(|slot| slot.is_none()) {
+            if delivery.is_err() {
+                // Fail-stop has consumed an invalid terminal. Later owners are
+                // retired with this disable; they cannot re-enter the machines.
+                drop(event);
+                return;
+            }
+            match self.event(now, B::event(event), io) {
+                Ok(Some(buffer)) => match self.held.iter_mut().find(|slot| slot.is_none()) {
                     Some(slot) => *slot = Some(buffer),
-                    // More than the port said it lends: the buffer is lost
-                    // to reception until the next install.
-                    None => self.counters.rx_buffers_lost.increment(),
-                }
+                    None => {
+                        delivery = Err(BackendContractViolation);
+                    }
+                },
+                Ok(None) => {}
+                Err(error) => delivery = Err(error),
             }
         };
-        owner.disable(&mut sink).await
+        let disabled = owner.disable(&mut sink).await?;
+        if delivery.is_err() {
+            self.arbiter.poisoned();
+            self.settle(timer.now(), io);
+        }
+        Ok((disabled, delivery))
     }
 
     /// Serve the running phase until the port must move, stop or failed.
-    async fn serve<'p, M: RawMutex, P>(
+    async fn serve<'p, P, const TX_DEPTH: usize, const RX_DEPTH: usize>(
         &mut self,
         phase: &mut P,
-        io: &mut ServiceIo<'_, M, B::Caps>,
+        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
         timer: &impl Timer,
     ) -> Served<B::Caps>
     where
@@ -575,10 +616,14 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                 phase.recycle(buffer);
             }
         }
+        // Each step consumes at most one input per source. Every source is
+        // polled even when RX is ready; eight steps bound a batch before a
+        // cooperative yield lets the driver and application progress.
+        let mut batch = 0_u8;
         loop {
             match self.step(timer.now(), phase, io) {
                 Next::Wait => {}
-                Next::Retune(channel) => return Served::Retune(channel),
+                Next::Retune(pending) => return Served::Retune(pending),
                 Next::Poisoned => return Served::Poisoned,
             }
             let deadline = [
@@ -590,100 +635,127 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
             .flatten()
             .min();
             let sending = self.data.accepts() && self.station.link().is_some();
-            let input = {
+            let (event, command, tick, transmit) = {
                 let event = phase.next_event();
-                let timer = async {
+                let command = io.commands.receive();
+                let alarm = async {
                     match deadline {
                         Some(deadline) => timer.wait_until(deadline).await,
-                        None => core::future::pending().await,
+                        None => core::future::pending::<()>().await,
                     }
                 };
-                let transmit = &mut io.transmit;
-                let application = select(io.commands.receive(), async move {
-                    if sending {
-                        transmit.receive().await;
+                let mut event = core::pin::pin!(event);
+                let mut command = core::pin::pin!(command);
+                let mut alarm = core::pin::pin!(alarm);
+                poll_fn(|cx| {
+                    let event = match event.as_mut().poll(cx) {
+                        Poll::Ready(event) => Some(event),
+                        Poll::Pending => None,
+                    };
+                    let command = match command.as_mut().poll(cx) {
+                        Poll::Ready(command) => Some(command),
+                        Poll::Pending => None,
+                    };
+                    let tick = alarm.as_mut().poll(cx).is_ready();
+                    let transmit = sending && io.transmit.poll_ready(cx).is_ready();
+                    if event.is_some() || command.is_some() || tick || transmit {
+                        Poll::Ready((event, command, tick, transmit))
                     } else {
-                        core::future::pending::<()>().await;
+                        Poll::Pending
                     }
-                });
-                select3(event, timer, application).await
+                })
+                .await
             };
             let now = timer.now();
-            match input {
-                Either3::First(Ok(Ok(event))) => {
-                    if let Some(buffer) = self.event(now, event, io) {
-                        phase.recycle(buffer);
-                    }
-                    if self.contract_failed {
+            match event {
+                Some(Ok(Ok(event))) => match self.event(now, event, io) {
+                    Ok(Some(buffer)) => phase.recycle(buffer),
+                    Ok(None) => {}
+                    Err(_) => {
+                        self.arbiter.poisoned();
+                        self.settle(now, io);
                         return Served::Poisoned;
                     }
-                }
-                // Received frames were dropped; the machines' timers cover
-                // what they lose.
-                Either3::First(Ok(Err(_))) => {}
-                Either3::First(Err(_)) => {
+                },
+                Some(Ok(Err(_))) | None => {}
+                Some(Err(_)) => {
                     self.arbiter.poisoned();
                     self.settle(now, io);
                     return Served::Poisoned;
                 }
-                // A machine's deadline passed: the station takes it as a
-                // tick (the arbiter and the data machine read the time in
-                // their polls).
-                Either3::Second(()) => self.station.input(now, StaInput::Tick),
-                Either3::Third(Either::First(command)) => match command {
+            }
+            if tick {
+                self.station.input(now, StaInput::Tick);
+            }
+            if let Some(command) = command {
+                match command {
                     ServiceCommand::Station(command) => {
-                        self.station.input(now, StaInput::Command(command));
+                        self.station.input(now, StaInput::Command(command))
                     }
                     ServiceCommand::AccessPoint(fact) => self.arbiter.access_point(now, fact),
                     ServiceCommand::WantAccessPoint => self.arbiter.want_access_point(),
                     ServiceCommand::Stop => return Served::Stop,
-                },
-                Either3::Third(Either::Second(())) => self.send(now, io),
+                }
+            }
+            if transmit && self.data.accepts() && self.station.link().is_some() {
+                self.send(now, io);
+            }
+            batch = batch.saturating_add(1);
+            if batch == 8 {
+                batch = 0;
+                yield_now().await;
             }
         }
     }
 
     /// Hand the network stack's next MSDU to the data machine on the
     /// station's link.
-    fn send<M: RawMutex>(&mut self, now: Instant, io: &mut ServiceIo<'_, M, B::Caps>) {
-        let Some(msdu) = io.transmit.try_receive() else {
-            return;
-        };
+    fn send<const TX_DEPTH: usize, const RX_DEPTH: usize>(
+        &mut self,
+        now: Instant,
+        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
+    ) {
         let Some(mut link) = self.station.link() else {
             return;
         };
-        let frame = &msdu.frame[..msdu.len.min(ETHERNET_FRAME)];
-        if frame.len() >= ETHERNET_HEADER {
-            let mut destination = [0; 6];
-            destination.copy_from_slice(&frame[..6]);
-            let msdu = Msdu {
-                destination,
-                ether_type: u16::from_be_bytes([frame[12], frame[13]]),
-                priority: msdu.priority,
-                payload: &frame[ETHERNET_HEADER..],
-            };
-            // The machine took it, or it can never go (too long, counted):
-            // either way it leaves the queue.
-            let taken = self.data.input(
-                now,
-                DataInput::Msdu {
-                    msdu,
-                    link: &mut link,
-                },
-            );
-            if let Err(DataRefusal::TooLong) = taken {
-                self.counters.tx_msdus_too_long.increment();
+        let Some(packet) = io.transmit.try_receive() else {
+            return;
+        };
+        let parts = packet.frame.parts();
+        let msdu = Msdu {
+            destination: parts.destination,
+            ether_type: parts.ether_type,
+            priority: packet.priority,
+            payload: parts.payload,
+        };
+        // Admission was polled immediately above under this same exclusive
+        // service borrow. A too-long MSDU is refused without changing bytes.
+        match self.data.input(
+            now,
+            DataInput::Msdu {
+                msdu,
+                link: &mut link,
+            },
+        ) {
+            Ok(()) => {}
+            Err(reason) => {
+                if reason == DataRefusal::TooLong {
+                    self.counters.tx_msdus_too_long.increment();
+                }
+                // The available-pool observation is dynamic and the public
+                // data input can refuse it. Return the original owned packet,
+                // rather than manufacturing a terminal or losing its bytes.
+                (io.output)(ServiceOutput::MsduRefused { packet, reason });
             }
         }
-        io.transmit.receive_done();
     }
 
     /// Carry out every action the machines owe at `now`.
-    fn step<'p, M: RawMutex, P>(
+    fn step<'p, P, const TX_DEPTH: usize, const RX_DEPTH: usize>(
         &mut self,
         now: Instant,
         phase: &mut P,
-        io: &mut ServiceIo<'_, M, B::Caps>,
+        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
     ) -> Next<B::Caps>
     where
         'id: 'p,
@@ -721,7 +793,6 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                 )
                 .and_then(|follow| self.follow(now, follow, io).map_err(|_| ()));
                 if submitted.is_err() {
-                    self.contract_failed = true;
                     self.arbiter.poisoned();
                     self.settle(now, io);
                     return Next::Poisoned;
@@ -809,7 +880,6 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                 match submitted {
                     Ok(follow) => {
                         if self.follow(now, follow, io).is_err() {
-                            self.contract_failed = true;
                             self.arbiter.poisoned();
                             self.settle(now, io);
                             return Next::Poisoned;
@@ -830,11 +900,11 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
 
     /// What follows a station's action, once it no longer borrows the
     /// station.
-    fn follow<M: RawMutex>(
+    fn follow<const TX_DEPTH: usize, const RX_DEPTH: usize>(
         &mut self,
         now: Instant,
         follow: Follow<'id, B>,
-        io: &mut ServiceIo<'_, M, B::Caps>,
+        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
     ) -> Result<(), BackendContractViolation> {
         match follow {
             Follow::Nothing => {}
@@ -869,7 +939,11 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
     /// Carry out the actions that need no phase once the port failed: the
     /// arbiter's notices reach the station, the station's notices the
     /// application.
-    fn settle<M: RawMutex>(&mut self, now: Instant, io: &mut ServiceIo<'_, M, B::Caps>) {
+    fn settle<const TX_DEPTH: usize, const RX_DEPTH: usize>(
+        &mut self,
+        now: Instant,
+        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
+    ) {
         while let Some(action) = self.arbiter.poll_action(now) {
             match action {
                 ArbiterAction::Station(notice) => {
@@ -896,16 +970,13 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
 
     /// Take one event of the port; a received frame's buffer comes back
     /// for its recycle.
-    fn event<M: RawMutex>(
+    fn event<const TX_DEPTH: usize, const RX_DEPTH: usize>(
         &mut self,
         now: Instant,
         event: LowerMacEvent<'id, B::Types>,
-        io: &mut ServiceIo<'_, M, B::Caps>,
-    ) -> Option<<B::Types as PhaseTypes<'id>>::RxBuffer> {
-        if self.contract_failed {
-            return None;
-        }
-        match event {
+        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
+    ) -> Result<Option<<B::Types as PhaseTypes<'id>>::RxBuffer>, BackendContractViolation> {
+        Ok(match event {
             LowerMacEvent::Received { frame, meta } => {
                 let bytes = frame.bytes();
                 self.station
@@ -916,13 +987,16 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                     for parts in msdus {
                         // A full queue drops the MSDU, as an Ethernet
                         // receiver does, counted.
-                        let Some(slot) = io.receive.try_send() else {
-                            self.counters.rx_msdus_queue_full.increment();
-                            continue;
-                        };
-                        if let Ok(len) = parts.copy_to(&mut slot.frame) {
-                            slot.len = len;
-                            io.receive.send_done();
+                        match EthernetFrame::from_parts(parts) {
+                            Ok(frame) => {
+                                if io.receive.try_send(frame).is_err() {
+                                    self.counters.rx_msdus_queue_full.increment();
+                                }
+                            }
+                            Err(reason) => {
+                                self.counters.rx_msdus_too_long.increment();
+                                (io.output)(ServiceOutput::RxMsduRefused(reason));
+                            }
                         }
                     }
                 }
@@ -935,32 +1009,22 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                 completion,
                 body,
             }) => {
-                if self
-                    .returned(
-                        now,
-                        context,
-                        ticket,
-                        buffer,
-                        ReturnedTx::Completed(completion),
-                    )
-                    .is_err()
-                {
-                    self.contract_failed = true;
-                    self.arbiter.poisoned();
-                    self.settle(now, io);
-                }
+                self.returned(
+                    now,
+                    context,
+                    ticket,
+                    buffer,
+                    ReturnedTx::Completed(completion),
+                )?;
                 // This service submits no external bodies. Sent MPDUs own theirs.
                 drop(body);
                 None
             }
             LowerMacEvent::TxCompleted(TxCompleted::Aggregate { .. }) => {
-                // This service submits only singles. Cardinality is represented
-                // by the terminal type, but origin is the backend's obligation.
-                self.contract_failed = true;
-                self.arbiter.poisoned();
-                self.settle(now, io);
-                None
+                // A backend terminal must have the same cardinality as submit.
+                return Err(BackendContractViolation);
             }
+
             LowerMacEvent::GateClosed(closed) => {
                 self.arbiter.gate_closed(closed);
                 None
@@ -985,7 +1049,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
             | LowerMacEvent::KeyRemoved(Removed::AccessPoint(_))
             | LowerMacEvent::Tbtt(_)
             | LowerMacEvent::TsfSampled(_) => None,
-        }
+        })
     }
 
     /// The context identifies the operation. Class is checked exactly once
@@ -1207,10 +1271,10 @@ where
 
 /// Carry out one action of the station; an arbiter's answer goes back to
 /// it at once.
-fn station_action<'p, 'id: 'p, B, P, M, S>(
+fn station_action<'p, 'id: 'p, B, P, S, const TX_DEPTH: usize, const RX_DEPTH: usize>(
     now: Instant,
     phase: &mut P,
-    io: &mut ServiceIo<'_, M, B::Caps>,
+    io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
     arbiter: &mut PortArbiter<'_, 'id, B>,
     rates: &S,
     configuring: &mut Option<oer_ieee80211_sta::machine::PendingConfiguration<'id>>,
@@ -1219,7 +1283,6 @@ fn station_action<'p, 'id: 'p, B, P, M, S>(
 where
     B: StationPort<'id>,
     P: LowerMacPhase<'p, 'id, Caps = B::Caps, Types = B::Types>,
-    M: RawMutex,
     S: RateSelection<PortRxMeta<'id, B>>,
 {
     let input = match action {

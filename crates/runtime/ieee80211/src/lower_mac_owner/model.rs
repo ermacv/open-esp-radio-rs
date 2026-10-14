@@ -49,6 +49,10 @@
 //! Capacity is the tokens': every terminal returns a ticket, so no terminal
 //! is ever lost; received frames beyond [`MODEL_RX_EVENTS`] queued are
 //! dropped and the stream says [`EventsLost`] once.
+//! The host fixture's VecDeque cannot express the token/capacity equation in
+//! its type. A broken equation retains the offending owner, poisons the
+//! backend and ends the installation without delivering later events. A
+//! received owner dropped without recycle likewise poisons this fixture.
 //!
 //! [owner decisions on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129037560
 
@@ -80,16 +84,16 @@ use oer_time::RadioInstant;
 use oer_ieee80211_lower_mac::{
     AccessPoint, AccessPointPhase, BandSet, BssColor, Ccmp128Key, Channel, CheckedAggregate,
     CheckedPoolSource, CheckedSubframe, CheckedTxSource, CoexPriority, CoexPrioritySet,
-    ConnectionEpochKind, FreshSource, FreshSubframe, GateClosed, GateClosedKind, GateOpen,
-    GateOpenKind, HardwareServices, Ieee80211Capabilities, Ieee80211Radio, IndeterminateCause,
-    IndividualAddress, InterfaceAggregateAttempt, InterfaceAttempt, InterfacePhase, KeyTypes,
-    LinkMetric, LowerMacBackend, LowerMacCapabilities, LowerMacEvent, LowerMacPhase, LowerMacSetup,
-    MpduKind, MpduLayout, PhaseRate, PhaseTypes, PhyFormatSet, PreparationError,
-    PreparationRefused, PreparedTx, RateSupport, ReceiveFilter, Removed, RemovedKey,
-    RetransmissionPlan, RoleKeys, RxBuffer, RxEvidence, RxMeta, RxMetadata, SignalMetadata,
-    Station, StationPhase, StationReceive, SupportedBlockAck, SupportedChannel, SupportedEdca,
-    SupportedFilter, TxAck, TxBody, TxBufferClass, TxBufferMemory, TxBufferPool, TxCompleted,
-    TxEndStatus, TxFrame, TxOutcome, TxProtection, TxSource, VifRole, WidthSet, WithdrawCause,
+    ConnectionEpochKind, FreshSource, FreshSubframe, GateClosed, GateIssuer, GateOpen, GatePlace,
+    HardwareServices, Ieee80211Capabilities, Ieee80211Radio, IndeterminateCause, IndividualAddress,
+    InterfaceAggregateAttempt, InterfaceAttempt, InterfacePhase, KeyTypes, LinkMetric,
+    LowerMacBackend, LowerMacCapabilities, LowerMacEvent, LowerMacPhase, LowerMacSetup, MpduKind,
+    MpduLayout, PhaseRate, PhaseTypes, PhyFormatSet, PreparationError, PreparationRefused,
+    PreparedTx, RateSupport, ReceiveFilter, Removed, RemovedKey, RetransmissionPlan, RoleKeys,
+    RxBuffer, RxEvidence, RxMeta, RxMetadata, SignalMetadata, Station, StationPhase,
+    StationReceive, SupportedBlockAck, SupportedChannel, SupportedEdca, SupportedFilter, TxAck,
+    TxBody, TxBufferClass, TxBufferMemory, TxBufferPool, TxCompleted, TxEndStatus, TxFrame,
+    TxOutcome, TxProtection, TxSource, VifRole, WidthSet, WithdrawCause,
 };
 use oer_ieee80211_lower_mac::{
     AggregateRefused, AggregateState, AmpduCapabilities, AmpduPhase, AmpduRate, BlockAckReport,
@@ -184,13 +188,25 @@ pub const MODEL_COMMANDS: usize = MODEL_TICKETS + 2 * (MODEL_ALL_KEY_SLOTS + 1);
 pub const MODEL_EVENTS: usize = MODEL_TICKETS + MODEL_ALL_KEY_SLOTS + 1 + 2 + MODEL_RX_EVENTS;
 
 /// A queue of the contract's capacity: an overflow is a broken promise and
-/// fails the test.
+/// poisons the install while retaining every owner.
 struct Bounded<T> {
     items: RefCell<VecDeque<T>>,
     capacity: usize,
     name: &'static str,
 }
 
+struct QueueCapacityViolation {
+    queue: &'static str,
+    capacity: usize,
+}
+impl core::fmt::Debug for QueueCapacityViolation {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("QueueCapacityViolation")
+            .field("queue", &self.queue)
+            .field("capacity", &self.capacity)
+            .finish()
+    }
+}
 impl<T> Bounded<T> {
     fn new(capacity: usize, name: &'static str) -> Self {
         Self {
@@ -200,15 +216,21 @@ impl<T> Bounded<T> {
         }
     }
 
-    fn push(&self, item: T) {
+    fn push(&self, item: T) -> Result<(), QueueCapacityViolation> {
         let mut items = self.items.borrow_mut();
-        assert!(
-            items.len() < self.capacity,
-            "the {} queue overflowed its contract capacity of {}",
-            self.name,
-            self.capacity
-        );
+        let failure = (items.len() >= self.capacity).then_some(QueueCapacityViolation {
+            queue: self.name,
+            capacity: self.capacity,
+        });
+        // On a backend accounting violation retain every owner in this same
+        // queue for fail-stop. No terminal or command is dropped or delivered
+        // after the caller latches poisoning. Healthy queues stay bounded by
+        // their tickets/slots; Rust cannot connect a VecDeque length to them.
         items.push_back(item);
+        match failure {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     }
 
     fn pop(&self) -> Option<T> {
@@ -282,15 +304,79 @@ impl AsRef<[u8]> for ModelMemory {
 impl ModelMemory {
     fn sequence(&self) -> SequenceNumber {
         let control = match self {
-            Self::Small(bytes) => [bytes[22], bytes[23]],
-            Self::Large(bytes) => [bytes[22], bytes[23]],
+            Self::Small(bytes) => {
+                let [
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    a,
+                    b,
+                    ..,
+                ] = bytes.as_ref();
+                [*a, *b]
+            }
+            Self::Large(bytes) => {
+                let [
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    a,
+                    b,
+                    ..,
+                ] = bytes.as_ref();
+                [*a, *b]
+            }
         };
         SequenceNumber::from_sequence_control(u16::from_le_bytes(control))
     }
     fn retry(&mut self) {
         match self {
-            Self::Small(bytes) => bytes[1] |= 0x08,
-            Self::Large(bytes) => bytes[1] |= 0x08,
+            Self::Small(bytes) => {
+                let [_, flags, ..] = bytes.as_mut();
+                *flags |= 0x08;
+            }
+            Self::Large(bytes) => {
+                let [_, flags, ..] = bytes.as_mut();
+                *flags |= 0x08;
+            }
         }
     }
 }
@@ -332,10 +418,17 @@ impl<'id, C> ModelSent<'id, C> {
     ) -> Result<Self, ModelFault> {
         let packet_number = match key {
             Some(key) => {
+                // Reborrow the actual allocation before PN allocation. The
+                // immutable layout proves the offsets, while these references
+                // retain the physical eight-byte storage through the write.
+                let tail = buffer
+                    .memory
+                    .split_at_mut_checked(layout.header_len())
+                    .ok_or(ModelFault)?
+                    .1;
+                let (header, _) = tail.split_first_chunk_mut::<8>().ok_or(ModelFault)?;
                 let pn = key.allocate()?;
-                // The range was checked against this allocation before admission.
-                buffer.memory[layout.header_len()..layout.prefix_len()]
-                    .copy_from_slice(&ccmp_header(pn, key.0.key_id));
+                *header = ccmp_header(pn, key.0.key_id);
                 Some(pn)
             }
             None => None,
@@ -397,14 +490,6 @@ impl ModelAnyBuffer<'_> {
             Self::Large(buffer) => &buffer.memory,
             Self::SmallSent(mpdu) => &mpdu.buffer.memory,
             Self::LargeSent(mpdu) => &mpdu.buffer.memory,
-        }
-    }
-    fn memory_mut(&mut self) -> &mut [u8] {
-        match self {
-            Self::Small(buffer) => &mut buffer.memory,
-            Self::Large(buffer) => &mut buffer.memory,
-            Self::SmallSent(mpdu) => &mut mpdu.buffer.memory,
-            Self::LargeSent(mpdu) => &mut mpdu.buffer.memory,
         }
     }
     fn packet_number(&self) -> Option<u64> {
@@ -498,7 +583,7 @@ struct ModelMpdu<'id> {
 impl<'id> ModelMpdu<'id> {
     fn from_sent(mut buffer: ModelAnyBuffer<'id>, layout: MpduLayout) -> Self {
         // The closed layout contains at least the checked MAC header.
-        buffer.memory_mut()[1] |= 0x08;
+        buffer.retry();
         Self {
             buffer,
             layout,
@@ -533,14 +618,20 @@ impl<'id> ModelMpdu<'id> {
         keys: &[KeyIdentity],
         key: Option<&KeyIdentity>,
         rate: PhyRate,
-    ) -> AirFrame {
-        AirFrame {
+    ) -> Result<AirFrame, ModelFault> {
+        let bytes = self
+            .buffer
+            .memory()
+            .split_at_checked(self.layout.len())
+            .ok_or(ModelFault)?
+            .0;
+        Ok(AirFrame {
             role,
-            frame: self.buffer.memory()[..self.layout.len()].into(),
+            frame: bytes.into(),
             rate,
             key: key.map(|key| (key.0.index, keys.contains(key))),
             packet_number: self.buffer.packet_number(),
-        }
+        })
     }
 }
 
@@ -834,11 +925,14 @@ impl SignalMetadata for ModelRxMeta {
 }
 
 /// The memory of one received MPDU, which goes back through
-/// [`LowerMacPhase::recycle`]: dropped without it, it panics in a test.
+/// [`LowerMacPhase::recycle`]: dropping it instead poisons the backend.
 #[derive(Debug)]
 pub struct ModelRxBuffer {
     bytes: Vec<u8>,
     recycled: bool,
+    air: Weak<ModelAir>,
+    #[cfg(test)]
+    streamed: bool,
 }
 
 impl RxBuffer for ModelRxBuffer {
@@ -850,8 +944,12 @@ impl RxBuffer for ModelRxBuffer {
 impl Drop for ModelRxBuffer {
     fn drop(&mut self) {
         #[cfg(any(test, feature = "test-support"))]
-        if !self.recycled && !std::thread::panicking() {
-            panic!("a received buffer was dropped without its recycle");
+        if !self.recycled
+            && let Some(air) = self.air.upgrade()
+        {
+            // A dropped affine receive owner cannot be recycled or admitted
+            // again. Signal the existing backend fail-stop, never a panic.
+            air.poison();
         }
     }
 }
@@ -955,6 +1053,8 @@ pub struct ModelAir {
     /// queued, each is acknowledged.
     answers: RefCell<VecDeque<AirResult>>,
     rx: RefCell<VecDeque<(Vec<u8>, ModelRxMeta)>>,
+    #[cfg(test)]
+    rx_stream: RefCell<Option<(Vec<u8>, ModelRxMeta)>>,
     refuse_enable: Cell<bool>,
     poisoned: Cell<bool>,
     #[cfg(test)]
@@ -1029,6 +1129,20 @@ impl ModelAir {
             .collect()
     }
 
+    /// Keep reception ready on every service poll, like an RX interrupt
+    /// source on another executor. This exercises scheduling against a
+    /// continuously ready source, rather than a finite queued burst.
+    #[cfg(test)]
+    pub(crate) fn receive_continuously(&self, frame: &[u8], meta: ModelRxMeta) {
+        self.rx_stream.borrow_mut().replace((frame.into(), meta));
+        self.wake_driver();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn stop_continuous_receive(&self) {
+        self.rx_stream.borrow_mut().take();
+    }
+
     /// Deliver `frame` to the radio.
     pub fn receive(&self, frame: &[u8], meta: ModelRxMeta) {
         self.rx.borrow_mut().push_back((frame.into(), meta));
@@ -1039,7 +1153,7 @@ impl ModelAir {
     /// wait unpublished meanwhile, as behind a long transmission.
     pub fn hold(&self, access_category: oer_ieee80211_mac::qos::WmmAccessCategory, held: bool) {
         let mut queues = self.held.get();
-        queues[access_category as usize] = held;
+        *access_category.select_mut(&mut queues) = held;
         self.held.set(queues);
         self.wake_driver();
     }
@@ -1122,7 +1236,7 @@ enum Command<'id, X: ModelContext> {
         key: KeyIdentity,
         removed: Removed<'id, ModelTypes<X>>,
     },
-    CloseGate,
+    CloseGate(GateOpen<'id>),
     OpenGate,
 }
 
@@ -1154,7 +1268,7 @@ struct PreparedAggregate<'id, X: ModelContext> {
     ticket: Slot<'id, ModelTickets>,
     subframes: Vec<Subframe<'id>>,
     start_sequence: SequenceNumber,
-    queue: usize,
+    queue: oer_ieee80211_mac::qos::WmmAccessCategory,
     rate: PhyRate,
     key: Option<PreparedKey>,
 }
@@ -1165,7 +1279,7 @@ struct Prepared<'id, X: ModelContext> {
     role: VifRole,
     ticket: Slot<'id, ModelTickets>,
     mpdu: ModelMpdu<'id>,
-    queue: usize,
+    queue: oer_ieee80211_mac::qos::WmmAccessCategory,
     plan: oer_ieee80211_lower_mac::RetryPlan<PhyRate>,
     key: Option<PreparedKey>,
 }
@@ -1199,10 +1313,8 @@ pub struct ModelHeld<'id, X: ModelContext = ()> {
     /// Received frames dropped since the stream last said so.
     lost: Cell<bool>,
     body: RefCell<Option<Waker>>,
-    /// The closed gate the driver holds while the gate is open.
-    closed: RefCell<Option<GateClosed<'id>>>,
-    /// The open gate the driver holds while the gate is closed.
-    open: RefCell<Option<GateOpen<'id>>>,
+    /// The backend alone attests the hardware barrier with the one gate place.
+    gate_issuer: RefCell<GateIssuer<'id>>,
     /// Disable asks the driver to return all queued operations before the
     /// owner ends the phase. Unlike poison, this is an ordinary terminal.
     draining: Cell<bool>,
@@ -1210,7 +1322,9 @@ pub struct ModelHeld<'id, X: ModelContext = ()> {
 
 impl<'id, X: ModelContext> ModelHeld<'id, X> {
     fn command(&self, command: Command<'id, X>) {
-        self.commands.push(command);
+        if self.commands.push(command).is_err() {
+            self.poison();
+        }
         self.air.wake_driver();
     }
 
@@ -1244,19 +1358,31 @@ impl<'id, X: ModelContext> ModelHeld<'id, X> {
                 }
                 self.air.swap_terminals.set(false);
                 self.air.corrupted_terminal.set(true);
-                self.events.push(LowerMacEvent::TxCompleted(previous));
+                if self
+                    .events
+                    .push(LowerMacEvent::TxCompleted(previous))
+                    .is_err()
+                {
+                    self.poison();
+                }
                 LowerMacEvent::TxCompleted(current)
             }
             event => event,
         };
-        self.events.push(event);
+        if self.events.push(event).is_err() {
+            self.poison();
+        }
         self.wake_body();
     }
 
     /// Confirm `role`'s settings, once while a confirmation waits.
     fn configured(&self, role: VifRole) {
         let mut waiting = self.configured.get();
-        let slot = &mut waiting[role as usize];
+        let [station, access_point] = &mut waiting;
+        let slot = match role {
+            VifRole::Station => station,
+            VifRole::AccessPoint => access_point,
+        };
         if !*slot {
             *slot = true;
             self.configured.set(waiting);
@@ -1396,8 +1522,7 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
         &mut self,
         mut mint: Mint<'id>,
     ) -> (ModelHeld<'id, X>, ModelLocal<'id>, ModelResources<'id>) {
-        let [gate] = mint.slots::<GateOpenKind, 1>();
-        let [closed] = mint.slots::<GateClosedKind, 1>();
+        let (gate, gate_issuer) = GatePlace::mint(&mut mint);
         let tickets: [Slot<'id, ModelTickets>; MODEL_TICKETS] = mint.slots();
         let small: [Slot<'id, ModelSmall>; MODEL_SMALL_BUFFERS] = mint.slots();
         let large: [Slot<'id, ModelLarge>; MODEL_LARGE_BUFFERS] = mint.slots();
@@ -1413,8 +1538,7 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
             configured: Cell::new([false; 2]),
             lost: Cell::new(false),
             body: RefCell::default(),
-            closed: RefCell::new(Some(closed)),
-            open: RefCell::default(),
+            gate_issuer: RefCell::new(gate_issuer),
             draining: Cell::new(false),
         };
         let [epoch_slot] = mint.slots::<ConnectionEpochKind, 1>();
@@ -1478,11 +1602,10 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
             }),
             keys: Vec::new(),
             removing: Vec::new(),
-            gate_open: true,
-            closing_gate: false,
+            gate: DriverGate::Open,
         };
         poll_fn(move |cx| {
-            held.air.passes.set(held.air.passes.get() + 1);
+            held.air.passes.set(held.air.passes.get().saturating_add(1));
             // A driver that sees the abandon latch publishes nothing and
             // stops.
             if held.air.poisoned.get() || retire.is_requested() || retire.is_abandoned() {
@@ -1529,6 +1652,19 @@ impl<C: Ieee80211Capabilities, X: ModelContext> LowerMacBackend for ModelBackend
     const PUBLICATION_BOUND: oer_time::Duration = MODEL_PUBLICATION_BOUND;
 }
 
+/// The driver retains the unique open place throughout the closing barrier.
+enum DriverGate<'id> {
+    Open,
+    Closing(GateOpen<'id>),
+    Closed,
+}
+
+impl DriverGate<'_> {
+    fn is_open(&self) -> bool {
+        matches!(self, Self::Open)
+    }
+}
+
 /// The model's hardware, which only the driver owns.
 struct Driver<'id, X: ModelContext> {
     /// The prepared attempts of each queue, the head first.
@@ -1536,8 +1672,7 @@ struct Driver<'id, X: ModelContext> {
     /// The installed hardware keys.
     keys: Vec<KeyIdentity>,
     removing: Vec<(KeyIdentity, Removed<'id, ModelTypes<X>>)>,
-    gate_open: bool,
-    closing_gate: bool,
+    gate: DriverGate<'id>,
 }
 
 impl<'id, X: ModelContext> Driver<'id, X> {
@@ -1562,11 +1697,15 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                 }
             }
             if settings.station {
-                held.air.settings.set(held.air.settings.get() + 1);
+                held.air
+                    .settings
+                    .set(held.air.settings.get().saturating_add(1));
                 held.configured(VifRole::Station);
             }
             if settings.access_point {
-                held.air.settings.set(held.air.settings.get() + 1);
+                held.air
+                    .settings
+                    .set(held.air.settings.get().saturating_add(1));
                 held.configured(VifRole::AccessPoint);
             }
             while let Some(mut buffer) = held.recycled.pop() {
@@ -1574,21 +1713,29 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                 held.rx_out.set(held.rx_out.get().saturating_sub(1));
             }
             if settings.other {
-                held.air.settings.set(held.air.settings.get() + 1);
+                held.air
+                    .settings
+                    .set(held.air.settings.get().saturating_add(1));
             }
             let command = held.commands.pop();
             let Some(command) = command else {
                 break;
             };
-            held.air.commands.set(held.air.commands.get() + 1);
+            held.air
+                .commands
+                .set(held.air.commands.get().saturating_add(1));
             match command {
                 Command::Submit(prepared) => {
                     let queue = prepared.queue;
-                    self.queues[queue].waiting.push_back(Work::Single(prepared));
+                    queue
+                        .select_mut(&mut self.queues)
+                        .waiting
+                        .push_back(Work::Single(prepared));
                 }
                 Command::SubmitAmpdu(aggregate) => {
                     let queue = aggregate.queue;
-                    self.queues[queue]
+                    queue
+                        .select_mut(&mut self.queues)
                         .waiting
                         .push_back(Work::Aggregate(aggregate));
                 }
@@ -1596,11 +1743,8 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                 Command::RemoveKey { key, removed } => {
                     self.removing.push((key, removed));
                 }
-                Command::CloseGate => {
-                    self.gate_open = false;
-                    self.closing_gate = true;
-                }
-                Command::OpenGate => self.gate_open = true,
+                Command::CloseGate(gate) => self.gate = DriverGate::Closing(gate),
+                Command::OpenGate => self.gate = DriverGate::Open,
             }
             self.publish(held);
         }
@@ -1610,11 +1754,15 @@ impl<'id, X: ModelContext> Driver<'id, X> {
             .queues
             .iter()
             .all(|queue| queue.air.is_none() && queue.waiting.is_empty());
-        if idle && self.closing_gate {
-            self.closing_gate = false;
-            if let Some(closed) = held.closed.borrow_mut().take() {
-                held.post(LowerMacEvent::GateClosed(closed));
-            }
+        if idle {
+            self.gate = match core::mem::replace(&mut self.gate, DriverGate::Closed) {
+                DriverGate::Closing(gate) => {
+                    let closed = held.gate_issuer.borrow_mut().close(gate);
+                    held.post(LowerMacEvent::GateClosed(closed));
+                    DriverGate::Closed
+                }
+                state => state,
+            };
         }
         if idle && held.draining.replace(false) {
             held.wake_body();
@@ -1648,7 +1796,7 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                     }
                     let cause = withdrawal(
                         held.draining.get(),
-                        self.gate_open,
+                        self.gate.is_open(),
                         publication.work.key().is_some_and(|key| {
                             self.removing.iter().any(|(removed, _)| removed == key)
                         }),
@@ -1669,7 +1817,7 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                 };
                 if let Some(cause) = withdrawal(
                     held.draining.get(),
-                    self.gate_open,
+                    self.gate.is_open(),
                     work.key()
                         .is_some_and(|key| self.removing.iter().any(|(removed, _)| removed == key)),
                 ) {
@@ -1712,11 +1860,14 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                 break;
             };
             if held.rx_out.get() < MODEL_RX_EVENTS {
-                held.rx_out.set(held.rx_out.get() + 1);
+                held.rx_out.set(held.rx_out.get().saturating_add(1));
                 held.post(LowerMacEvent::Received {
                     frame: ModelRxBuffer {
                         bytes: frame,
                         recycled: false,
+                        air: Rc::downgrade(&held.air),
+                        #[cfg(test)]
+                        streamed: false,
                     },
                     meta,
                 });
@@ -1891,12 +2042,19 @@ fn publish_single<'id, X: ModelContext>(
     if plan.transmissions != 0 {
         plan.prepared.mpdu.buffer.retry();
     }
-    held.air.sent.borrow_mut().push(plan.prepared.mpdu.on_air(
+    let frame = match plan.prepared.mpdu.on_air(
         plan.prepared.role,
         keys,
         plan.prepared.key.as_ref().map(|key| &key.identity),
         plan.rate,
-    ));
+    ) {
+        Ok(frame) => frame,
+        Err(_) => {
+            held.poison();
+            return None;
+        }
+    };
+    held.air.sent.borrow_mut().push(frame);
     Some(Publication {
         started: held.air.now_micros.get(),
         result: held.air.result(),
@@ -1966,12 +2124,19 @@ fn publish_aggregate<'id, X: ModelContext>(
                 return None;
             }
         };
-        held.air.sent.borrow_mut().push(mpdu.on_air(
+        let frame = match mpdu.on_air(
             aggregate.role,
             keys,
             aggregate.key.as_ref().map(|key| &key.identity),
             aggregate.rate,
-        ));
+        ) {
+            Ok(frame) => frame,
+            Err(_) => {
+                held.poison();
+                return None;
+            }
+        };
+        held.air.sent.borrow_mut().push(frame);
         let distance = aggregate
             .start_sequence
             .forward_distance(mpdu.buffer.sequence());
@@ -2033,10 +2198,29 @@ impl<'id, C, X: ModelContext> PortPhase for ModelPhase<'_, 'id, C, X> {
             if let Some(event) = held.events.pop() {
                 if let LowerMacEvent::Configured(role) = event {
                     let mut waiting = held.configured.get();
-                    waiting[role as usize] = false;
+                    let [station, access_point] = &mut waiting;
+                    *match role {
+                        VifRole::Station => station,
+                        VifRole::AccessPoint => access_point,
+                    } = false;
                     held.configured.set(waiting);
                 }
                 return Poll::Ready(Ok(Ok(event)));
+            }
+            #[cfg(test)]
+            if let Some((bytes, meta)) = held.air.rx_stream.borrow().as_ref()
+                && held.rx_out.get() < MODEL_RX_EVENTS
+            {
+                held.rx_out.set(held.rx_out.get().saturating_add(1));
+                return Poll::Ready(Ok(Ok(LowerMacEvent::Received {
+                    frame: ModelRxBuffer {
+                        bytes: bytes.clone(),
+                        recycled: false,
+                        air: Rc::downgrade(&held.air),
+                        streamed: true,
+                    },
+                    meta: *meta,
+                })));
             }
             if held.lost.replace(false) {
                 return Poll::Ready(Ok(Err(EventsLost)));
@@ -2066,26 +2250,32 @@ impl<'p, 'id: 'p, C: Ieee80211Capabilities, X: ModelContext> LowerMacPhase<'p, '
     }
 
     fn recycle(&mut self, buffer: ModelRxBuffer) {
-        self.held.recycled.push(buffer);
+        #[cfg(test)]
+        if buffer.streamed {
+            let mut buffer = buffer;
+            // The independent source observes this return immediately. Its
+            // next poll can reuse the same bounded RX capacity without a
+            // body/driver task switch, exactly the starvation case.
+            buffer.recycled = true;
+            self.held
+                .rx_out
+                .set(self.held.rx_out.get().saturating_sub(1));
+            return;
+        }
+        if self.held.recycled.push(buffer).is_err() {
+            self.held.poison();
+        }
         self.held.air.wake_driver();
     }
 
     fn close_gate(&mut self, gate: GateOpen<'id>) {
-        // The open gate waits with the backend while the gate is closed.
-        self.held.open.borrow_mut().replace(gate);
-        self.held.command(Command::CloseGate);
+        self.held.command(Command::CloseGate(gate));
     }
 
     fn open_gate(&mut self, gate: GateClosed<'id>) -> GateOpen<'id> {
-        // The closed gate goes back to the backend, the open one it kept to
-        // the caller.
-        self.held.closed.borrow_mut().replace(gate);
+        let open = self.held.gate_issuer.borrow_mut().open(gate);
         self.held.command(Command::OpenGate);
-        self.held
-            .open
-            .borrow_mut()
-            .take()
-            .expect("a closed gate's open twin waits with the backend")
+        open
     }
 
     fn set_edca(&mut self, _: SupportedEdca<C>) {
@@ -2341,7 +2531,7 @@ where
             role: R::ROLE,
             ticket: attempt.ticket,
             mpdu,
-            queue: attempt.access_category as usize,
+            queue: attempt.access_category,
             plan,
             key,
         })));
@@ -2650,8 +2840,8 @@ where
             ..
         } = attempt.aggregate;
         let queue = match oer_ieee80211_mac::qos::WmmUserPriority::new(tid.get()) {
-            Some(priority) => priority.access_category() as usize,
-            None => oer_ieee80211_mac::qos::WmmAccessCategory::BestEffort as usize,
+            Some(priority) => priority.access_category(),
+            None => oer_ieee80211_mac::qos::WmmAccessCategory::BestEffort,
         };
         self.held.command(Command::SubmitAmpdu(PreparedAggregate {
             context: attempt.context,

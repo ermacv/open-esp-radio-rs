@@ -83,10 +83,9 @@
 //! the install's resources.
 //!
 //! ```compile_fail,E0451
-//! # use oer_ieee80211_lower_mac::GateOpen;
-//! # use core::marker::PhantomData;
-//! fn forge<'id>() -> GateOpen<'id> {
-//!     oer_radio_port::Slot { index: 0, brand: PhantomData, kind: PhantomData }
+//! # use oer_ieee80211_lower_mac::{GateOpen, GatePlace};
+//! fn forge<'id>(place: GatePlace<'id>) -> GateOpen<'id> {
+//!     GateOpen { place }
 //! }
 //! ```
 //!
@@ -195,7 +194,7 @@
 
 use oer_ieee80211_mac::ccmp::GroupKeyId;
 use oer_ieee80211_port::PortPhase;
-use oer_radio_port::{Poisoned, Slot};
+use oer_radio_port::{Mint, Poisoned, Slot};
 
 use crate::{
     Channel, PhyRate, Protection, TbttEvent, TxOutcome, VifRole,
@@ -206,19 +205,99 @@ use crate::{
     },
 };
 
-/// The kind of the open gate's token.
-pub enum GateOpenKind {}
+enum GateKind {}
 
-/// The kind of the closed gate's token.
-pub enum GateClosedKind {}
+/// The install's unique gate place, held inside exactly one gate state.
+///
+/// Only the backend's resource factory has the install's [`Mint`]. It calls
+/// [`GatePlace::mint`] once, hands the open state to the body and retains the
+/// issuer. Neither state nor this place can be copied or independently minted
+/// by the body. The issuer converts that same place; it never creates another.
+///
+/// ```compile_fail,E0599
+/// # use oer_ieee80211_lower_mac::GatePlace;
+/// fn copy<'id>(place: &GatePlace<'id>) -> GatePlace<'id> {
+///     place.clone()
+/// }
+/// ```
+pub struct GatePlace<'id> {
+    slot: Slot<'id, GateKind>,
+}
 
-/// The open transmit gate: one per install, which the body holds while the
-/// gate is open.
-pub type GateOpen<'id> = Slot<'id, GateOpenKind>;
+impl<'id> GatePlace<'id> {
+    /// Create the one open gate and its backend issuer during installation.
+    /// The backend calls this exactly once per install; the body has no Mint.
+    pub fn mint(mint: &mut Mint<'id>) -> (GateOpen<'id>, GateIssuer<'id>) {
+        let [slot] = mint.slots();
+        (
+            GateOpen {
+                place: Self { slot },
+            },
+            GateIssuer {
+                brand: core::marker::PhantomData,
+            },
+        )
+    }
+}
 
-/// The closed transmit gate: it proves this port publishes no attempt, not
-/// that the air is quiet. The backend holds it while the gate is open.
-pub type GateClosed<'id> = Slot<'id, GateClosedKind>;
+impl core::fmt::Debug for GatePlace<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("GatePlace")
+            .field("slot", &self.slot.index())
+            .finish()
+    }
+}
+
+/// The open transmit gate. Closing transfers its unique place to the backend.
+#[derive(Debug)]
+pub struct GateOpen<'id> {
+    place: GatePlace<'id>,
+}
+
+/// Evidence that the backend publishes no attempt; it does not prove quiet air.
+/// Only the retained backend issuer constructs this state after its barrier.
+///
+/// ```compile_fail,E0451
+/// # use oer_ieee80211_lower_mac::{GateClosed, GatePlace};
+/// fn forge<'id>(place: GatePlace<'id>) -> GateClosed<'id> {
+///     GateClosed { place }
+/// }
+/// ```
+#[derive(Debug)]
+pub struct GateClosed<'id> {
+    place: GatePlace<'id>,
+}
+
+/// The backend's authority to convert its one gate place between states.
+///
+/// One issuer is retained by the backend per install and never reaches the
+/// body. Closing is allowed only after the current publication's result and
+/// the withdrawal of queued attempts. Opening consumes that very evidence.
+///
+/// ```compile_fail,E0382
+/// # use oer_ieee80211_lower_mac::{GateClosed, GateIssuer, GateOpen};
+/// fn both<'id>(issuer: &mut GateIssuer<'id>, gate: GateOpen<'id>)
+///     -> (GateOpen<'id>, GateClosed<'id>)
+/// {
+///     let closed = issuer.close(gate);
+///     (gate, closed)
+/// }
+/// ```
+pub struct GateIssuer<'id> {
+    brand: core::marker::PhantomData<fn(&'id ()) -> &'id ()>,
+}
+
+impl<'id> GateIssuer<'id> {
+    /// Attest the completed hardware barrier, retaining the same place.
+    pub fn close(&mut self, gate: GateOpen<'id>) -> GateClosed<'id> {
+        GateClosed { place: gate.place }
+    }
+
+    /// Consume the closed evidence to open the same gate.
+    pub fn open(&mut self, gate: GateClosed<'id>) -> GateOpen<'id> {
+        GateOpen { place: gate.place }
+    }
+}
 
 /// An event of a running lower-MAC phase, in the order the events
 /// occurred; every token an operation took comes back in one.

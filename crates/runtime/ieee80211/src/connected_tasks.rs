@@ -197,12 +197,13 @@ impl<M: RawMutex, S> ConnectedTaskGroup for ConnectedTaskController<'_, M, S> {
 impl<M: RawMutex, S> Drop for ConnectedTaskController<'_, M, S> {
     fn drop(&mut self) {
         if !self.completed {
-            let _ = self.resources.state.compare_exchange(
-                ACTIVE,
-                POISONED,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            );
+            // A losing exchange observes a terminal state published by the
+            // other endpoint; it must not overwrite that state.
+            self.completed = self
+                .resources
+                .state
+                .compare_exchange(ACTIVE, POISONED, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok();
         }
     }
 }
@@ -228,12 +229,12 @@ impl<M: RawMutex, S> ConnectedTaskEndpoint<'_, M, S> {
 impl<M: RawMutex, S> Drop for ConnectedTaskEndpoint<'_, M, S> {
     fn drop(&mut self) {
         if !self.completed {
-            let _ = self.resources.state.compare_exchange(
-                ACTIVE,
-                POISONED,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            );
+            // The parent may already have poisoned this same task group.
+            self.completed = self
+                .resources
+                .state
+                .compare_exchange(ACTIVE, POISONED, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok();
         }
     }
 }

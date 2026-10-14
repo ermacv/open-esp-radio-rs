@@ -109,6 +109,13 @@ back; its operations are synchronous and never wait:
   plan and monitor reception take effect before the next submission; the
   latest value of each wins. A receive configuration and a gate's closing
   end in events (`Configured`, `GateClosed`).
+- **Gate evidence.** The install creates one `GatePlace` inside `GateOpen`
+  and retains one `GateIssuer` in the backend. Closing moves that place to
+  the driver; only after the publication barrier does the issuer transform
+  it into `GateClosed` for the event. Opening consumes that evidence and
+  returns the same place as `GateOpen`. There are no independent open and
+  closed slots. The arbiter holds these exact branded states; the body can
+  neither construct closed evidence, copy the place, nor keep both states.
 - **Reception.** A received frame's buffer goes back through `recycle`; a
   lagging body loses unsolicited frames as `EventsLost`, never a terminal.
 

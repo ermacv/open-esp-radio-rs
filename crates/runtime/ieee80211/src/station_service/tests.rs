@@ -118,7 +118,7 @@ fn config(security: StaSecurity) -> StaConfig<ModelCaps24> {
     channels[0] = SupportedChannel::new(channel6());
     StaConfig {
         address: LOCAL,
-        ssid: SSID.iter().copied().collect(),
+        ssid: heapless::Vec::from_slice(SSID).unwrap(),
         channels,
         dwell: Duration::from_millis(10),
         skipped_absences: 3,
@@ -276,9 +276,9 @@ struct World<'b> {
     completions: RefCell<Vec<FrameRates>>,
     refuse_rate: Cell<bool>,
     /// The network stack's end of the transmit queue.
-    stack: RefCell<zerocopy_channel::Sender<'b, NoopRawMutex, TxMsdu>>,
+    stack: RefCell<MsduSender<'b, TxMsdu, 2>>,
     /// The network stack's end of the receive queue.
-    delivered: RefCell<zerocopy_channel::Receiver<'b, NoopRawMutex, RxMsdu>>,
+    delivered: RefCell<MsduReceiver<'b, EthernetFrame, 2>>,
 }
 
 /// Observe the operation class supplied by the service, independently of
@@ -374,11 +374,10 @@ impl World<'_> {
         for _ in 0..50 {
             yield_now().await;
         }
-        let mut delivered = self.delivered.borrow_mut();
+        let delivered = self.delivered.borrow();
         let mut frames = Vec::new();
         while let Some(msdu) = delivered.try_receive() {
-            frames.push(msdu.frame[..msdu.len].to_vec());
-            delivered.receive_done();
+            frames.push(msdu.bytes().collect());
         }
         frames
     }
@@ -435,18 +434,15 @@ impl World<'_> {
     /// The network stack sends one Ethernet frame of user `priority` to
     /// `destination` if its queue has room.
     fn try_send_msdu_at(&self, destination: [u8; 6], priority: u8) -> bool {
-        let mut stack = self.stack.borrow_mut();
-        let Some(slot) = stack.try_send() else {
-            return false;
+        let mut bytes = [0xab; 114];
+        bytes[..6].copy_from_slice(&destination);
+        bytes[6..12].copy_from_slice(&LOCAL);
+        bytes[12..14].copy_from_slice(&0x0800_u16.to_be_bytes());
+        let packet = TxMsdu {
+            priority: WmmUserPriority::new(priority).unwrap(),
+            frame: EthernetFrame::new(&bytes).unwrap(),
         };
-        slot.priority = WmmUserPriority::new(priority).unwrap();
-        slot.frame[..6].copy_from_slice(&destination);
-        slot.frame[6..12].copy_from_slice(&LOCAL);
-        slot.frame[12..14].copy_from_slice(&0x0800_u16.to_be_bytes());
-        slot.frame[14..114].fill(0xab);
-        slot.len = 114;
-        stack.send_done();
-        true
+        self.stack.borrow().try_send(packet).is_ok()
     }
 
     /// Scan, authenticate and associate: the probe, the Authentication and
@@ -478,8 +474,8 @@ impl World<'_> {
 /// The body that runs the service beside the test's script.
 struct Body<'w, 'b, S> {
     world: &'w World<'b>,
-    transmit: zerocopy_channel::Receiver<'b, NoopRawMutex, TxMsdu>,
-    receive: zerocopy_channel::Sender<'b, NoopRawMutex, RxMsdu>,
+    transmit: MsduReceiver<'b, TxMsdu, 2>,
+    receive: MsduSender<'b, EthernetFrame, 2>,
     config: StaConfig<ModelCaps24>,
     script: S,
 }
@@ -564,7 +560,6 @@ where
                     matches!(&end, ServiceEnd::Failed(_) | ServiceEnd::Poisoned(_)),
                     "class mismatch uses fail-stop"
                 );
-                assert!(service.contract_failed);
             }
             if matches!(&end, ServiceEnd::Stopped(_)) {
                 for category in WmmAccessCategory::ALL {
@@ -604,19 +599,10 @@ where
             IndividualAddress::new(ACCESS_POINT_ADDRESS).unwrap(),
         ],
     );
-    let mut transmit: [TxMsdu; 2] = core::array::from_fn(|_| TxMsdu {
-        priority: WmmUserPriority::new(0).unwrap(),
-        len: 0,
-        frame: [0; ETHERNET_FRAME],
-    });
-    let mut receive: [RxMsdu; 2] = core::array::from_fn(|_| RxMsdu {
-        len: 0,
-        frame: [0; ETHERNET_FRAME],
-    });
-    let mut transmit = zerocopy_channel::Channel::<NoopRawMutex, TxMsdu>::new(&mut transmit);
-    let mut receive = zerocopy_channel::Channel::<NoopRawMutex, RxMsdu>::new(&mut receive);
-    let (stack, transmit) = transmit.split();
-    let (receive, delivered) = receive.split();
+    let mut transmit = MsduQueue::<TxMsdu, 2>::new();
+    let mut receive = MsduQueue::<EthernetFrame, 2>::new();
+    let (stack, transmit) = transmit.split().ok().unwrap();
+    let (receive, delivered) = receive.split().ok().unwrap();
     let world = World {
         air,
         clock: VirtualClock::new(),
@@ -1357,6 +1343,51 @@ fn a_context_buffer_class_mismatch_stops_service_without_rate_updates_or_reuse()
                 yield_now().await;
             }
             assert_eq!(world.air.sent().len(), publications);
+        })
+    });
+}
+
+#[test]
+fn continuous_rx_cannot_starve_data_tx_or_application_commands() {
+    run(StaSecurity::Open, |world| {
+        Box::pin(async move {
+            let mut seen = 0;
+            world.associate(&mut seen, false).await;
+            world
+                .notice(StaNotice::Connected {
+                    bssid: BSSID,
+                    channel: 6,
+                })
+                .await;
+            let first = world.air.sent().len();
+            world.air.receive_continuously(&beacon(false), meta());
+            world.send_msdu(ACCESS_POINT_ADDRESS);
+            world.command(ServiceCommand::WantAccessPoint).await;
+            let mut progressed = false;
+            for _ in 0..64 {
+                yield_now().await;
+                let tx = world
+                    .air
+                    .sent()
+                    .iter()
+                    .skip(first)
+                    .any(|frame| kind(frame) == DATA);
+                let command = world.outputs.borrow().iter().any(|output| {
+                    matches!(
+                        output,
+                        ServiceOutput::AccessPoint(AccessPointCommand::Start(_))
+                    )
+                });
+                if tx && command {
+                    progressed = true;
+                    break;
+                }
+            }
+            assert!(
+                progressed,
+                "ready RX cannot consume the TX/command share of a batch"
+            );
+            world.air.stop_continuous_receive();
         })
     });
 }

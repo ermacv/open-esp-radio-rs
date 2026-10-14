@@ -133,7 +133,7 @@
 //!
 //! ```
 //! # use oer_ieee80211_arbiter::{AirReservation, CloseGateWith, NoReservation};
-//! # use oer_ieee80211_lower_mac::{AirReservationPhase, GateOpen, Ieee80211Instant, LowerMacPhase};
+//! # use oer_ieee80211_lower_mac::{AirReservationPhase, GateClosed, GateOpen, Ieee80211Instant, LowerMacPhase};
 //! fn plain<'p, 'id: 'p, P: LowerMacPhase<'p, 'id>>(phase: &mut P, gate: GateOpen<'id>) {
 //!     CloseGateWith::<'p, 'id, NoReservation>::close_gate_with(
 //!         phase,
@@ -173,8 +173,8 @@ pub mod coordinator;
 use core::fmt::Debug;
 
 use oer_ieee80211_lower_mac::{
-    AirReservationPhase, GateOpen, Ieee80211Capabilities, Ieee80211Instant, LowerMacPhase,
-    SupportedChannel,
+    AirReservationPhase, GateClosed, GateOpen, Ieee80211Capabilities, Ieee80211Instant,
+    LowerMacPhase, SupportedChannel,
 };
 use oer_ieee80211_mac::channel_switch::ChannelSwitchMode;
 use oer_time::{Duration, Instant};
@@ -462,14 +462,6 @@ pub enum UpstreamFact<K> {
     NotFound,
 }
 
-/// The tokens of the port's transmit gate the arbiter holds.
-pub trait GateTokens {
-    /// The open gate.
-    type Open;
-    /// The closed gate.
-    type Closed;
-}
-
 /// Whether an arbiter reserves the access point's air for an absence: its
 /// type parameter, so only a phase that sends the reservation closes its
 /// gates ([`CloseGateWith`]).
@@ -579,7 +571,7 @@ impl<K> PendingRetune<K> {
 
 /// One action of the arbiter.
 #[derive(Debug)]
-pub enum ArbiterAction<G: GateTokens, K, R: ReservationMode> {
+pub enum ArbiterAction<'id, K, R: ReservationMode> {
     /// Tell the station.
     Station(StationNotice<K>),
     /// Tell the access point.
@@ -588,7 +580,7 @@ pub enum ArbiterAction<G: GateTokens, K, R: ReservationMode> {
     /// with the reservation of an absence the mode carries.
     CloseGate {
         /// The open gate.
-        gate: G::Open,
+        gate: GateOpen<'id>,
         /// The air reservation's end, of an arbiter that reserves it.
         reserve: R::Reserve,
     },
@@ -597,7 +589,7 @@ pub enum ArbiterAction<G: GateTokens, K, R: ReservationMode> {
     Retune(PendingRetune<K>),
     /// Open the port's transmit gate ([`Arbiter::gate_opened`] takes the
     /// open gate back).
-    OpenGate(G::Closed),
+    OpenGate(GateClosed<'id>),
 }
 
 /// The arbiter's policy.
@@ -645,13 +637,13 @@ const fn sum(a: Duration, b: Duration) -> Duration {
 }
 
 /// The port's transmit gate and who holds its token.
-enum Gate<G: GateTokens> {
+enum Gate<'id> {
     /// Open: the arbiter holds the open gate.
-    Open(G::Open),
+    Open(GateOpen<'id>),
     /// Closing: the port holds the gate.
     Closing,
     /// Closed: the arbiter holds the closed gate.
-    Closed(G::Closed),
+    Closed(GateClosed<'id>),
     /// Opening: the port gives the open gate back.
     Opening,
 }
@@ -877,12 +869,11 @@ enum Owed<K> {
 }
 
 /// The arbiter.
-pub struct Arbiter<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode = NoReservation>
-{
+pub struct Arbiter<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode = NoReservation> {
     policy: ArbiterPolicy<'a>,
     publication_bound: Duration,
     coordinator: ChannelCoordinator<'a>,
-    gate: Gate<G>,
+    gate: Gate<'id>,
     port: Port<K>,
     pair: Pair<K>,
     /// The channel the port returns to: the access point's, the primary
@@ -902,7 +893,7 @@ pub struct Arbiter<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMo
     outbox: Outbox<K>,
 }
 
-impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, G, K, R> {
+impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, R> {
     /// The arbiter of a port on `channel`, holding its open gate, and the
     /// station's places for its primary lease and its absence.
     /// `publication_bound` comes from the backend's `PUBLICATION_BOUND`, not
@@ -910,7 +901,7 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
     pub fn new(
         policy: ArbiterPolicy<'a>,
         channel: SupportedChannel<K>,
-        gate: G::Open,
+        gate: GateOpen<'id>,
         publication_bound: Duration,
     ) -> (Self, LeasePlace, AbsencePlace) {
         (
@@ -1478,13 +1469,13 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
     }
 
     /// The port's gate closed.
-    pub fn gate_closed(&mut self, closed: G::Closed) {
+    pub fn gate_closed(&mut self, closed: GateClosed<'id>) {
         self.gate = Gate::Closed(closed);
     }
 
     /// The port's gate opened, which gives the open gate back and ends the
     /// gate's cycle.
-    pub fn gate_opened(&mut self, open: G::Open) {
+    pub fn gate_opened(&mut self, open: GateOpen<'id>) {
         self.gate = Gate::Open(open);
         if let Some(cycle) = self.cycle.take() {
             self.finish(cycle);
@@ -1689,7 +1680,7 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
 
     /// The next action at `now`, if any. The service takes every action
     /// before it waits again.
-    pub fn poll_action(&mut self, now: Instant) -> Option<ArbiterAction<G, K, R>> {
+    pub fn poll_action(&mut self, now: Instant) -> Option<ArbiterAction<'id, K, R>> {
         if let Some(action) = self.owed() {
             return Some(action);
         }
@@ -1746,7 +1737,7 @@ impl<'a, G: GateTokens, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a
     }
 
     /// A command or a notice owed, the commands first.
-    fn owed(&mut self) -> Option<ArbiterAction<G, K, R>> {
+    fn owed(&mut self) -> Option<ArbiterAction<'id, K, R>> {
         self.outbox.take().map(|owed| match owed {
             Owed::Station(notice) => ArbiterAction::Station(notice),
             Owed::AccessPoint(command) => ArbiterAction::AccessPoint(command),

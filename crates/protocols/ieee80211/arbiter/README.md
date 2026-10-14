@@ -4,6 +4,12 @@
 and access point share, the third sans-IO machine of their loop
 ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129596602)).
 
+The arbiter carries the lower-MAC `GateOpen<'id>` and `GateClosed<'id>`
+directly. Both own the install's one `GatePlace`; only the backend's
+retained `GateIssuer` turns a completed hardware barrier into closed
+evidence. Arbiter actions transfer that place rather than abstract test
+tokens or independently minted slots.
+
 Only the arbiter changes the port's channel: it closes the transmit gate,
 retunes the port and opens the gate again. The station asks it for a channel
 (`Arbiter::request`) and gets its answer in the same step: a named `Lease`

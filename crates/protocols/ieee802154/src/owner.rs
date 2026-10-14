@@ -210,7 +210,9 @@
 use core::{cell::RefCell, future::Future, marker::PhantomData};
 
 use oer_ieee802154_port::{PortBackend, RadioPortClient, RadioPortEvents, RadioWork, Work};
-use oer_radio_port::{Line, Permit, PermitPool, Poisoned, Seat, Slot};
+use oer_radio_port::{
+    Child, Line, Permit, PermitPool, PermitSupply, Poisoned, PoolPath, Root, Seat, Slot,
+};
 
 use crate::{
     AppliedSecurity, CcaMode, Channel, CslReceiver, EnhancedAckGeneration, FrameCounterUpdate,
@@ -559,14 +561,15 @@ pub enum ExtendedPending<const I: u8> {}
 
 /// The port-lifetime resources of interface `I`: its configuration slot
 /// and `P` pending-table slots of each address size. A radio without the
-/// frame-pending table has none.
-pub struct InterfaceResources<'id, const I: u8, const P: usize> {
+/// frame-pending table has none. `Path` identifies this interface component;
+/// its three child paths distinguish configuration, short and extended slots.
+pub struct InterfaceResources<'id, const I: u8, const P: usize, Path: PoolPath = Root> {
     /// The slot [`Ieee802154Setup::configure`] takes.
-    pub interface: Slot<'id, InterfaceKind<I>>,
+    pub interface: Slot<'id, InterfaceKind<I>, Child<Path, 0>>,
     /// The slots of short source addresses.
-    pub short: [Slot<'id, ShortPending<I>>; P],
+    pub short: [Slot<'id, ShortPending<I>, Child<Path, 1>>; P],
     /// The slots of extended source addresses.
-    pub extended: [Slot<'id, ExtendedPending<I>>; P],
+    pub extended: [Slot<'id, ExtendedPending<I>, Child<Path, 2>>; P],
 }
 
 /// The complete pool layout of interface `I` for capabilities `K`.
@@ -577,9 +580,11 @@ pub struct InterfacePool<K, const I: u8, const P: usize>(PhantomData<fn() -> K>)
 impl<K: Ieee802154Caps, const I: u8, const P: usize> oer_radio_port::PoolSet
     for InterfacePool<K, I, P>
 {
-    type Pools<'id> = InterfaceResources<'id, I, P>;
+    type Pools<'id, Path: PoolPath> = InterfaceResources<'id, I, P, Path>;
 
-    fn build<'id>(builder: oer_radio_port::PoolBuilder<'id>) -> Self::Pools<'id> {
+    fn build<'id, Path: PoolPath>(
+        builder: oer_radio_port::PoolBuilder<'id, Path>,
+    ) -> Self::Pools<'id, Path> {
         const {
             assert!(
                 I < K::CAPS.interfaces,
@@ -608,29 +613,29 @@ pub enum Operation {}
 
 /// What gives a taken permit of kind `K` back: the [`WorkPermits`] it came
 /// from.
-trait Release<'id, K> {
-    fn release(&self, permit: Permit<'id, K>);
+trait Release<'id, K, Path: PoolPath> {
+    fn release(&self, permit: Permit<'id, K, Path>);
 }
 
 /// A permit of kind `K` that admitted work holds until its terminal, which
 /// only [`WorkPermits::guard`] makes. Dropped before a submission, it goes
 /// back to its pool; a submission moves it into the backend.
-pub struct WorkPermit<'q, 'id, K> {
-    permit: Option<Permit<'id, K>>,
-    permits: &'q dyn Release<'id, K>,
+pub struct WorkPermit<'q, 'id, K, Path: PoolPath = Root> {
+    permit: Option<Permit<'id, K, Path>>,
+    permits: &'q dyn Release<'id, K, Path>,
 }
 
 /// The radio's one operation permit.
-pub type OperationPermit<'q, 'id> = WorkPermit<'q, 'id, Operation>;
+pub type OperationPermit<'q, 'id, Path = Root> = WorkPermit<'q, 'id, Operation, Path>;
 
-impl<K> WorkPermit<'_, '_, K> {
+impl<K, Path: PoolPath> WorkPermit<'_, '_, K, Path> {
     /// Whether the permit is still held, as it is until a submission.
     pub const fn is_held(&self) -> bool {
         self.permit.is_some()
     }
 }
 
-impl<K> Drop for WorkPermit<'_, '_, K> {
+impl<K, Path: PoolPath> Drop for WorkPermit<'_, '_, K, Path> {
     fn drop(&mut self) {
         if let Some(permit) = self.permit.take() {
             self.permits.release(permit);
@@ -639,10 +644,10 @@ impl<K> Drop for WorkPermit<'_, '_, K> {
 }
 
 /// The work in flight: whose it is and its permit.
-struct InFlight<'id, K> {
+struct InFlight<'id, K, Path: PoolPath> {
     interface: Interface,
     id: RequestId,
-    permit: Permit<'id, K>,
+    permit: Permit<'id, K, Path>,
 }
 
 /// The one permit of kind `K` of an install, which a backend keeps in its
@@ -652,31 +657,31 @@ struct InFlight<'id, K> {
 /// interface's seat in the pool's line, never refused; a submission moves
 /// it in, and the backend gives it back when it takes the work's terminal,
 /// before it hands the event out.
-pub struct WorkPermits<'id, K, P> {
+pub struct WorkPermits<'id, K, P, Path: PoolPath = Root> {
     pool: P,
-    in_flight: RefCell<Option<InFlight<'id, K>>>,
+    in_flight: RefCell<Option<InFlight<'id, K, Path>>>,
 }
 
 /// The operation permit of one install.
-pub type OperationPermits<'id, P> = WorkPermits<'id, Operation, P>;
+pub type OperationPermits<'id, P, Path = Root> = WorkPermits<'id, Operation, P, Path>;
 
-impl<'id, K, P: PermitPool<'id, K>> WorkPermits<'id, K, P> {
+impl<'id, K, Path: PoolPath, P: PermitPool<'id, K, Path>> WorkPermits<'id, K, P, Path> {
     /// Consume the installation's declared permit component: its one permit
     /// of kind `K`, handed to `pool` with the line of its `S` seats, and the
     /// seats, one per interface client, which the body's resources hand
     /// out.
     pub fn new<const S: usize>(
-        tokens: oer_radio_port::PermitTokens<'id, K, 1, S>,
-        pool: impl FnOnce(Permit<'id, K>, Line<'id, K, S>) -> P,
-    ) -> (Self, [Seat<'id, K>; S]) {
+        tokens: oer_radio_port::PermitTokens<'id, K, 1, S, Path>,
+        pool: impl FnOnce(PermitSupply<'id, K, 1, Path>, Line<'id, K, S, Path>) -> P,
+    ) -> (Self, [Seat<'id, K, Path>; S]) {
         let oer_radio_port::PermitTokens {
-            permits: [permit],
+            supply,
             line,
             seats,
         } = tokens;
         (
             Self {
-                pool: pool(permit, line),
+                pool: pool(supply, line),
                 in_flight: RefCell::new(None),
             },
             seats,
@@ -690,8 +695,8 @@ impl<'id, K, P: PermitPool<'id, K>> WorkPermits<'id, K, P> {
 
     /// Guard `permit`, which [`Self::pool`] served: dropped before a
     /// submission, the guard gives it back. The pool holds the install's one
-    /// permit of kind `K`, so every permit of this kind is that one.
-    pub fn guard(&self, permit: Permit<'id, K>) -> WorkPermit<'_, 'id, K> {
+    /// permit of kind `K` at `Path`, so every permit of this path is that one.
+    pub fn guard(&self, permit: Permit<'id, K, Path>) -> WorkPermit<'_, 'id, K, Path> {
         WorkPermit {
             permit: Some(permit),
             permits: self,
@@ -700,7 +705,12 @@ impl<'id, K, P: PermitPool<'id, K>> WorkPermits<'id, K, P> {
 
     /// Keep the permit of the admitted work `id` of `interface` until its
     /// terminal; a backend's submission calls it.
-    pub fn admit(&self, interface: Interface, id: RequestId, mut permit: WorkPermit<'_, 'id, K>) {
+    pub fn admit(
+        &self,
+        interface: Interface,
+        id: RequestId,
+        mut permit: WorkPermit<'_, 'id, K, Path>,
+    ) {
         let Some(permit) = permit.permit.take() else {
             unreachable!("a permit holds its token until a submission or its drop");
         };
@@ -738,8 +748,10 @@ impl<'id, K, P: PermitPool<'id, K>> WorkPermits<'id, K, P> {
     }
 }
 
-impl<'id, K, P: PermitPool<'id, K>> Release<'id, K> for WorkPermits<'id, K, P> {
-    fn release(&self, permit: Permit<'id, K>) {
+impl<'id, K, Path: PoolPath, P: PermitPool<'id, K, Path>> Release<'id, K, Path>
+    for WorkPermits<'id, K, P, Path>
+{
+    fn release(&self, permit: Permit<'id, K, Path>) {
         self.pool.release(permit);
     }
 }
@@ -805,13 +817,18 @@ pub trait RadioSettings {
 /// The disabled-only settings of an IEEE 802.15.4 port: the radio-wide
 /// settings and the configuration of its interfaces.
 pub trait Ieee802154Setup<'id>: RadioSettings {
+    /// Pool component containing interface I's resources.
+    type InterfacePath<const I: u8>: PoolPath;
     /// A configured interface `I`; it holds the interface's slot.
     type Configured<const I: u8>: ConfiguredInterface<'id, I>;
 
     /// Configure interface `I`: its client exists in every phase from now
     /// on. Nothing refuses it: the slot proves the interface exists and is
     /// not configured.
-    fn configure<const I: u8>(&mut self, slot: Slot<'id, InterfaceKind<I>>) -> Self::Configured<I>;
+    fn configure<const I: u8>(
+        &mut self,
+        slot: Slot<'id, InterfaceKind<I>, Child<Self::InterfacePath<I>, 0>>,
+    ) -> Self::Configured<I>;
 
     /// Remove interface `I`, giving its slot back. Its pending entries stay
     /// installed with their tokens, and apply again when it is configured
@@ -819,7 +836,7 @@ pub trait Ieee802154Setup<'id>: RadioSettings {
     fn remove<const I: u8>(
         &mut self,
         interface: Self::Configured<I>,
-    ) -> Slot<'id, InterfaceKind<I>>;
+    ) -> Slot<'id, InterfaceKind<I>, Child<Self::InterfacePath<I>, 0>>;
 }
 
 /// A configured interface `I` of the install `'id`, which the disabled
@@ -855,6 +872,10 @@ pub trait Ieee802154Client<'id, const I: u8>:
 {
     /// The backend's capabilities marker.
     type Caps: Ieee802154Caps;
+    /// Pool component containing this interface's resources.
+    type InterfacePath: PoolPath;
+    /// Pool component containing the radio's operation permit and waiter line.
+    type OperationPath: PoolPath;
     /// An installed short-address pending entry; removing it gives its
     /// slot back.
     type ShortEntry;
@@ -891,22 +912,28 @@ pub trait Ieee802154Client<'id, const I: u8>:
     /// Mark `address` as having pending data, in `slot`.
     fn add_pending_short(
         &self,
-        slot: Slot<'id, ShortPending<I>>,
+        slot: Slot<'id, ShortPending<I>, Child<Self::InterfacePath, 1>>,
         address: [u8; 2],
     ) -> Self::ShortEntry;
 
     /// Mark `address` as having pending data, in `slot`.
     fn add_pending_extended(
         &self,
-        slot: Slot<'id, ExtendedPending<I>>,
+        slot: Slot<'id, ExtendedPending<I>, Child<Self::InterfacePath, 2>>,
         address: [u8; 8],
     ) -> Self::ExtendedEntry;
 
     /// Clear `entry`, giving its slot back.
-    fn remove_pending_short(&self, entry: Self::ShortEntry) -> Slot<'id, ShortPending<I>>;
+    fn remove_pending_short(
+        &self,
+        entry: Self::ShortEntry,
+    ) -> Slot<'id, ShortPending<I>, Child<Self::InterfacePath, 1>>;
 
     /// Clear `entry`, giving its slot back.
-    fn remove_pending_extended(&self, entry: Self::ExtendedEntry) -> Slot<'id, ExtendedPending<I>>;
+    fn remove_pending_extended(
+        &self,
+        entry: Self::ExtendedEntry,
+    ) -> Slot<'id, ExtendedPending<I>, Child<Self::InterfacePath, 2>>;
 
     /// Ask to receive on `channel`: the request replaces the interface's
     /// previous wish at once (a window included), so it no longer receives
@@ -940,8 +967,8 @@ pub trait Ieee802154Client<'id, const I: u8>:
     /// refused. The seat is lent only while the take waits.
     fn operation<'c, 's>(
         &'c self,
-        seat: &'s mut Seat<'id, Operation>,
-    ) -> impl Future<Output = OperationPermit<'c, 'id>> + 's
+        seat: &'s mut Seat<'id, Operation, Self::OperationPath>,
+    ) -> impl Future<Output = OperationPermit<'c, 'id, Self::OperationPath>> + 's
     where
         'id: 'c,
         'c: 's;
@@ -954,7 +981,7 @@ pub trait Ieee802154Client<'id, const I: u8>:
     /// A poisoned backend.
     fn transmit<'c>(
         &'c self,
-        permit: OperationPermit<'c, 'id>,
+        permit: OperationPermit<'c, 'id, Self::OperationPath>,
         transmission: SupportedTransmit<'_, Self::Caps>,
     ) -> Result<Work<'c, Self>, Poisoned<Self::Fault>>
     where
@@ -968,7 +995,7 @@ pub trait Ieee802154Client<'id, const I: u8>:
     /// A poisoned backend.
     fn energy_scan<'c>(
         &'c self,
-        permit: OperationPermit<'c, 'id>,
+        permit: OperationPermit<'c, 'id, Self::OperationPath>,
         scan: SupportedEnergyScan<Self::Caps>,
     ) -> Result<Work<'c, Self>, Poisoned<Self::Fault>>
     where
@@ -982,7 +1009,7 @@ pub trait Ieee802154Client<'id, const I: u8>:
     /// A poisoned backend.
     fn clear_channel_assessment<'c>(
         &'c self,
-        permit: OperationPermit<'c, 'id>,
+        permit: OperationPermit<'c, 'id, Self::OperationPath>,
         cca: SupportedCca<Self::Caps>,
     ) -> Result<Work<'c, Self>, Poisoned<Self::Fault>>
     where

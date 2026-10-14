@@ -804,12 +804,8 @@ impl PortBackend for PoolProbe {
             [oer_radio_port::Seat<'id, crate::owner::Operation>; 3],
         ),
     ) {
-        let oer_radio_port::PermitTokens {
-            permits: [permit],
-            seats,
-            ..
-        } = mint.into_pools();
-        ((), (ModelPermitPool::new([permit]), seats))
+        let oer_radio_port::PermitTokens { supply, seats, .. } = mint.into_pools();
+        ((), (ModelPermitPool::new(supply), seats))
     }
 
     fn setup<'a, 'id>(&'a mut self) -> Lent<'a, Self::Setup<'a, 'id>> {

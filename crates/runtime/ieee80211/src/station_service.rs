@@ -93,8 +93,15 @@ use oer_time::{Instant, Timer};
 /// splits between the station and data.
 pub trait StationPort<'id>: LowerMacBackend {
     /// The types its phase's events carry.
-    type Types: PhaseTypes<'id, Context = TxContext<'id, Self::Caps, Self::Large>>
-        + TxBufferPool<'id, Self::Small>
+    type Types: PhaseTypes<
+            'id,
+            Context = TxContext<
+                'id,
+                Self::Caps,
+                Self::Large,
+                <Self::Types as PhaseTypes<'id>>::EpochPath,
+            >,
+        > + TxBufferPool<'id, Self::Small>
         + TxBufferPool<'id, Self::Large>;
     /// The buffer class of the station's frames.
     type Small: TxBufferClass;
@@ -138,11 +145,11 @@ pub enum StationTxBuffer<'id, B: StationPort<'id>> {
 /// The composition's context for this service. Each variant owns the
 /// original machine operation; the backend treats the entire value as opaque.
 #[derive(Debug)]
-pub enum TxContext<'id, K, C> {
+pub enum TxContext<'id, K, C, Path: oer_radio_port::PoolPath = oer_radio_port::Root> {
     /// A station protocol operation, including its connection epoch and purpose.
-    Station(StaTxContext<'id>),
+    Station(StaTxContext<'id, Path>),
     /// An MSDU operation, including its original link, TID and queue order.
-    Data(DataTxContext<'id, K, C>),
+    Data(DataTxContext<'id, K, C, oer_ieee80211_sta::data::AcPermit, Path>),
 }
 
 /// Each step polls every source and consumes at most one input from each.
@@ -181,7 +188,8 @@ where
     S: TxBufferClass,
 {
     type Small = S;
-    type Ticket = Slot<'id, Ty::TicketKind>;
+    type EpochPath = Ty::EpochPath;
+    type Ticket = Slot<'id, Ty::TicketKind, Ty::TicketPath>;
     type SmallBuffer = <Ty as TxBufferPool<'id, S>>::Buffer;
     type Sent = <Ty as TxBufferPool<'id, S>>::Sent;
 
@@ -207,7 +215,8 @@ where
     L: TxBufferClass,
 {
     type Class = L;
-    type Ticket = Slot<'id, Ty::TicketKind>;
+    type EpochPath = Ty::EpochPath;
+    type Ticket = Slot<'id, Ty::TicketKind, Ty::TicketPath>;
     type Buffer = <Ty as TxBufferPool<'id, L>>::Buffer;
     type Sent = <Ty as TxBufferPool<'id, L>>::Sent;
 
@@ -236,7 +245,12 @@ pub type PortData<'id, B> = StaData<
 >;
 
 /// The arbiter of the service on the port `B`.
-pub type PortArbiter<'id, B> = Arbiter<'id, <B as LowerMacBackend>::Caps>;
+pub type PortArbiter<'id, B> = Arbiter<
+    'id,
+    <B as LowerMacBackend>::Caps,
+    oer_ieee80211_arbiter::NoReservation,
+    <<B as StationPort<'id>>::Types as PhaseTypes<'id>>::GatePath,
+>;
 
 /// The levels the service's attempts take, which its port must offer:
 /// checked when the service's type is built, so a port without them builds
@@ -438,13 +452,21 @@ pub struct StationService<'id, B: StationPort<'id>, S, const RX: usize> {
 }
 
 struct PendingActions<'id, B: StationPort<'id>> {
-    configuring: Option<oer_ieee80211_sta::machine::PendingConfiguration<'id>>,
+    configuring: Option<
+        oer_ieee80211_sta::machine::PendingConfiguration<
+            'id,
+            <B::Types as PhaseTypes<'id>>::EpochPath,
+        >,
+    >,
     replacing: Option<PendingReplacement<'id, B>>,
 }
 
 struct PendingReplacement<'id, B: StationPort<'id>> {
     slot: <<B::Types as PhaseTypes<'id>>::StationKeys as KeyTypes<'id>>::GroupSlotIdentity,
-    pending: oer_ieee80211_sta::machine::PendingGroupReplacement<'id>,
+    pending: oer_ieee80211_sta::machine::PendingGroupReplacement<
+        'id,
+        <B::Types as PhaseTypes<'id>>::EpochPath,
+    >,
 }
 
 /// What a step left the loop to do.
@@ -1152,8 +1174,12 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
     fn returned(
         &mut self,
         now: Instant,
-        context: TxContext<'id, B::Caps, B::Large>,
-        ticket: Slot<'id, <B::Types as PhaseTypes<'id>>::TicketKind>,
+        context: TxContext<'id, B::Caps, B::Large, <B::Types as PhaseTypes<'id>>::EpochPath>,
+        ticket: Slot<
+            'id,
+            <B::Types as PhaseTypes<'id>>::TicketKind,
+            <B::Types as PhaseTypes<'id>>::TicketPath,
+        >,
         buffer: <B::Types as PhaseTypes<'id>>::AnyTxBuffer,
         end: ReturnedTx,
     ) -> Result<(), BackendContractViolation> {
@@ -1226,7 +1252,7 @@ enum Follow<'id, B: StationPort<'id>> {
     Associated(Peer<PortRxMeta<'id, B>>),
     /// A frame of the station did not go.
     Refused {
-        context: TxContext<'id, B::Caps, B::Large>,
+        context: TxContext<'id, B::Caps, B::Large, <B::Types as PhaseTypes<'id>>::EpochPath>,
         ticket: <PortStaTokens<'id, B::Types, B::Small> as StaTokens>::Ticket,
         buffer: <B::Types as PhaseTypes<'id>>::AnyTxBuffer,
         reason: TxRefusal,

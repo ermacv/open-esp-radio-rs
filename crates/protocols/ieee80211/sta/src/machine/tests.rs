@@ -90,6 +90,7 @@ struct Key<S = Slot>(S);
 struct Tokens;
 
 impl StaTokens for Tokens {
+    type EpochPath = oer_radio_port::Root;
     type Small = Buffer;
     type Ticket = Ticket;
     type SmallBuffer = Buffer;
@@ -1544,6 +1545,7 @@ fn the_handshakes_eapol_goes_unprotected_and_group_message_2_under_the_pairwise_
 }
 
 impl crate::data::StaDataTokens for Tokens {
+    type EpochPath = oer_radio_port::Root;
     type Class = Buffer;
     type Ticket = Ticket;
     type Buffer = Buffer;

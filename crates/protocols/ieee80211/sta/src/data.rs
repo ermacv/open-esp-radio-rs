@@ -35,10 +35,13 @@ use oer_ieee80211_mac::{
 use crate::epoch::LinkEpoch;
 use crate::machine::{LinkMode, LinkProtection, LinkView, StaTokens};
 use crate::pool::{Fifo, Pool};
+use oer_radio_port::{PoolPath, Root};
 
 /// The tokens of the data machine: the port's tickets and the buffers of
 /// the class that holds an MSDU's MPDU.
 pub trait StaDataTokens {
+    /// Component owning the connected station's epoch source.
+    type EpochPath: PoolPath;
     /// The checked class carried by the MPDU description and context.
     type Class: oer_ieee80211_lower_mac::TxBufferClass;
     /// A transmit ticket.
@@ -92,7 +95,7 @@ pub enum DataReturn<'id, D: StaDataTokens, K> {
     /// return and its admission count is released without a radio terminal.
     Refused {
         /// Original operation, moved back from submit.
-        context: DataTxContext<'id, K, D::Class>,
+        context: DataTxContext<'id, K, D::Class, AcPermit, D::EpochPath>,
         /// Its ticket.
         ticket: D::Ticket,
         /// Its memory.
@@ -110,7 +113,7 @@ pub enum DataReturn<'id, D: StaDataTokens, K> {
     /// [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6132835650
     TxDone {
         /// The original operation, returned unchanged by the port.
-        context: DataTxContext<'id, K, D::Class>,
+        context: DataTxContext<'id, K, D::Class, AcPermit, D::EpochPath>,
         /// Its ticket.
         ticket: D::Ticket,
         /// Its buffer.
@@ -169,7 +172,7 @@ pub enum DataReturn<'id, D: StaDataTokens, K> {
 #[must_use = "the operation owns a ticket, buffer and admission permission"]
 pub struct DataTransmit<'id, D: StaDataTokens, K, A = AcPermit> {
     /// The operation identity and parameters, moved through the port.
-    context: DataTxContext<'id, K, D::Class, A>,
+    context: DataTxContext<'id, K, D::Class, A, D::EpochPath>,
     /// Its ticket.
     ticket: D::Ticket,
     /// The buffer holding the MPDU, from its header on.
@@ -192,7 +195,7 @@ impl<'id, D: StaDataTokens, K, A> DataTransmit<'id, D, K, A> {
 #[must_use = "all owners must reach the port or return to Data"]
 pub struct DataTransmitParts<'id, D: StaDataTokens, K, A = AcPermit> {
     /// The original operation and its admission permission.
-    pub context: DataTxContext<'id, K, D::Class, A>,
+    pub context: DataTxContext<'id, K, D::Class, A, D::EpochPath>,
     /// The operation's ticket.
     pub ticket: D::Ticket,
     /// Its fresh or previously published MPDU.
@@ -240,9 +243,9 @@ pub enum DataRefusal {
 /// Its closed, checked frame description survives every unpublished return;
 /// neither the MPDU length nor its header is reconstructed at completion.
 #[derive(Debug)]
-pub struct DataTxContext<'id, K, C, A = AcPermit> {
+pub struct DataTxContext<'id, K, C, A = AcPermit, Path: PoolPath = Root> {
     admission: A,
-    link: LinkEpoch<'id>,
+    link: LinkEpoch<'id, Path>,
     tid: WmmUserPriority,
     frame: oer_ieee80211_lower_mac::ClassSizedFrame<C, AckHeader, K>,
     access_category: WmmAccessCategory,
@@ -289,7 +292,7 @@ impl Admissions {
     }
 }
 
-impl<'id, K, C, A> DataTxContext<'id, K, C, A> {
+impl<'id, K, C, A, Path: PoolPath> DataTxContext<'id, K, C, A, Path> {
     /// The checked MPDU description selected when the bytes were encoded.
     pub const fn frame(&self) -> &oer_ieee80211_lower_mac::ClassSizedFrame<C, AckHeader, K> {
         &self.frame
@@ -303,7 +306,7 @@ impl<'id, K, C, A> DataTxContext<'id, K, C, A> {
     /// Borrow the matching link's protection for this operation. A stale link
     /// or a changed protection mode refuses before the port sees the frame.
     /// In particular, a CCMP encoding never falls through to open submission.
-    pub fn protection<'a, T: StaTokens>(
+    pub fn protection<'a, T: StaTokens<EpochPath = Path>>(
         &self,
         link: &LinkView<'a, 'id, T>,
     ) -> Result<DataProtection<&'a T::PairwiseKey>, crate::machine::TxRefusal> {
@@ -314,7 +317,7 @@ impl<'id, K, C, A> DataTxContext<'id, K, C, A> {
         Ok(protection)
     }
 
-    fn admission<B>(self, admission: B) -> (DataTxContext<'id, K, C, B>, A) {
+    fn admission<B>(self, admission: B) -> (DataTxContext<'id, K, C, B, Path>, A) {
         (
             DataTxContext {
                 admission,
@@ -394,7 +397,7 @@ pub struct StaData<'id, D: StaDataTokens, K, const CAP: usize = 8> {
     /// The order of the next MSDU.
     next_order: u32,
     /// The current link: [`Self::leave`] ends it.
-    link: Option<LinkEpoch<'id>>,
+    link: Option<LinkEpoch<'id, D::EpochPath>>,
     overflows: Counter,
     left_behind: Counter,
     preparation_refused: Counter,
@@ -563,7 +566,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
     /// # Errors
     ///
     /// Why an MSDU did not become an MPDU: it waits, or is too long.
-    pub fn input<T: StaTokens>(
+    pub fn input<T: StaTokens<EpochPath = D::EpochPath>>(
         &mut self,
         input: DataInput<'_, '_, '_, 'id, T>,
     ) -> Result<(), DataRefusal> {
@@ -646,7 +649,10 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
 
     /// Whether this operation belongs to the current link. The service
     /// uses the same guard before updating the link's rate selection.
-    pub fn is_current<A>(&self, context: &DataTxContext<'id, K, D::Class, A>) -> bool {
+    pub fn is_current<A>(
+        &self,
+        context: &DataTxContext<'id, K, D::Class, A, D::EpochPath>,
+    ) -> bool {
         Some(context.link) == self.link
     }
 

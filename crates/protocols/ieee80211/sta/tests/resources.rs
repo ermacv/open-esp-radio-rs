@@ -48,6 +48,7 @@ impl oer_ieee80211_lower_mac::TxBufferClass for Buffer {
     const CAPACITY: usize = 256;
 }
 impl StaTokens for Tokens {
+    type EpochPath = oer_radio_port::Root;
     type Small = Buffer;
     type Ticket = u8;
     type SmallBuffer = Buffer;

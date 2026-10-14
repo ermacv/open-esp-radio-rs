@@ -5,9 +5,9 @@
 //! entries, a transmit queue, the one operation of a radio) is a set of
 //! tokens the install mints once, through the [`Mint`] that [`branded`]
 //! makes for each block's `run_port` to hand its backend, branded by the install
-//! (`'id`) and by the pool's kind marker `Kind`, which keeps pools apart
-//! (a Wi-Fi station's key slots and an access point's; a Bluetooth LE
-//! advertising set and a connection).
+//! (`'id`), its semantic kind `Kind`, and its sealed component `PoolPath`.
+//! Tuple factories derive a distinct child path for every component, even
+//! when the same kind occurs twice or inside a custom nested layout.
 //!
 //! - A **slot** ([`Slot`]) is taken synchronously: a pool is an array of
 //!   slots its holder owns, so how many are left is in the types, and an
@@ -193,7 +193,11 @@ use core::{future::Future, marker::PhantomData};
 type Brand<'id> = PhantomData<fn(&'id ()) -> &'id ()>;
 
 mod mint;
-pub use mint::{Mint, PermitTokens, Permits, PoolBuilder, PoolSet, Pools, Slots, branded};
+mod path;
+pub use mint::{
+    Mint, PermitSupply, PermitTokens, Permits, PoolBuilder, PoolSet, Pools, Slots, branded,
+};
+pub use path::{Child, PoolPath, Root};
 
 /// The index of a token of a pool of at most 256, which `Mint` asserts at
 /// compile time.
@@ -205,17 +209,17 @@ const fn index_of(index: usize) -> u8 {
     index as u8
 }
 
-/// One slot of an install's pool of the kind `Kind`: the capacity of one
+/// One slot of component `Path` of an install, of kind `Kind`: the capacity of one
 /// installed resource. Installing a resource moves it in; removing the
 /// resource gives it back.
 #[must_use = "a slot is capacity; dropping it loses it until the next install"]
-pub struct Slot<'id, Kind> {
+pub struct Slot<'id, Kind, Path: PoolPath = Root> {
     index: u8,
     brand: Brand<'id>,
-    kind: PhantomData<fn() -> Kind>,
+    kind: PhantomData<fn() -> (Kind, Path)>,
 }
 
-impl<Kind> Slot<'_, Kind> {
+impl<Kind, Path: PoolPath> Slot<'_, Kind, Path> {
     /// The slot's index in its pool, for the backend that places the
     /// resource.
     pub const fn index(&self) -> u8 {
@@ -227,13 +231,13 @@ impl<Kind> Slot<'_, Kind> {
 /// work holds until it ends; the backend that keeps the pool gives it back
 /// before it hands the work's terminal out.
 #[must_use = "a permit goes back to its pool through `PermitPool::release`"]
-pub struct Permit<'id, Kind> {
+pub struct Permit<'id, Kind, Path: PoolPath = Root> {
     index: u8,
     brand: Brand<'id>,
-    kind: PhantomData<fn() -> Kind>,
+    kind: PhantomData<fn() -> (Kind, Path)>,
 }
 
-impl<Kind> Permit<'_, Kind> {
+impl<Kind, Path: PoolPath> Permit<'_, Kind, Path> {
     /// The permit's index in its pool, for the backend that places the
     /// work.
     pub const fn index(&self) -> u8 {
@@ -246,13 +250,13 @@ impl<Kind> Permit<'_, Kind> {
 /// takes. What it stands for beyond its kind (an interface's role and
 /// access category) is its index, which the backend that minted it maps.
 #[must_use = "a seat is a place in a pool's line; dropping it loses it until the next install"]
-pub struct Seat<'id, Kind> {
+pub struct Seat<'id, Kind, Path: PoolPath = Root> {
     index: u8,
     brand: Brand<'id>,
-    kind: PhantomData<fn() -> Kind>,
+    kind: PhantomData<fn() -> (Kind, Path)>,
 }
 
-impl<Kind> Seat<'_, Kind> {
+impl<Kind, Path: PoolPath> Seat<'_, Kind, Path> {
     /// The seat's index in its line: the place the pool holds for it, and
     /// what the backend that minted it maps to its holder.
     pub const fn index(&self) -> u8 {
@@ -260,26 +264,26 @@ impl<Kind> Seat<'_, Kind> {
     }
 }
 
-/// The line of the permit pools of the kind `Kind`: the proof that
-/// [`Mint`] made the kind's `N` seats, which sizes a pool's line to hold a
+/// The receipt for waiter domain `Path`: proof that
+/// [`Mint`] made exactly its `N` seats of kind `Kind`, which sizes a pool's line to hold a
 /// place for each, so a pool never overflows and serves every taker in
 /// order. It is a copyable receipt, not capacity: each pool whose takers
 /// are these seats takes it, and a seat waits in one take at a time.
 #[must_use = "a line sizes its permit pools"]
-pub struct Line<'id, Kind, const N: usize> {
+pub struct Line<'id, Kind, const N: usize, Path: PoolPath = Root> {
     brand: Brand<'id>,
-    kind: PhantomData<fn() -> Kind>,
+    kind: PhantomData<fn() -> (Kind, Path)>,
 }
 
-impl<Kind, const N: usize> Clone for Line<'_, Kind, N> {
+impl<Kind, const N: usize, Path: PoolPath> Clone for Line<'_, Kind, N, Path> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<Kind, const N: usize> Copy for Line<'_, Kind, N> {}
+impl<Kind, const N: usize, Path: PoolPath> Copy for Line<'_, Kind, N, Path> {}
 
-impl<Kind, const N: usize> Line<'_, Kind, N> {
+impl<Kind, const N: usize, Path: PoolPath> Line<'_, Kind, N, Path> {
     /// The places in the line, one per seat.
     pub const fn places(&self) -> usize {
         N
@@ -289,21 +293,22 @@ impl<Kind, const N: usize> Line<'_, Kind, N> {
 /// A pool of the permits of one install of the kind `Kind`, which a runtime
 /// crate or a backend keeps; it lives in one task, shared by reference by
 /// the port's body and its phases, never across executor tasks. Its line
-/// holds a place for each seat of its kind, which [`Permits`] issued with
-/// the [`Line`] the pool was built with.
-pub trait PermitPool<'id, Kind> {
+/// holds a place for each seat of its `Waiters` path, which [`Permits`] issued
+/// with its [`Line`]. `Pool` independently identifies the returned permits;
+/// multiple pools may share a waiter domain without sharing capacity.
+pub trait PermitPool<'id, Kind, Pool: PoolPath = Root, Waiters: PoolPath = Pool> {
     /// Take a permit with `seat`, waiting while every permit is held, never
     /// refused, in the order the pool documents (first in, first out by
     /// default). The future borrows the seat while it waits: dropping it
     /// gives up the seat's place, and the seat stays with its taker.
     fn take<'a>(
         &'a self,
-        seat: &'a mut Seat<'id, Kind>,
-    ) -> impl Future<Output = Permit<'id, Kind>> + 'a;
+        seat: &'a mut Seat<'id, Kind, Waiters>,
+    ) -> impl Future<Output = Permit<'id, Kind, Pool>> + 'a;
 
     /// Give a permit back: the backend that keeps the pool calls it when the
     /// work that held the permit ended, before it hands the terminal out,
     /// or when a taker drops a permit it never submitted; the next waiting
     /// taker resumes.
-    fn release(&self, permit: Permit<'id, Kind>);
+    fn release(&self, permit: Permit<'id, Kind, Pool>);
 }

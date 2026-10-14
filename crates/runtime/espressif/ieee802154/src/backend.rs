@@ -57,7 +57,9 @@ use oer_ieee802154_port::{
     RadioPortEvents, RadioWork, Retire, Work,
 };
 use oer_radio_permit_pool::FifoPermitPool;
-use oer_radio_port::{EventsLost, Mint, PermitPool, Poisoned, PortResult, Seat, Slot};
+use oer_radio_port::{
+    Child, EventsLost, Mint, PermitPool, Poisoned, PoolPath, PortResult, Root, Seat, Slot,
+};
 use oer_time::Timer;
 
 use crate::{Ieee802154RadioEvent, Ieee802154Runtime, Ieee802154RuntimeParts};
@@ -70,6 +72,8 @@ pub const RUNTIME_INTERFACES: usize = 4;
 pub trait Ieee802154RuntimeCaps: Ieee802154Caps {
     /// The complete layout of the interfaces' port-lifetime resources.
     type Interfaces: oer_radio_port::PoolSet;
+    /// Path of interface I inside the complete runtime layout.
+    type InterfacePath<const I: u8>: PoolPath;
 }
 
 /// What one interface asks of the radio's resting state.
@@ -97,7 +101,11 @@ enum OperationKind {
 /// The runtime's held part of the install: the operation permit, the
 /// interfaces' wishes and the wakers of their waiting futures.
 pub struct RuntimeHeld<'id> {
-    permits: OperationPermits<'id, FifoPermitPool<'id, Operation, 1, RUNTIME_INTERFACES>>,
+    permits: OperationPermits<
+        'id,
+        FifoPermitPool<'id, Operation, 1, RUNTIME_INTERFACES, Child<Root, 1>>,
+        Child<Root, 1>,
+    >,
     kind: Cell<Option<OperationKind>>,
     wishes: RefCell<[Wish; RUNTIME_INTERFACES]>,
     waiters: RefCell<[Option<Waker>; RUNTIME_INTERFACES]>,
@@ -151,7 +159,7 @@ pub struct RuntimeResources<'r, 'id, I, Rt> {
     /// The interfaces' configuration and pending-table slots.
     pub interfaces: I,
     /// One operation seat per interface, by its index.
-    pub operation: [Seat<'id, Operation>; RUNTIME_INTERFACES],
+    pub operation: [Seat<'id, Operation, Child<Root, 1>>; RUNTIME_INTERFACES],
     /// The recent-RSSI reader.
     pub rssi: RuntimeRssi<'r, Rt>,
 }
@@ -282,11 +290,14 @@ pub struct Ieee802154PortEvent {
 }
 
 /// A configured interface `I` of the runtime.
-pub struct RuntimeConfigured<'id, const I: u8> {
-    slot: Slot<'id, InterfaceKind<I>>,
+pub struct RuntimeConfigured<'id, const I: u8, Path: PoolPath> {
+    slot: Slot<'id, InterfaceKind<I>, Child<Path, 0>>,
 }
 
-impl<'id, const I: u8> ConfiguredInterface<'id, I> for RuntimeConfigured<'id, I> {}
+impl<'id, const I: u8, Path: PoolPath> ConfiguredInterface<'id, I>
+    for RuntimeConfigured<'id, I, Path>
+{
+}
 
 /// The runtime's disabled-only settings.
 pub struct RuntimeSetup<'a, 'id, Rt, K> {
@@ -336,14 +347,14 @@ impl RadioWork for RuntimeToken {
 }
 
 /// An installed short-address pending entry of interface `I`.
-pub struct RuntimeShortEntry<'id, const I: u8> {
-    slot: Slot<'id, ShortPending<I>>,
+pub struct RuntimeShortEntry<'id, const I: u8, Path: PoolPath> {
+    slot: Slot<'id, ShortPending<I>, Child<Path, 1>>,
     address: [u8; 2],
 }
 
 /// An installed extended-address pending entry of interface `I`.
-pub struct RuntimeExtendedEntry<'id, const I: u8> {
-    slot: Slot<'id, ExtendedPending<I>>,
+pub struct RuntimeExtendedEntry<'id, const I: u8, Path: PoolPath> {
+    slot: Slot<'id, ExtendedPending<I>, Child<Path, 2>>,
     address: [u8; 8],
 }
 
@@ -464,7 +475,7 @@ where
         &self,
         held: &RuntimeHeld<'id>,
         interface: Interface,
-        permit: OperationPermit<'_, 'id>,
+        permit: OperationPermit<'_, 'id, Child<Root, 1>>,
         kind: OperationKind,
         id: RequestId,
         command: RadioCommand<'_>,
@@ -527,7 +538,7 @@ where
     type Resources<'id> = RuntimeResources<
         'r,
         'id,
-        oer_radio_port::Pools<'id, K::Interfaces>,
+        oer_radio_port::Pools<'id, K::Interfaces, Child<Root, 0>>,
         Rt<'storage, M, H, T, R, EVENTS>,
     >;
     type Held<'id> = RuntimeHeld<'id>;
@@ -583,8 +594,7 @@ where
         mint: Mint<'id, Self::Pools>,
     ) -> (RuntimeHeld<'id>, Self::Resources<'id>) {
         let (interfaces, work) = mint.into_pools();
-        let (permits, operation) =
-            OperationPermits::new(work, |permit, line| FifoPermitPool::new([permit], line));
+        let (permits, operation) = OperationPermits::new(work, FifoPermitPool::new);
         let held = RuntimeHeld {
             permits,
             kind: Cell::new(None),
@@ -860,7 +870,7 @@ macro_rules! radio_settings {
         impl<$($lt,)* 'storage, K, M, H, T, R, const EVENTS: usize> RadioSettings
             for $part<$($lt,)* Rt<'storage, M, H, T, R, EVENTS>, K>
         where
-            K: Ieee802154Caps,
+            K: Ieee802154RuntimeCaps,
             M: RawMutex,
             H: Ieee802154LowLevel,
             T: Timer,
@@ -928,7 +938,7 @@ macro_rules! radio_settings {
 radio_settings!(RuntimeSetup<'a, 'id>);
 radio_settings!(RuntimeControl<'a>);
 
-impl<M, H, T, R, const EVENTS: usize, K: Ieee802154Caps> Ieee802154Control
+impl<M, H, T, R, const EVENTS: usize, K: Ieee802154RuntimeCaps> Ieee802154Control
     for RuntimeControl<'_, Rt<'_, M, H, T, R, EVENTS>, K>
 where
     M: RawMutex,
@@ -938,7 +948,7 @@ where
 {
 }
 
-impl<'id, M, H, T, R, const EVENTS: usize, K: Ieee802154Caps> Ieee802154Setup<'id>
+impl<'id, M, H, T, R, const EVENTS: usize, K: Ieee802154RuntimeCaps> Ieee802154Setup<'id>
     for RuntimeSetup<'_, 'id, Rt<'_, M, H, T, R, EVENTS>, K>
 where
     M: RawMutex,
@@ -946,12 +956,13 @@ where
     T: Timer,
     R: Ieee802154Random,
 {
-    type Configured<const I: u8> = RuntimeConfigured<'id, I>;
+    type InterfacePath<const I: u8> = K::InterfacePath<I>;
+    type Configured<const I: u8> = RuntimeConfigured<'id, I, K::InterfacePath<I>>;
 
     fn configure<const I: u8>(
         &mut self,
-        slot: Slot<'id, InterfaceKind<I>>,
-    ) -> RuntimeConfigured<'id, I> {
+        slot: Slot<'id, InterfaceKind<I>, Child<K::InterfacePath<I>, 0>>,
+    ) -> RuntimeConfigured<'id, I, K::InterfacePath<I>> {
         self.runtime
             .configure_interface(Interface::new(I), InterfaceSetting::Enabled(true));
         RuntimeConfigured { slot }
@@ -959,8 +970,8 @@ where
 
     fn remove<const I: u8>(
         &mut self,
-        interface: RuntimeConfigured<'id, I>,
-    ) -> Slot<'id, InterfaceKind<I>> {
+        interface: RuntimeConfigured<'id, I, K::InterfacePath<I>>,
+    ) -> Slot<'id, InterfaceKind<I>, Child<K::InterfacePath<I>, 0>> {
         self.runtime
             .configure_interface(Interface::new(I), InterfaceSetting::Enabled(false));
         interface.slot
@@ -970,19 +981,22 @@ where
 impl<'a, 'id, 'storage, M, H, T, R, const EVENTS: usize, K> Ieee802154Clients<'id>
     for RuntimeClients<'a, 'id, Rt<'storage, M, H, T, R, EVENTS>, K>
 where
-    K: Ieee802154Caps,
+    K: Ieee802154RuntimeCaps,
     M: RawMutex,
     H: Ieee802154LowLevel,
     T: Timer,
     R: Ieee802154Random,
 {
-    type Configured<const I: u8> = RuntimeConfigured<'id, I>;
+    type Configured<const I: u8> = RuntimeConfigured<'id, I, K::InterfacePath<I>>;
     type Client<'c, const I: u8>
         = RuntimeClient<'c, 'id, Rt<'storage, M, H, T, R, EVENTS>, K, I>
     where
         Self: 'c;
 
-    fn client<'c, const I: u8>(&'c self, _: &RuntimeConfigured<'id, I>) -> Self::Client<'c, I> {
+    fn client<'c, const I: u8>(
+        &'c self,
+        _: &RuntimeConfigured<'id, I, K::InterfacePath<I>>,
+    ) -> Self::Client<'c, I> {
         RuntimeClient {
             runtime: self.runtime,
             held: self.held,
@@ -1028,15 +1042,17 @@ where
 impl<'c, 'id, M, H, T, R, const EVENTS: usize, K, const I: u8> Ieee802154Client<'id, I>
     for RuntimeClient<'c, 'id, Rt<'_, M, H, T, R, EVENTS>, K, I>
 where
-    K: Ieee802154Caps,
+    K: Ieee802154RuntimeCaps,
     M: RawMutex,
     H: Ieee802154LowLevel,
     T: Timer,
     R: Ieee802154Random,
 {
+    type InterfacePath = K::InterfacePath<I>;
+    type OperationPath = Child<Root, 1>;
     type Caps = K;
-    type ShortEntry = RuntimeShortEntry<'id, I>;
-    type ExtendedEntry = RuntimeExtendedEntry<'id, I>;
+    type ShortEntry = RuntimeShortEntry<'id, I, K::InterfacePath<I>>;
+    type ExtendedEntry = RuntimeExtendedEntry<'id, I, K::InterfacePath<I>>;
 
     fn set_pan_id(&self, pan_id: u16) {
         self.runtime
@@ -1093,9 +1109,9 @@ where
 
     fn add_pending_short(
         &self,
-        slot: Slot<'id, ShortPending<I>>,
+        slot: Slot<'id, ShortPending<I>, Child<K::InterfacePath<I>, 1>>,
         address: [u8; 2],
-    ) -> RuntimeShortEntry<'id, I> {
+    ) -> RuntimeShortEntry<'id, I, K::InterfacePath<I>> {
         self.runtime.configure_interface(
             Interface::new(I),
             InterfaceSetting::AddPendingAddress(FrameAddress::Short(address)),
@@ -1105,9 +1121,9 @@ where
 
     fn add_pending_extended(
         &self,
-        slot: Slot<'id, ExtendedPending<I>>,
+        slot: Slot<'id, ExtendedPending<I>, Child<K::InterfacePath<I>, 2>>,
         address: [u8; 8],
-    ) -> RuntimeExtendedEntry<'id, I> {
+    ) -> RuntimeExtendedEntry<'id, I, K::InterfacePath<I>> {
         self.runtime.configure_interface(
             Interface::new(I),
             InterfaceSetting::AddPendingAddress(FrameAddress::Extended(address)),
@@ -1115,7 +1131,10 @@ where
         RuntimeExtendedEntry { slot, address }
     }
 
-    fn remove_pending_short(&self, entry: RuntimeShortEntry<'id, I>) -> Slot<'id, ShortPending<I>> {
+    fn remove_pending_short(
+        &self,
+        entry: RuntimeShortEntry<'id, I, K::InterfacePath<I>>,
+    ) -> Slot<'id, ShortPending<I>, Child<K::InterfacePath<I>, 1>> {
         self.runtime.configure_interface(
             Interface::new(I),
             InterfaceSetting::RemovePendingAddress(FrameAddress::Short(entry.address)),
@@ -1125,8 +1144,8 @@ where
 
     fn remove_pending_extended(
         &self,
-        entry: RuntimeExtendedEntry<'id, I>,
-    ) -> Slot<'id, ExtendedPending<I>> {
+        entry: RuntimeExtendedEntry<'id, I, K::InterfacePath<I>>,
+    ) -> Slot<'id, ExtendedPending<I>, Child<K::InterfacePath<I>, 2>> {
         self.runtime.configure_interface(
             Interface::new(I),
             InterfaceSetting::RemovePendingAddress(FrameAddress::Extended(entry.address)),
@@ -1194,8 +1213,8 @@ where
 
     fn operation<'o, 's>(
         &'o self,
-        seat: &'s mut Seat<'id, Operation>,
-    ) -> impl Future<Output = OperationPermit<'o, 'id>> + 's
+        seat: &'s mut Seat<'id, Operation, Child<Root, 1>>,
+    ) -> impl Future<Output = OperationPermit<'o, 'id, Child<Root, 1>>> + 's
     where
         'id: 'o,
         'o: 's,
@@ -1209,7 +1228,7 @@ where
 
     fn transmit<'o>(
         &'o self,
-        permit: OperationPermit<'o, 'id>,
+        permit: OperationPermit<'o, 'id, Child<Root, 1>>,
         transmission: SupportedTransmit<'_, K>,
     ) -> Result<Work<'o, Self>, Poisoned<RadioFault>>
     where
@@ -1240,7 +1259,7 @@ where
 
     fn energy_scan<'o>(
         &'o self,
-        permit: OperationPermit<'o, 'id>,
+        permit: OperationPermit<'o, 'id, Child<Root, 1>>,
         scan: SupportedEnergyScan<K>,
     ) -> Result<Work<'o, Self>, Poisoned<RadioFault>>
     where
@@ -1265,7 +1284,7 @@ where
 
     fn clear_channel_assessment<'o>(
         &'o self,
-        permit: OperationPermit<'o, 'id>,
+        permit: OperationPermit<'o, 'id, Child<Root, 1>>,
         cca: SupportedCca<K>,
     ) -> Result<Work<'o, Self>, Poisoned<RadioFault>>
     where

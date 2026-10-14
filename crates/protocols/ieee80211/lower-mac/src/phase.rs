@@ -105,11 +105,11 @@
 //! Its compiling twin moves the token on, as an operation takes it:
 //!
 //! ```
-//! # use oer_ieee80211_lower_mac::{GateClosed, GateOpen, LowerMacPhase};
-//! fn close<'p, 'id: 'p, P: LowerMacPhase<'p, 'id>>(phase: &mut P, gate: GateOpen<'id>) {
+//! # use oer_ieee80211_lower_mac::{GateClosed, GateOpen, LowerMacPhase, PhaseTypes};
+//! fn close<'p, 'id: 'p, P: LowerMacPhase<'p, 'id>>(phase: &mut P, gate: GateOpen<'id, <P::Types as PhaseTypes<'id>>::GatePath>) {
 //!     phase.close_gate(gate);
 //! }
-//! fn open<'p, 'id: 'p, P: LowerMacPhase<'p, 'id>>(phase: &mut P, gate: GateClosed<'id>) -> GateOpen<'id> {
+//! fn open<'p, 'id: 'p, P: LowerMacPhase<'p, 'id>>(phase: &mut P, gate: GateClosed<'id, <P::Types as PhaseTypes<'id>>::GatePath>) -> GateOpen<'id, <P::Types as PhaseTypes<'id>>::GatePath> {
 //!     phase.open_gate(gate)
 //! }
 //! ```
@@ -117,8 +117,8 @@
 //! The open gate does not open a gate, nor the closed one close it:
 //!
 //! ```compile_fail,E0308
-//! # use oer_ieee80211_lower_mac::{GateOpen, LowerMacPhase};
-//! fn reopen<'p, 'id: 'p, P: LowerMacPhase<'p, 'id>>(phase: &mut P, gate: GateOpen<'id>) {
+//! # use oer_ieee80211_lower_mac::{GateOpen, LowerMacPhase, PhaseTypes};
+//! fn reopen<'p, 'id: 'p, P: LowerMacPhase<'p, 'id>>(phase: &mut P, gate: GateOpen<'id, <P::Types as PhaseTypes<'id>>::GatePath>) {
 //!     let _ = phase.open_gate(gate);
 //! }
 //! ```
@@ -191,7 +191,7 @@
 
 use oer_ieee80211_mac::ccmp::GroupKeyId;
 use oer_ieee80211_port::PortPhase;
-use oer_radio_port::{Poisoned, Slot};
+use oer_radio_port::{Poisoned, PoolPath, Root, Slot};
 
 use crate::{
     Channel, PhyRate, Protection, TbttEvent, TxOutcome, VifRole,
@@ -224,21 +224,25 @@ enum GateKind {}
 pub struct GatePool;
 
 impl oer_radio_port::PoolSet for GatePool {
-    type Pools<'id> = (GateOpen<'id>, GateIssuer<'id>);
+    type Pools<'id, Path: PoolPath> = (GateOpen<'id, Path>, GateIssuer<'id, Path>);
 
-    fn build<'id>(builder: oer_radio_port::PoolBuilder<'id>) -> Self::Pools<'id> {
+    fn build<'id, Path: PoolPath>(
+        builder: oer_radio_port::PoolBuilder<'id, Path>,
+    ) -> Self::Pools<'id, Path> {
         GatePlace::mint(builder.into_pools::<oer_radio_port::Slots<GateKind, 1>>())
     }
 }
 
 /// The install's unique gate place, held inside exactly one gate state.
 #[must_use = "the unique gate place stays in one gate state"]
-struct GatePlace<'id> {
-    slot: Slot<'id, GateKind>,
+struct GatePlace<'id, Path: PoolPath = Root> {
+    slot: Slot<'id, GateKind, Path>,
 }
 
-impl<'id> GatePlace<'id> {
-    fn mint([slot]: [Slot<'id, GateKind>; 1]) -> (GateOpen<'id>, GateIssuer<'id>) {
+impl<'id, Path: PoolPath> GatePlace<'id, Path> {
+    fn mint(
+        [slot]: [Slot<'id, GateKind, Path>; 1],
+    ) -> (GateOpen<'id, Path>, GateIssuer<'id, Path>) {
         (
             GateOpen {
                 place: Self { slot },
@@ -250,7 +254,7 @@ impl<'id> GatePlace<'id> {
     }
 }
 
-impl core::fmt::Debug for GatePlace<'_> {
+impl<Path: PoolPath> core::fmt::Debug for GatePlace<'_, Path> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("GatePlace")
             .field("slot", &self.slot.index())
@@ -261,8 +265,8 @@ impl core::fmt::Debug for GatePlace<'_> {
 /// The open transmit gate. Closing transfers its unique place to the backend.
 #[derive(Debug)]
 #[must_use = "close_gate consumes the open gate and returns its closed evidence"]
-pub struct GateOpen<'id> {
-    place: GatePlace<'id>,
+pub struct GateOpen<'id, Path: PoolPath = Root> {
+    place: GatePlace<'id, Path>,
 }
 
 /// Evidence that the backend publishes no attempt; it does not prove quiet air.
@@ -276,8 +280,8 @@ pub struct GateOpen<'id> {
 /// ```
 #[derive(Debug)]
 #[must_use = "open_gate consumes the closed evidence and returns the open gate"]
-pub struct GateClosed<'id> {
-    place: GatePlace<'id>,
+pub struct GateClosed<'id, Path: PoolPath = Root> {
+    place: GatePlace<'id, Path>,
 }
 
 /// The backend's authority to convert its one gate place between states.
@@ -296,18 +300,18 @@ pub struct GateClosed<'id> {
 /// }
 /// ```
 #[must_use = "the backend retains the issuer for the whole install"]
-pub struct GateIssuer<'id> {
-    brand: core::marker::PhantomData<fn(&'id ()) -> &'id ()>,
+pub struct GateIssuer<'id, Path: PoolPath = Root> {
+    brand: core::marker::PhantomData<fn(&'id (), Path) -> &'id ()>,
 }
 
-impl<'id> GateIssuer<'id> {
+impl<'id, Path: PoolPath> GateIssuer<'id, Path> {
     /// Attest the completed hardware barrier, retaining the same place.
-    pub fn close(&mut self, gate: GateOpen<'id>) -> GateClosed<'id> {
+    pub fn close(&mut self, gate: GateOpen<'id, Path>) -> GateClosed<'id, Path> {
         GateClosed { place: gate.place }
     }
 
     /// Consume the closed evidence to open the same gate.
-    pub fn open(&mut self, gate: GateClosed<'id>) -> GateOpen<'id> {
+    pub fn open(&mut self, gate: GateClosed<'id, Path>) -> GateOpen<'id, Path> {
         GateOpen { place: gate.place }
     }
 }
@@ -332,7 +336,7 @@ pub enum LowerMacEvent<'id, P: PhaseTypes<'id>> {
     /// asked for.
     TsfSampled(crate::TsfSample),
     /// The transmit gate closed: no attempt is published.
-    GateClosed(GateClosed<'id>),
+    GateClosed(GateClosed<'id, P::GatePath>),
     /// An interface's receive configuration took effect.
     Configured(VifRole),
     /// A removed key's slot, of its role and kind, once no attempt in
@@ -362,7 +366,7 @@ pub enum TxCompleted<'id, P: PhaseTypes<'id>> {
         /// Original opaque context.
         context: P::Context,
         /// Original ticket.
-        ticket: Slot<'id, P::TicketKind>,
+        ticket: Slot<'id, P::TicketKind, P::TicketPath>,
         /// Original MPDU, fresh if unpublished or retaining its sent image.
         buffer: P::AnyTxBuffer,
         /// A fresh MPDU's external body; sent MPDUs retain theirs internally.
@@ -375,7 +379,7 @@ pub enum TxCompleted<'id, P: PhaseTypes<'id>> {
         /// Original opaque context.
         context: P::Context,
         /// Original ticket.
-        ticket: Slot<'id, P::TicketKind>,
+        ticket: Slot<'id, P::TicketKind, P::TicketPath>,
         /// Original subframes.
         buffers: P::TxBuffers,
         /// Fresh subframes' bodies by subframe index; sent MPDUs retain theirs.
@@ -495,6 +499,14 @@ pub type InterfaceKeys<'p, 'id, I> = <<I as InterfacePhase<'p, 'id>>::Role as Ro
 
 /// The types of one backend's phase that its events carry.
 pub trait PhaseTypes<'id>: Sized {
+    /// Component owning the station connection epoch source.
+    type EpochPath: PoolPath;
+    /// Nominal authority of this backend's gate component.
+    type GatePath: PoolPath;
+    /// Nominal authority of this backend's transmit ticket component.
+    type TicketPath: PoolPath;
+    /// Nominal authority of this backend's receive Block Ack component.
+    type BlockAckPath: PoolPath;
     /// The backend fault shared by the event stream and every interface.
     type Fault: Copy + core::fmt::Debug;
     /// The composition's operation context. The backend owns and returns
@@ -604,10 +616,13 @@ pub trait LowerMacPhase<'p, 'id: 'p>:
     /// When a retry would be needed, withdraw the attempt with its Sent MPDU
     /// instead of starting that retry. Queued fresh MPDUs return Fresh.
     /// Terminals retain each AC's order and precede the barrier confirmation.
-    fn close_gate(&mut self, gate: GateOpen<'id>);
+    fn close_gate(&mut self, gate: GateOpen<'id, <Self::Types as PhaseTypes<'id>>::GatePath>);
 
     /// Open the closed gate, a register write that cannot fail.
-    fn open_gate(&mut self, gate: GateClosed<'id>) -> GateOpen<'id>;
+    fn open_gate(
+        &mut self,
+        gate: GateClosed<'id, <Self::Types as PhaseTypes<'id>>::GatePath>,
+    ) -> GateOpen<'id, <Self::Types as PhaseTypes<'id>>::GatePath>;
 
     /// The EDCA parameters every queue's attempts contend with.
     fn set_edca(&mut self, parameters: SupportedEdca<Self::Caps>);
@@ -624,11 +639,11 @@ pub trait LowerMacPhase<'p, 'id: 'p>:
 /// The frame's kind sets its response and
 /// its retry plan ([`RetryPlan`]) or one rate; its access category picks
 /// its queue, whose contention the backend draws.
-pub struct Attempt<'id, T, M, K, X> {
+pub struct Attempt<'id, T, M, K, X, Path: PoolPath = Root> {
     /// The original operation's context, returned with its terminal.
     pub context: X,
     /// The attempt's place in flight.
-    pub ticket: Slot<'id, T>,
+    pub ticket: Slot<'id, T, Path>,
     /// Fresh memory with its checked description and body, or the original
     /// returned MPDU together with this attempt's phase-bound rates.
     pub source: M,
@@ -739,6 +754,7 @@ pub type InterfaceAttempt<'k, 'p, 'id, I> = Attempt<
     >,
     <I as InterfacePhase<'p, 'id>>::Caps,
     <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::Context,
+    <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::TicketPath,
 >;
 
 /// The MPDU supplied to a submission. Fresh memory travels with its
@@ -888,7 +904,11 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     #[must_use = "an agreement holds its slot; dropping it loses the slot until the next install"]
     fn add_block_ack(
         &mut self,
-        slot: Slot<'id, <Self::Types as PhaseTypes<'id>>::BlockAckKind>,
+        slot: Slot<
+            'id,
+            <Self::Types as PhaseTypes<'id>>::BlockAckKind,
+            <Self::Types as PhaseTypes<'id>>::BlockAckPath,
+        >,
         agreement: SupportedBlockAck<Self::Caps>,
     ) -> <Self::Types as PhaseTypes<'id>>::BlockAck;
 
@@ -908,7 +928,11 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     fn remove_block_ack(
         &mut self,
         agreement: <Self::Types as PhaseTypes<'id>>::BlockAck,
-    ) -> Slot<'id, <Self::Types as PhaseTypes<'id>>::BlockAckKind>;
+    ) -> Slot<
+        'id,
+        <Self::Types as PhaseTypes<'id>>::BlockAckKind,
+        <Self::Types as PhaseTypes<'id>>::BlockAckPath,
+    >;
 }
 
 /// The station interface of a running phase.

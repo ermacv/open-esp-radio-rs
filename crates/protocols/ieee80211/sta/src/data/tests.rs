@@ -77,6 +77,7 @@ fn fresh_memory(buffer: &mut ReturnedMpdu<Buffer, Buffer>) -> &mut [u8] {
 struct Data;
 
 impl StaDataTokens for Data {
+    type EpochPath = oer_radio_port::Root;
     type Class = Buffer;
     type Ticket = u8;
     type Buffer = Buffer;
@@ -89,6 +90,7 @@ impl StaDataTokens for Data {
 struct Station;
 
 impl StaTokens for Station {
+    type EpochPath = oer_radio_port::Root;
     type Small = Buffer;
     type Ticket = u8;
     type SmallBuffer = Buffer;

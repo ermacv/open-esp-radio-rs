@@ -4,3 +4,22 @@ packages = []
 features = []
 targets = ["host", "esp32s31"]
 cases = ["tools/xtask/tests/fixtures/affine_contract.rs"]
+
+[[suite]]
+name = "pool-authority"
+packages = ["oer-radio-port", "oer-radio-permit-pool", "oer-ieee80211-lower-mac", "oer-ieee80211-sta"]
+features = []
+targets = ["host", "esp32s31"]
+cases = [
+    "crates/radio/port/tests/ui/same_kind.rs",
+    "crates/radio/port/tests/ui/nested_factory.rs",
+    "crates/radio/port/tests/ui/foreign_installation.rs",
+    "crates/runtime/radio/permit-pool/tests/ui/foreign_seat.rs",
+    "crates/runtime/radio/permit-pool/tests/ui/foreign_return.rs",
+    "crates/runtime/radio/permit-pool/tests/ui/split_supply.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/foreign_gate.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/nested_gate.rs",
+    "crates/radio/port/tests/ui/foreign_line.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/phase_gate.rs",
+    "crates/protocols/ieee80211/sta/tests/ui/epoch_source.rs",
+]

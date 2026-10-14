@@ -79,9 +79,12 @@ where
     pub(super) events: &'s mut E,
     pub(super) control: &'s mut S,
     pub(super) client: &'s C,
-    pub(super) seat: &'s mut Seat<'id, Operation>,
+    pub(super) seat: &'s mut Seat<'id, Operation, C::OperationPath>,
     pub(super) rssi: &'s Rs,
-    pub(super) short_free: Vec<Slot<'id, ShortPending<0>>, PENDING_TABLE_SIZE>,
+    pub(super) short_free: Vec<
+        Slot<'id, ShortPending<0>, oer_radio_port::Child<C::InterfacePath, 1>>,
+        PENDING_TABLE_SIZE,
+    >,
     pub(super) short: Vec<(u16, C::ShortEntry), PENDING_TABLE_SIZE>,
     pub(super) channel: Channel,
     /// Frames received since the previous collection; they survive a

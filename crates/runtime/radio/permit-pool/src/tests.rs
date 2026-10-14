@@ -48,7 +48,7 @@ impl RadioPortEvents for NoEvents {
 /// The resources of a probe: `N` permits and the line of `S` seats of one
 /// install.
 type Tokens<'id, const N: usize, const S: usize> = (
-    [Permit<'id, Kind>; N],
+    oer_radio_port::PermitSupply<'id, Kind, N>,
     Line<'id, Kind, S>,
     [Seat<'id, Kind>; S],
 );
@@ -105,11 +105,11 @@ impl<const N: usize, const S: usize> PortBackend for Probe<N, S> {
 
     fn resources<'id>(&mut self, mint: Mint<'id, Self::Pools>) -> ((), Tokens<'id, N, S>) {
         let oer_radio_port::PermitTokens {
-            permits,
+            supply,
             line,
             seats,
         } = mint.into_pools();
-        ((), (permits, line, seats))
+        ((), (supply, line, seats))
     }
 
     fn setup<'a, 'id>(&'a mut self) -> Lent<'a, Self::Setup<'a, 'id>> {
@@ -420,5 +420,37 @@ fn a_leaked_leader_replaced_by_its_seat_wakes_the_taker_behind_it() {
         };
         pool.release(permit);
         assert!(poll_once(again.as_mut()).is_ready());
+    });
+}
+
+#[test]
+fn distinct_permit_pools_share_one_waiter_domain_without_sharing_capacity() {
+    type Layout = (
+        oer_radio_port::Permits<Kind, 1, 1>,
+        oer_radio_port::Permits<Kind, 1, 0>,
+    );
+    let future = oer_radio_port::branded::<Layout, _>(async |mint| {
+        let (a, b) = mint.into_pools();
+        let [mut seat] = a.seats;
+        let line = a.line;
+        let a = FifoPermitPool::new(a.supply, line);
+        let b = FifoPermitPool::new(b.supply, line);
+        let token = a.take(&mut seat).await;
+        assert_eq!(a.available(), 0);
+        let other = b.take(&mut seat).await;
+        assert_eq!(b.available(), 0);
+        b.release(other);
+        a.release(token);
+        assert_eq!(a.available(), 1);
+    });
+    assert!(poll_once(pin!(future)).is_ready());
+}
+
+#[test]
+fn empty_capacity_and_zero_waiters_need_no_special_case() {
+    with_pool::<0, 0, _>(|pool, seats| {
+        assert_eq!(pool.available(), 0);
+        assert_eq!(pool.waiting(), 0);
+        assert!(seats.is_empty());
     });
 }

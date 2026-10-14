@@ -11,7 +11,7 @@ use oer_ieee802154::{
         SupportedTransmit, Transmission,
     },
 };
-use oer_radio_port::{Seat, Slot};
+use oer_radio_port::{Child, PoolPath, Seat, Slot};
 use oer_time::Clock;
 use openthread_radio::{
     AckSecurity, Capabilities, Config, CslConfig, ENH_ACK_PROBING_CAPACITY, EnhAckProbingConfig,
@@ -36,11 +36,11 @@ pub const OPEN_THREAD_RADIO_CAPABILITIES: Capabilities = Capabilities::ACK_TIMEO
     .union(Capabilities::TRANSMIT_TIMING);
 
 /// The pending-table slots of the interface OpenThread drives.
-pub struct PendingSlots<'id, const P: usize> {
+pub struct PendingSlots<'id, const P: usize, Path: PoolPath> {
     /// The short-address slots.
-    pub short: [Slot<'id, ShortPending<0>>; P],
+    pub short: [Slot<'id, ShortPending<0>, Child<Path, 1>>; P],
     /// The extended-address slots.
-    pub extended: [Slot<'id, ExtendedPending<0>>; P],
+    pub extended: [Slot<'id, ExtendedPending<0>, Child<Path, 2>>; P],
 }
 
 /// An IEEE 802.15.4 port's running phase as an OpenThread radio: its one
@@ -67,10 +67,10 @@ where
     events: &'a mut E,
     control: &'a mut S,
     client: C,
-    seat: Seat<'id, Operation>,
-    short_free: Vec<Slot<'id, ShortPending<0>>, P>,
+    seat: Seat<'id, Operation, C::OperationPath>,
+    short_free: Vec<Slot<'id, ShortPending<0>, Child<C::InterfacePath, 1>>, P>,
     short: Vec<(u16, C::ShortEntry), P>,
-    extended_free: Vec<Slot<'id, ExtendedPending<0>>, P>,
+    extended_free: Vec<Slot<'id, ExtendedPending<0>, Child<C::InterfacePath, 2>>, P>,
     extended: Vec<(u64, C::ExtendedEntry), P>,
     /// Received-frame events.
     received: Deque<E::Event, QUEUE>,
@@ -122,8 +122,8 @@ where
         events: &'a mut E,
         control: &'a mut S,
         client: C,
-        seat: Seat<'id, Operation>,
-        slots: PendingSlots<'id, P>,
+        seat: Seat<'id, Operation, C::OperationPath>,
+        slots: PendingSlots<'id, P, C::InterfacePath>,
     ) -> Self {
         Self {
             events,
@@ -144,7 +144,12 @@ where
 
     /// Give back the seat and the pending-table slots, the entries
     /// removed, when OpenThread stops.
-    pub fn into_parts(mut self) -> (Seat<'id, Operation>, PendingSlots<'id, P>) {
+    pub fn into_parts(
+        mut self,
+    ) -> (
+        Seat<'id, Operation, C::OperationPath>,
+        PendingSlots<'id, P, C::InterfacePath>,
+    ) {
         while let Some((_, entry)) = self.short.pop() {
             let slot = self.client.remove_pending_short(entry);
             let _ = self.short_free.push(slot);

@@ -4,7 +4,7 @@
 
 use core::marker::PhantomData;
 use oer_ieee80211_lower_mac::ConnectionEpochKind;
-use oer_radio_port::Slot;
+use oer_radio_port::{PoolPath, Root, Slot};
 
 /// A connection identity, invariant in the installation's brand. Only the
 /// station's source issues one; neither callers nor Data reconstruct it.
@@ -14,22 +14,22 @@ use oer_radio_port::Slot;
 /// fn cross_install<'old, 'new>(old: LinkEpoch<'old>) -> LinkEpoch<'new> { old }
 /// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LinkEpoch<'id> {
+pub struct LinkEpoch<'id, Path: PoolPath = Root> {
     sequence: u64,
-    brand: PhantomData<fn(&'id ()) -> &'id ()>,
+    brand: PhantomData<fn(&'id (), Path) -> &'id ()>,
 }
 
 /// The station's sole, non-cloneable source. A new source consumes the
 /// install's unique slot. It has no reset and never gives that slot back;
 /// reset requires ending the install, which also ends its branded contexts.
-pub struct LinkEpochSource<'id> {
-    brand: PhantomData<fn(&'id ()) -> &'id ()>,
+pub struct LinkEpochSource<'id, Path: PoolPath = Root> {
+    brand: PhantomData<fn(&'id (), Path) -> &'id ()>,
     last: u64,
 }
 
-impl<'id> LinkEpochSource<'id> {
+impl<'id, Path: PoolPath> LinkEpochSource<'id, Path> {
     /// Consume the one station source slot the backend minted at install.
-    pub fn new(_slot: Slot<'id, ConnectionEpochKind>) -> Self {
+    pub fn new(_slot: Slot<'id, ConnectionEpochKind, Path>) -> Self {
         Self {
             brand: PhantomData,
             last: 0,
@@ -47,7 +47,7 @@ impl<'id> LinkEpochSource<'id> {
     /// This is the owner's modular-epoch contract, not a Rust proof of age.
     ///
     /// [Owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6155932498).
-    pub(crate) fn begin(&mut self) -> LinkEpoch<'id> {
+    pub(crate) fn begin(&mut self) -> LinkEpoch<'id, Path> {
         self.last = self.last.wrapping_add(1);
         LinkEpoch {
             sequence: self.last,
@@ -57,7 +57,7 @@ impl<'id> LinkEpochSource<'id> {
 }
 
 #[cfg(test)]
-impl<'id> LinkEpoch<'id> {
+impl<'id, Path: PoolPath> LinkEpoch<'id, Path> {
     pub(crate) const fn for_test(sequence: u64) -> Self {
         Self {
             sequence,
@@ -67,7 +67,7 @@ impl<'id> LinkEpoch<'id> {
 }
 
 #[cfg(test)]
-impl LinkEpochSource<'_> {
+impl LinkEpochSource<'_, Root> {
     pub(crate) const fn for_test(last: u64) -> Self {
         Self {
             brand: PhantomData,

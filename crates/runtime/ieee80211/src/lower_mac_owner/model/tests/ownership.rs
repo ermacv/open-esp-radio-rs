@@ -30,7 +30,7 @@ struct Operations {
 
 fn observe(
     context: Context<'_>,
-    ticket: Slot<'_, ModelTickets>,
+    ticket: Slot<'_, ModelTickets, ModelPool<1>>,
     buffer: ModelAnyBuffer<'_>,
     body: Option<ModelBody>,
     end: End,

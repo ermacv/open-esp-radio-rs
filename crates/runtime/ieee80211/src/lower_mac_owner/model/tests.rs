@@ -121,7 +121,7 @@ fn data_frame<'p, X: ModelContext>(
 /// Submit a frame and its class's memory at the same boundary.
 fn submit_frame<'k, 'p, 'id: 'p + 'k, C: ModelClass>(
     phase: &mut ModelPhase<'p, 'id>,
-    ticket: Slot<'id, ModelTickets>,
+    ticket: Slot<'id, ModelTickets, ModelPool<1>>,
     source: ModelSource<'k, 'p, 'id, C, ModelCaps, Station, ()>,
 ) {
     let source = prepare_model(source.check().ok().unwrap()).ok().unwrap();
@@ -141,7 +141,7 @@ fn submit_frame<'k, 'p, 'id: 'p + 'k, C: ModelClass>(
 
 fn submit<'p, 'id: 'p, C: ModelClass>(
     phase: &mut ModelPhase<'p, 'id>,
-    ticket: Slot<'id, ModelTickets>,
+    ticket: Slot<'id, ModelTickets, ModelPool<1>>,
     mut buffer: ModelBuffer<'id, C>,
     key: Option<&ModelPairwiseKey<'id, Station>>,
 ) {
@@ -198,7 +198,7 @@ fn push_retry<'k, 'p, 'id: 'k + 'p, X: ModelContext, S: AggregateState>(
 /// The next terminal's ticket and buffer.
 async fn completion<'p, 'id: 'p>(
     phase: &mut ModelPhase<'p, 'id>,
-) -> (Slot<'id, ModelTickets>, ModelAnyBuffer<'id>) {
+) -> (Slot<'id, ModelTickets, ModelPool<1>>, ModelAnyBuffer<'id>) {
     loop {
         yield_now().await;
         let event = {
@@ -324,7 +324,7 @@ fn an_open_sent_mpdu_retransmits_without_rebuilding_its_sn_or_payload() {
 /// running `between` after each.
 fn submit_all<'p, 'id: 'p>(
     phase: &mut ModelPhase<'p, 'id>,
-    tickets: Vec<Slot<'id, ModelTickets>>,
+    tickets: Vec<Slot<'id, ModelTickets, ModelPool<1>>>,
     small: Vec<ModelBuffer<'id, ModelSmall>>,
     large: Vec<ModelBuffer<'id, ModelLarge>>,
     mut between: impl FnMut(&mut ModelPhase<'p, 'id>),
@@ -938,7 +938,7 @@ fn a_cancelled_next_event_loses_no_event() {
 
 /// A protected data MPDU of `sequence` to the peer, 40 octets, in
 /// `buffer`, and its frame.
-fn subframe<'id, C>(
+fn subframe<'id, C: ModelClass>(
     mut buffer: ModelBuffer<'id, C>,
     sequence: u16,
 ) -> (ModelBuffer<'id, C>, SizedFrame<AckHeader, ModelCaps>) {
@@ -977,7 +977,7 @@ fn subframe_frame(sequence: u16) -> SizedFrame<AckHeader, ModelCaps> {
 async fn aggregate_completion<'p, 'id: 'p>(
     phase: &mut ModelPhase<'p, 'id>,
 ) -> (
-    Slot<'id, ModelTickets>,
+    Slot<'id, ModelTickets, ModelPool<1>>,
     Vec<ModelAnyBuffer<'id>>,
     Vec<(u8, ModelBody)>,
     Option<oer_ieee80211_lower_mac::BlockAckReport>,

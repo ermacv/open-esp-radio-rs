@@ -300,10 +300,11 @@ impl Drop for Place<'_> {
 #[test]
 fn a_fifo_permit_pool_meets_the_conformance_rule() {
     let PermitTokens {
-        permits: [held, shared],
+        supply,
         line,
         mut seats,
     } = Mint::<Permits<ModelCaps, 2, 3>>::new().into_pools();
+    let [held, shared] = supply.into_permits();
     assert_eq!(line.places(), 3);
     let pool = FifoPool {
         free: core::cell::RefCell::new(std::vec![shared]),
@@ -335,7 +336,33 @@ fn a_declared_layout_issues_each_pools_capacity_without_stored_mint_state() {
     assert_eq!(keys.len(), 256);
     assert_eq!(keys[0].index(), 0);
     assert_eq!(keys[255].index(), 255);
-    assert_eq!(work.permits.map(|permit| permit.index()), [0, 1]);
+    assert_eq!(
+        work.supply.into_permits().map(|permit| permit.index()),
+        [0, 1]
+    );
     assert_eq!(work.seats.map(|seat| seat.index()), [0, 1, 2]);
     assert_eq!(work.line.places(), 3);
+}
+
+#[test]
+fn nested_same_kind_paths_add_no_runtime_storage() {
+    type Layout = (Slots<(), 1>, (Slots<(), 1>,));
+    let ([first], ([second],)) = Mint::<Layout>::new().into_pools();
+    assert_eq!(first.index(), 0);
+    assert_eq!(second.index(), 0);
+    assert_eq!(core::mem::size_of::<Pools<'_, Layout>>(), 2);
+    assert_eq!(core::mem::size_of::<Pools<'_, ()>>(), 0);
+    let () = Mint::<()>::new().into_pools();
+}
+
+#[test]
+fn all_256_permit_and_waiter_indices_are_representable() {
+    let tokens = Mint::<Permits<(), 256, 256>>::new().into_pools();
+    assert_eq!(tokens.line.places(), 256);
+    assert_eq!(tokens.supply.into_permits()[255].index(), 255);
+    assert_eq!(tokens.seats[255].index(), 255);
+    assert_eq!(
+        core::mem::size_of::<Pools<'_, Permits<(), 256, 256>>>(),
+        512
+    );
 }

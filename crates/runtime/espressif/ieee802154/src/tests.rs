@@ -39,6 +39,7 @@ use oer_ieee802154::{
 use oer_ieee802154_port::{
     CancelError, Disabled, Ended, Owner, PortBody, RadioPortClient, RadioPortEvents, run_port,
 };
+use oer_radio_port::{Child, Root};
 use oer_radio_port::{EventsLost, Poisoned, Seat};
 use oer_time::Duration;
 use oer_time_virtual::VirtualClock;
@@ -82,6 +83,7 @@ impl Ieee802154Caps for Single {
 
 impl Ieee802154RuntimeCaps for Single {
     type Interfaces = oer_ieee802154::owner::InterfacePool<Self, 0, PENDING_TABLE_SIZE>;
+    type InterfacePath<const I: u8> = Child<Root, 0>;
 }
 
 /// The capabilities of a two-interface multi-PAN runtime.
@@ -95,6 +97,7 @@ impl Ieee802154Caps for Multipan {
 }
 
 impl Ieee802154RuntimeCaps for Multipan {
+    type InterfacePath<const I: u8> = Child<Child<Root, 0>, I>;
     type Interfaces = (
         oer_ieee802154::owner::InterfacePool<Self, 0, PENDING_TABLE_SIZE>,
         oer_ieee802154::owner::InterfacePool<Self, 1, PENDING_TABLE_SIZE>,
@@ -137,7 +140,7 @@ type Parts = Ieee802154RuntimeParts<'static, Ieee802154LlModel>;
 type Resources<'id, K, const EVENTS: usize> = RuntimeResources<
     'static,
     'id,
-    oer_radio_port::Pools<'id, <K as Ieee802154RuntimeCaps>::Interfaces>,
+    oer_radio_port::Pools<'id, <K as Ieee802154RuntimeCaps>::Interfaces, Child<Root, 0>>,
     Runtime<EVENTS>,
 >;
 
@@ -206,7 +209,7 @@ struct Phase<'s, 'a, 'id, const EVENTS: usize> {
     events: &'s mut RuntimeEvents<'a, 'id, Runtime<EVENTS>>,
     control: &'s mut RuntimeControl<'a, Runtime<EVENTS>, Single>,
     client: &'s RuntimeClient<'s, 'id, Runtime<EVENTS>, Single, 0>,
-    seat: &'s mut Seat<'id, Operation>,
+    seat: &'s mut Seat<'id, Operation, Child<Root, 1>>,
 }
 
 /// Install a single-interface radio in a new runtime, configure its

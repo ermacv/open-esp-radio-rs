@@ -34,8 +34,8 @@ pub mod pool;
 mod relation;
 
 pub use pool::{
-    Line, Mint, Permit, PermitPool, PermitTokens, Permits, PoolBuilder, PoolSet, Pools, Seat, Slot,
-    Slots, branded,
+    Child, Line, Mint, Permit, PermitPool, PermitSupply, PermitTokens, Permits, PoolBuilder,
+    PoolPath, PoolSet, Pools, Root, Seat, Slot, Slots, branded,
 };
 pub use relation::{
     ClockInfo, ClockRelation, ClockSample, Generation, GenerationSource, Projected,

@@ -110,6 +110,7 @@ use oer_time::{Duration, Instant};
 
 use crate::epoch::{LinkEpoch, LinkEpochSource};
 use crate::pool::Pool;
+use oer_radio_port::{PoolPath, Root};
 mod group_keys;
 use crate::power_save::{NullOutcome, PowerSaveDecision, PowerSaveView};
 use group_keys::{GroupKeys, GroupPlace, Installed as InstalledGroup};
@@ -136,6 +137,8 @@ pub enum TxRefusal {
 
 /// The tokens a station holds: the port's, or a host test's.
 pub trait StaTokens {
+    /// Component owning this station's connection epoch source.
+    type EpochPath: PoolPath;
     /// The checked size class of management frames.
     type Small: oer_ieee80211_lower_mac::TxBufferClass;
     /// A transmit ticket: a place in flight and a place for its terminal.
@@ -191,7 +194,7 @@ pub enum StaInput<'id, T: StaTokens, K> {
     /// The terminal of a transmission: its ticket and buffer come back.
     TxDone {
         /// The original operation, returned by the port.
-        context: StaTxContext<'id>,
+        context: StaTxContext<'id, T::EpochPath>,
         /// The transmission's ticket.
         ticket: T::Ticket,
         /// The transmission's buffer.
@@ -207,7 +210,7 @@ pub enum StaInput<'id, T: StaTokens, K> {
         /// Refused before admission; no transmission terminal exists.
         reason: TxRefusal,
         /// The operation that was not submitted.
-        context: StaTxContext<'id>,
+        context: StaTxContext<'id, T::EpochPath>,
         /// The frame's ticket.
         ticket: T::Ticket,
         /// The frame's buffer.
@@ -226,11 +229,11 @@ pub enum StaInput<'id, T: StaTokens, K> {
     /// A notice of the arbiter.
     Arbiter(StationNotice<K>),
     /// The receive configuration the station set took effect.
-    Configured(PendingConfiguration<'id>),
+    Configured(PendingConfiguration<'id, T::EpochPath>),
     /// The pairwise key the station asked to install, installed.
     PairwiseKeyInstalled {
         /// The original installation action.
-        pending: PendingPairwiseKey<'id>,
+        pending: PendingPairwiseKey<'id, T::EpochPath>,
         /// The installed key.
         key: T::PairwiseKey,
     },
@@ -240,12 +243,12 @@ pub enum StaInput<'id, T: StaTokens, K> {
         /// The installed key.
         key: T::GroupKey,
         /// The original installation action, including epoch and key index.
-        pending: PendingGroupKey<'id>,
+        pending: PendingGroupKey<'id, T::EpochPath>,
     },
     /// The FIFO replacement terminal for the pending operation's slot.
     GroupKeyReplaced {
         /// The private successor epoch and installation record.
-        pending: PendingGroupReplacement<'id>,
+        pending: PendingGroupReplacement<'id, T::EpochPath>,
         /// The successor key, retaining the same physical slot.
         key: T::GroupKey,
     },
@@ -303,11 +306,11 @@ pub enum StaAction<'a, 'id, T: StaTokens, K> {
     Upstream(UpstreamFact<K>),
     /// Set what the station's interface receives ([`StaInput::Configured`]
     /// follows).
-    Configure(StationReceive<K>, PendingConfiguration<'id>),
+    Configure(StationReceive<K>, PendingConfiguration<'id, T::EpochPath>),
     /// Install a pairwise key ([`StaInput::PairwiseKeyInstalled`]).
     InstallPairwiseKey {
         /// The response must return this token.
-        pending: PendingPairwiseKey<'id>,
+        pending: PendingPairwiseKey<'id, T::EpochPath>,
         /// The slot it takes.
         slot: T::PairwiseSlot,
         /// The access point.
@@ -318,7 +321,7 @@ pub enum StaAction<'a, 'id, T: StaTokens, K> {
     /// Install a group key ([`StaInput::GroupKeyInstalled`]).
     InstallGroupKey {
         /// The response must return this token.
-        pending: PendingGroupKey<'id>,
+        pending: PendingGroupKey<'id, T::EpochPath>,
         /// The slot it takes.
         slot: T::GroupSlot,
         /// Its key index.
@@ -330,7 +333,7 @@ pub enum StaAction<'a, 'id, T: StaTokens, K> {
     /// terminal; only that terminal switches the station's replay epoch.
     ReplaceGroupKey {
         /// Return with the replacement terminal of this installed key's slot.
-        pending: PendingGroupReplacement<'id>,
+        pending: PendingGroupReplacement<'id, T::EpochPath>,
         /// The previous installation and its slot.
         installed: T::GroupKey,
         /// The successor's wire ID.
@@ -370,7 +373,7 @@ pub enum StaAction<'a, 'id, T: StaTokens, K> {
 #[must_use = "submit the operation or return its ticket and buffer"]
 pub struct StaTransmit<'id, T: StaTokens, K> {
     /// Its epoch and purpose, moved with the operation through its terminal.
-    pub context: StaTxContext<'id>,
+    pub context: StaTxContext<'id, T::EpochPath>,
     /// Its ticket.
     pub ticket: T::Ticket,
     /// The buffer holding the frame, from its header on.
@@ -386,7 +389,7 @@ pub struct StaTransmit<'id, T: StaTokens, K> {
 
 /// Reserve both owners before consuming a sequence or starting an attempt.
 struct TxCredit<'id, T: StaTokens> {
-    epoch: LinkEpoch<'id>,
+    epoch: LinkEpoch<'id, T::EpochPath>,
     ticket: T::Ticket,
     buffer: T::SmallBuffer,
 }
@@ -394,12 +397,12 @@ struct TxCredit<'id, T: StaTokens> {
 /// The identity of one station operation. No frame parsing or current-state
 /// guess assigns a completion to a handshake, power transition or link.
 #[derive(Debug)]
-pub struct StaTxContext<'id> {
-    epoch: LinkEpoch<'id>,
+pub struct StaTxContext<'id, Path: PoolPath = Root> {
+    epoch: LinkEpoch<'id, Path>,
     purpose: TxPurpose,
 }
 
-impl StaTxContext<'_> {
+impl<Path: PoolPath> StaTxContext<'_, Path> {
     /// Whether this operation used the probe rate record.
     pub const fn is_probe(&self) -> bool {
         matches!(
@@ -461,7 +464,7 @@ pub struct LinkView<'a, 'id, T: StaTokens> {
     /// The station's own address.
     pub address: OwnAddress,
     /// The connection identity, unchanged during sleep and channel absences.
-    pub epoch: LinkEpoch<'id>,
+    pub epoch: LinkEpoch<'id, T::EpochPath>,
     /// The access point.
     pub bssid: Bssid,
     /// The station's association identifier.
@@ -673,8 +676,8 @@ pub struct Station<'id, T: StaTokens, K: Ieee80211Capabilities> {
     sequence: StaSequenceCounter,
     scan: ScanTable<SCAN_CAPACITY>,
     /// The connection attempt that owns new TX operations.
-    epoch: Option<LinkEpoch<'id>>,
-    epochs: LinkEpochSource<'id>,
+    epoch: Option<LinkEpoch<'id, T::EpochPath>>,
+    epochs: LinkEpochSource<'id, T::EpochPath>,
 }
 
 /// The station's lease.
@@ -700,9 +703,9 @@ impl<K> Held<K> {
 /// A pairwise cell awaiting the response to its one installation.
 #[derive(Debug)]
 #[must_use = "return this token with the pairwise installation result"]
-pub struct PendingPairwiseKey<'id> {
+pub struct PendingPairwiseKey<'id, Path: PoolPath = Root> {
     cell: PairwiseCell,
-    epoch: LinkEpoch<'id>,
+    epoch: LinkEpoch<'id, Path>,
 }
 
 #[derive(Debug)]
@@ -729,15 +732,15 @@ struct PairwiseCell;
 /// With the original action's token, returning the key is well-typed:
 /// ```
 /// use oer_ieee80211_sta::machine::{PendingGroupKey, StaInput, StaTokens};
-/// fn installed<'id, T: StaTokens, K>(pending: PendingGroupKey<'id>, key: T::GroupKey)
+/// fn installed<'id, T: StaTokens, K>(pending: PendingGroupKey<'id, T::EpochPath>, key: T::GroupKey)
 ///     -> StaInput<'id, T, K> {
 ///     StaInput::GroupKeyInstalled { pending, key }
 /// }
 /// ```
 #[derive(Debug)]
 #[must_use = "return this token with the group installation result"]
-pub struct PendingGroupKey<'id> {
-    epoch: LinkEpoch<'id>,
+pub struct PendingGroupKey<'id, Path: PoolPath = Root> {
+    epoch: LinkEpoch<'id, Path>,
     key_id: GroupKeyId,
     material: [u8; 16],
     place: GroupPlace,
@@ -764,17 +767,23 @@ pub struct PendingGroupKey<'id> {
 /// Its valid terminal moves both values once:
 /// ```
 /// use oer_ieee80211_sta::machine::{PendingGroupReplacement, StaInput, StaTokens};
-/// fn returned<'id, T: StaTokens, K>(pending: PendingGroupReplacement<'id>, key: T::GroupKey)
+/// fn returned<'id, T: StaTokens, K>(pending: PendingGroupReplacement<'id, T::EpochPath>, key: T::GroupKey)
 ///     -> StaInput<'id, T, K> {
 ///     StaInput::GroupKeyReplaced { pending, key }
 /// }
 /// ```
 #[must_use = "return this token with the matching group replacement terminal"]
-pub struct PendingGroupReplacement<'id> {
-    install: PendingGroupKey<'id>,
+pub struct PendingGroupReplacement<'id, Path: PoolPath = Root> {
+    install: PendingGroupKey<'id, Path>,
     previous_id: GroupKeyId,
     replay: oer_ieee80211_mac::ccmp::CcmpRxReplayState,
 }
+
+/// The replacement command retains both its station epoch and installed key.
+type GroupReplacement<'id, T> = (
+    PendingGroupReplacement<'id, <T as StaTokens>::EpochPath>,
+    <T as StaTokens>::GroupKey,
+);
 
 /// A receive-configuration response must return this action token. Station
 /// grants only one at a time; returning an old epoch releases its permission
@@ -788,9 +797,9 @@ pub struct PendingGroupReplacement<'id> {
 /// ```
 #[derive(Debug)]
 #[must_use = "return this token with the receive configuration result"]
-pub struct PendingConfiguration<'id> {
+pub struct PendingConfiguration<'id, Path: PoolPath = Root> {
     place: ConfigurationPlace,
-    epoch: Option<LinkEpoch<'id>>,
+    epoch: Option<LinkEpoch<'id, Path>>,
 }
 
 #[derive(Debug)]
@@ -841,8 +850,8 @@ impl<T: StaTokens> Keys<T> {
 
     fn take_pairwise_slot<'id>(
         &mut self,
-        epoch: LinkEpoch<'id>,
-    ) -> Option<(T::PairwiseSlot, PendingPairwiseKey<'id>)> {
+        epoch: LinkEpoch<'id, T::EpochPath>,
+    ) -> Option<(T::PairwiseSlot, PendingPairwiseKey<'id, T::EpochPath>)> {
         match core::mem::replace(&mut self.pairwise, KeyCell::Installing) {
             KeyCell::Free(slot) => Some((
                 slot,
@@ -858,7 +867,11 @@ impl<T: StaTokens> Keys<T> {
         }
     }
 
-    fn pairwise_installed(&mut self, pending: PendingPairwiseKey<'_>, key: T::PairwiseKey) {
+    fn pairwise_installed(
+        &mut self,
+        pending: PendingPairwiseKey<'_, T::EpochPath>,
+        key: T::PairwiseKey,
+    ) {
         let PairwiseCell = pending.cell;
         self.pairwise = KeyCell::Installed(key);
     }
@@ -875,10 +888,10 @@ impl<T: StaTokens> Keys<T> {
 
     fn take_group_slot<'id>(
         &mut self,
-        epoch: LinkEpoch<'id>,
+        epoch: LinkEpoch<'id, T::EpochPath>,
         key_id: GroupKeyId,
         material: [u8; 16],
-    ) -> Option<(T::GroupSlot, PendingGroupKey<'id>)> {
+    ) -> Option<(T::GroupSlot, PendingGroupKey<'id, T::EpochPath>)> {
         let slot = self.group_slots.free.take()?;
         let Some(place) = self.groups.reserve() else {
             self.group_slots.free.put(slot);
@@ -895,7 +908,12 @@ impl<T: StaTokens> Keys<T> {
         ))
     }
 
-    fn group_installed(&mut self, pending: PendingGroupKey<'_>, key: T::GroupKey, current: bool) {
+    fn group_installed(
+        &mut self,
+        pending: PendingGroupKey<'_, T::EpochPath>,
+        key: T::GroupKey,
+        current: bool,
+    ) {
         self.groups.install(
             InstalledGroup {
                 place: pending.place,
@@ -1285,19 +1303,19 @@ enum Done {
 /// An action a state owes.
 enum Owed<'id, T: StaTokens, K> {
     InstallPairwise {
-        pending: PendingPairwiseKey<'id>,
+        pending: PendingPairwiseKey<'id, T::EpochPath>,
         slot: T::PairwiseSlot,
         peer: IndividualAddress,
         key: [u8; 16],
     },
     InstallGroup {
-        pending: PendingGroupKey<'id>,
+        pending: PendingGroupKey<'id, T::EpochPath>,
         slot: T::GroupSlot,
         key_id: GroupKeyId,
         key: [u8; 16],
     },
     ReplaceGroup {
-        pending: PendingGroupReplacement<'id>,
+        pending: PendingGroupReplacement<'id, T::EpochPath>,
         installed: T::GroupKey,
         key_id: GroupKeyId,
         key: [u8; 16],
@@ -1314,7 +1332,7 @@ enum Owed<'id, T: StaTokens, K> {
     /// The primary lease to give back.
     Release(Lease<K>),
     Upstream(UpstreamFact<K>),
-    Configure(StationReceive<K>, PendingConfiguration<'id>),
+    Configure(StationReceive<K>, PendingConfiguration<'id, T::EpochPath>),
     Transmit(StaTransmit<'id, T, K>),
     /// Under the pairwise key of the connected link.
     TransmitProtected(StaTransmit<'id, T, K>),
@@ -1350,7 +1368,7 @@ pub struct StationResources<
     const GROUPS: usize,
 > {
     /// The installation's only station epoch source.
-    pub epochs: LinkEpochSource<'id>,
+    pub epochs: LinkEpochSource<'id, T::EpochPath>,
     /// Ticket credits, each reserving a terminal.
     pub tickets: [T::Ticket; TICKETS],
     /// Fresh small allocations for protocol frames.
@@ -1449,7 +1467,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     /// A leave has closed the link even while its deauthentication and key
     /// removals still use the old operation epoch. Taken is a synchronous
     /// transition only; issuing actions uses that transition's owning epoch.
-    fn current_epoch(&self) -> Option<LinkEpoch<'id>> {
+    fn current_epoch(&self) -> Option<LinkEpoch<'id, T::EpochPath>> {
         match self.state {
             State::Idle | State::Leave(_) | State::Report(_) => None,
             State::Scan(_)
@@ -1462,7 +1480,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
 
     /// Whether an operation still belongs to this connection attempt.
     /// Resource return is unconditional; protocol and rate updates use this guard.
-    pub fn is_current(&self, context: &StaTxContext<'id>) -> bool {
+    pub fn is_current(&self, context: &StaTxContext<'id, T::EpochPath>) -> bool {
         Some(context.epoch) == self.epoch
     }
 
@@ -3165,7 +3183,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         key_id: GroupKeyId,
         material: [u8; 16],
         rsc: [u8; 8],
-    ) -> Result<Option<(PendingGroupReplacement<'id>, T::GroupKey)>, ()> {
+    ) -> Result<Option<GroupReplacement<'id, T>>, ()> {
         let replay = oer_ieee80211_mac::ccmp::CcmpRxReplayState::from_receive_sequence(rsc)
             .map_err(|_| ())?;
         let Some(epoch) = self.current_epoch() else {

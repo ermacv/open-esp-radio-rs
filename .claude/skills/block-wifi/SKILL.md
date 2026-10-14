@@ -32,7 +32,7 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   snapshots retain lint configuration and reject build-input symlinks; a
   symlink to a shared configuration prevents image capture before compilation.
 
-- A backend declares its complete `PortBackend::Pools` layout and consumes `Mint::into_pools(self)` once. Include one `GatePool`; it yields `GateOpen` and the backend's `GateIssuer`, with no public `GatePlace` constructor. Test worlds that need another gate must use another branded installation.
+- A backend declares its complete `PortBackend::Pools` layout and consumes `Mint::into_pools(self)` once. Include one `GatePool`; it yields `GateOpen` and the backend's `GateIssuer`, with no public `GatePlace` constructor. Each tuple component has a sealed pool path, including duplicate `GatePool` components; retain that path through gate/issuer and the phase's `GatePath`. Do not erase ticket, key, buffer or connection-source paths in wrappers. The source's path also stays in station/data epochs and contexts; two sources in one installation cannot produce interchangeable epochs.
 
 - Time follows [clocks, stamps and alarms](../../../docs/architecture.md#clocks-stamps-and-alarms).
 

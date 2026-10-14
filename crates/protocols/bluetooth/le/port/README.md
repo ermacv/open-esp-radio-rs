@@ -14,3 +14,10 @@ compile-fail test in the crate documentation.
 The vocabulary the blocks share (the brand and `Mint`, slots, permits and
 seats, `PortResult`, `Poisoned`, `EventsLost` and the clock relation)
 is `oer-radio-port`'s.
+
+The shared factory preserves a sealed component path through nested pool
+layouts, independently of the installation brand. BLE backends with no
+capacity layout use `()`; a standalone slot layout has `Root`, while tuple
+components retain their distinct child paths in the backend's resources.
+The existing port lifecycle introduces no path erasure or extra runtime
+storage.

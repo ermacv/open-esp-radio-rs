@@ -16,6 +16,50 @@ reason = "the network check tests compile this failing cargo stand-in with rustc
 path = "tools/xtask/tests/fixtures/affine_contract.rs"
 reason = "cargo xtask check ui compiles both cfg variants directly with rustc on host and RV32"
 
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/same_kind.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/nested_factory.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/foreign_installation.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/radio/permit-pool/tests/ui/foreign_seat.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/radio/permit-pool/tests/ui/foreign_return.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/radio/permit-pool/tests/ui/split_supply.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/foreign_gate.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/nested_gate.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/foreign_line.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/phase_gate.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/sta/tests/ui/epoch_source.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
 # Dependencies a package declares only to select features of a crate its
 # dependency graph already uses, and so never names.
 

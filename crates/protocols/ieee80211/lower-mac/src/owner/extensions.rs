@@ -22,7 +22,7 @@
 //! [owner decisions on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129677418
 
 use oer_ieee80211_mac::tsf::{TsfDuration, TsfInstant};
-use oer_radio_port::{Poisoned, Slot};
+use oer_radio_port::{Poisoned, PoolPath, Root, Slot};
 
 use super::{Ieee80211Capabilities, PhaseRate, SupportedCoex, SupportedPower, Tid};
 use crate::{
@@ -261,11 +261,11 @@ impl MpduStartSpacing {
 }
 
 /// One A-MPDU attempt: its ticket, its aggregate and how it goes.
-pub struct AggregateAttempt<'id, T, A, K, X> {
+pub struct AggregateAttempt<'id, T, A, K, X, Path: PoolPath = Root> {
     /// The caller's context for all subframes, returned with their terminal.
     pub context: X,
     /// The attempt's place in flight.
-    pub ticket: Slot<'id, T>,
+    pub ticket: Slot<'id, T, Path>,
     /// The aggregate, whose subframes' buffers come back with the terminal.
     pub aggregate: A,
     /// The control exchange that protects it.
@@ -286,6 +286,7 @@ pub type InterfaceAggregateAttempt<'k, 'p, 'id, I> = AggregateAttempt<
     InterfaceAggregate<'k, 'p, 'id, I, NonEmptyAggregate>,
     <I as InterfacePhase<'p, 'id>>::Caps,
     <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::Context,
+    <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::TicketPath,
 >;
 
 /// An interface's builder, with its role, phase, install and occupancy state.
@@ -410,7 +411,11 @@ pub trait AirReservationPhase<'p, 'id: 'p>: LowerMacPhase<'p, 'id> {
     /// send the access point's CTS-to-self reserving the air until `until`:
     /// its Duration is `min(until − now, MAX_RESERVATION)` when it goes,
     /// and no frame goes once no time is left.
-    fn close_gate_reserving(&mut self, gate: GateOpen<'id>, until: crate::Ieee80211Instant);
+    fn close_gate_reserving(
+        &mut self,
+        gate: GateOpen<'id, <Self::Types as PhaseTypes<'id>>::GatePath>,
+        until: crate::Ieee80211Instant,
+    );
 }
 
 /// The longest reservation a CTS-to-self's Duration field carries.

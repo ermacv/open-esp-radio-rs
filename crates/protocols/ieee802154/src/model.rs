@@ -47,7 +47,10 @@ use oer_ieee802154_port::{
     CancelError, ClockError, EnableResult, Lent, PhaseParts, PortBackend, RadioPortClient,
     RadioPortEvents, RadioWork, Retire, Work,
 };
-use oer_radio_port::{EventsLost, Mint, Permit, PermitPool, Poisoned, PortResult, Seat, Slot};
+use oer_radio_port::{
+    Child, EventsLost, Mint, Permit, PermitPool, PermitSupply, Poisoned, PoolPath, PortResult,
+    Root, Seat, Slot,
+};
 
 use crate::{
     CcaMode, CcaThresholdCapability, Channel, CslCapability, CslReceiver, EnhancedAckGeneration,
@@ -511,8 +514,8 @@ impl OwnedModel {
 
 /// A first-in, first-out pool of the model's permits, whose line grows on
 /// the heap: a place for every seat that waits.
-pub struct ModelPermitPool<'id, Kind> {
-    free: RefCell<Vec<Permit<'id, Kind>>>,
+pub struct ModelPermitPool<'id, Kind, Path: PoolPath = Root> {
+    free: RefCell<Vec<Permit<'id, Kind, Path>>>,
     /// The waiting takers, in arrival order: each one's ticket and waker.
     line: Waiting,
     next: Cell<u32>,
@@ -527,11 +530,11 @@ fn wake_head(line: &Waiting) {
     }
 }
 
-impl<'id, Kind> ModelPermitPool<'id, Kind> {
+impl<'id, Kind, Path: PoolPath> ModelPermitPool<'id, Kind, Path> {
     /// A pool of `permits`.
-    pub fn new(permits: impl IntoIterator<Item = Permit<'id, Kind>>) -> Self {
+    pub fn new<const N: usize>(supply: PermitSupply<'id, Kind, N, Path>) -> Self {
         Self {
-            free: RefCell::new(permits.into_iter().collect()),
+            free: RefCell::new(supply.into_permits().into_iter().collect()),
             line: RefCell::default(),
             next: Cell::new(0),
         }
@@ -559,11 +562,11 @@ impl Drop for Place<'_> {
     }
 }
 
-impl<'id, Kind> PermitPool<'id, Kind> for ModelPermitPool<'id, Kind> {
+impl<'id, Kind, Path: PoolPath> PermitPool<'id, Kind, Path> for ModelPermitPool<'id, Kind, Path> {
     fn take<'a>(
         &'a self,
-        _: &'a mut Seat<'id, Kind>,
-    ) -> impl Future<Output = Permit<'id, Kind>> + 'a {
+        _: &'a mut Seat<'id, Kind, Path>,
+    ) -> impl Future<Output = Permit<'id, Kind, Path>> + 'a {
         let mut place = Place {
             line: &self.line,
             ticket: None,
@@ -610,7 +613,7 @@ impl<'id, Kind> PermitPool<'id, Kind> for ModelPermitPool<'id, Kind> {
         })
     }
 
-    fn release(&self, permit: Permit<'id, Kind>) {
+    fn release(&self, permit: Permit<'id, Kind, Path>) {
         self.free.borrow_mut().push(permit);
         wake_head(&self.line);
     }
@@ -618,18 +621,18 @@ impl<'id, Kind> PermitPool<'id, Kind> for ModelPermitPool<'id, Kind> {
 
 /// The model's held part of the install: the operation permit.
 pub struct ModelHeld<'id> {
-    permits: OperationPermits<'id, ModelPermitPool<'id, Operation>>,
+    permits: OperationPermits<'id, ModelPermitPool<'id, Operation, Child<Root, 2>>, Child<Root, 2>>,
 }
 
 /// The model's port-lifetime resources: each interface's slots, its seat
 /// in the operation's line and the recent-RSSI reader.
 pub struct ModelResources<'id> {
     /// Each interface's seat in the operation's line, by interface.
-    pub operation: [Seat<'id, Operation>; MODEL_INTERFACES],
+    pub operation: [Seat<'id, Operation, Child<Root, 2>>; MODEL_INTERFACES],
     /// Interface 0's slots.
-    pub interface0: InterfaceResources<'id, 0, MODEL_PENDING_SLOTS>,
+    pub interface0: InterfaceResources<'id, 0, MODEL_PENDING_SLOTS, Child<Root, 0>>,
     /// Interface 1's slots.
-    pub interface1: InterfaceResources<'id, 1, MODEL_PENDING_SLOTS>,
+    pub interface1: InterfaceResources<'id, 1, MODEL_PENDING_SLOTS, Child<Root, 1>>,
     /// The recent-RSSI reader.
     pub rssi: ModelRssi,
 }
@@ -645,7 +648,7 @@ impl RecentRssi for ModelRssi {
 
 /// A configured interface `I` of the model; it holds the interface's slot.
 pub struct ModelConfigured<'id, const I: u8> {
-    slot: Slot<'id, InterfaceKind<I>>,
+    slot: Slot<'id, InterfaceKind<I>, Child<Child<Root, I>, 0>>,
 }
 
 impl<'id, const I: u8> ConfiguredInterface<'id, I> for ModelConfigured<'id, I> {}
@@ -736,11 +739,12 @@ radio_settings!(ModelControl<'_>);
 impl Ieee802154Control for ModelControl<'_> {}
 
 impl<'id> Ieee802154Setup<'id> for ModelSetup<'_, 'id> {
+    type InterfacePath<const I: u8> = Child<Root, I>;
     type Configured<const I: u8> = ModelConfigured<'id, I>;
 
     fn configure<const I: u8>(
         &mut self,
-        slot: Slot<'id, InterfaceKind<I>>,
+        slot: Slot<'id, InterfaceKind<I>, Child<Child<Root, I>, 0>>,
     ) -> ModelConfigured<'id, I> {
         self.shared.borrow_mut().interfaces[usize::from(I)].configured = true;
         ModelConfigured { slot }
@@ -749,7 +753,7 @@ impl<'id> Ieee802154Setup<'id> for ModelSetup<'_, 'id> {
     fn remove<const I: u8>(
         &mut self,
         interface: ModelConfigured<'id, I>,
-    ) -> Slot<'id, InterfaceKind<I>> {
+    ) -> Slot<'id, InterfaceKind<I>, Child<Child<Root, I>, 0>> {
         let mut state = self.shared.borrow_mut();
         let removed = &mut state.interfaces[usize::from(I)];
         // The pending entries stay with their tokens.
@@ -882,12 +886,12 @@ impl RadioWork for ModelToken {
 
 /// An installed short-address pending entry of interface `I`.
 pub struct ModelShortEntry<'id, const I: u8> {
-    slot: Slot<'id, ShortPending<I>>,
+    slot: Slot<'id, ShortPending<I>, Child<Child<Root, I>, 1>>,
 }
 
 /// An installed extended-address pending entry of interface `I`.
 pub struct ModelExtendedEntry<'id, const I: u8> {
-    slot: Slot<'id, ExtendedPending<I>>,
+    slot: Slot<'id, ExtendedPending<I>, Child<Child<Root, I>, 2>>,
 }
 
 /// The client of the model's interface `I` in a running phase.
@@ -919,7 +923,7 @@ impl<const I: u8> ModelClient<'_, '_, I> {
 
     fn admit<'c, 'id>(
         &'c self,
-        permit: OperationPermit<'c, 'id>,
+        permit: OperationPermit<'c, 'id, Child<Root, 2>>,
         kind: Kind,
         held: &'c ModelHeld<'id>,
     ) -> Result<ModelToken, Poisoned<ModelFault>> {
@@ -970,6 +974,8 @@ impl<const I: u8> RadioPortClient for ModelClient<'_, '_, I> {
 }
 
 impl<'c, 'id, const I: u8> Ieee802154Client<'id, I> for ModelClient<'c, 'id, I> {
+    type InterfacePath = Child<Root, I>;
+    type OperationPath = Child<Root, 2>;
     type Caps = ModelCaps;
     type ShortEntry = ModelShortEntry<'id, I>;
     type ExtendedEntry = ModelExtendedEntry<'id, I>;
@@ -1020,7 +1026,7 @@ impl<'c, 'id, const I: u8> Ieee802154Client<'id, I> for ModelClient<'c, 'id, I> 
 
     fn add_pending_short(
         &self,
-        slot: Slot<'id, ShortPending<I>>,
+        slot: Slot<'id, ShortPending<I>, Child<Child<Root, I>, 1>>,
         address: [u8; 2],
     ) -> ModelShortEntry<'id, I> {
         self.interface(|interface| {
@@ -1031,7 +1037,7 @@ impl<'c, 'id, const I: u8> Ieee802154Client<'id, I> for ModelClient<'c, 'id, I> 
 
     fn add_pending_extended(
         &self,
-        slot: Slot<'id, ExtendedPending<I>>,
+        slot: Slot<'id, ExtendedPending<I>, Child<Child<Root, I>, 2>>,
         address: [u8; 8],
     ) -> ModelExtendedEntry<'id, I> {
         self.interface(|interface| {
@@ -1040,7 +1046,10 @@ impl<'c, 'id, const I: u8> Ieee802154Client<'id, I> for ModelClient<'c, 'id, I> 
         ModelExtendedEntry { slot }
     }
 
-    fn remove_pending_short(&self, entry: ModelShortEntry<'id, I>) -> Slot<'id, ShortPending<I>> {
+    fn remove_pending_short(
+        &self,
+        entry: ModelShortEntry<'id, I>,
+    ) -> Slot<'id, ShortPending<I>, Child<Child<Root, I>, 1>> {
         self.interface(|interface| {
             interface.pending_short[usize::from(entry.slot.index())] = None;
         });
@@ -1050,7 +1059,7 @@ impl<'c, 'id, const I: u8> Ieee802154Client<'id, I> for ModelClient<'c, 'id, I> 
     fn remove_pending_extended(
         &self,
         entry: ModelExtendedEntry<'id, I>,
-    ) -> Slot<'id, ExtendedPending<I>> {
+    ) -> Slot<'id, ExtendedPending<I>, Child<Child<Root, I>, 2>> {
         self.interface(|interface| {
             interface.pending_extended[usize::from(entry.slot.index())] = None;
         });
@@ -1112,8 +1121,8 @@ impl<'c, 'id, const I: u8> Ieee802154Client<'id, I> for ModelClient<'c, 'id, I> 
 
     fn operation<'o, 's>(
         &'o self,
-        seat: &'s mut Seat<'id, Operation>,
-    ) -> impl Future<Output = OperationPermit<'o, 'id>> + 's
+        seat: &'s mut Seat<'id, Operation, Child<Root, 2>>,
+    ) -> impl Future<Output = OperationPermit<'o, 'id, Child<Root, 2>>> + 's
     where
         'id: 'o,
         'o: 's,
@@ -1130,7 +1139,7 @@ impl<'c, 'id, const I: u8> Ieee802154Client<'id, I> for ModelClient<'c, 'id, I> 
 
     fn transmit<'o>(
         &'o self,
-        permit: OperationPermit<'o, 'id>,
+        permit: OperationPermit<'o, 'id, Child<Root, 2>>,
         _: SupportedTransmit<'_, ModelCaps>,
     ) -> Result<Work<'o, Self>, Poisoned<ModelFault>>
     where
@@ -1142,7 +1151,7 @@ impl<'c, 'id, const I: u8> Ieee802154Client<'id, I> for ModelClient<'c, 'id, I> 
 
     fn energy_scan<'o>(
         &'o self,
-        permit: OperationPermit<'o, 'id>,
+        permit: OperationPermit<'o, 'id, Child<Root, 2>>,
         _: SupportedEnergyScan<ModelCaps>,
     ) -> Result<Work<'o, Self>, Poisoned<ModelFault>>
     where
@@ -1154,7 +1163,7 @@ impl<'c, 'id, const I: u8> Ieee802154Client<'id, I> for ModelClient<'c, 'id, I> 
 
     fn clear_channel_assessment<'o>(
         &'o self,
-        permit: OperationPermit<'o, 'id>,
+        permit: OperationPermit<'o, 'id, Child<Root, 2>>,
         _: SupportedCca<ModelCaps>,
     ) -> Result<Work<'o, Self>, Poisoned<ModelFault>>
     where
@@ -1267,7 +1276,7 @@ impl PortBackend for OwnedModel {
         // The model's line grows on the heap, so it holds a place for every
         // seat without the line's size.
         let (permits, operation) =
-            OperationPermits::new(work, |permit, _| ModelPermitPool::new([permit]));
+            OperationPermits::new(work, |supply, _| ModelPermitPool::new(supply));
         let held = ModelHeld { permits };
         let resources = ModelResources {
             operation,

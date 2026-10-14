@@ -282,6 +282,25 @@ impl TxBufferClass for ModelLarge {
     const CAPACITY: usize = MODEL_MAX_MPDU;
 }
 
+/// Paths of the model's fixed installation layout. They add no runtime state.
+pub type ModelPool<const I: u8> = oer_radio_port::Child<oer_radio_port::Root, I>;
+
+/// The distinct key pools belonging to each modeled interface role.
+pub trait ModelRole: oer_ieee80211_lower_mac::InterfaceRole {
+    /// Component containing the role's pairwise slots.
+    type PairwisePath: oer_radio_port::PoolPath;
+    /// Component containing the role's group slots.
+    type GroupPath: oer_radio_port::PoolPath;
+}
+impl ModelRole for Station {
+    type PairwisePath = ModelPool<5>;
+    type GroupPath = ModelPool<6>;
+}
+impl ModelRole for AccessPoint {
+    type PairwisePath = ModelPool<7>;
+    type GroupPath = ModelPool<8>;
+}
+
 /// The kind of the pairwise key slots of the role `R`.
 pub struct ModelPairwiseKeys<R>(PhantomData<fn() -> R>);
 /// The kind of the group key slots of the role `R`.
@@ -291,8 +310,8 @@ pub enum ModelBlockAcks {}
 
 /// A transmit buffer of the class `C`: its token and its memory, which
 /// moves with it; only the install mints one.
-pub struct ModelBuffer<'id, C> {
-    slot: Slot<'id, C>,
+pub struct ModelBuffer<'id, C: ModelClass> {
+    slot: Slot<'id, C, C::Path>,
     memory: ModelMemory,
 }
 
@@ -405,13 +424,13 @@ impl ModelMemory {
     }
 }
 
-impl<C> TxBufferMemory for ModelBuffer<'_, C> {
+impl<C: ModelClass> TxBufferMemory for ModelBuffer<'_, C> {
     fn bytes_mut(&mut self) -> &mut [u8] {
         &mut self.memory
     }
 }
 
-impl<C> core::fmt::Debug for ModelBuffer<'_, C> {
+impl<C: ModelClass> core::fmt::Debug for ModelBuffer<'_, C> {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter
             .debug_tuple("ModelBuffer")
@@ -423,7 +442,7 @@ impl<C> core::fmt::Debug for ModelBuffer<'_, C> {
 /// A returned published MPDU (open or protected). Its checked layout, installed-key identity,
 /// and external body remain inseparable from the immutable buffer.
 #[derive(Debug)]
-pub struct ModelSent<'id, C> {
+pub struct ModelSent<'id, C: ModelClass> {
     role: VifRole,
     buffer: ModelBuffer<'id, C>,
     layout: MpduLayout,
@@ -432,7 +451,7 @@ pub struct ModelSent<'id, C> {
     packet_number: Option<u64>,
 }
 
-impl<'id, C> ModelSent<'id, C> {
+impl<'id, C: ModelClass> ModelSent<'id, C> {
     fn publish(
         role: VifRole,
         mut buffer: ModelBuffer<'id, C>,
@@ -741,6 +760,10 @@ impl ModelContext for () {
 pub struct ModelTypes<X: ModelContext = ()>(PhantomData<fn() -> X>);
 
 impl<'id, X: ModelContext> PhaseTypes<'id> for ModelTypes<X> {
+    type EpochPath = ModelPool<4>;
+    type GatePath = ModelPool<0>;
+    type TicketPath = ModelPool<1>;
+    type BlockAckPath = ModelPool<9>;
     type Fault = ModelFault;
     type Context = X::Context<'id>;
     type Prepared<'k, 'p, R, K: Ieee80211Capabilities> = ModelPrepared<'k, 'p, 'id, R, K, X>;
@@ -768,9 +791,9 @@ impl<'id, X: ModelContext> PhaseTypes<'id> for ModelTypes<X> {
 /// The keys of the role `R` and their slots.
 pub struct ModelKeys<'id, R>(PhantomData<fn(&'id ()) -> R>);
 
-impl<'id, R: 'id> KeyTypes<'id> for ModelKeys<'id, R> {
-    type PairwiseSlot = Slot<'id, ModelPairwiseKeys<R>>;
-    type GroupSlot = Slot<'id, ModelGroupKeys<R>>;
+impl<'id, R: ModelRole + 'id> KeyTypes<'id> for ModelKeys<'id, R> {
+    type PairwiseSlot = Slot<'id, ModelPairwiseKeys<R>, R::PairwisePath>;
+    type GroupSlot = Slot<'id, ModelGroupKeys<R>, R::GroupPath>;
     type PairwiseKey = ModelPairwiseKey<'id, R>;
     type GroupKey = ModelGroupKey<'id, R>;
     type Identity = KeyIdentity;
@@ -815,6 +838,7 @@ impl<'id, X: ModelContext, C: ModelClass> TxBufferPool<'id, C> for ModelTypes<X>
         C::erase(buffer)
     }
 
+    /// Return a published MPDU through the terminal buffer enum.
     fn erase_sent(buffer: Self::Sent) -> ModelAnyBuffer<'id> {
         C::erase_sent(buffer)
     }
@@ -922,25 +946,26 @@ pub struct ModelFault;
 /// The tokens the install gives the body once.
 pub struct ModelResources<'id> {
     /// The install's single epoch-source slot; Station constructs its source.
-    pub connection_epoch: Slot<'id, ConnectionEpochKind>,
+    pub connection_epoch: Slot<'id, ConnectionEpochKind, ModelPool<4>>,
     /// The transmit tickets.
-    pub tickets: Vec<Slot<'id, ModelTickets>>,
+    pub tickets: Vec<Slot<'id, ModelTickets, ModelPool<1>>>,
     /// The small transmit buffers.
     pub small: Vec<ModelBuffer<'id, ModelSmall>>,
     /// The large transmit buffers.
     pub large: Vec<ModelBuffer<'id, ModelLarge>>,
     /// The station's pairwise key slots.
-    pub station_pairwise: [Slot<'id, ModelPairwiseKeys<Station>>; MODEL_KEY_SLOTS],
+    pub station_pairwise: [Slot<'id, ModelPairwiseKeys<Station>, ModelPool<5>>; MODEL_KEY_SLOTS],
     /// The station's group key slots.
-    pub station_group: [Slot<'id, ModelGroupKeys<Station>>; MODEL_KEY_SLOTS],
+    pub station_group: [Slot<'id, ModelGroupKeys<Station>, ModelPool<6>>; MODEL_KEY_SLOTS],
     /// The access point's pairwise key slots.
-    pub access_point_pairwise: [Slot<'id, ModelPairwiseKeys<AccessPoint>>; MODEL_KEY_SLOTS],
+    pub access_point_pairwise:
+        [Slot<'id, ModelPairwiseKeys<AccessPoint>, ModelPool<7>>; MODEL_KEY_SLOTS],
     /// The access point's group key slots.
-    pub access_point_group: [Slot<'id, ModelGroupKeys<AccessPoint>>; MODEL_KEY_SLOTS],
+    pub access_point_group: [Slot<'id, ModelGroupKeys<AccessPoint>, ModelPool<8>>; MODEL_KEY_SLOTS],
     /// The receive Block Ack slots both roles share.
-    pub block_acks: [Slot<'id, ModelBlockAcks>; MODEL_BLOCK_ACK_SLOTS],
+    pub block_acks: [Slot<'id, ModelBlockAcks, ModelPool<9>>; MODEL_BLOCK_ACK_SLOTS],
     /// The open transmit gate.
-    pub gate: GateOpen<'id>,
+    pub gate: GateOpen<'id, ModelPool<0>>,
 }
 
 /// One transmission the air saw.
@@ -1190,7 +1215,7 @@ enum Command<'id, X: ModelContext> {
         key: KeyIdentity,
         removed: Removed<'id, ModelTypes<X>>,
     },
-    CloseGate(GateOpen<'id>),
+    CloseGate(GateOpen<'id, ModelPool<0>>),
     OpenGate,
 }
 
@@ -1221,7 +1246,7 @@ struct Subframe<'id> {
 struct PreparedAggregate<'id, X: ModelContext> {
     context: X::Context<'id>,
     role: VifRole,
-    ticket: Slot<'id, ModelTickets>,
+    ticket: Slot<'id, ModelTickets, ModelPool<1>>,
     subframes: Vec<Subframe<'id>>,
     start_sequence: SequenceNumber,
     queue: oer_ieee80211_mac::qos::WmmAccessCategory,
@@ -1233,7 +1258,7 @@ struct PreparedAggregate<'id, X: ModelContext> {
 struct Prepared<'id, X: ModelContext> {
     context: X::Context<'id>,
     role: VifRole,
-    ticket: Slot<'id, ModelTickets>,
+    ticket: Slot<'id, ModelTickets, ModelPool<1>>,
     mpdu: ModelMpdu<'id>,
     queue: oer_ieee80211_mac::qos::WmmAccessCategory,
     plan: oer_ieee80211_lower_mac::RetryPlan<PhyRate>,
@@ -1256,7 +1281,7 @@ struct Settings {
 /// owners out of this slot, including in the feature-enabled library.
 struct SingleTerminal<'id, X: ModelContext> {
     context: X::Context<'id>,
-    ticket: Slot<'id, ModelTickets>,
+    ticket: Slot<'id, ModelTickets, ModelPool<1>>,
     buffer: ModelAnyBuffer<'id>,
     body: Option<ModelBody>,
     completion: TxOutcome,
@@ -1295,7 +1320,7 @@ pub struct ModelHeld<'id, X: ModelContext = ()> {
     lost: Cell<bool>,
     body: RefCell<Option<Waker>>,
     /// The backend alone attests the hardware barrier with the one gate place.
-    gate_issuer: RefCell<GateIssuer<'id>>,
+    gate_issuer: RefCell<GateIssuer<'id, ModelPool<0>>>,
     /// Disable asks the driver to return all queued operations before the
     /// owner ends the phase. Unlike poison, this is an ordinary terminal.
     draining: Cell<bool>,
@@ -1665,7 +1690,7 @@ impl<C: Ieee80211Capabilities, X: ModelContext> LowerMacBackend for ModelBackend
 /// The driver retains the unique open place throughout the closing barrier.
 enum DriverGate<'id> {
     Open,
-    Closing(GateOpen<'id>),
+    Closing(GateOpen<'id, ModelPool<0>>),
     Closed,
 }
 
@@ -2298,11 +2323,11 @@ impl<'p, 'id: 'p, C: Ieee80211Capabilities, X: ModelContext> LowerMacPhase<'p, '
         self.held.air.wake_driver();
     }
 
-    fn close_gate(&mut self, gate: GateOpen<'id>) {
+    fn close_gate(&mut self, gate: GateOpen<'id, ModelPool<0>>) {
         self.held.command(Command::CloseGate(gate));
     }
 
-    fn open_gate(&mut self, gate: GateClosed<'id>) -> GateOpen<'id> {
+    fn open_gate(&mut self, gate: GateClosed<'id, ModelPool<0>>) -> GateOpen<'id, ModelPool<0>> {
         let open = self.held.gate_issuer.borrow_mut().open(gate);
         self.held.command(Command::OpenGate);
         open
@@ -2340,20 +2365,20 @@ pub struct ModelInterface<'p, 'v, 'id, R, C = ModelCaps, X: ModelContext = ()> {
 }
 
 /// A key the model installed.
-pub struct ModelPairwiseKey<'id, R> {
+pub struct ModelPairwiseKey<'id, R: ModelRole> {
     identity: KeyIdentity,
-    slot: Slot<'id, ModelPairwiseKeys<R>>,
+    slot: Slot<'id, ModelPairwiseKeys<R>, R::PairwisePath>,
 }
 
 /// A group key the model installed.
-pub struct ModelGroupKey<'id, R> {
+pub struct ModelGroupKey<'id, R: ModelRole> {
     identity: KeyIdentity,
-    slot: Slot<'id, ModelGroupKeys<R>>,
+    slot: Slot<'id, ModelGroupKeys<R>, R::GroupPath>,
 }
 
 /// A receive Block Ack agreement the model keeps.
 pub struct ModelBlockAck<'id> {
-    slot: Slot<'id, ModelBlockAcks>,
+    slot: Slot<'id, ModelBlockAcks, ModelPool<9>>,
 }
 
 /// A retry plan's stages, as the model's hardware takes them.
@@ -2440,22 +2465,32 @@ impl<'id, R, K, X: ModelContext> PreparedTx<'id> for ModelPrepared<'_, '_, 'id, 
 )]
 // The return crosses Clippy's size threshold on 64-bit targets only.
 // Pointer width changes the lint expectation, never the model or its API.
-trait ModelClass: TxBufferClass + Sized {
+/// A model buffer class and its unique pool within the installation layout.
+pub trait ModelClass: TxBufferClass + Sized {
+    /// Nominal component of the backing memory slots.
+    type Path: oer_radio_port::PoolPath;
+    /// Return fresh memory through the terminal's exhaustive buffer enum.
     fn erase<'id>(buffer: ModelBuffer<'id, Self>) -> ModelAnyBuffer<'id>;
+    /// Return a published MPDU through the terminal buffer enum.
     fn erase_sent<'id>(mpdu: ModelSent<'id, Self>) -> ModelAnyBuffer<'id>;
+    /// Recover fresh memory of this class, or preserve the other owner.
     fn class<'id>(
         buffer: ModelAnyBuffer<'id>,
     ) -> Result<ModelBuffer<'id, Self>, ModelAnyBuffer<'id>>;
+    /// Recover a published MPDU of this class, or preserve the other owner.
     fn sent<'id>(buffer: ModelAnyBuffer<'id>) -> Result<ModelSent<'id, Self>, ModelAnyBuffer<'id>>;
 }
 
 impl ModelClass for ModelSmall {
+    type Path = ModelPool<2>;
     fn erase<'id>(buffer: ModelBuffer<'id, Self>) -> ModelAnyBuffer<'id> {
         ModelAnyBuffer::Small(buffer)
     }
+    /// Return a published MPDU through the terminal buffer enum.
     fn erase_sent<'id>(mpdu: ModelSent<'id, Self>) -> ModelAnyBuffer<'id> {
         ModelAnyBuffer::SmallSent(mpdu)
     }
+    /// Recover fresh memory of this class, or preserve the other owner.
     fn class<'id>(
         buffer: ModelAnyBuffer<'id>,
     ) -> Result<ModelBuffer<'id, Self>, ModelAnyBuffer<'id>> {
@@ -2464,6 +2499,7 @@ impl ModelClass for ModelSmall {
             buffer => Err(buffer),
         }
     }
+    /// Recover a published MPDU of this class, or preserve the other owner.
     fn sent<'id>(buffer: ModelAnyBuffer<'id>) -> Result<ModelSent<'id, Self>, ModelAnyBuffer<'id>> {
         match buffer {
             ModelAnyBuffer::SmallSent(buffer) => Ok(buffer),
@@ -2472,12 +2508,15 @@ impl ModelClass for ModelSmall {
     }
 }
 impl ModelClass for ModelLarge {
+    type Path = ModelPool<3>;
     fn erase<'id>(buffer: ModelBuffer<'id, Self>) -> ModelAnyBuffer<'id> {
         ModelAnyBuffer::Large(buffer)
     }
+    /// Return a published MPDU through the terminal buffer enum.
     fn erase_sent<'id>(mpdu: ModelSent<'id, Self>) -> ModelAnyBuffer<'id> {
         ModelAnyBuffer::LargeSent(mpdu)
     }
+    /// Recover fresh memory of this class, or preserve the other owner.
     fn class<'id>(
         buffer: ModelAnyBuffer<'id>,
     ) -> Result<ModelBuffer<'id, Self>, ModelAnyBuffer<'id>> {
@@ -2486,6 +2525,7 @@ impl ModelClass for ModelLarge {
             buffer => Err(buffer),
         }
     }
+    /// Recover a published MPDU of this class, or preserve the other owner.
     fn sent<'id>(buffer: ModelAnyBuffer<'id>) -> Result<ModelSent<'id, Self>, ModelAnyBuffer<'id>> {
         match buffer {
             ModelAnyBuffer::LargeSent(buffer) => Ok(buffer),
@@ -2576,7 +2616,7 @@ fn prepare_model<
 impl<'p, 'v, 'id: 'p, R, K: Ieee80211Capabilities, X: ModelContext> InterfacePhase<'p, 'id>
     for ModelInterface<'p, 'v, 'id, R, K, X>
 where
-    R: RoleKeys<'id, ModelTypes<X>, Keys = ModelKeys<'id, R>>,
+    R: ModelRole + RoleKeys<'id, ModelTypes<X>, Keys = ModelKeys<'id, R>>,
 {
     type Caps = K;
     type Types = ModelTypes<X>;
@@ -2610,7 +2650,7 @@ where
 
     fn install_pairwise_key(
         &mut self,
-        slot: Slot<'id, ModelPairwiseKeys<R>>,
+        slot: Slot<'id, ModelPairwiseKeys<R>, R::PairwisePath>,
         _: IndividualAddress,
         _: Ccmp128Key,
     ) -> ModelPairwiseKey<'id, R> {
@@ -2623,7 +2663,7 @@ where
 
     fn install_group_key(
         &mut self,
-        slot: Slot<'id, ModelGroupKeys<R>>,
+        slot: Slot<'id, ModelGroupKeys<R>, R::GroupPath>,
         key_id: GroupKeyId,
         _: Ccmp128Key,
     ) -> ModelGroupKey<'id, R> {
@@ -2652,7 +2692,7 @@ where
 
     fn add_block_ack(
         &mut self,
-        slot: Slot<'id, ModelBlockAcks>,
+        slot: Slot<'id, ModelBlockAcks, ModelPool<9>>,
         agreement: SupportedBlockAck<K>,
     ) -> ModelBlockAck<'id> {
         self.held.settings.borrow_mut().block_acks.insert(
@@ -2676,7 +2716,10 @@ where
         running
     }
 
-    fn remove_block_ack(&mut self, agreement: ModelBlockAck<'id>) -> Slot<'id, ModelBlockAcks> {
+    fn remove_block_ack(
+        &mut self,
+        agreement: ModelBlockAck<'id>,
+    ) -> Slot<'id, ModelBlockAcks, ModelPool<9>> {
         self.held
             .settings
             .borrow_mut()
@@ -2906,7 +2949,7 @@ fn push_model<
 impl<'p, 'v, 'id: 'p, R, K: Ieee80211Capabilities, X: ModelContext> AmpduPhase<'p, 'id>
     for ModelInterface<'p, 'v, 'id, R, K, X>
 where
-    R: RoleKeys<'id, ModelTypes<X>, Keys = ModelKeys<'id, R>>,
+    R: ModelRole + RoleKeys<'id, ModelTypes<X>, Keys = ModelKeys<'id, R>>,
 {
     fn ampdu_capabilities(&self) -> AmpduCapabilities {
         AmpduCapabilities {

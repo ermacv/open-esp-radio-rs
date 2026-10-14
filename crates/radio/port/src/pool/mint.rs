@@ -2,7 +2,7 @@
 
 use core::marker::PhantomData;
 
-use super::{Brand, Line, Permit, Seat, Slot, index_of};
+use super::{Brand, Child, Line, Permit, PoolPath, Root, Seat, Slot, index_of};
 
 /// The complete pool layout of one backend installation.
 ///
@@ -12,14 +12,14 @@ use super::{Brand, Line, Permit, Seat, Slot, index_of};
 /// once, so a factory cannot issue another copy of a declared pool.
 pub trait PoolSet {
     /// The owned pools, branded by the installation that issued them.
-    type Pools<'id>;
+    type Pools<'id, Path: PoolPath>;
 
     /// Assemble the complete set from its single construction authority.
-    fn build<'id>(builder: PoolBuilder<'id>) -> Self::Pools<'id>;
+    fn build<'id, Path: PoolPath>(builder: PoolBuilder<'id, Path>) -> Self::Pools<'id, Path>;
 }
 
 /// The resources produced by layout `P` for installation `'id`.
-pub type Pools<'id, P> = <P as PoolSet>::Pools<'id>;
+pub type Pools<'id, P, Path = Root> = <P as PoolSet>::Pools<'id, Path>;
 
 /// The one issuance authority for an installation's declared layout `P`.
 ///
@@ -75,8 +75,11 @@ impl<'id, P: PoolSet> Mint<'id, P> {
     }
 
     /// Issue the declared pool set exactly once, consuming its authority.
-    pub fn into_pools(self) -> P::Pools<'id> {
-        P::build(PoolBuilder { brand: self.brand })
+    pub fn into_pools(self) -> P::Pools<'id, Root> {
+        P::build(PoolBuilder {
+            brand: self.brand,
+            path: PhantomData,
+        })
     }
 }
 
@@ -102,13 +105,14 @@ pub async fn branded<P: PoolSet, R>(install: impl for<'id> AsyncFnOnce(Mint<'id,
 ///     drop((first, second));
 /// }
 /// ```
-pub struct PoolBuilder<'id> {
+pub struct PoolBuilder<'id, Path: PoolPath = Root> {
     brand: Brand<'id>,
+    path: PhantomData<fn() -> Path>,
 }
 
-impl<'id> PoolBuilder<'id> {
+impl<'id, Path: PoolPath> PoolBuilder<'id, Path> {
     /// Expand one declared component set, consuming this factory authority.
-    pub fn into_pools<P: PoolSet>(self) -> P::Pools<'id> {
+    pub fn into_pools<P: PoolSet>(self) -> P::Pools<'id, Path> {
         P::build(self)
     }
 }
@@ -127,9 +131,9 @@ impl<'id> PoolBuilder<'id> {
 pub struct Slots<Kind, const N: usize>(PhantomData<fn() -> Kind>);
 
 impl<Kind, const N: usize> PoolSet for Slots<Kind, N> {
-    type Pools<'id> = [Slot<'id, Kind>; N];
+    type Pools<'id, Path: PoolPath> = [Slot<'id, Kind, Path>; N];
 
-    fn build<'id>(builder: PoolBuilder<'id>) -> Self::Pools<'id> {
+    fn build<'id, Path: PoolPath>(builder: PoolBuilder<'id, Path>) -> Self::Pools<'id, Path> {
         const { assert!(N <= 256, "a pool holds at most 256 tokens") };
         core::array::from_fn(|index| Slot {
             index: index_of(index),
@@ -142,30 +146,47 @@ impl<Kind, const N: usize> PoolSet for Slots<Kind, N> {
 /// A layout of `N` awaited permits and the `S` seats of their line.
 pub struct Permits<Kind, const N: usize, const S: usize>(PhantomData<fn() -> Kind>);
 
+/// The indivisible initial capacity of one permit pool.
+///
+/// FIFO constructors consume this whole authority. Extracting its permits
+/// for another backend consumes it and cannot create a second initial supply.
+pub struct PermitSupply<'id, Kind, const N: usize, Path: PoolPath = Root> {
+    permits: [Permit<'id, Kind, Path>; N],
+}
+
+impl<'id, K, const N: usize, Path: PoolPath> PermitSupply<'id, K, N, Path> {
+    /// Move the complete initial capacity to its single backend owner.
+    pub fn into_permits(self) -> [Permit<'id, K, Path>; N] {
+        self.permits
+    }
+}
+
 /// One permit pool's initial owners, line and caller seats.
-pub struct PermitTokens<'id, Kind, const N: usize, const S: usize> {
+pub struct PermitTokens<'id, Kind, const N: usize, const S: usize, Path: PoolPath = Root> {
     /// All permits, to be retained by the backend's permit pool.
-    pub permits: [Permit<'id, Kind>; N],
+    pub supply: PermitSupply<'id, Kind, N, Path>,
     /// One queue place for every issued seat.
-    pub line: Line<'id, Kind, S>,
+    pub line: Line<'id, Kind, S, Path>,
     /// One seat for each allowed waiting caller.
-    pub seats: [Seat<'id, Kind>; S],
+    pub seats: [Seat<'id, Kind, Path>; S],
 }
 
 impl<Kind, const N: usize, const S: usize> PoolSet for Permits<Kind, N, S> {
-    type Pools<'id> = PermitTokens<'id, Kind, N, S>;
+    type Pools<'id, Path: PoolPath> = PermitTokens<'id, Kind, N, S, Path>;
 
-    fn build<'id>(builder: PoolBuilder<'id>) -> Self::Pools<'id> {
+    fn build<'id, Path: PoolPath>(builder: PoolBuilder<'id, Path>) -> Self::Pools<'id, Path> {
         const {
             assert!(N <= 256, "a pool holds at most 256 tokens");
             assert!(S <= 256, "a line holds at most 256 seats");
         };
         PermitTokens {
-            permits: core::array::from_fn(|index| Permit {
-                index: index_of(index),
-                brand: builder.brand,
-                kind: PhantomData,
-            }),
+            supply: PermitSupply {
+                permits: core::array::from_fn(|index| Permit {
+                    index: index_of(index),
+                    brand: builder.brand,
+                    kind: PhantomData,
+                }),
+            },
             line: Line {
                 brand: builder.brand,
                 kind: PhantomData,
@@ -180,30 +201,32 @@ impl<Kind, const N: usize, const S: usize> PoolSet for Permits<Kind, N, S> {
 }
 
 impl PoolSet for () {
-    type Pools<'id> = ();
+    type Pools<'id, Path: PoolPath> = ();
 
-    fn build<'id>(_: PoolBuilder<'id>) {}
+    fn build<'id, Path: PoolPath>(_: PoolBuilder<'id, Path>) {}
 }
 
 macro_rules! tuple_set {
-    ($($part:ident),+) => {
+    ($($index:literal => $part:ident),+) => {
         impl<$($part: PoolSet),+> PoolSet for ($($part,)+) {
-            type Pools<'id> = ($($part::Pools<'id>,)+);
+            type Pools<'id, Path: PoolPath> = ($($part::Pools<'id, Child<Path, $index>>,)+);
 
-            fn build<'id>(builder: PoolBuilder<'id>) -> Self::Pools<'id> {
-                ($($part::build(PoolBuilder { brand: builder.brand }),)+)
+            fn build<'id, Path: PoolPath>(builder: PoolBuilder<'id, Path>) -> Self::Pools<'id, Path> {
+                ($($part::build(PoolBuilder { brand: builder.brand, path: PhantomData }),)+)
             }
         }
     };
 }
 
-tuple_set!(A);
-tuple_set!(A, B);
-tuple_set!(A, B, C);
-tuple_set!(A, B, C, D);
-tuple_set!(A, B, C, D, E);
-tuple_set!(A, B, C, D, E, F);
-tuple_set!(A, B, C, D, E, F, G);
-tuple_set!(A, B, C, D, E, F, G, H);
-tuple_set!(A, B, C, D, E, F, G, H, I);
-tuple_set!(A, B, C, D, E, F, G, H, I, J);
+tuple_set!(0 => A);
+tuple_set!(0 => A, 1 => B);
+tuple_set!(0 => A, 1 => B, 2 => C);
+tuple_set!(0 => A, 1 => B, 2 => C, 3 => D);
+tuple_set!(0 => A, 1 => B, 2 => C, 3 => D, 4 => E);
+tuple_set!(0 => A, 1 => B, 2 => C, 3 => D, 4 => E, 5 => F);
+tuple_set!(0 => A, 1 => B, 2 => C, 3 => D, 4 => E, 5 => F, 6 => G);
+tuple_set!(0 => A, 1 => B, 2 => C, 3 => D, 4 => E, 5 => F, 6 => G, 7 => H);
+tuple_set!(0 => A, 1 => B, 2 => C, 3 => D, 4 => E, 5 => F, 6 => G, 7 => H, 8 => I);
+tuple_set!(0 => A, 1 => B, 2 => C, 3 => D, 4 => E, 5 => F, 6 => G, 7 => H, 8 => I, 9 => J);
+tuple_set!(0 => A, 1 => B, 2 => C, 3 => D, 4 => E, 5 => F, 6 => G, 7 => H, 8 => I, 9 => J, 10 => K);
+tuple_set!(0 => A, 1 => B, 2 => C, 3 => D, 4 => E, 5 => F, 6 => G, 7 => H, 8 => I, 9 => J, 10 => K, 11 => L);

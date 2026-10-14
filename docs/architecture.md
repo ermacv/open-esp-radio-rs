@@ -407,17 +407,22 @@ IEEE 802.15.4 retain their existing core and boundary arrangements.
 **Capacity as tokens.** An install's capacity is tokens a stateless
 `Mint<'id, P>::into_pools(self)` issues once for the backend's `resources`.
 The backend declares its complete layout as `type Pools: PoolSet`; a custom
-layout consumes one `PoolBuilder` to expand its components. `Slots<K, N>`
-and `Permits<K, N, S>` describe: slots (`Slot<'id, K>`,
-of a pool kind `Kind`, any marker type that keeps pools apart), which a caller takes
+layout consumes one `PoolBuilder<'id, Path>` to expand its components. Each
+tuple member receives a sealed `Child<Path, INDEX>`; tokens retain that path
+through custom nested layouts, even when kinds repeat. `Slots<K, N>`
+and `Permits<K, N, S>` describe: slots (`Slot<'id, K, Path>`,
+of semantic kind `Kind` and a unique component path), which a caller takes
 synchronously from the ones it holds, an installed resource holding its slot
-until its removal gives it back; and permits (`Permit<'id, K>`), which a
+until its removal gives it back; and permits (`Permit<'id, K, Path>`), which a
 `PermitPool` hands out to awaiting takers and takes back when the work that
 held one ends with its terminal event, not when a handle drops. A taker
-waits for a permit with a seat (`Seat<'id, K>`), its place in the pool's
-line, which it keeps across takes: `Permits` issues a kind's seats with
-the `Line` that sizes the pool's line, so a taker without a place cannot
-exist and a pool never overflows. A pool's
+waits for a permit with a seat (`Seat<'id, K, Waiters>`), its place in the pool's
+line, which it keeps across takes: `Permits` issues the waiter's path with
+the `Line` that sizes the pool's line. The initial `PermitSupply` is opaque
+and indivisible: a FIFO consumes it whole, so one minted pool cannot be
+split into two interchangeable FIFOs. Several distinct permit supplies may
+share a waiter line explicitly. Each line retains its path and capacity,
+so a taker without a place cannot exist and a pool never overflows. A pool's
 free list, its waiters and its order belong to a runtime crate or the
 backend; its order is its documented policy, first in, first out by default,
 which the conformance suite checks. A pool whose permits admitted work holds

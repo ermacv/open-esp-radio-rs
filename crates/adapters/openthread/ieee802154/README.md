@@ -159,3 +159,8 @@ CSL, time synchronization and secured enhanced ACKs are not exercised on air.
 The
 [Thread example](../../../../examples/esp32s31/thread/README.md) runs an
 OpenThread end device over it.
+
+The adapter keeps the client's operation-pool path in its waiter seat and
+the interface component's child paths in `PendingSlots`. Returning the
+parts preserves both domains; slots from another component cannot be
+inserted into the configured interface.

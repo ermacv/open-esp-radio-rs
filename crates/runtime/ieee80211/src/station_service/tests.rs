@@ -54,7 +54,8 @@ const RSN: [u8; 22] = [
 struct ServiceContexts;
 
 impl crate::lower_mac_owner::model::ModelContext for ServiceContexts {
-    type Context<'id> = TxContext<'id, ModelCaps24, ModelLarge>;
+    type Context<'id> =
+        TxContext<'id, ModelCaps24, ModelLarge, crate::lower_mac_owner::model::ModelPool<4>>;
 }
 
 impl<'id> StationPort<'id> for ModelBackend<ModelCaps24, ServiceContexts> {

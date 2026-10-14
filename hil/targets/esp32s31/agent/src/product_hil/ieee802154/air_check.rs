@@ -154,7 +154,7 @@ async fn run_cycle<'id, E, S, C>(
     events: &mut E,
     control: &mut S,
     client: &C,
-    seat: &mut Seat<'id, Operation>,
+    seat: &mut Seat<'id, Operation, C::OperationPath>,
     channel: Channel,
     request: Ieee802154AirCheckRequest,
     cycle: &mut Ieee802154AirCycle,

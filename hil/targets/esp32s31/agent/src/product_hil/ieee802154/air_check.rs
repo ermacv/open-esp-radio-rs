@@ -167,7 +167,8 @@ where
     let rejected = |_| Stop(Ieee802154AirCheckStop::CommandRejected);
     let unsupported = || Stop(Ieee802154AirCheckStop::UnsupportedSetup);
 
-    let scan = SupportedEnergyScan::new(channel, request.energy_scan_micros).ok_or_else(unsupported)?;
+    let scan =
+        SupportedEnergyScan::new(channel, request.energy_scan_micros).ok_or_else(unsupported)?;
     let permit = client.operation(seat).await;
     client.energy_scan(permit, scan).map_err(rejected)?.id();
     cycle.energy = match next_event(events).await? {

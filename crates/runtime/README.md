@@ -51,6 +51,12 @@ runtime retains their affine owners across borrowed waits, returns the same
 resources on rejection and preserves terminal owners when quiescence is not
 proven. A composed owner alone does not establish hardware qualification.
 
+The portable Wi-Fi station service uses `MsduQueue` for application commands
+as well as network frames. Each queue has one affine sender and receiver;
+waiting for readiness borrows its endpoint exclusively without removing a
+value. The service handles a ready port event before taking a command, so a
+simultaneous port fault leaves that command owned by its queue.
+
 Owned timers follow the owner graph: the shared `RadioSystem` carries the
 timer of every PHY wait it leases, the DATAPATH runner and the paired control
 arbiter carry the clock of their scheduling deadlines, the connected RX

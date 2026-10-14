@@ -42,8 +42,9 @@
 //! installed keys. Configure retains its one pending token until the port
 //! reports it applied; Station cannot issue another before that return.
 //! Arbiter answers return their affine places/leases in the same step.
-//! MSDUs come and go through
-//! affine SPSC queues with atomic wakeups; a received
+//! Commands and MSDUs use affine SPSC queues with atomic wakeups. Each
+//! readiness future holds its endpoint exclusively and consumes no value;
+//! a port fault leaves a simultaneously ready command in its queue. A received
 //! MSDU the network's full queue cannot take is dropped, as an Ethernet
 //! receiver drops one.
 //! `MsduQueue::split` exclusively borrows its storage. Both endpoints retain
@@ -60,7 +61,6 @@ use oer_ieee80211_sta::machine::TxRefusal;
 use core::future::{Future, poll_fn};
 use core::task::Poll;
 use embassy_futures::yield_now;
-use embassy_sync::channel::DynamicReceiver;
 use oer_ieee80211_arbiter::{
     AccessPointCommand, AccessPointFact, Arbiter, ArbiterAction, ArbiterNotice,
 };
@@ -348,9 +348,52 @@ enum ReturnedTx {
 struct BackendContractViolation;
 
 /// The service's ends to the application and the network stack.
-pub struct ServiceIo<'c, K, const TX_DEPTH: usize, const RX_DEPTH: usize> {
-    /// The application's commands.
-    pub commands: DynamicReceiver<'c, ServiceCommand<K>>,
+///
+/// Commands require an exclusive SPSC receiver rather than a shareable channel:
+///
+/// ```compile_fail,E0308
+/// use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel};
+/// use oer_ieee80211_runtime::station_service::{
+///     EthernetFrame, MsduQueue, ServiceCommand, ServiceIo, ServiceOutput, TxMsdu,
+/// };
+/// let commands = Channel::<NoopRawMutex, ServiceCommand<()>, 1>::new();
+/// let mut tx = MsduQueue::<TxMsdu, 1>::new();
+/// let mut rx = MsduQueue::<EthernetFrame, 1>::new();
+/// let (_, transmit) = tx.split();
+/// let (receive, _) = rx.split();
+/// let mut output = |_: ServiceOutput<()>| {};
+/// let io = ServiceIo {
+///     commands: commands.dyn_receiver(), transmit, receive, output: &mut output,
+/// };
+/// ```
+///
+/// The composition moves one receiver into the service and retains its sole sender:
+///
+/// ```
+/// use oer_ieee80211_runtime::station_service::{
+///     EthernetFrame, MsduQueue, ServiceCommand, ServiceIo, ServiceOutput, TxMsdu,
+/// };
+/// let mut commands = MsduQueue::<ServiceCommand<()>, 1>::new();
+/// let mut tx = MsduQueue::<TxMsdu, 1>::new();
+/// let mut rx = MsduQueue::<EthernetFrame, 1>::new();
+/// let (application, commands) = commands.split();
+/// let (_, transmit) = tx.split();
+/// let (receive, _) = rx.split();
+/// let mut output = |_: ServiceOutput<()>| {};
+/// let io = ServiceIo { commands, transmit, receive, output: &mut output };
+/// assert!(application.try_send(ServiceCommand::Stop).is_ok());
+/// assert!(matches!(io.commands.try_receive(), Some(ServiceCommand::Stop)));
+/// ```
+pub struct ServiceIo<
+    'c,
+    K,
+    const TX_DEPTH: usize,
+    const RX_DEPTH: usize,
+    const COMMAND_DEPTH: usize,
+> {
+    /// The application's exclusive command receiver. Readiness does not
+    /// remove a command; a simultaneous port fault leaves it in this queue.
+    pub commands: MsduReceiver<'c, ServiceCommand<K>, COMMAND_DEPTH>,
     /// The MSDUs the network stack sends.
     pub transmit: MsduReceiver<'c, TxMsdu, TX_DEPTH>,
     /// The MSDUs the station received for the network stack.
@@ -440,10 +483,15 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
 
     /// Run the service on the disabled port until the application stops it
     /// or the port fails.
-    pub async fn run<'p, const TX_DEPTH: usize, const RX_DEPTH: usize>(
+    pub async fn run<
+        'p,
+        const TX_DEPTH: usize,
+        const RX_DEPTH: usize,
+        const COMMAND_DEPTH: usize,
+    >(
         &mut self,
         owner: Owner<'p, 'id, B, Disabled>,
-        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
+        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
         timer: &impl Timer,
     ) -> ServiceEnd<'p, 'id, B> {
         let mut owner = match self.enable(owner, None, io, timer).await {
@@ -490,11 +538,16 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
 
     /// Enable the port, tuned to `channel` first when it moves; a refused
     /// move goes back to the arbiter, which names the next.
-    async fn enable<'p, const TX_DEPTH: usize, const RX_DEPTH: usize>(
+    async fn enable<
+        'p,
+        const TX_DEPTH: usize,
+        const RX_DEPTH: usize,
+        const COMMAND_DEPTH: usize,
+    >(
         &mut self,
         mut owner: Owner<'p, 'id, B, Disabled>,
         mut pending: Option<oer_ieee80211_arbiter::PendingRetune<B::Caps>>,
-        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
+        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
         timer: &impl Timer,
     ) -> Result<Owner<'p, 'id, B, Enabled>, ServiceEnd<'p, 'id, B>> {
         loop {
@@ -537,10 +590,15 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
 
     /// Disable the port: the work it ends comes back as events, its
     /// received buffers held for the next phase.
-    async fn disable<'p, const TX_DEPTH: usize, const RX_DEPTH: usize>(
+    async fn disable<
+        'p,
+        const TX_DEPTH: usize,
+        const RX_DEPTH: usize,
+        const COMMAND_DEPTH: usize,
+    >(
         &mut self,
         owner: Owner<'p, 'id, B, Enabled>,
-        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
+        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
         timer: &impl Timer,
     ) -> Result<
         (
@@ -577,10 +635,16 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
     }
 
     /// Serve the running phase until the port must move, stop or failed.
-    async fn serve<'p, P, const TX_DEPTH: usize, const RX_DEPTH: usize>(
+    async fn serve<
+        'p,
+        P,
+        const TX_DEPTH: usize,
+        const RX_DEPTH: usize,
+        const COMMAND_DEPTH: usize,
+    >(
         &mut self,
         phase: &mut P,
-        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
+        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
         timer: &impl Timer,
     ) -> Served<B::Caps>
     where
@@ -607,9 +671,9 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                 .flatten()
                 .min();
             let sending = self.data.accepts() && self.station.link().is_some();
-            let (event, command, tick, transmit) = {
+            let (event, command_ready, tick, transmit) = {
                 let event = phase.next_event();
-                let command = io.commands.receive();
+                let command = io.commands.ready();
                 let alarm = async {
                     match deadline {
                         Some(deadline) => timer.wait_until(deadline).await,
@@ -626,14 +690,11 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                         Poll::Ready(event) => Some(event),
                         Poll::Pending => None,
                     };
-                    let command = match command.as_mut().poll(cx) {
-                        Poll::Ready(command) => Some(command),
-                        Poll::Pending => None,
-                    };
+                    let command_ready = command.as_mut().poll(cx).is_ready();
                     let tick = alarm.as_mut().poll(cx).is_ready();
                     let transmit = sending && transmit_ready.as_mut().poll(cx).is_ready();
-                    if event.is_some() || command.is_some() || tick || transmit {
-                        Poll::Ready((event, command, tick, transmit))
+                    if event.is_some() || command_ready || tick || transmit {
+                        Poll::Ready((event, command_ready, tick, transmit))
                     } else {
                         Poll::Pending
                     }
@@ -660,7 +721,9 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
             if tick {
                 self.station.input(now, StaInput::Tick);
             }
-            if let Some(command) = command {
+            // A ready command stays in its sole-consumer queue until the
+            // event was accepted. An event fault above cannot discard it.
+            if command_ready && let Some(command) = io.commands.try_receive() {
                 match command {
                     ServiceCommand::Station(command) => {
                         self.station.input(now, StaInput::Command(command))
@@ -683,9 +746,9 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
 
     /// Hand the network stack's next MSDU to the data machine on the
     /// station's link.
-    fn send<const TX_DEPTH: usize, const RX_DEPTH: usize>(
+    fn send<const TX_DEPTH: usize, const RX_DEPTH: usize, const COMMAND_DEPTH: usize>(
         &mut self,
-        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
+        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
     ) {
         let Some(mut link) = self.station.link() else {
             return;
@@ -720,11 +783,11 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
     }
 
     /// Carry out every action the machines owe at `now`.
-    fn step<'p, P, const TX_DEPTH: usize, const RX_DEPTH: usize>(
+    fn step<'p, P, const TX_DEPTH: usize, const RX_DEPTH: usize, const COMMAND_DEPTH: usize>(
         &mut self,
         now: Instant,
         phase: &mut P,
-        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
+        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
     ) -> Next<B::Caps>
     where
         'id: 'p,
@@ -873,11 +936,11 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
 
     /// What follows a station's action, once it no longer borrows the
     /// station.
-    fn follow<const TX_DEPTH: usize, const RX_DEPTH: usize>(
+    fn follow<const TX_DEPTH: usize, const RX_DEPTH: usize, const COMMAND_DEPTH: usize>(
         &mut self,
         now: Instant,
         follow: Follow<'id, B>,
-        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
+        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
     ) -> Result<(), BackendContractViolation> {
         match follow {
             Follow::Nothing => {}
@@ -911,19 +974,23 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
 
     /// Report service termination without converting a recoverable enable
     /// refusal into hardware poisoning. The caller retains its typed owner.
-    fn fail_stop<const TX_DEPTH: usize, const RX_DEPTH: usize>(
+    fn fail_stop<const TX_DEPTH: usize, const RX_DEPTH: usize, const COMMAND_DEPTH: usize>(
         &mut self,
         now: Instant,
-        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
+        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
     ) {
         self.arbiter.port_failed();
         self.settle(now, io);
     }
 
-    fn deliver_arbiter_notices<const TX_DEPTH: usize, const RX_DEPTH: usize>(
+    fn deliver_arbiter_notices<
+        const TX_DEPTH: usize,
+        const RX_DEPTH: usize,
+        const COMMAND_DEPTH: usize,
+    >(
         &mut self,
         now: Instant,
-        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
+        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
     ) {
         while let Some(notice) = self.arbiter.poll_notice(now) {
             match notice {
@@ -940,10 +1007,10 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
     /// Carry out the actions that need no phase once the port failed: the
     /// arbiter's notices reach the station, the station's notices the
     /// application.
-    fn settle<const TX_DEPTH: usize, const RX_DEPTH: usize>(
+    fn settle<const TX_DEPTH: usize, const RX_DEPTH: usize, const COMMAND_DEPTH: usize>(
         &mut self,
         now: Instant,
-        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
+        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
     ) {
         self.deliver_arbiter_notices(now, io);
         while let Some(action) = self.station.poll_action(now) {
@@ -959,11 +1026,11 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
 
     /// Take one event of the port; a received frame's buffer comes back
     /// for its recycle.
-    fn event<const TX_DEPTH: usize, const RX_DEPTH: usize>(
+    fn event<const TX_DEPTH: usize, const RX_DEPTH: usize, const COMMAND_DEPTH: usize>(
         &mut self,
         now: Instant,
         event: LowerMacEvent<'id, B::Types>,
-        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
+        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
     ) -> Result<Option<<B::Types as PhaseTypes<'id>>::RxBuffer>, BackendContractViolation> {
         Ok(match event {
             LowerMacEvent::Received { frame, meta } => {
@@ -1260,10 +1327,19 @@ where
 
 /// Carry out one action of the station; an arbiter's answer goes back to
 /// it at once.
-fn station_action<'p, 'id: 'p, B, P, S, const TX_DEPTH: usize, const RX_DEPTH: usize>(
+fn station_action<
+    'p,
+    'id: 'p,
+    B,
+    P,
+    S,
+    const TX_DEPTH: usize,
+    const RX_DEPTH: usize,
+    const COMMAND_DEPTH: usize,
+>(
     now: Instant,
     phase: &mut P,
-    io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
+    io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
     arbiter: &mut PortArbiter<'_, 'id, B>,
     rates: &S,
     configuring: &mut Option<oer_ieee80211_sta::machine::PendingConfiguration<'id>>,

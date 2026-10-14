@@ -10,8 +10,6 @@ use core::pin::Pin;
 use core::task::{Poll, Waker};
 
 use embassy_futures::join::join;
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use embassy_sync::channel::Channel as CommandChannel;
 use oer_espressif_ieee80211_policy::{
     rate_control::EspressifRateControl, rate_selection::EspressifRateSelection,
 };
@@ -281,11 +279,12 @@ fn block_on<F: Future>(future: F) -> F::Output {
 struct World<'b> {
     air: Rc<ModelAir>,
     clock: VirtualClock,
-    commands: CommandChannel<NoopRawMutex, ServiceCommand<ModelCaps24>, 4>,
+    commands: Cell<Option<MsduSender<'b, ServiceCommand<ModelCaps24>, 4>>>,
     outputs: RefCell<Vec<ServiceOutput<ModelCaps24>>>,
     completions: RefCell<Vec<FrameRates>>,
     refuse_rate: Cell<bool>,
     counters: Cell<Option<ServiceCounters>>,
+    expect_queued_command_on_poison: Cell<bool>,
     /// The network stack's end of the transmit queue.
     stack: RefCell<MsduSender<'b, TxMsdu, 2>>,
     /// The network stack's end of the receive queue.
@@ -428,7 +427,13 @@ impl World<'_> {
     }
 
     async fn command(&self, command: ServiceCommand<ModelCaps24>) {
-        self.commands.send(command).await;
+        let mut sender = self
+            .commands
+            .take()
+            .expect("one application script owns the sender");
+        sender.ready().await;
+        assert!(sender.try_send(command).is_ok());
+        self.commands.set(Some(sender));
     }
 
     /// The network stack sends one Ethernet frame to `destination`.
@@ -489,6 +494,7 @@ impl World<'_> {
 /// The body that runs the service beside the test's script.
 struct Body<'w, 'b, S> {
     world: &'w World<'b>,
+    commands: MsduReceiver<'b, ServiceCommand<ModelCaps24>, 4>,
     transmit: MsduReceiver<'b, TxMsdu, 2>,
     receive: MsduSender<'b, EthernetFrame, 2>,
     config: StaConfig<ModelCaps24>,
@@ -557,7 +563,7 @@ where
             let world = self.world;
             let mut output = |output| world.outputs.borrow_mut().push(output);
             let mut io = ServiceIo {
-                commands: world.commands.dyn_receiver(),
+                commands: self.commands,
                 transmit: self.transmit,
                 receive: self.receive,
                 output: &mut output,
@@ -568,6 +574,20 @@ where
                 world.command(ServiceCommand::Stop).await;
             })
             .await;
+            if world.expect_queued_command_on_poison.get() {
+                assert!(matches!(&end, ServiceEnd::Poisoned(_)));
+                assert!(
+                    matches!(
+                        io.commands.try_receive(),
+                        Some(ServiceCommand::WantAccessPoint)
+                    ),
+                    "a simultaneously ready poisoned event must not consume the command"
+                );
+                assert!(matches!(
+                    io.commands.try_receive(),
+                    Some(ServiceCommand::Stop)
+                ));
+            }
             world.counters.set(Some(service.counters));
             assert_eq!(service.station.lost_tokens(), 0);
             assert_eq!(service.data.counters().lost_tokens, 0);
@@ -615,6 +635,8 @@ where
             IndividualAddress::new(ACCESS_POINT_ADDRESS).unwrap(),
         ],
     );
+    let mut commands = MsduQueue::<ServiceCommand<ModelCaps24>, 4>::new();
+    let (application, commands) = commands.split();
     let mut transmit = MsduQueue::<TxMsdu, 2>::new();
     let mut receive = MsduQueue::<EthernetFrame, 2>::new();
     let (stack, transmit) = transmit.split();
@@ -622,11 +644,12 @@ where
     let world = World {
         air,
         clock: VirtualClock::new(),
-        commands: CommandChannel::new(),
+        commands: Cell::new(Some(application)),
         outputs: RefCell::new(Vec::new()),
         completions: RefCell::new(Vec::new()),
         refuse_rate: Cell::new(false),
         counters: Cell::new(None),
+        expect_queued_command_on_poison: Cell::new(false),
         stack: RefCell::new(stack),
         delivered: RefCell::new(delivered),
     };
@@ -634,6 +657,7 @@ where
         backend,
         Body {
             world: &world,
+            commands,
             transmit,
             receive,
             config,
@@ -646,6 +670,21 @@ where
 
 fn dsss1() -> PhyRate {
     PhyRate::Legacy(LegacyRate::Dsss1M)
+}
+
+#[test]
+fn a_command_ready_with_a_poisoned_event_stays_owned_by_its_queue() {
+    run(StaSecurity::Open, |world| {
+        Box::pin(async move {
+            // Let the initial enable finish, leaving serve waiting for its inputs.
+            for _ in 0..4 {
+                yield_now().await;
+            }
+            world.expect_queued_command_on_poison.set(true);
+            world.command(ServiceCommand::WantAccessPoint).await;
+            world.air.poison();
+        })
+    });
 }
 
 fn ofdm6() -> PhyRate {

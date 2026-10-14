@@ -6,7 +6,8 @@ use core::task::Poll;
 use oer_memory::{AffineSpscQueue, AffineSpscReceiver, AffineSpscSender, AffineSpscTrySendError};
 
 /// Queue storage and atomic wake state. The composition splits it once and
-/// moves the two non-cloneable endpoints to the stack and the service.
+/// moves the two non-cloneable endpoints to the application and the service.
+/// The service uses it for both network MSDUs and application commands.
 pub struct MsduQueue<T, const DEPTH: usize> {
     queue: AffineSpscQueue<T, DEPTH>,
     consumer: AtomicWaker,

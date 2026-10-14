@@ -26,6 +26,8 @@
 //! machine holds is what it may do, and a host test plays the port and the
 //! arbiter with tokens of its own. The station encodes each frame straight
 //! into the memory of its buffer token ([`TxBufferMemory`]).
+//! Management requests use the configured station address as transmitter;
+//! the selected BSSID identifies the receiver and the BSS.
 //!
 //! Station owns keys and their free slots across protocol transitions. Install
 //! actions carry private affine pending tokens (key ID and link epoch for a
@@ -3065,10 +3067,11 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     );
                 };
                 let bssid = join.access_point.bssid;
+                let address = self.config.address;
                 let encoded = self.encode_individual(
                     |frame| {
                         OpenAuthenticationRequest {
-                            source: bssid,
+                            source: address,
                             bssid,
                             sequence_number: attempt.sequence_number,
                         }

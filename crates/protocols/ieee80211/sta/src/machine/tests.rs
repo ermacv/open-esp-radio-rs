@@ -3,7 +3,7 @@
 //! connected, disconnect; alone and beside an access point.
 
 use super::*;
-use crate::join::test_support::{BSSID, LOCAL, association_response, authentication_response};
+use crate::join::test_support::{BSSID, LOCAL, answer_authentication, association_response};
 use oer_ieee80211_arbiter::{
     AccessPointCommand, AccessPointFact, Arbiter, ArbiterAction, ArbiterPolicy, NoReservation,
 };
@@ -506,6 +506,17 @@ impl<'id> World<'id> {
             .push((transmit.context, transmit.ticket, transmit.buffer));
     }
 
+    fn answer_authentication(&mut self, now: Instant, status: u16) {
+        let response = self
+            .frames
+            .iter()
+            .rev()
+            .find(|frame| frame[0] & 0xfc == 0xb0)
+            .and_then(|request| answer_authentication(request, status))
+            .expect("the test AP requires a valid wire Authentication Request");
+        self.receive(now, &response);
+    }
+
     fn receive(&mut self, now: Instant, frame: &[u8]) {
         let mut meta = meta();
         if self.rssi != i8::MIN {
@@ -579,7 +590,7 @@ fn a_station_alone_scans_joins_an_open_network_and_leaves_it() {
                 },
             ]
         );
-        world.receive(at(30), &authentication_response(0));
+        world.answer_authentication(at(30), 0);
         assert_eq!(
             world.take(),
             [Seen::Transmit {
@@ -802,7 +813,7 @@ fn beside_an_access_point_a_join_elsewhere_moves_it_and_one_too_soon_after_waits
             ]
         );
         // The join fails; the access point stays where it moved.
-        world.receive(at(660), &authentication_response(1));
+        world.answer_authentication(at(660), 1);
         assert!(world.take().contains(&Seen::Notify(StaNotice::Disconnected(
             StaDisconnectReason::AuthenticationFailed
         ))));
@@ -848,7 +859,7 @@ fn connected_world<'id>(mint: &mut Mint<'id>) -> World<'id> {
     world.advance();
     world.receive(at(13), &beacon());
     world.advance();
-    world.receive(at(30), &authentication_response(0));
+    world.answer_authentication(at(30), 0);
     world.receive(at(31), &open_association_response());
     assert!(world.station.is_connected());
     world.take();
@@ -874,7 +885,7 @@ fn a_terminal_of_the_previous_connection_only_returns_its_resources() {
         world.advance();
         world.receive(at(63), &beacon());
         world.advance();
-        world.receive(at(80), &authentication_response(0));
+        world.answer_authentication(at(80), 0);
         world.receive(at(81), &open_association_response());
         assert!(world.station.is_connected());
         let State::Connected(connected) = &mut world.station.state else {
@@ -1125,7 +1136,7 @@ fn a_station_joins_a_wpa2_network_through_the_four_way_handshake() {
         world.advance();
         world.receive(at(13), &wpa2_beacon());
         world.advance();
-        world.receive(at(30), &authentication_response(0));
+        world.answer_authentication(at(30), 0);
         // The association response with the Privacy capability.
         world.receive(at(31), &association_response(0));
         world.take();
@@ -1235,7 +1246,7 @@ fn wpa2_associated_by<'id>(
     world.advance();
     world.receive(at(13), beacon);
     world.advance();
-    world.receive(at(30), &authentication_response(0));
+    world.answer_authentication(at(30), 0);
     world.receive(at(31), &association_response(0));
     let message1 = RsnTxFrame::<512>::message1(Akm::Psk, LOCAL, 1, ANONCE).unwrap();
     world.receive(at(32), &eapol_frame(message1.as_bytes()));
@@ -1791,5 +1802,23 @@ fn old_configuration_response_releases_permission_without_completing_leave() {
             .input(at(3), StaInput::Configured(pending_off));
         world.run(at(3));
         assert!(matches!(world.station.state, State::Idle));
+    });
+}
+
+#[test]
+fn review_authentication_transmitter_is_station() {
+    installed(|mint| {
+        let world = connected_world(mint);
+        let auth = world.frames.iter().find(|frame| frame[0] == 0xb0).unwrap();
+        assert_eq!(u16::from_le_bytes([auth[0], auth[1]]) & !0x0800, 0x00b0);
+        assert_eq!(&auth[4..10], &BSSID);
+        assert_eq!(&auth[10..16], &LOCAL);
+        assert_eq!(&auth[16..22], &BSSID);
+        assert!(answer_authentication(auth, 0).is_some());
+        for offset in [4, 10, 16] {
+            let mut malformed = auth.clone();
+            malformed[offset] ^= 2;
+            assert!(answer_authentication(&malformed, 0).is_none());
+        }
     });
 }

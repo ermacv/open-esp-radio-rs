@@ -156,14 +156,23 @@ fn beacon(protected: bool) -> Vec<u8> {
     frame
 }
 
-fn authentication_response() -> [u8; 30] {
+fn authentication_response(request: &[u8]) -> Option<[u8; 30]> {
+    let (request, _) = request.split_first_chunk::<30>()?;
+    if u16::from_le_bytes([request[0], request[1]]) & !0x0800 != 0x00b0
+        || request[4..10] != BSSID
+        || request[10..16] != LOCAL
+        || request[16..22] != BSSID
+        || request[24..30] != [0, 0, 1, 0, 0, 0]
+    {
+        return None;
+    }
     let mut frame = [0_u8; 30];
     frame[0..2].copy_from_slice(&0x00b0_u16.to_le_bytes());
     frame[4..10].copy_from_slice(&LOCAL);
     frame[10..16].copy_from_slice(&BSSID);
     frame[16..22].copy_from_slice(&BSSID);
     frame[26..28].copy_from_slice(&2_u16.to_le_bytes());
-    frame
+    Some(frame)
 }
 
 fn association_response(protected: bool) -> [u8; 30] {
@@ -465,7 +474,9 @@ impl World<'_> {
         let probe = self.sent(seen, PROBE_REQUEST).await;
         self.air.receive(&beacon, meta());
         let authentication = self.sent(seen, AUTHENTICATION).await;
-        self.air.receive(&authentication_response(), meta());
+        let response = authentication_response(&authentication.frame)
+            .expect("the test AP requires a valid wire Authentication Request");
+        self.air.receive(&response, meta());
         let association = self.sent(seen, ASSOCIATION_REQUEST).await;
         self.air.receive(&association_response(protected), meta());
         [probe, authentication, association]

@@ -2274,7 +2274,7 @@ fn associated_is_the_first_action_after_the_association_response() {
 }
 
 #[test]
-fn authentication_waits_for_credit_before_beginning_attempt() {
+fn irrelevant_management_while_authentication_waits_for_credit_preserves_join() {
     installed(|mint| {
         let mut world = World::new(mint, 3);
         world
@@ -2297,6 +2297,22 @@ fn authentication_waits_for_credit_before_beginning_attempt() {
         assert_eq!(world.station.sequence, before);
         assert!(world.station.poll_action(now).is_none());
         assert_eq!(world.station.sequence, before);
+        let mut probe = beacon();
+        probe[0] = 0x50;
+        let mut foreign_auth = crate::join::test_support::authentication_response(0);
+        foreign_auth[4..10].copy_from_slice(&[2, 0, 0, 0, 0, 0x7a]);
+        for input in [&beacon()[..], &probe[..], &foreign_auth[..]] {
+            world.station.receive(now, input, meta(), |_| {}).unwrap();
+            assert!(matches!(
+                world.station.state,
+                State::Join(Join {
+                    step: JoinStep::Authenticate(Authenticate::NeedCredit(_)),
+                    ..
+                })
+            ));
+            assert!(world.station.poll_action(now).is_none());
+            assert_eq!(world.station.sequence, before);
+        }
         world.station.tickets.put(first);
         world.station.tickets.put(second);
         let Some(StaAction::Transmit(transmit)) = world.station.poll_action(now) else {

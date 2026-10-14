@@ -117,7 +117,7 @@ use group_keys::{GroupKeys, GroupPlace, Installed as InstalledGroup};
 
 use crate::join::{
     association::{StaAssociationEvent, StaAssociationPoll, StaAssociationRuntime},
-    authentication::{StaAuthenticationEvent, StaAuthenticationRuntime},
+    authentication::{StaAuthenticationEvent, StaAuthenticationExchange, StaAuthenticationRuntime},
 };
 
 /// A refusal before admission, delivered by the service to the owning machine.
@@ -1047,14 +1047,16 @@ pub struct Peer<M> {
     pub response: M,
 }
 
-struct Authenticate {
-    runtime: StaAuthenticationRuntime,
-    stage: AuthStage,
+enum Authenticate {
+    NeedCredit(StaAuthenticationRuntime),
+    Exchange {
+        runtime: StaAuthenticationExchange,
+        stage: AuthStage,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AuthStage {
-    NeedSend,
     AwaitSent { response_timeout: Duration },
     AwaitResponse { until: Instant },
 }
@@ -2354,15 +2356,14 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             core::mem::replace(&mut join.step, JoinStep::NeedLease),
             done,
         ) {
-            (JoinStep::AwaitConfigured, Done::Configured) => JoinStep::Authenticate(Authenticate {
-                runtime: StaAuthenticationRuntime::new(
+            (JoinStep::AwaitConfigured, Done::Configured) => {
+                JoinStep::Authenticate(Authenticate::NeedCredit(StaAuthenticationRuntime::new(
                     self.config.address,
                     join.access_point.bssid,
-                ),
-                stage: AuthStage::NeedSend,
-            }),
-            (JoinStep::Authenticate(mut auth), done) => {
-                let timed_out = match (auth.stage, done) {
+                )))
+            }
+            (JoinStep::Authenticate(Authenticate::Exchange { runtime, mut stage }), done) => {
+                let timed_out = match (stage, done) {
                     (
                         AuthStage::AwaitSent { response_timeout },
                         Done::Tx {
@@ -2374,12 +2375,11 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                                 },
                         },
                     ) => {
-                        auth.stage = AuthStage::AwaitResponse {
+                        stage = AuthStage::AwaitResponse {
                             until: now.checked_add(response_timeout).unwrap_or(now),
                         };
                         false
                     }
-                    // Unacknowledged or unanswered: as a timeout.
                     (
                         AuthStage::AwaitSent { .. },
                         Done::Tx {
@@ -2390,16 +2390,16 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     (AuthStage::AwaitResponse { until }, Done::Tick) => now >= until,
                     _ => false,
                 };
-                if timed_out {
-                    match auth.runtime.response_timed_out() {
-                        Ok(StaAuthenticationEvent::Retry { .. }) => {
-                            auth.stage = AuthStage::NeedSend
+                let auth = if timed_out {
+                    match runtime.response_timed_out() {
+                        StaAuthenticationEvent::Retry { runtime, .. } => {
+                            Authenticate::NeedCredit(runtime)
                         }
-                        _ => {
-                            return leave_unkeyed(StaDisconnectReason::AuthenticationFailed);
-                        }
+                        _ => return leave_unkeyed(StaDisconnectReason::AuthenticationFailed),
                     }
-                }
+                } else {
+                    Authenticate::Exchange { runtime, stage }
+                };
                 JoinStep::Authenticate(auth)
             }
             (step, _) => step,
@@ -2510,69 +2510,88 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     .observe_management(frame, channel, rssi, Some(now));
                 State::Scan(scan)
             }
-            State::Join(mut join) => match &mut join.step {
-                JoinStep::Authenticate(auth) => {
-                    auth.runtime.observe_received_frame();
-                    match auth.runtime.observe_management_frame(frame) {
-                        Ok(StaAuthenticationEvent::Authenticated { .. }) => {
-                            join.step = JoinStep::Associate(StaAssociationRuntime::new(
-                                self.config.address,
-                                join.access_point.bssid,
-                                match self.config.security {
-                                    StaSecurity::Open => {
-                                        oer_ieee80211_mac::security::LinkProtection::Open
-                                    }
-                                    StaSecurity::Wpa2Personal { .. } => {
-                                        oer_ieee80211_mac::security::LinkProtection::Ccmp
-                                    }
-                                },
-                                now,
-                            ));
-                            State::Join(join)
-                        }
-                        Ok(StaAuthenticationEvent::Retry { .. }) => {
-                            auth.stage = AuthStage::NeedSend;
-                            State::Join(join)
-                        }
-                        Ok(StaAuthenticationEvent::Failed { .. }) | Err(_) => {
-                            leave_unkeyed(StaDisconnectReason::AuthenticationFailed)
-                        }
-                        Ok(StaAuthenticationEvent::Irrelevant) => State::Join(join),
+            State::Join(mut join) => {
+                match core::mem::replace(&mut join.step, JoinStep::NeedLease) {
+                    JoinStep::Authenticate(Authenticate::NeedCredit(runtime)) => {
+                        join.step = JoinStep::Authenticate(Authenticate::NeedCredit(runtime));
+                        State::Join(join)
                     }
-                }
-                JoinStep::Associate(runtime) => {
-                    runtime.observe_received_frame();
-                    match runtime.observe_management_frame(frame, now) {
-                        Ok(StaAssociationEvent::Associated { response, .. }) => {
-                            match StaAssociatedPeer::derive(
-                                &join.access_point,
-                                &response,
-                                self.config.phy,
-                                self.config.he_packet_padding,
-                            ) {
-                                Ok(associated) => {
-                                    join.step = JoinStep::NotifyAssociated {
-                                        association_id: response.association_id,
-                                        // The rate selection starts from the
-                                        // response's metadata.
-                                        peer: Peer {
-                                            associated,
-                                            response: meta,
-                                        },
-                                    };
-                                    State::Join(join)
-                                }
-                                Err(_) => leave_unkeyed(StaDisconnectReason::AssociationFailed),
+                    JoinStep::Authenticate(Authenticate::Exchange { mut runtime, stage }) => {
+                        runtime.observe_received_frame();
+                        match runtime.observe_management_frame(frame) {
+                            StaAuthenticationEvent::Authenticated { .. } => {
+                                join.step = JoinStep::Associate(StaAssociationRuntime::new(
+                                    self.config.address,
+                                    join.access_point.bssid,
+                                    match self.config.security {
+                                        StaSecurity::Open => {
+                                            oer_ieee80211_mac::security::LinkProtection::Open
+                                        }
+                                        StaSecurity::Wpa2Personal { .. } => {
+                                            oer_ieee80211_mac::security::LinkProtection::Ccmp
+                                        }
+                                    },
+                                    now,
+                                ));
+                                State::Join(join)
+                            }
+                            StaAuthenticationEvent::Retry { runtime, .. } => {
+                                join.step =
+                                    JoinStep::Authenticate(Authenticate::NeedCredit(runtime));
+                                State::Join(join)
+                            }
+                            StaAuthenticationEvent::Failed { .. } => {
+                                leave_unkeyed(StaDisconnectReason::AuthenticationFailed)
+                            }
+                            StaAuthenticationEvent::Irrelevant(runtime) => {
+                                join.step = JoinStep::Authenticate(Authenticate::Exchange {
+                                    runtime,
+                                    stage,
+                                });
+                                State::Join(join)
                             }
                         }
-                        Ok(StaAssociationEvent::Failed { .. }) | Err(_) => {
-                            leave_unkeyed(StaDisconnectReason::AssociationFailed)
+                    }
+                    JoinStep::Associate(mut runtime) => {
+                        runtime.observe_received_frame();
+                        match runtime.observe_management_frame(frame, now) {
+                            Ok(StaAssociationEvent::Associated { response, .. }) => {
+                                match StaAssociatedPeer::derive(
+                                    &join.access_point,
+                                    &response,
+                                    self.config.phy,
+                                    self.config.he_packet_padding,
+                                ) {
+                                    Ok(associated) => {
+                                        join.step = JoinStep::NotifyAssociated {
+                                            association_id: response.association_id,
+                                            // The rate selection starts from the
+                                            // response's metadata.
+                                            peer: Peer {
+                                                associated,
+                                                response: meta,
+                                            },
+                                        };
+                                        State::Join(join)
+                                    }
+                                    Err(_) => leave_unkeyed(StaDisconnectReason::AssociationFailed),
+                                }
+                            }
+                            Ok(StaAssociationEvent::Failed { .. }) | Err(_) => {
+                                leave_unkeyed(StaDisconnectReason::AssociationFailed)
+                            }
+                            Ok(StaAssociationEvent::Irrelevant) => {
+                                join.step = JoinStep::Associate(runtime);
+                                State::Join(join)
+                            }
                         }
-                        Ok(StaAssociationEvent::Irrelevant) => State::Join(join),
+                    }
+                    step => {
+                        join.step = step;
+                        State::Join(join)
                     }
                 }
-                _ => State::Join(join),
-            },
+            }
             State::Handshake(handshake) => match peer_disconnect(frame, handshake.bssid) {
                 Some(reason_code) => leave_keyed(StaDisconnectReason::Peer { reason_code }, None),
                 None => State::Handshake(handshake),
@@ -3483,11 +3502,11 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 let receive = bss_rules(join.access_point.bssid, Rules::<K>::MEMBER);
                 (JoinStep::AwaitConfigured, self.configure(receive))
             }
-            JoinStep::Authenticate(mut auth) if auth.stage == AuthStage::NeedSend => {
+            JoinStep::Authenticate(Authenticate::NeedCredit(runtime)) => {
                 let credit = match self.reserve_transmit() {
                     Ok(credit) => credit,
                     Err(Unsent::NoTokens) => {
-                        join.step = JoinStep::Authenticate(auth);
+                        join.step = JoinStep::Authenticate(Authenticate::NeedCredit(runtime));
                         return (State::Join(join), ActionProgress::Wait);
                     }
                     Err(Unsent::Encode) => {
@@ -3505,13 +3524,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                         );
                     }
                 };
-                let Ok(attempt) = auth.runtime.begin_attempt(&mut self.sequence) else {
-                    self.return_credit(credit);
-                    return (
-                        leave_unkeyed(StaDisconnectReason::AuthenticationFailed),
-                        ActionProgress::Transition,
-                    );
-                };
+                let (runtime, attempt) = runtime.begin_attempt(&mut self.sequence);
                 let bssid = join.access_point.bssid;
                 let address = self.config.address;
                 let encoded = self.encode_reserved(
@@ -3531,8 +3544,11 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 );
                 match encoded {
                     Ok(transmit) => {
-                        auth.stage = AuthStage::AwaitSent {
-                            response_timeout: attempt.response_timeout,
+                        let auth = Authenticate::Exchange {
+                            runtime,
+                            stage: AuthStage::AwaitSent {
+                                response_timeout: attempt.response_timeout,
+                            },
                         };
                         (JoinStep::Authenticate(auth), Some(Owed::Transmit(transmit)))
                     }
@@ -3903,7 +3919,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         match &self.state {
             State::Join(Join {
                 step:
-                    JoinStep::Authenticate(Authenticate {
+                    JoinStep::Authenticate(Authenticate::Exchange {
                         stage: AuthStage::AwaitResponse { until },
                         ..
                     }),

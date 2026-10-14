@@ -58,6 +58,12 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   corrupt the new frontier. A new material epoch starts at KeyRSC; keeping
   identical material means keeping the original replay owner.
 
+- Authentication's `NeedCredit` owns only the retry runtime. An active
+  `StaAuthenticationExchange` is created after ticket/buffer reservation and
+  is consumed by response or timeout; only Retry returns the runtime. Do not
+  call an active-exchange RX parser while waiting for credit or restore
+  separate `active`/`terminal` flags beside the machine's owned stage.
+
 - Every port method but `next_event` is synchronous (`port.rs`, the trait's documentation).
 - A port has one event stream in occurrence order (#266 D8): the S31 runtime numbers every event under the core's lock and merges its four queues by that number (`runtime/esp32s31/ieee80211/src/lower_mac.rs`, `Queues::take`). An extension event names its kind and interface (`LowerMacEvent::Extension { kind, vif }`), and the router routes it by that interface, never by role.
 - Interrupt model ([ownership and refusals](../../../docs/architecture.md#ownership-and-refusals), #643): the MAC and power interrupts only read and clear their status and post the events, through `IrqConsumer::publish` (`hardware/esp32s31/driver/ieee80211/mac/src/irq/consumer.rs`); the port's owner task runs `LowerMacCore::service`. No Wi-Fi decision has a software deadline below 1 ms (ACK and Block Ack turnaround are hardware). The port backend `Esp32s31LowerMac` still runs `service` inside `on_interrupt` under the core's blocking lock; #563 removes it, so never add interrupt-side logic there.

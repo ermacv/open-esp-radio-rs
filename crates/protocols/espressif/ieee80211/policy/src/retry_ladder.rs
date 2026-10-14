@@ -55,7 +55,8 @@ pub fn ht_retry_rate(initial: HtRate, failed_attempts: u8) -> Option<PhyRate> {
         return None;
     }
     let index = match initial.short_gi() {
-        false => 8_u8.saturating_sub(mcs),
+        // mcs <= 7 above, so this is the exact record index 1..=8.
+        false => 8_u8.wrapping_sub(mcs),
         true if mcs == 7 => 0,
         true => return None,
     };
@@ -88,7 +89,8 @@ pub fn he_retry_rate(initial: HeRate, failed_attempts: u8) -> Option<PhyRate> {
     let mcs = initial.mcs().index();
     let index = match initial.gi_ltf() {
         HeGiLtf::Ltf1xGi800Ns | HeGiLtf::Ltf2xGi800Ns if mcs == 9 => 0,
-        HeGiLtf::Ltf2xGi1600Ns => 10_u8.saturating_sub(mcs),
+        // The admission above proves mcs <= 9, hence index 1..=10.
+        HeGiLtf::Ltf2xGi1600Ns => 10_u8.wrapping_sub(mcs),
         HeGiLtf::Ltf1xGi800Ns | HeGiLtf::Ltf2xGi800Ns | HeGiLtf::Ltf4xGi3200Ns => return None,
     };
     let schedule = RateScheduleRef::new(RateScheduleKind::Dot11Ax, index)?;
@@ -179,5 +181,47 @@ mod tests {
             EspressifRetryLadder.rate(PhyRate::He(he), 0),
             Some(PhyRate::He(he))
         );
+    }
+
+    #[test]
+    fn every_supported_starting_mcs_uses_its_own_record() {
+        for index in 0..=31 {
+            for short in [false, true] {
+                let initial =
+                    HtRate::new(HtMcs::new(index).unwrap(), PpduBandwidth::Mhz20, short).unwrap();
+                let expected = if index <= 7 && (!short || index == 7) {
+                    Some(PhyRate::Ht(initial))
+                } else {
+                    None
+                };
+                assert_eq!(ht_retry_rate(initial, 0), expected);
+            }
+        }
+        for index in 0..=11 {
+            for gi in [
+                HeGiLtf::Ltf1xGi800Ns,
+                HeGiLtf::Ltf2xGi800Ns,
+                HeGiLtf::Ltf2xGi1600Ns,
+                HeGiLtf::Ltf4xGi3200Ns,
+            ] {
+                let initial = HeRate::new(
+                    HeMcs::new(index).unwrap(),
+                    SpatialStreams::ONE,
+                    PpduBandwidth::Mhz20,
+                    gi,
+                    FecCoding::Ldpc,
+                    false,
+                )
+                .unwrap();
+                let expected = if (index <= 9 && gi == HeGiLtf::Ltf2xGi1600Ns)
+                    || (index == 9 && matches!(gi, HeGiLtf::Ltf1xGi800Ns | HeGiLtf::Ltf2xGi800Ns))
+                {
+                    Some(PhyRate::He(initial))
+                } else {
+                    None
+                };
+                assert_eq!(he_retry_rate(initial, 0), expected);
+            }
+        }
     }
 }

@@ -55,6 +55,12 @@ callback mappings retain their recovered values. The largest private arena
 has 16 records; adding four byte-sized retry counts uses `u16`, so neither
 its attached index nor the retry sum wraps.
 
+PHY decoding first bounds each MCS code to its HT or HE wire domain;
+subtracting the domain base therefore yields exactly 0–7 or 0–9. Likewise,
+the retry ladder admits only MCS 0–7 or 0–9 before reversing their record
+indices to 1–8 or 1–10. These subtractions cannot wrap or saturate, and an
+unsupported starting rate cannot alias the highest-rate record.
+
 Retry selection either represents the complete record walk or refuses the
 plan when it needs more than four stages. Channel filtering preserves every
 accepted stage and its transmission count within that original capacity.

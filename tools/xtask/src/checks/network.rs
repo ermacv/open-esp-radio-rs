@@ -13,6 +13,8 @@ pub enum Boundary {
     Owned,
     Datapath,
     RadioCore,
+    /// Chip composition with an owned adapter, before a full stack is composed.
+    OwnedComposition,
     OwnedProduct,
 }
 impl Boundary {
@@ -22,11 +24,12 @@ impl Boundary {
             Self::Owned => "owned",
             Self::Datapath => "datapath",
             Self::RadioCore => "radio-core",
+            Self::OwnedComposition => "owned-composition",
             Self::OwnedProduct => "owned-product",
         }
     }
-    fn product(self) -> bool {
-        self == Self::OwnedProduct
+    fn targets_chip(self) -> bool {
+        matches!(self, Self::OwnedComposition | Self::OwnedProduct)
     }
 }
 fn official_registry(p: &Package) -> bool {
@@ -157,7 +160,10 @@ pub fn audit(
         }
         Ok(())
     };
-    if matches!(boundary, Boundary::Owned | Boundary::OwnedProduct) {
+    if matches!(
+        boundary,
+        Boundary::Owned | Boundary::OwnedComposition | Boundary::OwnedProduct
+    ) {
         reject(
             &|p| owned_api(p) && !pinned_git(p),
             "owned network APIs require full Git revision pins",
@@ -193,17 +199,19 @@ pub fn audit(
             &optimized,
             "radio core acquired the optimized network graph",
         )?,
-        Boundary::OwnedProduct => {
+        Boundary::OwnedComposition | Boundary::OwnedProduct => {
             required(&|p| p.name == OWNED, "owned network adapter")?;
             required(
                 &|p| p.name == DRIVER && pinned_git(p),
                 "owned Xarxa driver contract",
             )?;
-            required(&|p| p.name == "xarxa" && pinned_git(p), "owned Xarxa stack")?;
-            required(
-                &|p| p.name == "embassy-net" && pinned_git(p),
-                "owned Embassy network stack",
-            )?;
+            if boundary == Boundary::OwnedProduct {
+                required(&|p| p.name == "xarxa" && pinned_git(p), "owned Xarxa stack")?;
+                required(
+                    &|p| p.name == "embassy-net" && pinned_git(p),
+                    "owned Embassy network stack",
+                )?;
+            }
             // One Xarxa revision pins both the stack and its driver contract, so
             // a radio and the stack can never disagree about packet ownership.
             let sources = |api: fn(&str) -> bool| {
@@ -215,22 +223,24 @@ pub fn audit(
                     .len()
             };
             if sources(xarxa_api) != 1 {
-                return Err(
-                    "owned-product: Xarxa stack and driver must resolve to the same pinned source"
-                        .into(),
-                );
+                return Err(format!(
+                    "{}: Xarxa packages must resolve to the same pinned source",
+                    boundary.name()
+                )
+                .into());
             }
-            if sources(network_api) != 1 {
-                return Err(
-                    "owned-product: Embassy network packages must resolve to one pinned source"
-                        .into(),
-                );
+            if sources(network_api) > 1 {
+                return Err(format!(
+                    "{}: Embassy network packages must resolve to one pinned source",
+                    boundary.name()
+                )
+                .into());
             }
         }
     }
     let features = &graph.node(&root).features;
     let has = |feature: &str| features.iter().any(|f| f.as_str() == feature);
-    if boundary.product() && !has("owned-network") {
+    if boundary.targets_chip() && !has("owned-network") {
         return Err(format!("{}: owned-network is not selected", boundary.name()).into());
     }
     if boundary == Boundary::RadioCore && has("owned-network") {
@@ -249,10 +259,17 @@ impl Boundary {
     /// The boundary a chip profile names.
     fn parse(name: &str) -> Result<Self> {
         use Boundary::*;
-        [Neutral, Owned, Datapath, RadioCore, OwnedProduct]
-            .into_iter()
-            .find(|boundary| boundary.name() == name)
-            .ok_or_else(|| format!("unknown network boundary `{name}`").into())
+        [
+            Neutral,
+            Owned,
+            Datapath,
+            RadioCore,
+            OwnedComposition,
+            OwnedProduct,
+        ]
+        .into_iter()
+        .find(|boundary| boundary.name() == name)
+        .ok_or_else(|| format!("unknown network boundary `{name}`").into())
     }
 }
 
@@ -294,7 +311,7 @@ pub fn run(context: &Checkout) -> Result<()> {
     let ids: Vec<String> = chips.ids().map(str::to_owned).collect();
     for profile in profiles(&chips)? {
         let manifest = context.root.join(&profile.manifest);
-        // A product resolves for the chip whose directory holds it.
+        // Chip compositions and products resolve for their own target.
         let chip = chips.profiles().iter().find(|chip| {
             profile
                 .manifest
@@ -302,10 +319,11 @@ pub fn run(context: &Checkout) -> Result<()> {
                 .any(|part| part.as_os_str() == chip.id.as_str())
         });
         let chip_target = chip.map(|chip| chip.rust_target.as_str());
-        let target = if profile.boundary.product() {
+        let target = if profile.boundary.targets_chip() {
             Some(chip_target.ok_or_else(|| {
                 format!(
-                    "product {} lies in no chip's directory",
+                    "{} {} lies in no chip's directory",
+                    profile.boundary.name(),
                     profile.manifest.display()
                 )
             })?)

@@ -97,12 +97,11 @@ impl CcmpKeyId {
 
 /// The two-bit wire identifier of a GTK, 0 through 3.
 ///
-/// IEEE 802.11-2012, 11.6.2 Figure 11-31, includes zero in the GTK KDE.
-/// 6.3.19.1.2 distinguishes Key Type from Key ID; 11.8.2.6 selects the
-/// pairwise or group key by frame addressing before looking up that ID.
-/// A group key with ID zero therefore does not name the pairwise key.
+/// IEEE 802.11-2020, 12.7.2 (EAPOL-Key frames), defines the GTK KDE's
+/// two-bit KeyID. A GTK with ID zero does not name the pairwise key:
+/// receive selection distinguishes pairwise and group frame addressing.
 /// Hardware slot restrictions belong to the backend, separately from this
-/// wire value ([standard](https://mrncciew.com/wp-content/uploads/2014/10/ieee-802-11-2012.pdf)).
+/// wire value.
 ///
 /// ```
 /// # use oer_ieee80211_mac::ccmp::GroupKeyId;

@@ -4,6 +4,7 @@
 //! Hardware slot selection remains in the chip MAC crate; this module owns
 //! key material, slot identity, replacement, and zeroization.
 
+use oer_ieee80211_mac::ccmp::GroupKeyId;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{Ptk, RsnInterface, frames::RsnGtk};
@@ -13,7 +14,7 @@ pub const RSN_TK_LEN: usize = 16;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RsnKeyKind {
     Pairwise,
-    Group { key_id: u8, transmit: bool },
+    Group { key_id: GroupKeyId, transmit: bool },
 }
 
 /// Owned CCMP temporal-key bytes, zeroized on drop.

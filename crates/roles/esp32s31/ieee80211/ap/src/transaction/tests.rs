@@ -138,7 +138,11 @@ fn unschedulable_beacon_reports_preparation_failure_without_publication() {
         AccessPointService::new(
             ap,
             Pmk::derive(b"password", b"ap").unwrap(),
-            RsnGtk::new(1, true, [7; 16]).unwrap(),
+            RsnGtk::new(
+                oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
+                true,
+                [7; 16],
+            ),
             oer_ieee80211_ap::AccessPointClientLimit::new(2).unwrap(),
             oer_ieee80211_ap::AccessPointInactiveTimeout::default(),
             &mut peers,
@@ -186,7 +190,11 @@ fn prepared_beacon_becomes_evidence_only_after_terminal_success() {
         AccessPointService::new(
             ap,
             Pmk::derive(b"password", b"ap").unwrap(),
-            RsnGtk::new(1, true, [7; 16]).unwrap(),
+            RsnGtk::new(
+                oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
+                true,
+                [7; 16],
+            ),
             oer_ieee80211_ap::AccessPointClientLimit::new(2).unwrap(),
             oer_ieee80211_ap::AccessPointInactiveTimeout::default(),
             &mut peers,

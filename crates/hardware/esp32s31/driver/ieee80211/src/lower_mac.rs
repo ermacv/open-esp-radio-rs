@@ -1948,14 +1948,14 @@ pub enum CheckedKeyScope {
         peer: MacAddress,
     },
     StationGroup {
-        key_id: u8,
+        key_id: oer_ieee80211_mac::ccmp::GroupKeyId,
     },
     AccessPointPairwise {
         peer: MacAddress,
         association_id: u16,
     },
     AccessPointGroup {
-        key_id: u8,
+        key_id: oer_esp32s31_ieee80211_mac::crypto::ApGroupKeyId,
     },
 }
 

@@ -72,7 +72,11 @@ fn service(
     AccessPointService::new(
         ap,
         Pmk::derive(b"password", b"ap").unwrap(),
-        RsnGtk::new(1, true, [0x55; 16]).unwrap(),
+        RsnGtk::new(
+            oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
+            true,
+            [0x55; 16],
+        ),
         oer_ieee80211_ap::AccessPointClientLimit::new(2).unwrap(),
         oer_ieee80211_ap::AccessPointInactiveTimeout::default(),
         storage,
@@ -965,7 +969,11 @@ fn a_wpa3_engine_hands_sae_to_the_responder_and_accepts_its_result() {
     let mut pairwise = ApPairwiseKeyStorage::new();
     let wpa3 = AccessPointService::new_wpa3(
         ap,
-        RsnGtk::new(1, true, [0x55; 16]).unwrap(),
+        RsnGtk::new(
+            oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
+            true,
+            [0x55; 16],
+        ),
         oer_ieee80211_rsn::frames::RsnIgtk::new(4, [0; 6], [0x66; 16]).unwrap(),
         oer_ieee80211_ap::AccessPointClientLimit::new(2).unwrap(),
         oer_ieee80211_ap::AccessPointInactiveTimeout::default(),

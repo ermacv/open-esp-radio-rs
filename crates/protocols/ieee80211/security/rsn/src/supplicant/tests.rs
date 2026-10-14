@@ -144,7 +144,11 @@ fn completed_connected() -> (RsnConnectedSupplicant, crate::OwnedEapolFrame<512>
     let message1 = RsnTxFrame::<512>::message1(crate::Akm::Psk, LOCAL, 1, ANONCE).unwrap();
     process(&mut supplicant, owned(&message1), &pmk).unwrap();
     let rsn = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
-    let gtk = RsnGtk::new(2, false, [0x5a; 16]).unwrap();
+    let gtk = RsnGtk::new(
+        oer_ieee80211_mac::ccmp::GroupKeyId::new(2).unwrap(),
+        false,
+        [0x5a; 16],
+    );
     let plain = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     let message3 = encrypted_message3(&expected_ptk, [7, 6, 5, 4, 3, 2, 1, 0], plain.as_bytes());
     let duplicate = message3.clone();
@@ -189,7 +193,11 @@ fn resolves_m1_through_typed_install_and_authenticated_m4() {
     assert!(message2.key_frame().verify_mic(&expected_ptk));
 
     let rsn = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
-    let gtk = RsnGtk::new(2, false, [0x5a; 16]).unwrap();
+    let gtk = RsnGtk::new(
+        oer_ieee80211_mac::ccmp::GroupKeyId::new(2).unwrap(),
+        false,
+        [0x5a; 16],
+    );
     let plain = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     let rsc = [7, 6, 5, 4, 3, 2, 1, 0];
     let message3 = encrypted_message3(&expected_ptk, rsc, plain.as_bytes());
@@ -209,7 +217,7 @@ fn resolves_m1_through_typed_install_and_authenticated_m4() {
     assert_eq!(
         request.group().kind(),
         RsnKeyKind::Group {
-            key_id: 2,
+            key_id: oer_ieee80211_mac::ccmp::GroupKeyId::new(2).unwrap(),
             transmit: false,
         }
     );
@@ -235,7 +243,11 @@ fn invalid_message3_mic_is_ignored_and_valid_retry_can_install() {
     let message1 = RsnTxFrame::<512>::message1(crate::Akm::Psk, LOCAL, 1, ANONCE).unwrap();
     process(&mut supplicant, owned(&message1), &pmk).unwrap();
     let rsn = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
-    let gtk = RsnGtk::new(1, false, [9; 16]).unwrap();
+    let gtk = RsnGtk::new(
+        oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
+        false,
+        [9; 16],
+    );
     let plain = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     let message3 = encrypted_message3(&expected_ptk, [0; 8], plain.as_bytes());
     let mut bytes = [0; 512];
@@ -394,7 +406,7 @@ fn connected_group_rekey_installs_once_and_retransmits_idempotently() {
     assert_eq!(
         request.group().kind(),
         RsnKeyKind::Group {
-            key_id: 1,
+            key_id: oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
             transmit: false,
         }
     );
@@ -603,7 +615,11 @@ fn awaiting_encrypted_message3() -> (RsnStaSupplicant, crate::OwnedEapolFrame<51
     let message1 = RsnTxFrame::<512>::message1(crate::Akm::Psk, LOCAL, 1, ANONCE).unwrap();
     supplicant.on_frame::<512>(owned(&message1), &pmk).unwrap();
     let rsn = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
-    let gtk = RsnGtk::new(2, false, [0x5a; 16]).unwrap();
+    let gtk = RsnGtk::new(
+        oer_ieee80211_mac::ccmp::GroupKeyId::new(2).unwrap(),
+        false,
+        [0x5a; 16],
+    );
     let plain = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     let message3 = encrypted_message3(&ptk, [0; 8], plain.as_bytes());
     (supplicant, message3, pmk, ptk)

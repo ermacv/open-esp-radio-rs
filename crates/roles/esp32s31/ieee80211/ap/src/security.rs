@@ -1,8 +1,8 @@
 //! Typed ownership of one AP GTK and the bounded pairwise CCMP slot table.
 
 use oer_esp32s31_ieee80211_mac::crypto::{
-    AP_PAIRWISE_SLOT_COUNT, ApGroupCcmpSlot, ApPairwiseCcmpSlot, CcmpTxPacketNumberError,
-    CryptoKeyError, install_ap_group_ccmp, install_ap_pairwise_ccmp,
+    AP_PAIRWISE_SLOT_COUNT, ApGroupCcmpSlot, ApGroupKeyId, ApPairwiseCcmpSlot,
+    CcmpTxPacketNumberError, CryptoKeyError, install_ap_group_ccmp, install_ap_pairwise_ccmp,
 };
 
 use oer_ieee80211_mac::ccmp::{
@@ -143,7 +143,13 @@ impl<'storage> ApSecurity<'storage> {
                 storage,
             });
         }
-        let group = match install_ap_group_ccmp(hardware, gtk.key_id(), gtk.key()) {
+        let Some(key_id) = ApGroupKeyId::new(gtk.key_id().get()) else {
+            return Err(ApSecurityStartFailure {
+                error: ApSecurityError::Crypto(CryptoKeyError::InvalidGroupKeyId),
+                storage,
+            });
+        };
+        let group = match install_ap_group_ccmp(hardware, key_id, gtk.key()) {
             Ok(group) => group,
             Err(error) => {
                 return Err(ApSecurityStartFailure {

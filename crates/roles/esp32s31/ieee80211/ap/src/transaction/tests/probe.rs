@@ -26,7 +26,11 @@ fn exercise_probe_completion(status: u8) {
         AccessPointService::new(
             ap,
             Pmk::derive(b"password", b"ap").unwrap(),
-            RsnGtk::new(1, true, [7; 16]).unwrap(),
+            RsnGtk::new(
+                oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
+                true,
+                [7; 16],
+            ),
             oer_ieee80211_ap::AccessPointClientLimit::new(2).unwrap(),
             oer_ieee80211_ap::AccessPointInactiveTimeout::default(),
             &mut peers,

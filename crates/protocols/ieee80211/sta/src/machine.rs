@@ -1239,13 +1239,12 @@ fn peer_disconnect(frame: &[u8], bssid: Bssid) -> Option<u16> {
     Some(u16::from_le_bytes(*reason))
 }
 
-/// A group key's index and temporal key, when its index is a group
-/// key's two-bit wire ID (0 to 3).
+/// A group key's checked wire ID and temporal key.
 fn group_key(install: &RsnKeyInstall) -> Option<(GroupKeyId, [u8; 16])> {
     let RsnKeyKind::Group { key_id, .. } = install.kind() else {
         return None;
     };
-    Some((GroupKeyId::new(key_id)?, *install.key().as_bytes()))
+    Some((key_id, *install.key().as_bytes()))
 }
 
 /// The replay check of the keys a handshake's Message 3 installs.

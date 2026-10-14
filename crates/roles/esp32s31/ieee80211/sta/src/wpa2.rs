@@ -410,8 +410,7 @@ where
             *group.receive_sequence(),
         )
         .map_err(|error| Wpa2KeyPortError::InvalidReceiveSequence(error.into()))?;
-        let group_material = StaGroupCcmpKeyMaterial::new(key_id, *group.key().as_bytes())
-            .map_err(Wpa2KeyPortError::Install)?;
+        let group_material = StaGroupCcmpKeyMaterial::new(key_id, *group.key().as_bytes());
         let pairwise = install_sta_pairwise_ccmp(
             self.radio.hardware,
             *pairwise.peer(),
@@ -433,7 +432,7 @@ where
         });
         oer_trace::emit(&oer_ieee80211_trace::LinkControlTrace {
             event: oer_ieee80211_trace::LinkEvent::KeysInstalled {
-                group_key_id: key_id,
+                group_key_id: key_id.get(),
             },
         });
         Ok(InstalledWpa2Keys {

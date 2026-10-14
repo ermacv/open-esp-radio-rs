@@ -43,7 +43,6 @@ pub enum ConnectedWpa2SecurityFailure {
     Protocol(RsnConnectedSupplicantError),
     KeyUnwrap(SoftwareAesKeyUnwrapError),
     InvalidGroupKeyKind,
-    InvalidGroupKeyMaterial(CryptoKeyError),
     ReplayRotation(StaCcmpRxReplayError),
     SameKeyIdGenerationUnavailable,
     RetiredKeyIdGenerationUnavailable { key_id: u8 },
@@ -98,7 +97,7 @@ impl ConnectedWpa2Security {
         replay: StaCcmpRxReplayControlEndpoint,
         management: Option<StationManagementProtection>,
     ) -> Self {
-        let used_group_key_ids = 1_u8 << group_material.key_id();
+        let used_group_key_ids = 1_u8 << group_material.key_id().get();
         Self {
             supplicant,
             group,
@@ -262,15 +261,7 @@ impl ConnectedWpa2Security {
                     return self.fail(ConnectedWpa2SecurityFailure::InvalidGroupKeyKind);
                 };
                 let replacement =
-                    match StaGroupCcmpKeyMaterial::new(key_id, *request.group().key().as_bytes()) {
-                        Ok(replacement) => replacement,
-                        Err(error) => {
-                            let _ = self.supplicant.complete_group_key_install(request, false);
-                            return self.fail(
-                                ConnectedWpa2SecurityFailure::InvalidGroupKeyMaterial(error),
-                            );
-                        }
-                    };
+                    StaGroupCcmpKeyMaterial::new(key_id, *request.group().key().as_bytes());
                 let same_key_id = self.group_material.key_id() == replacement.key_id();
                 let same_temporal_key = self.group_material.same_temporal_key(&replacement);
                 if same_key_id && !same_temporal_key {
@@ -282,7 +273,7 @@ impl ConnectedWpa2Security {
                     let _ = self.supplicant.complete_group_key_install(request, false);
                     return self.fail(ConnectedWpa2SecurityFailure::SameKeyIdGenerationUnavailable);
                 }
-                let key_id_mask = 1_u8 << replacement.key_id();
+                let key_id_mask = 1_u8 << replacement.key_id().get();
                 if !same_key_id && self.used_group_key_ids & key_id_mask != 0 {
                     // The retired key ID may still label an authenticated
                     // frame in the RX staging pipeline. Reusing it for a new
@@ -291,13 +282,13 @@ impl ConnectedWpa2Security {
                     let _ = self.supplicant.complete_group_key_install(request, false);
                     return self.fail(
                         ConnectedWpa2SecurityFailure::RetiredKeyIdGenerationUnavailable {
-                            key_id: replacement.key_id(),
+                            key_id: replacement.key_id().get(),
                         },
                     );
                 }
                 let prepared = match self
                     .replay
-                    .prepare_group_rotation(key_id, *request.group().receive_sequence())
+                    .prepare_group_rotation(key_id.get(), *request.group().receive_sequence())
                 {
                     Ok(prepared) => prepared,
                     Err(error) => {

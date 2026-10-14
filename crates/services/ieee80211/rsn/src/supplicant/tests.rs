@@ -40,7 +40,11 @@ fn awaiting_message3(pmk: &Pmk) -> (RsnStaSupplicant, OwnedEapolFrame<512>) {
         panic!("Message 1 must produce Message 2")
     };
     let rsn = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
-    let gtk = RsnGtk::new(2, false, [0x5a; 16]).unwrap();
+    let gtk = RsnGtk::new(
+        oer_ieee80211_mac::ccmp::GroupKeyId::new(2).unwrap(),
+        false,
+        [0x5a; 16],
+    );
     let plain = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     let wrapped = software_aes128_key_wrap(ptk.kek(), plain.as_bytes()).unwrap();
     let message3 =

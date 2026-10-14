@@ -85,8 +85,7 @@ fn ap_pairwise_and_group_slots_share_the_fail_closed_pn_boundary() {
         tx_packet_number: exhausted(),
     };
     let mut group = ApGroupCcmpSlot {
-        key_id: 1,
-        tx_key_id: CcmpKeyId::new(1).unwrap(),
+        key_id: ApGroupKeyId::new(1).unwrap(),
         hardware_index: AP_GROUP_HARDWARE_INDEX_BASE + 1,
         tx_packet_number: exhausted(),
     };
@@ -109,7 +108,8 @@ fn first_ap_peer_and_gtk_own_the_evidenced_disjoint_slots() {
     assert_eq!(hardware.last_index, Some(8));
     pairwise.clear(&mut hardware);
 
-    let group = install_ap_group_ccmp(&mut hardware, 1, &[9; 16]).unwrap();
+    let group =
+        install_ap_group_ccmp(&mut hardware, ApGroupKeyId::new(1).unwrap(), &[9; 16]).unwrap();
     assert_eq!(group.hardware_index(), 2);
     assert_eq!(hardware.last_index, Some(2));
     group.clear(&mut hardware);
@@ -118,11 +118,8 @@ fn first_ap_peer_and_gtk_own_the_evidenced_disjoint_slots() {
 
 #[test]
 fn an_ap_group_key_id_zero_is_refused_before_it_touches_the_station_group_entry() {
-    let mut hardware = Hardware::default();
-    assert_eq!(
-        install_ap_group_ccmp(&mut hardware, 0, &[9; 16]).err(),
-        Some(CryptoKeyError::InvalidGroupKeyId)
-    );
+    let hardware = Hardware::default();
+    assert!(ApGroupKeyId::new(0).is_none());
     assert_eq!(hardware.installs, 0);
     assert_eq!(hardware.last_index, None);
 }
@@ -131,7 +128,7 @@ fn an_ap_group_key_id_zero_is_refused_before_it_touches_the_station_group_entry(
 fn a_station_gtk_with_wire_id_zero_owns_the_group_hardware_slot() {
     let mut hardware = Hardware::default();
     let key_id = oer_ieee80211_mac::ccmp::GroupKeyId::new(0).unwrap();
-    let slot = install_sta_group_ccmp(&mut hardware, key_id.get(), &[9; 16]).unwrap();
+    let slot = install_sta_group_ccmp(&mut hardware, key_id, &[9; 16]).unwrap();
     assert_eq!(hardware.last_index, Some(STA_GROUP_HARDWARE_INDEX));
     assert_ne!(hardware.last_index, Some(STA_PAIRWISE_HARDWARE_INDEX));
     assert_eq!(
@@ -146,10 +143,21 @@ fn a_station_gtk_with_wire_id_zero_owns_the_group_hardware_slot() {
 #[test]
 fn group_rekey_reuses_one_authority_and_clears_the_replacement_once() {
     let mut hardware = Hardware::default();
-    let mut slot = install_sta_group_ccmp(&mut hardware, 1, &[1; 16]).unwrap();
+    let mut slot = install_sta_group_ccmp(
+        &mut hardware,
+        oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
+        &[1; 16],
+    )
+    .unwrap();
 
-    replace_sta_group_ccmp(&mut hardware, &mut slot, 2, &[2; 16]).unwrap();
-    assert_eq!(slot.key_id(), 2);
+    replace_sta_group_ccmp(
+        &mut hardware,
+        &mut slot,
+        oer_ieee80211_mac::ccmp::GroupKeyId::new(2).unwrap(),
+        &[2; 16],
+    )
+    .unwrap();
+    assert_eq!(slot.key_id().get(), 2);
     assert_eq!(hardware.installs, 2);
     assert_eq!(hardware.clears, 1);
 
@@ -161,11 +169,21 @@ fn group_rekey_reuses_one_authority_and_clears_the_replacement_once() {
 #[test]
 fn rejected_rekey_invalidates_the_token_and_teardown_does_not_double_clear() {
     let mut hardware = Hardware::default();
-    let mut slot = install_sta_group_ccmp(&mut hardware, 1, &[1; 16]).unwrap();
+    let mut slot = install_sta_group_ccmp(
+        &mut hardware,
+        oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
+        &[1; 16],
+    )
+    .unwrap();
     hardware.reject_installs = 1;
 
     assert_eq!(
-        replace_sta_group_ccmp(&mut hardware, &mut slot, 2, &[2; 16]),
+        replace_sta_group_ccmp(
+            &mut hardware,
+            &mut slot,
+            oer_ieee80211_mac::ccmp::GroupKeyId::new(2).unwrap(),
+            &[2; 16]
+        ),
         Err(CryptoKeyError::HardwareRejected)
     );
     assert_eq!(hardware.clears, 1);
@@ -176,9 +194,14 @@ fn rejected_rekey_invalidates_the_token_and_teardown_does_not_double_clear() {
 #[test]
 fn group_rekey_failure_restores_exact_old_key_and_slot_authority() {
     let mut hardware = Hardware::default();
-    let mut slot = install_sta_group_ccmp(&mut hardware, 1, &[1; 16]).unwrap();
-    let current = StaGroupCcmpKeyMaterial::new(1, [1; 16]).unwrap();
-    let replacement = StaGroupCcmpKeyMaterial::new(2, [2; 16]).unwrap();
+    let mut slot = install_sta_group_ccmp(
+        &mut hardware,
+        oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
+        &[1; 16],
+    )
+    .unwrap();
+    let current = StaGroupCcmpKeyMaterial::new(GroupKeyId::new(1).unwrap(), [1; 16]);
+    let replacement = StaGroupCcmpKeyMaterial::new(GroupKeyId::new(2).unwrap(), [2; 16]);
     let old_install = hardware.last_install;
     hardware.reject_installs = 1;
 
@@ -188,7 +211,7 @@ fn group_rekey_failure_restores_exact_old_key_and_slot_authority() {
             CryptoKeyError::HardwareRejected,
         ))
     );
-    assert_eq!(slot.key_id(), 1);
+    assert_eq!(slot.key_id().get(), 1);
     assert!(hardware.occupied);
     assert_eq!(hardware.last_install, old_install);
     slot.clear(&mut hardware);
@@ -198,9 +221,14 @@ fn group_rekey_failure_restores_exact_old_key_and_slot_authority() {
 #[test]
 fn group_rekey_rollback_failure_invalidates_slot_and_requires_quarantine() {
     let mut hardware = Hardware::default();
-    let mut slot = install_sta_group_ccmp(&mut hardware, 1, &[1; 16]).unwrap();
-    let current = StaGroupCcmpKeyMaterial::new(1, [1; 16]).unwrap();
-    let replacement = StaGroupCcmpKeyMaterial::new(2, [2; 16]).unwrap();
+    let mut slot = install_sta_group_ccmp(
+        &mut hardware,
+        oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
+        &[1; 16],
+    )
+    .unwrap();
+    let current = StaGroupCcmpKeyMaterial::new(GroupKeyId::new(1).unwrap(), [1; 16]);
+    let replacement = StaGroupCcmpKeyMaterial::new(GroupKeyId::new(2).unwrap(), [2; 16]);
     hardware.reject_installs = 2;
 
     assert_eq!(
@@ -217,9 +245,9 @@ fn group_rekey_rollback_failure_invalidates_slot_and_requires_quarantine() {
 
 #[test]
 fn group_material_comparison_covers_same_and_different_key_id_cases() {
-    let current = StaGroupCcmpKeyMaterial::new(1, [0x11; 16]).unwrap();
-    let same_key_other_id = StaGroupCcmpKeyMaterial::new(2, [0x11; 16]).unwrap();
-    let changed_same_id = StaGroupCcmpKeyMaterial::new(1, [0x22; 16]).unwrap();
+    let current = StaGroupCcmpKeyMaterial::new(GroupKeyId::new(1).unwrap(), [0x11; 16]);
+    let same_key_other_id = StaGroupCcmpKeyMaterial::new(GroupKeyId::new(2).unwrap(), [0x11; 16]);
+    let changed_same_id = StaGroupCcmpKeyMaterial::new(GroupKeyId::new(1).unwrap(), [0x22; 16]);
     assert!(current.same_temporal_key(&same_key_other_id));
     assert!(!current.same_temporal_key(&changed_same_id));
 }

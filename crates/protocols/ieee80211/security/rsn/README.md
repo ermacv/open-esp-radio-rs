@@ -29,6 +29,12 @@ validated Association element; the supplicant takes it from its own
 Association element. Both reject EAPOL-Key frames whose descriptor version
 differs from that suite.
 
+GTK KDE parsing retains `GroupKeyId` in `RsnGtk` and `RsnKeyKind::Group`;
+IDs outside the two-bit wire domain never reach a key installation. The
+recorded M3 regression in `frames/captured_m3.rs` authenticates and unwraps
+frame 8 of Wireshark's pinned public `wpa2-psk-mfp` capture. Derived KDE cases
+change only its ID to exercise all four wire values, including zero.
+
 The portable station can retain a completed key installation while waiting for
 M4 delivery. `RsnStaSupplicant` authenticates a repeated M3 before advancing its
 counter. The station retains the installed PTK and processes only changed GTK

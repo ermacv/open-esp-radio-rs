@@ -692,7 +692,7 @@ impl CooperativeRadioHardware<'_> {
     pub fn replace_sta_group_ccmp(
         &mut self,
         slot: &mut StaGroupCcmpSlot,
-        key_id: u8,
+        key_id: oer_ieee80211_mac::ccmp::GroupKeyId,
         temporal_key: &[u8; 16],
     ) -> Result<(), CryptoKeyError> {
         replace_sta_group_ccmp(&mut self.wifi_mac_hal(), slot, key_id, temporal_key)

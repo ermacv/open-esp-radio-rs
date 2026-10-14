@@ -1,27 +1,26 @@
 //! Zeroizing group-key owners, key-data construction and parsing.
 
 use super::*;
+use oer_ieee80211_mac::ccmp::GroupKeyId;
 
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct RsnGtk {
-    key_id: u8,
+    #[zeroize(skip)]
+    key_id: GroupKeyId,
     transmit: bool,
     key: [u8; RSN_GTK_LEN],
 }
 
 impl RsnGtk {
-    pub fn new(key_id: u8, transmit: bool, key: [u8; RSN_GTK_LEN]) -> Result<Self, RsnFrameError> {
-        if key_id > 3 {
-            return Err(RsnFrameError::InvalidKeyId);
-        }
-        Ok(Self {
+    pub fn new(key_id: GroupKeyId, transmit: bool, key: [u8; RSN_GTK_LEN]) -> Self {
+        Self {
             key_id,
             transmit,
             key,
-        })
+        }
     }
 
-    pub const fn key_id(&self) -> u8 {
+    pub const fn key_id(&self) -> GroupKeyId {
         self.key_id
     }
 
@@ -122,7 +121,7 @@ impl<const N: usize> RsnPlainKeyData<N> {
         kde[1] = 22;
         kde[2..5].copy_from_slice(&RSN_OUI);
         kde[5] = GTK_KDE_TYPE;
-        kde[6] = gtk.key_id | u8::from(gtk.transmit) << 2;
+        kde[6] = gtk.key_id.get() | u8::from(gtk.transmit) << 2;
         kde[7] = 0;
         kde[8..24].copy_from_slice(gtk.key());
         if let Some(igtk) = igtk {
@@ -251,7 +250,9 @@ fn parse_key_data(
                         }
                         let mut key = [0; RSN_GTK_LEN];
                         key.copy_from_slice(&element[8..24]);
-                        gtk = Some(RsnGtk::new(element[6] & 0x03, element[6] & 0x04 != 0, key)?);
+                        let key_id = GroupKeyId::new(element[6] & 0x03)
+                            .ok_or(RsnFrameError::InvalidKeyId)?;
+                        gtk = Some(RsnGtk::new(key_id, element[6] & 0x04 != 0, key));
                     }
                     IGTK_KDE_TYPE => {
                         if !management_protection {

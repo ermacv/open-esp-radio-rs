@@ -1307,7 +1307,9 @@ fn a_fresh_protected_mpdu_is_numbered_by_its_key_and_the_station_group_key_refus
     let group = core
         .install_checked_key(
             &mut hardware,
-            CheckedKeyScope::StationGroup { key_id: 1 },
+            CheckedKeyScope::StationGroup {
+                key_id: oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
+            },
             &KEY,
         )
         .unwrap();

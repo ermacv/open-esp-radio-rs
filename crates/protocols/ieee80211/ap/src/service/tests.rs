@@ -103,7 +103,11 @@ fn service(storage: &mut AccessPointPeerStorage) -> AccessPointService<'_> {
     AccessPointService::new(
         AP,
         Pmk::derive(b"password", b"test-ap").unwrap(),
-        RsnGtk::new(1, true, [0x55; 16]).unwrap(),
+        RsnGtk::new(
+            oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
+            true,
+            [0x55; 16],
+        ),
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::default(),
         storage,
@@ -484,7 +488,11 @@ fn associated_activity_refreshes_the_configured_inactivity_frontier() {
     let mut service = AccessPointService::new(
         AP,
         Pmk::derive(b"password", b"test-ap").unwrap(),
-        RsnGtk::new(1, true, [0x55; 16]).unwrap(),
+        RsnGtk::new(
+            oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
+            true,
+            [0x55; 16],
+        ),
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::new(10).unwrap(),
         &mut storage,
@@ -1024,7 +1032,11 @@ fn all_fifteen_aids_are_stable_and_reused_after_removal() {
     let mut service = AccessPointService::new(
         AP,
         Pmk::derive(b"password", b"test-ap").unwrap(),
-        RsnGtk::new(1, true, [0x55; 16]).unwrap(),
+        RsnGtk::new(
+            oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
+            true,
+            [0x55; 16],
+        ),
         AccessPointClientLimit::new(15).unwrap(),
         AccessPointInactiveTimeout::default(),
         &mut storage,
@@ -1461,7 +1473,11 @@ fn a_station_resuming_a_pmksa_is_refused_by_an_access_point_without_a_cache() {
     let service = AccessPointService::new(
         AP,
         Pmk::derive(b"password", b"test-ap").unwrap(),
-        RsnGtk::new(1, true, [0x55; 16]).unwrap(),
+        RsnGtk::new(
+            oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
+            true,
+            [0x55; 16],
+        ),
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::new(10).unwrap(),
         &mut storage,
@@ -1484,7 +1500,11 @@ const SAE_PMKID: [u8; 16] = [0x4d; 16];
 fn wpa3_service(storage: &mut AccessPointPeerStorage) -> AccessPointService<'_> {
     AccessPointService::new_wpa3(
         AP,
-        RsnGtk::new(1, true, [0x55; 16]).unwrap(),
+        RsnGtk::new(
+            oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
+            true,
+            [0x55; 16],
+        ),
         RsnIgtk::new(4, [0; 6], [0x66; 16]).unwrap(),
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::default(),

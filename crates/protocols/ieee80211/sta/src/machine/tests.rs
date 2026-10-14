@@ -1440,9 +1440,14 @@ fn a_wpa2_gtk_kde_with_id_zero_uses_a_group_slot() {
 
         let (mut world, ptk) = wpa2_associated(mint, 1);
         let mut plain = Vec::from(RSN);
-        // IEEE 802.11-2012 Figure 11-31: two-bit KeyID zero, Tx zero.
+        // GTK KDE from Wireshark wpa2-psk-mfp frame 8, with KeyID
+        // changed from 1 to 0 (IEEE 802.11-2020, 12.7.2). The unmodified
+        // recorded M3 and its MIC are checked in rsn/frames/captured_m3.rs.
         plain.extend_from_slice(&[0xdd, 22, 0x00, 0x0f, 0xac, 0x01, 0x00, 0x00]);
-        plain.extend_from_slice(&[0x99; 16]);
+        plain.extend_from_slice(&[
+            0x70, 0xcd, 0xbf, 0x2e, 0x5b, 0xc0, 0xca, 0x22, 0xe5, 0x39, 0x30, 0x81, 0x8a, 0x5d,
+            0x80, 0xe4,
+        ]);
         plain.extend_from_slice(&[0xdd, 0]);
         let wrapped = oer_ieee80211_rsn::aes::software_aes128_key_wrap(ptk.kek(), &plain).unwrap();
         let message3 = RsnTxFrame::<512>::message3(

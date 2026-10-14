@@ -2038,7 +2038,7 @@ pub trait Esp32s31Role: InterfaceRole {
     #[doc(hidden)]
     fn pairwise_scope(peer: IndividualAddress, slot: u8) -> CheckedKeyScope;
     #[doc(hidden)]
-    fn group_scope(key_id: GroupKeyId) -> CheckedKeyScope;
+    fn group_scope(key_id: GroupKeyId) -> Result<CheckedKeyScope, LowerMacFault>;
 }
 
 impl Esp32s31Role for Station {
@@ -2046,10 +2046,8 @@ impl Esp32s31Role for Station {
         CheckedKeyScope::StationPairwise { peer: peer.get() }
     }
 
-    fn group_scope(key_id: GroupKeyId) -> CheckedKeyScope {
-        CheckedKeyScope::StationGroup {
-            key_id: key_id.get(),
-        }
+    fn group_scope(key_id: GroupKeyId) -> Result<CheckedKeyScope, LowerMacFault> {
+        Ok(CheckedKeyScope::StationGroup { key_id })
     }
 }
 
@@ -2064,10 +2062,12 @@ impl Esp32s31Role for AccessPoint {
         }
     }
 
-    fn group_scope(key_id: GroupKeyId) -> CheckedKeyScope {
-        CheckedKeyScope::AccessPointGroup {
-            key_id: key_id.get(),
-        }
+    fn group_scope(key_id: GroupKeyId) -> Result<CheckedKeyScope, LowerMacFault> {
+        oer_esp32s31_ieee80211_mac::crypto::ApGroupKeyId::new(key_id.get())
+            .map(|key_id| CheckedKeyScope::AccessPointGroup { key_id })
+            .ok_or(LowerMacFault::Key(
+                oer_esp32s31_ieee80211_mac::crypto::CryptoKeyError::InvalidGroupKeyId,
+            ))
     }
 }
 
@@ -2412,7 +2412,7 @@ where
         let handle = self
             .runtime
             .with_phase(|core, hardware, _, _| {
-                core.install_checked_key(hardware, vif_of(Role::ROLE), scope, &key.0)
+                core.install_checked_key(hardware, vif_of(Role::ROLE), scope?, &key.0)
             })
             .ok();
         Esp32s31GroupKey { handle, slot }

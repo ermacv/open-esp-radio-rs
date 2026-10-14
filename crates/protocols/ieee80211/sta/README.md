@@ -111,9 +111,9 @@ transmission waits only when credit is occupied; an encoding failure leaves
 once and returns its ticket and buffer, and a missing connection is reported
 as a changed link.
 
-GTK wire IDs include zero. IEEE 802.11-2012, 6.3.19.1.2 and Figure 11-31,
-define the two-bit ID separately from the key type; receive selection in
-11.8.2.6 uses the frame's addressing to distinguish PTK and GTK. The pinned
+GTK wire IDs include zero. IEEE 802.11-2020, 12.7.2 (EAPOL-Key frames),
+defines the GTK KDE's two-bit KeyID. Frame addressing distinguishes PTK
+and GTK. The pinned
 [ESP-IDF parser](https://github.com/espressif/esp-idf/blob/4d59230ddff16327812782151ef0afef202dc6d7/components/wpa_supplicant/src/rsn_supp/wpa.c#L1064)
 also accepts all four IDs. `GroupKeyId::select` addresses four protocol
 records; physical slots come from the backend's pool. S31 STA accepts ID zero

@@ -81,6 +81,11 @@ Also check the actual S31 target before each push:
 `cargo check -p oer-esp32s31-ieee80211-mac -p oer-esp32s31-ieee80211 --target riscv32imafc-unknown-none-elf`.
 Host `--all-targets` covers Cargo target kinds, not the RV32 architecture or
 its conditional imports and allocation paths.
+Run `cargo xtask check tier full --job architecture --checks chip-doctest`
+as well: chip API examples need their `no_std` harness, and must not inherit
+the allocating MAC model from a host-only dev-dependency. The core enables
+that dependency for host unit tests; explicit RV32 model builds still use
+the `test-support` feature.
 Also compile the same target with explicit models:
 `cargo check -p oer-esp32s31-ieee80211-mac -p oer-esp32s31-ieee80211 --target riscv32imafc-unknown-none-elf --features oer-esp32s31-ieee80211/test-support`.
 The portable runtime's model also remains `no_std` + `alloc` under its

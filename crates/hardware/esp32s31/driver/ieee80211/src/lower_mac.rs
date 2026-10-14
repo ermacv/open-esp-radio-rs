@@ -717,6 +717,11 @@ impl StationTbtt {
 /// side of the port, one published attempt per EDCA queue.
 /// Diagnostic callers cannot borrow the nested transmitter:
 /// ```compile_fail,E0599
+/// # #![cfg_attr(target_arch = "riscv32", no_std)]
+/// # #![cfg_attr(target_arch = "riscv32", no_main)]
+/// # #[cfg(target_arch = "riscv32")]
+/// # #[panic_handler]
+/// # fn panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 /// use oer_esp32s31_ieee80211::lower_mac::LowerMacCore;
 /// use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile};
 /// fn borrow_tx<P: WifiTxPowerProfile, E: WifiTxEntropy, T: oer_time::Timer, const N: usize>(
@@ -726,7 +731,12 @@ impl StationTbtt {
 /// }
 /// ```
 /// A diagnostic can read the next publication deadline directly:
-/// ```
+/// ```no_run
+/// # #![cfg_attr(target_arch = "riscv32", no_std)]
+/// # #![cfg_attr(target_arch = "riscv32", no_main)]
+/// # #[cfg(target_arch = "riscv32")]
+/// # #[panic_handler]
+/// # fn panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 /// use oer_esp32s31_ieee80211::lower_mac::LowerMacCore;
 /// use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile};
 /// fn deadline<P: WifiTxPowerProfile, E: WifiTxEntropy, T: oer_time::Timer, const N: usize>(

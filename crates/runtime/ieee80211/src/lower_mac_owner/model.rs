@@ -66,6 +66,8 @@
 //! Capacity is the tokens': every terminal returns a ticket, so no terminal
 //! is ever lost; received frames beyond [`MODEL_RX_EVENTS`] queued are
 //! dropped and the stream says [`EventsLost`] once.
+//! Queued events keep FIFO order; after that finite queue, a pending loss
+//! indication precedes the next synthetic continuous-RX frame.
 //! The host fixture's VecDeque cannot express the token/capacity equation in
 //! its type. A broken equation retains the offending owner, poisons the
 //! backend and ends the installation without delivering later events. A
@@ -2697,6 +2699,9 @@ impl<'id, C, X: ModelContext> PortPhase for ModelPhase<'_, 'id, C, X> {
             if let Some(event) = held.take_event() {
                 return Poll::Ready(Ok(Ok(event)));
             }
+            if held.lost.replace(false) {
+                return Poll::Ready(Ok(Err(EventsLost)));
+            }
             if let Some((bytes, meta)) = held.air.rx_stream.borrow().as_ref()
                 && held.rx_out.get() < MODEL_RX_EVENTS
             {
@@ -2710,9 +2715,6 @@ impl<'id, C, X: ModelContext> PortPhase for ModelPhase<'_, 'id, C, X> {
                     },
                     meta: *meta,
                 })));
-            }
-            if held.lost.replace(false) {
-                return Poll::Ready(Ok(Err(EventsLost)));
             }
             *held.body.borrow_mut() = Some(cx.waker().clone());
             Poll::Pending

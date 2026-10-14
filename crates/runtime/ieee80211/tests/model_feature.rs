@@ -139,6 +139,76 @@ fn continuous_receive_has_the_same_capacity_and_recycling_in_feature_builds() {
     run(run_port(backend, Receive(air))).unwrap();
 }
 
+struct ReceiveLoss(Rc<ModelAir>);
+
+impl PortBody<ModelBackend> for ReceiveLoss {
+    async fn run<'id>(
+        self,
+        owner: Owner<'_, 'id, ModelBackend, Disabled>,
+        resources: ModelResources<'id>,
+    ) -> Ended<'id, ModelBackend> {
+        use embassy_futures::yield_now;
+        use oer_ieee80211_lower_mac::{StationPhase, StationReceive, VifRole};
+        use oer_radio_port::EventsLost;
+        use oer_ieee80211_runtime::lower_mac_owner::model::MODEL_EVENTS;
+
+        let mut owner = owner.enable().await.ok().unwrap();
+        {
+            let mut phase = owner.phase();
+            let meta = ModelRxMeta::new(phase.channel(), -40, -90);
+            // Overflow actual receive capacity; do not write the loss latch.
+            for _ in 0..MODEL_RX_EVENTS + 1 {
+                self.0.receive(&[1], meta);
+            }
+            phase.station().configure(StationReceive::Off);
+            phase.close_gate(resources.gate);
+            yield_now().await;
+            self.0.receive_continuously(&[2], meta);
+            let mut terminals = Vec::new();
+            let mut losses = 0;
+            let mut streaming = 0;
+            for _ in 0..MODEL_EVENTS + 4 {
+                match phase.next_event().await.unwrap() {
+                    Err(EventsLost) => losses += 1,
+                    Ok(LowerMacEvent::Received { frame, .. }) => {
+                        if frame.bytes() == [2] {
+                            assert_eq!(losses, 1, "continuous RX cannot pass pending loss");
+                            streaming += 1;
+                        }
+                        phase.recycle(frame);
+                    }
+                    Ok(LowerMacEvent::Configured(VifRole::Station)) => terminals.push(1),
+                    Ok(LowerMacEvent::GateClosed(_)) => terminals.push(2),
+                    _ => panic!("unexpected event"),
+                }
+                // Return real RX capacity before the next observation, as a
+                // concurrently running driver would do under continuous RX.
+                yield_now().await;
+            }
+            assert_eq!(
+                losses, 1,
+                "one coalesced indication, not one per lost frame"
+            );
+            assert_eq!(terminals, [1, 2], "ordinary terminal FIFO is preserved");
+            assert!(streaming > 0);
+            self.0.stop_continuous_receive();
+            assert!(poll_once(phase.next_event()).is_pending());
+        }
+        let owner = owner
+            .disable(&mut |_| panic!("all owners returned"))
+            .await
+            .ok()
+            .unwrap();
+        owner.uninstall(())
+    }
+}
+
+#[test]
+fn receive_overflow_is_reported_before_continuous_rx_without_reordering_terminals() {
+    let (backend, air) = backend();
+    run(run_port(backend, ReceiveLoss(air))).unwrap();
+}
+
 struct Owners;
 
 impl PortBody<ModelBackend> for Owners {

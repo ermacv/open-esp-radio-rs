@@ -8,7 +8,8 @@
 //! plays on: the air answers each transmission, delivers received frames
 //! and records what the hardware saw. Receive Block Ack agreements are
 //! per-slot desired state: updates coalesce before the driver applies them,
-//! without occupying the command queue.
+//! without occupying the command queue. A configuration confirmation occupies
+//! its coalescing slot until that event is taken, including by disable's drain.
 //!
 //! The backend has the phase's shape ([owner decisions on #563]): the phase
 //! is the body's handle over queues to the model's driver
@@ -1391,6 +1392,22 @@ impl<'id, X: ModelContext> ModelHeld<'id, X> {
         }
     }
 
+    /// Release coalescing admission with the individual event, including when
+    /// disable drains it. A later configuration can then produce a new event.
+    fn take_event(&self) -> Option<LowerMacEvent<'id, ModelTypes<X>>> {
+        let event = self.events.pop()?;
+        if let LowerMacEvent::Configured(role) = event {
+            let mut waiting = self.configured.get();
+            let [station, access_point] = &mut waiting;
+            *match role {
+                VifRole::Station => station,
+                VifRole::AccessPoint => access_point,
+            } = false;
+            self.configured.set(waiting);
+        }
+        Some(event)
+    }
+
     fn wake_body(&self) {
         if let Some(waker) = self.body.borrow_mut().take() {
             waker.wake();
@@ -1504,7 +1521,7 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
                 held.air.wake_driver();
                 return Poll::Pending;
             }
-            while let Some(event) = held.events.pop() {
+            while let Some(event) = held.take_event() {
                 sink(event);
             }
             held.rx_out.set(0);
@@ -2196,16 +2213,7 @@ impl<'id, C, X: ModelContext> PortPhase for ModelPhase<'_, 'id, C, X> {
             if held.air.poisoned.get() {
                 return Poll::Ready(Err(Poisoned { cause: ModelFault }));
             }
-            if let Some(event) = held.events.pop() {
-                if let LowerMacEvent::Configured(role) = event {
-                    let mut waiting = held.configured.get();
-                    let [station, access_point] = &mut waiting;
-                    *match role {
-                        VifRole::Station => station,
-                        VifRole::AccessPoint => access_point,
-                    } = false;
-                    held.configured.set(waiting);
-                }
+            if let Some(event) = held.take_event() {
                 return Poll::Ready(Ok(Ok(event)));
             }
             #[cfg(test)]

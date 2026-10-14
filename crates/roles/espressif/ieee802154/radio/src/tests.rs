@@ -1376,7 +1376,6 @@ impl Bench {
     }
 }
 
-/// An engine built with multi-PAN gives the radio its interfaces; each
 /// `configure` applies a configuration in any state, as the vendor's
 /// setters do: disabled, and during an operation, without changing the
 /// radio's state; only a full pending table refuses.
@@ -1471,6 +1470,7 @@ fn configure_applies_in_every_state() {
     );
 }
 
+/// An engine built with multi-PAN gives the radio its interfaces; each
 /// interface setting reaches that interface's identity, enable bit and
 /// frame-pending table, as `esp_ieee802154_set_multipan_*` and
 /// `esp_ieee802154_multipan_*` do.

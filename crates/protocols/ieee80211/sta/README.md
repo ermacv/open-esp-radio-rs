@@ -77,6 +77,17 @@ does not cause repeated polling. Every four-way handshake step retains the
 same response deadline while waiting for TX, a key slot or installation.
 Expiry leaves once and reclaims late returns through the normal teardown.
 
+GTK wire IDs include zero. IEEE 802.11-2012, 6.3.19.1.2 and Figure 11-31,
+define the two-bit ID separately from the key type; receive selection in
+11.8.2.6 uses the frame's addressing to distinguish PTK and GTK. The pinned
+[ESP-IDF parser](https://github.com/espressif/esp-idf/blob/4d59230ddff16327812782151ef0afef202dc6d7/components/wpa_supplicant/src/rsn_supp/wpa.c#L1064)
+also accepts all four IDs. `GroupKeyId::select` addresses four protocol
+records; physical slots come from the backend's pool. S31 STA accepts ID zero
+in its dedicated group slot. S31 AP excludes it because its `1 + key_id`
+layout would collide with the station group slot. That hardware restriction
+does not narrow the portable WPA2 receive contract. Legacy WPA/TKIP and mesh
+key-selection policies are outside this station's supported WPA2-CCMP mode.
+
 `poll_action` drains internal transitions until it produces an action or
 reaches an external wait. The Associated action is a join step, delivered
 before Connected or handshake work. Disconnect waits for an absence to end

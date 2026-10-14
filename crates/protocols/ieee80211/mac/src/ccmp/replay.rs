@@ -64,14 +64,9 @@ pub enum CcmpRxReplayEpochCandidate {
 #[derive(Debug, Eq, PartialEq)]
 pub struct CcmpRxReplayEpoch {
     pairwise: CcmpRxReplayState,
-    /// The frontiers of the group key of each index 1 to 3, while it is
+    /// The frontiers of the group key of each index 0 to 3, while it is
     /// installed.
-    groups: [Option<CcmpRxReplayState>; 3],
-}
-
-/// The slot of a group key index.
-const fn slot(key_id: GroupKeyId) -> usize {
-    key_id.get() as usize - 1
+    groups: [Option<CcmpRxReplayState>; 4],
 }
 
 impl CcmpRxReplayEpoch {
@@ -90,7 +85,7 @@ impl CcmpRxReplayEpoch {
             .map_err(|_| CcmpRxReplayError::InvalidPairwiseReceiveSequence)?;
         let mut epoch = Self {
             pairwise,
-            groups: [None, None, None],
+            groups: [None, None, None, None],
         };
         epoch.install_group(group_key_id, group_receive_sequence)?;
         Ok(epoch)
@@ -98,7 +93,7 @@ impl CcmpRxReplayEpoch {
 
     /// Whether the group key of `key_id` is installed.
     pub const fn has_group(&self, key_id: GroupKeyId) -> bool {
-        self.groups[slot(key_id)].is_some()
+        key_id.select(&self.groups).is_some()
     }
 
     /// The group key `key_id` is installed with its receive sequence: its
@@ -116,17 +111,17 @@ impl CcmpRxReplayEpoch {
     ) -> Result<(), CcmpRxReplayError> {
         let mut group = CcmpRxReplayState::from_receive_sequence(receive_sequence)
             .map_err(|_| CcmpRxReplayError::InvalidGroupReceiveSequence)?;
-        if let Some(current) = &self.groups[slot(key_id)] {
+        if let Some(current) = key_id.select(&self.groups) {
             merge_frontiers(current, &mut group)?;
         }
-        self.groups[slot(key_id)] = Some(group);
+        *key_id.select_mut(&mut self.groups) = Some(group);
         Ok(())
     }
 
     /// The group key `key_id` is removed: its frames are refused from now
     /// on.
     pub fn remove_group(&mut self, key_id: GroupKeyId) {
-        self.groups[slot(key_id)] = None;
+        *key_id.select_mut(&mut self.groups) = None;
     }
 
     /// Prepare the check of a frame of `protection`, of the TID `tid` (none
@@ -163,7 +158,7 @@ impl CcmpRxReplayEpoch {
                 let Some(key_id) = GroupKeyId::new(observed.value()) else {
                     return Err(CcmpRxReplayError::UninstalledGroupKey(observed));
                 };
-                let Some(group) = &self.groups[slot(key_id)] else {
+                let Some(group) = key_id.select(&self.groups) else {
                     return Err(CcmpRxReplayError::UninstalledGroupKey(observed));
                 };
                 group
@@ -190,7 +185,8 @@ impl CcmpRxReplayEpoch {
                 .pairwise
                 .commit(candidate)
                 .map_err(CcmpRxReplayError::Replay),
-            CcmpRxReplayEpochCandidate::Group(key_id, candidate) => self.groups[slot(key_id)]
+            CcmpRxReplayEpochCandidate::Group(key_id, candidate) => key_id
+                .select_mut(&mut self.groups)
                 .as_mut()
                 .ok_or(CcmpRxReplayError::UninstalledGroupKey(key_id.key_id()))?
                 .commit(candidate)

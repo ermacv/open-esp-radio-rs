@@ -469,8 +469,9 @@ pub fn install_ap_pairwise_ccmp<H: CcmpKeyHardware>(
 
 /// Install one AP GTK. Vendor AP group slots map directly to `1 + key_id`;
 /// the first service provisions key id one and therefore owns slot 2. Key
-/// id 0 is the pairwise key's in WPA2 and would take entry 1, the station
-/// group key's: it is refused.
+/// id 0 would take entry 1, the station group key's: this S31 AP layout
+/// refuses it. This is a hardware layout restriction; GTK wire ID zero is
+/// valid for RSN and the station's dedicated group slot accepts it.
 pub fn install_ap_group_ccmp<H: CcmpKeyHardware>(
     hardware: &mut H,
     key_id: u8,

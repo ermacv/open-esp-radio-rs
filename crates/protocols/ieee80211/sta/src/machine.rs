@@ -1183,7 +1183,7 @@ fn peer_disconnect(frame: &[u8], bssid: [u8; 6]) -> Option<u16> {
 }
 
 /// A group key's index and temporal key, when its index is a group
-/// key's (1 to 3).
+/// key's two-bit wire ID (0 to 3).
 fn group_key(install: &RsnKeyInstall) -> Option<(GroupKeyId, [u8; 16])> {
     let RsnKeyKind::Group { key_id, .. } = install.kind() else {
         return None;

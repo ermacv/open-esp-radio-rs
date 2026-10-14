@@ -128,6 +128,22 @@ fn an_ap_group_key_id_zero_is_refused_before_it_touches_the_station_group_entry(
 }
 
 #[test]
+fn a_station_gtk_with_wire_id_zero_owns_the_group_hardware_slot() {
+    let mut hardware = Hardware::default();
+    let key_id = oer_ieee80211_mac::ccmp::GroupKeyId::new(0).unwrap();
+    let slot = install_sta_group_ccmp(&mut hardware, key_id.get(), &[9; 16]).unwrap();
+    assert_eq!(hardware.last_index, Some(STA_GROUP_HARDWARE_INDEX));
+    assert_ne!(hardware.last_index, Some(STA_PAIRWISE_HARDWARE_INDEX));
+    assert_eq!(
+        hardware.last_install,
+        Some((MacCcmpKeyIdentity::Group { key_id: 0 }, [9; 16]))
+    );
+    slot.clear(&mut hardware);
+    assert_eq!(hardware.clears, 1);
+    assert!(!hardware.occupied);
+}
+
+#[test]
 fn group_rekey_reuses_one_authority_and_clears_the_replacement_once() {
     let mut hardware = Hardware::default();
     let mut slot = install_sta_group_ccmp(&mut hardware, 1, &[1; 16]).unwrap();

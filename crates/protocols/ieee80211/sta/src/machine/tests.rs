@@ -1346,6 +1346,45 @@ fn m4_refused_before_admission_never_completes_the_handshake() {
     });
 }
 
+#[test]
+fn a_wpa2_gtk_kde_with_id_zero_uses_a_group_slot() {
+    installed(|mint| {
+        use oer_ieee80211_mac::security::rsn::Akm;
+        use oer_ieee80211_rsn::frames::RsnTxFrame;
+
+        let (mut world, ptk) = wpa2_associated(mint, 1);
+        let mut plain = Vec::from(RSN);
+        // IEEE 802.11-2012 Figure 11-31: two-bit KeyID zero, Tx zero.
+        plain.extend_from_slice(&[0xdd, 22, 0x00, 0x0f, 0xac, 0x01, 0x00, 0x00]);
+        plain.extend_from_slice(&[0x99; 16]);
+        plain.extend_from_slice(&[0xdd, 0]);
+        let wrapped = oer_ieee80211_rsn::aes::software_aes128_key_wrap(ptk.kek(), &plain).unwrap();
+        let message3 = RsnTxFrame::<512>::message3(
+            Akm::Psk,
+            LOCAL,
+            2,
+            ANONCE,
+            [9, 0, 0, 0, 0, 0, 0, 0],
+            wrapped.as_bytes(),
+        )
+        .unwrap()
+        .authenticate(&ptk);
+        world.receive(at(33), &eapol_frame(message3.as_bytes()));
+        assert!(world.station.is_connected());
+        assert!(world.take().contains(&Seen::InstallGroup(0)));
+        assert_eq!(world.station.keys.group_slots.free.len(), 0);
+        world
+            .station
+            .input(at(34), StaInput::Command(StaCommand::Disconnect));
+        world.run(at(34));
+        assert!(matches!(
+            world.station.keys.pairwise,
+            KeyCell::Free(Slot(0))
+        ));
+        assert_eq!(world.station.keys.group_slots.free.len(), 1);
+    });
+}
+
 /// Group Message 1 of key `key_id` with replay counter `replay`.
 fn group_message1(ptk: &oer_ieee80211_rsn::Ptk, replay: u64, key_id: u8) -> std::vec::Vec<u8> {
     use oer_ieee80211_mac::security::rsn::Akm;

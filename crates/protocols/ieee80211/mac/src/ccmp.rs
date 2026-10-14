@@ -95,39 +95,80 @@ impl CcmpKeyId {
     }
 }
 
-/// The identifier of a group key, 1 to 3: in WPA2 key id 0 is the
-/// pairwise key's (IEEE 802.11-2020 12.7.2), and a backend may place group
-/// keys by their id (on ESP32-S31 an access point's group key `n` takes
-/// key-table entry `1 + n`, so an id 0 would take the station's entry 1).
+/// The two-bit wire identifier of a GTK, 0 through 3.
+///
+/// IEEE 802.11-2012, 11.6.2 Figure 11-31, includes zero in the GTK KDE.
+/// 6.3.19.1.2 distinguishes Key Type from Key ID; 11.8.2.6 selects the
+/// pairwise or group key by frame addressing before looking up that ID.
+/// A group key with ID zero therefore does not name the pairwise key.
+/// Hardware slot restrictions belong to the backend, separately from this
+/// wire value ([standard](https://mrncciew.com/wp-content/uploads/2014/10/ieee-802-11-2012.pdf)).
 ///
 /// ```
 /// # use oer_ieee80211_mac::ccmp::GroupKeyId;
-/// assert!(GroupKeyId::new(0).is_none());
+/// assert_eq!(GroupKeyId::new(0).map(GroupKeyId::get), Some(0));
 /// assert_eq!(GroupKeyId::new(1).map(GroupKeyId::get), Some(1));
 /// assert_eq!(GroupKeyId::new(3).map(GroupKeyId::get), Some(3));
 /// assert!(GroupKeyId::new(4).is_none());
 /// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct GroupKeyId(u8);
+pub struct GroupKeyId(GroupIndex);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GroupIndex {
+    Zero,
+    One,
+    Two,
+    Three,
+}
 
 impl GroupKeyId {
-    /// `key_id`, when it is 1 to 3.
+    /// `key_id`, when it fits the GTK KDE's two-bit field.
     pub const fn new(key_id: u8) -> Option<Self> {
-        if matches!(key_id, 1..=3) {
-            Some(Self(key_id))
-        } else {
-            None
+        match key_id {
+            0 => Some(Self(GroupIndex::Zero)),
+            1 => Some(Self(GroupIndex::One)),
+            2 => Some(Self(GroupIndex::Two)),
+            3 => Some(Self(GroupIndex::Three)),
+            _ => None,
         }
     }
 
     /// The identifier.
     pub const fn get(self) -> u8 {
-        self.0
+        match self.0 {
+            GroupIndex::Zero => 0,
+            GroupIndex::One => 1,
+            GroupIndex::Two => 2,
+            GroupIndex::Three => 3,
+        }
     }
 
     /// The identifier, as a CCMP header names it.
     pub const fn key_id(self) -> CcmpKeyId {
-        CcmpKeyId(self.0)
+        CcmpKeyId(self.get())
+    }
+
+    /// Select the record for this wire ID, independently of hardware slots.
+    pub const fn select<T>(self, entries: &[T; 4]) -> &T {
+        let [zero, one, two, three] = entries;
+        match self.0 {
+            GroupIndex::Zero => zero,
+            GroupIndex::One => one,
+            GroupIndex::Two => two,
+            GroupIndex::Three => three,
+        }
+    }
+
+    /// Select the mutable record for this wire ID.
+    pub const fn select_mut<T>(self, entries: &mut [T; 4]) -> &mut T {
+        let [zero, one, two, three] = entries;
+        match self.0 {
+            GroupIndex::Zero => zero,
+            GroupIndex::One => one,
+            GroupIndex::Two => two,
+            GroupIndex::Three => three,
+        }
     }
 }
 

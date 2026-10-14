@@ -103,11 +103,44 @@ fn a_check_prepared_before_its_group_key_was_removed_does_not_commit() {
 }
 
 #[test]
-fn a_group_frame_under_the_pairwise_index_is_refused() {
+fn an_uninstalled_group_id_zero_is_refused() {
     let mut epoch = epoch();
     assert_eq!(
         epoch.check(CcmpRxProtection::Group, None, header(1, 0)),
         Err(CcmpRxReplayError::UninstalledGroupKey(CcmpKeyId::PAIRWISE))
+    );
+}
+
+#[test]
+fn gtk_zero_and_ptk_zero_have_distinct_receive_frontiers() {
+    let zero = group(0);
+    let mut epoch = CcmpRxReplayEpoch::new([0; 8], zero, [9, 0, 0, 0, 0, 0, 0, 0]).unwrap();
+    assert_eq!(
+        epoch.check(CcmpRxProtection::Pairwise, None, header(1, 0)),
+        Ok(())
+    );
+    assert_eq!(
+        epoch.check(CcmpRxProtection::Group, None, header(10, 0)),
+        Ok(())
+    );
+    assert!(
+        epoch
+            .check(CcmpRxProtection::Group, None, header(9, 0))
+            .is_err()
+    );
+    assert_eq!(
+        epoch.check(CcmpRxProtection::Pairwise, None, header(2, 0)),
+        Ok(())
+    );
+    epoch.remove_group(zero);
+    assert!(
+        epoch
+            .check(CcmpRxProtection::Group, None, header(11, 0))
+            .is_err()
+    );
+    assert_eq!(
+        epoch.check(CcmpRxProtection::Pairwise, None, header(3, 0)),
+        Ok(())
     );
 }
 

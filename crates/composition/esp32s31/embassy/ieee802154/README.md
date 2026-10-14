@@ -23,13 +23,12 @@ the [runtime](../../../../runtime/espressif/ieee802154/src/lib.rs) and the
    the adapter once at boot (`install_interrupt_route` with an
    `Ieee802154InterruptSource` from its token).
 
-`start` returns the running client and the radio's port, which goes to its
-one event consumer. `Ieee802154System::stop` takes the port back and
-reverses the steps: quiesce the route, take the MAC owners out of the
-runtime (consuming the port and the control the client keeps), prove the foundation again, leave the domain and
-BTBB (the radio system closes RF after the last PHY client), release the
-clocks and leave
-common power. It returns the partition and the engine for a later start.
+`start` returns the running client and the radio's port backend, which the
+application runs under `run_port`. The port's end masks the MAC route and
+returns the engine and MAC owners. `Ieee802154System::stop` takes those
+parts, proves the foundation again, leaves the domain and BTBB (the radio
+system closes RF after the last PHY client), releases the clocks and
+leaves common power. It returns the partition and engine for a later start.
 
 Periodic shared PHY tracking belongs to the radio system
 (`RadioSystem::run_tracking`), as ESP-IDF's `phy_track_pll` timer belongs to
@@ -71,15 +70,17 @@ stack: the recovered ESP32-S31 BTBB transmit power levels, every channel
 starting at the highest; the CCA thresholds of ESP-IDF's
 `CONFIG_IEEE802154_CCA_THRESHOLD` range, −120 to 0 dBm, starting from the
 `Ieee802154PibDefaults`; and `IEEE802154_RX_SENSITIVITY`, −104 dBm. A
-transmit power or CCA threshold outside them is refused, never clamped; one
-inside selects the greatest power level not above it. These settings, like
-every `RadioSetting`, change software state only, so a quiesced port admits
-them.
+transmit power or CCA threshold outside them cannot form a supported
+setting; one inside selects the greatest power level not above it. These
+settings change software state through the disabled owner's setup or the
+enabled phase's control.
 Enhanced ACKs follow ESP-IDF's OpenThread port: `start` installs no
 generator, so 2015 frames are delivered without an ACK, as with the vendor's
 default generator. `RadioSetting::EnhancedAck` installs a generator and
 `RadioSetting::EnhancedAckHeaderIes` and `EnhancedAckProbing` set its header
-IEs and Link Metrics initiators. Each `start` begins without a generator.
+IEs and Link Metrics initiators. Settings made while generation is off are
+kept for its next enable; disabling generation or changing the noise floor
+also keeps them. Each `start` begins without a generator or saved settings.
 
 Transmit security follows ESP-IDF's OpenThread port, which claims
 `OT_RADIO_CAPS_TRANSMIT_SEC`: `RadioSetting::MacKeys` and

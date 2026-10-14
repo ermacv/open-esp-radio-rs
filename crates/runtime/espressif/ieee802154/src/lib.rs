@@ -424,10 +424,11 @@ impl<M: RawMutex, const EVENTS: usize> Ieee802154RadioSink for QueueSink<'_, M, 
 /// The radio role, its hardware and the event queue.
 ///
 /// `EVENTS` bounds the events waiting for the consumer, the reserved
-/// terminal slots included; it is at least three (an operation's end, a
-/// fault and a lifecycle terminal). A full queue drops the newest received
-/// frame and reports [`EventsLost`] once in its place. `T` is the image's
-/// monotonic time the delays wait on.
+/// terminal slots included. At least three slots let one received frame
+/// fit beside the enabled period's fault reserve and the current or next
+/// operation's terminal. A full queue drops the newest received frame and
+/// reports [`EventsLost`] once in its place. `T` is the image's monotonic
+/// time the delays wait on.
 // CAPABILITY: ieee802154-mac-operation-subset
 pub struct Ieee802154Runtime<'storage, M: RawMutex, H, T, R, const EVENTS: usize> {
     timer: T,
@@ -471,7 +472,7 @@ impl<
     pub const fn new(timer: T) -> Self {
         assert!(
             EVENTS >= 3,
-            "the queue holds an operation's end, a fault and a lifecycle terminal"
+            "the queue holds a received frame beside an operation's end and a fault"
         );
         Self {
             timer,
@@ -508,8 +509,8 @@ impl<
     /// `esp_ieee802154_enable` after clocks, PHY and the interrupt owner are
     /// active: enable the engine, run its MAC initialization and install the
     /// radio role in the `Disabled` state. The platform CPU route may be
-    /// enabled afterwards; the port's `Enable` lifecycle command opens
-    /// admission.
+    /// enabled afterwards; enabling the port through its owner opens
+    /// admission and reserves the enabled period's fault slot.
     ///
     /// Returns the installed radio as the port's backend, with the
     /// capabilities marker `K` its composition names; the composition hands

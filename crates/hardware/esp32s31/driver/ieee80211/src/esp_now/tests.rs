@@ -47,7 +47,7 @@ fn every_ht20_sgi_gap_rate_selects_its_same_mcs_lgi_record() {
         else {
             panic!("SGI gap must use the typed fallback policy")
         };
-        assert_eq!(schedule.schedule().index, 8 - mcs.index());
+        assert_eq!(schedule.schedule().index(), 8 - mcs.index());
     }
 }
 

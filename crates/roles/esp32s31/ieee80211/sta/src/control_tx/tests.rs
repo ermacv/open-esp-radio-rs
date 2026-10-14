@@ -149,15 +149,24 @@ fn authentication_is_encoded_and_completed_by_the_shared_owner() {
     };
     let mut tx = make_tx(slot.as_mut());
 
-    let result = crate::test_support::block_on(tx.transmit_open_authentication(
-        &mut hardware,
-        OpenAuthenticationRequest {
-            source: [2, 3, 4, 5, 6, 7],
-            bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-            sequence_number: SequenceNumber::new(7).unwrap(),
-        },
-        None,
-    ));
+    let result = crate::test_support::block_on(
+        tx.transmit_open_authentication(
+            &mut hardware,
+            OpenAuthenticationRequest {
+                source: oer_ieee80211_mac::address::OwnAddress::new(
+                    oer_ieee80211_mac::address::IndividualAddress::new([2, 3, 4, 5, 6, 7]).unwrap(),
+                ),
+                bssid: oer_ieee80211_mac::address::Bssid::new(
+                    oer_ieee80211_mac::address::IndividualAddress::new([
+                        0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
+                    ])
+                    .unwrap(),
+                ),
+                sequence_number: SequenceNumber::new(7).unwrap(),
+            },
+            None,
+        ),
+    );
 
     assert!(matches!(result, Ok(completion) if completion.status() == 0));
     assert_eq!(hardware.publications, 1);
@@ -222,15 +231,24 @@ fn ack_timeout_reuses_sequence_and_marks_the_retry_bit() {
     };
     let mut tx = make_tx(slot.as_mut());
 
-    let result = crate::test_support::block_on(tx.transmit_open_authentication(
-        &mut hardware,
-        OpenAuthenticationRequest {
-            source: [2, 3, 4, 5, 6, 7],
-            bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-            sequence_number: SequenceNumber::new(11).unwrap(),
-        },
-        None,
-    ));
+    let result = crate::test_support::block_on(
+        tx.transmit_open_authentication(
+            &mut hardware,
+            OpenAuthenticationRequest {
+                source: oer_ieee80211_mac::address::OwnAddress::new(
+                    oer_ieee80211_mac::address::IndividualAddress::new([2, 3, 4, 5, 6, 7]).unwrap(),
+                ),
+                bssid: oer_ieee80211_mac::address::Bssid::new(
+                    oer_ieee80211_mac::address::IndividualAddress::new([
+                        0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
+                    ])
+                    .unwrap(),
+                ),
+                sequence_number: SequenceNumber::new(11).unwrap(),
+            },
+            None,
+        ),
+    );
 
     assert!(result.is_ok());
     assert_eq!(hardware.publications, 2);
@@ -281,18 +299,27 @@ fn a_reconnecting_station_publishes_connection_frames_at_event_46_priority() {
     };
     let mut tx = make_tx(slot.as_mut());
 
-    let result = crate::test_support::block_on(tx.transmit_open_authentication(
-        &mut hardware,
-        OpenAuthenticationRequest {
-            source: [2, 3, 4, 5, 6, 7],
-            bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-            sequence_number: SequenceNumber::new(7).unwrap(),
-        },
-        Some(ReconnectFramePriority {
-            packet: 10,
-            scheduler: 5,
-        }),
-    ));
+    let result = crate::test_support::block_on(
+        tx.transmit_open_authentication(
+            &mut hardware,
+            OpenAuthenticationRequest {
+                source: oer_ieee80211_mac::address::OwnAddress::new(
+                    oer_ieee80211_mac::address::IndividualAddress::new([2, 3, 4, 5, 6, 7]).unwrap(),
+                ),
+                bssid: oer_ieee80211_mac::address::Bssid::new(
+                    oer_ieee80211_mac::address::IndividualAddress::new([
+                        0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
+                    ])
+                    .unwrap(),
+                ),
+                sequence_number: SequenceNumber::new(7).unwrap(),
+            },
+            Some(ReconnectFramePriority {
+                packet: 10,
+                scheduler: 5,
+            }),
+        ),
+    );
 
     assert!(result.is_ok());
     let (_, program) = hardware.legacy.expect("management publication");
@@ -311,15 +338,25 @@ fn missing_hardware_timeout_edge_quarantines_without_drop_panic() {
     {
         let mut tx = make_tx(slot.as_mut());
 
-        let result = crate::test_support::block_on(tx.transmit_open_authentication(
-            &mut hardware,
-            OpenAuthenticationRequest {
-                source: [2, 3, 4, 5, 6, 7],
-                bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-                sequence_number: SequenceNumber::new(13).unwrap(),
-            },
-            None,
-        ));
+        let result = crate::test_support::block_on(
+            tx.transmit_open_authentication(
+                &mut hardware,
+                OpenAuthenticationRequest {
+                    source: oer_ieee80211_mac::address::OwnAddress::new(
+                        oer_ieee80211_mac::address::IndividualAddress::new([2, 3, 4, 5, 6, 7])
+                            .unwrap(),
+                    ),
+                    bssid: oer_ieee80211_mac::address::Bssid::new(
+                        oer_ieee80211_mac::address::IndividualAddress::new([
+                            0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
+                        ])
+                        .unwrap(),
+                    ),
+                    sequence_number: SequenceNumber::new(13).unwrap(),
+                },
+                None,
+            ),
+        );
 
         assert_eq!(
             result,
@@ -389,8 +426,15 @@ fn active_handoff_returns_tx_and_crypto_resources_for_later_retry() {
     };
     let mut tx = make_tx(slot.as_mut());
     let frame_length = OpenAuthenticationRequest {
-        source: [2, 3, 4, 5, 6, 7],
-        bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
+        source: oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new([2, 3, 4, 5, 6, 7]).unwrap(),
+        ),
+        bssid: oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new([
+                0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
+            ])
+            .unwrap(),
+        ),
         sequence_number: SequenceNumber::new(15).unwrap(),
     }
     .encode(&mut tx.ordinary.buffer_mut().unwrap()[TX_METADATA_SIZE..])
@@ -480,15 +524,24 @@ fn idle_timer_rebind_preserves_policy_and_terminal_observation() {
         completions: [Some(completion(0)), None],
         ..Hardware::default()
     };
-    let result = crate::test_support::block_on(tx.transmit_open_authentication(
-        &mut hardware,
-        OpenAuthenticationRequest {
-            source: [2, 3, 4, 5, 6, 7],
-            bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-            sequence_number: SequenceNumber::new(7).unwrap(),
-        },
-        None,
-    ))
+    let result = crate::test_support::block_on(
+        tx.transmit_open_authentication(
+            &mut hardware,
+            OpenAuthenticationRequest {
+                source: oer_ieee80211_mac::address::OwnAddress::new(
+                    oer_ieee80211_mac::address::IndividualAddress::new([2, 3, 4, 5, 6, 7]).unwrap(),
+                ),
+                bssid: oer_ieee80211_mac::address::Bssid::new(
+                    oer_ieee80211_mac::address::IndividualAddress::new([
+                        0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
+                    ])
+                    .unwrap(),
+                ),
+                sequence_number: SequenceNumber::new(7).unwrap(),
+            },
+            None,
+        ),
+    )
     .unwrap();
     let terminal = tx.ordinary.last_outcome();
     tx.policy_mut().install_he_bss_color(27);

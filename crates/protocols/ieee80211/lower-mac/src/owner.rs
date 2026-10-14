@@ -185,6 +185,7 @@
 //! [ownership and refusals]: https://github.com/ermacv/open-esp-radio-rs/blob/main/docs/architecture.md#ownership-and-refusals
 
 use core::marker::PhantomData;
+use oer_ieee80211_mac::address::IndividualAddress;
 
 use oer_ieee80211_mac::{extensions::wmm::WmmParameterSet, sequence::SequenceNumber};
 use oer_ieee80211_port::PortBackend;
@@ -605,27 +606,6 @@ impl<'p> PhaseRate<'p> {
     }
 }
 
-/// The receiver of an individual frame: its address has the group bit
-/// clear.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct IndividualAddress(MacAddress);
-
-impl IndividualAddress {
-    /// `address`, when its group bit is clear.
-    pub const fn new(address: MacAddress) -> Option<Self> {
-        if address[0] & 1 == 0 {
-            Some(Self(address))
-        } else {
-            None
-        }
-    }
-
-    /// The address.
-    pub const fn get(self) -> MacAddress {
-        self.0
-    }
-}
-
 /// The receiver of a group frame: its address has the group bit set.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct GroupAddress(MacAddress);
@@ -753,7 +733,7 @@ pub trait ReceiverAddress: Copy {
 
 impl ReceiverAddress for IndividualAddress {
     fn address(self) -> MacAddress {
-        self.0
+        self.get()
     }
 }
 
@@ -899,14 +879,16 @@ impl<A: ReceiverAddress> HeaderSpec<A> {
 /// constructor. Its private construction proves that its fields fill N bytes.
 ///
 /// ```compile_fail,E0308
-/// use oer_ieee80211_lower_mac::{IndividualAddress, owner::HeaderEncoder};
+/// use oer_ieee80211_mac::address::IndividualAddress;
+/// use oer_ieee80211_lower_mac::{owner::HeaderEncoder};
 /// fn short(encoder: HeaderEncoder<IndividualAddress, 24>) {
 ///     encoder.encode(&mut [0; 23], false);
 /// }
 /// ```
 ///
 /// ```
-/// use oer_ieee80211_lower_mac::{IndividualAddress, owner::HeaderEncoder};
+/// use oer_ieee80211_mac::address::IndividualAddress;
+/// use oer_ieee80211_lower_mac::{owner::HeaderEncoder};
 /// fn sized(encoder: HeaderEncoder<IndividualAddress, 24>) {
 ///     encoder.encode(&mut [0; 24], false);
 /// }

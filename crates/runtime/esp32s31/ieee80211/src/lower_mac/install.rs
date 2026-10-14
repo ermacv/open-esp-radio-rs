@@ -35,7 +35,8 @@ use oer_ieee80211_mac::channel::WifiChannel;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use oer_ieee80211_lower_mac::{IndividualAddress, SupportedChannel};
+use oer_ieee80211_lower_mac::SupportedChannel;
+use oer_ieee80211_mac::address::IndividualAddress;
 
 use super::{
     Esp32s31Backend, Esp32s31Caps, Esp32s31LowerMac, Esp32s31LowerMacParts, LowerMacRetune,

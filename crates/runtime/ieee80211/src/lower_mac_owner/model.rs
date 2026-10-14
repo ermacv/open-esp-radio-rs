@@ -85,7 +85,7 @@ use oer_ieee80211_lower_mac::{
     AccessPoint, AccessPointPhase, BandSet, BssColor, Ccmp128Key, Channel, CheckedAggregate,
     CheckedPoolSource, CheckedSubframe, CheckedTxSource, CoexPriority, CoexPrioritySet,
     ConnectionEpochKind, FreshSource, FreshSubframe, GateClosed, GateIssuer, GateOpen, GatePlace,
-    HardwareServices, Ieee80211Capabilities, Ieee80211Radio, IndeterminateCause, IndividualAddress,
+    HardwareServices, Ieee80211Capabilities, Ieee80211Radio, IndeterminateCause,
     InterfaceAggregateAttempt, InterfaceAttempt, InterfacePhase, KeyTypes, LinkMetric,
     LowerMacBackend, LowerMacCapabilities, LowerMacEvent, LowerMacPhase, LowerMacSetup, MpduKind,
     MpduLayout, PhaseRate, PhaseTypes, PhyFormatSet, PreparationError, PreparationRefused,
@@ -100,6 +100,7 @@ use oer_ieee80211_lower_mac::{
     ClassSubframe, EmptyAggregate, InterfaceProtection, NonEmptyAggregate, PhaseAggregate,
     SubframeSource, Tid,
 };
+use oer_ieee80211_mac::address::IndividualAddress;
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
 /// The longest MPDU the model's large buffers hold.

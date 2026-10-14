@@ -72,16 +72,17 @@ use oer_esp32s31_ieee80211_mac::{
 use oer_ieee80211_lower_mac::{
     AccessPoint, AccessPointClient, AckHeader, AmpduClient, AmpduRate, AttemptKey, Backoff,
     BeaconTimingClient, BssColor, CancelError, Ccmp128Key, ClockError, EventsLost,
-    Ieee80211Capabilities, Ieee80211Instant, Ieee80211Radio, IndividualAddress, InterfaceRole,
-    KeyHandle, LifecycleEvent, LowerMacBackend, LowerMacCapabilities, LowerMacClient,
-    LowerMacControl, LowerMacEvent, LowerMacEvents, LowerMacSetting, LowerMacSetup, MacAddress,
-    MonitorControl, PhaseAmpdu, PhaseAmpduBuffer, PhaseAttempt, Poisoned, PortResult,
-    ReceiveFilter, RxBeaconPriority, RxBlockAckAgreement, RxBuffer, RxEvidence, RxMeta, SizedFrame,
-    Station, StationClient, StationReceive, SupportedBlockAck, SupportedChannel, SupportedEdca,
+    Ieee80211Capabilities, Ieee80211Instant, Ieee80211Radio, InterfaceRole, KeyHandle,
+    LifecycleEvent, LowerMacBackend, LowerMacCapabilities, LowerMacClient, LowerMacControl,
+    LowerMacEvent, LowerMacEvents, LowerMacSetting, LowerMacSetup, MacAddress, MonitorControl,
+    PhaseAmpdu, PhaseAmpduBuffer, PhaseAttempt, Poisoned, PortResult, ReceiveFilter,
+    RxBeaconPriority, RxBlockAckAgreement, RxBuffer, RxEvidence, RxMeta, SizedFrame, Station,
+    StationClient, StationReceive, SupportedBlockAck, SupportedChannel, SupportedEdca,
     SupportedFilter, TbttEvent, TbttPlan, TbttSchedule, Tid, TsfSample, TxBody, TxBuffer,
     TxCompletion, TxFrame, TxFrameBody, TxGated, TxId, TxPower, TxSeats, VifConfig, VifId, VifRole,
     VifTsf,
 };
+use oer_ieee80211_mac::address::IndividualAddress;
 use oer_ieee80211_port::{
     EnableResult, Lent, PhaseParts, PortBackend, RadioPortClient, RadioPortEvents, RadioWork,
     Retire, Work,

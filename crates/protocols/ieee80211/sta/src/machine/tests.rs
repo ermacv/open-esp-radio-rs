@@ -251,7 +251,9 @@ impl<'id> World<'id> {
             Arbiter::new(ArbiterPolicy::DEFAULT, channel(1), gate, Duration::ZERO);
         let station = Station::new(
             StaConfig {
-                address: LOCAL,
+                address: oer_ieee80211_mac::address::OwnAddress::new(
+                    oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+                ),
                 ssid: heapless::Vec::from_slice(SSID).unwrap(),
                 channels,
                 dwell: Duration::from_millis(10),

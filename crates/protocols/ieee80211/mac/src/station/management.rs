@@ -2,17 +2,41 @@
 //! codecs.
 
 use super::*;
+use crate::address::{Bssid, OwnAddress};
 
+/// An Open System request distinguishes the transmitter from the BSS.
+///
+/// ```compile_fail,E0308
+/// use oer_ieee80211_mac::station::OpenAuthenticationRequest;
+/// fn swapped(request: OpenAuthenticationRequest) -> OpenAuthenticationRequest {
+///     OpenAuthenticationRequest {
+///         source: request.bssid,
+///         bssid: request.source,
+///         sequence_number: request.sequence_number,
+///     }
+/// }
+/// ```
+///
+/// ```
+/// use oer_ieee80211_mac::station::OpenAuthenticationRequest;
+/// fn unchanged(request: OpenAuthenticationRequest) -> OpenAuthenticationRequest {
+///     OpenAuthenticationRequest {
+///         source: request.source,
+///         bssid: request.bssid,
+///         sequence_number: request.sequence_number,
+///     }
+/// }
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OpenAuthenticationRequest {
-    pub source: [u8; 6],
-    pub bssid: [u8; 6],
+    pub source: OwnAddress,
+    pub bssid: Bssid,
     pub sequence_number: SequenceNumber,
 }
 
 impl OpenAuthenticationRequest {
     pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
-        validate_peer(self.bssid)?;
+        validate_peer(self.bssid.get())?;
         let required = MANAGEMENT_HEADER_LEN + 6;
         if output.len() < required {
             return Err(StationFrameError::OutputTooSmall { required });
@@ -23,9 +47,9 @@ impl OpenAuthenticationRequest {
         write_management_header(
             frame,
             OPEN_AUTHENTICATION_FRAME_CONTROL,
-            self.bssid,
-            self.source,
-            self.bssid,
+            self.bssid.get(),
+            self.source.get(),
+            self.bssid.get(),
             self.sequence_number,
         );
         frame[24..26].copy_from_slice(&OPEN_SYSTEM_ALGORITHM.to_le_bytes());

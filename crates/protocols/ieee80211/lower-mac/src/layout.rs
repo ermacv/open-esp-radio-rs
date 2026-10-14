@@ -1,7 +1,8 @@
 //! Checked placement of a MAC header, optional CCMP header and external body.
 
 use crate::owner::FrameHeader;
-use crate::{ClassSubframe, Ieee80211Capabilities, IndividualAddress, Tid, TxBufferClass, TxFrame};
+use crate::{ClassSubframe, Ieee80211Capabilities, Tid, TxBufferClass, TxFrame};
+use oer_ieee80211_mac::address::IndividualAddress;
 
 /// Portable refusals before the backend receives a prepared source.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

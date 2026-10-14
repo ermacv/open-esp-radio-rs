@@ -199,11 +199,12 @@ use oer_radio_port::{Mint, Poisoned, Slot};
 use crate::{
     Channel, PhyRate, Protection, TbttEvent, TxOutcome, VifRole,
     owner::{
-        AccessPoint, BssColor, Ccmp128Key, Ieee80211Capabilities, IndividualAddress, InterfaceRole,
-        PhaseRate, Station, StationReceive, SupportedBlockAck, SupportedCoex, SupportedEdca,
-        SupportedFilter, SupportedNoAck, SupportedPower, TxFrame,
+        AccessPoint, BssColor, Ccmp128Key, Ieee80211Capabilities, InterfaceRole, PhaseRate,
+        Station, StationReceive, SupportedBlockAck, SupportedCoex, SupportedEdca, SupportedFilter,
+        SupportedNoAck, SupportedPower, TxFrame,
     },
 };
+use oer_ieee80211_mac::address::IndividualAddress;
 
 enum GateKind {}
 

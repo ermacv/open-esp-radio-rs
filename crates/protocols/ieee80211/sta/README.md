@@ -60,6 +60,12 @@ be called from the runtime path; their checked values remain in closed types.
 
 ## Transmit ownership
 
+The interface configuration carries `OwnAddress`; an Open Authentication
+request takes it separately from the peer's `Bssid`. Both wrap the MAC
+crate's checked `IndividualAddress`, so a request cannot swap the local
+transmitter and BSS identities. The test access point admits a request only
+after checking its subtype and all three header addresses.
+
 Every `StaTransmit` or `DataTransmit` carries an owned context alongside its
 buffer and ticket. The service puts that context in the port attempt and
 returns it through `TxDone` or the local unsent path. A station context

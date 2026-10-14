@@ -82,8 +82,10 @@ fn append_rsn_tail(record: &mut ScanRecord, tail: &[u8]) {
 fn encodes_open_authentication_request() {
     let mut output = [0xa5; 32];
     let length = OpenAuthenticationRequest {
-        source: LOCAL,
-        bssid: BSSID,
+        source: crate::address::OwnAddress::new(
+            crate::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap()),
         sequence_number: seq(0x123),
     }
     .encode(&mut output)

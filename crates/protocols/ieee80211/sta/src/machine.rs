@@ -73,10 +73,11 @@ use oer_ieee80211_arbiter::{
     Purpose, Refusal, StationNotice, UpstreamFact,
 };
 use oer_ieee80211_lower_mac::{
-    AckHeader, GroupAddress, HeaderSpec, Ieee80211Capabilities, IndividualAddress, MpduLength,
-    ReceiveFilter, ReturnedMpdu, RxEvidence, RxMetadata, SizedFrame, Station as StationRole,
-    StationReceive, SupportedChannel, SupportedFilter, TxBufferMemory, TxEndStatus, TxOutcome,
+    AckHeader, GroupAddress, HeaderSpec, Ieee80211Capabilities, MpduLength, ReceiveFilter,
+    ReturnedMpdu, RxEvidence, RxMetadata, SizedFrame, Station as StationRole, StationReceive,
+    SupportedChannel, SupportedFilter, TxBufferMemory, TxEndStatus, TxOutcome,
 };
+use oer_ieee80211_mac::address::{Bssid, IndividualAddress, OwnAddress};
 use oer_ieee80211_mac::ccmp::CcmpRxReplayEpoch;
 use oer_ieee80211_mac::{
     management::ProbeRequest,
@@ -522,7 +523,7 @@ const REASON_HANDSHAKE_TIMEOUT: u16 = 15;
 /// What the station connects to and how.
 pub struct StaConfig<K> {
     /// The interface's own address.
-    pub address: [u8; 6],
+    pub address: OwnAddress,
     /// The network's SSID.
     pub ssid: heapless::Vec<u8, SSID_CAPACITY>,
     /// The channels the scan visits, in order.
@@ -1432,7 +1433,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         };
         Some(LinkView {
             epoch: self.epoch?,
-            address: self.config.address,
+            address: self.config.address.get(),
             bssid: connected.bssid,
             association_id: connected.association_id,
             mode: if connected.qos {
@@ -2213,7 +2214,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         ) {
             (JoinStep::AwaitConfigured, Done::Configured) => JoinStep::Authenticate(Authenticate {
                 runtime: StaAuthenticationRuntime::new(
-                    self.config.address,
+                    self.config.address.get(),
                     join.access_point.bssid,
                 ),
                 stage: AuthStage::NeedSend,
@@ -2284,7 +2285,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     match auth.runtime.observe_management_frame(frame) {
                         Ok(StaAuthenticationEvent::Authenticated { .. }) => {
                             join.step = JoinStep::Associate(StaAssociationRuntime::new(
-                                self.config.address,
+                                self.config.address.get(),
                                 join.access_point.bssid,
                                 match self.config.security {
                                     StaSecurity::Open => {
@@ -2358,7 +2359,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             // The access point ended the link: no Deauthentication back.
             return leave_connected(connected, StaDisconnectReason::Peer { reason_code }, None);
         }
-        if let Some(eapol) = received_eapol(frame, self.config.address, connected.bssid) {
+        if let Some(eapol) = received_eapol(frame, self.config.address.get(), connected.bssid) {
             return self.group_message(connected, eapol);
         }
         let step = connected
@@ -2633,7 +2634,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         if let Some(reason_code) = peer_disconnect(frame, handshake.bssid) {
             return leave_keyed(StaDisconnectReason::Peer { reason_code }, None);
         }
-        let Some(eapol) = received_eapol(frame, self.config.address, handshake.bssid) else {
+        let Some(eapol) = received_eapol(frame, self.config.address.get(), handshake.bssid) else {
             return State::Handshake(handshake);
         };
         let StaSecurity::Wpa2Personal { pmk } = &self.config.security else {
@@ -2769,7 +2770,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         eapol: &[u8],
         purpose: TxPurpose,
     ) -> Result<StaTransmit<'id, T, K>, Unsent> {
-        let address = self.config.address;
+        let address = self.config.address.get();
         let sequence_number = self.sequence.take();
         self.encode_individual(
             |frame| {
@@ -3010,7 +3011,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         bssid: [u8; 6],
         power_management: StaPowerManagement,
     ) -> Option<StaTransmit<'id, T, K>> {
-        let address = self.config.address;
+        let address = self.config.address.get();
         let sequence_number = self.sequence.take();
         let mut transmit = self
             .encode_individual(
@@ -3066,7 +3067,10 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                         None,
                     );
                 };
-                let bssid = join.access_point.bssid;
+                let Some(bssid) = IndividualAddress::new(join.access_point.bssid).map(Bssid::new)
+                else {
+                    return (leave_unkeyed(StaDisconnectReason::Encode), None);
+                };
                 let address = self.config.address;
                 let encoded = self.encode_individual(
                     |frame| {
@@ -3099,7 +3103,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 Ok(StaAssociationPoll::Transmit(attempt)) => {
                     let capabilities = self.config.association;
                     let phy = self.config.phy;
-                    let address = self.config.address;
+                    let address = self.config.address.get();
                     let access_point = &join.access_point;
                     let rsn = &join.rsn;
                     let encoded = self.encode_individual(
@@ -3182,7 +3186,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             });
         }
         let supplicant = RsnStaSupplicant::try_new(
-            self.config.address,
+            self.config.address.get(),
             bssid,
             (self.config.nonce)(),
             join.rsn.as_bytes(),
@@ -3292,7 +3296,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             None => self.sequence.take(),
         };
         let frame = oer_ieee80211_mac::station::StaProtectedDataFrame {
-            source: self.config.address,
+            source: self.config.address.get(),
             bssid,
             destination: bssid,
             sequence_number,
@@ -3318,7 +3322,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         let rates = self.config.supported_rates;
         let len = ProbeRequest {
             destination: [0xff; 6],
-            source: self.config.address,
+            source: self.config.address.get(),
             bssid: [0xff; 6],
             sequence_number,
             ssid: &self.config.ssid,
@@ -3364,7 +3368,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         bssid: [u8; 6],
         body: &[u8],
     ) -> Option<StaTransmit<'id, T, K>> {
-        let address = self.config.address;
+        let address = self.config.address.get();
         let sequence_number = self.sequence.take();
         self.encode_individual(
             |frame| {

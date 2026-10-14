@@ -21,9 +21,10 @@
 //! the replay check and, on a non-QoS BSS, the station's sequence space.
 
 use oer_ieee80211_lower_mac::{
-    AckHeader, Counter, HeaderSpec, IndividualAddress, MpduLength, ReturnedMpdu, RxCryptoStatus,
-    RxEvidence, RxMeta, SizedFrame, TxBufferMemory, TxOutcome,
+    AckHeader, Counter, HeaderSpec, MpduLength, ReturnedMpdu, RxCryptoStatus, RxEvidence, RxMeta,
+    SizedFrame, TxBufferMemory, TxOutcome,
 };
+use oer_ieee80211_mac::address::IndividualAddress;
 use oer_ieee80211_mac::{
     ccmp::{CcmpHeader, CcmpRxProtection},
     data::{DataInterfaceRole, EthernetFrameParts, decapsulate_data_frames},

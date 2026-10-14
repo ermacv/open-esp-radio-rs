@@ -16,9 +16,8 @@ use oer_espressif_ieee80211_policy::{
     rate_control::EspressifRateControl, rate_selection::EspressifRateSelection,
 };
 use oer_ieee80211_arbiter::ArbiterPolicy;
-use oer_ieee80211_lower_mac::{
-    Channel, ChannelWidth, IndividualAddress, LowerMacSetup, SignalMetadata,
-};
+use oer_ieee80211_lower_mac::{Channel, ChannelWidth, LowerMacSetup, SignalMetadata};
+use oer_ieee80211_mac::address::IndividualAddress;
 use oer_ieee80211_mac::{
     phy::LegacyRate,
     phy::PhyRate,
@@ -117,7 +116,9 @@ fn config(security: StaSecurity) -> StaConfig<ModelCaps24> {
     let mut channels = [None; 16];
     channels[0] = SupportedChannel::new(channel6());
     StaConfig {
-        address: LOCAL,
+        address: oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
         ssid: heapless::Vec::from_slice(SSID).unwrap(),
         channels,
         dwell: Duration::from_millis(10),

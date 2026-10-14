@@ -13,6 +13,7 @@
 //! required before step 2 of #563 merges; replacing indexing mechanically
 //! with `.get()` or suppressing its lint does not establish the contract.
 
+pub mod address;
 pub mod ap;
 pub mod beacon;
 pub mod block_ack;

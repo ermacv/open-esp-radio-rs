@@ -3,6 +3,8 @@
 //! These pure transforms form the source-owned AP protocol boundary.
 //! Association ownership, deferred
 //! queues and wakeups stay with the radio owner.
+//! Management decoding splits the fixed header and each fixed body as arrays
+//! before accessing fields; variable information elements remain borrowed slices.
 
 use crate::{
     block_ack::{BlockAckAction, parse_block_ack_action},
@@ -456,21 +458,15 @@ impl ApProtectedDataFrame<'_> {
                 required: ethernet_end,
             });
         }
-        let Some(&destination) = storage[ethernet_offset..].first_chunk::<6>() else {
+        let Some(&ethernet_header) =
+            storage[ethernet_offset..ethernet_end].first_chunk::<ETHERNET_HEADER_LEN>()
+        else {
             return Err(ApDataFrameError::EthernetFrameTooShort);
         };
+        let [destination @ .., _, _, _, _, _, _, _, _] = ethernet_header;
         if destination != self.peer {
             return Err(ApDataFrameError::InvalidPeer);
         }
-        let Some(&source) = storage[ethernet_offset + 6..].first_chunk::<6>() else {
-            return Err(ApDataFrameError::EthernetFrameTooShort);
-        };
-        let ether_type =
-            u16::from_be_bytes([storage[ethernet_offset + 12], storage[ethernet_offset + 13]]);
-        let mut ethernet_header = [0_u8; ETHERNET_HEADER_LEN];
-        ethernet_header[..6].copy_from_slice(&destination);
-        ethernet_header[6..12].copy_from_slice(&source);
-        ethernet_header[12..14].copy_from_slice(&ether_type.to_be_bytes());
         let mut plan = plan_data_encapsulation(
             DataInterfaceRole::AccessPoint,
             self.access_point,
@@ -580,35 +576,61 @@ pub fn parse_ap_management_request<'a>(
     frame: &'a [u8],
     access_point: [u8; 6],
 ) -> Option<ApManagementRequest<'a>> {
-    if frame.len() < MANAGEMENT_HEADER_LEN {
-        return None;
-    }
-    let frame_control = u16::from_le_bytes([frame[0], frame[1]]);
+    let (header, body) = frame.split_first_chunk::<MANAGEMENT_HEADER_LEN>()?;
+    let [
+        fc0,
+        fc1,
+        _duration0,
+        _duration1,
+        d0,
+        d1,
+        d2,
+        d3,
+        d4,
+        d5,
+        p0,
+        p1,
+        p2,
+        p3,
+        p4,
+        p5,
+        b0,
+        b1,
+        b2,
+        b3,
+        b4,
+        b5,
+        sc0,
+        _sc1,
+    ] = *header;
+    let destination = [d0, d1, d2, d3, d4, d5];
+    let peer = [p0, p1, p2, p3, p4, p5];
+    let bssid = [b0, b1, b2, b3, b4, b5];
+    let frame_control = u16::from_le_bytes([fc0, fc1]);
     if frame_control & 0x000c != 0 {
         return None;
     }
     let subtype = (frame_control >> 4) & 0x0f;
-    let peer: [u8; 6] = frame[10..16].try_into().ok()?;
     if subtype == 4 {
         if frame_control & 0x470f != 0
-            || frame[22] & 0x0f != 0
+            || sc0 & 0x0f != 0
             || peer[0] & 1 != 0
             || peer == [0; 6]
-            || (frame[4..10] != access_point && frame[4..10] != [0xff; 6])
-            || (frame[16..22] != access_point && frame[16..22] != [0xff; 6])
+            || (destination != access_point && destination != [0xff; 6])
+            || (bssid != access_point && bssid != [0xff; 6])
         {
             return None;
         }
         return Some(ApManagementRequest::Probe {
             peer,
-            ssid: probe::ssid(&frame[24..])?,
+            ssid: probe::ssid(body)?,
         });
     }
     if frame_control & 0x030f != 0
         || peer[0] & 1 != 0
         || peer == [0; 6]
-        || frame[4..10] != access_point
-        || frame[16..22] != access_point
+        || destination != access_point
+        || bssid != access_point
     {
         return None;
     }
@@ -618,14 +640,17 @@ pub fn parse_ap_management_request<'a>(
     if protected && !matches!(subtype, 10 | 12 | 13) {
         return None;
     }
-    let body_offset = MANAGEMENT_HEADER_LEN + if protected { CCMP_HEADER_LEN } else { 0 };
-    let management_body = frame.get(body_offset..)?;
+    let management_body = if protected {
+        body.split_first_chunk::<CCMP_HEADER_LEN>()?.1
+    } else {
+        body
+    };
     match subtype {
         11 => {
-            let body = frame.get(24..30)?;
-            let algorithm = u16::from_le_bytes([body[0], body[1]]);
-            let transaction = u16::from_le_bytes([body[2], body[3]]);
-            let status = u16::from_le_bytes([body[4], body[5]]);
+            let (&[a0, a1, t0, t1, s0, s1], body) = management_body.split_first_chunk()?;
+            let algorithm = u16::from_le_bytes([a0, a1]);
+            let transaction = u16::from_le_bytes([t0, t1]);
+            let status = u16::from_le_bytes([s0, s1]);
             match algorithm {
                 OPEN_SYSTEM_AUTHENTICATION_ALGORITHM => (transaction == 1 && status == 0)
                     .then_some(ApManagementRequest::OpenAuthentication { peer }),
@@ -633,15 +658,15 @@ pub fn parse_ap_management_request<'a>(
                     peer,
                     transaction,
                     status,
-                    body: &frame[30..],
+                    body,
                 }),
                 _ => None,
             }
         }
         0 => {
-            let fixed = frame.get(24..28)?;
-            let capabilities = u16::from_le_bytes([fixed[0], fixed[1]]);
-            let information_elements = frame.get(28..)?;
+            let (&[c0, c1, _listen0, _listen1], information_elements) =
+                management_body.split_first_chunk()?;
+            let capabilities = u16::from_le_bytes([c0, c1]);
             let ht_capabilities = ht_peer_capabilities(information_elements);
             Some(ApManagementRequest::Association {
                 peer,
@@ -656,8 +681,8 @@ pub fn parse_ap_management_request<'a>(
             })
         }
         10 | 12 => {
-            let body = management_body.get(..2)?;
-            let reason = u16::from_le_bytes([body[0], body[1]]);
+            let (reason, _) = management_body.split_first_chunk()?;
+            let reason = u16::from_le_bytes(*reason);
             if subtype == 10 {
                 Some(ApManagementRequest::Disassociation { peer, reason })
             } else {
@@ -937,12 +962,11 @@ pub fn write_ht_association_response_frame_for_security(
     security: ApSecurityPolicy,
     protection: ApBssProtection,
 ) -> Result<usize, ApAssociationResponseError> {
-    if output.len() < AP_ASSOCIATION_RESPONSE_LEN {
-        return Err(ApAssociationResponseError::OutputTooSmall {
+    let (frame, _) = output
+        .split_first_chunk_mut::<AP_ASSOCIATION_RESPONSE_LEN>()
+        .ok_or(ApAssociationResponseError::OutputTooSmall {
             required: AP_ASSOCIATION_RESPONSE_LEN,
-        });
-    }
-    let frame = &mut output[..AP_ASSOCIATION_RESPONSE_LEN];
+        })?;
     frame.fill(0);
     write_management_header(frame, 0x0010, access_point, peer, management_sequence);
     let Some(body) =

@@ -5,7 +5,8 @@
 //! plaintext v2: it does not select a radio channel, install a key, allocate a
 //! DMA descriptor or weaken a receive filter. In particular, decoding a frame
 //! here is not evidence that a backend has admitted or authenticated its
-//! sender.
+//! sender. Fixed headers are borrowed arrays after a single length check;
+//! variable Action data and ciphertext remain borrowed slices.
 
 use core::fmt;
 
@@ -73,10 +74,10 @@ pub enum EspNowVersionError {
 /// Callers must immediately pass the complete MPDU to the selected strict
 /// v1/v2 parser; this function is not admission by itself.
 pub fn esp_now_wire_version(body: &[u8]) -> Result<EspNowWireVersion, EspNowVersionError> {
-    const MINIMUM: usize = 15;
-    if body.len() < MINIMUM {
-        return Err(EspNowVersionError::ActionTooShort { minimum: MINIMUM });
-    }
+    const MINIMUM: usize = ESP_NOW_V1_ACTION_OVERHEAD;
+    let (body, _) = body
+        .split_first_chunk::<MINIMUM>()
+        .ok_or(EspNowVersionError::ActionTooShort { minimum: MINIMUM })?;
     if body[0] != ESP_NOW_ACTION_CATEGORY {
         return Err(EspNowVersionError::UnsupportedActionCategory(body[0]));
     }
@@ -510,12 +511,12 @@ impl<'payload> EspNowV1Frame<'payload> {
 
     /// Parse one complete unprotected, unfragmented ESP-NOW v1 Action MPDU.
     pub fn parse(input: &'payload [u8]) -> Result<Self, EspNowV1WireError> {
-        if input.len() < ESP_NOW_MANAGEMENT_HEADER_LEN {
-            return Err(EspNowV1WireError::FrameTooShort {
+        let (header, action) = input
+            .split_first_chunk::<ESP_NOW_MANAGEMENT_HEADER_LEN>()
+            .ok_or(EspNowV1WireError::FrameTooShort {
                 minimum: ESP_NOW_MANAGEMENT_HEADER_LEN,
-            });
-        }
-        let frame_control = u16::from_le_bytes([input[0], input[1]]);
+            })?;
+        let frame_control = u16::from_le_bytes([header[0], header[1]]);
         if frame_control & PROTOCOL_VERSION_MASK != 0
             || frame_control & FRAME_TYPE_AND_SUBTYPE_MASK != ACTION_FRAME_CONTROL
             || frame_control & TO_FROM_DS_MASK != 0
@@ -527,23 +528,24 @@ impl<'payload> EspNowV1Frame<'payload> {
             return Err(EspNowV1WireError::ProtectedFrameUnsupported);
         }
 
-        let destination =
-            EspNowDestination::new([input[4], input[5], input[6], input[7], input[8], input[9]])
-                .map_err(EspNowV1WireError::InvalidDestination)?;
+        let destination = EspNowDestination::new([
+            header[4], header[5], header[6], header[7], header[8], header[9],
+        ])
+        .map_err(EspNowV1WireError::InvalidDestination)?;
         let source = EspNowUnicastAddress::new([
-            input[10], input[11], input[12], input[13], input[14], input[15],
+            header[10], header[11], header[12], header[13], header[14], header[15],
         ])
         .map_err(EspNowV1WireError::InvalidSource)?;
-        if input[16..22] != BROADCAST_ADDRESS {
+        if header[16..22] != BROADCAST_ADDRESS {
             return Err(EspNowV1WireError::InvalidBssid);
         }
-        let sequence_control = u16::from_le_bytes([input[22], input[23]]);
+        let sequence_control = u16::from_le_bytes([header[22], header[23]]);
         if frame_control & MORE_FRAGMENTS_FLAG != 0 || sequence_control & 0x000f != 0 {
             return Err(EspNowV1WireError::FragmentedFrame(
                 (sequence_control & 0x000f) as u8,
             ));
         }
-        let action = EspNowV1Action::parse(&input[ESP_NOW_MANAGEMENT_HEADER_LEN..])?;
+        let action = EspNowV1Action::parse(action)?;
         Ok(Self {
             destination,
             source,
@@ -579,10 +581,20 @@ impl<'frame> EspNowProtectedV1Envelope<'frame> {
     /// Parse protected-frame metadata while leaving ciphertext and MIC
     /// unauthenticated and uninterpreted.
     pub fn parse(input: &'frame [u8]) -> Result<Self, EspNowProtectedV1WireError> {
-        if input.len() < ESP_NOW_V1_MIN_PROTECTED_MPDU_LEN {
-            return Err(EspNowProtectedV1WireError::FrameTooShort {
-                minimum: ESP_NOW_V1_MIN_PROTECTED_MPDU_LEN,
-            });
+        let too_short = || EspNowProtectedV1WireError::FrameTooShort {
+            minimum: ESP_NOW_V1_MIN_PROTECTED_MPDU_LEN,
+        };
+        let (management_header, protected) = input
+            .split_first_chunk::<ESP_NOW_MANAGEMENT_HEADER_LEN>()
+            .ok_or_else(too_short)?;
+        let (ccmp_header, protected_body) = protected
+            .split_first_chunk::<ESP_NOW_CCMP_HEADER_LEN>()
+            .ok_or_else(too_short)?;
+        let (ciphertext, mic) = protected_body
+            .split_last_chunk::<ESP_NOW_CCMP_MIC_LEN>()
+            .ok_or_else(too_short)?;
+        if ciphertext.len() < ESP_NOW_V1_ACTION_OVERHEAD {
+            return Err(too_short());
         }
         if input.len() > ESP_NOW_V1_MAX_PROTECTED_MPDU_LEN {
             return Err(EspNowProtectedV1WireError::FrameTooLong {
@@ -591,7 +603,7 @@ impl<'frame> EspNowProtectedV1Envelope<'frame> {
             });
         }
 
-        let frame_control = u16::from_le_bytes([input[0], input[1]]);
+        let frame_control = u16::from_le_bytes([management_header[0], management_header[1]]);
         if frame_control & PROTOCOL_VERSION_MASK != 0
             || frame_control & FRAME_TYPE_AND_SUBTYPE_MASK != ACTION_FRAME_CONTROL
             || frame_control & TO_FROM_DS_MASK != 0
@@ -605,36 +617,39 @@ impl<'frame> EspNowProtectedV1Envelope<'frame> {
             return Err(EspNowProtectedV1WireError::ProtectionRequired);
         }
 
-        let destination_bytes = [input[4], input[5], input[6], input[7], input[8], input[9]];
+        let destination_bytes = [
+            management_header[4],
+            management_header[5],
+            management_header[6],
+            management_header[7],
+            management_header[8],
+            management_header[9],
+        ];
         if destination_bytes == BROADCAST_ADDRESS {
             return Err(EspNowProtectedV1WireError::EncryptedBroadcastUnsupported);
         }
         let destination = EspNowUnicastAddress::new(destination_bytes)
             .map_err(EspNowProtectedV1WireError::InvalidDestination)?;
         let source = EspNowUnicastAddress::new([
-            input[10], input[11], input[12], input[13], input[14], input[15],
+            management_header[10],
+            management_header[11],
+            management_header[12],
+            management_header[13],
+            management_header[14],
+            management_header[15],
         ])
         .map_err(EspNowProtectedV1WireError::InvalidSource)?;
-        if input[16..22] != BROADCAST_ADDRESS {
+        if management_header[16..22] != BROADCAST_ADDRESS {
             return Err(EspNowProtectedV1WireError::InvalidBssid);
         }
 
-        let sequence_control = u16::from_le_bytes([input[22], input[23]]);
+        let sequence_control = u16::from_le_bytes([management_header[22], management_header[23]]);
         if frame_control & MORE_FRAGMENTS_FLAG != 0 || sequence_control & 0x000f != 0 {
             return Err(EspNowProtectedV1WireError::FragmentedFrame(
                 (sequence_control & 0x000f) as u8,
             ));
         }
 
-        let Some(ccmp_header) =
-            input[ESP_NOW_MANAGEMENT_HEADER_LEN..].first_chunk::<ESP_NOW_CCMP_HEADER_LEN>()
-        else {
-            return Err(EspNowProtectedV1WireError::FrameTooShort {
-                minimum: ESP_NOW_MANAGEMENT_HEADER_LEN
-                    + ESP_NOW_CCMP_HEADER_LEN
-                    + ESP_NOW_CCMP_MIC_LEN,
-            });
-        };
         if ccmp_header[2] != 0 || ccmp_header[3] & CCMP_RESERVED_CONTROL_MASK != 0 {
             return Err(EspNowProtectedV1WireError::ReservedCcmpBitsSet {
                 reserved_byte: ccmp_header[2],
@@ -652,24 +667,6 @@ impl<'frame> EspNowProtectedV1Envelope<'frame> {
             | (u64::from(ccmp_header[7]) << 40);
         let packet_number = EspNowCcmpPacketNumber::new(packet_number)
             .map_err(EspNowProtectedV1WireError::InvalidPacketNumber)?;
-
-        let protected_body = &input[ESP_NOW_MANAGEMENT_HEADER_LEN + ESP_NOW_CCMP_HEADER_LEN..];
-        // A fixed MIC extent for a future authenticated decoder.
-        let Some((ciphertext, mic)) = protected_body.split_last_chunk::<ESP_NOW_CCMP_MIC_LEN>()
-        else {
-            return Err(EspNowProtectedV1WireError::FrameTooShort {
-                minimum: ESP_NOW_MANAGEMENT_HEADER_LEN
-                    + ESP_NOW_CCMP_HEADER_LEN
-                    + ESP_NOW_CCMP_MIC_LEN,
-            });
-        };
-        let Some(management_header) = input.first_chunk::<ESP_NOW_MANAGEMENT_HEADER_LEN>() else {
-            return Err(EspNowProtectedV1WireError::FrameTooShort {
-                minimum: ESP_NOW_MANAGEMENT_HEADER_LEN
-                    + ESP_NOW_CCMP_HEADER_LEN
-                    + ESP_NOW_CCMP_MIC_LEN,
-            });
-        };
 
         Ok(Self {
             management_header,

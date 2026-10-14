@@ -1,6 +1,11 @@
 //! Validate fragment headers, role mapping and authenticated payload identity.
+//!
+//! The fixed MAC header and optional QoS control are split as arrays once.
+//! Fragment admission carries that decoded sequence control and payload view;
+//! it does not revisit raw offsets after validating the header.
 
 use crate::ccmp::CcmpHeader;
+use crate::data::IEEE80211_LEGACY_DATA_HEADER_LEN;
 use crate::sequence::SequenceNumber;
 
 use super::{
@@ -20,7 +25,7 @@ pub fn parse_open_data_fragment(
     mpdu: &[u8],
 ) -> Result<OpenDataFragment<'_>, OpenDataFragmentError> {
     let header = parse_data_header(role, mpdu, DataFragmentProtection::Open)?;
-    parse_data_fragment(header, mpdu, &mpdu[header.header_length..], None)
+    parse_data_fragment(header, header.payload, None)
 }
 
 /// Parse one hardware-authenticated CCMP data fragment.
@@ -44,15 +49,13 @@ pub fn parse_ccmp_data_fragment<'frame>(
     )?;
     parse_data_fragment(
         header,
-        mpdu,
         authenticated_payload,
         Some(ccmp_header.packet_number()),
     )
 }
 
 fn parse_data_fragment<'frame>(
-    header: ParsedOpenDataHeader,
-    mpdu: &[u8],
+    header: ParsedOpenDataHeader<'_>,
     payload: &'frame [u8],
     packet_number: Option<CcmpPacketNumber>,
 ) -> Result<OpenDataFragment<'frame>, OpenDataFragmentError> {
@@ -74,7 +77,7 @@ fn parse_data_fragment<'frame>(
         // individual.
         return Err(OpenDataFragmentError::InvalidDestination);
     }
-    let sequence_control = u16::from_le_bytes([mpdu[22], mpdu[23]]);
+    let sequence_control = header.sequence_control;
     let fragment_number = (sequence_control & 0x000f) as u8;
     let more_fragments = header.frame_control & MORE_FRAGMENTS != 0;
     if fragment_number == 0 && !more_fragments {
@@ -125,10 +128,11 @@ pub fn parse_ccmp_data_identity(
 }
 
 #[derive(Clone, Copy)]
-struct ParsedOpenDataHeader {
+struct ParsedOpenDataHeader<'frame> {
     identity: OpenDataFragmentIdentity,
     frame_control: u16,
-    header_length: usize,
+    sequence_control: u16,
+    payload: &'frame [u8],
     qos_amsdu_present: bool,
 }
 
@@ -136,11 +140,40 @@ fn parse_data_header(
     role: DataInterfaceRole,
     mpdu: &[u8],
     protection: DataFragmentProtection,
-) -> Result<ParsedOpenDataHeader, OpenDataFragmentError> {
-    if mpdu.len() < 24 {
-        return Err(OpenDataFragmentError::Truncated);
-    }
-    let frame_control = u16::from_le_bytes([mpdu[0], mpdu[1]]);
+) -> Result<ParsedOpenDataHeader<'_>, OpenDataFragmentError> {
+    let (header, remainder) = mpdu
+        .split_first_chunk::<IEEE80211_LEGACY_DATA_HEADER_LEN>()
+        .ok_or(OpenDataFragmentError::Truncated)?;
+    let [
+        fc0,
+        fc1,
+        _duration0,
+        _duration1,
+        r0,
+        r1,
+        r2,
+        r3,
+        r4,
+        r5,
+        t0,
+        t1,
+        t2,
+        t3,
+        t4,
+        t5,
+        a0,
+        a1,
+        a2,
+        a3,
+        a4,
+        a5,
+        sc0,
+        sc1,
+    ] = *header;
+    let receiver_address = [r0, r1, r2, r3, r4, r5];
+    let transmitter_address = [t0, t1, t2, t3, t4, t5];
+    let address3 = [a0, a1, a2, a3, a4, a5];
+    let frame_control = u16::from_le_bytes([fc0, fc1]);
     let subtype = frame_control & TYPE_AND_SUBTYPE;
     if frame_control & 0x0003 != 0 || (subtype != DATA && subtype != QOS_DATA) {
         return Err(OpenDataFragmentError::NotData);
@@ -165,24 +198,15 @@ fn parse_data_header(
         return Err(OpenDataFragmentError::RoleMismatch);
     }
 
-    let qos = subtype == QOS_DATA;
-    let header_length = if qos { 26 } else { 24 };
-    if mpdu.len() < header_length {
-        return Err(OpenDataFragmentError::Truncated);
-    }
-    let qos_control = if qos {
-        Some(u16::from_le_bytes([mpdu[24], mpdu[25]]))
+    let (qos_control, payload) = if subtype == QOS_DATA {
+        let (qos, payload) = remainder
+            .split_first_chunk()
+            .ok_or(OpenDataFragmentError::Truncated)?;
+        (Some(u16::from_le_bytes(*qos)), payload)
     } else {
-        None
+        (None, remainder)
     };
-    let sequence_control = u16::from_le_bytes([mpdu[22], mpdu[23]]);
-    let (Some(&receiver_address), Some(&transmitter_address), Some(&address3)) = (
-        mpdu[4..].first_chunk::<6>(),
-        mpdu[10..].first_chunk::<6>(),
-        mpdu[16..].first_chunk::<6>(),
-    ) else {
-        return Err(OpenDataFragmentError::Truncated);
-    };
+    let sequence_control = u16::from_le_bytes([sc0, sc1]);
     if transmitter_address == [0; 6] || transmitter_address[0] & 1 != 0 {
         return Err(OpenDataFragmentError::InvalidTransmitter);
     }
@@ -197,7 +221,8 @@ fn parse_data_header(
             qos_control,
         },
         frame_control,
-        header_length,
-        qos_amsdu_present: qos && mpdu[24] & QOS_AMSDU_PRESENT != 0,
+        sequence_control,
+        payload,
+        qos_amsdu_present: qos_control.is_some_and(|qos| qos & u16::from(QOS_AMSDU_PRESENT) != 0),
     })
 }

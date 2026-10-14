@@ -223,15 +223,12 @@ impl StaProtectedEthernetFrame {
 
         // Preserve the bytes that the new CCMP/LLC prefix overlaps before
         // mutating the shared allocation.
-        let (Some(&destination), Some(&source)) = (
-            storage[ethernet_offset..].first_chunk::<6>(),
-            storage[ethernet_offset + 6..].first_chunk::<6>(),
-        ) else {
+        let Some(&ethernet) =
+            storage[ethernet_offset..ethernet_end].first_chunk::<ETHERNET_HEADER_LEN>()
+        else {
             return Err(StationFrameError::EthernetFrameTooShort);
         };
-        let ether_type =
-            u16::from_be_bytes([storage[ethernet_offset + 12], storage[ethernet_offset + 13]]);
-        let ethernet = ethernet_header(destination, source, ether_type);
+        let [_, _, _, _, _, _, source @ .., _, _] = ethernet;
         let mut plan = plan_data_encapsulation_with_he_control(
             DataInterfaceRole::Station,
             self.bssid,

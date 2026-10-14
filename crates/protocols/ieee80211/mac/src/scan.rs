@@ -428,40 +428,42 @@ pub fn best_matching_ssid_and_security<'a>(
 }
 
 /// Decode one beacon or probe response into an owned bounded record.
+///
+/// The fixed management and beacon fields are checked as one array before
+/// interpreting the variable information elements.
 pub fn parse_management(frame: &[u8], fallback_channel: u8, rssi: i8) -> Option<ScanRecord> {
-    if frame.len() < 36 {
-        return None;
-    }
-    let frame_control = u16::from_le_bytes([frame[0], frame[1]]);
+    let (header, elements) = frame.split_first_chunk::<36>()?;
+    let frame_control = u16::from_le_bytes([header[0], header[1]]);
     let subtype = (frame_control >> 4) & 0x0f;
     if frame_control & 0x000c != 0 || !matches!(subtype, 5 | 8) {
         return None;
     }
 
     let mut record = ScanRecord::EMPTY;
-    record.bssid.copy_from_slice(&frame[16..22]);
+    record.bssid.copy_from_slice(&header[16..22]);
     record.channel = fallback_channel;
     record.rssi = rssi;
+    let [.., t0, t1, t2, t3, t4, t5, t6, t7, b0, b1, c0, c1] = *header;
     record.timestamp =
-        crate::tsf::TsfInstant::from_micros(u64::from_le_bytes(*frame[24..].first_chunk::<8>()?));
-    record.beacon_interval_tu = u16::from_le_bytes([frame[32], frame[33]]);
-    record.capability_info = u16::from_le_bytes([frame[34], frame[35]]);
+        crate::tsf::TsfInstant::from_micros(u64::from_le_bytes([t0, t1, t2, t3, t4, t5, t6, t7]));
+    record.beacon_interval_tu = u16::from_le_bytes([b0, b1]);
+    record.capability_info = u16::from_le_bytes([c0, c1]);
     record.privacy = record.capability_info & 0x0010 != 0;
 
-    let mut offset = 36;
-    while offset + 2 <= frame.len() {
-        let id = frame[offset];
-        let length = usize::from(frame[offset + 1]);
+    let mut offset = 0;
+    while offset + 2 <= elements.len() {
+        let id = elements[offset];
+        let length = usize::from(elements[offset + 1]);
         offset += 2;
         let Some(end) = offset.checked_add(length) else {
             record.information_elements_truncated = true;
             break;
         };
-        if end > frame.len() {
+        if end > elements.len() {
             record.information_elements_truncated = true;
             break;
         }
-        let value = &frame[offset..end];
+        let value = &elements[offset..end];
         match id {
             0 if length <= record.ssid.len() => {
                 record.ssid[..length].copy_from_slice(value);
@@ -481,7 +483,7 @@ pub fn parse_management(frame: &[u8], fallback_channel: u8, rssi: i8) -> Option<
             45 if length + 2 == HT_CAPABILITY_IE_LEN => {
                 record
                     .ht_capability_ie
-                    .copy_from_slice(&frame[offset - 2..end]);
+                    .copy_from_slice(&elements[offset - 2..end]);
                 record.ht_capability_ie_present = true;
             }
             48 => {
@@ -489,7 +491,7 @@ pub fn parse_management(frame: &[u8], fallback_channel: u8, rssi: i8) -> Option<
                 record.rsn_ie_count = record.rsn_ie_count.saturating_add(1);
                 let total = length + 2;
                 if total <= record.rsn_ie.len() {
-                    record.rsn_ie[..total].copy_from_slice(&frame[offset - 2..end]);
+                    record.rsn_ie[..total].copy_from_slice(&elements[offset - 2..end]);
                     record.rsn_ie_len = total as u8;
                 } else {
                     record.information_elements_truncated = true;
@@ -504,13 +506,13 @@ pub fn parse_management(frame: &[u8], fallback_channel: u8, rssi: i8) -> Option<
             61 if length + 2 == HT_OPERATION_IE_LEN => {
                 record
                     .ht_operation_ie
-                    .copy_from_slice(&frame[offset - 2..end]);
+                    .copy_from_slice(&elements[offset - 2..end]);
                 record.ht_operation_ie_present = true;
             }
             244 => {
                 let total = length + 2;
                 if total <= record.rsnxe.len() {
-                    record.rsnxe[..total].copy_from_slice(&frame[offset - 2..end]);
+                    record.rsnxe[..total].copy_from_slice(&elements[offset - 2..end]);
                     record.rsnxe_len = total as u8;
                 } else {
                     record.information_elements_truncated = true;
@@ -519,7 +521,7 @@ pub fn parse_management(frame: &[u8], fallback_channel: u8, rssi: i8) -> Option<
             255 if value.first().copied() == Some(HE_CAPABILITIES_EXTENSION_ID) => {
                 let total = length + 2;
                 if total <= record.he_capability_ie.len() {
-                    record.he_capability_ie[..total].copy_from_slice(&frame[offset - 2..end]);
+                    record.he_capability_ie[..total].copy_from_slice(&elements[offset - 2..end]);
                     record.he_capability_ie_len = total as u8;
                 } else {
                     record.information_elements_truncated = true;
@@ -528,7 +530,7 @@ pub fn parse_management(frame: &[u8], fallback_channel: u8, rssi: i8) -> Option<
             255 if value.first().copied() == Some(HE_OPERATION_EXTENSION_ID) => {
                 let total = length + 2;
                 if total <= record.he_operation_ie.len() {
-                    record.he_operation_ie[..total].copy_from_slice(&frame[offset - 2..end]);
+                    record.he_operation_ie[..total].copy_from_slice(&elements[offset - 2..end]);
                     record.he_operation_ie_len = total as u8;
                 } else {
                     record.information_elements_truncated = true;
@@ -540,7 +542,7 @@ pub fn parse_management(frame: &[u8], fallback_channel: u8, rssi: i8) -> Option<
             221 if length >= 6 && value[..4] == [0x00, 0x50, 0xf2, 0x02] => {
                 let total = length + 2;
                 if total <= record.wmm_ie.len() {
-                    record.wmm_ie[..total].copy_from_slice(&frame[offset - 2..end]);
+                    record.wmm_ie[..total].copy_from_slice(&elements[offset - 2..end]);
                     record.wmm_ie_len = total as u8;
                 } else {
                     record.information_elements_truncated = true;
@@ -552,7 +554,7 @@ pub fn parse_management(frame: &[u8], fallback_channel: u8, rssi: i8) -> Option<
     }
     // One trailing byte cannot form an IE header. Treat it as malformed,
     // rather than silently accepting it as absence of a later RSN/WPA IE.
-    record.information_elements_truncated |= offset != frame.len();
+    record.information_elements_truncated |= offset != elements.len();
     Some(record)
 }
 

@@ -46,8 +46,10 @@
 //! `MsduQueue::split` exclusively borrows its storage. Both endpoints retain
 //! that borrow, so no second pair can coexist. After the pair returns, queued
 //! values remain owned by the queue and reach the next receiver in order.
-//! `EthernetFrame` retains its fixed header and bounded payload; malformed
-//! lengths refuse at construction, and received payloads are never clipped.
+//! [`EthernetFrame`] retains its fixed header and bounded payload. Construction
+//! from checked Ethernet parts returns [`FrameTooLong`] for a payload exceeding
+//! [`MAX_ETHERNET_PAYLOAD_LEN`]; received payloads are never clipped. Raw-byte
+//! fixture parsing and serialization do not belong to the product API.
 
 use core::marker::PhantomData;
 use oer_ieee80211_sta::machine::TxRefusal;
@@ -82,10 +84,6 @@ use oer_ieee80211_sta::{
 use oer_ieee80211_upper_mac::rate_selection::{FrameRates, RateSelection};
 use oer_radio_port::Slot;
 use oer_time::{Instant, Timer};
-
-/// The longest Ethernet frame a queue's slot holds: its 14-octet header and
-/// a 1500-octet payload.
-pub const ETHERNET_FRAME: usize = 1514;
 
 /// A backend the station's service drives: its phase, settings and events
 /// as the lower-MAC contract's, and the two buffer classes the service
@@ -281,7 +279,7 @@ impl<K: Ieee80211Capabilities> Levels<K> {
 
 mod ethernet;
 mod msdu_queue;
-pub use ethernet::{EthernetFrame, EthernetFrameError};
+pub use ethernet::{EthernetFrame, FrameTooLong, MAX_ETHERNET_PAYLOAD_LEN};
 pub use msdu_queue::{MsduQueue, MsduReceiver, MsduSender};
 
 /// One checked, owned Ethernet frame with its user priority.
@@ -314,7 +312,7 @@ pub enum ServiceOutput<K> {
     /// The original network operation refused before data admission.
     MsduRefused { packet: TxMsdu, reason: DataRefusal },
     /// A received MSDU cannot fit the checked Ethernet contract.
-    RxMsduRefused(EthernetFrameError),
+    RxMsduRefused(FrameTooLong),
     /// An operation refused before admission. Its resources return and the
     /// service continues; this is not a TX completion or radio statistic.
     TxRefused {

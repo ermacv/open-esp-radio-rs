@@ -445,13 +445,15 @@ impl World<'_> {
     /// The network stack sends one Ethernet frame of user `priority` to
     /// `destination` if its queue has room.
     fn try_send_msdu_at(&self, destination: [u8; 6], priority: u8) -> bool {
-        let mut bytes = [0xab; 114];
-        bytes[..6].copy_from_slice(&destination);
-        bytes[6..12].copy_from_slice(&LOCAL);
-        bytes[12..14].copy_from_slice(&0x0800_u16.to_be_bytes());
         let packet = TxMsdu {
             priority: WmmUserPriority::new(priority).unwrap(),
-            frame: EthernetFrame::new(&bytes).unwrap(),
+            frame: EthernetFrame::from_parts(oer_ieee80211_mac::data::EthernetFrameParts {
+                destination,
+                source: LOCAL,
+                ether_type: 0x0800,
+                payload: &[0xab; 100],
+            })
+            .unwrap(),
         };
         self.stack.borrow().try_send(packet).is_ok()
     }

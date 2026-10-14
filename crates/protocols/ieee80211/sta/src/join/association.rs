@@ -124,8 +124,8 @@ pub struct StaAssociationRuntime {
     local: OwnAddress,
     bssid: Bssid,
     security: LinkProtection,
-    /// Start of the current request epoch: `None` before the first poll and
-    /// while the station waits out a temporary refusal.
+    /// Start of the current request epoch: entry into Association, or the
+    /// scheduled return after a temporary refusal.
     epoch_start: Instant,
     /// Requests sent in the current epoch.
     sent: u16,

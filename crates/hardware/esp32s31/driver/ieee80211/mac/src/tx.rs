@@ -9,9 +9,9 @@ use core::{
     pin::Pin,
 };
 
-#[cfg(not(target_pointer_width = "32"))]
+#[cfg(any(test, feature = "test-support"))]
 extern crate alloc;
-#[cfg(not(target_pointer_width = "32"))]
+#[cfg(any(test, feature = "test-support"))]
 use alloc::boxed::Box;
 
 pub use oer_esp32s31_hal::types::MacLegacyTxResponse;
@@ -28,7 +28,7 @@ use oer_esp32s31_hal::types::{
 };
 
 pub use oer_esp32s31_ieee80211_dma::tx_storage::TxDmaState as TxSlotState;
-#[cfg(not(target_pointer_width = "32"))]
+#[cfg(any(test, feature = "test-support"))]
 use oer_esp32s31_ieee80211_dma::tx_storage::TxDmaStorage;
 
 use oer_esp32s31_ieee80211_dma::tx_storage::{PinnedTxDmaStorage, TxDmaStorageError};
@@ -524,7 +524,7 @@ impl TxCompletion {
     }
 
     /// Construct a semantic completion for a native protocol model.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub const fn new_model(
         cookie: TxCookie,
         status: u8,
@@ -536,13 +536,13 @@ impl TxCompletion {
         )
     }
 
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub const fn with_trigger_flow_model(mut self, trigger_flow: bool) -> Self {
         self.observation = self.observation.with_trigger_flow_model(trigger_flow);
         self
     }
 
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub const fn with_trigger_packet_counts_model(
         mut self,
         primary: u8,
@@ -557,7 +557,7 @@ impl TxCompletion {
         self
     }
 
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub const fn with_ack_snr_encoded_model(mut self, encoded: u8) -> Self {
         self.observation = self.observation.with_ack_snr_encoded_model(encoded);
         self
@@ -3215,6 +3215,27 @@ impl LegacyTxConfig {
 /// Descriptor and buffer storage live in the audited chip-DMA leaf. This
 /// upper owner retains only the queue, generation and completion policy and
 /// cannot manufacture a DMA address or final queue-start capability.
+#[cfg_attr(
+    not(feature = "test-support"),
+    doc = r"
+Production builds cannot synthesize a DMA owner, on either host or chip:
+
+```compile_fail,E0599
+use oer_esp32s31_ieee80211_mac::tx::TxSlot;
+let slot = TxSlot::<512>::new_model();
+```
+
+The production constructor consumes a pinned DMA allocation:
+
+```
+use oer_esp32s31_ieee80211_dma::tx_storage::PinnedTxDmaStorage;
+use oer_esp32s31_ieee80211_mac::tx::TxSlot;
+fn slot(dma: PinnedTxDmaStorage<512>) -> TxSlot<512> {
+    TxSlot::from_dma(dma)
+}
+```
+"
+)]
 pub struct TxSlot<const BUFFER_SIZE: usize> {
     dma: PinnedTxDmaStorage<BUFFER_SIZE>,
     generation_cursor: u32,
@@ -3237,18 +3258,27 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
 
     /// Construct a native model with no asynchronous DMA actor.
     ///
-    /// Existing host tests use this convenience constructor. The leaked
-    /// allocation intentionally models permanently retained target SRAM; it
-    /// is unavailable in 32-bit production builds.
-    #[cfg(not(target_pointer_width = "32"))]
-    pub fn new_model() -> Self {
+    /// The `test-support` feature enables this allocation-backed constructor
+    /// on either architecture. The allocation models permanently retained
+    /// target SRAM; production builds have no model constructors. An invalid
+    /// buffer extent returns the DMA binding error.
+    ///
+    /// ```
+    /// use oer_esp32s31_ieee80211_mac::tx::TxSlot;
+    /// let slot = TxSlot::<512>::new_model()?;
+    /// # Ok::<(), oer_esp32s31_ieee80211_dma::tx_storage::TxDmaStorageError>(())
+    /// ```
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn new_model() -> Result<Self, TxDmaStorageError> {
         const MODEL_DESCRIPTOR_ADDRESS: u32 = 0x2f00_5000;
         const MODEL_BUFFER_ADDRESS: u32 = 0x2f04_0000;
         let storage = Box::leak(Box::new(TxDmaStorage::new()));
-        let dma =
-            TxDmaStorage::pin_static_model(storage, MODEL_DESCRIPTOR_ADDRESS, MODEL_BUFFER_ADDRESS)
-                .expect("native TX model addresses cover the complete allocation");
-        Self::from_dma(dma)
+        let dma = TxDmaStorage::pin_static_model(
+            storage,
+            MODEL_DESCRIPTOR_ADDRESS,
+            MODEL_BUFFER_ADDRESS,
+        )?;
+        Ok(Self::from_dma(dma))
     }
 
     /// Receipt remains in pinned CPU metadata across retry detach/abort. Read
@@ -3492,7 +3522,7 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
     /// TX layer performs its final q0 ENABLE|VALID write under MAC-IRQ
     /// exclusion. Full q0 PPDU/rate configuration must precede this call; this
     /// method intentionally performs no incomplete hardware submission.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn mark_hardware_owned(self: Pin<&mut Self>, cookie: TxCookie) -> Result<(), TxError> {
         let slot = self.get_mut();
         if slot.dma.state() != TxSlotState::Reserved || cookie != slot.active {

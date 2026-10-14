@@ -193,7 +193,7 @@ fn run(case: Case) {
         };
         let mut hardware = Hardware::default();
         let entropy_draws = core::cell::Cell::new(0);
-        let mut slot = pin!(TxSlot::<512>::new_model());
+        let mut slot = pin!(TxSlot::<512>::new_model().unwrap());
         let mac = ApMac::new(
             engine,
             WifiTxResources {

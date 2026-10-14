@@ -635,7 +635,7 @@ impl MacTxCompletionObservation {
     }
 
     /// Construct a semantic completion supplied by a native hardware model.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub const fn new_model(status: u8, detail: u8) -> Self {
         Self {
             status,
@@ -648,13 +648,13 @@ impl MacTxCompletionObservation {
         }
     }
 
-    #[cfg(any(not(target_pointer_width = "32"), feature = "validation-probes"))]
+    #[cfg(any(test, feature = "test-support", feature = "validation-probes"))]
     pub const fn with_trigger_flow_model(mut self, trigger_flow: bool) -> Self {
         self.trigger_flow = trigger_flow;
         self
     }
 
-    #[cfg(any(not(target_pointer_width = "32"), feature = "validation-probes"))]
+    #[cfg(any(test, feature = "test-support", feature = "validation-probes"))]
     pub const fn with_trigger_packet_counts_model(
         mut self,
         primary: u8,
@@ -667,7 +667,7 @@ impl MacTxCompletionObservation {
         self
     }
 
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub const fn with_ack_snr_encoded_model(mut self, encoded: u8) -> Self {
         self.ack_snr_encoded = encoded;
         self
@@ -725,7 +725,7 @@ impl MacHtAmpduCompletionObservation {
         self.block_ack_received
     }
 
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub const fn new_model(
         tx: MacTxCompletionObservation,
         block_ack_control: u8,
@@ -806,7 +806,7 @@ impl MacTxQueueDetached<'_> {
     }
 
     /// Construct a detach edge in a native model with no asynchronous DMA.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub const fn new_model(descriptor_head: u32) -> Self {
         Self {
             descriptor_address_low: descriptor_head & DESCRIPTOR_ADDRESS_LOW_MASK,

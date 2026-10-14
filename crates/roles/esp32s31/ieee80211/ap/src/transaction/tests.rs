@@ -152,7 +152,7 @@ fn unschedulable_beacon_reports_preparation_failure_without_publication() {
         1,
     )
     .unwrap_or_else(|_| panic!("AP engine starts"));
-    let mut slot = pin!(TxSlot::<512>::new_model());
+    let mut slot = pin!(TxSlot::<512>::new_model().unwrap());
     let mut mac = ApMac::new(
         engine,
         WifiTxResources {
@@ -200,7 +200,7 @@ fn prepared_beacon_becomes_evidence_only_after_terminal_success() {
         1,
     )
     .unwrap_or_else(|_| panic!("AP engine starts"));
-    let mut slot = pin!(TxSlot::<512>::new_model());
+    let mut slot = pin!(TxSlot::<512>::new_model().unwrap());
     let mut mac = ApMac::new(
         engine,
         WifiTxResources {
@@ -305,7 +305,7 @@ fn mixed_bss_protects_ordinary_data_with_cts_to_self_at_a_dsss_rate() {
     assert_eq!(engine.bss_protection().erp, ErpProtection::new(true, false));
     assert_eq!(engine.bss_protection().ht, HtProtectionMode::NonHtMixed);
 
-    let mut slot = pin!(TxSlot::<512>::new_model());
+    let mut slot = pin!(TxSlot::<512>::new_model().unwrap());
     let mut mac = ApMac::new(
         engine,
         WifiTxResources {

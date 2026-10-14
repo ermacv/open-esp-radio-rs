@@ -141,7 +141,7 @@ fn make_tx<'a>(
 
 #[test]
 fn authentication_is_encoded_and_completed_by_the_shared_owner() {
-    let mut slot = core::pin::pin!(TxSlot::<256>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<256>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         completions: [Some(completion(0)), None],
@@ -178,7 +178,7 @@ fn authentication_is_encoded_and_completed_by_the_shared_owner() {
 /// Join-path EAPOL follows the default interface schedule (1 Mbit/s DSSS),
 /// which ERP protection never covers: only OFDM rates need CTS-to-Self.
 fn erp_protected_join_eapol_leaves_at_the_dsss_schedule_rate_without_protection() {
-    let mut slot = core::pin::pin!(TxSlot::<256>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<256>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         completions: [Some(completion(0)), None],
@@ -214,7 +214,7 @@ fn erp_protected_join_eapol_leaves_at_the_dsss_schedule_rate_without_protection(
 
 #[test]
 fn ack_timeout_reuses_sequence_and_marks_the_retry_bit() {
-    let mut slot = core::pin::pin!(TxSlot::<256>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<256>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         completions: [Some(completion(5)), Some(completion(0))],
@@ -244,7 +244,7 @@ fn ack_timeout_reuses_sequence_and_marks_the_retry_bit() {
 
 #[test]
 fn eapol_uses_the_recovered_voice_data_priority() {
-    let mut slot = core::pin::pin!(TxSlot::<256>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<256>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         completions: [Some(completion(0)), None],
@@ -273,7 +273,7 @@ fn eapol_uses_the_recovered_voice_data_priority() {
 
 #[test]
 fn a_reconnecting_station_publishes_connection_frames_at_event_46_priority() {
-    let mut slot = core::pin::pin!(TxSlot::<256>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<256>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         completions: [Some(completion(0)), None],
@@ -303,7 +303,7 @@ fn a_reconnecting_station_publishes_connection_frames_at_event_46_priority() {
 
 #[test]
 fn missing_hardware_timeout_edge_quarantines_without_drop_panic() {
-    let mut slot = std::boxed::Box::pin(TxSlot::<256>::new_model());
+    let mut slot = std::boxed::Box::pin(TxSlot::<256>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         ..Hardware::default()
@@ -347,7 +347,7 @@ fn passive_fallback_requires_a_proven_quiescent_tx_owner() {
 
 #[test]
 fn connected_handoff_preserves_the_descriptor_and_association_policy() {
-    let mut slot = core::pin::pin!(TxSlot::<256>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<256>::new_model().unwrap());
     let mut hardware = Hardware::default();
     let mut tx = make_tx(slot.as_mut());
     tx.install_he_bss_color(37);
@@ -382,7 +382,7 @@ fn connected_handoff_preserves_the_descriptor_and_association_policy() {
 
 #[test]
 fn active_handoff_returns_tx_and_crypto_resources_for_later_retry() {
-    let mut slot = core::pin::pin!(TxSlot::<256>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<256>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         ..Hardware::default()
@@ -473,7 +473,7 @@ fn active_handoff_returns_tx_and_crypto_resources_for_later_retry() {
 
 #[test]
 fn idle_timer_rebind_preserves_policy_and_terminal_observation() {
-    let mut slot = core::pin::pin!(TxSlot::<256>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<256>::new_model().unwrap());
     let mut tx = make_tx(slot.as_mut());
     let mut hardware = Hardware {
         prepare: true,

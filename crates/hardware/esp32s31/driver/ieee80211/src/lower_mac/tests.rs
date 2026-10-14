@@ -451,7 +451,7 @@ fn channel(number: u8) -> WifiChannel {
 
 /// A model slot in permanently retained storage, as target SRAM is.
 fn slot() -> Pin<&'static mut TxSlot<512>> {
-    Pin::static_mut(Box::leak(Box::new(TxSlot::new_model())))
+    Pin::static_mut(Box::leak(Box::new(TxSlot::new_model().unwrap())))
 }
 
 fn core() -> Core {

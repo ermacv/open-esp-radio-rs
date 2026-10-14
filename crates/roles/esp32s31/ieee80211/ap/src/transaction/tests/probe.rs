@@ -40,7 +40,7 @@ fn exercise_probe_completion(status: u8) {
         1,
     )
     .unwrap_or_else(|_| panic!("AP engine starts"));
-    let mut slot = pin!(TxSlot::<512>::new_model());
+    let mut slot = pin!(TxSlot::<512>::new_model().unwrap());
     let mut mac = ApMac::new(
         engine,
         WifiTxResources {

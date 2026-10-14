@@ -245,7 +245,7 @@ fn esp_now_protocol(
 
 #[test]
 fn completion_releases_the_slot_and_network_lease_boundary() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         ..Hardware::default()
@@ -288,7 +288,7 @@ fn rejected_lr_frontier_does_not_consume_the_shared_sequence() {
         oer_ieee80211_softmac::EspressifLongRangeRate::Kbps250,
         oer_ieee80211_softmac::EspressifLongRangeRate::Kbps500,
     ] {
-        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
         let mut hardware = Hardware::default();
         let mut tx = make_tx(slot.as_mut(), &mut hardware);
         let (protocol, peer, station, channel) = esp_now_protocol(EspNowPhyMode::LongRange(rate));
@@ -318,7 +318,7 @@ fn rejected_lr_frontier_does_not_consume_the_shared_sequence() {
 
 #[test]
 fn successful_esp_now_publication_commits_one_sequence_exactly_once() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         ..Hardware::default()
@@ -345,7 +345,7 @@ fn successful_esp_now_publication_commits_one_sequence_exactly_once() {
 
 #[test]
 fn broadcast_ethernet_destination_is_protected_as_the_individual_bssid_receiver() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         ..Hardware::default()
@@ -368,7 +368,7 @@ fn broadcast_ethernet_destination_is_protected_as_the_individual_bssid_receiver(
 
 #[test]
 fn erp_protection_publishes_cts_to_self_at_a_dsss_rate() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         ..Hardware::default()
@@ -391,7 +391,7 @@ fn erp_protection_publishes_cts_to_self_at_a_dsss_rate() {
 
 #[test]
 fn dscp_selects_the_matching_hardware_queue_qos_tid_and_sequence_space() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         ..Hardware::default()
@@ -464,7 +464,7 @@ fn dscp_selects_the_matching_hardware_queue_qos_tid_and_sequence_space() {
 
 #[test]
 fn idle_connected_owner_returns_descriptor_key_and_sequences_for_teardown() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let mut hardware = Hardware::default();
     let tx = make_tx(slot.as_mut(), &mut hardware);
 
@@ -488,7 +488,7 @@ fn idle_connected_owner_returns_descriptor_key_and_sequences_for_teardown() {
 
 #[test]
 fn active_connected_owner_rejects_teardown_without_losing_transaction() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         ..Hardware::default()
@@ -519,7 +519,7 @@ fn active_connected_owner_rejects_teardown_without_losing_transaction() {
 
 #[test]
 fn connected_action_uses_the_shared_slot_as_plaintext_voice_tx() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         ..Hardware::default()
@@ -561,7 +561,7 @@ fn connected_action_uses_the_shared_slot_as_plaintext_voice_tx() {
 
 #[test]
 fn a_robust_action_leaves_protected_under_management_frame_protection() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         ..Hardware::default()
@@ -607,7 +607,7 @@ fn a_robust_action_leaves_protected_under_management_frame_protection() {
 #[test]
 fn a_leaving_deauthentication_is_protected_only_under_management_frame_protection() {
     for protection in [false, true] {
-        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
         let mut hardware = Hardware {
             prepare: true,
             ..Hardware::default()
@@ -644,7 +644,7 @@ fn a_leaving_deauthentication_is_protected_only_under_management_frame_protectio
 
 #[test]
 fn a_public_action_stays_plaintext_under_management_frame_protection() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         ..Hardware::default()
@@ -663,7 +663,7 @@ fn a_public_action_stays_plaintext_under_management_frame_protection() {
 
 #[test]
 fn power_save_null_uses_shared_retried_tx_and_exact_pm_bit() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         ..Hardware::default()
@@ -713,7 +713,7 @@ fn power_save_null_uses_shared_retried_tx_and_exact_pm_bit() {
 
 #[test]
 fn missing_cts_exhausts_short_retries_and_releases_the_queue_for_the_next_frame() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         ..Hardware::default()
@@ -775,7 +775,7 @@ fn missing_cts_exhausts_short_retries_and_releases_the_queue_for_the_next_frame(
 
 #[test]
 fn ack_timeout_republishes_the_same_encoded_mpdu_with_retry_bit() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         ..Hardware::default()
@@ -849,7 +849,7 @@ fn ack_timeout_republishes_the_same_encoded_mpdu_with_retry_bit() {
 
 #[test]
 fn timeout_retains_dma_until_settle_deadline_without_waiting_or_republication() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         ..Hardware::default()
@@ -915,7 +915,7 @@ fn timeout_retains_dma_until_settle_deadline_without_waiting_or_republication() 
 
 #[test]
 fn cancelling_poll_wait_keeps_abort_state_and_dma_ownership() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         ..Hardware::default()
@@ -949,7 +949,7 @@ fn cancelling_poll_wait_keeps_abort_state_and_dma_ownership() {
 
 #[test]
 fn collision_retries_without_marking_an_untransmitted_mpdu_as_retry() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         ..Hardware::default()
@@ -986,7 +986,7 @@ fn collision_retries_without_marking_an_untransmitted_mpdu_as_retry() {
 
 #[test]
 fn executor_deadline_quarantines_without_drop_panic() {
-    let mut slot = std::boxed::Box::pin(TxSlot::<512>::new_model());
+    let mut slot = std::boxed::Box::pin(TxSlot::<512>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         ..Hardware::default()
@@ -1021,7 +1021,7 @@ fn executor_deadline_quarantines_without_drop_panic() {
 
 #[test]
 fn queue_rejection_cancels_the_unpublished_descriptor() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let mut hardware = Hardware::default();
     let mut tx = make_tx(slot.as_mut(), &mut hardware);
 
@@ -1060,7 +1060,7 @@ fn an_idle_or_reached_deadline_wait_yields_to_the_executor_once() {
         }
     }
 
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let mut hardware = Hardware {
         prepare: true,
         ..Hardware::default()

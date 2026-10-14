@@ -141,7 +141,6 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> AmpduDmaStorage<SLOTS, BUFFER
         }
     }
 
-    #[cfg(target_pointer_width = "32")]
     pub fn pin_static(
         storage: &'static mut Self,
     ) -> Result<PinnedAmpduDmaStorage<SLOTS, BUFFER_SIZE>, AmpduDmaStorageError> {
@@ -157,7 +156,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> AmpduDmaStorage<SLOTS, BUFFER
     }
 
     /// Bind deterministic target-like addresses in a native model.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn pin_static_model(
         storage: &'static mut Self,
         descriptor_base: u32,

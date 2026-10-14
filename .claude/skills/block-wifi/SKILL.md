@@ -65,6 +65,14 @@ Also check the actual S31 target before each push:
 Host `--all-targets` covers Cargo target kinds, not the RV32 architecture or
 its conditional imports and allocation paths.
 
+Synthetic MAC/DMA completion and detach evidence requires the explicit
+`oer-esp32s31-ieee80211-mac/test-support` feature. Host pointer width is not
+test authority. Core and role tests enable it through dev-dependencies;
+the MAC's integration tests declare it as a required test feature. Also run
+`cargo test -p oer-esp32s31-ieee80211-mac --doc` alone without that feature:
+its negative contracts verify the production surface without Cargo feature
+unification from a test consumer.
+
 - `cargo test -p <package>`, then `cargo xtask check changed`.
 - `cargo hil images check --class performance --type-check` for chip-side changes; `cargo xtask check network` for network-owner or manifest changes.
 - HIL smoke: `cargo hil run icmp-latency tcp-bidirectional station-reconnect` (`hil-run` skill).

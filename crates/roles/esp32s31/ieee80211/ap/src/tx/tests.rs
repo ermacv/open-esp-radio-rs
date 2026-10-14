@@ -183,7 +183,7 @@ fn ap_mcs32_request_reaches_the_shared_frontier_without_replacing_fallback() {
 
 #[test]
 fn idle_ap_tx_lends_and_resumes_the_exact_ordinary_owner() {
-    let mut slot = pin!(TxSlot::<256>::new_model());
+    let mut slot = pin!(TxSlot::<256>::new_model().unwrap());
     let request = HtDuplicateCertificationRequest::new(
         HtChannelWidth::Mhz40,
         HtGuardInterval::Long800Ns,
@@ -223,7 +223,7 @@ fn ap_aggregate_config_is_protected_by_bss_rules_not_by_its_length() {
     use oer_esp32s31_ieee80211_mac::tx::protection::{BasicRates, BssProtection, TxProtection};
     use oer_ieee80211_mac::protection::HtProtectionMode;
 
-    let mut slot = pin!(TxSlot::<256>::new_model());
+    let mut slot = pin!(TxSlot::<256>::new_model().unwrap());
     let mut tx = ApTx::new(
         WifiTxResources {
             slot: slot.as_mut(),
@@ -267,7 +267,7 @@ fn ap_aggregate_config_is_protected_by_bss_rules_not_by_its_length() {
 
 #[test]
 fn beacon_is_one_publication_and_resources_return_only_after_completion() {
-    let mut slot = pin!(TxSlot::<256>::new_model());
+    let mut slot = pin!(TxSlot::<256>::new_model().unwrap());
     let resources = WifiTxResources {
         slot: slot.as_mut(),
         policy: WifiTxRuntimePolicy::vendor_defaults(),
@@ -312,7 +312,7 @@ fn beacon_is_one_publication_and_resources_return_only_after_completion() {
 
 #[test]
 fn aggregate_retry_uses_the_next_edca_contention_window() {
-    let mut slot = pin!(TxSlot::<256>::new_model());
+    let mut slot = pin!(TxSlot::<256>::new_model().unwrap());
     let resources = WifiTxResources {
         slot: slot.as_mut(),
         policy: WifiTxRuntimePolicy::vendor_defaults(),

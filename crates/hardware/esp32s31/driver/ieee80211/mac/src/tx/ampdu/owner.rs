@@ -1,9 +1,9 @@
 //! Capability-bound A-MPDU metadata, descriptor and backing ownership.
 
-#[cfg(not(target_pointer_width = "32"))]
+#[cfg(any(test, feature = "test-support"))]
 extern crate alloc;
 
-#[cfg(not(target_pointer_width = "32"))]
+#[cfg(any(test, feature = "test-support"))]
 use alloc::boxed::Box;
 use oer_ieee80211_softmac::tx_cost::TxContention;
 
@@ -59,7 +59,7 @@ impl<'storage, const SLOTS: usize, const BUFFER_SIZE: usize>
     }
 
     /// Supply a deterministic descriptor address for host state-machine tests.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn new_model(
         metadata: Pin<&'storage mut HtAmpduTxStorage<SLOTS, BUFFER_SIZE>>,
     ) -> Result<Self, HtAmpduTxError> {
@@ -82,7 +82,6 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> Deref
     }
 }
 
-#[cfg(target_pointer_width = "32")]
 impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxResources<'static, SLOTS, BUFFER_SIZE> {
     /// Bind both statically allocated target arenas at their final addresses.
     pub fn pin_static(
@@ -121,7 +120,7 @@ impl<'storage, B: 'storage, const SLOTS: usize, const BUFFER_SIZE: usize>
         }
     }
 
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn new_model(
         storage: Pin<&'storage mut HtAmpduTxStorage<SLOTS, BUFFER_SIZE>>,
         retention: &'storage mut RetainedAmpduDmaStorage<B, SLOTS>,

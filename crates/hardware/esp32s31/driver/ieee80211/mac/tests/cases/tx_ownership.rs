@@ -16,7 +16,7 @@ fn each_publication_carries_its_control_frame_across_phy_and_queue_changes() {
         HeSmpduTxConfig, HtTxConfig, TxControlFrame, protection::TxProtection,
     };
 
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let mut hardware = MockMmio::default();
     let mut expected = [None; 4];
     for protection in [
@@ -119,7 +119,7 @@ fn each_publication_carries_its_control_frame_across_phy_and_queue_changes() {
 
 #[test]
 fn completed_tx_keeps_buffer_until_detach_and_rejects_previous_generation() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let mut hardware = MockMmio::default();
     let mut previous = None;
     for payload in 0..32_u8 {
@@ -163,7 +163,7 @@ fn completed_tx_keeps_buffer_until_detach_and_rejects_previous_generation() {
 
 #[test]
 fn failed_completion_detach_quarantines_storage_despite_success_status() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let cookie = slot.as_mut().reserve(512, 100).unwrap();
     slot.as_mut().mark_hardware_owned(cookie).unwrap();
     let mut hardware = MockMmio::default();
@@ -192,7 +192,7 @@ fn failed_completion_detach_quarantines_storage_despite_success_status() {
 
 #[test]
 fn tx_slot_rejects_stale_cookie_and_completes_one_generation() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     slot.as_mut().buffer_mut().unwrap()[..4].copy_from_slice(&[1, 2, 3, 4]);
     let cookie = slot.as_mut().reserve(512, 100).unwrap();
     assert!(matches!(slot.as_mut().buffer_mut(), Err(TxError::Busy)));
@@ -230,7 +230,7 @@ fn tx_slot_rejects_stale_cookie_and_completes_one_generation() {
 
 #[test]
 fn tx_slot_cancels_only_an_unpublished_reservation() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let cookie = slot.as_mut().reserve(512, 100).unwrap();
 
     assert_eq!(slot.as_mut().cancel_reservation(cookie), Ok(()));
@@ -245,7 +245,7 @@ fn tx_slot_cancels_only_an_unpublished_reservation() {
 
 #[test]
 fn executor_deadline_quarantines_hardware_owned_tx_storage_without_drop_panic() {
-    let mut slot = std::boxed::Box::pin(TxSlot::<512>::new_model());
+    let mut slot = std::boxed::Box::pin(TxSlot::<512>::new_model().unwrap());
     let cookie = slot.as_mut().reserve(512, 100).unwrap();
     slot.as_mut().mark_hardware_owned(cookie).unwrap();
 
@@ -258,7 +258,7 @@ fn executor_deadline_quarantines_hardware_owned_tx_storage_without_drop_panic() 
 
 #[test]
 fn tx_completion_decodes_the_blob_ack_snr_byte() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let cookie = slot.as_mut().reserve(512, 100).unwrap();
     slot.as_mut().mark_hardware_owned(cookie).unwrap();
 
@@ -288,7 +288,7 @@ fn tx_completion_decodes_the_blob_ack_snr_byte() {
 
 #[test]
 fn tx_slot_preserves_the_semantic_timeout_abort_order() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let cookie = slot.as_mut().reserve(512, 100).unwrap();
     slot.as_mut().mark_hardware_owned(cookie).unwrap();
 
@@ -331,7 +331,7 @@ fn tx_slot_preserves_the_semantic_timeout_abort_order() {
 
 #[test]
 fn tx_slot_disables_before_acknowledging_one_collision_queue() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let cookie = slot.as_mut().reserve(512, 100).unwrap();
     slot.as_mut().mark_hardware_owned(cookie).unwrap();
 
@@ -362,7 +362,7 @@ fn tx_slot_disables_before_acknowledging_one_collision_queue() {
 #[test]
 fn no_effect_keeps_dma_hardware_owned_and_faults_quarantine_it() {
     use oer_esp32s31_ieee80211_mac::tx::CompletionFault;
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let cookie = slot.as_mut().reserve(512, 100).unwrap();
     slot.as_mut().mark_hardware_owned(cookie).unwrap();
     let mut hardware = MockMmio::default();

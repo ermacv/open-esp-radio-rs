@@ -863,17 +863,11 @@ pub(crate) struct PhyModeSelection {
     pub index_map: RateIndexMap,
     /// The rate byte used to derive the initial AMPDU limit for HT/HE.
     pub ampdu_limit_rate: Option<u8>,
-    /// A computed index fell beyond its table and took the table's slowest
-    /// record: a test over the whole input domain proves it never does.
-    pub clamped: bool,
 }
 
 // Constant schedules are constructed only from literal compile-time values.
 // The array equality proves the record bound without a runtime panic path.
 macro_rules! literal_schedule {
-    ($kind:expr, last) => {
-        literal_schedule!($kind, (($kind).record_count().saturating_sub(1)) as u8)
-    };
     ($kind:expr, $index:expr) => {{
         const KIND: RateScheduleKind = $kind;
         const INDEX: u8 = $index;
@@ -904,43 +898,6 @@ const BASIC_OFDM_0: RateScheduleRef = literal_schedule!(RateScheduleKind::BasicO
 const DOT11B_3: RateScheduleRef = DEFAULT_CONTROL_SCHEDULE;
 const DOT11B_0: RateScheduleRef = literal_schedule!(RateScheduleKind::Dot11B, 0);
 
-/// The record `index` of `kind`'s table, which the vendor's selection
-/// computes. Beyond the table it is the table's last record, its slowest
-/// (a higher index is a slower rate), and `clamped` says so.
-const fn record(kind: RateScheduleKind, index: u8, clamped: &mut bool) -> RateScheduleRef {
-    match RateScheduleRef::new(kind, index) {
-        Some(reference) => reference,
-        None => {
-            *clamped = true;
-            slowest(kind)
-        }
-    }
-}
-
-/// The last record of `kind`'s table, checked at build.
-const fn slowest(kind: RateScheduleKind) -> RateScheduleRef {
-    const BAR_OFDM: RateScheduleRef = literal_schedule!(RateScheduleKind::BarOfdm, last);
-    const BASIC_OFDM: RateScheduleRef = literal_schedule!(RateScheduleKind::BasicOfdm, last);
-    const DOT11AX: RateScheduleRef = literal_schedule!(RateScheduleKind::Dot11Ax, last);
-    const DOT11B: RateScheduleRef = literal_schedule!(RateScheduleKind::Dot11B, last);
-    const DOT11G: RateScheduleRef = literal_schedule!(RateScheduleKind::Dot11G, last);
-    const DOT11N: RateScheduleRef = literal_schedule!(RateScheduleKind::Dot11N, last);
-    const LORA: RateScheduleRef = literal_schedule!(RateScheduleKind::Lora, last);
-    const P2P_DOT11G: RateScheduleRef = literal_schedule!(RateScheduleKind::P2pDot11G, last);
-    const P2P_DOT11N: RateScheduleRef = literal_schedule!(RateScheduleKind::P2pDot11N, last);
-    match kind {
-        RateScheduleKind::BarOfdm => BAR_OFDM,
-        RateScheduleKind::BasicOfdm => BASIC_OFDM,
-        RateScheduleKind::Dot11Ax => DOT11AX,
-        RateScheduleKind::Dot11B => DOT11B,
-        RateScheduleKind::Dot11G => DOT11G,
-        RateScheduleKind::Dot11N => DOT11N,
-        RateScheduleKind::Lora => LORA,
-        RateScheduleKind::P2pDot11G => P2P_DOT11G,
-        RateScheduleKind::P2pDot11N => P2P_DOT11N,
-    }
-}
-
 /// Non-data schedule `rcUpdatePhyMode` stores at trc `+0x68`.
 ///
 /// `rcGetSched` selects it for every frame that is not ordinary data
@@ -965,111 +922,127 @@ const fn control_schedule(phy: StaRateControlPhy, flagged: bool) -> RateSchedule
     }
 }
 
-const fn highest_dot11b(rate: u32) -> u8 {
-    match rate {
-        2 => 3,
-        4 => 2,
-        11 => 1,
-        22 => 0,
-        _ => 0,
-    }
-}
-
-const fn highest_dot11g(rate: u32) -> u8 {
-    match rate {
-        12 => 7,
-        18 => 6,
-        24 => 5,
-        36 => 4,
-        48 => 3,
-        72 => 2,
-        96 => 1,
-        108 => 0,
-        _ => 0,
-    }
-}
-
-const fn highest_dot11n(rate: u32) -> u8 {
-    match rate {
-        13 => 8,
-        26 => 7,
-        39 => 6,
-        52 => 5,
-        78 => 4,
-        104 => 3,
-        117 => 2,
-        130 => 1,
-        144 => 0,
-        _ => 0,
-    }
-}
-
-const fn highest_dot11ax(rate: u32) -> u8 {
-    match rate {
-        17 => 9,
-        34 => 8,
-        51 => 7,
-        68 => 6,
-        104 => 5,
-        137 => 4,
-        154 => 3,
-        172 => 2,
-        206 => 1,
-        229 => 0,
-        _ => 0,
-    }
-}
-
-/// Exact log-free port of `rcGetHighestRateIdx` and its five finite helpers.
-///
-/// Invalid rate encodings deliberately retain the vendor result of zero.
-pub(crate) const fn highest_rate_index(
-    phy_type: u8,
-    he_type: u8,
-    supplied_rate: u32,
-    use_supplied_rate: bool,
-) -> u8 {
-    if !use_supplied_rate {
-        return if phy_type == 2 || phy_type == 4 { 1 } else { 0 };
-    }
-    match phy_type {
-        0 => highest_dot11b(supplied_rate),
-        1 => highest_dot11g(supplied_rate),
-        2..=5 if he_type == 7 => highest_dot11ax(supplied_rate),
-        2..=5 => highest_dot11n(supplied_rate),
-        _ => {
-            if phy_type == 2 || phy_type == 4 {
-                1
-            } else {
-                0
-            }
+// Both arms are independently checked literals: a runtime family choice
+// never creates a raw index that needs a fallback record.
+macro_rules! g_schedule {
+    ($p2p:expr, $index:expr) => {
+        if $p2p {
+            literal_schedule!(RateScheduleKind::P2pDot11G, $index)
+        } else {
+            literal_schedule!(RateScheduleKind::Dot11G, $index)
         }
+    };
+}
+
+macro_rules! ht_schedule {
+    ($he:expr, $index:expr) => {
+        if $he {
+            literal_schedule!(RateScheduleKind::Dot11Ax, $index)
+        } else {
+            literal_schedule!(RateScheduleKind::Dot11N, $index)
+        }
+    };
+}
+
+const fn highest_dot11b(rate: u32) -> RateScheduleRef {
+    match rate {
+        2 => literal_schedule!(RateScheduleKind::Dot11B, 3),
+        4 => literal_schedule!(RateScheduleKind::Dot11B, 2),
+        11 => literal_schedule!(RateScheduleKind::Dot11B, 1),
+        _ => DOT11B_0,
     }
 }
 
-const fn ht_metric_index(metric: i32) -> u8 {
-    if metric <= 8 {
-        11
-    } else if metric <= 11 {
-        8
-    } else if metric <= 13 {
-        7
-    } else if metric <= 16 {
-        6
-    } else if metric <= 21 {
-        5
-    } else if metric <= 26 {
-        4
-    } else if metric <= 29 {
-        3
-    } else if metric <= 33 {
-        2
-    } else if metric <= 36 {
-        1
-    } else if metric <= 41 {
-        0
-    } else {
-        u8::MAX
+const fn highest_dot11g(rate: u32, p2p: bool) -> RateScheduleRef {
+    match rate {
+        12 => g_schedule!(p2p, 7),
+        18 => g_schedule!(p2p, 6),
+        24 => g_schedule!(p2p, 5),
+        36 => g_schedule!(p2p, 4),
+        48 => g_schedule!(p2p, 3),
+        72 => g_schedule!(p2p, 2),
+        96 => g_schedule!(p2p, 1),
+        _ => g_schedule!(p2p, 0),
+    }
+}
+
+const fn highest_dot11n(rate: u32) -> RateScheduleRef {
+    match rate {
+        13 => literal_schedule!(RateScheduleKind::Dot11N, 8),
+        26 => literal_schedule!(RateScheduleKind::Dot11N, 7),
+        39 => literal_schedule!(RateScheduleKind::Dot11N, 6),
+        52 => literal_schedule!(RateScheduleKind::Dot11N, 5),
+        78 => literal_schedule!(RateScheduleKind::Dot11N, 4),
+        104 => literal_schedule!(RateScheduleKind::Dot11N, 3),
+        117 => literal_schedule!(RateScheduleKind::Dot11N, 2),
+        130 => literal_schedule!(RateScheduleKind::Dot11N, 1),
+        _ => literal_schedule!(RateScheduleKind::Dot11N, 0),
+    }
+}
+
+const fn highest_dot11ax(rate: u32) -> RateScheduleRef {
+    match rate {
+        17 => literal_schedule!(RateScheduleKind::Dot11Ax, 9),
+        34 => literal_schedule!(RateScheduleKind::Dot11Ax, 8),
+        51 => literal_schedule!(RateScheduleKind::Dot11Ax, 7),
+        68 => literal_schedule!(RateScheduleKind::Dot11Ax, 6),
+        104 => literal_schedule!(RateScheduleKind::Dot11Ax, 5),
+        137 => literal_schedule!(RateScheduleKind::Dot11Ax, 4),
+        154 => literal_schedule!(RateScheduleKind::Dot11Ax, 3),
+        172 => literal_schedule!(RateScheduleKind::Dot11Ax, 2),
+        206 => literal_schedule!(RateScheduleKind::Dot11Ax, 1),
+        _ => literal_schedule!(RateScheduleKind::Dot11Ax, 0),
+    }
+}
+
+/// The record selected by `rcGetHighestRateIdx` and its finite helpers.
+/// Unknown wire rate encodings deliberately select the vendor's record zero;
+/// the resulting reference is already valid for its selected arena.
+const fn highest_rate_schedule(input: PhyModeSelectionInput) -> RateScheduleRef {
+    if !input.use_supplied_highest_rate {
+        return match input.phy_type {
+            1 => g_schedule!(input.p2p, 0),
+            2 | 4 => ht_schedule!(input.he_type == 7, 1),
+            3 | 5 => ht_schedule!(input.he_type == 7, 0),
+            6 => LORA_0,
+            _ => DOT11B_0,
+        };
+    }
+    match input.phy_type {
+        0 => highest_dot11b(input.supplied_highest_rate),
+        1 => highest_dot11g(input.supplied_highest_rate, input.p2p),
+        2..=5 if input.he_type == 7 => highest_dot11ax(input.supplied_highest_rate),
+        2..=5 => highest_dot11n(input.supplied_highest_rate),
+        6 => LORA_0,
+        _ => DOT11B_0,
+    }
+}
+
+/// Compare the unadjusted HT threshold with the peer's highest record,
+/// then select the checked HT record or its HE record two places lower.
+const fn ht_metric_schedule(metric: i32, he: bool, highest: RateScheduleRef) -> RateScheduleRef {
+    macro_rules! threshold {
+        ($index:expr) => {
+            if $index <= highest.index() {
+                highest
+            } else if he {
+                literal_schedule!(RateScheduleKind::Dot11Ax, $index + 2)
+            } else {
+                literal_schedule!(RateScheduleKind::Dot11N, $index)
+            }
+        };
+    }
+    match metric {
+        ..=8 => threshold!(11),
+        9..=11 => threshold!(8),
+        12..=13 => threshold!(7),
+        14..=16 => threshold!(6),
+        17..=21 => threshold!(5),
+        22..=26 => threshold!(4),
+        27..=29 => threshold!(3),
+        30..=33 => threshold!(2),
+        34..=36 => threshold!(1),
+        _ => highest,
     }
 }
 
@@ -1079,25 +1052,19 @@ const fn ht_metric_index(metric: i32) -> u8 {
 /// Rust-owned association; no vendor record projection remains.
 #[inline(never)]
 pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection {
-    let highest = highest_rate_index(
-        input.phy_type,
-        input.he_type,
-        input.supplied_highest_rate,
-        input.use_supplied_highest_rate,
-    );
+    let highest = highest_rate_schedule(input);
     let lora_fallback = LORA_1;
-    let mut clamped = false;
 
     let (current, secondary, legacy, maximum_index, schedule_count, index_map, ampdu_limit_rate) =
         match input.phy_type {
             0 => {
-                let current_index = if input.use_supplied_highest_rate {
+                let current = if input.use_supplied_highest_rate {
                     highest
                 } else {
-                    3
+                    DOT11B_3
                 };
                 (
-                    record(RateScheduleKind::Dot11B, current_index, &mut clamped),
+                    current,
                     DOT11B_3,
                     DOT11B_0,
                     if input.long_range_rates_present { 5 } else { 3 },
@@ -1107,33 +1074,31 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
                 )
             }
             1 => {
-                let kind = if input.p2p {
-                    RateScheduleKind::P2pDot11G
-                } else {
-                    RateScheduleKind::Dot11G
-                };
-                let mut current_index = if input.metric <= 11 {
-                    if input.p2p { 7 } else { 10 }
+                let current = if input.use_supplied_highest_rate {
+                    highest
+                } else if input.metric <= 11 {
+                    if input.p2p {
+                        P2P_DOT11G_7
+                    } else {
+                        literal_schedule!(RateScheduleKind::Dot11G, 10)
+                    }
                 } else if input.metric <= 16 {
-                    5
+                    g_schedule!(input.p2p, 5)
                 } else if input.metric <= 21 {
-                    3
+                    g_schedule!(input.p2p, 3)
                 } else if input.metric < 30 {
-                    2
+                    g_schedule!(input.p2p, 2)
                 } else {
-                    0
+                    g_schedule!(input.p2p, 0)
                 };
-                if input.use_supplied_highest_rate {
-                    current_index = highest;
-                }
                 (
-                    record(kind, current_index, &mut clamped),
+                    current,
                     if input.p2p {
                         P2P_DOT11G_7
                     } else {
                         BASIC_OFDM_0
                     },
-                    record(kind, 0, &mut clamped),
+                    g_schedule!(input.p2p, 0),
                     if input.p2p {
                         7
                     } else if input.long_range_rates_present {
@@ -1148,34 +1113,27 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
             }
             2..=5 => {
                 let he = input.he_type == 7;
-                let kind = if he {
-                    RateScheduleKind::Dot11Ax
-                } else {
-                    RateScheduleKind::Dot11N
-                };
-                let threshold = ht_metric_index(input.metric);
-                let adjustment = if he { 2 } else { 0 };
-                let mut current_index = if threshold == u8::MAX || threshold <= highest {
+                let metric_schedule = ht_metric_schedule(input.metric, he, highest);
+                let current = if input.use_supplied_highest_rate {
                     highest
+                } else if input.p2p && metric_schedule.index() > 7 {
+                    ht_schedule!(he, 7)
                 } else {
-                    threshold.saturating_add(adjustment)
+                    metric_schedule
                 };
-                if input.p2p && current_index > 7 {
-                    current_index = 7;
-                }
-                if input.use_supplied_highest_rate {
-                    current_index = highest;
-                }
-                let limit_index = if current_index > 8 { 8 } else { current_index };
-                let limit_schedule = record(kind, limit_index, &mut clamped);
+                let limit_schedule = if current.index() > 8 {
+                    ht_schedule!(he, 8)
+                } else {
+                    current
+                };
                 (
-                    record(kind, current_index, &mut clamped),
+                    current,
                     if input.p2p {
                         P2P_DOT11G_7
                     } else {
                         BASIC_OFDM_0
                     },
-                    record(kind, 0, &mut clamped),
+                    ht_schedule!(he, 0),
                     if input.long_range_rates_present {
                         if he { 15 } else { 13 }
                     } else if he {
@@ -1213,12 +1171,11 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
             secondary
         },
         legacy,
-        highest_index: highest,
+        highest_index: highest.index(),
         maximum_index,
         schedule_count,
         index_map,
         ampdu_limit_rate,
-        clamped,
     }
 }
 

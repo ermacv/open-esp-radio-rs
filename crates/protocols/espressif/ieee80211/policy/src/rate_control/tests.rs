@@ -211,17 +211,27 @@ fn selection_input(phy_type: u8) -> PhyModeSelectionInput {
 
 #[test]
 fn highest_rate_tables_match_recovered_boundaries() {
-    assert_eq!(highest_rate_index(0, 0, 2, true), 3);
-    assert_eq!(highest_rate_index(0, 0, 22, true), 0);
-    assert_eq!(highest_rate_index(1, 0, 12, true), 7);
-    assert_eq!(highest_rate_index(1, 0, 108, true), 0);
-    assert_eq!(highest_rate_index(2, 0, 13, true), 8);
-    assert_eq!(highest_rate_index(2, 0, 144, true), 0);
-    assert_eq!(highest_rate_index(2, 7, 17, true), 9);
-    assert_eq!(highest_rate_index(2, 7, 229, true), 0);
-    assert_eq!(highest_rate_index(2, 0, 0, false), 1);
-    assert_eq!(highest_rate_index(3, 0, 0, false), 0);
-    assert_eq!(highest_rate_index(4, 0, 0, false), 1);
+    for (phy_type, he_type, rate, supplied, index) in [
+        (0, 0, 2, true, 3),
+        (0, 0, 22, true, 0),
+        (1, 0, 12, true, 7),
+        (1, 0, 108, true, 0),
+        (2, 0, 13, true, 8),
+        (2, 0, 144, true, 0),
+        (2, 7, 17, true, 9),
+        (2, 7, 229, true, 0),
+        (2, 0, 0, false, 1),
+        (3, 0, 0, false, 0),
+        (4, 0, 0, false, 1),
+    ] {
+        let selected = highest_rate_schedule(PhyModeSelectionInput {
+            he_type,
+            supplied_highest_rate: rate,
+            use_supplied_highest_rate: supplied,
+            ..selection_input(phy_type)
+        });
+        assert_eq!(selected.index(), index);
+    }
 }
 
 #[test]
@@ -641,12 +651,9 @@ mod seam {
     }
 }
 
-/// Every input `select_phy_mode` can meet computes indices inside their
-/// tables, so the clamp toward the slowest record never acts: every link
-/// metric, every PHY type the selection distinguishes (each arm, and the
-/// default arm's first and last values) with and without HE, P2P and long
-/// range, and every peer highest rate the vendor tables name, with a value
-/// they do not.
+/// Every selection branch retains valid records: all link metrics and both
+/// i32 extremes, each PHY arm and the default arm's endpoints, HE/P2P/long
+/// range flags, every named peer rate and representatives of unknown rates.
 #[test]
 fn phy_mode_selection_indices_stay_inside_their_tables() {
     const RATES: [u32; 35] = [
@@ -689,53 +696,40 @@ fn phy_mode_selection_indices_stay_inside_their_tables() {
     let mut inputs = 0_u32;
     for phy_type in (0..=7).chain([u8::MAX]) {
         for he_type in [0, 7, u8::MAX] {
-            for metric in i8::MIN..=i8::MAX {
+            for metric in (i8::MIN..=i8::MAX)
+                .map(i32::from)
+                .chain([i32::MIN, i32::MAX])
+            {
                 for flags in 0..8_u8 {
                     for supplied_highest_rate in RATES {
                         let selection = select_phy_mode(PhyModeSelectionInput {
                             phy_type,
                             he_type,
-                            metric: i32::from(metric),
+                            metric,
                             p2p: flags & 1 != 0,
                             supplied_highest_rate,
                             use_supplied_highest_rate: flags & 2 != 0,
                             long_range_rates_present: flags & 4 != 0,
                         });
-                        assert!(
-                            !selection.clamped,
-                            "phy {phy_type} he {he_type} metric {metric} flags {flags} rate {supplied_highest_rate}"
-                        );
+                        for schedule in [
+                            selection.current,
+                            selection.secondary,
+                            selection.fallback,
+                            selection.legacy,
+                        ] {
+                            assert!(usize::from(schedule.index()) < schedule.kind().record_count());
+                        }
                         inputs += 1;
                     }
                 }
             }
         }
     }
-    assert_eq!(inputs, 9 * 3 * 256 * 8 * 35);
+    assert_eq!(inputs, 9 * 3 * 258 * 8 * 35);
 }
 
-/// An index beyond its table takes the table's last record, its slowest.
-#[test]
-fn a_record_beyond_its_table_is_the_slowest() {
-    let mut clamped = false;
-    let inside = record(RateScheduleKind::Dot11N, 13, &mut clamped);
-    assert!(!clamped);
-    assert_eq!(
-        inside,
-        RateScheduleRef::new(RateScheduleKind::Dot11N, 13).unwrap()
-    );
-    let beyond = record(RateScheduleKind::Dot11N, 14, &mut clamped);
-    assert!(clamped);
-    assert_eq!(beyond, inside);
-    assert_eq!(
-        slowest(RateScheduleKind::Dot11B),
-        RateScheduleRef::new(RateScheduleKind::Dot11B, 5).unwrap()
-    );
-}
-
-/// The clamp's target is the slowest record: in every table the last
-/// record's rate is no faster than any other record's. The vendor's Long
-/// Range codes have no portable rate and count at their nominal rates,
+/// In every table the last record's rate is no faster than any other record's.
+/// The vendor's Long Range codes have no portable rate and count at their nominal rates,
 /// `wifi_phy_rate_t`'s `WIFI_PHY_RATE_LORA_250K` (`0x29`) and
 /// `WIFI_PHY_RATE_LORA_500K` (`0x2a`).
 #[test]
@@ -769,7 +763,6 @@ fn the_last_record_of_every_table_is_the_slowest() {
     };
     for kind in KINDS {
         let last = (kind.record_count() - 1) as u8;
-        assert_eq!(slowest(kind), RateScheduleRef::new(kind, last).unwrap());
         for index in 0..last {
             assert!(
                 kbps(kind, last) <= kbps(kind, index),

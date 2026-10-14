@@ -37,10 +37,13 @@ portable station uses it through `EspressifRateControl`, the station's
 `StaRateControl` seam, which decodes its schedules through `rate_code`.
 
 Rate-control schedule literals are bounds-checked at compile time with an
-array-length equality. Dynamic schedule selection still uses its typed
-constructor and the documented vendor clamping rule. HT fallback uses the
-MAC's checked `HtMcs::SINGLE_STREAM_MAX` value; neither path can panic while
-processing a transmission.
+array-length equality. Initial PHY-mode selection chooses those complete
+records directly; it has no out-of-table index or clamp to the last record.
+The HT metric comparison uses the unadjusted threshold before selecting its
+HE record two positions lower. Unknown peer rate encodings retain the
+vendor's record-zero result. HT fallback uses the MAC's checked
+`HtMcs::SINGLE_STREAM_MAX` value; neither path can panic while processing a
+transmission.
 
 `RateScheduleRef` retains a reference to the checked twelve-byte record, with
 private fields. Its kind and record cannot be relabelled independently; the

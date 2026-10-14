@@ -6,6 +6,8 @@
 //! `check_barriers` uses the same captured publication/event trace for held
 //! ACK, retry, timeout and key-removal cases. A Sent repeat differs only in
 //! Retry, so the shared comparison covers the original SN, PN and payload.
+//! Changed MPDU bytes report `MpduChanged`, separately from `Owners` for
+//! a context, ticket or buffer identity mismatch.
 
 use alloc::vec::Vec;
 use oer_ieee80211_lower_mac::{IndeterminateCause, TxEndStatus, TxOutcome, WithdrawCause};
@@ -178,7 +180,7 @@ pub fn verify_barrier(case: BarrierCase, trace: BarrierTrace) -> Result<(), Viol
             || f1 & !0x08 != r1 & !0x08
             || original != repeated
         {
-            return Err(Violation::Owners);
+            return Err(Violation::MpduChanged);
         }
     }
     Ok(())
@@ -289,12 +291,21 @@ pub trait Harness {
 /// The common suite found a contract violation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Violation {
+    /// A terminal names a different context, ticket, buffer or class.
     Owners,
+    /// A Sent repeat changed its MPDU beyond setting the Retry bit.
+    MpduChanged,
+    /// An operation produced more than one return.
     Duplicate,
+    /// Returns or barriers violated their prescribed order.
     Order,
+    /// A required terminal or retained owner is absent.
     Missing,
+    /// The terminal's outcome or shape differs from the operation's.
     TerminalKind,
+    /// A context did not live until its terminal or install teardown.
     Lifetime,
+    /// Publication counts or captured frame extents are invalid.
     Publication,
 }
 
@@ -368,3 +379,6 @@ fn verify(scenario: Scenario, trace: Trace) -> Result<(), Violation> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

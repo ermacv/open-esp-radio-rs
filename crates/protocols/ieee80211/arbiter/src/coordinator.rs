@@ -31,7 +31,7 @@
 //!   access point again on its previous channel, and the next attempt
 //!   follows `after` later ([`ChannelCoordinator::upstream_rescan`]).
 
-use core::num::NonZeroU8;
+use core::num::{NonZeroU8, NonZeroU64};
 
 use oer_ieee80211_lower_mac::{Ieee80211Capabilities, SupportedChannel};
 use oer_ieee80211_mac::channel::{Band, Channel};
@@ -93,7 +93,7 @@ pub struct ApFollowPolicy {
     /// ```
     /// A nonzero count is carried unchanged into the announcement:
     /// ```
-    /// use core::num::NonZeroU8;
+    /// use core::num::{NonZeroU8, NonZeroU64};
     /// use oer_ieee80211_arbiter::coordinator::ApFollowPolicy;
     /// let policy = ApFollowPolicy {
     ///     announce_count: NonZeroU8::MIN,
@@ -264,7 +264,42 @@ pub enum JoinAway {
     TooSoon { retry_at: Instant },
 }
 
+/// A strictly positive AP beacon interval, in microseconds.
+///
+/// ```
+/// use oer_ieee80211_arbiter::coordinator::BeaconInterval;
+/// use oer_time::Duration;
+/// assert!(BeaconInterval::new(Duration::ZERO).is_none());
+/// assert_eq!(BeaconInterval::new(Duration::from_millis(100)).unwrap().as_micros(), 100_000);
+/// ```
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BeaconInterval(NonZeroU64);
+impl BeaconInterval {
+    pub const fn new(interval: Duration) -> Option<Self> {
+        match NonZeroU64::new(interval.as_micros()) {
+            Some(value) => Some(Self(value)),
+            None => None,
+        }
+    }
+    pub const fn as_micros(self) -> u64 {
+        self.0.get()
+    }
+    pub const fn duration(self) -> Duration {
+        Duration::from_micros(self.as_micros())
+    }
+}
+
 /// The access point's schedule, which counts and absences follow.
+/// Raw durations cannot construct a schedule; zero must be rejected before
+/// publishing an AP fact:
+/// ```compile_fail,E0308
+/// use oer_ieee80211_arbiter::coordinator::ApSchedule;
+/// use oer_ieee80211_lower_mac::SupportedChannel;
+/// fn raw_interval<K>(channel: SupportedChannel<K>) -> ApSchedule<K> {
+///     ApSchedule { channel, next_tbtt: oer_time::Instant::from_micros(0),
+///         beacon_interval: oer_time::Duration::ZERO }
+/// }
+/// ```
 ///
 /// The channel must already be accepted by the backend:
 /// ```compile_fail,E0308
@@ -275,7 +310,7 @@ pub enum JoinAway {
 ///     ApSchedule {
 ///         channel,
 ///         next_tbtt: Instant::from_micros(100),
-///         beacon_interval: Duration::from_millis(100),
+///         beacon_interval: oer_ieee80211_arbiter::coordinator::BeaconInterval::new(Duration::from_millis(100)).unwrap(),
 ///     }
 /// }
 /// ```
@@ -288,7 +323,7 @@ pub enum JoinAway {
 ///     ApSchedule {
 ///         channel,
 ///         next_tbtt: Instant::from_micros(100),
-///         beacon_interval: Duration::from_millis(100),
+///         beacon_interval: oer_ieee80211_arbiter::coordinator::BeaconInterval::new(Duration::from_millis(100)).unwrap(),
 ///     }
 /// }
 /// ```
@@ -297,14 +332,14 @@ pub struct ApSchedule<K> {
     pub channel: SupportedChannel<K>,
     /// Its next TBTT.
     pub next_tbtt: Instant,
-    pub beacon_interval: Duration,
+    pub beacon_interval: BeaconInterval,
 }
 
 impl<K> ApSchedule<K> {
     /// The access point's TBTTs before `instant`, from the next one on.
     fn beacons_before(self, instant: Instant) -> u64 {
         let interval = self.beacon_interval.as_micros();
-        if interval == 0 || instant <= self.next_tbtt {
+        if instant <= self.next_tbtt {
             return 0;
         }
         instant
@@ -314,27 +349,14 @@ impl<K> ApSchedule<K> {
     }
 
     /// When a switch announced at `now` in the next `count` beacons is
-    /// due: at the TBTT after the last of them.
-    pub fn switch_at(self, now: Instant, count: u8) -> Instant {
-        let interval = self.beacon_interval.as_micros();
-        self.tbtt_from(now).saturating_add(Duration::from_micros(
-            interval.saturating_mul(u64::from(count)),
-        ))
-    }
-
-    /// The first TBTT at or after `instant`.
-    fn tbtt_from(self, instant: Instant) -> Instant {
-        let interval = self.beacon_interval.as_micros();
-        if interval == 0 || instant <= self.next_tbtt {
-            return self.next_tbtt;
-        }
-        let late = instant
-            .saturating_duration_since(self.next_tbtt)
-            .as_micros();
-        let steps = late.div_ceil(interval);
-        self.next_tbtt
-            .checked_add(Duration::from_micros(steps.saturating_mul(interval)))
-            .unwrap_or(instant)
+    /// due: at the TBTT after the last of them. None means no representable
+    /// future TBTT; callers must refuse the schedule rather than approximate it.
+    pub fn switch_at(self, now: Instant, count: u8) -> Option<Instant> {
+        let offset = self
+            .beacon_interval
+            .as_micros()
+            .checked_mul(u64::from(count))?;
+        crate::slot(self, now, Duration::ZERO)?.checked_add(Duration::from_micros(offset))
     }
 }
 

@@ -180,8 +180,8 @@ use oer_ieee80211_mac::channel_switch::ChannelSwitchMode;
 use oer_time::{Duration, Instant};
 
 use coordinator::{
-    ApFollowPolicy, ApSchedule, ApSearchPolicy, ChannelCoordinator, CoordinatorAction,
-    CoordinatorActions, JoinAway, UpstreamLossPolicy,
+    ApFollowPolicy, ApSchedule, ApSearchPolicy, BeaconInterval, ChannelCoordinator,
+    CoordinatorAction, CoordinatorActions, JoinAway, UpstreamLossPolicy,
 };
 
 /// The longest air reservation: the Duration field's limit, in
@@ -312,6 +312,8 @@ pub enum AbsenceAnswer<K> {
 /// Why the arbiter refused an absence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AbsenceRefusal {
+    /// No future beacon/absence slot fits the clock's representable range.
+    ScheduleExhausted,
     /// The primary lease named is not the running one.
     NotConnected,
     /// The primary lease ends before this absence can start.
@@ -337,6 +339,8 @@ pub enum Answer<K> {
 /// Why the arbiter refused a request.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Refusal {
+    /// No future beacon/absence slot fits the clock's representable range.
+    ScheduleExhausted,
     /// The station joins where the access point beside it may not follow,
     /// and the policy keeps the access point.
     Unservable,
@@ -439,7 +443,7 @@ pub enum AccessPointFact<K> {
         /// Its next TBTT.
         next_tbtt: Instant,
         /// Its beacon interval.
-        beacon_interval: Duration,
+        beacon_interval: BeaconInterval,
     },
     /// It stopped.
     Stopped,
@@ -1039,10 +1043,14 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
     /// The absence slot and end for `dwell` from `earliest`: beside an
     /// access point after one of its TBTTs, alone at once; the move there,
     /// the listening and the move back, at most the policy's absence.
-    fn absence_window(&self, earliest: Instant, dwell: Option<Duration>) -> (Instant, Instant) {
+    fn absence_window(
+        &self,
+        earliest: Instant,
+        dwell: Option<Duration>,
+    ) -> Option<(Instant, Instant)> {
         let retune = sum(self.publication_bound, self.policy.retune);
         let from = match self.schedule() {
-            Some(schedule) => slot(schedule, earliest, self.policy.guard),
+            Some(schedule) => slot(schedule, earliest, self.policy.guard)?,
             None => earliest,
         };
         let wanted = dwell.map_or(self.policy.absence, |dwell| sum(sum(dwell, retune), retune));
@@ -1051,7 +1059,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
         } else {
             self.policy.absence
         };
-        (from, from.saturating_add(length))
+        Some((from, from.checked_add(length)?))
     }
 
     fn lease_value(&self, granted: &Granted<K>) -> Lease<K> {
@@ -1090,7 +1098,10 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
                         mode: ChannelSwitchMode::Continue,
                         count,
                     });
-                    follows = Some(schedule.switch_at(now, count));
+                    let Some(at) = schedule.switch_at(now, count) else {
+                        return Answer::Refused(Refusal::ScheduleExhausted, place);
+                    };
+                    follows = Some(at);
                     self.following = true;
                 }
                 JoinAway::StopAccessPoint => {
@@ -1133,7 +1144,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
                 {
                     let dense = since.saturating_add(self.policy.search.dense_period);
                     let spacing = if last < dense {
-                        schedule.beacon_interval
+                        schedule.beacon_interval.duration()
                     } else {
                         self.policy.search.sparse_interval
                     };
@@ -1149,7 +1160,9 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
         let (from, until, returns) = if away && schedule.is_some() {
             // Beside an access point, away from its channel only in an
             // absence after its TBTT.
-            let (from, until) = self.absence_window(earliest, dwell);
+            let Some((from, until)) = self.absence_window(earliest, dwell) else {
+                return Answer::Refused(Refusal::ScheduleExhausted, place);
+            };
             (from, Some(until), true)
         } else {
             // Alone, or on the access point's channel, the port stays.
@@ -1205,7 +1218,12 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
             Purpose::Scan { dwell } | Purpose::Search { dwell } => Some(dwell),
             Purpose::Connect => None,
         };
-        let (from, until) = self.absence_window(now.saturating_add(self.policy.preparation), dwell);
+        let Some((from, until)) = now
+            .checked_add(self.policy.preparation)
+            .and_then(|earliest| self.absence_window(earliest, dwell))
+        else {
+            return AbsenceAnswer::Refused(AbsenceRefusal::ScheduleExhausted, place);
+        };
         let until = match self.primary.as_ref().and_then(|(granted, _)| granted.until) {
             Some(end) if from >= end => {
                 return AbsenceAnswer::Refused(AbsenceRefusal::PrimaryEnds { at: end }, place);
@@ -1919,15 +1937,16 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
 
 /// The first absence slot that starts at or after `earliest`: the guard
 /// after one of the schedule's TBTTs.
-fn slot<K>(schedule: ApSchedule<K>, earliest: Instant, guard: Duration) -> Instant {
-    let mut tbtt = schedule.next_tbtt;
-    loop {
-        let start = tbtt.saturating_add(guard);
-        if start >= earliest || schedule.beacon_interval.as_micros() == 0 {
-            return start;
-        }
-        tbtt = tbtt.saturating_add(schedule.beacon_interval);
+fn slot<K>(schedule: ApSchedule<K>, earliest: Instant, guard: Duration) -> Option<Instant> {
+    let first = schedule.next_tbtt.checked_add(guard)?;
+    if earliest <= first {
+        return Some(first);
     }
+    let late = earliest.checked_duration_since(first)?.as_micros();
+    let interval = schedule.beacon_interval.as_micros();
+    let steps = late.div_ceil(interval);
+    let offset = steps.checked_mul(interval)?;
+    first.checked_add(Duration::from_micros(offset))
 }
 
 #[cfg(test)]

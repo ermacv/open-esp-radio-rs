@@ -1220,7 +1220,10 @@ fn beside_an_access_point_msdus_survive_an_absence() {
                 .command(ServiceCommand::AccessPoint(AccessPointFact::Running {
                     channel: SupportedChannel::new(channel6()).unwrap(),
                     next_tbtt: tbtt,
-                    beacon_interval: Duration::from_micros(102_400),
+                    beacon_interval: oer_ieee80211_arbiter::coordinator::BeaconInterval::new(
+                        Duration::from_micros(102_400),
+                    )
+                    .unwrap(),
                 }))
                 .await;
             world

@@ -686,7 +686,10 @@ fn beside_an_access_point_the_scan_goes_in_absences_after_its_tbtts() {
             AccessPointFact::Running {
                 channel: channel(1),
                 next_tbtt: at(50),
-                beacon_interval: Duration::from_millis(100),
+                beacon_interval: oer_ieee80211_arbiter::coordinator::BeaconInterval::new(
+                    Duration::from_millis(100),
+                )
+                .unwrap(),
             },
         );
         world
@@ -738,7 +741,10 @@ fn a_scan_ends_with_a_partial_result_after_skipped_absences() {
             AccessPointFact::Running {
                 channel: channel(1),
                 next_tbtt: at(50),
-                beacon_interval: Duration::from_millis(100),
+                beacon_interval: oer_ieee80211_arbiter::coordinator::BeaconInterval::new(
+                    Duration::from_millis(100),
+                )
+                .unwrap(),
             },
         );
         world
@@ -756,7 +762,10 @@ fn a_scan_ends_with_a_partial_result_after_skipped_absences() {
                 AccessPointFact::Running {
                     channel: channel(1),
                     next_tbtt: at(50),
-                    beacon_interval: Duration::from_millis(100),
+                    beacon_interval: oer_ieee80211_arbiter::coordinator::BeaconInterval::new(
+                        Duration::from_millis(100),
+                    )
+                    .unwrap(),
                 },
             );
             world.run(at(20));
@@ -774,7 +783,10 @@ fn access_point_on_1(world: &mut World<'_>) {
         AccessPointFact::Running {
             channel: channel(1),
             next_tbtt: at(50),
-            beacon_interval: Duration::from_millis(100),
+            beacon_interval: oer_ieee80211_arbiter::coordinator::BeaconInterval::new(
+                Duration::from_millis(100),
+            )
+            .unwrap(),
         },
     );
 }

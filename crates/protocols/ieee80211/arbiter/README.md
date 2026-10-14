@@ -93,3 +93,10 @@ resumes the search from the original loss instant, including its loss
 policy deadline. Joining does not grant a new search period. The coordinator
 cannot be copied into another owner. The crate uses the canonical strict
 lint block checked by tidy.
+
+Beacon schedules carry `BeaconInterval`, which rejects zero at construction.
+The arbiter and coordinator use the same TBTT grid: absences start at TBTT
+plus the guard, while a switch uses the TBTT itself. The next slot uses a
+checked difference, ceiling division, multiplication and addition; its cost
+does not depend on missed beacons. If no future slot fits the clock range,
+`ScheduleExhausted` returns the admission place without creating a lease.

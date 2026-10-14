@@ -23,7 +23,7 @@ fn schedule(channel: SupportedChannel<Caps>) -> ApSchedule<Caps> {
     ApSchedule {
         channel,
         next_tbtt: at(FIRST_TBTT),
-        beacon_interval: INTERVAL,
+        beacon_interval: crate::coordinator::BeaconInterval::new(INTERVAL).unwrap(),
     }
 }
 

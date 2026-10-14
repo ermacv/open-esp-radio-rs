@@ -147,7 +147,8 @@ fn running(arbiter: &mut TestArbiter<'_, impl ReservationMode>) {
         AccessPointFact::Running {
             channel: channel(1),
             next_tbtt: at(50),
-            beacon_interval: Duration::from_millis(100),
+            beacon_interval: crate::coordinator::BeaconInterval::new(Duration::from_millis(100))
+                .unwrap(),
         },
     );
 }
@@ -1157,7 +1158,10 @@ fn an_old_channel_tbtt_during_a_move_does_not_change_the_return_channel() {
             AccessPointFact::Running {
                 channel: channel(1),
                 next_tbtt: at(150),
-                beacon_interval: Duration::from_millis(100),
+                beacon_interval: crate::coordinator::BeaconInterval::new(Duration::from_millis(
+                    100,
+                ))
+                .unwrap(),
             },
         );
         arbiter.gate_closed(port.issuer.close(gate));
@@ -1370,5 +1374,72 @@ fn an_absence_starting_after_primary_expiry_returns_its_place_and_deadline() {
         );
         assert!(arbiter.absence.is_none());
         assert_eq!(arbiter.poll_deadline(), home.until());
+    });
+}
+
+#[test]
+fn beacon_slots_match_the_tbtt_grid_and_guard_without_iteration() {
+    let schedule = ApSchedule {
+        channel: channel(1),
+        next_tbtt: at(50),
+        beacon_interval: BeaconInterval::new(Duration::from_millis(100)).unwrap(),
+    };
+    for earliest in [0, 49, 50, 51, 52, 53, 151, 152, 153, 10_053] {
+        let expected = (0..200)
+            .map(|n| at(52 + n * 100))
+            .find(|&at| at >= self::at(earliest))
+            .unwrap();
+        assert_eq!(
+            slot(schedule, at(earliest), Duration::from_millis(2)),
+            Some(expected)
+        );
+        assert_eq!(
+            schedule.switch_at(at(earliest), 0),
+            slot(schedule, at(earliest), Duration::ZERO)
+        );
+    }
+    let schedule = ApSchedule {
+        channel: channel(1),
+        next_tbtt: Instant::from_micros(0),
+        beacon_interval: BeaconInterval::new(Duration::from_micros(1)).unwrap(),
+    };
+    assert_eq!(
+        slot(schedule, Instant::from_micros(u64::MAX), Duration::ZERO),
+        Some(Instant::from_micros(u64::MAX))
+    );
+    let schedule = ApSchedule {
+        beacon_interval: BeaconInterval::new(Duration::from_micros(2)).unwrap(),
+        ..schedule
+    };
+    assert_eq!(
+        slot(schedule, Instant::from_micros(u64::MAX), Duration::ZERO),
+        None
+    );
+    let schedule = ApSchedule {
+        next_tbtt: Instant::from_micros(u64::MAX),
+        ..schedule
+    };
+    assert_eq!(slot(schedule, at(0), Duration::from_micros(1)), None);
+    assert_eq!(schedule.switch_at(at(0), 1), None);
+    assert!(BeaconInterval::new(Duration::ZERO).is_none());
+}
+
+#[test]
+fn an_unrepresentable_beacon_slot_returns_the_admission_place() {
+    installed(|mint| {
+        let (mut arbiter, place, _) = beside_access_point::<NoReservation>(mint);
+        arbiter.access_point(
+            at(0),
+            AccessPointFact::Running {
+                channel: channel(1),
+                next_tbtt: Instant::from_micros(u64::MAX),
+                beacon_interval: BeaconInterval::new(Duration::from_millis(100)).unwrap(),
+            },
+        );
+        assert!(matches!(
+            arbiter.request(at(0), scan(6, 10), place),
+            Answer::Refused(Refusal::ScheduleExhausted, _)
+        ));
+        assert!(arbiter.primary.is_none());
     });
 }

@@ -55,6 +55,10 @@ callback mappings retain their recovered values. The largest private arena
 has 16 records; adding four byte-sized retry counts uses `u16`, so neither
 its attached index nor the retry sum wraps.
 
+Retry selection either represents the complete record walk or refuses the
+plan when it needs more than four stages. Channel filtering preserves every
+accepted stage and its transmission count within that original capacity.
+
 Rate observations carry a nonzero MPDU count and an explicit ACK outcome, or
 a `BlockAckTally` whose acknowledgements cannot exceed its attempted MPDUs.
 Those proofs survive through the vendor window's division; observing a

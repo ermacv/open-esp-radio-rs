@@ -14,6 +14,7 @@ readme = "README.md"
 test-support = ["oer-radio-port/test-support", "oer-ieee80211-port/test-support"]
 
 [dependencies]
+heapless = "0.9.3"
 oer-ieee80211-port = { path = "../port" }
 oer-ieee80211-mac = { path = "../mac" }
 oer-radio-coex = { path = "../../../radio/coex" }

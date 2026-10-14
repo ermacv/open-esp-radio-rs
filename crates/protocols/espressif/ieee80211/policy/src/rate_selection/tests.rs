@@ -6,7 +6,7 @@ use std::vec::Vec;
 
 use oer_ieee80211_lower_mac::{
     BandSet, CoexPriority, CoexPrioritySet, HardwareServices, LowerMacCapabilities, PhyFormatSet,
-    RateSupport, ReceiveFilter, WidthSet,
+    RETRY_STAGES, RateSupport, ReceiveFilter, WidthSet,
 };
 use oer_ieee80211_mac::{
     ht::ht_peer_capabilities,
@@ -377,4 +377,27 @@ fn unknown_outcomes_and_contention_exhaustion_never_change_rate_state() {
             before
         );
     }
+}
+
+#[test]
+fn an_unrepresentable_walk_never_publishes_a_partial_retry_budget() {
+    let initial = PhyRate::Legacy(LegacyRate::Dsss1M);
+    let budget = 5;
+    let plan = walk(initial, budget, |failed| {
+        Some(PhyRate::Legacy(if failed.is_multiple_of(2) {
+            LegacyRate::Dsss1M
+        } else {
+            LegacyRate::Ofdm6M
+        }))
+    });
+    assert!(
+        plan.is_none_or(|plan| plan.transmissions() == u16::from(budget)),
+        "a fifth rate stage must refuse the whole plan, not shorten its budget"
+    );
+}
+
+#[test]
+fn a_zero_retry_budget_never_creates_a_transmission() {
+    let rate = PhyRate::Legacy(LegacyRate::Dsss1M);
+    assert!(walk(rate, 0, |_| Some(rate)).is_none());
 }

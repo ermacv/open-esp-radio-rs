@@ -3721,6 +3721,7 @@ dependencies = [
 name = "oer-ieee80211-lower-mac"
 version = "0.1.0"
 dependencies = [
+ "heapless 0.9.3",
  "oer-ieee80211-mac",
  "oer-ieee80211-port",
  "oer-radio-coex",

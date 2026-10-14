@@ -83,7 +83,10 @@ back; its operations are synchronous and never wait:
   indexed external bodies. `renew` returns memory and body explicitly.
 - **Retry plans.** An individual frame carries its `RetryPlan`, a sequence
   of rates with their transmissions and protection, as mac80211's rate
-  table. The backend retries the head of its queue by the plan before the
+  table. The first stage is mandatory; the tail is a bounded array with an
+  initialized length, so it cannot contain holes. Filtering a plan keeps
+  each accepted stage's full budget and order, within the original bound.
+  The backend retries the head of its queue by the plan before the
   next attempt of that queue; the completion reports the transmissions made
   and the last rate, for the rate control above the port.
   `Ended.transmissions` is exact (`u16` covers all four 255-transmission

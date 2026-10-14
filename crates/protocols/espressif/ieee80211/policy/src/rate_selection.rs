@@ -18,7 +18,7 @@
 //!   current schedule record; its terminal adapts the control.
 //!
 //! A record is four `(rate, count)` pairs, so each plan holds at most
-//! four stages ([`RETRY_STAGES`]); once the ladder has no further rate,
+//! four stages ([`oer_ieee80211_lower_mac::RETRY_STAGES`]); once the ladder has no further rate,
 //! the remaining transmissions keep the last one, as the vendor's retry
 //! state does.
 //!
@@ -33,8 +33,8 @@ use core::marker::PhantomData;
 use core::num::{NonZeroU8, NonZeroU16};
 
 use oer_ieee80211_lower_mac::{
-    Band, Ieee80211Capabilities, Protection, RETRY_STAGES, RetryPlan, RetryStage, SignalMetadata,
-    TxEndStatus, TxOutcome,
+    Band, Ieee80211Capabilities, Protection, RetryPlan, RetryStage, SignalMetadata, TxEndStatus,
+    TxOutcome,
 };
 use oer_ieee80211_mac::phy::{LegacyRate, PhyRate};
 use oer_ieee80211_upper_mac::{
@@ -178,41 +178,42 @@ impl<K: Ieee80211Capabilities> Default for EspressifRateSelection<K> {
 /// The plan of `limit` transmissions, the first at `initial` and each
 /// after `failures` failures at `rate(failures)`, the last rate where it
 /// has none. A record holds four `(rate, count)` pairs, so its walk makes
-/// at most four stages; were a fifth rate to come, the plan would end with
-/// the fourth stage.
-fn walk(initial: PhyRate, limit: u8, rate: impl Fn(u8) -> Option<PhyRate>) -> RetryPlan<PhyRate> {
+/// at most four stages. A source with more rate changes refuses the complete
+/// plan rather than publishing a smaller transmission budget.
+fn walk(
+    initial: PhyRate,
+    limit: u8,
+    rate: impl Fn(u8) -> Option<PhyRate>,
+) -> Option<RetryPlan<PhyRate>> {
     let stage = |(rate, transmissions): (PhyRate, NonZeroU8)| RetryStage {
         rate,
         transmissions,
         protection: Protection::None,
     };
-    let mut first = (initial, NonZeroU8::MIN);
-    let mut rest: [Option<(PhyRate, NonZeroU8)>; RETRY_STAGES - 1] = [None; RETRY_STAGES - 1];
-    let mut current = initial;
-    for failures in 1..limit {
-        let next = rate(failures).unwrap_or(current);
-        current = next;
-        let last = rest.iter_mut().rev().find_map(Option::as_mut);
-        match last {
-            Some((rate, transmissions)) if *rate == next => {
-                *transmissions = transmissions.saturating_add(1);
-            }
-            None if first.0 == next => first.1 = first.1.saturating_add(1),
-            _ => match rest.iter_mut().find(|slot| slot.is_none()) {
-                Some(slot) => *slot = Some((next, NonZeroU8::MIN)),
-                None => break,
-            },
+    let limit = NonZeroU8::new(limit)?;
+    let mut current = (initial, NonZeroU8::MIN);
+    let mut plan: Option<RetryPlan<PhyRate>> = None;
+    for failures in 1..limit.get() {
+        let next = rate(failures).unwrap_or(current.0);
+        if next == current.0 {
+            // A run is bounded by the byte-sized publication limit; its
+            // nonzero count cannot exceed 255, including this increment.
+            current.1 = current.1.saturating_add(1);
+        } else {
+            plan = Some(match plan {
+                None => RetryPlan::new(stage(current)),
+                Some(plan) => match plan.then(stage(current)) {
+                    Ok(plan) => plan,
+                    Err(_) => return None,
+                },
+            });
+            current = (next, NonZeroU8::MIN);
         }
     }
-    let mut plan = RetryPlan::new(stage(first));
-    for next in rest.into_iter().flatten() {
-        plan = match plan.then(stage(next)) {
-            Ok(plan) => plan,
-            // The walk keeps at most the plan's stages.
-            Err((plan, _)) => plan,
-        };
+    match plan {
+        None => Some(RetryPlan::new(stage(current))),
+        Some(plan) => plan.then(stage(current)).ok(),
     }
-    plan
 }
 
 /// The plan of a control schedule record: its rates, its budget; `None`
@@ -224,7 +225,7 @@ fn control_plan(schedule: RateScheduleRef) -> Option<RetryPlan<PhyRate>> {
             .and_then(legacy_rate)
             .map(PhyRate::Legacy)
     };
-    Some(walk(rate(0)?, schedule_publication_limit(schedule), rate))
+    walk(rate(0)?, schedule_publication_limit(schedule), rate)
 }
 
 /// The selection for a port whose metadata measures every received frame's
@@ -360,11 +361,11 @@ impl<K: Ieee80211Capabilities> EspressifRateSelection<K> {
             })),
             (FrameRates::Data, Some(control)) => {
                 let initial = control.mpdu_rate();
-                Some(walk(
+                walk(
                     initial,
                     schedule_publication_limit(control.association().current_schedule()),
                     |failures| ordinary_retry_rate(initial, failures),
-                ))
+                )
             }
             // No data goes before an association; it would go as control.
             (FrameRates::Control | FrameRates::Data, _) => control_plan(self.control_schedule()),
@@ -381,22 +382,7 @@ fn on_channel<R>(
     plan: RetryPlan<PhyRate>,
     carried: impl Fn(PhyRate) -> Option<R>,
 ) -> Option<RetryPlan<R>> {
-    let mut stages = plan.stages().filter_map(|stage| {
-        Some(RetryStage {
-            rate: carried(stage.rate)?,
-            transmissions: stage.transmissions,
-            protection: stage.protection,
-        })
-    });
-    let mut on_channel = RetryPlan::new(stages.next()?);
-    for stage in stages {
-        on_channel = match on_channel.then(stage) {
-            Ok(plan) => plan,
-            // Never more stages than the vendor's plan held.
-            Err((plan, _)) => plan,
-        };
-    }
-    Some(on_channel)
+    plan.filter_map(carried)
 }
 
 #[cfg(test)]

@@ -1117,8 +1117,8 @@ pub struct RetryStage<R> {
 pub struct RetryPlan<R> {
     /// The first stage: a plan always has one.
     first: RetryStage<R>,
-    /// The stages after it, in order, the empty ones last.
-    rest: [Option<RetryStage<R>>; RETRY_STAGES - 1],
+    /// The initialized stages after the first, contiguous and bounded.
+    rest: heapless::Vec<RetryStage<R>, { RETRY_STAGES - 1 }>,
 }
 
 impl<R> RetryPlan<R> {
@@ -1126,7 +1126,7 @@ impl<R> RetryPlan<R> {
     pub fn new(first: RetryStage<R>) -> Self {
         Self {
             first,
-            rest: [const { None }; RETRY_STAGES - 1],
+            rest: heapless::Vec::new(),
         }
     }
 
@@ -1136,12 +1136,9 @@ impl<R> RetryPlan<R> {
     ///
     /// The plan and the stage, when the plan holds [`RETRY_STAGES`].
     pub fn then(mut self, stage: RetryStage<R>) -> Result<Self, (Self, RetryStage<R>)> {
-        match self.rest.iter_mut().find(|slot| slot.is_none()) {
-            Some(slot) => {
-                *slot = Some(stage);
-                Ok(self)
-            }
-            None => Err((self, stage)),
+        match self.rest.push(stage) {
+            Ok(()) => Ok(self),
+            Err(stage) => Err((self, stage)),
         }
     }
 
@@ -1157,7 +1154,7 @@ impl<R> RetryPlan<R> {
 
     /// The stages in order.
     pub fn stages(&self) -> impl Iterator<Item = &RetryStage<R>> {
-        core::iter::once(&self.first).chain(self.rest.iter().map_while(Option::as_ref))
+        core::iter::once(&self.first).chain(self.rest.iter())
     }
 
     /// The transmissions the plan makes at most.
@@ -1194,10 +1191,7 @@ impl<R> RetryPlan<R> {
         let first = self.first.transmissions.min(transmissions);
         let mut left = first.get()..transmissions.get();
         self.first.transmissions = first;
-        for slot in &mut self.rest {
-            let Some(stage) = slot else {
-                break;
-            };
+        self.rest.retain_mut(|stage| {
             let taken = left
                 .by_ref()
                 .take(usize::from(stage.transmissions.get()))
@@ -1205,10 +1199,11 @@ impl<R> RetryPlan<R> {
             match core::num::NonZeroU8::new(taken) {
                 Some(taken) => {
                     stage.transmissions = taken;
+                    true
                 }
-                None => *slot = None,
+                None => false,
             }
-        }
+        });
         self
     }
 
@@ -1221,11 +1216,31 @@ impl<R> RetryPlan<R> {
         };
         RetryPlan {
             first: stage(&self.first),
-            rest: self
-                .rest
-                .each_ref()
-                .map(|slot| slot.as_ref().map(&mut stage)),
+            // One output per initialized input, with the same capacity.
+            rest: self.rest.iter().map(stage).collect(),
         }
+    }
+
+    /// Keep the stages whose rates `rate` accepts, in their original order.
+    /// Each retained stage keeps its exact transmission count and protection;
+    /// `None` means every stage was refused.
+    pub fn filter_map<S>(self, mut rate: impl FnMut(R) -> Option<S>) -> Option<RetryPlan<S>> {
+        let mut stages = core::iter::once(self.first)
+            .chain(self.rest)
+            .filter_map(|stage| {
+                Some(RetryStage {
+                    rate: rate(stage.rate)?,
+                    transmissions: stage.transmissions,
+                    protection: stage.protection,
+                })
+            });
+        Some(RetryPlan {
+            first: stages.next()?,
+            // The input has at most RETRY_STAGES stages. Taking its first
+            // accepted stage leaves at most RETRY_STAGES - 1; filtering
+            // cannot increase that bound.
+            rest: stages.collect(),
+        })
     }
 
     /// The plan with each stage's rate turned by `rate`, the stages and
@@ -1242,13 +1257,13 @@ impl<R> RetryPlan<R> {
                 protection: stage.protection,
             })
         };
-        let mut plan = RetryPlan::new(turn(self.first)?);
-        for (slot, stage) in plan.rest.iter_mut().zip(self.rest) {
-            let Some(stage) = stage else {
-                break;
-            };
-            *slot = Some(turn(stage)?);
-        }
-        Ok(plan)
+        Ok(RetryPlan {
+            first: turn(self.first)?,
+            // At most RETRY_STAGES - 1 inputs, even when a conversion fails.
+            rest: self.rest.into_iter().map(turn).collect::<Result<_, _>>()?,
+        })
     }
 }
+
+#[cfg(test)]
+mod tests;

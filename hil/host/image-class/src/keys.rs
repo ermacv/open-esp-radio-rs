@@ -8,6 +8,9 @@
 //! ([`oer_hil_image_keys::image_keys`]), so the host's
 //! expectation of a flashed image cannot drift from the firmware. A flashed
 //! image is the one class of its chip whose keys it reports.
+//! Linking a network stack does not advertise a traffic endpoint: only the
+//! handlers implemented by the image contribute keys. Wi-Fi traffic remains
+//! absent while its product orchestration is being rebuilt on the port.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -138,7 +141,7 @@ pub fn classify_flashed(chip: &str, image_keys: &DeviceImageKeys) -> Option<Imag
 
 #[cfg(test)]
 mod tests {
-    use oer_hil_protocol::{Message, bluetooth, network, system, telemetry, wifi};
+    use oer_hil_protocol::{Message, base, bluetooth, network, system, telemetry, wifi};
 
     use super::*;
 
@@ -214,7 +217,7 @@ mod tests {
             None
         );
         let mut missing = performance.keys().clone();
-        missing.remove(&<network::Udp as Message>::KEY);
+        assert!(missing.remove(&<base::Hello as Message>::KEY));
         assert_eq!(
             classify_flashed(full_agent(), &DeviceImageKeys::of_keys(missing)),
             None
@@ -230,13 +233,14 @@ mod tests {
     }
 
     #[test]
-    fn the_classes_report_what_their_features_promise() {
+    fn the_classes_report_active_handlers_without_unimplemented_wifi_traffic() {
         let performance = keys(ImageClass::Performance);
-        assert!(performance.has::<network::Udp>());
+        assert!(!performance.has::<network::Udp>());
         assert!(!performance.has::<wifi::DriverObservation>());
         assert!(keys(ImageClass::Correctness).has::<wifi::DriverObservation>());
         let coex = keys(ImageClass::WifiBleCoex);
-        assert!(coex.has::<bluetooth::Gatt>() && coex.has::<network::Udp>());
+        assert!(coex.has::<bluetooth::Gatt>());
+        assert!(!coex.has::<network::Udp>());
         let dtm = keys(ImageClass::BluetoothDtm);
         assert!(dtm.has::<bluetooth::Dtm>() && dtm.has::<bluetooth::Hci>());
         assert!(!dtm.has::<network::Udp>());
@@ -269,7 +273,7 @@ mod tests {
         let class = keys(ImageClass::Performance);
         let arm = image_keys_with(ImageClass::Performance, chip, &without).unwrap();
         assert!(class.has::<telemetry::CpuLoad>() && !arm.has::<telemetry::CpuLoad>());
-        assert!(arm.has::<network::Udp>());
+        assert!(!class.has::<network::Udp>() && !arm.has::<network::Udp>());
         assert!(classify_flashed(chip, &arm).is_none());
         assert!(
             image_keys_with(ImageClass::Performance, chip, &FeatureDelta::default())

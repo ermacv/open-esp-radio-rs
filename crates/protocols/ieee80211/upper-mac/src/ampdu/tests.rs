@@ -334,6 +334,41 @@ fn helpers_select_compact_and_mark_retries() {
 }
 
 #[test]
+fn compaction_keeps_exactly_the_selected_prefix_in_order() {
+    let original = [11, 22, 33, 44, 55];
+    for mask in 0..=u8::MAX {
+        let mut items = original;
+        let kept = compact(&mut items, u64::from(mask));
+        let expected = original
+            .into_iter()
+            .enumerate()
+            .filter(|(index, _)| mask & (1 << index) != 0)
+            .map(|(_, item)| item);
+        assert!(items[..kept].iter().copied().eq(expected));
+    }
+}
+
+#[test]
+fn compaction_respects_empty_arrays_and_the_last_mask_bit() {
+    assert_eq!(compact(&mut [0_u8; 0], u64::MAX), 0);
+    let original: [usize; 65] = core::array::from_fn(|index| index);
+    for mask in [
+        0,
+        1,
+        1 << 63,
+        u64::MAX,
+        0xaaaa_aaaa_aaaa_aaaa,
+        0x5555_5555_5555_5555,
+    ] {
+        let mut items = original;
+        let kept = compact(&mut items, mask);
+        let expected = (0..64).filter(|index| mask & (1 << index) != 0);
+        assert!(items[..kept].iter().copied().eq(expected));
+        assert_eq!(items[64], original[64]);
+    }
+}
+
+#[test]
 fn aging_threshold_is_exact_at_radio_epoch_boundaries() {
     use oer_time::RadioDuration;
     let policy = AmpduRetryPolicy {

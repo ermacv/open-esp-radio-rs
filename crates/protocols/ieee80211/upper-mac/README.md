@@ -66,6 +66,9 @@ request gives `None`, and the planner reports `SubframeOutsideAggregate`
 before publishing an attempt. An unrepresentable subframe size admits no
 frame and leaves the aggregate run unchanged. `ampdu::compact` operates on
 fixed arrays of Copy metadata, never on affine MPDUs or payload owners.
+It swaps selected entries into the prefix in order, without a full-array
+temporary. Only the first 64 entries are addressable by its mask; callers
+consume the returned prefix length and do not inspect the remaining suffix.
 The crate uses the canonical strict lint block checked by tidy.
 
 ## What stays outside

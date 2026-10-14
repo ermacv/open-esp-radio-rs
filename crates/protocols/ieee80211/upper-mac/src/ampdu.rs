@@ -62,21 +62,24 @@ pub fn unacknowledged(sequences: &[SequenceNumber], report: Option<BlockAckRepor
 }
 
 /// Keep the entries of `items` whose bit is set in `mask`, moved to the
-/// front in their order; returns how many were kept.
+/// front in their order; returns how many were kept. Only the first 64
+/// entries have mask bits. The suffix after the kept prefix is unspecified.
+///
+/// Compaction swaps each selected entry into the next free prefix position,
+/// using at most one entry of temporary storage rather than copying the array.
 pub fn compact<T: Copy, const N: usize>(items: &mut [T; N], mask: u64) -> usize {
     // This helper moves copyable metadata, never affine MPDU/body owners.
-    // The fixed array copy retains its length proof; both iterators carry
-    // actual references, so compaction needs no dynamic array index.
-    let original = *items;
-    let selected = original
-        .into_iter()
-        .take(64)
-        .enumerate()
-        .filter_map(|(index, item)| (mask & (1_u64 << index) != 0).then_some(item));
     let mut kept = 0_usize;
-    for (destination, source) in items.iter_mut().zip(selected) {
-        *destination = source;
-        kept = kept.saturating_add(1);
+    // The mask represents at most MAX_AMPDU_SUBFRAMES entries.
+    for index in 0..N.min(usize::from(MAX_AMPDU_SUBFRAMES)) {
+        if mask & (1_u64 << index) != 0 {
+            // kept counts selected entries before index, hence kept <= index
+            // < N. Both swap indices are in bounds, and the displaced value
+            // is behind the unread suffix. Selected order is preserved.
+            items.swap(kept, index);
+            // The count is bounded by the 64 mask positions.
+            kept = kept.saturating_add(1);
+        }
     }
     kept
 }

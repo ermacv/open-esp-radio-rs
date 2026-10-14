@@ -55,6 +55,12 @@ vendor:
 [`oer-espressif-ieee80211-policy`](../../espressif/ieee80211/policy/README.md)
 supplies the Espressif values recovered from the vendor stack.
 
+Control-rate selection starts from the first eligible advertised basic rate.
+When none is eligible it starts from the ERP mandatory set's compile-time
+checked head; its selection fold always has a candidate. It then chooses the
+fastest candidate no faster than the data rate, or the slowest candidate when
+all are faster, applying the BSS preamble rule afterward.
+
 A-MPDU lifetime and aging margin are spans of the port's radio clock
 (`Ieee80211Duration`). Aging uses the
 same radio epoch as the commit instant and starts strictly after

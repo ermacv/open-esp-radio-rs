@@ -202,6 +202,49 @@ fn control_rate_is_the_fastest_basic_rate_not_faster_than_the_data_rate() {
 }
 
 #[test]
+fn every_basic_set_selects_the_required_control_rate() {
+    for mask in 0..1 << BasicRates::ORDER.len() {
+        for dsss_only in [false, true] {
+            let selected = BasicRates(mask);
+            let eligible = |rate: &LegacyRate| !dsss_only || !rate.is_ofdm();
+            let candidates = if selected.rates().any(|rate| eligible(&rate)) {
+                selected
+            } else {
+                BasicRates::ERP_MANDATORY
+            };
+            let policy = policy(
+                ErpProtection::new(dsss_only, false),
+                HtProtectionMode::None,
+                selected,
+            );
+            for (_, data) in BasicRates::ORDER {
+                let expected = candidates
+                    .rates()
+                    .filter(eligible)
+                    .map(LegacyRate::kbps)
+                    .filter(|kbps| *kbps <= data.kbps())
+                    .max()
+                    .unwrap_or_else(|| {
+                        candidates
+                            .rates()
+                            .filter(eligible)
+                            .map(LegacyRate::kbps)
+                            .min()
+                            .unwrap()
+                    });
+                let actual = policy.control_rate(PhyRate::Legacy(data));
+                assert_eq!(
+                    actual.kbps(),
+                    expected,
+                    "set {mask:#x}, ERP {dsss_only}, data {data:?}"
+                );
+                assert!(!dsss_only || !actual.is_ofdm());
+            }
+        }
+    }
+}
+
+#[test]
 fn the_length_threshold_protects_only_long_individual_mpdus() {
     let policy = ProtectionPolicy::new(Some(RtsLengthThreshold::new(2346)));
     let rate = PhyRate::Legacy(LegacyRate::Ofdm54M);

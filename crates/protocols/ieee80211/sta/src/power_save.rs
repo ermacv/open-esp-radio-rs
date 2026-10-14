@@ -14,21 +14,65 @@
 //!
 //! [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6130033259
 
+use core::num::NonZeroU8;
+
 use oer_ieee80211_mac::station_beacon::StaTimObservation;
 use oer_ieee80211_mac::station_power_save::StaPowerManagement;
 
 /// The transmissions a Null's retry plan makes: the vendor's limit of
 /// Null retries, plus the first.
-pub const NULL_TRANSMISSIONS: u8 = crate::modem_sleep::NULL_RETRY_LIMIT + 1;
+pub const NULL_TRANSMISSIONS: NonZeroU8 = {
+    #[cfg_attr(not(test), expect(clippy::panic, reason = "evaluated at build"))]
+    const fn checked() -> NonZeroU8 {
+        match NonZeroU8::MIN.checked_add(crate::modem_sleep::NULL_RETRY_LIMIT) {
+            Some(count) => count,
+            None => panic!("a Null's retry limit plus its first transmission must fit"),
+        }
+    }
+    checked()
+};
+
+/// What the Null's completed retry plan established.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NullOutcome {
+    /// The access point acknowledged the Null.
+    Delivered,
+    /// Delivery was not confirmed, including a local preparation refusal.
+    Unconfirmed,
+}
 
 /// What the station knows of its access point's view of its power state.
+///
+/// A Null completion carries an explicit outcome rather than a boolean:
+///
+/// ```compile_fail,E0308
+/// use oer_ieee80211_sta::power_save::PowerSaveView;
+/// use oer_ieee80211_mac::station_power_save::StaPowerManagement;
+/// fn sent(view: &mut PowerSaveView) {
+///     view.null_sent(StaPowerManagement::Active, false);
+/// }
+/// ```
+///
+/// Confirmed and unconfirmed transitions retain the access point's view:
+///
+/// ```
+/// use oer_ieee80211_sta::power_save::{NullOutcome, PowerSaveView};
+/// use oer_ieee80211_mac::station_power_save::StaPowerManagement;
+/// let mut view = PowerSaveView::Awake;
+/// view.null_sent(StaPowerManagement::PowerSave, NullOutcome::Delivered);
+/// view.null_sent(StaPowerManagement::Active, NullOutcome::Unconfirmed);
+/// assert_eq!(view, PowerSaveView::AwakeUnconfirmed);
+/// ```
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct PowerSaveView {
-    /// The station's own state: it sleeps.
-    asleep: bool,
+pub enum PowerSaveView {
+    /// Both ends know that the station is awake.
+    #[default]
+    Awake,
+    /// The station sleeps; a PM=1 Null may have reached the access point.
+    Asleep,
     /// The access point may think the station sleeps: a PM=1 Null may have
-    /// arrived and no PM=0 since.
-    peer_may_think_asleep: bool,
+    /// arrived, and the awake station has no acknowledgement of PM=0 since.
+    AwakeUnconfirmed,
 }
 
 /// What the station does about its access point's view.
@@ -42,37 +86,25 @@ pub enum PowerSaveDecision {
 }
 
 impl PowerSaveView {
-    /// The view of an awake station whose access point thinks it awake.
-    pub const fn awake() -> Self {
-        Self {
-            asleep: false,
-            peer_may_think_asleep: false,
-        }
-    }
-
     /// The station sent a Null with `power_management`, which its retry
     /// plan delivered or not.
-    pub fn null_sent(&mut self, power_management: StaPowerManagement, delivered: bool) {
-        match power_management {
-            StaPowerManagement::PowerSave => {
-                self.asleep = true;
+    pub fn null_sent(&mut self, power_management: StaPowerManagement, outcome: NullOutcome) {
+        *self = match (power_management, outcome, *self) {
+            (StaPowerManagement::PowerSave, _, _) => {
                 // Even an unacknowledged PM=1 may have reached the access
                 // point: its ACK alone may have been lost.
-                self.peer_may_think_asleep = true;
+                Self::Asleep
             }
-            StaPowerManagement::Active => {
-                self.asleep = false;
-                if delivered {
-                    self.peer_may_think_asleep = false;
-                }
-            }
-        }
+            (StaPowerManagement::Active, NullOutcome::Delivered, _)
+            | (StaPowerManagement::Active, _, Self::Awake) => Self::Awake,
+            (StaPowerManagement::Active, NullOutcome::Unconfirmed, _) => Self::AwakeUnconfirmed,
+        };
     }
 
     /// A beacon of the station's BSS with `tim`: what the station does.
     pub fn beacon(&self, tim: Option<StaTimObservation>) -> PowerSaveDecision {
         match tim {
-            Some(tim) if !self.asleep && self.peer_may_think_asleep && tim.unicast_buffered => {
+            Some(tim) if *self == Self::AwakeUnconfirmed && tim.unicast_buffered => {
                 PowerSaveDecision::SendActive
             }
             _ => PowerSaveDecision::Keep,
@@ -81,7 +113,7 @@ impl PowerSaveView {
 
     /// Whether the station sleeps.
     pub const fn asleep(&self) -> bool {
-        self.asleep
+        matches!(self, Self::Asleep)
     }
 }
 
@@ -100,23 +132,31 @@ mod tests {
 
     #[test]
     fn an_undelivered_active_null_is_sent_again_when_the_tim_shows_our_frames() {
-        let mut view = PowerSaveView::awake();
-        view.null_sent(StaPowerManagement::PowerSave, true);
-        view.null_sent(StaPowerManagement::Active, false);
+        let mut view = PowerSaveView::Awake;
+        view.null_sent(StaPowerManagement::PowerSave, NullOutcome::Delivered);
+        view.null_sent(StaPowerManagement::Active, NullOutcome::Unconfirmed);
         // The access point buffers for the station: send PM=0 again.
         assert_eq!(view.beacon(tim(true)), PowerSaveDecision::SendActive);
         // A TIM without the station's bit says nothing.
         assert_eq!(view.beacon(tim(false)), PowerSaveDecision::Keep);
         // Delivered at last: the two sides agree.
-        view.null_sent(StaPowerManagement::Active, true);
+        view.null_sent(StaPowerManagement::Active, NullOutcome::Delivered);
         assert_eq!(view.beacon(tim(true)), PowerSaveDecision::Keep);
     }
 
     #[test]
     fn a_sleeping_station_leaves_its_buffered_frames_to_its_wake() {
-        let mut view = PowerSaveView::awake();
-        view.null_sent(StaPowerManagement::PowerSave, false);
+        let mut view = PowerSaveView::Awake;
+        view.null_sent(StaPowerManagement::PowerSave, NullOutcome::Unconfirmed);
         assert!(view.asleep());
+        assert_eq!(view.beacon(tim(true)), PowerSaveDecision::Keep);
+    }
+
+    #[test]
+    fn an_unconfirmed_active_null_does_not_invent_a_prior_sleep() {
+        let mut view = PowerSaveView::Awake;
+        view.null_sent(StaPowerManagement::Active, NullOutcome::Unconfirmed);
+        assert_eq!(view, PowerSaveView::Awake);
         assert_eq!(view.beacon(tim(true)), PowerSaveDecision::Keep);
     }
 }

@@ -50,7 +50,6 @@
 //! lengths refuse at construction, and received payloads are never clipped.
 
 use core::marker::PhantomData;
-use core::num::NonZeroU8;
 use oer_ieee80211_sta::machine::TxRefusal;
 
 use core::future::{Future, poll_fn};
@@ -277,17 +276,6 @@ impl<K: Ieee80211Capabilities> Levels<K> {
             }
         }
         checked::<K>()
-    };
-    /// A Null's transmissions.
-    const NULL: NonZeroU8 = {
-        #[cfg_attr(not(test), expect(clippy::panic, reason = "evaluated at build"))]
-        const fn checked() -> NonZeroU8 {
-            match NonZeroU8::new(NULL_TRANSMISSIONS) {
-                Some(transmissions) => transmissions,
-                None => panic!("a Null is sent at least once"),
-            }
-        }
-        checked()
     };
 }
 
@@ -1214,7 +1202,7 @@ where
                     // ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6130033259)).
                     StaRatePlan::Null => rates
                         .plan(FrameRates::Control, carried)
-                        .map(|plan| plan.limit(Levels::<B::Caps>::NULL)),
+                        .map(|plan| plan.limit(NULL_TRANSMISSIONS)),
                     StaRatePlan::Management | StaRatePlan::Group => {
                         rates.plan(FrameRates::Control, carried)
                     }

@@ -109,6 +109,12 @@ names the connection epoch and purpose (authentication, handshake message,
 PM transition, probe or rekey); the current state never guesses which
 operation a terminal ended. Connected control admission remains one at a
 time; its flags describe pending policy transitions, not completion identity.
+The complete `TxOutcome` reaches the station's state transition. Power save
+then interprets a Null's outcome as Delivered or Unconfirmed, keeping one of
+three states: Awake, Asleep or AwakeUnconfirmed. An unconfirmed PM=0 only
+needs reconciliation through TIM when an earlier PM=1 may have reached the
+access point. The Null retry budget is a `NonZeroU8` from its constant
+definition through the service's retry-plan limit.
 
 A data context keeps the link epoch, original TID, order, checked
 `SizedFrame<AckHeader, K>`, access category and protection. The immutable

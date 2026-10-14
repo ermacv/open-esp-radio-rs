@@ -110,7 +110,7 @@ use oer_time::{Duration, Instant};
 
 use crate::epoch::{LinkEpoch, LinkEpochSource};
 use crate::pool::Pool;
-use crate::power_save::{PowerSaveDecision, PowerSaveView};
+use crate::power_save::{NullOutcome, PowerSaveDecision, PowerSaveView};
 
 use crate::join::{
     association::{StaAssociationEvent, StaAssociationPoll, StaAssociationRuntime},
@@ -1236,10 +1236,10 @@ enum Done {
     },
     Command(StaCommand),
     Tick,
-    /// A transmission ended: acknowledged, or not.
+    /// The complete port terminal, including withdrawals and unknown outcomes.
     Tx {
         purpose: TxPurpose,
-        delivered: bool,
+        completion: TxOutcome,
     },
     Configured,
 }
@@ -1495,13 +1495,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 }
                 Done::Tx {
                     purpose: context.purpose,
-                    delivered: matches!(
-                        completion,
-                        TxOutcome::Ended {
-                            status: TxEndStatus::Delivered,
-                            ..
-                        }
-                    ),
+                    completion,
                 }
             }
             StaInput::Unsent {
@@ -2046,22 +2040,31 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         let sent = match done {
             Done::Tx {
                 purpose: TxPurpose::Connected(sending),
-                delivered,
-            } => Some((sending, delivered)),
+                completion,
+            } => Some((
+                sending,
+                match completion {
+                    TxOutcome::Ended {
+                        status: TxEndStatus::Delivered,
+                        ..
+                    } => NullOutcome::Delivered,
+                    _ => NullOutcome::Unconfirmed,
+                },
+            )),
             Done::Unsent {
                 purpose: TxPurpose::Connected(sending),
                 ..
-            } => Some((sending, false)),
+            } => Some((sending, NullOutcome::Unconfirmed)),
             _ => None,
         };
-        if let Some((sending, delivered)) = sent {
+        if let Some((sending, outcome)) = sent {
             connected.sending = false;
             match sending {
                 Sending::Wake => {
                     connected.waking = false;
                     connected
                         .power
-                        .null_sent(StaPowerManagement::Active, delivered);
+                        .null_sent(StaPowerManagement::Active, outcome);
                     if let Some(background) = &mut connected.background
                         && background.step == BackgroundStep::AwaitWake
                     {
@@ -2071,13 +2074,13 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 Sending::Sleep => {
                     connected
                         .power
-                        .null_sent(StaPowerManagement::PowerSave, delivered);
+                        .null_sent(StaPowerManagement::PowerSave, outcome);
                     if let Some(background) = &mut connected.background
                         && background.step == BackgroundStep::AwaitSleep
                     {
                         // Not delivered: no readiness; the arbiter cancels
                         // the absence at its start.
-                        background.step = if delivered {
+                        background.step = if outcome == NullOutcome::Delivered {
                             BackgroundStep::NeedReady
                         } else {
                             BackgroundStep::AwaitStart
@@ -2242,7 +2245,11 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                         AuthStage::AwaitSent { response_timeout },
                         Done::Tx {
                             purpose: TxPurpose::Authentication,
-                            delivered: true,
+                            completion:
+                                TxOutcome::Ended {
+                                    status: TxEndStatus::Delivered,
+                                    ..
+                                },
                         },
                     ) => {
                         auth.stage = AuthStage::AwaitResponse {
@@ -2255,7 +2262,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                         AuthStage::AwaitSent { .. },
                         Done::Tx {
                             purpose: TxPurpose::Authentication,
-                            delivered: false,
+                            ..
                         },
                     ) => true,
                     (AuthStage::AwaitResponse { until }, Done::Tick) => now >= until,
@@ -3296,7 +3303,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 qos_sequences: QOS_SEQUENCES,
                 report: Some(UpstreamFact::Connected(channel)),
                 exchange: false,
-                power: PowerSaveView::awake(),
+                power: PowerSaveView::Awake,
                 wake: false,
                 sending: false,
                 waking: false,
@@ -3662,7 +3669,7 @@ fn connect<T: StaTokens, K>(handshake: Handshake<T, K>) -> State<T, K> {
             qos_sequences: QOS_SEQUENCES,
             report: Some(UpstreamFact::Connected(channel)),
             exchange: false,
-            power: PowerSaveView::awake(),
+            power: PowerSaveView::Awake,
             wake: false,
             sending: false,
             waking: false,

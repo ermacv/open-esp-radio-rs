@@ -31,4 +31,4 @@ host-layer = "entry"
 host-app = "gate"
 host-boundary = "application"
 # The checks read issue policy, workflows, hooks and chip profiles.
-inputs = [".github/workflows", ".github/labels.json", ".github/ISSUE_TEMPLATE", ".github/scripts", ".claude/hooks", "platform/*/chip.toml", "crates/radio/port/tests/ui", "crates/runtime/radio/permit-pool/tests/ui", "crates/protocols/ieee80211/lower-mac/tests/ui", "crates/protocols/ieee80211/sta/tests/ui", "crates/runtime/ieee80211/tests/ui"]
+inputs = [".github/workflows", ".github/labels.json", ".github/ISSUE_TEMPLATE", ".github/scripts", ".claude/hooks", "platform/*/chip.toml", "crates/radio/port/tests/ui", "crates/runtime/radio/permit-pool/tests/ui", "crates/protocols/ieee80211/lower-mac/tests/ui", "crates/protocols/ieee80211/mac/tests/ui", "crates/protocols/ieee80211/sta/tests/ui", "crates/runtime/ieee80211/tests/ui"]

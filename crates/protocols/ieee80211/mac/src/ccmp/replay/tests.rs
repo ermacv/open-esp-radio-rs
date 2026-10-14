@@ -88,17 +88,43 @@ fn the_old_and_the_new_group_key_are_both_taken_until_the_old_is_removed() {
 }
 
 #[test]
-fn a_check_prepared_before_its_group_key_was_removed_does_not_commit() {
+fn cancelled_old_admission_cannot_advance_the_reinstalled_group_key() {
     let mut epoch = epoch();
-    let candidate = epoch
-        .prepare(CcmpRxProtection::Group, None, header(5, 1))
-        .unwrap();
+    {
+        let _cancelled = epoch
+            .prepare(CcmpRxProtection::Group, None, header(900, 1))
+            .unwrap();
+    }
     epoch.remove_group(group(1));
+    epoch.install_group(group(1), [0; 8]).unwrap();
     assert_eq!(
-        epoch.commit(candidate),
-        Err(CcmpRxReplayError::UninstalledGroupKey(
-            CcmpKeyId::new(1).unwrap()
-        ))
+        epoch.check(CcmpRxProtection::Group, None, header(1, 1)),
+        Ok(())
+    );
+    assert_eq!(
+        epoch.check(CcmpRxProtection::Group, None, header(2, 1)),
+        Ok(())
+    );
+}
+
+#[test]
+fn pairwise_admission_advances_only_its_original_association() {
+    let mut old = epoch();
+    let mut current = epoch();
+    old.prepare(CcmpRxProtection::Pairwise, None, header(900, 0))
+        .unwrap()
+        .commit();
+    assert!(
+        old.check(CcmpRxProtection::Pairwise, None, header(900, 0))
+            .is_err()
+    );
+    assert_eq!(
+        current.check(CcmpRxProtection::Pairwise, None, header(1, 0)),
+        Ok(())
+    );
+    assert_eq!(
+        current.check(CcmpRxProtection::Group, None, header(1, 1)),
+        Ok(())
     );
 }
 

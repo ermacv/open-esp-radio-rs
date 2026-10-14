@@ -44,19 +44,10 @@ pub enum CcmpRxReplayError {
         observed: CcmpKeyId,
     },
     /// A group frame's CCMP header names an index no installed group key
-    /// has, or a group key removed since its check was prepared.
+    /// has.
     UninstalledGroupKey(CcmpKeyId),
     /// The frame repeats or precedes a packet number of its lane.
     Replay(CcmpReplayError),
-}
-
-/// A prepared check of one frame; it commits once the frame is published.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CcmpRxReplayEpochCandidate {
-    /// A pairwise frame's.
-    Pairwise(CcmpRxReplayCandidate),
-    /// A group frame's, under the group key of its index.
-    Group(GroupKeyId, CcmpRxReplayCandidate),
 }
 
 /// The receive frontiers of one association's pairwise key and installed
@@ -128,18 +119,20 @@ impl CcmpRxReplayEpoch {
     }
 
     /// Prepare the check of a frame of `protection`, of the TID `tid` (none
-    /// for a non-QoS frame), with the CCMP header `header`.
+    /// for a non-QoS frame), with the CCMP header `header`. The returned
+    /// token borrows this exact key frontier exclusively through publication;
+    /// it cannot be applied to another epoch or survive key removal.
     ///
     /// # Errors
     ///
     /// A foreign destination, a key index that does not match it or names
     /// no installed group key, or a replayed packet number.
     pub fn prepare(
-        &self,
+        &mut self,
         protection: CcmpRxProtection,
         tid: Option<u8>,
         header: CcmpHeader,
-    ) -> Result<CcmpRxReplayEpochCandidate, CcmpRxReplayError> {
+    ) -> Result<CcmpRxReplayCandidate<'_>, CcmpRxReplayError> {
         let lane = match tid {
             Some(tid) => CcmpReplayLane::Tid(tid),
             None => CcmpReplayLane::NonQos,
@@ -153,7 +146,6 @@ impl CcmpRxReplayEpoch {
                 }
                 self.pairwise
                     .prepare(lane, header.packet_number())
-                    .map(CcmpRxReplayEpochCandidate::Pairwise)
                     .map_err(CcmpRxReplayError::Replay)
             }
             CcmpRxProtection::Group => {
@@ -161,39 +153,14 @@ impl CcmpRxReplayEpoch {
                 let Some(key_id) = GroupKeyId::new(observed.value()) else {
                     return Err(CcmpRxReplayError::UninstalledGroupKey(observed));
                 };
-                let Some(group) = key_id.select(&self.groups) else {
+                let Some(group) = key_id.select_mut(&mut self.groups) else {
                     return Err(CcmpRxReplayError::UninstalledGroupKey(observed));
                 };
                 group
                     .prepare(lane, header.packet_number())
-                    .map(|candidate| CcmpRxReplayEpochCandidate::Group(key_id, candidate))
                     .map_err(CcmpRxReplayError::Replay)
             }
             CcmpRxProtection::Other => Err(CcmpRxReplayError::ForeignDestination),
-        }
-    }
-
-    /// Commit a prepared check: its lane's frontier advances.
-    ///
-    /// # Errors
-    ///
-    /// A candidate another commit made stale, or one of a group key removed
-    /// since.
-    pub fn commit(
-        &mut self,
-        candidate: CcmpRxReplayEpochCandidate,
-    ) -> Result<(), CcmpRxReplayError> {
-        match candidate {
-            CcmpRxReplayEpochCandidate::Pairwise(candidate) => self
-                .pairwise
-                .commit(candidate)
-                .map_err(CcmpRxReplayError::Replay),
-            CcmpRxReplayEpochCandidate::Group(key_id, candidate) => key_id
-                .select_mut(&mut self.groups)
-                .as_mut()
-                .ok_or(CcmpRxReplayError::UninstalledGroupKey(key_id.key_id()))?
-                .commit(candidate)
-                .map_err(CcmpRxReplayError::Replay),
         }
     }
 
@@ -209,7 +176,8 @@ impl CcmpRxReplayEpoch {
         header: CcmpHeader,
     ) -> Result<(), CcmpRxReplayError> {
         let candidate = self.prepare(protection, tid, header)?;
-        self.commit(candidate)
+        candidate.commit();
+        Ok(())
     }
 }
 

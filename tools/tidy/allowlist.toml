@@ -104,6 +104,18 @@ reason = "cargo xtask check ui checks the contract diagnostic and its compiling 
 path = "crates/runtime/ieee80211/tests/ui/partial_aggregate.rs"
 reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
 
+[[uncompiled]]
+path = "crates/protocols/ieee80211/mac/tests/ui/replay_reinstallation.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/mac/tests/ui/replay_association.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/mac/tests/ui/replay_frontier.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
 # Dependencies a package declares only to select features of a crate its
 # dependency graph already uses, and so never names.
 

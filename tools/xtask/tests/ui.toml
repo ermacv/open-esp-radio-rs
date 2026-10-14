@@ -58,3 +58,14 @@ cases = [
     "crates/runtime/ieee80211/tests/ui/accepted_mpdu.rs",
     "crates/runtime/ieee80211/tests/ui/partial_aggregate.rs",
 ]
+
+[[suite]]
+name = "replay-owner"
+packages = ["oer-ieee80211-mac"]
+features = []
+targets = ["host", "esp32s31"]
+cases = [
+    "crates/protocols/ieee80211/mac/tests/ui/replay_reinstallation.rs",
+    "crates/protocols/ieee80211/mac/tests/ui/replay_association.rs",
+    "crates/protocols/ieee80211/mac/tests/ui/replay_frontier.rs",
+]

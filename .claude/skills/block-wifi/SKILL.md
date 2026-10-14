@@ -51,6 +51,13 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   custody before teardown when injecting a publication fault: counting all
   destructors only after `run_port` ends cannot detect an early owner drop.
 
+- CCMP replay preparation returns an exclusive borrow of the selected
+  frontier. Commit the token itself before publication, or drop it to cancel.
+  Never replace this with a transferable PN/revision pair: resetting a key
+  with the same wire ID also resets its revision, letting an old candidate
+  corrupt the new frontier. A new material epoch starts at KeyRSC; keeping
+  identical material means keeping the original replay owner.
+
 - Every port method but `next_event` is synchronous (`port.rs`, the trait's documentation).
 - A port has one event stream in occurrence order (#266 D8): the S31 runtime numbers every event under the core's lock and merges its four queues by that number (`runtime/esp32s31/ieee80211/src/lower_mac.rs`, `Queues::take`). An extension event names its kind and interface (`LowerMacEvent::Extension { kind, vif }`), and the router routes it by that interface, never by role.
 - Interrupt model ([ownership and refusals](../../../docs/architecture.md#ownership-and-refusals), #643): the MAC and power interrupts only read and clear their status and post the events, through `IrqConsumer::publish` (`hardware/esp32s31/driver/ieee80211/mac/src/irq/consumer.rs`); the port's owner task runs `LowerMacCore::service`. No Wi-Fi decision has a software deadline below 1 ms (ACK and Block Ack turnaround are hardware). The port backend `Esp32s31LowerMac` still runs `service` inside `on_interrupt` under the core's blocking lock; #563 removes it, so never add interrupt-side logic there.

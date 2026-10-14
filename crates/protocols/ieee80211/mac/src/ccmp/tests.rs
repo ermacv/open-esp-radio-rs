@@ -49,30 +49,27 @@ fn receive_sequence_rejects_truncating_high_bits() {
 }
 
 #[test]
-fn replay_commit_is_lane_scoped_and_two_phase() {
+fn replay_admission_borrows_one_owner_and_cancel_does_not_advance_it() {
     let initial = CcmpPacketNumber::new(7).unwrap();
     let mut replay = CcmpRxReplayState::new(initial);
     let tid0 = CcmpReplayLane::Tid(0);
     let tid7 = CcmpReplayLane::Tid(7);
     let pn8 = CcmpPacketNumber::new(8).unwrap();
     let pn9 = CcmpPacketNumber::new(9).unwrap();
-
-    let first = replay.prepare(tid0, pn8).unwrap();
-    let stale = replay.prepare(tid0, pn9).unwrap();
-    assert_eq!(replay.highest(tid0), Some(initial));
-    replay.commit(first).unwrap();
+    let admission = replay.prepare(tid0, pn8).unwrap();
+    assert_eq!(admission.lane(), tid0);
+    assert_eq!(admission.packet_number(), pn8);
+    admission.commit();
     assert_eq!(replay.highest(tid0), Some(pn8));
-    assert_eq!(replay.commit(stale), Err(CcmpReplayError::StaleCandidate));
-    assert_eq!(
+    {
+        let _cancelled = replay.prepare(tid0, pn9).unwrap();
+    }
+    assert_eq!(replay.highest(tid0), Some(pn8));
+    assert!(matches!(
         replay.prepare(tid0, pn8),
-        Err(CcmpReplayError::Replayed {
-            packet_number: pn8,
-            highest: pn8,
-        })
-    );
-
-    let other_lane = replay.prepare(tid7, pn8).unwrap();
-    replay.commit(other_lane).unwrap();
+        Err(CcmpReplayError::Replayed { .. })
+    ));
+    replay.prepare(tid7, pn8).unwrap().commit();
     assert_eq!(replay.highest(tid7), Some(pn8));
     assert_eq!(replay.highest(CcmpReplayLane::NonQos), Some(initial));
     replay.commit_immediate(tid7, pn9).unwrap();
@@ -81,14 +78,14 @@ fn replay_commit_is_lane_scoped_and_two_phase() {
         replay.commit_immediate(tid7, pn9),
         Err(CcmpReplayError::Replayed {
             packet_number: pn9,
-            highest: pn9,
+            highest: pn9
         })
     );
     assert_eq!(replay.highest(tid0), Some(pn8));
-    assert_eq!(
+    assert!(matches!(
         replay.prepare(CcmpReplayLane::Tid(16), pn9),
         Err(CcmpReplayError::InvalidTid)
-    );
+    ));
     assert_eq!(
         replay.commit_immediate(CcmpReplayLane::Tid(16), pn9),
         Err(CcmpReplayError::InvalidTid)

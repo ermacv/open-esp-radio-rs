@@ -63,6 +63,13 @@ back; its operations are synchronous and never wait:
   are pairwise; AP TX may use pairwise or group keys. The portable
   `MpduLayout` constructor checks CCMP room and tail-body overlap once,
   before any header/body write, admission or PN allocation.
+  `PhaseRate` retains the capabilities, generative installation brand and
+  enabled phase loan through NoAck, legacy/A-MPDU rates, retry plans and
+  prepared frames. Two installations of the same backend cannot exchange
+  those proofs even when their loan lifetimes coincide. Disable and retune
+  require releasing the old loan and checking a new rate on the new channel.
+  These identities add no stored bytes. The UI cases beside lower-MAC and
+  runtime check both misuse and valid use on host and RV32.
   Preparation borrows `TxBody::bytes` once and keeps that view for both the
   length check and the complete tail copy. Re-reading an external body can
   select another slice; even a shorter second view must not leave stale

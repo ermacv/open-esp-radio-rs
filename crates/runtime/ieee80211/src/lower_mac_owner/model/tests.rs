@@ -47,6 +47,77 @@ fn backend() -> (ModelBackend, Rc<ModelAir>) {
     )
 }
 
+#[test]
+fn each_installation_and_retuned_phase_checks_its_own_channel() {
+    use oer_ieee80211_port::Enabled;
+
+    struct Channels;
+    struct Second<'s, 'p, 'outer>(&'s mut Owner<'p, 'outer, ModelBackend, Enabled>);
+    impl PortBody<ModelBackend> for Second<'_, '_, '_> {
+        async fn run<'p, 'id>(
+            self,
+            owner: Owner<'p, 'id, ModelBackend, Disabled>,
+            _resources: ModelResources<'id>,
+        ) -> Ended<'id, ModelBackend> {
+            let mut target = owner.enable().await.ok().unwrap();
+            {
+                let source = self.0.phase();
+                let destination = target.phase();
+                let dsss = PhyRate::Legacy(LegacyRate::Dsss1M);
+                assert!(source.no_ack(source.rate(dsss).unwrap()).is_ok());
+                assert!(destination.rate(dsss).is_none());
+                let ofdm = destination
+                    .rate(PhyRate::Legacy(LegacyRate::Ofdm6M))
+                    .unwrap();
+                assert!(destination.no_ack(ofdm).is_ok());
+            }
+            target.fail_stop()
+        }
+    }
+    impl PortBody<ModelBackend> for Channels {
+        async fn run<'p, 'id>(
+            self,
+            owner: Owner<'p, 'id, ModelBackend, Disabled>,
+            _resources: ModelResources<'id>,
+        ) -> Ended<'id, ModelBackend> {
+            let mut source = owner.enable().await.ok().unwrap();
+            let (target, _) = ModelBackend::new(
+                Channel::ghz5(36, ChannelWidth::Mhz20).unwrap(),
+                [
+                    IndividualAddress::new(STATION).unwrap(),
+                    IndividualAddress::new(ACCESS_POINT).unwrap(),
+                ],
+            );
+            assert!(run_port(target, Second(&mut source)).await.is_none());
+            let mut source = source.disable(&mut |_| {}).await.ok().unwrap();
+            source.setup().set_channel(
+                SupportedChannel::new(Channel::ghz5(36, ChannelWidth::Mhz20).unwrap()).unwrap(),
+            );
+            let mut source = source.enable().await.ok().unwrap();
+            {
+                let mut phase = source.phase();
+                assert!(phase.rate(PhyRate::Legacy(LegacyRate::Dsss1M)).is_none());
+                let rate = phase.rate(PhyRate::Legacy(LegacyRate::Ofdm6M)).unwrap();
+                assert!(phase.no_ack(rate).is_ok());
+                let ht = oer_ieee80211_mac::phy::HtRate::new(
+                    HtMcs::new(7).unwrap(),
+                    oer_ieee80211_mac::phy::PpduBandwidth::Mhz20,
+                    false,
+                )
+                .unwrap();
+                let aggregate = phase.rate(PhyRate::Ht(ht)).unwrap();
+                assert!(phase.station().ampdu_rate(aggregate).is_ok());
+                assert_eq!(
+                    core::mem::size_of_val(&rate),
+                    core::mem::size_of::<PhyRate>()
+                );
+            }
+            source.fail_stop()
+        }
+    }
+    assert!(block_on(run_port(backend().0, Channels)).is_none());
+}
+
 /// Poll `future` with a waker that does nothing until it is ready: the
 /// model's progress needs no wake, only polls.
 fn block_on<F: Future>(future: F) -> F::Output {
@@ -87,10 +158,10 @@ fn until(open: &Cell<bool>) -> impl Future<Output = ()> + '_ {
 }
 
 /// A data frame to the peer, 40 octets, protected or not.
-fn data_frame<'p, X: ModelContext>(
-    phase: &ModelPhase<'p, '_, ModelCaps, X>,
+fn data_frame<'p, 'id: 'p, X: ModelContext>(
+    phase: &ModelPhase<'p, 'id, ModelCaps, X>,
     protected: bool,
-) -> TxFrame<'p, ModelCaps> {
+) -> TxFrame<'p, 'id, ModelCaps> {
     let rate = phase
         .rate(PhyRate::Legacy(LegacyRate::Ofdm6M))
         .expect("the channel carries 6 Mbit/s");

@@ -2239,7 +2239,7 @@ where
 
     async fn tx_buffer<'c, 's>(
         &'c self,
-        frame: TxFrame<'c, Esp32s31Caps<B>>,
+        frame: TxFrame<'c, 'id, Esp32s31Caps<B>>,
         seat: &'s mut Seat<'id, TxBufferKind>,
     ) -> Self::TxBuffer<'c>
     where
@@ -2812,7 +2812,7 @@ where
     async fn ampdu_buffer<'c, 's>(
         &'c self,
         tid: Tid,
-        rate: AmpduRate<'c>,
+        rate: AmpduRate<'c, 'id, Esp32s31Caps<B>>,
         seat: &'s mut Seat<'id, Esp32s31AmpduKind>,
     ) -> Self::AmpduBuffer<'c>
     where

@@ -60,6 +60,34 @@ reason = "cargo xtask check ui checks the contract diagnostic and its compiling 
 path = "crates/protocols/ieee80211/sta/tests/ui/epoch_source.rs"
 reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
 
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/frame_capabilities.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/rate_capabilities.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/ieee80211/tests/ui/installation_rate.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/ieee80211/tests/ui/installation_ampdu_rate.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/ieee80211/tests/ui/installation_prepared.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/ieee80211/tests/ui/installation_no_ack.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/ieee80211/tests/ui/retuned_rate.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
 # Dependencies a package declares only to select features of a crate its
 # dependency graph already uses, and so never names.
 

@@ -128,7 +128,7 @@
 //!
 //! ```compile_fail,E0451
 //! # use oer_ieee80211_lower_mac::{ClassFrame, TxFrame};
-//! fn forge<'p, C, K>(frame: TxFrame<'p, K>) -> ClassFrame<'p, C, K> {
+//! fn forge<'p, 'id, C, K>(frame: TxFrame<'p, 'id, K>) -> ClassFrame<'p, 'id, C, K> {
 //!     ClassFrame { frame, class: core::marker::PhantomData }
 //! }
 //! ```
@@ -137,9 +137,9 @@
 //!
 //! ```
 //! # use oer_ieee80211_lower_mac::{ClassFrame, Ieee80211Capabilities, TxBufferClass, TxFrame};
-//! fn fit<'p, C: TxBufferClass, K: Ieee80211Capabilities>(
-//!     frame: TxFrame<'p, K>,
-//! ) -> Result<ClassFrame<'p, C, K>, TxFrame<'p, K>> {
+//! fn fit<'p, 'id, C: TxBufferClass, K: Ieee80211Capabilities>(
+//!     frame: TxFrame<'p, 'id, K>,
+//! ) -> Result<ClassFrame<'p, 'id, C, K>, TxFrame<'p, 'id, K>> {
 //!     ClassFrame::new(frame)
 //! }
 //! ```
@@ -583,7 +583,7 @@ pub trait LowerMacPhase<'p, 'id: 'p>:
 
     /// The rate on the phase's channel, when the capabilities send it
     /// there. Only this check mints a [`PhaseRate`].
-    fn rate(&self, rate: PhyRate) -> Option<PhaseRate<'p>> {
+    fn rate(&self, rate: PhyRate) -> Option<PhaseRate<'p, 'id, Self::Caps>> {
         if Self::Caps::CAPS.supports_rate(rate, self.channel()) {
             Some(PhaseRate::checked(rate))
         } else {
@@ -597,7 +597,10 @@ pub trait LowerMacPhase<'p, 'id: 'p>:
     /// # Errors
     ///
     /// The rate, when they do not.
-    fn no_ack(&self, rate: PhaseRate<'p>) -> Result<SupportedNoAck<'p>, PhaseRate<'p>> {
+    fn no_ack(
+        &self,
+        rate: PhaseRate<'p, 'id, Self::Caps>,
+    ) -> Result<SupportedNoAck<'p, 'id, Self::Caps>, PhaseRate<'p, 'id, Self::Caps>> {
         if Self::Caps::CAPS.individual_no_ack.contains_rate(rate.get()) {
             Ok(SupportedNoAck(rate))
         } else {
@@ -698,22 +701,22 @@ impl<Key> TxProtection<Key> {
 
 /// The class-specific input to preparation; refusal returns this exact type.
 pub type PoolSource<'k, 'p, 'id, T, C, K, R> = TxSource<
-    'p,
     <T as TxBufferPool<'id, C>>::Buffer,
     <T as TxBufferPool<'id, C>>::Sent,
-    ClassFrame<'p, C, K>,
+    ClassFrame<'p, 'id, C, K>,
     <T as PhaseTypes<'id>>::TxBody,
     <R as RoleKeys<'id, T>>::TxKey<'k>,
+    RetransmissionPlan<'p, 'id, K>,
 >;
 
 /// Class-specific source whose portable layout has already been checked.
 pub type CheckedPoolSource<'k, 'p, 'id, T, C, K, R> = crate::CheckedTxSource<
-    'p,
     <T as TxBufferPool<'id, C>>::Buffer,
     <T as TxBufferPool<'id, C>>::Sent,
-    ClassFrame<'p, C, K>,
+    ClassFrame<'p, 'id, C, K>,
     <T as PhaseTypes<'id>>::TxBody,
     <R as RoleKeys<'id, T>>::TxKey<'k>,
+    RetransmissionPlan<'p, 'id, K>,
 >;
 
 /// Preparation returns a phase-bound MPDU or its unchanged class-specific source.
@@ -760,7 +763,7 @@ pub type InterfaceAttempt<'k, 'p, 'id, I> = Attempt<
 /// The MPDU supplied to a submission. Fresh memory travels with its
 /// `ClassFrame` and body; a `Sent` MPDU already owns that description and
 /// body, and receives only the new attempt's phase-bound rate plan.
-pub enum TxSource<'p, B, N, F, O, Key> {
+pub enum TxSource<B, N, F, O, Key, Plan> {
     /// A new MPDU, numbered at its first protected transmission.
     Fresh {
         /// Caller-owned memory, writable only before admission.
@@ -777,20 +780,20 @@ pub enum TxSource<'p, B, N, F, O, Key> {
         /// The returned MPDU owns its description, payload and body.
         mpdu: N,
         /// Only the transmission parameters change, not the MPDU.
-        plan: RetransmissionPlan<'p>,
+        plan: Plan,
     },
 }
 
 /// The phase-bound rates of a new attempt of a `Sent` MPDU. The backend
 /// checks that its response kind matches the original MPDU's kind.
 #[derive(Debug)]
-pub enum RetransmissionPlan<'p> {
+pub enum RetransmissionPlan<'p, 'id, K> {
     /// An individually acknowledged MPDU.
-    Individual(RetryPlan<PhaseRate<'p>>),
+    Individual(RetryPlan<PhaseRate<'p, 'id, K>>),
     /// An individually addressed MPDU with no ACK.
-    IndividualNoAck(crate::SupportedNoAck<'p>),
+    IndividualNoAck(crate::SupportedNoAck<'p, 'id, K>),
     /// A group-addressed MPDU.
-    Group(PhaseRate<'p>),
+    Group(PhaseRate<'p, 'id, K>),
 }
 
 /// Preparation failed before admission; the original operation is returned
@@ -1081,18 +1084,18 @@ pub trait TxBufferMemory {
 
 /// A frame that a buffer of the class `C` fits; only [`ClassFrame::new`]
 /// makes one.
-pub struct ClassFrame<'p, C, K> {
-    frame: TxFrame<'p, K>,
+pub struct ClassFrame<'p, 'id, C, K> {
+    frame: TxFrame<'p, 'id, K>,
     class: core::marker::PhantomData<C>,
 }
 
-impl<'p, C: TxBufferClass, K: Ieee80211Capabilities> ClassFrame<'p, C, K> {
+impl<'p, 'id, C: TxBufferClass, K: Ieee80211Capabilities> ClassFrame<'p, 'id, C, K> {
     /// `frame`, when a buffer of the class `C` fits it.
     ///
     /// # Errors
     ///
     /// The frame, when it is longer than the class holds.
-    pub fn new(frame: TxFrame<'p, K>) -> Result<Self, TxFrame<'p, K>> {
+    pub fn new(frame: TxFrame<'p, 'id, K>) -> Result<Self, TxFrame<'p, 'id, K>> {
         if frame.mpdu_len() <= C::CAPACITY {
             Ok(Self {
                 frame,
@@ -1104,13 +1107,13 @@ impl<'p, C: TxBufferClass, K: Ieee80211Capabilities> ClassFrame<'p, C, K> {
     }
 
     /// The frame.
-    pub fn into_frame(self) -> TxFrame<'p, K> {
+    pub fn into_frame(self) -> TxFrame<'p, 'id, K> {
         self.frame
     }
 
     /// Borrow the checked description for preparation without consuming
     /// the original operation, so a refusal can return it intact.
-    pub const fn frame(&self) -> &TxFrame<'p, K> {
+    pub const fn frame(&self) -> &TxFrame<'p, 'id, K> {
         &self.frame
     }
 }
@@ -1146,11 +1149,11 @@ impl<C: TxBufferClass, H: crate::FrameHeader, K: Ieee80211Capabilities> ClassSiz
         &self.frame
     }
 }
-impl<'p, C, K> ClassFrame<'p, C, K> {
+impl<'p, 'id, C, K> ClassFrame<'p, 'id, C, K> {
     /// Add only the phase-bound retry plan to an individually acknowledged MPDU.
     pub fn individual(
         frame: ClassSizedFrame<C, crate::AckHeader, K>,
-        plan: RetryPlan<PhaseRate<'p>>,
+        plan: RetryPlan<PhaseRate<'p, 'id, K>>,
     ) -> Self {
         Self {
             frame: TxFrame::Individual {
@@ -1163,7 +1166,7 @@ impl<'p, C, K> ClassFrame<'p, C, K> {
     /// Add only the phase-bound rate to a group MPDU.
     pub fn group(
         frame: ClassSizedFrame<C, crate::HeaderSpec<crate::GroupAddress>, K>,
-        rate: PhaseRate<'p>,
+        rate: PhaseRate<'p, 'id, K>,
     ) -> Self {
         Self {
             frame: TxFrame::Group {

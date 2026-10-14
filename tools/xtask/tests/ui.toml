@@ -23,3 +23,26 @@ cases = [
     "crates/protocols/ieee80211/lower-mac/tests/ui/phase_gate.rs",
     "crates/protocols/ieee80211/sta/tests/ui/epoch_source.rs",
 ]
+
+[[suite]]
+name = "rate-capabilities"
+packages = ["oer-ieee80211-lower-mac"]
+features = []
+targets = ["host", "esp32s31"]
+cases = [
+    "crates/protocols/ieee80211/lower-mac/tests/ui/frame_capabilities.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/rate_capabilities.rs",
+]
+
+[[suite]]
+name = "rate-installation"
+packages = ["oer-ieee80211-lower-mac", "oer-ieee80211-mac", "oer-ieee80211-port", "oer-ieee80211-runtime"]
+features = ["oer-ieee80211-runtime/test-support"]
+targets = ["host", "esp32s31"]
+cases = [
+    "crates/runtime/ieee80211/tests/ui/installation_rate.rs",
+    "crates/runtime/ieee80211/tests/ui/installation_ampdu_rate.rs",
+    "crates/runtime/ieee80211/tests/ui/installation_prepared.rs",
+    "crates/runtime/ieee80211/tests/ui/installation_no_ack.rs",
+    "crates/runtime/ieee80211/tests/ui/retuned_rate.rs",
+]

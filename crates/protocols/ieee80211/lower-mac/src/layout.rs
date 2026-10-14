@@ -163,7 +163,7 @@ pub enum MpduProtection {
 ///
 /// ```compile_fail,E0308
 /// use oer_ieee80211_lower_mac::{Ieee80211Capabilities, MpduLayout, TxFrame};
-/// fn flag<K: Ieee80211Capabilities>(frame: &TxFrame<'_, K>) {
+/// fn flag<K: Ieee80211Capabilities>(frame: &TxFrame<'_, '_, K>) {
 ///     drop(MpduLayout::new(frame, 0, true));
 /// }
 /// ```
@@ -172,7 +172,7 @@ pub enum MpduProtection {
 /// use oer_ieee80211_lower_mac::{
 ///     Ieee80211Capabilities, LayoutError, MpduLayout, MpduProtection, TxFrame,
 /// };
-/// fn open<K: Ieee80211Capabilities>(frame: &TxFrame<'_, K>) -> Result<(), LayoutError> {
+/// fn open<K: Ieee80211Capabilities>(frame: &TxFrame<'_, '_, K>) -> Result<(), LayoutError> {
 ///     let layout = MpduLayout::new(frame, 0, MpduProtection::Open)?;
 ///     assert_eq!(layout.protection(), MpduProtection::Open);
 ///     Ok(())
@@ -205,7 +205,7 @@ pub struct MpduLayout {
 impl MpduLayout {
     /// Check the only dynamic layout constraints: CCMP space and body overlap.
     pub fn new<K: Ieee80211Capabilities>(
-        frame: &TxFrame<'_, K>,
+        frame: &TxFrame<'_, '_, K>,
         body_len: usize,
         protection: MpduProtection,
     ) -> Result<Self, LayoutError> {
@@ -349,7 +349,7 @@ pub struct FreshSource<B, F, O, Key> {
 
 /// Input to backend preparation. Fresh layout has already been checked;
 /// retransmission carries the returned, immutable MPDU itself.
-pub enum CheckedTxSource<'p, B, N, F, O, Key> {
+pub enum CheckedTxSource<B, N, F, O, Key, Plan> {
     /// Fresh memory and its portable layout proof.
     Fresh(LaidOut<FreshSource<B, F, O, Key>>),
     /// The original published MPDU and only the new attempt's plan.
@@ -357,12 +357,12 @@ pub enum CheckedTxSource<'p, B, N, F, O, Key> {
         /// The original published MPDU, including its header, body and key identity.
         mpdu: N,
         /// Only the new attempt's rates, retry budget and medium protection.
-        plan: crate::RetransmissionPlan<'p>,
+        plan: Plan,
     },
 }
-impl<'p, B, N, F, O, Key> CheckedTxSource<'p, B, N, F, O, Key> {
+impl<B, N, F, O, Key, Plan> CheckedTxSource<B, N, F, O, Key, Plan> {
     /// Recover the complete source on cancellation or backend refusal.
-    pub fn into_source(self) -> crate::TxSource<'p, B, N, F, O, Key> {
+    pub fn into_source(self) -> crate::TxSource<B, N, F, O, Key, Plan> {
         match self {
             Self::Fresh(fresh) => {
                 let FreshSource {
@@ -385,17 +385,35 @@ impl<'p, B, N, F, O, Key> CheckedTxSource<'p, B, N, F, O, Key> {
 
 impl<
     'p,
+    'id,
     B: crate::TxBufferMemory,
     N,
     C: TxBufferClass,
     K: Ieee80211Capabilities,
     O: crate::TxBody,
     Key,
-> crate::TxSource<'p, B, N, crate::ClassFrame<'p, C, K>, O, Key>
+>
+    crate::TxSource<
+        B,
+        N,
+        crate::ClassFrame<'p, 'id, C, K>,
+        O,
+        Key,
+        crate::RetransmissionPlan<'p, 'id, K>,
+    >
 {
     /// Prove the complete layout before entering a backend. A refusal does
     /// not change memory, consume PN, take admission or create a terminal.
-    pub fn check(self) -> SourceLayoutResult<'p, B, N, crate::ClassFrame<'p, C, K>, O, Key> {
+    pub fn check(
+        self,
+    ) -> SourceLayoutResult<
+        B,
+        N,
+        crate::ClassFrame<'p, 'id, C, K>,
+        O,
+        Key,
+        crate::RetransmissionPlan<'p, 'id, K>,
+    > {
         match self {
             Self::Retransmission { mpdu, plan } => {
                 Ok(CheckedTxSource::Retransmission { mpdu, plan })
@@ -451,7 +469,7 @@ impl MpduLayout {
     fn initialize<K: Ieee80211Capabilities>(
         self,
         bytes: &mut [u8],
-        frame: &TxFrame<'_, K>,
+        frame: &TxFrame<'_, '_, K>,
         body: Option<&[u8]>,
     ) -> Result<Self, LayoutError> {
         let (prefix, body_memory) = self.memory(bytes)?;
@@ -621,9 +639,9 @@ impl<A, B: crate::TxBufferMemory, N, C: TxBufferClass, K: Ieee80211Capabilities,
 }
 
 /// Result of checking an owned single source.
-pub type SourceLayoutResult<'p, B, N, F, O, Key> = Result<
-    CheckedTxSource<'p, B, N, F, O, Key>,
-    LayoutRefused<crate::TxSource<'p, B, N, F, O, Key>>,
+pub type SourceLayoutResult<B, N, F, O, Key, Plan> = Result<
+    CheckedTxSource<B, N, F, O, Key, Plan>,
+    LayoutRefused<crate::TxSource<B, N, F, O, Key, Plan>>,
 >;
 /// Result of checking a builder and its subframe together.
 pub type AggregateLayoutResult<A, B, N, F, O> =

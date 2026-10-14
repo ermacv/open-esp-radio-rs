@@ -2383,7 +2383,7 @@ pub struct ModelBlockAck<'id> {
 
 /// A retry plan's stages, as the model's hardware takes them.
 fn stages<C: Ieee80211Capabilities>(
-    frame: &TxFrame<'_, C>,
+    frame: &TxFrame<'_, '_, C>,
 ) -> oer_ieee80211_lower_mac::RetryPlan<PhyRate> {
     match frame {
         TxFrame::Individual { plan, .. } => plan.map(|rate| rate.get()),
@@ -2400,9 +2400,9 @@ fn one_stage(rate: PhyRate) -> oer_ieee80211_lower_mac::RetryPlan<PhyRate> {
     })
 }
 
-fn retry_stages(
+fn retry_stages<K>(
     layout: &MpduLayout,
-    plan: &RetransmissionPlan<'_>,
+    plan: &RetransmissionPlan<'_, '_, K>,
 ) -> Result<oer_ieee80211_lower_mac::RetryPlan<PhyRate>, PreparationError> {
     match (layout.kind(), plan) {
         (MpduKind::Individual, RetransmissionPlan::Individual(plan)) => {
@@ -2419,20 +2419,20 @@ fn retry_stages(
 type PhaseProof<'p, T> = PhantomData<fn(&'p ()) -> (&'p (), T)>;
 type TypeProof<T> = PhantomData<fn() -> T>;
 type ModelSource<'k, 'p, 'id, C, K, R, X> = TxSource<
-    'p,
     ModelBuffer<'id, C>,
     ModelSent<'id, C>,
-    oer_ieee80211_lower_mac::ClassFrame<'p, C, K>,
+    oer_ieee80211_lower_mac::ClassFrame<'p, 'id, C, K>,
     ModelBody,
     <R as RoleKeys<'id, ModelTypes<X>>>::TxKey<'k>,
+    RetransmissionPlan<'p, 'id, K>,
 >;
 type ModelCheckedSource<'k, 'p, 'id, C, K, R, X> = CheckedTxSource<
-    'p,
     ModelBuffer<'id, C>,
     ModelSent<'id, C>,
-    oer_ieee80211_lower_mac::ClassFrame<'p, C, K>,
+    oer_ieee80211_lower_mac::ClassFrame<'p, 'id, C, K>,
     ModelBody,
     <R as RoleKeys<'id, ModelTypes<X>>>::TxKey<'k>,
+    RetransmissionPlan<'p, 'id, K>,
 >;
 type ModelPreparation<'k, 'p, 'id, R, K, X, C> = Result<
     ModelPrepared<'k, 'p, 'id, R, K, X>,
@@ -2773,7 +2773,7 @@ pub struct ModelAggregate<
     first: S::Head<SequenceNumber>,
     receiver: IndividualAddress,
     tid: Tid,
-    rate: AmpduRate<'p>,
+    rate: AmpduRate<'p, 'id, K>,
     key: Option<PreparedKey>,
     key_borrow: PhantomData<&'k ()>,
     caps: TypeProof<(R, K, X, S)>,
@@ -2962,7 +2962,7 @@ where
         &mut self,
         receiver: IndividualAddress,
         tid: Tid,
-        rate: AmpduRate<'p>,
+        rate: AmpduRate<'p, 'id, K>,
         protection: InterfaceProtection<'k, 'p, 'id, Self>,
     ) -> ModelAggregate<'k, 'p, 'id, R, K, X>
     where
@@ -3053,7 +3053,10 @@ impl<'p, 'v, 'id: 'p, C: Ieee80211Capabilities, X: ModelContext> AccessPointPhas
 }
 
 #[allow(dead_code, reason = "the rate check the service uses")]
-fn rate<'p>(phase: &ModelPhase<'p, '_>, rate: PhyRate) -> Option<PhaseRate<'p>> {
+fn rate<'p, 'id>(
+    phase: &ModelPhase<'p, 'id>,
+    rate: PhyRate,
+) -> Option<PhaseRate<'p, 'id, ModelCaps>> {
     phase.rate(rate)
 }
 

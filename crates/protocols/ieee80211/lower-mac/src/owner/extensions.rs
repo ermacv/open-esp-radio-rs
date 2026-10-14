@@ -181,11 +181,17 @@ pub type AggregateParts<'id, T> = (
 );
 
 /// A rate the backend aggregates at, checked by [`AmpduPhase::ampdu_rate`].
-#[derive(Clone, Copy, Debug)]
-pub struct AmpduRate<'p>(PhaseRate<'p>);
-impl<'p> AmpduRate<'p> {
+#[derive(Debug)]
+pub struct AmpduRate<'p, 'id, K>(PhaseRate<'p, 'id, K>);
+impl<K> Copy for AmpduRate<'_, '_, K> {}
+impl<K> Clone for AmpduRate<'_, '_, K> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<'p, 'id, K> AmpduRate<'p, 'id, K> {
     /// The rate.
-    pub const fn rate(&self) -> &PhaseRate<'p> {
+    pub const fn rate(&self) -> &PhaseRate<'p, 'id, K> {
         &self.0
     }
 }
@@ -324,7 +330,10 @@ pub trait AmpduPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id> {
     fn ampdu_capabilities(&self) -> AmpduCapabilities;
 
     /// Check that the backend aggregates at this phase's rate.
-    fn ampdu_rate(&self, rate: PhaseRate<'p>) -> Result<AmpduRate<'p>, PhaseRate<'p>> {
+    fn ampdu_rate(
+        &self,
+        rate: PhaseRate<'p, 'id, Self::Caps>,
+    ) -> Result<AmpduRate<'p, 'id, Self::Caps>, PhaseRate<'p, 'id, Self::Caps>> {
         if self.ampdu_capabilities().formats.contains_rate(rate.get()) {
             Ok(AmpduRate(rate))
         } else {
@@ -338,7 +347,7 @@ pub trait AmpduPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id> {
         &mut self,
         receiver: super::IndividualAddress,
         tid: Tid,
-        rate: AmpduRate<'p>,
+        rate: AmpduRate<'p, 'id, Self::Caps>,
         protection: InterfaceProtection<'k, 'p, 'id, Self>,
     ) -> InterfaceAggregate<'k, 'p, 'id, Self, EmptyAggregate>
     where

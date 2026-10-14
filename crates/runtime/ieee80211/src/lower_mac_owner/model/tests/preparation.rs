@@ -2,11 +2,11 @@ use super::*;
 use oer_ieee80211_lower_mac::{AggregateAttempt, LayoutError, MpduStartSpacing, PoolSource};
 use oer_ieee80211_sta::machine::TxRefusal;
 
-fn frame<'p>(
-    phase: &ModelPhase<'p, '_>,
+fn frame<'p, 'id: 'p>(
+    phase: &ModelPhase<'p, 'id>,
     len: usize,
     protected_bit: bool,
-) -> ClassFrame<'p, ModelSmall, ModelCaps> {
+) -> ClassFrame<'p, 'id, ModelSmall, ModelCaps> {
     let TxFrame::Individual { frame, plan } = data_frame(phase, protected_bit) else {
         unreachable!()
     };
@@ -254,7 +254,7 @@ impl Work for BodyView {
                 assert!(bodies.is_empty());
                 (source.buffer, source.body, layout)
             } else {
-                let source: TxSource<'_, _, (), _, _, ()> = TxSource::Fresh {
+                let source: TxSource<_, (), _, _, (), _> = TxSource::Fresh {
                     buffer,
                     frame: frame(phase, 40, false),
                     body,
@@ -294,7 +294,7 @@ fn an_aggregate_copies_exactly_the_body_view_whose_length_it_checked() {
     block_on(run_port(backend, Body(BodyView { aggregate: true })));
 }
 
-fn aggregate_rate<'p, 'id: 'p>(phase: &mut ModelPhase<'p, 'id>) -> AmpduRate<'p> {
+fn aggregate_rate<'p, 'id: 'p>(phase: &mut ModelPhase<'p, 'id>) -> AmpduRate<'p, 'id, ModelCaps> {
     let ht = oer_ieee80211_mac::phy::HtRate::new(
         HtMcs::new(7).unwrap(),
         oer_ieee80211_mac::phy::PpduBandwidth::Mhz20,

@@ -166,7 +166,7 @@
 //! ```
 //! # use oer_ieee80211_lower_mac::{LowerMacPhase, PhaseRate, PhyRate};
 //! # use oer_ieee80211_mac::phy::LegacyRate;
-//! fn rate<'p, 'id: 'p, P: LowerMacPhase<'p, 'id>>(phase: &P) -> Option<PhaseRate<'p>> {
+//! fn rate<'p, 'id: 'p, P: LowerMacPhase<'p, 'id>>(phase: &P) -> Option<PhaseRate<'p, 'id, P::Caps>> {
 //!     phase.rate(PhyRate::Legacy(LegacyRate::Ofdm6M))
 //! }
 //! ```
@@ -578,18 +578,38 @@ impl core::fmt::Debug for Ccmp128Key {
 
 /// A rate the phase's channel carries: [`LowerMacPhase::rate`](crate::LowerMacPhase::rate) checks it
 /// against the capabilities and the channel the phase runs on.
-#[derive(Clone, Copy, Debug)]
-pub struct PhaseRate<'p> {
+///
+/// The invariant installation brand, capabilities and phase loan remain in
+/// every derived rate, retry plan and frame. A second installation with the
+/// same capabilities cannot consume it; keeping it also keeps the enabled
+/// owner borrowed, so disable and retune cannot invalidate its channel check.
+pub struct PhaseRate<'p, 'id, K> {
     rate: PhyRate,
     loan: PhantomData<fn(&'p ()) -> &'p ()>,
+    install: PhantomData<fn(&'id ()) -> &'id ()>,
+    capabilities: PhantomData<fn(K) -> K>,
 }
 
-impl<'p> PhaseRate<'p> {
+impl<K> Copy for PhaseRate<'_, '_, K> {}
+impl<K> Clone for PhaseRate<'_, '_, K> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<K> core::fmt::Debug for PhaseRate<'_, '_, K> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("PhaseRate").field(&self.rate).finish()
+    }
+}
+
+impl<'p, 'id, K> PhaseRate<'p, 'id, K> {
     /// A rate [`LowerMacPhase::rate`](crate::LowerMacPhase::rate) checked; nothing else mints one.
     pub(crate) const fn checked(rate: PhyRate) -> Self {
         Self {
             rate,
             loan: PhantomData,
+            install: PhantomData,
+            capabilities: PhantomData,
         }
     }
 
@@ -603,7 +623,7 @@ impl<'p> PhaseRate<'p> {
     /// # Errors
     ///
     /// The rate, when it is not.
-    pub fn legacy(self) -> Result<LegacyPhaseRate<'p>, Self> {
+    pub fn legacy(self) -> Result<LegacyPhaseRate<'p, 'id, K>, Self> {
         if matches!(self.rate, PhyRate::Legacy(_)) {
             Ok(LegacyPhaseRate(self))
         } else {
@@ -957,11 +977,11 @@ pub(crate) enum HeaderLength<A> {
 /// as the capabilities' individual no-ACK formats state:
 /// [`LowerMacPhase::no_ack`](crate::LowerMacPhase::no_ack) checks it.
 #[derive(Debug)]
-pub struct SupportedNoAck<'p>(pub(crate) PhaseRate<'p>);
+pub struct SupportedNoAck<'p, 'id, K>(pub(crate) PhaseRate<'p, 'id, K>);
 
-impl<'p> SupportedNoAck<'p> {
+impl<'p, 'id, K> SupportedNoAck<'p, 'id, K> {
     /// The rate.
-    pub const fn rate(&self) -> &PhaseRate<'p> {
+    pub const fn rate(&self) -> &PhaseRate<'p, 'id, K> {
         &self.0
     }
 }
@@ -969,11 +989,11 @@ impl<'p> SupportedNoAck<'p> {
 /// A non-HT rate of the phase, the only rates a BlockAckReq goes at:
 /// [`PhaseRate::legacy`] checks it.
 #[derive(Debug)]
-pub struct LegacyPhaseRate<'p>(PhaseRate<'p>);
+pub struct LegacyPhaseRate<'p, 'id, K>(PhaseRate<'p, 'id, K>);
 
-impl<'p> LegacyPhaseRate<'p> {
+impl<'p, 'id, K> LegacyPhaseRate<'p, 'id, K> {
     /// The rate.
-    pub const fn rate(&self) -> &PhaseRate<'p> {
+    pub const fn rate(&self) -> &PhaseRate<'p, 'id, K> {
         &self.0
     }
 }
@@ -1069,13 +1089,13 @@ impl ResponseHeader for HeaderSpec<GroupAddress> {
 /// rate, from which its response follows. Only the kinds the hardware
 /// sends exist, so a frame and its response never disagree.
 #[derive(Debug)]
-pub enum TxFrame<'p, K> {
+pub enum TxFrame<'p, 'id, K> {
     /// An individual data or management frame, which solicits an ACK.
     Individual {
         /// Checked acknowledged header and complete MPDU length.
         frame: SizedFrame<AckHeader, K>,
         /// The phase-bound rates and retry budget of this attempt.
-        plan: crate::RetryPlan<PhaseRate<'p>>,
+        plan: crate::RetryPlan<PhaseRate<'p, 'id, K>>,
     },
     /// An individual frame that solicits no ACK and says so, at a rate that
     /// carries one without it.
@@ -1083,14 +1103,14 @@ pub enum TxFrame<'p, K> {
         /// Checked unacknowledged header and complete MPDU length.
         frame: SizedFrame<NoAckHeader, K>,
         /// A phase-bound rate that supports individual No Ack frames.
-        rate: SupportedNoAck<'p>,
+        rate: SupportedNoAck<'p, 'id, K>,
     },
     /// A group data or management frame, which solicits no response.
     Group {
         /// Checked group receiver, header and complete MPDU length.
         frame: SizedFrame<HeaderSpec<GroupAddress>, K>,
         /// The phase-bound rate of this group transmission.
-        rate: PhaseRate<'p>,
+        rate: PhaseRate<'p, 'id, K>,
     },
     /// A BlockAckReq, which solicits a BlockAck, at a non-HT rate.
     BlockAckRequest {
@@ -1103,11 +1123,11 @@ pub enum TxFrame<'p, K> {
         /// The first sequence number requested in the Block Ack window.
         starting_sequence: SequenceNumber,
         /// The non-HT rates and retry budget of the request.
-        plan: crate::RetryPlan<LegacyPhaseRate<'p>>,
+        plan: crate::RetryPlan<LegacyPhaseRate<'p, 'id, K>>,
     },
 }
 
-impl<K> TxFrame<'_, K> {
+impl<K> TxFrame<'_, '_, K> {
     /// The MPDU's length without its FCS: the length its buffer holds.
     pub const fn mpdu_len(&self) -> usize {
         match self {

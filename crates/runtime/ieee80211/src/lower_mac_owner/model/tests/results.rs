@@ -193,7 +193,7 @@ fn every_result_is_consumed_by_exactly_one_single_or_aggregate_attempt() {
 }
 
 #[test]
-fn review_aggregate_honors_timeout_injection() {
+fn aggregate_honors_timeout_injection() {
     let (backend, _) = backend();
     block_on(run_port(
         backend,

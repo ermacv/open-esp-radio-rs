@@ -76,7 +76,7 @@ impl PortBody<ModelBackend> for ConfigureAcrossDisable {
 }
 
 #[test]
-fn review_configured_drained_by_disable_is_rearmed() {
+fn configured_drained_by_disable_is_rearmed() {
     for posted_before_disable in [false, true] {
         let (backend, _) = backend();
         block_on(run_port(

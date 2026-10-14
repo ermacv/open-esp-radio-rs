@@ -2062,7 +2062,7 @@ fn old_configuration_response_releases_permission_without_completing_leave() {
 }
 
 #[test]
-fn review_authentication_transmitter_is_station() {
+fn authentication_transmitter_is_station() {
     installed(|mint| {
         let world = connected_world(mint);
         let auth = world.frames.iter().find(|frame| frame[0] == 0xb0).unwrap();
@@ -2080,7 +2080,7 @@ fn review_authentication_transmitter_is_station() {
 }
 
 #[test]
-fn review_leave_without_lease_reports_before_waiting() {
+fn leave_without_lease_reports_before_waiting() {
     installed(|mint| {
         let mut world = World::new(mint, 3);
         world
@@ -2261,7 +2261,7 @@ fn associated_is_the_first_action_after_the_association_response() {
 }
 
 #[test]
-fn review_authentication_waits_for_credit_before_beginning_attempt() {
+fn authentication_waits_for_credit_before_beginning_attempt() {
     installed(|mint| {
         let mut world = World::new(mint, 3);
         world

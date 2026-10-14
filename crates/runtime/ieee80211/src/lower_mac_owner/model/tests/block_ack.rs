@@ -150,7 +150,7 @@ fn bitmap_matches_acknowledged_sequence_set_across_wrap_and_reordering() {
 }
 
 #[test]
-fn review_aggregate_does_not_alias_blockack_bit63() {
+fn aggregate_does_not_alias_blockack_bit63() {
     for (start, refused) in [
         (&[0][..], 64),
         (&[4095][..], 63),

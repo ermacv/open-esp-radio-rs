@@ -21,8 +21,8 @@ mod rx_handoff;
 pub mod zeroed;
 
 pub use affine_spsc::{
-    AffineSpscQueue, AffineSpscReceiver, AffineSpscSender, AffineSpscTryReceiveError,
-    AffineSpscTrySendError,
+    AffineSpscQueue, AffineSpscReceiver, AffineSpscSendPermit, AffineSpscSender,
+    AffineSpscTryReceiveError, AffineSpscTrySendError,
 };
 pub use pinned_tx::{
     DmaIndexReturn, IndexedStableDmaLease, PinnedDmaTxNetworkLease, PinnedDmaTxPool,

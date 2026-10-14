@@ -1,9 +1,13 @@
 //! Runtime wake policy around the audited affine SPSC queue.
 
 use atomic_waker::AtomicWaker;
-use core::future::poll_fn;
-use core::task::Poll;
-use oer_memory::{AffineSpscQueue, AffineSpscReceiver, AffineSpscSender, AffineSpscTrySendError};
+use core::future::{Future, poll_fn};
+use core::pin::Pin;
+use core::task::{Context, Poll};
+use oer_memory::{
+    AffineSpscQueue, AffineSpscReceiver, AffineSpscSendPermit, AffineSpscSender,
+    AffineSpscTrySendError,
+};
 
 /// Queue storage and atomic wake state. The composition splits it once and
 /// moves the two non-cloneable endpoints to the application and the service.
@@ -65,9 +69,9 @@ impl<T, const DEPTH: usize> MsduSender<'_, T, DEPTH> {
     }
 
     /// Wait for capacity while retaining the sole producer wake registration.
-    /// The caller keeps its value until `try_send`; cancellation owns no value
-    /// and consumes no credit. With one sender, a free cell stays free until
-    /// that sender publishes.
+    /// The returned permit keeps the exclusive sender borrow and publishes
+    /// without another capacity check. The caller owns its value until send;
+    /// cancelling the wait or dropping a permit consumes no credit.
     ///
     /// ```compile_fail,E0499
     /// use oer_ieee80211_runtime::station_service::MsduQueue;
@@ -83,22 +87,75 @@ impl<T, const DEPTH: usize> MsduSender<'_, T, DEPTH> {
     /// async fn sequential() {
     ///     let mut queue = MsduQueue::<u8, 1>::new();
     ///     let (mut sender, receiver) = queue.split();
-    ///     sender.ready().await;
-    ///     sender.try_send(1).unwrap();
+    ///     sender.ready().await.send(1);
     ///     assert_eq!(receiver.try_receive(), Some(1));
-    ///     sender.ready().await;
+    ///     drop(sender.ready().await);
     /// }
     /// ```
-    pub async fn ready(&mut self) {
-        poll_fn(|cx| {
-            self.producer.register(cx.waker());
-            if self.sender.free_capacity() == 0 {
+    pub async fn ready(&mut self) -> SendPermit<'_, T, DEPTH> {
+        SendReady {
+            sender: Some(&mut self.sender),
+            consumer: self.consumer,
+            producer: self.producer,
+        }
+        .await
+    }
+}
+
+/// Exclusive capacity obtained by [`MsduSender::ready`].
+///
+/// ```compile_fail,E0502
+/// use oer_ieee80211_runtime::station_service::MsduQueue;
+/// async fn cannot_publish_twice() {
+///     let mut queue = MsduQueue::<u8, 1>::new();
+///     let (mut sender, receiver) = queue.split();
+///     let permit = sender.ready().await;
+///     sender.try_send(1).unwrap();
+///     permit.send(2);
+/// }
+/// ```
+#[must_use = "send a value or drop the permit to release the sender borrow"]
+pub struct SendPermit<'sender, T, const DEPTH: usize> {
+    permit: AffineSpscSendPermit<'sender, T, DEPTH>,
+    consumer: &'sender AtomicWaker,
+}
+
+impl<T, const DEPTH: usize> SendPermit<'_, T, DEPTH> {
+    /// Publish once and wake the consumer. The reserved cell cannot be full.
+    pub fn send(self, value: T) {
+        self.permit.send(value);
+        self.consumer.wake();
+    }
+}
+
+struct SendReady<'sender, 'queue, T, const DEPTH: usize> {
+    // None only after returning the permit; repolling a completed wait parks.
+    sender: Option<&'sender mut AffineSpscSender<'queue, T, DEPTH>>,
+    consumer: &'sender AtomicWaker,
+    producer: &'sender AtomicWaker,
+}
+
+impl<'sender, T, const DEPTH: usize> Future for SendReady<'sender, '_, T, DEPTH> {
+    type Output = SendPermit<'sender, T, DEPTH>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+        let Some(sender) = this.sender.take() else {
+            return Poll::Pending;
+        };
+        // Reclamation before registration is seen by the Acquire load in
+        // try_reserve; reclamation after it wakes this sole registration.
+        this.producer.register(cx.waker());
+        match sender.try_reserve() {
+            Ok(permit) => Poll::Ready(SendPermit {
+                permit,
+                consumer: this.consumer,
+            }),
+            Err(sender) => {
+                this.sender = Some(sender);
                 Poll::Pending
-            } else {
-                Poll::Ready(())
             }
-        })
-        .await;
+        }
     }
 }
 
@@ -210,9 +267,11 @@ mod tests {
             assert!(ready.as_mut().poll(&mut cx).is_pending());
             assert_eq!(receiver.try_receive().unwrap().0, 1);
             assert_eq!(wakes.0.load(Ordering::Relaxed), 2);
-            assert!(ready.as_mut().poll(&mut cx).is_ready());
+            let Poll::Ready(permit) = ready.as_mut().poll(&mut cx) else {
+                panic!("the receiver returned the credit");
+            };
+            permit.send(owner);
         }
-        assert!(sender.try_send(owner).is_ok());
         assert_eq!(receiver.try_receive().unwrap().0, 2);
         assert!(receiver.try_receive().is_none());
     }
@@ -275,5 +334,74 @@ mod tests {
             assert_eq!(drops.load(Ordering::Relaxed), 1);
         }
         assert_eq!(drops.load(Ordering::Relaxed), 1);
+    }
+
+    struct ThreadWake(std::thread::Thread);
+
+    impl Wake for ThreadWake {
+        fn wake(self: Arc<Self>) {
+            self.0.unpark();
+        }
+        fn wake_by_ref(self: &Arc<Self>) {
+            self.0.unpark();
+        }
+    }
+
+    fn wait<F: Future>(future: F) -> F::Output {
+        let waker = Waker::from(Arc::new(ThreadWake(std::thread::current())));
+        let mut cx = Context::from_waker(&waker);
+        let mut future = core::pin::pin!(future);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            if let Poll::Ready(value) = future.as_mut().poll(&mut cx) {
+                return value;
+            }
+            assert!(std::time::Instant::now() < deadline, "queue wake timed out");
+            std::thread::park_timeout(
+                deadline.saturating_duration_since(std::time::Instant::now()),
+            );
+            assert!(std::time::Instant::now() < deadline, "queue wake timed out");
+        }
+    }
+
+    #[test]
+    fn a_dropped_send_permit_publishes_nothing_and_can_be_reserved_again() {
+        let mut queue = MsduQueue::<u8, 1>::new();
+        let (mut sender, receiver) = queue.split();
+        drop(wait(sender.ready()));
+        assert!(receiver.try_receive().is_none());
+        wait(sender.ready()).send(9);
+        assert_eq!(receiver.try_receive(), Some(9));
+    }
+
+    #[test]
+    fn a_producer_on_another_thread_sends_each_owner_once_through_its_permit() {
+        struct Owner(usize, Arc<AtomicUsize>);
+        impl Drop for Owner {
+            fn drop(&mut self) {
+                self.1.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+        const COUNT: usize = 512;
+        let drops = Arc::new(AtomicUsize::new(0));
+        let mut queue = MsduQueue::<Owner, 1>::new();
+        let (mut sender, mut receiver) = queue.split();
+        std::thread::scope(|scope| {
+            let producer_drops = Arc::clone(&drops);
+            let producer = scope.spawn(move || {
+                for id in 0..COUNT {
+                    wait(sender.ready()).send(Owner(id, Arc::clone(&producer_drops)));
+                }
+            });
+            for expected in 0..COUNT {
+                wait(receiver.ready());
+                let owner = receiver.try_receive().unwrap();
+                assert_eq!(owner.0, expected);
+                drop(owner);
+            }
+            producer.join().unwrap();
+        });
+        assert!(receiver.try_receive().is_none());
+        assert_eq!(drops.load(Ordering::Relaxed), COUNT);
     }
 }

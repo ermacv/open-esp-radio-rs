@@ -153,3 +153,22 @@ fn endpoint_transfer_between_threads_preserves_fifo() {
     let (_, receiver) = queue.split();
     assert!(receiver.is_empty());
 }
+
+#[test]
+fn dropping_a_vacant_permit_preserves_credit_and_refusal_returns_the_sender() {
+    let mut queue = AffineSpscQueue::<u8, 1>::new();
+    let (mut sender, receiver) = queue.split();
+    for value in 0..12 {
+        drop(sender.try_reserve().ok().unwrap());
+        assert_eq!(sender.free_capacity(), 1);
+        assert_eq!(
+            receiver.try_receive(),
+            Err(AffineSpscTryReceiveError::Empty)
+        );
+        sender.try_reserve().ok().unwrap().send(value);
+        let returned_sender = sender.try_reserve().err().expect("the queue is full");
+        assert_eq!(receiver.try_receive(), Ok(value));
+        returned_sender.try_reserve().ok().unwrap().send(value + 1);
+        assert_eq!(receiver.try_receive(), Ok(value + 1));
+    }
+}

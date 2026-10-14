@@ -43,6 +43,12 @@
 //! one waiting point, every machine's actions after each input. Hardware access and concrete
 //! task assembly belong to the chip backend and its integration.
 //!
+//! The station's SPSC sender waits through `ready(&mut self)`, returning a
+//! [`station_service::SendPermit`] that holds its exclusive producer borrow.
+//! `send` publishes without a fallible second capacity check. Cancelling the
+//! wait or dropping the permit consumes neither a value nor queue capacity;
+//! the receiver may run on another thread.
+//!
 //! The `test-support` feature exposes `lower_mac_owner`, the in-memory backend
 //! and conformance harness for tests of port consumers. The module is absent
 //! from production builds without that feature. The feature build includes

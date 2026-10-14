@@ -433,8 +433,7 @@ impl World<'_> {
             .commands
             .take()
             .expect("one application script owns the sender");
-        sender.ready().await;
-        assert!(sender.try_send(command).is_ok());
+        sender.ready().await.send(command);
         self.commands.set(Some(sender));
     }
 

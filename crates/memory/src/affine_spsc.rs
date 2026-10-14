@@ -124,25 +124,25 @@ impl<T, const DEPTH: usize> AffineSpscQueue<T, DEPTH> {
         }
     }
 
-    #[inline]
-    fn try_send(&self, value: T) -> Result<(), AffineSpscTrySendError<T>> {
+    fn vacant_slot(&self) -> Option<AffineSpscSendPermit<'_, T, DEPTH>> {
         let producer = self.producer.0.load(Ordering::Relaxed);
         let consumer = self.consumer.0.load(Ordering::Acquire);
         if Self::cursor_distance(consumer, producer) >= DEPTH {
+            return None;
+        }
+        Some(AffineSpscSendPermit {
+            queue: self,
+            producer,
+            _not_sync: PhantomData,
+        })
+    }
+
+    #[inline]
+    fn try_send(&self, value: T) -> Result<(), AffineSpscTrySendError<T>> {
+        let Some(permit) = self.vacant_slot() else {
             return Err(AffineSpscTrySendError(value));
-        }
-        #[allow(
-            unsafe_code,
-            reason = "the single producer owns this unpublished SPSC slot"
-        )]
-        // SAFETY: only the producer writes the slot at its private cursor, and
-        // the Acquire consumer cursor proved the previous value moved out.
-        unsafe {
-            (*self.values[producer % DEPTH].get()).write(value);
-        }
-        self.producer
-            .0
-            .store(Self::advance(producer), Ordering::Release);
+        };
+        permit.send(value);
         Ok(())
     }
 
@@ -207,6 +207,34 @@ impl<'queue, T, const DEPTH: usize> AffineSpscSender<'queue, T, DEPTH> {
         self.queue.try_send(value)
     }
 
+    /// Reserve one vacant cell, exclusively borrowing the producer until
+    /// the permit is sent or dropped. A full queue returns that same borrow,
+    /// allowing a readiness future to keep its sole producer registration.
+    /// Neither refusal nor dropping a permit advances the producer cursor.
+    ///
+    /// ```compile_fail,E0502
+    /// use oer_memory::AffineSpscQueue;
+    /// let mut queue = AffineSpscQueue::<u8, 1>::new();
+    /// let (mut sender, receiver) = queue.split();
+    /// let permit = sender.try_reserve().ok().unwrap();
+    /// sender.try_send(1).unwrap();
+    /// permit.send(2);
+    /// ```
+    ///
+    /// ```
+    /// use oer_memory::AffineSpscQueue;
+    /// let mut queue = AffineSpscQueue::<u8, 1>::new();
+    /// let (mut sender, receiver) = queue.split();
+    /// sender.try_reserve().ok().unwrap().send(1);
+    /// assert_eq!(receiver.try_receive(), Ok(1));
+    /// ```
+    pub fn try_reserve(&mut self) -> Result<AffineSpscSendPermit<'_, T, DEPTH>, &mut Self> {
+        match self.queue.vacant_slot() {
+            Some(permit) => Ok(permit),
+            None => Err(self),
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.queue.len()
     }
@@ -217,6 +245,39 @@ impl<'queue, T, const DEPTH: usize> AffineSpscSender<'queue, T, DEPTH> {
 
     pub fn free_capacity(&self) -> usize {
         DEPTH.saturating_sub(self.len())
+    }
+}
+
+/// Exclusive right to publish one value into a proven vacant SPSC cell.
+///
+/// The producer endpoint remains borrowed; the consumer can only free more
+/// cells. Dropping an unused permit leaves the cursor and capacity unchanged.
+#[must_use = "send a value or drop the permit to release the producer borrow"]
+pub struct AffineSpscSendPermit<'sender, T, const DEPTH: usize> {
+    queue: &'sender AffineSpscQueue<T, DEPTH>,
+    producer: usize,
+    _not_sync: PhantomData<Cell<()>>,
+}
+
+impl<T, const DEPTH: usize> AffineSpscSendPermit<'_, T, DEPTH> {
+    /// Publish into the reserved cell, transferring the complete owner.
+    pub fn send(self, value: T) {
+        #[allow(
+            unsafe_code,
+            reason = "the sole producer's permit retains its proven vacant cell"
+        )]
+        // SAFETY: vacant_slot acquired the consumer cursor after the previous
+        // value moved out. The permit's exclusive producer borrow prevents a
+        // competing publication or a second permit at this cursor. The only
+        // other endpoint can only advance the consumer, so this cell remains
+        // vacant until this write and its following Release publication.
+        unsafe {
+            (*self.queue.values[self.producer % DEPTH].get()).write(value);
+        }
+        self.queue.producer.0.store(
+            AffineSpscQueue::<T, DEPTH>::advance(self.producer),
+            Ordering::Release,
+        );
     }
 }
 

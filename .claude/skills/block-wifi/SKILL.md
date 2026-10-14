@@ -55,6 +55,12 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
 - GTK's two-bit wire ID includes zero (IEEE 802.11-2020, 12.7.2 and the pinned ESP-IDF `wpa.c:1064`). Frame addressing distinguishes PTK from GTK; group replay records use `GroupKeyId::select`, separately from the backend's slot pool. S31 STA accepts `GroupKeyId`, including zero, in hardware slot 1. Its AP installation takes `ApGroupKeyId` (1 through 3), validated before hardware. S31 AP's `1 + key_id` layout excludes zero because it would collide with that station slot; do not impose this AP restriction on the portable station.
 - A station GTK replacement is a FIFO command consuming its installed key and slot. `GroupKeyReplaced` returns the successor in the same slot and separates old/new RX epochs; never switch replay at submission. The service matches its private pending owner by `GroupSlotIdentity`, not the material installation's TX `Identity`. Hardware rejection is Poisoned; S31 rollback stays internal. Identical ID/material skips installation; new material starts at KeyRSC, even below the old frontier ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6169527922)).
 
+The MSDU/command SPSC sender's readiness returns a `SendPermit`. Keep the
+permit through publication: its exclusive sender borrow is the capacity
+proof, so `send` has no full-queue outcome. Cancelling a wait or dropping a
+permit leaves the cursor unchanged. Wake registration precedes the Acquire
+capacity check; the consumer can only free additional cells while held.
+
 ## Checks
 
 Before each push run check (`--all-targets`), test

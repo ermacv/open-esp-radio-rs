@@ -283,7 +283,7 @@ impl<K: Ieee80211Capabilities> Levels<K> {
 mod ethernet;
 mod msdu_queue;
 pub use ethernet::{EthernetFrame, FrameTooLong, MAX_ETHERNET_PAYLOAD_LEN};
-pub use msdu_queue::{MsduQueue, MsduReceiver, MsduSender};
+pub use msdu_queue::{MsduQueue, MsduReceiver, MsduSender, SendPermit};
 
 /// One checked, owned Ethernet frame with its user priority.
 #[derive(Debug)]

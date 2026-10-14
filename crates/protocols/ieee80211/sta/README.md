@@ -92,13 +92,17 @@ crate's checked `IndividualAddress`, so a request cannot swap the local
 transmitter and BSS identities. The test access point admits a request only
 after checking its subtype and all three header addresses.
 
-`Station::new` requires one to eight tickets, small buffers and group-key
-slots at compile time. Authentication and Association reserve an owned
+`Station::new` requires one to eight tickets and small buffers at compile
+time. Open mode accepts zero group slots; protected mode without a slot
+returns `MissingGroupSlot` with the original configuration and resources
+before the station can run. Authentication and Association reserve an owned
 ticket/buffer credit before beginning a request or consuming its sequence
-number. EAPOL (including the QoS rekey response), Null and deauthentication
-also reserve credit before consuming a sequence. A missing credit waits for
-the admitted operation's terminal; the
-association's state deadline remains active, while its overdue retry time
+number. EAPOL (including the QoS rekey response), Null, deauthentication
+and Probe reserve credit before consuming a sequence. A missing credit
+waits for a terminal that returns the required ticket or buffer from the
+station pool; it is not tied to one named operation. Association starts its
+deadline when entered, before any credit or first transmission; its overdue
+retry time
 does not cause repeated polling. Every four-way handshake step retains the
 same response deadline while waiting for TX, a key slot or installation.
 Expiry leaves once and reclaims late returns through the normal teardown.

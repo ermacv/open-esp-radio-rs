@@ -33,6 +33,7 @@ fn association_runtime_owns_epoch_schedule_sequence_and_timeout() {
             oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
         ),
         LinkProtection::Ccmp,
+        at(0),
     );
     let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0x0ffc).unwrap());
     let mut attempts = std::vec::Vec::new();
@@ -86,9 +87,10 @@ fn the_next_deadline_is_the_next_request_or_the_epoch_deadline() {
             oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
         ),
         LinkProtection::Ccmp,
+        at(5),
     );
     let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0).unwrap());
-    assert_eq!(runtime.next_deadline(), None);
+    assert_eq!(runtime.next_deadline(), Some(at(5)));
     assert!(matches!(
         runtime.poll(at(5), &mut sequence),
         Ok(StaAssociationPoll::Transmit(_))
@@ -118,6 +120,7 @@ fn association_runtime_accepts_only_selected_peer_response() {
             oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
         ),
         LinkProtection::Ccmp,
+        at(0),
     );
     let mut sequence = StaSequenceCounter::new(SequenceNumber::new(7).unwrap());
     let StaAssociationPoll::Transmit(first) = runtime.poll(at(0), &mut sequence).unwrap() else {
@@ -168,6 +171,7 @@ fn association_runtime_reports_peer_disconnect_and_rejection() {
             oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
         ),
         LinkProtection::Ccmp,
+        at(0),
     );
     disconnected.poll(at(0), &mut sequence).unwrap();
     disconnected.observe_received_frame();
@@ -190,6 +194,7 @@ fn association_runtime_reports_peer_disconnect_and_rejection() {
             oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
         ),
         LinkProtection::Ccmp,
+        at(0),
     );
     rejected.poll(at(0), &mut sequence).unwrap();
     assert_eq!(
@@ -236,6 +241,7 @@ fn a_temporary_refusal_comes_back_once_after_its_comeback_time() {
             oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
         ),
         LinkProtection::Ccmp,
+        at(0),
     );
     let (_, first) = millis_until_attempt(&mut runtime, &mut sequence, 0);
     assert_eq!(first.ordinal, 1);
@@ -275,6 +281,7 @@ fn a_long_or_unnamed_temporary_refusal_ends_the_association() {
             oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
         ),
         LinkProtection::Ccmp,
+        at(0),
     );
     long.poll(at(0), &mut sequence).unwrap();
     assert_eq!(
@@ -292,6 +299,7 @@ fn a_long_or_unnamed_temporary_refusal_ends_the_association() {
             oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
         ),
         LinkProtection::Ccmp,
+        at(0),
     );
     unnamed.poll(at(0), &mut sequence).unwrap();
     assert_eq!(

@@ -275,7 +275,8 @@ impl<'id> World<'id> {
                 pairwise: Slot(0),
                 groups: group_slots,
             },
-        );
+        )
+        .unwrap_or_else(|_| panic!("protected fixture has group slots"));
         Self {
             station,
             arbiter,
@@ -2255,13 +2256,14 @@ fn association_waits_for_credit_without_consuming_a_request_and_still_expires() 
                     oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
                 ),
                 oer_ieee80211_mac::security::LinkProtection::Open,
+                at(100),
             )),
         };
         world.station.state = State::Join(join());
         let before = world.station.sequence;
         assert!(world.station.poll_action(at(100)).is_none());
         assert_eq!(world.station.sequence, before);
-        assert!(world.station.poll_deadline().is_none());
+        assert_eq!(world.station.poll_deadline(), Some(at(1100)));
         world.station.tickets.put(held.pop().unwrap());
         let Some(StaAction::Transmit(transmit)) = world.station.poll_action(at(100)) else {
             panic!("returning credit resumes the first association request");
@@ -2529,7 +2531,7 @@ fn every_control_encoder_reserves_credit_before_consuming_its_sequence() {
                                 &[],
                             )
                             .ok(),
-                        4 => station.encode_probe(),
+                        4 => station.encode_probe(TxPurpose::Probe).ok(),
                         5 => station
                             .encode_management(
                                 StaManagementSubtype::Deauthentication,
@@ -2868,4 +2870,94 @@ fn a_repeated_m3_can_replace_group_material_without_reinstalling_the_ptk() {
             assert_eq!(world.station.buffers.len(), 2);
         });
     }
+}
+
+#[test]
+fn protected_construction_without_group_slots_returns_resources_for_open_mode() {
+    installed(|mint| {
+        let mut world = World::with_groups(mint, 3, StaSecurity::Open, []);
+        let Station {
+            mut config,
+            epochs,
+            mut tickets,
+            mut buffers,
+            place,
+            absence_place,
+            ..
+        } = world.station;
+        config.security = StaSecurity::Wpa2Personal {
+            pmk: Pmk::from_bytes([0; 32]),
+        };
+        let resources = StationResources {
+            epochs,
+            tickets: [tickets.take().unwrap(), tickets.take().unwrap()],
+            buffers: [buffers.take().unwrap(), buffers.take().unwrap()],
+            place: place.unwrap(),
+            absence_place: absence_place.unwrap(),
+            pairwise: Slot(0),
+            groups: [],
+        };
+        let Err(MissingGroupSlot {
+            mut config,
+            resources,
+        }) = Station::new(config, resources)
+        else {
+            panic!("protected mode needs a GTK slot before launch");
+        };
+        assert_eq!(resources.tickets.len(), 2);
+        assert_eq!(resources.buffers.len(), 2);
+        config.security = StaSecurity::Open;
+        world.station = Station::new(config, resources)
+            .unwrap_or_else(|_| panic!("open mode needs no GTK slot"));
+        world
+            .station
+            .input(at(0), StaInput::Command(StaCommand::Connect));
+        world.run(at(0));
+        world.advance();
+        world.receive(at(13), &beacon());
+        world.advance();
+        world.answer_authentication(at(30), 0);
+        world.receive(at(31), &open_association_response());
+        assert!(world.station.is_connected());
+        assert_eq!(world.station.tickets.len(), 2);
+        assert_eq!(world.station.buffers.len(), 2);
+    });
+}
+
+#[test]
+fn probe_encoding_failure_returns_credit_and_missing_epoch_reports_link_change() {
+    installed(|mint| {
+        let mut world = World::new(mint, 3);
+        world
+            .station
+            .input(at(0), StaInput::Command(StaCommand::Connect));
+        let State::Scan(scan) = &mut world.station.state else {
+            panic!("scan");
+        };
+        scan.step = ScanStep::NeedProbe;
+        let mut buffers = Vec::new();
+        while let Some(mut buffer) = world.station.buffers.take() {
+            buffer.1 = 0;
+            buffers.push(buffer);
+        }
+        for buffer in buffers {
+            world.station.buffers.put(buffer);
+        }
+        assert!(matches!(
+            world.station.poll_action(at(0)),
+            Some(StaAction::Configure(StationReceive::Off, _))
+        ));
+        assert_eq!(world.station.tickets.len(), 2);
+        assert_eq!(world.station.buffers.len(), 2);
+        world.station.epoch = None;
+        assert!(matches!(
+            world.station.encode_probe(TxPurpose::Probe),
+            Err(Unsent::NoConnection)
+        ));
+        let state = world.station.take_state();
+        let State::Leave(leave) = state else {
+            panic!("permanent encoding failure leaves");
+        };
+        assert_eq!(leave.reason, StaDisconnectReason::Encode);
+    });
 }

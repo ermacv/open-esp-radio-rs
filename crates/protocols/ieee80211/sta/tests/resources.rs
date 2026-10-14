@@ -79,6 +79,7 @@ fn construct<'id, const T: usize, const B: usize, const G: usize>(
             groups: [(); G],
         },
     )
+    .unwrap_or_else(|_| panic!("protected fixture has group slots"))
 }
 
 #[test]

@@ -1366,34 +1366,53 @@ pub struct StationResources<
     pub groups: [T::GroupSlot; GROUPS],
 }
 
+/// Protected mode requires a group-key slot. Construction returns every
+/// resource and the configuration unchanged when that slot is absent.
+#[must_use]
+pub struct MissingGroupSlot<
+    'id,
+    T: StaTokens,
+    K: Ieee80211Capabilities,
+    const TICKETS: usize,
+    const BUFFERS: usize,
+    const GROUPS: usize,
+> {
+    pub config: StaConfig<K>,
+    pub resources: StationResources<'id, T, TICKETS, BUFFERS, GROUPS>,
+}
+
 impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     /// An idle station of `config`, with the tickets, small buffers and key
     /// slots the composition granted it and the arbiter's places. It holds
     /// at most eight tokens of a kind, checked at compile time:
     ///
     #[doc = include_str!("machine/resources_contracts.md")]
+    #[allow(
+        clippy::result_large_err,
+        reason = "construction refusal returns all affine resources"
+    )]
     pub fn new<const TICKETS: usize, const BUFFERS: usize, const GROUPS: usize>(
         config: StaConfig<K>,
         resources: StationResources<'id, T, TICKETS, BUFFERS, GROUPS>,
-    ) -> Self {
+    ) -> Result<Self, MissingGroupSlot<'id, T, K, TICKETS, BUFFERS, GROUPS>> {
         const {
             #[cfg_attr(not(test), expect(clippy::panic, reason = "evaluated at build"))]
-            const fn check(tickets: usize, buffers: usize, groups: usize) {
+            const fn check(tickets: usize, buffers: usize) {
                 if tickets < 1 {
                     panic!("a station needs at least one TX ticket");
                 }
                 if buffers < 1 {
                     panic!("a station needs at least one small buffer");
                 }
-                if groups < 1 {
-                    panic!("a station needs at least one group-key slot");
-                }
             }
-            check(TICKETS, BUFFERS, GROUPS);
+            check(TICKETS, BUFFERS);
             let _: (
                 SupportedFilter<K, StationRole>,
                 SupportedFilter<K, StationRole>,
             ) = (Rules::<K>::MEMBER, Rules::<K>::WIDENED);
+        }
+        if GROUPS == 0 && !matches!(config.security, StaSecurity::Open) {
+            return Err(MissingGroupSlot { config, resources });
         }
         let StationResources {
             epochs,
@@ -1404,7 +1423,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             pairwise,
             groups,
         } = resources;
-        Self {
+        Ok(Self {
             config,
             state: State::Idle,
             keys: Keys::new(pairwise, groups),
@@ -1420,7 +1439,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             scan: ScanTable::new(),
             epoch: None,
             epochs,
-        }
+        })
     }
 
     /// Tokens given back beyond the station's own: dropped, counted.
@@ -2473,6 +2492,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                                         oer_ieee80211_mac::security::LinkProtection::Ccmp
                                     }
                                 },
+                                now,
                             ));
                             State::Join(join)
                         }
@@ -2755,11 +2775,27 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                         scan.step = ScanStep::AwaitConfigured;
                         self.configure(StationReceive::OtherBssManagement)
                     }
-                    // No token or no encoding: listen passively.
-                    ScanStep::NeedProbe => {
-                        scan.step = ScanStep::Listen;
-                        self.encode_probe().map(Owed::Transmit)
-                    }
+                    ScanStep::NeedProbe => match self.encode_probe(TxPurpose::Probe) {
+                        Ok(transmit) => {
+                            scan.step = ScanStep::Listen;
+                            Some(Owed::Transmit(transmit))
+                        }
+                        Err(Unsent::NoTokens) => None,
+                        Err(Unsent::Encode) => {
+                            return (
+                                leave_unkeyed(StaDisconnectReason::Encode),
+                                ActionProgress::Transition,
+                            );
+                        }
+                        Err(Unsent::NoConnection) => {
+                            return (
+                                leave_unkeyed(StaDisconnectReason::TransmitRefused(
+                                    TxRefusal::LinkChanged,
+                                )),
+                                ActionProgress::Transition,
+                            );
+                        }
+                    },
                     _ => None,
                 };
                 (State::Scan(scan), owed.into())
@@ -3053,6 +3089,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             },
             StaFrameClass::Connection,
             purpose,
+            StaRatePlan::Management,
         )?)
     }
 
@@ -3208,8 +3245,11 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                         (Rekey::AwaitSent, Some(Owed::TransmitProtected(transmit)))
                     }
                     Err(Unsent::NoTokens) => (Rekey::Send(message), None),
-                    Err(Unsent::Encode | Unsent::NoConnection) => {
-                        return Some(Err(StaDisconnectReason::Encode));
+                    Err(Unsent::Encode) => return Some(Err(StaDisconnectReason::Encode)),
+                    Err(Unsent::NoConnection) => {
+                        return Some(Err(StaDisconnectReason::TransmitRefused(
+                            TxRefusal::LinkChanged,
+                        )));
                     }
                 }
             }
@@ -3280,8 +3320,12 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     BackgroundStep::AwaitConfigured
                 }
                 BackgroundStep::NeedProbe if !connected.sending => {
-                    owed = self.probe(&mut connected.sending);
-                    BackgroundStep::Listen
+                    owed = self.probe(&mut connected.sending)?;
+                    if owed.is_some() {
+                        BackgroundStep::Listen
+                    } else {
+                        BackgroundStep::NeedProbe
+                    }
                 }
                 BackgroundStep::NeedHome if self.configuration.is_some() => {
                     owed = self.configure(bss_rules(bssid, Rules::<K>::MEMBER));
@@ -3292,8 +3336,12 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     BackgroundStep::AwaitWake
                 }
                 BackgroundStep::HomeProbe { until } if !connected.sending => {
-                    owed = self.probe(&mut connected.sending);
-                    BackgroundStep::HomeListen { until }
+                    owed = self.probe(&mut connected.sending)?;
+                    if owed.is_some() {
+                        BackgroundStep::HomeListen { until }
+                    } else {
+                        BackgroundStep::HomeProbe { until }
+                    }
                 }
                 BackgroundStep::Narrow if self.configuration.is_some() => {
                     owed = self.configure(bss_rules(bssid, Rules::<K>::MEMBER));
@@ -3335,11 +3383,21 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     }
 
     /// A Probe Request of the background scan, marked in flight.
-    fn probe(&mut self, sending: &mut bool) -> Option<Owed<'id, T, K>> {
-        let mut transmit = self.encode_probe()?;
-        transmit.context.purpose = TxPurpose::Connected(Sending::Probe);
-        *sending = true;
-        Some(Owed::Transmit(transmit))
+    fn probe(
+        &mut self,
+        sending: &mut bool,
+    ) -> Result<Option<Owed<'id, T, K>>, StaDisconnectReason> {
+        match self.encode_probe(TxPurpose::Connected(Sending::Probe)) {
+            Ok(transmit) => {
+                *sending = true;
+                Ok(Some(Owed::Transmit(transmit)))
+            }
+            Err(Unsent::NoTokens) => Ok(None),
+            Err(Unsent::Encode) => Err(StaDisconnectReason::Encode),
+            Err(Unsent::NoConnection) => {
+                Err(StaDisconnectReason::TransmitRefused(TxRefusal::LinkChanged))
+            }
+        }
     }
 
     /// A Null to `bssid` with `power_management`, in a buffer.
@@ -3351,7 +3409,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         let credit = self.reserve_transmit()?;
         let address = self.config.address;
         let sequence_number = self.sequence.take();
-        let mut transmit = self.encode_reserved(
+        let transmit = self.encode_reserved(
             credit,
             |frame| {
                 StaNullDataFrame {
@@ -3368,8 +3426,8 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 StaPowerManagement::Active => Sending::Wake,
                 StaPowerManagement::PowerSave => Sending::Sleep,
             }),
+            StaRatePlan::Null,
         )?;
-        transmit.plan = StaRatePlan::Null;
         Ok(transmit)
     }
 
@@ -3398,9 +3456,17 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                         join.step = JoinStep::Authenticate(auth);
                         return (State::Join(join), ActionProgress::Wait);
                     }
-                    Err(Unsent::NoConnection | Unsent::Encode) => {
+                    Err(Unsent::Encode) => {
                         return (
                             leave_unkeyed(StaDisconnectReason::Encode),
+                            ActionProgress::Transition,
+                        );
+                    }
+                    Err(Unsent::NoConnection) => {
+                        return (
+                            leave_unkeyed(StaDisconnectReason::TransmitRefused(
+                                TxRefusal::LinkChanged,
+                            )),
                             ActionProgress::Transition,
                         );
                     }
@@ -3427,6 +3493,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     },
                     StaFrameClass::Connection,
                     TxPurpose::Authentication,
+                    StaRatePlan::Management,
                 );
                 match encoded {
                     Ok(transmit) => {
@@ -3459,9 +3526,17 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                         join.step = JoinStep::Associate(runtime);
                         return (State::Join(join), ActionProgress::Wait);
                     }
-                    Err(Unsent::NoConnection | Unsent::Encode) => {
+                    Err(Unsent::Encode) => {
                         return (
                             leave_unkeyed(StaDisconnectReason::Encode),
+                            ActionProgress::Transition,
+                        );
+                    }
+                    Err(Unsent::NoConnection) => {
+                        return (
+                            leave_unkeyed(StaDisconnectReason::TransmitRefused(
+                                TxRefusal::LinkChanged,
+                            )),
                             ActionProgress::Transition,
                         );
                     }
@@ -3491,6 +3566,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                             },
                             StaFrameClass::Connection,
                             TxPurpose::Association,
+                            StaRatePlan::Management,
                         );
                         match encoded {
                             Ok(transmit) => {
@@ -3637,6 +3713,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         encode: impl FnOnce(&mut [u8]) -> Option<usize>,
         class: StaFrameClass,
         purpose: TxPurpose,
+        plan: StaRatePlan,
     ) -> Result<StaTransmit<'id, T, K>, EncodeError> {
         let TxCredit {
             epoch,
@@ -3644,24 +3721,31 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             mut buffer,
         } = credit;
         let frame = encode(buffer.bytes_mut()).and_then(|len| {
-            let header = HeaderSpec::decode(
-                buffer.bytes_mut().split_at_checked(len)?.0,
-                IndividualAddress::new,
-            )?;
-            oer_ieee80211_lower_mac::ClassSizedFrame::new(SizedFrame::new(
-                AckHeader::new(header)?,
-                MpduLength::new(len)?,
-            )?)
-            .ok()
+            let bytes = buffer.bytes_mut().split_at_checked(len)?.0;
+            let length = MpduLength::new(len)?;
+            if matches!(plan, StaRatePlan::Group) {
+                let header = HeaderSpec::decode(bytes, GroupAddress::new)?;
+                oer_ieee80211_lower_mac::ClassSizedFrame::new(SizedFrame::new(header, length)?)
+                    .ok()
+                    .map(StaFrame::Group)
+            } else {
+                let header = HeaderSpec::decode(bytes, IndividualAddress::new)?;
+                oer_ieee80211_lower_mac::ClassSizedFrame::new(SizedFrame::new(
+                    AckHeader::new(header)?,
+                    length,
+                )?)
+                .ok()
+                .map(StaFrame::Individual)
+            }
         });
         match frame {
             Some(frame) => Ok(StaTransmit {
                 context: StaTxContext { epoch, purpose },
                 ticket,
                 buffer,
-                frame: StaFrame::Individual(frame),
+                frame,
                 class,
-                plan: StaRatePlan::Management,
+                plan,
             }),
             None => {
                 self.tickets.put(ticket);
@@ -3718,55 +3802,35 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             |buffer| frame.encode(buffer).ok(),
             StaFrameClass::Connection,
             TxPurpose::Connected(Sending::GroupResponse),
+            StaRatePlan::Management,
         )?)
     }
 
-    /// A broadcast Probe Request in a buffer, if the station holds tokens
-    /// and it encodes.
-    fn encode_probe(&mut self) -> Option<StaTransmit<'id, T, K>> {
-        let epoch = self.epoch?;
-        let (ticket, mut buffer) = self.tokens()?;
+    /// A Probe Request reserves credit before consuming its sequence.
+    fn encode_probe(&mut self, purpose: TxPurpose) -> Result<StaTransmit<'id, T, K>, Unsent> {
+        let credit = self.reserve_transmit()?;
         let sequence_number = self.sequence.take();
         let rates = self.config.supported_rates;
-        let len = ProbeRequest {
-            destination: [0xff; 6],
-            source: self.config.address.get(),
-            bssid: [0xff; 6],
-            sequence_number,
-            ssid: &self.config.ssid,
-            supported_rates: &rates,
-        }
-        .encode(buffer.bytes_mut())
-        .ok();
-        let frame = len.and_then(|len| {
-            let header = HeaderSpec::decode(
-                buffer.bytes_mut().split_at_checked(len)?.0,
-                GroupAddress::new,
-            )?;
-            oer_ieee80211_lower_mac::ClassSizedFrame::new(SizedFrame::new(
-                header,
-                MpduLength::new(len)?,
-            )?)
-            .ok()
-        });
-        match frame {
-            Some(frame) => Some(StaTransmit {
-                context: StaTxContext {
-                    epoch,
-                    purpose: TxPurpose::Probe,
-                },
-                ticket,
-                buffer,
-                frame: StaFrame::Group(frame),
-                class: StaFrameClass::Normal,
-                plan: StaRatePlan::Group,
-            }),
-            None => {
-                self.tickets.put(ticket);
-                self.buffers.put(buffer);
-                None
-            }
-        }
+        let address = self.config.address.get();
+        let ssid = self.config.ssid.clone();
+        Ok(self.encode_reserved(
+            credit,
+            |output| {
+                ProbeRequest {
+                    destination: [0xff; 6],
+                    source: address,
+                    bssid: [0xff; 6],
+                    sequence_number,
+                    ssid: &ssid,
+                    supported_rates: &rates,
+                }
+                .encode(output)
+                .ok()
+            },
+            StaFrameClass::Normal,
+            purpose,
+            StaRatePlan::Group,
+        )?)
     }
 
     /// A management frame of `subtype` to `bssid` in a buffer.
@@ -3795,6 +3859,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             },
             StaFrameClass::Normal,
             purpose,
+            StaRatePlan::Management,
         )?)
     }
 

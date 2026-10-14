@@ -126,7 +126,7 @@ pub struct StaAssociationRuntime {
     security: LinkProtection,
     /// Start of the current request epoch: `None` before the first poll and
     /// while the station waits out a temporary refusal.
-    epoch_start: Option<Instant>,
+    epoch_start: Instant,
     /// Requests sent in the current epoch.
     sent: u16,
     terminal: bool,
@@ -148,12 +148,17 @@ const COMEBACK_MARGIN_TU: u32 = 100;
 const MICROS_PER_TU: u64 = 1_024;
 
 impl StaAssociationRuntime {
-    pub const fn new(local: OwnAddress, bssid: Bssid, security: LinkProtection) -> Self {
+    pub const fn new(
+        local: OwnAddress,
+        bssid: Bssid,
+        security: LinkProtection,
+        now: Instant,
+    ) -> Self {
         Self {
             local,
             bssid,
             security,
-            epoch_start: None,
+            epoch_start: now,
             sent: 0,
             terminal: false,
             received_frames: 0,
@@ -162,7 +167,7 @@ impl StaAssociationRuntime {
         }
     }
 
-    /// Advance to `now`: start the epoch on its first poll, expire its
+    /// Advance to `now`: expire the epoch started at construction and its
     /// one-second deadline, or consume a management sequence number exactly
     /// when the retry schedule calls for a new request.
     pub fn poll(
@@ -179,7 +184,7 @@ impl StaAssociationRuntime {
             }
             self.comeback_until = None;
         }
-        let start = *self.epoch_start.get_or_insert(now);
+        let start = self.epoch_start;
         if now >= deadline_after(start, STA_RESPONSE_TIMEOUT) {
             self.terminal = true;
             return Ok(StaAssociationPoll::Failed {
@@ -210,7 +215,7 @@ impl StaAssociationRuntime {
         if self.comeback_until.is_some() {
             return self.comeback_until;
         }
-        let start = self.epoch_start?;
+        let start = self.epoch_start;
         let timeout = deadline_after(start, STA_RESPONSE_TIMEOUT);
         Some(
             StaAssociationRetrySchedule::offset(self.sent.saturating_add(1))
@@ -221,11 +226,10 @@ impl StaAssociationRuntime {
     /// The state deadline remains active while a request waits for a TX
     /// credit. A retry's earlier due time is not a wake source in that wait.
     pub(crate) fn response_deadline(&self) -> Option<Instant> {
-        if self.terminal || self.comeback_until.is_some() {
+        if self.terminal {
             None
         } else {
-            self.epoch_start
-                .map(|start| deadline_after(start, STA_RESPONSE_TIMEOUT))
+            Some(deadline_after(self.epoch_start, STA_RESPONSE_TIMEOUT))
         }
     }
 
@@ -296,12 +300,13 @@ impl StaAssociationRuntime {
             return self.fail(StaAssociationFailure::ComebackRefused { comeback_tu });
         }
         self.came_back = true;
-        self.epoch_start = None;
         self.sent = 0;
         let wait = Duration::from_micros(
             u64::from(comeback_tu.wrapping_add(COMEBACK_MARGIN_TU)).saturating_mul(MICROS_PER_TU),
         );
-        self.comeback_until = Some(deadline_after(now, wait));
+        let until = deadline_after(now, wait);
+        self.epoch_start = until;
+        self.comeback_until = Some(until);
         StaAssociationEvent::Irrelevant
     }
 

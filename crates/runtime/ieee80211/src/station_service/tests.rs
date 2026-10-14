@@ -554,7 +554,8 @@ where
                     pairwise,
                     groups,
                 },
-            );
+            )
+            .unwrap_or_else(|_| panic!("protected fixture has group slots"));
             let mut service = StationService::<_, _, 4>::new(
                 station,
                 StaData::new(data_tickets, large, MODEL_TX_QUEUE_DEPTH),

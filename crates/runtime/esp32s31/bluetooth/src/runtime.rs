@@ -671,10 +671,10 @@ pub struct BluetoothRuntime<
 /// The driver of an installed radio: it owns the radio role and its
 /// hardware by value and is their one user ([`BluetoothRuntime`]).
 ///
-/// Poll [`Self::run`] in the task of the port's body, for the port's whole
-/// life; it returns once the radio is left for the uninstall
-/// ([`BluetoothRuntime::retire`]), or on a fault, which poisoned the port
-/// first.
+/// The port's joined driver (`PortBackend::drive`, which `run_port` polls
+/// in the task of the port's body) runs it for the port's whole life; it
+/// returns once the radio is left for the uninstall, or on a fault, which
+/// poisoned the port first.
 #[must_use = "a driver owns the installed radio"]
 #[allow(
     clippy::type_complexity,

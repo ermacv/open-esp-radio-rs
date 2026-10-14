@@ -53,6 +53,8 @@
 //! and conformance harness for tests of port consumers. The module is absent
 //! from production builds without that feature. The feature build includes
 //! the same bounded continuous RX and terminal fault injection as unit tests.
+//! It requires `alloc`, including on RV32, but only the host test harness
+//! requires `std`.
 #![cfg_attr(
     not(feature = "test-support"),
     doc = r"
@@ -94,7 +96,7 @@ pub use monitor::{
     MonitorCaptureResources, MonitorCaptureSink,
 };
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(test)]
 extern crate std;
 
 // The in-memory lower-MAC model allocates its state and events.

@@ -79,6 +79,9 @@ Host `--all-targets` covers Cargo target kinds, not the RV32 architecture or
 its conditional imports and allocation paths.
 Also compile the same target with explicit models:
 `cargo check -p oer-esp32s31-ieee80211-mac -p oer-esp32s31-ieee80211 --target riscv32imafc-unknown-none-elf --features oer-esp32s31-ieee80211/test-support`.
+The portable runtime's model also remains `no_std` + `alloc` under its
+feature; only unit tests import `std`. Check this library build with
+`cargo clippy -p oer-ieee80211-runtime --target riscv32imafc-unknown-none-elf --features test-support`.
 
 Synthetic MAC/DMA completion and detach evidence requires the explicit
 `oer-esp32s31-ieee80211-mac/test-support` feature. Host pointer width is not

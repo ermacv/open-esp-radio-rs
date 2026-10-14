@@ -254,6 +254,26 @@ pub enum StaInput<'f, 'id, T: StaTokens, K> {
 }
 
 /// One action of the station, which the service carries out at once.
+/// Discarding a produced action is diagnosed by `unused_must_use`:
+/// ```compile_fail
+/// #![deny(unused_must_use)]
+/// use oer_ieee80211_sta::machine::{StaAction, StaTokens};
+/// fn ignore<'a, 'id, T: StaTokens, K: 'a>(next: impl FnOnce() -> StaAction<'a, 'id, T, K>)
+/// where T::PairwiseKey: 'a {
+///     next();
+/// }
+/// ```
+/// The consumer may transfer it to the component that performs it:
+/// ```
+/// #![deny(unused_must_use)]
+/// use oer_ieee80211_sta::machine::{StaAction, StaTokens};
+/// fn forward<'a, 'id, T: StaTokens, K: 'a>(next: impl FnOnce() -> StaAction<'a, 'id, T, K>)
+///     -> StaAction<'a, 'id, T, K>
+/// where T::PairwiseKey: 'a {
+///     next()
+/// }
+/// ```
+#[must_use = "carry out the action or return its owners through a terminal path"]
 pub enum StaAction<'a, 'id, T: StaTokens, K> {
     /// Ask the arbiter for a channel, with the station's place; the service
     /// hands the answer back ([`StaInput::Answer`]) in the same step.
@@ -333,6 +353,7 @@ pub enum StaAction<'a, 'id, T: StaTokens, K> {
 
 /// One MPDU to transmit: its ticket, the buffer the station encoded it in,
 /// its kind, its class and its rates.
+#[must_use = "submit the operation or return its ticket and buffer"]
 pub struct StaTransmit<'id, T: StaTokens, K> {
     /// Its epoch and purpose, moved with the operation through its terminal.
     pub context: StaTxContext<'id>,
@@ -662,6 +683,7 @@ impl<K> Held<K> {
 
 /// A pairwise cell awaiting the response to its one installation.
 #[derive(Debug)]
+#[must_use = "return this token with the pairwise installation result"]
 pub struct PendingPairwiseKey<'id> {
     cell: PairwiseCell,
     epoch: LinkEpoch<'id>,
@@ -697,6 +719,7 @@ struct PairwiseCell;
 /// }
 /// ```
 #[derive(Debug)]
+#[must_use = "return this token with the group installation result"]
 pub struct PendingGroupKey<'id> {
     epoch: LinkEpoch<'id>,
     key_id: GroupKeyId,
@@ -713,6 +736,7 @@ pub struct PendingGroupKey<'id> {
 /// }
 /// ```
 #[derive(Debug)]
+#[must_use = "return this token with the receive configuration result"]
 pub struct PendingConfiguration<'id> {
     place: ConfigurationPlace,
     epoch: Option<LinkEpoch<'id>>,
@@ -1545,8 +1569,8 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             StaInput::PairwiseKeyInstalled { pending, key } => {
                 let current = self.current_epoch() == Some(pending.epoch);
                 self.keys.pairwise_installed(pending, key);
-                // Leave keeps RemovingKeys until every outstanding installation
-                // has returned. An old response becomes a removal action there.
+                // Leave waits for every outstanding key installation to return.
+                // An old response becomes a removal action there.
                 if current {
                     self.keys_changed();
                 }
@@ -2481,6 +2505,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     /// encoding, configuration. Every back edge requires an external
     /// completion or a new command. Associated is its own join step before
     /// either Connected or the first handshake action.
+    #[must_use = "perform the returned action before waiting for another input"]
     pub fn poll_action(&mut self, now: Instant) -> Option<StaAction<'_, 'id, T, K>> {
         let owed = loop {
             if let Some(notice) = self.notice_owed.take() {

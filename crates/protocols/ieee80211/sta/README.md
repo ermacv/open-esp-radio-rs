@@ -8,6 +8,11 @@ notices, commands and time as values and leaves the port's and the arbiter's
 actions as values. A thin service loop over the lower-MAC port feeds it
 ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6128926225)).
 
+Produced actions, transmissions and pending response tokens are `must_use`:
+the consumer performs or forwards them before waiting again. Rust can still
+explicitly drop an affine value; the annotation diagnoses accidentally
+discarded results and does not replace terminal resource handling.
+
 Module map:
 
 - `machine`: the station, its tokens (`StaTokens`) and its host slice tests

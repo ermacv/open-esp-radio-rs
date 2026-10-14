@@ -195,6 +195,7 @@ pub struct LeaseId(u32);
 /// The station's right to hold one lease: a request takes it, and the
 /// lease's end or cancellation gives it back. Only the arbiter makes one.
 #[derive(Debug, Eq, PartialEq)]
+#[must_use = "retain the sole place for the station's next channel request"]
 pub struct LeasePlace {
     private: (),
 }
@@ -203,6 +204,7 @@ pub struct LeasePlace {
 /// channel: [`Arbiter::request_absence`] takes it, and the absence's end or
 /// cancellation gives it back. Only the arbiter makes one.
 #[derive(Debug, Eq, PartialEq)]
+#[must_use = "retain the sole place for the station's next absence request"]
 pub struct AbsencePlace {
     private: (),
 }
@@ -297,6 +299,7 @@ pub struct ChannelRequest<K> {
 
 /// The arbiter's answer to a connected station's absence.
 #[derive(Debug)]
+#[must_use = "deliver the lease or retain the returned absence place"]
 pub enum AbsenceAnswer<K> {
     /// The absence, leased: it starts a preparation window later, once the
     /// station said [`Arbiter::ready`], and returns to the primary lease's
@@ -317,6 +320,7 @@ pub enum AbsenceRefusal {
 
 /// The arbiter's answer to a request.
 #[derive(Debug)]
+#[must_use = "deliver the lease or retain the returned admission place"]
 pub enum Answer<K> {
     /// The channel, leased; the arbiter keeps the place until the lease
     /// ends. A join away from the running access point's channel, which
@@ -381,6 +385,7 @@ pub enum CancelReason {
 
 /// What the arbiter tells the station.
 #[derive(Debug, Eq, PartialEq)]
+#[must_use = "deliver the notice and return any admission place to the station"]
 pub enum StationNotice<K> {
     /// The lease started: the port runs on its channel.
     LeaseStarted(LeaseId),
@@ -548,6 +553,22 @@ impl<'p, 'id: 'p, P: AirReservationPhase<'p, 'id>> CloseGateWith<'p, 'id, AirRes
 }
 
 /// Proof of the one retune the arbiter requested.
+/// Discarding a produced token is diagnosed by `unused_must_use`:
+/// ```compile_fail
+/// #![deny(unused_must_use)]
+/// use oer_ieee80211_arbiter::PendingRetune;
+/// fn ignore<K>(next: impl FnOnce() -> PendingRetune<K>) {
+///     next();
+/// }
+/// ```
+/// Its consumer retains it across the requested operation:
+/// ```
+/// #![deny(unused_must_use)]
+/// use oer_ieee80211_arbiter::PendingRetune;
+/// fn forward<K>(next: impl FnOnce() -> PendingRetune<K>) -> PendingRetune<K> {
+///     next()
+/// }
+/// ```
 ///
 /// Only [`Arbiter::poll_action`] creates this token. The service keeps it
 /// through disable, tuning and enable, then consumes it in either
@@ -560,6 +581,7 @@ impl<'p, 'id: 'p, P: AirReservationPhase<'p, 'id>> CloseGateWith<'p, 'id, AirRes
 /// let pending = PendingRetune { to: (), purpose: () };
 /// ```
 #[derive(Debug)]
+#[must_use = "finish or refuse the retune with this token"]
 pub struct PendingRetune<K> {
     to: SupportedChannel<K>,
     purpose: CyclePurpose<K>,
@@ -574,6 +596,7 @@ impl<K> PendingRetune<K> {
 
 /// One action of the arbiter.
 #[derive(Debug)]
+#[must_use = "perform the action and retain any gate or retune token"]
 pub enum ArbiterAction<'id, K, R: ReservationMode> {
     /// Tell the station.
     Station(StationNotice<K>),
@@ -880,6 +903,7 @@ impl<K> Outbox<K> {
 
 /// A notice deliverable without owning an enabled port phase.
 #[derive(Debug)]
+#[must_use = "deliver the notice and retain any admission place"]
 pub enum ArbiterNotice<K> {
     Station(StationNotice<K>),
     AccessPoint(AccessPointCommand<K>),
@@ -1724,6 +1748,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
 
     /// The next action at `now`, if any. The service takes every action
     /// before it waits again.
+    #[must_use = "perform the action before waiting"]
     pub fn poll_action(&mut self, now: Instant) -> Option<ArbiterAction<'id, K, R>> {
         if let Some(notice) = self.poll_notice(now) {
             return Some(match notice {
@@ -1787,6 +1812,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
     /// Notices available without a running port phase. Planning may update
     /// deadlines, but this API never takes a gate or issues a retune token.
     /// Access-point notices precede station notices, as in `poll_action`.
+    #[must_use = "deliver the notice before waiting"]
     pub fn poll_notice(&mut self, now: Instant) -> Option<ArbiterNotice<K>> {
         if let Some(notice) = self.outbox.take() {
             return Some(notice);
@@ -1823,6 +1849,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
 
     /// When the arbiter next needs [`Self::poll_action`], even without an
     /// input.
+    #[must_use = "arm the timer for the returned deadline"]
     pub fn poll_deadline(&self) -> Option<Instant> {
         if self.cycle.is_some() || matches!(self.port, Port::Failed) {
             return None;

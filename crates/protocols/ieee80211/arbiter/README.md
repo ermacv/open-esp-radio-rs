@@ -28,6 +28,11 @@ option, off by default: the gate's closing takes one last frame, a
 CTS-to-self the driver sends with the Duration left
 ([amendments](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129677418)).
 
+Admission places, answers, notices and actions are `must_use`, as is each
+pending retune. Polling transfers work or a deadline to the caller; silently
+discarding that result is diagnosed. Explicitly dropping an affine value
+remains possible and does not complete its protocol obligation.
+
 A join on another channel beside a running access point starts with the
 access point's announced move there, by the `ApFollowPolicy`; the move is
 never withdrawn, and a second such join within the policy's

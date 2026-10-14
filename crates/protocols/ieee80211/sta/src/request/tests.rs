@@ -60,3 +60,54 @@ fn preferred_scan_order_preserves_the_exact_selected_set() {
         [1, 6, 11, 14]
     );
 }
+
+#[test]
+fn scan_iterator_lengths_and_order_hold_for_every_channel_set() {
+    for mask in 1..=ALL_2_4_GHZ_CHANNEL_BITS {
+        let selected: std::vec::Vec<u8> = (1..=14)
+            .filter(|channel| mask & (1 << (channel - 1)) != 0)
+            .collect();
+        let channels = StationScanChannels::from_primary_channels(&selected).unwrap();
+        assert_eq!(usize::from(channels.count()), selected.len());
+        assert!(channels.primary_channels().eq(selected.iter().copied()));
+        for preference in [
+            None,
+            Some(0),
+            Some(1),
+            Some(7),
+            Some(14),
+            Some(15),
+            Some(255),
+        ] {
+            let mut expected = selected.clone();
+            if let Some(preference) = preference
+                && let Some(index) = expected.iter().position(|channel| *channel == preference)
+            {
+                expected.remove(index);
+                expected.insert(0, preference);
+            }
+            let mut iter = channels.primary_channels_preferred(preference);
+            for (index, expected) in expected.iter().copied().enumerate() {
+                let remaining = selected.len() - index;
+                assert_eq!(iter.size_hint(), (remaining, Some(remaining)));
+                assert_eq!(iter.len(), remaining);
+                assert_eq!(iter.next(), Some(expected));
+            }
+            assert_eq!(iter.size_hint(), (0, Some(0)));
+            assert_eq!(iter.next(), None);
+            assert_eq!(iter.next(), None);
+        }
+    }
+}
+
+#[test]
+fn every_out_of_domain_channel_is_refused_before_a_bit_shift() {
+    let channels = StationScanChannels::CHANNELS_1_TO_14;
+    for invalid in core::iter::once(0).chain(15..=u8::MAX) {
+        assert!(!channels.contains(invalid));
+        assert_eq!(
+            StationScanChannels::from_primary_channels(&[1, invalid]),
+            Err(StationScanChannelsError::InvalidPrimary(invalid)),
+        );
+    }
+}

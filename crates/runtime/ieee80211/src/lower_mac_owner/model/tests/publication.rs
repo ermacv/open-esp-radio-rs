@@ -40,7 +40,11 @@ impl Work for DuringPublication {
             Ccmp128Key([7; 16]),
         ));
         air.hold_completion(WmmAccessCategory::BestEffort, true);
-        air.answer(matches!(self.0, Barrier::GateAck));
+        air.answer(if matches!(self.0, Barrier::GateAck) {
+            AirAnswer::Ack
+        } else {
+            AirAnswer::NoResponse
+        });
         let head_ticket = tickets[0].index();
         let tail_ticket = tickets[1].index();
         submit(phase, tickets.remove(0), small.remove(0), key.as_ref());

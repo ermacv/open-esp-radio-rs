@@ -683,8 +683,8 @@ impl Work for MaxWork<'_> {
             ..
         } = resources;
         for _ in 0..MODEL_TICKETS {
-            self.air.answer(false);
-            self.air.answer(false);
+            self.air.answer(AirAnswer::NoResponse);
+            self.air.answer(AirAnswer::NoResponse);
         }
         let settings = self.settings;
         submit_all(phase, tickets, small, large, |phase| {
@@ -1053,7 +1053,7 @@ impl Work for AggregateRetransmission<'_> {
         };
         // Three new subframes, sequence numbers 0 to 2; the Block Ack
         // misses the second.
-        self.air.block_ack(0b101);
+        self.air.answer(AirAnswer::BlockAck(0b101));
         let rate = phase.rate(PhyRate::Ht(ht)).unwrap();
         let mut station = phase.station();
         let rate = station.ampdu_rate(rate).ok().unwrap();
@@ -1170,10 +1170,10 @@ impl Work for TerminalOutcomes<'_> {
             Ccmp128Key([7; 16]),
         );
         if self.collision {
-            self.air.collision();
-            self.air.collision();
+            self.air.answer(AirAnswer::Collision);
+            self.air.answer(AirAnswer::Collision);
         } else {
-            self.air.timeout();
+            self.air.answer(AirAnswer::HardwareTimeout);
         }
         let expected_tickets = [tickets[0].index(), tickets[1].index()];
         submit(phase, tickets.remove(0), large.remove(0), Some(&key));
@@ -1300,9 +1300,9 @@ impl Work for LongRetryPlan<'_> {
             ..
         } = resources;
         for _ in 0..1019 {
-            self.0.answer(false);
+            self.0.answer(AirAnswer::NoResponse);
         }
-        self.0.answer(true);
+        self.0.answer(AirAnswer::Ack);
         let rate = phase.rate(PhyRate::Legacy(LegacyRate::Ofdm6M)).unwrap();
         let mut plan = RetryPlan::new(RetryStage {
             rate,
@@ -1382,8 +1382,8 @@ impl Work for LastRateBeforeCollision<'_> {
             mut small,
             ..
         } = resources;
-        self.0.answer(false);
-        self.0.collision();
+        self.0.answer(AirAnswer::NoResponse);
+        self.0.answer(AirAnswer::Collision);
         let first_rate = PhyRate::Legacy(LegacyRate::Ofdm6M);
         let plan = RetryPlan::new(RetryStage {
             rate: phase.rate(first_rate).unwrap(),

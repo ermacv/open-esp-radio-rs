@@ -26,10 +26,11 @@
 //! [`MODEL_AMPDU_SUBFRAMES`] subframes: under a key the new subframes are
 //! numbered at their first transmission and a retransmitted one keeps its
 //! number and gets the Retry bit; the air answers each aggregate with a
-//! Block Ack ([`ModelAir::block_ack`], every subframe by default). Single
-//! MPDUs and aggregates consume the same injected publication results: ACK/BA,
-//! missing response, collision or hardware timeout. An aggregate consumes its
-//! selected BA bitmap even when that publication receives no response.
+//! Block Ack (every subframe by default). `ModelAir::answer` queues one
+//! `AirAnswer` per publication: ACK, BA bitmap, missing response, collision or
+//! hardware timeout. ACK/BA shape mismatch poisons before publication and
+//! quarantines the rejected operation until teardown. There is no separate
+//! BA queue whose injection could escape to a later aggregate.
 //! The builder rejects subframes outside the 64-sequence BA window rooted at
 //! its first subframe, using sequence arithmetic modulo 4096. Refusal returns
 //! both the unchanged builder and the rejected subframe before publication.
@@ -957,10 +958,14 @@ pub struct AirFrame {
     pub packet_number: Option<u64>,
 }
 
-#[derive(Clone, Copy)]
-enum AirResult {
-    Acknowledged,
-    AckTimeout,
+/// One FIFO injection for the next PPDU. ACK and Block Ack must match its
+/// shape; a mismatch poisons the model before publication, retaining owners.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AirAnswer {
+    Ack,
+    /// Bit n acknowledges subframe n of this one aggregate.
+    BlockAck(u64),
+    NoResponse,
     Collision,
     HardwareTimeout,
 }
@@ -1000,7 +1005,7 @@ pub struct ModelAir {
     sent: RefCell<Vec<AirFrame>>,
     /// The answers of the next transmissions, in order; once none is
     /// queued, each is acknowledged.
-    answers: RefCell<VecDeque<AirResult>>,
+    answers: RefCell<VecDeque<AirAnswer>>,
     rx: RefCell<VecDeque<(Vec<u8>, ModelRxMeta)>>,
     rx_stream: RefCell<Option<(Vec<u8>, ModelRxMeta)>>,
     refuse_enable: Cell<bool>,
@@ -1020,10 +1025,6 @@ pub struct ModelAir {
     /// Keep a published PPDU's result pending, independently of prepublication CCA.
     held_results: Cell<[bool; WmmAccessCategory::ALL.len()]>,
     now_micros: Cell<u64>,
-    /// The Block Acks of the next A-MPDUs, in order: bit `n` acknowledges
-    /// the aggregate's subframe `n`; once none is queued, every subframe
-    /// is acknowledged.
-    block_acks: RefCell<VecDeque<u64>>,
     receive_agreements: RefCell<BTreeMap<u8, ModelReceiveAgreement>>,
 }
 
@@ -1052,33 +1053,10 @@ impl ModelAir {
         self.sent.borrow().clone()
     }
 
-    /// Answer the next publication, single or aggregate: ACK/BA or timeout.
-    pub fn answer(&self, acknowledged: bool) {
-        self.answers.borrow_mut().push_back(if acknowledged {
-            AirResult::Acknowledged
-        } else {
-            AirResult::AckTimeout
-        });
-    }
-
-    /// End the next publication with no completion. A timeout is final:
-    /// the MPDU becomes Indeterminate and the next queued attempt may run.
-    pub fn timeout(&self) {
-        self.answers
-            .borrow_mut()
-            .push_back(AirResult::HardwareTimeout);
-    }
-
-    /// An internal collision before the PPDU reached the air. The driver
-    /// consumes the next step of the plan without returning its resources.
-    pub fn collision(&self) {
-        self.answers.borrow_mut().push_back(AirResult::Collision);
-    }
-
-    /// Answer the next A-MPDU with a Block Ack of the subframes whose
-    /// bits `acknowledged` sets, bit `n` for its subframe `n`.
-    pub fn block_ack(&self, acknowledged: u64) {
-        self.block_acks.borrow_mut().push_back(acknowledged);
+    /// Supply exactly one result for the next publication. A Block Ack cannot
+    /// be left behind for a later aggregate when a Single is ahead of it.
+    pub fn answer(&self, answer: AirAnswer) {
+        self.answers.borrow_mut().push_back(answer);
     }
 
     /// Applied receive agreements by hardware slot. Pending writes remain
@@ -1172,13 +1150,27 @@ impl ModelAir {
         }
     }
 
-    fn result(&self) -> AirResult {
-        self.answers
-            .borrow_mut()
-            .pop_front()
-            .unwrap_or(AirResult::Acknowledged)
+    fn result(&self, form: AirForm) -> Result<AirAnswer, AnswerShapeMismatch> {
+        let answer = self.answers.borrow_mut().pop_front().unwrap_or(match form {
+            AirForm::Single => AirAnswer::Ack,
+            AirForm::Aggregate => AirAnswer::BlockAck(u64::MAX),
+        });
+        match (form, answer) {
+            (AirForm::Single, AirAnswer::BlockAck(_)) | (AirForm::Aggregate, AirAnswer::Ack) => {
+                Err(AnswerShapeMismatch)
+            }
+            _ => Ok(answer),
+        }
     }
 }
+
+#[derive(Clone, Copy)]
+enum AirForm {
+    Single,
+    Aggregate,
+}
+#[derive(Debug)]
+struct AnswerShapeMismatch;
 
 /// A command the handle sends the driver, in the order it made it.
 /// The host model boxes its larger single-operation owner so small commands
@@ -1293,6 +1285,7 @@ pub struct ModelHeld<'id, X: ModelContext = ()> {
     settings: RefCell<Settings>,
     events: Bounded<LowerMacEvent<'id, ModelTypes<X>>>,
     held_terminal: RefCell<Option<SingleTerminal<'id, X>>>,
+    rejected_answer: Bounded<Work<'id, X>>,
     /// The receive buffers out with the body, queued or held.
     rx_out: Cell<usize>,
     /// A confirmation of each interface's settings waits in `events`.
@@ -1529,6 +1522,7 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
             settings: RefCell::default(),
             events: Bounded::new(MODEL_EVENTS, "event"),
             held_terminal: RefCell::new(None),
+            rejected_answer: Bounded::new(1, "answer shape rejection"),
             rx_out: Cell::new(0),
             configured: Cell::new([false; 2]),
             lost: Cell::new(false),
@@ -1808,7 +1802,7 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                     let cause =
                         withdrawal(held, &self.gate, publication.work.key(), &self.removing);
                     let result = if result_held {
-                        AirResult::HardwareTimeout
+                        AirAnswer::HardwareTimeout
                     } else {
                         publication.result
                     };
@@ -1889,7 +1883,7 @@ struct TxQueue<'id, X: ModelContext> {
 }
 struct Publication<'id, X: ModelContext> {
     started: u64,
-    result: AirResult,
+    result: AirAnswer,
     work: Published<'id, X>,
 }
 struct SinglePlan<'id, X: ModelContext> {
@@ -1937,86 +1931,76 @@ impl<'id, X: ModelContext> Published<'id, X> {
         self,
         held: &ModelHeld<'id, X>,
         keys: &[KeyIdentity],
-        result: AirResult,
+        result: AirAnswer,
         cause: Option<WithdrawCause>,
     ) -> Option<Publication<'id, X>> {
         match self {
             Self::Single(mut plan) => {
-                let status = match result {
-                    AirResult::HardwareTimeout => {
-                        terminal(
-                            held,
-                            *plan.prepared,
-                            TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout),
-                        );
-                        return None;
-                    }
-                    AirResult::Acknowledged => TxEndStatus::Delivered,
-                    AirResult::AckTimeout => TxEndStatus::AckTimeout,
-                    AirResult::Collision => TxEndStatus::ContentionLimit,
-                };
-                if !matches!(result, AirResult::Collision) {
-                    // At most four u8 stages: even the last of all 1020
-                    // transmissions stays below u16::MAX. Saturation cannot
-                    // occur; NonZero preserves that a last rate means air TX.
+                if matches!(result, AirAnswer::Ack | AirAnswer::NoResponse) {
                     let transmissions = plan
                         .last
                         .map_or(NonZeroU16::MIN, |(count, _)| count.saturating_add(1));
                     plan.last = Some((transmissions, plan.rate));
                 }
-                if !matches!(result, AirResult::Acknowledged) {
-                    if let Some(cause) = cause {
-                        terminal(held, *plan.prepared, TxOutcome::Withdrawn(cause));
-                        return None;
-                    }
-                    if let Some(rate) = plan.remaining.pop_front() {
-                        plan.rate = rate;
-                        return publish_single(held, keys, plan);
-                    }
-                }
-                terminal(
-                    held,
-                    *plan.prepared,
+                let outcome = air_outcome(result, plan.last, None, cause);
+                if matches!(
+                    outcome,
                     TxOutcome::Ended {
-                        status,
-                        last: plan.last,
-                        ack: (status == TxEndStatus::Delivered).then_some(TxAck::default()),
-                    },
-                );
+                        status: TxEndStatus::AckTimeout | TxEndStatus::ContentionLimit,
+                        ..
+                    }
+                ) && let Some(rate) = plan.remaining.pop_front()
+                {
+                    plan.rate = rate;
+                    return publish_single(held, keys, plan);
+                }
+                terminal(held, *plan.prepared, outcome);
             }
             Self::Aggregate { prepared, report } => {
-                let outcome = match (result, cause) {
-                    (AirResult::HardwareTimeout, _) => {
-                        TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout)
-                    }
-                    (AirResult::Acknowledged, _) => TxOutcome::Ended {
-                        status: TxEndStatus::Delivered,
-                        last: Some((NonZeroU16::MIN, prepared.rate)),
-                        ack: Some(TxAck {
-                            block_ack: Some(report),
-                            ..TxAck::default()
-                        }),
-                    },
-                    (AirResult::AckTimeout | AirResult::Collision, Some(cause)) => {
-                        TxOutcome::Withdrawn(cause)
-                    }
-                    (AirResult::AckTimeout, None) => TxOutcome::Ended {
-                        status: TxEndStatus::AckTimeout,
-                        last: Some((NonZeroU16::MIN, prepared.rate)),
-                        ack: None,
-                    },
-                    (AirResult::Collision, None) => TxOutcome::Ended {
-                        status: TxEndStatus::ContentionLimit,
-                        last: None,
-                        ack: None,
-                    },
-                };
-                terminal_aggregate(held, prepared, outcome);
+                let last = (!matches!(result, AirAnswer::Collision))
+                    .then_some((NonZeroU16::MIN, prepared.rate));
+                terminal_aggregate(
+                    held,
+                    prepared,
+                    air_outcome(result, last, Some(report), cause),
+                );
             }
         }
         None
     }
 }
+/// One interpretation of air completion for both submission shapes.
+fn air_outcome(
+    answer: AirAnswer,
+    last: Option<(NonZeroU16, PhyRate)>,
+    report: Option<BlockAckReport>,
+    cause: Option<WithdrawCause>,
+) -> TxOutcome {
+    match answer {
+        AirAnswer::HardwareTimeout => TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout),
+        AirAnswer::Ack | AirAnswer::BlockAck(_) => TxOutcome::Ended {
+            status: TxEndStatus::Delivered,
+            last,
+            ack: Some(TxAck {
+                block_ack: report,
+                ..TxAck::default()
+            }),
+        },
+        AirAnswer::NoResponse | AirAnswer::Collision => match cause {
+            Some(cause) => TxOutcome::Withdrawn(cause),
+            None => TxOutcome::Ended {
+                status: if matches!(answer, AirAnswer::Collision) {
+                    TxEndStatus::ContentionLimit
+                } else {
+                    TxEndStatus::AckTimeout
+                },
+                last,
+                ack: None,
+            },
+        },
+    }
+}
+
 fn start_work<'id, X: ModelContext>(
     held: &ModelHeld<'id, X>,
     keys: &[KeyIdentity],
@@ -2052,6 +2036,14 @@ fn publish_single<'id, X: ModelContext>(
     keys: &[KeyIdentity],
     mut plan: SinglePlan<'id, X>,
 ) -> Option<Publication<'id, X>> {
+    let result = match held.air.result(AirForm::Single) {
+        Ok(result) => result,
+        Err(AnswerShapeMismatch) => {
+            let _fault = held.rejected_answer.push(Work::Single(plan.prepared));
+            held.poison();
+            return None;
+        }
+    };
     plan.prepared.mpdu = match plan.prepared.mpdu.publish(
         plan.prepared.role,
         plan.prepared.key.as_ref().map(|key| &key.identity),
@@ -2080,7 +2072,7 @@ fn publish_single<'id, X: ModelContext>(
     held.air.sent.borrow_mut().push(frame);
     Some(Publication {
         started: held.air.now_micros.get(),
-        result: held.air.result(),
+        result,
         work: Published::Single(plan),
     })
 }
@@ -2128,12 +2120,18 @@ fn publish_aggregate<'id, X: ModelContext>(
     keys: &[KeyIdentity],
     mut aggregate: PreparedAggregate<'id, X>,
 ) -> Option<Publication<'id, X>> {
-    let acknowledged = held
-        .air
-        .block_acks
-        .borrow_mut()
-        .pop_front()
-        .unwrap_or(u64::MAX);
+    let result = match held.air.result(AirForm::Aggregate) {
+        Ok(result) => result,
+        Err(AnswerShapeMismatch) => {
+            let _fault = held.rejected_answer.push(Work::Aggregate(aggregate));
+            held.poison();
+            return None;
+        }
+    };
+    let acknowledged = match result {
+        AirAnswer::BlockAck(bitmap) => bitmap,
+        _ => 0,
+    };
     let mut subframes = Vec::with_capacity(aggregate.subframes.len());
     let mut bitmap = 0_u64;
     for (index, subframe) in aggregate.subframes.into_iter().enumerate() {
@@ -2176,7 +2174,7 @@ fn publish_aggregate<'id, X: ModelContext>(
     };
     Some(Publication {
         started: held.air.now_micros.get(),
-        result: held.air.result(),
+        result,
         work: Published::Aggregate {
             prepared: aggregate,
             report,

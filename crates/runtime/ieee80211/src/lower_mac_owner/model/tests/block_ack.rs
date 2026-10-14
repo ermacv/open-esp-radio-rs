@@ -81,7 +81,7 @@ impl Work for Window {
             assert!(air.sent().is_empty(), "refusal must precede publication");
             aggregate = returned;
         }
-        air.block_ack(self.acknowledged);
+        air.answer(AirAnswer::BlockAck(self.acknowledged));
         let ticket = tickets.remove(0);
         let ticket_index = ticket.index();
         station

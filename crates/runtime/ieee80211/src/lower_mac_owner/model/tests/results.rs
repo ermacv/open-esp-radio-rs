@@ -9,7 +9,7 @@ enum Form {
 
 struct Results {
     form: Form,
-    result: AirResult,
+    result: AirAnswer,
 }
 
 impl Work for Results {
@@ -28,16 +28,11 @@ impl Work for Results {
         let original_ticket = ticket.index();
         let original_buffer = buffer.slot.index();
         let air = phase.held.air.clone();
-        match self.result {
-            AirResult::Acknowledged => air.answer(true),
-            AirResult::AckTimeout => air.answer(false),
-            AirResult::Collision => air.collision(),
-            AirResult::HardwareTimeout => air.timeout(),
-        }
+        air.answer(self.result);
         // The second operation has no injection and must get the default ACK,
         // including when the first operation was an aggregate.
-        for result in [self.result, AirResult::Acknowledged] {
-            let rate = match self.form {
+        for (form, result) in [(self.form, self.result), (Form::Single, AirAnswer::Ack)] {
+            let rate = match form {
                 Form::Single => {
                     let TxFrame::Individual { frame, plan } = data_frame(phase, false) else {
                         panic!()
@@ -101,7 +96,7 @@ impl Work for Results {
             let Ok(Ok(LowerMacEvent::TxCompleted(completed))) = phase.next_event().await else {
                 panic!()
             };
-            let (returned_ticket, returned_buffer, outcome) = match (self.form, completed) {
+            let (returned_ticket, returned_buffer, outcome) = match (form, completed) {
                 (
                     Form::Single,
                     TxCompleted::Single {
@@ -132,35 +127,39 @@ impl Work for Results {
                 _ => panic!("terminal changed operation kind"),
             };
             let expected = match result {
-                AirResult::HardwareTimeout => {
+                AirAnswer::HardwareTimeout => {
                     TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout)
                 }
-                AirResult::Acknowledged => TxOutcome::Ended {
+                AirAnswer::Ack | AirAnswer::BlockAck(_) => TxOutcome::Ended {
                     status: TxEndStatus::Delivered,
                     last: Some((NonZeroU16::MIN, rate)),
                     ack: Some(TxAck {
-                        block_ack: match self.form {
+                        block_ack: match form {
                             Form::Single => None,
                             Form::Aggregate => Some(BlockAckReport {
                                 start_sequence: SequenceNumber::new(0).unwrap(),
-                                bitmap: 1,
+                                bitmap: if matches!(result, AirAnswer::BlockAck(0)) {
+                                    0
+                                } else {
+                                    1
+                                },
                             }),
                         },
                         ..TxAck::default()
                     }),
                 },
-                AirResult::AckTimeout => TxOutcome::Ended {
+                AirAnswer::NoResponse => TxOutcome::Ended {
                     status: TxEndStatus::AckTimeout,
                     last: Some((NonZeroU16::MIN, rate)),
                     ack: None,
                 },
-                AirResult::Collision => TxOutcome::Ended {
+                AirAnswer::Collision => TxOutcome::Ended {
                     status: TxEndStatus::ContentionLimit,
                     last: None,
                     ack: None,
                 },
             };
-            assert_eq!(outcome, expected, "{:?}", self.form);
+            assert_eq!(outcome, expected, "{form:?}");
             ticket = returned_ticket;
             let ModelAnyBuffer::SmallSent(sent) = returned_buffer else {
                 panic!("publication must return Sent")
@@ -179,10 +178,13 @@ impl Work for Results {
 fn every_result_is_consumed_by_exactly_one_single_or_aggregate_attempt() {
     for form in [Form::Single, Form::Aggregate] {
         for result in [
-            AirResult::Acknowledged,
-            AirResult::AckTimeout,
-            AirResult::Collision,
-            AirResult::HardwareTimeout,
+            match form {
+                Form::Single => AirAnswer::Ack,
+                Form::Aggregate => AirAnswer::BlockAck(1),
+            },
+            AirAnswer::NoResponse,
+            AirAnswer::Collision,
+            AirAnswer::HardwareTimeout,
         ] {
             let (backend, _) = backend();
             block_on(run_port(backend, Body(Results { form, result })));
@@ -197,7 +199,89 @@ fn review_aggregate_honors_timeout_injection() {
         backend,
         Body(Results {
             form: Form::Aggregate,
-            result: AirResult::HardwareTimeout,
+            result: AirAnswer::HardwareTimeout,
         }),
     ));
+}
+
+#[test]
+fn an_empty_block_ack_is_consumed_before_the_following_single() {
+    let (backend, _) = backend();
+    block_on(run_port(
+        backend,
+        Body(Results {
+            form: Form::Aggregate,
+            result: AirAnswer::BlockAck(0),
+        }),
+    ));
+}
+
+#[test]
+fn an_answer_for_the_other_submission_shape_is_refused_and_consumed() {
+    let (_, air) = backend();
+    for (form, wrong) in [
+        (AirForm::Single, AirAnswer::BlockAck(1)),
+        (AirForm::Aggregate, AirAnswer::Ack),
+    ] {
+        air.answer(wrong);
+        assert!(air.result(form).is_err());
+        assert!(air.answers.borrow().is_empty());
+    }
+}
+
+#[test]
+fn failed_responses_keep_each_withdrawal_reason_for_both_forms() {
+    let rate = PhyRate::Legacy(LegacyRate::Ofdm6M);
+    for cause in [
+        WithdrawCause::Disabled,
+        WithdrawCause::KeyRemoved,
+        WithdrawCause::GateClosed,
+    ] {
+        for answer in [AirAnswer::NoResponse, AirAnswer::Collision] {
+            for report in [
+                None,
+                Some(BlockAckReport {
+                    start_sequence: SequenceNumber::ZERO,
+                    bitmap: 0,
+                }),
+            ] {
+                assert_eq!(
+                    air_outcome(answer, Some((NonZeroU16::MIN, rate)), report, Some(cause)),
+                    TxOutcome::Withdrawn(cause)
+                );
+            }
+        }
+    }
+}
+
+struct WrongAnswer;
+impl Work for WrongAnswer {
+    async fn work<'p, 'id: 'p>(
+        self,
+        phase: &mut ModelPhase<'p, 'id>,
+        resources: ModelResources<'id>,
+    ) {
+        let ModelResources {
+            mut tickets,
+            mut small,
+            ..
+        } = resources;
+        let ticket = tickets.remove(0);
+        let index = ticket.index();
+        phase.held.air.answer(AirAnswer::BlockAck(1));
+        submit(phase, ticket, small.remove(0), None);
+        assert!(phase.next_event().await.is_err());
+        assert!(phase.held.air.sent().is_empty());
+        let held = phase.held.rejected_answer.items.borrow();
+        let Some(super::super::Work::Single(operation)) = held.front() else {
+            panic!("the rejected operation stays owned")
+        };
+        assert_eq!(operation.ticket.index(), index);
+    }
+}
+
+#[test]
+fn wrong_answer_shape_retains_the_operation_before_publication() {
+    let (backend, _) = backend();
+    block_on(run_port(backend, Body(WrongAnswer)));
 }

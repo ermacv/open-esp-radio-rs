@@ -1281,7 +1281,10 @@ impl<'id, X: ModelContext> SingleTerminal<'id, X> {
     }
 }
 
-/// The install's queues between the handle and the driver.
+/// The install's queues between the handle and the driver. RX capacity stays
+/// charged until recycle, including buffers handed to the body by disable.
+/// Disable preserves an unobserved EventsLost indication for the next enable;
+/// draining events does not acknowledge that separate loss indication.
 pub struct ModelHeld<'id, X: ModelContext = ()> {
     air: Rc<ModelAir>,
     commands: Bounded<Command<'id, X>>,
@@ -1497,7 +1500,9 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
             while let Some(event) = held.take_event() {
                 sink(event);
             }
-            held.rx_out.set(0);
+            // Draining transfers RX owners to the body, not back to the pool.
+            // Only recycle releases capacity. An unobserved `lost` indication
+            // likewise survives disable and is delivered after re-enable.
             Poll::Ready(Ok(()))
         })
     }

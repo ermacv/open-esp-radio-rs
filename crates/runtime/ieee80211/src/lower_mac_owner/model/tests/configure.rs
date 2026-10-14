@@ -87,3 +87,89 @@ fn review_configured_drained_by_disable_is_rearmed() {
         ));
     }
 }
+
+struct ReceiveAcrossDisable;
+impl PortBody<ModelBackend> for ReceiveAcrossDisable {
+    async fn run<'id>(
+        self,
+        owner: Owner<'_, 'id, ModelBackend, Disabled>,
+        _resources: ModelResources<'id>,
+    ) -> Ended<'id, ModelBackend> {
+        let Ok(mut enabled) = owner.enable().await else {
+            panic!()
+        };
+        let air = enabled.phase().held.air.clone();
+        let meta = ModelRxMeta::new(Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap(), -40, -95);
+        for _ in 0..MODEL_RX_EVENTS + 1 {
+            air.receive(&[1], meta);
+        }
+        for _ in 0..3 {
+            yield_now().await;
+        }
+        let mut frames = Vec::new();
+        let event = enabled.phase().next_event().await.unwrap().unwrap();
+        let LowerMacEvent::Received { frame, .. } = event else {
+            panic!()
+        };
+        frames.push(frame);
+        let Ok(disabled) = enabled
+            .disable(&mut |event| {
+                let LowerMacEvent::Received { frame, .. } = event else {
+                    panic!()
+                };
+                frames.push(frame);
+            })
+            .await
+        else {
+            panic!()
+        };
+        assert_eq!(frames.len(), MODEL_RX_EVENTS);
+        let Ok(mut enabled) = disabled.enable().await else {
+            panic!()
+        };
+        assert_eq!(
+            enabled.phase().held.rx_out.get(),
+            MODEL_RX_EVENTS,
+            "drain does not return owners held by the body"
+        );
+        assert!(
+            matches!(enabled.phase().next_event().await, Ok(Err(EventsLost))),
+            "an unobserved loss survives disable"
+        );
+        air.receive(&[2], meta);
+        for _ in 0..3 {
+            yield_now().await;
+        }
+        assert!(
+            matches!(enabled.phase().next_event().await, Ok(Err(EventsLost))),
+            "no capacity until the old owners return"
+        );
+        for frame in frames {
+            enabled.phase().recycle(frame);
+        }
+        for _ in 0..3 {
+            yield_now().await;
+        }
+        assert_eq!(enabled.phase().held.rx_out.get(), 0);
+        air.receive(&[3], meta);
+        let event = enabled.phase().next_event().await.unwrap().unwrap();
+        let LowerMacEvent::Received { frame, .. } = event else {
+            panic!()
+        };
+        assert_eq!(frame.bytes(), [3]);
+        enabled.phase().recycle(frame);
+        let Ok(disabled) = enabled
+            .disable(&mut |_| panic!("all events consumed"))
+            .await
+        else {
+            panic!()
+        };
+        disabled.uninstall(())
+    }
+}
+
+#[test]
+fn disable_preserves_borrowed_rx_capacity_and_unobserved_loss() {
+    let (backend, _) = backend();
+    block_on(run_port(backend, ReceiveAcrossDisable));
+}

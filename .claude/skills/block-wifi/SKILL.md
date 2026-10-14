@@ -139,6 +139,11 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   They carry no secret: uninstall/abandon must deactivate and clear the
   installation table and captured RX independently of identity reference
   counts. Ordinary disable/reenable preserves the installed table.
+- GTK conformance needs an independent fixture watchdog as well as measured
+  admission/completion instants against the backend's `GROUP_COMMAND_BOUND`.
+  Keep the backend deadline waker separate from the watchdog's waker. Exercise
+  expiry and exact poisoned custody for every mutation, disable before/after
+  execution, and AP removal held by a published group transmission.
 
 The MSDU/command SPSC sender's readiness returns a `SendPermit`. Keep the
 permit through publication: its exclusive sender borrow is the capacity

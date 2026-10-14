@@ -1,5 +1,9 @@
 use super::*;
 use crate::lower_mac_owner::conformance::group_keys as contract;
+use oer_time::{Clock, Timer};
+use oer_time_virtual::VirtualClock;
+
+mod progress;
 
 fn id() -> GroupKeyId {
     GroupKeyId::new(1).unwrap()
@@ -38,6 +42,7 @@ struct Boundary<'a> {
     case: contract::Case,
     air: &'a ModelAir,
     trace: &'a RefCell<Option<contract::Trace>>,
+    clock: &'a VirtualClock,
 }
 impl Work for Boundary<'_> {
     async fn work<'p, 'id: 'p>(
@@ -105,10 +110,11 @@ impl Work for Boundary<'_> {
                 phase.station().select_group_key(permission, a)
             }
         }
+        let admitted_at = oer_time::Instant::from_micros(self.air.now_micros.get());
         self.finish(
             phase,
             (original, submitted_slot),
-            writes,
+            (writes, admitted_at),
             old_material,
             new_material,
             retained,
@@ -122,7 +128,7 @@ impl Boundary<'_> {
         self,
         phase: &mut ModelPhase<'p, 'id>,
         (original, submitted_slot): (contract::Installation, u8),
-        writes: usize,
+        (writes, admitted_at): (usize, oer_time::Instant),
         old: [u8; 16],
         new: [u8; 16],
         retained: Option<ModelGroupKey<'id, Station>>,
@@ -154,6 +160,10 @@ impl Boundary<'_> {
             );
         }
         self.air.receive_continuously(&[0], meta());
+        self.clock
+            .wait_for(oer_time::Duration::from_micros(100))
+            .await
+            .unwrap();
         self.air.hold_group_commands(false);
         let (key, permission) = loop {
             yield_now().await;
@@ -178,6 +188,7 @@ impl Boundary<'_> {
             }
         };
         events.push(Event::Terminal(snapshot(&key)));
+        let completed_at = oer_time::Instant::from_micros(self.air.now_micros.get());
         let continuous_rx_at_terminal = self.air.rx_stream.borrow().is_some();
         self.air.stop_continuous_receive();
         let inactive = if self.case == contract::Case::SelectCurrent {
@@ -210,6 +221,10 @@ impl Boundary<'_> {
         self.trace.replace(Some(contract::Trace {
             original,
             submitted_slot,
+            timing: contract::Timing {
+                admitted_at,
+                completed_at,
+            },
             events,
             writes: self.air.group_writes() - writes,
             inactive_material_accepted,
@@ -224,8 +239,11 @@ impl Boundary<'_> {
     }
 }
 
-struct Harness;
-impl contract::Harness for Harness {
+struct Harness<'a>(&'a VirtualClock);
+impl contract::Harness for Harness<'_> {
+    const GROUP_COMMAND_BOUND: oer_time::Duration =
+        <ModelBackend as LowerMacBackend>::GROUP_COMMAND_BOUND;
+    const SCENARIO_BOUND: oer_time::Duration = oer_time::Duration::from_millis(20);
     async fn exercise(&mut self, case: contract::Case) -> contract::Trace {
         let (backend, air) = backend();
         let trace = RefCell::new(None);
@@ -233,15 +251,20 @@ impl contract::Harness for Harness {
             case,
             air: &air,
             trace: &trace,
+            clock: self.0,
         };
-        run_port(backend, Body(boundary)).await;
+        progress::run_timed(run_port(backend, Body(boundary)), &air, self.0, None).await;
         assert!(!air.poisoned.get());
         trace.into_inner().unwrap()
+    }
+    async fn exercise_progress(&mut self, case: contract::ProgressCase) -> contract::ProgressTrace {
+        progress::exercise(case, self.0).await
     }
 }
 #[test]
 fn common_gtk_boundary_suite_covers_delayed_ingress_and_retained_selection() {
-    block_on(contract::check(&mut Harness)).unwrap();
+    let clock = VirtualClock::new();
+    progress::run_clocked(contract::check(&mut Harness(&clock), &clock), &clock).unwrap();
 }
 
 #[derive(Clone, Copy, Debug)]

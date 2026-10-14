@@ -29,3 +29,6 @@ and shares the beacon clock and management sequence space. It is published throu
 the management TX owner and retained until completion. Discovery does not allocate
 a peer, alter its security state, start WPA2, or count as an association response.
 Malformed requests and requests for another AP or SSID are ignored.
+An invalid hardware completion propagates the decoder fault and retains the
+publication for reset. It produces neither a probe-failure terminal nor an
+ACK-timeout observation.

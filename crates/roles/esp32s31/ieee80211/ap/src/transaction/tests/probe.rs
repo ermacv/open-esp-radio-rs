@@ -11,7 +11,7 @@ fn probe_ack_timeout_retains_receiver_sequence_and_terminal_attempts() {
 }
 
 #[test]
-fn probe_terminal_hardware_error_is_not_classified_as_a_missing_ack() {
+fn an_invalid_probe_completion_keeps_the_publication_without_reporting_ack_timeout() {
     exercise_probe_completion(3);
 }
 
@@ -106,6 +106,35 @@ fn exercise_probe_completion(status: u8) {
         "hardware owner must not be overwritten"
     );
     let sequence_control = u16::from_le_bytes([output[22], output[23]]);
+    if status == 3 {
+        hardware.completion = Some(MacTxCompletionObservation::new_model(status, 0));
+        assert_eq!(
+            mac.service_tx(
+                &mut hardware,
+                WifiTxWake::Interrupt {
+                    events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
+                },
+                oer_time::Instant::from_micros(102),
+            ),
+            Err(ApMacError::Transmit(crate::tx::ApTxError::Ordinary(
+                oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxError::Tx(
+                    oer_esp32s31_ieee80211_mac::tx::TxError::Completion(
+                        oer_esp32s31_ieee80211_mac::tx::CompletionFault::InvalidStatus { status },
+                    ),
+                ),
+            ))),
+        );
+        assert_eq!(hardware.publications, 1);
+        assert_eq!(
+            mac.pending_publication_kind(),
+            Some(ApPendingPublicationKind::ProbeResponse),
+        );
+        assert!(mac.first_probe_failure().is_none());
+        assert_eq!(mac.observation().tx_failures.probe_ack_timeouts, 0);
+        assert_eq!(mac.observation().tx_failures.hardware_failures, 0);
+        assert!(mac.try_into_parts().is_err());
+        return;
+    }
     let mut terminal = None;
     for attempt in 0..32 {
         hardware.completion = Some(MacTxCompletionObservation::new_model(status, 0));

@@ -5,6 +5,7 @@
 //! wait for interrupts, access MMIO, mutate DMA storage or produce entropy;
 //! those remain separate hardware/executor boundaries.
 
+use oer_ieee80211_lower_mac::TxStatus;
 use oer_ieee80211_mac::extensions::wmm::WmmParameterSet;
 use oer_ieee80211_mac::qos::{
     WmmAccessCategory, WmmTrafficClass, WmmUserPriority, classify_ethernet_wmm,
@@ -556,7 +557,7 @@ impl OrdinaryMpduRetryState {
     pub fn observe_completion(
         &mut self,
         policy: &mut WifiTxRuntimePolicy,
-        status: oer_ieee80211_lower_mac::TxStatus,
+        status: TxStatus,
     ) -> OrdinaryRetryDecision {
         let step = self.retry.observe(status);
         match (step.contention, step.decision) {
@@ -576,7 +577,7 @@ impl OrdinaryMpduRetryState {
 
     /// Apply one detached ordinary-queue collision.
     pub fn observe_collision(&mut self, policy: &mut WifiTxRuntimePolicy) -> OrdinaryRetryDecision {
-        self.observe_completion(policy, oer_ieee80211_lower_mac::TxStatus::Collision)
+        self.observe_completion(policy, TxStatus::Collision)
     }
 
     /// End ownership after a non-retryable executor or hardware error.
@@ -832,7 +833,7 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
         self.validate_stamp(now)?;
         let result = if completion.tx.completes_vendor_trigger_flow() {
             AmpduAttemptResult::TriggerFlowEnd
-        } else if completion.tx.tx_status() == oer_ieee80211_lower_mac::TxStatus::CtsTimeout {
+        } else if completion.tx.tx_status() == TxStatus::CtsTimeout {
             AmpduAttemptResult::ProtectionFailure
         } else if !completion.block_ack_received {
             AmpduAttemptResult::NoResponse

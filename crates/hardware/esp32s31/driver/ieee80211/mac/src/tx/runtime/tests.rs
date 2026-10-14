@@ -1,4 +1,5 @@
 use super::*;
+use crate::tx::test_support::model_completion;
 use crate::{
     tx::ampdu::{HtAmpduTxCompletion, HtBlockAckObservation},
     tx::{HtGuardInterval, HtMcs, HtRate, LegacyRate, TxCompletion, TxCookie},
@@ -407,7 +408,7 @@ fn completion_with_tx(
 
 fn completion(status: u8, starting_sequence: u16, bitmap: u64) -> HtAmpduTxCompletion {
     completion_with_tx(
-        crate::tx::model_completion(TxCookie(1), status, 0),
+        model_completion(TxCookie(1), status, 0),
         starting_sequence,
         bitmap,
     )
@@ -737,7 +738,7 @@ fn vendor_trigger_timeout_finishes_without_fabricating_block_ack() {
     )
     .unwrap();
     let trigger_timeout = completion_with_tx(
-        crate::tx::model_completion(TxCookie(1), TxCompletion::ACK_TIMEOUT_STATUS, 0)
+        model_completion(TxCookie(1), TxCompletion::ACK_TIMEOUT_STATUS, 0)
             .with_trigger_flow_model(true),
         20,
         u64::MAX,
@@ -766,7 +767,7 @@ fn trigger_timeout_with_reported_packets_stays_on_retry_path() {
         )
         .unwrap();
         let completion = completion_with_tx(
-            crate::tx::model_completion(TxCookie(1), TxCompletion::ACK_TIMEOUT_STATUS, 0)
+            model_completion(TxCookie(1), TxCompletion::ACK_TIMEOUT_STATUS, 0)
                 .with_trigger_flow_model(true)
                 .with_trigger_packet_counts_model(primary, last_tx_was_trigger_based, secondary),
             20,
@@ -792,8 +793,7 @@ fn trigger_success_predicate_rejects_wrong_status_or_queue_state() {
         )
         .unwrap();
         let completion = completion_with_tx(
-            crate::tx::model_completion(TxCookie(1), status, 0)
-                .with_trigger_flow_model(trigger_flow),
+            model_completion(TxCookie(1), status, 0).with_trigger_flow_model(trigger_flow),
             20,
             0,
         );

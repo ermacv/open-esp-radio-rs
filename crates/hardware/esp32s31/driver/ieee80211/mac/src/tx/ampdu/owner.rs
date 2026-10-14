@@ -4,6 +4,7 @@
 extern crate alloc;
 
 #[cfg(not(target_pointer_width = "32"))]
+use crate::tx::CompletionObservation;
 use alloc::boxed::Box;
 use oer_ieee80211_softmac::tx_cost::TxContention;
 
@@ -288,7 +289,7 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
         block_ack_operational: bool,
     ) -> Result<Option<RetainedAmpduRetryCompletion>, RetainedAmpduRetryCompletionError> {
         retry.validate_stamp(now)?;
-        let Some(crate::tx::CompletionEvent::Observed(completion)) =
+        let Some(CompletionObservation::Observed(completion)) =
             self.acknowledge_completion(hardware)?
         else {
             // NoEffect leaves both metadata and DMA owners published.
@@ -631,9 +632,9 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
     pub fn acknowledge_completion<H: HtAmpduHardware>(
         &mut self,
         hardware: &mut H,
-    ) -> Result<Option<crate::tx::CompletionEvent<HtAmpduTxCompletion>>, HtAmpduTxError> {
+    ) -> Result<Option<CompletionObservation<HtAmpduTxCompletion>>, HtAmpduTxError> {
         let completion = self.metadata_mut().acknowledge_completion(hardware)?;
-        if matches!(completion, Some(crate::tx::CompletionEvent::Observed(_)))
+        if matches!(completion, Some(CompletionObservation::Observed(_)))
             && self.dma_mut().mark_completed().is_err()
         {
             self.quarantine();

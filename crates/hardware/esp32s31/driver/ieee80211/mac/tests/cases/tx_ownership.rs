@@ -1,10 +1,10 @@
 use crate::{support::*, *};
-use oer_esp32s31_ieee80211_mac::tx::CompletionEvent;
+use oer_esp32s31_ieee80211_mac::tx::CompletionObservation;
 
-fn observed<T>(event: CompletionEvent<T>) -> T {
+fn observed<T>(event: CompletionObservation<T>) -> T {
     match event {
-        CompletionEvent::Observed(value) => value,
-        CompletionEvent::NoEffect => panic!("fixture needs an observed completion"),
+        CompletionObservation::Observed(value) => value,
+        CompletionObservation::NoEffect => panic!("fixture needs an observed completion"),
     }
 }
 
@@ -369,7 +369,7 @@ fn no_effect_keeps_dma_hardware_owned_and_faults_quarantine_it() {
     hardware.set_tx_completion(0, MacTxCompletionObservation::new_model(1, 2));
     assert_eq!(
         slot.as_mut().acknowledge_completion(&mut hardware),
-        Ok(Some(CompletionEvent::NoEffect))
+        Ok(Some(CompletionObservation::NoEffect))
     );
     assert_eq!(slot.state(), TxSlotState::HardwareOwned);
     assert_eq!(

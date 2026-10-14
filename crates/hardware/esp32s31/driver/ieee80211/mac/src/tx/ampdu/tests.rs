@@ -1546,7 +1546,7 @@ fn radio_stamp(micros: u64) -> oer_ieee80211_lower_mac::Ieee80211Stamp {
 
 #[test]
 fn no_effect_keeps_the_aggregate_and_its_trigger_reservation_published() {
-    use crate::tx::CompletionEvent;
+    use crate::tx::CompletionObservation;
     let mut storage = core::pin::pin!(HtAmpduTxStorage::<2, 256>::new());
     let cookie = storage.as_mut().begin().unwrap();
     let reservation = MacHeTbLinkReservation::for_queue(MacHeTbTidLimit::Three, 2, 2).unwrap();
@@ -1569,7 +1569,7 @@ fn no_effect_keeps_the_aggregate_and_its_trigger_reservation_published() {
     };
     assert_eq!(
         storage.as_mut().acknowledge_completion(&mut hardware),
-        Ok(Some(CompletionEvent::NoEffect))
+        Ok(Some(CompletionObservation::NoEffect))
     );
     assert_eq!(storage.state(), TxSlotState::HardwareOwned);
     assert_eq!(hardware.cleared, None);
@@ -1586,7 +1586,7 @@ fn no_effect_keeps_the_aggregate_and_its_trigger_reservation_published() {
     ));
     assert!(matches!(
         storage.as_mut().acknowledge_completion(&mut hardware),
-        Ok(Some(CompletionEvent::Observed(_)))
+        Ok(Some(CompletionObservation::Observed(_)))
     ));
     assert_eq!(storage.state(), TxSlotState::Completed);
     assert_eq!(hardware.cleared, Some(reservation));

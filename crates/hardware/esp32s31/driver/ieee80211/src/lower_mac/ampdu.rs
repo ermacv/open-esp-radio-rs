@@ -474,7 +474,7 @@ where
     }
     if let Some(event) = published.owner.acknowledge_completion(hardware)? {
         match event {
-            oer_esp32s31_ieee80211_mac::tx::CompletionEvent::Observed(completion) => {
+            oer_esp32s31_ieee80211_mac::tx::CompletionObservation::Observed(completion) => {
                 published.owner.detach_completed(hardware, cookie)?;
                 published.owner.release_completed(cookie)?;
                 return Ok(AmpduProgress::Complete {
@@ -482,7 +482,7 @@ where
                     owner: published.owner,
                 });
             }
-            oer_esp32s31_ieee80211_mac::tx::CompletionEvent::NoEffect => {
+            oer_esp32s31_ieee80211_mac::tx::CompletionObservation::NoEffect => {
                 return Ok(AmpduProgress::Pending(published));
             }
         }

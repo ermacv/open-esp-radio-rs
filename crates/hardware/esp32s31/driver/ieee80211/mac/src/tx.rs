@@ -33,6 +33,7 @@ use oer_esp32s31_ieee80211_dma::tx_storage::TxDmaStorage;
 
 use oer_esp32s31_ieee80211_dma::tx_storage::{PinnedTxDmaStorage, TxDmaStorageError};
 
+use oer_ieee80211_lower_mac::TxStatus;
 use oer_ieee80211_mac::qos::WmmAccessCategory;
 
 pub use oer_ieee80211_mac::trigger::HeResourceUnit;
@@ -57,11 +58,7 @@ use oer_ieee80211_mac::{
 
 mod completion;
 mod cost;
-pub use completion::{
-    CompletionEvent, CompletionFault, CompletionObservation, CompletionQueue, CompletionQueueError,
-    CompletionRaw, decode,
-};
-use oer_ieee80211_lower_mac::TxStatus;
+pub use completion::{CompletionFault, CompletionObservation, CompletionRaw, decode};
 
 const LEGACY_FCS_LENGTH: u16 = 4;
 // SOURCE: HIL_VENDOR_HE20_MCS9_SU_2026_07_29. Two synchronous vendor HE SU
@@ -532,7 +529,7 @@ impl TxCompletion {
         cookie: TxCookie,
         status: u8,
         detail: u8,
-    ) -> Result<CompletionEvent<Self>, CompletionFault> {
+    ) -> Result<CompletionObservation<Self>, CompletionFault> {
         decode_tx_completion(
             cookie,
             MacTxCompletionObservation::new_model(status, detail),
@@ -571,18 +568,28 @@ impl TxCompletion {
 pub(crate) const fn decode_tx_completion(
     cookie: TxCookie,
     observation: MacTxCompletionObservation,
-) -> Result<CompletionEvent<TxCompletion>, CompletionFault> {
+) -> Result<CompletionObservation<TxCompletion>, CompletionFault> {
     match decode(CompletionRaw::ordinary(observation)) {
         Ok(CompletionObservation::Observed(tx_status)) => {
-            Ok(CompletionEvent::Observed(TxCompletion {
+            Ok(CompletionObservation::Observed(TxCompletion {
                 cookie,
                 observation,
                 tx_status,
             }))
         }
-        Ok(CompletionObservation::NoEffect) => Ok(CompletionEvent::NoEffect),
+        Ok(CompletionObservation::NoEffect) => Ok(CompletionObservation::NoEffect),
         Err(fault) => Err(fault),
     }
+}
+
+/// A hardware decoding fault always quarantines its owner's storage before
+/// returning the existing completion fault. NoEffect leaves storage alone.
+pub(crate) fn decode_or_quarantine(
+    cookie: TxCookie,
+    observation: MacTxCompletionObservation,
+    quarantine: impl FnOnce(),
+) -> Result<CompletionObservation<TxCompletion>, CompletionFault> {
+    decode_tx_completion(cookie, observation).inspect_err(|_| quarantine())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -3503,7 +3510,7 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
     pub fn acknowledge_q0_completion<H: TxHardware>(
         self: Pin<&mut Self>,
         hardware: &mut H,
-    ) -> Result<Option<CompletionEvent<TxCompletion>>, TxError> {
+    ) -> Result<Option<CompletionObservation<TxCompletion>>, TxError> {
         self.acknowledge_completion(hardware)
     }
 
@@ -3512,9 +3519,9 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
     pub fn acknowledge_completion<H: TxHardware>(
         self: Pin<&mut Self>,
         hardware: &mut H,
-    ) -> Result<Option<CompletionEvent<TxCompletion>>, TxError> {
+    ) -> Result<Option<CompletionObservation<TxCompletion>>, TxError> {
         let slot = self.get_mut();
-        let index = CompletionQueue::ordinary(slot.queue).index();
+        let index = slot.queue.hardware_index();
         let Some(registers) = hardware.take_tx_completion(index) else {
             return Ok(None);
         };
@@ -3523,17 +3530,15 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
             slot.dma.quarantine();
             return Err(TxError::Stale);
         }
-        let event = match decode_tx_completion(slot.active, registers) {
-            Ok(event) => event,
-            Err(fault) => {
-                slot.dma.quarantine();
-                return Err(TxError::Completion(fault));
+        match decode_or_quarantine(slot.active, registers, || slot.dma.quarantine())
+            .map_err(TxError::Completion)?
+        {
+            CompletionObservation::Observed(completion) => {
+                slot.dma.mark_completed().map_err(map_dma_storage_error)?;
+                Ok(Some(CompletionObservation::Observed(completion)))
             }
-        };
-        if matches!(event, CompletionEvent::Observed(_)) {
-            slot.dma.mark_completed().map_err(map_dma_storage_error)?;
+            CompletionObservation::NoEffect => Ok(Some(CompletionObservation::NoEffect)),
         }
-        Ok(Some(event))
     }
 
     /// Decode and acknowledge the completion of a BlockAckReq together with
@@ -3542,9 +3547,9 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
     pub fn acknowledge_block_ack_completion<H: TxHardware>(
         self: Pin<&mut Self>,
         hardware: &mut H,
-    ) -> Result<Option<CompletionEvent<ampdu::HtAmpduTxCompletion>>, TxError> {
+    ) -> Result<Option<CompletionObservation<ampdu::HtAmpduTxCompletion>>, TxError> {
         let slot = self.get_mut();
-        let index = CompletionQueue::ordinary(slot.queue).index();
+        let index = slot.queue.hardware_index();
         let Some(registers) = hardware.take_block_ack_completion(index) else {
             return Ok(None);
         };
@@ -3553,27 +3558,27 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
             slot.dma.quarantine();
             return Err(TxError::Stale);
         }
-        let event = match decode_tx_completion(slot.active, registers.tx()) {
-            Ok(event) => event,
-            Err(fault) => {
-                slot.dma.quarantine();
-                return Err(TxError::Completion(fault));
+        match decode_or_quarantine(slot.active, registers.tx(), || slot.dma.quarantine())
+            .map_err(TxError::Completion)?
+        {
+            CompletionObservation::Observed(tx) => {
+                slot.dma.mark_completed().map_err(map_dma_storage_error)?;
+                Ok(Some(CompletionObservation::Observed(
+                    ampdu::HtAmpduTxCompletion {
+                        tx,
+                        block_ack: ampdu::HtBlockAckObservation::new(
+                            registers.block_ack_control(),
+                            oer_ieee80211_mac::sequence::SequenceNumber::from_low_bits(
+                                registers.block_ack_starting_sequence(),
+                            ),
+                            registers.block_ack_bitmap(),
+                        ),
+                        block_ack_received: registers.block_ack_received(),
+                    },
+                )))
             }
-        };
-        if matches!(event, CompletionEvent::Observed(_)) {
-            slot.dma.mark_completed().map_err(map_dma_storage_error)?;
+            CompletionObservation::NoEffect => Ok(Some(CompletionObservation::NoEffect)),
         }
-        Ok(Some(event.map(|tx| ampdu::HtAmpduTxCompletion {
-            tx,
-            block_ack: ampdu::HtBlockAckObservation::new(
-                registers.block_ack_control(),
-                oer_ieee80211_mac::sequence::SequenceNumber::from_low_bits(
-                    registers.block_ack_starting_sequence(),
-                ),
-                registers.block_ack_bitmap(),
-            ),
-            block_ack_received: registers.block_ack_received(),
-        })))
     }
 
     /// Starts the recovered two-phase abort for this queue's TX-timeout edge.
@@ -3717,17 +3722,11 @@ fn map_dma_storage_error(error: TxDmaStorageError) -> TxError {
 
 #[cfg(test)]
 mod completion_tests;
+#[cfg(test)]
+pub(crate) mod test_support;
 
 pub mod ampdu;
 pub mod metadata;
 pub mod policy;
 pub mod protection;
 pub mod runtime;
-
-#[cfg(test)]
-pub(crate) fn model_completion(cookie: TxCookie, status: u8, detail: u8) -> TxCompletion {
-    match TxCompletion::new_model(cookie, status, detail).expect("valid model observation") {
-        CompletionEvent::Observed(completion) => completion,
-        CompletionEvent::NoEffect => panic!("fixture needs an observed completion"),
-    }
-}

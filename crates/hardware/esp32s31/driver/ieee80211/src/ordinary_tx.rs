@@ -21,7 +21,7 @@ use oer_esp32s31_ieee80211_mac::{
         WifiTxRuntimePolicy,
     },
     tx::{
-        CompletionEvent, HeSmpduTxConfig, HtTxConfig, LegacyTxConfig, LegacyTxQueue,
+        CompletionObservation, HeSmpduTxConfig, HtTxConfig, LegacyTxConfig, LegacyTxQueue,
         MacLegacyTxResponse, TxCompletion, TxControlFrame, TxCookie, TxError, TxHardware,
         TxPhyRate, TxSlot, TxSlotState,
     },
@@ -431,7 +431,7 @@ struct ActiveTx {
     retries: OrdinaryTxRetryReport,
 }
 
-type OrdinaryCompletion = CompletionEvent<(TxCompletion, Option<HtBlockAckObservation>)>;
+type OrdinaryCompletion = CompletionObservation<(TxCompletion, Option<HtBlockAckObservation>)>;
 
 /// A published operation moves into this value only after Observed(status).
 struct FinishedTx {
@@ -869,14 +869,14 @@ where
         };
         if let Some(event) = self.acknowledge_completion(hardware, &active)? {
             match event {
-                CompletionEvent::Observed((completion, block_ack)) => {
+                CompletionObservation::Observed((completion, block_ack)) => {
                     self.slot
                         .as_mut()
                         .detach_completed(hardware, active.cookie)?;
                     let finished = active.finish(completion.tx_status());
                     return self.finish_completion(hardware, finished, completion, block_ack);
                 }
-                CompletionEvent::NoEffect => {
+                CompletionObservation::NoEffect => {
                     self.active = Some(active);
                     return Ok(WifiTxProgress::Pending);
                 }
@@ -1076,14 +1076,14 @@ where
 
         if let Some(event) = self.acknowledge_completion(hardware, &active)? {
             match event {
-                CompletionEvent::Observed((completion, block_ack)) => {
+                CompletionObservation::Observed((completion, block_ack)) => {
                     self.slot
                         .as_mut()
                         .detach_completed(hardware, active.cookie)?;
                     let finished = active.finish(completion.tx_status());
                     return self.finish_completion(hardware, finished, completion, block_ack);
                 }
-                CompletionEvent::NoEffect => {
+                CompletionObservation::NoEffect => {
                     self.active = Some(active);
                     return Ok(WifiTxProgress::Pending);
                 }
@@ -1165,14 +1165,14 @@ where
         }
         if let Some(event) = self.acknowledge_completion(hardware, &active)? {
             match event {
-                CompletionEvent::Observed((completion, block_ack)) => {
+                CompletionObservation::Observed((completion, block_ack)) => {
                     self.slot
                         .as_mut()
                         .detach_completed(hardware, active.cookie)?;
                     let finished = active.finish(completion.tx_status());
                     return self.finish_completion(hardware, finished, completion, block_ack);
                 }
-                CompletionEvent::NoEffect => {
+                CompletionObservation::NoEffect => {
                     self.active = Some(active);
                     return Ok(WifiTxProgress::Pending);
                 }

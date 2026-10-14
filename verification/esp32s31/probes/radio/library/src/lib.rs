@@ -1410,12 +1410,33 @@ oer_probe_macros::probe! {
 }
 
 oer_probe_macros::probe! {
-    /// ABI projection around the exact production status-four classifier.
+    /// ABI projection: compare the zero-argument hardware path with the
+    /// product decoder; the probe alone represents other vendor ABI calls.
+    ///
+    /// SOURCE(esp32s31): libpp[lmac.o]::lmacProcessTxError +0xb2 handles
+    /// collision details only for a2 == 0; nonzero a2 routes them to ACK
+    /// timeout at +0xca. Detail zero always reaches CTS timeout (+0xe2),
+    /// and 0xc0 with nonzero a2 returns without ending FES (+0xea).
+    /// SOURCE(esp32s31): libpp[lmac.o]::lmacProcessTxRtsError +0xd2 likewise
+    /// suppresses FES end for 0xc0 with nonzero a3. +0x1a..+0x2c resolves
+    /// virtual queue 10 through our_tx_eb, descriptor +52, word +4 bits 7:4;
+    /// +0x42 requires an instance below five. Neither is a hardware decoder
+    /// input: the product retains LegacyTxQueue directly and libpp[lmac.o]::
+    /// lmacProcessTxComplete supplies zero at +0x19a and +0x1cc.
     pub fn open_libpp_tx_retry_trace_lmac_process_tx_error(queue: u32, detail: u32, selector: u32) {
         use oer_esp32s31_ieee80211_mac::tx::{CompletionFault, CompletionObservation, CompletionRaw, decode};
         use oer_ieee80211_lower_mac::TxStatus;
 
-        match decode(CompletionRaw::tx_error(detail as u8, selector)) {
+        if selector != 0 {
+            match detail as u8 {
+                0 => open_libpp_tx_retry_cts_timeout(queue),
+                0xc0 => {},
+                _ => open_libpp_tx_retry_ack_timeout(queue),
+            }
+            return;
+        }
+        let raw = oer_esp32s31_hal::types::MacTxCompletionObservation::new_validation(4, detail as u8);
+        match decode(CompletionRaw::ordinary(raw)) {
             Ok(CompletionObservation::Observed(TxStatus::AckTimeout)) => open_libpp_tx_retry_ack_timeout(queue),
             Ok(CompletionObservation::Observed(TxStatus::CtsTimeout)) => open_libpp_tx_retry_cts_timeout(queue),
             Ok(CompletionObservation::Observed(TxStatus::Collision)) => open_libpp_tx_retry_collision(queue),

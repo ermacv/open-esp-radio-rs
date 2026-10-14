@@ -472,13 +472,20 @@ where
             owner: published.owner,
         });
     }
-    if let Some(completion) = published.owner.acknowledge_completion(hardware)? {
-        published.owner.detach_completed(hardware, cookie)?;
-        published.owner.release_completed(cookie)?;
-        return Ok(AmpduProgress::Complete {
-            outcome: AmpduOutcome::Completed(completion),
-            owner: published.owner,
-        });
+    if let Some(event) = published.owner.acknowledge_completion(hardware)? {
+        match event {
+            oer_esp32s31_ieee80211_mac::tx::CompletionEvent::Observed(completion) => {
+                published.owner.detach_completed(hardware, cookie)?;
+                published.owner.release_completed(cookie)?;
+                return Ok(AmpduProgress::Complete {
+                    outcome: AmpduOutcome::Completed(completion),
+                    owner: published.owner,
+                });
+            }
+            oer_esp32s31_ieee80211_mac::tx::CompletionEvent::NoEffect => {
+                return Ok(AmpduProgress::Pending(published));
+            }
+        }
     }
     let events = match wake {
         WifiTxWake::Interrupt { events } => events,

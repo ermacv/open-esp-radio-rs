@@ -468,7 +468,7 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
                     (None, TxStatus::AckTimeout | TxStatus::Collision) => {
                         AmpduAttemptResult::NoResponse
                     }
-                    (None, TxStatus::Aborted | TxStatus::Fault(_)) => {
+                    (None, TxStatus::TimedOut) => {
                         self.update_contention(exchange, ContentionUpdate::Reset);
                         return self.finish_ampdu(exchange, &state, MacAmpduTxResult::Incomplete);
                     }

@@ -8,7 +8,9 @@ use oer_ieee80211_mac::sequence::SequenceNumber;
 use super::{
     HtAmpduHardware, HtAmpduTxCompletion, HtAmpduTxError, HtAmpduTxStorage, HtBlockAckObservation,
 };
-use crate::tx::{TxCompletion, TxCookie, TxHardware, TxSlotState, decode_tx_completion};
+use crate::tx::{
+    CompletionEvent, TxCompletion, TxCookie, TxHardware, TxSlotState, decode_tx_completion,
+};
 
 impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFER_SIZE> {
     /// Discard a software-owned partial batch.
@@ -25,7 +27,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     pub fn acknowledge_completion<H: HtAmpduHardware>(
         self: Pin<&mut Self>,
         hardware: &mut H,
-    ) -> Result<Option<HtAmpduTxCompletion>, HtAmpduTxError> {
+    ) -> Result<Option<CompletionEvent<HtAmpduTxCompletion>>, HtAmpduTxError> {
         let storage = self.project();
         let Some(registers) = hardware.take_block_ack_completion(storage.queue.index()) else {
             return Ok(None);
@@ -34,19 +36,28 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             *storage.state = TxSlotState::ResetRequired;
             return Err(HtAmpduTxError::Stale);
         }
-        if let Some(reservation) = storage.trigger_reservation.take() {
-            hardware.clear_he_trigger_based_queue(reservation);
+        let event = match decode_tx_completion(*storage.active, registers.tx()) {
+            Ok(event) => event,
+            Err(fault) => {
+                *storage.state = TxSlotState::ResetRequired;
+                return Err(HtAmpduTxError::Completion(fault));
+            }
+        };
+        if matches!(event, CompletionEvent::Observed(_)) {
+            if let Some(reservation) = storage.trigger_reservation.take() {
+                hardware.clear_he_trigger_based_queue(reservation);
+            }
+            *storage.state = TxSlotState::Completed;
         }
-        *storage.state = TxSlotState::Completed;
-        Ok(Some(HtAmpduTxCompletion {
-            tx: decode_tx_completion(*storage.active, registers.tx()),
+        Ok(Some(event.map(|tx| HtAmpduTxCompletion {
+            tx,
             block_ack: HtBlockAckObservation::new(
                 registers.block_ack_control(),
                 SequenceNumber::from_low_bits(registers.block_ack_starting_sequence()),
                 registers.block_ack_bitmap(),
             ),
             block_ack_received: registers.block_ack_received(),
-        }))
+        })))
     }
 
     /// Return the Trigger queue readback captured at its publication edge.
@@ -75,7 +86,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     pub fn acknowledge_he_smpdu_completion<H: TxHardware>(
         self: Pin<&mut Self>,
         hardware: &mut H,
-    ) -> Result<Option<TxCompletion>, HtAmpduTxError> {
+    ) -> Result<Option<CompletionEvent<TxCompletion>>, HtAmpduTxError> {
         let storage = self.project();
         let Some(registers) = hardware.take_tx_completion(storage.queue.index()) else {
             return Ok(None);
@@ -84,8 +95,17 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             *storage.state = TxSlotState::ResetRequired;
             return Err(HtAmpduTxError::Stale);
         }
-        *storage.state = TxSlotState::Completed;
-        Ok(Some(decode_tx_completion(*storage.active, registers)))
+        let event = match decode_tx_completion(*storage.active, registers) {
+            Ok(event) => event,
+            Err(fault) => {
+                *storage.state = TxSlotState::ResetRequired;
+                return Err(HtAmpduTxError::Completion(fault));
+            }
+        };
+        if matches!(event, CompletionEvent::Observed(_)) {
+            *storage.state = TxSlotState::Completed;
+        }
+        Ok(Some(event))
     }
 
     pub fn begin_timeout_abort<H: HtAmpduHardware>(

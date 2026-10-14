@@ -86,7 +86,10 @@ back; its operations are synchronous and never wait:
   `Ended.transmissions` is exact (`u16` covers all four 255-transmission
   stages). A hardware timeout with no completion ends as `Indeterminate`;
   the backend does not republish that MPDU, stop the queue, or return its
-  tail. Internal collisions remain driver retries; budget exhaustion is
+  tail. `TxStatus` describes only Success, AckTimeout, CtsTimeout, Collision
+  and TimedOut observations of a publication. Decoder/accounting faults
+  poison the backend and produce no `TxOutcome` or returned-resource event.
+  Internal collisions remain driver retries; budget exhaustion is
   `Ended(ContentionLimit)`. Withdrawals name only GateClosed, KeyRemoved or
   Disabled. Rate selection ignores withdrawals, Indeterminate and
   ContentionLimit. A lifecycle barrier waits for one current publication,

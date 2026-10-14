@@ -69,6 +69,7 @@ pub enum HtAmpduTxError {
     /// A commit attempted to advance beyond the statically bounded slot set.
     SlotCapacity,
     Stale,
+    Completion(crate::tx::CompletionFault),
     FrameIndexOutOfRange {
         index: u8,
         count: u8,

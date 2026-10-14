@@ -885,11 +885,11 @@ where
             }
             #[cfg(any(feature = "diagnostics", test))]
             match outcome {
-                OrdinaryTxOutcome::HardwareFailure(report) => {
+                OrdinaryTxOutcome::HardwareFailure(failure) => {
+                    let report = failure.report();
                     if matches!(pending, PendingPublication::ProbeResponse { .. })
                         && report.completion.is_some_and(|completion| {
-                            completion.disposition()
-                                == oer_esp32s31_ieee80211_mac::tx::TxCompletionDisposition::AckTimeout
+                            completion.tx_status() == oer_ieee80211_lower_mac::TxStatus::AckTimeout
                         })
                     {
                         self.observer.observation.tx_failures.probe_ack_timeouts = self

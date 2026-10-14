@@ -90,19 +90,6 @@ pub enum Backoff {
     HardwareDraw { cw_exponent: u8 },
 }
 
-/// Why an admitted attempt ended without a portable status of its own.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum TxFault {
-    /// The protection exchange failed in a way the hardware does not
-    /// retry.
-    ProtectionFailure,
-    /// The hardware cipher found no usable key for the frame.
-    KeyUnavailable,
-    /// The hardware reported a completion the backend does not recognize;
-    /// the backend keeps its raw code as its own diagnostic.
-    Unrecognized,
-}
-
 /// One hardware publication observed by a retry planner. This is not a
 /// terminal of a port attempt: the backend carries its plan through to
 /// [`TxOutcome`].
@@ -116,11 +103,9 @@ pub enum TxStatus {
     CtsTimeout,
     /// The attempt lost contention or collided before a response.
     Collision,
-    /// The attempt was cancelled, or the backend quiesced or disabled
-    /// before it completed, or the hardware timed it out; whether it
-    /// reached the air is unknown.
-    Aborted,
-    Fault(TxFault),
+    /// Hardware timed out without a completion; the publication outcome
+    /// is unknown. This ends the attempt as Indeterminate, never a retry.
+    TimedOut,
 }
 
 /// The BlockAck the recipient answered an A-MPDU or BlockAckReq with.
@@ -202,7 +187,7 @@ pub struct TxAck {
 /// A hardware timeout is final: the backend does not republish the MPDU.
 /// A completion already observed takes priority over the timeout. Only
 /// `Ended` claims an exact transmission count; rate selection ignores
-/// withdrawals, indeterminate outcomes, faults and contention exhaustion.
+/// withdrawals, indeterminate outcomes and contention exhaustion.
 /// The next operation in the queue may proceed after every terminal.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TxOutcome {
@@ -224,9 +209,6 @@ pub enum TxOutcome {
     },
     /// Final unknown outcome. Returned MPDUs are `Sent`; Data retires them.
     Indeterminate(IndeterminateCause),
-    /// An operation-local hardware fault. Poisoning the install is a
-    /// separate fail-stop and returns no terminal or retained resources.
-    Fault(TxFault),
 }
 
 impl TxOutcome {

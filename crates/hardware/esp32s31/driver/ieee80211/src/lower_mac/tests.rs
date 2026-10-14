@@ -734,7 +734,6 @@ fn an_unacknowledged_attempt_is_reported_and_never_published_again() {
         (5, 0, TxStatus::AckTimeout),
         (2, 0, TxStatus::CtsTimeout),
         (4, 1, TxStatus::Collision),
-        (4, 0xc0, TxStatus::Fault(TxFault::KeyUnavailable)),
     ] {
         let published = hardware.publications();
         let request = values(&frame, false);
@@ -754,6 +753,88 @@ fn an_unacknowledged_attempt_is_reported_and_never_published_again() {
             .iter_mut()
             .all(|slot| slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE + 1] == 0x01)
     );
+}
+
+#[test]
+fn a_no_effect_rts_event_retains_its_published_owner_until_the_real_result() {
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    let request = values(&data_frame(BSSID), false);
+    let address = request.slot.as_ref().buffer_address();
+    submit(&mut core, &mut hardware, request).unwrap();
+    let deadline = core.next_deadline();
+    let mut events = Events::default();
+    hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(1, 2));
+    core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+        .unwrap();
+    assert!(events.completions.is_empty());
+    assert!(events.slots.is_empty());
+    assert_eq!(hardware.publications(), 1);
+    assert_eq!(queued(&core, BE).slot().buffer_address(), address);
+    assert_eq!(
+        queued(&core, BE).slot().state(),
+        oer_esp32s31_ieee80211_mac::tx::TxSlotState::HardwareOwned
+    );
+    assert_eq!(core.next_deadline(), deadline);
+    hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(0, 0));
+    core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+        .unwrap();
+    assert_eq!(
+        events.completions,
+        [completed(TxStatus::Success, Some(0x60))]
+    );
+    assert_eq!(events.slots.len(), 1);
+    assert_eq!(events.slots[0].as_ref().buffer_address(), address);
+    assert_eq!(hardware.publications(), 1);
+}
+
+#[test]
+fn a_no_effect_rts_event_can_end_only_at_the_later_hardware_timeout() {
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    submit(&mut core, &mut hardware, values(&data_frame(BSSID), false)).unwrap();
+    let mut events = Events::default();
+    hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(1, 0xff));
+    core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+        .unwrap();
+    assert!(events.completions.is_empty());
+    hardware.timeout_pending[BE] = true;
+    core.service(&mut hardware, interrupt(EVENT_TX_TIMEOUT), &mut events)
+        .unwrap();
+    assert!(events.completions.is_empty());
+    let settle = core.next_deadline().unwrap();
+    core.tx.timer.advance_to(settle);
+    core.service(&mut hardware, WifiTxWake::Deadline, &mut events)
+        .unwrap();
+    assert_eq!(events.completions, [PublicationEnd::TimedOut]);
+    assert_eq!(events.slots.len(), 1);
+    assert_eq!(hardware.publications(), 1);
+}
+
+#[test]
+fn completion_faults_return_the_existing_backend_fault_without_a_tx_terminal() {
+    use oer_esp32s31_ieee80211_mac::tx::CompletionFault;
+    for (status, detail, fault) in [
+        (1, 0xc0, CompletionFault::SecurityKeyError),
+        (4, 0xc0, CompletionFault::SecurityKeyError),
+        (3, 0, CompletionFault::InvalidStatus { status: 3 }),
+        (9, 0, CompletionFault::InvalidStatus { status: 9 }),
+    ] {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware);
+        submit(&mut core, &mut hardware, values(&data_frame(BSSID), false)).unwrap();
+        hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(status, detail));
+        let mut events = Events::default();
+        assert_eq!(
+            core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events),
+            Err(LowerMacFault::Tx(OrdinaryTxError::Tx(TxError::Completion(
+                fault
+            ))))
+        );
+        assert!(events.completions.is_empty());
+        assert!(events.slots.is_empty());
+        assert_eq!(hardware.publications(), 1);
+    }
 }
 
 #[test]
@@ -790,7 +871,7 @@ fn a_collision_detach_ends_the_attempt_without_a_transmission() {
 }
 
 #[test]
-fn a_hardware_timeout_ends_the_attempt_as_aborted() {
+fn a_hardware_timeout_ends_the_publication_with_an_unknown_result() {
     let mut hardware = Hardware::default();
     let mut core = enabled(&mut hardware);
     let frame = data_frame(BSSID);

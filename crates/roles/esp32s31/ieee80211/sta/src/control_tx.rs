@@ -634,11 +634,8 @@ where
                 .take_last_outcome()
                 .expect("complete control TX retains one terminal outcome");
             return match outcome {
-                OrdinaryTxOutcome::Success(report) | OrdinaryTxOutcome::HardwareFailure(report) => {
-                    Ok(report
-                        .completion
-                        .expect("a detached hardware completion backs this outcome"))
-                }
+                OrdinaryTxOutcome::Success(completed)
+                | OrdinaryTxOutcome::HardwareFailure(completed) => Ok(completed.completion()),
                 OrdinaryTxOutcome::HardwareTimeout(_) => Err(ControlTxError::HardwareTimeout),
                 OrdinaryTxOutcome::CollisionLimit(_) => Err(ControlTxError::CollisionLimit),
             };

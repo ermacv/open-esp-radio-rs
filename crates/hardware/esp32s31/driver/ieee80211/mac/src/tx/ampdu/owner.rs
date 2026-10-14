@@ -288,7 +288,10 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
         block_ack_operational: bool,
     ) -> Result<Option<RetainedAmpduRetryCompletion>, RetainedAmpduRetryCompletionError> {
         retry.validate_stamp(now)?;
-        let Some(completion) = self.acknowledge_completion(hardware)? else {
+        let Some(crate::tx::CompletionEvent::Observed(completion)) =
+            self.acknowledge_completion(hardware)?
+        else {
+            // NoEffect leaves both metadata and DMA owners published.
             return Ok(None);
         };
         self.detach_completed(hardware, cookie)?;
@@ -628,9 +631,11 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
     pub fn acknowledge_completion<H: HtAmpduHardware>(
         &mut self,
         hardware: &mut H,
-    ) -> Result<Option<HtAmpduTxCompletion>, HtAmpduTxError> {
+    ) -> Result<Option<crate::tx::CompletionEvent<HtAmpduTxCompletion>>, HtAmpduTxError> {
         let completion = self.metadata_mut().acknowledge_completion(hardware)?;
-        if completion.is_some() && self.dma_mut().mark_completed().is_err() {
+        if matches!(completion, Some(crate::tx::CompletionEvent::Observed(_)))
+            && self.dma_mut().mark_completed().is_err()
+        {
             self.quarantine();
             return Err(HtAmpduTxError::ResetRequired);
         }

@@ -139,8 +139,8 @@ pub use rx::{
     LinkMetric, RxBuffer, RxCryptoStatus, RxEvidence, RxMeta, RxMetadata, SignalMetadata,
 };
 pub use tx::{
-    Backoff, BlockAckReport, IndeterminateCause, Protection, TxAck, TxBody, TxEndStatus, TxFault,
-    TxOutcome, TxPower, TxResponse, TxStatus, WithdrawCause,
+    Backoff, BlockAckReport, IndeterminateCause, Protection, TxAck, TxBody, TxEndStatus, TxOutcome,
+    TxPower, TxResponse, TxStatus, WithdrawCause,
 };
 
 #[cfg(test)]

@@ -37,8 +37,17 @@
 //! [`OrdinaryTxOwner::start_queued_single_attempt`]: exactly one descriptor
 //! publication at the submitted rate with the caller's protection, backoff
 //! and power ceiling. Its completion, a collision detach or the hardware
-//! timeout abort ends it; the driver carries the retry plan out by
+//! timeout abort ends it; the driver carries known-result retries out by
 //! submitting the same MPDU again (`MpduValues::retry`).
+//!
+//! The chip's pure completion decoder returns `Observed(status)` or
+//! `NoEffect`, or a `CompletionFault`. Only Observed constructs completed
+//! metadata and consumes the published attempt through `finish(status)`.
+//! NoEffect retains the same descriptor, deadline and attempt until its real
+//! result or hardware timeout. SecurityKeyError and InvalidStatus propagate
+//! through `LowerMacFault::Tx` to the existing poisoned-install path; they
+//! return no TX terminal or slot. TimedOut ends the attempt with an unknown
+//! result, and the backend never republishes it.
 //!
 //! The S31 MAC has four ordinary EDCA queues (voice, video, best effort,
 //! background), each with its own descriptor, completion bank and latched
@@ -113,7 +122,7 @@ use oer_ieee80211_lower_mac::{
     BandSet, BeaconTimingCapabilities, BlockAckReport, Channel, CoexPriority, CoexPrioritySet,
     LinkMetric, LowerMacCapabilities, MacAddress, MonitorCapabilities, PhyFormatSet, PhyRate,
     Protection, RateSupport, ReceiveFilter, RxEvidence, RxMeta, RxMetadata, SignalMetadata,
-    TbttEvent, TsfTimingError, TxFault, TxStatus, VifRole, VifRoleSet, VifTsf, WidthSet,
+    TbttEvent, TsfTimingError, TxStatus, VifRole, VifRoleSet, VifTsf, WidthSet,
 };
 use oer_ieee80211_mac::{
     ccmp::CCMP_HEADER_LEN,
@@ -1064,6 +1073,7 @@ where
     }
 
     /// Plan one MPDU's publication from its common values.
+    // CAPABILITY: wifi-interfaces-and-operating-modes-lower-mac-port-coexistence-levels
     fn plan_mpdu(
         &self,
         common: CommonAdmission,
@@ -2101,21 +2111,13 @@ fn receive_policy(config: &LowerMacConfig, vif: &CoreVif) -> Result<ReceivePolic
 /// How one publication ended.
 fn publication_end(outcome: OrdinaryTxOutcome) -> PublicationEnd {
     match outcome {
-        OrdinaryTxOutcome::Success(report) => PublicationEnd::Completed {
-            status: TxStatus::Success,
-            // The S31 completion carries an ACK SNR sample but no ACK RSSI.
-            ack_snr_db: report.status.ack_snr_db,
-            block_ack: block_ack(report),
-        },
-        OrdinaryTxOutcome::HardwareFailure(report) => PublicationEnd::Completed {
-            status: report
-                .completion
-                .map_or(TxStatus::Fault(TxFault::Unrecognized), |completion| {
-                    completion.tx_status()
-                }),
-            ack_snr_db: report.status.ack_snr_db,
-            block_ack: block_ack(report),
-        },
+        OrdinaryTxOutcome::Success(completed) | OrdinaryTxOutcome::HardwareFailure(completed) => {
+            PublicationEnd::Completed {
+                status: completed.status(),
+                ack_snr_db: completed.report().status.ack_snr_db,
+                block_ack: block_ack(completed.report()),
+            }
+        }
         OrdinaryTxOutcome::HardwareTimeout(_) => PublicationEnd::TimedOut,
         OrdinaryTxOutcome::CollisionLimit(_) => PublicationEnd::Collision,
     }

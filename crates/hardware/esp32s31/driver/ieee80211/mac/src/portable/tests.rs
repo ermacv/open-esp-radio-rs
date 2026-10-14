@@ -3,7 +3,6 @@ use oer_ieee80211_mac::channel::ChannelWidth;
 use oer_ieee80211_softmac::MacRxEvidence;
 
 use super::*;
-use crate::tx::TxCookie;
 
 const LEGACY: [LegacyRate; 15] = [
     LegacyRate::Dsss1MLong,
@@ -240,22 +239,6 @@ fn receive_metadata_keeps_provenance_and_takes_the_configured_channel() {
         ..chip
     };
     assert_eq!(rx_meta(mu, channel).rate, RxEvidence::Unavailable);
-}
-
-#[test]
-fn completions_map_to_portable_statuses_without_their_raw_codes() {
-    let status = |status, detail| TxCompletion::new_model(TxCookie(1), status, detail).tx_status();
-    assert_eq!(status(0, 0), TxStatus::Success);
-    assert_eq!(status(5, 0), TxStatus::AckTimeout);
-    assert_eq!(status(4, 2), TxStatus::AckTimeout);
-    assert_eq!(status(2, 0), TxStatus::CtsTimeout);
-    assert_eq!(status(4, 0), TxStatus::CtsTimeout);
-    assert_eq!(status(1, 3), TxStatus::Collision);
-    assert_eq!(status(4, 5), TxStatus::Collision);
-    assert_eq!(status(1, 0), TxStatus::Fault(TxFault::ProtectionFailure));
-    assert_eq!(status(4, 0xc0), TxStatus::Fault(TxFault::KeyUnavailable));
-    assert_eq!(status(3, 0), TxStatus::Fault(TxFault::Unrecognized));
-    assert_eq!(status(9, 0), TxStatus::Fault(TxFault::Unrecognized));
 }
 
 #[test]

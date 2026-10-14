@@ -55,7 +55,13 @@ use oer_ieee80211_mac::{
     },
 };
 
+mod completion;
 mod cost;
+pub use completion::{
+    CompletionEvent, CompletionFault, CompletionObservation, CompletionQueue, CompletionQueueError,
+    CompletionRaw, decode,
+};
+use oer_ieee80211_lower_mac::TxStatus;
 
 const LEGACY_FCS_LENGTH: u16 = 4;
 // SOURCE: HIL_VENDOR_HE20_MCS9_SU_2026_07_29. Two synchronous vendor HE SU
@@ -394,28 +400,23 @@ impl TxHardware for RadioRuntimeOwner {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TxCookie(pub u32);
 
+/// Completed-publication metadata, constructed only after Observed(status).
+/// Its retained status proof is independent of optional diagnostic fields.
+/// NoEffect and CompletionFault cannot construct this value.
+///
+/// ```compile_fail,E0451
+/// # use oer_esp32s31_ieee80211_mac::tx::{TxCompletion, TxCookie};
+/// # use oer_esp32s31_hal::types::MacTxCompletionObservation;
+/// # use oer_ieee80211_lower_mac::TxStatus;
+/// fn forge(raw: MacTxCompletionObservation) -> TxCompletion {
+///     TxCompletion { cookie: TxCookie(1), observation: raw, tx_status: TxStatus::Success }
+/// }
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TxCompletion {
     cookie: TxCookie,
     observation: MacTxCompletionObservation,
-}
-
-/// Vendor LMAC disposition of one decoded ordinary-queue completion.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TxCompletionDisposition {
-    Success,
-    AckTimeout,
-    CtsTimeout,
-    Collision,
-    Terminal(TxCompletionFailure),
-}
-
-/// Terminal completion classes which the recovered LMAC does not retry.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TxCompletionFailure {
-    InvalidStatus { status: u8 },
-    RtsError { detail: u8 },
-    SecurityKeyError,
+    tx_status: TxStatus,
 }
 
 impl TxCompletion {
@@ -448,35 +449,10 @@ impl TxCompletion {
         self.observation.detail()
     }
 
-    /// Reproduce the complete top-level LMAC completion dispatch and the
-    /// retry-relevant leaves of `lmacProcessTxRtsError`/`TxError`.
-    ///
-    /// Status four is not terminal by itself. With the zero selector supplied
-    /// by `lmacProcessTxComplete`, detail zero becomes CTS timeout, details
-    /// one and three through five become collision, detail `0xc0` becomes a
-    /// security-key failure, and every remaining detail becomes ACK timeout.
-    pub const fn disposition(&self) -> TxCompletionDisposition {
-        match self.status() {
-            0 => TxCompletionDisposition::Success,
-            1 if matches!(self.detail(), 3..=5) => TxCompletionDisposition::Collision,
-            1 => TxCompletionDisposition::Terminal(TxCompletionFailure::RtsError {
-                detail: self.detail(),
-            }),
-            2 => TxCompletionDisposition::CtsTimeout,
-            3 => {
-                TxCompletionDisposition::Terminal(TxCompletionFailure::InvalidStatus { status: 3 })
-            }
-            4 => match self.detail() {
-                0 => TxCompletionDisposition::CtsTimeout,
-                1 | 3..=5 => TxCompletionDisposition::Collision,
-                0xc0 => TxCompletionDisposition::Terminal(TxCompletionFailure::SecurityKeyError),
-                _ => TxCompletionDisposition::AckTimeout,
-            },
-            5 => TxCompletionDisposition::AckTimeout,
-            status => {
-                TxCompletionDisposition::Terminal(TxCompletionFailure::InvalidStatus { status })
-            }
-        }
+    /// The status retained when the pure decoder observed this completion.
+    /// NoEffect and decoder faults never construct a TxCompletion.
+    pub const fn tx_status(&self) -> TxStatus {
+        self.tx_status
     }
 
     /// Return whether this completion belongs to a Trigger-based transmit flow.
@@ -552,11 +528,15 @@ impl TxCompletion {
 
     /// Construct a semantic completion for a native protocol model.
     #[cfg(not(target_pointer_width = "32"))]
-    pub const fn new_model(cookie: TxCookie, status: u8, detail: u8) -> Self {
-        Self {
+    pub const fn new_model(
+        cookie: TxCookie,
+        status: u8,
+        detail: u8,
+    ) -> Result<CompletionEvent<Self>, CompletionFault> {
+        decode_tx_completion(
             cookie,
-            observation: MacTxCompletionObservation::new_model(status, detail),
-        }
+            MacTxCompletionObservation::new_model(status, detail),
+        )
     }
 
     #[cfg(not(target_pointer_width = "32"))]
@@ -585,24 +565,23 @@ impl TxCompletion {
         self.observation = self.observation.with_ack_snr_encoded_model(encoded);
         self
     }
-
-    /// Construct a semantic completion in a compiled validation image.
-    #[cfg(feature = "validation-probes")]
-    pub const fn new_validation(cookie: TxCookie, status: u8, detail: u8) -> Self {
-        Self {
-            cookie,
-            observation: MacTxCompletionObservation::new_validation(status, detail),
-        }
-    }
 }
 
-pub(crate) fn decode_tx_completion(
+/// Attach the status proof to diagnostic metadata only on Observed.
+pub(crate) const fn decode_tx_completion(
     cookie: TxCookie,
     observation: MacTxCompletionObservation,
-) -> TxCompletion {
-    TxCompletion {
-        cookie,
-        observation,
+) -> Result<CompletionEvent<TxCompletion>, CompletionFault> {
+    match decode(CompletionRaw::ordinary(observation)) {
+        Ok(CompletionObservation::Observed(tx_status)) => {
+            Ok(CompletionEvent::Observed(TxCompletion {
+                cookie,
+                observation,
+                tx_status,
+            }))
+        }
+        Ok(CompletionObservation::NoEffect) => Ok(CompletionEvent::NoEffect),
+        Err(fault) => Err(fault),
     }
 }
 
@@ -615,6 +594,8 @@ pub enum TxError {
     DetachFailed,
     TimeoutNotPending,
     ResetRequired,
+    /// A completion contradicted the publication contract; retain DMA for reset.
+    Completion(CompletionFault),
 }
 
 /// Hardware encoding of an ESP32-S31 non-HT transmit rate.
@@ -3522,7 +3503,7 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
     pub fn acknowledge_q0_completion<H: TxHardware>(
         self: Pin<&mut Self>,
         hardware: &mut H,
-    ) -> Result<Option<TxCompletion>, TxError> {
+    ) -> Result<Option<CompletionEvent<TxCompletion>>, TxError> {
         self.acknowledge_completion(hardware)
     }
 
@@ -3531,9 +3512,9 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
     pub fn acknowledge_completion<H: TxHardware>(
         self: Pin<&mut Self>,
         hardware: &mut H,
-    ) -> Result<Option<TxCompletion>, TxError> {
+    ) -> Result<Option<CompletionEvent<TxCompletion>>, TxError> {
         let slot = self.get_mut();
-        let index = slot.queue.index();
+        let index = CompletionQueue::ordinary(slot.queue).index();
         let Some(registers) = hardware.take_tx_completion(index) else {
             return Ok(None);
         };
@@ -3542,8 +3523,17 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
             slot.dma.quarantine();
             return Err(TxError::Stale);
         }
-        slot.dma.mark_completed().map_err(map_dma_storage_error)?;
-        Ok(Some(decode_tx_completion(slot.active, registers)))
+        let event = match decode_tx_completion(slot.active, registers) {
+            Ok(event) => event,
+            Err(fault) => {
+                slot.dma.quarantine();
+                return Err(TxError::Completion(fault));
+            }
+        };
+        if matches!(event, CompletionEvent::Observed(_)) {
+            slot.dma.mark_completed().map_err(map_dma_storage_error)?;
+        }
+        Ok(Some(event))
     }
 
     /// Decode and acknowledge the completion of a BlockAckReq together with
@@ -3552,9 +3542,9 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
     pub fn acknowledge_block_ack_completion<H: TxHardware>(
         self: Pin<&mut Self>,
         hardware: &mut H,
-    ) -> Result<Option<ampdu::HtAmpduTxCompletion>, TxError> {
+    ) -> Result<Option<CompletionEvent<ampdu::HtAmpduTxCompletion>>, TxError> {
         let slot = self.get_mut();
-        let index = slot.queue.index();
+        let index = CompletionQueue::ordinary(slot.queue).index();
         let Some(registers) = hardware.take_block_ack_completion(index) else {
             return Ok(None);
         };
@@ -3563,9 +3553,18 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
             slot.dma.quarantine();
             return Err(TxError::Stale);
         }
-        slot.dma.mark_completed().map_err(map_dma_storage_error)?;
-        Ok(Some(ampdu::HtAmpduTxCompletion {
-            tx: decode_tx_completion(slot.active, registers.tx()),
+        let event = match decode_tx_completion(slot.active, registers.tx()) {
+            Ok(event) => event,
+            Err(fault) => {
+                slot.dma.quarantine();
+                return Err(TxError::Completion(fault));
+            }
+        };
+        if matches!(event, CompletionEvent::Observed(_)) {
+            slot.dma.mark_completed().map_err(map_dma_storage_error)?;
+        }
+        Ok(Some(event.map(|tx| ampdu::HtAmpduTxCompletion {
+            tx,
             block_ack: ampdu::HtBlockAckObservation::new(
                 registers.block_ack_control(),
                 oer_ieee80211_mac::sequence::SequenceNumber::from_low_bits(
@@ -3574,7 +3573,7 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
                 registers.block_ack_bitmap(),
             ),
             block_ack_received: registers.block_ack_received(),
-        }))
+        })))
     }
 
     /// Starts the recovered two-phase abort for this queue's TX-timeout edge.
@@ -3717,10 +3716,18 @@ fn map_dma_storage_error(error: TxDmaStorageError) -> TxError {
 }
 
 #[cfg(test)]
-mod completion_disposition_tests;
+mod completion_tests;
 
 pub mod ampdu;
 pub mod metadata;
 pub mod policy;
 pub mod protection;
 pub mod runtime;
+
+#[cfg(test)]
+pub(crate) fn model_completion(cookie: TxCookie, status: u8, detail: u8) -> TxCompletion {
+    match TxCompletion::new_model(cookie, status, detail).expect("valid model observation") {
+        CompletionEvent::Observed(completion) => completion,
+        CompletionEvent::NoEffect => panic!("fixture needs an observed completion"),
+    }
+}

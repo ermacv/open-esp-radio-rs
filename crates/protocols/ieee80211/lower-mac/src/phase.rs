@@ -220,6 +220,7 @@ enum GateKind {}
 ///     place.clone()
 /// }
 /// ```
+#[must_use = "the unique gate place stays in one gate state"]
 pub struct GatePlace<'id> {
     slot: Slot<'id, GateKind>,
 }
@@ -250,6 +251,7 @@ impl core::fmt::Debug for GatePlace<'_> {
 
 /// The open transmit gate. Closing transfers its unique place to the backend.
 #[derive(Debug)]
+#[must_use = "close_gate consumes the open gate and returns its closed evidence"]
 pub struct GateOpen<'id> {
     place: GatePlace<'id>,
 }
@@ -264,6 +266,7 @@ pub struct GateOpen<'id> {
 /// }
 /// ```
 #[derive(Debug)]
+#[must_use = "open_gate consumes the closed evidence and returns the open gate"]
 pub struct GateClosed<'id> {
     place: GatePlace<'id>,
 }
@@ -283,6 +286,7 @@ pub struct GateClosed<'id> {
 ///     (gate, closed)
 /// }
 /// ```
+#[must_use = "the backend retains the issuer for the whole install"]
 pub struct GateIssuer<'id> {
     brand: core::marker::PhantomData<fn(&'id ()) -> &'id ()>,
 }

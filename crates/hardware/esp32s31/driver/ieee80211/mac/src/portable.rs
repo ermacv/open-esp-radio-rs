@@ -7,7 +7,7 @@
 //! meaning, such as an HE MU reception or a rate the S31 formatter cannot
 //! send, fails closed instead of approximating.
 
-use oer_ieee80211_lower_mac::{RxMeta, TxFault, TxStatus};
+use oer_ieee80211_lower_mac::RxMeta;
 use oer_ieee80211_mac::{
     channel::Channel,
     phy::{self, DsssPreamble, FecCoding, HeGiLtf, PhyRate, PpduBandwidth, SpatialStreams},
@@ -18,8 +18,7 @@ use crate::{
     rx::{HeBandwidth, HeGuardIntervalAndLtf, RxBasebandFormat, RxPhyInfo},
     tx::{
         HeBccDcmMcs, HeFecCoding, HeLdpcDcmMcs, HeMcs, HeRate, HtChannelWidth, HtGuardInterval,
-        HtMcs, HtRate, LegacyRate, TxCompletion, TxCompletionDisposition, TxCompletionFailure,
-        TxPhyRate,
+        HtMcs, HtRate, LegacyRate, TxPhyRate,
     },
 };
 
@@ -291,35 +290,6 @@ pub fn rx_meta(metadata: MacRxMetadata<RxPhyInfo>, channel: Channel) -> RxMeta {
         ampdu: metadata.ampdu,
         amsdu: metadata.amsdu,
         ..RxMeta::unavailable(channel)
-    }
-}
-
-impl TxCompletionDisposition {
-    /// The portable status of the attempt this completion ended.
-    pub const fn tx_status(self) -> TxStatus {
-        match self {
-            Self::Success => TxStatus::Success,
-            Self::AckTimeout => TxStatus::AckTimeout,
-            Self::CtsTimeout => TxStatus::CtsTimeout,
-            Self::Collision => TxStatus::Collision,
-            Self::Terminal(TxCompletionFailure::RtsError { .. }) => {
-                TxStatus::Fault(TxFault::ProtectionFailure)
-            }
-            Self::Terminal(TxCompletionFailure::SecurityKeyError) => {
-                TxStatus::Fault(TxFault::KeyUnavailable)
-            }
-            Self::Terminal(TxCompletionFailure::InvalidStatus { .. }) => {
-                TxStatus::Fault(TxFault::Unrecognized)
-            }
-        }
-    }
-}
-
-impl TxCompletion {
-    /// The portable status of the attempt; [`Self::status`] and
-    /// [`Self::detail`] keep the raw completion as the chip's diagnostic.
-    pub const fn tx_status(&self) -> TxStatus {
-        self.disposition().tx_status()
     }
 }
 

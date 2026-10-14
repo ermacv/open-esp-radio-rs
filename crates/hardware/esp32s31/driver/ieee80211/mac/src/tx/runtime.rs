@@ -24,10 +24,7 @@ use crate::{
     rate::schedule::{RateScheduleKind, RateScheduleRef, schedule_rate_after_failures},
     tx::ampdu::{HtAmpduTxCompletion, HtBlockAckObservation},
     tx::protection::{BssProtection, RtsLengthThreshold, WifiTxProtectionPolicy},
-    tx::{
-        HeEdcaTxopLimit, HtChannelWidth, HtPeerAmpduParameters, LegacyTxQueue,
-        TxCompletionDisposition, TxPhyRate,
-    },
+    tx::{HeEdcaTxopLimit, HtChannelWidth, HtPeerAmpduParameters, LegacyTxQueue, TxPhyRate},
 };
 
 const HARDWARE_BLOCK_ACK_WINDOW: usize = 32;
@@ -559,9 +556,9 @@ impl OrdinaryMpduRetryState {
     pub fn observe_completion(
         &mut self,
         policy: &mut WifiTxRuntimePolicy,
-        disposition: TxCompletionDisposition,
+        status: oer_ieee80211_lower_mac::TxStatus,
     ) -> OrdinaryRetryDecision {
-        let step = self.retry.observe(disposition.tx_status());
+        let step = self.retry.observe(status);
         match (step.contention, step.decision) {
             (_, RetryDecision::Complete(RetryOutcome::Delivered)) => {
                 policy.record_success(self.queue);
@@ -579,7 +576,7 @@ impl OrdinaryMpduRetryState {
 
     /// Apply one detached ordinary-queue collision.
     pub fn observe_collision(&mut self, policy: &mut WifiTxRuntimePolicy) -> OrdinaryRetryDecision {
-        self.observe_completion(policy, TxCompletionDisposition::Collision)
+        self.observe_completion(policy, oer_ieee80211_lower_mac::TxStatus::Collision)
     }
 
     /// End ownership after a non-retryable executor or hardware error.
@@ -835,7 +832,7 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
         self.validate_stamp(now)?;
         let result = if completion.tx.completes_vendor_trigger_flow() {
             AmpduAttemptResult::TriggerFlowEnd
-        } else if completion.tx.disposition() == TxCompletionDisposition::CtsTimeout {
+        } else if completion.tx.tx_status() == oer_ieee80211_lower_mac::TxStatus::CtsTimeout {
             AmpduAttemptResult::ProtectionFailure
         } else if !completion.block_ack_received {
             AmpduAttemptResult::NoResponse

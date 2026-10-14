@@ -21,9 +21,9 @@ use oer_esp32s31_ieee80211_mac::{
         WifiTxRuntimePolicy,
     },
     tx::{
-        HeSmpduTxConfig, HtTxConfig, LegacyTxConfig, LegacyTxQueue, MacLegacyTxResponse,
-        TxCompletion, TxControlFrame, TxCookie, TxError, TxHardware, TxPhyRate, TxSlot,
-        TxSlotState,
+        CompletionEvent, HeSmpduTxConfig, HtTxConfig, LegacyTxConfig, LegacyTxQueue,
+        MacLegacyTxResponse, TxCompletion, TxControlFrame, TxCookie, TxError, TxHardware,
+        TxPhyRate, TxSlot, TxSlotState,
     },
 };
 use oer_ieee80211_softmac::{MacTxPlan, MacTxQueueState, MacTxResult, MacTxStatus};
@@ -151,10 +151,33 @@ impl OrdinaryTxRetryReport {
     }
 }
 
+/// A completed publication, retaining the decoder's status proof.
+/// The diagnostic report alone has an optional raw completion and cannot
+/// prove this fact. Only the observed finish path constructs this value.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OrdinaryTxCompleted {
+    completion: TxCompletion,
+    report: OrdinaryTxReport,
+}
+
+impl OrdinaryTxCompleted {
+    pub const fn status(&self) -> oer_ieee80211_lower_mac::TxStatus {
+        self.completion.tx_status()
+    }
+
+    pub const fn report(self) -> OrdinaryTxReport {
+        self.report
+    }
+
+    pub const fn completion(self) -> TxCompletion {
+        self.completion
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OrdinaryTxOutcome {
-    Success(OrdinaryTxReport),
-    HardwareFailure(OrdinaryTxReport),
+    Success(OrdinaryTxCompleted),
+    HardwareFailure(OrdinaryTxCompleted),
     HardwareTimeout(OrdinaryTxReport),
     CollisionLimit(OrdinaryTxReport),
 }
@@ -162,10 +185,8 @@ pub enum OrdinaryTxOutcome {
 impl OrdinaryTxOutcome {
     pub const fn report(self) -> OrdinaryTxReport {
         match self {
-            Self::Success(report)
-            | Self::HardwareFailure(report)
-            | Self::HardwareTimeout(report)
-            | Self::CollisionLimit(report) => report,
+            Self::HardwareTimeout(report) | Self::CollisionLimit(report) => report,
+            Self::Success(completed) | Self::HardwareFailure(completed) => completed.report(),
         }
     }
 
@@ -408,6 +429,23 @@ struct ActiveTx {
     deadline: oer_time::Instant,
     phase: OrdinaryTxPhase,
     retries: OrdinaryTxRetryReport,
+}
+
+type OrdinaryCompletion = CompletionEvent<(TxCompletion, Option<HtBlockAckObservation>)>;
+
+/// A published operation moves into this value only after Observed(status).
+struct FinishedTx {
+    active: ActiveTx,
+    status: oer_ieee80211_lower_mac::TxStatus,
+}
+
+impl ActiveTx {
+    fn finish(self, status: oer_ieee80211_lower_mac::TxStatus) -> FinishedTx {
+        FinishedTx {
+            active: self,
+            status,
+        }
+    }
 }
 
 enum OrdinaryTxPhase {
@@ -829,11 +867,20 @@ where
             WifiTxWake::Interrupt { events } => events,
             WifiTxWake::Deadline => 0,
         };
-        if let Some((completion, block_ack)) = self.acknowledge_completion(hardware, &active)? {
-            self.slot
-                .as_mut()
-                .detach_completed(hardware, active.cookie)?;
-            return self.finish_completion(hardware, active, completion, block_ack);
+        if let Some(event) = self.acknowledge_completion(hardware, &active)? {
+            match event {
+                CompletionEvent::Observed((completion, block_ack)) => {
+                    self.slot
+                        .as_mut()
+                        .detach_completed(hardware, active.cookie)?;
+                    let finished = active.finish(completion.tx_status());
+                    return self.finish_completion(hardware, finished, completion, block_ack);
+                }
+                CompletionEvent::NoEffect => {
+                    self.active = Some(active);
+                    return Ok(WifiTxProgress::Pending);
+                }
+            }
         }
         if events & EVENT_COLLISION != 0
             && self
@@ -885,6 +932,7 @@ where
         capped_power(self.power.power_pair(rate_code), ceiling)
     }
 
+    // CAPABILITY: wifi-interfaces-and-operating-modes-lower-mac-port-individual-no-ack
     fn start_transaction<H: TxHardware>(
         &mut self,
         hardware: &mut H,
@@ -1026,11 +1074,20 @@ where
                 .reset_required(active, TxResetReason::ConflictingInterruptEvents(tx_events));
         }
 
-        if let Some((completion, block_ack)) = self.acknowledge_completion(hardware, &active)? {
-            self.slot
-                .as_mut()
-                .detach_completed(hardware, active.cookie)?;
-            return self.finish_completion(hardware, active, completion, block_ack);
+        if let Some(event) = self.acknowledge_completion(hardware, &active)? {
+            match event {
+                CompletionEvent::Observed((completion, block_ack)) => {
+                    self.slot
+                        .as_mut()
+                        .detach_completed(hardware, active.cookie)?;
+                    let finished = active.finish(completion.tx_status());
+                    return self.finish_completion(hardware, finished, completion, block_ack);
+                }
+                CompletionEvent::NoEffect => {
+                    self.active = Some(active);
+                    return Ok(WifiTxProgress::Pending);
+                }
+            }
         }
 
         use oer_esp32s31_ieee80211_mac::irq::{
@@ -1106,11 +1163,20 @@ where
         if matches!(active.phase, OrdinaryTxPhase::AbortSettling) {
             return self.service_abort_settle(hardware, active);
         }
-        if let Some((completion, block_ack)) = self.acknowledge_completion(hardware, &active)? {
-            self.slot
-                .as_mut()
-                .detach_completed(hardware, active.cookie)?;
-            return self.finish_completion(hardware, active, completion, block_ack);
+        if let Some(event) = self.acknowledge_completion(hardware, &active)? {
+            match event {
+                CompletionEvent::Observed((completion, block_ack)) => {
+                    self.slot
+                        .as_mut()
+                        .detach_completed(hardware, active.cookie)?;
+                    let finished = active.finish(completion.tx_status());
+                    return self.finish_completion(hardware, finished, completion, block_ack);
+                }
+                CompletionEvent::NoEffect => {
+                    self.active = Some(active);
+                    return Ok(WifiTxProgress::Pending);
+                }
+            }
         }
         if self
             .slot
@@ -1132,25 +1198,27 @@ where
         &mut self,
         hardware: &mut H,
         active: &ActiveTx,
-    ) -> Result<Option<(TxCompletion, Option<HtBlockAckObservation>)>, OrdinaryTxError> {
+    ) -> Result<Option<OrdinaryCompletion>, OrdinaryTxError> {
         if active.response != MacLegacyTxResponse::BlockAck {
             return Ok(self
                 .slot
                 .as_mut()
                 .acknowledge_completion(hardware)?
-                .map(|completion| (completion, None)));
+                .map(|event| event.map(|completion| (completion, None))));
         }
         Ok(self
             .slot
             .as_mut()
             .acknowledge_block_ack_completion(hardware)?
-            .map(|completion| {
-                (
-                    completion.tx,
-                    completion
-                        .block_ack_received
-                        .then_some(completion.block_ack),
-                )
+            .map(|event| {
+                event.map(|completion| {
+                    (
+                        completion.tx,
+                        completion
+                            .block_ack_received
+                            .then_some(completion.block_ack),
+                    )
+                })
             }))
     }
 
@@ -1189,36 +1257,28 @@ where
     fn finish_completion<H: TxHardware>(
         &mut self,
         hardware: &mut H,
-        mut active: ActiveTx,
+        finished: FinishedTx,
         completion: TxCompletion,
         block_ack: Option<HtBlockAckObservation>,
     ) -> Result<WifiTxProgress, OrdinaryTxError> {
+        let FinishedTx { mut active, status } = finished;
         let attempts = active.retry.publications();
         let final_rate = active.retry.current_rate()?;
-        let disposition = completion.disposition();
         let decision = if active.single_attempt.is_some() {
             // One publication is the whole transaction: the retry state
             // never sees the completion, so it can never re-publish.
-            if matches!(
-                disposition,
-                oer_esp32s31_ieee80211_mac::tx::TxCompletionDisposition::Success
-            ) {
+            if status == oer_ieee80211_lower_mac::TxStatus::Success {
                 self.policy.record_success(active.route.queue());
             } else {
                 active.retry.abort(&mut self.policy);
             }
             OrdinaryRetryDecision::Complete
         } else {
-            active
-                .retry
-                .observe_completion(&mut self.policy, disposition)
+            active.retry.observe_completion(&mut self.policy, status)
         };
         match decision {
             OrdinaryRetryDecision::Complete => {
-                let success = matches!(
-                    disposition,
-                    oer_esp32s31_ieee80211_mac::tx::TxCompletionDisposition::Success
-                );
+                let success = status == oer_ieee80211_lower_mac::TxStatus::Success;
                 let report = OrdinaryTxReport {
                     status: MacTxStatus {
                         result: if success {
@@ -1240,25 +1300,25 @@ where
                     block_ack: if success { block_ack } else { None },
                 };
                 self.last_outcome = Some(if success {
-                    OrdinaryTxOutcome::Success(report)
+                    OrdinaryTxOutcome::Success(OrdinaryTxCompleted { completion, report })
                 } else {
-                    OrdinaryTxOutcome::HardwareFailure(report)
+                    OrdinaryTxOutcome::HardwareFailure(OrdinaryTxCompleted { completion, report })
                 });
                 Ok(WifiTxProgress::Complete)
             }
             OrdinaryRetryDecision::Retry { set_retry_bit } => {
-                use oer_esp32s31_ieee80211_mac::tx::TxCompletionDisposition;
-                match disposition {
-                    TxCompletionDisposition::AckTimeout => {
+                use oer_ieee80211_lower_mac::TxStatus;
+                match status {
+                    TxStatus::AckTimeout => {
                         active.retries.ack_timeouts = active.retries.ack_timeouts.saturating_add(1);
                     }
-                    TxCompletionDisposition::CtsTimeout => {
+                    TxStatus::CtsTimeout => {
                         active.retries.cts_timeouts = active.retries.cts_timeouts.saturating_add(1);
                     }
-                    TxCompletionDisposition::Collision => {
+                    TxStatus::Collision => {
                         active.retries.collisions = active.retries.collisions.saturating_add(1);
                     }
-                    TxCompletionDisposition::Success | TxCompletionDisposition::Terminal(_) => {}
+                    TxStatus::Success | TxStatus::TimedOut => {}
                 }
                 if set_retry_bit {
                     self.mark_retry_bit()?;

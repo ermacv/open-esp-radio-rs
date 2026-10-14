@@ -621,14 +621,17 @@ fn a_decrypted_data_mpdu_gives_its_msdu_and_an_unverified_or_eapol_one_none() {
     let mut replay = epoch();
     let mut link = qos_link(&(), &mut replay);
     let frame = received_frame(0x4288, 0x0800, 1, 0);
-    let parts: Vec<_> = received(&mut link, &frame, &decrypted()).unwrap().collect();
+    let parts: Vec<_> = received(&mut link, &frame, &decrypted())
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
     assert_eq!(parts.len(), 1);
     assert_eq!(parts[0].source, PEER);
     assert_eq!(parts[0].destination, LOCAL);
     assert_eq!(parts[0].payload, &[0xcd; 20]);
     // Protected but not verified: nothing for the network.
     let frame = received_frame(0x4288, 0x0800, 2, 0);
-    assert!(received(&mut link, &frame, &meta(RxEvidence::Unavailable)).is_none());
+    assert!(received(&mut link, &frame, &meta(RxEvidence::Unavailable)).is_err());
     // EAPOL is the station's.
     let eapol = received_frame(0x4288, 0x888e, 3, 0);
     assert_eq!(
@@ -647,7 +650,7 @@ fn a_frame_sent_again_is_dropped_by_the_replay_check() {
         1
     );
     // The same packet number again: dropped before it reaches the network.
-    assert!(received(&mut link, &frame, &decrypted()).is_none());
+    assert!(received(&mut link, &frame, &decrypted()).is_err());
 }
 
 #[test]
@@ -689,7 +692,7 @@ fn the_old_and_the_new_group_key_are_both_taken_until_the_old_is_removed() {
     }
     replay.remove_group(GroupKeyId::new(1).unwrap());
     let mut link = qos_link(&(), &mut replay);
-    assert!(received(&mut link, &group(202, 1), &decrypted()).is_none());
+    assert!(received(&mut link, &group(202, 1), &decrypted()).is_err());
     assert_eq!(
         received(&mut link, &group(2, 2), &decrypted())
             .unwrap()

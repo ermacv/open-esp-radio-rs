@@ -183,18 +183,11 @@ pub enum StaCommand {
 }
 
 /// One input of the station.
-pub enum StaInput<'f, 'id, T: StaTokens, K> {
+pub enum StaInput<'id, T: StaTokens, K> {
     /// A command of the application.
     Command(StaCommand),
     /// A deadline the station named passed.
     Tick,
-    /// A frame the station's interface received.
-    Received {
-        /// The MPDU, from its header to the end of its body.
-        frame: &'f [u8],
-        /// What the port observed of it.
-        meta: T::RxMeta,
-    },
     /// The terminal of a transmission: its ticket and buffer come back.
     TxDone {
         /// The original operation, returned by the port.
@@ -720,7 +713,7 @@ struct PairwiseCell;
 ///
 /// ```compile_fail,E0063
 /// use oer_ieee80211_sta::machine::{StaInput, StaTokens};
-/// fn forged<'id, T: StaTokens, K>(key: T::GroupKey) -> StaInput<'static, 'id, T, K> {
+/// fn forged<'id, T: StaTokens, K>(key: T::GroupKey) -> StaInput<'id, T, K> {
 ///     StaInput::GroupKeyInstalled { key }
 /// }
 /// ```
@@ -737,7 +730,7 @@ struct PairwiseCell;
 /// ```
 /// use oer_ieee80211_sta::machine::{PendingGroupKey, StaInput, StaTokens};
 /// fn installed<'id, T: StaTokens, K>(pending: PendingGroupKey<'id>, key: T::GroupKey)
-///     -> StaInput<'static, 'id, T, K> {
+///     -> StaInput<'id, T, K> {
 ///     StaInput::GroupKeyInstalled { pending, key }
 /// }
 /// ```
@@ -764,7 +757,7 @@ pub struct PendingGroupKey<'id> {
 /// The replacement input must return that owner:
 /// ```compile_fail,E0063
 /// use oer_ieee80211_sta::machine::{StaInput, StaTokens};
-/// fn forged<'id, T: StaTokens, K>(key: T::GroupKey) -> StaInput<'static, 'id, T, K> {
+/// fn forged<'id, T: StaTokens, K>(key: T::GroupKey) -> StaInput<'id, T, K> {
 ///     StaInput::GroupKeyReplaced { key }
 /// }
 /// ```
@@ -772,7 +765,7 @@ pub struct PendingGroupKey<'id> {
 /// ```
 /// use oer_ieee80211_sta::machine::{PendingGroupReplacement, StaInput, StaTokens};
 /// fn returned<'id, T: StaTokens, K>(pending: PendingGroupReplacement<'id>, key: T::GroupKey)
-///     -> StaInput<'static, 'id, T, K> {
+///     -> StaInput<'id, T, K> {
 ///     StaInput::GroupKeyReplaced { pending, key }
 /// }
 /// ```
@@ -789,7 +782,7 @@ pub struct PendingGroupReplacement<'id> {
 ///
 /// ```compile_fail,E0308
 /// use oer_ieee80211_sta::machine::{StaInput, StaTokens};
-/// fn forged<'id, T: StaTokens, K>() -> StaInput<'static, 'id, T, K> {
+/// fn forged<'id, T: StaTokens, K>() -> StaInput<'id, T, K> {
 ///     StaInput::Configured
 /// }
 /// ```
@@ -1230,66 +1223,20 @@ enum LeaveStep {
 
 /// The EAPOL ether type.
 const EAPOL_ETHER_TYPE: u16 = 0x888e;
-/// The LLC/SNAP header of an EAPOL payload.
-const LLC_SNAP_EAPOL: [u8; 8] = [0xaa, 0xaa, 0x03, 0, 0, 0, 0x88, 0x8e];
 
-/// The EAPOL frame a data `frame` from `bssid` to `address` carries.
-fn received_eapol(
-    frame: &[u8],
-    address: [u8; 6],
-    bssid: Bssid,
-) -> Option<OwnedEapolFrame<DEFAULT_EAPOL_FRAME_CAPACITY>> {
-    let (header, mut payload) = frame.split_first_chunk::<24>()?;
-    let [
-        c0,
-        c1,
-        _,
-        _,
-        d0,
-        d1,
-        d2,
-        d3,
-        d4,
-        d5,
-        b0,
-        b1,
-        b2,
-        b3,
-        b4,
-        b5,
-        ..,
-    ] = *header;
-    let control = u16::from_le_bytes([c0, c1]);
-    if (control >> 2) & 0b11 != 2 || control & 0x0300 != 0x0200 {
-        return None;
-    }
-    if [d0, d1, d2, d3, d4, d5] != address || [b0, b1, b2, b3, b4, b5] != bssid.get() {
-        return None;
-    }
-    if control & 0x0080 != 0 {
-        payload = payload.split_first_chunk::<2>()?.1;
-    }
-    let (llc, eapol) = payload.split_first_chunk::<8>()?;
-    if *llc != LLC_SNAP_EAPOL {
-        return None;
-    }
-    OwnedEapolFrame::try_copy(RsnInterface::Station, bssid.get(), eapol).ok()
-}
-
-/// The frame control of a Deauthentication and of a Disassociation.
-const DEAUTHENTICATION: u16 = 0x00c0;
-const DISASSOCIATION: u16 = 0x00a0;
-
-/// The disconnect `frame` carries from `bssid`, if it is one.
+/// A checked management disconnect from the selected BSS.
 fn peer_disconnect(frame: &[u8], bssid: Bssid) -> Option<u16> {
-    let control = u16::from_le_bytes(frame.get(0..2)?.try_into().ok()?) & 0x00fc;
-    if control != DEAUTHENTICATION && control != DISASSOCIATION {
+    let header = oer_ieee80211_mac::frame::DecodedHeader::decode(frame)?;
+    if header.control().is_data()
+        || !matches!(header.control().subtype(), 10 | 12)
+        || header.transmitter() != bssid.get()
+        || header.address3() != bssid.get()
+        || header.control().protected()
+    {
         return None;
     }
-    if frame.get(10..16)? != bssid.get() {
-        return None;
-    }
-    Some(u16::from_le_bytes(frame.get(24..26)?.try_into().ok()?))
+    let (reason, _) = header.body().split_first_chunk::<2>()?;
+    Some(u16::from_le_bytes(*reason))
 }
 
 /// A group key's index and temporal key, when its index is a group
@@ -1577,7 +1524,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     }
 
     /// Take one input at `now`.
-    pub fn input(&mut self, now: Instant, input: StaInput<'_, 'id, T, K>) {
+    pub fn input(&mut self, now: Instant, input: StaInput<'id, T, K>) {
         let done = match input {
             StaInput::TxDone {
                 context,
@@ -1620,10 +1567,6 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     return;
                 }
                 Done::Configured
-            }
-            StaInput::Received { frame, meta } => {
-                self.received(now, frame, meta);
-                return;
             }
             StaInput::Answer(answer) => {
                 self.answered(answer);
@@ -2428,8 +2371,76 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         State::Join(join)
     }
 
+    /// Admit a received frame once, process station EAPOL/management, and
+    /// deliver each remaining MSDU. Refusals retain their typed reason.
+    pub fn receive<'frame>(
+        &mut self,
+        now: Instant,
+        frame: &'frame [u8],
+        meta: T::RxMeta,
+        mut deliver: impl FnMut(oer_ieee80211_mac::data::EthernetFrameParts<'frame>),
+    ) -> Result<(), oer_ieee80211_mac::receive::RxDropReason> {
+        use oer_ieee80211_mac::{
+            frame::DecodedHeader,
+            receive::{AdmittedData, RxDropReason},
+        };
+        let header = DecodedHeader::decode(frame).ok_or(RxDropReason::Header)?;
+        if !header.control().is_data() {
+            self.received_management(now, frame, meta);
+            return Ok(());
+        }
+        let (bssid, replay) = match &mut self.state {
+            State::Handshake(handshake) => (
+                handshake.bssid,
+                match &mut handshake.step {
+                    HandshakeStep::AwaitLast(replay)
+                    | HandshakeStep::AwaitRetry(replay)
+                    | HandshakeStep::SendLast(_, replay) => Some(replay),
+                    HandshakeStep::InstallGroup(_, replay)
+                    | HandshakeStep::AwaitInstalled(_, replay, _) => replay.as_mut(),
+                    _ => None,
+                },
+            ),
+            State::Connected(connected) => (
+                connected.bssid,
+                connected.rsn.as_mut().map(|rsn| &mut rsn.replay),
+            ),
+            _ => return Err(RxDropReason::NotConnected),
+        };
+        let admitted = AdmittedData::admit(
+            header,
+            self.config.address,
+            bssid,
+            crate::data::integrity(meta.common()),
+            replay,
+        )?;
+        for parts in admitted.msdus()? {
+            let parts = parts?;
+            if parts.ether_type == EAPOL_ETHER_TYPE {
+                let eapol =
+                    OwnedEapolFrame::try_copy(RsnInterface::Station, bssid.get(), parts.payload)
+                        .map_err(|_| RxDropReason::Payload)?;
+                let state = self.take_state();
+                self.state = match state {
+                    State::Handshake(handshake) => self.handshake_eapol(handshake, now, eapol),
+                    State::Connected(connected) => self.group_message(connected, eapol),
+                    state => state,
+                };
+            } else {
+                if !matches!(self.config.security, StaSecurity::Open) && !admitted.protected() {
+                    return Err(RxDropReason::Protection);
+                }
+                if self.link().is_none() {
+                    return Err(RxDropReason::NotConnected);
+                }
+                deliver(parts);
+            }
+        }
+        Ok(())
+    }
+
     /// Take a received frame.
-    fn received(&mut self, now: Instant, frame: &[u8], meta: T::RxMeta) {
+    fn received_management(&mut self, now: Instant, frame: &[u8], meta: T::RxMeta) {
         let rssi = match meta.common().rssi_dbm {
             RxEvidence::HardwareObserved(rssi) | RxEvidence::ProtocolValidated(rssi) => rssi,
             RxEvidence::Unavailable => i8::MIN,
@@ -2508,7 +2519,10 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 }
                 _ => State::Join(join),
             },
-            State::Handshake(handshake) => self.handshake_received(handshake, now, frame),
+            State::Handshake(handshake) => match peer_disconnect(frame, handshake.bssid) {
+                Some(reason_code) => leave_keyed(StaDisconnectReason::Peer { reason_code }, None),
+                None => State::Handshake(handshake),
+            },
             State::Connected(connected) => self.connected_received(connected, now, frame, rssi),
             state => state,
         };
@@ -2525,9 +2539,6 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         if let Some(reason_code) = peer_disconnect(frame, connected.bssid) {
             // The access point ended the link: no Deauthentication back.
             return leave_connected(connected, StaDisconnectReason::Peer { reason_code }, None);
-        }
-        if let Some(eapol) = received_eapol(frame, self.config.address.get(), connected.bssid) {
-            return self.group_message(connected, eapol);
         }
         let step = connected
             .background
@@ -2824,18 +2835,12 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     }
 
     /// The handshake's state after a received frame.
-    fn handshake_received(
+    fn handshake_eapol(
         &mut self,
         mut handshake: Handshake<T, K>,
         now: Instant,
-        frame: &[u8],
+        eapol: OwnedEapolFrame<DEFAULT_EAPOL_FRAME_CAPACITY>,
     ) -> State<T, K> {
-        if let Some(reason_code) = peer_disconnect(frame, handshake.bssid) {
-            return leave_keyed(StaDisconnectReason::Peer { reason_code }, None);
-        }
-        let Some(eapol) = received_eapol(frame, self.config.address.get(), handshake.bssid) else {
-            return State::Handshake(handshake);
-        };
         if !matches!(
             handshake.step,
             HandshakeStep::Await | HandshakeStep::AwaitSent | HandshakeStep::AwaitRetry(_)

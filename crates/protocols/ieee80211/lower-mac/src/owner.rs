@@ -186,6 +186,7 @@
 
 use core::marker::PhantomData;
 use oer_ieee80211_mac::address::IndividualAddress;
+use oer_ieee80211_mac::frame::FrameControl;
 
 use oer_ieee80211_mac::{extensions::wmm::WmmParameterSet, sequence::SequenceNumber};
 use oer_ieee80211_port::PortBackend;
@@ -647,52 +648,6 @@ impl Tid {
     }
 }
 
-/// The Frame Control field of a data or management frame of protocol
-/// version 0: never a control frame, whose kinds have their own buffers.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct FrameControl(u16);
-
-impl FrameControl {
-    const DATA: u16 = 2;
-    const MANAGEMENT: u16 = 0;
-    const TYPE_AND_SUBTYPE: u16 = (0b11 << 2) | (0b1111 << 4);
-    const ACTION_NO_ACK: u16 = 0b1110 << 4;
-
-    /// `field`, when it is a data or management frame of version 0.
-    pub const fn new(field: u16) -> Option<Self> {
-        let kind = (field >> 2) & 0b11;
-        if field & 0b11 == 0 && (kind == Self::DATA || kind == Self::MANAGEMENT) {
-            Some(Self(field))
-        } else {
-            None
-        }
-    }
-
-    /// The field.
-    pub const fn get(self) -> u16 {
-        self.0
-    }
-
-    const fn is_action_no_ack(self) -> bool {
-        self.0 & Self::TYPE_AND_SUBTYPE == Self::ACTION_NO_ACK
-    }
-
-    const fn is_qos_data(self) -> bool {
-        (self.0 >> 2) & 0b11 == Self::DATA && self.0 & (1 << 7) != 0
-    }
-
-    const fn is_four_address(self) -> bool {
-        (self.0 >> 2) & 0b11 == Self::DATA && self.0 & (0b11 << 8) == 0b11 << 8
-    }
-
-    /// Whether the frame carries an HT Control field: the Order bit of a
-    /// QoS data or management frame; in a non-QoS data frame the bit
-    /// requests strictly ordered service instead.
-    const fn has_ht_control(self) -> bool {
-        self.0 & (1 << 15) != 0 && (self.is_qos_data() || (self.0 >> 2) & 0b11 == Self::MANAGEMENT)
-    }
-}
-
 /// The on-wire acknowledgement policy chosen by a checked response header.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum QosAckPolicy {
@@ -812,12 +767,9 @@ impl<A: ReceiverAddress> HeaderSpec<A> {
     }
     /// Derive the Protected bit from the preparation's sole protection value.
     pub(crate) fn with_protection(mut self, protection: crate::MpduProtection) -> Self {
-        const PROTECTED: u16 = 1 << 14;
-        self.frame_control.0 = (self.frame_control.0 & !PROTECTED)
-            | match protection {
-                crate::MpduProtection::Open => 0,
-                crate::MpduProtection::Ccmp => PROTECTED,
-            };
+        self.frame_control = self
+            .frame_control
+            .with_protected(matches!(protection, crate::MpduProtection::Ccmp));
         self
     }
     /// Encode a fresh aggregate subframe with its builder's receiver and TID.
@@ -857,52 +809,24 @@ impl<A: ReceiverAddress> HeaderSpec<A> {
     }
 
     /// Decode a data or management header, checking its receiver's kind.
-    pub fn decode(
-        mut frame: &[u8],
-        receiver: impl FnOnce(MacAddress) -> Option<A>,
-    ) -> Option<Self> {
-        fn take<const N: usize>(frame: &mut &[u8]) -> Option<[u8; N]> {
-            let (field, rest) = frame.split_first_chunk()?;
-            *frame = rest;
-            Some(*field)
-        }
-        let frame_control = FrameControl::new(u16::from_le_bytes(take(&mut frame)?))?;
-        let duration = u16::from_le_bytes(take(&mut frame)?);
-        let receiver = receiver(take(&mut frame)?)?;
-        let transmitter = take(&mut frame)?;
-        let address3 = take(&mut frame)?;
-        let sequence_control = u16::from_le_bytes(take(&mut frame)?);
-        let address4 = if frame_control.is_four_address() {
-            Some(take(&mut frame)?)
-        } else {
-            None
-        };
-        let qos = if frame_control.is_qos_data() {
-            let field = u16::from_le_bytes(take(&mut frame)?);
-            Some(QosControl {
-                tid: Tid::new((field & 0x0f) as u8)?,
-                end_of_service_period: field & 0x0010 != 0,
-                amsdu_present: field & 0x0080 != 0,
-                high: (field >> 8) as u8,
-            })
-        } else {
-            None
-        };
-        let ht_control = if frame_control.has_ht_control() {
-            Some(take(&mut frame)?)
-        } else {
-            None
-        };
+    pub fn decode(frame: &[u8], receiver: impl FnOnce(MacAddress) -> Option<A>) -> Option<Self> {
+        let header = oer_ieee80211_mac::frame::DecodedHeader::decode(frame)?;
+        let qos = header.qos().map(|field| QosControl {
+            tid: Tid((field & 15) as u8),
+            end_of_service_period: field & 0x10 != 0,
+            amsdu_present: field & 0x80 != 0,
+            high: (field >> 8) as u8,
+        });
         Self::new(
-            frame_control,
-            duration,
-            receiver,
-            transmitter,
-            address3,
-            sequence_control,
-            address4,
+            header.control(),
+            header.duration(),
+            receiver(header.receiver())?,
+            header.transmitter(),
+            header.address3(),
+            header.sequence_control(),
+            header.address4(),
             qos,
-            ht_control,
+            header.ht_control(),
         )
     }
 

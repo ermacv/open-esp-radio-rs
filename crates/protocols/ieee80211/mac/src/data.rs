@@ -21,10 +21,10 @@ const IEEE80211_QOS_DATA: u8 = 0x88;
 const IEEE80211_TO_DS: u8 = 0x01;
 const IEEE80211_FROM_DS: u8 = 0x02;
 const IEEE80211_ORDER: u8 = 0x80;
-const IEEE80211_MORE_FRAGMENTS: u8 = 0x04;
 const IEEE80211_QOS_AMSDU_PRESENT: u8 = 0x80;
 const QOS_NO_ACK_POLICY: u8 = 0x20;
-const RFC1042_LLC_SNAP_PREFIX: [u8; 6] = [0xaa, 0xaa, 0x03, 0, 0, 0];
+/// RFC 1042 LLC/SNAP prefix before the EtherType.
+pub const RFC1042_LLC_SNAP_PREFIX: [u8; 6] = [0xaa, 0xaa, 0x03, 0, 0, 0];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DataInterfaceRole {
@@ -410,67 +410,83 @@ pub fn plan_data_decapsulation(
     payload_offset: usize,
     payload_length: usize,
 ) -> Result<DataDecapPlan, DataDecapError> {
-    if mpdu.len() < IEEE80211_LEGACY_DATA_HEADER_LEN {
-        return Err(DataDecapError::Truncated);
-    }
-    let frame_control = u16::from_le_bytes([mpdu[0], mpdu[1]]);
-    if frame_control & 0x0003 != 0 || frame_control & 0x000c != 0x0008 {
-        return Err(DataDecapError::NotData);
-    }
-    if mpdu[1] & IEEE80211_MORE_FRAGMENTS != 0 || mpdu[22] & 0x0f != 0 {
-        return Err(DataDecapError::Fragmented);
-    }
-
-    let to_ds = mpdu[1] & IEEE80211_TO_DS != 0;
-    let from_ds = mpdu[1] & IEEE80211_FROM_DS != 0;
-    let (destination_offset, source_offset) = match (role, to_ds, from_ds) {
-        (DataInterfaceRole::Station, false, true) => (4, 16),
-        (DataInterfaceRole::AccessPoint, true, false) => (16, 10),
-        _ => return Err(DataDecapError::RoleMismatch),
-    };
-
-    let qos = mpdu[0] & 0x80 != 0;
-    let header_length = if qos {
-        IEEE80211_QOS_DATA_HEADER_LEN
-    } else {
-        IEEE80211_LEGACY_DATA_HEADER_LEN
-    };
-    if mpdu.len() < header_length {
-        return Err(DataDecapError::Truncated);
-    }
-    if qos && mpdu[24] & IEEE80211_QOS_AMSDU_PRESENT != 0 {
+    let header = data_header(role, mpdu)?;
+    if header
+        .qos()
+        .is_some_and(|qos| qos & u16::from(IEEE80211_QOS_AMSDU_PRESENT) != 0)
+    {
         return Err(DataDecapError::AmsduUnsupported);
     }
+    let payload = data_payload(header, payload_offset, payload_length)?;
+    let parts = single_payload(header, payload)?;
+    Ok(DataDecapPlan {
+        destination: parts.destination,
+        source: parts.source,
+        ether_type: parts.ether_type,
+        payload_offset: payload_offset + LLC_SNAP_HEADER_LEN,
+        payload_length: parts.payload.len(),
+        ethernet_length: parts.length(),
+    })
+}
 
-    let payload_end = payload_offset
-        .checked_add(payload_length)
+fn data_header(
+    role: DataInterfaceRole,
+    mpdu: &[u8],
+) -> Result<crate::frame::DecodedHeader<'_>, DataDecapError> {
+    let header = crate::frame::DecodedHeader::decode(mpdu).ok_or(DataDecapError::Truncated)?;
+    let control = header.control();
+    if !control.is_data() {
+        return Err(DataDecapError::NotData);
+    }
+    if control.more_fragments() || header.sequence_control() & 15 != 0 {
+        return Err(DataDecapError::Fragmented);
+    }
+    if !matches!(
+        (role, control.ds()),
+        (DataInterfaceRole::Station, 2) | (DataInterfaceRole::AccessPoint, 1)
+    ) {
+        return Err(DataDecapError::RoleMismatch);
+    }
+    Ok(header)
+}
+
+fn data_payload(
+    header: crate::frame::DecodedHeader<'_>,
+    offset: usize,
+    length: usize,
+) -> Result<&[u8], DataDecapError> {
+    let end = offset
+        .checked_add(length)
         .ok_or(DataDecapError::Truncated)?;
-    if payload_offset < header_length
-        || payload_length < LLC_SNAP_HEADER_LEN
-        || payload_end > mpdu.len()
-    {
+    if offset < header.frame().len() - header.body().len() {
         return Err(DataDecapError::Truncated);
     }
-    let llc = &mpdu[payload_offset..payload_offset + LLC_SNAP_HEADER_LEN];
+    header
+        .frame()
+        .get(offset..end)
+        .ok_or(DataDecapError::Truncated)
+}
+
+fn single_payload<'a>(
+    header: crate::frame::DecodedHeader<'_>,
+    payload: &'a [u8],
+) -> Result<EthernetFrameParts<'a>, DataDecapError> {
+    let (llc, payload) = payload
+        .split_first_chunk::<LLC_SNAP_HEADER_LEN>()
+        .ok_or(DataDecapError::Truncated)?;
     if llc[..RFC1042_LLC_SNAP_PREFIX.len()] != RFC1042_LLC_SNAP_PREFIX {
         return Err(DataDecapError::InvalidLlcSnap);
     }
-
-    let mut destination = [0_u8; 6];
-    destination.copy_from_slice(&mpdu[destination_offset..destination_offset + 6]);
-    let mut source = [0_u8; 6];
-    source.copy_from_slice(&mpdu[source_offset..source_offset + 6]);
-    let payload_length = payload_length - LLC_SNAP_HEADER_LEN;
-    let ethernet_length = ETHERNET_HEADER_LEN
-        .checked_add(payload_length)
-        .ok_or(DataDecapError::Truncated)?;
-    Ok(DataDecapPlan {
+    let (destination, source) = match header.control().ds() {
+        2 => (header.receiver(), header.address3()),
+        1 => (header.address3(), header.transmitter()),
+        _ => return Err(DataDecapError::RoleMismatch),
+    };
+    Ok(EthernetFrameParts {
         destination,
         source,
         ether_type: u16::from_be_bytes([llc[6], llc[7]]),
-        payload_offset: payload_offset + LLC_SNAP_HEADER_LEN,
-        payload_length,
-        ethernet_length,
+        payload,
     })
 }
 
@@ -481,86 +497,58 @@ pub fn amsdu_subframes<'a>(
     payload_offset: usize,
     payload_length: usize,
 ) -> Result<AmsduSubframes<'a>, DataDecapError> {
-    if mpdu.len() < IEEE80211_QOS_DATA_HEADER_LEN {
-        return Err(DataDecapError::Truncated);
-    }
-    let frame_control = u16::from_le_bytes([mpdu[0], mpdu[1]]);
-    if frame_control & 0x0003 != 0 || frame_control & 0x000c != 0x0008 {
-        return Err(DataDecapError::NotData);
-    }
-    if mpdu[1] & IEEE80211_MORE_FRAGMENTS != 0 || mpdu[22] & 0x0f != 0 {
-        return Err(DataDecapError::Fragmented);
-    }
-    let to_ds = mpdu[1] & IEEE80211_TO_DS != 0;
-    let from_ds = mpdu[1] & IEEE80211_FROM_DS != 0;
-    if !matches!(
-        (role, to_ds, from_ds),
-        (DataInterfaceRole::Station, false, true) | (DataInterfaceRole::AccessPoint, true, false)
-    ) {
-        return Err(DataDecapError::RoleMismatch);
-    }
-    if mpdu[0] & 0x80 == 0 || mpdu[24] & IEEE80211_QOS_AMSDU_PRESENT == 0 {
+    let header = data_header(role, mpdu)?;
+    if !header
+        .qos()
+        .is_some_and(|qos| qos & u16::from(IEEE80211_QOS_AMSDU_PRESENT) != 0)
+    {
         return Err(DataDecapError::AmsduUnsupported);
     }
-    let payload_end = payload_offset
-        .checked_add(payload_length)
-        .ok_or(DataDecapError::Truncated)?;
-    if payload_offset < IEEE80211_QOS_DATA_HEADER_LEN
-        || payload_length < ETHERNET_HEADER_LEN + LLC_SNAP_HEADER_LEN
-        || payload_end > mpdu.len()
-    {
+    let payload = data_payload(header, payload_offset, payload_length)?;
+    aggregate_payload(payload)
+}
+
+fn aggregate_payload(payload: &[u8]) -> Result<AmsduSubframes<'_>, DataDecapError> {
+    if payload.len() < ETHERNET_HEADER_LEN + LLC_SNAP_HEADER_LEN {
         return Err(DataDecapError::Truncated);
     }
     Ok(AmsduSubframes {
-        remaining: &mpdu[payload_offset..payload_end],
+        remaining: payload,
         failed: false,
     })
 }
 
 /// Validate one role-addressed data MPDU and expose all contained Ethernet
-/// frames without allocation or chip/runtime policy.
-///
-/// A non-aggregate MPDU yields exactly one frame. An A-MSDU yields each
-/// validated subframe in wire order and reports a malformed later subframe at
-/// that exact iterator position. This preserves the observed publication
-/// order while keeping STA and AP payload interpretation in one owner.
-#[inline(always)]
+/// frames without allocation or chip/runtime policy. Malformed later A-MSDU
+/// subframes remain errors at their iterator position.
 pub fn decapsulate_data_frames<'a>(
     role: DataInterfaceRole,
     mpdu: &'a [u8],
     payload_offset: usize,
     payload_length: usize,
 ) -> Result<DataDecapsulation<'a>, DataDecapError> {
-    match plan_data_decapsulation(role, mpdu, payload_offset, payload_length) {
-        Ok(plan) => {
-            let payload_end = plan
-                .payload_offset
-                .checked_add(plan.payload_length)
-                .ok_or(DataDecapError::Truncated)?;
-            let payload = mpdu
-                .get(plan.payload_offset..payload_end)
-                .ok_or(DataDecapError::Truncated)?;
-            Ok(DataDecapsulation {
-                frames: DataDecapsulationFrames::Single(Some(EthernetFrameParts {
-                    destination: plan.destination,
-                    source: plan.source,
-                    ether_type: plan.ether_type,
-                    payload,
-                })),
-                amsdu: false,
-            })
-        }
-        Err(DataDecapError::AmsduUnsupported) => Ok(DataDecapsulation {
-            frames: DataDecapsulationFrames::Aggregate(amsdu_subframes(
-                role,
-                mpdu,
-                payload_offset,
-                payload_length,
-            )?),
-            amsdu: true,
-        }),
-        Err(error) => Err(error),
-    }
+    let header = data_header(role, mpdu)?;
+    decapsulate_payload(
+        header,
+        data_payload(header, payload_offset, payload_length)?,
+    )
+}
+
+/// The receive admission owner has already checked this header and located
+/// the decrypted payload. Do not parse header geometry or commit replay again.
+pub(crate) fn decapsulate_payload<'a>(
+    header: crate::frame::DecodedHeader<'_>,
+    payload: &'a [u8],
+) -> Result<DataDecapsulation<'a>, DataDecapError> {
+    let amsdu = header
+        .qos()
+        .is_some_and(|qos| qos & u16::from(IEEE80211_QOS_AMSDU_PRESENT) != 0);
+    let frames = if amsdu {
+        DataDecapsulationFrames::Aggregate(aggregate_payload(payload)?)
+    } else {
+        DataDecapsulationFrames::Single(Some(single_payload(header, payload)?))
+    };
+    Ok(DataDecapsulation { frames, amsdu })
 }
 
 /// Copy one validated A-MSDU subframe into ordinary Ethernet-II storage.

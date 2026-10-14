@@ -200,7 +200,7 @@ struct World<'id> {
     /// The configurations wait for the test's confirmation.
     hold_configured: bool,
     hold_key_installs: bool,
-    pending_installs: Vec<StaInput<'static, 'id, Tokens, Caps>>,
+    pending_installs: Vec<StaInput<'id, Tokens, Caps>>,
     /// The outcomes of the next transmissions; delivered once none is
     /// queued.
     outcomes: std::collections::VecDeque<(TxOutcome, bool)>,
@@ -442,7 +442,7 @@ impl<'id> World<'id> {
         }
     }
 
-    fn installed(&mut self, now: Instant, input: StaInput<'static, 'id, Tokens, Caps>) {
+    fn installed(&mut self, now: Instant, input: StaInput<'id, Tokens, Caps>) {
         if self.hold_key_installs {
             self.pending_installs.push(input);
         } else {
@@ -538,7 +538,7 @@ impl<'id> World<'id> {
         if self.rssi != i8::MIN {
             meta.rssi_dbm = RxEvidence::HardwareObserved(self.rssi);
         }
-        self.station.input(now, StaInput::Received { frame, meta });
+        let _ = self.station.receive(now, frame, meta, |_| {});
         self.run(now);
     }
 
@@ -619,13 +619,9 @@ fn a_station_alone_scans_joins_an_open_network_and_leaves_it() {
         let mut meta = meta();
         meta.rssi_dbm = RxEvidence::HardwareObserved(-40);
         meta.noise_floor_dbm = RxEvidence::HardwareObserved(-95);
-        world.station.input(
-            at(31),
-            StaInput::Received {
-                frame: &open_association_response(),
-                meta,
-            },
-        );
+        let _ = world
+            .station
+            .receive(at(31), &open_association_response(), meta, |_| {});
         world.run(at(31));
         assert_eq!(
             world.take(),
@@ -2187,13 +2183,9 @@ fn associated_is_the_first_action_after_the_association_response() {
         world.receive(at(13), &beacon());
         world.advance();
         world.answer_authentication(at(30), 0);
-        world.station.input(
-            at(31),
-            StaInput::Received {
-                frame: &open_association_response(),
-                meta: meta(),
-            },
-        );
+        let _ = world
+            .station
+            .receive(at(31), &open_association_response(), meta(), |_| {});
         assert!(matches!(
             world.station.poll_action(at(31)),
             Some(StaAction::Associated(_))
@@ -2348,13 +2340,10 @@ fn handshake_deadline_covers_every_message_key_and_tx_wait() {
             world.answer_authentication(at(30), 0);
             world.receive(at(31), &association_response(0));
             let message1 = RsnTxFrame::<512>::message1(Akm::Psk, LOCAL, 1, ANONCE).unwrap();
-            world.station.input(
-                at(32),
-                StaInput::Received {
-                    frame: &eapol_frame(message1.as_bytes()),
-                    meta: meta(),
-                },
-            );
+            let _ =
+                world
+                    .station
+                    .receive(at(32), &eapol_frame(message1.as_bytes()), meta(), |_| {});
             let mut transmissions = Vec::new();
             if point >= 1 {
                 let Some(StaAction::Transmit(tx)) = world.station.poll_action(at(32)) else {
@@ -2393,12 +2382,11 @@ fn handshake_deadline_covers_every_message_key_and_tx_wait() {
                 )
                 .unwrap()
                 .authenticate(&ptk);
-                world.station.input(
+                let _ = world.station.receive(
                     at(33),
-                    StaInput::Received {
-                        frame: &eapol_frame(message3.as_bytes()),
-                        meta: meta(),
-                    },
+                    &eapol_frame(message3.as_bytes()),
+                    meta(),
+                    |_| {},
                 );
             }
             if point >= 4 {

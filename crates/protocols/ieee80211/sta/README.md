@@ -163,6 +163,14 @@ link; the service checks the same epoch before updating rate selection.
 `LinkView` still borrows sequence/replay/key state only for a synchronous
 step. No queued context borrows the station or data machine.
 
+`Station::receive` admits Data and EAPOL together through MAC's checked
+`DecodedHeader` and `AdmittedData`. The header owns the MAC/QoS/HT boundary;
+CCMP admission requires integrity evidence and commits replay once before
+EtherType dispatch. The service delivers non-EAPOL MSDUs from this same
+admission, counts `RxDropReason` refusals and reports `RxFrameRefused`.
+Malformed A-MSDU subframes retain their error instead of disappearing from
+an iterator.
+
 Station alone issues `LinkEpoch`, before starting Connect. Its non-cloneable
 `LinkEpochSource` consumes the install's unique `Slot<ConnectionEpochKind>`
 from `oer-ieee80211-lower-mac`; there is no reset or slot extraction. The

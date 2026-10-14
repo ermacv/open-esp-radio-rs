@@ -27,8 +27,7 @@ use oer_ieee80211_lower_mac::{
 };
 use oer_ieee80211_mac::address::IndividualAddress;
 use oer_ieee80211_mac::{
-    ccmp::{CcmpHeader, CcmpRxProtection},
-    data::{DataInterfaceRole, EthernetFrameParts, decapsulate_data_frames},
+    data::EthernetFrameParts,
     qos::{WmmAccessCategory, WmmUserPriority},
     sequence::SequenceNumber,
     station::StaProtectedDataFrame,
@@ -694,96 +693,62 @@ pub fn received<'f, T: StaTokens>(
     link: &mut LinkView<'_, '_, T>,
     frame: &'f [u8],
     meta: &RxMeta,
-) -> Option<impl Iterator<Item = EthernetFrameParts<'f>>> {
-    let (header, mut payload) = frame.split_first_chunk::<24>()?;
-    let [
-        c0,
-        c1,
-        _,
-        _,
-        d0,
-        d1,
-        d2,
-        d3,
-        d4,
-        d5,
-        b0,
-        b1,
-        b2,
-        b3,
-        b4,
-        b5,
-        ..,
-    ] = *header;
-    let control = u16::from_le_bytes([c0, c1]);
-    if (control >> 2) & 0b11 != 2 || control & 0x0300 != 0x0200 {
-        return None;
-    }
-    if [b0, b1, b2, b3, b4, b5] != link.bssid.get() {
-        return None;
-    }
-    let destination = [d0, d1, d2, d3, d4, d5];
-    let tid = if control & 0x0080 != 0 {
-        let ([qos, _], rest) = payload.split_first_chunk::<2>()?;
-        payload = rest;
-        if control & 0x8000 != 0 {
-            payload = payload.split_first_chunk::<4>()?.1;
-        }
-        Some(qos & 0x0f)
-    } else {
-        None
+) -> Result<
+    impl Iterator<Item = Result<EthernetFrameParts<'f>, oer_ieee80211_mac::receive::RxDropReason>> + 'f,
+    oer_ieee80211_mac::receive::RxDropReason,
+> {
+    use oer_ieee80211_mac::receive::{AdmittedData, RxDropReason};
+    let protected_link = matches!(link.protection, LinkProtection::Ccmp { .. });
+    let replay = match &mut link.protection {
+        LinkProtection::Ccmp { replay, .. } => Some(&mut **replay),
+        LinkProtection::Open => None,
     };
-    match &mut link.protection {
-        LinkProtection::Ccmp { replay, .. } => {
-            if control & 0x4000 == 0 {
-                return None;
-            }
-            let verified = matches!(
-                meta.crypto,
-                RxEvidence::HardwareObserved(RxCryptoStatus::DecryptedAndIntegrityVerified)
-                    | RxEvidence::ProtocolValidated(RxCryptoStatus::DecryptedAndIntegrityVerified)
-            );
-            if !verified {
-                return None;
-            }
-            // The CCMP header stays; the MIC is gone.
-            let (ccmp, rest) = payload.split_first_chunk::<8>()?;
-            let header = CcmpHeader::parse(*ccmp).ok()?;
-            payload = rest;
-            let protection = if destination == link.address.get() {
-                CcmpRxProtection::Pairwise
-            } else if d0 & 1 == 1 {
-                CcmpRxProtection::Group
-            } else {
-                CcmpRxProtection::Other
-            };
-            replay.check(protection, tid, header).ok()?;
-        }
-        LinkProtection::Open => {
-            if control & 0x4000 != 0 || (destination != link.address.get() && d0 & 1 == 0) {
-                return None;
-            }
-        }
+    let admitted = AdmittedData::admit(
+        oer_ieee80211_mac::frame::DecodedHeader::decode(frame).ok_or(RxDropReason::Header)?,
+        link.address,
+        link.bssid,
+        integrity(meta),
+        replay,
+    )?;
+    if protected_link != admitted.protected() {
+        return Err(RxDropReason::Protection);
     }
-    let length = payload.len();
-    let offset = frame.len().checked_sub(length)?;
-    let frames = decapsulate_data_frames(DataInterfaceRole::Station, frame, offset, length).ok()?;
-    Some(
-        frames
-            .filter_map(Result::ok)
-            .filter(|parts| parts.ether_type != EAPOL_ETHER_TYPE),
-    )
+    Ok(admitted.msdus()?.filter(|parts| match parts {
+        Ok(parts) => parts.ether_type != EAPOL_ETHER_TYPE,
+        Err(_) => true,
+    }))
+}
+
+pub(crate) fn integrity(meta: &RxMeta) -> oer_ieee80211_mac::receive::Integrity {
+    use oer_ieee80211_mac::receive::Integrity;
+    match meta.crypto {
+        RxEvidence::HardwareObserved(RxCryptoStatus::DecryptedAndIntegrityVerified)
+        | RxEvidence::ProtocolValidated(RxCryptoStatus::DecryptedAndIntegrityVerified) => {
+            Integrity::DecryptedAndVerified
+        }
+        _ => Integrity::Unverified,
+    }
 }
 
 /// The length of the MPDU of a payload of `payload` octets: its header,
 /// the CCMP header's room on a protected link, the LLC/SNAP header and the
 /// payload.
 const fn mpdu_len(qos: bool, protection: DataProtection<()>, payload: usize) -> Option<usize> {
+    use oer_ieee80211_mac::{
+        ccmp::CCMP_HEADER_LEN,
+        data::{
+            IEEE80211_LEGACY_DATA_HEADER_LEN, IEEE80211_QOS_DATA_HEADER_LEN, LLC_SNAP_HEADER_LEN,
+        },
+    };
     let prefix = match (qos, protection) {
-        (false, DataProtection::Open) => 32,
-        (true, DataProtection::Open) => 34,
-        (false, DataProtection::Ccmp(())) => 40,
-        (true, DataProtection::Ccmp(())) => 42,
+        (false, DataProtection::Open) => IEEE80211_LEGACY_DATA_HEADER_LEN + LLC_SNAP_HEADER_LEN,
+        (true, DataProtection::Open) => IEEE80211_QOS_DATA_HEADER_LEN + LLC_SNAP_HEADER_LEN,
+        (false, DataProtection::Ccmp(())) => {
+            IEEE80211_LEGACY_DATA_HEADER_LEN + CCMP_HEADER_LEN + LLC_SNAP_HEADER_LEN
+        }
+        (true, DataProtection::Ccmp(())) => {
+            IEEE80211_QOS_DATA_HEADER_LEN + CCMP_HEADER_LEN + LLC_SNAP_HEADER_LEN
+        }
     };
     payload.checked_add(prefix)
 }
@@ -811,7 +776,11 @@ fn encode_frame<
         let length = mpdu_len(qos, DataProtection::Open, msdu.payload.len())?;
         let frame = output.split_at_mut_checked(length)?.0;
         let header = HeaderSpec::new(
-            oer_ieee80211_lower_mac::FrameControl::new(if qos { 0x0188 } else { 0x0108 })?,
+            oer_ieee80211_mac::frame::FrameControl::new(if qos {
+                oer_ieee80211_mac::frame::QOS_DATA_TO_DS
+            } else {
+                oer_ieee80211_mac::frame::DATA_TO_DS
+            })?,
             0,
             link.bssid.individual(),
             link.address.get(),
@@ -835,9 +804,11 @@ fn encode_frame<
             .ok()?
             .encode();
         let payload = frame.split_at_mut_checked(header_length)?.1;
-        let (llc, payload) = payload.split_first_chunk_mut::<8>()?;
+        let (llc, payload) =
+            payload.split_first_chunk_mut::<{ oer_ieee80211_mac::data::LLC_SNAP_HEADER_LEN }>()?;
         let [e0, e1] = msdu.ether_type.to_be_bytes();
-        *llc = [0xaa, 0xaa, 0x03, 0, 0, 0, e0, e1];
+        let [a, b, c, d, e, f] = oer_ieee80211_mac::data::RFC1042_LLC_SNAP_PREFIX;
+        *llc = [a, b, c, d, e, f, e0, e1];
         for (to, from) in payload.iter_mut().zip(msdu.payload) {
             *to = *from;
         }

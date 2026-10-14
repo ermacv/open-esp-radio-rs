@@ -31,10 +31,11 @@
 )]
 
 use core::{future::Future, num::NonZeroU8, task::Poll};
+use oer_ieee80211_mac::frame::FrameControl;
 use std::{rc::Rc, task::Waker};
 
 use oer_ieee80211_lower_mac::{
-    AckHeader, Attempt, Channel, ChannelWidth, ClassFrame, CoexPriority, FrameControl, HeaderSpec,
+    AckHeader, Attempt, Channel, ChannelWidth, ClassFrame, CoexPriority, HeaderSpec,
     InterfacePhase, LowerMacEvent, LowerMacPhase, MpduLength, Protection, RetryPlan, RetryStage,
     RxBuffer, SizedFrame, Station, SupportedCoex, SupportedPower, TxBufferPool, TxCompleted,
     TxFrame, TxPower, TxProtection, TxSource,

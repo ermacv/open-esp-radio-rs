@@ -67,7 +67,7 @@ use oer_ieee80211_arbiter::{
 use oer_ieee80211_lower_mac::{
     Ccmp128Key, ClassFrame, CoexPriority, Ieee80211Capabilities, InterfacePhase, KeyTypes,
     LowerMacBackend, LowerMacEvent, LowerMacPhase, PhaseTypes, PoolMpdu, PoolSource, Protection,
-    Removed, RemovedKey, RetransmissionPlan, ReturnedMpdu, RxBuffer, RxMetadata, StationPhase,
+    Removed, RemovedKey, RetransmissionPlan, ReturnedMpdu, RxBuffer, StationPhase,
     SupportedChannel, SupportedCoex, SupportedPower, TxBufferClass, TxBufferPool, TxCompleted,
     TxOutcome, TxPower, TxProtection, TxSource, VifRole,
 };
@@ -153,6 +153,8 @@ const MAX_INPUT_STEPS_PER_BATCH: u8 = 8;
 /// What the service dropped or could not send, counted.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ServiceCounters {
+    /// Frames or subframes refused by checked RX admission.
+    pub rx_frames_rejected: oer_ieee80211_sta::Counter,
     /// Indications of lost port events; EventsLost carries no frame count.
     pub events_lost: oer_ieee80211_sta::Counter,
     /// RX payloads larger than the network's checked Ethernet contract.
@@ -310,6 +312,8 @@ pub enum ServiceCommand<K> {
     reason = "a refusal returns the original owned packet without allocation"
 )]
 pub enum ServiceOutput<K> {
+    /// A checked RX refusal, before network delivery.
+    RxFrameRefused(oer_ieee80211_mac::receive::RxDropReason),
     /// The original network operation refused before data admission.
     MsduRefused { packet: TxMsdu, reason: DataRefusal },
     /// A received MSDU cannot fit the checked Ethernet contract.
@@ -1048,15 +1052,12 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
         Ok(match event {
             LowerMacEvent::Received { frame, meta } => {
                 let bytes = frame.bytes();
-                self.station
-                    .input(now, StaInput::Received { frame: bytes, meta });
-                if let Some(mut link) = self.station.link()
-                    && let Some(msdus) = data::received(&mut link, bytes, meta.common())
-                {
-                    for parts in msdus {
-                        // A full queue drops the MSDU, as an Ethernet
-                        // receiver does, counted.
-                        match EthernetFrame::from_parts(parts) {
+                let result =
+                    self.station.receive(
+                        now,
+                        bytes,
+                        meta,
+                        |parts| match EthernetFrame::from_parts(parts) {
                             Ok(frame) => {
                                 if io.receive.try_send(frame).is_err() {
                                     self.counters.rx_msdus_queue_full.increment();
@@ -1066,8 +1067,11 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
                                 self.counters.rx_msdus_too_long.increment();
                                 (io.output)(ServiceOutput::RxMsduRefused(reason));
                             }
-                        }
-                    }
+                        },
+                    );
+                if let Err(reason) = result {
+                    self.counters.rx_frames_rejected.increment();
+                    (io.output)(ServiceOutput::RxFrameRefused(reason));
                 }
                 Some(frame)
             }
@@ -1217,7 +1221,7 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
 enum Follow<'id, B: StationPort<'id>> {
     Nothing,
     /// An arbiter's answer or a key, back to the station.
-    Input(StaInput<'static, 'id, PortStaTokens<'id, B::Types, B::Small>, B::Caps>),
+    Input(StaInput<'id, PortStaTokens<'id, B::Types, B::Small>, B::Caps>),
     /// The station associated: the rates start from its peer.
     Associated(Peer<PortRxMeta<'id, B>>),
     /// A frame of the station did not go.

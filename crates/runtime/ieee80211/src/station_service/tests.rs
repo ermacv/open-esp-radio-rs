@@ -1539,3 +1539,59 @@ fn lost_port_events_are_counted_and_the_service_keeps_running() {
     });
     assert_eq!(counters.events_lost.get(), 1);
 }
+
+#[test]
+fn protected_qos_ht_group_message_rekeys_once_after_integrity_and_replay_admission() {
+    use oer_ieee80211_mac::{
+        ccmp::{CcmpHeader, CcmpKeyId, CcmpPacketNumber},
+        receive::RxDropReason,
+    };
+    let counters = run_with(
+        config(StaSecurity::Wpa2Personal {
+            pmk: Pmk::from_bytes(PMK),
+        }),
+        |world| {
+            Box::pin(async move {
+                let mut seen = 0;
+                world.associate(&mut seen, true).await;
+                let ptk = world.handshake(&mut seen).await;
+                let plain = group_message1(&ptk, 3, 2);
+                let mut protected = plain[..24].to_vec();
+                protected[..2].copy_from_slice(&0xc288_u16.to_le_bytes());
+                protected.extend_from_slice(&[7, 0, 0, 0, 0, 0]);
+                protected.extend_from_slice(
+                    &CcmpHeader::new(
+                        CcmpPacketNumber::new(1).unwrap(),
+                        CcmpKeyId::new(0).unwrap(),
+                    )
+                    .encode(),
+                );
+                protected.extend_from_slice(&plain[24..]);
+                world.air.receive(&protected, meta());
+                for _ in 0..20 {
+                    yield_now().await;
+                }
+                assert!(world.outputs.borrow().iter().any(|output| matches!(
+                    output,
+                    ServiceOutput::RxFrameRefused(RxDropReason::Integrity)
+                )));
+                world.air.receive(&protected, decrypted());
+                let reply = world.sent(&mut seen, DATA).await;
+                assert!(reply.key.is_some());
+                let header = oer_ieee80211_mac::frame::DecodedHeader::decode(&reply.frame).unwrap();
+                assert_eq!(header.body()[14..16], [0x88, 0x8e]);
+                let after = world.air.sent().len();
+                world.air.receive(&protected, decrypted());
+                for _ in 0..20 {
+                    yield_now().await;
+                }
+                assert_eq!(world.air.sent().len(), after);
+                assert!(world.outputs.borrow().iter().any(|output| matches!(
+                    output,
+                    ServiceOutput::RxFrameRefused(RxDropReason::Replay)
+                )));
+            })
+        },
+    );
+    assert_eq!(counters.rx_frames_rejected.get(), 2);
+}

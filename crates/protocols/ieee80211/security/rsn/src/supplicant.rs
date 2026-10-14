@@ -708,6 +708,25 @@ impl RsnStaSupplicant {
         frame: crate::OwnedEapolFrame<N>,
         pmk: &Pmk,
     ) -> Result<RsnStaSupplicantAction<N>, RsnStaSupplicantError> {
+        // A completed installation may still be waiting for M4 delivery.
+        // Authenticate a repeated M3 before changing its replay frontier;
+        // exact-counter repeats must also match the retained authenticated M3.
+        if self.state.phase() == RsnStaPhase::Completed
+            && frame.key_frame().message() == crate::EapolKeyMessage::PairwiseMessage3
+        {
+            let key = frame.key_frame();
+            if !key.verify_mic(self.ptk()?) {
+                return Err(RsnStaSupplicantError::InvalidMessage3Mic);
+            }
+            if let Some(completed) = &self.completed_message3
+                && key.replay_counter() == completed.replay_counter
+                && key.mic() != &completed.mic
+            {
+                return Err(RsnStaSupplicantError::State(
+                    RsnStateError::UnexpectedMessage,
+                ));
+            }
+        }
         let action = self
             .state
             .on_frame(frame)

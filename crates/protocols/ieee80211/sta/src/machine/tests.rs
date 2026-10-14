@@ -203,7 +203,7 @@ struct World<'id> {
     pending_installs: Vec<StaInput<'static, 'id, Tokens, Caps>>,
     /// The outcomes of the next transmissions; delivered once none is
     /// queued.
-    outcomes: std::collections::VecDeque<bool>,
+    outcomes: std::collections::VecDeque<(TxOutcome, bool)>,
     /// The reason codes of the Deauthentications sent.
     deauthentications: Vec<u16>,
     /// Each EAPOL frame's Protected bit and whether it went under the key.
@@ -465,21 +465,21 @@ impl<'id> World<'id> {
                 );
                 continue;
             }
+            let (completion, published) = self
+                .outcomes
+                .pop_front()
+                .unwrap_or((ended(TxEndStatus::Delivered), true));
             self.station.input(
                 now,
                 StaInput::TxDone {
                     context,
                     ticket,
-                    buffer: ReturnedMpdu::Sent(buffer),
-                    completion: TxOutcome::Ended {
-                        status: if self.outcomes.pop_front().unwrap_or(true) {
-                            TxEndStatus::Delivered
-                        } else {
-                            TxEndStatus::AckTimeout
-                        },
-                        ack: None,
-                        last: Some((NonZeroU16::MIN, PhyRate::Legacy(LegacyRate::Ofdm6M))),
+                    buffer: if published {
+                        ReturnedMpdu::Sent(buffer)
+                    } else {
+                        ReturnedMpdu::Fresh(buffer)
                     },
+                    completion,
                 },
             );
         }
@@ -1066,7 +1066,9 @@ fn a_connected_station_scans_in_an_absence_announced_with_nulls() {
 fn an_undelivered_sleep_null_cancels_the_absence_and_the_station_stays() {
     installed(|mint| {
         let mut world = connected_world(mint);
-        world.outcomes.push_back(false);
+        world
+            .outcomes
+            .push_back((ended(TxEndStatus::AckTimeout), true));
         world
             .station
             .input(at(40), StaInput::Command(StaCommand::BackgroundScan));
@@ -1117,7 +1119,9 @@ fn an_undelivered_wake_null_is_sent_again_when_the_tim_shows_buffered_frames() {
         world.run(at(40));
         // Channel 1's absence; back home, the PM=0 Null is not delivered.
         world.advance();
-        world.outcomes.push_back(false);
+        world
+            .outcomes
+            .push_back((ended(TxEndStatus::AckTimeout), true));
         world.advance();
         // Channel 6, the network's own, without an absence.
         world.advance();
@@ -2701,6 +2705,176 @@ fn a_lease_terminal_during_leave_preserves_deauthentication_and_configuration() 
                 sent < off && off < reported,
                 "deauthentication, Off, notice: {seen:?}"
             );
+            assert!(world.station.keys.clear());
+            assert_eq!(world.station.tickets.len(), 2);
+            assert_eq!(world.station.buffers.len(), 2);
+        });
+    }
+}
+
+fn ended(status: TxEndStatus) -> TxOutcome {
+    TxOutcome::Ended {
+        status,
+        ack: None,
+        last: Some((NonZeroU16::MIN, PhyRate::Legacy(LegacyRate::Ofdm6M))),
+    }
+}
+
+fn retry_message3(ptk: &oer_ieee80211_rsn::Ptk, counter: u64, material: u8) -> Vec<u8> {
+    use oer_ieee80211_mac::security::rsn::Akm;
+    use oer_ieee80211_rsn::frames::RsnTxFrame;
+    let mut plain = Vec::from(RSN);
+    plain.extend_from_slice(&[0xdd, 22, 0x00, 0x0f, 0xac, 0x01, 0x01, 0x00]);
+    plain.extend_from_slice(&[material; 16]);
+    plain.extend_from_slice(&[0xdd, 0]);
+    let wrapped = oer_ieee80211_rsn::aes::software_aes128_key_wrap(ptk.kek(), &plain).unwrap();
+    let message =
+        RsnTxFrame::<512>::message3(Akm::Psk, LOCAL, counter, ANONCE, [0; 8], wrapped.as_bytes())
+            .unwrap()
+            .authenticate(ptk);
+    eapol_frame(message.as_bytes())
+}
+
+#[test]
+fn only_delivered_m4_connects_and_other_terminals_keep_the_original_deadline() {
+    use oer_ieee80211_lower_mac::{IndeterminateCause, WithdrawCause};
+    for (outcome, published) in [
+        (ended(TxEndStatus::Delivered), true),
+        (ended(TxEndStatus::AckTimeout), true),
+        (ended(TxEndStatus::ContentionLimit), true),
+        (TxOutcome::Withdrawn(WithdrawCause::GateClosed), false),
+        (TxOutcome::Withdrawn(WithdrawCause::GateClosed), true),
+        (
+            TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout),
+            true,
+        ),
+        (TxOutcome::Withdrawn(WithdrawCause::Disabled), false),
+    ] {
+        installed(|mint| {
+            let (mut world, ptk) = wpa2_associated(mint, 2);
+            let deadline = world.station.poll_deadline().unwrap();
+            world.outcomes.push_back((outcome, published));
+            world.receive(at(33), &retry_message3(&ptk, 2, 0x99));
+            assert_eq!(world.station.tickets.len(), 2);
+            assert_eq!(world.station.buffers.len(), 2);
+            if outcome == ended(TxEndStatus::Delivered) {
+                assert!(world.station.is_connected());
+                return;
+            }
+            assert!(!world.station.is_connected(), "{outcome:?}");
+            assert!(
+                !world
+                    .seen
+                    .iter()
+                    .any(|s| matches!(s, Seen::Notify(StaNotice::Connected { .. })))
+            );
+            if outcome == TxOutcome::Withdrawn(WithdrawCause::Disabled) {
+                assert!(world.station.keys.clear());
+                return;
+            }
+            assert_eq!(world.station.poll_deadline(), Some(deadline));
+            let first = world.take();
+            assert_eq!(
+                first
+                    .iter()
+                    .filter(|s| matches!(s, Seen::InstallPairwise(_)))
+                    .count(),
+                1
+            );
+            assert_eq!(
+                first
+                    .iter()
+                    .filter(|s| matches!(s, Seen::InstallGroup(_)))
+                    .count(),
+                1
+            );
+            world.run(at(34));
+            assert!(world.take().is_empty());
+            if matches!(outcome, TxOutcome::Indeterminate(_)) {
+                world.station.input(deadline, StaInput::Tick);
+                world.run(deadline);
+                assert_eq!(
+                    world
+                        .take()
+                        .iter()
+                        .filter(|s| **s
+                            == Seen::Notify(StaNotice::Disconnected(
+                                StaDisconnectReason::HandshakeFailed
+                            )))
+                        .count(),
+                    1
+                );
+                world.station.input(deadline, StaInput::Tick);
+                world.run(deadline);
+                assert!(world.take().is_empty());
+                assert!(world.station.keys.clear());
+            } else {
+                let mut forged = retry_message3(&ptk, 100, 0x99);
+                *forged.last_mut().unwrap() ^= 1;
+                world.receive(at(34), &forged);
+                assert_eq!(world.station.poll_deadline(), Some(deadline));
+                assert!(world.take().is_empty());
+                world.receive(at(35), &retry_message3(&ptk, 3, 0x99));
+                assert!(world.station.is_connected());
+                assert!(!world.take().iter().any(|s| matches!(
+                    s,
+                    Seen::InstallPairwise(_)
+                        | Seen::InstallGroup(_)
+                        | Seen::ReplaceGroup(_)
+                        | Seen::RemoveKey
+                )));
+            }
+            assert_eq!(world.station.tickets.len(), 2);
+            assert_eq!(world.station.buffers.len(), 2);
+        });
+    }
+}
+
+#[test]
+fn a_repeated_m3_can_replace_group_material_without_reinstalling_the_ptk() {
+    for slots in [1, 2] {
+        installed(|mint| {
+            let (mut world, ptk) = wpa2_associated(mint, slots);
+            world
+                .outcomes
+                .push_back((ended(TxEndStatus::AckTimeout), true));
+            world.receive(at(33), &retry_message3(&ptk, 2, 0x99));
+            assert!(!world.station.is_connected());
+            assert_eq!(
+                world
+                    .take()
+                    .iter()
+                    .filter(|s| matches!(s, Seen::InstallPairwise(_)))
+                    .count(),
+                1
+            );
+            world.receive(at(34), &retry_message3(&ptk, 3, 0x55));
+            assert!(world.station.is_connected());
+            let seen = world.take();
+            assert!(!seen.iter().any(|s| matches!(s, Seen::InstallPairwise(_))));
+            if slots == 1 {
+                assert_eq!(
+                    seen.iter()
+                        .filter(|s| matches!(s, Seen::ReplaceGroup(1)))
+                        .count(),
+                    1
+                );
+                assert!(!seen.contains(&Seen::RemoveKey));
+            } else {
+                let install = seen
+                    .iter()
+                    .position(|s| matches!(s, Seen::InstallGroup(1)))
+                    .unwrap();
+                let remove = seen
+                    .iter()
+                    .position(|s| matches!(s, Seen::RemoveKey))
+                    .unwrap();
+                assert!(install < remove);
+            }
+            world
+                .station
+                .input(at(35), StaInput::Command(StaCommand::Disconnect));
+            world.run(at(35));
             assert!(world.station.keys.clear());
             assert_eq!(world.station.tickets.len(), 2);
             assert_eq!(world.station.buffers.len(), 2);

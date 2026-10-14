@@ -29,6 +29,11 @@ validated Association element; the supplicant takes it from its own
 Association element. Both reject EAPOL-Key frames whose descriptor version
 differs from that suite.
 
+The portable station can retain a completed key installation while waiting for
+M4 delivery. `RsnStaSupplicant` authenticates a repeated M3 before advancing its
+counter. The station retains the installed PTK and processes only changed GTK
+material from a newer M3; an exact repeat produces M4 without an install.
+
 `BipTransmitter` refuses a frame when its 48-bit IPN space is exhausted, or
 when the output has no room for the MMIE; refusal consumes no IPN and leaves
 the frame unchanged. The IGTK epoch's owner retains this state across an AP

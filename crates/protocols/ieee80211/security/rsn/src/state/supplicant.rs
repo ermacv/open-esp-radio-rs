@@ -236,7 +236,13 @@ impl RsnStaState {
                 } else if replay < self.message3_replay {
                     Err(RsnStateError::StaleReplayCounter)
                 } else {
-                    Err(RsnStateError::UnexpectedMessage)
+                    // An authenticated retry can carry a larger counter and
+                    // fresh group material. The caller retains the installed
+                    // PTK and decides whether the GTK material changed.
+                    self.message3_replay = replay;
+                    self.phase = RsnStaPhase::VerifyingMessage3;
+                    let ticket = self.issue_ticket();
+                    Ok(RsnStaAction::VerifyMessage3Mic { ticket, frame })
                 }
             }
             RsnStaPhase::AwaitingMessage1 | RsnStaPhase::DerivingPtk | RsnStaPhase::Failed => {

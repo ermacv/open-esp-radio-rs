@@ -187,6 +187,14 @@ normal leave path; an unsubmitted M4 cannot establish a connection. A
 required join frame refused at preparation ends that join. Connected PM
 frames retain the existing unsuccessful-send policy; refusing a group-key
 response ends the handshake rather than retiring its keys as if it sent.
+An admitted M4 establishes Connected only on `Ended(Delivered)`. Other
+radio outcomes return their ticket and buffer and wait for another M3 under
+the original handshake deadline; Disabled starts Leave. There is no automatic
+M4 retry after an indeterminate result. A repeated authenticated M3 may advance
+its replay counter and group material, while the installed PTK and its replay
+frontier remain intact. Unchanged GTK material is acknowledged without another
+installation; changed GTK material follows the same install/replace terminal
+rules as connected rekeying.
 Data's `DataReturn::Refused` ends that MSDU and releases its permission and
 tokens once, without retrying unchanged invalid input. The service reports
 the typed reason to its application and continues; preparation refusals

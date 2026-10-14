@@ -1077,8 +1077,15 @@ enum HandshakeStep {
     /// The keys of Message 3 to install: the pairwise key, then the group
     /// key.
     Install(RsnStaKeyInstallRequest),
-    InstallGroup(RsnStaKeyInstallRequest),
-    AwaitInstalled(RsnStaKeyInstallRequest),
+    InstallGroup(RsnStaKeyInstallRequest, Option<CcmpRxReplayEpoch>),
+    AwaitInstalled(
+        RsnStaKeyInstallRequest,
+        Option<CcmpRxReplayEpoch>,
+        Option<GroupKeyId>,
+    ),
+    /// M4 was not delivered. Only a repeated M3 or the existing deadline
+    /// advances this state; both key installations and their replay survive.
+    AwaitRetry(CcmpRxReplayEpoch),
     /// Message 4, then connected.
     SendLast(RsnTxFrame, CcmpRxReplayEpoch),
     AwaitLast(CcmpRxReplayEpoch),
@@ -1728,22 +1735,24 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         self.state = match state {
             State::Handshake(mut handshake) if self.keys.installed() => {
                 match core::mem::replace(&mut handshake.step, HandshakeStep::Await) {
-                    HandshakeStep::AwaitInstalled(request) => {
-                        // The replay check starts from the keys' receive
-                        // sequences.
-                        let Some(epoch) = replay_epoch(&request) else {
-                            return self.set(leave_handshake(handshake, REASON_UNSPECIFIED));
-                        };
-                        match handshake
-                            .supplicant
-                            .complete_key_install::<DEFAULT_EAPOL_FRAME_CAPACITY>(request, true)
-                        {
-                            Ok(RsnStaSupplicantAction::Transmit(message4)) => {
-                                handshake.step = HandshakeStep::SendLast(message4, epoch);
-                                State::Handshake(handshake)
+                    HandshakeStep::AwaitInstalled(request, mut replay, replaced) => {
+                        if let Some(epoch) = &mut replay {
+                            let Some((id, _)) = group_key(request.group()) else {
+                                return self.set(leave_handshake(handshake, REASON_UNSPECIFIED));
+                            };
+                            if let Some(old) = replaced
+                                && old != id
+                            {
+                                epoch.remove_group(old);
                             }
-                            _ => leave_handshake(handshake, REASON_UNSPECIFIED),
+                            if epoch
+                                .install_group(id, *request.group().receive_sequence())
+                                .is_err()
+                            {
+                                return self.set(leave_handshake(handshake, REASON_UNSPECIFIED));
+                            }
                         }
+                        finish_handshake_install(handshake, request, replay)
                     }
                     step => {
                         handshake.step = step;
@@ -2069,14 +2078,33 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     handshake.step = HandshakeStep::Await;
                     State::Handshake(handshake)
                 }
-                // Message 4 went: connected, the supplicant's keys held.
+                // Only acknowledged M4 completes the association.
                 (
                     HandshakeStep::AwaitLast(_),
                     Done::Tx {
                         purpose: TxPurpose::HandshakeLast,
-                        ..
+                        completion,
                     },
-                ) => connect(handshake),
+                ) => match completion {
+                    TxOutcome::Ended {
+                        status: TxEndStatus::Delivered,
+                        ..
+                    } => connect(handshake, self.keys.has_retiring()),
+                    TxOutcome::Withdrawn(oer_ieee80211_lower_mac::WithdrawCause::Disabled) => {
+                        leave_keyed(
+                            StaDisconnectReason::TransmitRefused(TxRefusal::LinkChanged),
+                            None,
+                        )
+                    }
+                    _ => {
+                        if let HandshakeStep::AwaitLast(replay) =
+                            core::mem::replace(&mut handshake.step, HandshakeStep::Await)
+                        {
+                            handshake.step = HandshakeStep::AwaitRetry(replay);
+                        }
+                        State::Handshake(handshake)
+                    }
+                },
                 (_, Done::Tick)
                     if matches!(
                         handshake.deadline.poll(now),
@@ -2808,6 +2836,17 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         let Some(eapol) = received_eapol(frame, self.config.address.get(), handshake.bssid) else {
             return State::Handshake(handshake);
         };
+        if !matches!(
+            handshake.step,
+            HandshakeStep::Await | HandshakeStep::AwaitSent | HandshakeStep::AwaitRetry(_)
+        ) {
+            return State::Handshake(handshake);
+        }
+        if matches!(handshake.step, HandshakeStep::AwaitRetry(_))
+            && eapol.key_frame().message() != oer_ieee80211_rsn::EapolKeyMessage::PairwiseMessage3
+        {
+            return State::Handshake(handshake);
+        }
         let StaSecurity::Wpa2Personal { pmk } = &self.config.security else {
             return State::Handshake(handshake);
         };
@@ -2831,15 +2870,28 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         };
         match action {
             RsnStaSupplicantAction::Transmit(message) => {
-                handshake.step = HandshakeStep::Send(message);
-                if let Some(deadline) =
-                    RsnStaResponseDeadline::start(RsnStaResponseWait::Message3, now)
-                {
-                    handshake.deadline = deadline;
+                match core::mem::replace(&mut handshake.step, HandshakeStep::Await) {
+                    HandshakeStep::AwaitRetry(replay) => {
+                        handshake.step = HandshakeStep::SendLast(message, replay);
+                    }
+                    _ => {
+                        handshake.step = HandshakeStep::Send(message);
+                        if let Some(deadline) =
+                            RsnStaResponseDeadline::start(RsnStaResponseWait::Message3, now)
+                        {
+                            handshake.deadline = deadline;
+                        }
+                    }
                 }
             }
             RsnStaSupplicantAction::InstallKeys(request) => {
-                handshake.step = HandshakeStep::Install(request);
+                handshake.step = match core::mem::replace(&mut handshake.step, HandshakeStep::Await)
+                {
+                    HandshakeStep::AwaitRetry(replay) => {
+                        HandshakeStep::InstallGroup(request, Some(replay))
+                    }
+                    _ => HandshakeStep::Install(request),
+                };
             }
             RsnStaSupplicantAction::Deauthenticate => {
                 return leave_handshake(handshake, REASON_UNSPECIFIED);
@@ -2877,7 +2929,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     Some((slot, pending)) => {
                         let key = *request.pairwise().key().as_bytes();
                         (
-                            HandshakeStep::InstallGroup(request),
+                            HandshakeStep::InstallGroup(request, None),
                             Some(Owed::InstallPairwise {
                                 pending,
                                 slot,
@@ -2889,28 +2941,60 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     None => (HandshakeStep::Install(request), None),
                 }
             }
-            HandshakeStep::InstallGroup(request) => {
-                // A key index that is no group key's fails the handshake.
+            HandshakeStep::InstallGroup(request, replay) => {
                 let Some((key_id, key)) = group_key(request.group()) else {
                     return (
                         leave_handshake(handshake, REASON_UNSPECIFIED),
                         ActionProgress::Transition,
                     );
                 };
-                match self
+                if self.keys.groups.same_material(key_id, &key) {
+                    // A repeated M3 acknowledges installed material without
+                    // resetting either the PTK or GTK replay frontiers.
+                    return (
+                        finish_handshake_install(handshake, request, replay),
+                        ActionProgress::Transition,
+                    );
+                }
+                if let Some((slot, pending)) = self
                     .current_epoch()
                     .and_then(|epoch| self.keys.take_group_slot(epoch, key_id, key))
                 {
-                    Some((slot, pending)) => (
-                        HandshakeStep::AwaitInstalled(request),
+                    (
+                        HandshakeStep::AwaitInstalled(request, replay, None),
                         Some(Owed::InstallGroup {
                             pending,
                             slot,
                             key_id,
                             key,
                         }),
-                    ),
-                    None => (HandshakeStep::InstallGroup(request), None),
+                    )
+                } else {
+                    match self.reserve_group_replacement(
+                        key_id,
+                        key,
+                        *request.group().receive_sequence(),
+                    ) {
+                        Ok(Some((pending, installed))) => {
+                            let previous_id = pending.previous_id;
+                            (
+                                HandshakeStep::AwaitInstalled(request, replay, Some(previous_id)),
+                                Some(Owed::ReplaceGroup {
+                                    pending,
+                                    installed,
+                                    key_id,
+                                    key,
+                                }),
+                            )
+                        }
+                        Ok(None) => (HandshakeStep::InstallGroup(request, replay), None),
+                        Err(()) => {
+                            return (
+                                leave_handshake(handshake, REASON_UNSPECIFIED),
+                                ActionProgress::Transition,
+                            );
+                        }
+                    }
                 }
             }
             HandshakeStep::SendLast(message, epoch) => {
@@ -3018,6 +3102,44 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
 
     /// The action of a group key's handshake, if one is owed; a failure's
     /// reason to leave.
+    fn reserve_group_replacement(
+        &mut self,
+        key_id: GroupKeyId,
+        material: [u8; 16],
+        rsc: [u8; 8],
+    ) -> Result<Option<(PendingGroupReplacement<'id>, T::GroupKey)>, ()> {
+        let replay = oer_ieee80211_mac::ccmp::CcmpRxReplayState::from_receive_sequence(rsc)
+            .map_err(|_| ())?;
+        let Some(epoch) = self.current_epoch() else {
+            return Ok(None);
+        };
+        let Some(InstalledGroup {
+            place,
+            key_id: previous_id,
+            key,
+            ..
+        }) = self
+            .keys
+            .groups
+            .replace(key_id, self.keys.group_slots.capacity == 1)
+        else {
+            return Ok(None);
+        };
+        Ok(Some((
+            PendingGroupReplacement {
+                install: PendingGroupKey {
+                    epoch,
+                    key_id,
+                    material,
+                    place,
+                },
+                previous_id,
+                replay,
+            },
+            key,
+        )))
+    }
+
     fn owe_rekey(
         &mut self,
         connected: &mut Connected<T, K>,
@@ -3048,49 +3170,24 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                             key,
                         }),
                     )
-                } else if let Some(epoch) = self.current_epoch() {
-                    let Ok(replay) =
-                        oer_ieee80211_mac::ccmp::CcmpRxReplayState::from_receive_sequence(
-                            *request.group().receive_sequence(),
-                        )
-                    else {
-                        return Some(Err(StaDisconnectReason::HandshakeFailed));
-                    };
-                    match self
-                        .keys
-                        .groups
-                        .replace(key_id, self.keys.group_slots.capacity == 1)
-                    {
-                        Some(InstalledGroup {
-                            place,
-                            key_id: previous_id,
-                            key: installed,
-                            ..
-                        }) => {
-                            let pending = PendingGroupReplacement {
-                                install: PendingGroupKey {
-                                    epoch,
-                                    key_id,
-                                    material: key,
-                                    place,
-                                },
-                                previous_id,
-                                replay,
-                            };
-                            (
-                                Rekey::AwaitInstalled(request),
-                                Some(Owed::ReplaceGroup {
-                                    pending,
-                                    installed,
-                                    key_id,
-                                    key,
-                                }),
-                            )
-                        }
-                        None => (Rekey::Install(request), None),
-                    }
                 } else {
-                    (Rekey::Install(request), None)
+                    match self.reserve_group_replacement(
+                        key_id,
+                        key,
+                        *request.group().receive_sequence(),
+                    ) {
+                        Ok(Some((pending, installed))) => (
+                            Rekey::AwaitInstalled(request),
+                            Some(Owed::ReplaceGroup {
+                                pending,
+                                installed,
+                                key_id,
+                                key,
+                            }),
+                        ),
+                        Ok(None) => (Rekey::Install(request), None),
+                        Err(()) => return Some(Err(StaDisconnectReason::HandshakeFailed)),
+                    }
                 }
             }
             // After the handshake, EAPOL goes under the pairwise key, as in
@@ -3799,8 +3896,34 @@ fn leave_connected<T: StaTokens, K>(
     })
 }
 
+fn finish_handshake_install<T: StaTokens, K>(
+    mut handshake: Handshake<T, K>,
+    request: RsnStaKeyInstallRequest,
+    retained: Option<CcmpRxReplayEpoch>,
+) -> State<T, K> {
+    let replay = match retained {
+        Some(replay) => replay,
+        None => {
+            let Some(replay) = replay_epoch(&request) else {
+                return leave_handshake(handshake, REASON_UNSPECIFIED);
+            };
+            replay
+        }
+    };
+    match handshake
+        .supplicant
+        .complete_key_install::<DEFAULT_EAPOL_FRAME_CAPACITY>(request, true)
+    {
+        Ok(RsnStaSupplicantAction::Transmit(message)) => {
+            handshake.step = HandshakeStep::SendLast(message, replay);
+            State::Handshake(handshake)
+        }
+        _ => leave_handshake(handshake, REASON_UNSPECIFIED),
+    }
+}
+
 /// The handshake's end: connected, its supplicant and keys held.
-fn connect<T: StaTokens, K>(handshake: Handshake<T, K>) -> State<T, K> {
+fn connect<T: StaTokens, K>(handshake: Handshake<T, K>, retire_groups: bool) -> State<T, K> {
     let Handshake {
         bssid,
         channel,
@@ -3832,7 +3955,11 @@ fn connect<T: StaTokens, K>(handshake: Handshake<T, K>) -> State<T, K> {
             connected_notice: true,
             rsn: Some(ConnectedRsn {
                 supplicant,
-                rekey: Rekey::None,
+                rekey: if retire_groups {
+                    Rekey::Retire
+                } else {
+                    Rekey::None
+                },
                 replay,
             }),
         }),

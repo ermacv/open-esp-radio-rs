@@ -58,6 +58,11 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   corrupt the new frontier. A new material epoch starts at KeyRSC; keeping
   identical material means keeping the original replay owner.
 
+- Pending key actions and installed GTK records retain `CcmpKey`, whose
+  Debug is redacted and whose destructor zeroizes its bytes. Compare through
+  borrowed material; a raw `[u8; 16]` in a derived Debug token exposes GTK.
+  This owner discipline does not prove erasure of compiler temporaries.
+
 - Authentication's `NeedCredit` owns only the retry runtime. An active
   `StaAuthenticationExchange` is created after ticket/buffer reservation and
   is consumed by response or timeout; only Retry returns the runtime. Do not

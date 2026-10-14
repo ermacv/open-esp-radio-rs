@@ -1465,7 +1465,7 @@ where
             pending,
             key: phase
                 .station()
-                .install_pairwise_key(slot, peer, Ccmp128Key(key)),
+                .install_pairwise_key(slot, peer, Ccmp128Key(*key.as_bytes())),
         },
         StaAction::InstallGroupKey {
             pending,
@@ -1475,7 +1475,7 @@ where
         } => StaInput::GroupKeyInstalled {
             key: phase
                 .station()
-                .install_group_key(slot, key_id, Ccmp128Key(key)),
+                .install_group_key(slot, key_id, Ccmp128Key(*key.as_bytes())),
             pending,
         },
         StaAction::RemovePairwiseKey(key) => {
@@ -1495,7 +1495,7 @@ where
             pending_actions.replacing = Some(PendingReplacement { slot, pending });
             phase
                 .station()
-                .replace_group_key(installed, key_id, Ccmp128Key(key));
+                .replace_group_key(installed, key_id, Ccmp128Key(*key.as_bytes()));
             return Ok(Follow::Nothing);
         }
         StaAction::RemoveGroupKey(key) => {

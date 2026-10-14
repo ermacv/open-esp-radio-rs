@@ -1,7 +1,7 @@
 //! Installed group owners and reserved record places. A pending installation
 //! owns its vacant place, so its return cannot overflow a retirement pool.
 
-use super::{GroupKeyId, Pool};
+use super::{CcmpKey, GroupKeyId, Pool};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Index {
@@ -29,7 +29,7 @@ mod tests {
                 Installed {
                     place,
                     key_id: id(value),
-                    material: [value; 16],
+                    material: CcmpKey::new([value; 16]),
                     key: value,
                 },
                 true,
@@ -43,7 +43,7 @@ mod tests {
             Installed {
                 place: old.place,
                 key_id: id(3),
-                material: [3; 16],
+                material: CcmpKey::new([3; 16]),
                 key: 3,
             },
             true,
@@ -110,7 +110,7 @@ pub(super) struct GroupPlace(Index);
 pub(super) struct Installed<Key> {
     pub(super) place: GroupPlace,
     pub(super) key_id: GroupKeyId,
-    pub(super) material: [u8; 16],
+    pub(super) material: CcmpKey,
     pub(super) key: Key,
 }
 
@@ -164,7 +164,7 @@ impl<Key> GroupKeys<Key> {
         self.entries
             .iter()
             .flatten()
-            .any(|entry| entry.key_id == id && entry.material == *material)
+            .any(|entry| entry.key_id == id && entry.material.as_bytes() == material)
     }
 
     pub(super) fn has_retiring(&self) -> bool {

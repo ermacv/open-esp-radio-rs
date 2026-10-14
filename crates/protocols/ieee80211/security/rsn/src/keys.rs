@@ -28,6 +28,12 @@ pub struct CcmpKey {
     bytes: [u8; RSN_TK_LEN],
 }
 
+impl core::fmt::Debug for CcmpKey {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("CcmpKey([REDACTED])")
+    }
+}
+
 impl CcmpKey {
     pub const fn new(bytes: [u8; RSN_TK_LEN]) -> Self {
         Self { bytes }

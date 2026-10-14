@@ -29,6 +29,11 @@ validated Association element; the supplicant takes it from its own
 Association element. Both reject EAPOL-Key frames whose descriptor version
 differs from that suite.
 
+`CcmpKey` owns its temporal-key bytes, redacts Debug output and zeroizes its
+storage on drop. Pending actions and retained station records use the same
+owner; adapters and comparisons borrow the bytes. This covers those owners,
+not arbitrary compiler temporaries.
+
 GTK KDE parsing retains `GroupKeyId` in `RsnGtk` and `RsnKeyKind::Group`;
 IDs outside the two-bit wire domain never reach a key installation. The
 recorded M3 regression in `frames/captured_m3.rs` authenticates and unwraps

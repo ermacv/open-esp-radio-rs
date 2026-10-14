@@ -63,3 +63,13 @@ fn group_transmit_flag_change_reuses_key_id_slot() {
         }
     );
 }
+
+#[test]
+fn temporal_key_redacts_debug_and_owns_zeroization() {
+    fn zeroizes_on_drop<T: ZeroizeOnDrop>(_: &T) {}
+    let mut key = CcmpKey::new([173; RSN_TK_LEN]);
+    zeroizes_on_drop(&key);
+    assert_eq!(std::format!("{key:?}"), "CcmpKey([REDACTED])");
+    key.zeroize();
+    assert_eq!(key.as_bytes(), &[0; RSN_TK_LEN]);
+}

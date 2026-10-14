@@ -274,6 +274,12 @@ the superseded key retires after Group Message 2. A full pool uses
 `replace_group_key`, selecting the same ID or the oldest non-current owner;
 only a one-slot backend replaces its sole current key for a new ID.
 
+Key actions and pending/installed GTK records keep material in RSN's
+`CcmpKey` owner. Its Debug is redacted and its destructor zeroizes the
+owned bytes when a record retires or an unfinished action is dropped.
+Material comparison borrows those bytes; this makes no claim about
+arbitrary compiler temporaries or copies made inside hardware adapters.
+
 The service retains `PendingGroupReplacement` and matches the port's
 `GroupKeyReplaced` terminal by slot identity. Until that terminal RX uses
 the previous epoch; the successor starts at KeyRSC there, even when its PN

@@ -359,7 +359,7 @@ impl<'id> World<'id> {
                     StaAction::InstallPairwiseKey {
                         pending, slot, key, ..
                     } => {
-                        self.seen.push(Seen::InstallPairwise(key));
+                        self.seen.push(Seen::InstallPairwise(*key.as_bytes()));
                         self.installed(
                             now,
                             StaInput::PairwiseKeyInstalled {
@@ -2288,9 +2288,16 @@ fn group_slots_are_fungible_and_the_full_pool_proves_all_returns() {
             let mut epochs = LinkEpochSource::for_test(0);
             let epoch = epochs.begin();
             let key_id = GroupKeyId::new(1).unwrap();
-            let (a, pending_a) = keys.take_group_slot(epoch, key_id, [0; 16]).unwrap();
-            let (b, pending_b) = keys.take_group_slot(epoch, key_id, [0; 16]).unwrap();
-            assert!(keys.take_group_slot(epoch, key_id, [0; 16]).is_none());
+            let (a, pending_a) = keys
+                .take_group_slot(epoch, key_id, &CcmpKey::new([0; 16]))
+                .unwrap();
+            let (b, pending_b) = keys
+                .take_group_slot(epoch, key_id, &CcmpKey::new([0; 16]))
+                .unwrap();
+            assert!(
+                keys.take_group_slot(epoch, key_id, &CcmpKey::new([0; 16]))
+                    .is_none()
+            );
             keys.group_installed(pending_a, Key(a), true);
             keys.group_installed(pending_b, Key(b), true);
             let (_, Key(a)) = keys.take_group_key().unwrap();
@@ -2304,7 +2311,7 @@ fn group_slots_are_fungible_and_the_full_pool_proves_all_returns() {
             // Either returned raw slot is usable for any next key ID.
             let new_id = GroupKeyId::new(2).unwrap();
             let (slot, pending) = keys
-                .take_group_slot(epochs.begin(), new_id, [1; 16])
+                .take_group_slot(epochs.begin(), new_id, &CcmpKey::new([1; 16]))
                 .unwrap();
             assert_eq!(pending.key_id, new_id);
             assert!(matches!(slot, Slot(7) | Slot(42)));
@@ -3526,5 +3533,25 @@ fn probe_encoding_failure_returns_credit_and_missing_epoch_reports_link_change()
             panic!("permanent encoding failure leaves");
         };
         assert_eq!(leave.reason, StaDisconnectReason::Encode);
+    });
+}
+
+#[test]
+fn pending_group_material_is_redacted_and_moves_into_the_installed_record() {
+    installed(|_mint| {
+        let mut keys = Keys::<Tokens>::new(Slot(0), [Slot(1)]);
+        let mut epochs = LinkEpochSource::for_test(0);
+        let id = GroupKeyId::new(1).unwrap();
+        let material = CcmpKey::new([173; 16]);
+        let (slot, pending) = keys.take_group_slot(epochs.begin(), id, &material).unwrap();
+        let printed = std::format!("{pending:?}");
+        assert!(printed.contains("[REDACTED]"));
+        assert!(!printed.contains("173"));
+        keys.group_installed(pending, Key(slot), true);
+        assert!(keys.groups.same_material(id, material.as_bytes()));
+        let (_, Key(slot)) = keys.take_group_key().unwrap();
+        assert!(!keys.groups.same_material(id, material.as_bytes()));
+        keys.group_removed(slot);
+        assert!(keys.clear());
     });
 }

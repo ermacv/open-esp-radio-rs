@@ -68,6 +68,12 @@
 //! The model's 1 ms publication bound is synthetic model time, not an S31
 //! timing claim. `set_time` feeds the test's virtual clock. Hardware backends
 //! must declare their own PPDU plus response/timeout bound.
+//!
+//! Unit tests and the `test-support` library use the same implementation,
+//! including continuous RX, immediate recycling of its bounded slots, and
+//! terminal fault injection. Only the unit-test module is under `cfg(test)`.
+//! `tests/model_feature.rs` exercises these paths through the public port
+//! from a separate test crate, so the model itself is compiled without that cfg.
 
 use alloc::{
     boxed::Box,
@@ -939,7 +945,6 @@ pub struct ModelRxBuffer {
     bytes: Vec<u8>,
     recycled: bool,
     air: Weak<ModelAir>,
-    #[cfg(test)]
     streamed: bool,
 }
 
@@ -951,7 +956,6 @@ impl RxBuffer for ModelRxBuffer {
 
 impl Drop for ModelRxBuffer {
     fn drop(&mut self) {
-        #[cfg(any(test, feature = "test-support"))]
         if !self.recycled
             && let Some(air) = self.air.upgrade()
         {
@@ -1061,14 +1065,11 @@ pub struct ModelAir {
     /// queued, each is acknowledged.
     answers: RefCell<VecDeque<AirResult>>,
     rx: RefCell<VecDeque<(Vec<u8>, ModelRxMeta)>>,
-    #[cfg(test)]
     rx_stream: RefCell<Option<(Vec<u8>, ModelRxMeta)>>,
     refuse_enable: Cell<bool>,
     poisoned: Cell<bool>,
-    #[cfg(test)]
     swap_terminals: Cell<bool>,
-    #[cfg(test)]
-    pub(crate) corrupted_terminal: Cell<bool>,
+    corrupted_terminal: Cell<bool>,
     driver: RefCell<Option<Waker>>,
     /// The driver's passes.
     passes: Cell<u32>,
@@ -1089,9 +1090,18 @@ pub struct ModelAir {
 }
 
 impl ModelAir {
-    #[cfg(test)]
-    pub(crate) fn swap_next_two_single_buffers(&self) {
+    /// Inject a broken backend return by exchanging the MPDUs of the next
+    /// two Single terminals. Each retains its original context and ticket;
+    /// the consumer must detect the mismatch and fail-stop. The first
+    /// terminal waits for the second, even across separate driver polls.
+    pub fn swap_next_two_single_buffers(&self) {
         self.swap_terminals.set(true);
+        self.corrupted_terminal.set(false);
+    }
+
+    /// Whether the requested pair of terminal buffers has been exchanged.
+    pub fn terminal_buffers_swapped(&self) -> bool {
+        self.corrupted_terminal.get()
     }
     /// Every publication so far, including collisions and unknown outcomes.
     pub fn sent(&self) -> Vec<AirFrame> {
@@ -1140,14 +1150,14 @@ impl ModelAir {
     /// Keep reception ready on every service poll, like an RX interrupt
     /// source on another executor. This exercises scheduling against a
     /// continuously ready source, rather than a finite queued burst.
-    #[cfg(test)]
-    pub(crate) fn receive_continuously(&self, frame: &[u8], meta: ModelRxMeta) {
+    pub fn receive_continuously(&self, frame: &[u8], meta: ModelRxMeta) {
         self.rx_stream.borrow_mut().replace((frame.into(), meta));
         self.wake_driver();
     }
 
-    #[cfg(test)]
-    pub(crate) fn stop_continuous_receive(&self) {
+    /// Stop generating RX events. Already returned buffers still require
+    /// recycling through the phase.
+    pub fn stop_continuous_receive(&self) {
         self.rx_stream.borrow_mut().take();
     }
 
@@ -1306,6 +1316,28 @@ struct Settings {
     block_acks: BTreeMap<u8, Option<ModelReceiveAgreement>>,
 }
 
+/// A Single terminal held by the fault injector. Its type keeps aggregate
+/// owners out of this slot, including in the feature-enabled library.
+struct SingleTerminal<'id, X: ModelContext> {
+    context: X::Context<'id>,
+    ticket: Slot<'id, ModelTickets>,
+    buffer: ModelAnyBuffer<'id>,
+    body: Option<ModelBody>,
+    completion: TxOutcome,
+}
+
+impl<'id, X: ModelContext> SingleTerminal<'id, X> {
+    fn event(self) -> LowerMacEvent<'id, ModelTypes<X>> {
+        LowerMacEvent::TxCompleted(TxCompleted::Single {
+            context: self.context,
+            ticket: self.ticket,
+            buffer: self.buffer,
+            body: self.body,
+            completion: self.completion,
+        })
+    }
+}
+
 /// The install's queues between the handle and the driver.
 pub struct ModelHeld<'id, X: ModelContext = ()> {
     air: Rc<ModelAir>,
@@ -1314,8 +1346,7 @@ pub struct ModelHeld<'id, X: ModelContext = ()> {
     recycled: Bounded<ModelRxBuffer>,
     settings: RefCell<Settings>,
     events: Bounded<LowerMacEvent<'id, ModelTypes<X>>>,
-    #[cfg(test)]
-    held_terminal: RefCell<Option<TxCompleted<'id, ModelTypes<X>>>>,
+    held_terminal: RefCell<Option<SingleTerminal<'id, X>>>,
     /// The receive buffers out with the body, queued or held.
     rx_out: Cell<usize>,
     /// A confirmation of each interface's settings waits in `events`.
@@ -1339,43 +1370,34 @@ impl<'id, X: ModelContext> ModelHeld<'id, X> {
     }
 
     fn post(&self, event: LowerMacEvent<'id, ModelTypes<X>>) {
-        #[cfg(test)]
         let event = match event {
-            LowerMacEvent::TxCompleted(mut current @ TxCompleted::Single { .. })
-                if self.air.swap_terminals.get() =>
-            {
-                let Some(mut previous) = self.held_terminal.borrow_mut().take() else {
+            LowerMacEvent::TxCompleted(TxCompleted::Single {
+                context,
+                ticket,
+                buffer,
+                body,
+                completion,
+            }) if self.air.swap_terminals.get() => {
+                let mut current = SingleTerminal {
+                    context,
+                    ticket,
+                    buffer,
+                    body,
+                    completion,
+                };
+                let previous = self.held_terminal.borrow_mut().take();
+                let Some(mut previous) = previous else {
                     *self.held_terminal.borrow_mut() = Some(current);
                     return;
                 };
-                match (&mut previous, &mut current) {
-                    (
-                        TxCompleted::Single {
-                            buffer: a,
-                            body: ab,
-                            ..
-                        },
-                        TxCompleted::Single {
-                            buffer: b,
-                            body: bb,
-                            ..
-                        },
-                    ) => {
-                        core::mem::swap(a, b);
-                        core::mem::swap(ab, bb);
-                    }
-                    _ => panic!("test injector holds only Single terminals"),
-                }
+                core::mem::swap(&mut previous.buffer, &mut current.buffer);
+                core::mem::swap(&mut previous.body, &mut current.body);
                 self.air.swap_terminals.set(false);
                 self.air.corrupted_terminal.set(true);
-                if self
-                    .events
-                    .push(LowerMacEvent::TxCompleted(previous))
-                    .is_err()
-                {
+                if self.events.push(previous.event()).is_err() {
                     self.poison();
                 }
-                LowerMacEvent::TxCompleted(current)
+                current.event()
             }
             event => event,
         };
@@ -1558,7 +1580,6 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
             recycled: Bounded::new(MODEL_RX_EVENTS, "recycle"),
             settings: RefCell::default(),
             events: Bounded::new(MODEL_EVENTS, "event"),
-            #[cfg(test)]
             held_terminal: RefCell::new(None),
             rx_out: Cell::new(0),
             configured: Cell::new([false; 2]),
@@ -1892,7 +1913,6 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                         bytes: frame,
                         recycled: false,
                         air: Rc::downgrade(&held.air),
-                        #[cfg(test)]
                         streamed: false,
                     },
                     meta,
@@ -2240,7 +2260,6 @@ impl<'id, C, X: ModelContext> PortPhase for ModelPhase<'_, 'id, C, X> {
             if let Some(event) = held.take_event() {
                 return Poll::Ready(Ok(Ok(event)));
             }
-            #[cfg(test)]
             if let Some((bytes, meta)) = held.air.rx_stream.borrow().as_ref()
                 && held.rx_out.get() < MODEL_RX_EVENTS
             {
@@ -2283,7 +2302,6 @@ impl<'p, 'id: 'p, C: Ieee80211Capabilities, X: ModelContext> LowerMacPhase<'p, '
     }
 
     fn recycle(&mut self, buffer: ModelRxBuffer) {
-        #[cfg(test)]
         if buffer.streamed {
             let mut buffer = buffer;
             // The independent source observes this return immediately. Its

@@ -571,7 +571,7 @@ where
             world.counters.set(Some(service.counters));
             assert_eq!(service.station.lost_tokens(), 0);
             assert_eq!(service.data.counters().lost_tokens, 0);
-            if world.air.corrupted_terminal.get() {
+            if world.air.terminal_buffers_swapped() {
                 assert!(
                     matches!(&end, ServiceEnd::Failed(_) | ServiceEnd::Poisoned(_)),
                     "class mismatch uses fail-stop"
@@ -1363,7 +1363,7 @@ fn a_context_buffer_class_mismatch_stops_service_without_rate_updates_or_reuse()
             for _ in 0..20 {
                 yield_now().await;
             }
-            assert!(world.air.corrupted_terminal.get());
+            assert!(world.air.terminal_buffers_swapped());
             assert_eq!(world.completions.borrow().len(), baseline);
             let publications = world.air.sent().len();
             world.send_msdu(ACCESS_POINT_ADDRESS);

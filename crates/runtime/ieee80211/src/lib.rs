@@ -45,7 +45,8 @@
 //!
 //! The `test-support` feature exposes `lower_mac_owner`, the in-memory backend
 //! and conformance harness for tests of port consumers. The module is absent
-//! from production builds without that feature.
+//! from production builds without that feature. The feature build includes
+//! the same bounded continuous RX and terminal fault injection as unit tests.
 #![cfg_attr(
     not(feature = "test-support"),
     doc = r"

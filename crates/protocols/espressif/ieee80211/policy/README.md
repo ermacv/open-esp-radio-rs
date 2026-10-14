@@ -59,6 +59,13 @@ Retry selection either represents the complete record walk or refuses the
 plan when it needs more than four stages. Channel filtering preserves every
 accepted stage and its transmission count within that original capacity.
 
+The HE TXOP estimate keeps the vendor's single-precision operation order and
+16-bit table result. Its checked threshold and rate bound the intermediate
+integer arithmetic inside `i32`; the final halfword conversion is intentional
+modulo arithmetic. When positive remaining time fits no complete symbol,
+subtracting the SERVICE/tail bits produces a signed result whose stored
+halfword is 65533. It must not be clamped to zero.
+
 Rate observations carry a nonzero MPDU count and an explicit ACK outcome, or
 a `BlockAckTally` whose acknowledgements cannot exceed its attempted MPDUs.
 Those proofs survive through the vendor window's division; observing a

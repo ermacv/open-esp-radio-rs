@@ -1343,3 +1343,36 @@ fn a_cancelled_starting_absence_delivers_its_pending_leave_and_both_places() {
         });
     }
 }
+
+#[test]
+fn an_absence_returns_before_its_finite_primary_lease_expires() {
+    installed(|mint| {
+        let (mut arbiter, place, mut port) = beside_access_point::<NoReservation>(mint);
+        let home = lease(arbiter.request(at(0), scan(1, 60), place));
+        run(&mut arbiter, &mut port, at(0));
+        let away = absence(arbiter.request_absence(at(0), scan(6, 100), &home, absence_place()));
+        assert_eq!(away.until(), home.until());
+        arbiter.ready(away.id());
+        run(&mut arbiter, &mut port, away.from());
+        assert_eq!(arbiter.poll_deadline(), away.listen_until());
+        let seen = run(&mut arbiter, &mut port, away.listen_until().unwrap());
+        assert!(seen.contains(&Seen::Station(StationNotice::AbsenceEnded(absence_place()))));
+        let seen = run(&mut arbiter, &mut port, home.until().unwrap());
+        assert!(seen.contains(&Seen::Station(StationNotice::LeaseEnded(self::place()))));
+        assert_eq!(arbiter.poll_deadline(), None);
+    });
+}
+
+#[test]
+fn an_absence_starting_after_primary_expiry_returns_its_place_and_deadline() {
+    installed(|mint| {
+        let (mut arbiter, place, mut port) = beside_access_point::<NoReservation>(mint);
+        let home = lease(arbiter.request(at(0), scan(1, 40), place));
+        run(&mut arbiter, &mut port, at(0));
+        assert!(
+            matches!(arbiter.request_absence(at(0), scan(6, 10), &home, absence_place()), AbsenceAnswer::Refused(AbsenceRefusal::PrimaryEnds { at: end }, _) if Some(end) == home.until())
+        );
+        assert!(arbiter.absence.is_none());
+        assert_eq!(arbiter.poll_deadline(), home.until());
+    });
+}

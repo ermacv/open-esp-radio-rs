@@ -314,6 +314,8 @@ pub enum AbsenceAnswer<K> {
 pub enum AbsenceRefusal {
     /// The primary lease named is not the running one.
     NotConnected,
+    /// The primary lease ends before this absence can start.
+    PrimaryEnds { at: Instant },
     /// The port failed.
     PortFailed,
 }
@@ -797,7 +799,6 @@ enum CyclePurpose<K> {
     LeaseEnd(Which),
     /// A move no lease asked for; the station hears of it.
     Move {
-        access_point: Option<ApSchedule<K>>,
         /// A coordinator move received while this cycle owns the gate.
         next: Option<(SupportedChannel<K>, Instant)>,
     },
@@ -976,13 +977,6 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
 
     /// The access point's schedule while it runs.
     fn schedule(&self) -> Option<ApSchedule<K>> {
-        if let Some(Cycle {
-            purpose: CyclePurpose::Move { access_point, .. },
-            ..
-        }) = self.cycle
-        {
-            return access_point;
-        }
         match self.pair {
             Pair::Alone => None,
             Pair::Serving { schedule } | Pair::UpstreamLost { schedule, .. } => Some(schedule),
@@ -1006,13 +1000,6 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
 
     /// The access point stopped, or is stopping.
     fn access_point_gone(&mut self) {
-        if let Some(Cycle {
-            purpose: CyclePurpose::Move { access_point, .. },
-            ..
-        }) = &mut self.cycle
-        {
-            *access_point = None;
-        }
         match &mut self.pair {
             Pair::Moving { access_point, .. } => *access_point = None,
             pair => *pair = Pair::Alone,
@@ -1208,6 +1195,13 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
             Purpose::Connect => None,
         };
         let (from, until) = self.absence_window(now.saturating_add(self.policy.preparation), dwell);
+        let until = match self.primary.as_ref().and_then(|(granted, _)| granted.until) {
+            Some(end) if from >= end => {
+                return AbsenceAnswer::Refused(AbsenceRefusal::PrimaryEnds { at: end }, place);
+            }
+            Some(end) => until.min(end),
+            None => until,
+        };
         let granted = Granted {
             id,
             channel: request.channel,
@@ -1375,13 +1369,6 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
                     next_tbtt,
                     beacon_interval,
                 };
-                if let Some(Cycle {
-                    purpose: CyclePurpose::Move { access_point, .. },
-                    ..
-                }) = &mut self.cycle
-                {
-                    *access_point = Some(schedule);
-                }
                 match &mut self.pair {
                     Pair::Serving { schedule: running }
                     | Pair::UpstreamLost {
@@ -1578,8 +1565,8 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
             CyclePurpose::LeaseEnd(which) => {
                 self.ended(which);
             }
-            CyclePurpose::Move { access_point, next } => {
-                let access_point = access_point.map(|schedule| ApSchedule {
+            CyclePurpose::Move { next } => {
+                let access_point = self.schedule().map(|schedule| ApSchedule {
                     channel: cycle.to,
                     ..schedule
                 });
@@ -1765,14 +1752,11 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
             self.home = target;
             // The cycle owns the scheduled move from here on. Its next
             // input is a gate/retune terminal, never the consumed deadline.
-            self.pair = Pair::Alone;
+            self.settle(access_point);
             self.cycle = Some(Cycle {
                 to: target,
                 reserve: R::none(),
-                purpose: CyclePurpose::Move {
-                    access_point,
-                    next: None,
-                },
+                purpose: CyclePurpose::Move { next: None },
             });
         }
     }

@@ -61,7 +61,10 @@ and cycle purpose. The service owns it across disable, tuning and enable;
 value alone cannot acknowledge a retune or create an unsolicited response.
 While a gate cycle runs, the next input is its gate or retune terminal;
 `poll_deadline` returns no timer. Planning a shared move consumes its deadline
-and transfers the access-point schedule into the cycle. A waiting absence
+while the pair remains the sole owner of the access-point schedule. The cycle
+owns its move and next move, without a second schedule copy. An absence
+ends no later than its primary lease; one starting after that deadline returns
+`PrimaryEnds` with the deadline and its place. A waiting absence
 is cancelled when that move becomes due. The active move retains a subsequent
 coordinator retune until its gate opens; completing the first move then arms
 the next one. A TBTT fact on the old channel updates beacon timing without

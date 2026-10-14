@@ -2,8 +2,8 @@
 //! shape: [`Ieee802154Runtime::install`] returns the backend, and
 //! `run_port` runs a body over it with its joined driver. Covered here are
 //! the lock, owned events, the bounded queue, the operation permit, the
-//! driver's backoffs and the port's end. The engine's vendor sequences are
-//! covered by the engine tests and the host stand.
+//! driver's backoffs, enhanced-ACK settings and the port's end. The engine's
+//! vendor sequences are covered by the engine tests and the host stand.
 
 use std::{boxed::Box, vec::Vec};
 
@@ -28,9 +28,9 @@ use oer_espressif_ieee802154_engine::{
     types::{Ieee802154Event, Ieee802154TxAbortReason, Ieee802154TxAbortReasonObservation},
 };
 use oer_ieee802154::{
-    Channel, CslReceiver, EnhancedAckGeneration, FrameCounterUpdate, FrameView,
-    Ieee802154Capabilities, Interface, RadioCapabilities, RadioFault, RadioState, RestingState,
-    TxMode, TxSecurity, TxStatus,
+    Channel, CslReceiver, EnhancedAckGeneration, FrameAddress, FrameCounterUpdate, FrameView,
+    Ieee802154Capabilities, Interface, LinkMetrics, ProbingInitiator, RadioCapabilities,
+    RadioFault, RadioState, RestingState, TxMode, TxSecurity, TxStatus,
     owner::{
         Has, Ieee802154Caps, Ieee802154Client, Ieee802154Clients, Ieee802154Setup,
         InterfaceResources, Operation, RadioSettings, RecentRssi, SupportedHeaderIes,
@@ -987,6 +987,79 @@ fn enhanced_ack_header_ies_are_kept_while_generation_is_off() {
             noise_floor_dbm: -80,
         }));
         assert_eq!(held(), Some((std::vec![3], -80)));
+    });
+}
+
+/// Probing initiators set while generation is off survive enabling,
+/// reconfiguration and repeated disabling; replacement and removal while
+/// off reach the next enabled generator.
+#[test]
+fn enhanced_ack_probing_is_kept_while_generation_is_off() {
+    enabled::<4>(async |phase| {
+        let initiator = ProbingInitiator {
+            short_address: 0x1234,
+            extended_address: [1, 2, 3, 4, 5, 6, 7, 8],
+            metrics: LinkMetrics {
+                lqi: true,
+                ..LinkMetrics::NONE
+            },
+        };
+        let held = || {
+            phase.runtime.with_installed(|radio, _, _| {
+                radio.enhanced_ack().as_mut().map(|generator| {
+                    let probing = generator.probing();
+                    (
+                        probing.metrics(FrameAddress::Short(initiator.short_address.to_le_bytes())),
+                        probing.metrics(FrameAddress::Extended(initiator.extended_address)),
+                        probing.noise_floor(),
+                    )
+                })
+            })
+        };
+        phase.control.set_enhanced_ack_probing(&[initiator]);
+        assert_eq!(held(), None, "generation is off");
+        for noise_floor_dbm in [-100, -90] {
+            phase
+                .control
+                .set_enhanced_ack(Some(EnhancedAckGeneration { noise_floor_dbm }));
+            assert_eq!(
+                held(),
+                Some((
+                    Some(initiator.metrics),
+                    Some(initiator.metrics),
+                    noise_floor_dbm
+                ))
+            );
+        }
+        phase.control.set_enhanced_ack(None);
+        phase.control.set_enhanced_ack(None);
+        phase.control.set_enhanced_ack(Some(EnhancedAckGeneration {
+            noise_floor_dbm: -80,
+        }));
+        assert_eq!(
+            held(),
+            Some((Some(initiator.metrics), Some(initiator.metrics), -80))
+        );
+
+        let replacement = ProbingInitiator {
+            metrics: LinkMetrics {
+                rssi: true,
+                ..LinkMetrics::NONE
+            },
+            ..initiator
+        };
+        for (initiators, metrics) in [
+            (&[replacement][..], Some(replacement.metrics)),
+            (&[][..], None),
+        ] {
+            phase.control.set_enhanced_ack(None);
+            phase.control.set_enhanced_ack_probing(initiators);
+            assert_eq!(held(), None, "generation stays off");
+            phase.control.set_enhanced_ack(Some(EnhancedAckGeneration {
+                noise_floor_dbm: -80,
+            }));
+            assert_eq!(held(), Some((metrics, metrics, -80)));
+        }
     });
 }
 

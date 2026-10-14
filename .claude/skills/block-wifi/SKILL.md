@@ -135,6 +135,10 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   copy: its hardware boundary still needs proof in the new form. Hardware
   uncertainty retains resources for teardown, never an ordinary permission
   ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6169527922)).
+- Model GTK identities may outlive the port in captured ingress or a test.
+  They carry no secret: uninstall/abandon must deactivate and clear the
+  installation table and captured RX independently of identity reference
+  counts. Ordinary disable/reenable preserves the installed table.
 
 The MSDU/command SPSC sender's readiness returns a `SendPermit`. Keep the
 permit through publication: its exclusive sender borrow is the capacity

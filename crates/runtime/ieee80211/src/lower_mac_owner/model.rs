@@ -53,6 +53,11 @@
 //! Prepared operations retain a use of their key installation through their
 //! terminal or cancellation. `KeyRemoved` waits for these owners; a returned
 //! Sent retains only identity and therefore permits removal and slot reuse.
+//! GTK material lives in the model's installation table, separately from
+//! cloneable identities. Removal clears its material after the last prepared
+//! use ends. Uninstall and abandon deactivate the table, discard captured
+//! ingress and clear all secrets even if a test retains an identity. Normal
+//! disable/reenable preserves installed keys and their counters.
 //! A prepared retry submitted after removal is withdrawn in its AC's order,
 //! without publication. Cancellation wakes the driver to finish the barrier.
 //! An aggregate preflights every MPDU and the entire fresh-PN range before
@@ -522,6 +527,7 @@ impl ModelAnyBuffer<'_> {
 
 /// Identity of an installation of a key, not its reusable slot index.
 /// Rc is the host model's allocation identity; only the driver allocates PN.
+/// Cloning an identity never retains secret material past removal or teardown.
 #[derive(Clone, Debug)]
 pub struct KeyIdentity(Rc<KeyInstall>);
 
@@ -531,15 +537,15 @@ struct KeyInstall {
     key_id: u8,
     last: Cell<u64>,
     active: Cell<bool>,
-    group: Option<GroupMaterial>,
+    group_role: Option<VifRole>,
     rx_active: Cell<bool>,
     preparations: Rc<()>,
     air: Weak<ModelAir>,
 }
 
 #[derive(Debug)]
-struct GroupMaterial {
-    role: VifRole,
+struct GroupInstallation {
+    identity: Weak<KeyInstall>,
     key: CcmpKey,
 }
 
@@ -557,7 +563,7 @@ impl KeyIdentity {
             key_id,
             last: Cell::new(0),
             active: Cell::new(true),
-            group: None,
+            group_role: None,
             rx_active: Cell::new(false),
             preparations: Rc::new(()),
             air: Rc::downgrade(air),
@@ -570,16 +576,23 @@ impl KeyIdentity {
         key: CcmpKey,
         air: &Rc<ModelAir>,
     ) -> Self {
-        Self(Rc::new(KeyInstall {
+        let identity = Self(Rc::new(KeyInstall {
             index,
             key_id: key_id.get(),
             last: Cell::new(0),
             active: Cell::new(true),
-            group: Some(GroupMaterial { role, key }),
+            group_role: Some(role),
             rx_active: Cell::new(false),
             preparations: Rc::new(()),
             air: Rc::downgrade(air),
-        }))
+        }));
+        air.group_installations
+            .borrow_mut()
+            .push(GroupInstallation {
+                identity: Rc::downgrade(&identity.0),
+                key,
+            });
+        identity
     }
     fn check_packet_numbers(&self, count: usize) -> Result<(), ModelFault> {
         let count = u64::try_from(count).map_err(|_| ModelFault)?;
@@ -1208,7 +1221,9 @@ pub struct ModelAir {
     refuse_enable: Cell<bool>,
     group_failure: Cell<Option<GroupFaultStage>>,
     group_held: Cell<bool>,
-    group_installations: RefCell<Vec<Weak<KeyInstall>>>,
+    // Secret material belongs to this installation table, never to the
+    // cloneable identity carried by captured RX or returned Sent owners.
+    group_installations: RefCell<Vec<GroupInstallation>>,
     group_rx: RefCell<VecDeque<CapturedGroupRx>>,
     group_writes: Cell<usize>,
     poisoned: Cell<bool>,
@@ -1228,6 +1243,25 @@ pub struct ModelAir {
 }
 
 impl ModelAir {
+    fn remove_group_material(&self, identity: &KeyIdentity) {
+        self.group_installations
+            .borrow_mut()
+            .retain(|entry| !entry.identity.ptr_eq(&Rc::downgrade(&identity.0)));
+    }
+
+    fn end_installation(&self) {
+        let mut installations = self.group_installations.borrow_mut();
+        for entry in installations.iter() {
+            if let Some(identity) = entry.identity.upgrade() {
+                identity.active.set(false);
+                identity.rx_active.set(false);
+            }
+        }
+        self.group_rx.borrow_mut().clear();
+        // CcmpKey clears its bytes even if an external identity still exists.
+        installations.clear();
+    }
+
     /// Inject uncertainty before or after a GTK hardware mutation. No success
     /// owner or ordinary permission leaves the poisoned installation.
     pub fn fail_next_group_change(&self, stage: GroupFaultStage) {
@@ -1260,19 +1294,21 @@ impl ModelAir {
         material: &[u8; 16],
         stage: GroupRxStage,
     ) -> bool {
-        let installation =
-            self.group_installations
-                .borrow()
-                .iter()
-                .filter_map(Weak::upgrade)
-                .find(|key| {
-                    key.active.get()
-                        && key.rx_active.get()
-                        && key.key_id == key_id.get()
-                        && key.group.as_ref().is_some_and(|group| {
-                            group.role == role && group.key.as_bytes() == material
-                        })
-                });
+        let installation = self
+            .group_installations
+            .borrow()
+            .iter()
+            .filter_map(|entry| {
+                (entry.key.as_bytes() == material)
+                    .then(|| entry.identity.upgrade())
+                    .flatten()
+            })
+            .find(|key| {
+                key.active.get()
+                    && key.rx_active.get()
+                    && key.key_id == key_id.get()
+                    && key.group_role == Some(role)
+            });
         let Some(installation) = installation else {
             return false;
         };
@@ -1950,10 +1986,13 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
         (): (),
         (): (),
     ) -> Rc<ModelAir> {
+        self.air.end_installation();
         self.air
     }
 
-    fn abandon(&mut self) {}
+    fn abandon(&mut self) {
+        self.air.end_installation();
+    }
 }
 
 /// The depth of the model driver's software queue of each access
@@ -2131,17 +2170,11 @@ impl<'id, X: ModelContext> Driver<'id, X> {
     }
 
     fn activate_group(&mut self, held: &ModelHeld<'id, X>, identity: &KeyIdentity, write: bool) {
-        let Some(selected) = identity.0.group.as_ref() else {
+        let Some(role) = identity.0.group_role else {
             return;
         };
         for key in &self.keys {
-            if key.0.key_id == identity.0.key_id
-                && key
-                    .0
-                    .group
-                    .as_ref()
-                    .is_some_and(|group| group.role == selected.role)
-            {
+            if key.0.key_id == identity.0.key_id && key.0.group_role == Some(role) {
                 key.0.rx_active.set(false);
             }
         }
@@ -2150,9 +2183,6 @@ impl<'id, X: ModelContext> Driver<'id, X> {
             held.air
                 .group_writes
                 .set(held.air.group_writes.get().saturating_add(1));
-            let mut installations = held.air.group_installations.borrow_mut();
-            installations.retain(|key| key.upgrade().is_some_and(|key| key.active.get()));
-            installations.push(Rc::downgrade(&identity.0));
             self.keys.push(identity.clone());
         }
     }
@@ -2187,6 +2217,7 @@ impl<'id, X: ModelContext> Driver<'id, X> {
             } => {
                 installed.identity.0.active.set(false);
                 installed.identity.0.rx_active.set(false);
+                held.air.remove_group_material(&installed.identity);
                 self.keys.retain(|key| *key != installed.identity);
                 let identity = KeyIdentity::group(
                     installed.slot.index(),
@@ -2303,6 +2334,7 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                 pending.push(removal);
                 held.poison();
             } else if Rc::strong_count(&removal.key.0.preparations) == 1 {
+                held.air.remove_group_material(&removal.key);
                 self.keys.retain(|installed| *installed != removal.key);
                 held.post(LowerMacEvent::KeyRemoved(removal.removed));
             } else {

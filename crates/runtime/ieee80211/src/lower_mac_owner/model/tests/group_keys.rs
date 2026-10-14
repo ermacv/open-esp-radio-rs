@@ -421,7 +421,7 @@ fn fault_and_disable_keep_each_gtk_mutations_owner_and_permission() {
                     air.group_installations
                         .borrow()
                         .iter()
-                        .all(|key| key.upgrade().is_none())
+                        .all(|entry| entry.identity.upgrade().is_none())
                 );
             }
         }
@@ -558,5 +558,163 @@ impl Work for IndependentIds<'_> {
 fn selection_and_removal_leave_other_wire_key_ids_active() {
     let (backend, air) = backend();
     block_on(run_port(backend, Body(IndependentIds(&air))));
+    assert!(!air.poisoned.get());
+}
+
+#[derive(Clone, Copy)]
+enum EndInstallation {
+    Uninstall,
+    PoisonedUninstall,
+    Abandon,
+}
+struct Teardown<'a> {
+    air: &'a ModelAir,
+    identity: &'a RefCell<Option<KeyIdentity>>,
+    stage: GroupRxStage,
+    end: EndInstallation,
+}
+impl PortBody<ModelBackend> for Teardown<'_> {
+    async fn run<'id>(
+        self,
+        owner: Owner<'_, 'id, ModelBackend, Disabled>,
+        resources: ModelResources<'id>,
+    ) -> Ended<'id, ModelBackend> {
+        let mut owner = owner.enable().await.ok().unwrap();
+        {
+            let mut phase = owner.phase();
+            let [slot, _] = resources.station_group;
+            phase.station().install_group_key(
+                resources.station_group_permission,
+                slot,
+                id(),
+                Ccmp128Key([1; 16]),
+            );
+            let (key, permission) = installed(&mut phase).await;
+            self.identity.replace(Some(key.identity.clone()));
+            assert!(self.air.receive_group(
+                &[1],
+                meta(),
+                VifRole::Station,
+                id(),
+                &[1; 16],
+                self.stage,
+            ));
+            if matches!(self.end, EndInstallation::PoisonedUninstall) {
+                self.air.fail_next_group_change(GroupFaultStage::Before);
+                phase.station().select_group_key(permission, key);
+                assert!(phase.next_event().await.is_err());
+            }
+        }
+        match self.end {
+            EndInstallation::Uninstall => {
+                owner.disable(&mut |_| {}).await.ok().unwrap().uninstall(())
+            }
+            EndInstallation::PoisonedUninstall => {
+                let Err(poisoned) = owner.disable(&mut |_| {}).await else {
+                    panic!("expected poison")
+                };
+                poisoned.uninstall(())
+            }
+            EndInstallation::Abandon => owner.fail_stop(),
+        }
+    }
+}
+#[test]
+fn teardown_ends_delayed_group_ingress_and_material_despite_external_identities() {
+    for end in [
+        EndInstallation::Uninstall,
+        EndInstallation::PoisonedUninstall,
+        EndInstallation::Abandon,
+    ] {
+        for stage in [
+            GroupRxStage::Dma,
+            GroupRxStage::Interrupt,
+            GroupRxStage::Software,
+        ] {
+            let (backend, air) = backend();
+            let identity = RefCell::new(None);
+            block_on(run_port(
+                backend,
+                Teardown {
+                    air: &air,
+                    identity: &identity,
+                    stage,
+                    end,
+                },
+            ));
+            let identity = identity.into_inner().unwrap();
+            assert!(!identity.0.active.get());
+            assert!(!identity.0.rx_active.get());
+            assert!(
+                air.group_installations.borrow().is_empty(),
+                "no secret survives in identity clones"
+            );
+            assert!(
+                air.group_rx.borrow().is_empty(),
+                "no captured ingress survives teardown"
+            );
+            assert!(!air.receive_group(
+                &[2],
+                meta(),
+                VifRole::Station,
+                id(),
+                &[1; 16],
+                GroupRxStage::Ready
+            ));
+        }
+    }
+}
+
+struct ReenableGroup<'a>(&'a ModelAir);
+impl PortBody<ModelBackend> for ReenableGroup<'_> {
+    async fn run<'id>(
+        self,
+        owner: Owner<'_, 'id, ModelBackend, Disabled>,
+        resources: ModelResources<'id>,
+    ) -> Ended<'id, ModelBackend> {
+        let mut owner = owner.enable().await.ok().unwrap();
+        let (key, permission) = {
+            let mut phase = owner.phase();
+            let [slot, _] = resources.station_group;
+            phase.station().install_group_key(
+                resources.station_group_permission,
+                slot,
+                id(),
+                Ccmp128Key([1; 16]),
+            );
+            installed(&mut phase).await
+        };
+        key.identity.0.last.set(41);
+        let before = snapshot(&key);
+        let disabled = owner.disable(&mut |_| {}).await.ok().unwrap();
+        assert_eq!(self.0.group_installations.borrow().len(), 1);
+        let mut owner = disabled.enable().await.ok().unwrap();
+        assert_eq!(snapshot(&key), before);
+        {
+            let mut phase = owner.phase();
+            assert!(self.0.receive_group(
+                &[1],
+                meta(),
+                VifRole::Station,
+                id(),
+                &[1; 16],
+                GroupRxStage::Ready
+            ));
+            let Ok(Ok(LowerMacEvent::Received { frame, .. })) = phase.next_event().await else {
+                panic!("reenabled installation receives")
+            };
+            assert_eq!(frame.bytes(), &[1]);
+            phase.recycle(frame);
+            phase.station().remove_group_key(permission, key);
+            let _permission = removed(&mut phase).await;
+            assert!(self.0.group_installations.borrow().is_empty());
+        }
+        owner.disable(&mut |_| {}).await.ok().unwrap().uninstall(())
+    }
+}
+#[test]
+fn disable_and_reenable_preserve_the_same_group_installation_and_counter() {
+    let (backend, air) = backend();
+    block_on(run_port(backend, ReenableGroup(&air)));
     assert!(!air.poisoned.get());
 }

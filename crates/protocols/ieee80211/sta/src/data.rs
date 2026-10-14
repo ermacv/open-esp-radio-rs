@@ -255,10 +255,7 @@ pub struct AcPermit {
 /// one actual permission; taking clears it, returning the owned token sets
 /// it. No increment/decrement or metadata lookup reconstructs admission.
 struct Admissions {
-    best_effort: u8,
-    background: u8,
-    video: u8,
-    voice: u8,
+    by_category: [u8; 4],
 }
 
 impl Admissions {
@@ -266,40 +263,23 @@ impl Admissions {
         let count = usize::from(depth.get()).min(tickets);
         let mask = (0..count).fold(0u8, |mask, _| (mask << 1) | 1);
         Self {
-            best_effort: mask,
-            background: mask,
-            video: mask,
-            voice: mask,
+            by_category: [mask; 4],
         }
     }
 
     fn available(&self, category: WmmAccessCategory) -> u8 {
-        match category {
-            WmmAccessCategory::BestEffort => self.best_effort,
-            WmmAccessCategory::Background => self.background,
-            WmmAccessCategory::Video => self.video,
-            WmmAccessCategory::Voice => self.voice,
-        }
-    }
-
-    fn pool(&mut self, category: WmmAccessCategory) -> &mut u8 {
-        match category {
-            WmmAccessCategory::BestEffort => &mut self.best_effort,
-            WmmAccessCategory::Background => &mut self.background,
-            WmmAccessCategory::Video => &mut self.video,
-            WmmAccessCategory::Voice => &mut self.voice,
-        }
+        *category.select(&self.by_category)
     }
 
     fn take(&mut self, category: WmmAccessCategory) -> Option<AcPermit> {
-        let pool = self.pool(category);
+        let pool = category.select_mut(&mut self.by_category);
         let bit = core::num::NonZeroU8::new(*pool & pool.wrapping_neg())?;
         *pool &= !bit.get();
         Some(AcPermit { bit })
     }
 
     fn put(&mut self, category: WmmAccessCategory, permit: AcPermit) {
-        *self.pool(category) |= permit.bit.get();
+        *category.select_mut(&mut self.by_category) |= permit.bit.get();
     }
 }
 

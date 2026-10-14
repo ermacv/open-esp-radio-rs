@@ -337,29 +337,9 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
         }
     }
 
-    const fn contention_ref(&self, category: WmmAccessCategory) -> &EdcaContention {
-        let [be, bk, vi, vo] = &self.contention;
-        match category {
-            WmmAccessCategory::BestEffort => be,
-            WmmAccessCategory::Background => bk,
-            WmmAccessCategory::Video => vi,
-            WmmAccessCategory::Voice => vo,
-        }
-    }
-
-    fn contention_mut(&mut self, category: WmmAccessCategory) -> &mut EdcaContention {
-        let [be, bk, vi, vo] = &mut self.contention;
-        match category {
-            WmmAccessCategory::BestEffort => be,
-            WmmAccessCategory::Background => bk,
-            WmmAccessCategory::Video => vi,
-            WmmAccessCategory::Voice => vo,
-        }
-    }
-
     /// The contention state of an access category.
     pub const fn contention(&self, access_category: WmmAccessCategory) -> EdcaContention {
-        *self.contention_ref(access_category)
+        *access_category.select(&self.contention)
     }
 
     /// Replace an access category's contention parameters, as a new EDCA
@@ -369,7 +349,7 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
         access_category: WmmAccessCategory,
         contention: EdcaContention,
     ) {
-        *self.contention_mut(access_category) = contention;
+        *access_category.select_mut(&mut self.contention) = contention;
     }
 
     pub fn protection(&self) -> &ProtectionPolicy {
@@ -677,7 +657,10 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
     }
 
     fn update_contention(&mut self, exchange: &TxExchange, update: ContentionUpdate) {
-        let contention = self.contention_mut(exchange.request.access_category);
+        let contention = exchange
+            .request
+            .access_category
+            .select_mut(&mut self.contention);
         match update {
             ContentionUpdate::Reset => contention.reset(),
             ContentionUpdate::Double => contention.record_failure(),
@@ -747,7 +730,10 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
             Live::BlockAckRequest(state, ampdu) => {
                 exchange.aggregate = 0;
                 let rate = PhyRate::Legacy(self.protection.control_rate(request.initial_rate));
-                let backoff = self.contention_ref(request.access_category).draw(entropy);
+                let backoff = request
+                    .access_category
+                    .select(&self.contention)
+                    .draw(entropy);
                 exchange.rate = rate;
                 return TxAttemptPlan {
                     access_category: request.access_category,
@@ -790,7 +776,10 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
             },
             &self.he_budget,
         );
-        let backoff = self.contention_ref(request.access_category).draw(entropy);
+        let backoff = request
+            .access_category
+            .select(&self.contention)
+            .draw(entropy);
         TxAttemptPlan {
             access_category: request.access_category,
             rate,

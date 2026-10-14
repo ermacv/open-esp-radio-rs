@@ -20,7 +20,9 @@ plans and reports leave as values, and nothing waits.
 The backoff is drawn by `oer-ieee80211-softmac`'s `EdcaContention`, one per
 access category inside the planner: doubled after each failed attempt that
 is retried, reset when the frame ends. Reports are the softmac contract's
-`MacTxStatus` and `MacAmpduTxStatus`.
+`MacTxStatus` and `MacAmpduTxStatus`. The checked `WmmAccessCategory` selects
+its cell in the four-entry contention array through the MAC's selector, the
+same mapping used by the station's data admission pools.
 
 `RateControl` observes a `NonZeroU16` transmission count with `MpduOutcome`
 for an ordinary MPDU, or a checked `BlockAckTally` for an aggregate. A tally

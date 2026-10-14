@@ -5,6 +5,8 @@
 //! performs no I/O. In particular, a chip backend must prove antenna-point
 //! RX/TX timestamp capture before publishing the request returned by
 //! [`FtmRequester::service`].
+//! One token set tracks all nonzero dialog tokens, including 255. Zero is
+//! the protocol's absent-token value and cannot be inserted into that set.
 
 use core::num::NonZeroU8;
 
@@ -19,6 +21,42 @@ const FTM_TIMESTAMP_MASK: u64 = (1_u64 << 48) - 1;
 const FTM_TIMESTAMP_HALF_RANGE: u64 = 1_u64 << 47;
 const MAX_REQUEST_ATTEMPTS: u8 = 8;
 const MAX_TRACKED_INFORMATION_ELEMENTS_LEN: usize = 64;
+
+/// A session's seen nonzero wire tokens, with one word-selection rule for
+/// reads and writes. Eight words cover the entire u8 token space.
+struct TokenSet([u32; 8]);
+
+impl TokenSet {
+    const EMPTY: Self = Self([0; 8]);
+
+    fn contains(&self, token: u8) -> bool {
+        NonZeroU8::new(token)
+            .is_some_and(|token| *Self::word(token, self.0.each_ref()) & Self::bit(token) != 0)
+    }
+
+    fn insert(&mut self, token: NonZeroU8) {
+        *Self::word(token, self.0.each_mut()) |= Self::bit(token);
+    }
+
+    fn word<T>(token: NonZeroU8, words: [T; 8]) -> T {
+        let [a, b, c, d, e, f, g, h] = words;
+        // Discarding five bits of a u8 leaves exactly the indices 0..=7.
+        match token.get() >> 5 {
+            0 => a,
+            1 => b,
+            2 => c,
+            3 => d,
+            4 => e,
+            5 => f,
+            6 => g,
+            _ => h,
+        }
+    }
+
+    const fn bit(token: NonZeroU8) -> u32 {
+        1_u32 << (token.get() & 31)
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FtmRequesterConfigError {
@@ -462,7 +500,7 @@ pub struct FtmRequester<const MAX_SAMPLES: usize> {
     peer: [u8; 6],
     session_generation: u32,
     transmission_generation: u32,
-    dialog_tokens: [u32; 8],
+    dialog_tokens: TokenSet,
     pending: Option<FtmLocalExchangeTiming>,
     last_measurement: Option<LastMeasurement>,
     samples: [Option<FtmRawExchange>; MAX_SAMPLES],
@@ -477,7 +515,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             peer: [0; 6],
             session_generation: 0,
             transmission_generation: 0,
-            dialog_tokens: [0; 8],
+            dialog_tokens: TokenSet::EMPTY,
             pending: None,
             last_measurement: None,
             samples: [None; MAX_SAMPLES],
@@ -516,7 +554,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             .checked_add(1)
             .ok_or(FtmRequesterError::GenerationExhausted)?;
         self.peer = peer;
-        self.dialog_tokens.fill(0);
+        self.dialog_tokens = TokenSet::EMPTY;
         self.pending = None;
         self.last_measurement = None;
         self.samples.fill(None);
@@ -790,7 +828,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             return self.protocol_error(FtmRequesterError::TooManyMeasurements);
         }
         let local_timing = self.validate_new_local_timing(measurement, local_timing)?;
-        self.remember_dialog_token(local_timing.dialog_token);
+        self.dialog_tokens.insert(local_timing.dialog_token);
         self.pending = Some(local_timing);
         self.last_measurement = Some(LastMeasurement {
             fields: measurement.fields,
@@ -896,7 +934,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
                 dialog_token: measurement.fields.follow_up_dialog_token,
             }
         };
-        self.remember_dialog_token(local_timing.dialog_token);
+        self.dialog_tokens.insert(local_timing.dialog_token);
         self.pending = Some(local_timing);
         self.last_measurement = Some(LastMeasurement {
             fields: measurement.fields,
@@ -936,7 +974,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         let local_timing = self.validate_new_local_timing(measurement, local_timing)?;
         let information_elements =
             self.own_information_elements(measurement.information_elements)?;
-        self.remember_dialog_token(local_timing.dialog_token);
+        self.dialog_tokens.insert(local_timing.dialog_token);
         self.pending = Some(local_timing);
         self.last_measurement = Some(LastMeasurement {
             fields: measurement.fields,
@@ -1007,7 +1045,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         previous: u8,
         actual: u8,
     ) -> Result<(), FtmRequesterError> {
-        if self.token_seen(actual) {
+        if self.dialog_tokens.contains(actual) {
             return self.protocol_error(FtmRequesterError::DialogTokenReused);
         }
         let expected = if previous == u8::MAX {
@@ -1088,40 +1126,6 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         })
     }
 
-    fn token_seen(&self, token: u8) -> bool {
-        if token == 0 {
-            return false;
-        }
-        let [a, b, c, d, e, f, g, h] = &self.dialog_tokens;
-        let word = match token >> 5 {
-            0 => a,
-            1 => b,
-            2 => c,
-            3 => d,
-            4 => e,
-            5 => f,
-            6 => g,
-            _ => h,
-        };
-        *word & (1_u32 << (token & 31)) != 0
-    }
-
-    fn remember_dialog_token(&mut self, token: NonZeroU8) {
-        // Every u8 indexes one of the eight words, including token 255.
-        let [a, b, c, d, e, f, g, h] = &mut self.dialog_tokens;
-        let word = match token.get() >> 5 {
-            0 => a,
-            1 => b,
-            2 => c,
-            3 => d,
-            4 => e,
-            5 => f,
-            6 => g,
-            _ => h,
-        };
-        *word |= 1_u32 << (token.get() & 31);
-    }
-
     fn fail(&mut self, failure: FtmSessionFailure) -> FtmRequesterService {
         self.phase = FtmRequesterPhase::Failed(failure);
         FtmRequesterService::Event(FtmRequesterEvent::Failed(failure))
@@ -1161,7 +1165,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         self.last_measurement = None;
         self.samples.fill(None);
         self.sample_count = 0;
-        self.dialog_tokens.fill(0);
+        self.dialog_tokens = TokenSet::EMPTY;
     }
 }
 

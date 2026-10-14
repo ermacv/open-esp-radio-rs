@@ -47,9 +47,10 @@
 //! backend ([`PortBackend`]), joined with the backend's driver
 //! ([below](#the-driver)); no caller ever holds the backend. The body
 //! receives an [`Owner`] in the [`Disabled`] state and must return
-//! [`Ended`], which only the uninstalls and the `fail_stop`s construct, so
-//! a body that drops or forgets its owner does not compile. The owner's
-//! state is its type (`'p` is its borrow of the install `run_port` keeps,
+//! [`Ended`], which only the uninstalls and the `fail_stop`s construct.
+//! Dropping or forgetting the owner is legal Rust, but leaves the body
+//! without the owner it needs to construct `Ended`. The owner's state is
+//! its type (`'p` is its borrow of the install `run_port` keeps,
 //! `'id` the install's brand):
 //!
 //! ```text
@@ -146,8 +147,9 @@
 //! - **Unsolicited reception is bounded:** a body that lags makes the
 //!   driver keep refilling DMA and drop the surplus, and the stream says
 //!   [`EventsLost`]. A received buffer goes back through the phase's own
-//!   `recycle`, never through `Drop`; a lost one only shrinks reception,
-//!   and in tests and debug builds a dropped one panics.
+//!   `recycle`, never through `Drop`. Keeping one occupies receive capacity;
+//!   the host model poisons the installation when an unrecycled buffer is
+//!   dropped. It does not panic or silently recycle that buffer.
 //!
 //! "One wait point" in the body's loop is a latency rule: a slow body
 //! delays its own events, but the driver keeps serving the hardware.
@@ -155,10 +157,11 @@
 //! # Drop
 //!
 //! Rust's types are affine: an owner can be dropped and `mem::forget` is
-//! safe. A body cannot do either and still end, and it runs as an executor
-//! task that is not cancelled; inside it, the phase's parts run under
-//! `join` over disjoint borrows. An owner is dropped only by a panic (on the
-//! target, a reset) or by a body raced outside its task. The owner is a
+//! safe. Neither operation returns `Ended`. The phase's parts run under
+//! `join` over disjoint borrows inside the body's task. Dropping an owner
+//! can be explicit or follow cancellation of a future that holds it; a
+//! forgotten owner runs no destructor. The installation remains owned by
+//! `run_port` until that enclosing future ends or is cancelled. The owner is a
 //! state over its borrow of the backend, which [`run_port`] keeps; it has
 //! no `Drop` of its own and never gives the backend up. Its sentry, dropped
 //! with it (or with an `enable` or `disable` future holding it), sets the
@@ -170,8 +173,8 @@
 //! published. This is the Wi-Fi port's form of the safety net, a
 //! consequence of the driver being the core's one owner in its own
 //! executor ([refinement on #581]). A `run_port` cancelled before its body
-//! ended abandons the backend the same way and asserts in debug builds, as
-//! [`PlatformClockGuard`] does; neither is the shutdown.
+//! ended abandons the backend the same way, without panicking in either
+//! debug or release builds. Cancellation does not perform normal shutdown.
 //!
 //! # Several executor tasks
 //!
@@ -460,11 +463,7 @@
 //!
 //! [owner decisions on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129037560
 //! [ownership and refusals]: https://github.com/ermacv/open-esp-radio-rs/blob/main/docs/architecture.md#ownership-and-refusals
-//! [`PlatformClockGuard`]: https://github.com/ermacv/open-esp-radio-rs/blob/main/crates/hardware/esp32s31/hal/src/power/clock/executor.rs
 //! [refinement on #581]: https://github.com/ermacv/open-esp-radio-rs/issues/581#issuecomment-6133179528
-
-#[cfg(any(test, all(feature = "test-support", not(target_os = "none"))))]
-extern crate std;
 
 use core::{
     cell::Cell,

@@ -13,6 +13,11 @@ single-producer single-consumer queues to it
 Every rule a caller controls is a type, each with a compile-fail test in
 the crate documentation.
 
+Rust still permits dropping or forgetting an owner. The type boundary
+prevents constructing `Ended` without consuming the owner through its
+uninstall or fail-stop path. The host model poisons unrecycled RX buffers;
+normal and test builds share the same lifecycle and cancellation behavior.
+
 The vocabulary the blocks share (the brand and `Mint`, slots, permits and
 seats, `PortResult`, `Poisoned`, `EventsLost` and the clock relation)
 is `oer-radio-port`'s.

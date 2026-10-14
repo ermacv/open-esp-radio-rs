@@ -11,17 +11,7 @@ pub struct MsduQueue<T, const DEPTH: usize> {
     queue: AffineSpscQueue<T, DEPTH>,
     consumer: AtomicWaker,
     producer: AtomicWaker,
-    fresh: Option<FreshQueue>,
 }
-
-// This witness exists only beside new, inaccessible empty storage. Consuming
-// it is the only route to the shared queue's checked splitting preconditions.
-struct FreshQueue;
-
-/// The queue's affine endpoint pair has already been granted. Reacquisition
-/// needs a new queue; existing queued owners remain in this storage.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct AlreadySplit;
 
 type Endpoints<'a, T, const DEPTH: usize> = (MsduSender<'a, T, DEPTH>, MsduReceiver<'a, T, DEPTH>);
 
@@ -31,17 +21,14 @@ impl<T, const DEPTH: usize> MsduQueue<T, DEPTH> {
             queue: const { AffineSpscQueue::new() },
             consumer: AtomicWaker::new(),
             producer: AtomicWaker::new(),
-            fresh: Some(FreshQueue),
         }
     }
 
-    /// Grant the queue's sole endpoint pair. A second call refuses without
-    /// inspecting or dropping queued values. The private fresh witness and
-    /// exclusive borrow prove the audited queue's empty/inactive conditions.
-    pub fn split(&mut self) -> Result<Endpoints<'_, T, DEPTH>, AlreadySplit> {
-        let FreshQueue = self.fresh.take().ok_or(AlreadySplit)?;
+    /// Exclusively borrow the storage to grant its sole endpoint pair.
+    /// A later pair receives any values left in the queue by its predecessor.
+    pub fn split(&mut self) -> Endpoints<'_, T, DEPTH> {
         let (sender, receiver) = self.queue.split();
-        Ok((
+        (
             MsduSender {
                 sender,
                 consumer: &self.consumer,
@@ -52,7 +39,7 @@ impl<T, const DEPTH: usize> MsduQueue<T, DEPTH> {
                 consumer: &self.consumer,
                 producer: &self.producer,
             },
-        ))
+        )
     }
 }
 
@@ -144,7 +131,7 @@ mod tests {
     fn full_queue_returns_the_same_non_clone_owner_and_keeps_fifo() {
         struct Owner(u8);
         let mut queue = MsduQueue::<Owner, 2>::new();
-        let (sender, receiver) = queue.split().ok().unwrap();
+        let (sender, receiver) = queue.split();
         assert!(sender.try_send(Owner(1)).is_ok());
         assert!(sender.try_send(Owner(2)).is_ok());
         assert_eq!(sender.try_send(Owner(3)).err().unwrap().0.0, 3);
@@ -159,7 +146,7 @@ mod tests {
     fn publication_wakes_the_consumer_and_reclaim_wakes_the_blocked_producer() {
         struct Owner(u8);
         let mut queue = MsduQueue::<Owner, 1>::new();
-        let (sender, receiver) = queue.split().ok().unwrap();
+        let (sender, receiver) = queue.split();
         let wakes = Arc::new(Wakes(AtomicUsize::new(0)));
         let waker = Waker::from(Arc::clone(&wakes));
         let mut cx = Context::from_waker(&waker);
@@ -178,7 +165,7 @@ mod tests {
     }
 
     #[test]
-    fn a_second_split_refuses_and_preserves_the_queued_owner() {
+    fn resplitting_keeps_the_queued_owner_until_the_next_receiver_takes_it() {
         struct Owner(Arc<AtomicUsize>);
         impl Drop for Owner {
             fn drop(&mut self) {
@@ -188,11 +175,17 @@ mod tests {
         let drops = Arc::new(AtomicUsize::new(0));
         {
             let mut queue = MsduQueue::<Owner, 1>::new();
-            let (sender, receiver) = queue.split().ok().unwrap();
-            assert!(sender.try_send(Owner(Arc::clone(&drops))).is_ok());
-            drop((sender, receiver));
-            assert_eq!(queue.split().err(), Some(AlreadySplit));
+            {
+                let (sender, _receiver) = queue.split();
+                assert!(sender.try_send(Owner(Arc::clone(&drops))).is_ok());
+            }
+            let (_next_sender, next_receiver) = queue.split();
             assert_eq!(drops.load(Ordering::Relaxed), 0);
+            let owner = next_receiver.try_receive().unwrap();
+            assert!(next_receiver.try_receive().is_none());
+            assert_eq!(drops.load(Ordering::Relaxed), 0);
+            drop(owner);
+            assert_eq!(drops.load(Ordering::Relaxed), 1);
         }
         assert_eq!(drops.load(Ordering::Relaxed), 1);
     }

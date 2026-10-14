@@ -266,14 +266,6 @@ impl<
         self.frames.len()
     }
 
-    /// Reacquire the sole standalone protocol consumer while the physical
-    /// producer is detached from a logical DMA role.
-    pub fn try_resume_standalone_receiver(
-        &self,
-    ) -> Option<StagedRxReceiver<'queue, 'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>> {
-        self.frames.try_resume_standalone_receiver()
-    }
-
     /// Reassemble the stopped production owner after a finite join attempt.
     pub fn with_halted_ring(
         self,
@@ -700,14 +692,6 @@ impl<
                 pipeline_observer,
             },
         ))
-    }
-
-    /// Reacquire the sole standalone protocol consumer retained by neither
-    /// the stopped nor live DMA owner across a station reconnect boundary.
-    pub fn try_resume_standalone_receiver(
-        &self,
-    ) -> Option<StagedRxReceiver<'queue, 'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>> {
-        self.frames.try_resume_standalone_receiver()
     }
 
     /// Monotonic descriptor progress used only to prove that a bounded drain

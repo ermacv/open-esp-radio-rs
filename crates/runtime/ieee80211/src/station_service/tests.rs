@@ -601,8 +601,8 @@ where
     );
     let mut transmit = MsduQueue::<TxMsdu, 2>::new();
     let mut receive = MsduQueue::<EthernetFrame, 2>::new();
-    let (stack, transmit) = transmit.split().ok().unwrap();
-    let (receive, delivered) = receive.split().ok().unwrap();
+    let (stack, transmit) = transmit.split();
+    let (receive, delivered) = receive.split();
     let world = World {
         air,
         clock: VirtualClock::new(),

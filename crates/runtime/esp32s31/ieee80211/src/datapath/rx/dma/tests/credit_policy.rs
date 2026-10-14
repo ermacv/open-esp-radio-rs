@@ -53,7 +53,7 @@ fn saturation<const SLOTS: usize, const DEPTH: usize>(critical_control: u16) {
     hardware.release_through(completed - 1, Some(completed));
     let pool = RxStagePool::<SLOTS, CAPACITY>::new();
     let observer = RecordingRxObserver::default();
-    let queue = StagedRxQueue::<NoopRawMutex, DEPTH, CAPACITY, SLOTS>::new();
+    let mut queue = StagedRxQueue::<NoopRawMutex, DEPTH, CAPACITY, SLOTS>::new();
     let (sender, receiver) = queue.split();
     let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender)
         .with_pipeline_observer(&observer);

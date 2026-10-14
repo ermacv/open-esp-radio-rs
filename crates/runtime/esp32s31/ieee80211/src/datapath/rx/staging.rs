@@ -75,18 +75,6 @@ impl<'queue, 'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, cons
     pub fn free_capacity(&self) -> usize {
         DEPTH.saturating_sub(self.len())
     }
-
-    /// Reacquire the only protocol consumer after a drained lifecycle epoch.
-    ///
-    /// Physical DMA deliberately retains this sender across station
-    /// reconnect. Reconnect must therefore resume the paired consumer instead
-    /// of splitting the static queue again and manufacturing a second sender.
-    pub fn resume_receiver(&self) -> StagedRxReceiver<'queue, 'pool, M, DEPTH, CAPACITY, SLOTS> {
-        StagedRxReceiver {
-            inner: self.inner.resume_consumer(),
-            mutex: PhantomData,
-        }
-    }
 }
 
 /// Single protocol consumer endpoint paired with [`StagedRxSender`].
@@ -143,15 +131,12 @@ impl<'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, const SLOTS:
     StagedRxQueue<'pool, M, DEPTH, CAPACITY, SLOTS>
 {
     pub const fn new() -> Self {
-        assert!(DEPTH != 0, "staged RX queue must not be empty");
-        assert!(
-            DEPTH <= usize::MAX / 2,
-            "staged RX cursor domain must fit usize"
-        );
-        assert!(
-            DEPTH <= SLOTS,
-            "staged RX queue cannot outgrow its ownership pool"
-        );
+        const {
+            assert!(
+                DEPTH <= SLOTS,
+                "staged RX queue cannot outgrow its ownership pool"
+            );
+        }
         Self {
             inner: AffineSpscQueue::new(),
             mutex: PhantomData,
@@ -159,7 +144,7 @@ impl<'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, const SLOTS:
     }
 
     pub fn split(
-        &self,
+        &mut self,
     ) -> (
         StagedRxSender<'_, 'pool, M, DEPTH, CAPACITY, SLOTS>,
         StagedRxReceiver<'_, 'pool, M, DEPTH, CAPACITY, SLOTS>,

@@ -43,7 +43,7 @@ use crate::datapath::{
     DatapathRxProgress, DatapathRxWorkCounters,
     rx::{
         routed::{StaApStagedRxFrame, StaApStagedRxSender},
-        staging::{StagedRxFrame, StagedRxReceiver, StagedRxSender, StagedRxTrySendError},
+        staging::{StagedRxFrame, StagedRxSender, StagedRxTrySendError},
     },
     services::DatapathRxService,
 };
@@ -136,15 +136,6 @@ impl<
         match self {
             Self::Standalone(frames) => frames.len(),
             Self::StaAp { frames, .. } => frames.len(),
-        }
-    }
-
-    fn try_resume_standalone_receiver(
-        &self,
-    ) -> Option<StagedRxReceiver<'queue, 'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>> {
-        match self {
-            Self::Standalone(frames) => Some(frames.resume_receiver()),
-            Self::StaAp { .. } => None,
         }
     }
 

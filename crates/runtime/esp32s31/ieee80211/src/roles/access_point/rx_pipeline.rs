@@ -187,7 +187,7 @@ where
         ring: RxRingHalted<'storage, COUNT>,
         storage: &'static ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
-        queue: &'queue StagedRxQueue<'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
+        queue: &'queue mut StagedRxQueue<'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
         delay: D,
     ) -> (
         Self,
@@ -209,7 +209,7 @@ where
         ring: RxRingLive<'storage, COUNT>,
         storage: &'static ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
-        queue: &'queue StagedRxQueue<'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
+        queue: &'queue mut StagedRxQueue<'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
         delay: D,
     ) -> (
         Self,
@@ -227,8 +227,8 @@ where
         )
     }
 
-    /// Adopt the standalone producer retained by a previous logical role and
-    /// resume only its protocol consumer for this AP epoch.
+    /// Adopt the retained producer and move its original consumer into the AP
+    /// epoch. Neither endpoint is recreated at this lifecycle boundary.
     pub fn from_live_resources(
         ring: RxRingLive<'storage, COUNT>,
         resources: crate::datapath::rx::dma::RxEpochResources<
@@ -244,13 +244,11 @@ where
             DMA_BUFFER_SIZE,
             DMA_STORAGE_SIZE,
         >,
+        frames: StagedRxReceiver<'queue, 'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
     ) -> (
         Self,
         AccessPointRxConsumer<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
     ) {
-        let frames = resources
-            .try_resume_standalone_receiver()
-            .expect("AP role handoff requires a retained standalone RX publisher");
         (
             Self {
                 inner: StagedRxEpoch::from_live_resources(ring, resources),
@@ -262,8 +260,8 @@ where
         )
     }
 
-    /// Adopt a retained standalone producer while its physical ring is
-    /// halted. Starting the AP epoch promotes this same owner to live.
+    /// Adopt the retained producer and its original consumer while the ring
+    /// is halted. Starting the AP epoch promotes this same owner to live.
     pub fn from_halted_resources(
         ring: RxRingHalted<'storage, COUNT>,
         resources: crate::datapath::rx::dma::RxEpochResources<
@@ -279,13 +277,11 @@ where
             DMA_BUFFER_SIZE,
             DMA_STORAGE_SIZE,
         >,
+        frames: StagedRxReceiver<'queue, 'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
     ) -> (
         Self,
         AccessPointRxConsumer<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
     ) {
-        let frames = resources
-            .try_resume_standalone_receiver()
-            .expect("AP role handoff requires a retained standalone RX publisher");
         (
             Self {
                 inner: StagedRxEpoch::from_halted_resources(ring, resources),
@@ -302,7 +298,7 @@ where
         ring: RxRingLive<'storage, COUNT>,
         storage: &'static ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
-        queue: &'queue StagedRxQueue<'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
+        queue: &'queue mut StagedRxQueue<'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
         delay: D,
         observer: &'pool dyn RxPipelineObserver,
     ) -> (
@@ -330,7 +326,7 @@ where
         ring: RxRingHalted<'storage, COUNT>,
         storage: &'static ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
-        queue: &'queue StagedRxQueue<'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
+        queue: &'queue mut StagedRxQueue<'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
         delay: D,
         observer: &'pool dyn RxPipelineObserver,
     ) -> (

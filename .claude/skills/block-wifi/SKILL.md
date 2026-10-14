@@ -48,18 +48,17 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
 - Pinned RTS-error dispatch is not a generic protection failure: `lmacProcessTxRtsError` sends details `1`, `3..5`, `0xa0..0xad` to collision (`+0x124`), and `0xc0` to the key-error end (`+0xe6`). The remaining details only log (`+0x72`) and produce no terminal. Keep that publication until its real result or timeout ([owner clarification](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6158453731)).
 - The fourth RTS-handler argument suppresses ending FES for `0xc0` when nonzero (`+0xd2`); do not derive it from the hardware Trigger-flow flag. The discovered ordinary completion callers pass zero: `libpp[lmac.o]::lmacProcessTxComplete +0x19a` and `rom[]::lmacProcessTxComplete +0x152`. `libpp[wdev.o]::wdev_funcs_init +0x900` installs the library handler in the ROM dispatch table.
 - Handler queue `10` resolves through `our_tx_eb`, then its descriptor at `+52`, then queue bits `7:4` of descriptor word `+4` (`lmacProcessTxRtsError +0x1a..+0x2c`). It is not ordinary queue ten. Cite `lmacProcessTxseckiderr +0x26` for its FES end; `+0x98` is its call site inside `lmacProcessTxError`.
-- The portable station service's MSDU queue grants endpoints once. Its private fresh witness proves `affine_spsc::split`'s empty/inactive preconditions; a second split refuses and preserves queued owners. An exclusive borrow alone would not prove empty storage after earlier endpoints were dropped.
+- `affine_spsc::split` takes `&mut` storage. The endpoints retain that exclusive borrow, so another pair cannot coexist. A new pair may receive values left by its predecessor; the queue owns them until receipt or destruction. Move the receiver itself across lifecycle boundaries; the producer cannot create one.
 
 ## Checks
 
-For the #563 cutover, before each push run check (`--all-targets`), test
+Before each push run check (`--all-targets`), test
 (including doctests), and clippy (`--all-targets`) without warnings, with
 `--features oer-ieee80211-runtime/test-support`, on:
 `oer-ieee80211-{lower-mac,sta,runtime,arbiter,upper-mac,port,mac,rsn}`,
 `oer-espressif-ieee80211-policy`, `oer-esp32s31-ieee80211-mac` and
 `oer-esp32s31-ieee80211`. The core package's host tests are required too;
 checking only its MAC dependency misses its ESP-NOW callers.
-
 
 - `cargo test -p <package>`, then `cargo xtask check changed`.
 - `cargo hil images check --class performance --type-check` for chip-side changes; `cargo xtask check network` for network-owner or manifest changes.

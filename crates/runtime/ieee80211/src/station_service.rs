@@ -43,10 +43,9 @@
 //! affine SPSC queues with atomic wakeups; a received
 //! MSDU the network's full queue cannot take is dropped, as an Ethernet
 //! receiver drops one.
-//! `MsduQueue::split` consumes a private fresh-storage witness. A second
-//! split returns `AlreadySplit` and preserves queued values, including when
-//! an earlier endpoint pair has been dropped or forgotten. The shared
-//! affine queue's splitting assertions therefore have proven preconditions.
+//! `MsduQueue::split` exclusively borrows its storage. Both endpoints retain
+//! that borrow, so no second pair can coexist. After the pair returns, queued
+//! values remain owned by the queue and reach the next receiver in order.
 //! `EthernetFrame` retains its fixed header and bounded payload; malformed
 //! lengths refuse at construction, and received payloads are never clipped.
 
@@ -286,7 +285,7 @@ impl<K: Ieee80211Capabilities> Levels<K> {
 mod ethernet;
 mod msdu_queue;
 pub use ethernet::{EthernetFrame, EthernetFrameError};
-pub use msdu_queue::{AlreadySplit, MsduQueue, MsduReceiver, MsduSender};
+pub use msdu_queue::{MsduQueue, MsduReceiver, MsduSender};
 
 /// One checked, owned Ethernet frame with its user priority.
 #[derive(Debug)]

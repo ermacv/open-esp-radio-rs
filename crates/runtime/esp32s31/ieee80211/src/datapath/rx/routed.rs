@@ -193,11 +193,12 @@ impl<'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, const SLOTS:
     StaApStagedRxQueue<'pool, M, DEPTH, CAPACITY, SLOTS>
 {
     pub const fn new() -> Self {
-        assert!(DEPTH != 0, "STA+AP staged RX queue must not be empty");
-        assert!(
-            DEPTH <= SLOTS,
-            "STA+AP staged RX queue cannot outgrow its ownership pool"
-        );
+        const {
+            assert!(
+                DEPTH <= SLOTS,
+                "STA+AP staged RX queue cannot outgrow its ownership pool"
+            );
+        }
         Self {
             frames: AffineSpscQueue::new(),
             mutex: PhantomData,
@@ -205,7 +206,7 @@ impl<'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, const SLOTS:
     }
 
     pub fn split(
-        &self,
+        &mut self,
     ) -> (
         StaApStagedRxSender<'pool, '_, M, DEPTH, CAPACITY, SLOTS>,
         StaApStagedRxReceiver<'pool, '_, M, DEPTH, CAPACITY, SLOTS>,

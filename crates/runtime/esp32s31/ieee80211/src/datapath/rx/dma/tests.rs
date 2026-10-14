@@ -431,7 +431,7 @@ fn connected_rx_stop_confirms_walker_off_and_preserves_static_resources() {
         .map_err(|(_, error)| error)
         .unwrap();
     let pool = RxStagePool::<STAGED_DEPTH, ESP32S31_RX_BUFFER_SIZE>::new();
-    let queue =
+    let mut queue =
         StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, ESP32S31_RX_BUFFER_SIZE, STAGED_DEPTH>::new();
     let (sender, _receiver) = queue.split();
     let service = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender);
@@ -521,7 +521,7 @@ fn logical_role_handoff_preserves_one_continuous_live_walker_epoch() {
         .map_err(|(_, error)| error)
         .unwrap();
     let pool = RxStagePool::<STAGED_DEPTH, ESP32S31_RX_BUFFER_SIZE>::new();
-    let queue =
+    let mut queue =
         StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, ESP32S31_RX_BUFFER_SIZE, STAGED_DEPTH>::new();
     let (sender, receiver) = queue.split();
     let first = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender);
@@ -577,7 +577,8 @@ fn logical_role_handoff_recycles_released_prefix_before_discarding_old_completio
     hardware.release_through(3, Some(4));
 
     let pool = RxStagePool::<STAGED_DEPTH, STAGE_CAPACITY>::new();
-    let queue = StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, STAGE_CAPACITY, STAGED_DEPTH>::new();
+    let mut queue =
+        StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, STAGE_CAPACITY, STAGED_DEPTH>::new();
     let (sender, receiver) = queue.split();
     let mut first = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender);
     assert_eq!(
@@ -640,7 +641,7 @@ fn exhausted_cursor_keeps_service_live_until_terminal_writeback_arrives() {
     }
     hardware.release_through(3, None);
     let pool = RxStagePool::<COUNT, STAGE_CAPACITY>::new();
-    let queue = StagedRxQueue::<NoopRawMutex, COUNT, STAGE_CAPACITY, COUNT>::new();
+    let mut queue = StagedRxQueue::<NoopRawMutex, COUNT, STAGE_CAPACITY, COUNT>::new();
     let (sender, receiver) = queue.split();
     let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender);
 
@@ -709,7 +710,8 @@ fn finite_service_discards_a_descriptor_chain_without_copying_it() {
     hardware.release_through(1, None);
     let observer = RecordingRxObserver::default();
     let pool = RxStagePool::<STAGED_DEPTH, STAGE_CAPACITY>::new();
-    let queue = StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, STAGE_CAPACITY, STAGED_DEPTH>::new();
+    let mut queue =
+        StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, STAGE_CAPACITY, STAGED_DEPTH>::new();
     let (sender, receiver) = queue.split();
     let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender)
         .with_pipeline_observer(&observer)
@@ -766,7 +768,7 @@ fn frozen_last_reclaims_chained_and_empty_discards_through_its_frontier() {
     hardware.release_through(3, None);
     let observer = RecordingRxObserver::default();
     let pool = RxStagePool::<COUNT, STAGE_CAPACITY>::new();
-    let queue = StagedRxQueue::<NoopRawMutex, COUNT, STAGE_CAPACITY, COUNT>::new();
+    let mut queue = StagedRxQueue::<NoopRawMutex, COUNT, STAGE_CAPACITY, COUNT>::new();
     let (sender, receiver) = queue.split();
     let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender)
         .with_pipeline_observer(&observer);
@@ -840,7 +842,8 @@ fn production_ring_reclaims_before_a_32_slot_stage_pool_saturates() {
 
     let pool = RxStagePool::<STAGED_DEPTH, STAGE_CAPACITY>::new();
     let observer = RecordingRxObserver::default();
-    let queue = StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, STAGE_CAPACITY, STAGED_DEPTH>::new();
+    let mut queue =
+        StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, STAGE_CAPACITY, STAGED_DEPTH>::new();
     let (sender, receiver) = queue.split();
     let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender)
         .with_pipeline_observer(&observer);
@@ -916,7 +919,7 @@ fn saturated_bulk_rx_discards_upper_copy_and_recycles_without_consuming_critical
 
     let pool = RxStagePool::<VENDOR_LARGE_RX_SLOT_COUNT, ESP32S31_RX_BUFFER_SIZE>::new();
     let observer = RecordingRxObserver::default();
-    let queue = StagedRxQueue::<
+    let mut queue = StagedRxQueue::<
         NoopRawMutex,
         VENDOR_LARGE_RX_SLOT_COUNT,
         ESP32S31_RX_BUFFER_SIZE,
@@ -1014,7 +1017,7 @@ fn burst_returns_to_consumer_before_treating_newly_filled_stage_as_overload() {
 
     let pool = RxStagePool::<VENDOR_LARGE_RX_SLOT_COUNT, ESP32S31_RX_BUFFER_SIZE>::new();
     let observer = RecordingRxObserver::default();
-    let queue = StagedRxQueue::<
+    let mut queue = StagedRxQueue::<
         NoopRawMutex,
         VENDOR_LARGE_RX_SLOT_COUNT,
         ESP32S31_RX_BUFFER_SIZE,
@@ -1088,7 +1091,7 @@ fn critical_frame_consumes_the_reserved_final_staging_credit() {
     hardware.release_through(COUNT - 1, None);
     let pool = RxStagePool::<COUNT, ESP32S31_RX_BUFFER_SIZE>::new();
     let observer = RecordingRxObserver::default();
-    let queue = StagedRxQueue::<NoopRawMutex, COUNT, ESP32S31_RX_BUFFER_SIZE, COUNT>::new();
+    let mut queue = StagedRxQueue::<NoopRawMutex, COUNT, ESP32S31_RX_BUFFER_SIZE, COUNT>::new();
     let (sender, _receiver) = queue.split();
     let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender)
         .with_pipeline_observer(&observer);
@@ -1137,7 +1140,7 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
     hardware.release_through(1, Some(0));
     let pool = RxStagePool::new();
     let observer = RecordingRxObserver::default();
-    let queue = StagedRxQueue::<NoopRawMutex, STAGED_DEPTH>::new();
+    let mut queue = StagedRxQueue::<NoopRawMutex, STAGED_DEPTH>::new();
     let (sender, receiver) = queue.split();
     let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender)
         .with_pipeline_observer(&observer)
@@ -1219,7 +1222,7 @@ fn one_shot_admission_discards_before_staging_then_observes_same_live_ring() {
         .unwrap();
     let pool = RxStagePool::new();
     let admission = OneShotNarrowAdmission::default();
-    let queue = StagedRxQueue::<NoopRawMutex, STAGED_DEPTH>::new();
+    let mut queue = StagedRxQueue::<NoopRawMutex, STAGED_DEPTH>::new();
     let (sender, receiver) = queue.split();
     let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender)
         .with_stage_admission_policy(&admission);
@@ -1292,7 +1295,7 @@ fn finite_service_accepts_a_unit_within_a_wider_negotiated_stage() {
     storage.descriptors()[1].write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | BIT_30 | BIT_31);
     hardware.release_through(1, Some(0));
     let pool = RxStagePool::<VENDOR_LARGE_RX_SLOT_COUNT, WIDE_STAGE_CAPACITY>::new();
-    let queue = StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, WIDE_STAGE_CAPACITY>::new();
+    let mut queue = StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, WIDE_STAGE_CAPACITY>::new();
     let (sender, receiver) = queue.split();
     let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender)
         .with_stage_admission_policy(UnreservedRxStageAdmission);

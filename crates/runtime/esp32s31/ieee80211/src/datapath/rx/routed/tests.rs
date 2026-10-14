@@ -77,12 +77,10 @@ fn invalid_hardware_unit_fails_before_vif_classification() {
 }
 
 #[test]
-fn paired_rx_queue_has_one_affine_endpoint_pair_per_drained_epoch() {
-    let queue = StaApStagedRxQueue::<NoopRawMutex, 2, 128, 2>::new();
-    let endpoints = queue.split();
-    let duplicate = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| queue.split()));
-    assert!(duplicate.is_err());
-    drop(endpoints);
-    let reused = queue.split();
-    drop(reused);
+fn paired_rx_queue_reuses_storage_after_returning_both_endpoints() {
+    let mut queue = StaApStagedRxQueue::<NoopRawMutex, 2, 128, 2>::new();
+    {
+        let (_sender, _receiver) = queue.split();
+    }
+    let (_sender, _receiver) = queue.split();
 }

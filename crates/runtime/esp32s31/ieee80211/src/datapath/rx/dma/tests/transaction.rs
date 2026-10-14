@@ -13,7 +13,7 @@ type TransactionStorage =
 fn invalid_reserve_retains_the_live_owner_until_an_explicit_policy_is_selected() {
     let (storage, ring, mut hardware, pointer) = transaction_fixture();
     let pool = RxStagePool::<1, TRANSACTION_CAPACITY>::new();
-    let queue = StagedRxQueue::<NoopRawMutex, 1, TRANSACTION_CAPACITY, 1>::new();
+    let mut queue = StagedRxQueue::<NoopRawMutex, 1, TRANSACTION_CAPACITY, 1>::new();
     let (sender, receiver) = queue.split();
     let mut producer = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender);
     let observed = producer.ring().observed_mask();
@@ -84,7 +84,7 @@ fn transaction_fixture() -> (
 fn adapter_service_publishes_the_original_buffer_before_its_future_is_polled() {
     let (storage, ring, mut hardware, pointer) = transaction_fixture();
     let pool = RxStagePool::<1, TRANSACTION_CAPACITY>::new();
-    let queue = StagedRxQueue::<NoopRawMutex, 1, TRANSACTION_CAPACITY, 1>::new();
+    let mut queue = StagedRxQueue::<NoopRawMutex, 1, TRANSACTION_CAPACITY, 1>::new();
     let (sender, receiver) = queue.split();
     let mut producer = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender)
         .with_stage_admission_policy(UnreservedRxStageAdmission);

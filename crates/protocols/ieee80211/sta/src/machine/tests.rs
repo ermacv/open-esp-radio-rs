@@ -173,6 +173,25 @@ fn meta() -> RxMeta {
     meta
 }
 
+fn verified_meta() -> RxMeta {
+    let mut meta = meta();
+    meta.crypto = RxEvidence::HardwareObserved(
+        oer_ieee80211_lower_mac::RxCryptoStatus::DecryptedAndIntegrityVerified,
+    );
+    meta
+}
+
+fn protected_received(mut frame: Vec<u8>, pn: u64) -> Vec<u8> {
+    use oer_ieee80211_mac::ccmp::{CcmpHeader, CcmpKeyId, CcmpPacketNumber};
+    frame[1] |= 0x40;
+    let header = CcmpHeader::new(
+        CcmpPacketNumber::new(pn).unwrap(),
+        CcmpKeyId::new(0).unwrap(),
+    );
+    frame.splice(24..24, header.encode());
+    frame
+}
+
 /// What the world saw the station and the arbiter do.
 #[derive(Debug, Eq, PartialEq)]
 enum Seen {
@@ -556,6 +575,13 @@ impl<'id> World<'id> {
             meta.rssi_dbm = RxEvidence::HardwareObserved(self.rssi);
         }
         let _ = self.station.receive(now, frame, meta, |_| {});
+        self.run(now);
+    }
+
+    fn receive_verified(&mut self, now: Instant, frame: &[u8]) {
+        self.station
+            .receive(now, frame, verified_meta(), |_| {})
+            .unwrap();
         self.run(now);
     }
 
@@ -1495,14 +1521,14 @@ fn group_message1(ptk: &oer_ieee80211_rsn::Ptk, replay: u64, key_id: u8) -> std:
         RsnTxFrame::<512>::group_message1(Akm::Psk, LOCAL, replay, [0; 8], wrapped.as_bytes())
             .unwrap()
             .authenticate(ptk);
-    eapol_frame(message.as_bytes())
+    protected_received(eapol_frame(message.as_bytes()), replay)
 }
 
 #[test]
 fn a_new_group_key_goes_in_beside_the_old_one_which_is_removed_after_group_message_2() {
     installed(|mint| {
         let (mut world, ptk) = wpa2_connected(mint, 2);
-        world.receive(at(50), &group_message1(&ptk, 3, 2));
+        world.receive_verified(at(50), &group_message1(&ptk, 3, 2));
         assert_eq!(
             world.take(),
             [
@@ -1537,7 +1563,7 @@ fn the_handshakes_eapol_goes_unprotected_and_group_message_2_under_the_pairwise_
         let (mut world, ptk) = wpa2_connected(mint, 2);
         // Messages 2 and 4 of the four-way handshake: no key, no Protected bit.
         assert_eq!(world.eapol, [(false, false), (false, false)]);
-        world.receive(at(50), &group_message1(&ptk, 3, 2));
+        world.receive_verified(at(50), &group_message1(&ptk, 3, 2));
         // Group Message 2, once connected: under the pairwise key, with the
         // Protected bit and the CCMP header's room.
         assert_eq!(world.eapol[2..], [(true, true)]);
@@ -1623,7 +1649,7 @@ fn eapol_and_data_on_tid_7_share_one_counter_and_tid_0_runs_on_across_a_rekey() 
         assert_eq!(send(&mut data, &mut world, 0), (0, 0));
         // A rekey: Group Message 2 is QoS Data on TID 7, numbered in its space.
         let before = world.frames.len();
-        world.receive(at(50), &group_message1(&ptk, 3, 2));
+        world.receive_verified(at(50), &group_message1(&ptk, 3, 2));
         let group_message2 = world.frames[before..]
             .iter()
             .find(|frame| frame[0] & 0xfc == 0x88)
@@ -1639,7 +1665,7 @@ fn eapol_and_data_on_tid_7_share_one_counter_and_tid_0_runs_on_across_a_rekey() 
 fn a_single_group_slot_is_replaced_without_a_separate_removal() {
     installed(|mint| {
         let (mut world, ptk) = wpa2_connected(mint, 1);
-        world.receive(at(50), &group_message1(&ptk, 3, 2));
+        world.receive_verified(at(50), &group_message1(&ptk, 3, 2));
         assert_eq!(
             world.take(),
             [
@@ -1664,7 +1690,7 @@ fn a_single_group_slot_is_replaced_without_a_separate_removal() {
 fn identical_gtk_material_keeps_its_installation_and_replay_frontier() {
     installed(|mint| {
         let (mut world, ptk) = wpa2_connected(mint, 2);
-        world.receive(at(50), &group_message1(&ptk, 3, 2));
+        world.receive_verified(at(50), &group_message1(&ptk, 3, 2));
         let mut link = world.station.link().unwrap();
         let LinkProtection::Ccmp { replay, .. } = &mut link.protection else {
             panic!()
@@ -1681,7 +1707,7 @@ fn identical_gtk_material_keeps_its_installation_and_replay_frontier() {
             )
             .unwrap();
         world.take();
-        world.receive(at(51), &group_message1(&ptk, 4, 2));
+        world.receive_verified(at(51), &group_message1(&ptk, 4, 2));
         assert!(!world.seen.iter().any(|event| matches!(
             event,
             Seen::InstallGroup(_) | Seen::ReplaceGroup(_) | Seen::RemoveKey
@@ -1708,7 +1734,7 @@ fn old_rx_between_replacement_and_its_terminal_cannot_advance_the_successor_epoc
     installed(|mint| {
         let (mut world, ptk) = wpa2_connected(mint, 1);
         world.hold_key_installs = true;
-        world.receive(at(50), &group_message1(&ptk, 3, 1));
+        world.receive_verified(at(50), &group_message1(&ptk, 3, 1));
         assert_eq!(world.pending_installs.len(), 1);
         let mut link = world.station.link().unwrap();
         let LinkProtection::Ccmp { replay, .. } = &mut link.protection else {
@@ -1957,7 +1983,7 @@ fn a_rekey_installed_after_disconnect_is_removed_without_group_message_2() {
         let (mut world, ptk) = wpa2_connected(mint, 2);
         world.hold_key_installs = true;
         let eapol = world.eapol.len();
-        world.receive(at(50), &group_message1(&ptk, 3, 2));
+        world.receive_verified(at(50), &group_message1(&ptk, 3, 2));
         assert_eq!(world.pending_installs.len(), 1);
         world
             .station
@@ -1986,7 +2012,7 @@ fn a_replacement_terminal_after_disconnect_returns_its_slot_through_removal() {
     installed(|mint| {
         let (mut world, ptk) = wpa2_connected(mint, 1);
         world.hold_key_installs = true;
-        world.receive(at(50), &group_message1(&ptk, 3, 2));
+        world.receive_verified(at(50), &group_message1(&ptk, 3, 2));
         assert_eq!(world.pending_installs.len(), 1);
         let responses = world.eapol.len();
         world
@@ -2610,6 +2636,7 @@ fn every_control_encoder_reserves_credit_before_consuming_its_sequence() {
                                 ),
                                 None,
                                 &[],
+                                Sending::GroupResponse,
                             )
                             .ok(),
                         3 => station
@@ -2620,6 +2647,7 @@ fn every_control_encoder_reserves_credit_before_consuming_its_sequence() {
                                 ),
                                 Some(qos),
                                 &[],
+                                Sending::GroupResponse,
                             )
                             .ok(),
                         4 => station.encode_probe(TxPurpose::Probe).ok(),
@@ -2814,6 +2842,163 @@ fn retry_message3(ptk: &oer_ieee80211_rsn::Ptk, counter: u64, material: u8) -> V
             .unwrap()
             .authenticate(ptk);
     eapol_frame(message.as_bytes())
+}
+
+#[test]
+fn connected_duplicate_m3_answers_without_reinstalling_or_resetting_replay() {
+    use oer_ieee80211_mac::ccmp::{CcmpHeader, CcmpPacketNumber, CcmpRxProtection};
+    installed(|mint| {
+        let (mut world, ptk) = wpa2_connected(mint, 2);
+        let header = CcmpHeader::new(
+            CcmpPacketNumber::new(900).unwrap(),
+            GroupKeyId::new(1).unwrap().key_id(),
+        );
+        if let State::Connected(Connected { rsn: Some(rsn), .. }) = &mut world.station.state {
+            rsn.replay
+                .check(CcmpRxProtection::Group, None, header)
+                .unwrap();
+        } else {
+            panic!("protected connected station");
+        }
+        let before = world.frames.len();
+        world.receive(at(50), &retry_message3(&ptk, 2, 0x99));
+        assert!(world.station.is_connected());
+        assert_eq!(world.frames.len(), before + 1);
+        assert_eq!(world.eapol.last(), Some(&(true, true)));
+        assert!(!world.take().iter().any(|event| matches!(
+            event,
+            Seen::InstallPairwise(_)
+                | Seen::InstallGroup(_)
+                | Seen::ReplaceGroup(_)
+                | Seen::RemoveKey
+        )));
+        let State::Connected(Connected { rsn: Some(rsn), .. }) = &mut world.station.state else {
+            panic!()
+        };
+        assert_eq!(rsn.supplicant.replay_counter(), 2);
+        assert!(
+            rsn.replay
+                .check(CcmpRxProtection::Group, None, header)
+                .is_err()
+        );
+    });
+}
+
+#[test]
+fn duplicate_m3_waits_for_credit_and_coalesces_across_group_key_installation() {
+    installed(|mint| {
+        let (mut world, ptk) = wpa2_connected(mint, 2);
+        world.hold_key_installs = true;
+        world.receive_verified(at(50), &group_message1(&ptk, 3, 2));
+        let first = world.station.tickets.take().unwrap();
+        let second = world.station.tickets.take().unwrap();
+        let before = world.frames.len();
+        for _ in 0..3 {
+            world.receive(at(51), &retry_message3(&ptk, 2, 0x99));
+        }
+        assert_eq!(world.frames.len(), before);
+        world
+            .station
+            .input(at(52), world.pending_installs.pop().unwrap());
+        world.station.tickets.put(first);
+        let Some(StaAction::TransmitProtected { transmit, .. }) = world.station.poll_action(at(52))
+        else {
+            panic!()
+        };
+        assert_eq!(
+            transmit.context.purpose,
+            TxPurpose::Connected(Sending::DuplicateMessage4)
+        );
+        world.transmitted(transmit, true);
+        // The same authenticated request while its response is in flight
+        // cannot displace the group response or grow a queue.
+        world
+            .station
+            .receive(at(52), &retry_message3(&ptk, 2, 0x99), meta(), |_| {})
+            .unwrap();
+        assert!(world.station.poll_action(at(52)).is_none());
+        world.end_transmissions(at(53));
+        let Some(StaAction::TransmitProtected { transmit, .. }) = world.station.poll_action(at(53))
+        else {
+            panic!()
+        };
+        assert_eq!(
+            transmit.context.purpose,
+            TxPurpose::Connected(Sending::GroupResponse)
+        );
+        world.transmitted(transmit, true);
+        world.station.tickets.put(second);
+        world.run(at(53));
+        assert_eq!(world.frames.len(), before + 2);
+        assert!(world.station.is_connected());
+        assert_eq!(world.station.tickets.len(), 2);
+        assert_eq!(world.station.buffers.len(), 2);
+    });
+}
+
+#[test]
+fn duplicate_m3_survives_an_in_flight_group_response() {
+    installed(|mint| {
+        let (mut world, ptk) = wpa2_connected(mint, 2);
+        world.hold_key_installs = true;
+        world.receive_verified(at(50), &group_message1(&ptk, 3, 2));
+        world
+            .station
+            .input(at(51), world.pending_installs.pop().unwrap());
+        let Some(StaAction::TransmitProtected { transmit, .. }) = world.station.poll_action(at(51))
+        else {
+            panic!()
+        };
+        assert_eq!(
+            transmit.context.purpose,
+            TxPurpose::Connected(Sending::GroupResponse)
+        );
+        world.transmitted(transmit, true);
+        let before = world.frames.len();
+        world
+            .station
+            .receive(at(51), &retry_message3(&ptk, 2, 0x99), meta(), |_| {})
+            .unwrap();
+        assert!(world.station.poll_action(at(51)).is_none());
+        world.end_transmissions(at(52));
+        let Some(StaAction::TransmitProtected { transmit, .. }) = world.station.poll_action(at(52))
+        else {
+            panic!()
+        };
+        assert_eq!(
+            transmit.context.purpose,
+            TxPurpose::Connected(Sending::DuplicateMessage4)
+        );
+        world.transmitted(transmit, true);
+        world.run(at(52));
+        assert_eq!(world.frames.len(), before + 1);
+        assert!(world.station.is_connected());
+    });
+}
+
+#[test]
+fn connected_eapol_rejects_changed_m3_and_unprotected_group_message1() {
+    installed(|mint| {
+        let (mut world, ptk) = wpa2_connected(mint, 2);
+        let before = world.frames.len();
+        let mut forged = retry_message3(&ptk, 2, 0x99);
+        *forged.last_mut().unwrap() ^= 1;
+        let mut unprotected_group = group_message1(&ptk, 3, 2);
+        unprotected_group[1] &= !0x40;
+        unprotected_group.drain(24..32);
+        for frame in [
+            forged,
+            retry_message3(&ptk, 1, 0x99),
+            retry_message3(&ptk, 2, 0x55),
+            retry_message3(&ptk, 3, 0x99),
+            unprotected_group,
+        ] {
+            world.receive(at(50), &frame);
+            assert!(world.station.is_connected());
+            assert!(world.take().is_empty());
+        }
+        assert_eq!(world.frames.len(), before);
+    });
 }
 
 #[test]

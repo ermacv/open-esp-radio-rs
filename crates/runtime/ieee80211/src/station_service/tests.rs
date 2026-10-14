@@ -213,6 +213,18 @@ fn group_message1(ptk: &oer_ieee80211_rsn::Ptk, replay: u64, key_id: u8) -> Vec<
     eapol_frame(message.as_bytes())
 }
 
+fn protected_group_message1(ptk: &oer_ieee80211_rsn::Ptk, replay: u64, key_id: u8) -> Vec<u8> {
+    use oer_ieee80211_mac::ccmp::{CcmpHeader, CcmpKeyId, CcmpPacketNumber};
+    let mut frame = group_message1(ptk, replay, key_id);
+    frame[1] |= 0x40;
+    let header = CcmpHeader::new(
+        CcmpPacketNumber::new(replay).unwrap(),
+        CcmpKeyId::new(0).unwrap(),
+    );
+    frame.splice(24..24, header.encode());
+    frame
+}
+
 /// What the port reported of a frame the access point sent: its signal
 /// over the noise floor, 55 dB.
 fn meta() -> ModelRxMeta {
@@ -762,7 +774,9 @@ fn on_wpa2_the_join_goes_on_the_default_record_and_the_handshake_on_the_associat
                 // Connected: Group Message 2 goes under the pairwise key the
                 // link lends, with the Protected bit, on the association's
                 // record.
-                world.air.receive(&group_message1(&ptk, 3, 2), meta());
+                world
+                    .air
+                    .receive(&protected_group_message1(&ptk, 3, 2), decrypted());
                 let group_message2 = world.sent(&mut seen, DATA).await;
                 assert!(
                     matches!(group_message2.key, Some((_, true))),
@@ -793,7 +807,9 @@ fn a_one_slot_station_completes_group_replacement_through_the_service_event_stre
                 let mut seen = 0;
                 world.associate(&mut seen, true).await;
                 let ptk = world.handshake(&mut seen).await;
-                world.air.receive(&group_message1(&ptk, 3, 2), meta());
+                world
+                    .air
+                    .receive(&protected_group_message1(&ptk, 3, 2), decrypted());
                 let response = world.sent(&mut seen, DATA).await;
                 assert!(matches!(response.key, Some((_, true))));
                 world
@@ -1062,7 +1078,9 @@ fn data_takes_all_its_tokens_and_eapol_null_and_deauthentication_still_go() {
                     .all(|frame| kind(frame) != DATA)
             );
 
-            world.air.receive(&group_message1(&ptk, 3, 2), meta());
+            world
+                .air
+                .receive(&protected_group_message1(&ptk, 3, 2), decrypted());
             let group_message2 = world.sent(&mut seen, DATA).await;
             // Protected after the handshake: the EtherType follows the
             // CCMP header's room.
@@ -1307,7 +1325,9 @@ fn interleaved_station_and_data_terminals_keep_their_owner_and_voice_order() {
                         yield_now().await;
                     }
                 }
-                world.air.receive(&group_message1(&ptk, 3, 2), meta());
+                world
+                    .air
+                    .receive(&protected_group_message1(&ptk, 3, 2), decrypted());
                 for _ in 0..20 {
                     yield_now().await;
                 }
@@ -1390,7 +1410,9 @@ fn eapol_and_deauthentication_wait_for_at_most_the_queue_depth_and_one_data_atte
                     assert_eq!(sent, 4 + 2);
                 };
                 fill().await;
-                world.air.receive(&group_message1(&ptk, 3, 2), meta());
+                world
+                    .air
+                    .receive(&protected_group_message1(&ptk, 3, 2), decrypted());
                 for _ in 0..20 {
                     yield_now().await;
                 }

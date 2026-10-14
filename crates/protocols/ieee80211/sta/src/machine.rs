@@ -1147,15 +1147,31 @@ enum Sending {
     Probe,
     /// Group Message 2.
     GroupResponse,
+    /// Message 4 answering the exact completed Message 3.
+    DuplicateMessage4,
 }
 
 /// A protected link's supplicant and its group key's handshake.
 struct ConnectedRsn {
     supplicant: RsnConnectedSupplicant,
     rekey: Rekey,
+    message4: DuplicateMessage4,
     /// The replay check of the association's keys, which the data machine
     /// borrows through the link.
     replay: CcmpRxReplayEpoch,
+}
+
+/// At most one response to the completed M3 is retained. Further exact
+/// duplicates coalesce while it waits or is in flight. A pending response
+/// precedes the next group-handshake TX, after any current control TX ends.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one bounded EAPOL response is owned in place; the station has no allocator"
+)]
+enum DuplicateMessage4 {
+    None,
+    Send(RsnTxFrame),
+    AwaitSent,
 }
 
 /// A group key's handshake: one algorithm whatever the slots. With a free
@@ -2222,6 +2238,11 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                         };
                     }
                 }
+                Sending::DuplicateMessage4 => {
+                    if let Some(rsn) = &mut connected.rsn {
+                        rsn.message4 = DuplicateMessage4::None;
+                    }
+                }
                 Sending::Probe => {}
             }
             if let Some(background) = &connected.background
@@ -2476,7 +2497,9 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 let state = self.take_state();
                 self.state = match state {
                     State::Handshake(handshake) => self.handshake_eapol(handshake, now, eapol),
-                    State::Connected(connected) => self.group_message(connected, eapol),
+                    State::Connected(connected) => {
+                        self.connected_eapol(connected, eapol, admitted.protected())
+                    }
                     state => state,
                 };
             } else {
@@ -2648,15 +2671,29 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         State::Connected(connected)
     }
 
-    /// A connected station's EAPOL frame: a group key's handshake.
-    fn group_message(
+    /// Connected EAPOL admission keeps plaintext completed-M3 recovery
+    /// separate from the protected group handshake, as in the chip consumer.
+    fn connected_eapol(
         &mut self,
         mut connected: Connected<T, K>,
         eapol: OwnedEapolFrame<DEFAULT_EAPOL_FRAME_CAPACITY>,
+        protected: bool,
     ) -> State<T, K> {
         let Some(rsn) = &mut connected.rsn else {
             return State::Connected(connected);
         };
+        match (eapol.key_frame().message(), protected) {
+            (oer_ieee80211_rsn::EapolKeyMessage::PairwiseMessage3, false) => {
+                if let Ok(response) = rsn.supplicant.on_duplicate_message3(eapol)
+                    && matches!(rsn.message4, DuplicateMessage4::None)
+                {
+                    rsn.message4 = DuplicateMessage4::Send(response);
+                }
+                return State::Connected(connected);
+            }
+            (oer_ieee80211_rsn::EapolKeyMessage::GroupMessage1, true) => {}
+            _ => return State::Connected(connected),
+        }
         if !matches!(rsn.rekey, Rekey::None) {
             return State::Connected(connected);
         }
@@ -3177,7 +3214,10 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 held => self.lease = held,
             }
         }
-        if let Some(owed) = self.owe_rekey(&mut connected) {
+        if let Some(owed) = self
+            .owe_duplicate_message4(&mut connected)
+            .or_else(|| self.owe_rekey(&mut connected))
+        {
             return match owed {
                 Ok(owed) => (State::Connected(connected), ActionProgress::Action(owed)),
                 Err(reason) => (
@@ -3192,6 +3232,37 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 leave_connected(connected, reason, Some(REASON_UNSPECIFIED)),
                 ActionProgress::Transition,
             ),
+        }
+    }
+
+    fn owe_duplicate_message4(
+        &mut self,
+        connected: &mut Connected<T, K>,
+    ) -> Option<Result<Owed<'id, T, K>, StaDisconnectReason>> {
+        if connected.sending || !self.link_up(&connected.power, &self.keys) {
+            return None;
+        }
+        let rsn = connected.rsn.as_mut()?;
+        let DuplicateMessage4::Send(message) = &rsn.message4 else {
+            return None;
+        };
+        let qos = connected.qos.then_some(&mut connected.qos_sequences);
+        match self.encode_protected_eapol(
+            connected.bssid,
+            qos,
+            message.as_bytes(),
+            Sending::DuplicateMessage4,
+        ) {
+            Ok(transmit) => {
+                rsn.message4 = DuplicateMessage4::AwaitSent;
+                connected.sending = true;
+                Some(Ok(Owed::TransmitProtected(transmit)))
+            }
+            Err(Unsent::NoTokens) => None,
+            Err(Unsent::Encode) => Some(Err(StaDisconnectReason::Encode)),
+            Err(Unsent::NoConnection) => Some(Err(StaDisconnectReason::TransmitRefused(
+                TxRefusal::LinkChanged,
+            ))),
         }
     }
 
@@ -3292,7 +3363,12 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 if !connected.sending && self.link_up(&connected.power, &self.keys) =>
             {
                 let qos = connected.qos.then_some(&mut connected.qos_sequences);
-                match self.encode_protected_eapol(connected.bssid, qos, message.as_bytes()) {
+                match self.encode_protected_eapol(
+                    connected.bssid,
+                    qos,
+                    message.as_bytes(),
+                    Sending::GroupResponse,
+                ) {
                     Ok(transmit) => {
                         connected.sending = true;
                         (Rekey::AwaitSent, Some(Owed::TransmitProtected(transmit)))
@@ -3825,6 +3901,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         bssid: Bssid,
         qos: Option<&mut [StaSequenceCounter; 8]>,
         eapol: &[u8],
+        sending: Sending,
     ) -> Result<StaTransmit<'id, T, K>, Unsent> {
         const PRIORITY: u8 = 7;
         let credit = self.reserve_transmit()?;
@@ -3851,7 +3928,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             credit,
             |buffer| frame.encode(buffer).ok(),
             StaFrameClass::Connection,
-            TxPurpose::Connected(Sending::GroupResponse),
+            TxPurpose::Connected(sending),
             StaRatePlan::Management,
         )?)
     }
@@ -4075,6 +4152,7 @@ fn connect<T: StaTokens, K>(handshake: Handshake<T, K>, retire_groups: bool) -> 
             connected_notice: true,
             rsn: Some(ConnectedRsn {
                 supplicant,
+                message4: DuplicateMessage4::None,
                 rekey: if retire_groups {
                     Rekey::Retire
                 } else {

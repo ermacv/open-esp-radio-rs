@@ -180,6 +180,15 @@ admission, counts `RxDropReason` refusals and reports `RxFrameRefused`.
 Malformed A-MSDU subframes retain their error instead of disappearing from
 an iterator.
 
+Connected EAPOL distinguishes an unprotected exact repeat of the completed
+M3 from a protected Group M1. The supplicant authenticates the completed-M3
+commitment before queuing M4; this path cannot reinstall keys or reset replay.
+One owned response coalesces repeats while waiting for credit or its terminal.
+After the current control TX ends, it precedes the next group response; GTK
+installation and retirement retain their own pending owners. M4 uses the
+installed pairwise key. Its terminal releases the response stage, so a later
+peer retry can request another response without an unbounded local retry loop.
+
 Station alone issues `LinkEpoch`, before starting Connect. Its non-cloneable
 `LinkEpochSource` consumes the install's unique `Slot<ConnectionEpochKind>`
 from `oer-ieee80211-lower-mac`; there is no reset or slot extraction. The

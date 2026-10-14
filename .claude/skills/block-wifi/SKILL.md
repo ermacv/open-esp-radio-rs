@@ -64,6 +64,12 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   call an active-exchange RX parser while waiting for credit or restore
   separate `active`/`terminal` flags beside the machine's owned stage.
 
+- Connected plaintext EAPOL may recover only the exact authenticated completed
+  M3, through `on_duplicate_message3`. Its owned M4 stage coalesces repeats
+  until TX ends and precedes the next group response after a busy control TX.
+  It never installs keys or resets replay. Group M1 requires the protected RX
+  path, including integrity and replay admission; both replies use the PTK.
+
 - Every port method but `next_event` is synchronous (`port.rs`, the trait's documentation).
 - A port has one event stream in occurrence order (#266 D8): the S31 runtime numbers every event under the core's lock and merges its four queues by that number (`runtime/esp32s31/ieee80211/src/lower_mac.rs`, `Queues::take`). An extension event names its kind and interface (`LowerMacEvent::Extension { kind, vif }`), and the router routes it by that interface, never by role.
 - Interrupt model ([ownership and refusals](../../../docs/architecture.md#ownership-and-refusals), #643): the MAC and power interrupts only read and clear their status and post the events, through `IrqConsumer::publish` (`hardware/esp32s31/driver/ieee80211/mac/src/irq/consumer.rs`); the port's owner task runs `LowerMacCore::service`. No Wi-Fi decision has a software deadline below 1 ms (ACK and Block Ack turnaround are hardware). The port backend `Esp32s31LowerMac` still runs `service` inside `on_interrupt` under the core's blocking lock; #563 removes it, so never add interrupt-side logic there.

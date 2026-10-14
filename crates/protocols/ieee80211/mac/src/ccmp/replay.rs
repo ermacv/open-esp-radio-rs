@@ -97,9 +97,9 @@ impl CcmpRxReplayEpoch {
     }
 
     /// The group key `key_id` is installed with its receive sequence: its
-    /// frontiers start there. A key installed again under an index that
-    /// holds one keeps the higher of the old and the new frontiers, so a
-    /// reinstalled key never lowers them.
+    /// frontiers start there. The key owner must compare material before
+    /// installation: identical material keeps its existing epoch unchanged;
+    /// new material starts from KeyRSC even if it reuses an ID with higher PN.
     ///
     /// # Errors
     ///
@@ -109,13 +109,16 @@ impl CcmpRxReplayEpoch {
         key_id: GroupKeyId,
         receive_sequence: [u8; 8],
     ) -> Result<(), CcmpRxReplayError> {
-        let mut group = CcmpRxReplayState::from_receive_sequence(receive_sequence)
+        let group = CcmpRxReplayState::from_receive_sequence(receive_sequence)
             .map_err(|_| CcmpRxReplayError::InvalidGroupReceiveSequence)?;
-        if let Some(current) = key_id.select(&self.groups) {
-            merge_frontiers(current, &mut group)?;
-        }
-        *key_id.select_mut(&mut self.groups) = Some(group);
+        self.install_group_epoch(key_id, group);
         Ok(())
+    }
+
+    /// Publish a successor epoch previously checked from its KeyRSC. The
+    /// key owner calls this at the installation boundary in the RX stream.
+    pub fn install_group_epoch(&mut self, key_id: GroupKeyId, epoch: CcmpRxReplayState) {
+        *key_id.select_mut(&mut self.groups) = Some(epoch);
     }
 
     /// The group key `key_id` is removed: its frames are refused from now
@@ -208,31 +211,6 @@ impl CcmpRxReplayEpoch {
         let candidate = self.prepare(protection, tid, header)?;
         self.commit(candidate)
     }
-}
-
-/// Raise `incoming`'s frontiers to `current`'s where `current`'s are
-/// higher.
-fn merge_frontiers(
-    current: &CcmpRxReplayState,
-    incoming: &mut CcmpRxReplayState,
-) -> Result<(), CcmpRxReplayError> {
-    for lane in core::iter::once(CcmpReplayLane::NonQos).chain((0..16).map(CcmpReplayLane::Tid)) {
-        let held = current
-            .highest(lane)
-            .ok_or(CcmpRxReplayError::Replay(CcmpReplayError::InvalidTid))?;
-        let new = incoming
-            .highest(lane)
-            .ok_or(CcmpRxReplayError::Replay(CcmpReplayError::InvalidTid))?;
-        if held > new {
-            let candidate = incoming
-                .prepare(lane, held)
-                .map_err(CcmpRxReplayError::Replay)?;
-            incoming
-                .commit(candidate)
-                .map_err(CcmpRxReplayError::Replay)?;
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

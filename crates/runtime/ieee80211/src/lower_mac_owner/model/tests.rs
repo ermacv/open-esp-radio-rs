@@ -454,6 +454,90 @@ fn an_attempt_naming_a_key_goes_after_the_keys_install() {
     assert_eq!(sent[0].key, Some((0, true)));
 }
 
+struct GroupReplacement<'a> {
+    air: &'a ModelAir,
+    reject: bool,
+}
+
+impl Work for GroupReplacement<'_> {
+    async fn work<'p, 'id: 'p>(
+        self,
+        phase: &mut ModelPhase<'p, 'id>,
+        resources: ModelResources<'id>,
+    ) {
+        let [slot, _] = resources.station_group;
+        let slot_id = slot.index();
+        let installed = phase.station().install_group_key(
+            slot,
+            GroupKeyId::new(1).unwrap(),
+            Ccmp128Key([1; 16]),
+        );
+        let meta = ModelRxMeta::new(Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap(), -50, -90);
+        self.air.receive(&[1], meta);
+        if self.reject {
+            self.air.reject_next_group_replacement();
+        }
+        phase.station().replace_group_key(
+            installed,
+            GroupKeyId::new(2).unwrap(),
+            Ccmp128Key([2; 16]),
+        );
+        if self.reject {
+            assert!(phase.next_event().await.is_err());
+            return;
+        }
+        let Ok(Ok(LowerMacEvent::Received { frame, .. })) = phase.next_event().await else {
+            panic!("old RX must precede replacement");
+        };
+        assert_eq!(frame.bytes, [1]);
+        phase.recycle(frame);
+        let Ok(Ok(LowerMacEvent::GroupKeyReplaced(key))) = phase.next_event().await else {
+            panic!("replacement returns its installed owner");
+        };
+        assert_eq!(key.slot.index(), slot_id);
+        assert_eq!(key.identity.0.key_id, 2);
+        self.air.receive(&[2], meta);
+        let Ok(Ok(LowerMacEvent::Received { frame, .. })) = phase.next_event().await else {
+            panic!("new RX follows replacement");
+        };
+        assert_eq!(frame.bytes, [2]);
+        phase.recycle(frame);
+        phase.station().remove_group_key(key);
+        let Ok(Ok(LowerMacEvent::KeyRemoved(Removed::Station(RemovedKey::Group(slot))))) =
+            phase.next_event().await
+        else {
+            panic!("the replaced slot returns once");
+        };
+        assert_eq!(slot.index(), slot_id);
+    }
+}
+
+#[test]
+fn group_replacement_returns_the_same_slot_between_old_and_new_rx() {
+    let (backend, air) = backend();
+    block_on(run_port(
+        backend,
+        Body(GroupReplacement {
+            air: &air,
+            reject: false,
+        }),
+    ));
+    assert!(!air.poisoned.get());
+}
+
+#[test]
+fn a_rejected_group_replacement_poisons_without_a_success_terminal() {
+    let (backend, air) = backend();
+    block_on(run_port(
+        backend,
+        Body(GroupReplacement {
+            air: &air,
+            reject: true,
+        }),
+    ));
+    assert!(air.poisoned.get());
+}
+
 /// Install a key, submit an attempt that names it and remove the key, all
 /// before the driver runs and without reading an event.
 struct KeyAttemptRemoval;

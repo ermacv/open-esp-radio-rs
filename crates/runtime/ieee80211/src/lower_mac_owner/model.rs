@@ -772,11 +772,15 @@ impl<'id, R: 'id> KeyTypes<'id> for ModelKeys<'id, R> {
     type PairwiseKey = ModelPairwiseKey<'id, R>;
     type GroupKey = ModelGroupKey<'id, R>;
     type Identity = KeyIdentity;
+    type GroupSlotIdentity = u8;
     fn pairwise_identity(key: &Self::PairwiseKey) -> KeyIdentity {
         key.identity.clone()
     }
     fn group_identity(key: &Self::GroupKey) -> KeyIdentity {
         key.identity.clone()
+    }
+    fn group_slot_identity(key: &Self::GroupKey) -> u8 {
+        key.slot.index()
     }
 }
 
@@ -1000,6 +1004,7 @@ pub struct ModelAir {
     rx: RefCell<VecDeque<(Vec<u8>, ModelRxMeta)>>,
     rx_stream: RefCell<Option<(Vec<u8>, ModelRxMeta)>>,
     refuse_enable: Cell<bool>,
+    reject_group_replacement: Cell<bool>,
     poisoned: Cell<bool>,
     swap_terminals: Cell<bool>,
     corrupted_terminal: Cell<bool>,
@@ -1023,6 +1028,12 @@ pub struct ModelAir {
 }
 
 impl ModelAir {
+    /// Fail the next GTK hardware replacement. The driver retains the slot
+    /// until fail-stop ends the installation and emits no success terminal.
+    pub fn reject_next_group_replacement(&self) {
+        self.reject_group_replacement.set(true);
+    }
+
     /// Inject a broken backend return by exchanging the MPDUs of the next
     /// two Single terminals. Each retains its original context and ticket;
     /// the consumer must detect the mismatch and fail-stop. The first
@@ -1177,6 +1188,10 @@ enum Command<'id, X: ModelContext> {
     SubmitAmpdu(PreparedAggregate<'id, X>),
     InstallKey {
         key: KeyIdentity,
+    },
+    ReplaceGroupKey {
+        installed: ModelGroupKey<'id, Station>,
+        key_id: GroupKeyId,
     },
     RemoveKey {
         key: KeyIdentity,
@@ -1577,6 +1592,7 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
             }),
             keys: Vec::new(),
             removing: Vec::new(),
+            failed_replacement: None,
             gate: DriverGate::Open,
         };
         poll_fn(move |cx| {
@@ -1641,6 +1657,7 @@ struct Driver<'id, X: ModelContext> {
     /// The installed hardware keys.
     keys: Vec<KeyIdentity>,
     removing: Vec<(KeyIdentity, Removed<'id, ModelTypes<X>>)>,
+    failed_replacement: Option<ModelGroupKey<'id, Station>>,
     gate: DriverGate<'id>,
 }
 
@@ -1709,6 +1726,26 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                         .push_back(Work::Aggregate(aggregate));
                 }
                 Command::InstallKey { key } => self.keys.push(key),
+                Command::ReplaceGroupKey { installed, key_id } => {
+                    // RX already observed under the old installation precedes
+                    // the terminal, even when the command and RX arrive in one
+                    // driver step.
+                    self.receive(held);
+                    if held.air.reject_group_replacement.replace(false) {
+                        self.failed_replacement = Some(installed);
+                        held.poison();
+                        return;
+                    }
+                    installed.identity.0.active.set(false);
+                    self.keys.retain(|key| *key != installed.identity);
+                    let identity =
+                        KeyIdentity::new(installed.slot.index(), key_id.get(), &held.air);
+                    self.keys.push(identity.clone());
+                    held.post(LowerMacEvent::GroupKeyReplaced(ModelGroupKey {
+                        identity,
+                        slot: installed.slot,
+                    }));
+                }
                 Command::RemoveKey { key, removed } => {
                     self.removing.push((key, removed));
                 }
@@ -2904,6 +2941,16 @@ where
 impl<'p, 'v, 'id: 'p, C: Ieee80211Capabilities, X: ModelContext> StationPhase<'p, 'id>
     for ModelInterface<'p, 'v, 'id, Station, C, X>
 {
+    fn replace_group_key(
+        &mut self,
+        installed: ModelGroupKey<'id, Station>,
+        key_id: GroupKeyId,
+        _: Ccmp128Key,
+    ) {
+        self.held
+            .command(Command::ReplaceGroupKey { installed, key_id });
+    }
+
     fn configure(&mut self, _: StationReceive<C>) {
         self.held.settings.borrow_mut().station = true;
         self.held.air.wake_driver();

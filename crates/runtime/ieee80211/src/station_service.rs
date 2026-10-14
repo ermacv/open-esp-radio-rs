@@ -429,8 +429,18 @@ pub struct StationService<'id, B: StationPort<'id>, S, const RX: usize> {
     pub rates: S,
     /// What the service dropped or could not send.
     pub counters: ServiceCounters,
-    configuring: Option<oer_ieee80211_sta::machine::PendingConfiguration<'id>>,
+    pending: PendingActions<'id, B>,
     held: [Option<<B::Types as PhaseTypes<'id>>::RxBuffer>; RX],
+}
+
+struct PendingActions<'id, B: StationPort<'id>> {
+    configuring: Option<oer_ieee80211_sta::machine::PendingConfiguration<'id>>,
+    replacing: Option<PendingReplacement<'id, B>>,
+}
+
+struct PendingReplacement<'id, B: StationPort<'id>> {
+    slot: <<B::Types as PhaseTypes<'id>>::StationKeys as KeyTypes<'id>>::GroupSlotIdentity,
+    pending: oer_ieee80211_sta::machine::PendingGroupReplacement<'id>,
 }
 
 /// What a step left the loop to do.
@@ -476,7 +486,10 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
             arbiter,
             rates,
             counters: ServiceCounters::default(),
-            configuring: None,
+            pending: PendingActions {
+                configuring: None,
+                replacing: None,
+            },
             held: [const { None }; RX],
         }
     }
@@ -820,7 +833,7 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
                     io,
                     &mut self.arbiter,
                     &self.rates,
-                    &mut self.configuring,
+                    &mut self.pending,
                     action,
                 )
                 .and_then(|follow| self.follow(now, follow, io).map_err(|_| ()));
@@ -1086,7 +1099,7 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
                 None
             }
             LowerMacEvent::Configured(VifRole::Station) => {
-                if let Some(pending) = self.configuring.take() {
+                if let Some(pending) = self.pending.configuring.take() {
                     self.station.input(now, StaInput::Configured(pending));
                 }
                 None
@@ -1097,6 +1110,26 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
             }
             LowerMacEvent::KeyRemoved(Removed::Station(RemovedKey::Group(slot))) => {
                 self.station.input(now, StaInput::GroupKeyRemoved(slot));
+                None
+            }
+            LowerMacEvent::GroupKeyReplaced(key) => {
+                let replacement = self
+                    .pending
+                    .replacing
+                    .take()
+                    .ok_or(BackendContractViolation)?;
+                if replacement.slot
+                    != <B::Types as PhaseTypes<'id>>::StationKeys::group_slot_identity(&key)
+                {
+                    return Err(BackendContractViolation);
+                }
+                self.station.input(
+                    now,
+                    StaInput::GroupKeyReplaced {
+                        pending: replacement.pending,
+                        key,
+                    },
+                );
                 None
             }
             // No access point runs in this service; the station follows no
@@ -1342,7 +1375,7 @@ fn station_action<
     io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
     arbiter: &mut PortArbiter<'id, B>,
     rates: &S,
-    configuring: &mut Option<oer_ieee80211_sta::machine::PendingConfiguration<'id>>,
+    pending_actions: &mut PendingActions<'id, B>,
     action: StaAction<'_, 'id, PortStaTokens<'id, B::Types, B::Small>, B::Caps>,
 ) -> Result<Follow<'id, B>, ()>
 where
@@ -1373,7 +1406,7 @@ where
             return Ok(Follow::Nothing);
         }
         StaAction::Configure(receive, pending) => {
-            *configuring = Some(pending);
+            pending_actions.configuring = Some(pending);
             phase.station().configure(receive);
             return Ok(Follow::Nothing);
         }
@@ -1401,6 +1434,22 @@ where
         },
         StaAction::RemovePairwiseKey(key) => {
             phase.station().remove_pairwise_key(key);
+            return Ok(Follow::Nothing);
+        }
+        StaAction::ReplaceGroupKey {
+            pending,
+            installed,
+            key_id,
+            key,
+        } => {
+            if pending_actions.replacing.is_some() {
+                return Err(());
+            }
+            let slot = <B::Types as PhaseTypes<'id>>::StationKeys::group_slot_identity(&installed);
+            pending_actions.replacing = Some(PendingReplacement { slot, pending });
+            phase
+                .station()
+                .replace_group_key(installed, key_id, Ccmp128Key(key));
             return Ok(Follow::Nothing);
         }
         StaAction::RemoveGroupKey(key) => {

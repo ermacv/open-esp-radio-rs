@@ -145,20 +145,20 @@ fn gtk_zero_and_ptk_zero_have_distinct_receive_frontiers() {
 }
 
 #[test]
-fn the_same_group_key_installed_again_never_lowers_its_frontiers() {
+fn new_group_material_in_the_same_id_starts_from_its_key_rsc() {
     let mut epoch = epoch();
     assert_eq!(
         epoch.check(CcmpRxProtection::Group, None, header(900, 1)),
         Ok(())
     );
-    epoch.install_group(group(1), [0; 8]).unwrap();
+    epoch.install_group(group(1), 5u64.to_le_bytes()).unwrap();
     assert!(
         epoch
-            .check(CcmpRxProtection::Group, None, header(900, 1))
+            .check(CcmpRxProtection::Group, None, header(5, 1))
             .is_err()
     );
     assert_eq!(
-        epoch.check(CcmpRxProtection::Group, None, header(901, 1)),
+        epoch.check(CcmpRxProtection::Group, None, header(6, 1)),
         Ok(())
     );
 }

@@ -183,6 +183,7 @@ enum Seen {
     Upstream(UpstreamFact<Caps>),
     InstallPairwise([u8; 16]),
     InstallGroup(u8),
+    ReplaceGroup(u8),
     RemoveKey,
 }
 
@@ -351,6 +352,21 @@ impl<'id> World<'id> {
                     StaAction::RemoveGroupKey(Key(slot)) => {
                         self.seen.push(Seen::RemoveKey);
                         self.station.input(now, StaInput::GroupKeyRemoved(slot));
+                    }
+                    StaAction::ReplaceGroupKey {
+                        pending,
+                        installed,
+                        key_id,
+                        ..
+                    } => {
+                        self.seen.push(Seen::ReplaceGroup(key_id.get()));
+                        self.installed(
+                            now,
+                            StaInput::GroupKeyReplaced {
+                                pending,
+                                key: installed,
+                            },
+                        );
                     }
                     StaAction::ExchangeLease(old) => {
                         let new = self.arbiter.exchange(old);
@@ -1572,15 +1588,14 @@ fn eapol_and_data_on_tid_7_share_one_counter_and_tid_0_runs_on_across_a_rekey() 
 }
 
 #[test]
-fn without_a_free_group_slot_the_old_key_goes_first() {
+fn a_single_group_slot_is_replaced_without_a_separate_removal() {
     installed(|mint| {
         let (mut world, ptk) = wpa2_connected(mint, 1);
         world.receive(at(50), &group_message1(&ptk, 3, 2));
         assert_eq!(
             world.take(),
             [
-                Seen::RemoveKey,
-                Seen::InstallGroup(2),
+                Seen::ReplaceGroup(2),
                 Seen::Transmit {
                     subtype: 0x0008,
                     on: 6
@@ -1588,6 +1603,107 @@ fn without_a_free_group_slot_the_old_key_goes_first() {
             ]
         );
         assert!(world.station.is_connected());
+        assert_eq!(world.station.keys.group_slots.free.len(), 0);
+        world
+            .station
+            .input(at(51), StaInput::Command(StaCommand::Disconnect));
+        world.run(at(51));
+        assert!(world.station.keys.clear());
+    });
+}
+
+#[test]
+fn identical_gtk_material_keeps_its_installation_and_replay_frontier() {
+    installed(|mint| {
+        let (mut world, ptk) = wpa2_connected(mint, 2);
+        world.receive(at(50), &group_message1(&ptk, 3, 2));
+        let mut link = world.station.link().unwrap();
+        let LinkProtection::Ccmp { replay, .. } = &mut link.protection else {
+            panic!()
+        };
+        let header = oer_ieee80211_mac::ccmp::CcmpHeader::new(
+            oer_ieee80211_mac::ccmp::CcmpPacketNumber::new(900).unwrap(),
+            GroupKeyId::new(2).unwrap().key_id(),
+        );
+        replay
+            .check(
+                oer_ieee80211_mac::ccmp::CcmpRxProtection::Group,
+                None,
+                header,
+            )
+            .unwrap();
+        world.take();
+        world.receive(at(51), &group_message1(&ptk, 4, 2));
+        assert!(!world.seen.iter().any(|event| matches!(
+            event,
+            Seen::InstallGroup(_) | Seen::ReplaceGroup(_) | Seen::RemoveKey
+        )));
+        let mut link = world.station.link().unwrap();
+        let LinkProtection::Ccmp { replay, .. } = &mut link.protection else {
+            panic!()
+        };
+        assert!(
+            replay
+                .check(
+                    oer_ieee80211_mac::ccmp::CcmpRxProtection::Group,
+                    None,
+                    header
+                )
+                .is_err()
+        );
+        assert_eq!(world.station.keys.group_slots.free.len(), 1);
+    });
+}
+
+#[test]
+fn old_rx_between_replacement_and_its_terminal_cannot_advance_the_successor_epoch() {
+    installed(|mint| {
+        let (mut world, ptk) = wpa2_connected(mint, 1);
+        world.hold_key_installs = true;
+        world.receive(at(50), &group_message1(&ptk, 3, 1));
+        assert_eq!(world.pending_installs.len(), 1);
+        let mut link = world.station.link().unwrap();
+        let LinkProtection::Ccmp { replay, .. } = &mut link.protection else {
+            panic!()
+        };
+        let header = |pn| {
+            oer_ieee80211_mac::ccmp::CcmpHeader::new(
+                oer_ieee80211_mac::ccmp::CcmpPacketNumber::new(pn).unwrap(),
+                GroupKeyId::new(1).unwrap().key_id(),
+            )
+        };
+        replay
+            .check(
+                oer_ieee80211_mac::ccmp::CcmpRxProtection::Group,
+                None,
+                header(900),
+            )
+            .unwrap();
+        let terminal = world.pending_installs.pop().unwrap();
+        world.station.input(at(51), terminal);
+        world.run(at(51));
+        let mut link = world.station.link().unwrap();
+        let LinkProtection::Ccmp { replay, .. } = &mut link.protection else {
+            panic!()
+        };
+        replay
+            .check(
+                oer_ieee80211_mac::ccmp::CcmpRxProtection::Group,
+                None,
+                header(1),
+            )
+            .unwrap();
+        assert!(
+            replay
+                .check(
+                    oer_ieee80211_mac::ccmp::CcmpRxProtection::Group,
+                    None,
+                    header(1)
+                )
+                .is_err()
+        );
+        assert_eq!(world.station.keys.group_slots.free.len(), 0);
+        assert!(!world.seen.contains(&Seen::RemoveKey));
     });
 }
 
@@ -1816,6 +1932,35 @@ fn a_rekey_installed_after_disconnect_is_removed_without_group_message_2() {
 }
 
 #[test]
+fn a_replacement_terminal_after_disconnect_returns_its_slot_through_removal() {
+    installed(|mint| {
+        let (mut world, ptk) = wpa2_connected(mint, 1);
+        world.hold_key_installs = true;
+        world.receive(at(50), &group_message1(&ptk, 3, 2));
+        assert_eq!(world.pending_installs.len(), 1);
+        let responses = world.eapol.len();
+        world
+            .station
+            .input(at(51), StaInput::Command(StaCommand::Disconnect));
+        world.run(at(51));
+        assert!(!world.station.keys.clear());
+        let terminal = world.pending_installs.pop().unwrap();
+        world.station.input(at(52), terminal);
+        world.run(at(52));
+        assert!(world.station.keys.clear());
+        assert_eq!(world.eapol.len(), responses);
+        assert_eq!(
+            world
+                .seen
+                .iter()
+                .filter(|event| **event == Seen::RemoveKey)
+                .count(),
+            2
+        );
+    });
+}
+
+#[test]
 fn group_slots_are_fungible_and_the_full_pool_proves_all_returns() {
     installed(|_mint| {
         for reverse in [false, true] {
@@ -1823,9 +1968,9 @@ fn group_slots_are_fungible_and_the_full_pool_proves_all_returns() {
             let mut epochs = LinkEpochSource::for_test(0);
             let epoch = epochs.begin();
             let key_id = GroupKeyId::new(1).unwrap();
-            let (a, pending_a) = keys.take_group_slot(epoch, key_id).unwrap();
-            let (b, pending_b) = keys.take_group_slot(epoch, key_id).unwrap();
-            assert!(keys.take_group_slot(epoch, key_id).is_none());
+            let (a, pending_a) = keys.take_group_slot(epoch, key_id, [0; 16]).unwrap();
+            let (b, pending_b) = keys.take_group_slot(epoch, key_id, [0; 16]).unwrap();
+            assert!(keys.take_group_slot(epoch, key_id, [0; 16]).is_none());
             keys.group_installed(pending_a, Key(a), true);
             keys.group_installed(pending_b, Key(b), true);
             let (_, Key(a)) = keys.take_group_key().unwrap();
@@ -1838,7 +1983,9 @@ fn group_slots_are_fungible_and_the_full_pool_proves_all_returns() {
             assert!(keys.clear());
             // Either returned raw slot is usable for any next key ID.
             let new_id = GroupKeyId::new(2).unwrap();
-            let (slot, pending) = keys.take_group_slot(epochs.begin(), new_id).unwrap();
+            let (slot, pending) = keys
+                .take_group_slot(epochs.begin(), new_id, [1; 16])
+                .unwrap();
             assert_eq!(pending.key_id, new_id);
             assert!(matches!(slot, Slot(7) | Slot(42)));
             assert!(!keys.clear());

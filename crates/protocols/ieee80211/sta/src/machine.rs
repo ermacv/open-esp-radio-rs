@@ -110,7 +110,9 @@ use oer_time::{Duration, Instant};
 
 use crate::epoch::{LinkEpoch, LinkEpochSource};
 use crate::pool::Pool;
+mod group_keys;
 use crate::power_save::{NullOutcome, PowerSaveDecision, PowerSaveView};
+use group_keys::{GroupKeys, GroupPlace, Installed as InstalledGroup};
 
 use crate::join::{
     association::{StaAssociationEvent, StaAssociationPoll, StaAssociationRuntime},
@@ -247,6 +249,13 @@ pub enum StaInput<'f, 'id, T: StaTokens, K> {
         /// The original installation action, including epoch and key index.
         pending: PendingGroupKey<'id>,
     },
+    /// The FIFO replacement terminal for the pending operation's slot.
+    GroupKeyReplaced {
+        /// The private successor epoch and installation record.
+        pending: PendingGroupReplacement<'id>,
+        /// The successor key, retaining the same physical slot.
+        key: T::GroupKey,
+    },
     /// A removed pairwise key's slot.
     PairwiseKeyRemoved(T::PairwiseSlot),
     /// A removed group key's slot.
@@ -322,6 +331,18 @@ pub enum StaAction<'a, 'id, T: StaTokens, K> {
         /// Its key index.
         key_id: GroupKeyId,
         /// The temporal key.
+        key: [u8; 16],
+    },
+    /// Replace the consumed key in one FIFO operation. Its slot reserves the
+    /// terminal; only that terminal switches the station's replay epoch.
+    ReplaceGroupKey {
+        /// Return with the replacement terminal of this installed key's slot.
+        pending: PendingGroupReplacement<'id>,
+        /// The previous installation and its slot.
+        installed: T::GroupKey,
+        /// The successor's wire ID.
+        key_id: GroupKeyId,
+        /// The successor's material.
         key: [u8; 16],
     },
     /// Remove the pairwise key ([`StaInput::PairwiseKeyRemoved`]).
@@ -725,6 +746,41 @@ struct PairwiseCell;
 pub struct PendingGroupKey<'id> {
     epoch: LinkEpoch<'id>,
     key_id: GroupKeyId,
+    material: [u8; 16],
+    place: GroupPlace,
+}
+
+/// The reserved successor of a GTK. It stays private until the port's
+/// replacement terminal; the active replay epoch remains usable meanwhile.
+///
+/// The pending owner cannot complete two replacements:
+/// ```compile_fail,E0382
+/// use oer_ieee80211_sta::machine::PendingGroupReplacement;
+/// fn duplicate<'id>(pending: PendingGroupReplacement<'id>) {
+///     let first = pending;
+///     let second = pending;
+/// }
+/// ```
+/// The replacement input must return that owner:
+/// ```compile_fail,E0063
+/// use oer_ieee80211_sta::machine::{StaInput, StaTokens};
+/// fn forged<'id, T: StaTokens, K>(key: T::GroupKey) -> StaInput<'static, 'id, T, K> {
+///     StaInput::GroupKeyReplaced { key }
+/// }
+/// ```
+/// Its valid terminal moves both values once:
+/// ```
+/// use oer_ieee80211_sta::machine::{PendingGroupReplacement, StaInput, StaTokens};
+/// fn returned<'id, T: StaTokens, K>(pending: PendingGroupReplacement<'id>, key: T::GroupKey)
+///     -> StaInput<'static, 'id, T, K> {
+///     StaInput::GroupKeyReplaced { pending, key }
+/// }
+/// ```
+#[must_use = "return this token with the matching group replacement terminal"]
+pub struct PendingGroupReplacement<'id> {
+    install: PendingGroupKey<'id>,
+    previous_id: GroupKeyId,
+    replay: oer_ieee80211_mac::ccmp::CcmpRxReplayState,
 }
 
 /// A receive-configuration response must return this action token. Station
@@ -775,14 +831,6 @@ impl<Slot> GroupSlots<Slot> {
     }
 }
 
-/// Group owners are identified by protocol key ID, without physical cells.
-/// The replaced owner remains held until Group Message 2 ends and its normal
-/// retirement action can run. The backend owns the raw slot throughout.
-struct GroupKeys<Key> {
-    current: Option<(GroupKeyId, Key)>,
-    retiring: Pool<(GroupKeyId, Key)>,
-}
-
 struct Keys<T: StaTokens> {
     pairwise: KeyCell<T::PairwiseKey, T::PairwiseSlot>,
     group_slots: GroupSlots<T::GroupSlot>,
@@ -794,10 +842,7 @@ impl<T: StaTokens> Keys<T> {
         Self {
             pairwise: KeyCell::Free(pairwise),
             group_slots: GroupSlots::new(groups),
-            groups: GroupKeys {
-                current: None,
-                retiring: Pool::new([]),
-            },
+            groups: GroupKeys::new(),
         }
     }
 
@@ -839,28 +884,42 @@ impl<T: StaTokens> Keys<T> {
         &mut self,
         epoch: LinkEpoch<'id>,
         key_id: GroupKeyId,
+        material: [u8; 16],
     ) -> Option<(T::GroupSlot, PendingGroupKey<'id>)> {
         let slot = self.group_slots.free.take()?;
-        Some((slot, PendingGroupKey { epoch, key_id }))
+        let Some(place) = self.groups.reserve() else {
+            self.group_slots.free.put(slot);
+            return None;
+        };
+        Some((
+            slot,
+            PendingGroupKey {
+                epoch,
+                key_id,
+                material,
+                place,
+            },
+        ))
     }
 
     fn group_installed(&mut self, pending: PendingGroupKey<'_>, key: T::GroupKey, current: bool) {
-        if current {
-            if let Some(old) = self.groups.current.replace((pending.key_id, key)) {
-                self.groups.retiring.put(old);
-            }
-        } else {
-            self.groups.retiring.put((pending.key_id, key));
-        }
+        self.groups.install(
+            InstalledGroup {
+                place: pending.place,
+                key_id: pending.key_id,
+                material: pending.material,
+                key,
+            },
+            current,
+        );
     }
 
     fn take_retiring_key(&mut self) -> Option<(GroupKeyId, T::GroupKey)> {
-        self.groups.retiring.take()
+        self.groups.take_retiring()
     }
 
     fn take_group_key(&mut self) -> Option<(GroupKeyId, T::GroupKey)> {
-        self.take_retiring_key()
-            .or_else(|| self.groups.current.take())
+        self.groups.take_any()
     }
 
     fn group_removed(&mut self, slot: T::GroupSlot) {
@@ -868,11 +927,11 @@ impl<T: StaTokens> Keys<T> {
     }
 
     fn current_group(&self) -> Option<GroupKeyId> {
-        self.groups.current.as_ref().map(|(id, _)| *id)
+        self.groups.current_id()
     }
 
     fn has_retiring(&self) -> bool {
-        !self.groups.retiring.is_empty()
+        self.groups.has_retiring()
     }
 
     fn installed(&self) -> bool {
@@ -1081,14 +1140,11 @@ struct ConnectedRsn {
 
 /// A group key's handshake: one algorithm whatever the slots. With a free
 /// group slot the new key goes in beside the old one, which is removed
-/// after Group Message 2; without one the old key is removed first.
+/// after Group Message 2; a full pool replaces one key in a single operation.
 enum Rekey {
     None,
-    /// The new key to install, into a free slot or after the old key's
-    /// removal.
+    /// The new key to install in a free slot or replace in an occupied slot.
     Install(RsnGroupKeyInstallRequest<DEFAULT_EAPOL_FRAME_CAPACITY>),
-    /// The old key's removal frees a slot.
-    AwaitFree(RsnGroupKeyInstallRequest<DEFAULT_EAPOL_FRAME_CAPACITY>),
     AwaitInstalled(RsnGroupKeyInstallRequest<DEFAULT_EAPOL_FRAME_CAPACITY>),
     /// Group Message 2.
     Send(RsnTxFrame),
@@ -1284,6 +1340,12 @@ enum Owed<'id, T: StaTokens, K> {
     InstallGroup {
         pending: PendingGroupKey<'id>,
         slot: T::GroupSlot,
+        key_id: GroupKeyId,
+        key: [u8; 16],
+    },
+    ReplaceGroup {
+        pending: PendingGroupReplacement<'id>,
+        installed: T::GroupKey,
         key_id: GroupKeyId,
         key: [u8; 16],
     },
@@ -1582,7 +1644,26 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 let current = self.current_epoch() == Some(pending.epoch);
                 self.keys.group_installed(pending, key, current);
                 if current {
-                    self.group_installed();
+                    self.group_installed(None);
+                }
+                return;
+            }
+            StaInput::GroupKeyReplaced { pending, key } => {
+                let PendingGroupReplacement {
+                    install,
+                    previous_id,
+                    replay,
+                } = pending;
+                let current = self.current_epoch() == Some(install.epoch);
+                let key_id = install.key_id;
+                self.keys.group_installed(install, key, current);
+                if current {
+                    if let State::Connected(Connected { rsn: Some(rsn), .. }) = &mut self.state
+                        && previous_id != key_id
+                    {
+                        rsn.replay.remove_group(previous_id);
+                    }
+                    self.group_installed(Some(replay));
                 }
                 return;
             }
@@ -1675,7 +1756,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     }
 
     /// A group key is installed: the handshake's, or a rekey's.
-    fn group_installed(&mut self) {
+    fn group_installed(&mut self, new_epoch: Option<oer_ieee80211_mac::ccmp::CcmpRxReplayState>) {
         let state = self.take_state();
         self.state = match state {
             State::Connected(mut connected) => {
@@ -1685,11 +1766,17 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 {
                     // The new group key's frontiers start from its receive
                     // sequence once it is installed, beside the old key's.
-                    let installed = group_key(request.group()).is_some_and(|(key_id, _)| {
-                        rsn.replay
-                            .install_group(key_id, *request.group().receive_sequence())
-                            .is_ok()
-                    });
+                    let installed =
+                        group_key(request.group()).is_some_and(|(key_id, _)| match new_epoch {
+                            Some(epoch) => {
+                                rsn.replay.install_group_epoch(key_id, epoch);
+                                true
+                            }
+                            None => rsn
+                                .replay
+                                .install_group(key_id, *request.group().receive_sequence())
+                                .is_ok(),
+                        });
                     let completed = rsn.supplicant.complete_group_key_install(request, true);
                     match completed {
                         Ok(response) if installed => rsn.rekey = Rekey::Send(response),
@@ -1716,7 +1803,6 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     fn group_removed(&mut self) {
         if let State::Connected(Connected { rsn: Some(rsn), .. }) = &mut self.state {
             rsn.rekey = match core::mem::replace(&mut rsn.rekey, Rekey::None) {
-                Rekey::AwaitFree(request) => Rekey::Install(request),
                 Rekey::AwaitRetired => Rekey::None,
                 rekey => rekey,
             };
@@ -2560,6 +2646,17 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 key,
             },
             Owed::RemovePairwise(key) => StaAction::RemovePairwiseKey(key),
+            Owed::ReplaceGroup {
+                pending,
+                installed,
+                key_id,
+                key,
+            } => StaAction::ReplaceGroupKey {
+                pending,
+                installed,
+                key_id,
+                key,
+            },
             Owed::RemoveGroup(key) => StaAction::RemoveGroupKey(key),
             Owed::Exchange(lease) => StaAction::ExchangeLease(lease),
             Owed::Request(request, place) => StaAction::RequestChannel(request, place),
@@ -2807,7 +2904,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 };
                 match self
                     .current_epoch()
-                    .and_then(|epoch| self.keys.take_group_slot(epoch, key_id))
+                    .and_then(|epoch| self.keys.take_group_slot(epoch, key_id, key))
                 {
                     Some((slot, pending)) => (
                         HandshakeStep::AwaitInstalled(request),
@@ -2936,9 +3033,16 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 let Some((key_id, key)) = group_key(request.group()) else {
                     return Some(Err(StaDisconnectReason::HandshakeFailed));
                 };
+                if self.keys.groups.same_material(key_id, &key) {
+                    rsn.rekey = match rsn.supplicant.complete_group_key_install(request, true) {
+                        Ok(response) => Rekey::Send(response),
+                        Err(_) => return Some(Err(StaDisconnectReason::HandshakeFailed)),
+                    };
+                    return self.owe_rekey(connected);
+                }
                 if let Some((slot, pending)) = self
                     .current_epoch()
-                    .and_then(|epoch| self.keys.take_group_slot(epoch, key_id))
+                    .and_then(|epoch| self.keys.take_group_slot(epoch, key_id, key))
                 {
                     (
                         Rekey::AwaitInstalled(request),
@@ -2949,11 +3053,47 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                             key,
                         }),
                     )
-                } else if let Some((old, key)) = self.keys.take_group_key() {
-                    // No free slot: the old key goes first, and its frames
-                    // with it.
-                    forget_group(rsn, &self.keys, old);
-                    (Rekey::AwaitFree(request), Some(Owed::RemoveGroup(key)))
+                } else if let Some(epoch) = self.current_epoch() {
+                    let Ok(replay) =
+                        oer_ieee80211_mac::ccmp::CcmpRxReplayState::from_receive_sequence(
+                            *request.group().receive_sequence(),
+                        )
+                    else {
+                        return Some(Err(StaDisconnectReason::HandshakeFailed));
+                    };
+                    match self
+                        .keys
+                        .groups
+                        .replace(key_id, self.keys.group_slots.capacity == 1)
+                    {
+                        Some(InstalledGroup {
+                            place,
+                            key_id: previous_id,
+                            key: installed,
+                            ..
+                        }) => {
+                            let pending = PendingGroupReplacement {
+                                install: PendingGroupKey {
+                                    epoch,
+                                    key_id,
+                                    material: key,
+                                    place,
+                                },
+                                previous_id,
+                                replay,
+                            };
+                            (
+                                Rekey::AwaitInstalled(request),
+                                Some(Owed::ReplaceGroup {
+                                    pending,
+                                    installed,
+                                    key_id,
+                                    key,
+                                }),
+                            )
+                        }
+                        None => (Rekey::Install(request), None),
+                    }
                 } else {
                     (Rekey::Install(request), None)
                 }

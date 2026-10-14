@@ -211,9 +211,20 @@ waits only the current publication; rate selection ignores every withdrawal.
 `Station` owns keys and free slots across scan/join/handshake/leave
 transitions. The pairwise cell is Free, Installing, Installed or Removing.
 Group slots are fungible credits from the composition's declared pool;
-there are no physical group cells, wrappers or Removing states. Installed
-owners are held by protocol key ID, including a replaced GTK retained until
-Group Message 2 ends and its normal retirement action runs.
+installed owners occupy private reserved records in installation order. A
+pending install owns a vacant record; returning it cannot overflow a pool
+of retiring keys. With a free physical slot the new GTK installs first and
+the superseded key retires after Group Message 2. A full pool uses
+`replace_group_key`, selecting the same ID or the oldest non-current owner;
+only a one-slot backend replaces its sole current key for a new ID.
+
+The service retains `PendingGroupReplacement` and matches the port's
+`GroupKeyReplaced` terminal by slot identity. Until that terminal RX uses
+the previous epoch; the successor starts at KeyRSC there, even when its PN
+is lower. Identical ID and material produce a response without reinstalling
+or changing replay. Hardware rejection poisons the port; rollback is a
+driver detail, never a portable success result. The model verifies the RX
+ordering and returned slot; the S31 runtime migration is still separate.
 
 Installation actions carry private, non-cloneable `PendingPairwiseKey` or
 `PendingGroupKey`. The pairwise token names its one cell and link epoch;

@@ -330,6 +330,10 @@ pub enum LowerMacEvent<'id, P: PhaseTypes<'id>> {
     /// A removed key's slot, of its role and kind, once no attempt in
     /// flight uses the key.
     KeyRemoved(Removed<'id, P>),
+    /// A station GTK replacement completed in the same slot. RX before this
+    /// terminal belongs to the previous installation; RX after it belongs to
+    /// this one. Replay state is owned above the port.
+    GroupKeyReplaced(<P::StationKeys as KeyTypes<'id>>::GroupKey),
 }
 
 /// An accepted attempt's terminal, with the shape of its submission.
@@ -388,10 +392,15 @@ pub trait KeyTypes<'id> {
     type GroupKey: 'id;
     /// Backend identity of one installation, distinct from its reusable slot.
     type Identity;
+    /// Stable identity of a group slot within this installation, retained
+    /// across replacement. It correlates the consumed key with its terminal.
+    type GroupSlotIdentity: Copy + Eq;
     /// Retain the installed pairwise identity while preparing an operation.
     fn pairwise_identity(key: &Self::PairwiseKey) -> Self::Identity;
     /// Retain the installed group identity (transmit-capable on an AP only).
     fn group_identity(key: &Self::GroupKey) -> Self::Identity;
+    /// The group key's slot identity, independent of its key installation.
+    fn group_slot_identity(key: &Self::GroupKey) -> Self::GroupSlotIdentity;
 }
 
 /// A removed key's slot, of its kind.
@@ -896,6 +905,22 @@ pub trait InterfacePhase<'p, 'id: 'p> {
 
 /// The station interface of a running phase.
 pub trait StationPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id, Role = Station> {
+    /// Consume an installed GTK and enqueue its replacement in command order.
+    /// The slot reserves one terminal place at this call, under the same
+    /// key-slot capacity bound as removal. No separate removal is possible
+    /// while the operation holds the key and slot.
+    ///
+    /// [`LowerMacEvent::GroupKeyReplaced`] returns the new installed key with
+    /// the same slot. Its position in the event stream is the installation
+    /// boundary for RX. A hardware write failure poisons the backend; any
+    /// internal hardware rollback is not a successful port terminal.
+    fn replace_group_key(
+        &mut self,
+        installed: <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::GroupKey,
+        key_id: GroupKeyId,
+        key: Ccmp128Key,
+    );
+
     /// Set what the station receives once none of its frames is in flight:
     /// a frame the closed gate holds ends as aborted at once, a published
     /// one is waited for, and [`LowerMacEvent::Configured`] follows.

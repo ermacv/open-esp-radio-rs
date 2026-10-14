@@ -148,6 +148,16 @@ back; its operations are synchronous and never wait:
 - **Reception.** A received frame's buffer goes back through `recycle`; a
   lagging body loses unsolicited frames as `EventsLost`, never a terminal.
 
+Station GTK replacement consumes the installed owner and its slot in one
+FIFO command. That slot reserves one `GroupKeyReplaced` terminal under the
+key-slot capacity bound, and the terminal returns the new key in the same
+slot. Old-installation RX precedes it and new-installation RX follows it.
+The station owns replay state and switches it at that boundary. A rejected
+hardware write poisons the backend; an internal rollback is not a portable
+terminal. `KeyTypes::GroupSlotIdentity` correlates the operation and terminal
+without confusing slot reuse with `Identity`, which names key material's
+installation for prepared TX.
+
 The install mints one `Slot<ConnectionEpochKind>` for Station's epoch source.
 This slot kind belongs to the lower-MAC contract; the backend neither depends
 on the station's epoch implementation nor creates connection identities.

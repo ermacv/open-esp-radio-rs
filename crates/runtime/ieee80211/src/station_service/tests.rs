@@ -492,7 +492,7 @@ impl World<'_> {
 }
 
 /// The body that runs the service beside the test's script.
-struct Body<'w, 'b, S> {
+struct Body<'w, 'b, S, const GROUPS: usize> {
     world: &'w World<'b>,
     commands: MsduReceiver<'b, ServiceCommand<ModelCaps24>, 4>,
     transmit: MsduReceiver<'b, TxMsdu, 2>,
@@ -504,7 +504,8 @@ struct Body<'w, 'b, S> {
 /// A test's script: the access point and the application, on the world.
 type Script<'w> = Pin<Box<dyn Future<Output = ()> + 'w>>;
 
-impl<'w, 'b, S> PortBody<ModelBackend<ModelCaps24, ServiceContexts>> for Body<'w, 'b, S>
+impl<'w, 'b, S, const GROUPS: usize> PortBody<ModelBackend<ModelCaps24, ServiceContexts>>
+    for Body<'w, 'b, S, GROUPS>
 where
     S: FnOnce(&'w World<'b>) -> Script<'w>,
 {
@@ -530,6 +531,8 @@ where
             let small: [_; 4] = small.try_into().ok().unwrap();
             let large: [_; 4] = large.try_into().ok().unwrap();
             let [pairwise, _] = station_pairwise;
+            let mut group_slots = station_group.into_iter();
+            let groups: [_; GROUPS] = core::array::from_fn(|_| group_slots.next().unwrap());
             let channel = SupportedChannel::new(channel6()).unwrap();
             let (arbiter, place, absence) =
                 PortArbiter::<ModelBackend<ModelCaps24, ServiceContexts>>::new(
@@ -547,7 +550,7 @@ where
                     place,
                     absence_place: absence,
                     pairwise,
-                    groups: station_group,
+                    groups,
                 },
             );
             let mut service = StationService::<_, _, 4>::new(
@@ -628,6 +631,16 @@ fn run_with<S>(config: StaConfig<ModelCaps24>, script: S) -> ServiceCounters
 where
     S: for<'w, 'b> FnOnce(&'w World<'b>) -> Script<'w>,
 {
+    run_with_groups::<S, 2>(config, script)
+}
+
+fn run_with_groups<S, const GROUPS: usize>(
+    config: StaConfig<ModelCaps24>,
+    script: S,
+) -> ServiceCounters
+where
+    S: for<'w, 'b> FnOnce(&'w World<'b>) -> Script<'w>,
+{
     let (backend, air) = ModelBackend::<ModelCaps24, ServiceContexts>::new(
         channel6(),
         [
@@ -655,7 +668,7 @@ where
     };
     let uninstalled = block_on(run_port(
         backend,
-        Body {
+        Body::<S, GROUPS> {
             world: &world,
             commands,
             transmit,
@@ -764,6 +777,33 @@ fn on_wpa2_the_join_goes_on_the_default_record_and_the_handshake_on_the_associat
                     .await;
                 let deauthentication = world.sent(&mut seen, DEAUTHENTICATION).await;
                 assert_eq!(deauthentication.rate, ofdm6());
+            })
+        },
+    );
+}
+
+#[test]
+fn a_one_slot_station_completes_group_replacement_through_the_service_event_stream() {
+    use oer_ieee80211_sta::machine::StaDisconnectReason;
+    run_with_groups::<_, 1>(
+        config(StaSecurity::Wpa2Personal {
+            pmk: Pmk::from_bytes(PMK),
+        }),
+        |world| {
+            Box::pin(async move {
+                let mut seen = 0;
+                world.associate(&mut seen, true).await;
+                let ptk = world.handshake(&mut seen).await;
+                world.air.receive(&group_message1(&ptk, 3, 2), meta());
+                let response = world.sent(&mut seen, DATA).await;
+                assert!(matches!(response.key, Some((_, true))));
+                world
+                    .command(ServiceCommand::Station(StaCommand::Disconnect))
+                    .await;
+                world.sent(&mut seen, DEAUTHENTICATION).await;
+                world
+                    .notice(StaNotice::Disconnected(StaDisconnectReason::Requested))
+                    .await;
             })
         },
     );

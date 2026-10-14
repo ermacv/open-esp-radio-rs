@@ -595,7 +595,6 @@ fn msdus_wait_while_the_tokens_are_out() {
         },
     );
     assert!(data.accepts());
-    assert_eq!(data.poll_deadline(), None);
 }
 
 fn received_frame(control: u16, ether_type: u16, packet_number: u8, key_id: u8) -> Vec<u8> {

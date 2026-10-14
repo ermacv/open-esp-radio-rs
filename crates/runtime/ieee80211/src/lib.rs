@@ -32,20 +32,49 @@
 
 //! Chip-independent Wi-Fi execution primitives shared by chip runtimes.
 //!
-//! These are executor-independent async ownership contracts over the same
-//! `embassy-sync`/`embassy-time` interfaces as the chip runtimes; they bind no
-//! executor.
+//! These async ownership contracts bind no executor. Waiting on time uses
+//! `oer_time::Timer`; bounded channels and task signals use `embassy-sync`.
 //!
 //! [`monitor`] provides bounded capture and injection handoffs. [`connected_tasks`]
 //! coordinates finite task shutdown, and [`station_network`] retains network
 //! ownership across station associations. [`stack_boundary`] provides an explicit
-//! poll boundary for large async state machines. [`lower_mac_owner`] keeps
-//! the transmit permits of a lower-MAC backend on the owner shape.
+//! poll boundary for large async state machines.
 //! [`station_service`] is the station's thin service on a lower-MAC port:
 //! one waiting point, every machine's actions after each input. Hardware access and concrete
 //! task assembly belong to the chip backend and its integration.
+//!
+//! The `test-support` feature exposes `lower_mac_owner`, the in-memory backend
+//! and conformance harness for tests of port consumers. The module is absent
+//! from production builds without that feature.
+#![cfg_attr(
+    not(feature = "test-support"),
+    doc = r"
+```compile_fail,E0432
+use oer_ieee80211_runtime::lower_mac_owner;
+```
+
+Production code uses the station service directly:
+
+```
+use oer_ieee80211_runtime::station_service::StationService;
+```
+
+"
+)]
+#![cfg_attr(
+    feature = "test-support",
+    doc = r"
+With `test-support`, host fixtures can name the backend's capabilities:
+
+```
+use oer_ieee80211_runtime::lower_mac_owner::model::ModelCaps;
+```
+
+"
+)]
 
 pub mod connected_tasks;
+#[cfg(any(test, feature = "test-support"))]
 pub mod lower_mac_owner;
 pub mod monitor;
 pub mod stack_boundary;

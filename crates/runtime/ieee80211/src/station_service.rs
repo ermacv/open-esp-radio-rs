@@ -238,8 +238,6 @@ pub type PortArbiter<'a, 'id, B> = Arbiter<'a, 'id, <B as LowerMacBackend>::Caps
 /// no service.
 struct Levels<K>(PhantomData<fn() -> K>);
 
-type CheckedLevels<K> = (SupportedCoex<K>, SupportedCoex<K>, SupportedPower<K>);
-
 impl<K: Ieee80211Capabilities> Levels<K> {
     /// The station's connection frames (Authentication, Association,
     /// EAPOL), which a coexisting radio lets through first.
@@ -421,11 +419,11 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
             checked::<'id, B, RX>();
         };
         // The port's levels, checked as the type is built.
-        let _: CheckedLevels<B::Caps> = (
-            Levels::<B::Caps>::CONNECTION,
-            Levels::<B::Caps>::NORMAL,
-            Levels::<B::Caps>::POWER,
-        );
+        const {
+            let _connection = Levels::<B::Caps>::CONNECTION;
+            let _normal = Levels::<B::Caps>::NORMAL;
+            let _power = Levels::<B::Caps>::POWER;
+        };
         Self {
             station,
             data,
@@ -601,14 +599,10 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                 Next::Retune(pending) => return Served::Retune(pending),
                 Next::Poisoned => return Served::Poisoned,
             }
-            let deadline = [
-                self.arbiter.poll_deadline(),
-                self.station.poll_deadline(),
-                self.data.poll_deadline(),
-            ]
-            .into_iter()
-            .flatten()
-            .min();
+            let deadline = [self.arbiter.poll_deadline(), self.station.poll_deadline()]
+                .into_iter()
+                .flatten()
+                .min();
             let sending = self.data.accepts() && self.station.link().is_some();
             let (event, command, tick, transmit) = {
                 let event = phase.next_event();

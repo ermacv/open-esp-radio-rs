@@ -1,8 +1,8 @@
 //! The connected station's data: a sans-IO machine beside the station
 //! ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6131495971)),
 //! in the station's and the arbiter's form: an MSDU is an input, an
-//! attempt an action ([`StaData::poll_action`]), and
-//! [`StaData::poll_deadline`] names when it needs time.
+//! attempt an action ([`StaData::poll_action`]). Data keeps no timer; every
+//! wait ends on a returned credit or an input from the station or network.
 //!
 //! An MSDU becomes one MPDU in a buffer of the machine's own: QoS Data by
 //! its user priority on a QoS BSS, Data in the station's sequence space
@@ -262,6 +262,29 @@ pub struct DataCounters {
 /// The connected station's data machine. `CAP` sizes each TID's queues of
 /// owed MPDUs: each holds a ticket, so the machine's tickets
 /// fit (checked at build).
+///
+/// Data has no timer: its queued work advances on inputs and returned credits.
+///
+/// ```compile_fail,E0599
+/// use oer_ieee80211_lower_mac::Ieee80211Capabilities;
+/// use oer_ieee80211_sta::data::{StaData, StaDataTokens};
+/// fn deadline<D: StaDataTokens, K: Ieee80211Capabilities>(data: &StaData<'_, D, K>) {
+///     let _deadline = data.poll_deadline();
+/// }
+/// ```
+///
+/// The service drains ready actions after each input:
+///
+/// ```
+/// use oer_ieee80211_lower_mac::Ieee80211Capabilities;
+/// use oer_ieee80211_sta::data::{DataAction, StaData, StaDataTokens};
+/// use oer_time::Instant;
+/// fn action<'id, D: StaDataTokens, K: Ieee80211Capabilities>(
+///     data: &mut StaData<'id, D, K>, now: Instant,
+/// ) -> Option<DataAction<'id, D, K>> {
+///     data.poll_action(now)
+/// }
+/// ```
 pub struct StaData<'id, D: StaDataTokens, K, const CAP: usize = 8> {
     tickets: Pool<D::Ticket>,
     buffers: Pool<D::Buffer>,
@@ -570,12 +593,6 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
                 protected: transmit.protected,
             })
         })
-    }
-
-    /// When the machine next needs [`Self::poll_action`] without an input:
-    /// never, while it keeps no timer.
-    pub const fn poll_deadline(&self) -> Option<Instant> {
-        None
     }
 }
 

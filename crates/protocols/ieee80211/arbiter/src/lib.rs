@@ -686,6 +686,8 @@ struct Granted<K> {
     returns: bool,
     end: LeaseEnd,
     step: LeaseStep,
+    /// A leave command belongs to the absence terminal, whichever path ends it.
+    then_leave: Option<LeaveReason>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -695,8 +697,10 @@ enum LeaseStep {
     /// A join's lease that starts with the access point's announced move
     /// onto its channel.
     AwaitingMove,
-    /// The gate cycles onto its channel.
-    Starting,
+    /// The outgoing gate is closing; the late admission check is still due.
+    Closing,
+    /// The outgoing retune was admitted. Its time is no longer charged again.
+    Moving,
     /// Running on its channel.
     Running,
     /// The gate cycles back.
@@ -885,8 +889,6 @@ pub struct Arbiter<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode = NoRes
     primary: Option<(Granted<K>, LeasePlace)>,
     /// The connected station's absence and its place.
     absence: Option<(Granted<K>, AbsencePlace)>,
-    /// A command to leave the station hears once its absence ended.
-    leave: Option<LeaveReason>,
     /// The primary lease is a join the access point moved for, which has
     /// not connected yet.
     following: bool,
@@ -917,7 +919,6 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
                 home: channel,
                 primary: None,
                 absence: None,
-                leave: None,
                 following: false,
                 cycle: None,
                 next_id: 0,
@@ -1078,6 +1079,7 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
                 returns: false,
                 end: LeaseEnd::Own,
                 step: LeaseStep::AwaitingMove,
+                then_leave: None,
             };
             let lease = self.lease_value(&granted);
             self.primary = Some((granted, place));
@@ -1141,6 +1143,7 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
             returns,
             end: LeaseEnd::Own,
             step: LeaseStep::Waiting { ready: true },
+            then_leave: None,
         };
         let lease = self.lease_value(&granted);
         self.primary = Some((granted, place));
@@ -1179,6 +1182,7 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
             returns: true,
             end: LeaseEnd::Own,
             step: LeaseStep::Waiting { ready: false },
+            then_leave: None,
         };
         let lease = self.lease_value(&granted);
         self.absence = Some((granted, place));
@@ -1263,7 +1267,7 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
                 };
                 self.cancel(which, reason);
             }
-            LeaseStep::Starting | LeaseStep::Running => granted.end = end,
+            LeaseStep::Closing | LeaseStep::Moving | LeaseStep::Running => granted.end = end,
             LeaseStep::Ending => {}
         }
     }
@@ -1286,9 +1290,7 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
                 }
             }
             Which::Absence => {
-                if let Some((_, place)) = self.absence.take() {
-                    self.outbox.absence_end = Some((Some(reason), place));
-                }
+                self.finish_absence(Some(reason));
             }
         }
     }
@@ -1309,12 +1311,20 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
                     }
                 }
                 Which::Absence => {
-                    if let Some((_, place)) = self.absence.take() {
-                        self.outbox.absence_end = Some((None, place));
-                    }
+                    self.finish_absence(None);
                 }
             },
             None => {}
+        }
+    }
+
+    /// Every absence terminal returns its place and releases its pending leave.
+    fn finish_absence(&mut self, reason: Option<CancelReason>) {
+        if let Some((granted, place)) = self.absence.take() {
+            self.outbox.absence_end = Some((reason, place));
+            if let Some(leave) = granted.then_leave {
+                self.outbox.leave(leave);
+            }
         }
     }
 
@@ -1436,9 +1446,9 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
 
     /// The station must leave: its absence ends first, then it hears it.
     fn command_leave(&mut self, reason: LeaveReason) {
-        if self.absence.is_some() {
+        if let Some((granted, _)) = &mut self.absence {
+            granted.then_leave = Some(reason);
             self.end_lease(Which::Absence, LeaseEnd::Cancelled(CancelReason::Switch));
-            self.leave = Some(reason);
         } else {
             self.outbox.leave(reason);
         }
@@ -1528,11 +1538,6 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
             }
             CyclePurpose::LeaseEnd(which) => {
                 self.ended(which);
-                if which == Which::Absence
-                    && let Some(reason) = self.leave.take()
-                {
-                    self.outbox.leave(reason);
-                }
             }
             CyclePurpose::Move { access_point } => {
                 let access_point = access_point.map(|schedule| ApSchedule {
@@ -1622,7 +1627,7 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
                     self.cancel(which, CancelReason::NotReady);
                     return None;
                 }
-                granted.step = LeaseStep::Starting;
+                granted.step = LeaseStep::Closing;
                 let reserve = match (granted.returns, granted.until) {
                     (true, Some(until)) => match until.checked_duration_since(now) {
                         Some(length) => R::reserve(until, length),
@@ -1745,11 +1750,11 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
                 if let CyclePurpose::LeaseStart(which) = cycle.purpose
                     && self.too_late(which, now)
                 {
-                    // The lease no longer fits: cancelled, and the gate
-                    // opens where the port is.
+                    // The lease no longer fits before its outbound retune:
+                    // cancel it and restore the home channel before opening.
                     self.cancel(which, CancelReason::Late);
                     self.cycle = Some(Cycle {
-                        to: self.channel().unwrap_or(self.home),
+                        to: self.home,
                         purpose: CyclePurpose::Return,
                         ..cycle
                     });
@@ -1762,6 +1767,11 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
                         Some(ArbiterAction::OpenGate(closed))
                     }
                     Port::On(_) => {
+                        if let CyclePurpose::LeaseStart(which) = cycle.purpose
+                            && let Some(granted) = self.granted(which)
+                        {
+                            granted.step = LeaseStep::Moving;
+                        }
                         self.gate = Gate::Closed(closed);
                         self.port = Port::Retuning;
                         Some(ArbiterAction::Retune(PendingRetune {
@@ -1797,6 +1807,9 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
         let Some(granted) = self.granted(which) else {
             return false;
         };
+        if granted.step != LeaseStep::Closing {
+            return false;
+        }
         let Some(until) = granted.until else {
             return false;
         };

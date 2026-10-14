@@ -779,13 +779,19 @@ fn a_join_where_the_access_point_may_not_follow_stops_it_by_the_default_policy()
 fn connected<'id>(
     mint: &mut Mint<'id>,
 ) -> (TestArbiter<'id>, Lease<Caps>, AbsencePlace, Port<'id>) {
+    connected_with_policy(mint, ArbiterPolicy::DEFAULT)
+}
+
+fn connected_with_policy<'id>(
+    mint: &mut Mint<'id>,
+    policy: ArbiterPolicy<'static>,
+) -> (TestArbiter<'id>, Lease<Caps>, AbsencePlace, Port<'id>) {
     let (gate, issuer) = GatePlace::mint(mint);
     let mut port = Port {
         refuse: false,
         issuer,
     };
-    let (mut arbiter, place, absence) =
-        Arbiter::new(ArbiterPolicy::DEFAULT, channel(1), gate, Duration::ZERO);
+    let (mut arbiter, place, absence) = Arbiter::new(policy, channel(1), gate, Duration::ZERO);
     running(&mut arbiter);
     let home = lease(arbiter.request(
         at(0),
@@ -1121,4 +1127,108 @@ fn loss_deadline_waits_for_the_gate_terminal_then_expires_once() {
         assert_eq!(arbiter.poll_deadline(), None);
         assert!(run(&mut arbiter, &mut port, due).is_empty());
     });
+}
+
+#[test]
+fn a_retuned_absence_does_not_charge_its_outbound_move_twice() {
+    installed(|mint| {
+        let (mut arbiter, place, mut port) = beside_access_point::<NoReservation>(mint);
+        let lease = lease(arbiter.request(at(0), scan(6, 100), place));
+        assert_eq!(lease.until(), Some(at(72)));
+        let Some(ArbiterAction::CloseGate { gate, .. }) = arbiter.poll_action(at(52)) else {
+            panic!("close");
+        };
+        arbiter.gate_closed(port.issuer.close(gate));
+        let Some(ArbiterAction::Retune(pending)) = arbiter.poll_action(at(52)) else {
+            panic!("retune");
+        };
+        arbiter.retuned(pending);
+        let events = run(&mut arbiter, &mut port, at(69));
+        assert_eq!(
+            events,
+            [
+                Seen::OpenGate,
+                Seen::Station(StationNotice::LeaseStarted(lease.id())),
+            ]
+        );
+        assert_eq!(arbiter.poll_deadline(), Some(at(70)));
+        let events = run(&mut arbiter, &mut port, at(70));
+        assert_eq!(
+            events,
+            [
+                Seen::CloseGate(()),
+                Seen::Retune(1),
+                Seen::OpenGate,
+                Seen::Station(StationNotice::LeaseEnded(self::place())),
+            ]
+        );
+        assert_eq!(arbiter.channel(), Some(channel(1)));
+    });
+}
+
+#[test]
+fn a_cancelled_starting_absence_delivers_its_pending_leave_and_both_places() {
+    for refuse in [false, true] {
+        installed(|mint| {
+            let mut policy = ArbiterPolicy::DEFAULT;
+            policy.follow.unservable = coordinator::ApUnservable::LeaveUpstream;
+            let (mut arbiter, home, place, mut port) = connected_with_policy(mint, policy);
+            let away = absence(arbiter.request_absence(at(0), scan(6, 10), &home, place));
+            arbiter.ready(away.id());
+            let Some(ArbiterAction::CloseGate { gate, .. }) = arbiter.poll_action(away.from())
+            else {
+                panic!("close");
+            };
+            arbiter.upstream(
+                at(53),
+                UpstreamFact::SwitchAnnounced {
+                    target: SupportedChannel::new(Channel::ghz5(36, ChannelWidth::Mhz20).unwrap())
+                        .unwrap(),
+                    mode: ChannelSwitchMode::Continue,
+                    at: at(100),
+                },
+            );
+            arbiter.gate_closed(port.issuer.close(gate));
+            port.refuse = refuse;
+            let now = if refuse {
+                at(53)
+            } else {
+                away.until().unwrap()
+            };
+            let events = run(&mut arbiter, &mut port, now);
+            let reason = if refuse {
+                CancelReason::Refused
+            } else {
+                CancelReason::Late
+            };
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|event| matches!(
+                        event,
+                        Seen::Station(StationNotice::Leave(LeaveReason::Unservable))
+                    ))
+                    .count(),
+                1
+            );
+            let notices: Vec<_> = events
+                .into_iter()
+                .filter(|event| matches!(event, Seen::Station(_)))
+                .collect();
+            assert_eq!(
+                notices,
+                [
+                    Seen::Station(StationNotice::AbsenceCancelled(reason, absence_place())),
+                    Seen::Station(StationNotice::Leave(LeaveReason::Unservable)),
+                ]
+            );
+            assert_eq!(arbiter.channel(), Some(channel(1)));
+            arbiter.release(home);
+            assert!(
+                run(&mut arbiter, &mut port, now)
+                    .contains(&Seen::Station(StationNotice::LeaseEnded(self::place())))
+            );
+            assert!(run(&mut arbiter, &mut port, now).is_empty());
+        });
+    }
 }

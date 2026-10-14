@@ -54,6 +54,11 @@ While a gate cycle runs, the next input is its gate or retune terminal;
 and transfers the access-point schedule into the cycle. A waiting absence
 is cancelled when that move becomes due. Lease and upstream-loss deadlines
 resume after the cycle ends, and an elapsed deadline causes a finite transition.
+Late admission is checked before the outgoing retune. Once that move is
+admitted, its completion cannot charge the outbound budget again; the lease
+ends on its original return deadline and restores the home channel. A leave
+command deferred by an absence belongs to that absence's terminal, including
+refusal and late cancellation, so returning its place also releases the command.
 A refused lease move returns the next `PendingRetune` directly and enters
 `Retuning` before handing it out. `None` means the port stopped. Without an
 enabled phase, consumers poll `ArbiterNotice` through `poll_notice`; that

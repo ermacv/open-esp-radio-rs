@@ -1824,3 +1824,499 @@ fn review_authentication_transmitter_is_station() {
         }
     });
 }
+
+#[test]
+fn review_leave_without_lease_reports_before_waiting() {
+    installed(|mint| {
+        let mut world = World::new(mint, 3);
+        world
+            .station
+            .input(at(0), StaInput::Command(StaCommand::Connect));
+        world
+            .station
+            .input(at(0), StaInput::Command(StaCommand::Disconnect));
+        let Some(StaAction::Configure(StationReceive::Off, pending)) =
+            world.station.poll_action(at(0))
+        else {
+            panic!("disconnect first disables reception");
+        };
+        world.station.input(at(0), StaInput::Configured(pending));
+        assert!(matches!(
+            world.station.poll_action(at(0)),
+            Some(StaAction::Notify(StaNotice::Disconnected(
+                StaDisconnectReason::Requested
+            )))
+        ));
+        assert!(world.station.poll_action(at(0)).is_none());
+        assert!(world.station.poll_deadline().is_none());
+    });
+}
+
+#[test]
+fn deauthentication_waits_for_the_ticket_and_buffer_of_an_accepted_transmission() {
+    installed(|mint| {
+        let mut world = connected_world(mint);
+        let mut pending = Vec::new();
+        for _ in 0..2 {
+            pending.push(
+                world
+                    .station
+                    .encode_null(BSSID, StaPowerManagement::Active)
+                    .unwrap(),
+            );
+        }
+        world
+            .station
+            .input(at(50), StaInput::Command(StaCommand::Disconnect));
+        assert!(
+            world.station.poll_action(at(50)).is_none(),
+            "deauthentication must wait for credit"
+        );
+        assert!(world.station.poll_deadline().is_none());
+        let transmit = pending.pop().unwrap();
+        world.station.input(
+            at(51),
+            StaInput::TxDone {
+                context: transmit.context,
+                ticket: transmit.ticket,
+                buffer: ReturnedMpdu::Fresh(transmit.buffer),
+                completion: TxOutcome::Withdrawn(
+                    oer_ieee80211_lower_mac::WithdrawCause::GateClosed,
+                ),
+            },
+        );
+        let Some(StaAction::Transmit(transmit)) = world.station.poll_action(at(51)) else {
+            panic!("returned credit must release deauthentication");
+        };
+        assert!(matches!(
+            transmit.context.purpose,
+            TxPurpose::Deauthentication
+        ));
+        world.transmitted(transmit, false);
+        for transmit in pending {
+            world.transmitted(transmit, false);
+        }
+        world.run(at(51));
+        assert_eq!(world.station.tickets.len(), 2);
+        assert_eq!(world.station.buffers.len(), 2);
+        assert!(world.take().contains(&Seen::Notify(StaNotice::Disconnected(
+            StaDisconnectReason::Requested
+        ))));
+    });
+}
+
+#[test]
+fn disconnect_during_an_absence_sends_deauthentication_only_after_returning_home() {
+    installed(|mint| {
+        let mut world = connected_world(mint);
+        world
+            .station
+            .input(at(40), StaInput::Command(StaCommand::BackgroundScan));
+        world.run(at(40));
+        let now = world.advance();
+        assert_eq!(world.arbiter.channel().unwrap().channel().number(), 1);
+        world.take();
+        world
+            .station
+            .input(now, StaInput::Command(StaCommand::Disconnect));
+        world.run(now);
+        assert!(
+            world.take().is_empty(),
+            "no leave frame or configuration while away"
+        );
+        world.advance();
+        let seen = world.take();
+        assert!(seen.contains(&Seen::Transmit {
+            subtype: 0x00c0,
+            on: 6
+        }));
+        assert!(!seen.contains(&Seen::Transmit {
+            subtype: 0x00c0,
+            on: 1
+        }));
+        assert!(seen.contains(&Seen::Notify(StaNotice::Disconnected(
+            StaDisconnectReason::Requested
+        ))));
+    });
+}
+
+#[test]
+fn associated_is_the_first_action_after_the_association_response() {
+    installed(|mint| {
+        let mut world = World::new(mint, 3);
+        world
+            .station
+            .input(at(0), StaInput::Command(StaCommand::Connect));
+        world.run(at(0));
+        world.advance();
+        world.receive(at(13), &beacon());
+        world.advance();
+        world.answer_authentication(at(30), 0);
+        world.station.input(
+            at(31),
+            StaInput::Received {
+                frame: &open_association_response(),
+                meta: meta(),
+            },
+        );
+        assert!(matches!(
+            world.station.poll_action(at(31)),
+            Some(StaAction::Associated(_))
+        ));
+        assert!(matches!(
+            world.station.poll_action(at(31)),
+            Some(StaAction::Notify(StaNotice::Connected { .. }))
+        ));
+    });
+}
+
+#[test]
+fn review_authentication_waits_for_credit_before_beginning_attempt() {
+    installed(|mint| {
+        let mut world = World::new(mint, 3);
+        world
+            .station
+            .input(at(0), StaInput::Command(StaCommand::Connect));
+        world.run(at(0));
+        world.advance();
+        world.receive(at(13), &beacon());
+        world.hold_configured = true;
+        let now = world.advance();
+        let pending = world.configuring.take().unwrap();
+        let first = world.station.tickets.take().unwrap();
+        let second = world.station.tickets.take().unwrap();
+        world.station.input(now, StaInput::Configured(pending));
+        let before = world.station.sequence;
+        let mut after_one_attempt = before;
+        after_one_attempt.take();
+        assert!(world.station.poll_action(now).is_none());
+        assert!(matches!(world.station.state, State::Join(_)));
+        assert_eq!(world.station.sequence, before);
+        assert!(world.station.poll_action(now).is_none());
+        assert_eq!(world.station.sequence, before);
+        world.station.tickets.put(first);
+        world.station.tickets.put(second);
+        let Some(StaAction::Transmit(transmit)) = world.station.poll_action(now) else {
+            panic!("returning credits must continue the unsent authentication attempt");
+        };
+        assert_eq!(world.station.sequence, after_one_attempt);
+        world.transmitted(transmit, false);
+        world.end_transmissions(now);
+        assert_eq!(world.station.tickets.len(), 2);
+        assert_eq!(world.station.buffers.len(), 2);
+    });
+}
+
+#[test]
+fn association_waits_for_credit_without_consuming_a_request_and_still_expires() {
+    installed(|mint| {
+        let mut world = connected_world(mint);
+        let mut held = Vec::new();
+        while let Some(ticket) = world.station.tickets.take() {
+            held.push(ticket);
+        }
+        let access_point = world.station.scan.records()[0];
+        let join = || Join {
+            rsn: select_association_rsn(&access_point, world.station.policy()).unwrap(),
+            access_point,
+            channel: world.station.config.channels[0].unwrap(),
+            step: JoinStep::Associate(StaAssociationRuntime::new(
+                LOCAL,
+                BSSID,
+                oer_ieee80211_mac::security::LinkProtection::Open,
+            )),
+        };
+        world.station.state = State::Join(join());
+        let before = world.station.sequence;
+        assert!(world.station.poll_action(at(100)).is_none());
+        assert_eq!(world.station.sequence, before);
+        assert!(world.station.poll_deadline().is_none());
+        world.station.tickets.put(held.pop().unwrap());
+        let Some(StaAction::Transmit(transmit)) = world.station.poll_action(at(100)) else {
+            panic!("returning credit resumes the first association request");
+        };
+        // This TX owns the only available credit while the next retry becomes
+        // due. The association's absolute deadline must remain armed.
+        let after_first = world.station.sequence;
+        let mut after_one_attempt = before;
+        after_one_attempt.take();
+        assert_eq!(after_first, after_one_attempt);
+        assert!(world.station.poll_action(at(300)).is_none());
+        assert_eq!(world.station.sequence, after_first);
+        assert_eq!(world.station.poll_deadline(), Some(at(1100)));
+        world.station.input(at(1100), StaInput::Tick);
+        let Some(StaAction::Configure(StationReceive::Off, pending)) =
+            world.station.poll_action(at(1100))
+        else {
+            panic!("association must leave at its absolute deadline")
+        };
+        world.station.input(at(1100), StaInput::Configured(pending));
+        world.station.input(
+            at(1100),
+            StaInput::TxDone {
+                context: transmit.context,
+                ticket: transmit.ticket,
+                buffer: ReturnedMpdu::Fresh(transmit.buffer),
+                completion: TxOutcome::Withdrawn(
+                    oer_ieee80211_lower_mac::WithdrawCause::GateClosed,
+                ),
+            },
+        );
+        for ticket in held {
+            world.station.tickets.put(ticket);
+        }
+        assert_eq!(world.station.tickets.len(), 2);
+        assert_eq!(world.station.buffers.len(), 2);
+        world.run(at(1100));
+        world.station.input(at(1101), StaInput::Tick);
+        world.run(at(1101));
+        assert_eq!(
+            world
+                .take()
+                .iter()
+                .filter(|event| matches!(
+                    event,
+                    Seen::Notify(StaNotice::Disconnected(
+                        StaDisconnectReason::AssociationFailed
+                    ))
+                ))
+                .count(),
+            1
+        );
+    });
+}
+
+#[test]
+fn handshake_deadline_covers_every_message_key_and_tx_wait() {
+    use oer_ieee80211_mac::security::rsn::Akm;
+    use oer_ieee80211_rsn::{PtkContext, frames::RsnTxFrame};
+    for point in 0..8 {
+        installed(|mint| {
+            let mut world = World::with_security(
+                mint,
+                3,
+                StaSecurity::Wpa2Personal {
+                    pmk: Pmk::from_bytes(PMK),
+                },
+            );
+            world
+                .station
+                .input(at(0), StaInput::Command(StaCommand::Connect));
+            world.run(at(0));
+            world.advance();
+            world.receive(at(13), &wpa2_beacon());
+            world.advance();
+            world.answer_authentication(at(30), 0);
+            world.receive(at(31), &association_response(0));
+            let message1 = RsnTxFrame::<512>::message1(Akm::Psk, LOCAL, 1, ANONCE).unwrap();
+            world.station.input(
+                at(32),
+                StaInput::Received {
+                    frame: &eapol_frame(message1.as_bytes()),
+                    meta: meta(),
+                },
+            );
+            let mut transmissions = Vec::new();
+            if point >= 1 {
+                let Some(StaAction::Transmit(tx)) = world.station.poll_action(at(32)) else {
+                    panic!("M2")
+                };
+                transmissions.push(tx);
+            }
+            if point >= 2 {
+                let tx = transmissions.pop().unwrap();
+                world.transmitted(tx, false);
+                world.end_transmissions(at(32));
+            }
+            if point >= 3 {
+                let ptk = Pmk::from_bytes(PMK).derive_ptk(
+                    Akm::Psk,
+                    PtkContext {
+                        authenticator_address: BSSID,
+                        supplicant_address: LOCAL,
+                        authenticator_nonce: ANONCE,
+                        supplicant_nonce: SNONCE,
+                    },
+                );
+                let mut plain = RSN.to_vec();
+                plain.extend_from_slice(&[0xdd, 22, 0, 0x0f, 0xac, 1, 1, 0]);
+                plain.extend_from_slice(&[0x99; 16]);
+                plain.extend_from_slice(&[0xdd, 0]);
+                let wrapped =
+                    oer_ieee80211_rsn::aes::software_aes128_key_wrap(ptk.kek(), &plain).unwrap();
+                let message3 = RsnTxFrame::<512>::message3(
+                    Akm::Psk,
+                    LOCAL,
+                    2,
+                    ANONCE,
+                    [0; 8],
+                    wrapped.as_bytes(),
+                )
+                .unwrap()
+                .authenticate(&ptk);
+                world.station.input(
+                    at(33),
+                    StaInput::Received {
+                        frame: &eapol_frame(message3.as_bytes()),
+                        meta: meta(),
+                    },
+                );
+            }
+            if point >= 4 {
+                let Some(StaAction::InstallPairwiseKey { pending, slot, .. }) =
+                    world.station.poll_action(at(33))
+                else {
+                    panic!("PTK")
+                };
+                world.pending_installs.push(StaInput::PairwiseKeyInstalled {
+                    pending,
+                    key: Key(slot),
+                });
+            }
+            if point >= 5 {
+                let Some(StaAction::InstallGroupKey { pending, slot, .. }) =
+                    world.station.poll_action(at(33))
+                else {
+                    panic!("GTK")
+                };
+                world.pending_installs.push(StaInput::GroupKeyInstalled {
+                    pending,
+                    key: Key(slot),
+                });
+            }
+            if point >= 6 {
+                for installed in core::mem::take(&mut world.pending_installs) {
+                    world.station.input(at(33), installed);
+                }
+            }
+            if point >= 7 {
+                let Some(StaAction::Transmit(tx)) = world.station.poll_action(at(33)) else {
+                    panic!("M4")
+                };
+                transmissions.push(tx);
+            }
+            assert_eq!(
+                world.station.poll_deadline(),
+                Some(at(6032)),
+                "handshake step {point}"
+            );
+            world.station.input(at(6032), StaInput::Tick);
+            assert!(
+                matches!(world.station.state, State::Leave(_)),
+                "step {point} must expire"
+            );
+            assert!(world.station.poll_deadline().is_none());
+            for installed in core::mem::take(&mut world.pending_installs) {
+                world.station.input(at(6032), installed);
+            }
+            for tx in transmissions {
+                world.transmitted(tx, false);
+            }
+            world.run(at(6032));
+            world.station.input(at(6033), StaInput::Tick);
+            world.run(at(6033));
+            assert_eq!(world.station.tickets.len(), 2);
+            assert_eq!(world.station.buffers.len(), 2);
+            assert!(world.station.keys.clear());
+            let seen = world.take();
+            assert_eq!(
+                seen.iter()
+                    .filter(|event| matches!(
+                        event,
+                        Seen::Notify(StaNotice::Disconnected(
+                            StaDisconnectReason::HandshakeFailed
+                        ))
+                    ))
+                    .count(),
+                1
+            );
+            assert!(
+                !seen
+                    .iter()
+                    .any(|event| matches!(event, Seen::Notify(StaNotice::Connected { .. })))
+            );
+        });
+    }
+}
+
+#[test]
+fn every_control_encoder_reserves_credit_before_consuming_its_sequence() {
+    for hold_buffers in [false, true] {
+        for encoding in 0..6 {
+            installed(|mint| {
+                let mut world = connected_world(mint);
+                let mut tickets = Vec::new();
+                let mut buffers = Vec::new();
+                if hold_buffers {
+                    while let Some(buffer) = world.station.buffers.take() {
+                        buffers.push(buffer);
+                    }
+                } else {
+                    while let Some(ticket) = world.station.tickets.take() {
+                        tickets.push(ticket);
+                    }
+                }
+                let mut qos = [StaSequenceCounter::new(SequenceNumber::ZERO); 8];
+                fn encode<'id>(
+                    station: &mut Station<'id, Tokens, Caps>,
+                    qos: &mut [StaSequenceCounter; 8],
+                    encoding: u8,
+                ) -> Option<StaTransmit<'id, Tokens, Caps>> {
+                    match encoding {
+                        0 => station
+                            .encode_eapol(BSSID, &[], TxPurpose::HandshakeResponse)
+                            .ok(),
+                        1 => station.encode_null(BSSID, StaPowerManagement::Active),
+                        2 => station.encode_protected_eapol(BSSID, None, &[]).ok(),
+                        3 => station.encode_protected_eapol(BSSID, Some(qos), &[]).ok(),
+                        4 => station.encode_probe(),
+                        5 => station
+                            .encode_management(
+                                StaManagementSubtype::Deauthentication,
+                                BSSID,
+                                &REASON_UNSPECIFIED.to_le_bytes(),
+                                TxPurpose::Deauthentication,
+                            )
+                            .ok(),
+                        _ => unreachable!(),
+                    }
+                }
+                let before = world.station.sequence;
+                let qos_before = qos;
+                for _ in 0..2 {
+                    assert!(encode(&mut world.station, &mut qos, encoding).is_none());
+                    assert_eq!(world.station.sequence, before, "encoding {encoding}");
+                    assert_eq!(qos, qos_before, "encoding {encoding}");
+                    assert_eq!(
+                        world.station.tickets.len(),
+                        if hold_buffers { 2 } else { 0 }
+                    );
+                    assert_eq!(
+                        world.station.buffers.len(),
+                        if hold_buffers { 0 } else { 2 }
+                    );
+                }
+                for ticket in tickets {
+                    world.station.tickets.put(ticket);
+                }
+                for buffer in buffers {
+                    world.station.buffers.put(buffer);
+                }
+                let transmit = encode(&mut world.station, &mut qos, encoding).unwrap();
+                let mut expected = before;
+                let mut expected_qos = qos_before;
+                if encoding == 3 {
+                    expected_qos[7].take();
+                } else {
+                    expected.take();
+                }
+                assert_eq!(world.station.sequence, expected);
+                assert_eq!(qos, expected_qos);
+                world.transmitted(transmit, false);
+                world.end_transmissions(at(50));
+                assert_eq!(world.station.tickets.len(), 2);
+                assert_eq!(world.station.buffers.len(), 2);
+            });
+        }
+    }
+}

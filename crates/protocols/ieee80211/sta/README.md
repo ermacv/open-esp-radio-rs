@@ -66,6 +66,23 @@ crate's checked `IndividualAddress`, so a request cannot swap the local
 transmitter and BSS identities. The test access point admits a request only
 after checking its subtype and all three header addresses.
 
+`Station::new` requires one to eight tickets, small buffers and group-key
+slots at compile time. Authentication and Association reserve an owned
+ticket/buffer credit before beginning a request or consuming its sequence
+number. EAPOL (including the QoS rekey response), Null and deauthentication
+also reserve credit before consuming a sequence. A missing credit waits for
+the admitted operation's terminal; the
+association's state deadline remains active, while its overdue retry time
+does not cause repeated polling. Every four-way handshake step retains the
+same response deadline while waiting for TX, a key slot or installation.
+Expiry leaves once and reclaims late returns through the normal teardown.
+
+`poll_action` drains internal transitions until it produces an action or
+reaches an external wait. The Associated action is a join step, delivered
+before Connected or handshake work. Disconnect waits for an absence to end
+before deauthentication, and waits for TX credit instead of discarding that
+frame. The bounded transition graph is documented beside `poll_action`.
+
 Every `StaTransmit` or `DataTransmit` carries an owned context alongside its
 buffer and ticket. The service puts that context in the port attempt and
 returns it through `TxDone` or the local unsent path. A station context

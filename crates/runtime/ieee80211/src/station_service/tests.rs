@@ -1059,6 +1059,10 @@ fn a_disconnection_during_an_absence_leaves_no_old_frame_to_go_after_the_reconne
             world
                 .command(ServiceCommand::Station(StaCommand::Disconnect))
                 .await;
+            // Leaving waits for the absence to end before sending the
+            // Deauthentication. `sent` advances the virtual clock to that
+            // deadline; waiting only for a notice leaves time stopped.
+            world.sent(&mut seen, DEAUTHENTICATION).await;
             world
                 .notice(StaNotice::Disconnected(
                     oer_ieee80211_sta::machine::StaDisconnectReason::Requested,

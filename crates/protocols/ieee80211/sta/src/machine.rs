@@ -346,6 +346,13 @@ pub struct StaTransmit<'id, T: StaTokens, K> {
     pub plan: StaRatePlan,
 }
 
+/// Reserve both owners before consuming a sequence or starting an attempt.
+struct TxCredit<'id, T: StaTokens> {
+    epoch: LinkEpoch<'id>,
+    ticket: T::Ticket,
+    buffer: T::SmallBuffer,
+}
+
 /// The identity of one station operation. No frame parsing or current-state
 /// guess assigns a completion to a handshake, power transition or link.
 #[derive(Debug)]
@@ -605,8 +612,6 @@ pub struct Station<'id, T: StaTokens, K: Ieee80211Capabilities> {
     /// A notice for the application the station owes outside its state's
     /// steps.
     notice_owed: Option<StaNotice>,
-    /// The access point of an association the service has yet to hear.
-    associated_owed: Option<Peer<T::RxMeta>>,
     sequence: StaSequenceCounter,
     scan: ScanTable<SCAN_CAPACITY>,
     /// The connection attempt that owns new TX operations.
@@ -902,7 +907,11 @@ enum JoinStep<M> {
     AwaitConfigured,
     Authenticate(Authenticate),
     Associate(StaAssociationRuntime),
-    Report {
+    NotifyAssociated {
+        association_id: u16,
+        peer: Peer<M>,
+    },
+    StartLink {
         association_id: u16,
         peer: Peer<M>,
     },
@@ -1095,6 +1104,8 @@ struct Deauthentication {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LeaveStep {
+    /// The absence's terminal proves the port returned to the home channel.
+    AwaitAbsenceEnd(Option<Deauthentication>),
     /// Remove the installed keys; their slots come back with their
     /// removals. Then the Deauthentication, if any.
     RemoveKeys(Option<Deauthentication>),
@@ -1245,8 +1256,27 @@ enum Owed<'id, T: StaTokens, K> {
     Transmit(StaTransmit<'id, T, K>),
     /// Under the pairwise key of the connected link.
     TransmitProtected(StaTransmit<'id, T, K>),
+    Associated(Peer<T::RxMeta>),
     Notify(StaNotice),
 }
+
+/// An action, an internal transition to drain, or an actual wait for input.
+enum ActionProgress<A> {
+    Action(A),
+    Transition,
+    Wait,
+}
+
+impl<A> From<Option<A>> for ActionProgress<A> {
+    fn from(action: Option<A>) -> Self {
+        match action {
+            Some(action) => Self::Action(action),
+            None => Self::Wait,
+        }
+    }
+}
+
+type ActionStep<'id, T, K> = (State<T, K>, ActionProgress<Owed<'id, T, K>>);
 
 /// The affine resources composition grants to one station. Epoch issuance,
 /// frame pools, channel admission and key slots move into it together.
@@ -1278,59 +1308,30 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     /// slots the composition granted it and the arbiter's places. It holds
     /// at most eight tokens of a kind, checked at compile time:
     ///
-    /// ```compile_fail,E0080
-    /// # use oer_ieee80211_arbiter::{AbsencePlace, LeasePlace};
-    /// # use oer_ieee80211_lower_mac::*;
-    /// # use oer_ieee80211_mac::phy::{HeMcs, HtMcs};
-    /// # use oer_ieee80211_sta::machine::{StaConfig, StaTokens, Station, StationResources};
-    /// # use oer_ieee80211_sta::epoch::LinkEpochSource;
-    /// # struct Caps;
-    /// # impl Ieee80211Capabilities for Caps {
-    /// #     const CAPS: LowerMacCapabilities = LowerMacCapabilities {
-    /// #         bands: BandSet::GHZ2_4, widths: WidthSet::MHZ20,
-    /// #         rates: RateSupport { dsss_cck: true, ofdm: true, ht_max_mcs: HtMcs::new(7),
-    /// #             he_max_mcs: HeMcs::new(9), he_max_bandwidth_mhz: 20, he_dcm: false,
-    /// #             he_ldpc: false, spatial_streams: 1 },
-    /// #         services: HardwareServices::FCS, vifs: 1, tx_queues: 4, max_mpdu_length: 2304,
-    /// #         max_backoff_slots: 1023, tx_power_ceiling_min_dbm: None,
-    /// #         coex_priorities: CoexPrioritySet::only(CoexPriority::Normal),
-    /// #         individual_no_ack: PhyFormatSet::NON_HT,
-    /// #         station_receive_filters: ReceiveFilter::BSS_MEMBER
-    /// #             .union(ReceiveFilter::OTHER_BSS_MANAGEMENT),
-    /// #         access_point_receive_filters: ReceiveFilter::BSS_MEMBER, key_slots: 4,
-    /// #         rx_block_ack_agreements: 0, rx_block_ack_max_tid: 0, rx_block_ack_max_window: 0,
-    /// #         edca_max_aifsn: 15, edca_max_cw_exponent: 10,
-    /// #     };
-    /// # }
-    /// # struct Buffer;
-    /// # impl TxBufferMemory for Buffer { fn bytes_mut(&mut self) -> &mut [u8] { &mut [] } }
-    /// # struct Tokens;
-    /// # impl oer_ieee80211_lower_mac::TxBufferClass for Buffer { const CAPACITY: usize = 256; }
-    /// # impl StaTokens for Tokens {
-    /// #     type Small = Buffer;
-    /// #     type Ticket = u8; type SmallBuffer = Buffer; type PairwiseSlot = ();
-    /// #     type Sent = core::convert::Infallible;
-    /// #     fn renew(mpdu: Self::Sent) -> Buffer { match mpdu {} }
-    /// #     type GroupSlot = (); type PairwiseKey = (); type GroupKey = (); type RxMeta = RxMeta;
-    /// # }
-    /// fn nine<'id>(
-    ///     epochs: LinkEpochSource<'id>,
-    ///     config: StaConfig<Caps>,
-    ///     place: LeasePlace,
-    ///     absence: AbsencePlace,
-    /// ) -> Station<'id, Tokens, Caps> {
-    ///     Station::new(config, StationResources {
-    ///         epochs, tickets: [0; 9], buffers: [Buffer], place,
-    ///         absence_place: absence, pairwise: (), groups: [()],
-    ///     })
-    /// }
-    /// let nine: fn(_, _, _, _) -> _ = nine;
-    /// core::hint::black_box(nine);
-    /// ```
+    #[doc = include_str!("machine/resources_contracts.md")]
     pub fn new<const TICKETS: usize, const BUFFERS: usize, const GROUPS: usize>(
         config: StaConfig<K>,
         resources: StationResources<'id, T, TICKETS, BUFFERS, GROUPS>,
     ) -> Self {
+        const {
+            #[cfg_attr(not(test), expect(clippy::panic, reason = "evaluated at build"))]
+            const fn check(tickets: usize, buffers: usize, groups: usize) {
+                if tickets < 1 {
+                    panic!("a station needs at least one TX ticket");
+                }
+                if buffers < 1 {
+                    panic!("a station needs at least one small buffer");
+                }
+                if groups < 1 {
+                    panic!("a station needs at least one group-key slot");
+                }
+            }
+            check(TICKETS, BUFFERS, GROUPS);
+            let _: (
+                SupportedFilter<K, StationRole>,
+                SupportedFilter<K, StationRole>,
+            ) = (Rules::<K>::MEMBER, Rules::<K>::WIDENED);
+        }
         let StationResources {
             epochs,
             tickets,
@@ -1340,11 +1341,6 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             pairwise,
             groups,
         } = resources;
-        // The port's receive rules, checked as the type is built.
-        let _: (
-            SupportedFilter<K, StationRole>,
-            SupportedFilter<K, StationRole>,
-        ) = (Rules::<K>::MEMBER, Rules::<K>::WIDENED);
         Self {
             config,
             state: State::Idle,
@@ -1357,7 +1353,6 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             absence_place: Some(absence_place),
             absence: None,
             notice_owed: None,
-            associated_owed: None,
             sequence: StaSequenceCounter::new(SequenceNumber::ZERO),
             scan: ScanTable::new(),
             epoch: None,
@@ -1950,7 +1945,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                         ..
                     },
                 ) => connect(handshake),
-                (HandshakeStep::Await, Done::Tick)
+                (_, Done::Tick)
                     if matches!(
                         handshake.deadline.poll(now),
                         RsnStaDeadlineEvent::Expired { .. }
@@ -2319,7 +2314,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                                 self.config.he_packet_padding,
                             ) {
                                 Ok(associated) => {
-                                    join.step = JoinStep::Report {
+                                    join.step = JoinStep::NotifyAssociated {
                                         association_id: response.association_id,
                                         // The rate selection starts from the
                                         // response's metadata.
@@ -2443,19 +2438,32 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         ))
     }
 
-    /// The next action to carry out at `now`, if any. The service takes
-    /// every action before it waits again.
+    /// The next action to carry out at `now`, if any. `None` means a wait
+    /// for an input, a returned resource, or the state's deadline.
+    ///
+    /// Internal transitions form an acyclic graph. Join completion enters
+    /// Handshake/Connected; preparation failure enters Leave; Leave moves
+    /// through RemoveKeys, NeedDeauthentication and NeedConfigure, or from
+    /// NeedRelease to Report. The longest path is five steps: connected
+    /// failure, an already ended absence, returned key slots, failed frame
+    /// encoding, configuration. Every back edge requires an external
+    /// completion or a new command. Associated is its own join step before
+    /// either Connected or the first handshake action.
     pub fn poll_action(&mut self, now: Instant) -> Option<StaAction<'_, 'id, T, K>> {
-        if let Some(peer) = self.associated_owed.take() {
-            return Some(StaAction::Associated(peer));
-        }
-        if let Some(notice) = self.notice_owed.take() {
-            return Some(StaAction::Notify(notice));
-        }
-        let state = self.take_state();
-        let (state, owed) = self.owe(state, now);
-        self.state = state;
-        Some(match owed? {
+        let owed = loop {
+            if let Some(notice) = self.notice_owed.take() {
+                return Some(StaAction::Notify(notice));
+            }
+            let state = self.take_state();
+            let (state, progress) = self.owe(state, now);
+            self.state = state;
+            match progress {
+                ActionProgress::Action(owed) => break owed,
+                ActionProgress::Transition => continue,
+                ActionProgress::Wait => return None,
+            }
+        };
+        Some(match owed {
             // Owed only while the station holds its primary lease; without
             // it the place stays, and nothing is asked.
             Owed::Absence(request, place) => match &self.lease {
@@ -2512,17 +2520,18 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 }
             },
             Owed::Notify(notice) => StaAction::Notify(notice),
+            Owed::Associated(peer) => StaAction::Associated(peer),
         })
     }
 
     /// The action `state` owes, and the state that awaits its end.
-    fn owe(&mut self, state: State<T, K>, now: Instant) -> (State<T, K>, Option<Owed<'id, T, K>>) {
+    fn owe(&mut self, state: State<T, K>, now: Instant) -> ActionStep<'id, T, K> {
         match state {
             State::Report(reason) => {
                 self.epoch = None;
                 (
                     State::Idle,
-                    Some(Owed::Notify(StaNotice::Disconnected(reason))),
+                    ActionProgress::Action(Owed::Notify(StaNotice::Disconnected(reason))),
                 )
             }
             State::Scan(mut scan) => {
@@ -2558,19 +2567,23 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     }
                     _ => None,
                 };
-                (State::Scan(scan), owed)
+                (State::Scan(scan), owed.into())
             }
             State::Join(join) => self.owe_join(join, now),
             State::Handshake(handshake) => self.owe_handshake(handshake),
             State::Connected(connected) => self.owe_connected(connected),
             State::Leave(leave) => self.owe_leave(leave),
-            state => (state, None),
+            state => (state, ActionProgress::Wait),
         }
     }
 
     /// The action the leave owes.
-    fn owe_leave(&mut self, mut leave: Leave) -> (State<T, K>, Option<Owed<'id, T, K>>) {
+    fn owe_leave(&mut self, mut leave: Leave) -> ActionStep<'id, T, K> {
         let owed = match leave.step {
+            LeaveStep::AwaitAbsenceEnd(deauthentication) if self.absence.is_none() => {
+                leave.step = LeaveStep::RemoveKeys(deauthentication);
+                return (State::Leave(leave), ActionProgress::Transition);
+            }
             LeaveStep::RemoveKeys(deauthentication) => {
                 if let Some(key) = self.keys.take_pairwise_key() {
                     Some(Owed::RemovePairwise(key))
@@ -2582,7 +2595,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                         Some(deauthentication) => LeaveStep::NeedDeauthentication(deauthentication),
                         None => LeaveStep::NeedConfigure,
                     };
-                    return self.owe_leave(leave);
+                    return (State::Leave(leave), ActionProgress::Transition);
                 } else {
                     None
                 }
@@ -2592,14 +2605,16 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     StaManagementSubtype::Deauthentication,
                     bssid,
                     &reason_code.to_le_bytes(),
+                    TxPurpose::Deauthentication,
                 ) {
-                    Some(transmit) => {
+                    Ok(transmit) => {
                         leave.step = LeaveStep::AwaitDeauthentication;
                         Some(Owed::Transmit(transmit))
                     }
-                    None => {
+                    Err(Unsent::NoTokens) => None,
+                    Err(Unsent::Encode | Unsent::NoConnection) => {
                         leave.step = LeaveStep::NeedConfigure;
-                        None
+                        return (State::Leave(leave), ActionProgress::Transition);
                     }
                 }
             }
@@ -2616,12 +2631,12 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 // No lease to give back: done.
                 held => {
                     self.lease = held;
-                    return (self.report(leave), None);
+                    return (self.report(leave), ActionProgress::Transition);
                 }
             },
             _ => None,
         };
-        (State::Leave(leave), owed)
+        (State::Leave(leave), owed.into())
     }
 
     /// The handshake's state after a received frame.
@@ -2679,10 +2694,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     }
 
     /// The action the handshake owes.
-    fn owe_handshake(
-        &mut self,
-        mut handshake: Handshake<T, K>,
-    ) -> (State<T, K>, Option<Owed<'id, T, K>>) {
+    fn owe_handshake(&mut self, mut handshake: Handshake<T, K>) -> ActionStep<'id, T, K> {
         let (step, owed) = match core::mem::replace(&mut handshake.step, HandshakeStep::Await) {
             HandshakeStep::Send(message) => {
                 match self.encode_eapol(
@@ -2693,13 +2705,19 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     Ok(transmit) => (HandshakeStep::AwaitSent, Some(Owed::Transmit(transmit))),
                     Err(Unsent::NoTokens) => (HandshakeStep::Send(message), None),
                     Err(Unsent::Encode | Unsent::NoConnection) => {
-                        return (leave_handshake(handshake, REASON_UNSPECIFIED), None);
+                        return (
+                            leave_handshake(handshake, REASON_UNSPECIFIED),
+                            ActionProgress::Transition,
+                        );
                     }
                 }
             }
             HandshakeStep::Install(request) => {
                 let Some(peer) = IndividualAddress::new(handshake.bssid) else {
-                    return (leave_handshake(handshake, REASON_UNSPECIFIED), None);
+                    return (
+                        leave_handshake(handshake, REASON_UNSPECIFIED),
+                        ActionProgress::Transition,
+                    );
                 };
                 match self
                     .current_epoch()
@@ -2723,7 +2741,10 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             HandshakeStep::InstallGroup(request) => {
                 // A key index that is no group key's fails the handshake.
                 let Some((key_id, key)) = group_key(request.group()) else {
-                    return (leave_handshake(handshake, REASON_UNSPECIFIED), None);
+                    return (
+                        leave_handshake(handshake, REASON_UNSPECIFIED),
+                        ActionProgress::Transition,
+                    );
                 };
                 match self
                     .current_epoch()
@@ -2753,14 +2774,17 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     ),
                     Err(Unsent::NoTokens) => (HandshakeStep::SendLast(message, epoch), None),
                     Err(Unsent::Encode | Unsent::NoConnection) => {
-                        return (leave_handshake(handshake, REASON_UNSPECIFIED), None);
+                        return (
+                            leave_handshake(handshake, REASON_UNSPECIFIED),
+                            ActionProgress::Transition,
+                        );
                     }
                 }
             }
             step => (step, None),
         };
         handshake.step = step;
-        (State::Handshake(handshake), owed)
+        (State::Handshake(handshake), owed.into())
     }
 
     /// An EAPOL frame to `bssid` in a data frame, in a buffer.
@@ -2770,9 +2794,11 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         eapol: &[u8],
         purpose: TxPurpose,
     ) -> Result<StaTransmit<'id, T, K>, Unsent> {
+        let credit = self.reserve_transmit()?;
         let address = self.config.address.get();
         let sequence_number = self.sequence.take();
-        self.encode_individual(
+        self.encode_reserved(
+            credit,
             |frame| {
                 oer_ieee80211_mac::station::StaDataFrame {
                     source: address,
@@ -2791,41 +2817,47 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     }
 
     /// The action the connected state owes.
-    fn owe_connected(
-        &mut self,
-        mut connected: Connected<T, K>,
-    ) -> (State<T, K>, Option<Owed<'id, T, K>>) {
+    fn owe_connected(&mut self, mut connected: Connected<T, K>) -> ActionStep<'id, T, K> {
         if connected.connected_notice {
             connected.connected_notice = false;
             let notice = StaNotice::Connected {
                 bssid: connected.bssid,
                 channel: connected.channel.channel().number(),
             };
-            return (State::Connected(connected), Some(Owed::Notify(notice)));
+            return (
+                State::Connected(connected),
+                ActionProgress::Action(Owed::Notify(notice)),
+            );
         }
         if let Some(fact) = connected.report.take() {
-            return (State::Connected(connected), Some(Owed::Upstream(fact)));
+            return (
+                State::Connected(connected),
+                ActionProgress::Action(Owed::Upstream(fact)),
+            );
         }
         if connected.exchange {
             match core::mem::replace(&mut self.lease, Held::None) {
                 Held::Lease(lease) => {
                     connected.exchange = false;
-                    return (State::Connected(connected), Some(Owed::Exchange(lease)));
+                    return (
+                        State::Connected(connected),
+                        ActionProgress::Action(Owed::Exchange(lease)),
+                    );
                 }
                 held => self.lease = held,
             }
         }
         if let Some(owed) = self.owe_rekey(&mut connected) {
             return match owed {
-                Ok(owed) => (State::Connected(connected), Some(owed)),
+                Ok(owed) => (State::Connected(connected), ActionProgress::Action(owed)),
                 Err(reason) => (
                     leave_connected(connected, reason, Some(REASON_UNSPECIFIED)),
-                    None,
+                    ActionProgress::Transition,
                 ),
             };
         }
         let owed = self.owe_background(&mut connected);
-        (State::Connected(connected), owed)
+        (State::Connected(connected), owed.into())
     }
 
     /// The action of a group key's handshake, if one is owed; a failure's
@@ -3011,10 +3043,12 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         bssid: [u8; 6],
         power_management: StaPowerManagement,
     ) -> Option<StaTransmit<'id, T, K>> {
+        let credit = self.reserve_transmit().ok()?;
         let address = self.config.address.get();
         let sequence_number = self.sequence.take();
         let mut transmit = self
-            .encode_individual(
+            .encode_reserved(
+                credit,
                 |frame| {
                     StaNullDataFrame {
                         station_address: address,
@@ -3036,11 +3070,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         Some(transmit)
     }
 
-    fn owe_join(
-        &mut self,
-        mut join: Join<T, K>,
-        now: Instant,
-    ) -> (State<T, K>, Option<Owed<'id, T, K>>) {
+    fn owe_join(&mut self, mut join: Join<T, K>, now: Instant) -> ActionStep<'id, T, K> {
         let connect = ChannelRequest {
             channel: join.channel,
             purpose: Purpose::Connect,
@@ -3057,22 +3087,46 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             JoinStep::NeedConfigure if self.configuration.is_some() => {
                 match bss_rules(join.access_point.bssid, Rules::<K>::MEMBER) {
                     Some(receive) => (JoinStep::AwaitConfigured, self.configure(receive)),
-                    None => return (leave_unkeyed(StaDisconnectReason::Encode), None),
+                    None => {
+                        return (
+                            leave_unkeyed(StaDisconnectReason::Encode),
+                            ActionProgress::Transition,
+                        );
+                    }
                 }
             }
             JoinStep::Authenticate(mut auth) if auth.stage == AuthStage::NeedSend => {
+                let credit = match self.reserve_transmit() {
+                    Ok(credit) => credit,
+                    Err(Unsent::NoTokens) => {
+                        join.step = JoinStep::Authenticate(auth);
+                        return (State::Join(join), ActionProgress::Wait);
+                    }
+                    Err(Unsent::NoConnection | Unsent::Encode) => {
+                        return (
+                            leave_unkeyed(StaDisconnectReason::Encode),
+                            ActionProgress::Transition,
+                        );
+                    }
+                };
                 let Ok(attempt) = auth.runtime.begin_attempt(&mut self.sequence) else {
+                    self.return_credit(credit);
                     return (
                         leave_unkeyed(StaDisconnectReason::AuthenticationFailed),
-                        None,
+                        ActionProgress::Transition,
                     );
                 };
                 let Some(bssid) = IndividualAddress::new(join.access_point.bssid).map(Bssid::new)
                 else {
-                    return (leave_unkeyed(StaDisconnectReason::Encode), None);
+                    self.return_credit(credit);
+                    return (
+                        leave_unkeyed(StaDisconnectReason::Encode),
+                        ActionProgress::Transition,
+                    );
                 };
                 let address = self.config.address;
-                let encoded = self.encode_individual(
+                let encoded = self.encode_reserved(
+                    credit,
                     |frame| {
                         OpenAuthenticationRequest {
                             source: address,
@@ -3092,65 +3146,110 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                         };
                         (JoinStep::Authenticate(auth), Some(Owed::Transmit(transmit)))
                     }
-                    // No token now: the next poll tries again.
-                    Err(Unsent::NoTokens) => (JoinStep::Authenticate(auth), None),
-                    Err(Unsent::Encode | Unsent::NoConnection) => {
-                        return (leave_unkeyed(StaDisconnectReason::Encode), None);
+                    Err(Unsent::Encode | Unsent::NoConnection | Unsent::NoTokens) => {
+                        return (
+                            leave_unkeyed(StaDisconnectReason::Encode),
+                            ActionProgress::Transition,
+                        );
                     }
                 }
             }
-            JoinStep::Associate(mut runtime) => match runtime.poll(now, &mut self.sequence) {
-                Ok(StaAssociationPoll::Transmit(attempt)) => {
-                    let capabilities = self.config.association;
-                    let phy = self.config.phy;
-                    let address = self.config.address.get();
-                    let access_point = &join.access_point;
-                    let rsn = &join.rsn;
-                    let encoded = self.encode_individual(
-                        |frame| {
-                            AssociationRequest {
-                                source: address,
-                                access_point,
-                                sequence_number: attempt.sequence_number,
-                                listen_interval: 10,
-                                phy,
-                                security: rsn,
-                                power_capability: None,
-                                he_ul_mu_power: None,
-                            }
-                            .encode(frame, capabilities)
-                            .ok()
-                        },
-                        StaFrameClass::Connection,
-                        TxPurpose::Association,
+            JoinStep::Associate(mut runtime) => {
+                if runtime
+                    .response_deadline()
+                    .is_some_and(|deadline| now >= deadline)
+                {
+                    return (
+                        leave_unkeyed(StaDisconnectReason::AssociationFailed),
+                        ActionProgress::Transition,
                     );
-                    match encoded {
-                        Ok(transmit) => {
-                            (JoinStep::Associate(runtime), Some(Owed::Transmit(transmit)))
-                        }
-                        Err(Unsent::NoTokens) => (JoinStep::Associate(runtime), None),
-                        Err(Unsent::Encode | Unsent::NoConnection) => {
-                            return (leave_unkeyed(StaDisconnectReason::Encode), None);
+                }
+                let credit = match self.reserve_transmit() {
+                    Ok(credit) => credit,
+                    Err(Unsent::NoTokens) => {
+                        join.step = JoinStep::Associate(runtime);
+                        return (State::Join(join), ActionProgress::Wait);
+                    }
+                    Err(Unsent::NoConnection | Unsent::Encode) => {
+                        return (
+                            leave_unkeyed(StaDisconnectReason::Encode),
+                            ActionProgress::Transition,
+                        );
+                    }
+                };
+                match runtime.poll(now, &mut self.sequence) {
+                    Ok(StaAssociationPoll::Transmit(attempt)) => {
+                        let capabilities = self.config.association;
+                        let phy = self.config.phy;
+                        let address = self.config.address.get();
+                        let access_point = &join.access_point;
+                        let rsn = &join.rsn;
+                        let encoded = self.encode_reserved(
+                            credit,
+                            |frame| {
+                                AssociationRequest {
+                                    source: address,
+                                    access_point,
+                                    sequence_number: attempt.sequence_number,
+                                    listen_interval: 10,
+                                    phy,
+                                    security: rsn,
+                                    power_capability: None,
+                                    he_ul_mu_power: None,
+                                }
+                                .encode(frame, capabilities)
+                                .ok()
+                            },
+                            StaFrameClass::Connection,
+                            TxPurpose::Association,
+                        );
+                        match encoded {
+                            Ok(transmit) => {
+                                (JoinStep::Associate(runtime), Some(Owed::Transmit(transmit)))
+                            }
+                            Err(Unsent::Encode | Unsent::NoConnection | Unsent::NoTokens) => {
+                                return (
+                                    leave_unkeyed(StaDisconnectReason::Encode),
+                                    ActionProgress::Transition,
+                                );
+                            }
                         }
                     }
+                    Ok(StaAssociationPoll::Idle) => {
+                        self.return_credit(credit);
+                        (JoinStep::Associate(runtime), None)
+                    }
+                    Ok(StaAssociationPoll::Failed { .. }) | Err(_) => {
+                        self.return_credit(credit);
+                        return (
+                            leave_unkeyed(StaDisconnectReason::AssociationFailed),
+                            ActionProgress::Transition,
+                        );
+                    }
                 }
-                Ok(StaAssociationPoll::Idle) => (JoinStep::Associate(runtime), None),
-                Ok(StaAssociationPoll::Failed { .. }) | Err(_) => {
-                    return (leave_unkeyed(StaDisconnectReason::AssociationFailed), None);
-                }
-            },
+            }
             // The next state owes its first action at once.
-            JoinStep::Report {
+            JoinStep::NotifyAssociated {
+                association_id,
+                peer,
+            } => (
+                JoinStep::StartLink {
+                    association_id,
+                    peer,
+                },
+                Some(Owed::Associated(peer)),
+            ),
+            JoinStep::StartLink {
                 association_id,
                 peer,
             } => {
                 let state = self.joined(join, association_id, peer, now);
-                return self.owe(state, now);
+                return (state, ActionProgress::Transition);
             }
             step => (step, None),
         };
         join.step = step;
-        (State::Join(join), owed)
+        (State::Join(join), owed.into())
     }
 
     /// The associated station: its handshake, or, on an open network,
@@ -3162,7 +3261,6 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         peer: Peer<T::RxMeta>,
         now: Instant,
     ) -> State<T, K> {
-        self.associated_owed = Some(peer);
         let bssid = join.access_point.bssid;
         let channel = join.channel;
         let qos = join.access_point.wmm_ie_len > 0;
@@ -3227,16 +3325,35 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         }
     }
 
-    /// The frame `encode` writes into a buffer, as an individual frame of
-    /// `class`.
-    fn encode_individual(
+    fn reserve_transmit(&mut self) -> Result<TxCredit<'id, T>, Unsent> {
+        let epoch = self.epoch.ok_or(Unsent::NoConnection)?;
+        let (ticket, buffer) = self.tokens().ok_or(Unsent::NoTokens)?;
+        Ok(TxCredit {
+            epoch,
+            ticket,
+            buffer,
+        })
+    }
+
+    fn return_credit(&mut self, credit: TxCredit<'id, T>) {
+        self.tickets.put(credit.ticket);
+        self.buffers.put(credit.buffer);
+    }
+
+    /// Encode with both owners already reserved, after the caller may have
+    /// consumed a sequence or started an attempt.
+    fn encode_reserved(
         &mut self,
+        credit: TxCredit<'id, T>,
         encode: impl FnOnce(&mut [u8]) -> Option<usize>,
         class: StaFrameClass,
         purpose: TxPurpose,
     ) -> Result<StaTransmit<'id, T, K>, Unsent> {
-        let epoch = self.epoch.ok_or(Unsent::NoConnection)?;
-        let (ticket, mut buffer) = self.tokens().ok_or(Unsent::NoTokens)?;
+        let TxCredit {
+            epoch,
+            ticket,
+            mut buffer,
+        } = credit;
         let frame = encode(buffer.bytes_mut()).and_then(|len| {
             let header = HeaderSpec::decode(
                 buffer.bytes_mut().split_at_checked(len)?.0,
@@ -3287,6 +3404,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         eapol: &[u8],
     ) -> Result<StaTransmit<'id, T, K>, Unsent> {
         const PRIORITY: u8 = 7;
+        let credit = self.reserve_transmit()?;
         let peer_qos = qos.is_some();
         let sequence_number = match qos {
             Some(sequences) => {
@@ -3306,7 +3424,8 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             ether_type: EAPOL_ETHER_TYPE,
             payload: eapol,
         };
-        self.encode_individual(
+        self.encode_reserved(
+            credit,
             |buffer| frame.encode(buffer).ok(),
             StaFrameClass::Connection,
             TxPurpose::Connected(Sending::GroupResponse),
@@ -3367,10 +3486,13 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         subtype: StaManagementSubtype,
         bssid: [u8; 6],
         body: &[u8],
-    ) -> Option<StaTransmit<'id, T, K>> {
+        purpose: TxPurpose,
+    ) -> Result<StaTransmit<'id, T, K>, Unsent> {
+        let credit = self.reserve_transmit()?;
         let address = self.config.address.get();
         let sequence_number = self.sequence.take();
-        self.encode_individual(
+        self.encode_reserved(
+            credit,
             |frame| {
                 StaManagementFrame {
                     subtype,
@@ -3383,9 +3505,8 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 .ok()
             },
             StaFrameClass::Normal,
-            TxPurpose::Deauthentication,
+            purpose,
         )
-        .ok()
     }
 
     /// When the station next needs a [`StaInput::Tick`], even without an
@@ -3403,16 +3524,18 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             State::Join(Join {
                 step: JoinStep::Associate(runtime),
                 ..
-            }) => runtime.next_deadline(),
+            }) => {
+                if self.tickets.is_empty() || self.buffers.is_empty() {
+                    runtime.response_deadline()
+                } else {
+                    runtime.next_deadline()
+                }
+            }
             State::Join(Join {
                 step: JoinStep::RetryAt(at),
                 ..
             }) => Some(*at),
-            State::Handshake(Handshake {
-                step: HandshakeStep::Await,
-                deadline,
-                ..
-            }) => Some(deadline.deadline()),
+            State::Handshake(Handshake { deadline, .. }) => Some(deadline.deadline()),
             State::Connected(Connected {
                 background: Some(background),
                 ..
@@ -3484,10 +3607,12 @@ fn leave_connected<T: StaTokens, K>(
     reason_code: Option<u16>,
 ) -> State<T, K> {
     let bssid = connected.bssid;
-    leave_keyed(
+    State::Leave(Leave {
         reason,
-        reason_code.map(|reason_code| Deauthentication { bssid, reason_code }),
-    )
+        step: LeaveStep::AwaitAbsenceEnd(
+            reason_code.map(|reason_code| Deauthentication { bssid, reason_code }),
+        ),
+    })
 }
 
 /// The handshake's end: connected, its supplicant and keys held.

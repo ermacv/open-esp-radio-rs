@@ -217,6 +217,17 @@ impl StaAssociationRuntime {
         )
     }
 
+    /// The state deadline remains active while a request waits for a TX
+    /// credit. A retry's earlier due time is not a wake source in that wait.
+    pub(crate) fn response_deadline(&self) -> Option<Instant> {
+        if self.terminal || self.comeback_until.is_some() {
+            None
+        } else {
+            self.epoch_start
+                .map(|start| deadline_after(start, STA_RESPONSE_TIMEOUT))
+        }
+    }
+
     /// Account for one completed RX descriptor, including a frame which is
     /// not a valid management input. The station owns this runtime only while
     /// its exchange is active; accounting has no dynamic refusal.

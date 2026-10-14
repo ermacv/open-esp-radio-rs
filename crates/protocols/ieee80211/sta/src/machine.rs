@@ -2854,7 +2854,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         let credit = self.reserve_transmit()?;
         let address = self.config.address.get();
         let sequence_number = self.sequence.take();
-        self.encode_reserved(
+        Ok(self.encode_reserved(
             credit,
             |frame| {
                 oer_ieee80211_mac::station::StaDataFrame {
@@ -2870,7 +2870,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             },
             StaFrameClass::Connection,
             purpose,
-        )
+        )?)
     }
 
     /// The action the connected state owes.
@@ -2913,8 +2913,13 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 ),
             };
         }
-        let owed = self.owe_background(&mut connected);
-        (State::Connected(connected), owed.into())
+        match self.owe_background(&mut connected) {
+            Ok(owed) => (State::Connected(connected), owed.into()),
+            Err(reason) => (
+                leave_connected(connected, reason, Some(REASON_UNSPECIFIED)),
+                ActionProgress::Transition,
+            ),
+        }
     }
 
     /// The action of a group key's handshake, if one is owed; a failure's
@@ -2983,7 +2988,10 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     }
 
     /// The background scan's action, or a Null the access point is owed.
-    fn owe_background(&mut self, connected: &mut Connected<T, K>) -> Option<Owed<'id, T, K>> {
+    fn owe_background(
+        &mut self,
+        connected: &mut Connected<T, K>,
+    ) -> Result<Option<Owed<'id, T, K>>, StaDisconnectReason> {
         let bssid = connected.bssid;
         let home = connected.channel;
         let absence_id = self.absence.as_ref().map(Lease::id);
@@ -3064,13 +3072,13 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         }
         if let Some((power_management, sending)) = power {
             match self.encode_null(bssid, power_management) {
-                Some(transmit) => {
+                Ok(transmit) => {
                     connected.sending = true;
                     connected.waking = sending == Sending::Wake;
                     owed = Some(Owed::Transmit(transmit));
                 }
                 // No token now: the step waits for the next poll.
-                None => {
+                Err(Unsent::NoTokens) => {
                     if let Some(background) = &mut connected.background {
                         background.step = match background.step {
                             BackgroundStep::AwaitSleep => BackgroundStep::NeedSleep,
@@ -3081,9 +3089,13 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                         connected.wake = true;
                     }
                 }
+                Err(Unsent::Encode) => return Err(StaDisconnectReason::Encode),
+                Err(Unsent::NoConnection) => {
+                    return Err(StaDisconnectReason::TransmitRefused(TxRefusal::LinkChanged));
+                }
             }
         }
-        owed
+        Ok(owed)
     }
 
     /// A Probe Request of the background scan, marked in flight.
@@ -3099,32 +3111,30 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         &mut self,
         bssid: [u8; 6],
         power_management: StaPowerManagement,
-    ) -> Option<StaTransmit<'id, T, K>> {
-        let credit = self.reserve_transmit().ok()?;
+    ) -> Result<StaTransmit<'id, T, K>, Unsent> {
+        let credit = self.reserve_transmit()?;
         let address = self.config.address.get();
         let sequence_number = self.sequence.take();
-        let mut transmit = self
-            .encode_reserved(
-                credit,
-                |frame| {
-                    StaNullDataFrame {
-                        station_address: address,
-                        bssid,
-                        sequence_number,
-                        power_management,
-                    }
-                    .encode(frame)
-                    .ok()
-                },
-                StaFrameClass::Normal,
-                TxPurpose::Connected(match power_management {
-                    StaPowerManagement::Active => Sending::Wake,
-                    StaPowerManagement::PowerSave => Sending::Sleep,
-                }),
-            )
-            .ok()?;
+        let mut transmit = self.encode_reserved(
+            credit,
+            |frame| {
+                StaNullDataFrame {
+                    station_address: address,
+                    bssid,
+                    sequence_number,
+                    power_management,
+                }
+                .encode(frame)
+                .ok()
+            },
+            StaFrameClass::Normal,
+            TxPurpose::Connected(match power_management {
+                StaPowerManagement::Active => Sending::Wake,
+                StaPowerManagement::PowerSave => Sending::Sleep,
+            }),
+        )?;
         transmit.plan = StaRatePlan::Null;
-        Some(transmit)
+        Ok(transmit)
     }
 
     fn owe_join(&mut self, mut join: Join<T, K>, now: Instant) -> ActionStep<'id, T, K> {
@@ -3203,7 +3213,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                         };
                         (JoinStep::Authenticate(auth), Some(Owed::Transmit(transmit)))
                     }
-                    Err(Unsent::Encode | Unsent::NoConnection | Unsent::NoTokens) => {
+                    Err(EncodeError) => {
                         return (
                             leave_unkeyed(StaDisconnectReason::Encode),
                             ActionProgress::Transition,
@@ -3264,7 +3274,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                             Ok(transmit) => {
                                 (JoinStep::Associate(runtime), Some(Owed::Transmit(transmit)))
                             }
-                            Err(Unsent::Encode | Unsent::NoConnection | Unsent::NoTokens) => {
+                            Err(EncodeError) => {
                                 return (
                                     leave_unkeyed(StaDisconnectReason::Encode),
                                     ActionProgress::Transition,
@@ -3405,7 +3415,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         encode: impl FnOnce(&mut [u8]) -> Option<usize>,
         class: StaFrameClass,
         purpose: TxPurpose,
-    ) -> Result<StaTransmit<'id, T, K>, Unsent> {
+    ) -> Result<StaTransmit<'id, T, K>, EncodeError> {
         let TxCredit {
             epoch,
             ticket,
@@ -3434,7 +3444,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             None => {
                 self.tickets.put(ticket);
                 self.buffers.put(buffer);
-                Err(Unsent::Encode)
+                Err(EncodeError)
             }
         }
     }
@@ -3481,12 +3491,12 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             ether_type: EAPOL_ETHER_TYPE,
             payload: eapol,
         };
-        self.encode_reserved(
+        Ok(self.encode_reserved(
             credit,
             |buffer| frame.encode(buffer).ok(),
             StaFrameClass::Connection,
             TxPurpose::Connected(Sending::GroupResponse),
-        )
+        )?)
     }
 
     /// A broadcast Probe Request in a buffer, if the station holds tokens
@@ -3548,7 +3558,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         let credit = self.reserve_transmit()?;
         let address = self.config.address.get();
         let sequence_number = self.sequence.take();
-        self.encode_reserved(
+        Ok(self.encode_reserved(
             credit,
             |frame| {
                 StaManagementFrame {
@@ -3563,7 +3573,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             },
             StaFrameClass::Normal,
             purpose,
-        )
+        )?)
     }
 
     /// When the station next needs a [`StaInput::Tick`], even without an
@@ -3720,12 +3730,23 @@ fn connect<T: StaTokens, K>(handshake: Handshake<T, K>) -> State<T, K> {
 }
 
 /// Why a frame was not handed out.
+#[derive(Debug)]
 enum Unsent {
     NoConnection,
     /// The station holds no ticket or buffer now.
     NoTokens,
     /// The frame did not encode.
     Encode,
+}
+
+/// Encoding can fail after credit is reserved; acquiring credit cannot.
+#[derive(Debug)]
+struct EncodeError;
+
+impl From<EncodeError> for Unsent {
+    fn from(_: EncodeError) -> Self {
+        Self::Encode
+    }
 }
 
 #[cfg(test)]

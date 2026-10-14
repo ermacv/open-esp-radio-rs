@@ -69,7 +69,7 @@ impl Ieee80211Capabilities for Caps {
 #[derive(Debug, Eq, PartialEq)]
 struct Ticket(u8);
 
-struct Buffer([u8; 512]);
+struct Buffer([u8; 512], usize);
 
 impl oer_ieee80211_lower_mac::TxBufferClass for Buffer {
     const CAPACITY: usize = 512;
@@ -77,7 +77,7 @@ impl oer_ieee80211_lower_mac::TxBufferClass for Buffer {
 
 impl TxBufferMemory for Buffer {
     fn bytes_mut(&mut self) -> &mut [u8] {
-        &mut self.0
+        &mut self.0[..self.1]
     }
 }
 
@@ -268,7 +268,7 @@ impl<'id> World<'id> {
             StationResources {
                 epochs: LinkEpochSource::for_test(0),
                 tickets: [Ticket(0), Ticket(1)],
-                buffers: [Buffer([0; 512]), Buffer([0; 512])],
+                buffers: [Buffer([0; 512], 512), Buffer([0; 512], 512)],
                 place,
                 absence_place: absence,
                 pairwise: Slot(0),
@@ -864,6 +864,42 @@ fn connected_world<'id>(mint: &mut Mint<'id>) -> World<'id> {
     assert!(world.station.is_connected());
     world.take();
     world
+}
+
+#[test]
+fn a_null_encoding_failure_leaves_once_and_returns_the_credit() {
+    installed(|mint| {
+        let mut world = connected_world(mint);
+        let mut buffers = Vec::new();
+        while let Some(mut buffer) = world.station.buffers.take() {
+            buffer.1 = 1;
+            buffers.push(buffer);
+        }
+        for buffer in buffers {
+            world.station.buffers.put(buffer);
+        }
+        let State::Connected(connected) = &mut world.station.state else {
+            panic!()
+        };
+        connected.wake = true;
+        world.run(at(40));
+        assert!(!world.station.is_connected());
+        assert_eq!(world.station.tickets.len(), 2);
+        assert_eq!(world.station.buffers.len(), 2);
+        assert_eq!(
+            world
+                .seen
+                .iter()
+                .filter(|event| matches!(
+                    event,
+                    Seen::Notify(StaNotice::Disconnected(StaDisconnectReason::Encode))
+                ))
+                .count(),
+            1
+        );
+        assert!(world.station.poll_action(at(41)).is_none());
+        assert_eq!(world.station.poll_deadline(), None);
+    });
 }
 
 #[test]
@@ -1475,7 +1511,7 @@ fn eapol_and_data_on_tid_7_share_one_counter_and_tid_0_runs_on_across_a_rekey() 
         let (mut world, ptk) = wpa2_connected_by(mint, 2, &beacon);
         let mut data = StaData::<Tokens, Caps>::new(
             [Ticket(10)],
-            [Buffer([0; 512])],
+            [Buffer([0; 512], 512)],
             core::num::NonZeroU8::MIN,
         );
         fn send<'id>(
@@ -2300,7 +2336,7 @@ fn every_control_encoder_reserves_credit_before_consuming_its_sequence() {
                         0 => station
                             .encode_eapol(BSSID, &[], TxPurpose::HandshakeResponse)
                             .ok(),
-                        1 => station.encode_null(BSSID, StaPowerManagement::Active),
+                        1 => station.encode_null(BSSID, StaPowerManagement::Active).ok(),
                         2 => station.encode_protected_eapol(BSSID, None, &[]).ok(),
                         3 => station.encode_protected_eapol(BSSID, Some(qos), &[]).ok(),
                         4 => station.encode_probe(),

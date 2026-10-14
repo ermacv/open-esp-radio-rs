@@ -96,6 +96,10 @@ association's state deadline remains active, while its overdue retry time
 does not cause repeated polling. Every four-way handshake step retains the
 same response deadline while waiting for TX, a key slot or installation.
 Expiry leaves once and reclaims late returns through the normal teardown.
+After reserving credit, encoding can fail only with `EncodeError`. Null
+transmission waits only when credit is occupied; an encoding failure leaves
+once and returns its ticket and buffer, and a missing connection is reported
+as a changed link.
 
 GTK wire IDs include zero. IEEE 802.11-2012, 6.3.19.1.2 and Figure 11-31,
 define the two-bit ID separately from the key type; receive selection in

@@ -1945,7 +1945,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     fn group_removed(&mut self) {
         if let State::Connected(Connected { rsn: Some(rsn), .. }) = &mut self.state {
             rsn.rekey = match core::mem::replace(&mut rsn.rekey, Rekey::None) {
-                Rekey::AwaitRetired => Rekey::None,
+                Rekey::AwaitRetired => Rekey::Retire,
                 rekey => rekey,
             };
         }
@@ -3609,6 +3609,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             }
             Rekey::Retire => match self.group_removal(true) {
                 Some(removal) => (Rekey::AwaitRetired, Some(removal)),
+                None if self.keys.has_retiring() => (Rekey::Retire, None),
                 None => (Rekey::None, None),
             },
             rekey => (rekey, None),

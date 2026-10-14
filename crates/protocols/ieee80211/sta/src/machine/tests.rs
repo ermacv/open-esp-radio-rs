@@ -227,6 +227,8 @@ struct World<'id> {
     hold_configured: bool,
     hold_key_installs: bool,
     pending_installs: Vec<StaInput<'id, Tokens, Caps>>,
+    hold_group_removals: bool,
+    pending_removals: Vec<StaInput<'id, Tokens, Caps>>,
     /// The outcomes of the next transmissions; delivered once none is
     /// queued.
     outcomes: std::collections::VecDeque<(TxOutcome, bool)>,
@@ -330,6 +332,8 @@ impl<'id> World<'id> {
             hold_configured: false,
             hold_key_installs: false,
             pending_installs: Vec::new(),
+            hold_group_removals: false,
+            pending_removals: Vec::new(),
             outcomes: std::collections::VecDeque::new(),
             deauthentications: Vec::new(),
             eapol: Vec::new(),
@@ -401,14 +405,16 @@ impl<'id> World<'id> {
                         permission,
                     } => {
                         self.seen.push(Seen::RemoveKey);
-                        self.station.input(
-                            now,
-                            StaInput::GroupKeyRemoved {
-                                pending,
-                                slot,
-                                permission,
-                            },
-                        );
+                        let removed = StaInput::GroupKeyRemoved {
+                            pending,
+                            slot,
+                            permission,
+                        };
+                        if self.hold_group_removals {
+                            self.pending_removals.push(removed);
+                        } else {
+                            self.station.input(now, removed);
+                        }
                     }
                     StaAction::SelectGroupKey {
                         pending,
@@ -3839,4 +3845,110 @@ fn a_removal_issued_before_leave_returns_its_record_and_permission_after_leave()
         assert!(world.station.keys.clear());
         assert!(matches!(world.station.state, State::Idle));
     });
+}
+
+#[test]
+fn delivered_m4_retires_every_superseded_owner_and_leave_finishes_the_chain() {
+    fn exercise<const G: usize>(leave: bool) {
+        use oer_ieee80211_mac::security::rsn::Akm;
+        use oer_ieee80211_rsn::{PtkContext, frames::RsnTxFrame};
+        installed(|mint| {
+            let mut world = World::with_groups(
+                mint,
+                3,
+                StaSecurity::Wpa2Personal {
+                    pmk: Pmk::from_bytes(PMK),
+                },
+                core::array::from_fn::<_, G, _>(|i| Slot(u8::try_from(i + 1).unwrap())),
+            );
+            world
+                .station
+                .command(at(0), StaRequest::new(1, StaCommand::Connect))
+                .unwrap();
+            world.run(at(0));
+            world.advance();
+            world.receive(at(13), &wpa2_beacon());
+            world.advance();
+            world.answer_authentication(at(30), 0);
+            world.receive(at(31), &association_response(0));
+            let message1 = RsnTxFrame::<512>::message1(Akm::Psk, LOCAL, 1, ANONCE).unwrap();
+            world.receive(at(32), &eapol_frame(message1.as_bytes()));
+            let ptk = Pmk::from_bytes(PMK).derive_ptk(
+                Akm::Psk,
+                PtkContext {
+                    authenticator_address: BSSID,
+                    supplicant_address: LOCAL,
+                    authenticator_nonce: ANONCE,
+                    supplicant_nonce: SNONCE,
+                },
+            );
+            world.take();
+            world.hold_group_removals = true;
+            for index in 0..G {
+                if index + 1 < G {
+                    world
+                        .outcomes
+                        .push_back((ended(TxEndStatus::AckTimeout), true));
+                }
+                world.receive(
+                    at(33),
+                    &retry_message3(
+                        &ptk,
+                        u64::try_from(index + 2).unwrap(),
+                        u8::try_from(index + 1).unwrap(),
+                    ),
+                );
+                assert_eq!(world.station.is_connected(), index + 1 == G);
+            }
+            assert_eq!(world.pending_removals.len(), 1);
+            assert!(world.station.keys.group_permission.is_none());
+            assert_eq!(world.station.keys.group_slots.free.len(), 0);
+            if leave {
+                world
+                    .station
+                    .command(at(34), StaRequest::new(2, StaCommand::Disconnect))
+                    .unwrap();
+                world.run(at(34));
+                assert!(matches!(world.station.state, State::Leave(_)));
+            }
+            let expected = if leave { G } else { G - 1 };
+            for completed in 1..=expected {
+                assert_eq!(
+                    world.pending_removals.len(),
+                    1,
+                    "the prior terminal supplies the sole permission"
+                );
+                let terminal = world.pending_removals.pop().unwrap();
+                world.station.input(at(35), terminal);
+                world.run(at(35));
+                assert_eq!(world.station.keys.group_slots.free.len(), completed);
+            }
+            assert!(world.pending_removals.is_empty());
+            assert!(world.station.keys.group_permission.is_some());
+            assert!(!world.station.keys.has_retiring());
+            if leave {
+                assert!(world.station.keys.clear());
+                assert!(matches!(world.station.state, State::Idle));
+            } else {
+                assert!(world.station.keys.groups.current_material(
+                    GroupKeyId::new(1).unwrap(),
+                    &[u8::try_from(G).unwrap(); 16]
+                ));
+                assert!(matches!(
+                    world.station.state,
+                    State::Connected(Connected {
+                        rsn: Some(ConnectedRsn {
+                            rekey: Rekey::None,
+                            ..
+                        }),
+                        ..
+                    })
+                ));
+            }
+        });
+    }
+    for leave in [false, true] {
+        exercise::<3>(leave);
+        exercise::<4>(leave);
+    }
 }

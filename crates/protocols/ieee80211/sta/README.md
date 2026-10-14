@@ -270,7 +270,10 @@ Group slots are fungible credits from the composition's declared pool;
 installed owners occupy private reserved records in installation order. A
 pending install owns a vacant record; returning it cannot overflow a pool
 of retiring keys. With a free physical slot the new GTK installs first and
-the superseded key retires after Group Message 2. A full pool uses
+all superseded keys retire after the delivered M4 or Group Message 2.
+Each removal terminal supplies the permission for the next removal; retirement
+ends only when no non-current owner remains. Leave continues that same chain
+through the current key as well. A full pool uses
 `replace_group_key`, evicting the oldest non-current installation;
 only a one-slot backend replaces its sole current key for a new ID.
 

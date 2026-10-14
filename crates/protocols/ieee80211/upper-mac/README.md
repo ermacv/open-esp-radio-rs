@@ -24,6 +24,11 @@ is retried, reset when the frame ends. Reports are the softmac contract's
 its cell in the four-entry contention array through the MAC's selector, the
 same mapping used by the station's data admission pools.
 
+`TxExchange` retains its immutable request context once. The current phase
+holds the sole MPDU/A-MPDU description, including the aggregate lengths;
+the finished phase retains that description with its report. `request()`
+reconstructs a value snapshot rather than borrowing a second stored copy.
+
 `RateControl` observes a `NonZeroU16` transmission count with `MpduOutcome`
 for an ordinary MPDU, or a checked `BlockAckTally` for an aggregate. A tally
 cannot contain zero attempts or more acknowledgements than attempts. The

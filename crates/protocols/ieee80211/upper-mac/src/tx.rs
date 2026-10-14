@@ -183,6 +183,43 @@ pub struct TxRequest {
     pub body: TxBody,
 }
 
+/// Immutable fields shared by every phase of one exchange. The body stays
+/// solely in the phase whose state proves whether it is an MPDU or A-MPDU.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RequestContext {
+    access_category: WmmAccessCategory,
+    initial_rate: PhyRate,
+    receiver: TxReceiver,
+    power: TxPower,
+    coex: CoexPriority,
+    mpdu_retry_limit: u8,
+}
+
+impl RequestContext {
+    const fn from_request(request: &TxRequest) -> Self {
+        Self {
+            access_category: request.access_category,
+            initial_rate: request.initial_rate,
+            receiver: request.receiver,
+            power: request.power,
+            coex: request.coex,
+            mpdu_retry_limit: request.mpdu_retry_limit,
+        }
+    }
+
+    const fn request(self, body: TxBody) -> TxRequest {
+        TxRequest {
+            access_category: self.access_category,
+            initial_rate: self.initial_rate,
+            receiver: self.receiver,
+            power: self.power,
+            coex: self.coex,
+            mpdu_retry_limit: self.mpdu_retry_limit,
+            body,
+        }
+    }
+}
+
 /// The frame content of one attempt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AttemptContent {
@@ -243,7 +280,7 @@ pub enum TxPlanError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Phase {
     Live(Live),
-    Done(TxReport),
+    Done(TxReport, TxBody),
 }
 
 /// A running exchange's phase: each holds the request's body of its own
@@ -267,7 +304,7 @@ enum Live {
 /// The state of one frame exchange.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TxExchange {
-    request: TxRequest,
+    context: RequestContext,
     phase: Phase,
     /// Original subframes (bit zero for an MPDU) that were on air.
     transmitted: u64,
@@ -283,18 +320,46 @@ pub struct TxExchange {
 }
 
 impl TxExchange {
-    pub const fn request(&self) -> &TxRequest {
-        &self.request
+    /// Reconstruct the request as a value from its common context and the
+    /// body held by the current phase.
+    ///
+    /// ```compile_fail,E0308
+    /// use oer_ieee80211_upper_mac::{TxExchange, TxRequest};
+    /// fn borrowed_request(exchange: &TxExchange) -> &TxRequest {
+    ///     exchange.request()
+    /// }
+    /// ```
+    ///
+    /// ```
+    /// use oer_ieee80211_upper_mac::{TxExchange, TxRequest};
+    /// fn request_snapshot(exchange: &TxExchange) -> TxRequest {
+    ///     exchange.request()
+    /// }
+    /// ```
+    pub const fn request(&self) -> TxRequest {
+        self.context.request(self.body())
+    }
+
+    const fn body(&self) -> TxBody {
+        match self.phase {
+            Phase::Live(Live::Mpdu(_, mpdu)) => TxBody::Mpdu(mpdu),
+            Phase::Live(
+                Live::Aggregate(_, ampdu)
+                | Live::BlockAckRequest(_, ampdu)
+                | Live::Individual { ampdu, .. },
+            ) => TxBody::Ampdu(ampdu),
+            Phase::Done(_, body) => body,
+        }
     }
 
     pub const fn is_done(&self) -> bool {
-        matches!(self.phase, Phase::Done(_))
+        matches!(self.phase, Phase::Done(..))
     }
 
     /// The report of a finished exchange.
     pub const fn report(&self) -> Option<TxReport> {
         match self.phase {
-            Phase::Done(report) => Some(report),
+            Phase::Done(report, _) => Some(report),
             _ => None,
         }
     }
@@ -302,8 +367,16 @@ impl TxExchange {
     /// Mark whether the Block Ack agreement is operational; the next
     /// completion of the aggregate reads it.
     pub fn set_block_ack_operational(&mut self, operational: bool) {
-        if let TxBody::Ampdu(request) = &mut self.request.body {
-            request.block_ack_operational = operational;
+        match &mut self.phase {
+            Phase::Live(
+                Live::Aggregate(_, ampdu)
+                | Live::BlockAckRequest(_, ampdu)
+                | Live::Individual { ampdu, .. },
+            )
+            | Phase::Done(_, TxBody::Ampdu(ampdu)) => {
+                ampdu.block_ack_operational = operational;
+            }
+            Phase::Live(Live::Mpdu(..)) | Phase::Done(_, TxBody::Mpdu(_)) => {}
         }
     }
 }
@@ -375,8 +448,9 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
         ladder: &impl RateLadder,
         entropy: &mut impl BackoffEntropy,
     ) -> Result<(TxExchange, TxAttemptPlan), TxPlanError> {
+        let context = RequestContext::from_request(&request);
         let phase = match request.body {
-            TxBody::Mpdu(mpdu) => Live::Mpdu(self.mpdu_retry(&request, mpdu.length)?, mpdu),
+            TxBody::Mpdu(mpdu) => Live::Mpdu(self.mpdu_retry(&context, mpdu.length)?, mpdu),
             TxBody::Ampdu(ampdu) => Live::Aggregate(
                 AmpduRetryState::new(
                     ampdu.first_sequence,
@@ -389,7 +463,7 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
             ),
         };
         let mut exchange = TxExchange {
-            request,
+            context,
             phase: Phase::Live(phase),
             transmitted: 0,
             rate: request.initial_rate,
@@ -419,7 +493,7 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
             exchange.ack_snr_db = completion.ack_snr_db;
         }
         let live = match exchange.phase {
-            Phase::Done(report) => return TxStep::Done(report),
+            Phase::Done(report, _) => return TxStep::Done(report),
             Phase::Live(live) => live,
         };
         let next = match live {
@@ -435,7 +509,7 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
                     }
                     RetryDecision::Complete(outcome) => {
                         let report = TxReport::Mpdu(Self::mpdu_status(exchange, &retry, outcome));
-                        exchange.phase = Phase::Done(report);
+                        exchange.phase = Phase::Done(report, exchange.body());
                         return TxStep::Done(report);
                     }
                 }
@@ -605,7 +679,7 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
             result,
             original_subframes: u16::from(self.original_subframes(exchange)),
             aggregate_attempts: exchange.aggregate_attempts,
-            aggregate_rate: exchange.request.initial_rate,
+            aggregate_rate: exchange.context.initial_rate,
             block_acknowledged_subframes: u16::from(state.acknowledged()),
             ack_snr_db: if state.acknowledged() > 0 {
                 exchange.ack_snr_db
@@ -614,25 +688,29 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
             },
             individual_retries: exchange.individual,
         });
-        exchange.phase = Phase::Done(report);
+        exchange.phase = Phase::Done(report, exchange.body());
         TxStep::Done(report)
     }
 
     fn original_subframes(&self, exchange: &TxExchange) -> u8 {
-        match exchange.request.body {
+        match exchange.body() {
             TxBody::Mpdu(_) => 1,
             TxBody::Ampdu(ampdu) => ampdu.subframes,
         }
     }
 
     fn block_ack_operational(&self, exchange: &TxExchange) -> bool {
-        match exchange.request.body {
+        match exchange.body() {
             TxBody::Ampdu(ampdu) => ampdu.block_ack_operational,
             TxBody::Mpdu(_) => false,
         }
     }
 
-    fn mpdu_retry(&self, request: &TxRequest, length: u32) -> Result<MpduRetryState, TxPlanError> {
+    fn mpdu_retry(
+        &self,
+        request: &RequestContext,
+        length: u32,
+    ) -> Result<MpduRetryState, TxPlanError> {
         let frame_class = match self.protection.rts_length_threshold() {
             Some(threshold) if length > u32::from(threshold.bytes()) => FrameClass::Long,
             _ => FrameClass::Short,
@@ -646,19 +724,19 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
         exchange: &TxExchange,
         index: u8,
     ) -> Result<(MpduRetryState, u32), TxPlanError> {
-        let length = match exchange.request.body {
+        let length = match exchange.body() {
             TxBody::Ampdu(ampdu) => ampdu
                 .mpdu_length(index)
                 .ok_or(TxPlanError::SubframeOutsideAggregate)?,
             TxBody::Mpdu(mpdu) => mpdu.length,
         };
-        self.mpdu_retry(&exchange.request, length)
+        self.mpdu_retry(&exchange.context, length)
             .map(|retry| (retry, length))
     }
 
     fn update_contention(&mut self, exchange: &TxExchange, update: ContentionUpdate) {
         let contention = exchange
-            .request
+            .context
             .access_category
             .select_mut(&mut self.contention);
         match update {
@@ -672,7 +750,7 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
         retry: &MpduRetryState,
         outcome: RetryOutcome,
     ) -> MacTxStatus {
-        let solicits_ack = match exchange.request.body {
+        let solicits_ack = match exchange.body() {
             TxBody::Mpdu(mpdu) => mpdu.response != TxResponse::None,
             TxBody::Ampdu(_) => true,
         };
@@ -700,7 +778,7 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
         ladder: &impl RateLadder,
         entropy: &mut impl BackoffEntropy,
     ) -> TxAttemptPlan {
-        let request = exchange.request;
+        let request = exchange.context;
         let (rate, psdu, content) = match live {
             Live::Mpdu(retry, mpdu) => (
                 retry.rate(ladder, request.initial_rate, exchange.rate),

@@ -323,6 +323,113 @@ fn repeated_protection_failures_end_in_a_block_ack_request() {
 }
 
 #[test]
+fn request_snapshot_keeps_the_mpdu_context_through_completion() {
+    let mut planner = planner();
+    let mut entropy = all_ones;
+    let expected = mpdu(733);
+    let (mut exchange, _) = planner.begin(expected, &Ladder, &mut entropy).unwrap();
+    exchange.set_block_ack_operational(false);
+    assert_eq!(exchange.request(), expected);
+    let step = planner.complete(
+        &mut exchange,
+        &completion(TxStatus::Success, None),
+        now(10),
+        &Ladder,
+        &mut entropy,
+    );
+    assert!(matches!(step, TxStep::Done(TxReport::Mpdu(_))));
+    exchange.set_block_ack_operational(true);
+    assert_eq!(exchange.request(), expected);
+}
+
+#[test]
+fn aggregate_body_stays_with_the_bar_individual_and_finished_phases() {
+    let mut planner = planner();
+    let mut entropy = all_ones;
+    let mut body = AmpduRequest::new(
+        7,
+        SequenceNumber::new(4094).unwrap(),
+        &[311, 677, 1234],
+        now(0),
+        true,
+    )
+    .unwrap();
+    let mut expected = TxRequest {
+        body: TxBody::Ampdu(body),
+        ..ampdu_request(3)
+    };
+    let (mut exchange, _) = planner.begin(expected, &Ladder, &mut entropy).unwrap();
+    assert_eq!(exchange.request(), expected);
+    for _ in 0..3 {
+        let plan = attempt(planner.complete(
+            &mut exchange,
+            &completion(TxStatus::CtsTimeout, None),
+            now(1),
+            &Ladder,
+            &mut entropy,
+        ));
+        assert!(matches!(plan.content, AttemptContent::Ampdu { .. }));
+        assert_eq!(exchange.request(), expected);
+    }
+    let bar = attempt(planner.complete(
+        &mut exchange,
+        &completion(TxStatus::CtsTimeout, None),
+        now(1),
+        &Ladder,
+        &mut entropy,
+    ));
+    assert_eq!(
+        bar.content,
+        AttemptContent::BlockAckRequest {
+            tid: 7,
+            starting_sequence: body.first_sequence,
+        }
+    );
+    exchange.set_block_ack_operational(false);
+    body.block_ack_operational = false;
+    expected.body = TxBody::Ampdu(body);
+    assert_eq!(exchange.request(), expected);
+
+    let individual = attempt(planner.complete(
+        &mut exchange,
+        &completion(TxStatus::Success, report(4094, 0b011)),
+        now(2),
+        &Ladder,
+        &mut entropy,
+    ));
+    assert_eq!(individual.content, AttemptContent::Subframe { index: 2 });
+    assert_eq!(exchange.request(), expected);
+    exchange.set_block_ack_operational(true);
+    body.block_ack_operational = true;
+    expected.body = TxBody::Ampdu(body);
+    assert_eq!(exchange.request(), expected);
+
+    let finished = planner.complete(
+        &mut exchange,
+        &completion(TxStatus::Success, None),
+        now(3),
+        &Ladder,
+        &mut entropy,
+    );
+    assert!(matches!(finished, TxStep::Done(TxReport::Ampdu(_))));
+    assert_eq!(exchange.request(), expected);
+    exchange.set_block_ack_operational(false);
+    body.block_ack_operational = false;
+    expected.body = TxBody::Ampdu(body);
+    assert_eq!(exchange.request(), expected);
+    assert_eq!(
+        planner.complete(
+            &mut exchange,
+            &completion(TxStatus::Success, None),
+            now(4),
+            &Ladder,
+            &mut entropy,
+        ),
+        finished
+    );
+}
+
+#[test]
 fn an_unanswered_aggregate_ends_as_a_hardware_timeout() {
     let mut planner = planner();
     let mut entropy = all_ones;

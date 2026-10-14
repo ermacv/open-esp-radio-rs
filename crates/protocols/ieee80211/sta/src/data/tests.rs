@@ -9,6 +9,7 @@ use oer_ieee80211_lower_mac::{
 };
 use oer_ieee80211_lower_mac::{IndeterminateCause, WithdrawCause};
 use oer_ieee80211_mac::ccmp::{CcmpRxReplayEpoch, GroupKeyId};
+use oer_ieee80211_mac::data::EthernetFrameParts;
 use oer_ieee80211_mac::phy::{HeMcs, HtMcs, LegacyRate, PhyRate};
 use oer_ieee80211_mac::sequence::SequenceNumber;
 use oer_ieee80211_mac::station::StaSequenceCounter;
@@ -966,4 +967,39 @@ fn key_removal_drops_a_published_msdu_and_returns_admission_once() {
     }
     assert!(data.tickets.take().is_none());
     assert!(data.buffers.take().is_none());
+}
+
+const EAPOL_ETHER_TYPE: u16 = 0x888e;
+/// The MSDUs of a data MPDU of `link`'s BSS to the station, which `meta`
+/// describes: a protected one only once the hardware decrypted and verified
+/// it and the replay check passed it. An EAPOL frame is the station's, not
+/// the network's.
+fn received<'f, T: StaTokens>(
+    link: &mut LinkView<'_, '_, T>,
+    frame: &'f [u8],
+    meta: &RxMeta,
+) -> Result<
+    impl Iterator<Item = Result<EthernetFrameParts<'f>, oer_ieee80211_mac::receive::RxDropReason>> + 'f,
+    oer_ieee80211_mac::receive::RxDropReason,
+> {
+    use oer_ieee80211_mac::receive::{AdmittedData, RxDropReason};
+    let protected_link = matches!(link.protection, LinkProtection::Ccmp { .. });
+    let replay = match &mut link.protection {
+        LinkProtection::Ccmp { replay, .. } => Some(&mut **replay),
+        LinkProtection::Open => None,
+    };
+    let admitted = AdmittedData::admit(
+        oer_ieee80211_mac::frame::DecodedHeader::decode(frame).ok_or(RxDropReason::Header)?,
+        link.address,
+        link.bssid,
+        integrity(meta),
+        replay,
+    )?;
+    if protected_link != admitted.protected() {
+        return Err(RxDropReason::Protection);
+    }
+    Ok(admitted.msdus()?.filter(|parts| match parts {
+        Ok(parts) => parts.ether_type != EAPOL_ETHER_TYPE,
+        Err(_) => true,
+    }))
 }

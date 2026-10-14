@@ -27,7 +27,6 @@ use oer_ieee80211_lower_mac::{
 };
 use oer_ieee80211_mac::address::IndividualAddress;
 use oer_ieee80211_mac::{
-    data::EthernetFrameParts,
     qos::{WmmAccessCategory, WmmUserPriority},
     sequence::SequenceNumber,
     station::StaProtectedDataFrame,
@@ -36,9 +35,6 @@ use oer_ieee80211_mac::{
 use crate::epoch::LinkEpoch;
 use crate::machine::{LinkMode, LinkProtection, LinkView, StaTokens};
 use crate::pool::{Fifo, Pool};
-
-/// The EAPOL ether type, which the station itself carries.
-const EAPOL_ETHER_TYPE: u16 = 0x888e;
 
 /// The tokens of the data machine: the port's tickets and the buffers of
 /// the class that holds an MSDU's MPDU.
@@ -683,40 +679,6 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
             }
         })
     }
-}
-
-/// The MSDUs of a data MPDU of `link`'s BSS to the station, which `meta`
-/// describes: a protected one only once the hardware decrypted and verified
-/// it and the replay check passed it. An EAPOL frame is the station's, not
-/// the network's.
-pub fn received<'f, T: StaTokens>(
-    link: &mut LinkView<'_, '_, T>,
-    frame: &'f [u8],
-    meta: &RxMeta,
-) -> Result<
-    impl Iterator<Item = Result<EthernetFrameParts<'f>, oer_ieee80211_mac::receive::RxDropReason>> + 'f,
-    oer_ieee80211_mac::receive::RxDropReason,
-> {
-    use oer_ieee80211_mac::receive::{AdmittedData, RxDropReason};
-    let protected_link = matches!(link.protection, LinkProtection::Ccmp { .. });
-    let replay = match &mut link.protection {
-        LinkProtection::Ccmp { replay, .. } => Some(&mut **replay),
-        LinkProtection::Open => None,
-    };
-    let admitted = AdmittedData::admit(
-        oer_ieee80211_mac::frame::DecodedHeader::decode(frame).ok_or(RxDropReason::Header)?,
-        link.address,
-        link.bssid,
-        integrity(meta),
-        replay,
-    )?;
-    if protected_link != admitted.protected() {
-        return Err(RxDropReason::Protection);
-    }
-    Ok(admitted.msdus()?.filter(|parts| match parts {
-        Ok(parts) => parts.ether_type != EAPOL_ETHER_TYPE,
-        Err(_) => true,
-    }))
 }
 
 pub(crate) fn integrity(meta: &RxMeta) -> oer_ieee80211_mac::receive::Integrity {

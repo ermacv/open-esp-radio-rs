@@ -2392,6 +2392,23 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
 
     /// Admit a received frame once, process station EAPOL/management, and
     /// deliver each remaining MSDU. Refusals retain their typed reason.
+    ///
+    /// Data cannot be admitted again through the old second RX entry point:
+    ///
+    /// ```compile_fail,E0425
+    /// let _ = oer_ieee80211_sta::data::received;
+    /// ```
+    ///
+    /// ```
+    /// use oer_ieee80211_sta::machine::{Station, StaTokens};
+    /// use oer_ieee80211_lower_mac::Ieee80211Capabilities;
+    /// fn receive<T: StaTokens, K: Ieee80211Capabilities>(
+    ///     station: &mut Station<'_, T, K>, now: oer_time::Instant,
+    ///     frame: &[u8], meta: T::RxMeta,
+    /// ) {
+    ///     let _ = station.receive(now, frame, meta, |_| {});
+    /// }
+    /// ```
     pub fn receive<'frame>(
         &mut self,
         now: Instant,

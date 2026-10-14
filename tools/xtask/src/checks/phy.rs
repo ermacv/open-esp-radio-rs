@@ -39,8 +39,11 @@ const PHY_PACKAGES: &[&str] = &[
     // Shared IEEE 802.15.4 MAC values and transactions the chip PAC
     // re-exports; a closed register PAC crate, no vendor code.
     "oer-ieee802154-pac",
-    // Portable IEEE 802.15.4 frame values the MAC engine is typed over.
+    // Portable IEEE 802.15.4 frame values the MAC engine is typed over, and
+    // the port lifecycle contract the protocol's owner shape extends; plain
+    // portable types over `oer-radio-port` and `oer-time`, no vendor code.
     "oer-ieee802154",
+    "oer-ieee802154-port",
     // The chip-neutral IEEE 802.15.4 MAC engine the HAL's radio owners drive,
     // and the portable trace events it records.
     "oer-espressif-ieee802154-engine",

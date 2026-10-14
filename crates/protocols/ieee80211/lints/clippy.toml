@@ -2,6 +2,7 @@ disallowed-methods = [
     { path = "core::hint::spin_loop", reason = "production radio code must yield through its executor or platform" },
 ]
 
+suppress-restriction-lint-in-const = false
 allow-panic-in-tests = true
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true

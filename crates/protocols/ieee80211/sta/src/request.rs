@@ -88,7 +88,7 @@ impl StationScanChannels {
             if !(1..=14).contains(&channel) {
                 return Err(StationScanChannelsError::InvalidPrimary(channel));
             }
-            bits |= CHANNEL_ONE_BIT << (channel - 1);
+            bits |= CHANNEL_ONE_BIT << channel.saturating_sub(1);
         }
         if bits == 0 {
             return Err(StationScanChannelsError::Empty);
@@ -97,7 +97,9 @@ impl StationScanChannels {
     }
 
     pub const fn contains(self, primary: u8) -> bool {
-        primary != 0 && primary <= 14 && self.0 & (CHANNEL_ONE_BIT << (primary - 1)) != 0
+        primary != 0
+            && primary <= 14
+            && self.0 & (CHANNEL_ONE_BIT << primary.saturating_sub(1)) != 0
     }
 
     pub const fn count(self) -> u8 {
@@ -123,7 +125,7 @@ impl StationScanChannels {
         };
         StationScanChannelOrderIter {
             remaining: match preferred {
-                Some(channel) => self.0 & !(CHANNEL_ONE_BIT << (channel - 1)),
+                Some(channel) => self.0 & !(CHANNEL_ONE_BIT << channel.saturating_sub(1)),
                 None => self.0,
             },
             preferred,
@@ -144,8 +146,8 @@ impl Iterator for StationScanChannelIter {
             return None;
         }
         let offset = self.remaining.trailing_zeros() as u8;
-        self.remaining &= self.remaining - 1;
-        Some(offset + 1)
+        self.remaining &= self.remaining.wrapping_sub(1);
+        Some(offset.saturating_add(1))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -173,13 +175,13 @@ impl Iterator for StationScanChannelOrderIter {
             return None;
         }
         let offset = self.remaining.trailing_zeros() as u8;
-        self.remaining &= self.remaining - 1;
-        Some(offset + 1)
+        self.remaining &= self.remaining.wrapping_sub(1);
+        Some(offset.saturating_add(1))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let remaining =
-            self.remaining.count_ones() as usize + usize::from(self.preferred.is_some());
+        let remaining = (self.remaining.count_ones() as usize)
+            .saturating_add(usize::from(self.preferred.is_some()));
         (remaining, Some(remaining))
     }
 }

@@ -15,10 +15,13 @@ impl<X> Pool<X> {
     /// time, so no granted token is ever lost.
     pub(crate) fn new<const N: usize>(items: [X; N]) -> Self {
         const {
-            assert!(
-                N <= POOL_CAPACITY,
-                "a station holds at most 8 tokens of a kind"
-            )
+            #[cfg_attr(not(test), expect(clippy::panic, reason = "evaluated at build"))]
+            const fn checked<const N: usize>() {
+                if N > POOL_CAPACITY {
+                    panic!("a station holds at most 8 tokens of a kind");
+                }
+            }
+            checked::<N>();
         };
         let mut pool = Self {
             items: [const { None }; POOL_CAPACITY],
@@ -63,76 +66,108 @@ impl<X> Pool<X> {
 /// a const parameter checked at build against the tokens its items hold;
 /// an item beyond `N` comes back to the caller.
 pub(crate) struct Fifo<X, const N: usize> {
+    // Occupied cells form a prefix. Construction and the methods below are
+    // the only writers; a checked free cell reserves capacity before insert.
     items: [Option<X>; N],
-    head: usize,
-    len: usize,
 }
 
 impl<X, const N: usize> Fifo<X, N> {
     pub(crate) const fn new() -> Self {
         Self {
             items: [const { None }; N],
-            head: 0,
-            len: 0,
         }
     }
 
-    /// Queue `item` at the back.
-    ///
-    /// # Errors
-    ///
-    /// The item, when the queue holds `N`.
     pub(crate) fn push(&mut self, item: X) -> Result<(), X> {
-        if self.len >= N {
-            return Err(item);
+        match self.items.iter_mut().find(|slot| slot.is_none()) {
+            Some(slot) => {
+                *slot = Some(item);
+                Ok(())
+            }
+            None => Err(item),
         }
-        let at = (self.head + self.len) % N;
-        self.items[at] = Some(item);
-        self.len += 1;
-        Ok(())
     }
 
-    /// Insert by the operation's original order. Returning several older
-    /// operations must not reverse them as repeated `push_front` would.
+    /// Insert by the original operation order, preserving older returns.
     pub(crate) fn insert_by(&mut self, item: X, before: impl Fn(&X, &X) -> bool) -> Result<(), X> {
-        if self.len >= N {
+        // The last free cell is reserved before any ownership moves. With
+        // the occupied-prefix invariant it is the final destination of carry.
+        let Some((free, occupied)) = self.items.split_last_mut() else {
+            return Err(item);
+        };
+        if free.is_some() {
             return Err(item);
         }
-        let at = self
-            .iter()
-            .position(|other| before(&item, other))
-            .unwrap_or(self.len);
-        for offset in (at..self.len).rev() {
-            let from = (self.head + offset) % N;
-            let to = (self.head + offset + 1) % N;
-            self.items[to] = self.items[from].take();
+        let mut carry = item;
+        let mut inserting = false;
+        for slot in occupied {
+            match slot {
+                Some(other) => {
+                    if inserting || before(&carry, other) {
+                        core::mem::swap(&mut carry, other);
+                        inserting = true;
+                    }
+                }
+                None => {
+                    *slot = Some(carry);
+                    return Ok(());
+                }
+            }
         }
-        self.items[(self.head + at) % N] = Some(item);
-        self.len += 1;
+        *free = Some(carry);
         Ok(())
     }
 
-    /// The items, front first.
+    #[cfg(test)]
     pub(crate) fn iter(&self) -> impl Iterator<Item = &X> {
-        (0..self.len).filter_map(move |at| self.items[(self.head + at) % N].as_ref())
+        self.items.iter().flatten()
     }
 
-    /// The front item, in place.
     pub(crate) fn front(&self) -> Option<&X> {
-        if self.len == 0 {
-            return None;
-        }
-        self.items[self.head].as_ref()
+        self.items.first().and_then(Option::as_ref)
     }
 
-    /// The front item.
     pub(crate) fn pop(&mut self) -> Option<X> {
-        if self.len == 0 {
-            return None;
+        let (front, tail) = self.items.split_first_mut()?;
+        let item = front.take()?;
+        let mut vacant = front;
+        for next in tail {
+            *vacant = next.take();
+            vacant = next;
         }
-        let item = self.items[self.head].take();
-        self.head = (self.head + 1) % N;
-        self.len -= 1;
-        item
+        Some(item)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Fifo;
+
+    #[test]
+    fn fifo_moves_non_clone_owners_and_preserves_return_order() {
+        struct Owned(u8);
+        let mut queue = Fifo::<Owned, 3>::new();
+        assert!(queue.push(Owned(3)).is_ok());
+        assert!(queue.insert_by(Owned(1), |a, b| a.0 < b.0).is_ok());
+        assert!(queue.insert_by(Owned(2), |a, b| a.0 < b.0).is_ok());
+        assert_eq!(queue.push(Owned(4)).err().unwrap().0, 4);
+        assert_eq!(
+            queue
+                .iter()
+                .map(|value| value.0)
+                .collect::<std::vec::Vec<_>>(),
+            [1, 2, 3]
+        );
+        assert_eq!(queue.pop().unwrap().0, 1);
+        assert!(queue.push(Owned(4)).is_ok());
+        assert_eq!(queue.pop().unwrap().0, 2);
+        assert_eq!(queue.pop().unwrap().0, 3);
+        assert_eq!(queue.pop().unwrap().0, 4);
+        assert!(queue.pop().is_none());
+        assert!(
+            Fifo::<Owned, 0>::new()
+                .insert_by(Owned(7), |a, b| a.0 < b.0)
+                .is_err()
+        );
     }
 }

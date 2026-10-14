@@ -93,7 +93,7 @@ impl StationSaQuery {
         };
         let received = i32::from(u16::from_le_bytes(transaction));
         let latest = i32::from(active.transaction);
-        let first = latest - i32::from(active.requests);
+        let first = latest.saturating_sub(i32::from(active.requests));
         if received <= first || received > latest {
             return false;
         }
@@ -130,7 +130,7 @@ impl StationSaQuery {
         }
         active.next_retry = deadline_after(active.next_retry, RETRY_INTERVAL);
         active.transaction = active.transaction.wrapping_add(1);
-        active.requests += 1;
+        active.requests = active.requests.saturating_add(1);
         SaQueryStep::Request(active.transaction.to_le_bytes())
     }
 

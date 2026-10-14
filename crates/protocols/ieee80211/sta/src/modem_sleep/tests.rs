@@ -309,19 +309,82 @@ fn stop_wakes_the_rf_and_releases_held_frames() {
 fn the_listen_interval_scales_to_beacons_rounded_to_the_dtim() {
     // At 100 TU beacons a listen interval counts beacons directly.
     // At or above one DTIM: the nearest multiple of the DTIM, a tie up.
-    assert_eq!(scaled_listen_interval(10, BI, 3), 9);
-    assert_eq!(scaled_listen_interval(11, BI, 3), 12);
-    assert_eq!(scaled_listen_interval(10, BI, 4), 12);
-    assert_eq!(scaled_listen_interval(10, BI, 1), 10);
+    assert_eq!(
+        scaled_listen_interval(
+            10,
+            core::num::NonZeroU32::new(BI).unwrap_or(core::num::NonZeroU32::MIN),
+            3
+        ),
+        9
+    );
+    assert_eq!(
+        scaled_listen_interval(
+            11,
+            core::num::NonZeroU32::new(BI).unwrap_or(core::num::NonZeroU32::MIN),
+            3
+        ),
+        12
+    );
+    assert_eq!(
+        scaled_listen_interval(
+            10,
+            core::num::NonZeroU32::new(BI).unwrap_or(core::num::NonZeroU32::MIN),
+            4
+        ),
+        12
+    );
+    assert_eq!(
+        scaled_listen_interval(
+            10,
+            core::num::NonZeroU32::new(BI).unwrap_or(core::num::NonZeroU32::MIN),
+            1
+        ),
+        10
+    );
     // Below one DTIM: the nearest divisor of it, a tie up.
-    assert_eq!(scaled_listen_interval(3, BI, 10), 2);
-    assert_eq!(scaled_listen_interval(4, BI, 10), 5);
-    assert_eq!(scaled_listen_interval(3, BI, 8), 4);
+    assert_eq!(
+        scaled_listen_interval(
+            3,
+            core::num::NonZeroU32::new(BI).unwrap_or(core::num::NonZeroU32::MIN),
+            10
+        ),
+        2
+    );
+    assert_eq!(
+        scaled_listen_interval(
+            4,
+            core::num::NonZeroU32::new(BI).unwrap_or(core::num::NonZeroU32::MIN),
+            10
+        ),
+        5
+    );
+    assert_eq!(
+        scaled_listen_interval(
+            3,
+            core::num::NonZeroU32::new(BI).unwrap_or(core::num::NonZeroU32::MIN),
+            8
+        ),
+        4
+    );
     // The listen interval counts 100-TU units: at 200 TU beacons ten units
     // are five beacons.
-    assert_eq!(scaled_listen_interval(10, 2 * BI, 1), 5);
+    assert_eq!(
+        scaled_listen_interval(
+            10,
+            core::num::NonZeroU32::new(2 * BI).unwrap_or(core::num::NonZeroU32::MIN),
+            1
+        ),
+        5
+    );
     // Fewer than one beacon is one.
-    assert_eq!(scaled_listen_interval(1, 4 * BI, 1), 1);
+    assert_eq!(
+        scaled_listen_interval(
+            1,
+            core::num::NonZeroU32::new(4 * BI).unwrap_or(core::num::NonZeroU32::MIN),
+            1
+        ),
+        1
+    );
 }
 
 #[test]

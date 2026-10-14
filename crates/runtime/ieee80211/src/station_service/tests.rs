@@ -114,14 +114,11 @@ fn channel6() -> Channel {
 }
 
 fn config(security: StaSecurity) -> StaConfig<ModelCaps24> {
-    let mut ssid = [0; 32];
-    ssid[..SSID.len()].copy_from_slice(SSID);
     let mut channels = [None; 16];
     channels[0] = SupportedChannel::new(channel6());
     StaConfig {
         address: LOCAL,
-        ssid,
-        ssid_len: SSID.len() as u8,
+        ssid: SSID.iter().copied().collect(),
         channels,
         dwell: Duration::from_millis(10),
         skipped_absences: 3,

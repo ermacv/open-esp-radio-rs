@@ -23,8 +23,8 @@ use oer_ieee80211_mac::station::{
     parse_sta_disconnect,
 };
 use oer_ieee80211_rsn::sae::{
-    SAE_COMMIT_LEN, SAE_CONFIRM_LEN, SAE_KEY_LEN, SAE_PMKID_LEN, SaeCommit, SaeCommitValues,
-    SaeError, SaeKeys, anti_clogging_token,
+    SAE_COMMIT_LEN, SAE_KEY_LEN, SAE_PMKID_LEN, SaeCommit, SaeCommitValues, SaeError, SaeKeys,
+    anti_clogging_token,
 };
 
 /// Authentication timer of the commit exchange.
@@ -41,17 +41,16 @@ const STATUS_ANTI_CLOGGING_TOKEN_REQUIRED: u16 = 76;
 const STATUS_SAE_HASH_TO_ELEMENT: u16 = 126;
 
 /// One SAE Authentication frame body the station sends.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StaSaeTransmission {
     pub transaction: u16,
     pub status_code: u16,
-    body: [u8; STA_SAE_BODY_CAPACITY],
-    length: usize,
+    body: heapless::Vec<u8, STA_SAE_BODY_CAPACITY>,
 }
 
 impl StaSaeTransmission {
     pub fn body(&self) -> &[u8] {
-        &self.body[..self.length]
+        &self.body
     }
 }
 
@@ -84,7 +83,7 @@ pub enum StaSaeFailure {
 }
 
 /// Result of observing a frame or completing a millisecond.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StaSaeEvent {
     Irrelevant,
     Transmit(StaSaeTransmission),
@@ -109,8 +108,7 @@ pub struct StaSaeAuthentication {
     bssid: [u8; 6],
     commit: SaeCommit,
     pwe: SaePwe,
-    token: [u8; STA_SAE_TOKEN_CAPACITY],
-    token_length: usize,
+    token: heapless::Vec<u8, STA_SAE_TOKEN_CAPACITY>,
     phase: StaSaePhase,
     /// When the authentication timer of the current phase expires; `None`
     /// until [`Self::start`] after the commit left.
@@ -126,8 +124,7 @@ impl StaSaeAuthentication {
             bssid,
             commit,
             pwe,
-            token: [0; STA_SAE_TOKEN_CAPACITY],
-            token_length: 0,
+            token: heapless::Vec::new(),
             phase: StaSaePhase::Committed,
             deadline: None,
         }
@@ -158,7 +155,7 @@ impl StaSaeAuthentication {
     /// The commit did not encode in the body's capacity.
     pub fn commit(&self) -> Result<StaSaeTransmission, StaSaeFailure> {
         let mut body = [0; STA_SAE_BODY_CAPACITY];
-        let token = (self.token_length != 0).then_some(&self.token[..self.token_length]);
+        let token = (!self.token.is_empty()).then_some(self.token.as_slice());
         let length = self
             .commit
             .values()
@@ -167,8 +164,12 @@ impl StaSaeAuthentication {
         Ok(StaSaeTransmission {
             transaction: SAE_COMMIT_TRANSACTION,
             status_code: self.commit_status(),
-            body,
-            length,
+            body: heapless::Vec::from_slice(
+                body.split_at_checked(length)
+                    .ok_or(StaSaeFailure::Protocol(SaeError::Malformed))?
+                    .0,
+            )
+            .map_err(|_| StaSaeFailure::Protocol(SaeError::Malformed))?,
         })
     }
 
@@ -211,11 +212,10 @@ impl StaSaeAuthentication {
                 Ok(token) => token,
                 Err(error) => return self.fail(StaSaeFailure::Protocol(error)),
             };
-            if token.len() > STA_SAE_TOKEN_CAPACITY {
-                return self.fail(StaSaeFailure::TokenTooLong);
-            }
-            self.token[..token.len()].copy_from_slice(token);
-            self.token_length = token.len();
+            self.token = match heapless::Vec::from_slice(token) {
+                Ok(token) => token,
+                Err(_) => return self.fail(StaSaeFailure::TokenTooLong),
+            };
             return match self.commit() {
                 Ok(commit) => StaSaeEvent::Transmit(commit),
                 Err(failure) => self.fail(failure),
@@ -241,15 +241,16 @@ impl StaSaeAuthentication {
             Err(error) => return self.fail(StaSaeFailure::Protocol(error)),
         };
         let confirm = keys.own_confirm(1);
-        let mut body = [0; STA_SAE_BODY_CAPACITY];
-        body[..SAE_CONFIRM_LEN].copy_from_slice(&confirm);
+        let body = match heapless::Vec::from_slice(&confirm) {
+            Ok(body) => body,
+            Err(_) => return self.fail(StaSaeFailure::Protocol(SaeError::Malformed)),
+        };
         self.phase = StaSaePhase::Confirmed(keys);
         self.deadline = Some(deadline_after(now, STA_SAE_CONFIRM_TIMEOUT));
         StaSaeEvent::Transmit(StaSaeTransmission {
             transaction: SAE_CONFIRM_TRANSACTION,
             status_code: STATUS_SUCCESS,
             body,
-            length: SAE_CONFIRM_LEN,
         })
     }
 

@@ -113,7 +113,7 @@ impl FtmRequesterConfig {
     /// responder timestamps for the preceding frame, so a single ASAP burst
     /// can deliver at most one fewer sample than its FTM frame allocation.
     pub const fn maximum_deliverable_samples(self) -> u8 {
-        self.parameters.ftms_per_burst() - 1
+        self.parameters.ftms_per_burst().saturating_sub(1)
     }
 
     pub const fn response_timeout(self) -> Duration {
@@ -249,12 +249,13 @@ impl<const MAX_SAMPLES: usize> FtmSessionResult<MAX_SAMPLES> {
         self.sample_count
     }
 
-    pub const fn sample(&self, index: usize) -> Option<FtmRawExchange> {
-        if index < self.sample_count {
-            self.samples[index]
-        } else {
-            None
-        }
+    pub fn sample(&self, index: usize) -> Option<FtmRawExchange> {
+        self.samples
+            .iter()
+            .take(self.sample_count)
+            .nth(index)
+            .copied()
+            .flatten()
     }
 }
 
@@ -434,7 +435,9 @@ impl OwnedInformationElements {
             });
         }
         let mut owned = [0_u8; MAX_TRACKED_INFORMATION_ELEMENTS_LEN];
-        owned[..bytes.len()].copy_from_slice(bytes);
+        for (to, from) in owned.iter_mut().zip(bytes) {
+            *to = *from;
+        }
         Ok(Self {
             bytes: owned,
             len: bytes.len() as u8,
@@ -442,7 +445,12 @@ impl OwnedInformationElements {
     }
 
     fn matches(self, bytes: &[u8]) -> bool {
-        usize::from(self.len) == bytes.len() && self.bytes[..bytes.len()] == *bytes
+        usize::from(self.len) == bytes.len()
+            && self
+                .bytes
+                .iter()
+                .take(usize::from(self.len))
+                .eq(bytes.iter())
     }
 }
 
@@ -579,8 +587,12 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         let mut body = [0_u8; FTM_INITIAL_REQUEST_BODY_LEN];
         encode_initial_request(self.config.parameters, &mut body)
             .map_err(|_| FtmRequesterError::RequestEncode)?;
-        let attempt = self.config.request_attempt_limit - attempts_remaining + 1;
-        let attempts_remaining = attempts_remaining - 1;
+        let attempt = self
+            .config
+            .request_attempt_limit
+            .saturating_sub(attempts_remaining)
+            .saturating_add(1);
+        let attempts_remaining = attempts_remaining.saturating_sub(1);
         let transmission = FtmRequestTransmission {
             session_generation: self.session_generation,
             transmission_generation: self.transmission_generation,
@@ -792,7 +804,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         Ok(FtmMeasurementDisposition::InitialAccepted {
             dialog_token: measurement.fields.dialog_token,
             allocated_ftms_per_burst: negotiated.ftms_per_burst,
-            maximum_samples: negotiated.ftms_per_burst - 1,
+            maximum_samples: negotiated.ftms_per_burst.saturating_sub(1),
         })
     }
 
@@ -849,7 +861,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             let Some(sample) = sample else {
                 return Ok(FtmMeasurementDisposition::Stale);
             };
-            if self.sample_count >= usize::from(negotiated.ftms_per_burst - 1) {
+            if self.sample_count >= usize::from(negotiated.ftms_per_burst.saturating_sub(1)) {
                 return self.protocol_error(FtmRequesterError::TooManyMeasurements);
             }
             self.push_sample(sample)?;
@@ -866,9 +878,9 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             measurement.fields.dialog_token,
         )?;
         let local_timing = self.validate_new_local_timing(measurement, local_timing)?;
-        let maximum_samples = usize::from(negotiated.ftms_per_burst - 1);
+        let maximum_samples = usize::from(negotiated.ftms_per_burst.saturating_sub(1));
         let disposition = if let Some(sample) = sample {
-            if self.sample_count + 1 >= maximum_samples {
+            if self.sample_count.saturating_add(1) >= maximum_samples {
                 return self.protocol_error(FtmRequesterError::TooManyMeasurements);
             }
             let sample_index = self.push_sample(sample)?;
@@ -977,7 +989,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             || !negotiated.asap_capable
             || negotiated.ftms_per_burst == 0
             || negotiated.ftms_per_burst > requested.ftms_per_burst()
-            || usize::from(negotiated.ftms_per_burst - 1) > MAX_SAMPLES
+            || usize::from(negotiated.ftms_per_burst.saturating_sub(1)) > MAX_SAMPLES
             || negotiated.min_delta_ftm_100us < requested.min_delta_ftm_100us()
             || negotiated.burst_duration == FtmBurstDuration::NoPreference
             || negotiated.burst_duration.wire() > requested.burst_duration().wire()
@@ -998,7 +1010,11 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         if self.token_seen(actual) {
             return self.protocol_error(FtmRequesterError::DialogTokenReused);
         }
-        let expected = if previous == u8::MAX { 1 } else { previous + 1 };
+        let expected = if previous == u8::MAX {
+            1
+        } else {
+            previous.saturating_add(1)
+        };
         if actual != expected {
             return self
                 .protocol_error(FtmRequesterError::DialogTokenOutOfSequence { expected, actual });
@@ -1046,9 +1062,17 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             self.phase = FtmRequesterPhase::Failed(FtmSessionFailure::ProtocolViolation);
             return Err(FtmRequesterError::TooManyMeasurements);
         }
-        let index = self.sample_count;
-        self.samples[index] = Some(sample);
-        self.sample_count += 1;
+        let Some((index, slot)) = self
+            .samples
+            .iter_mut()
+            .enumerate()
+            .find(|(_, slot)| slot.is_none())
+        else {
+            self.phase = FtmRequesterPhase::Failed(FtmSessionFailure::ProtocolViolation);
+            return Err(FtmRequesterError::TooManyMeasurements);
+        };
+        *slot = Some(sample);
+        self.sample_count = self.sample_count.saturating_add(1);
         Ok(index)
     }
 
@@ -1068,16 +1092,34 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         if token == 0 {
             return false;
         }
-        let index = usize::from(token) / 32;
-        let bit = u32::from(token) % 32;
-        self.dialog_tokens[index] & (1_u32 << bit) != 0
+        let [a, b, c, d, e, f, g, h] = &self.dialog_tokens;
+        let word = match token >> 5 {
+            0 => a,
+            1 => b,
+            2 => c,
+            3 => d,
+            4 => e,
+            5 => f,
+            6 => g,
+            _ => h,
+        };
+        *word & (1_u32 << (token & 31)) != 0
     }
 
     fn remember_dialog_token(&mut self, token: NonZeroU8) {
         // Every u8 indexes one of the eight words, including token 255.
-        let index = usize::from(token.get()) / 32;
-        let bit = u32::from(token.get()) % 32;
-        self.dialog_tokens[index] |= 1_u32 << bit;
+        let [a, b, c, d, e, f, g, h] = &mut self.dialog_tokens;
+        let word = match token.get() >> 5 {
+            0 => a,
+            1 => b,
+            2 => c,
+            3 => d,
+            4 => e,
+            5 => f,
+            6 => g,
+            _ => h,
+        };
+        *word |= 1_u32 << (token.get() & 31);
     }
 
     fn fail(&mut self, failure: FtmSessionFailure) -> FtmRequesterService {

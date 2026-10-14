@@ -103,7 +103,7 @@ impl StaAuthenticationRuntime {
         if self.active {
             return Err(StaAuthenticationRuntimeError::AttemptAlreadyActive);
         }
-        self.attempts_started += 1;
+        self.attempts_started = self.attempts_started.saturating_add(1);
         self.active = true;
         self.received_frames = 0;
         Ok(StaAuthenticationAttempt {

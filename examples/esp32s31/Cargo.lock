@@ -2274,6 +2274,7 @@ dependencies = [
 name = "oer-ieee80211-sta"
 version = "0.1.0"
 dependencies = [
+ "heapless 0.9.3",
  "oer-ieee80211-arbiter",
  "oer-ieee80211-lower-mac",
  "oer-ieee80211-mac",

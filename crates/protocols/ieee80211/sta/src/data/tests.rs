@@ -203,7 +203,7 @@ fn interleaved_returns_keep_the_original_tid_order_and_admission_count() {
     for (ticket, tid, sequence) in [(1, 6, 0), (2, 4, 0), (3, 6, 1), (4, 7, 0)] {
         let operation = transmit(&mut data);
         assert_eq!(operation.ticket, ticket);
-        assert_eq!(operation.context.tid, tid);
+        assert_eq!(operation.context.tid.value(), tid);
         assert_eq!(
             operation.context.frame.frame().len().get(),
             26 + 8 + 8 + 100
@@ -521,6 +521,35 @@ fn an_msdu_too_long_for_its_buffer_takes_no_sequence_number() {
         u16::from_le_bytes([memory(&sent.buffer)[22], memory(&sent.buffer)[23]]) >> 4,
         42
     );
+}
+
+#[test]
+fn open_mpdu_fits_exactly_without_a_temporary_ccmp_gap() {
+    let mut data = StaData::<Data, Caps>::new(
+        [1],
+        [Buffer(std::vec![0; 24 + 8 + 100])],
+        core::num::NonZeroU8::new(8).unwrap(),
+    );
+    let mut counter = StaSequenceCounter::new(SequenceNumber::new(42).unwrap());
+    data.input(
+        NOW,
+        DataInput::Msdu {
+            msdu: msdu(0),
+            link: &mut open_link(&mut counter),
+        },
+    )
+    .unwrap();
+    let sent = transmit(&mut data);
+    let bytes = memory(&sent.buffer);
+    assert_eq!(bytes.len(), 132);
+    assert_eq!(&bytes[..2], &[0x08, 0x01]);
+    assert_eq!(&bytes[4..10], &BSSID);
+    assert_eq!(&bytes[10..16], &LOCAL);
+    assert_eq!(&bytes[16..22], &PEER);
+    assert_eq!(&bytes[22..24], &(42_u16 << 4).to_le_bytes());
+    assert_eq!(&bytes[24..32], &[0xaa, 0xaa, 3, 0, 0, 0, 8, 0]);
+    assert_eq!(&bytes[32..], &[0xab; 100]);
+    assert_eq!(counter.peek(), SequenceNumber::new(43).unwrap());
 }
 
 #[test]

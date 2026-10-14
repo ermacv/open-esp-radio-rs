@@ -44,6 +44,19 @@ and hardware ownership belong in `crates/roles/esp32s31/ieee80211/sta`; clocks, 
 DMA wakeups and network leases belong to the radio runtime; final resource
 claims and board composition belong to integration.
 
+The station's SSID and SAE bodies own their bounded lengths in heapless
+vectors. WMM priorities and TWT flow IDs select exact arrays without numeric
+indexing; an unpublished data return retains its checked frame description.
+Data writes an open MAC header directly into its proven span, so it fits an
+exact-size buffer without a temporary CCMP gap or a second payload move.
+The PM owner retains a NonZero beacon period through its divisions. Vendor
+timer arithmetic keeps its original wrapping width; diagnostics saturate.
+
+The crate uses tidy's canonical strict lint block. Compile-time checks use
+private functions scoped inside const expressions, with the explicit
+`expect(clippy::panic, reason = "evaluated at build")`. Those functions cannot
+be called from the runtime path; their checked values remain in closed types.
+
 
 ## Transmit ownership
 

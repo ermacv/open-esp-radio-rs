@@ -32,7 +32,9 @@ impl StaAssociationRetrySchedule {
         if ordinal == 0 {
             return None;
         }
-        let micros = (ordinal as u64 - 1) * Self::INTERVAL.as_micros();
+        let micros = (ordinal as u64)
+            .saturating_sub(1)
+            .saturating_mul(Self::INTERVAL.as_micros());
         if micros < STA_RESPONSE_TIMEOUT.as_micros() {
             Some(Duration::from_micros(micros))
         } else {
@@ -184,7 +186,7 @@ impl StaAssociationRuntime {
                 total_received_frames: self.received_frames,
             });
         }
-        let ordinal = self.sent + 1;
+        let ordinal = self.sent.saturating_add(1);
         match StaAssociationRetrySchedule::offset(ordinal) {
             Some(offset) if now >= deadline_after(start, offset) => {
                 self.sent = ordinal;
@@ -210,7 +212,7 @@ impl StaAssociationRuntime {
         let start = self.epoch_start?;
         let timeout = deadline_after(start, STA_RESPONSE_TIMEOUT);
         Some(
-            StaAssociationRetrySchedule::offset(self.sent + 1)
+            StaAssociationRetrySchedule::offset(self.sent.saturating_add(1))
                 .map_or(timeout, |offset| deadline_after(start, offset).min(timeout)),
         )
     }
@@ -283,7 +285,9 @@ impl StaAssociationRuntime {
         self.came_back = true;
         self.epoch_start = None;
         self.sent = 0;
-        let wait = Duration::from_micros((comeback_tu + COMEBACK_MARGIN_TU) as u64 * MICROS_PER_TU);
+        let wait = Duration::from_micros(
+            u64::from(comeback_tu.wrapping_add(COMEBACK_MARGIN_TU)).saturating_mul(MICROS_PER_TU),
+        );
         self.comeback_until = Some(deadline_after(now, wait));
         StaAssociationEvent::Irrelevant
     }

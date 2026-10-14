@@ -124,7 +124,7 @@ impl StaReconnectPolicy {
             } else {
                 self.maximum_retry_backoff_millis
             };
-            remaining -= 1;
+            remaining = remaining.saturating_sub(1);
         }
         delay
     }

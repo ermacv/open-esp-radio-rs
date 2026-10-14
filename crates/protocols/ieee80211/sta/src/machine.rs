@@ -522,9 +522,7 @@ pub struct StaConfig<K> {
     /// The interface's own address.
     pub address: [u8; 6],
     /// The network's SSID.
-    pub ssid: [u8; SSID_CAPACITY],
-    /// The SSID's length.
-    pub ssid_len: u8,
+    pub ssid: heapless::Vec<u8, SSID_CAPACITY>,
     /// The channels the scan visits, in order.
     pub channels: [Option<SupportedChannel<K>>; CHANNEL_CAPACITY],
     /// How long the scan listens on each channel.
@@ -559,18 +557,29 @@ struct Rules<K>(PhantomData<fn() -> K>);
 
 impl<K: Ieee80211Capabilities> Rules<K> {
     /// The network's frames alone.
-    const MEMBER: SupportedFilter<K, StationRole> =
-        match SupportedFilter::new(ReceiveFilter::BSS_MEMBER) {
-            Some(filter) => filter,
-            None => panic!("a station's port receives its network's frames"),
-        };
+    const MEMBER: SupportedFilter<K, StationRole> = {
+        #[cfg_attr(not(test), expect(clippy::panic, reason = "evaluated at build"))]
+        const fn checked<K: Ieee80211Capabilities>() -> SupportedFilter<K, StationRole> {
+            match SupportedFilter::new(ReceiveFilter::BSS_MEMBER) {
+                Some(filter) => filter,
+                None => panic!("a station's port receives its network's frames"),
+            }
+        }
+        checked::<K>()
+    };
     /// The network's frames and the other networks' management frames:
     /// the network's own channel in a background scan.
-    const WIDENED: SupportedFilter<K, StationRole> = match SupportedFilter::new(
-        ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::OTHER_BSS_MANAGEMENT),
-    ) {
-        Some(filter) => filter,
-        None => panic!("a station's port hears the other networks beside its own"),
+    const WIDENED: SupportedFilter<K, StationRole> = {
+        #[cfg_attr(not(test), expect(clippy::panic, reason = "evaluated at build"))]
+        const fn checked<K: Ieee80211Capabilities>() -> SupportedFilter<K, StationRole> {
+            match SupportedFilter::new(
+                ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::OTHER_BSS_MANAGEMENT),
+            ) {
+                Some(filter) => filter,
+                None => panic!("a station's port hears the other networks beside its own"),
+            }
+        }
+        checked::<K>()
     };
 }
 
@@ -1106,20 +1115,41 @@ fn received_eapol(
     address: [u8; 6],
     bssid: [u8; 6],
 ) -> Option<OwnedEapolFrame<DEFAULT_EAPOL_FRAME_CAPACITY>> {
-    let control = u16::from_le_bytes(frame.get(0..2)?.try_into().ok()?);
-    // Data from the DS.
+    let (header, mut payload) = frame.split_first_chunk::<24>()?;
+    let [
+        c0,
+        c1,
+        _,
+        _,
+        d0,
+        d1,
+        d2,
+        d3,
+        d4,
+        d5,
+        b0,
+        b1,
+        b2,
+        b3,
+        b4,
+        b5,
+        ..,
+    ] = *header;
+    let control = u16::from_le_bytes([c0, c1]);
     if (control >> 2) & 0b11 != 2 || control & 0x0300 != 0x0200 {
         return None;
     }
-    if frame.get(4..10)? != address || frame.get(10..16)? != bssid {
+    if [d0, d1, d2, d3, d4, d5] != address || [b0, b1, b2, b3, b4, b5] != bssid {
         return None;
     }
-    let qos = control & 0x0080 != 0;
-    let payload = if qos { 26 } else { 24 };
-    if frame.get(payload..payload + 8)? != LLC_SNAP_EAPOL {
+    if control & 0x0080 != 0 {
+        payload = payload.split_first_chunk::<2>()?.1;
+    }
+    let (llc, eapol) = payload.split_first_chunk::<8>()?;
+    if *llc != LLC_SNAP_EAPOL {
         return None;
     }
-    OwnedEapolFrame::try_copy(RsnInterface::Station, bssid, frame.get(payload + 8..)?).ok()
+    OwnedEapolFrame::try_copy(RsnInterface::Station, bssid, eapol).ok()
 }
 
 /// The frame control of a Deauthentication and of a Disassociation.
@@ -1308,7 +1338,10 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             groups,
         } = resources;
         // The port's receive rules, checked as the type is built.
-        let _ = (Rules::<K>::MEMBER, Rules::<K>::WIDENED);
+        let _: (
+            SupportedFilter<K, StationRole>,
+            SupportedFilter<K, StationRole>,
+        ) = (Rules::<K>::MEMBER, Rules::<K>::WIDENED);
         Self {
             config,
             state: State::Idle,
@@ -1418,7 +1451,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     }
 
     fn ssid(&self) -> &[u8] {
-        &self.config.ssid[..usize::from(self.config.ssid_len)]
+        &self.config.ssid
     }
 
     fn channel(&self, visit: usize) -> Option<SupportedChannel<K>> {
@@ -1823,7 +1856,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 }
             }
             // The visit's listening is over: the next channel.
-            State::Scan(scan) => self.visit(scan.visit + 1, 0, scan.access_point),
+            State::Scan(scan) => self.visit(scan.visit.saturating_add(1), 0, scan.access_point),
             State::Leave(leave) => self.report(leave),
             // The lease ended without the station's release: the port left;
             // the station leaves, its keys first.
@@ -2079,7 +2112,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         let visit = if background.skipped > 0 {
             background.visit
         } else {
-            background.visit + 1
+            background.visit.saturating_add(1)
         };
         background.visit = visit;
         background.step = BackgroundStep::NeedAbsence;
@@ -2143,7 +2176,9 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         let beside = access_point_channel.and_then(|channel| {
             candidates()
                 .filter(|record| record.channel == channel.channel().number())
-                .filter(|record| i16::from(record.rssi) >= i16::from(strongest.rssi) - margin)
+                .filter(|record| {
+                    i16::from(record.rssi) >= i16::from(strongest.rssi).saturating_sub(margin)
+                })
                 .max_by_key(|record| record.rssi)
                 .copied()
         });
@@ -3196,7 +3231,10 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         let epoch = self.epoch.ok_or(Unsent::NoConnection)?;
         let (ticket, mut buffer) = self.tokens().ok_or(Unsent::NoTokens)?;
         let frame = encode(buffer.bytes_mut()).and_then(|len| {
-            let header = HeaderSpec::decode(&buffer.bytes_mut()[..len], IndividualAddress::new)?;
+            let header = HeaderSpec::decode(
+                buffer.bytes_mut().split_at_checked(len)?.0,
+                IndividualAddress::new,
+            )?;
             oer_ieee80211_lower_mac::ClassSizedFrame::new(SizedFrame::new(
                 AckHeader::new(header)?,
                 MpduLength::new(len)?,
@@ -3244,7 +3282,10 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         const PRIORITY: u8 = 7;
         let peer_qos = qos.is_some();
         let sequence_number = match qos {
-            Some(sequences) => sequences[usize::from(PRIORITY)].take(),
+            Some(sequences) => {
+                let [_, _, _, _, _, _, _, voice] = sequences;
+                voice.take()
+            }
             None => self.sequence.take(),
         };
         let frame = oer_ieee80211_mac::station::StaProtectedDataFrame {
@@ -3277,13 +3318,16 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             source: self.config.address,
             bssid: [0xff; 6],
             sequence_number,
-            ssid: &self.config.ssid[..usize::from(self.config.ssid_len)],
+            ssid: &self.config.ssid,
             supported_rates: &rates,
         }
         .encode(buffer.bytes_mut())
         .ok();
         let frame = len.and_then(|len| {
-            let header = HeaderSpec::decode(&buffer.bytes_mut()[..len], GroupAddress::new)?;
+            let header = HeaderSpec::decode(
+                buffer.bytes_mut().split_at_checked(len)?.0,
+                GroupAddress::new,
+            )?;
             oer_ieee80211_lower_mac::ClassSizedFrame::new(SizedFrame::new(
                 header,
                 MpduLength::new(len)?,

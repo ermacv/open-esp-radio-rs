@@ -154,7 +154,7 @@ pub enum DataRefusal {
 pub struct DataTxContext<'id, K, C, A = AcPermit> {
     admission: A,
     link: LinkEpoch<'id>,
-    tid: u8,
+    tid: WmmUserPriority,
     frame: oer_ieee80211_lower_mac::ClassSizedFrame<C, AckHeader, K>,
     access_category: WmmAccessCategory,
     protected: bool,
@@ -291,10 +291,15 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
         depth: core::num::NonZeroU8,
     ) -> Self {
         const {
-            assert!(
-                TICKETS <= CAP,
-                "each MPDU a data queue holds takes a ticket: the queues hold every ticket"
-            );
+            #[cfg_attr(not(test), expect(clippy::panic, reason = "evaluated at build"))]
+            const fn checked<const TICKETS: usize, const CAP: usize>() {
+                if TICKETS > CAP {
+                    panic!(
+                        "each MPDU a data queue holds takes a ticket: the queues hold every ticket"
+                    );
+                }
+            }
+            checked::<TICKETS, CAP>();
         };
         Self {
             tickets: Pool::new(tickets),
@@ -330,8 +335,8 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
     ///
     /// [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6133717216
     pub fn leave(&mut self) {
-        for tid in 0..8 {
-            while let Some(owed) = self.owed[tid].pop() {
+        for queue in &mut self.owed {
+            while let Some(owed) = queue.pop() {
                 self.left_behind.increment();
                 self.tickets.put(owed.ticket);
                 self.buffers.put(owed.buffer.into_fresh(D::renew));
@@ -409,7 +414,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
                     )
                 ) {
                     let frame = context.frame;
-                    let tid = usize::from(context.tid);
+                    let tid = context.tid;
                     let again = DataTransmit {
                         ticket,
                         buffer,
@@ -419,7 +424,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
                         context,
                     };
                     let next_order = self.next_order;
-                    if let Err(again) = self.owed[tid].insert_by(again, |a, b| {
+                    if let Err(again) = tid.select_mut(&mut self.owed).insert_by(again, |a, b| {
                         a.context.order.wrapping_sub(next_order)
                             < b.context.order.wrapping_sub(next_order)
                     }) {
@@ -455,24 +460,26 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
                     self.tickets.put(ticket);
                     return Err(DataRefusal::NoTokens);
                 };
-                let tid = msdu.priority.value();
+                let tid = msdu.priority;
                 let qos = matches!(link.mode, LinkMode::Qos(_));
                 // A non-QoS link has one queue, best effort.
                 let (slot, access_category) = if qos {
-                    (usize::from(tid), msdu.priority.access_category())
+                    (tid, msdu.priority.access_category())
                 } else {
-                    (0, WmmAccessCategory::BestEffort)
+                    (WmmUserPriority::UP0, WmmAccessCategory::BestEffort)
                 };
                 let protected = matches!(link.protection, LinkProtection::Ccmp { .. });
                 // A frame that does not fit its buffer takes no sequence
                 // number.
-                if mpdu_len(qos, protected, msdu.payload.len()) > buffer.bytes_mut().len() {
+                if mpdu_len(qos, protected, msdu.payload.len())
+                    .is_none_or(|length| length > buffer.bytes_mut().len())
+                {
                     self.tickets.put(ticket);
                     self.buffers.put(buffer);
                     return Err(DataRefusal::TooLong);
                 }
                 let sequence_number = match &mut link.mode {
-                    LinkMode::Qos(counters) => counters[usize::from(tid)].take(),
+                    LinkMode::Qos(counters) => tid.select_mut(counters).take(),
                     LinkMode::NonQos(counter) => counter.take(),
                 };
                 let frame = encode_frame::<_, K, D::Class>(
@@ -490,7 +497,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
                         let context = DataTxContext {
                             admission: (),
                             link: link.epoch,
-                            tid: slot as u8,
+                            tid: slot,
                             frame,
                             access_category,
                             protected,
@@ -504,7 +511,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
                             access_category,
                             protected,
                         };
-                        if let Err(owed) = self.owed[slot].push(owed) {
+                        if let Err(owed) = slot.select_mut(&mut self.owed).push(owed) {
                             self.overflowed(owed);
                         }
                         Ok(())
@@ -536,9 +543,10 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
     /// consumes none. The service takes every action before waiting.
     pub fn poll_action(&mut self, _now: Instant) -> Option<DataAction<'id, D, K>> {
         // The earliest MSDU of an admitted category first, whatever its TID.
-        let tid = (0..8)
+        let tid = WmmUserPriority::ALL
+            .into_iter()
             .filter_map(|tid| {
-                self.owed[tid]
+                tid.select(&self.owed)
                     .front()
                     .filter(|owed| self.admission.available(owed.access_category) != 0)
                     .map(|owed| (owed.context.order, tid))
@@ -548,9 +556,9 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
         // A queue can be empty or an AC can have no free permit: both are
         // normal polling states. Reserve and pop under the same exclusive
         // borrow; no actor can change either between these operations.
-        let category = self.owed[tid].front()?.access_category;
+        let category = tid.select(&self.owed).front()?.access_category;
         let permit = self.admission.take(category)?;
-        self.owed[tid].pop().map(|transmit| {
+        tid.select_mut(&mut self.owed).pop().map(|transmit| {
             let (context, ()) = transmit.context.admission(permit);
             DataAction::Transmit(DataTransmit {
                 context,
@@ -579,24 +587,44 @@ pub fn received<'f, T: StaTokens>(
     frame: &'f [u8],
     meta: &RxMeta,
 ) -> Option<impl Iterator<Item = EthernetFrameParts<'f>>> {
-    let control = u16::from_le_bytes(frame.get(0..2)?.try_into().ok()?);
-    // Data (type 2) from the DS.
+    let (header, mut payload) = frame.split_first_chunk::<24>()?;
+    let [
+        c0,
+        c1,
+        _,
+        _,
+        d0,
+        d1,
+        d2,
+        d3,
+        d4,
+        d5,
+        b0,
+        b1,
+        b2,
+        b3,
+        b4,
+        b5,
+        ..,
+    ] = *header;
+    let control = u16::from_le_bytes([c0, c1]);
     if (control >> 2) & 0b11 != 2 || control & 0x0300 != 0x0200 {
         return None;
     }
-    if frame.get(10..16)? != link.bssid {
+    if [b0, b1, b2, b3, b4, b5] != link.bssid {
         return None;
     }
-    let destination: [u8; 6] = frame.get(4..10)?.try_into().ok()?;
-    let qos = control & 0x0080 != 0;
-    let order = control & 0x8000 != 0;
-    let mut offset = if qos { 26 } else { 24 };
-    if qos && order {
-        offset += 4;
-    }
-    let tid = qos
-        .then(|| frame.get(24).map(|control| control & 0x0f))
-        .flatten();
+    let destination = [d0, d1, d2, d3, d4, d5];
+    let tid = if control & 0x0080 != 0 {
+        let ([qos, _], rest) = payload.split_first_chunk::<2>()?;
+        payload = rest;
+        if control & 0x8000 != 0 {
+            payload = payload.split_first_chunk::<4>()?.1;
+        }
+        Some(qos & 0x0f)
+    } else {
+        None
+    };
     match &mut link.protection {
         LinkProtection::Ccmp { replay, .. } => {
             if control & 0x4000 == 0 {
@@ -611,24 +639,26 @@ pub fn received<'f, T: StaTokens>(
                 return None;
             }
             // The CCMP header stays; the MIC is gone.
-            let header = CcmpHeader::parse(frame.get(offset..offset + 8)?.try_into().ok()?).ok()?;
+            let (ccmp, rest) = payload.split_first_chunk::<8>()?;
+            let header = CcmpHeader::parse(*ccmp).ok()?;
+            payload = rest;
             let protection = if destination == link.address {
                 CcmpRxProtection::Pairwise
-            } else if destination[0] & 1 == 1 {
+            } else if d0 & 1 == 1 {
                 CcmpRxProtection::Group
             } else {
                 CcmpRxProtection::Other
             };
             replay.check(protection, tid, header).ok()?;
-            offset += 8;
         }
         LinkProtection::Open => {
-            if control & 0x4000 != 0 || (destination != link.address && destination[0] & 1 == 0) {
+            if control & 0x4000 != 0 || (destination != link.address && d0 & 1 == 0) {
                 return None;
             }
         }
     }
-    let length = frame.len().checked_sub(offset)?;
+    let length = payload.len();
+    let offset = frame.len().checked_sub(length)?;
     let frames = decapsulate_data_frames(DataInterfaceRole::Station, frame, offset, length).ok()?;
     Some(
         frames
@@ -640,10 +670,14 @@ pub fn received<'f, T: StaTokens>(
 /// The length of the MPDU of a payload of `payload` octets: its header,
 /// the CCMP header's room on a protected link, the LLC/SNAP header and the
 /// payload.
-const fn mpdu_len(qos: bool, protected: bool, payload: usize) -> usize {
-    let header = if qos { 26 } else { 24 };
-    let ccmp = if protected { 8 } else { 0 };
-    header + ccmp + 8 + payload
+const fn mpdu_len(qos: bool, protected: bool, payload: usize) -> Option<usize> {
+    let prefix = match (qos, protected) {
+        (false, false) => 32,
+        (true, false) => 34,
+        (false, true) => 40,
+        (true, true) => 42,
+    };
+    payload.checked_add(prefix)
 }
 
 /// The MPDU of `msdu` on `link`, written into `output`.
@@ -659,6 +693,48 @@ fn encode_frame<
     protected: bool,
     output: &mut [u8],
 ) -> Option<oer_ieee80211_lower_mac::ClassSizedFrame<C, AckHeader, K>> {
+    if !protected {
+        // Write the open encoding directly; it never needs a temporary CCMP
+        // gap or a second move of the payload. The exact sized header is
+        // validated once and written by the portable array encoder.
+        if link.bssid == [0; 6] {
+            return None;
+        }
+        let length = mpdu_len(qos, false, msdu.payload.len())?;
+        let frame = output.split_at_mut_checked(length)?.0;
+        let header = HeaderSpec::new(
+            oer_ieee80211_lower_mac::FrameControl::new(if qos { 0x0188 } else { 0x0108 })?,
+            0,
+            IndividualAddress::new(link.bssid)?,
+            link.address,
+            msdu.destination,
+            sequence_number.sequence_control(),
+            None,
+            if qos {
+                Some(oer_ieee80211_lower_mac::QosControl {
+                    tid: oer_ieee80211_lower_mac::Tid::new(msdu.priority.value())?,
+                    end_of_service_period: false,
+                    amsdu_present: false,
+                    high: 0,
+                })
+            } else {
+                None
+            },
+            None,
+        )?;
+        let header_length = header.len();
+        oer_ieee80211_lower_mac::HeaderLayout::new(header, frame)
+            .ok()?
+            .encode(false);
+        let payload = frame.split_at_mut_checked(header_length)?.1;
+        let (llc, payload) = payload.split_first_chunk_mut::<8>()?;
+        let [e0, e1] = msdu.ether_type.to_be_bytes();
+        *llc = [0xaa, 0xaa, 0x03, 0, 0, 0, e0, e1];
+        for (to, from) in payload.iter_mut().zip(msdu.payload) {
+            *to = *from;
+        }
+        return sized(frame);
+    }
     let len = StaProtectedDataFrame {
         source: link.address,
         bssid: link.bssid,
@@ -666,21 +742,13 @@ fn encode_frame<
         sequence_number,
         user_priority: msdu.priority.value(),
         peer_qos: qos,
-        // The backend writes the CCMP header at the first transmission.
         ccmp_header: [0; 8],
         ether_type: msdu.ether_type,
         payload: msdu.payload,
     }
     .encode(output)
     .ok()?;
-    if !protected {
-        // Without a key: no Protected bit and no CCMP header.
-        let header = if qos { 26 } else { 24 };
-        output[1] &= !0x40;
-        output.copy_within(header + 8..len, header);
-        return sized(&output[..len - 8]);
-    }
-    sized(&output[..len])
+    sized(output.split_at_checked(len)?.0)
 }
 
 fn sized<

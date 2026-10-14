@@ -8,6 +8,7 @@ repository.workspace = true
 description = "Executor- and chip-independent Wi-Fi station MLME and policy"
 
 [dependencies]
+heapless = "0.9.3"
 oer-trace = { path = "../../../trace" }
 oer-ieee80211-arbiter = { path = "../arbiter" }
 oer-ieee80211-lower-mac = { path = "../lower-mac" }

@@ -239,8 +239,6 @@ impl World {
         security: StaSecurity,
         group_slots: [Slot; G],
     ) -> Self {
-        let mut ssid = [0; 32];
-        ssid[..SSID.len()].copy_from_slice(SSID);
         let mut channels = [None; 16];
         channels[0] = Some(channel(1));
         channels[1] = Some(channel(6));
@@ -249,8 +247,7 @@ impl World {
         let station = Station::new(
             StaConfig {
                 address: LOCAL,
-                ssid,
-                ssid_len: SSID.len() as u8,
+                ssid: heapless::Vec::from_slice(SSID).unwrap(),
                 channels,
                 dwell: Duration::from_millis(10),
                 skipped_absences,

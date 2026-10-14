@@ -4,6 +4,9 @@
 //! This is the live, chip-independent owner of the finite encapsulation
 //! policy. Raw ESF, descriptor,
 //! node, key, and interface accesses deliberately remain outside this module.
+//! Encapsulation takes a checked `WmmUserPriority`; a basic data plan is
+//! infallible. Requesting hardware HE-Control can fail only when the resulting
+//! frame is not individual QoS data, reported as `HeControlRequiresQos`.
 
 use crate::qos::{WmmAccessCategory, WmmUserPriority};
 
@@ -269,78 +272,48 @@ impl<'a> Iterator for AmsduSubframes<'a> {
     }
 }
 
+/// Plan a data MPDU from a checked user priority.
+///
+/// A raw priority cannot enter the encoder:
+///
+/// ```compile_fail,E0308
+/// use oer_ieee80211_mac::data::{DataInterfaceRole, plan_data_encapsulation};
+/// let _plan = plan_data_encapsulation(
+///     DataInterfaceRole::Station, [2; 6], [4; 6], [0; 14], 8, true, false,
+/// );
+/// ```
+///
+/// Fixed protocol priorities need no runtime validation:
+///
+/// ```
+/// use oer_ieee80211_mac::data::{DataInterfaceRole, plan_data_encapsulation};
+/// use oer_ieee80211_mac::qos::{WmmAccessCategory, WmmUserPriority};
+/// let plan = plan_data_encapsulation(
+///     DataInterfaceRole::Station, [2; 6], [4; 6], [0; 14],
+///     WmmUserPriority::UP7, true, false,
+/// );
+/// assert_eq!(plan.access_category, WmmAccessCategory::Voice);
+/// ```
 pub const fn plan_data_encapsulation(
     role: DataInterfaceRole,
     bssid: [u8; 6],
     interface_mac: [u8; 6],
     ethernet: [u8; ETHERNET_HEADER_LEN],
-    priority: u8,
+    priority: WmmUserPriority,
     peer_qos: bool,
     no_ack_policy: bool,
-) -> Option<DataEncapPlan> {
-    plan_data_encapsulation_with_he_control(
-        role,
-        bssid,
-        interface_mac,
-        ethernet,
-        priority,
-        peer_qos,
-        no_ack_policy,
-        DataHeControl::Disabled,
-    )
-}
-
-/// Plan one data MPDU whose HE-Control bytes are inserted by MAC hardware.
-///
-/// SOURCE(esp32s31): complete
-/// `libnet80211[ieee80211_he.o]::ieee80211_encap_esfbuf_htc`
-/// sets byte-one bit seven but does not extend or move the DMA header.
-/// Complete `libpp[pp_he.o]::ppCalSubFrameLength` accounts for the
-/// inserted bytes through DMA metadata byte seven bit zero; that chip-specific
-/// metadata remains outside this IEEE 802.11 encoder.
-#[allow(clippy::too_many_arguments)]
-pub const fn plan_data_encapsulation_with_he_control(
-    role: DataInterfaceRole,
-    bssid: [u8; 6],
-    interface_mac: [u8; 6],
-    ethernet: [u8; ETHERNET_HEADER_LEN],
-    priority: u8,
-    peer_qos: bool,
-    no_ack_policy: bool,
-    he_control: DataHeControl,
-) -> Option<DataEncapPlan> {
-    let access_category = match WmmUserPriority::new(priority) {
-        Some(value) => value.access_category(),
-        None => return None,
-    };
-
-    let mut destination = [0_u8; 6];
-    let mut source = [0_u8; 6];
-    let mut index = 0;
-    while index != 6 {
-        destination[index] = ethernet[index];
-        source[index] = ethernet[index + 6];
-        index += 1;
-    }
-
-    let descriptor_multicast =
-        matches!(role, DataInterfaceRole::AccessPoint) && destination[0] & 1 != 0;
+) -> DataEncapPlan {
+    let [d0, d1, d2, d3, d4, d5, s0, s1, s2, s3, s4, s5, e0, e1] = ethernet;
+    let destination = [d0, d1, d2, d3, d4, d5];
+    let source = [s0, s1, s2, s3, s4, s5];
+    let descriptor_multicast = matches!(role, DataInterfaceRole::AccessPoint) && d0 & 1 != 0;
     let qos = peer_qos && !descriptor_multicast;
-    if !qos
-        && matches!(
-            he_control,
-            DataHeControl::HardwareGeneratedBufferStatusReport
-        )
-    {
-        return None;
-    }
     let mut header = [0_u8; IEEE80211_QOS_DATA_HEADER_LEN];
     header[0] = if qos {
         IEEE80211_QOS_DATA
     } else {
         IEEE80211_DATA
     };
-
     match role {
         DataInterfaceRole::Station => {
             header[1] = IEEE80211_TO_DS;
@@ -355,31 +328,73 @@ pub const fn plan_data_encapsulation_with_he_control(
             copy_six(&mut header, 16, source);
         }
     }
-
     if qos {
-        header[24] = priority | if no_ack_policy { QOS_NO_ACK_POLICY } else { 0 };
+        header[24] = priority.value() | if no_ack_policy { QOS_NO_ACK_POLICY } else { 0 };
     }
-    if matches!(
-        he_control,
-        DataHeControl::HardwareGeneratedBufferStatusReport
-    ) {
-        // The chip-specific DMA owner separately marks the four-byte hardware
-        // insertion; the encoded QoS header itself remains 26 bytes.
-        header[1] |= IEEE80211_ORDER;
-    }
-
-    Some(DataEncapPlan {
+    DataEncapPlan {
         header,
         header_len: if qos {
             IEEE80211_QOS_DATA_HEADER_LEN as u8
         } else {
             IEEE80211_LEGACY_DATA_HEADER_LEN as u8
         },
-        llc_snap: [0xaa, 0xaa, 0x03, 0, 0, 0, ethernet[12], ethernet[13]],
+        llc_snap: [0xaa, 0xaa, 0x03, 0, 0, 0, e0, e1],
         descriptor_multicast,
-        access_category,
+        access_category: priority.access_category(),
+        he_control: DataHeControl::Disabled,
+    }
+}
+
+/// Hardware-generated HE-Control requires an individual QoS data MPDU.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HeControlRequiresQos;
+
+/// Plan one data MPDU whose HE-Control bytes are inserted by MAC hardware.
+///
+/// # Errors
+///
+/// [`HeControlRequiresQos`] when insertion is requested for a non-QoS frame,
+/// including an AP's group-addressed frame even when the peer supports QoS.
+///
+/// SOURCE(esp32s31): complete
+/// `libnet80211[ieee80211_he.o]::ieee80211_encap_esfbuf_htc`
+/// sets byte-one bit seven but does not extend or move the DMA header.
+/// Complete `libpp[pp_he.o]::ppCalSubFrameLength` accounts for the
+/// inserted bytes through DMA metadata byte seven bit zero; that chip-specific
+/// metadata remains outside this IEEE 802.11 encoder.
+#[allow(clippy::too_many_arguments)]
+pub const fn plan_data_encapsulation_with_he_control(
+    role: DataInterfaceRole,
+    bssid: [u8; 6],
+    interface_mac: [u8; 6],
+    ethernet: [u8; ETHERNET_HEADER_LEN],
+    priority: WmmUserPriority,
+    peer_qos: bool,
+    no_ack_policy: bool,
+    he_control: DataHeControl,
+) -> Result<DataEncapPlan, HeControlRequiresQos> {
+    let mut plan = plan_data_encapsulation(
+        role,
+        bssid,
+        interface_mac,
+        ethernet,
+        priority,
+        peer_qos,
+        no_ack_policy,
+    );
+    if matches!(
         he_control,
-    })
+        DataHeControl::HardwareGeneratedBufferStatusReport
+    ) {
+        if plan.header_len != IEEE80211_QOS_DATA_HEADER_LEN as u8 {
+            return Err(HeControlRequiresQos);
+        }
+        // The chip-specific DMA owner separately marks the four-byte hardware
+        // insertion; the encoded QoS header itself remains 26 bytes.
+        plan.header[1] |= IEEE80211_ORDER;
+    }
+    plan.he_control = he_control;
+    Ok(plan)
 }
 
 /// Validate one ordinary STA/AP data MPDU and locate its Ethernet payload.

@@ -144,9 +144,8 @@ pub fn sta_protected_amsdu_pair_frame_length(
 impl StaProtectedAmsduFrame<'_> {
     fn plan(&self) -> Result<(crate::data::DataEncapPlan, usize), StationFrameError> {
         validate_peer(self.bssid)?;
-        if self.user_priority > 7 {
-            return Err(StationFrameError::UserPriorityOutOfRange);
-        }
+        let priority = WmmUserPriority::new(self.user_priority)
+            .ok_or(StationFrameError::UserPriorityOutOfRange)?;
         let Some(first) = self.ethernet_frames.first().copied() else {
             return Err(StationFrameError::NoAmsduFrames);
         };
@@ -158,11 +157,10 @@ impl StaProtectedAmsduFrame<'_> {
             self.bssid,
             self.source,
             first_header,
-            self.user_priority,
+            priority,
             true,
             false,
-        )
-        .ok_or(StationFrameError::UserPriorityOutOfRange)?;
+        );
         plan.header[1] |= 0x40;
         plan.header[24] |= 0x80;
         let required = sta_protected_amsdu_frame_length(self.ethernet_frames)?;

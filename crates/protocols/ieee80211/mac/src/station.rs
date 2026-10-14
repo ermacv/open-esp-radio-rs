@@ -14,6 +14,7 @@ use crate::{
     extensions::wmm::{WmmParameterSet, parse_wmm_parameter_element},
     he::{parse_he20_capabilities, parse_he20_operation},
     management::{MANAGEMENT_HEADER_LEN, MAX_SSID_LEN, MAX_SUPPORTED_RATES_LEN},
+    qos::WmmUserPriority,
     scan::ScanRecord,
     security::{LinkProtection, StaSecurityPolicy},
     sequence::SequenceNumber,

@@ -14,6 +14,7 @@ use crate::{
         ht_operation_ie, ht_peer_capabilities,
     },
     protection::ApBssProtection,
+    qos::WmmUserPriority,
     security::{ApSecurityPolicy, LinkProtection},
     sequence::SequenceNumber,
     station::SAE_AUTHENTICATION_ALGORITHM,
@@ -91,11 +92,10 @@ impl ApDataFrame<'_> {
             self.access_point,
             self.access_point,
             ethernet,
-            7,
+            WmmUserPriority::UP7,
             false,
             false,
-        )
-        .ok_or(ApDataFrameError::InvalidUserPriority)?;
+        );
         let header_len = usize::from(plan.header_len);
         let required = header_len
             .checked_add(plan.llc_snap.len())
@@ -145,11 +145,10 @@ impl ApUnprotectedDataFrame<'_> {
             self.access_point,
             self.access_point,
             ethernet_header,
-            0,
+            WmmUserPriority::UP0,
             false,
             false,
-        )
-        .ok_or(ApDataFrameError::InvalidUserPriority)?;
+        );
         if plan.header[4..10] != self.peer {
             return Err(ApDataFrameError::InvalidPeer);
         }
@@ -209,9 +208,8 @@ impl ApProtectedDataFrame<'_> {
         if self.access_point[0] & 1 != 0 || self.access_point == [0; 6] {
             return Err(ApDataFrameError::InvalidAccessPoint);
         }
-        if self.user_priority > 7 {
-            return Err(ApDataFrameError::InvalidUserPriority);
-        }
+        let priority = WmmUserPriority::new(self.user_priority)
+            .ok_or(ApDataFrameError::InvalidUserPriority)?;
         if self.ethernet.len() < ETHERNET_HEADER_LEN {
             return Err(ApDataFrameError::EthernetFrameTooShort);
         }
@@ -225,11 +223,10 @@ impl ApProtectedDataFrame<'_> {
             self.access_point,
             self.access_point,
             ethernet_header,
-            self.user_priority,
+            priority,
             self.peer_qos,
             false,
-        )
-        .ok_or(ApDataFrameError::InvalidUserPriority)?;
+        );
         if plan.header[4..10] != self.peer {
             return Err(ApDataFrameError::InvalidPeer);
         }
@@ -357,9 +354,8 @@ impl ApAmsduFrame<'_> {
         if self.peer[0] & 1 != 0 || self.peer == [0; 6] {
             return Err(ApDataFrameError::InvalidPeer);
         }
-        if self.user_priority > 7 {
-            return Err(ApDataFrameError::InvalidUserPriority);
-        }
+        let priority = WmmUserPriority::new(self.user_priority)
+            .ok_or(ApDataFrameError::InvalidUserPriority)?;
         let Some(first) = self.ethernet_frames.first().copied() else {
             return Err(ApDataFrameError::NoAmsduFrames);
         };
@@ -384,11 +380,10 @@ impl ApAmsduFrame<'_> {
             self.access_point,
             self.access_point,
             first_header,
-            self.user_priority,
+            priority,
             true,
             false,
-        )
-        .ok_or(ApDataFrameError::InvalidUserPriority)?;
+        );
         if plan.header[4..10] != self.peer {
             return Err(ApDataFrameError::InvalidPeer);
         }
@@ -446,12 +441,10 @@ impl ApProtectedDataFrame<'_> {
         if !self.peer_qos {
             return Err(ApDataFrameError::InvalidUserPriority);
         }
-        if self.user_priority > 7 || ethernet_length < ETHERNET_HEADER_LEN {
-            return Err(if self.user_priority > 7 {
-                ApDataFrameError::InvalidUserPriority
-            } else {
-                ApDataFrameError::EthernetFrameTooShort
-            });
+        let priority = WmmUserPriority::new(self.user_priority)
+            .ok_or(ApDataFrameError::InvalidUserPriority)?;
+        if ethernet_length < ETHERNET_HEADER_LEN {
+            return Err(ApDataFrameError::EthernetFrameTooShort);
         }
         let ethernet_end = ethernet_offset.checked_add(ethernet_length).ok_or(
             ApDataFrameError::OutputTooSmall {
@@ -483,11 +476,10 @@ impl ApProtectedDataFrame<'_> {
             self.access_point,
             self.access_point,
             ethernet_header,
-            self.user_priority,
+            priority,
             true,
             false,
-        )
-        .ok_or(ApDataFrameError::InvalidUserPriority)?;
+        );
         plan.header[1] |= 0x40;
         if self.more_data {
             plan.header[1] |= 0x20;

@@ -30,11 +30,10 @@ impl StaDataFrame<'_> {
             self.bssid,
             self.source,
             ethernet,
-            7,
+            WmmUserPriority::UP7,
             false,
             false,
-        )
-        .ok_or(StationFrameError::UserPriorityOutOfRange)?;
+        );
         let header_len = usize::from(plan.header_len);
         let required = header_len
             .checked_add(plan.llc_snap.len())
@@ -93,9 +92,8 @@ impl StaProtectedDataFrame<'_> {
         output: &mut [u8],
     ) -> Result<usize, StationFrameError> {
         validate_peer(self.bssid)?;
-        if self.user_priority > 7 {
-            return Err(StationFrameError::UserPriorityOutOfRange);
-        }
+        let priority = WmmUserPriority::new(self.user_priority)
+            .ok_or(StationFrameError::UserPriorityOutOfRange)?;
         if !self.peer_qos
             && matches!(
                 he_control,
@@ -110,12 +108,12 @@ impl StaProtectedDataFrame<'_> {
             self.bssid,
             self.source,
             ethernet,
-            self.user_priority,
+            priority,
             self.peer_qos,
             false,
             he_control,
         )
-        .ok_or(StationFrameError::UserPriorityOutOfRange)?;
+        .map_err(|_| StationFrameError::HeControlRequiresQos)?;
         // Exact `net80211_tx::encapsulate_ordinary` mutation after successful
         // CCMP key selection.
         plan.header[1] |= 0x40;
@@ -199,9 +197,8 @@ impl StaProtectedEthernetFrame {
         he_control: DataHeControl,
     ) -> Result<EncodedStaFrame, StationFrameError> {
         validate_peer(self.bssid)?;
-        if self.user_priority > 7 {
-            return Err(StationFrameError::UserPriorityOutOfRange);
-        }
+        let priority = WmmUserPriority::new(self.user_priority)
+            .ok_or(StationFrameError::UserPriorityOutOfRange)?;
         if !self.peer_qos
             && matches!(
                 he_control,
@@ -240,12 +237,12 @@ impl StaProtectedEthernetFrame {
             self.bssid,
             source,
             ethernet,
-            self.user_priority,
+            priority,
             self.peer_qos,
             false,
             he_control,
         )
-        .ok_or(StationFrameError::UserPriorityOutOfRange)?;
+        .map_err(|_| StationFrameError::HeControlRequiresQos)?;
         plan.header[1] |= 0x40;
 
         let header_len = usize::from(plan.header_len);
@@ -306,9 +303,8 @@ impl StaProtectedEthernetFrame {
         second_ethernet: &[u8],
     ) -> Result<EncodedStaFrame, StationFrameError> {
         validate_peer(self.bssid)?;
-        if self.user_priority > 7 {
-            return Err(StationFrameError::UserPriorityOutOfRange);
-        }
+        let priority = WmmUserPriority::new(self.user_priority)
+            .ok_or(StationFrameError::UserPriorityOutOfRange)?;
         if !self.peer_qos {
             return Err(StationFrameError::AmsduRequiresQos);
         }
@@ -356,11 +352,10 @@ impl StaProtectedEthernetFrame {
             self.bssid,
             source,
             first_header,
-            self.user_priority,
+            priority,
             true,
             false,
-        )
-        .ok_or(StationFrameError::UserPriorityOutOfRange)?;
+        );
         plan.header[1] |= 0x40;
         plan.header[24] |= 0x80;
 

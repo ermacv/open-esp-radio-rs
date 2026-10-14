@@ -43,11 +43,10 @@ fn station_qos_header_matches_the_recovered_plan() {
         BSSID,
         AP_MAC,
         ethernet(DESTINATION),
-        7,
+        WmmUserPriority::UP7,
         true,
         false,
-    )
-    .unwrap();
+    );
     assert_eq!(plan.header_len, 26);
     assert_eq!(&plan.header[..2], &[0x88, 0x01]);
     assert_eq!(&plan.header[4..10], &BSSID);
@@ -65,7 +64,7 @@ fn hardware_bsr_sets_order_without_moving_dma_payload() {
         BSSID,
         AP_MAC,
         ethernet(DESTINATION),
-        0,
+        WmmUserPriority::UP0,
         true,
         false,
         DataHeControl::HardwareGeneratedBufferStatusReport,
@@ -85,12 +84,12 @@ fn hardware_bsr_sets_order_without_moving_dma_payload() {
             BSSID,
             AP_MAC,
             ethernet(DESTINATION),
-            0,
+            WmmUserPriority::UP0,
             false,
             false,
             DataHeControl::HardwareGeneratedBufferStatusReport,
         )
-        .is_none()
+        .is_err()
     );
 }
 
@@ -102,11 +101,10 @@ fn station_decapsulation_reverses_from_ds_rfc1042_data() {
         BSSID,
         BSSID,
         ethernet,
-        0,
+        WmmUserPriority::UP0,
         false,
         false,
-    )
-    .unwrap();
+    );
     let header_length = usize::from(plan.header_len);
     let payload = [1, 2, 3, 4];
     let mut mpdu = [0_u8; 64];

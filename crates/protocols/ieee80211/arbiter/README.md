@@ -43,3 +43,7 @@ Each retune carries a private `PendingRetune`, which retains its destination
 and cycle purpose. The service owns it across disable, tuning and enable;
 `retuned` or `retune_refused` consumes that exact action token. A channel
 value alone cannot acknowledge a retune or create an unsolicited response.
+
+The coordinator advances its bounded channel-search cursor with checked
+arithmetic; an empty search has no cursor. The crate uses the canonical
+strict lint block checked by tidy.

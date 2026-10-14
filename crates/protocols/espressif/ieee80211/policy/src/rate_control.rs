@@ -72,13 +72,16 @@ impl AckSnrFilter {
         let midpoint = if self.latest == Self::UNINITIALIZED {
             0
         } else {
-            ((i16::from(self.latest) + i16::from(sample)) >> 1) as i8
+            (i16::from(self.latest).saturating_add(i16::from(sample)) >> 1) as i8
         };
         self.latest = sample;
         self.filtered = if self.filtered == Self::UNINITIALIZED {
             midpoint
         } else {
-            ((3 * i16::from(self.filtered) + i16::from(midpoint)) / 4) as i8
+            (i16::from(self.filtered)
+                .saturating_mul(3)
+                .saturating_add(i16::from(midpoint))
+                / 4) as i8
         };
     }
 
@@ -270,7 +273,13 @@ impl AmpduRateControlState {
             self.attempted_mpdu >>= 1;
             self.acknowledged_mpdu >>= 1;
         }
-        self.attempted_mpdu = self.attempted_mpdu.wrapping_add(attempted_mpdu);
+        // The input check established a positive observation. Keep its
+        // nonzero witness through division; prior accumulating windows hold
+        // fewer than EVALUATION_MPDU (500) frames and inputs are u16.
+        let positive = core::num::NonZeroU32::new(attempted_mpdu)
+            .ok_or(AmpduRateObservationError::NoAttemptedMpdu)?;
+        let accumulated = positive.saturating_add(self.attempted_mpdu);
+        self.attempted_mpdu = accumulated.get();
         self.acknowledged_mpdu = self.acknowledged_mpdu.wrapping_add(acknowledged_mpdu);
 
         if self.attempted_mpdu < Self::EVALUATION_MPDU
@@ -279,20 +288,26 @@ impl AmpduRateControlState {
             return Ok(AmpduRateDecision::Accumulating);
         }
 
-        let raw_success_ratio = ((self.acknowledged_mpdu << 7) / self.attempted_mpdu) as u8;
+        let raw_success_ratio = ((self.acknowledged_mpdu << 7) / accumulated) as u8;
         let rate = schedule_state(self.current_schedule).rate;
         let ack_snr = filtered_ack_snr.unwrap_or(AckSnrFilter::UNINITIALIZED) as u8;
         let down_threshold = ampdu_down_threshold(rate, ack_snr);
         let previous_filtered = self.filtered_success_ratio;
         let filtered_success_ratio = if previous_filtered == 0 {
-            let initial = ((3 * u16::from(down_threshold) + 128) >> 2) as u8;
+            let initial = (u16::from(down_threshold)
+                .saturating_mul(3)
+                .saturating_add(128)
+                >> 2) as u8;
             if initial >= raw_success_ratio {
                 initial
             } else {
-                ((u16::from(initial) + u16::from(raw_success_ratio)) >> 1) as u8
+                (u16::from(initial).saturating_add(u16::from(raw_success_ratio)) >> 1) as u8
             }
         } else {
-            ((3 * u16::from(previous_filtered) + u16::from(raw_success_ratio)) >> 2) as u8
+            (u16::from(previous_filtered)
+                .saturating_mul(3)
+                .saturating_add(u16::from(raw_success_ratio))
+                >> 2) as u8
         };
 
         self.last_evaluation_us = now_us;
@@ -310,7 +325,7 @@ impl AmpduRateControlState {
                     .min(Self::MAX_PROMOTE_COOLDOWN_US);
             }
             if vendor_duration(now_us, self.last_lower_us) > Self::LOWER_HOLDOFF_US
-                && self.current_schedule.index < Self::VENDOR_AMPDU_FLOOR_INDEX
+                && self.current_schedule.index() < Self::VENDOR_AMPDU_FLOOR_INDEX
             {
                 let from = self.current_schedule;
                 if let Some(to) = from.advance() {
@@ -341,13 +356,13 @@ impl AmpduRateControlState {
         }
 
         let up_threshold = ampdu_up_threshold(rate, ack_snr);
-        if self.highest_schedule_index < self.current_schedule.index
+        if self.highest_schedule_index < self.current_schedule.index()
             && up_threshold < filtered_success_ratio
             && up_threshold < previous_filtered
             && vendor_duration(now_us, self.last_promote_us) > self.promote_cooldown_us
         {
             let from = self.current_schedule;
-            if let Some(to) = RateScheduleRef::new(from.kind, from.index.wrapping_sub(1)) {
+            if let Some(to) = RateScheduleRef::new(from.kind(), from.index().wrapping_sub(1)) {
                 self.current_schedule = to;
                 self.last_promote_us = now_us;
                 self.promotion_probe = true;
@@ -388,8 +403,8 @@ const fn vendor_duration(now: u32, previous: u32) -> u32 {
 
 const fn ampdu_rssi_margin(rate: u8, filtered_ack_snr: u8) -> u8 {
     let mcs = match rate {
-        0x10..=0x19 => rate - 0x10,
-        0x1a..=0x23 => rate - 0x1a,
+        0x10..=0x19 => rate.saturating_sub(0x10),
+        0x1a..=0x23 => rate.saturating_sub(0x1a),
         _ => return 0,
     };
     let reference = match mcs {
@@ -407,16 +422,17 @@ const fn ampdu_rssi_margin(rate: u8, filtered_ack_snr: u8) -> u8 {
     if filtered_ack_snr == AckSnrFilter::UNINITIALIZED as u8 || filtered_ack_snr <= reference {
         return 0;
     }
-    let scaled = (((filtered_ack_snr - reference) >> 1) as u16 * 3) as u8;
+    let scaled =
+        (((filtered_ack_snr.saturating_sub(reference)) >> 1) as u16).saturating_mul(3) as u8;
     if scaled > 32 { 32 } else { scaled }
 }
 
 const fn ampdu_up_threshold(rate: u8, filtered_ack_snr: u8) -> u8 {
     let margin = ampdu_rssi_margin(rate, filtered_ack_snr);
     match rate {
-        0x10..=0x12 => 111 - margin,
-        0x13 => 116 - margin,
-        0x14..=0x19 | 0x21..=0x23 => 121 - margin,
+        0x10..=0x12 => 111_u8.saturating_sub(margin),
+        0x13 => 116_u8.saturating_sub(margin),
+        0x14..=0x19 | 0x21..=0x23 => 121_u8.saturating_sub(margin),
         _ => 121,
     }
 }
@@ -424,13 +440,13 @@ const fn ampdu_up_threshold(rate: u8, filtered_ack_snr: u8) -> u8 {
 const fn ampdu_down_threshold(rate: u8, filtered_ack_snr: u8) -> u8 {
     let margin = ampdu_rssi_margin(rate, filtered_ack_snr);
     match rate {
-        0x10 => 105 - margin,
-        0x11 => 106 - margin,
-        0x12 => 107 - margin,
-        0x13 => 108 - margin,
-        0x14 => 109 - margin,
-        0x15 | 0x17 => 115 - margin,
-        0x16 | 0x18..=0x19 | 0x21..=0x23 => 114 - margin,
+        0x10 => 105_u8.saturating_sub(margin),
+        0x11 => 106_u8.saturating_sub(margin),
+        0x12 => 107_u8.saturating_sub(margin),
+        0x13 => 108_u8.saturating_sub(margin),
+        0x14 => 109_u8.saturating_sub(margin),
+        0x15 | 0x17 => 115_u8.saturating_sub(margin),
+        0x16 | 0x18..=0x19 | 0x21..=0x23 => 114_u8.saturating_sub(margin),
         _ => 114,
     }
 }
@@ -482,7 +498,7 @@ impl RateControlState {
         self.retry_state_1e = 0;
         self.retry_pressure = 0;
 
-        let next_index = u16::from(self.current_schedule.reference.index) + 1;
+        let next_index = u16::from(self.current_schedule.reference.index()) + 1;
         let selected = if u16::from(self.maximum_schedule_index) < next_index {
             self.legacy_schedule.offset(self.maximum_schedule_index)
         } else {
@@ -701,8 +717,8 @@ impl StaRateControlAssociation {
         let current = schedule_state(selection.current);
         let ampdu_runtime = selection.ampdu_limit_rate.and_then(|_| {
             AmpduRateControlState::new(
-                selection.current.kind,
-                selection.current.index,
+                selection.current.kind(),
+                selection.current.index(),
                 selection.highest_index,
             )
         });
@@ -870,16 +886,17 @@ pub(crate) struct PhyModeSelection {
 // The array equality proves the record bound without a runtime panic path.
 macro_rules! literal_schedule {
     ($kind:expr, last) => {
-        literal_schedule!($kind, (($kind).record_count() - 1) as u8)
+        literal_schedule!($kind, (($kind).record_count().saturating_sub(1)) as u8)
     };
     ($kind:expr, $index:expr) => {{
         const KIND: RateScheduleKind = $kind;
         const INDEX: u8 = $index;
         const _: [(); 1] = [(); ((INDEX as usize) < KIND.record_count()) as usize];
-        RateScheduleRef {
-            kind: KIND,
-            index: INDEX,
-        }
+        const SCHEDULE: RateScheduleRef = match RateScheduleRef::new(KIND, INDEX) {
+            Some(schedule) => schedule,
+            None => panic!("a literal schedule is outside its arena"),
+        };
+        SCHEDULE
     }};
 }
 
@@ -1155,7 +1172,7 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
                 let mut current_index = if threshold == u8::MAX || threshold <= highest {
                     highest
                 } else {
-                    threshold + adjustment
+                    threshold.saturating_add(adjustment)
                 };
                 if input.p2p && current_index > 7 {
                     current_index = 7;
@@ -1284,6 +1301,8 @@ pub const fn beamforming_report_rate_for_metric(
 pub struct EspressifRateControl {
     association: StaRateControlAssociation,
     decode: RateDecode,
+    refused_observations: oer_ieee80211_lower_mac::Counter,
+    observation_refusal: Option<AmpduRateObservationError>,
 }
 
 /// What turns a schedule into a rate the association can send.
@@ -1300,7 +1319,7 @@ impl RateDecode {
     fn rate(self, schedule: RateScheduleRef) -> PhyRate {
         let code = schedule_state(schedule).rate;
         match crate::rate_code::phy_rate(
-            schedule.kind,
+            schedule.kind(),
             code,
             self.ht_bandwidth,
             self.he_800ns_gi_ltf,
@@ -1378,6 +1397,8 @@ impl RateControl for EspressifRateControl {
         };
         Self {
             association,
+            refused_observations: oer_ieee80211_lower_mac::Counter::ZERO,
+            observation_refusal: None,
             decode: RateDecode {
                 high_throughput: peer.phy != PhyMode::Legacy,
                 ht_bandwidth,
@@ -1421,21 +1442,42 @@ impl RateControl for EspressifRateControl {
         acknowledged: u16,
         ack_snr_db: Option<i8>,
     ) {
-        // As the S31 station: the BlockAck's ACK SNR feeds the filter the
-        // aggregate thresholds read, before the window is evaluated.
-        if let Some(sample) = ack_snr_db {
+        // These public legacy report counters are not a checked observation:
+        // unavailable AMPDU state and invalid counts are real typed refusals.
+        // Preserve their reason for the owner, rather than discarding Result.
+        if attempted != 0
+            && acknowledged <= attempted
+            && self.association.ampdu_runtime.is_some()
+            && let Some(sample) = ack_snr_db
+        {
             self.association.update_ack_snr(sample);
         }
-        // The vendor's wrapping 32-bit microsecond clock.
-        let _ = self.association.observe_ampdu_block_ack(
+        match self.association.observe_ampdu_block_ack(
             now.as_micros() as u32,
             attempted,
             acknowledged,
-        );
+        ) {
+            Ok(_) => {}
+            Err(reason) => {
+                self.refused_observations.increment();
+                self.observation_refusal = Some(reason);
+            }
+        }
     }
 }
 
 impl EspressifRateControl {
+    /// Reports refused by the checked A-MPDU observation boundary. This
+    /// diagnostic counter is separate from transmission/rate statistics.
+    pub const fn refused_observations(&self) -> u32 {
+        self.refused_observations.get()
+    }
+
+    /// Take the most recent typed observation refusal.
+    pub fn take_observation_refusal(&mut self) -> Option<AmpduRateObservationError> {
+        self.observation_refusal.take()
+    }
+
     /// The association's rate control, as the vendor holds it.
     pub const fn association(&self) -> &StaRateControlAssociation {
         &self.association

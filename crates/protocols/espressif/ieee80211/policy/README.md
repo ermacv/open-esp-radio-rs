@@ -41,3 +41,15 @@ array-length equality. Dynamic schedule selection still uses its typed
 constructor and the documented vendor clamping rule. HT fallback uses the
 MAC's checked `HtMcs::SINGLE_STREAM_MAX` value; neither path can panic while
 processing a transmission.
+
+`RateScheduleRef` retains a reference to the checked twelve-byte record, with
+private fields. Its kind and record cannot be relabelled independently; the
+record's attached index is read through `index()`. The arenas are arrays of
+records and consumers destructure fixed record arrays. On the 32-bit S31 a
+handle occupies eight bytes instead of the former two-byte kind/index pair;
+the table bytes and publication budgets stay the same.
+
+The legacy A-MPDU report counters are validated before rate or ACK-SNR state
+changes. A refusal is observable through `take_observation_refusal()` and the
+saturating `refused_observations()` diagnostic; it does not train rate control.
+The crate uses the canonical strict lint block checked by tidy.

@@ -22,8 +22,12 @@ pub const BLOCK_ACK_RESPONSE_MICROS: u32 =
 /// The A-MPDU subframe of an Ethernet-II frame of `ethernet_len` octets at
 /// most: delimiter, QoS data header, CCMP header, LLC/SNAP, the payload, MIC
 /// and FCS, padded to four octets.
-pub const fn subframe_bound(ethernet_len: usize) -> u32 {
-    (4 + 26 + 8 + 8 + ethernet_len as u32 + 8 + 4 + 3) & !3
+pub fn subframe_bound(ethernet_len: usize) -> Option<u32> {
+    let payload = u32::try_from(ethernet_len).ok()?;
+    // Checked before rounding: an unrepresentable size admits no frame.
+    payload
+        .checked_add(4 + 26 + 8 + 8 + 8 + 4 + 3)
+        .map(|length| length & !3)
 }
 
 /// What bounds one A-MPDU to one recipient.
@@ -44,7 +48,12 @@ pub struct AmpduLimits {
 impl AmpduLimits {
     /// The recipient's Maximum A-MPDU Length in octets.
     pub const fn peer_max_length(&self) -> u32 {
-        (1_u32 << (13 + (self.peer_ampdu_parameters & 0x03) as u32)) - 1
+        match self.peer_ampdu_parameters & 0x03 {
+            0 => 0x1fff,
+            1 => 0x3fff,
+            2 => 0x7fff,
+            _ => 0xffff,
+        }
     }
 
     /// The recipient's Minimum MPDU Start Spacing, IEEE encoding 0-7.
@@ -105,16 +114,24 @@ impl AmpduRun {
         if self.frames == self.limit {
             return false;
         }
-        let length = self.length + subframe_bound(ethernet_len);
+        let Some(length) =
+            subframe_bound(ethernet_len).and_then(|subframe| self.length.checked_add(subframe))
+        else {
+            return false;
+        };
         if length > self.maximum
             || self.limits.txop_limit_micros.is_some_and(|txop| {
-                self.limits.rate.max_ppdu_duration_micros(length) + BLOCK_ACK_RESPONSE_MICROS > txop
+                self.limits
+                    .rate
+                    .max_ppdu_duration_micros(length)
+                    .checked_add(BLOCK_ACK_RESPONSE_MICROS)
+                    .is_none_or(|duration| duration > txop)
             })
         {
             return false;
         }
         self.length = length;
-        self.frames += 1;
+        self.frames = self.frames.saturating_add(1);
         true
     }
 
@@ -174,14 +191,14 @@ mod tests {
             ..limits()
         };
         assert_eq!(limits.peer_max_length(), 8_191);
-        assert_eq!(subframe_bound(1_514), 1_572);
+        assert_eq!(subframe_bound(1_514), Some(1_572));
         assert_eq!(limits.run([1_514; 8]), 5);
     }
 
     #[test]
     fn the_txop_limit_holds_the_aggregate_and_its_block_ack() {
         let rate = ht_mcs7();
-        let one = subframe_bound(1_514);
+        let one = subframe_bound(1_514).unwrap();
         // Room for two subframes and the BlockAck, not three.
         let txop = rate.max_ppdu_duration_micros(2 * one) + BLOCK_ACK_RESPONSE_MICROS;
         let limits = AmpduLimits {
@@ -213,5 +230,19 @@ mod tests {
         };
         assert_eq!(limits.run([100; 8]), 0);
         assert!(limits.begin().is_none());
+    }
+
+    #[test]
+    fn unrepresentable_subframes_leave_admission_unchanged() {
+        let mut run = limits().begin().unwrap();
+        assert_eq!(subframe_bound(usize::MAX), None);
+        assert_eq!(subframe_bound(u32::MAX as usize), None);
+        assert!(!run.admit(usize::MAX));
+        assert_eq!(run.frames(), 0);
+        assert!(run.admit(100));
+        assert!(!run.admit(u32::MAX as usize));
+        assert_eq!(run.frames(), 1);
+        assert!(run.admit(100));
+        assert_eq!(run.frames(), 2);
     }
 }

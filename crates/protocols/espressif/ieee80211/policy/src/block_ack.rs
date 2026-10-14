@@ -18,7 +18,11 @@ pub const FIRST_DIALOG_TOKEN: u8 = 1;
 /// SOURCE(esp32s31): complete `libnet80211[ieee80211_ht.o]::ieee80211_ampdu_request`
 /// increments one archive-static token modulo 63.
 pub const fn next_dialog_token(current: u8) -> u8 {
-    if current >= 62 { 0 } else { current + 1 }
+    if current >= 62 {
+        0
+    } else {
+        current.saturating_add(1)
+    }
 }
 
 /// How long a receive reorder window holds a buffered run behind a missing

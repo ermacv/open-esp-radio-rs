@@ -55,7 +55,7 @@ pub fn ht_retry_rate(initial: HtRate, failed_attempts: u8) -> Option<PhyRate> {
         return None;
     }
     let index = match initial.short_gi() {
-        false => 8 - mcs,
+        false => 8_u8.saturating_sub(mcs),
         true if mcs == 7 => 0,
         true => return None,
     };
@@ -88,7 +88,7 @@ pub fn he_retry_rate(initial: HeRate, failed_attempts: u8) -> Option<PhyRate> {
     let mcs = initial.mcs().index();
     let index = match initial.gi_ltf() {
         HeGiLtf::Ltf1xGi800Ns | HeGiLtf::Ltf2xGi800Ns if mcs == 9 => 0,
-        HeGiLtf::Ltf2xGi1600Ns => 10 - mcs,
+        HeGiLtf::Ltf2xGi1600Ns => 10_u8.saturating_sub(mcs),
         HeGiLtf::Ltf1xGi800Ns | HeGiLtf::Ltf2xGi800Ns | HeGiLtf::Ltf4xGi3200Ns => return None,
     };
     let schedule = RateScheduleRef::new(RateScheduleKind::Dot11Ax, index)?;

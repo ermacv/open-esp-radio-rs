@@ -125,23 +125,23 @@ struct Port<K>(PhantomData<fn() -> K>);
 
 impl<K: Ieee80211Capabilities> Port<K> {
     const CHECKED: () = {
-        assert!(
-            !K::CAPS.bands.contains(Band::Ghz5),
-            "the vendor's rate records are recovered for 2.4 GHz only (#748)"
-        );
-        let rates = K::CAPS.rates;
-        assert!(
-            rates.dsss_cck && rates.ofdm,
-            "the vendor's records name DSSS/CCK and OFDM rates"
-        );
-        assert!(
-            matches!(rates.ht_max_mcs, Some(mcs) if mcs.index() >= 7),
-            "the vendor's records name HT MCS 0-7"
-        );
-        assert!(
-            matches!(rates.he_max_mcs, Some(mcs) if mcs.index() >= 9) && rates.he_ldpc,
-            "the vendor's records name HE MCS 0-9 with LDPC"
-        );
+        #[cfg_attr(not(test), expect(clippy::panic, reason = "evaluated at build"))]
+        const fn checked<K: Ieee80211Capabilities>() {
+            if K::CAPS.bands.contains(Band::Ghz5) {
+                panic!("the vendor's rate records are recovered for 2.4 GHz only (#748)");
+            }
+            let rates = K::CAPS.rates;
+            if !(rates.dsss_cck && rates.ofdm) {
+                panic!("the vendor's records name DSSS/CCK and OFDM rates");
+            }
+            if !matches!(rates.ht_max_mcs, Some(mcs) if mcs.index() >= 7) {
+                panic!("the vendor's records name HT MCS 0-7");
+            }
+            if !(matches!(rates.he_max_mcs, Some(mcs) if mcs.index() >= 9) && rates.he_ldpc) {
+                panic!("the vendor's records name HE MCS 0-9 with LDPC");
+            }
+        }
+        checked::<K>();
     };
 }
 

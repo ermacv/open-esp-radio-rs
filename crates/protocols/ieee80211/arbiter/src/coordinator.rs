@@ -300,7 +300,7 @@ impl ApSchedule {
             .as_micros();
         let steps = late.div_ceil(interval);
         self.next_tbtt
-            .checked_add(Duration::from_micros(steps * interval))
+            .checked_add(Duration::from_micros(steps.saturating_mul(interval)))
             .unwrap_or(instant)
     }
 }
@@ -687,7 +687,8 @@ impl<'a> ChannelCoordinator<'a> {
             };
             return None;
         }
-        let channel = *candidates.clone().nth(cursor % count)?;
+        let cursor = cursor.checked_rem(count)?;
+        let channel = *candidates.clone().nth(cursor)?;
         let until = start.checked_add(self.search.dwell)?;
         let dense_until = since.checked_add(self.search.dense_period)?;
         let spacing = if start < dense_until {
@@ -699,7 +700,7 @@ impl<'a> ChannelCoordinator<'a> {
         self.upstream = Upstream::Searching {
             since,
             next_absence: Some(next),
-            cursor: (cursor + 1) % count,
+            cursor: cursor.checked_add(1)?.checked_rem(count)?,
         };
         Some(CoordinatorAction::Absence {
             channel,

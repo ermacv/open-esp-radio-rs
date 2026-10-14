@@ -2488,7 +2488,7 @@ impl TxPhyRate {
         he_800ns_gi_ltf: crate::rx::HeGuardIntervalAndLtf,
     ) -> Option<Self> {
         let code = crate::rate::schedule::schedule_state(schedule).rate;
-        Self::from_rate_control_code(schedule.kind, code, ht_width, he_800ns_gi_ltf)
+        Self::from_rate_control_code(schedule.kind(), code, ht_width, he_800ns_gi_ltf)
     }
 
     pub const fn code(self) -> u8 {

@@ -140,7 +140,7 @@ impl BasicRates {
 
 // 1 Mb/s, the slowest rate a control frame falls back to, is in the ERP
 // mandatory set.
-const _: () = assert!(BasicRates::ERP_MANDATORY.0 & 1 != 0);
+const _: [(); 1] = [(); (BasicRates::ERP_MANDATORY.0 & 1 != 0) as usize];
 
 impl BasicRates {
     /// Collect rates marked basic (bit seven) in Supported Rates and

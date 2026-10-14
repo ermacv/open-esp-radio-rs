@@ -52,6 +52,14 @@ from another generation before consuming a completion or changing retry state.
 Its STA/AP runtimes read the existing MAC `ReceptionClock`; monotonic timers
 remain the source for waiting and transmit watchdogs.
 
+WMM categories select one cell of an exact four-cell contention array.
+`AmpduRequest` owns its bounded lengths; asking for a subframe outside that
+request gives `None`, and the planner reports `SubframeOutsideAggregate`
+before publishing an attempt. An unrepresentable subframe size admits no
+frame and leaves the aggregate run unchanged. `ampdu::compact` operates on
+fixed arrays of Copy metadata, never on affine MPDUs or payload owners.
+The crate uses the canonical strict lint block checked by tidy.
+
 ## What stays outside
 
 The planner holds no frame bytes: the caller keeps its encoded MPDUs and

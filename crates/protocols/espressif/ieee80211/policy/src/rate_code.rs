@@ -79,7 +79,7 @@ pub const fn phy_rate(
     }
     if matches!(kind, RateScheduleKind::Dot11Ax) {
         let (index, gi_ltf) = if code >= 0x10 && code <= 0x19 {
-            (code - 0x10, HeGiLtf::Ltf2xGi1600Ns)
+            (code.saturating_sub(0x10), HeGiLtf::Ltf2xGi1600Ns)
         } else if code >= 0x1a && code <= 0x23 {
             if !matches!(
                 he_800ns_gi_ltf,
@@ -87,7 +87,7 @@ pub const fn phy_rate(
             ) {
                 return None;
             }
-            (code - 0x1a, he_800ns_gi_ltf)
+            (code.saturating_sub(0x1a), he_800ns_gi_ltf)
         } else {
             return None;
         };
@@ -107,9 +107,9 @@ pub const fn phy_rate(
         };
     }
     let (index, short_gi) = if code >= 0x10 && code <= 0x17 {
-        (code - 0x10, false)
+        (code.saturating_sub(0x10), false)
     } else if code >= 0x1a && code <= 0x21 {
-        (code - 0x1a, true)
+        (code.saturating_sub(0x1a), true)
     } else {
         return None;
     };

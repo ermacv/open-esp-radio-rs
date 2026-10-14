@@ -45,7 +45,7 @@ pub const fn all_subframes(count: u8) -> u64 {
     if count >= 64 {
         u64::MAX
     } else {
-        (1_u64 << count) - 1
+        (1_u64 << count).wrapping_sub(1)
     }
 }
 
@@ -63,13 +63,20 @@ pub fn unacknowledged(sequences: &[SequenceNumber], report: Option<BlockAckRepor
 
 /// Keep the entries of `items` whose bit is set in `mask`, moved to the
 /// front in their order; returns how many were kept.
-pub fn compact<T: Copy>(items: &mut [T], mask: u64) -> usize {
-    let mut kept = 0;
-    for index in 0..items.len().min(64) {
-        if mask & (1_u64 << index) != 0 {
-            items[kept] = items[index];
-            kept += 1;
-        }
+pub fn compact<T: Copy, const N: usize>(items: &mut [T; N], mask: u64) -> usize {
+    // This helper moves copyable metadata, never affine MPDU/body owners.
+    // The fixed array copy retains its length proof; both iterators carry
+    // actual references, so compaction needs no dynamic array index.
+    let original = *items;
+    let selected = original
+        .into_iter()
+        .take(64)
+        .enumerate()
+        .filter_map(|(index, item)| (mask & (1_u64 << index) != 0).then_some(item));
+    let mut kept = 0_usize;
+    for (destination, source) in items.iter_mut().zip(selected) {
+        *destination = source;
+        kept = kept.saturating_add(1);
     }
     kept
 }
@@ -337,7 +344,7 @@ impl AmpduRetryState {
                 retry_mask |= 1_u64 << index;
                 retry_original_indices |= 1_u64 << original_index;
             }
-            index += 1;
+            index = index.saturating_add(1);
         }
         self.missing_original_indices = retry_original_indices;
         let missing = retry_mask.count_ones() as u8;
@@ -424,8 +431,8 @@ impl AmpduRetryState {
             if position == 0 || remaining == 0 {
                 return original;
             }
-            remaining &= remaining - 1;
-            position -= 1;
+            remaining &= remaining.wrapping_sub(1);
+            position = position.saturating_sub(1);
         }
     }
 }

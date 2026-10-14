@@ -564,7 +564,7 @@ mod seam {
                 continue;
             };
             let raw = crate::rate_code::phy_rate(
-                schedule.kind,
+                schedule.kind(),
                 schedule_state(schedule).rate,
                 PpduBandwidth::Mhz20,
                 oer_ieee80211_mac::phy::HeGiLtf::Ltf2xGi800Ns,
@@ -602,6 +602,33 @@ mod seam {
         assert_eq!(control.association().filtered_ack_snr(), None);
         control.observe_ampdu(oer_time::Instant::from_micros(1_000), 4, 4, Some(30));
         assert!(control.association().filtered_ack_snr().is_some());
+    }
+
+    #[test]
+    fn refused_block_ack_counts_are_observable_and_do_not_update_the_rate_filter() {
+        use crate::rate_control::AmpduRateObservationError;
+        let mut control = EspressifRateControl::for_peer((), &ht20_peer(true), metric(60));
+        let before = control.ampdu_rate();
+        control.observe_ampdu(oer_time::Instant::from_micros(1_000), 0, 0, Some(30));
+        assert_eq!(control.refused_observations(), 1);
+        assert_eq!(
+            control.take_observation_refusal(),
+            Some(AmpduRateObservationError::NoAttemptedMpdu)
+        );
+        assert_eq!(control.take_observation_refusal(), None);
+        assert_eq!(control.association().filtered_ack_snr(), None);
+        assert_eq!(control.ampdu_rate(), before);
+
+        control.observe_ampdu(oer_time::Instant::from_micros(2_000), 3, 4, Some(40));
+        assert_eq!(control.refused_observations(), 2);
+        assert_eq!(
+            control.take_observation_refusal(),
+            Some(AmpduRateObservationError::AcknowledgedExceedsAttempted)
+        );
+        assert_eq!(control.association().filtered_ack_snr(), None);
+        control.observe_ampdu(oer_time::Instant::from_micros(3_000), 4, 4, Some(30));
+        assert!(control.association().filtered_ack_snr().is_some());
+        assert_eq!(control.refused_observations(), 2);
     }
 }
 

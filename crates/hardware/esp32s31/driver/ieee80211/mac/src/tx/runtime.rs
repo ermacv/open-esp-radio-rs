@@ -351,10 +351,9 @@ pub struct P2pRetryRateSchedule(RateScheduleRef);
 impl P2pRetryRateSchedule {
     pub const fn new(schedule: RateScheduleRef) -> Option<Self> {
         if matches!(
-            schedule.kind,
+            schedule.kind(),
             RateScheduleKind::P2pDot11G | RateScheduleKind::P2pDot11N
-        ) && (schedule.index as usize) < schedule.kind.record_count()
-        {
+        ) {
             Some(Self(schedule))
         } else {
             None

@@ -107,7 +107,9 @@ impl AmpduRequest {
             return None;
         }
         let mut owned = [0; MAX_AMPDU_SUBFRAMES as usize];
-        owned[..lengths.len()].copy_from_slice(lengths);
+        for (to, from) in owned.iter_mut().zip(lengths) {
+            *to = *from;
+        }
         Some(Self {
             tid,
             first_sequence,
@@ -128,24 +130,33 @@ impl AmpduRequest {
     }
 
     /// Octets on air of subframe `index`'s MPDU.
-    pub fn mpdu_length(&self, index: u8) -> u32 {
-        u32::from(self.lengths[usize::from(index)])
+    pub fn mpdu_length(&self, index: u8) -> Option<u32> {
+        self.lengths
+            .iter()
+            .take(usize::from(self.subframes))
+            .nth(usize::from(index))
+            .copied()
+            .map(u32::from)
     }
 
     /// The A-MPDU of the subframes of `mask`, in order: each MPDU after its
     /// delimiter, padded to four octets except the last.
     pub fn aggregate_length(&self, mask: u64) -> u32 {
+        let selected = self
+            .lengths
+            .iter()
+            .take(usize::from(self.subframes))
+            .enumerate()
+            .filter(|(index, _)| mask & (1_u64 << index) != 0);
+        let mut selected = selected.peekable();
         let mut length = 0_u32;
-        let mut remaining = mask & crate::ampdu::all_subframes(self.subframes);
-        while remaining != 0 {
-            let index = remaining.trailing_zeros() as u8;
-            remaining &= remaining - 1;
-            let subframe = AMPDU_DELIMITER + self.mpdu_length(index);
-            length += if remaining == 0 {
+        while let Some((_, mpdu_length)) = selected.next() {
+            let subframe = AMPDU_DELIMITER.saturating_add(u32::from(*mpdu_length));
+            length = length.saturating_add(if selected.peek().is_none() {
                 subframe
             } else {
                 subframe.next_multiple_of(4)
-            };
+            });
         }
         length
     }
@@ -224,6 +235,8 @@ pub enum TxStep {
 pub enum TxPlanError {
     Retry(RetryStateError),
     Ampdu(AmpduRetryError),
+    /// A requested original subframe is outside this aggregate.
+    SubframeOutsideAggregate,
 }
 
 /// The exchange's phase: running, or finished with its report.
@@ -246,6 +259,8 @@ enum Live {
         remaining: u64,
         retry: MpduRetryState,
         ampdu: AmpduRequest,
+        /// Checked once when this individual retry is selected.
+        length: u32,
     },
 }
 
@@ -322,9 +337,29 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
         }
     }
 
+    const fn contention_ref(&self, category: WmmAccessCategory) -> &EdcaContention {
+        let [be, bk, vi, vo] = &self.contention;
+        match category {
+            WmmAccessCategory::BestEffort => be,
+            WmmAccessCategory::Background => bk,
+            WmmAccessCategory::Video => vi,
+            WmmAccessCategory::Voice => vo,
+        }
+    }
+
+    fn contention_mut(&mut self, category: WmmAccessCategory) -> &mut EdcaContention {
+        let [be, bk, vi, vo] = &mut self.contention;
+        match category {
+            WmmAccessCategory::BestEffort => be,
+            WmmAccessCategory::Background => bk,
+            WmmAccessCategory::Video => vi,
+            WmmAccessCategory::Voice => vo,
+        }
+    }
+
     /// The contention state of an access category.
     pub const fn contention(&self, access_category: WmmAccessCategory) -> EdcaContention {
-        self.contention[access_category as usize]
+        *self.contention_ref(access_category)
     }
 
     /// Replace an access category's contention parameters, as a new EDCA
@@ -334,7 +369,7 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
         access_category: WmmAccessCategory,
         contention: EdcaContention,
     ) {
-        self.contention[access_category as usize] = contention;
+        *self.contention_mut(access_category) = contention;
     }
 
     pub fn protection(&self) -> &ProtectionPolicy {
@@ -473,6 +508,7 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
                 mut remaining,
                 mut retry,
                 ampdu,
+                length,
             } => {
                 let step = retry.observe(completion.status);
                 self.update_contention(exchange, step.contention);
@@ -482,11 +518,12 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
                         remaining,
                         retry,
                         ampdu,
+                        length,
                     },
                     RetryDecision::Complete(outcome) => {
                         let status = Self::mpdu_status(exchange, &retry, outcome);
                         exchange.individual.record(status);
-                        remaining &= remaining - 1;
+                        remaining &= remaining.wrapping_sub(1);
                         if remaining == 0 {
                             let result = if exchange.individual.failed == 0 {
                                 MacAmpduTxResult::Delivered
@@ -497,11 +534,12 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
                         }
                         let index = remaining.trailing_zeros() as u8;
                         match self.subframe_retry(exchange, index) {
-                            Ok(retry) => Live::Individual {
+                            Ok((retry, length)) => Live::Individual {
                                 aggregate,
                                 remaining,
                                 retry,
                                 ampdu,
+                                length,
                             },
                             Err(_) => {
                                 return self.finish_ampdu(
@@ -549,11 +587,12 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
                 self.update_contention(exchange, ContentionUpdate::Double);
                 let index = remaining.trailing_zeros() as u8;
                 match self.subframe_retry(exchange, index) {
-                    Ok(retry) => Some(Live::Individual {
+                    Ok((retry, length)) => Some(Live::Individual {
                         aggregate: state,
                         remaining,
                         retry,
                         ampdu,
+                        length,
                     }),
                     Err(_) => None,
                 }
@@ -626,16 +665,19 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
         &self,
         exchange: &TxExchange,
         index: u8,
-    ) -> Result<MpduRetryState, TxPlanError> {
+    ) -> Result<(MpduRetryState, u32), TxPlanError> {
         let length = match exchange.request.body {
-            TxBody::Ampdu(ampdu) => ampdu.mpdu_length(index),
+            TxBody::Ampdu(ampdu) => ampdu
+                .mpdu_length(index)
+                .ok_or(TxPlanError::SubframeOutsideAggregate)?,
             TxBody::Mpdu(mpdu) => mpdu.length,
         };
         self.mpdu_retry(&exchange.request, length)
+            .map(|retry| (retry, length))
     }
 
     fn update_contention(&mut self, exchange: &TxExchange, update: ContentionUpdate) {
-        let contention = &mut self.contention[exchange.request.access_category as usize];
+        let contention = self.contention_mut(exchange.request.access_category);
         match update {
             ContentionUpdate::Reset => contention.reset(),
             ContentionUpdate::Double => contention.record_failure(),
@@ -705,7 +747,7 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
             Live::BlockAckRequest(state, ampdu) => {
                 exchange.aggregate = 0;
                 let rate = PhyRate::Legacy(self.protection.control_rate(request.initial_rate));
-                let backoff = self.contention[request.access_category as usize].draw(entropy);
+                let backoff = self.contention_ref(request.access_category).draw(entropy);
                 exchange.rate = rate;
                 return TxAttemptPlan {
                     access_category: request.access_category,
@@ -723,7 +765,7 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
             Live::Individual {
                 remaining,
                 retry,
-                ampdu,
+                length,
                 ..
             } => {
                 let index = remaining.trailing_zeros() as u8;
@@ -734,9 +776,7 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
                 };
                 (
                     retry.rate(ladder, request.initial_rate, previous),
-                    TxPsdu::Mpdu {
-                        length: ampdu.mpdu_length(index),
-                    },
+                    TxPsdu::Mpdu { length },
                     AttemptContent::Subframe { index },
                 )
             }
@@ -750,7 +790,7 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
             },
             &self.he_budget,
         );
-        let backoff = self.contention[request.access_category as usize].draw(entropy);
+        let backoff = self.contention_ref(request.access_category).draw(entropy);
         TxAttemptPlan {
             access_category: request.access_category,
             rate,

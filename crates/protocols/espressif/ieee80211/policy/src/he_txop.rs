@@ -77,38 +77,46 @@ pub fn maximum_unprotected_apep_bytes(
     padding: HePacketPadding,
     rate: HeRate,
 ) -> u16 {
-    const PREAMBLE_US: [f32; 3] = [23.2, 24.0, 32.0];
-    const SYMBOL_US: [f32; 3] = [13.6, 14.4, 16.0];
-    const DATA_BITS_PER_SYMBOL_RU242: [i32; 10] =
-        [117, 234, 351, 468, 702, 936, 1_053, 1_170, 1_404, 1_560];
-    let row = match rate.gi_ltf() {
-        HeGiLtf::Ltf1xGi800Ns | HeGiLtf::Ltf2xGi800Ns => 0,
-        HeGiLtf::Ltf2xGi1600Ns => 1,
-        HeGiLtf::Ltf4xGi3200Ns => 2,
+    let (preamble_us, symbol_us) = match rate.gi_ltf() {
+        HeGiLtf::Ltf1xGi800Ns | HeGiLtf::Ltf2xGi800Ns => (23.2, 13.6),
+        HeGiLtf::Ltf2xGi1600Ns => (24.0, 14.4),
+        HeGiLtf::Ltf4xGi3200Ns => (32.0, 16.0),
     };
     let mcs = rate.mcs().index();
-    let Some(&data_bits) = DATA_BITS_PER_SYMBOL_RU242.get(usize::from(mcs)) else {
-        return 0;
+    let data_bits = match mcs {
+        0 => 117,
+        1 => 234,
+        2 => 351,
+        3 => 468,
+        4 => 702,
+        5 => 936,
+        6 => 1053,
+        7 => 1170,
+        8 => 1404,
+        9 => 1560,
+        _ => return 0,
     };
     let block_ack_us = match mcs {
         0 => 68,
         1 | 2 => 44,
         _ => 32,
     } as f32;
-    let budget = (i32::from(threshold.units_32_us()) * 32 - 20) as f32
-        - PREAMBLE_US[row]
+    let budget = i32::from(threshold.units_32_us())
+        .wrapping_mul(32)
+        .wrapping_sub(20) as f32
+        - preamble_us
         - 16.0
         - f32::from(padding.micros());
     if block_ack_us >= budget {
         return 0;
     }
     // The quotient is positive here, so truncation equals `floor`.
-    let symbols = ((budget - block_ack_us) / SYMBOL_US[row]) as i32;
-    let mut bits = data_bits;
+    let symbols = ((budget - block_ack_us) / symbol_us) as i32;
+    let mut bits: i32 = data_bits;
     if rate.dcm() {
         bits /= 2;
     }
-    ((bits * symbols - 22) >> 3) as u16
+    (bits.wrapping_mul(symbols).wrapping_sub(22) >> 3) as u16
 }
 
 /// [`maximum_unprotected_apep_bytes`] as the portable protection policy's

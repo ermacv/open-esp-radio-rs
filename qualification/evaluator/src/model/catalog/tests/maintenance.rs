@@ -62,7 +62,7 @@ fn software_policy_does_not_require_vendor_equivalence_or_hide_hardware_obligati
 }
 
 #[test]
-fn ap_availability_qualifies_only_selected_functional_transitions() {
+fn ap_availability_keeps_its_requirements_while_port_integration_is_incomplete() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
@@ -93,9 +93,12 @@ fn ap_availability_qualifies_only_selected_functional_transitions() {
         .unwrap();
     assert_eq!(
         recovery.implementation,
-        crate::model::ImplementationProof::Complete
+        crate::model::ImplementationProof::Incomplete
     );
-    assert!(recovery.gaps.is_empty());
+    assert!(recovery.gaps.iter().any(|gap| {
+        gap.axis == crate::model::Axis::Implementation
+            && gap.id == "station-orchestration-removed-returns-on-the-lower-mac-port"
+    }));
     assert!(
         recovery.hil_requirements[0]
             .checks

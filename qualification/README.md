@@ -123,6 +123,11 @@ secure peripheral GATT. Their definitions share canonical capability declaration
 | [BLE peripheral/ACL](targets/esp32s31/bluetooth-peripheral-acl.toml) | One LE 1M connection, bidirectional ACL, recovery and terminal powered release |
 | [Secure peripheral GATT](targets/esp32s31/bluetooth-secure-gatt.toml) | The complete peripheral/ACL boundary plus encrypted traffic, Secure Connections, protected ATT access and bonded reconnect |
 
+The AP-availability program keeps its reconnect, IP-exchange and control
+requirements while a port integration gap is open. Its catalog regression
+test preserves that gap instead of inferring completeness from selecting
+the focused program.
+
 The [full Bluetooth LE program](targets/esp32s31/bluetooth-le.toml) retains its
 wider role and feature requirements. [IEEE 802.15.4](targets/esp32s31/ieee802154.toml)
 is an independent program. Product selection does not change source coverage or

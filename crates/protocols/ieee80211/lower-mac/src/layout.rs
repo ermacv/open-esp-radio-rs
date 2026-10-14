@@ -2,7 +2,7 @@
 
 use crate::owner::FrameHeader;
 use crate::{ClassSubframe, Ieee80211Capabilities, Tid, TxBufferClass, TxFrame};
-use oer_ieee80211_mac::address::IndividualAddress;
+use oer_ieee80211_mac::{address::IndividualAddress, block_ack::BLOCK_ACK_REQUEST_LEN};
 
 /// Portable refusals before the backend receives a prepared source.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -178,6 +178,20 @@ pub enum MpduProtection {
 ///     Ok(())
 /// }
 /// ```
+///
+/// The checked layout always contains a MAC header:
+///
+/// ```compile_fail,E0599
+/// use oer_ieee80211_lower_mac::MpduLayout;
+/// fn empty(layout: MpduLayout) { let _empty = layout.is_empty(); }
+/// ```
+///
+/// ```
+/// use oer_ieee80211_lower_mac::MpduLayout;
+/// fn lengths(layout: MpduLayout) {
+///     assert!(layout.mpdu_len() >= layout.header_len());
+/// }
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct MpduLayout {
     len: usize,
@@ -199,7 +213,7 @@ impl MpduLayout {
             TxFrame::Individual { frame, .. } => {
                 let header = frame.header().header();
                 (
-                    header.len(),
+                    header.header_len(),
                     MpduKind::Individual,
                     header.qos().map(|qos| (header.receiver(), qos.tid)),
                 )
@@ -208,7 +222,9 @@ impl MpduLayout {
                 (frame.header().header_len(), MpduKind::IndividualNoAck, None)
             }
             TxFrame::Group { frame, .. } => (frame.header().header_len(), MpduKind::Group, None),
-            TxFrame::BlockAckRequest { .. } => (20, MpduKind::BlockAckRequest, None),
+            TxFrame::BlockAckRequest { .. } => {
+                (BLOCK_ACK_REQUEST_LEN, MpduKind::BlockAckRequest, None)
+            }
         };
         Self::checked(
             frame.mpdu_len(),
@@ -266,12 +282,8 @@ impl MpduLayout {
         })
     }
     /// Whole MPDU length, excluding FCS and hardware MIC.
-    pub const fn len(self) -> usize {
+    pub const fn mpdu_len(self) -> usize {
         self.len
-    }
-    /// MAC headers are never empty.
-    pub const fn is_empty(self) -> bool {
-        false
     }
     /// MAC header length.
     pub const fn header_len(self) -> usize {
@@ -459,7 +471,7 @@ impl MpduLayout {
                 ..
             } => {
                 let (header, _) = prefix
-                    .split_first_chunk_mut::<20>()
+                    .split_first_chunk_mut::<BLOCK_ACK_REQUEST_LEN>()
                     .ok_or(LayoutError::StorageTooShort)?;
                 *header = oer_ieee80211_mac::block_ack::encode_block_ack_request(
                     receiver.get(),

@@ -829,7 +829,7 @@ fn encode_frame<
             },
             None,
         )?;
-        let header_length = header.len();
+        let header_length = header.header_len();
         oer_ieee80211_lower_mac::HeaderLayout::new(AckHeader::new(header)?, frame)
             .ok()?
             .encode();

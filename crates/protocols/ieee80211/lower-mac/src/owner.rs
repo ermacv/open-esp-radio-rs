@@ -650,6 +650,8 @@ pub struct FrameControl(u16);
 impl FrameControl {
     const DATA: u16 = 2;
     const MANAGEMENT: u16 = 0;
+    const TYPE_AND_SUBTYPE: u16 = (0b11 << 2) | (0b1111 << 4);
+    const ACTION_NO_ACK: u16 = 0b1110 << 4;
 
     /// `field`, when it is a data or management frame of version 0.
     pub const fn new(field: u16) -> Option<Self> {
@@ -664,6 +666,10 @@ impl FrameControl {
     /// The field.
     pub const fn get(self) -> u16 {
         self.0
+    }
+
+    const fn is_action_no_ack(self) -> bool {
+        self.0 & Self::TYPE_AND_SUBTYPE == Self::ACTION_NO_ACK
     }
 
     const fn is_qos_data(self) -> bool {
@@ -742,6 +748,18 @@ impl QosControl {
 ///     HeaderLayout::new(header, out)?.encode();
 ///     Ok(())
 /// }
+/// ```
+///
+/// A checked MAC header always contains its mandatory fields:
+///
+/// ```compile_fail,E0599
+/// use oer_ieee80211_lower_mac::{HeaderSpec, ReceiverAddress};
+/// fn empty<A: ReceiverAddress>(header: HeaderSpec<A>) { let _empty = header.is_empty(); }
+/// ```
+///
+/// ```
+/// use oer_ieee80211_lower_mac::{HeaderSpec, ReceiverAddress};
+/// fn length<A: ReceiverAddress>(header: HeaderSpec<A>) -> usize { header.header_len() }
 /// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct HeaderSpec<A> {
@@ -881,7 +899,7 @@ impl<A: ReceiverAddress> HeaderSpec<A> {
     }
 
     /// The header's length in octets.
-    pub fn len(&self) -> usize {
+    pub fn header_len(&self) -> usize {
         match (
             self.address4.is_some(),
             self.qos.is_some(),
@@ -895,11 +913,6 @@ impl<A: ReceiverAddress> HeaderSpec<A> {
             (true, false, true) => 34,
             (true, true, true) => 36,
         }
-    }
-
-    /// Whether the header is empty: never.
-    pub fn is_empty(&self) -> bool {
-        false
     }
 
     pub(crate) fn encoder(self, policy: QosAckPolicy) -> HeaderLength<A> {
@@ -1042,7 +1055,7 @@ pub struct AckHeader(HeaderSpec<IndividualAddress>);
 impl AckHeader {
     /// `header`, when it is not an Action No Ack frame.
     pub fn new(header: HeaderSpec<IndividualAddress>) -> Option<Self> {
-        (header.frame_control.get() & 0x00fc != NoAckHeader::ACTION_NO_ACK).then_some(Self(header))
+        (!header.frame_control.is_action_no_ack()).then_some(Self(header))
     }
 
     /// The header.
@@ -1063,14 +1076,10 @@ impl AckHeader {
 pub struct NoAckHeader(HeaderSpec<IndividualAddress>);
 
 impl NoAckHeader {
-    /// Frame Control's type and subtype bits of an Action No Ack frame.
-    const ACTION_NO_ACK: u16 = 0b1110 << 4;
-
     /// `header`, when it is a QoS data or an Action No Ack frame.
     pub fn new(header: HeaderSpec<IndividualAddress>) -> Option<Self> {
         let frame_control = header.frame_control;
-        (frame_control.is_qos_data() || frame_control.get() & 0x00fc == Self::ACTION_NO_ACK)
-            .then_some(Self(header))
+        (frame_control.is_qos_data() || frame_control.is_action_no_ack()).then_some(Self(header))
     }
 
     /// The header.
@@ -1162,9 +1171,7 @@ impl<K> TxFrame<'_, K> {
             Self::Individual { frame, .. } => frame.len.len as usize,
             Self::IndividualNoAck { frame, .. } => frame.len.len as usize,
             Self::Group { frame, .. } => frame.len.len as usize,
-            // Frame Control, Duration, RA, TA, BAR Control and the
-            // Starting Sequence Control.
-            Self::BlockAckRequest { .. } => 20,
+            Self::BlockAckRequest { .. } => oer_ieee80211_mac::block_ack::BLOCK_ACK_REQUEST_LEN,
         }
     }
 }
@@ -1178,19 +1185,19 @@ pub trait FrameHeader {
 
 impl<A: ReceiverAddress> FrameHeader for HeaderSpec<A> {
     fn header_len(&self) -> usize {
-        self.len()
+        HeaderSpec::header_len(self)
     }
 }
 
 impl FrameHeader for AckHeader {
     fn header_len(&self) -> usize {
-        self.0.len()
+        self.0.header_len()
     }
 }
 
 impl FrameHeader for NoAckHeader {
     fn header_len(&self) -> usize {
-        self.0.len()
+        self.0.header_len()
     }
 }
 

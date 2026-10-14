@@ -643,7 +643,7 @@ impl<'id> ModelMpdu<'id> {
         let bytes = self
             .buffer
             .memory()
-            .split_at_checked(self.layout.len())
+            .split_at_checked(self.layout.mpdu_len())
             .ok_or(ModelFault)?
             .0;
         Ok(AirFrame {

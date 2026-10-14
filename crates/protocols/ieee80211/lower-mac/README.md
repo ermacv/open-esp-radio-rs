@@ -64,6 +64,9 @@ back; its operations are synchronous and never wait:
   length check and the complete tail copy. Re-reading an external body can
   select another slice; even a shorter second view must not leave stale
   payload bytes in an accepted MPDU. The body owner remains with its source.
+  A checked header exposes `header_len`, and its MPDU layout exposes
+  `mpdu_len`; neither has an empty state. Block Ack request lengths come from
+  the MAC wire encoder's `BLOCK_ACK_REQUEST_LEN`.
   A refused preparation returns the original typed source and its owners;
   the caller still holds context and ticket. `submit` takes the prepared
   proof, context, ticket and attempt parameters and can refuse only poisoning.

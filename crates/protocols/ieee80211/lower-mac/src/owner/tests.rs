@@ -71,7 +71,7 @@ fn a_header_agrees_with_its_frame_control() {
 #[test]
 fn the_qos_ack_policy_follows_the_frames_response() {
     let header = header(0x0388, Some(A), Some(qos(6)), None).unwrap();
-    assert_eq!(header.len(), 32);
+    assert_eq!(header.header_len(), 32);
     let mut out = [0; 32];
     crate::HeaderLayout::new(AckHeader::new(header).unwrap(), &mut out)
         .unwrap()
@@ -136,8 +136,9 @@ fn a_header_decodes_as_it_was_encoded() {
         crate::HeaderLayout::new(AckHeader::new(spec).unwrap(), &mut bytes)
             .unwrap()
             .encode();
-        let decoded = HeaderSpec::decode(&bytes[..spec.len()], IndividualAddress::new).unwrap();
-        for len in 0..spec.len() {
+        let decoded =
+            HeaderSpec::decode(&bytes[..spec.header_len()], IndividualAddress::new).unwrap();
+        for len in 0..spec.header_len() {
             let mut short = [0xa5; 36];
             assert!(matches!(
                 crate::HeaderLayout::new(AckHeader::new(spec).unwrap(), &mut short[..len]),
@@ -203,7 +204,7 @@ fn every_valid_header_shape_writes_all_fields_and_leaves_its_tail_untouched() {
         }
         let mut out = [0xa5; 40];
         crate::HeaderLayout::new(spec, &mut out).unwrap().encode();
-        assert_eq!(spec.len(), expected.len(), "control {raw:#06x}");
+        assert_eq!(spec.header_len(), expected.len(), "control {raw:#06x}");
         assert_eq!(&out[..expected.len()], expected, "control {raw:#06x}");
         assert!(out[expected.len()..].iter().all(|byte| *byte == 0xa5));
         assert_eq!(HeaderSpec::decode(&out, GroupAddress::new), Some(spec));

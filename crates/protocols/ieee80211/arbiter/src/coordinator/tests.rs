@@ -177,7 +177,7 @@ fn a_channel_that_needs_radar_detection_is_never_served_even_in_an_allowed_band(
             ghz5: true,
         },
         unservable: ApUnservable::LeaveUpstream,
-        announce_count: 5,
+        announce_count: NonZeroU8::new(5).unwrap(),
         min_follow_interval: Duration::from_secs(30),
         max_follow_interval: Duration::from_secs(480),
     };
@@ -351,4 +351,28 @@ fn a_rescan_that_joins_the_upstream_starts_the_access_point_on_its_new_channel()
             .next()
             .is_none()
     );
+}
+
+#[test]
+fn every_nonzero_follow_count_reaches_both_move_paths_unchanged() {
+    for count in 1..=u8::MAX {
+        let policy = ApFollowPolicy {
+            announce_count: NonZeroU8::new(count).unwrap(),
+            ..ApFollowPolicy::DEFAULT
+        };
+        let mut coordinator = running(policy, ghz2_4(6));
+        assert_eq!(
+            coordinator.station_joining_away(ghz2_4(11), at(FIRST_TBTT)),
+            JoinAway::Follow { count }
+        );
+        coordinator.upstream_lost(at(FIRST_TBTT));
+        assert_eq!(
+            actions(coordinator.upstream_found(ghz2_4(11))),
+            [CoordinatorAction::AnnounceSwitch {
+                target: ghz2_4(11),
+                mode: ChannelSwitchMode::Continue,
+                count,
+            }]
+        );
+    }
 }

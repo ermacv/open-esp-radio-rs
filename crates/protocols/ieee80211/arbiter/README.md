@@ -40,7 +40,9 @@ never withdrawn, and a second such join within the policy's
 serve without radar detection. Coordinator facts, schedules and actions
 carry `SupportedChannel<K>` from the backend's capability check. Applying
 a start or move therefore needs no second channel conversion that could
-discard the command after its state transition.
+discard the command after its state transition. The follow policy's
+announcement count is nonzero at construction; it reaches the beacon
+announcement without silently increasing a zero count to one.
 
 Composition passes the backend's `PUBLICATION_BOUND` to `Arbiter::new`.
 Absences reserve one current publication plus retune time for each move;

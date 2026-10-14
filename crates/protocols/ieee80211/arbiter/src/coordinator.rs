@@ -31,6 +31,8 @@
 //!   access point again on its previous channel, and the next attempt
 //!   follows `after` later ([`ChannelCoordinator::upstream_rescan`]).
 
+use core::num::NonZeroU8;
+
 use oer_ieee80211_lower_mac::{Ieee80211Capabilities, SupportedChannel};
 use oer_ieee80211_mac::channel::{Band, Channel};
 use oer_ieee80211_mac::channel_switch::ChannelSwitchMode;
@@ -81,7 +83,25 @@ pub struct ApFollowPolicy {
     pub unservable: ApUnservable,
     /// The beacons that announce a move the coordinator starts itself (to
     /// where a lost upstream was found, or where the station joins).
-    pub announce_count: u8,
+    /// Zero is rejected when the policy is built, before any move:
+    /// ```compile_fail,E0308
+    /// use oer_ieee80211_arbiter::coordinator::ApFollowPolicy;
+    /// let policy = ApFollowPolicy {
+    ///     announce_count: 0,
+    ///     ..ApFollowPolicy::DEFAULT
+    /// };
+    /// ```
+    /// A nonzero count is carried unchanged into the announcement:
+    /// ```
+    /// use core::num::NonZeroU8;
+    /// use oer_ieee80211_arbiter::coordinator::ApFollowPolicy;
+    /// let policy = ApFollowPolicy {
+    ///     announce_count: NonZeroU8::MIN,
+    ///     ..ApFollowPolicy::DEFAULT
+    /// };
+    /// assert_eq!(policy.announce_count.get(), 1);
+    /// ```
+    pub announce_count: NonZeroU8,
     /// The shortest time between two moves of the access point to where
     /// the station joins, counted from their announcements: within it a
     /// join elsewhere is refused ([`JoinAway::TooSoon`]). It doubles after
@@ -101,7 +121,7 @@ impl ApFollowPolicy {
     pub const DEFAULT: Self = Self {
         bands: ApBands::GHZ2_4,
         unservable: ApUnservable::StopAccessPoint,
-        announce_count: 5,
+        announce_count: const { NonZeroU8::new(5).unwrap() },
         min_follow_interval: Duration::from_secs(30),
         max_follow_interval: Duration::from_secs(480),
     };
@@ -463,7 +483,7 @@ impl<K: Ieee80211Capabilities> ChannelCoordinator<K> {
         }
         self.last_follow = Some(now);
         JoinAway::Follow {
-            count: self.policy.announce_count.max(1),
+            count: self.policy.announce_count.get(),
         }
     }
 
@@ -584,7 +604,7 @@ impl<K: Ieee80211Capabilities> ChannelCoordinator<K> {
         CoordinatorActions::one(CoordinatorAction::AnnounceSwitch {
             target: channel,
             mode: ChannelSwitchMode::Continue,
-            count: self.policy.announce_count.max(1),
+            count: self.policy.announce_count.get(),
         })
     }
 

@@ -46,3 +46,29 @@ fn a_positive_twin_must_compile() {
     let (_directory, path, output) = compiled("pub fn f() { let _: u8 = 0; }\n");
     validate(&output, &path, None).unwrap();
 }
+
+#[test]
+fn an_uncoded_error_requires_null_code_and_the_exact_message() {
+    let source = "pub fn f<'a, 'b>(b: &'b ()) -> &'a () { b } // ui-error: null lifetime may not live long enough\n";
+    let (_directory, path, output) = compiled(source);
+    validate(&output, &path, Some(&expectations(source).unwrap())).unwrap();
+    for wrong in ["E0521", "null another lifetime failure"] {
+        let expected =
+            expectations(&source.replace("null lifetime may not live long enough", wrong)).unwrap();
+        assert!(validate(&output, &path, Some(&expected)).is_err());
+    }
+}
+
+#[test]
+fn multiple_errors_at_one_boundary_require_one_expectation_each() {
+    let source =
+        "pub fn f() { let _: u8 = false; let _: u8 = (); } // ui-error: E0308 // ui-error: E0308\n";
+    let (_directory, path, output) = compiled(source);
+    let mut expected = expectations(source).unwrap();
+    validate(&output, &path, Some(&expected)).unwrap();
+    expected.pop();
+    assert!(validate(&output, &path, Some(&expected)).is_err());
+    expected.push(expected[0].clone());
+    expected.push(expected[0].clone());
+    assert!(validate(&output, &path, Some(&expected)).is_err());
+}

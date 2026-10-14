@@ -32,7 +32,9 @@ struct Suite {
 
 /// The target and feature set are identical for both sides of each case.
 /// `ui_reject` selects the misuse; its expected error is marked on that line
-/// with `// ui-error: E0123`. Every error must match one such annotation.
+/// with `// ui-error: E0123`. A deliberately uncoded error uses
+/// `// ui-error: null exact diagnostic message`. Repeat the annotation when
+/// rustc reports multiple errors at one boundary. Every error must match once.
 pub fn run(ctx: &Checkout) -> Result<()> {
     let catalog: Catalog = toml::from_str(&fs::read_to_string(
         ctx.root.join("tools/xtask/tests/ui.toml"),
@@ -184,24 +186,42 @@ fn compile(
     oer_process::output(&mut command, None)
 }
 
-type Expected = BTreeMap<usize, String>;
+#[derive(Clone, Debug)]
+struct ExpectedError {
+    line: usize,
+    code: Option<String>,
+    message: Option<String>,
+}
+
+type Expected = Vec<ExpectedError>;
 
 fn expectations(source: &str) -> Result<Expected> {
-    let mut expected = BTreeMap::new();
+    let mut expected = Vec::new();
     for (index, line) in source.lines().enumerate() {
-        let Some((_, code)) = line.split_once("// ui-error:") else {
-            continue;
-        };
-        let code = code.trim();
-        if code.len() != 5
-            || !code.starts_with('E')
-            || !code[1..].bytes().all(|b| b.is_ascii_digit())
-        {
-            return Err(
-                format!("invalid UI error annotation on line {}: {code}", index + 1).into(),
-            );
+        for annotation in line.split("// ui-error:").skip(1).map(str::trim) {
+            let (code, message) = if let Some(message) = annotation.strip_prefix("null ") {
+                if message.trim().is_empty() {
+                    return Err("an uncoded UI error requires its exact message".into());
+                }
+                (None, Some(message.trim().to_owned()))
+            } else if annotation.len() == 5
+                && annotation.starts_with('E')
+                && annotation[1..].bytes().all(|b| b.is_ascii_digit())
+            {
+                (Some(annotation.to_owned()), None)
+            } else {
+                return Err(format!(
+                    "invalid UI error annotation on line {}: {annotation}",
+                    index + 1
+                )
+                .into());
+            };
+            expected.push(ExpectedError {
+                line: index + 1,
+                code,
+                message,
+            });
         }
-        expected.insert(index + 1, code.to_owned());
     }
     if expected.is_empty() {
         return Err("UI case has no intended error annotation".into());
@@ -232,8 +252,8 @@ fn validate(output: &Output, source: &Path, expected: Option<&Expected>) -> Resu
         let spans = message["spans"]
             .as_array()
             .ok_or("diagnostic spans missing")?;
-        // rustc's final summary is not another diagnostic. A code-less error
-        // with spans (including an unexpected lifetime error) still fails.
+        // rustc's final summary is not another diagnostic. Every other error,
+        // including an uncoded lifetime error, requires an exact expectation.
         if spans.is_empty()
             && message["message"]
                 .as_str()
@@ -251,15 +271,19 @@ fn validate(output: &Output, source: &Path, expected: Option<&Expected>) -> Resu
                 }
                 let start = usize::try_from(span["line_start"].as_u64()?).ok()?;
                 let end = usize::try_from(span["line_end"].as_u64()?).ok()?;
-                remaining
-                    .range(start..=end)
-                    .find(|(_, expected)| Some(expected.as_str()) == code)
-                    .map(|(line, _)| *line)
+                remaining.iter().position(|expected| {
+                    (start..=end).contains(&expected.line)
+                        && expected.code.as_deref() == code
+                        && expected
+                            .message
+                            .as_deref()
+                            .is_none_or(|text| message["message"].as_str() == Some(text))
+                })
             });
         let Some(line) = matching else {
             return Err(format!("unintended compiler error: {}", message["rendered"]).into());
         };
-        remaining.remove(&line);
+        remaining.remove(line);
     }
     if !remaining.is_empty() {
         return Err(format!("missing intended diagnostics: {remaining:?}").into());

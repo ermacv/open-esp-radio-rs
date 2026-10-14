@@ -443,6 +443,11 @@ error code, a different location, extra errors, a successful misuse, or a
 broken positive twin. Stable rustdoc's `compile_fail,E0123` does not check
 the code; those examples remain documentation, not this evidence.
 
+For a rustc diagnostic without a code, `// ui-error: null exact message`
+requires both `code: null` and that complete message at the marked line.
+Repeat the annotation on that line for each expected diagnostic; the check
+does not accept fewer or more errors at the same boundary.
+
 Cargo supplies exact library artifact paths for each declared target and
 feature set; the runner never selects an rlib by globbing a shared cache.
 Both host and RV32 use the pinned stable toolchain. The `ui` registry check

@@ -149,8 +149,8 @@ impl PortBody<ModelBackend> for ReceiveLoss {
     ) -> Ended<'id, ModelBackend> {
         use embassy_futures::yield_now;
         use oer_ieee80211_lower_mac::{StationPhase, StationReceive, VifRole};
-        use oer_radio_port::EventsLost;
         use oer_ieee80211_runtime::lower_mac_owner::model::MODEL_EVENTS;
+        use oer_radio_port::EventsLost;
 
         let mut owner = owner.enable().await.ok().unwrap();
         {

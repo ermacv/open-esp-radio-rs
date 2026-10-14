@@ -2431,10 +2431,15 @@ impl<'id, R, K, X: ModelContext> PreparedTx<'id> for ModelPrepared<'_, '_, 'id, 
     }
 }
 
-#[expect(
-    clippy::result_large_err,
-    reason = "class refusal returns the original affine MPDU by value"
+#[cfg_attr(
+    target_pointer_width = "64",
+    expect(
+        clippy::result_large_err,
+        reason = "class refusal returns the original affine MPDU by value"
+    )
 )]
+// The return crosses Clippy's size threshold on 64-bit targets only.
+// Pointer width changes the lint expectation, never the model or its API.
 trait ModelClass: TxBufferClass + Sized {
     fn erase<'id>(buffer: ModelBuffer<'id, Self>) -> ModelAnyBuffer<'id>;
     fn erase_sent<'id>(mpdu: ModelSent<'id, Self>) -> ModelAnyBuffer<'id>;
@@ -2489,9 +2494,12 @@ impl ModelClass for ModelLarge {
     }
 }
 
-#[expect(
-    clippy::result_large_err,
-    reason = "a refusal returns the whole operation by value"
+#[cfg_attr(
+    target_pointer_width = "64",
+    expect(
+        clippy::result_large_err,
+        reason = "a refusal returns the whole operation by value"
+    )
 )]
 fn prepare_model<
     'k,
@@ -2784,9 +2792,12 @@ type ModelAggregatePush<'k, 'p, 'id, R, K, X, S, C> = Result<
     AggregateRefused<ModelAggregate<'k, 'p, 'id, R, K, X, S>, ModelSubframe<'id, C, K>>,
 >;
 
-#[expect(
-    clippy::result_large_err,
-    reason = "a refusal returns the whole operation by value"
+#[cfg_attr(
+    target_pointer_width = "64",
+    expect(
+        clippy::result_large_err,
+        reason = "a refusal returns the whole operation by value"
+    )
 )]
 fn push_model<
     'k,

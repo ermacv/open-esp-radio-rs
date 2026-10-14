@@ -17,7 +17,7 @@
 //! | `CommandError::UnknownInterface`, `SettingError::UnknownInterface` | a client per configured interface ([`ConfiguredInterface`]), of an index the capabilities state |
 //! | `CommandError::PendingTableFull` | a pending-table [`Slot`] of the interface's own kind, which the install's resources give once and the caller counts itself |
 //! | `CommandError::Unsupported`, `CommandError::TransmitPower`, `SettingError::TransmitPower`, `SettingError::CcaThreshold`, `SettingError::Unsupported`, `SettingError::HeaderIesTooLong` | the validated values [`SupportedTransmit`], [`SupportedEnergyScan`], [`SupportedCca`], [`SupportedScheduledReceive`], [`SupportedPower`], [`SupportedCcaThreshold`], [`SupportedHeaderIes`] and the feature witness [`Has`] |
-//! | `SettingError::EnhancedAckDisabled` | header IEs and probing initiators are kept while the generator is off and go out once it is on |
+//! | the former `SettingError::EnhancedAckDisabled` | header IEs and probing initiators are kept while the generator is off and go out once it is on |
 //! | duplicate request identifiers | the backend mints the [`Work`] of each submission |
 //!
 //! These stay the world's outcomes: [`Poisoned`] (a radio fault poisons

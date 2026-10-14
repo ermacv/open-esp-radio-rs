@@ -126,13 +126,16 @@ pub enum RadioSetting<'a> {
     },
     /// Replace the CSL receiver state.
     Csl(CslReceiver),
-    /// Generate enhanced ACKs, starting without header IEs or probing
-    /// initiators, or refuse every enhanced ACK (`None`).
+    /// Generate enhanced ACKs with the header IEs and probing initiators
+    /// set so far, or refuse every enhanced ACK (`None`), keeping them
+    /// (owner decision recorded on #753, closing #700).
     EnhancedAck(Option<EnhancedAckGeneration>),
-    /// Replace the header IEs every enhanced ACK carries.
+    /// Replace the header IEs every enhanced ACK carries; kept while
+    /// generation is off.
     EnhancedAckHeaderIes(&'a [u8]),
     /// Replace the Link Metrics probing initiators, most recently added
-    /// first ([`EnhAckProbing::replace`](crate::EnhAckProbing::replace)).
+    /// first ([`EnhAckProbing::replace`](crate::EnhAckProbing::replace));
+    /// kept while generation is off.
     EnhancedAckProbing(&'a [ProbingInitiator]),
     /// Set the transmit power of every channel in dBm
     /// (`esp_ieee802154_set_txpower`, `otPlatRadioSetTransmitPower`).
@@ -166,8 +169,6 @@ pub enum SettingError {
         /// The radio's interface count.
         interfaces: u8,
     },
-    /// The setting changes the enhanced-ACK generator, which is off.
-    EnhancedAckDisabled,
     /// The header IEs exceed what an enhanced ACK carries.
     HeaderIesTooLong {
         /// The IE bytes the backend holds at most.

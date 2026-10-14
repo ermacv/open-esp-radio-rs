@@ -4,7 +4,6 @@
 extern crate alloc;
 
 #[cfg(not(target_pointer_width = "32"))]
-use crate::tx::CompletionObservation;
 use alloc::boxed::Box;
 use oer_ieee80211_softmac::tx_cost::TxContention;
 
@@ -20,7 +19,9 @@ use oer_esp32s31_ieee80211_dma::tx_ampdu_storage::{
 use oer_ieee80211_upper_mac::ampdu::set_retry_bit;
 use oer_memory::StableDmaBacking;
 
-use crate::tx::{HeAmpduTxConfig, HtAmpduTxConfig, LegacyTxQueue, TxCookie, TxSlotState};
+use crate::tx::{
+    CompletionObservation, HeAmpduTxConfig, HtAmpduTxConfig, LegacyTxQueue, TxCookie, TxSlotState,
+};
 
 use super::{
     AmpduRepublication, HeAmpduFrameRequest, HtAmpduFrameRequest, HtAmpduHardware, HtAmpduLength,

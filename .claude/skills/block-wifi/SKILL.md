@@ -60,6 +60,11 @@ Before each push run check (`--all-targets`), test
 `oer-esp32s31-ieee80211`. The core package's host tests are required too;
 checking only its MAC dependency misses its ESP-NOW callers.
 
+Also check the actual S31 target before each push:
+`cargo check -p oer-esp32s31-ieee80211-mac -p oer-esp32s31-ieee80211 --target riscv32imafc-unknown-none-elf`.
+Host `--all-targets` covers Cargo target kinds, not the RV32 architecture or
+its conditional imports and allocation paths.
+
 - `cargo test -p <package>`, then `cargo xtask check changed`.
 - `cargo hil images check --class performance --type-check` for chip-side changes; `cargo xtask check network` for network-owner or manifest changes.
 - HIL smoke: `cargo hil run icmp-latency tcp-bidirectional station-reconnect` (`hil-run` skill).

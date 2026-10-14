@@ -12,6 +12,10 @@ reason = "the process tests compile this child-process tree with rustc"
 path = "tools/xtask/tests/fixtures/malformed_cargo.rs"
 reason = "the network check tests compile this failing cargo stand-in with rustc"
 
+[[uncompiled]]
+path = "tools/xtask/tests/fixtures/affine_contract.rs"
+reason = "cargo xtask check ui compiles both cfg variants directly with rustc on host and RV32"
+
 # Dependencies a package declares only to select features of a crate its
 # dependency graph already uses, and so never names.
 

@@ -168,6 +168,8 @@ enum Check {
     /// `open-radio.test-feature-sets` declares.
     FeatureSets,
     Architecture,
+    /// Compile contract misuses and their positive twins, checking exact rustc diagnostics.
+    Ui,
     /// Audit the resolved dependency graph of every network profile.
     Network,
     /// Check local Markdown links and the static qualification catalogs.
@@ -244,6 +246,7 @@ fn check_name(check: &Check) -> &'static str {
         Check::Metadata => "metadata",
         Check::FeatureSets => "feature-sets",
         Check::Architecture => "architecture",
+        Check::Ui => "ui",
         Check::Network => "network",
         Check::Docs => "docs",
         Check::Capabilities { .. } => "capabilities",
@@ -319,6 +322,7 @@ fn dispatch(ctx: &Checkout, command: Task) -> Result<std::process::ExitCode> {
             Check::Architecture => {
                 checks::architecture::run(&ctx).and_then(|()| checks::architecture::clippy(&ctx))
             }
+            Check::Ui => checks::ui::run(&ctx),
             Check::Network => checks::network::run(&ctx),
             Check::Docs => checks::docs::run(&ctx),
             Check::Capabilities { changed } => checks::docs::capabilities(&ctx, &changed),

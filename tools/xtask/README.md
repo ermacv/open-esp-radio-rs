@@ -432,3 +432,20 @@ unavailable.
 The full `images-correctness` job also builds `boot-smoke` for every staged HIL target,
 including C5, through the same coverage, placement and stack gates as a run.
 Radio final images additionally receive Blobray's forbidden-ROM audit.
+
+## Contract diagnostics
+
+`cargo xtask check ui` compiles every case in `tests/ui.toml` twice, with the
+same dependency features and target: its valid use, then the misuse selected
+by `ui_reject`. A `// ui-error: E0123` annotation marks the expected error's
+source line. The check reads rustc JSON diagnostics and rejects a different
+error code, a different location, extra errors, a successful misuse, or a
+broken positive twin. Stable rustdoc's `compile_fail,E0123` does not check
+the code; those examples remain documentation, not this evidence.
+
+Cargo supplies exact library artifact paths for each declared target and
+feature set; the runner never selects an rlib by globbing a shared cache.
+Both host and RV32 use the pinned stable toolchain. The `ui` registry check
+runs in the fast gate and the `host` CI job. New cases belong beside the
+contract they exercise and have explicit entries in the catalog and tidy's
+uncompiled-source list.

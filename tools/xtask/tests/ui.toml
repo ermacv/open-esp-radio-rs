@@ -1,0 +1,6 @@
+[[suite]]
+name = "compiler-contract"
+packages = []
+features = []
+targets = ["host", "esp32s31"]
+cases = ["tools/xtask/tests/fixtures/affine_contract.rs"]

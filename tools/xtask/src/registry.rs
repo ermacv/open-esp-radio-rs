@@ -107,6 +107,25 @@ pub struct Check {
 /// Every check, in the order a tier runs them.
 pub const CHECKS: &[Check] = &[
     Check {
+        id: "ui",
+        tier: Tier::Fast,
+        job: "host",
+        summary: "structured contract diagnostics and compiling twins on host and chip targets",
+        trigger: Some(|change| {
+            touches(
+                change,
+                &[
+                    "crates/",
+                    "tools/xtask/",
+                    "rust-toolchain.toml",
+                    "Cargo.toml",
+                    "Cargo.lock",
+                ],
+            )
+        }),
+        run: |ctx, _| checks::ui::run(ctx),
+    },
+    Check {
         id: "tidy",
         tier: Tier::Fast,
         job: "host-lint",

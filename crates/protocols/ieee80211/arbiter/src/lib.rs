@@ -458,6 +458,9 @@ pub enum UpstreamFact<K> {
     Lost,
     /// It heard its lost upstream on the channel.
     Found(SupportedChannel<K>),
+    /// Joining the rediscovered upstream failed. Resume the original
+    /// search and loss deadline; the join did not start a new loss period.
+    JoinFailed,
     /// Its scan, alone on the port, found no upstream.
     NotFound,
 }
@@ -559,7 +562,7 @@ impl<'p, 'id: 'p, P: AirReservationPhase<'p, 'id>> CloseGateWith<'p, 'id, AirRes
 #[derive(Debug)]
 pub struct PendingRetune<K> {
     to: SupportedChannel<K>,
-    purpose: CyclePurpose,
+    purpose: CyclePurpose<K>,
 }
 
 impl<K> PendingRetune<K> {
@@ -594,7 +597,7 @@ pub enum ArbiterAction<'id, K, R: ReservationMode> {
 
 /// The arbiter's policy.
 #[derive(Clone, Copy, Debug)]
-pub struct ArbiterPolicy<'a> {
+pub struct ArbiterPolicy {
     /// The window a station that announces its absence has to tell its
     /// access point.
     pub preparation: Duration,
@@ -610,12 +613,12 @@ pub struct ArbiterPolicy<'a> {
     /// How the access point follows its upstream.
     pub follow: ApFollowPolicy,
     /// How the search for a lost upstream spaces its absences.
-    pub search: ApSearchPolicy<'a>,
+    pub search: ApSearchPolicy,
     /// When the pair gives up waiting for a lost upstream.
     pub loss: UpstreamLossPolicy,
 }
 
-impl ArbiterPolicy<'static> {
+impl ArbiterPolicy {
     /// A 10 ms preparation, absences 2 ms after the TBTT, at most 20 ms
     /// with their two retunes of at most 2 ms each, at least 5 ms of
     /// listening, and the coordinator's default policies.
@@ -626,7 +629,7 @@ impl ArbiterPolicy<'static> {
         retune: Duration::from_millis(2),
         min_listen: Duration::from_millis(5),
         follow: ApFollowPolicy::DEFAULT,
-        search: ApSearchPolicy::new(&[]),
+        search: ApSearchPolicy::DEFAULT,
         loss: UpstreamLossPolicy::DEFAULT,
     };
 }
@@ -714,20 +717,20 @@ enum Pair<K> {
     /// The station alone on the port.
     Alone,
     /// The access point runs on its schedule.
-    Serving { schedule: ApSchedule },
+    Serving { schedule: ApSchedule<K> },
     /// The port moves to `target` at `at`, for both interfaces; the access
     /// point's schedule while it runs.
     Moving {
         target: SupportedChannel<K>,
         at: Instant,
-        access_point: Option<ApSchedule>,
+        access_point: Option<ApSchedule<K>>,
     },
     /// The upstream is lost since `since` while the access point runs; the
     /// search's last absence started at `last_search`.
     UpstreamLost {
         since: Instant,
         last_search: Option<Instant>,
-        schedule: ApSchedule,
+        schedule: ApSchedule<K>,
     },
 }
 
@@ -736,7 +739,7 @@ enum Pair<K> {
 struct Cycle<K, Reserve> {
     to: SupportedChannel<K>,
     reserve: Reserve,
-    purpose: CyclePurpose,
+    purpose: CyclePurpose<K>,
 }
 
 // The channel, the reservation and the purpose are values: copies of
@@ -765,17 +768,25 @@ impl<K, Reserve: Copy> Clone for Cycle<K, Reserve> {
 
 impl<K, Reserve: Copy> Copy for Cycle<K, Reserve> {}
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum CyclePurpose {
+#[derive(Debug, Eq, PartialEq)]
+enum CyclePurpose<K> {
     LeaseStart(Which),
     LeaseEnd(Which),
     /// A move no lease asked for; the station hears of it.
     Move {
-        access_point: Option<ApSchedule>,
+        access_point: Option<ApSchedule<K>>,
     },
     /// The return after a refused move or a late lease; the station heard
     /// of its lease's end already.
     Return,
+}
+
+impl<K> Copy for CyclePurpose<K> {}
+
+impl<K> Clone for CyclePurpose<K> {
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 
 /// What the arbiter owes the station and the access point, until its
@@ -875,10 +886,10 @@ pub enum ArbiterNotice<K> {
 }
 
 /// The arbiter.
-pub struct Arbiter<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode = NoReservation> {
-    policy: ArbiterPolicy<'a>,
+pub struct Arbiter<'id, K: Ieee80211Capabilities, R: ReservationMode = NoReservation> {
+    policy: ArbiterPolicy,
     publication_bound: Duration,
-    coordinator: ChannelCoordinator<'a>,
+    coordinator: ChannelCoordinator<K>,
     gate: Gate<'id>,
     port: Port<K>,
     pair: Pair<K>,
@@ -897,13 +908,13 @@ pub struct Arbiter<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode = NoRes
     outbox: Outbox<K>,
 }
 
-impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, R> {
+impl<'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'id, K, R> {
     /// The arbiter of a port on `channel`, holding its open gate, and the
     /// station's places for its primary lease and its absence.
     /// `publication_bound` comes from the backend's `PUBLICATION_BOUND`, not
     /// its retry-plan length. Each move reserves this drain plus its retune.
     pub fn new(
-        policy: ArbiterPolicy<'a>,
+        policy: ArbiterPolicy,
         channel: SupportedChannel<K>,
         gate: GateOpen<'id>,
         publication_bound: Duration,
@@ -912,7 +923,7 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
             Self {
                 policy,
                 publication_bound,
-                coordinator: ChannelCoordinator::new(policy.follow, policy.search),
+                coordinator: ChannelCoordinator::new(policy.follow),
                 gate: Gate::Open(gate),
                 port: Port::On(channel),
                 pair: Pair::Alone,
@@ -938,7 +949,7 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
     }
 
     /// The access point's schedule while it runs.
-    fn schedule(&self) -> Option<ApSchedule> {
+    fn schedule(&self) -> Option<ApSchedule<K>> {
         if let Some(Cycle {
             purpose: CyclePurpose::Move { access_point },
             ..
@@ -955,7 +966,7 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
 
     /// The pair once no move runs: alone, serving, or searching for the
     /// upstream the coordinator searches for.
-    fn settle(&mut self, schedule: Option<ApSchedule>) {
+    fn settle(&mut self, schedule: Option<ApSchedule<K>>) {
         self.pair = match (schedule, self.coordinator.search_since()) {
             (None, _) => Pair::Alone,
             (Some(schedule), Some(since)) => Pair::UpstreamLost {
@@ -1046,10 +1057,7 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
             && request.purpose == Purpose::Connect
             && let Some(schedule) = self.schedule()
         {
-            match self
-                .coordinator
-                .station_joining_away(request.channel.channel(), now)
-            {
+            match self.coordinator.station_joining_away(request.channel, now) {
                 JoinAway::Follow { count } => {
                     self.outbox.announce = Some(AccessPointCommand::AnnounceSwitch {
                         target: request.channel,
@@ -1337,7 +1345,7 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
                 beacon_interval,
             } => {
                 let schedule = ApSchedule {
-                    channel: channel.channel(),
+                    channel,
                     next_tbtt,
                     beacon_interval,
                 };
@@ -1385,9 +1393,7 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
                 }
             }
             AccessPointFact::SwitchDue(target) => {
-                let actions = self
-                    .coordinator
-                    .access_point_switch_due(target.channel(), now);
+                let actions = self.coordinator.access_point_switch_due(target, now);
                 self.apply(actions);
             }
         }
@@ -1398,11 +1404,10 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
         match fact {
             UpstreamFact::Connected(channel) => {
                 self.following = false;
-                self.coordinator.station_connected_after_follow();
                 if let Pair::UpstreamLost { schedule, .. } = self.pair {
                     self.pair = Pair::Serving { schedule };
                 }
-                let actions = self.coordinator.station_connected(channel.channel());
+                let actions = self.coordinator.station_connected(channel);
                 self.apply(actions);
             }
             UpstreamFact::SwitchAnnounced { target, mode, at } => {
@@ -1414,9 +1419,7 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
                 {
                     self.cancel(Which::Primary, CancelReason::Switch);
                 }
-                let actions =
-                    self.coordinator
-                        .upstream_switch_announced(target.channel(), mode, at);
+                let actions = self.coordinator.upstream_switch_announced(target, mode, at);
                 self.apply(actions);
             }
             UpstreamFact::Lost => {
@@ -1428,8 +1431,14 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
                 }
             }
             UpstreamFact::Found(channel) => {
-                let actions = self.coordinator.upstream_found(channel.channel());
+                let actions = self.coordinator.upstream_found(channel);
                 self.apply(actions);
+            }
+            UpstreamFact::JoinFailed => {
+                self.coordinator.join_failed();
+                if !matches!(self.pair, Pair::Moving { .. }) {
+                    self.settle(self.schedule());
+                }
             }
             UpstreamFact::NotFound => {
                 let actions = self.coordinator.upstream_rescan_failed(now);
@@ -1455,48 +1464,35 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
     }
 
     /// Carry the coordinator's actions out.
-    fn apply(&mut self, actions: CoordinatorActions) {
+    fn apply(&mut self, actions: CoordinatorActions<K>) {
         for action in actions {
             match action {
                 CoordinatorAction::AnnounceSwitch {
                     target,
                     mode,
                     count,
-                } => match SupportedChannel::new(target) {
-                    Some(target) => {
-                        self.outbox.announce = Some(AccessPointCommand::AnnounceSwitch {
-                            target,
-                            mode,
-                            count,
-                        });
-                    }
-                    None => self.command_leave(LeaveReason::Unservable),
-                },
-                CoordinatorAction::Retune { channel, at } => match SupportedChannel::new(channel) {
-                    Some(target) => {
-                        self.pair = Pair::Moving {
-                            target,
-                            at,
-                            access_point: self.schedule(),
-                        };
-                    }
-                    None => self.command_leave(LeaveReason::Unservable),
-                },
+                } => {
+                    self.outbox.announce = Some(AccessPointCommand::AnnounceSwitch {
+                        target,
+                        mode,
+                        count,
+                    });
+                }
+                CoordinatorAction::Retune { channel, at } => {
+                    self.pair = Pair::Moving {
+                        target: channel,
+                        at,
+                        access_point: self.schedule(),
+                    };
+                }
                 CoordinatorAction::StopAccessPoint => {
                     self.access_point_gone();
                     self.outbox.stop();
                 }
                 CoordinatorAction::StartAccessPoint { channel } => {
-                    if let Some(channel) = SupportedChannel::new(channel) {
-                        self.outbox.start = Some(channel);
-                    }
+                    self.outbox.start = Some(channel);
                 }
                 CoordinatorAction::LeaveUpstream => self.command_leave(LeaveReason::Unservable),
-                // The station joins on the channel the port moved to; the
-                // move's notice told it.
-                CoordinatorAction::JoinUpstream { .. } => {}
-                // The arbiter's own search leases place the absences.
-                CoordinatorAction::Absence { .. } => {}
             }
         }
     }
@@ -1541,7 +1537,7 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
             }
             CyclePurpose::Move { access_point } => {
                 let access_point = access_point.map(|schedule| ApSchedule {
-                    channel: cycle.to.channel(),
+                    channel: cycle.to,
                     ..schedule
                 });
                 self.settle(access_point);
@@ -1570,7 +1566,7 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
     /// The requested retune completed and the port runs on its channel.
     pub fn retuned(&mut self, pending: PendingRetune<K>) {
         self.port = Port::On(pending.to);
-        let actions = self.coordinator.port_moved(pending.to.channel());
+        let actions = self.coordinator.port_moved(pending.to);
         self.apply(actions);
     }
 
@@ -1862,7 +1858,7 @@ impl<'a, 'id, K: Ieee80211Capabilities, R: ReservationMode> Arbiter<'a, 'id, K, 
 
 /// The first absence slot that starts at or after `earliest`: the guard
 /// after one of the schedule's TBTTs.
-fn slot(schedule: ApSchedule, earliest: Instant, guard: Duration) -> Instant {
+fn slot<K>(schedule: ApSchedule<K>, earliest: Instant, guard: Duration) -> Instant {
     let mut tbtt = schedule.next_tbtt;
     loop {
         let start = tbtt.saturating_add(guard);

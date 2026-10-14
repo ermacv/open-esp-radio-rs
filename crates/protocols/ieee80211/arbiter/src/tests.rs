@@ -20,7 +20,7 @@ fn installed<R>(body: impl for<'id> FnOnce(&mut Mint<'id>) -> R) -> R {
 
 /// A 2.4 and 5 GHz backend.
 #[derive(Debug, Eq, PartialEq)]
-struct Caps;
+pub(super) struct Caps;
 
 impl Ieee80211Capabilities for Caps {
     const CAPS: LowerMacCapabilities = LowerMacCapabilities {
@@ -55,7 +55,7 @@ impl Ieee80211Capabilities for Caps {
     };
 }
 
-type TestArbiter<'id, R = NoReservation> = Arbiter<'static, 'id, Caps, R>;
+type TestArbiter<'id, R = NoReservation> = Arbiter<'id, Caps, R>;
 
 fn channel(number: u8) -> SupportedChannel<Caps> {
     SupportedChannel::new(Channel::ghz2_4(number, ChannelWidth::Mhz20).unwrap()).unwrap()
@@ -563,6 +563,58 @@ fn a_lost_upstream_is_searched_for_in_absences_and_its_loss_stops_the_access_poi
     });
 }
 
+#[test]
+fn a_failed_upstream_join_resumes_the_original_loss_deadline() {
+    installed(|mint| {
+        let (mut arbiter, _place, mut port) = beside_access_point::<NoReservation>(mint);
+        arbiter.upstream(at(0), UpstreamFact::Connected(channel(1)));
+        arbiter.upstream(at(10), UpstreamFact::Lost);
+        assert_eq!(arbiter.poll_deadline(), Some(at(30_010)));
+        arbiter.upstream(at(20), UpstreamFact::Found(channel(1)));
+        assert_eq!(arbiter.poll_deadline(), None);
+
+        // A join can outlast the loss policy. Its failure makes that
+        // original deadline due immediately, without another 30 s wait.
+        arbiter.upstream(at(40_000), UpstreamFact::JoinFailed);
+        assert_eq!(arbiter.poll_deadline(), Some(at(30_010)));
+        assert_eq!(
+            run(&mut arbiter, &mut port, at(40_000)),
+            [Seen::AccessPoint(AccessPointCommand::Stop)]
+        );
+        assert_eq!(arbiter.poll_deadline(), None);
+        assert!(run(&mut arbiter, &mut port, at(40_000)).is_empty());
+    });
+}
+
+#[test]
+fn a_failed_upstream_join_does_not_restart_dense_search() {
+    installed(|mint| {
+        let (mut arbiter, place, mut port) = beside_access_point::<NoReservation>(mint);
+        arbiter.policy.search.dense_period = Duration::from_millis(200);
+        arbiter.upstream(at(0), UpstreamFact::Connected(channel(1)));
+        arbiter.upstream(at(10), UpstreamFact::Lost);
+        arbiter.upstream(at(20), UpstreamFact::Found(channel(1)));
+        arbiter.upstream(at(410), UpstreamFact::JoinFailed);
+        let search = |number| ChannelRequest {
+            channel: channel(number),
+            purpose: Purpose::Search {
+                dwell: Duration::from_millis(10),
+            },
+        };
+        let first = lease(arbiter.request(at(410), search(6), place));
+        assert_eq!(first.from(), at(452));
+        run(&mut arbiter, &mut port, at(452));
+        let seen = run(&mut arbiter, &mut port, at(464));
+        let Some(Seen::Station(StationNotice::LeaseEnded(place))) = seen.into_iter().last() else {
+            panic!("the search absence returns its place");
+        };
+        let second = lease(arbiter.request(at(464), search(11), place));
+        assert_eq!(second.from(), at(1452));
+        arbiter.release(second);
+        run(&mut arbiter, &mut port, at(464));
+    });
+}
+
 fn connect(number: u8) -> ChannelRequest<Caps> {
     ChannelRequest {
         channel: channel(number),
@@ -784,7 +836,7 @@ fn connected<'id>(
 
 fn connected_with_policy<'id>(
     mint: &mut Mint<'id>,
-    policy: ArbiterPolicy<'static>,
+    policy: ArbiterPolicy,
 ) -> (TestArbiter<'id>, Lease<Caps>, AbsencePlace, Port<'id>) {
     let (gate, issuer) = GatePlace::mint(mint);
     let mut port = Port {

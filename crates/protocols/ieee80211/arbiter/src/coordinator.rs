@@ -31,6 +31,7 @@
 //!   access point again on its previous channel, and the next attempt
 //!   follows `after` later ([`ChannelCoordinator::upstream_rescan`]).
 
+use oer_ieee80211_lower_mac::{Ieee80211Capabilities, SupportedChannel};
 use oer_ieee80211_mac::channel::{Band, Channel};
 use oer_ieee80211_mac::channel_switch::ChannelSwitchMode;
 use oer_time::{Duration, Instant};
@@ -112,35 +113,32 @@ impl ApFollowPolicy {
 }
 
 /// How the station searches for an upstream lost without an announcement.
+///
+/// Channel traversal belongs to the station, so this policy has no channel list:
+/// ```compile_fail,E0599
+/// use oer_ieee80211_arbiter::coordinator::ApSearchPolicy;
+/// let policy = ApSearchPolicy::new(&[]);
+/// ```
+/// Timing is a value independent of the station's channel storage:
+/// ```
+/// use oer_ieee80211_arbiter::coordinator::ApSearchPolicy;
+/// let policy = ApSearchPolicy::DEFAULT;
+/// assert!(policy.sparse_interval > oer_time::Duration::ZERO);
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ApSearchPolicy<'a> {
-    /// The channels searched, in turn; the access point's own channel,
-    /// which the station hears between absences, is skipped. Empty: the
-    /// station waits on the access point's channel alone.
-    pub channels: &'a [Channel],
-    /// How long one absence listens on another channel.
-    pub dwell: Duration,
-    /// How long after the access point's TBTT an absence starts, the
-    /// access point's beacon sent.
-    pub guard: Duration,
+pub struct ApSearchPolicy {
     /// How long the search takes one absence per beacon interval.
     pub dense_period: Duration,
     /// The spacing of absences after the dense period.
     pub sparse_interval: Duration,
 }
 
-impl<'a> ApSearchPolicy<'a> {
-    /// Absences of 20 ms, 2 ms after the TBTT, each beacon interval for
-    /// 30 s, then about one a second, over `channels`.
-    pub const fn new(channels: &'a [Channel]) -> Self {
-        Self {
-            channels,
-            dwell: Duration::from_millis(20),
-            guard: Duration::from_millis(2),
-            dense_period: Duration::from_secs(30),
-            sparse_interval: Duration::from_secs(1),
-        }
-    }
+impl ApSearchPolicy {
+    /// One absence per beacon interval for 30 s, then about one a second.
+    pub const DEFAULT: Self = Self {
+        dense_period: Duration::from_secs(30),
+        sparse_interval: Duration::from_secs(1),
+    };
 }
 
 /// What the pair does when its upstream stays lost.
@@ -174,63 +172,51 @@ impl UpstreamLossPolicy {
 }
 
 /// What the port's owner does for the coordinator.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CoordinatorAction {
+#[derive(Debug, Eq, PartialEq)]
+pub enum CoordinatorAction<K> {
     /// The access point announces a move of its BSS to `target` in its next
     /// `count` beacons.
     AnnounceSwitch {
-        target: Channel,
+        target: SupportedChannel<K>,
         mode: ChannelSwitchMode,
         count: u8,
     },
     /// Move the port to `channel` at `at`, for every interface, tell each
     /// client its switch is done and report it
     /// ([`ChannelCoordinator::port_moved`]).
-    Retune { channel: Channel, at: Instant },
+    Retune {
+        channel: SupportedChannel<K>,
+        at: Instant,
+    },
     /// Release the access point's peers and close its BSS.
     StopAccessPoint,
     /// Start the access point on `channel`.
-    StartAccessPoint { channel: Channel },
+    StartAccessPoint { channel: SupportedChannel<K> },
     /// The station leaves the upstream.
     LeaveUpstream,
-    /// The station joins the upstream again on `channel`.
-    JoinUpstream { channel: Channel },
-    /// Leave the port's channel from `start` until `until` to listen for the
-    /// upstream on `channel`, the access point's air reserved meanwhile.
-    Absence {
-        channel: Channel,
-        start: Instant,
-        until: Instant,
-    },
 }
 
 /// The actions one fact asks for, in order: at most two.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct CoordinatorActions([Option<CoordinatorAction>; 2]);
+#[derive(Debug, Eq, PartialEq)]
+pub struct CoordinatorActions<K>([Option<CoordinatorAction<K>>; 2]);
 
-impl CoordinatorActions {
-    pub const NONE: Self = Self([None, None]);
+impl<K> CoordinatorActions<K> {
+    const fn none() -> Self {
+        Self([None, None])
+    }
 
-    const fn one(action: CoordinatorAction) -> Self {
+    const fn one(action: CoordinatorAction<K>) -> Self {
         Self([Some(action), None])
     }
 
-    const fn two(first: CoordinatorAction, second: CoordinatorAction) -> Self {
+    const fn two(first: CoordinatorAction<K>, second: CoordinatorAction<K>) -> Self {
         Self([Some(first), Some(second)])
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0[0].is_none()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = CoordinatorAction> + '_ {
-        self.0.iter().flatten().copied()
     }
 }
 
-impl IntoIterator for CoordinatorActions {
-    type Item = CoordinatorAction;
-    type IntoIter = core::iter::Flatten<core::array::IntoIter<Option<CoordinatorAction>, 2>>;
+impl<K> IntoIterator for CoordinatorActions<K> {
+    type Item = CoordinatorAction<K>;
+    type IntoIter = core::iter::Flatten<core::array::IntoIter<Option<CoordinatorAction<K>>, 2>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter().flatten()
@@ -259,15 +245,42 @@ pub enum JoinAway {
 }
 
 /// The access point's schedule, which counts and absences follow.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ApSchedule {
-    pub channel: Channel,
+///
+/// The channel must already be accepted by the backend:
+/// ```compile_fail,E0308
+/// use oer_ieee80211_arbiter::coordinator::ApSchedule;
+/// use oer_ieee80211_mac::channel::Channel;
+/// use oer_time::{Duration, Instant};
+/// fn raw_schedule<K>(channel: Channel) -> ApSchedule<K> {
+///     ApSchedule {
+///         channel,
+///         next_tbtt: Instant::from_micros(100),
+///         beacon_interval: Duration::from_millis(100),
+///     }
+/// }
+/// ```
+/// A checked channel is carried unchanged into the schedule:
+/// ```
+/// use oer_ieee80211_arbiter::coordinator::ApSchedule;
+/// use oer_ieee80211_lower_mac::SupportedChannel;
+/// use oer_time::{Duration, Instant};
+/// fn checked_schedule<K>(channel: SupportedChannel<K>) -> ApSchedule<K> {
+///     ApSchedule {
+///         channel,
+///         next_tbtt: Instant::from_micros(100),
+///         beacon_interval: Duration::from_millis(100),
+///     }
+/// }
+/// ```
+#[derive(Debug, Eq, PartialEq)]
+pub struct ApSchedule<K> {
+    pub channel: SupportedChannel<K>,
     /// Its next TBTT.
     pub next_tbtt: Instant,
     pub beacon_interval: Duration,
 }
 
-impl ApSchedule {
+impl<K> ApSchedule<K> {
     /// The access point's TBTTs before `instant`, from the next one on.
     fn beacons_before(self, instant: Instant) -> u64 {
         let interval = self.beacon_interval.as_micros();
@@ -306,49 +319,87 @@ impl ApSchedule {
 }
 
 /// Where the upstream is.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Upstream {
+#[derive(Debug, Eq, PartialEq)]
+enum Upstream<K> {
     /// The station is not connected.
     None,
-    Connected(Channel),
+    Connected(SupportedChannel<K>),
     /// Lost without an announcement, searched for since `since`.
     Searching {
         since: Instant,
-        next_absence: Option<Instant>,
-        cursor: usize,
     },
     /// Found, but not joined yet; the access point may still be announcing
     /// the move to this channel.
     Joining {
-        channel: Channel,
         since: Instant,
-        waiting_for_move: bool,
     },
     /// Scanned for by the station alone on the port, the access point
     /// stopped by the [`UpstreamLossPolicy`]; it starts again on `fallback`
     /// when the scan finds none.
     Rescanning {
-        fallback: Channel,
+        fallback: SupportedChannel<K>,
     },
 }
 
 /// Where the access point is.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum AccessPoint {
+#[derive(Debug, Eq, PartialEq)]
+enum AccessPoint<K> {
     /// Not started, or stopped by the policy.
     Stopped,
     /// Asked to start and not running yet.
-    Starting(Channel),
-    Running(ApSchedule),
+    Starting,
+    Running(ApSchedule<K>),
 }
 
 /// Decides the shared port's channel; see the module documentation.
-#[derive(Clone, Copy, Debug)]
-pub struct ChannelCoordinator<'a> {
+///
+/// Facts cannot introduce an unchecked channel:
+/// ```compile_fail,E0308
+/// use oer_ieee80211_arbiter::coordinator::ChannelCoordinator;
+/// use oer_ieee80211_mac::channel::Channel;
+/// fn raw_fact<K: oer_ieee80211_lower_mac::Ieee80211Capabilities>(
+///     coordinator: &mut ChannelCoordinator<K>, channel: Channel,
+/// ) {
+///     let _ = coordinator.station_connected(channel);
+/// }
+/// ```
+///
+/// The arbiter owns search timing; the coordinator has no independent poll loop:
+/// ```compile_fail,E0599
+/// use oer_ieee80211_arbiter::coordinator::ChannelCoordinator;
+/// use oer_time::Instant;
+/// fn separate_loop<K: oer_ieee80211_lower_mac::Ieee80211Capabilities>(
+///     coordinator: &mut ChannelCoordinator<K>, now: Instant,
+/// ) {
+///     coordinator.poll(now);
+/// }
+/// ```
+///
+/// Its protocol state cannot be copied into a second owner:
+/// ```compile_fail,E0382
+/// use oer_ieee80211_arbiter::coordinator::ChannelCoordinator;
+/// fn duplicate<K>(coordinator: ChannelCoordinator<K>) {
+///     let first = coordinator;
+///     let second = coordinator;
+/// }
+/// ```
+/// One owner can consume facts and move its coordinator:
+/// ```
+/// use oer_ieee80211_arbiter::coordinator::{ApFollowPolicy, ChannelCoordinator};
+/// use oer_ieee80211_lower_mac::{Ieee80211Capabilities, SupportedChannel};
+/// fn accept<K: Ieee80211Capabilities>(channel: SupportedChannel<K>) {
+///     let mut coordinator = ChannelCoordinator::new(ApFollowPolicy::DEFAULT);
+///     let actions = coordinator.station_connected(channel);
+///     for action in actions { /* the owner carries out each effect */ }
+///     let owner = coordinator;
+///     assert_eq!(owner.search_since(), None);
+/// }
+/// ```
+#[derive(Debug)]
+pub struct ChannelCoordinator<K> {
     policy: ApFollowPolicy,
-    search: ApSearchPolicy<'a>,
-    upstream: Upstream,
-    access_point: AccessPoint,
+    upstream: Upstream<K>,
+    access_point: AccessPoint<K>,
     /// The access point should run: the composition wants it, the policy
     /// may have stopped it.
     wanted: bool,
@@ -359,11 +410,10 @@ pub struct ChannelCoordinator<'a> {
     follow_interval: Duration,
 }
 
-impl<'a> ChannelCoordinator<'a> {
-    pub const fn new(policy: ApFollowPolicy, search: ApSearchPolicy<'a>) -> Self {
+impl<K: Ieee80211Capabilities> ChannelCoordinator<K> {
+    pub const fn new(policy: ApFollowPolicy) -> Self {
         Self {
             policy,
-            search,
             upstream: Upstream::None,
             access_point: AccessPoint::Stopped,
             wanted: false,
@@ -383,26 +433,6 @@ impl<'a> ChannelCoordinator<'a> {
         };
     }
 
-    /// The station connected: the follow interval starts again from the
-    /// policy's shortest.
-    pub fn station_connected_after_follow(&mut self) {
-        self.follow_interval = self.policy.min_follow_interval;
-    }
-
-    pub const fn policy(&self) -> ApFollowPolicy {
-        self.policy
-    }
-
-    /// The configured search timing and channel list.
-    pub const fn search_policy(&self) -> ApSearchPolicy<'a> {
-        self.search
-    }
-
-    /// Whether the owner should observe the upstream between absences.
-    pub const fn searching(&self) -> bool {
-        matches!(self.upstream, Upstream::Searching { .. })
-    }
-
     /// Since when the upstream is searched for, while it is.
     pub const fn search_since(&self) -> Option<Instant> {
         match self.upstream {
@@ -415,8 +445,8 @@ impl<'a> ChannelCoordinator<'a> {
     /// away from the access point's, at `now`: the policy decides whether
     /// the access point follows, stops or keeps its channel, and how soon
     /// it follows again.
-    pub fn station_joining_away(&mut self, channel: Channel, now: Instant) -> JoinAway {
-        if !self.policy.serves(channel) {
+    pub fn station_joining_away(&mut self, channel: SupportedChannel<K>, now: Instant) -> JoinAway {
+        if !self.policy.serves(channel.channel()) {
             return match self.policy.unservable {
                 ApUnservable::StopAccessPoint => {
                     self.access_point = AccessPoint::Stopped;
@@ -439,40 +469,27 @@ impl<'a> ChannelCoordinator<'a> {
 
     /// The composition wants the access point to run: on the upstream's
     /// channel once the station is connected and the policy lets it.
-    pub fn want_access_point(&mut self) -> CoordinatorActions {
+    pub fn want_access_point(&mut self) -> CoordinatorActions<K> {
         self.wanted = true;
         self.start_if_servable()
     }
 
     /// The station connected to the upstream on `channel`.
-    pub fn station_connected(&mut self, channel: Channel) -> CoordinatorActions {
+    pub fn station_connected(&mut self, channel: SupportedChannel<K>) -> CoordinatorActions<K> {
+        self.follow_interval = self.policy.min_follow_interval;
         self.upstream = Upstream::Connected(channel);
         self.start_if_servable()
     }
 
     /// The port moved to `channel`, as a [`CoordinatorAction::Retune`]
-    /// asked: a stopped access point may start there, or a newly discovered
-    /// upstream can now be joined after the access point's CSA.
-    pub fn port_moved(&mut self, channel: Channel) -> CoordinatorActions {
+    /// asked: a stopped access point may start there. The station owns its
+    /// join lease and starts joining when that lease becomes ready.
+    pub fn port_moved(&mut self, channel: SupportedChannel<K>) -> CoordinatorActions<K> {
         if let AccessPoint::Running(schedule) = &mut self.access_point {
             schedule.channel = channel;
         }
         if let Upstream::Connected(_) = self.upstream {
             self.upstream = Upstream::Connected(channel);
-        }
-        if let Upstream::Joining {
-            channel: found,
-            since,
-            waiting_for_move: true,
-        } = self.upstream
-            && found == channel
-        {
-            self.upstream = Upstream::Joining {
-                channel,
-                since,
-                waiting_for_move: false,
-            };
-            return CoordinatorActions::one(CoordinatorAction::JoinUpstream { channel });
         }
         self.start_if_servable()
     }
@@ -480,7 +497,7 @@ impl<'a> ChannelCoordinator<'a> {
     /// The access point runs on `schedule`'s channel; its next TBTT is
     /// `schedule.next_tbtt`. Repeated at each TBTT, it keeps counts and
     /// absences on the access point's schedule.
-    pub fn access_point_running(&mut self, schedule: ApSchedule) {
+    pub fn access_point_running(&mut self, schedule: ApSchedule<K>) {
         self.access_point = AccessPoint::Running(schedule);
     }
 
@@ -492,10 +509,10 @@ impl<'a> ChannelCoordinator<'a> {
     /// The upstream announced a move to `target` at `at`, in `mode`.
     pub fn upstream_switch_announced(
         &mut self,
-        target: Channel,
+        target: SupportedChannel<K>,
         mode: ChannelSwitchMode,
         at: Instant,
-    ) -> CoordinatorActions {
+    ) -> CoordinatorActions<K> {
         let retune = CoordinatorAction::Retune {
             channel: target,
             at,
@@ -505,7 +522,7 @@ impl<'a> ChannelCoordinator<'a> {
             // upstream.
             return CoordinatorActions::one(retune);
         };
-        if !self.policy.serves(target) {
+        if !self.policy.serves(target.channel()) {
             return match self.unservable() {
                 // The station follows the upstream alone.
                 stop @ CoordinatorAction::StopAccessPoint => CoordinatorActions::two(stop, retune),
@@ -525,7 +542,11 @@ impl<'a> ChannelCoordinator<'a> {
 
     /// The access point's announced move to `target` is due at `now`: the
     /// port moves for both interfaces.
-    pub fn access_point_switch_due(&mut self, target: Channel, now: Instant) -> CoordinatorActions {
+    pub fn access_point_switch_due(
+        &mut self,
+        target: SupportedChannel<K>,
+        now: Instant,
+    ) -> CoordinatorActions<K> {
         CoordinatorActions::one(CoordinatorAction::Retune {
             channel: target,
             at: now,
@@ -537,46 +558,29 @@ impl<'a> ChannelCoordinator<'a> {
         self.upstream = match self.access_point {
             // The access point holds its channel; the station searches
             // around it.
-            AccessPoint::Running(_) => Upstream::Searching {
-                since: now,
-                next_absence: None,
-                cursor: 0,
-            },
+            AccessPoint::Running(_) => Upstream::Searching { since: now },
             // Alone on the port, the station reconnects its own way.
-            AccessPoint::Stopped | AccessPoint::Starting(_) => Upstream::None,
+            AccessPoint::Stopped | AccessPoint::Starting => Upstream::None,
         };
     }
 
     /// The station heard the upstream on `channel` while it searched.
-    pub fn upstream_found(&mut self, channel: Channel) -> CoordinatorActions {
+    pub fn upstream_found(&mut self, channel: SupportedChannel<K>) -> CoordinatorActions<K> {
         let Upstream::Searching { since, .. } = self.upstream else {
-            return CoordinatorActions::NONE;
+            return CoordinatorActions::none();
         };
-        self.upstream = Upstream::Joining {
-            channel,
-            since,
-            waiting_for_move: false,
-        };
-        let join = CoordinatorAction::JoinUpstream { channel };
+        self.upstream = Upstream::Joining { since };
         let AccessPoint::Running(schedule) = self.access_point else {
-            return CoordinatorActions::one(join);
+            return CoordinatorActions::none();
         };
         if channel == schedule.channel {
-            return CoordinatorActions::one(join);
+            return CoordinatorActions::none();
         }
-        if !self.policy.serves(channel) {
-            return match self.unservable() {
-                stop @ CoordinatorAction::StopAccessPoint => CoordinatorActions::two(stop, join),
-                leave => CoordinatorActions::one(leave),
-            };
+        if !self.policy.serves(channel.channel()) {
+            return CoordinatorActions::one(self.unservable());
         }
-        // The access point moves first; the station joins once the port
-        // has ([`Self::port_moved`] then [`Self::station_connected`]).
-        self.upstream = Upstream::Joining {
-            channel,
-            since,
-            waiting_for_move: true,
-        };
+        // The access point moves first. The station's lease, owned by the
+        // arbiter, admits the join once that move finishes.
         CoordinatorActions::one(CoordinatorAction::AnnounceSwitch {
             target: channel,
             mode: ChannelSwitchMode::Continue,
@@ -600,11 +604,11 @@ impl<'a> ChannelCoordinator<'a> {
     /// and the station, alone on the port, scans for the upstream. Report
     /// the outcome: [`Self::station_connected`] when it joined,
     /// [`Self::upstream_rescan_failed`] when it did not.
-    pub fn upstream_rescan(&mut self) -> CoordinatorActions {
+    pub fn upstream_rescan(&mut self) -> CoordinatorActions<K> {
         let (Upstream::Searching { .. }, AccessPoint::Running(schedule)) =
             (self.upstream, self.access_point)
         else {
-            return CoordinatorActions::NONE;
+            return CoordinatorActions::none();
         };
         self.upstream = Upstream::Rescanning {
             fallback: schedule.channel,
@@ -616,16 +620,12 @@ impl<'a> ChannelCoordinator<'a> {
     /// The station's scan found no upstream to join at `now`: the port goes
     /// back to the access point's previous channel, the access point starts
     /// there, and the loss counts again from `now`.
-    pub fn upstream_rescan_failed(&mut self, now: Instant) -> CoordinatorActions {
+    pub fn upstream_rescan_failed(&mut self, now: Instant) -> CoordinatorActions<K> {
         let Upstream::Rescanning { fallback } = self.upstream else {
-            return CoordinatorActions::NONE;
+            return CoordinatorActions::none();
         };
-        self.upstream = Upstream::Searching {
-            since: now,
-            next_absence: None,
-            cursor: 0,
-        };
-        self.access_point = AccessPoint::Starting(fallback);
+        self.upstream = Upstream::Searching { since: now };
+        self.access_point = AccessPoint::Starting;
         CoordinatorActions::two(
             CoordinatorAction::Retune {
                 channel: fallback,
@@ -637,134 +637,35 @@ impl<'a> ChannelCoordinator<'a> {
 
     /// A discovered upstream refused the join. Resume searching without
     /// restarting the dense period that began at the original loss.
-    pub fn upstream_join_failed(&mut self) {
+    pub(super) fn join_failed(&mut self) {
         if let Upstream::Joining { since, .. } = self.upstream {
-            self.upstream = Upstream::Searching {
-                since,
-                next_absence: None,
-                cursor: 0,
-            };
-        }
-    }
-
-    /// The next absence of a search that is due at `now`.
-    pub fn poll(&mut self, now: Instant) -> Option<CoordinatorAction> {
-        let AccessPoint::Running(schedule) = self.access_point else {
-            return None;
-        };
-        let Upstream::Searching {
-            since,
-            next_absence,
-            cursor,
-        } = self.upstream
-        else {
-            return None;
-        };
-        let candidates = self
-            .search
-            .channels
-            .iter()
-            .filter(|channel| !same_primary(**channel, schedule.channel));
-        let count = candidates.clone().count();
-        if count == 0 {
-            return None;
-        }
-        let mut start = match next_absence {
-            Some(start) => start,
-            None => self.absence_after(schedule, now)?,
-        };
-        // A completed exchange can make the owner late. Never replay a
-        // window whose end has already passed, nor accumulate a backlog
-        // of missed dense windows.
-        if self.search.dwell != Duration::ZERO && now >= start.checked_add(self.search.dwell)? {
-            start = self.absence_after(schedule, now)?;
-        }
-        if now < start {
-            self.upstream = Upstream::Searching {
-                since,
-                next_absence: Some(start),
-                cursor,
-            };
-            return None;
-        }
-        let cursor = cursor.checked_rem(count)?;
-        let channel = *candidates.clone().nth(cursor)?;
-        let until = start.checked_add(self.search.dwell)?;
-        let dense_until = since.checked_add(self.search.dense_period)?;
-        let spacing = if start < dense_until {
-            schedule.beacon_interval
-        } else {
-            self.search.sparse_interval
-        };
-        let next = self.absence_after(schedule, start.checked_add(spacing)?)?;
-        self.upstream = Upstream::Searching {
-            since,
-            next_absence: Some(next),
-            cursor: cursor.checked_add(1)?.checked_rem(count)?,
-        };
-        Some(CoordinatorAction::Absence {
-            channel,
-            start,
-            until,
-        })
-    }
-
-    /// The earliest instant the coordinator needs its owner without input.
-    pub fn next_deadline(&self) -> Option<Instant> {
-        if let AccessPoint::Running(schedule) = self.access_point
-            && !self
-                .search
-                .channels
-                .iter()
-                .any(|channel| !same_primary(*channel, schedule.channel))
-        {
-            return None;
-        }
-        match (self.upstream, self.access_point) {
-            (
-                Upstream::Searching {
-                    next_absence: Some(next),
-                    ..
-                },
-                AccessPoint::Running(_),
-            ) => Some(next),
-            (Upstream::Searching { .. }, AccessPoint::Running(schedule)) => {
-                Some(schedule.next_tbtt)
-            }
-            _ => None,
+            self.upstream = Upstream::Searching { since };
         }
     }
 
     /// The access point's TBTTs before `at`, as a count it can announce.
-    fn beacons_before(&self, schedule: ApSchedule, at: Instant) -> u8 {
+    fn beacons_before(&self, schedule: ApSchedule<K>, at: Instant) -> u8 {
         u8::try_from(schedule.beacons_before(at)).unwrap_or(u8::MAX)
-    }
-
-    /// The first absence start at or after `instant`: the guard after a
-    /// TBTT.
-    fn absence_after(&self, schedule: ApSchedule, instant: Instant) -> Option<Instant> {
-        let tbtt = schedule.tbtt_from(instant.checked_sub(self.search.guard)?);
-        tbtt.checked_add(self.search.guard)
     }
 
     /// Start the wanted access point on the upstream's channel, when the
     /// policy lets it serve that channel.
-    fn start_if_servable(&mut self) -> CoordinatorActions {
+    fn start_if_servable(&mut self) -> CoordinatorActions<K> {
         let Upstream::Connected(channel) = self.upstream else {
-            return CoordinatorActions::NONE;
+            return CoordinatorActions::none();
         };
         if !self.wanted
             || !matches!(self.access_point, AccessPoint::Stopped)
-            || !self.policy.serves(channel)
+            || !self.policy.serves(channel.channel())
         {
-            return CoordinatorActions::NONE;
+            return CoordinatorActions::none();
         }
-        self.access_point = AccessPoint::Starting(channel);
+        self.access_point = AccessPoint::Starting;
         CoordinatorActions::one(CoordinatorAction::StartAccessPoint { channel })
     }
 
     /// The upstream went where the access point may not follow.
-    fn unservable(&mut self) -> CoordinatorAction {
+    fn unservable(&mut self) -> CoordinatorAction<K> {
         match self.policy.unservable {
             ApUnservable::StopAccessPoint => {
                 self.access_point = AccessPoint::Stopped;
@@ -778,8 +679,46 @@ impl<'a> ChannelCoordinator<'a> {
     }
 }
 
-fn same_primary(first: Channel, second: Channel) -> bool {
-    first.band() == second.band() && first.number() == second.number()
+// Only value facts are copied. The backend marker carries no storage and
+// need not implement Copy; ChannelCoordinator remains a single owner.
+impl<K> Copy for CoordinatorAction<K> {}
+
+impl<K> Clone for CoordinatorAction<K> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<K> Copy for CoordinatorActions<K> {}
+
+impl<K> Clone for CoordinatorActions<K> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<K> Copy for ApSchedule<K> {}
+
+impl<K> Clone for ApSchedule<K> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<K> Copy for Upstream<K> {}
+
+impl<K> Clone for Upstream<K> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<K> Copy for AccessPoint<K> {}
+
+impl<K> Clone for AccessPoint<K> {
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 
 #[cfg(test)]

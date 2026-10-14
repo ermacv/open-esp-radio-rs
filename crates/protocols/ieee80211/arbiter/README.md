@@ -37,7 +37,10 @@ never withdrawn, and a second such join within the policy's
 `coordinator` keeps the access point's follow, search and loss policies
 (`ChannelCoordinator`, `ApFollowPolicy`, `ApSearchPolicy`,
 `UpstreamLossPolicy`), and `channel` the channels an access point may not
-serve without radar detection.
+serve without radar detection. Coordinator facts, schedules and actions
+carry `SupportedChannel<K>` from the backend's capability check. Applying
+a start or move therefore needs no second channel conversion that could
+discard the command after its state transition.
 
 Composition passes the backend's `PUBLICATION_BOUND` to `Arbiter::new`.
 Absences reserve one current publication plus retune time for each move;
@@ -65,6 +68,11 @@ enabled phase, consumers poll `ArbiterNotice` through `poll_notice`; that
 exhaustive type contains only station/AP notices and cannot take a gate or
 retune token. `port_failed` covers both enable refusal and poisoning.
 
-The coordinator advances its bounded channel-search cursor with checked
-arithmetic; an empty search has no cursor. The crate uses the canonical
-strict lint block checked by tidy.
+The station chooses search channels and requests their leases. The arbiter
+places those absences around the access point's beacons and spaces dense
+and sparse searches; the coordinator keeps follow and loss state without
+an independent poll loop or channel cursor. `UpstreamFact::JoinFailed`
+resumes the search from the original loss instant, including its loss
+policy deadline. Joining does not grant a new search period. The coordinator
+cannot be copied into another owner. The crate uses the canonical strict
+lint block checked by tidy.

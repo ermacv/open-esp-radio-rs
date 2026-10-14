@@ -189,7 +189,7 @@ enum Seen {
 /// The loop the thin service runs, with the test as the port.
 struct World<'id> {
     station: Station<'id, Tokens, Caps>,
-    arbiter: Arbiter<'static, 'id, Caps, NoReservation>,
+    arbiter: Arbiter<'id, Caps, NoReservation>,
     gate_issuer: GateIssuer<'id>,
     seen: Vec<Seen>,
     /// The transmissions in flight, which the port ends in order.

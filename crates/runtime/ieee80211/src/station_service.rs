@@ -234,7 +234,7 @@ pub type PortData<'id, B> = StaData<
 >;
 
 /// The arbiter of the service on the port `B`.
-pub type PortArbiter<'a, 'id, B> = Arbiter<'a, 'id, <B as LowerMacBackend>::Caps>;
+pub type PortArbiter<'id, B> = Arbiter<'id, <B as LowerMacBackend>::Caps>;
 
 /// The levels the service's attempts take, which its port must offer:
 /// checked when the service's type is built, so a port without them builds
@@ -418,13 +418,13 @@ pub enum ServiceEnd<'p, 'id, B: PortBackend> {
 /// and the received buffers a disable returned, which go back with the
 /// next phase. `RX` bounds those buffers: at least the port's receive
 /// buffers.
-pub struct StationService<'a, 'id, B: StationPort<'id>, S, const RX: usize> {
+pub struct StationService<'id, B: StationPort<'id>, S, const RX: usize> {
     /// The station.
     pub station: PortStation<'id, B>,
     /// Its data machine.
     pub data: PortData<'id, B>,
     /// The arbiter of the port.
-    pub arbiter: PortArbiter<'a, 'id, B>,
+    pub arbiter: PortArbiter<'id, B>,
     /// The rates of the station's frames and data.
     pub rates: S,
     /// What the service dropped or could not send.
@@ -443,15 +443,15 @@ enum Next<K> {
     Poisoned,
 }
 
-impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: usize>
-    StationService<'a, 'id, B, S, RX>
+impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: usize>
+    StationService<'id, B, S, RX>
 {
     /// The service of the machines the composition built, its frames at
     /// the rates `rates` selects.
     pub fn new(
         station: PortStation<'id, B>,
         data: PortData<'id, B>,
-        arbiter: PortArbiter<'a, 'id, B>,
+        arbiter: PortArbiter<'id, B>,
         rates: S,
     ) -> Self {
         // The port's received buffers fit the held ones.
@@ -1340,7 +1340,7 @@ fn station_action<
     now: Instant,
     phase: &mut P,
     io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
-    arbiter: &mut PortArbiter<'_, 'id, B>,
+    arbiter: &mut PortArbiter<'id, B>,
     rates: &S,
     configuring: &mut Option<oer_ieee80211_sta::machine::PendingConfiguration<'id>>,
     action: StaAction<'_, 'id, PortStaTokens<'id, B::Types, B::Small>, B::Caps>,

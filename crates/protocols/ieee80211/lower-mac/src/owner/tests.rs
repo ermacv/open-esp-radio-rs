@@ -73,16 +73,38 @@ fn the_qos_ack_policy_follows_the_frames_response() {
     let header = header(0x0388, Some(A), Some(qos(6)), None).unwrap();
     assert_eq!(header.len(), 32);
     let mut out = [0; 32];
-    crate::HeaderLayout::new(header, &mut out)
+    crate::HeaderLayout::new(AckHeader::new(header).unwrap(), &mut out)
         .unwrap()
-        .encode(false);
+        .encode();
     assert_eq!(out[30] & 0b0110_0000, 0, "Normal Ack");
     assert_eq!(out[30] & 0x0f, 6);
-    crate::HeaderLayout::new(header, &mut out)
+    crate::HeaderLayout::new(NoAckHeader::new(header).unwrap(), &mut out)
         .unwrap()
-        .encode(true);
+        .encode();
     assert_eq!(out[30] & 0b0110_0000, 0b0010_0000, "No Ack");
     assert_eq!(&out[4..10], &B);
+}
+
+#[test]
+fn group_qos_frames_encode_no_ack_without_an_individual_response() {
+    let group = GroupAddress::new([0xff; 6]).unwrap();
+    let header = HeaderSpec::new(
+        FrameControl::new(0x0288).unwrap(),
+        0,
+        group,
+        A,
+        B,
+        0,
+        None,
+        Some(qos(3)),
+        None,
+    )
+    .unwrap();
+    let mut out = [0; 26];
+    crate::HeaderLayout::new(header, &mut out).unwrap().encode();
+    assert_eq!(out[24] & 0b0110_0000, 0b0010_0000);
+    assert_eq!(out[24] & 0x0f, 3);
+    assert_eq!(&out[4..10], &group.get());
 }
 
 #[test]
@@ -111,14 +133,14 @@ fn a_header_decodes_as_it_was_encoded() {
     ] {
         let spec = header(control, address4, qos, ht).unwrap();
         let mut bytes = [0; 36];
-        crate::HeaderLayout::new(spec, &mut bytes)
+        crate::HeaderLayout::new(AckHeader::new(spec).unwrap(), &mut bytes)
             .unwrap()
-            .encode(false);
+            .encode();
         let decoded = HeaderSpec::decode(&bytes[..spec.len()], IndividualAddress::new).unwrap();
         for len in 0..spec.len() {
             let mut short = [0xa5; 36];
             assert!(matches!(
-                crate::HeaderLayout::new(spec, &mut short[..len]),
+                crate::HeaderLayout::new(AckHeader::new(spec).unwrap(), &mut short[..len]),
                 Err(crate::LayoutError::StorageTooShort)
             ));
             assert_eq!(short, [0xa5; 36]);

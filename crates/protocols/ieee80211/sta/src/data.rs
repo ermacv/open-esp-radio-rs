@@ -830,9 +830,9 @@ fn encode_frame<
             None,
         )?;
         let header_length = header.len();
-        oer_ieee80211_lower_mac::HeaderLayout::new(header, frame)
+        oer_ieee80211_lower_mac::HeaderLayout::new(AckHeader::new(header)?, frame)
             .ok()?
-            .encode(false);
+            .encode();
         let payload = frame.split_at_mut_checked(header_length)?.1;
         let (llc, payload) = payload.split_first_chunk_mut::<8>()?;
         let [e0, e1] = msdu.ether_type.to_be_bytes();

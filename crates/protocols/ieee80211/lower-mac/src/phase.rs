@@ -650,9 +650,12 @@ pub enum TxProtection<Key> {
 }
 
 impl<Key> TxProtection<Key> {
-    /// Whether preparation reserves and writes a CCMP header.
-    pub const fn is_protected(&self) -> bool {
-        matches!(self, Self::Ccmp(_))
+    /// Derive the MAC/CCMP layout from this operation's key selection.
+    pub(crate) const fn layout(&self) -> crate::MpduProtection {
+        match self {
+            Self::Open => crate::MpduProtection::Open,
+            Self::Ccmp(_) => crate::MpduProtection::Ccmp,
+        }
     }
 }
 

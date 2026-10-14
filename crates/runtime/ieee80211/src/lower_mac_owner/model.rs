@@ -2687,8 +2687,11 @@ impl<'id, R, K, X: ModelContext, S: AggregateState> PhaseAggregate<'id>
     fn tid(&self) -> Tid {
         self.tid
     }
-    fn is_protected(&self) -> bool {
-        self.key.is_some()
+    fn protection(&self) -> oer_ieee80211_lower_mac::MpduProtection {
+        match &self.key {
+            None => oer_ieee80211_lower_mac::MpduProtection::Open,
+            Some(_) => oer_ieee80211_lower_mac::MpduProtection::Ccmp,
+        }
     }
     fn subframes(&self) -> usize {
         self.subframes.len()

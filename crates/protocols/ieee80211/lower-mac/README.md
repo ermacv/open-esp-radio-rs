@@ -43,6 +43,8 @@ back; its operations are synchronous and never wait:
   where its buffer class is concrete and returns a closed `Prepared` value.
   `TxSource::check` first consumes the raw source into `CheckedTxSource`;
   layout errors return the source before entering the backend. `HeaderLayout`
+  accepts an `AckHeader`, `NoAckHeader` or group-addressed header; this type
+  selects QoS Ack Policy, with no separate flag at encoding. It
   obtains exactly sized arrays with `split_first_chunk_mut`, then the header
   encoder writes into `&mut [u8; N]` without a fallible operation. Storage
   shortage, CCMP shortage and body overlap are `LayoutError`; backend
@@ -51,7 +53,9 @@ back; its operations are synchronous and never wait:
   It retains the phase, install, role and key borrow. `ClassSizedFrame`
   carries a portable machine's size proof until the service adds phase-bound
   rates, without rechecking the class. `TxProtection::{Open, Ccmp(key)}` in
-  the fresh source is the sole source of the Protected bit. Station TX keys
+  the fresh source is the sole source of the Protected bit. It derives
+  `MpduProtection` for the layout; callers cannot change a header's protection
+  independently through a public setter. Station TX keys
   are pairwise; AP TX may use pairwise or group keys. The portable
   `MpduLayout` constructor checks CCMP room and tail-body overlap once,
   before any header/body write, admission or PN allocation.
@@ -66,6 +70,8 @@ back; its operations are synchronous and never wait:
   Retiring the original installation makes preparation refuse
   `RetransmissionKey`, even if the slot and key material are reused.
   An aggregate builder owns its receiver, TID, role, rate and one protection.
+  Its `PhaseAggregate::protection` derives the same typed layout value from
+  its retained key, and each subframe produces an `AckHeader`.
   `CheckedAggregate::new` checks the class-specific `SubframeSource` with
   its builder and owns both until `TxBufferPool::push_aggregate` consumes it.
   The proof cannot be transferred to another builder. Fresh subframes have no protection argument, and

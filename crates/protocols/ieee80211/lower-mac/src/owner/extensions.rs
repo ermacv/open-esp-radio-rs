@@ -64,6 +64,24 @@ impl AggregateState for NonEmptyAggregate {
 /// A class-checked QoS data description. The builder supplies receiver and
 /// TID when encoding it, together with its one protection. Other header fields
 /// and the MPDU length remain this subframe's own.
+///
+/// ```compile_fail,E0308
+/// use oer_ieee80211_lower_mac::{ClassSubframe, Ieee80211Capabilities, Tid, TxBufferClass};
+/// use oer_ieee80211_mac::address::IndividualAddress;
+/// fn flag<C: TxBufferClass, K: Ieee80211Capabilities>(
+///     frame: &ClassSubframe<C, K>, receiver: IndividualAddress, tid: Tid,
+/// ) { let _header = frame.header(receiver, tid, true); }
+/// ```
+///
+/// ```
+/// use oer_ieee80211_lower_mac::{
+///     AckHeader, ClassSubframe, Ieee80211Capabilities, MpduProtection, Tid, TxBufferClass,
+/// };
+/// use oer_ieee80211_mac::address::IndividualAddress;
+/// fn typed<C: TxBufferClass, K: Ieee80211Capabilities>(
+///     frame: &ClassSubframe<C, K>, receiver: IndividualAddress, tid: Tid,
+/// ) -> AckHeader { frame.header(receiver, tid, MpduProtection::Open) }
+/// ```
 pub struct ClassSubframe<C, K> {
     frame: super::SizedFrame<super::AckHeader, K>,
     qos: super::QosControl,
@@ -92,15 +110,17 @@ impl<C: TxBufferClass, K: Ieee80211Capabilities> ClassSubframe<C, K> {
         &self,
         receiver: super::IndividualAddress,
         tid: Tid,
-        protected: bool,
-    ) -> super::HeaderSpec<super::IndividualAddress> {
+        protection: crate::MpduProtection,
+    ) -> super::AckHeader {
         let mut qos = self.qos;
         qos.tid = tid;
-        self.frame
-            .header()
-            .header()
-            .in_aggregate(receiver, qos)
-            .with_protection(protected)
+        super::AckHeader(
+            self.frame
+                .header()
+                .header()
+                .in_aggregate(receiver, qos)
+                .with_protection(protection),
+        )
     }
 }
 
@@ -207,8 +227,8 @@ pub trait PhaseAggregate<'id> {
     fn receiver(&self) -> super::IndividualAddress;
     /// The TID fixed when this builder was created.
     fn tid(&self) -> Tid;
-    /// Whether the builder reserves CCMP space for all fresh subframes.
-    fn is_protected(&self) -> bool;
+    /// The encryption fixed for all fresh subframes by this builder's key.
+    fn protection(&self) -> crate::MpduProtection;
     /// Number of subframes currently held.
     fn subframes(&self) -> usize;
     /// Cancel preparation, recovering all original MPDUs and fresh bodies.

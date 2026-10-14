@@ -17,6 +17,40 @@ pub enum LayoutError {
 
 /// A MAC header and its exact-size writable array. Only this constructor
 /// checks storage length; the selected encoder takes an array and is total.
+///
+/// A caller cannot replace the header's acknowledgement policy at encoding:
+///
+/// ```compile_fail,E0061
+/// use oer_ieee80211_lower_mac::HeaderLayout;
+/// use oer_ieee80211_mac::address::IndividualAddress;
+/// fn policy(layout: HeaderLayout<'_, IndividualAddress>) { layout.encode(true); }
+/// ```
+///
+/// An individual header must have a checked response kind:
+///
+/// ```compile_fail,E0277
+/// use oer_ieee80211_lower_mac::{HeaderLayout, HeaderSpec};
+/// use oer_ieee80211_mac::address::IndividualAddress;
+/// fn raw(header: HeaderSpec<IndividualAddress>, out: &mut [u8]) {
+///     drop(HeaderLayout::new(header, out));
+/// }
+/// ```
+///
+/// Each accepted header type carries its own response policy:
+///
+/// ```
+/// use oer_ieee80211_lower_mac::{
+///     AckHeader, GroupAddress, HeaderLayout, HeaderSpec, LayoutError, NoAckHeader,
+/// };
+/// fn typed(
+///     ack: AckHeader, no_ack: NoAckHeader, group: HeaderSpec<GroupAddress>, out: &mut [u8],
+/// ) -> Result<(), LayoutError> {
+///     HeaderLayout::new(ack, out)?.encode();
+///     HeaderLayout::new(no_ack, out)?.encode();
+///     HeaderLayout::new(group, out)?.encode();
+///     Ok(())
+/// }
+/// ```
 pub struct HeaderLayout<'a, A> {
     inner: HeaderStorage<'a, A>,
 }
@@ -31,47 +65,52 @@ enum HeaderStorage<'a, A> {
 }
 impl<'a, A: crate::ReceiverAddress> HeaderLayout<'a, A> {
     /// Prove the storage length, without writing any bytes on refusal.
-    pub fn new(header: crate::HeaderSpec<A>, out: &'a mut [u8]) -> Result<Self, LayoutError> {
+    pub fn new<H: crate::ResponseHeader<Address = A>>(
+        header: H,
+        out: &'a mut [u8],
+    ) -> Result<Self, LayoutError> {
         use crate::owner::HeaderLength;
+        let policy = H::ACK_POLICY;
+        let header = header.into_header();
         let inner = match header.encoded_length() {
             HeaderLength::L24 => HeaderStorage::H24(
-                header.encoder(),
+                header.encoder(policy),
                 out.split_first_chunk_mut::<24>()
                     .ok_or(LayoutError::StorageTooShort)?
                     .0,
             ),
             HeaderLength::L26 => HeaderStorage::H26(
-                header.encoder(),
+                header.encoder(policy),
                 out.split_first_chunk_mut::<26>()
                     .ok_or(LayoutError::StorageTooShort)?
                     .0,
             ),
             HeaderLength::L28 => HeaderStorage::H28(
-                header.encoder(),
+                header.encoder(policy),
                 out.split_first_chunk_mut::<28>()
                     .ok_or(LayoutError::StorageTooShort)?
                     .0,
             ),
             HeaderLength::L30 => HeaderStorage::H30(
-                header.encoder(),
+                header.encoder(policy),
                 out.split_first_chunk_mut::<30>()
                     .ok_or(LayoutError::StorageTooShort)?
                     .0,
             ),
             HeaderLength::L32 => HeaderStorage::H32(
-                header.encoder(),
+                header.encoder(policy),
                 out.split_first_chunk_mut::<32>()
                     .ok_or(LayoutError::StorageTooShort)?
                     .0,
             ),
             HeaderLength::L34 => HeaderStorage::H34(
-                header.encoder(),
+                header.encoder(policy),
                 out.split_first_chunk_mut::<34>()
                     .ok_or(LayoutError::StorageTooShort)?
                     .0,
             ),
             HeaderLength::L36 => HeaderStorage::H36(
-                header.encoder(),
+                header.encoder(policy),
                 out.split_first_chunk_mut::<36>()
                     .ok_or(LayoutError::StorageTooShort)?
                     .0,
@@ -80,15 +119,15 @@ impl<'a, A: crate::ReceiverAddress> HeaderLayout<'a, A> {
         Ok(Self { inner })
     }
     /// Encode into the array whose length this layout established.
-    pub fn encode(self, no_ack: bool) {
+    pub fn encode(self) {
         match self.inner {
-            HeaderStorage::H24(header, out) => header.encode(out, no_ack),
-            HeaderStorage::H26(header, out) => header.encode(out, no_ack),
-            HeaderStorage::H28(header, out) => header.encode(out, no_ack),
-            HeaderStorage::H30(header, out) => header.encode(out, no_ack),
-            HeaderStorage::H32(header, out) => header.encode(out, no_ack),
-            HeaderStorage::H34(header, out) => header.encode(out, no_ack),
-            HeaderStorage::H36(header, out) => header.encode(out, no_ack),
+            HeaderStorage::H24(header, out) => header.encode(out),
+            HeaderStorage::H26(header, out) => header.encode(out),
+            HeaderStorage::H28(header, out) => header.encode(out),
+            HeaderStorage::H30(header, out) => header.encode(out),
+            HeaderStorage::H32(header, out) => header.encode(out),
+            HeaderStorage::H34(header, out) => header.encode(out),
+            HeaderStorage::H36(header, out) => header.encode(out),
         }
     }
 }
@@ -106,17 +145,46 @@ pub enum MpduKind {
     BlockAckRequest,
 }
 
+/// The MPDU encryption selected by its operation or aggregate builder.
+/// This layout value carries no key; the preparation retains the installed
+/// key separately in its `TxProtection` and derives this value from it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MpduProtection {
+    /// An unencrypted MAC frame, with no CCMP prefix.
+    Open,
+    /// A CCMP frame with its reserved CCMP header.
+    Ccmp,
+}
+
 /// An immutable proof of the MAC/CCMP prefix and tail-body placement.
 /// Constructors use a checked frame length. Backends keep this proof beside
 /// its buffer through preparation, admission and return; they do not repeat
 /// portable layout checks or allocate a PN before this proof exists.
+///
+/// ```compile_fail,E0308
+/// use oer_ieee80211_lower_mac::{Ieee80211Capabilities, MpduLayout, TxFrame};
+/// fn flag<K: Ieee80211Capabilities>(frame: &TxFrame<'_, K>) {
+///     drop(MpduLayout::new(frame, 0, true));
+/// }
+/// ```
+///
+/// ```
+/// use oer_ieee80211_lower_mac::{
+///     Ieee80211Capabilities, LayoutError, MpduLayout, MpduProtection, TxFrame,
+/// };
+/// fn open<K: Ieee80211Capabilities>(frame: &TxFrame<'_, K>) -> Result<(), LayoutError> {
+///     let layout = MpduLayout::new(frame, 0, MpduProtection::Open)?;
+///     assert_eq!(layout.protection(), MpduProtection::Open);
+///     Ok(())
+/// }
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct MpduLayout {
     len: usize,
     header_len: usize,
     prefix_len: usize,
     body_start: usize,
-    protected: bool,
+    protection: MpduProtection,
     kind: MpduKind,
     recipient: Option<(IndividualAddress, Tid)>,
 }
@@ -125,7 +193,7 @@ impl MpduLayout {
     pub fn new<K: Ieee80211Capabilities>(
         frame: &TxFrame<'_, K>,
         body_len: usize,
-        protected: bool,
+        protection: MpduProtection,
     ) -> Result<Self, LayoutError> {
         let (header_len, kind, recipient) = match frame {
             TxFrame::Individual { frame, .. } => {
@@ -146,7 +214,7 @@ impl MpduLayout {
             frame.mpdu_len(),
             header_len,
             body_len,
-            protected,
+            protection,
             kind,
             recipient,
         )
@@ -155,7 +223,7 @@ impl MpduLayout {
     pub fn subframe<C: TxBufferClass, K: Ieee80211Capabilities>(
         frame: &ClassSubframe<C, K>,
         body_len: usize,
-        protected: bool,
+        protection: MpduProtection,
         receiver: IndividualAddress,
         tid: Tid,
     ) -> Result<Self, LayoutError> {
@@ -163,7 +231,7 @@ impl MpduLayout {
             frame.frame().len().get(),
             frame.frame().header().header_len(),
             body_len,
-            protected,
+            protection,
             MpduKind::Individual,
             Some((receiver, tid)),
         )
@@ -172,17 +240,16 @@ impl MpduLayout {
         len: usize,
         header_len: usize,
         body_len: usize,
-        protected: bool,
+        protection: MpduProtection,
         kind: MpduKind,
         recipient: Option<(IndividualAddress, Tid)>,
     ) -> Result<Self, LayoutError> {
-        let prefix_len = if protected {
-            header_len
-                .checked_add(8)
+        let prefix_len = match protection {
+            MpduProtection::Open => header_len,
+            MpduProtection::Ccmp => header_len
+                .checked_add(oer_ieee80211_mac::ccmp::CCMP_HEADER_LEN)
                 .filter(|end| *end <= len)
-                .ok_or(LayoutError::CcmpHeaderTooShort)?
-        } else {
-            header_len
+                .ok_or(LayoutError::CcmpHeaderTooShort)?,
         };
         let body_start = len
             .checked_sub(body_len)
@@ -193,7 +260,7 @@ impl MpduLayout {
             header_len,
             prefix_len,
             body_start,
-            protected,
+            protection,
             kind,
             recipient,
         })
@@ -218,9 +285,9 @@ impl MpduLayout {
     pub const fn body_start(self) -> usize {
         self.body_start
     }
-    /// Whether the builder/preparation selected CCMP.
-    pub const fn protected(self) -> bool {
-        self.protected
+    /// The encryption selected by the builder or preparation.
+    pub const fn protection(self) -> MpduProtection {
+        self.protection
     }
     /// Response kind retained for a retransmission.
     pub const fn kind(self) -> MpduKind {
@@ -328,7 +395,7 @@ impl<
                 let checked = MpduLayout::new(
                     frame.frame(),
                     body.as_ref().map_or(0, |body| body.bytes().len()),
-                    protection.is_protected(),
+                    protection.layout(),
                 )
                 .and_then(|layout| {
                     layout.initialize(
@@ -378,19 +445,14 @@ impl MpduLayout {
     ) -> Result<Self, LayoutError> {
         let (prefix, body_memory) = self.memory(bytes)?;
         match frame {
-            TxFrame::Individual { frame, .. } => HeaderLayout::new(
-                frame.header().header().with_protection(self.protected),
-                prefix,
-            )?
-            .encode(false),
-            TxFrame::IndividualNoAck { frame, .. } => HeaderLayout::new(
-                frame.header().header().with_protection(self.protected),
-                prefix,
-            )?
-            .encode(true),
+            TxFrame::Individual { frame, .. } => {
+                HeaderLayout::new(frame.header().with_protection(self.protection), prefix)?.encode()
+            }
+            TxFrame::IndividualNoAck { frame, .. } => {
+                HeaderLayout::new(frame.header().with_protection(self.protection), prefix)?.encode()
+            }
             TxFrame::Group { frame, .. } => {
-                HeaderLayout::new(frame.header().with_protection(self.protected), prefix)?
-                    .encode(true)
+                HeaderLayout::new(frame.header().with_protection(self.protection), prefix)?.encode()
             }
             TxFrame::BlockAckRequest {
                 receiver,
@@ -427,7 +489,7 @@ impl MpduLayout {
         tid: Tid,
     ) -> Result<Self, LayoutError> {
         let (prefix, body_memory) = self.memory(bytes)?;
-        HeaderLayout::new(frame.header(receiver, tid, self.protected), prefix)?.encode(false);
+        HeaderLayout::new(frame.header(receiver, tid, self.protection), prefix)?.encode();
         if let Some(body) = body {
             for (out, byte) in body_memory.iter_mut().zip(body) {
                 *out = *byte;
@@ -506,7 +568,7 @@ impl<A, B: crate::TxBufferMemory, N, C: TxBufferClass, K: Ieee80211Capabilities,
                 let checked = MpduLayout::subframe(
                     &frame,
                     body.as_ref().map_or(0, |body| body.bytes().len()),
-                    aggregate.is_protected(),
+                    aggregate.protection(),
                     aggregate.receiver(),
                     aggregate.tid(),
                 )

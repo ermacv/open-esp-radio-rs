@@ -682,6 +682,15 @@ impl FrameControl {
     }
 }
 
+/// The on-wire acknowledgement policy chosen by a checked response header.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum QosAckPolicy {
+    /// The addressed receiver acknowledges this frame.
+    Normal,
+    /// No acknowledgement is solicited.
+    NoAck,
+}
+
 /// The QoS Control field of a QoS data frame, but its Ack Policy: the
 /// backend writes that from the frame's response
 /// (its [`TxFrame`] kind), the one source of it.
@@ -695,12 +704,14 @@ pub struct QosControl {
 }
 
 impl QosControl {
-    /// The field, with the Ack Policy of a frame that solicits an ACK
-    /// (`no_ack` false: Normal Ack) or none (No Ack).
-    pub const fn encode(self, no_ack: bool) -> u16 {
+    /// The field, with the policy derived from its checked response header.
+    pub const fn encode(self, policy: QosAckPolicy) -> u16 {
         self.tid.get() as u16
             | (self.end_of_service_period as u16) << 4
-            | (no_ack as u16) << 5
+            | match policy {
+                QosAckPolicy::Normal => 0,
+                QosAckPolicy::NoAck => 1 << 5,
+            }
             | (self.amsdu_present as u16) << 7
             | (self.high as u16) << 8
     }
@@ -711,6 +722,27 @@ impl QosControl {
 /// Frame Control: a fourth address exactly when To DS and From DS are both
 /// set, a QoS Control exactly in a QoS data frame, an HT Control exactly
 /// when the Order bit is set in a QoS data or management frame.
+///
+/// Only preparation derives Protected from the operation's protection:
+///
+/// ```compile_fail,E0624
+/// use oer_ieee80211_lower_mac::HeaderSpec;
+/// use oer_ieee80211_mac::address::IndividualAddress;
+/// fn flag(header: HeaderSpec<IndividualAddress>) {
+///     let _header = header.with_protection(false);
+/// }
+/// ```
+///
+/// A caller passes its checked response header to the encoder. Preparation
+/// supplies Protected from `TxProtection` when constructing a fresh MPDU.
+///
+/// ```
+/// use oer_ieee80211_lower_mac::{AckHeader, HeaderLayout, LayoutError};
+/// fn encode(header: AckHeader, out: &mut [u8]) -> Result<(), LayoutError> {
+///     HeaderLayout::new(header, out)?.encode();
+///     Ok(())
+/// }
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct HeaderSpec<A> {
     frame_control: FrameControl,
@@ -753,9 +785,13 @@ impl<A: ReceiverAddress> HeaderSpec<A> {
         self.receiver
     }
     /// Derive the Protected bit from the preparation's sole protection value.
-    pub fn with_protection(mut self, protected: bool) -> Self {
-        self.frame_control.0 =
-            (self.frame_control.0 & !0x4000) | if protected { 0x4000 } else { 0 };
+    pub(crate) fn with_protection(mut self, protection: crate::MpduProtection) -> Self {
+        const PROTECTED: u16 = 1 << 14;
+        self.frame_control.0 = (self.frame_control.0 & !PROTECTED)
+            | match protection {
+                crate::MpduProtection::Open => 0,
+                crate::MpduProtection::Ccmp => PROTECTED,
+            };
         self
     }
     /// Encode a fresh aggregate subframe with its builder's receiver and TID.
@@ -870,8 +906,11 @@ impl<A: ReceiverAddress> HeaderSpec<A> {
         false
     }
 
-    pub(crate) fn encoder<const N: usize>(self) -> HeaderEncoder<A, N> {
-        HeaderEncoder { header: self }
+    pub(crate) fn encoder<const N: usize>(self, policy: QosAckPolicy) -> HeaderEncoder<A, N> {
+        HeaderEncoder {
+            header: self,
+            policy,
+        }
     }
 }
 
@@ -882,7 +921,7 @@ impl<A: ReceiverAddress> HeaderSpec<A> {
 /// use oer_ieee80211_mac::address::IndividualAddress;
 /// use oer_ieee80211_lower_mac::{owner::HeaderEncoder};
 /// fn short(encoder: HeaderEncoder<IndividualAddress, 24>) {
-///     encoder.encode(&mut [0; 23], false);
+///     encoder.encode(&mut [0; 23]);
 /// }
 /// ```
 ///
@@ -890,15 +929,16 @@ impl<A: ReceiverAddress> HeaderSpec<A> {
 /// use oer_ieee80211_mac::address::IndividualAddress;
 /// use oer_ieee80211_lower_mac::{owner::HeaderEncoder};
 /// fn sized(encoder: HeaderEncoder<IndividualAddress, 24>) {
-///     encoder.encode(&mut [0; 24], false);
+///     encoder.encode(&mut [0; 24]);
 /// }
 /// ```
 pub struct HeaderEncoder<A, const N: usize> {
     header: HeaderSpec<A>,
+    policy: QosAckPolicy,
 }
 impl<A: ReceiverAddress, const N: usize> HeaderEncoder<A, N> {
     /// Write this header into exactly its storage. This operation cannot fail.
-    pub fn encode(self, out: &mut [u8; N], no_ack: bool) {
+    pub fn encode(self, out: &mut [u8; N]) {
         let header = self.header;
         let fields = header
             .frame_control
@@ -914,7 +954,7 @@ impl<A: ReceiverAddress, const N: usize> HeaderEncoder<A, N> {
             .chain(
                 header
                     .qos
-                    .map(|qos| qos.encode(no_ack).to_le_bytes())
+                    .map(|qos| qos.encode(self.policy).to_le_bytes())
                     .into_iter()
                     .flatten(),
             )
@@ -991,6 +1031,10 @@ impl AckHeader {
     pub const fn header(&self) -> &HeaderSpec<IndividualAddress> {
         &self.0
     }
+
+    pub(crate) fn with_protection(self, protection: crate::MpduProtection) -> Self {
+        Self(self.0.with_protection(protection))
+    }
 }
 
 /// The header of an individual frame that solicits no ACK: one that says
@@ -1014,6 +1058,51 @@ impl NoAckHeader {
     /// The header.
     pub const fn header(&self) -> &HeaderSpec<IndividualAddress> {
         &self.0
+    }
+
+    pub(crate) fn with_protection(self, protection: crate::MpduProtection) -> Self {
+        Self(self.0.with_protection(protection))
+    }
+}
+
+mod response_header {
+    pub trait Sealed {}
+}
+
+/// A header whose response policy is fixed by its type. Only `AckHeader`,
+/// `NoAckHeader` and a group-addressed `HeaderSpec` implement this sealed
+/// contract; a raw individually addressed header has no response proof.
+pub trait ResponseHeader: response_header::Sealed {
+    /// Its receiver's checked address type.
+    type Address: ReceiverAddress;
+    /// QoS Ack Policy selected by this header kind.
+    const ACK_POLICY: QosAckPolicy;
+    /// Consume the response proof into its fields for encoding.
+    fn into_header(self) -> HeaderSpec<Self::Address>;
+}
+
+impl response_header::Sealed for AckHeader {}
+impl ResponseHeader for AckHeader {
+    type Address = IndividualAddress;
+    const ACK_POLICY: QosAckPolicy = QosAckPolicy::Normal;
+    fn into_header(self) -> HeaderSpec<Self::Address> {
+        self.0
+    }
+}
+impl response_header::Sealed for NoAckHeader {}
+impl ResponseHeader for NoAckHeader {
+    type Address = IndividualAddress;
+    const ACK_POLICY: QosAckPolicy = QosAckPolicy::NoAck;
+    fn into_header(self) -> HeaderSpec<Self::Address> {
+        self.0
+    }
+}
+impl response_header::Sealed for HeaderSpec<GroupAddress> {}
+impl ResponseHeader for HeaderSpec<GroupAddress> {
+    type Address = GroupAddress;
+    const ACK_POLICY: QosAckPolicy = QosAckPolicy::NoAck;
+    fn into_header(self) -> HeaderSpec<Self::Address> {
+        self
     }
 }
 

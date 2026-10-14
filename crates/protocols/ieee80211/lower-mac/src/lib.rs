@@ -58,7 +58,7 @@ mod layout;
 pub use counter::Counter;
 pub use layout::{
     CheckedAggregate, CheckedSubframe, CheckedTxSource, FreshSource, FreshSubframe, HeaderLayout,
-    LaidOut, LayoutError, LayoutRefused, MpduKind, MpduLayout,
+    LaidOut, LayoutError, LayoutRefused, MpduKind, MpduLayout, MpduProtection,
 };
 pub mod control;
 pub mod extensions;
@@ -115,10 +115,10 @@ pub use oer_radio_port::{
 pub use owner::{
     AccessPoint, AckHeader, AddressSetup, BssColor, Ccmp128Key, FrameControl, FrameHeader,
     GroupAddress, HeaderSpec, Ieee80211Capabilities, InterfaceRole, LegacyPhaseRate,
-    LowerMacBackend, LowerMacSetup, MpduLength, NoAckHeader, PhaseRate, QosControl,
-    ReceiverAddress, SizedFrame, Station, StationReceive, SupportedBackoff, SupportedBlockAck,
-    SupportedChannel, SupportedCoex, SupportedEdca, SupportedFilter, SupportedNoAck,
-    SupportedPower, Tid, TxFrame,
+    LowerMacBackend, LowerMacSetup, MpduLength, NoAckHeader, PhaseRate, QosAckPolicy, QosControl,
+    ReceiverAddress, ResponseHeader, SizedFrame, Station, StationReceive, SupportedBackoff,
+    SupportedBlockAck, SupportedChannel, SupportedCoex, SupportedEdca, SupportedFilter,
+    SupportedNoAck, SupportedPower, Tid, TxFrame,
 };
 pub use owner::{
     AggregateAttempt, AggregateParts, AggregatePushResult, AggregateRefused, AggregateState,

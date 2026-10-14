@@ -80,7 +80,7 @@ fn returned(
         }) => {
             let end = match completion {
                 TxOutcome::Ended {
-                    transmissions: 1,
+                    last: Some((core::num::NonZeroU16::MIN, _)),
                     status: TxEndStatus::Delivered,
                     ..
                 } => End::Completed,

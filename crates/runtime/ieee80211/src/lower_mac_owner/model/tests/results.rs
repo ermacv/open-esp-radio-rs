@@ -137,8 +137,7 @@ impl Work for Results {
                 }
                 AirResult::Acknowledged => TxOutcome::Ended {
                     status: TxEndStatus::Delivered,
-                    transmissions: 1,
-                    rate: Some(rate),
+                    last: Some((NonZeroU16::MIN, rate)),
                     ack: Some(TxAck {
                         block_ack: match self.form {
                             Form::Single => None,
@@ -152,14 +151,12 @@ impl Work for Results {
                 },
                 AirResult::AckTimeout => TxOutcome::Ended {
                     status: TxEndStatus::AckTimeout,
-                    transmissions: 1,
-                    rate: Some(rate),
+                    last: Some((NonZeroU16::MIN, rate)),
                     ack: None,
                 },
                 AirResult::Collision => TxOutcome::Ended {
                     status: TxEndStatus::ContentionLimit,
-                    transmissions: 0,
-                    rate: None,
+                    last: None,
                     ack: None,
                 },
             };

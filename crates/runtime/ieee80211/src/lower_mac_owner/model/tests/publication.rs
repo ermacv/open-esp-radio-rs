@@ -107,7 +107,7 @@ impl Work for DuringPublication {
                 completion,
                 TxOutcome::Ended {
                     status: TxEndStatus::Delivered,
-                    transmissions: 1,
+                    last: Some((core::num::NonZeroU16::MIN, _)),
                     ..
                 }
             )),

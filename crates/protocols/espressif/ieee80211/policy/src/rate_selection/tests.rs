@@ -2,6 +2,7 @@
 
 extern crate std;
 
+use core::num::NonZeroU16;
 use std::vec::Vec;
 
 use oer_ieee80211_lower_mac::{
@@ -136,8 +137,8 @@ fn plan_walk(plan: &RetryPlan<PhyRate>) -> Vec<PhyRate> {
 fn completion(status: TxEndStatus, transmissions: u16) -> TxOutcome {
     TxOutcome::Ended {
         status,
-        transmissions,
-        rate: None,
+        last: NonZeroU16::new(transmissions)
+            .map(|count| (count, PhyRate::Legacy(LegacyRate::Ofdm6M))),
         ack: (status == TxEndStatus::Delivered).then_some(oer_ieee80211_lower_mac::TxAck {
             snr_db: Some(30),
             ..Default::default()
@@ -363,7 +364,9 @@ fn unknown_outcomes_and_contention_exhaustion_never_change_rate_state() {
         TxOutcome::Withdrawn(WithdrawCause::KeyRemoved),
         completion(TxEndStatus::ContentionLimit, 0),
         completion(TxEndStatus::ContentionLimit, 3),
+        completion(TxEndStatus::CtsTimeout, 0),
     ] {
+        assert!(!outcome.is_rate_sample());
         for _ in 0..64 {
             RateSelection::<Measured>::completed(
                 &mut selection,

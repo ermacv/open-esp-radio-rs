@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::join::test_support::{BSSID, LOCAL, answer_authentication, association_response};
+use core::num::NonZeroU16;
 use oer_ieee80211_arbiter::{
     AccessPointCommand, AccessPointFact, Arbiter, ArbiterAction, ArbiterPolicy, NoReservation,
 };
@@ -12,7 +13,7 @@ use oer_ieee80211_lower_mac::{
     HardwareServices, LowerMacCapabilities, PhyFormatSet, RateSupport, RxMeta, WidthSet,
 };
 use oer_ieee80211_mac::channel_switch::ChannelSwitchMode;
-use oer_ieee80211_mac::phy::{HeMcs, HtMcs};
+use oer_ieee80211_mac::phy::{HeMcs, HtMcs, LegacyRate, PhyRate};
 use oer_radio_port::{Mint, branded};
 use std::vec::Vec;
 
@@ -461,8 +462,7 @@ impl<'id> World<'id> {
                             TxEndStatus::AckTimeout
                         },
                         ack: None,
-                        transmissions: 1,
-                        rate: None,
+                        last: Some((NonZeroU16::MIN, PhyRate::Legacy(LegacyRate::Ofdm6M))),
                     },
                 },
             );
@@ -906,8 +906,7 @@ fn a_terminal_of_the_previous_connection_only_returns_its_resources() {
                 completion: TxOutcome::Ended {
                     status: TxEndStatus::Delivered,
                     ack: None,
-                    transmissions: 1,
-                    rate: None,
+                    last: Some((NonZeroU16::MIN, PhyRate::Legacy(LegacyRate::Ofdm6M))),
                 },
             },
         );
@@ -1515,8 +1514,7 @@ fn eapol_and_data_on_tid_7_share_one_counter_and_tid_0_runs_on_across_a_rekey() 
                 completion: TxOutcome::Ended {
                     status: TxEndStatus::Delivered,
                     ack: None,
-                    transmissions: 1,
-                    rate: None,
+                    last: Some((NonZeroU16::MIN, PhyRate::Legacy(LegacyRate::Ofdm6M))),
                 },
             });
             sent

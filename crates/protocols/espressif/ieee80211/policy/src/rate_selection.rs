@@ -30,7 +30,7 @@
 //! [owner decisions on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6132066470
 
 use core::marker::PhantomData;
-use core::num::{NonZeroU8, NonZeroU16};
+use core::num::NonZeroU8;
 
 use oer_ieee80211_lower_mac::{
     Band, Ieee80211Capabilities, Protection, RetryPlan, RetryStage, SignalMetadata, TxEndStatus,
@@ -328,14 +328,10 @@ impl<K: Ieee80211Capabilities, M: SignalMetadata> RateSelection<M> for Espressif
         }
         let TxOutcome::Ended {
             status,
-            transmissions,
+            last: Some((transmissions, _rate)),
             ack,
-            ..
         } = *completion
         else {
-            return;
-        };
-        let Some(transmissions) = NonZeroU16::new(transmissions) else {
             return;
         };
         let outcome = match status {

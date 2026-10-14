@@ -142,7 +142,7 @@ pub fn verify_barrier(case: BarrierCase, trace: BarrierTrace) -> Result<(), Viol
             outcome,
             TxOutcome::Ended {
                 status: TxEndStatus::Delivered,
-                transmissions: 1,
+                last: Some((core::num::NonZeroU16::MIN, _)),
                 ..
             }
         ),

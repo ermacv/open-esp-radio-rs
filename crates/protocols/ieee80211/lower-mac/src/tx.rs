@@ -10,6 +10,7 @@
 //! owner's memory or copies it into its own is the backend's choice, not
 //! the contract's.
 
+use core::num::NonZeroU16;
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
 /// The response the attempt solicits, which the hardware waits for.
@@ -189,6 +190,43 @@ pub struct TxAck {
 /// `Ended` claims an exact transmission count; rate selection ignores
 /// withdrawals, indeterminate outcomes and contention exhaustion.
 /// The next operation in the queue may proceed after every terminal.
+///
+/// A terminal cannot claim a rate with zero transmissions:
+///
+/// ```compile_fail,E0559
+/// use oer_ieee80211_lower_mac::{PhyRate, TxEndStatus, TxOutcome};
+/// fn zero(rate: PhyRate) -> TxOutcome {
+///     TxOutcome::Ended {
+///         status: TxEndStatus::ContentionLimit, transmissions: 0, rate: Some(rate), ack: None,
+///     }
+/// }
+/// ```
+///
+/// Nor can it report transmissions while omitting their last rate:
+///
+/// ```compile_fail,E0559
+/// use oer_ieee80211_lower_mac::{TxEndStatus, TxOutcome};
+/// fn missing_rate() -> TxOutcome {
+///     TxOutcome::Ended {
+///         status: TxEndStatus::AckTimeout, transmissions: 2, rate: None, ack: None,
+///     }
+/// }
+/// ```
+///
+/// The complete observation is either absent or carries both values:
+///
+/// ```
+/// use core::num::NonZeroU16;
+/// use oer_ieee80211_lower_mac::{PhyRate, TxEndStatus, TxOutcome};
+/// fn observed(rate: PhyRate) -> [TxOutcome; 2] {
+///     [
+///         TxOutcome::Ended { status: TxEndStatus::ContentionLimit, last: None, ack: None },
+///         TxOutcome::Ended {
+///             status: TxEndStatus::Delivered, last: Some((NonZeroU16::MIN, rate)), ack: None,
+///         },
+///     ]
+/// }
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TxOutcome {
     /// Lifecycle stopped the attempt before its plan ended; no transmission
@@ -199,11 +237,10 @@ pub enum TxOutcome {
     Ended {
         /// The known result, including known failure without an MPDU on air.
         status: TxEndStatus,
-        /// Exact MPDU transmissions, including the first; zero is possible
-        /// after protection or contention failure. Never publication count.
-        transmissions: u16,
-        /// The rate of the last MPDU transmitted, absent when none was.
-        rate: Option<crate::PhyRate>,
+        /// Exact MPDU transmission count, including the first, paired with
+        /// the last transmitted MPDU's rate. `None` means no MPDU reached air
+        /// after protection or contention failure; this is not publication count.
+        last: Option<(NonZeroU16, crate::PhyRate)>,
         /// Evidence from the solicited response.
         ack: Option<TxAck>,
     },
@@ -218,7 +255,7 @@ impl TxOutcome {
             self,
             Self::Ended {
                 status: TxEndStatus::Delivered | TxEndStatus::AckTimeout | TxEndStatus::CtsTimeout,
-                transmissions: 1..,
+                last: Some(_),
                 ..
             }
         )

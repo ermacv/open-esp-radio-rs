@@ -103,8 +103,11 @@ back; its operations are synchronous and never wait:
   The backend retries the head of its queue by the plan before the
   next attempt of that queue; the completion reports the transmissions made
   and the last rate, for the rate control above the port.
-  `Ended.transmissions` is exact (`u16` covers all four 255-transmission
-  stages). A hardware timeout with no completion ends as `Indeterminate`;
+  `Ended.last` holds the exact nonzero MPDU count together with the last
+  transmitted rate (`u16` covers all four 255-transmission stages). `None`
+  means no MPDU reached air. A collision at a later rate preserves the
+  preceding air transmission's count and rate. A hardware timeout with no
+  completion ends as `Indeterminate`;
   the backend does not republish that MPDU, stop the queue, or return its
   tail. `TxStatus` describes only Success, AckTimeout, CtsTimeout, Collision
   and TimedOut observations of a publication. Decoder/accounting faults

@@ -1,6 +1,7 @@
 //! The data machine's encapsulation, tokens and admission.
 
 use super::*;
+use core::num::NonZeroU16;
 use oer_ieee80211_lower_mac::{
     BandSet, Channel, ChannelWidth, CoexPriority, CoexPrioritySet, HardwareServices,
     Ieee80211Capabilities, LowerMacCapabilities, PhyFormatSet, RateSupport, ReceiveFilter,
@@ -8,7 +9,7 @@ use oer_ieee80211_lower_mac::{
 };
 use oer_ieee80211_lower_mac::{IndeterminateCause, WithdrawCause};
 use oer_ieee80211_mac::ccmp::{CcmpRxReplayEpoch, GroupKeyId};
-use oer_ieee80211_mac::phy::{HeMcs, HtMcs};
+use oer_ieee80211_mac::phy::{HeMcs, HtMcs, LegacyRate, PhyRate};
 use oer_ieee80211_mac::sequence::SequenceNumber;
 use oer_ieee80211_mac::station::StaSequenceCounter;
 use std::vec::Vec;
@@ -693,8 +694,8 @@ fn the_old_and_the_new_group_key_are_both_taken_until_the_old_is_removed() {
 fn ended(status: TxEndStatus, transmissions: u16) -> TxOutcome {
     TxOutcome::Ended {
         status,
-        transmissions,
-        rate: None,
+        last: NonZeroU16::new(transmissions)
+            .map(|count| (count, PhyRate::Legacy(LegacyRate::Ofdm6M))),
         ack: (status == TxEndStatus::Delivered).then_some(oer_ieee80211_lower_mac::TxAck {
             snr_db: Some(30),
             ..Default::default()

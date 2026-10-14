@@ -1143,7 +1143,7 @@ fn a_timeout_is_final_and_does_not_stop_or_withdraw_the_queue_tail() {
         outcomes[1],
         TxOutcome::Ended {
             status: TxEndStatus::Delivered,
-            transmissions: 1,
+            last: Some((core::num::NonZeroU16::MIN, _)),
             ..
         }
     ));
@@ -1176,8 +1176,7 @@ fn collisions_retry_the_head_then_end_at_contention_limit_without_air_transmissi
         outcomes.borrow()[0],
         TxOutcome::Ended {
             status: TxEndStatus::ContentionLimit,
-            transmissions: 0,
-            rate: None,
+            last: None,
             ..
         }
     ));
@@ -1185,7 +1184,7 @@ fn collisions_retry_the_head_then_end_at_contention_limit_without_air_transmissi
         outcomes.borrow()[1],
         TxOutcome::Ended {
             status: TxEndStatus::Delivered,
-            transmissions: 1,
+            last: Some((core::num::NonZeroU16::MIN, _)),
             ..
         }
     ));
@@ -1215,22 +1214,29 @@ impl Work for LongRetryPlan<'_> {
             mut large,
             ..
         } = resources;
-        for _ in 0..256 {
+        for _ in 0..1019 {
             self.0.answer(false);
         }
         self.0.answer(true);
         let rate = phase.rate(PhyRate::Legacy(LegacyRate::Ofdm6M)).unwrap();
-        let plan = RetryPlan::new(RetryStage {
+        let mut plan = RetryPlan::new(RetryStage {
             rate,
             transmissions: core::num::NonZeroU8::new(255).unwrap(),
             protection: Protection::None,
-        })
-        .then(RetryStage {
-            rate,
-            transmissions: core::num::NonZeroU8::new(2).unwrap(),
-            protection: Protection::None,
-        })
-        .unwrap();
+        });
+        for rate in [
+            LegacyRate::Ofdm12M,
+            LegacyRate::Ofdm24M,
+            LegacyRate::Ofdm54M,
+        ] {
+            plan = plan
+                .then(RetryStage {
+                    rate: phase.rate(PhyRate::Legacy(rate)).unwrap(),
+                    transmissions: core::num::NonZeroU8::MAX,
+                    protection: Protection::None,
+                })
+                .unwrap();
+        }
         let TxFrame::Individual { frame, .. } = data_frame(phase, false) else {
             unreachable!()
         };
@@ -1254,10 +1260,10 @@ impl Work for LongRetryPlan<'_> {
                 assert!(matches!(
                     completion,
                     TxOutcome::Ended {
-                        transmissions: 257,
+                        last: Some((count, PhyRate::Legacy(LegacyRate::Ofdm54M))),
                         status: TxEndStatus::Delivered,
                         ..
-                    }
+                    } if count.get() == 1020
                 ));
                 break;
             }
@@ -1266,17 +1272,102 @@ impl Work for LongRetryPlan<'_> {
 }
 
 #[test]
-fn ended_preserves_exact_counts_above_u8_and_retry_changes_only_on_republication() {
+fn ended_preserves_the_full_retry_budget_and_last_transmitted_rate() {
     let (backend, air) = backend();
     block_on(run_port(backend, Body(LongRetryPlan(&air))));
     let sent = air.sent();
-    assert_eq!(sent.len(), 257);
+    assert_eq!(sent.len(), 1020);
     assert_eq!(sent[0].frame[1] & 8, 0);
     assert!(sent[1..].iter().all(|frame| frame.frame[1] & 8 != 0));
     assert!(
         sent.iter()
             .all(|frame| frame.frame[22..24] == sent[0].frame[22..24])
     );
+}
+
+struct LastRateBeforeCollision<'a>(&'a ModelAir);
+impl Work for LastRateBeforeCollision<'_> {
+    async fn work<'p, 'id: 'p>(
+        self,
+        phase: &mut ModelPhase<'p, 'id>,
+        resources: ModelResources<'id>,
+    ) {
+        let ModelResources {
+            mut tickets,
+            mut small,
+            ..
+        } = resources;
+        self.0.answer(false);
+        self.0.collision();
+        let first_rate = PhyRate::Legacy(LegacyRate::Ofdm6M);
+        let plan = RetryPlan::new(RetryStage {
+            rate: phase.rate(first_rate).unwrap(),
+            transmissions: NonZeroU8::MIN,
+            protection: Protection::None,
+        })
+        .then(RetryStage {
+            rate: phase.rate(PhyRate::Legacy(LegacyRate::Ofdm54M)).unwrap(),
+            transmissions: NonZeroU8::MIN,
+            protection: Protection::None,
+        })
+        .unwrap();
+        let TxFrame::Individual { frame, .. } = data_frame(phase, false) else {
+            unreachable!()
+        };
+        let ticket = tickets.remove(0);
+        let ticket_index = ticket.index();
+        let buffer = small.remove(0);
+        let buffer_index = buffer.slot.index();
+        submit_frame::<ModelSmall>(
+            phase,
+            ticket,
+            TxSource::Fresh {
+                buffer,
+                frame: ClassFrame::new(TxFrame::Individual { frame, plan })
+                    .ok()
+                    .unwrap(),
+                body: None,
+                protection: TxProtection::Open,
+            },
+        );
+        loop {
+            let Ok(Ok(event)) = phase.next_event().await else {
+                panic!("terminal")
+            };
+            if let LowerMacEvent::TxCompleted(TxCompleted::Single {
+                completion,
+                ticket,
+                buffer,
+                body,
+                ..
+            }) = event
+            {
+                assert_eq!(
+                    completion,
+                    TxOutcome::Ended {
+                        status: TxEndStatus::ContentionLimit,
+                        last: Some((NonZeroU16::MIN, first_rate)),
+                        ack: None,
+                    }
+                );
+                assert!(!completion.is_rate_sample());
+                assert_eq!(ticket.index(), ticket_index);
+                let ModelAnyBuffer::SmallSent(mpdu) = buffer else {
+                    panic!("sent MPDU")
+                };
+                assert_eq!(mpdu.buffer.slot.index(), buffer_index);
+                assert!(body.is_none());
+                break;
+            }
+        }
+    }
+}
+
+#[test]
+fn a_collision_does_not_overwrite_the_count_or_rate_of_the_last_mpdu_on_air() {
+    let (backend, air) = backend();
+    block_on(run_port(backend, Body(LastRateBeforeCollision(&air))));
+    assert_eq!(air.sent().len(), 2);
 }
 
 struct ReceiveAgreementState<'a>(&'a ModelAir);

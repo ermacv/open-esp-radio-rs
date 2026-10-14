@@ -88,6 +88,7 @@ use core::{
     cell::{Cell, RefCell},
     future::{Future, poll_fn},
     marker::PhantomData,
+    num::NonZeroU16,
     task::{Poll, Waker},
 };
 use oer_ieee80211_mac::ccmp::GroupKeyId;
@@ -1851,8 +1852,7 @@ struct Publication<'id, X: ModelContext> {
 struct SinglePlan<'id, X: ModelContext> {
     prepared: Box<Prepared<'id, X>>,
     remaining: VecDeque<PhyRate>,
-    transmissions: u16,
-    last: Option<PhyRate>,
+    last: Option<(NonZeroU16, PhyRate)>,
     rate: PhyRate,
 }
 enum Published<'id, X: ModelContext> {
@@ -1913,9 +1913,13 @@ impl<'id, X: ModelContext> Published<'id, X> {
                     AirResult::Collision => TxEndStatus::ContentionLimit,
                 };
                 if !matches!(result, AirResult::Collision) {
-                    // The closed plan has at most four u8 stages (1020 transmissions).
-                    plan.transmissions = plan.transmissions.saturating_add(1);
-                    plan.last = Some(plan.rate);
+                    // At most four u8 stages: even the last of all 1020
+                    // transmissions stays below u16::MAX. Saturation cannot
+                    // occur; NonZero preserves that a last rate means air TX.
+                    let transmissions = plan
+                        .last
+                        .map_or(NonZeroU16::MIN, |(count, _)| count.saturating_add(1));
+                    plan.last = Some((transmissions, plan.rate));
                 }
                 if !matches!(result, AirResult::Acknowledged) {
                     if let Some(cause) = cause {
@@ -1932,8 +1936,7 @@ impl<'id, X: ModelContext> Published<'id, X> {
                     *plan.prepared,
                     TxOutcome::Ended {
                         status,
-                        transmissions: plan.transmissions,
-                        rate: plan.last,
+                        last: plan.last,
                         ack: (status == TxEndStatus::Delivered).then_some(TxAck::default()),
                     },
                 );
@@ -1945,8 +1948,7 @@ impl<'id, X: ModelContext> Published<'id, X> {
                     }
                     (AirResult::Acknowledged, _) => TxOutcome::Ended {
                         status: TxEndStatus::Delivered,
-                        transmissions: 1,
-                        rate: Some(prepared.rate),
+                        last: Some((NonZeroU16::MIN, prepared.rate)),
                         ack: Some(TxAck {
                             block_ack: Some(report),
                             ..TxAck::default()
@@ -1957,14 +1959,12 @@ impl<'id, X: ModelContext> Published<'id, X> {
                     }
                     (AirResult::AckTimeout, None) => TxOutcome::Ended {
                         status: TxEndStatus::AckTimeout,
-                        transmissions: 1,
-                        rate: Some(prepared.rate),
+                        last: Some((NonZeroU16::MIN, prepared.rate)),
                         ack: None,
                     },
                     (AirResult::Collision, None) => TxOutcome::Ended {
                         status: TxEndStatus::ContentionLimit,
-                        transmissions: 0,
-                        rate: None,
+                        last: None,
                         ack: None,
                     },
                 };
@@ -1996,7 +1996,6 @@ fn start_work<'id, X: ModelContext>(
                 SinglePlan {
                     prepared,
                     remaining,
-                    transmissions: 0,
                     last: None,
                     rate,
                 },
@@ -2020,7 +2019,7 @@ fn publish_single<'id, X: ModelContext>(
             return None;
         }
     };
-    if plan.transmissions != 0 {
+    if plan.last.is_some() {
         plan.prepared.mpdu.buffer.retry();
     }
     let frame = match plan.prepared.mpdu.on_air(

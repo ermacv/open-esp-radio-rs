@@ -582,9 +582,11 @@ pub struct StaConfig<K> {
     /// The consecutive cancelled leases after which a scan ends with a
     /// partial result.
     pub skipped_absences: u8,
-    /// How much weaker than the strongest a candidate on the channel of
-    /// the access point beside the station may be and still win, in dB:
-    /// a composition policy independent of the number of scan channels.
+    /// The margin, in dB, within which a candidate on the channel of the
+    /// access point beside the station wins over the strongest candidate.
+    /// The owner set this parameter to [6 dB].
+    ///
+    /// [6 dB]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6130775558
     pub access_point_margin_db: u8,
     /// The rates the Probe Request offers.
     pub supported_rates: [u8; 8],

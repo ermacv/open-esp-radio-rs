@@ -310,12 +310,15 @@ impl PortBody<Backend> for ThreadBody<'_> {
                             },
                         );
                     // The stack's radio, alarm and tasklet loops share one
-                    // large future.
-                    let running = core::pin::pin!(ot.run(radio));
-                    let served = core::pin::pin!(serve(&ot, &socket));
-                    *self.stop_request = match select(running, served).await {
-                        Either::First(never) => match never {},
-                        Either::Second(stop_request) => Some(stop_request),
+                    // large future; it and the server end before the stack
+                    // and its socket are dropped.
+                    *self.stop_request = {
+                        let running = core::pin::pin!(ot.run(radio));
+                        let served = core::pin::pin!(serve(&ot, &socket));
+                        match select(running, served).await {
+                            Either::First(never) => match never {},
+                            Either::Second(stop_request) => Some(stop_request),
+                        }
                     };
                     let _ = ot.enable_thread(false);
                     let _ = ot.enable_ipv6(false);

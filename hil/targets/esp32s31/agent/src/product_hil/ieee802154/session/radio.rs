@@ -28,7 +28,7 @@ use oer_ieee802154::{
         SupportedEnergyScan, SupportedTransmit, Transmission,
     },
 };
-use oer_ieee802154_port::{RadioPortEvents, RadioWork};
+use oer_ieee802154_port::RadioPortEvents;
 use oer_radio_port::{Seat, Slot};
 
 use super::super::client::tx_outcome;

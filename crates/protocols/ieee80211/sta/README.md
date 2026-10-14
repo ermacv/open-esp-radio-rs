@@ -18,6 +18,11 @@ BSS address as `Bssid` before it can enter Join. Authentication, Association,
 SAE, the handshake, the connected link and station frame encoders keep those
 roles. Wire writers unwrap the octets at the encoding boundary, so beginning
 an attempt cannot uncover a previously unchecked address.
+Authentication, Association, SAE, Handshake and Connected share MAC's
+disconnect parser with those address roles. It admits our unicast or broadcast
+from the selected BSSID and rejects foreign receivers, fragments, invalid
+geometry and Protected bodies. This portable station has no PMF integration;
+an integrity flag alone does not authorize interpreting protected management.
 
 Module map:
 

@@ -297,6 +297,9 @@ pub fn parse_open_authentication_response(
 }
 
 /// Parse a Disassociation or Deauthentication sent by the selected AP.
+/// Accept only unfragmented, unprotected management addressed to this station
+/// or broadcast. Protected management requires the separate PMF owner and its
+/// authenticated body; this parser never interprets a CCMP header as a reason.
 ///
 /// An authentication wait must treat this as a protocol transition rather
 /// than an absent response. In particular, an AP may reject the first Open
@@ -308,22 +311,32 @@ pub fn parse_open_authentication_response(
 /// (Disassociation) and `.L737` (Deauthentication) read the reason code at
 /// management-body offset zero (`frame + 24`) and immediately call
 /// `ieee80211_sta_new_state(g_ic, 0, (reason << 8) | subtype)`.
-pub fn parse_sta_disconnect(frame: &[u8], local: [u8; 6], bssid: [u8; 6]) -> Option<StaDisconnect> {
-    if frame.len() < MANAGEMENT_HEADER_LEN + 2
-        || frame[4..10] != local
-        || frame[10..16] != bssid
-        || frame[16..22] != bssid
+pub fn parse_sta_disconnect(
+    frame: &[u8],
+    local: OwnAddress,
+    bssid: Bssid,
+) -> Option<StaDisconnect> {
+    let header = crate::frame::DecodedHeader::decode(frame)?;
+    let control = header.control();
+    if control.is_data()
+        || control.ds() != 0
+        || control.protected()
+        || control.more_fragments()
+        || header.sequence_control() & 15 != 0
+        || (header.receiver() != local.get() && header.receiver() != [0xff; 6])
+        || header.transmitter() != bssid.get()
+        || header.address3() != bssid.get()
     {
         return None;
     }
 
-    let kind = match read_u16(frame, 0)? & 0x00fc {
+    let kind = match control.get() & 0x00fc {
         DISASSOCIATION_FRAME_CONTROL => StaDisconnectKind::Disassociation,
         DEAUTHENTICATION_FRAME_CONTROL => StaDisconnectKind::Deauthentication,
         _ => return None,
     };
     Some(StaDisconnect {
         kind,
-        reason_code: read_u16(frame, MANAGEMENT_HEADER_LEN)?,
+        reason_code: read_u16(header.body(), 0)?,
     })
 }

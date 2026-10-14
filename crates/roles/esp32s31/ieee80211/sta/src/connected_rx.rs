@@ -7,6 +7,7 @@
 //! through [`ConnectedRxSink`] and belong to the integration runner.
 
 use core::cell::RefCell;
+use oer_ieee80211_mac::address::{Bssid, IndividualAddress, OwnAddress};
 
 use critical_section::Mutex;
 use oer_esp32s31_ieee80211::protected_data_rx::{
@@ -113,8 +114,8 @@ fn connected_rx_cycle_count() -> u32 {
 /// Immutable identity and descriptor-ingress policy for one connected STA.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ConnectedRxConfig {
-    pub station_address: [u8; 6],
-    pub bssid: [u8; 6],
+    pub station_address: OwnAddress,
+    pub bssid: Bssid,
     pub association_id: u16,
     pub ingress: RxIngressConfig,
     pub security: LinkProtection,
@@ -1323,9 +1324,14 @@ impl ConnectedRxDispatcher {
     /// [`Self::try_reconfigure`] at the connected-epoch start edge before
     /// installing replay or ESP-NOW owners.
     pub const fn unconfigured() -> Self {
+        #[expect(
+            clippy::expect_used,
+            reason = "compile-time checked individual literal"
+        )]
+        const PARKED: IndividualAddress = IndividualAddress::new([0; 6]).expect("individual");
         Self::new(ConnectedRxConfig {
-            station_address: [0; 6],
-            bssid: [0; 6],
+            station_address: OwnAddress::new(PARKED),
+            bssid: Bssid::new(PARKED),
             association_id: 0,
             ingress: RxIngressConfig {
                 ring_entry_limit: 1,
@@ -1434,7 +1440,7 @@ impl ConnectedRxDispatcher {
     pub fn install_esp_now_rx_epoch(&mut self, epoch: EspNowRxEpoch) {
         assert_eq!(
             epoch.config().station().interface.address,
-            self.config.station_address,
+            self.config.station_address.get(),
             "ESP-NOW RX epoch must belong to the connected station"
         );
         self.esp_now = Some(epoch);
@@ -1561,8 +1567,8 @@ impl ConnectedRxDispatcher {
         }
         rx_block_ack_mpdu_key(
             segment.buffer,
-            self.config.station_address,
-            Some(self.config.bssid),
+            self.config.station_address.get(),
+            Some(self.config.bssid.get()),
         )
     }
 
@@ -1576,8 +1582,8 @@ impl ConnectedRxDispatcher {
         }
         rx_block_ack_request_key(
             segment.buffer,
-            self.config.station_address,
-            Some(self.config.bssid),
+            self.config.station_address.get(),
+            Some(self.config.bssid.get()),
         )
     }
 
@@ -1614,7 +1620,7 @@ impl ConnectedRxDispatcher {
         let Some(frame_control) = public_frame_control(raw) else {
             return rejected(CcmpRxProtection::Other, ConnectedRxError::PublicHeader);
         };
-        let protection = public_protection(raw, frame_control, self.config.station_address)
+        let protection = public_protection(raw, frame_control, self.config.station_address.get())
             .unwrap_or(CcmpRxProtection::Other);
 
         match frame_control & 0x00fc {
@@ -1632,7 +1638,7 @@ impl ConnectedRxDispatcher {
                 };
                 let observation = match parse_sta_beacon(
                     &mpdu[..management.length],
-                    self.config.bssid,
+                    self.config.bssid.get(),
                     self.config.association_id,
                 ) {
                     Ok(observation) => observation,
@@ -1676,9 +1682,9 @@ impl ConnectedRxDispatcher {
                     Err(error) => return rejected(protection, ConnectedRxError::Rx(error)),
                 };
                 if management.length < 24
-                    || mpdu[4..10] != self.config.station_address
-                    || mpdu[10..16] != self.config.bssid
-                    || mpdu[16..22] != self.config.bssid
+                    || mpdu[4..10] != self.config.station_address.get()
+                    || mpdu[10..16] != self.config.bssid.get()
+                    || mpdu[16..22] != self.config.bssid.get()
                 {
                     return ConnectedRxDispatch::Ignored;
                 }
@@ -1784,9 +1790,9 @@ impl ConnectedRxDispatcher {
                     );
                 }
                 let body = &mpdu[24..management.length];
-                let is_associated_peer_action = mpdu[4..10] == self.config.station_address
-                    && mpdu[10..16] == self.config.bssid
-                    && mpdu[16..22] == self.config.bssid;
+                let is_associated_peer_action = mpdu[4..10] == self.config.station_address.get()
+                    && mpdu[10..16] == self.config.bssid.get()
+                    && mpdu[16..22] == self.config.bssid.get();
                 if is_associated_peer_action && let Some(action) = parse_block_ack_action(body) {
                     if self.config.security == LinkProtection::Open {
                         return ConnectedRxDispatch::Ignored;
@@ -1954,13 +1960,13 @@ impl ConnectedRxDispatcher {
         const CLASS_2_FROM_NONAUTHENTICATED: u16 = 6;
         const CLASS_3_FROM_NONASSOCIATED: u16 = 7;
         if frame.len() < 24
-            || frame[10..16] != self.config.bssid
-            || frame[16..22] != self.config.bssid
+            || frame[10..16] != self.config.bssid.get()
+            || frame[16..22] != self.config.bssid.get()
         {
             return ConnectedRxDispatch::Ignored;
         }
         let group = frame[4] & 1 != 0;
-        if !group && frame[4..10] != self.config.station_address {
+        if !group && frame[4..10] != self.config.station_address.get() {
             return ConnectedRxDispatch::Ignored;
         }
         if group || frame_control & PROTECTED != 0 {
@@ -1987,8 +1993,9 @@ impl ConnectedRxDispatcher {
         receiver_address: [u8; 6],
         transmitter_address: [u8; 6],
     ) -> Option<AssociatedHeControlIdentity> {
-        if transmitter_address != self.config.bssid
-            || (receiver_address != self.config.station_address && receiver_address[0] & 1 == 0)
+        if transmitter_address != self.config.bssid.get()
+            || (receiver_address != self.config.station_address.get()
+                && receiver_address[0] & 1 == 0)
         {
             return None;
         }
@@ -2053,8 +2060,8 @@ impl ConnectedRxDispatcher {
                         return rejected(protection, ConnectedRxError::Fragment(error));
                     }
                 };
-                if identity.transmitter_address() != self.config.bssid
-                    || identity.receiver_address() != self.config.station_address
+                if identity.transmitter_address() != self.config.bssid.get()
+                    || identity.receiver_address() != self.config.station_address.get()
                         && identity.receiver_address()[0] & 1 == 0
                     || protection == CcmpRxProtection::Other
                 {
@@ -2094,8 +2101,8 @@ impl ConnectedRxDispatcher {
                         return rejected(protection, ConnectedRxError::Fragment(error));
                     }
                 };
-                if fragment_identity.transmitter_address() != self.config.bssid
-                    || fragment_identity.receiver_address() != self.config.station_address
+                if fragment_identity.transmitter_address() != self.config.bssid.get()
+                    || fragment_identity.receiver_address() != self.config.station_address.get()
                         && fragment_identity.receiver_address()[0] & 1 == 0
                     || protection == CcmpRxProtection::Other
                 {
@@ -2134,7 +2141,7 @@ impl ConnectedRxDispatcher {
                 )
             }
         };
-        if mpdu[10..16] != self.config.bssid {
+        if mpdu[10..16] != self.config.bssid.get() {
             return ConnectedRxDispatch::Ignored;
         }
         if tid.is_some() && !self.config.peer_qos {
@@ -2234,8 +2241,8 @@ impl ConnectedRxDispatcher {
                     return rejected(protection, ConnectedRxError::Fragment(error));
                 }
             };
-            if identity.transmitter_address() != self.config.bssid
-                || identity.receiver_address() != self.config.station_address
+            if identity.transmitter_address() != self.config.bssid.get()
+                || identity.receiver_address() != self.config.station_address.get()
             {
                 return ConnectedRxDispatch::Ignored;
             }
@@ -2253,7 +2260,7 @@ impl ConnectedRxDispatcher {
                 }
             }
         }
-        if view.mpdu[10..16] != self.config.bssid {
+        if view.mpdu[10..16] != self.config.bssid.get() {
             return ConnectedRxDispatch::Ignored;
         }
         if view.tid.is_some() && !self.config.peer_qos {
@@ -2358,8 +2365,8 @@ impl ConnectedRxDispatcher {
             }
         };
         let identity = view.fragment.identity();
-        if identity.transmitter_address() != self.config.bssid
-            || identity.receiver_address() != self.config.station_address
+        if identity.transmitter_address() != self.config.bssid.get()
+            || identity.receiver_address() != self.config.station_address.get()
                 && identity.receiver_address()[0] & 1 == 0
             || protection == CcmpRxProtection::Other
         {
@@ -2443,8 +2450,8 @@ impl ConnectedRxDispatcher {
             }
         };
         let identity = view.fragment.identity();
-        if identity.transmitter_address() != self.config.bssid
-            || identity.receiver_address() != self.config.station_address
+        if identity.transmitter_address() != self.config.bssid.get()
+            || identity.receiver_address() != self.config.station_address.get()
             || protection != CcmpRxProtection::Pairwise
         {
             return ConnectedRxDispatch::Ignored;
@@ -2562,8 +2569,8 @@ impl ConnectedRxDispatcher {
             Ok(view) => view,
             Err(error) => return rejected(protection, ConnectedRxError::Rx(error)),
         };
-        if view.mpdu.get(4..10) != Some(&self.config.station_address)
-            || view.mpdu.get(10..16) != Some(&self.config.bssid)
+        if view.mpdu.get(4..10) != Some(&self.config.station_address.get())
+            || view.mpdu.get(10..16) != Some(&self.config.bssid.get())
             || (view.tid.is_some() && !self.config.peer_qos)
         {
             return rejected(protection, ConnectedRxError::SecurityModeMismatch);
@@ -2582,8 +2589,8 @@ impl ConnectedRxDispatcher {
             None => return rejected(protection, ConnectedRxError::SecurityModeMismatch),
         };
         if frames.next().is_some()
-            || frame.destination != self.config.station_address
-            || frame.source != self.config.bssid
+            || frame.destination != self.config.station_address.get()
+            || frame.source != self.config.bssid.get()
             || frame.ether_type != 0x888e
         {
             return rejected(protection, ConnectedRxError::SecurityModeMismatch);

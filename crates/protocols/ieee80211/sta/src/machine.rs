@@ -1261,18 +1261,9 @@ enum LeaveStep {
 const EAPOL_ETHER_TYPE: u16 = 0x888e;
 
 /// A checked management disconnect from the selected BSS.
-fn peer_disconnect(frame: &[u8], bssid: Bssid) -> Option<u16> {
-    let header = oer_ieee80211_mac::frame::DecodedHeader::decode(frame)?;
-    if header.control().is_data()
-        || !matches!(header.control().subtype(), 10 | 12)
-        || header.transmitter() != bssid.get()
-        || header.address3() != bssid.get()
-        || header.control().protected()
-    {
-        return None;
-    }
-    let (reason, _) = header.body().split_first_chunk::<2>()?;
-    Some(u16::from_le_bytes(*reason))
+fn peer_disconnect(frame: &[u8], local: OwnAddress, bssid: Bssid) -> Option<u16> {
+    oer_ieee80211_mac::station::parse_sta_disconnect(frame, local, bssid)
+        .map(|disconnect| disconnect.reason_code)
 }
 
 /// A group key's checked wire ID and temporal key.
@@ -2615,10 +2606,14 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     }
                 }
             }
-            State::Handshake(handshake) => match peer_disconnect(frame, handshake.bssid) {
-                Some(reason_code) => leave_keyed(StaDisconnectReason::Peer { reason_code }, None),
-                None => State::Handshake(handshake),
-            },
+            State::Handshake(handshake) => {
+                match peer_disconnect(frame, self.config.address, handshake.bssid) {
+                    Some(reason_code) => {
+                        leave_keyed(StaDisconnectReason::Peer { reason_code }, None)
+                    }
+                    None => State::Handshake(handshake),
+                }
+            }
             State::Connected(connected) => self.connected_received(connected, now, frame, rssi),
             state => state,
         };
@@ -2632,7 +2627,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         frame: &[u8],
         rssi: i8,
     ) -> State<T, K> {
-        if let Some(reason_code) = peer_disconnect(frame, connected.bssid) {
+        if let Some(reason_code) = peer_disconnect(frame, self.config.address, connected.bssid) {
             // The access point ended the link: no Deauthentication back.
             return leave_connected(connected, StaDisconnectReason::Peer { reason_code }, None);
         }

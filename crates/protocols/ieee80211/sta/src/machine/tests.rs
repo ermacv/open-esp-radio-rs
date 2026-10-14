@@ -1834,6 +1834,81 @@ fn the_access_points_deauthentication_is_not_answered_with_one() {
 }
 
 #[test]
+fn disconnects_to_other_receivers_never_end_handshake_or_connection() {
+    for connected in [false, true] {
+        for subtype in [0xa0, 0xc0] {
+            installed(|mint| {
+                let (mut world, _) = if connected {
+                    wpa2_connected(mint, 2)
+                } else {
+                    wpa2_associated(mint, 2)
+                };
+                world.take();
+                let mut base = [0; 26];
+                base[0] = subtype;
+                base[4..10].copy_from_slice(&LOCAL);
+                base[10..16].copy_from_slice(&BSSID);
+                base[16..22].copy_from_slice(&BSSID);
+                base[24..26].copy_from_slice(&7_u16.to_le_bytes());
+                for (offset, byte) in [(4, 4), (4, 1), (10, 4), (16, 4), (1, 0x40)] {
+                    let mut frame = base;
+                    frame[offset] = byte;
+                    // Even descriptor integrity evidence cannot turn a
+                    // protected body into unprotected management admission.
+                    world
+                        .station
+                        .receive(at(50), &frame, verified_meta(), |_| {})
+                        .unwrap();
+                    world.run(at(50));
+                    assert!(matches!(
+                        world.station.state,
+                        State::Handshake(_) | State::Connected(_)
+                    ));
+                    assert_eq!(world.station.is_connected(), connected);
+                    assert!(world.take().is_empty());
+                }
+                world.receive(at(50), &base[..25]);
+                assert!(world.take().is_empty());
+                assert!(matches!(
+                    world.station.state,
+                    State::Handshake(_) | State::Connected(_)
+                ));
+            });
+        }
+    }
+}
+
+#[test]
+fn local_or_broadcast_disconnect_from_selected_bss_ends_the_link() {
+    for connected in [false, true] {
+        for receiver in [LOCAL, [0xff; 6]] {
+            for subtype in [0xa0, 0xc0] {
+                installed(|mint| {
+                    let (mut world, _) = if connected {
+                        wpa2_connected(mint, 2)
+                    } else {
+                        wpa2_associated(mint, 2)
+                    };
+                    world.take();
+                    let mut frame = [0; 26];
+                    frame[0] = subtype;
+                    frame[4..10].copy_from_slice(&receiver);
+                    frame[10..16].copy_from_slice(&BSSID);
+                    frame[16..22].copy_from_slice(&BSSID);
+                    frame[24..26].copy_from_slice(&7_u16.to_le_bytes());
+                    world.receive(at(50), &frame);
+                    assert!(world.station.keys.clear());
+                    assert!(world.deauthentications.is_empty());
+                    assert!(world.take().contains(&Seen::Notify(StaNotice::Disconnected(
+                        StaDisconnectReason::Peer { reason_code: 7 }
+                    ))));
+                });
+            }
+        }
+    }
+}
+
+#[test]
 fn leaving_on_request_deauthenticates_as_leaving() {
     installed(|mint| {
         let (mut world, _) = wpa2_connected(mint, 2);

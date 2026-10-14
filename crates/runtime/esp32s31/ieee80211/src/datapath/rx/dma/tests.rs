@@ -395,8 +395,12 @@ impl ConnectedRxSink for OrderObserver {
 
 fn dispatcher_config() -> ConnectedRxConfig {
     ConnectedRxConfig {
-        station_address: [2, 3, 4, 5, 6, 7],
-        bssid: [8, 9, 10, 11, 12, 13],
+        station_address: oer_ieee80211_mac::address::OwnAddress::new(
+            oer_ieee80211_mac::address::IndividualAddress::new([2, 3, 4, 5, 6, 7]).unwrap(),
+        ),
+        bssid: oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new([8, 9, 10, 11, 12, 13]).unwrap(),
+        ),
         association_id: 1,
         ingress: RxIngressConfig {
             ring_entry_limit: 1,

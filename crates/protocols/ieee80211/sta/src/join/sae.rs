@@ -188,7 +188,7 @@ impl StaSaeAuthentication {
         if matches!(self.phase, StaSaePhase::Terminal) {
             return StaSaeEvent::Irrelevant;
         }
-        if let Some(disconnect) = parse_sta_disconnect(frame, self.local.get(), self.bssid.get()) {
+        if let Some(disconnect) = parse_sta_disconnect(frame, self.local, self.bssid) {
             return self.fail(StaSaeFailure::PeerDisconnect(disconnect));
         }
         let Some(frame) = parse_sae_authentication(frame, self.local.get(), self.bssid.get())

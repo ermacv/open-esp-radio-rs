@@ -570,8 +570,8 @@ fn routes_only_probe_responses_from_the_associated_bssid() {
 
 fn config() -> ConnectedRxConfig {
     ConnectedRxConfig {
-        station_address: STATION,
-        bssid: BSSID,
+        station_address: OwnAddress::new(IndividualAddress::new(STATION).unwrap()),
+        bssid: Bssid::new(IndividualAddress::new(BSSID).unwrap()),
         association_id: 7,
         ingress: RxIngressConfig {
             ring_entry_limit: 1,

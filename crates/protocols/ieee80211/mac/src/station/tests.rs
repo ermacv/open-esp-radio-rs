@@ -171,7 +171,11 @@ fn a_deauthentication_carries_its_reason_plain_or_protected() {
     .unwrap();
     assert_eq!(length, 26);
     assert_eq!(
-        parse_sta_disconnect(&output[..length], LOCAL, BSSID),
+        parse_sta_disconnect(
+            &output[..length],
+            crate::address::OwnAddress::new(crate::address::IndividualAddress::new(LOCAL).unwrap()),
+            crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap()),
+        ),
         None,
         "the station's own Deauthentication is not addressed to it"
     );
@@ -253,40 +257,48 @@ fn parses_only_matching_open_authentication_response() {
 }
 
 #[test]
-fn parses_only_disconnects_from_selected_access_point() {
-    let mut frame = [0_u8; MANAGEMENT_HEADER_LEN + 2];
-    frame[0..2].copy_from_slice(&DEAUTHENTICATION_FRAME_CONTROL.to_le_bytes());
-    frame[4..10].copy_from_slice(&LOCAL);
-    frame[10..16].copy_from_slice(&BSSID);
-    frame[16..22].copy_from_slice(&BSSID);
-    frame[24..26].copy_from_slice(&1_u16.to_le_bytes());
-    assert_eq!(
-        parse_sta_disconnect(&frame, LOCAL, BSSID),
-        Some(StaDisconnect {
-            kind: StaDisconnectKind::Deauthentication,
-            reason_code: 1,
-        })
-    );
-
-    frame[0..2].copy_from_slice(&DISASSOCIATION_FRAME_CONTROL.to_le_bytes());
-    frame[24..26].copy_from_slice(&8_u16.to_le_bytes());
-    assert_eq!(
-        parse_sta_disconnect(&frame, LOCAL, BSSID),
-        Some(StaDisconnect {
-            kind: StaDisconnectKind::Disassociation,
-            reason_code: 8,
-        })
-    );
-
-    assert_eq!(parse_sta_disconnect(&frame, [0; 6], BSSID), None);
-    assert_eq!(parse_sta_disconnect(&frame, LOCAL, [0; 6]), None);
-    assert_eq!(
-        parse_sta_disconnect(&frame[..MANAGEMENT_HEADER_LEN + 1], LOCAL, BSSID),
-        None
-    );
-
-    frame[0..2].copy_from_slice(&OPEN_AUTHENTICATION_FRAME_CONTROL.to_le_bytes());
-    assert_eq!(parse_sta_disconnect(&frame, LOCAL, BSSID), None);
+fn disconnect_parser_checks_receiver_bss_geometry_and_protection() {
+    use crate::address::{Bssid, IndividualAddress, OwnAddress};
+    let local = OwnAddress::new(IndividualAddress::new(LOCAL).unwrap());
+    let bssid = Bssid::new(IndividualAddress::new(BSSID).unwrap());
+    for (control, kind) in [
+        (
+            DEAUTHENTICATION_FRAME_CONTROL,
+            StaDisconnectKind::Deauthentication,
+        ),
+        (
+            DISASSOCIATION_FRAME_CONTROL,
+            StaDisconnectKind::Disassociation,
+        ),
+    ] {
+        let mut frame = [0_u8; MANAGEMENT_HEADER_LEN + 2];
+        frame[..2].copy_from_slice(&control.to_le_bytes());
+        frame[4..10].copy_from_slice(&LOCAL);
+        frame[10..16].copy_from_slice(&BSSID);
+        frame[16..22].copy_from_slice(&BSSID);
+        frame[24..26].copy_from_slice(&7_u16.to_le_bytes());
+        let expected = Some(StaDisconnect {
+            kind,
+            reason_code: 7,
+        });
+        assert_eq!(parse_sta_disconnect(&frame, local, bssid), expected);
+        let mut broadcast = frame;
+        broadcast[4..10].fill(0xff);
+        assert_eq!(parse_sta_disconnect(&broadcast, local, bssid), expected);
+        for (offset, value) in [(4, 4), (4, 1), (10, 4), (16, 4), (22, 1)] {
+            let mut foreign = frame;
+            foreign[offset] = value;
+            assert_eq!(parse_sta_disconnect(&foreign, local, bssid), None);
+        }
+        for bits in [1, 4, 8, 0x100, 0x200, 0x400, 0x4000] {
+            let mut invalid = frame;
+            invalid[..2].copy_from_slice(&(control | bits).to_le_bytes());
+            assert_eq!(parse_sta_disconnect(&invalid, local, bssid), None);
+        }
+        for length in 0..frame.len() {
+            assert_eq!(parse_sta_disconnect(&frame[..length], local, bssid), None);
+        }
+    }
 }
 
 #[test]

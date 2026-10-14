@@ -248,7 +248,7 @@ impl StaAssociationRuntime {
         now: Instant,
     ) -> Result<StaAssociationEvent, StaAssociationRuntimeError> {
         self.require_running()?;
-        if let Some(disconnect) = parse_sta_disconnect(frame, self.local.get(), self.bssid.get()) {
+        if let Some(disconnect) = parse_sta_disconnect(frame, self.local, self.bssid) {
             return Ok(self.fail(StaAssociationFailure::PeerDisconnect(disconnect)));
         }
         let Some(response) = parse_association_response(frame, self.local.get(), self.bssid.get())

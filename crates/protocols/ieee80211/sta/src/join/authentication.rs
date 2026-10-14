@@ -125,7 +125,7 @@ impl StaAuthenticationExchange {
     /// An irrelevant input returns this same owner unchanged.
     pub fn observe_management_frame(self, frame: &[u8]) -> StaAuthenticationEvent {
         if let Some(disconnect) =
-            parse_sta_disconnect(frame, self.runtime.local.get(), self.runtime.bssid.get())
+            parse_sta_disconnect(frame, self.runtime.local, self.runtime.bssid)
         {
             return self.finish_retryable(StaAuthenticationFailure::PeerDisconnect(disconnect));
         }

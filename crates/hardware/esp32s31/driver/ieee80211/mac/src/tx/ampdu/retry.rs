@@ -2,7 +2,7 @@
 
 use core::pin::Pin;
 
-#[cfg(not(target_pointer_width = "32"))]
+#[cfg(any(test, feature = "test-support"))]
 use oer_ieee80211_upper_mac::ampdu::set_retry_bit;
 
 use super::{
@@ -32,7 +32,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// The returned slice excludes the private eight-byte DMA metadata prefix
     /// and the hardware-generated MIC/FCS trailer. Sequence Control and CCMP
     /// header are retained exactly as originally submitted.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn completed_frame(
         &self,
         cookie: TxCookie,
@@ -102,7 +102,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// `lmacProcessLongRetryFail` writes four immediately before entering the
     /// A-MPDU retry leaf. Only the compacted byte/subframe count and the next
     /// EDCA backoff are expected to change before republication.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn retain_for_ampdu_retry(
         mut self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -182,13 +182,13 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         Ok(locations)
     }
 
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     fn internal_frame_matches(&self, location: RetryFrameLocation) -> bool {
         let buffer = &self.buffers[location.index].0;
         location.buffer_address == buffer.as_ptr().addr() && location.capacity <= buffer.len()
     }
 
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     fn mark_internal_retry_frames(
         mut self: Pin<&mut Self>,
         locations: &[Option<RetryFrameLocation>; SLOTS],

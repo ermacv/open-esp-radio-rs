@@ -735,24 +735,32 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
     /// so DMA-visible descriptors and buffers must remain allocated even when
     /// the typestate owner is lost. Borrowing the arena for `'static` also
     /// prevents later safe mutable pre-publication access.
-    #[cfg(target_pointer_width = "32")]
+    ///
+    /// Temporary storage cannot authorize a DMA lifecycle, including in a model:
+    /// ```compile_fail,E0597
+    /// use oer_esp32s31_ieee80211_dma::{rx_dma::RxDma, rx_storage::RxDmaStorage};
+    /// fn temporary(hardware: &mut impl RxDma) {
+    ///     let storage = RxDmaStorage::<2, 16, 20>::new();
+    ///     let _ = storage.prepare_ring(hardware, 0x2f001000, &[0x2f002000, 0x2f002100]);
+    /// }
+    /// ```
+    /// A static arena can return an owner borrowing the address table:
+    /// ```
+    /// use oer_esp32s31_ieee80211_dma::{
+    ///     rx_dma::RxDma, rx_ring::{RxRingError, RxRingStopped}, rx_storage::RxDmaStorage,
+    /// };
+    /// fn prepare<'a>(storage: &'static RxDmaStorage<2, 16, 20>,
+    ///     hardware: &mut impl RxDma, addresses: &'a [u32; 2])
+    ///     -> Result<RxRingStopped<'a, 2>, RxRingError> {
+    ///     storage.prepare_ring(hardware, 0x2f001000, addresses)
+    /// }
+    /// ```
     pub fn prepare_ring<'addresses, M: RxDma>(
         &'static self,
         mmio: &mut M,
         descriptor_base: u32,
         buffer_addresses: &'addresses RxDmaBufferAddresses<COUNT>,
     ) -> Result<RxRingStopped<'addresses, COUNT>, RxRingError> {
-        self.prepare_ring_bound(mmio, descriptor_base, buffer_addresses)
-    }
-
-    /// Prepare a stopped ring for a native host model with no DMA actor.
-    #[cfg(not(target_pointer_width = "32"))]
-    pub fn prepare_ring<'storage, M: RxDma>(
-        &'storage self,
-        mmio: &mut M,
-        descriptor_base: u32,
-        buffer_addresses: &'storage [u32; COUNT],
-    ) -> Result<RxRingStopped<'storage, COUNT>, RxRingError> {
         self.prepare_ring_bound(mmio, descriptor_base, buffer_addresses)
     }
 
@@ -764,8 +772,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         &'storage self,
         mmio: &mut M,
         descriptor_base: u32,
-        #[cfg(target_pointer_width = "32")] buffer_addresses: &'storage RxDmaBufferAddresses<COUNT>,
-        #[cfg(not(target_pointer_width = "32"))] buffer_addresses: &'storage [u32; COUNT],
+        buffer_addresses: &'storage RxDmaBufferAddresses<COUNT>,
     ) -> Result<RxRingStopped<'storage, COUNT>, RxRingError> {
         self.validate_descriptor_base(descriptor_base)?;
         self.validate_buffer_addresses(buffer_addresses)?;
@@ -818,7 +825,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         }
         match self.lifecycle_state() {
             RxDmaArenaState::Prepared => {}
-            #[cfg(not(target_pointer_width = "32"))]
+            #[cfg(any(test, feature = "test-support"))]
             RxDmaArenaState::Reusable => {
                 // Native models may construct a raw halted ring over this
                 // arena because no asynchronous DMA actor exists. Claim the
@@ -830,11 +837,11 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
             RxDmaArenaState::ResetRequired => {
                 return Err((ring, RxRingError::ResetRequired));
             }
-            #[cfg(target_pointer_width = "32")]
+            #[cfg(not(any(test, feature = "test-support")))]
             RxDmaArenaState::Reusable | RxDmaArenaState::Live => {
                 return Err((ring, RxRingError::Busy));
             }
-            #[cfg(not(target_pointer_width = "32"))]
+            #[cfg(any(test, feature = "test-support"))]
             RxDmaArenaState::Live => {
                 return Err((ring, RxRingError::Busy));
             }
@@ -1285,13 +1292,13 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
     }
 
     fn validate_descriptor_base(&self, descriptor_base: u32) -> Result<(), RxRingError> {
-        #[cfg(target_pointer_width = "32")]
+        #[cfg(not(any(test, feature = "test-support")))]
         if u32::try_from(self.descriptors.as_ptr().addr()).map_err(|_| RxRingError::Address)?
             != descriptor_base
         {
             return Err(RxRingError::DescriptorBaseAddress);
         }
-        #[cfg(not(target_pointer_width = "32"))]
+        #[cfg(any(test, feature = "test-support"))]
         let _ = descriptor_base;
         Ok(())
     }
@@ -1300,10 +1307,10 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         &self,
         buffer_addresses: &RxDmaBufferAddresses<COUNT>,
     ) -> Result<(), RxRingError> {
-        // ESP32-S31 DMA is a 32-bit target. Native builds use synthetic low
-        // addresses and a mock that never touches host memory; descriptor
+        // Explicit models use synthetic low addresses and a mock that never
+        // touches DMA memory; descriptor
         // identity remains checked by `validate_ring_layout` there.
-        #[cfg(target_pointer_width = "32")]
+        #[cfg(not(any(test, feature = "test-support")))]
         for (index, &address) in buffer_addresses.iter().enumerate() {
             let buffer = self
                 .buffer_for_descriptor(index)
@@ -1316,7 +1323,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
                 });
             }
         }
-        #[cfg(not(target_pointer_width = "32"))]
+        #[cfg(any(test, feature = "test-support"))]
         let _ = buffer_addresses;
         Ok(())
     }

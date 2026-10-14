@@ -1227,7 +1227,7 @@ impl<B, const SLOTS: usize, const BUFFER_SIZE: usize> Drop
     }
 }
 
-#[cfg(target_pointer_width = "32")]
+#[cfg(not(any(test, feature = "test-support")))]
 fn external_dma_address(address: usize, capacity: u32) -> Result<u32, AmpduDmaStorageError> {
     let address = u32::try_from(address).map_err(|_| AmpduDmaStorageError::Address)?;
     external_tx_buffer_range_valid(address, capacity)
@@ -1235,24 +1235,30 @@ fn external_dma_address(address: usize, capacity: u32) -> Result<u32, AmpduDmaSt
         .ok_or(AmpduDmaStorageError::Address)
 }
 
-#[cfg(target_pointer_width = "32")]
+#[cfg(not(any(test, feature = "test-support")))]
 const fn external_tx_buffer_range_valid(address: u32, size: u32) -> bool {
     dma_range_valid(address, size) || psram_tx_buffer_range_valid(address, size)
 }
 
-#[cfg(all(target_pointer_width = "32", feature = "tx-psram-dma-probe"))]
+#[cfg(all(
+    not(any(test, feature = "test-support")),
+    feature = "tx-psram-dma-probe"
+))]
 const fn psram_tx_buffer_range_valid(address: u32, size: u32) -> bool {
     const PSRAM_LOW: u32 = 0x5000_0000;
     const PSRAM_HIGH: u32 = 0x5400_0000;
     size != 0 && address >= PSRAM_LOW && address < PSRAM_HIGH && size <= PSRAM_HIGH - address
 }
 
-#[cfg(all(target_pointer_width = "32", not(feature = "tx-psram-dma-probe")))]
+#[cfg(all(
+    not(any(test, feature = "test-support")),
+    not(feature = "tx-psram-dma-probe")
+))]
 const fn psram_tx_buffer_range_valid(_address: u32, _size: u32) -> bool {
     false
 }
 
-#[cfg(not(target_pointer_width = "32"))]
+#[cfg(any(test, feature = "test-support"))]
 fn external_dma_address(address: usize, _capacity: u32) -> Result<u32, AmpduDmaStorageError> {
     // Native models have no asynchronous DMA actor. Truncation supplies only
     // a model descriptor image for host state-machine tests.

@@ -14,22 +14,6 @@ use super::{
 impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize>
     ReceiveFrontier<'storage, COUNT, DMA_BUFFER_SIZE>
 {
-    #[cfg(not(target_pointer_width = "32"))]
-    pub fn prepare_initial<M: RxDma, const DMA_STORAGE_SIZE: usize>(
-        hardware: &mut M,
-        storage: &'storage ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
-        descriptor_base: u32,
-        buffer_addresses: &'storage RxDmaBufferAddresses<COUNT>,
-    ) -> Result<Self, RxRingError> {
-        if DMA_BUFFER_SIZE > u32::MAX as usize {
-            return Err(RxRingError::Size);
-        }
-        storage
-            .prepare_ring(hardware, descriptor_base, buffer_addresses)
-            .map(Self::from_prepared)
-    }
-
-    #[cfg(target_pointer_width = "32")]
     pub fn prepare_initial<M: RxDma, const DMA_STORAGE_SIZE: usize>(
         hardware: &mut M,
         storage: &'static ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
@@ -141,7 +125,7 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize>
     /// Native models may provide an explicit buffer-preparation callback.
     /// Hardware builds must use [`Self::start_with_storage`] so the callback
     /// cannot bypass the DMA arena's guard restoration.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn start<M, F>(
         &mut self,
         timer: &impl oer_time::Timer,
@@ -451,6 +435,10 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize>
     /// A prepared ring has not started DMA and can be demoted synchronously.
     /// Live or vacant owners are returned unchanged: a caller must never use
     /// this conversion as a substitute for stopping the walker.
+    #[allow(
+        clippy::result_large_err,
+        reason = "failure returns the complete affine frontier without allocation"
+    )]
     pub fn try_into_halted(self) -> Result<RxRingHalted<'storage, COUNT>, Self> {
         match self.state {
             RxFrontierState::Halted(ring) => Ok(ring),
@@ -460,6 +448,10 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize>
     }
 
     /// Consume a live frontier without changing hardware state.
+    #[allow(
+        clippy::result_large_err,
+        reason = "failure returns the complete affine frontier without allocation"
+    )]
     pub fn try_into_live(mut self) -> Result<RxRingLive<'storage, COUNT>, Self> {
         match self.take_live() {
             Ok(ring) => Ok(ring),

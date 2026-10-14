@@ -67,6 +67,8 @@ Also check the actual S31 target before each push:
 `cargo check -p oer-esp32s31-ieee80211-mac -p oer-esp32s31-ieee80211 --target riscv32imafc-unknown-none-elf`.
 Host `--all-targets` covers Cargo target kinds, not the RV32 architecture or
 its conditional imports and allocation paths.
+Also compile the same target with explicit models:
+`cargo check -p oer-esp32s31-ieee80211-mac -p oer-esp32s31-ieee80211 --target riscv32imafc-unknown-none-elf --features oer-esp32s31-ieee80211/test-support`.
 
 Synthetic MAC/DMA completion and detach evidence requires the explicit
 `oer-esp32s31-ieee80211-mac/test-support` feature. Host pointer width is not
@@ -75,6 +77,9 @@ the MAC's integration tests declare it as a required test feature. Also run
 `cargo test -p oer-esp32s31-ieee80211-mac --doc` alone without that feature:
 its negative contracts verify the production surface without Cargo feature
 unification from a test consumer.
+RX storage constructors have the same static-storage signature on host and
+chip. Tests leak their allocation deliberately, so forgetting a ring cannot
+turn a hardware-capable signature into a temporary-memory DMA binding.
 
 - `cargo test -p <package>`, then `cargo xtask check changed`.
 - `cargo hil images check --class performance --type-check` for chip-side changes; `cargo xtask check network` for network-owner or manifest changes.

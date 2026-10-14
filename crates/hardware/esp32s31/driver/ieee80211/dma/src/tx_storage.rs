@@ -43,13 +43,10 @@ struct TxDmaBuffer<const BUFFER_SIZE: usize>([u8; BUFFER_SIZE]);
 ///
 /// Construct this in static storage. The returned owner is movable; this
 /// backing allocation is not.
+/// Consume the hardware allocation through [`Self::pin_static`].
 #[cfg_attr(
-    target_pointer_width = "32",
-    doc = "Consume the hardware allocation through [`Self::pin_static`]."
-)]
-#[cfg_attr(
-    feature = "test-support",
-    doc = "Consume the native model allocation through [`Self::pin_static_model`]."
+    any(test, feature = "test-support"),
+    doc = "Explicit models consume the allocation through [`Self::pin_static_model`]."
 )]
 #[pin_project]
 #[derive(bytemuck::Zeroable)]

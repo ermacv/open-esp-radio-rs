@@ -2131,5 +2131,5 @@ fn block_ack(report: crate::ordinary_tx::OrdinaryTxReport) -> Option<BlockAckRep
     })
 }
 
-#[cfg(all(test, not(target_pointer_width = "32")))]
+#[cfg(test)]
 mod tests;

@@ -152,7 +152,7 @@ fn check_composition(
         ],
     ] {
         let graph = cargo::metadata(ctx, &manifest, &features, Some(target), true)?;
-        forbid_features(&graph, &["cooperative-scheduler-telemetry"])?;
+        forbid_features(&graph, &["cooperative-scheduler-telemetry", "test-support"])?;
     }
     let runtime = profile.hil_agent_manifest(&ctx.root);
     for (overlay, expected) in [(None, false), (Some("driver-observation"), true)] {
@@ -161,6 +161,7 @@ fn check_composition(
             &graph,
             &[
                 "cooperative-scheduler-telemetry",
+                "test-support",
                 "network-scheduler-observation",
                 "task-poll-telemetry",
                 "mac-irq-diagnostics",

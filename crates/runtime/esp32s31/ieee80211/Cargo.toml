@@ -62,9 +62,8 @@ trace = [
 # materialization boundary compile without this feature for compatibility and
 # research integrations.
 owned-network = ["dep:oer-embassy-net-owned"]
-# Host models of the station TX hardware for other packages' host tests,
-# including observers. Absent on 32-bit targets, where the models do not exist.
-test-support = ["diagnostics", "dep:oer-time-virtual"]
+# Explicit models for tests and observers, on host and RV32 alike.
+test-support = ["diagnostics", "dep:oer-time-virtual", "oer-esp32s31-ieee80211/test-support"]
 # Value-only driver observers. Ordinary/performance builds do not retain
 # diagnostic counters or invoke observation clocks.
 diagnostics = [

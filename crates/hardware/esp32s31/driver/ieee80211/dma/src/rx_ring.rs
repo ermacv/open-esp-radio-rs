@@ -4,7 +4,7 @@
 //! decoding remains in the MAC crate, while the semantic MMIO operations are
 //! defined by [`crate::rx_dma::RxDma`].
 
-#[cfg(target_pointer_width = "32")]
+#[cfg(not(any(test, feature = "test-support")))]
 use core::sync::atomic::AtomicU32;
 use core::sync::atomic::{AtomicU8, Ordering};
 
@@ -128,25 +128,25 @@ pub struct RxReloadRepairEvidence {
     pub last_repair_head: Option<u32>,
 }
 
-// The 32-bit production target has one hardware RX-ring authority. Keep
+// Production has one hardware RX-ring authority. Keep
 // qualification evidence outside the movable ownership token: adding even a
 // few words to that token is multiplied across nested async state machines and
 // measurably changes the stack shape being diagnosed. Native model tests keep
 // evidence per instance so parallel tests cannot race through these globals.
-#[cfg(target_pointer_width = "32")]
+#[cfg(not(any(test, feature = "test-support")))]
 static RELOAD_OBSERVATIONS: AtomicU32 = AtomicU32::new(0);
-#[cfg(target_pointer_width = "32")]
+#[cfg(not(any(test, feature = "test-support")))]
 static RELOAD_UPPER_ONLY: AtomicU32 = AtomicU32::new(0);
-#[cfg(target_pointer_width = "32")]
+#[cfg(not(any(test, feature = "test-support")))]
 static RELOAD_BASE_REPAIRS: AtomicU32 = AtomicU32::new(0);
-#[cfg(target_pointer_width = "32")]
+#[cfg(not(any(test, feature = "test-support")))]
 static RELOAD_LAST_NEXT_LOW: AtomicU32 = AtomicU32::new(0);
-#[cfg(target_pointer_width = "32")]
+#[cfg(not(any(test, feature = "test-support")))]
 static RELOAD_LAST_LAST: AtomicU32 = AtomicU32::new(u32::MAX);
-#[cfg(target_pointer_width = "32")]
+#[cfg(not(any(test, feature = "test-support")))]
 static RELOAD_LAST_HEAD: AtomicU32 = AtomicU32::new(u32::MAX);
 
-#[cfg(target_pointer_width = "32")]
+#[cfg(not(any(test, feature = "test-support")))]
 fn reset_reload_repair_evidence() {
     RELOAD_OBSERVATIONS.store(0, Ordering::Relaxed);
     RELOAD_UPPER_ONLY.store(0, Ordering::Relaxed);
@@ -156,14 +156,14 @@ fn reset_reload_repair_evidence() {
     RELOAD_LAST_HEAD.store(u32::MAX, Ordering::Relaxed);
 }
 
-#[cfg(target_pointer_width = "32")]
+#[cfg(not(any(test, feature = "test-support")))]
 fn increment_saturating(counter: &AtomicU32) {
     let _ = counter.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
         Some(value.saturating_add(1))
     });
 }
 
-#[cfg(target_pointer_width = "32")]
+#[cfg(not(any(test, feature = "test-support")))]
 const fn encode_optional_evidence(value: Option<u32>) -> u32 {
     match value {
         Some(value) => value,
@@ -171,7 +171,7 @@ const fn encode_optional_evidence(value: Option<u32>) -> u32 {
     }
 }
 
-#[cfg(target_pointer_width = "32")]
+#[cfg(not(any(test, feature = "test-support")))]
 const fn decode_optional_evidence(value: u32) -> Option<u32> {
     if value == u32::MAX { None } else { Some(value) }
 }
@@ -418,10 +418,7 @@ pub enum RxReloadObservation {
 pub struct RxRingStopped<'a, const COUNT: usize> {
     descriptors: &'a [Descriptor; COUNT],
     descriptor_base: u32,
-    #[cfg(target_pointer_width = "32")]
     buffer_addresses: &'a RxDmaBufferAddresses<COUNT>,
-    #[cfg(not(target_pointer_width = "32"))]
-    buffer_addresses: [u32; COUNT],
     buffer_size: u16,
     initial_start: usize,
     accepted_tail: usize,
@@ -446,10 +443,7 @@ pub struct RxRingStopped<'a, const COUNT: usize> {
 pub struct RxRingLive<'a, const COUNT: usize> {
     descriptors: &'a [Descriptor; COUNT],
     descriptor_base: u32,
-    #[cfg(target_pointer_width = "32")]
     buffer_addresses: &'a RxDmaBufferAddresses<COUNT>,
-    #[cfg(not(target_pointer_width = "32"))]
-    buffer_addresses: [u32; COUNT],
     buffer_size: u16,
     observed_mask: RxObservedMask,
     recycle_start: usize,
@@ -461,7 +455,7 @@ pub struct RxRingLive<'a, const COUNT: usize> {
     cursor_generation: u32,
     completion_release_probe_pending: bool,
     exhausted_republication_head_low: Option<u32>,
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     reload_repair_evidence: RxReloadRepairEvidence,
     binding: RxDmaBinding<'a>,
     lifecycle: Option<&'a AtomicU8>,
@@ -477,10 +471,7 @@ pub struct RxRingLive<'a, const COUNT: usize> {
 pub struct RxRingHalted<'a, const COUNT: usize> {
     descriptors: &'a [Descriptor; COUNT],
     descriptor_base: u32,
-    #[cfg(target_pointer_width = "32")]
     buffer_addresses: &'a RxDmaBufferAddresses<COUNT>,
-    #[cfg(not(target_pointer_width = "32"))]
-    buffer_addresses: [u32; COUNT],
     buffer_size: u16,
     lifecycle: Option<&'a AtomicU8>,
 }
@@ -494,14 +485,8 @@ impl<'a, const COUNT: usize> RxRingHalted<'a, COUNT> {
         self.descriptors
     }
 
-    #[cfg(target_pointer_width = "32")]
     pub const fn buffer_addresses(&self) -> &RxDmaBufferAddresses<COUNT> {
         self.buffer_addresses
-    }
-
-    #[cfg(not(target_pointer_width = "32"))]
-    pub const fn buffer_addresses(&self) -> &RxDmaBufferAddresses<COUNT> {
-        &self.buffer_addresses
     }
 
     /// Observe one halted descriptor without recovering mutation authority.
@@ -532,10 +517,7 @@ impl<'a, const COUNT: usize> RxRingHalted<'a, COUNT> {
             return Err((self, RxRingError::Size));
         }
         let lifecycle = self.lifecycle;
-        #[cfg(target_pointer_width = "32")]
         let buffer_addresses = self.buffer_addresses;
-        #[cfg(not(target_pointer_width = "32"))]
-        let buffer_addresses = &self.buffer_addresses;
         match RxRingStopped::prepare_inner(
             mmio,
             self.descriptors,
@@ -566,7 +548,7 @@ impl<'a, const COUNT: usize> RxRingHalted<'a, COUNT> {
     /// Production code must use `RxDmaStorage::prepare_halted`, which binds
     /// every descriptor to the matching arena buffer and restores its guard
     /// words before publication.
-    #[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
+    #[cfg(any(test, feature = "test-support", feature = "validation-raw-dma"))]
     pub fn prepare<M, F>(
         self,
         mmio: &mut M,
@@ -612,12 +594,12 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
     /// qualified by HIL_OPEN_RX_LIVE_APPEND_2026_07_27. A retained nonzero
     /// NEXT cursor is authoritative because WALKER_ENABLE does not clear it;
     /// the rebuilt zero-terminated list is rotated to that exact descriptor.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn prepare<M, F>(
         mmio: &mut M,
         descriptors: &'a [Descriptor; COUNT],
         descriptor_base: u32,
-        buffer_addresses: &[u32; COUNT],
+        buffer_addresses: &'a RxDmaBufferAddresses<COUNT>,
         buffer_size: u32,
         prepare_buffer: F,
     ) -> Result<Self, RxRingError>
@@ -644,7 +626,10 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
     /// and exclusively DMA-owned until the returned ring is confirmed halted.
     /// Shipping code must use [`crate::rx_storage::RxDmaStorage::prepare_ring`]
     /// instead, which establishes that proof from a static arena.
-    #[cfg(all(target_pointer_width = "32", feature = "validation-raw-dma"))]
+    #[cfg(all(
+        not(any(test, feature = "test-support")),
+        feature = "validation-raw-dma"
+    ))]
     #[allow(
         unsafe_code,
         reason = "raw target constructor makes its DMA lifetime contract explicit"
@@ -676,8 +661,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
         mmio: &mut M,
         descriptors: &'a [Descriptor; COUNT],
         descriptor_base: u32,
-        #[cfg(target_pointer_width = "32")] buffer_addresses: &'a RxDmaBufferAddresses<COUNT>,
-        #[cfg(not(target_pointer_width = "32"))] buffer_addresses: &RxDmaBufferAddresses<COUNT>,
+        buffer_addresses: &'a RxDmaBufferAddresses<COUNT>,
         buffer_size: u32,
         mut prepare_buffer: F,
         lifecycle: Option<&'a AtomicU8>,
@@ -738,10 +722,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
         Ok(Self {
             descriptors,
             descriptor_base,
-            #[cfg(target_pointer_width = "32")]
             buffer_addresses,
-            #[cfg(not(target_pointer_width = "32"))]
-            buffer_addresses: buffer_addresses_snapshot,
             buffer_size: buffer_size_u16,
             initial_start,
             accepted_tail: wrap_sub_one::<COUNT>(initial_start),
@@ -768,14 +749,8 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
         self.retained_next_low
     }
 
-    #[cfg(target_pointer_width = "32")]
     pub const fn buffer_addresses(&self) -> &RxDmaBufferAddresses<COUNT> {
         self.buffer_addresses
-    }
-
-    #[cfg(not(target_pointer_width = "32"))]
-    pub const fn buffer_addresses(&self) -> &RxDmaBufferAddresses<COUNT> {
-        &self.buffer_addresses
     }
 
     /// Observe one descriptor without exposing mutation authority.
@@ -832,7 +807,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
         if let Some(lifecycle) = self.lifecycle {
             RxDmaArenaState::Live.store(lifecycle);
         }
-        #[cfg(target_pointer_width = "32")]
+        #[cfg(not(any(test, feature = "test-support")))]
         reset_reload_repair_evidence();
         Ok(RxRingLive {
             descriptors: self.descriptors,
@@ -846,7 +821,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
             cursor_generation: 0,
             completion_release_probe_pending: false,
             exhausted_republication_head_low: None,
-            #[cfg(not(target_pointer_width = "32"))]
+            #[cfg(any(test, feature = "test-support"))]
             reload_repair_evidence: RxReloadRepairEvidence::default(),
             binding: self.binding,
             lifecycle: self.lifecycle,
@@ -868,14 +843,8 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         self.buffer_addresses.get(index).copied()
     }
 
-    #[cfg(target_pointer_width = "32")]
     pub const fn buffer_addresses(&self) -> &RxDmaBufferAddresses<COUNT> {
         self.buffer_addresses
-    }
-
-    #[cfg(not(target_pointer_width = "32"))]
-    pub const fn buffer_addresses(&self) -> &RxDmaBufferAddresses<COUNT> {
-        &self.buffer_addresses
     }
 
     /// Return whether this live owner was constructed by the storage arena
@@ -915,7 +884,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     }
 
     pub fn reload_repair_evidence(&self) -> RxReloadRepairEvidence {
-        #[cfg(target_pointer_width = "32")]
+        #[cfg(not(any(test, feature = "test-support")))]
         {
             RxReloadRepairEvidence {
                 observations: RELOAD_OBSERVATIONS.load(Ordering::Relaxed),
@@ -928,7 +897,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
                 ),
             }
         }
-        #[cfg(not(target_pointer_width = "32"))]
+        #[cfg(any(test, feature = "test-support"))]
         {
             self.reload_repair_evidence
         }
@@ -942,7 +911,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     ) {
         let upper_only =
             next_descriptor.address_low() == 0 && next_descriptor.has_unknown_upper_state();
-        #[cfg(target_pointer_width = "32")]
+        #[cfg(not(any(test, feature = "test-support")))]
         {
             increment_saturating(&RELOAD_OBSERVATIONS);
             if upper_only {
@@ -958,7 +927,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
                 RELOAD_LAST_HEAD.store(repair_head, Ordering::Relaxed);
             }
         }
-        #[cfg(not(target_pointer_width = "32"))]
+        #[cfg(any(test, feature = "test-support"))]
         {
             self.reload_repair_evidence.observations =
                 self.reload_repair_evidence.observations.saturating_add(1);
@@ -1426,7 +1395,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     }
 
     /// Raw/model completion transfer without a storage-bound buffer owner.
-    #[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
+    #[cfg(any(test, feature = "test-support", feature = "validation-raw-dma"))]
     pub fn take_completed_unit(
         &mut self,
         descriptor_limit: usize,
@@ -1466,7 +1435,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     }}
 
     /// Raw/model descriptor transfer without a storage-bound buffer owner.
-    #[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
+    #[cfg(any(test, feature = "test-support", feature = "validation-raw-dma"))]
     pub fn take_completed(&mut self, index: usize) -> Option<RxCompletedDescriptor> {
         self.take_completed_owned(index)
     }
@@ -1532,7 +1501,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     }}
 
     /// Raw/model half-ring recycle with caller-provided buffer preparation.
-    #[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
+    #[cfg(any(test, feature = "test-support", feature = "validation-raw-dma"))]
     pub fn recycle_completed_half<M, F>(
         &mut self,
         mmio: &mut M,
@@ -1558,7 +1527,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     /// successful append. This deliberately preserves the ROM doorbell/base
     /// repair ordering without hiding a wait in this finite operation.
     #[inline(never)]
-    #[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
+    #[cfg(any(test, feature = "test-support", feature = "validation-raw-dma"))]
     pub fn recycle_completed_batch<const BATCH: usize, M, F>(
         &mut self,
         mmio: &mut M,
@@ -1639,7 +1608,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     }}
 
     /// Raw/model prefix recycle with caller-provided buffer preparation.
-    #[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
+    #[cfg(any(test, feature = "test-support", feature = "validation-raw-dma"))]
     pub fn recycle_completed_prefix<const MAX_BATCH: usize, M, F>(
         &mut self,
         mmio: &mut M,
@@ -1736,7 +1705,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     }
 
     /// Raw/model unit recycle with caller-provided buffer preparation.
-    #[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
+    #[cfg(any(test, feature = "test-support", feature = "validation-raw-dma"))]
     pub fn recycle_completed_unit<M, F>(
         &mut self,
         mmio: &mut M,
@@ -2055,7 +2024,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     }
 
     /// Raw/model release proof from an explicitly supplied LAST snapshot.
-    #[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
+    #[cfg(any(test, feature = "test-support", feature = "validation-raw-dma"))]
     pub fn observe_completed_unit_link_release<M: RxDma>(
         &mut self,
         mmio: &mut M,
@@ -2579,7 +2548,7 @@ fn build_cold_ring_inner(
 /// Ordinary target code must construct a ring through [`RxRingStopped`],
 /// which couples mutation to the arena lifecycle instead of accepting a bare
 /// descriptor slice.
-#[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
+#[cfg(any(test, feature = "test-support", feature = "validation-raw-dma"))]
 pub fn build_cold_ring(
     descriptors: &[Descriptor],
     descriptor_dma_base: u32,
@@ -2595,7 +2564,7 @@ pub fn build_cold_ring(
 }
 
 /// Publish a synthetic cold ring in a native model with no DMA actor.
-#[cfg(not(target_pointer_width = "32"))]
+#[cfg(any(test, feature = "test-support"))]
 pub fn publish_cold_ring<M: RxDma>(
     mmio: &mut M,
     descriptor_dma_base: u32,
@@ -2612,7 +2581,10 @@ pub fn publish_cold_ring<M: RxDma>(
 /// `descriptor_dma_base` must identify a fully initialized static descriptor
 /// chain whose buffers remain exclusively available to DMA until the walker
 /// is confirmed stopped.
-#[cfg(all(target_pointer_width = "32", feature = "validation-raw-dma"))]
+#[cfg(all(
+    not(any(test, feature = "test-support")),
+    feature = "validation-raw-dma"
+))]
 #[allow(
     unsafe_code,
     reason = "raw target publication makes its DMA lifetime contract explicit"
@@ -2652,7 +2624,7 @@ fn publish_cold_ring_inner<M: RxDma>(
 /// `chip_enable` path calls `hal_mac_rx_enable`. Keeping this as a distinct
 /// operation preserves that ordering and gives the base register time to
 /// settle while the caller completes channel/MAC setup.
-#[cfg(not(target_pointer_width = "32"))]
+#[cfg(any(test, feature = "test-support"))]
 pub fn enable_receive<M: RxDma>(mmio: &mut M) -> Result<(), RxRingError> {
     enable_receive_inner(mmio, &RxDmaBinding::raw_validation(0))
 }
@@ -2680,13 +2652,13 @@ fn disable_receive_inner<M: RxDma>(mmio: &mut M) -> Result<(), RxRingError> {
 ///
 /// Production target lifecycle code must consume [`RxRingLive::try_stop`], so
 /// the register edge and the Rust ownership state cannot diverge.
-#[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
+#[cfg(any(test, feature = "test-support", feature = "validation-raw-dma"))]
 pub fn disable_receive<M: RxDma>(mmio: &mut M) -> Result<(), RxRingError> {
     disable_receive_inner(mmio)
 }
 
 /// Returns one CPU-owned completed descriptor to the cold/live ring.
-#[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
+#[cfg(any(test, feature = "test-support", feature = "validation-raw-dma"))]
 pub fn rearm_descriptor(
     descriptor: &Descriptor,
     expected_buffer_address: u32,

@@ -66,27 +66,6 @@ pub struct MonitorRx<
 impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORAGE_SIZE: usize>
     MonitorRx<'storage, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 {
-    #[cfg(not(target_pointer_width = "32"))]
-    pub fn prepare_initial<H: RxDma>(
-        plan: WifiStandaloneMonitorPlan,
-        hardware: &mut H,
-        storage: &'storage ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
-        descriptor_base: u32,
-        buffer_addresses: &'storage RxDmaBufferAddresses<COUNT>,
-    ) -> Result<Self, MonitorPrepareError> {
-        let (channel_context, filter) =
-            monitor_context(plan).map_err(MonitorPrepareError::Configuration)?;
-        let receive =
-            ReceiveFrontier::prepare_initial(hardware, storage, descriptor_base, buffer_addresses)
-                .map_err(MonitorPrepareError::Ring)?;
-        Ok(Self {
-            receive,
-            storage,
-            channel_context,
-            filter,
-        })
-    }
-
     /// Rebind the physical RX ring returned by a previous role without
     /// acquiring the shared DMA arena a second time.
     pub fn prepare_halted<H: RxDma>(
@@ -131,7 +110,6 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         })
     }
 
-    #[cfg(target_pointer_width = "32")]
     pub fn prepare_initial<H: RxDma>(
         plan: WifiStandaloneMonitorPlan,
         hardware: &mut H,

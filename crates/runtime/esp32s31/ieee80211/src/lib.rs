@@ -21,7 +21,7 @@ mod time;
 
 /// Generation `jumps` of the port's radio-clock relation, for tests that
 /// name generations by number.
-#[cfg(any(test, all(feature = "test-support", not(target_pointer_width = "32"))))]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn clock_generation(jumps: u32) -> oer_ieee80211_lower_mac::Ieee80211ClockGeneration {
     let mut source = oer_ieee80211_lower_mac::GenerationSource::new(0);
     for _ in 0..jumps {

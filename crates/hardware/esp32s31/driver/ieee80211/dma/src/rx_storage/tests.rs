@@ -428,7 +428,7 @@ fn one_arena_cannot_issue_two_root_ring_capabilities() {
     const COUNT: usize = 2;
     const BASE: u32 = 0x2f00_1000;
     let buffers = [0x2f00_2000, 0x2f00_2200];
-    let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+    let storage = Box::leak(Box::new(RxDmaStorage::<COUNT, 16, 20>::new()));
     let mut first_mmio = MockRxDma::default();
     let mut second_mmio = MockRxDma::default();
 
@@ -461,7 +461,7 @@ fn live_binding_rejects_a_foreign_storage_arena() {
     const COUNT: usize = 2;
     const BASE: u32 = 0x2f00_1000;
     let buffers = [0x2f00_2000, 0x2f00_2200];
-    let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+    let storage = Box::leak(Box::new(RxDmaStorage::<COUNT, 16, 20>::new()));
     let foreign = RxDmaStorage::<COUNT, 16, 20>::new();
     let mut mmio = MockRxDma::default();
     let live = storage
@@ -487,7 +487,7 @@ fn first_frontier_returns_one_unit_from_a_terminal_burst() {
     const BASE: u32 = 0x2f00_1000;
     const ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
     let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
-    let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+    let storage = Box::leak(Box::new(RxDmaStorage::<COUNT, 16, 20>::new()));
     let mut mmio = MockRxDma::default();
     let prepared = storage
         .prepare_ring(&mut mmio, BASE, &buffers)
@@ -534,7 +534,7 @@ fn failed_root_prepare_quarantines_the_arena_when_walker_stop_is_unproved() {
     const COUNT: usize = 2;
     const BASE: u32 = 0x2f00_1000;
     let buffers = [0x2f00_2000, 0x2f00_2200];
-    let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+    let storage = Box::leak(Box::new(RxDmaStorage::<COUNT, 16, 20>::new()));
     let mut mmio = MockRxDma {
         walker: true,
         fail_disable: true,
@@ -553,7 +553,7 @@ fn failed_halted_prepare_quarantines_the_arena_when_walker_stop_is_unproved() {
     const COUNT: usize = 2;
     const BASE: u32 = 0x2f00_1000;
     let buffers = [0x2f00_2000, 0x2f00_2200];
-    let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+    let storage = Box::leak(Box::new(RxDmaStorage::<COUNT, 16, 20>::new()));
     let mut mmio = MockRxDma::default();
     let prepared = storage
         .prepare_ring(&mut mmio, BASE, &buffers)
@@ -587,7 +587,7 @@ fn partial_live_buffer_rearm_quarantines_the_arena() {
     const BASE: u32 = 0x2f00_1000;
     const ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
     let buffers = [0x2f00_2000, 0x2f00_2200];
-    let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+    let storage = Box::leak(Box::new(RxDmaStorage::<COUNT, 16, 20>::new()));
     let mut mmio = MockRxDma::default();
     let prepared = storage
         .prepare_ring(&mut mmio, BASE, &buffers)
@@ -625,7 +625,7 @@ fn completed_descriptor_metadata_is_validated_before_payload_transfer() {
     let buffers = [0x2f00_2000, 0x2f00_2200];
 
     for corruption in 0..3 {
-        let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+        let storage = Box::leak(Box::new(RxDmaStorage::<COUNT, 16, 20>::new()));
         let mut mmio = MockRxDma::default();
         let prepared = storage
             .prepare_ring(&mut mmio, BASE, &buffers)
@@ -665,7 +665,7 @@ fn impossible_reload_frontier_quarantines_the_static_arena() {
     const BASE: u32 = 0x2f00_1000;
     const ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
     let buffers = [0x2f00_2000, 0x2f00_2200];
-    let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+    let storage = Box::leak(Box::new(RxDmaStorage::<COUNT, 16, 20>::new()));
     let mut mmio = MockRxDma::default();
     let prepared = storage
         .prepare_ring(&mut mmio, BASE, &buffers)
@@ -714,7 +714,7 @@ fn in_arena_intermediate_last_repairs_from_its_successor() {
     const BASE: u32 = 0x2f00_1000;
     const ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
     let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
-    let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+    let storage = Box::leak(Box::new(RxDmaStorage::<COUNT, 16, 20>::new()));
     let mut mmio = MockRxDma::default();
     let prepared = storage
         .prepare_ring(&mut mmio, BASE, &buffers)
@@ -771,7 +771,7 @@ fn exhausted_reload_records_the_direct_base_repair_facts() {
     const BASE: u32 = 0x2f00_1000;
     const ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
     let buffers = [0x2f00_2000, 0x2f00_2200];
-    let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+    let storage = Box::leak(Box::new(RxDmaStorage::<COUNT, 16, 20>::new()));
     let mut mmio = MockRxDma::default();
     let prepared = storage
         .prepare_ring(&mut mmio, BASE, &buffers)
@@ -832,7 +832,7 @@ fn exhausted_list_reclaims_untouched_prefix_before_terminal_payload() {
     const BASE: u32 = 0x2f00_1000;
     const ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
     let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
-    let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+    let storage = Box::leak(Box::new(RxDmaStorage::<COUNT, 16, 20>::new()));
     let mut mmio = MockRxDma::default();
     let prepared = storage
         .prepare_ring(&mut mmio, BASE, &buffers)
@@ -912,7 +912,7 @@ fn dropping_a_taken_completed_unit_requires_radio_reset() {
     const BASE: u32 = 0x2f00_1000;
     const ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
     let buffers = [0x2f00_2000, 0x2f00_2200];
-    let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+    let storage = Box::leak(Box::new(RxDmaStorage::<COUNT, 16, 20>::new()));
     let mut mmio = MockRxDma::default();
     let prepared = storage
         .prepare_ring(&mut mmio, BASE, &buffers)
@@ -945,7 +945,7 @@ fn frozen_last_releases_the_descriptor_equal_to_last() {
     const BASE: u32 = 0x2f00_1000;
     const ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
     let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
-    let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+    let storage = Box::leak(Box::new(RxDmaStorage::<COUNT, 16, 20>::new()));
     let mut mmio = MockRxDma::default();
     let prepared = storage
         .prepare_ring(&mut mmio, BASE, &buffers)
@@ -995,7 +995,7 @@ fn frozen_last_unit_reclaim_returns_only_one_vendor_chain() {
     const BASE: u32 = 0x2f00_1000;
     const ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
     let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
-    let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+    let storage = Box::leak(Box::new(RxDmaStorage::<COUNT, 16, 20>::new()));
     let mut mmio = MockRxDma::default();
     let prepared = storage
         .prepare_ring(&mut mmio, BASE, &buffers)
@@ -1064,7 +1064,7 @@ fn ambiguous_start_quarantines_the_arena_when_walker_is_observed_live() {
     const COUNT: usize = 2;
     const BASE: u32 = 0x2f00_1000;
     let buffers = [0x2f00_2000, 0x2f00_2200];
-    let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+    let storage = Box::leak(Box::new(RxDmaStorage::<COUNT, 16, 20>::new()));
     let mut mmio = MockRxDma {
         ambiguous_enable: true,
         ..MockRxDma::default()

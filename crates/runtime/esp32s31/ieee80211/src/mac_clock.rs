@@ -117,7 +117,7 @@ pub struct MacClockSnapshot {
 
 impl MacClockSnapshot {
     /// A reviewed sample supplied by a host clock model.
-    #[cfg(any(test, all(feature = "test-support", not(target_pointer_width = "32"))))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn for_validation(sample: Ieee80211ClockSample) -> Self {
         let mut timeline = MacTimeline::new();
         // The model explicitly supplies the widened counter relation.

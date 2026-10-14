@@ -298,17 +298,16 @@ impl PortBody<Backend> for ThreadBody<'_> {
                     let mut events = parts.events;
                     let mut control = parts.control;
                     let client = parts.clients.client(&zero);
-                    let radio: OpenThreadRadio<'_, '_, _, _, _, RX_QUEUE, _> =
-                        OpenThreadRadio::new(
-                            &mut *events,
-                            &mut *control,
-                            client,
-                            seat,
-                            PendingSlots {
-                                short: interface.short,
-                                extended: interface.extended,
-                            },
-                        );
+                    let radio: OpenThreadRadio<'_, '_, _, _, _, RX_QUEUE, _> = OpenThreadRadio::new(
+                        &mut *events,
+                        &mut *control,
+                        client,
+                        seat,
+                        PendingSlots {
+                            short: interface.short,
+                            extended: interface.extended,
+                        },
+                    );
                     // The stack's radio, alarm and tasklet loops share one
                     // large future; it and the server end before the stack
                     // and its socket are dropped.

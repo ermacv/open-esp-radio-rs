@@ -255,8 +255,7 @@ pub(in crate::product_hil) async fn run_session(
                         schedule_stop.signal(());
                         return None;
                     };
-                    evidence.rf_closed =
-                        client.radio.lock().await.lease().attachment().rf_closed();
+                    evidence.rf_closed = client.radio.lock().await.lease().attachment().rf_closed();
                     let started = {
                         let started = core::pin::pin!(client.start(parked));
                         started.await

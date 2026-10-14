@@ -28,7 +28,9 @@
 //! number and gets the Retry bit; the air answers each aggregate with a
 //! Block Ack (every subframe by default). `ModelAir::answer` queues one
 //! `AirAnswer` per publication: ACK, BA bitmap, missing response, collision or
-//! hardware timeout. ACK/BA shape mismatch poisons before publication and
+//! hardware timeout. The checked frame determines whether it expects no
+//! response, an ACK or a Block Ack (including a single BAR). A mismatched
+//! response poisons before publication and
 //! quarantines the rejected operation until teardown. There is no separate
 //! BA queue whose injection could escape to a later aggregate.
 //! The builder rejects duplicate sequence numbers and subframes outside the
@@ -451,6 +453,7 @@ pub struct ModelSent<'id, C: ModelClass> {
     role: VifRole,
     buffer: ModelBuffer<'id, C>,
     layout: MpduLayout,
+    response: ResponsePolicy,
     key: Option<KeyIdentity>,
     body: Option<ModelBody>,
     packet_number: Option<u64>,
@@ -630,6 +633,7 @@ impl Drop for PreparedKey {
 pub struct ModelMpdu<'id> {
     buffer: ModelAnyBuffer<'id>,
     layout: MpduLayout,
+    response: ResponsePolicy,
     // Fresh memory keeps its body here, including during publication. Only
     // consuming the terminal moves both into the returned Sent owner.
     body: Option<ModelBody>,
@@ -698,6 +702,7 @@ impl<'id> TxMpdu for ModelMpdu<'id> {
         let Self {
             buffer,
             layout,
+            response,
             body,
             published,
         } = self;
@@ -714,6 +719,7 @@ impl<'id> TxMpdu for ModelMpdu<'id> {
                     role,
                     buffer,
                     layout,
+                    response,
                     key,
                     body,
                     packet_number,
@@ -732,6 +738,7 @@ impl<'id> TxMpdu for ModelMpdu<'id> {
                     role,
                     buffer,
                     layout,
+                    response,
                     key,
                     body,
                     packet_number,
@@ -768,11 +775,16 @@ impl<'id> ModelMpdu<'id> {
         }
     }
 
-    fn from_sent(mut buffer: ModelAnyBuffer<'id>, layout: MpduLayout) -> Self {
+    fn from_sent(
+        mut buffer: ModelAnyBuffer<'id>,
+        layout: MpduLayout,
+        response: ResponsePolicy,
+    ) -> Self {
         buffer.retry();
         Self {
             buffer,
             layout,
+            response,
             body: None,
             published: None,
         }
@@ -1374,24 +1386,44 @@ impl ModelAir {
         }
     }
 
-    fn result(&self, form: AirForm) -> Result<AirAnswer, AnswerShapeMismatch> {
-        let answer = self.answers.borrow_mut().pop_front().unwrap_or(match form {
-            AirForm::Single => AirAnswer::Ack,
-            AirForm::Aggregate => AirAnswer::BlockAck(u64::MAX),
-        });
-        match (form, answer) {
-            (AirForm::Single, AirAnswer::BlockAck(_)) | (AirForm::Aggregate, AirAnswer::Ack) => {
-                Err(AnswerShapeMismatch)
-            }
+    fn result(&self, response: ResponsePolicy) -> Result<AirAnswer, AnswerShapeMismatch> {
+        let answer = self
+            .answers
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or(match response {
+                ResponsePolicy::NoResponseExpected => AirAnswer::NoResponse,
+                ResponsePolicy::Ack => AirAnswer::Ack,
+                ResponsePolicy::BlockAck { .. } => AirAnswer::BlockAck(u64::MAX),
+            });
+        match (response, answer) {
+            (ResponsePolicy::NoResponseExpected, AirAnswer::Ack | AirAnswer::BlockAck(_))
+            | (ResponsePolicy::Ack, AirAnswer::BlockAck(_))
+            | (ResponsePolicy::BlockAck { .. }, AirAnswer::Ack) => Err(AnswerShapeMismatch),
             _ => Ok(answer),
         }
     }
 }
 
-#[derive(Clone, Copy)]
-enum AirForm {
-    Single,
-    Aggregate,
+#[derive(Clone, Copy, Debug)]
+enum ResponsePolicy {
+    NoResponseExpected,
+    Ack,
+    BlockAck { start_sequence: SequenceNumber },
+}
+
+impl ResponsePolicy {
+    fn of_frame<K>(frame: &TxFrame<'_, '_, K>) -> Self {
+        match frame {
+            TxFrame::Individual { .. } => Self::Ack,
+            TxFrame::IndividualNoAck { .. } | TxFrame::Group { .. } => Self::NoResponseExpected,
+            TxFrame::BlockAckRequest {
+                starting_sequence, ..
+            } => Self::BlockAck {
+                start_sequence: *starting_sequence,
+            },
+        }
+    }
 }
 #[derive(Debug)]
 struct AnswerShapeMismatch;
@@ -2382,13 +2414,26 @@ impl<'id, X: ModelContext> Published<'id, X> {
     ) -> Option<Publication<'id, X>> {
         match self {
             Self::Single(mut plan) => {
-                if matches!(result, AirAnswer::Ack | AirAnswer::NoResponse) {
+                if matches!(
+                    result,
+                    AirAnswer::Ack | AirAnswer::BlockAck(_) | AirAnswer::NoResponse
+                ) {
                     let transmissions = plan
                         .last
                         .map_or(NonZeroU16::MIN, |(count, _)| count.saturating_add(1));
                     plan.last = Some((transmissions, plan.rate));
                 }
-                let outcome = air_outcome(result, plan.last, None, cause);
+                let response = plan.prepared.operation.payload().response;
+                let report = match (response, result) {
+                    (ResponsePolicy::BlockAck { start_sequence }, AirAnswer::BlockAck(bitmap)) => {
+                        Some(BlockAckReport {
+                            start_sequence,
+                            bitmap,
+                        })
+                    }
+                    _ => None,
+                };
+                let outcome = air_outcome(response, result, plan.last, report, cause);
                 if matches!(
                     outcome,
                     TxOutcome::Ended {
@@ -2403,12 +2448,15 @@ impl<'id, X: ModelContext> Published<'id, X> {
                 terminal(held, *plan.prepared, outcome);
             }
             Self::Aggregate { prepared, report } => {
+                let response = ResponsePolicy::BlockAck {
+                    start_sequence: prepared.start_sequence,
+                };
                 let last = (!matches!(result, AirAnswer::Collision))
                     .then_some((NonZeroU16::MIN, prepared.rate));
                 terminal_aggregate(
                     held,
                     prepared,
-                    air_outcome(result, last, Some(report), cause),
+                    air_outcome(response, result, last, Some(report), cause),
                 );
             }
         }
@@ -2417,6 +2465,7 @@ impl<'id, X: ModelContext> Published<'id, X> {
 }
 /// One interpretation of air completion for both submission shapes.
 fn air_outcome(
+    response: ResponsePolicy,
     answer: AirAnswer,
     last: Option<(NonZeroU16, PhyRate)>,
     report: Option<BlockAckReport>,
@@ -2432,6 +2481,13 @@ fn air_outcome(
                 ..TxAck::default()
             }),
         },
+        AirAnswer::NoResponse if matches!(response, ResponsePolicy::NoResponseExpected) => {
+            TxOutcome::Ended {
+                status: TxEndStatus::Delivered,
+                last,
+                ack: None,
+            }
+        }
         AirAnswer::NoResponse | AirAnswer::Collision => match cause {
             Some(cause) => TxOutcome::Withdrawn(cause),
             None => TxOutcome::Ended {
@@ -2482,7 +2538,7 @@ fn publish_single<'id, X: ModelContext>(
     keys: &[KeyIdentity],
     mut plan: SinglePlan<'id, X>,
 ) -> Option<Publication<'id, X>> {
-    let result = match held.air.result(AirForm::Single) {
+    let result = match held.air.result(plan.prepared.operation.payload().response) {
         Ok(result) => result,
         Err(AnswerShapeMismatch) => {
             let _fault = held.quarantined.push(Work::Single(plan.prepared));
@@ -2559,7 +2615,9 @@ fn publish_aggregate<'id, X: ModelContext>(
     keys: &[KeyIdentity],
     mut aggregate: PreparedAggregate<'id, X>,
 ) -> Option<Publication<'id, X>> {
-    let result = match held.air.result(AirForm::Aggregate) {
+    let result = match held.air.result(ResponsePolicy::BlockAck {
+        start_sequence: aggregate.start_sequence,
+    }) {
         Ok(result) => result,
         Err(AnswerShapeMismatch) => {
             let _fault = held.quarantined.push(Work::Aggregate(aggregate));
@@ -2943,10 +3001,12 @@ fn prepare_model<
                 TxProtection::Ccmp(key) => Some(R::tx_identity(&key)),
             };
             let plan = stages(frame.frame());
+            let response = ResponsePolicy::of_frame(frame.frame());
             (
                 ModelMpdu {
                     buffer: C::erase(buffer),
                     layout,
+                    response,
                     body,
                     published: None,
                 },
@@ -2973,8 +3033,9 @@ fn prepare_model<
             };
             let key = mpdu.key.clone();
             let layout = mpdu.layout;
+            let response = mpdu.response;
             (
-                ModelMpdu::from_sent(C::erase_sent(mpdu), layout),
+                ModelMpdu::from_sent(C::erase_sent(mpdu), layout, response),
                 stages,
                 key,
             )
@@ -3291,6 +3352,7 @@ fn push_model<
                 ModelMpdu {
                     buffer: C::erase(buffer),
                     layout,
+                    response: ResponsePolicy::Ack,
                     body,
                     published: None,
                 },
@@ -3306,7 +3368,11 @@ fn push_model<
                 });
             };
             let layout = mpdu.layout;
-            (ModelMpdu::from_sent(C::erase_sent(mpdu), layout), bit)
+            let response = mpdu.response;
+            (
+                ModelMpdu::from_sent(C::erase_sent(mpdu), layout, response),
+                bit,
+            )
         }
     };
     let first = S::retain_head(&aggregate.first, mpdu.buffer.sequence());

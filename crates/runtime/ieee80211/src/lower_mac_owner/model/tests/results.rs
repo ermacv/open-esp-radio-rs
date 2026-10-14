@@ -214,11 +214,18 @@ fn an_empty_block_ack_is_consumed_before_the_following_single() {
 }
 
 #[test]
-fn an_answer_for_the_other_submission_shape_is_refused_and_consumed() {
+fn an_answer_incompatible_with_the_checked_response_policy_is_refused_and_consumed() {
     let (_, air) = backend();
     for (form, wrong) in [
-        (AirForm::Single, AirAnswer::BlockAck(1)),
-        (AirForm::Aggregate, AirAnswer::Ack),
+        (ResponsePolicy::Ack, AirAnswer::BlockAck(1)),
+        (
+            ResponsePolicy::BlockAck {
+                start_sequence: SequenceNumber::ZERO,
+            },
+            AirAnswer::Ack,
+        ),
+        (ResponsePolicy::NoResponseExpected, AirAnswer::Ack),
+        (ResponsePolicy::NoResponseExpected, AirAnswer::BlockAck(1)),
     ] {
         air.answer(wrong);
         assert!(air.result(form).is_err());
@@ -243,7 +250,18 @@ fn failed_responses_keep_each_withdrawal_reason_for_both_forms() {
                 }),
             ] {
                 assert_eq!(
-                    air_outcome(answer, Some((NonZeroU16::MIN, rate)), report, Some(cause)),
+                    air_outcome(
+                        match report {
+                            None => ResponsePolicy::Ack,
+                            Some(report) => ResponsePolicy::BlockAck {
+                                start_sequence: report.start_sequence
+                            },
+                        },
+                        answer,
+                        Some((NonZeroU16::MIN, rate)),
+                        report,
+                        Some(cause)
+                    ),
                     TxOutcome::Withdrawn(cause)
                 );
             }

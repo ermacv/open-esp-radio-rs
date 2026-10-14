@@ -53,6 +53,9 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   Preflight an aggregate's whole fresh-PN range before changing any subframe;
   retries consume no new PN. A poisoned submission still owns the transferred
   context, ticket and MPDUs until teardown, even when its call reports poison.
+  Single/Aggregate cardinality does not determine the response: a single BAR
+  solicits Block Ack, while Group and IndividualNoAck complete without an ACK.
+  Preserve the checked frame's response policy through Sent retries and barriers.
 
 - CCMP replay preparation returns an exclusive borrow of the selected
   frontier. Commit the token itself before publication, or drop it to cancel.

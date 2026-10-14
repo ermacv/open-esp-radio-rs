@@ -54,6 +54,9 @@ use oer_ieee80211_runtime::lower_mac_owner::model::{
 const STATION: [u8; 6] = [2, 0, 0, 0, 0, 1];
 const PEER: [u8; 6] = [2, 0, 0, 0, 0, 2];
 
+#[path = "model_feature/response.rs"]
+mod response;
+
 fn backend() -> (ModelBackend, Rc<ModelAir>) {
     ModelBackend::new(
         Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap(),

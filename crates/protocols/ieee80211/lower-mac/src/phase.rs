@@ -770,6 +770,9 @@ pub enum PreparationError {
     RetransmissionKind,
     /// The aggregate cannot take another subframe.
     AggregateFull,
+    /// A subframe lies outside the compressed BA window starting at the
+    /// aggregate's first sequence number. Neither source has been published.
+    BlockAckWindow,
 }
 
 /// What one interface of a running phase does: its own frames, keys and

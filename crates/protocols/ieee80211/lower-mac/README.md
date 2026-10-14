@@ -46,8 +46,8 @@ back; its operations are synchronous and never wait:
   obtains exactly sized arrays with `split_first_chunk_mut`, then the header
   encoder writes into `&mut [u8; N]` without a fallible operation. Storage
   shortage, CCMP shortage and body overlap are `LayoutError`; backend
-  `PreparationError` contains only retransmission identity/kind and aggregate
-  capacity refusals.
+  `PreparationError` contains retransmission identity/kind, aggregate capacity
+  and Block Ack window refusals.
   It retains the phase, install, role and key borrow. `ClassSizedFrame`
   carries a portable machine's size proof until the service adds phase-bound
   rates, without rechecking the class. `TxProtection::{Open, Ccmp(key)}` in
@@ -72,6 +72,9 @@ back; its operations are synchronous and never wait:
   their receiver/TID come from the builder. A Sent subframe retains its
   original installation and must match the builder. Refusal returns both
   the unchanged source and the builder with all earlier subframes.
+  A builder using a compressed Block Ack window refuses `BlockAckWindow`
+  before publication when a subframe is outside the 64 sequence numbers
+  beginning at its first subframe, modulo 4096.
   A successful push returns `NonEmptyAggregate`; only this state can be
   submitted. `AggregateFull` remains a push refusal, and an empty aggregate
   has no submit operation ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6156247280)).

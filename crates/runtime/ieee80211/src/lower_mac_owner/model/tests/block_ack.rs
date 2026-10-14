@@ -1,0 +1,165 @@
+use super::*;
+use alloc::collections::BTreeSet;
+use oer_ieee80211_lower_mac::{AggregateAttempt, MpduStartSpacing};
+
+struct Window {
+    sequences: &'static [u16],
+    acknowledged: u64,
+    refused: Option<u16>,
+}
+
+impl Work for Window {
+    async fn work<'p, 'id: 'p>(
+        self,
+        phase: &mut ModelPhase<'p, 'id>,
+        resources: ModelResources<'id>,
+    ) {
+        let ModelResources {
+            mut tickets,
+            mut small,
+            ..
+        } = resources;
+        let air = phase.held.air.clone();
+        let rate = phase
+            .rate(PhyRate::Ht(
+                oer_ieee80211_mac::phy::HtRate::new(
+                    HtMcs::new(7).unwrap(),
+                    oer_ieee80211_mac::phy::PpduBandwidth::Mhz20,
+                    false,
+                )
+                .unwrap(),
+            ))
+            .unwrap();
+        let mut station = phase.station();
+        let rate = station.ampdu_rate(rate).ok().unwrap();
+        let aggregate = station.aggregate(
+            IndividualAddress::new(PEER).unwrap(),
+            Tid::new(0).unwrap(),
+            rate,
+            TxProtection::Open,
+        );
+        let buffer = small.remove(0);
+        let mut indices = alloc::vec![buffer.slot.index()];
+        let mut aggregate = push_subframe(
+            aggregate,
+            buffer,
+            subframe_frame(self.sequences[0]),
+            Some(ModelBody(alloc::vec![0x5a])),
+        );
+        for &sequence in &self.sequences[1..] {
+            let buffer = small.remove(0);
+            indices.push(buffer.slot.index());
+            aggregate = push_subframe(aggregate, buffer, subframe_frame(sequence), None);
+        }
+        if let Some(sequence) = self.refused {
+            let buffer = small.remove(0);
+            let refused_index = buffer.slot.index();
+            let operation = CheckedAggregate::new(
+                aggregate,
+                SubframeSource::Fresh {
+                    buffer,
+                    frame: ClassSubframe::new(subframe_frame(sequence)).ok().unwrap(),
+                    body: Some(ModelBody(alloc::vec![0x7a])),
+                },
+            )
+            .ok()
+            .unwrap();
+            let Err(AggregateRefused {
+                reason,
+                aggregate: returned,
+                subframe,
+            }) = <ModelTypes as TxBufferPool<ModelSmall>>::push_aggregate(operation)
+            else {
+                panic!("out-of-window subframe was accepted")
+            };
+            assert_eq!(reason, PreparationError::BlockAckWindow);
+            let SubframeSource::Fresh { buffer, body, .. } = subframe else {
+                panic!()
+            };
+            assert_eq!(buffer.slot.index(), refused_index);
+            assert_eq!(body.unwrap().0, [0x7a]);
+            assert!(air.sent().is_empty(), "refusal must precede publication");
+            aggregate = returned;
+        }
+        air.block_ack(self.acknowledged);
+        let ticket = tickets.remove(0);
+        let ticket_index = ticket.index();
+        station
+            .submit_ampdu(AggregateAttempt {
+                context: (),
+                ticket,
+                aggregate,
+                protection: Protection::None,
+                power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+                coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+                min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
+            })
+            .unwrap();
+        let (ticket, buffers, bodies, report) = aggregate_completion(phase).await;
+        assert_eq!(ticket.index(), ticket_index);
+        let report = report.unwrap();
+        let expected: BTreeSet<u16> = self
+            .sequences
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| self.acknowledged & (1 << index) != 0)
+            .map(|(_, &sequence)| sequence)
+            .collect();
+        // Independent oracle: decode bits to the finite set of wire sequence
+        // numbers; do not repeat the model's forward-distance calculation.
+        let observed: BTreeSet<u16> = (0..64)
+            .filter(|bit| report.bitmap & (1 << bit) != 0)
+            .map(|bit| (report.start_sequence.get() + bit) % 4096)
+            .collect();
+        assert_eq!(observed, expected);
+        assert_eq!(buffers.len(), indices.len());
+        assert!(bodies.is_empty(), "published bodies stay in Sent");
+        for (index, (buffer, original_index)) in buffers.into_iter().zip(indices).enumerate() {
+            let ModelAnyBuffer::SmallSent(sent) = buffer else {
+                panic!()
+            };
+            let (buffer, body) = <ModelTypes as TxBufferPool<ModelSmall>>::renew(sent);
+            assert_eq!(buffer.slot.index(), original_index);
+            if index == 0 {
+                assert_eq!(body.unwrap().0, [0x5a]);
+            } else {
+                assert!(body.is_none());
+            }
+        }
+    }
+}
+
+#[test]
+fn bitmap_matches_acknowledged_sequence_set_across_wrap_and_reordering() {
+    for (sequences, acknowledged) in [
+        (&[0, 63][..], 0b11),
+        (&[4095, 0, 62][..], 0b110),
+        (&[40, 43, 103, 41][..], 0b1010),
+        (&[40, 103, 41, 43][..], 0b1100),
+    ] {
+        let (backend, _) = backend();
+        block_on(run_port(
+            backend,
+            Body(Window {
+                sequences,
+                acknowledged,
+                refused: None,
+            }),
+        ));
+    }
+}
+
+#[test]
+fn review_aggregate_does_not_alias_blockack_bit63() {
+    for (start, refused) in [(&[0][..], 64), (&[4095][..], 63), (&[0][..], 4095)] {
+        let (backend, _) = backend();
+        block_on(run_port(
+            backend,
+            Body(Window {
+                sequences: start,
+                acknowledged: 1,
+                refused: Some(refused),
+            }),
+        ));
+    }
+}

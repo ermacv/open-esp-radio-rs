@@ -30,6 +30,9 @@
 //! MPDUs and aggregates consume the same injected publication results: ACK/BA,
 //! missing response, collision or hardware timeout. An aggregate consumes its
 //! selected BA bitmap even when that publication receives no response.
+//! The builder rejects subframes outside the 64-sequence BA window rooted at
+//! its first subframe, using sequence arithmetic modulo 4096. Refusal returns
+//! both the unchanged builder and the rejected subframe before publication.
 //!
 //! Each concrete class pool uses the portable `MpduLayout` proof before
 //! writing headers or copying an external body. Its allocation is privately
@@ -1264,6 +1267,8 @@ impl<X: ModelContext> Work<'_, X> {
 /// One subframe of an aggregate, in its buffer.
 struct Subframe<'id> {
     mpdu: ModelMpdu<'id>,
+    /// Checked at admission against the first subframe's BA window.
+    acknowledgement_bit: u64,
 }
 
 /// An A-MPDU attempt prepared for its queue.
@@ -2174,13 +2179,13 @@ fn publish_aggregate<'id, X: ModelContext>(
             }
         };
         held.air.sent.borrow_mut().push(frame);
-        let distance = aggregate
-            .start_sequence
-            .forward_distance(mpdu.buffer.sequence());
         if acknowledged & (1 << index) != 0 {
-            bitmap |= 1 << distance.min(63);
+            bitmap |= subframe.acknowledgement_bit;
         }
-        subframes.push(Subframe { mpdu });
+        subframes.push(Subframe {
+            mpdu,
+            acknowledgement_bit: subframe.acknowledgement_bit,
+        });
     }
     aggregate.subframes = subframes;
     // NonEmptyAggregate carries the first sequence into PreparedAggregate below.
@@ -2693,6 +2698,14 @@ pub struct ModelAggregate<
     key_borrow: PhantomData<&'k ()>,
     caps: TypeProof<(R, K, X, S)>,
 }
+impl<R, K, X: ModelContext, S: AggregateState> ModelAggregate<'_, '_, '_, R, K, X, S> {
+    fn acknowledgement_bit(&self, sequence: SequenceNumber) -> Option<u64> {
+        let distance = self.subframes.first().map_or(0, |first| {
+            first.mpdu.buffer.sequence().forward_distance(sequence)
+        });
+        1_u64.checked_shl(u32::from(distance))
+    }
+}
 impl<'id, R, K, X: ModelContext, S: AggregateState> PhaseAggregate<'id>
     for ModelAggregate<'_, '_, 'id, R, K, X, S>
 {
@@ -2776,22 +2789,53 @@ fn push_model<
             subframe: source.into_source(),
         });
     }
-    let mpdu = match source {
+    let (mpdu, acknowledgement_bit) = match source {
         CheckedSubframe::Fresh(fresh) => {
-            let (FreshSubframe { buffer, body, .. }, layout) = fresh.into_parts();
-            ModelMpdu {
-                buffer: C::erase(buffer),
+            let (
+                FreshSubframe {
+                    buffer,
+                    frame,
+                    body,
+                },
                 layout,
-                body,
-            }
+            ) = fresh.into_parts();
+            let Some(bit) = aggregate.acknowledgement_bit(buffer.memory.sequence()) else {
+                return Err(AggregateRefused {
+                    reason: PreparationError::BlockAckWindow,
+                    aggregate,
+                    subframe: SubframeSource::Fresh {
+                        buffer,
+                        frame,
+                        body,
+                    },
+                });
+            };
+            (
+                ModelMpdu {
+                    buffer: C::erase(buffer),
+                    layout,
+                    body,
+                },
+                bit,
+            )
         }
         CheckedSubframe::Sent(mpdu) => {
+            let Some(bit) = aggregate.acknowledgement_bit(mpdu.buffer.memory.sequence()) else {
+                return Err(AggregateRefused {
+                    reason: PreparationError::BlockAckWindow,
+                    aggregate,
+                    subframe: SubframeSource::Sent(mpdu),
+                });
+            };
             let layout = mpdu.layout;
-            ModelMpdu::from_sent(C::erase_sent(mpdu), layout)
+            (ModelMpdu::from_sent(C::erase_sent(mpdu), layout), bit)
         }
     };
     let first = S::retain_head(aggregate.first, mpdu.buffer.sequence());
-    aggregate.subframes.push(Subframe { mpdu });
+    aggregate.subframes.push(Subframe {
+        mpdu,
+        acknowledgement_bit,
+    });
     let ModelAggregate {
         subframes,
         receiver,

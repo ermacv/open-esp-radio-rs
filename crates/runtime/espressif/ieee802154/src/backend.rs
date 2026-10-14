@@ -40,8 +40,8 @@ use oer_espressif_ieee802154_radio::Ieee802154Random;
 use oer_ieee802154::{
     CcaMode, Channel, CommandError, Configuration, CslReceiver, EnhancedAckGeneration,
     FrameAddress, FrameCounterUpdate, Ieee802154Instant, Interface, InterfaceSetting, MacKeys,
-    ProbingInitiator, RadioCommand, RadioFault, RadioSetting, RequestId, ScheduledReceiveRequest,
-    TxRequest,
+    ProbingInitiator, RadioCommand, RadioFault, RadioSetting, RadioState, RequestId,
+    ScheduledReceiveRequest, TxRequest,
     mac::pending::AutoPendingMode,
     owner::{
         AutomaticAcknowledgement, ClearChannelAssessment, ConfiguredInterface, ExtendedPending,
@@ -60,7 +60,7 @@ use oer_radio_permit_pool::FifoPermitPool;
 use oer_radio_port::{EventsLost, Mint, PermitPool, Poisoned, PortResult, Seat, Slot};
 use oer_time::Timer;
 
-use crate::{Ieee802154RadioEvent, Ieee802154Runtime, Ieee802154RuntimeParts, apply_setting};
+use crate::{Ieee802154RadioEvent, Ieee802154Runtime, Ieee802154RuntimeParts};
 
 /// The most interfaces a runtime serves: the engine's multi-PAN contexts.
 pub const RUNTIME_INTERFACES: usize = 4;
@@ -184,6 +184,7 @@ where
     T: Timer,
     R: Ieee802154Random,
 {
+    // CAPABILITY: ieee802154-phy-and-rf-rssi
     fn recent_rssi(&self) -> i8 {
         self.runtime
             .with_held(|_, hardware, _| hardware.recent_rssi())
@@ -383,12 +384,13 @@ where
         self.events.changed.signal(());
     }
 
-    /// Apply one configuration through the radio role; the owner shape's
+    /// Apply one configuration through the radio role, in any state the
+    /// owner shape calls it in (the disabled setup, a running phase, an
+    /// operation in flight), as the vendor's setters do; the owner shape's
     /// types admit only configurations it takes, so a refusal is a fault.
     fn configure(&self, configuration: Configuration) {
-        let id = self.mint_id();
         if self
-            .submit_locked(RadioCommand::Configure { id, configuration })
+            .with_installed(|radio, hardware, _| radio.configure(hardware, configuration))
             .is_err()
         {
             self.poison(RadioFault::StateLost);
@@ -426,20 +428,21 @@ where
     /// Apply one radio setting; the validated values admit only settings
     /// the radio takes, so a refusal is a fault.
     fn setting(&self, setting: RadioSetting<'_>) {
-        if self
-            .with_installed(|radio, _, _| apply_setting(radio, setting))
-            .is_err()
-        {
+        if self.apply_setting(setting).is_err() {
             self.poison(RadioFault::StateLost);
         }
     }
 
     /// Ask the radio for the resting state the wishes of `held` ask for,
     /// unless an operation runs: the consumer applies it at the
-    /// operation's terminal.
+    /// operation's terminal. A disabled radio rests as it is: the disable
+    /// takes the terminals it ended, and the enable starts it asleep.
     fn rest(&self, held: &RuntimeHeld<'_>) {
         let resting = held.resting();
         if held.applied.get() == Some(resting) || held.permits.in_flight().is_some() {
+            return;
+        }
+        if self.with_installed(|radio, _, _| radio.state()) == RadioState::Disabled {
             return;
         }
         let command = match resting {
@@ -766,28 +769,24 @@ where
     type Event = Ieee802154PortEvent;
     type Fault = RadioFault;
 
-    fn next_event(
-        &mut self,
-    ) -> impl Future<Output = PortResult<Ieee802154PortEvent, EventsLost, RadioFault>> + '_ {
-        async move {
-            loop {
-                match self.runtime.events.take() {
-                    Some(Err(EventsLost)) => return Ok(Err(EventsLost)),
-                    Some(Ok(event)) => {
-                        if let Some(port) = take_terminal(self.runtime, self.held, event) {
-                            return Ok(Ok(port));
-                        }
-                        continue;
+    async fn next_event(&mut self) -> PortResult<Ieee802154PortEvent, EventsLost, RadioFault> {
+        loop {
+            match self.runtime.events.take() {
+                Some(Err(EventsLost)) => return Ok(Err(EventsLost)),
+                Some(Ok(event)) => {
+                    if let Some(port) = take_terminal(self.runtime, self.held, event) {
+                        return Ok(Ok(port));
                     }
-                    None => {}
+                    continue;
                 }
-                self.runtime.poisoned()?;
-                select(
-                    self.runtime.events.entries.ready_to_receive(),
-                    self.runtime.events.changed.wait(),
-                )
-                .await;
+                None => {}
             }
+            self.runtime.poisoned()?;
+            select(
+                self.runtime.events.entries.ready_to_receive(),
+                self.runtime.events.changed.wait(),
+            )
+            .await;
         }
     }
 }
@@ -905,23 +904,14 @@ macro_rules! radio_settings {
                 self.runtime.setting(RadioSetting::EnhancedAck(generation));
             }
 
-            /// The generator holds the IEs; while it is off there is none to
-            /// hold them, as in the vendor's driver.
+            /// Kept while generation is off, and sent once it is on.
             fn set_enhanced_ack_header_ies(&mut self, ies: SupportedHeaderIes<'_, K>) {
-                self.runtime.with_installed(|radio, _, _| {
-                    if let Some(generator) = radio.enhanced_ack().as_mut() {
-                        // The validated length fits the generator.
-                        let _ = generator.set_header_ies(ies.get());
-                    }
-                });
+                self.runtime.setting(RadioSetting::EnhancedAckHeaderIes(ies.get()));
             }
 
+            /// Kept while generation is off, and served once it is on.
             fn set_enhanced_ack_probing(&mut self, initiators: &[ProbingInitiator]) {
-                self.runtime.with_installed(|radio, _, _| {
-                    if let Some(generator) = radio.enhanced_ack().as_mut() {
-                        generator.probing().replace(initiators);
-                    }
-                });
+                self.runtime.setting(RadioSetting::EnhancedAckProbing(initiators));
             }
         }
     };

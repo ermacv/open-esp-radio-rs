@@ -67,9 +67,8 @@ use oer_espressif_ieee802154_radio::{
 
 use oer_ieee802154::{
     AcceptedCommand, AppliedSecurity, CancelError, CommandError, EventsLost, Frame,
-    FrameCounterUpdate, Interface, LifecycleCommand, LifecycleError, LifecycleEvent, MacKeys,
-    PortResult, RadioCommand, RadioEvent, RadioFault, RadioSetting, RadioState, ReceivedFrame,
-    RequestId, RxMetadata, SettingError, TxStatus,
+    FrameCounterUpdate, Interface, LifecycleEvent, MacKeys, RadioCommand, RadioEvent, RadioFault,
+    RadioSetting, RadioState, ReceivedFrame, RequestId, RxMetadata, SettingError, TxStatus,
 };
 use oer_time::{Duration, Instant, Timer};
 
@@ -250,6 +249,10 @@ pub struct Ieee802154RuntimeParts<'storage, H> {
 struct Installed<'storage, H, R> {
     radio: Ieee802154Radio<'storage, R>,
     hardware: H,
+    /// The enhanced-ACK generator while generation is off: it keeps the
+    /// header IEs and probing initiators set meanwhile, which go out once
+    /// generation is on again.
+    parked_ack: Option<Ieee802154EnhancedAckGenerator>,
 }
 
 /// The invariant of every port and control call: the handles exist only
@@ -257,27 +260,23 @@ struct Installed<'storage, H, R> {
 const INSTALLED: &str = "a port or control exists only while its radio is installed";
 
 /// What the event queue owes the consumer: the slots it reserved for
-/// terminal events, a loss not reported yet and the progress of a quiesce.
+/// terminal events and a loss not reported yet.
 #[derive(Default)]
 struct Owed {
     /// A received frame was dropped: the next event reports the loss first.
     lost: bool,
     /// The admitted operation's terminal event.
     operation: bool,
-    /// The fault that may end the enabled period; `Disable` takes its slot.
+    /// The fault that may end the enabled period, reserved by `enable`;
+    /// `disable` gives its slot back.
     fault: bool,
-    /// A quiesce waits for the operation's terminal event to report
-    /// `Quiesced`.
-    quiescing: bool,
-    /// Admission of operations is closed until `Enable`.
-    quiesced: bool,
     /// An event taken after the loss it reported.
     held: Option<Ieee802154RadioEvent>,
 }
 
 impl Owed {
     fn reserved(&self) -> usize {
-        usize::from(self.operation) + usize::from(self.fault) + usize::from(self.quiescing)
+        usize::from(self.operation) + usize::from(self.fault)
     }
 }
 
@@ -305,8 +304,6 @@ impl<M: RawMutex, const EVENTS: usize> EventQueue<M, EVENTS> {
                 lost: false,
                 operation: false,
                 fault: false,
-                quiescing: false,
-                quiesced: false,
                 held: None,
             })),
             changed: Signal::new(),
@@ -361,15 +358,6 @@ impl<M: RawMutex, const EVENTS: usize> EventQueue<M, EVENTS> {
                 owed.operation = false;
             }
             self.send(owed, event);
-            // A quiesce ends after the operation's terminal event.
-            if ends_operation && owed.quiescing {
-                owed.quiescing = false;
-                owed.quiesced = true;
-                self.send(
-                    owed,
-                    Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Quiesced),
-                );
-            }
             true
         })
     }
@@ -558,6 +546,7 @@ impl<
             *installed = Some(Installed {
                 radio: Ieee802154Radio::new(parts.engine, random),
                 hardware: parts.hardware,
+                parked_ack: None,
             });
             Ok(())
         };
@@ -566,11 +555,15 @@ impl<
         Ok(Ieee802154RuntimeBackend::new(self))
     }
 
-    /// Enable the installed radio: it enters sleep.
+    /// Enable the installed radio: it enters sleep, and the queue reserves
+    /// the slot of the fault that may end the enabled period, so a queue
+    /// full of received frames never loses it.
     fn enable_locked(&self) -> Result<(), ()> {
         self.with_installed(|radio, hardware, sink| {
             radio.enable(hardware, &self.timer, sink).map_err(|_| ())
-        })
+        })?;
+        self.events.owed(|owed| owed.fault = true);
+        Ok(())
     }
 
     /// Disable the installed radio, ending the operation in flight with its
@@ -629,6 +622,7 @@ impl<
             let Installed {
                 mut radio,
                 mut hardware,
+                ..
             } = installed.borrow_mut().take().expect(INSTALLED);
             let mut sink = QueueSink {
                 events: &self.events,
@@ -645,9 +639,13 @@ impl<
         parts
     }
 
-    /// Whether the port is quiesced or quiescing: it holds the radio still.
-    fn quiesced(&self) -> bool {
-        self.events.owed(|owed| owed.quiescing || owed.quiesced)
+    /// Apply one portable setting to the installed radio.
+    fn apply_setting(&self, setting: RadioSetting<'_>) -> Result<(), SettingError> {
+        self.installed.lock(|installed| {
+            let mut installed = installed.borrow_mut();
+            let installed = installed.as_mut().expect(INSTALLED);
+            apply_setting(&mut installed.radio, &mut installed.parked_ack, setting)
+        })
     }
 
     /// Run `entry` on the installed radio and its hardware.
@@ -705,12 +703,8 @@ impl<
         }
     }
 
-    /// Admit and start one portable command. A quiesced port holds the radio
-    /// still: it refuses every command that writes the MAC registers as
-    /// quiesced, and admits a
-    /// configuration of the PIB or the pending table. An operation reserves
-    /// its terminal event's slot first and is refused while no slot is
-    /// free.
+    /// Admit and start one portable command. An operation reserves its
+    /// terminal event's slot first and is refused while no slot is free.
     fn submit_locked(&self, command: RadioCommand<'_>) -> Result<AcceptedCommand, CommandError> {
         let operation = matches!(
             command,
@@ -721,12 +715,9 @@ impl<
         );
         let submitted = self.with_installed(|radio, hardware, sink| {
             // A configuration of the PIB or the pending table needs no
-            // hardware: a quiesced radio takes it too.
+            // hardware.
             if !writes_registers(&command) {
                 return Ok((radio.submit_software_configuration(command), None));
-            }
-            if self.quiesced() {
-                return Err(CommandError::Quiesced);
             }
             // A second operation is the state machine's to refuse.
             let reserved = operation
@@ -795,11 +786,24 @@ impl<
 
 /// Apply one portable setting to the radio under the runtime's lock. Every
 /// setting changes software state the interrupt context or the next
-/// operation reads, so none is refused as quiesced.
+/// operation reads. While enhanced-ACK generation is off, `parked` keeps
+/// the generator with its header IEs and probing initiators.
 fn apply_setting<R: Ieee802154Random>(
     radio: &mut Ieee802154Radio<'_, R>,
+    parked: &mut Option<Ieee802154EnhancedAckGenerator>,
     setting: RadioSetting<'_>,
 ) -> Result<(), SettingError> {
+    /// The generator a setting changes: the running one, else the parked
+    /// one, made on first use.
+    fn generator<'g, R: Ieee802154Random>(
+        radio: &'g mut Ieee802154Radio<'_, R>,
+        parked: &'g mut Option<Ieee802154EnhancedAckGenerator>,
+    ) -> &'g mut Ieee802154EnhancedAckGenerator {
+        match radio.enhanced_ack() {
+            Some(running) => running,
+            None => parked.get_or_insert_with(Ieee802154EnhancedAckGenerator::new),
+        }
+    }
     fn keys<'r, R: Ieee802154Random>(
         radio: &'r mut Ieee802154Radio<'_, R>,
         interface: Interface,
@@ -838,29 +842,30 @@ fn apply_setting<R: Ieee802154Random>(
                 sample_time: csl.sample_time,
             };
         }
-        RadioSetting::EnhancedAck(generation) => {
-            *radio.enhanced_ack() = generation.map(|generation| {
-                let mut generator = Ieee802154EnhancedAckGenerator::new();
-                generator
-                    .probing()
-                    .set_noise_floor(generation.noise_floor_dbm);
-                generator
-            });
+        RadioSetting::EnhancedAck(Some(generation)) => {
+            let mut running = radio
+                .enhanced_ack()
+                .take()
+                .or_else(|| parked.take())
+                .unwrap_or_else(Ieee802154EnhancedAckGenerator::new);
+            running
+                .probing()
+                .set_noise_floor(generation.noise_floor_dbm);
+            *radio.enhanced_ack() = Some(running);
         }
-        RadioSetting::EnhancedAckHeaderIes(ies) => radio
-            .enhanced_ack()
-            .as_mut()
-            .ok_or(SettingError::EnhancedAckDisabled)?
+        RadioSetting::EnhancedAck(None) => {
+            if let Some(running) = radio.enhanced_ack().take() {
+                *parked = Some(running);
+            }
+        }
+        RadioSetting::EnhancedAckHeaderIes(ies) => generator(radio, parked)
             .set_header_ies(ies)
             .map_err(|_| SettingError::HeaderIesTooLong {
                 capacity: IEEE802154_ENHANCED_ACK_IE_CAPACITY,
             })?,
-        RadioSetting::EnhancedAckProbing(initiators) => radio
-            .enhanced_ack()
-            .as_mut()
-            .ok_or(SettingError::EnhancedAckDisabled)?
-            .probing()
-            .replace(initiators),
+        RadioSetting::EnhancedAckProbing(initiators) => {
+            generator(radio, parked).probing().replace(initiators);
+        }
         // The PIB settings the next operation publishes.
         RadioSetting::TransmitPowerDbm(power) => radio
             .set_transmit_power(None, power)

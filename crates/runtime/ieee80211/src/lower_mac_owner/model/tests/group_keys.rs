@@ -295,8 +295,11 @@ fn terminal_slot(event: &LowerMacEvent<'_, ModelTypes>) -> Option<u8> {
 }
 fn change_slot(change: &GroupChange<'_, ()>) -> u8 {
     match change {
-        GroupChange::Install(InstalledGroup::Station { key, permission })
-        | GroupChange::Replace {
+        GroupChange::Install(GroupInstallationCommand::Station(pending)) => {
+            assert_eq!(pending.permission.index(), 0);
+            pending.slot.index()
+        }
+        GroupChange::Replace {
             installed: key,
             permission,
             ..
@@ -744,5 +747,66 @@ impl PortBody<ModelBackend> for ReenableGroup<'_> {
 fn disable_and_reenable_preserve_the_same_group_installation_and_counter() {
     let (backend, air) = backend();
     block_on(run_port(backend, ReenableGroup(&air)));
+    assert!(!air.poisoned.get());
+}
+
+struct Admission<'a>(&'a ModelAir);
+impl Work for Admission<'_> {
+    async fn work<'p, 'id: 'p>(
+        self,
+        phase: &mut ModelPhase<'p, 'id>,
+        resources: ModelResources<'id>,
+    ) {
+        let [slot, _] = resources.station_group;
+        let slot_id = slot.index();
+        self.0.hold_group_commands(true);
+        phase.station().install_group_key(
+            resources.station_group_permission,
+            slot,
+            id(),
+            Ccmp128Key([1; 16]),
+        );
+        for _ in 0..3 {
+            yield_now().await;
+        }
+        {
+            let queued = phase.held.commands.items.borrow();
+            let Some(Command::Group {
+                change: GroupChange::Install(GroupInstallationCommand::Station(pending)),
+                ..
+            }) = queued.front()
+            else {
+                panic!("vacant installation command remains owned")
+            };
+            assert_eq!(pending.slot.index(), slot_id);
+            assert_eq!(pending.permission.index(), 0);
+            assert_eq!(pending.key_id, id());
+            assert_eq!(pending.key.as_bytes(), &[1; 16]);
+        }
+        assert!(phase.held.driver_state.borrow().keys.is_empty());
+        assert!(phase.held.events.is_empty());
+        assert!(self.0.group_installations.borrow().is_empty());
+        assert_eq!(self.0.group_writes(), 0);
+        assert!(!self.0.receive_group(
+            &[1],
+            meta(),
+            VifRole::Station,
+            id(),
+            &[1; 16],
+            GroupRxStage::Ready
+        ));
+        self.0.hold_group_commands(false);
+        let (key, permission) = installed(phase).await;
+        assert_eq!(key.slot.index(), slot_id);
+        assert_eq!(self.0.group_writes(), 1);
+        assert_eq!(self.0.group_installations.borrow().len(), 1);
+        phase.station().remove_group_key(permission, key);
+        let _permission = removed(phase).await;
+    }
+}
+#[test]
+fn pending_installation_owns_vacant_resources_without_an_installed_identity() {
+    let (backend, air) = backend();
+    block_on(run_port(backend, Body(Admission(&air))));
     assert!(!air.poisoned.get());
 }

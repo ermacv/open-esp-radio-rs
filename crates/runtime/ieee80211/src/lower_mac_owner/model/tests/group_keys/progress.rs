@@ -119,8 +119,10 @@ fn terminal(event: LowerMacEvent<'_, ModelTypes>) -> Completion {
 fn retained(phase: &ModelPhase<'_, '_>) -> Vec<Owners> {
     fn command(change: &GroupChange<'_, ()>) -> Owners {
         match change {
-            GroupChange::Install(InstalledGroup::Station { key, permission })
-            | GroupChange::Replace {
+            GroupChange::Install(GroupInstallationCommand::Station(pending)) => {
+                admitted(pending.slot.index(), pending.permission.index())
+            }
+            GroupChange::Replace {
                 installed: key,
                 permission,
                 ..

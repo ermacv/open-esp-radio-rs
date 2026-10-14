@@ -58,6 +58,9 @@
 //! use ends. Uninstall and abandon deactivate the table, discard captured
 //! ingress and clear all secrets even if a test retains an identity. Normal
 //! disable/reenable preserves installed keys and their counters.
+//! Pending GTK installation owns only a vacant slot, permission, KeyID and
+//! material. The driver creates its identity and installed owner after the
+//! hardware step, then publishes the success terminal at the RX boundary.
 //! A prepared retry submitted after removal is withdrawn in its AC's order,
 //! without publication. Cancellation wakes the driver to finish the barrier.
 //! An aggregate preflights every MPDU and the entire fresh-PN range before
@@ -117,15 +120,15 @@ use oer_ieee80211_lower_mac::{
     CheckedPoolSource, CheckedSubframe, CheckedTxSource, CoexPriority, CoexPrioritySet,
     ConnectionEpochKind, ExecutionPayload, FreshSource, FreshSubframe, GateClosed, GateIssuer,
     GateOpen, GatePool, HardwareServices, Ieee80211Capabilities, Ieee80211Radio, InFlight,
-    IndeterminateCause, InstalledGroup, InterfaceAggregateAttempt, InterfaceAttempt,
-    InterfacePhase, KeyTypes, LinkMetric, LowerMacBackend, LowerMacCapabilities, LowerMacEvent,
-    LowerMacPhase, LowerMacSetup, MpduKind, MpduLayout, PhaseRate, PhaseTypes, PhyFormatSet,
-    PreparationError, PreparationRefused, PreparedTx, RateSupport, ReceiveFilter, Removed,
-    RemovedKey, RetransmissionPlan, RoleKeys, RxBuffer, RxEvidence, RxMeta, RxMetadata,
-    SignalMetadata, Station, StationPhase, StationReceive, SupportedBlockAck, SupportedChannel,
-    SupportedEdca, SupportedFilter, TxAck, TxBody, TxBufferClass, TxBufferMemory, TxBufferPool,
-    TxCompleted, TxEndStatus, TxFrame, TxMpdu, TxOutcome, TxProtection, TxSource, VifRole,
-    WidthSet, WithdrawCause,
+    IndeterminateCause, InterfaceAggregateAttempt, InterfaceAttempt, InterfacePhase, KeyTypes,
+    LinkMetric, LowerMacBackend, LowerMacCapabilities, LowerMacEvent, LowerMacPhase, LowerMacSetup,
+    MpduKind, MpduLayout, PhaseRate, PhaseTypes, PhyFormatSet, PreparationError,
+    PreparationRefused, PreparedTx, RateSupport, ReceiveFilter, Removed, RemovedKey,
+    RetransmissionPlan, RoleKeys, RxBuffer, RxEvidence, RxMeta, RxMetadata, SignalMetadata,
+    Station, StationPhase, StationReceive, SupportedBlockAck, SupportedChannel, SupportedEdca,
+    SupportedFilter, TxAck, TxBody, TxBufferClass, TxBufferMemory, TxBufferPool, TxCompleted,
+    TxEndStatus, TxFrame, TxMpdu, TxOutcome, TxProtection, TxSource, VifRole, WidthSet,
+    WithdrawCause,
 };
 use oer_ieee80211_lower_mac::{
     AggregateRefused, AggregateState, AmpduCapabilities, AmpduPhase, AmpduRate, BlockAckReport,
@@ -1489,9 +1492,35 @@ enum Command<'id, X: ModelContext> {
 
 type StationGroupPermission<'id> = Slot<'id, ModelGroupPermission<Station>, ModelPool<10>>;
 
+struct PendingGroupInstall<'id, R: ModelRole> {
+    slot: Slot<'id, ModelGroupKeys<R>, R::GroupPath>,
+    permission: Slot<'id, ModelGroupPermission<R>, R::GroupPermissionPath>,
+    key_id: GroupKeyId,
+    key: CcmpKey,
+}
+
+enum GroupInstallationCommand<'id> {
+    Station(PendingGroupInstall<'id, Station>),
+    AccessPoint(PendingGroupInstall<'id, AccessPoint>),
+}
+
+trait GroupInstallationRole: ModelRole + Sized {
+    fn installation(pending: PendingGroupInstall<'_, Self>) -> GroupInstallationCommand<'_>;
+}
+impl GroupInstallationRole for Station {
+    fn installation(pending: PendingGroupInstall<'_, Self>) -> GroupInstallationCommand<'_> {
+        GroupInstallationCommand::Station(pending)
+    }
+}
+impl GroupInstallationRole for AccessPoint {
+    fn installation(pending: PendingGroupInstall<'_, Self>) -> GroupInstallationCommand<'_> {
+        GroupInstallationCommand::AccessPoint(pending)
+    }
+}
+
 /// Whole command custody, including permission, material and physical owner.
 enum GroupChange<'id, X: ModelContext> {
-    Install(InstalledGroup<'id, ModelTypes<X>>),
+    Install(GroupInstallationCommand<'id>),
     Replace {
         permission: StationGroupPermission<'id>,
         installed: ModelGroupKey<'id, Station>,
@@ -2187,6 +2216,34 @@ impl<'id, X: ModelContext> Driver<'id, X> {
         }
     }
 
+    /// Called only after captured old RX crossed the FIFO boundary. Until
+    /// this step the command owns vacant resources and material, not an
+    /// installed owner or an allocation identity.
+    fn install_group<R>(
+        &mut self,
+        held: &ModelHeld<'id, X>,
+        pending: PendingGroupInstall<'id, R>,
+    ) -> LowerMacEvent<'id, ModelTypes<X>>
+    where
+        R: ModelRole + RoleKeys<'id, ModelTypes<X>, Keys = ModelKeys<'id, R>>,
+    {
+        let identity = KeyIdentity::group(
+            pending.slot.index(),
+            pending.key_id,
+            R::ROLE,
+            pending.key,
+            &held.air,
+        );
+        self.activate_group(held, &identity, true);
+        LowerMacEvent::GroupKeyInstalled(R::installed_group(
+            ModelGroupKey {
+                identity,
+                slot: pending.slot,
+            },
+            pending.permission,
+        ))
+    }
+
     fn group_change(
         &mut self,
         held: &ModelHeld<'id, X>,
@@ -2201,13 +2258,11 @@ impl<'id, X: ModelContext> Driver<'id, X> {
             self.deliver(held, received.frame, received.meta);
         }
         let terminal = match change {
-            GroupChange::Install(installed) => {
-                let identity = match &installed {
-                    InstalledGroup::Station { key, .. } => &key.identity,
-                    InstalledGroup::AccessPoint { key, .. } => &key.identity,
-                };
-                self.activate_group(held, identity, true);
-                LowerMacEvent::GroupKeyInstalled(installed)
+            GroupChange::Install(GroupInstallationCommand::Station(pending)) => {
+                self.install_group(held, pending)
+            }
+            GroupChange::Install(GroupInstallationCommand::AccessPoint(pending)) => {
+                self.install_group(held, pending)
             }
             GroupChange::Replace {
                 permission,
@@ -3087,7 +3142,7 @@ fn prepare_model<
 impl<'p, 'v, 'id: 'p, R, K: Ieee80211Capabilities, X: ModelContext> InterfacePhase<'p, 'id>
     for ModelInterface<'p, 'v, 'id, R, K, X>
 where
-    R: ModelRole + RoleKeys<'id, ModelTypes<X>, Keys = ModelKeys<'id, R>>,
+    R: GroupInstallationRole + RoleKeys<'id, ModelTypes<X>, Keys = ModelKeys<'id, R>>,
 {
     type Caps = K;
     type Types = ModelTypes<X>;
@@ -3138,19 +3193,14 @@ where
         key_id: GroupKeyId,
         key: Ccmp128Key,
     ) {
-        let identity = KeyIdentity::group(
-            slot.index(),
-            key_id,
-            R::ROLE,
-            CcmpKey::new(key.0),
-            &self.held.air,
-        );
         self.held.command(Command::Group {
             admitted_at: self.held.air.now_micros.get(),
-            change: GroupChange::Install(R::installed_group(
-                ModelGroupKey { identity, slot },
+            change: GroupChange::Install(R::installation(PendingGroupInstall {
+                slot,
                 permission,
-            )),
+                key_id,
+                key: CcmpKey::new(key.0),
+            })),
         });
     }
 
@@ -3437,7 +3487,7 @@ fn push_model<
 impl<'p, 'v, 'id: 'p, R, K: Ieee80211Capabilities, X: ModelContext> AmpduPhase<'p, 'id>
     for ModelInterface<'p, 'v, 'id, R, K, X>
 where
-    R: ModelRole + RoleKeys<'id, ModelTypes<X>, Keys = ModelKeys<'id, R>>,
+    R: GroupInstallationRole + RoleKeys<'id, ModelTypes<X>, Keys = ModelKeys<'id, R>>,
 {
     fn ampdu_capabilities(&self) -> AmpduCapabilities {
         AmpduCapabilities {

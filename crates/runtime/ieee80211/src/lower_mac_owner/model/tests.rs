@@ -5,8 +5,8 @@
 use super::*;
 use core::num::NonZeroU8;
 use oer_ieee80211_lower_mac::{
-    AckHeader, ChannelWidth, ClassFrame, HeaderSpec, MpduLength, Protection, RetryPlan, RetryStage,
-    SizedFrame, SupportedCoex, SupportedPower, TxPower,
+    AckHeader, ChannelWidth, ClassFrame, HeaderSpec, InstalledGroup, MpduLength, Protection,
+    RetryPlan, RetryStage, SizedFrame, SupportedCoex, SupportedPower, TxPower,
 };
 use oer_ieee80211_mac::ccmp::GroupKeyId;
 use oer_ieee80211_mac::frame::FrameControl;

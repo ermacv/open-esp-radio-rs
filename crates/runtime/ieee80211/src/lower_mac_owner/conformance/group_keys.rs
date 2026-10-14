@@ -33,6 +33,9 @@ pub enum Event {
 pub struct Trace {
     /// The target before submission for selection, old owner for replacement.
     pub original: Installation,
+    /// Slot of the actual owner submitted with the command, including the
+    /// vacant slot for InstallBeside. Capture it before transferring ownership.
+    pub submitted_slot: u8,
     pub events: Vec<Event>,
     /// Material writes performed by this operation only.
     pub writes: usize,
@@ -81,10 +84,21 @@ fn verify(case: Case, trace: Trace) -> Result<(), Violation> {
         return Err(Violation::RxOrder);
     };
     let selected = matches!(case, Case::SelectRetained | Case::SelectCurrent);
-    if selected && returned.identity != trace.original.identity
-        || case == Case::Replace && returned.identity == trace.original.identity
-        || case != Case::InstallBeside && returned.slot != trace.original.slot
-    {
+    let identity_matches = match case {
+        Case::InstallBeside => {
+            returned.identity != trace.original.identity
+                && trace.submitted_slot != trace.original.slot
+        }
+        Case::Replace => {
+            returned.identity != trace.original.identity
+                && trace.submitted_slot == trace.original.slot
+        }
+        Case::SelectRetained | Case::SelectCurrent => {
+            returned.identity == trace.original.identity
+                && trace.submitted_slot == trace.original.slot
+        }
+    };
+    if !identity_matches || returned.slot != trace.submitted_slot {
         return Err(Violation::Identity);
     }
     if selected && returned.counter != trace.original.counter {
@@ -100,4 +114,70 @@ fn verify(case: Case, trace: Trace) -> Result<(), Violation> {
         return Err(Violation::UnboundedIngress);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn installation_beside_requires_a_new_identity_in_the_submitted_vacant_slot() {
+        let original = Installation {
+            identity: 7,
+            slot: 0,
+            counter: 73,
+        };
+        for (returned, expected) in [
+            (original, Err(Violation::Identity)),
+            (
+                Installation {
+                    identity: 8,
+                    slot: 0,
+                    counter: 0,
+                },
+                Err(Violation::Identity),
+            ),
+            (
+                Installation {
+                    identity: 7,
+                    slot: 2,
+                    counter: 0,
+                },
+                Err(Violation::Identity),
+            ),
+            (
+                Installation {
+                    identity: 8,
+                    slot: 1,
+                    counter: 0,
+                },
+                Err(Violation::Identity),
+            ),
+            (
+                Installation {
+                    identity: 8,
+                    slot: 2,
+                    counter: 0,
+                },
+                Ok(()),
+            ),
+        ] {
+            let trace = Trace {
+                original,
+                submitted_slot: 2,
+                events: alloc::vec![
+                    Event::OldRx,
+                    Event::OldRx,
+                    Event::OldRx,
+                    Event::OldRx,
+                    Event::Terminal(returned),
+                    Event::NewRx
+                ],
+                writes: 1,
+                inactive_material_accepted: false,
+                continuous_rx_at_terminal: true,
+            };
+            assert_eq!(verify(Case::InstallBeside, trace), expected);
+        }
+    }
 }

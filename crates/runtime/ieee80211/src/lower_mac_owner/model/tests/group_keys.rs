@@ -82,6 +82,10 @@ impl Work for Boundary<'_> {
         };
         let writes = self.air.group_writes();
         self.air.hold_group_commands(true);
+        let submitted_slot = match self.case {
+            Case::InstallBeside => spare.as_ref().unwrap().index(),
+            _ => a.slot.index(),
+        };
         match self.case {
             Case::InstallBeside => {
                 phase.station().install_group_key(
@@ -103,7 +107,7 @@ impl Work for Boundary<'_> {
         }
         self.finish(
             phase,
-            original,
+            (original, submitted_slot),
             writes,
             old_material,
             new_material,
@@ -117,7 +121,7 @@ impl Boundary<'_> {
     async fn finish<'p, 'id: 'p>(
         self,
         phase: &mut ModelPhase<'p, 'id>,
-        original: contract::Installation,
+        (original, submitted_slot): (contract::Installation, u8),
         writes: usize,
         old: [u8; 16],
         new: [u8; 16],
@@ -205,6 +209,7 @@ impl Boundary<'_> {
         events.push(Event::NewRx);
         self.trace.replace(Some(contract::Trace {
             original,
+            submitted_slot,
             events,
             writes: self.air.group_writes() - writes,
             inactive_material_accepted,

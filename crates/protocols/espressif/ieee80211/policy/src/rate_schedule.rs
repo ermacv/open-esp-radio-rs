@@ -74,6 +74,7 @@ impl RateScheduleRef {
                 return Some(Self { kind, record });
             }
             records = rest;
+            // The largest private arena has 16 records, so at never wraps.
             at = at.wrapping_add(1);
         }
         None
@@ -87,7 +88,7 @@ impl RateScheduleRef {
         *index
     }
     pub const fn advance(self) -> Option<Self> {
-        Self::new(self.kind, self.index().wrapping_add(1))
+        self.offset(1)
     }
     pub const fn offset(self, records: u8) -> Option<Self> {
         match self.index().checked_add(records) {
@@ -115,6 +116,8 @@ impl<const RECORDS: usize> ScheduleArena<RECORDS> {
         while let Some((record, rest)) = records.split_first_mut() {
             let [_, _, _, _, _, _, _, _, _, _, tag, _] = record;
             *tag = index;
+            // Only the private static arenas below call this constructor;
+            // the largest has 16 records, including its final increment.
             index = index.wrapping_add(1);
             records = rest;
         }
@@ -415,11 +418,12 @@ pub fn schedule_publication_limit(schedule: RateScheduleRef) -> u8 {
 /// applies here.
 pub fn schedule_rate_after_failures(schedule: RateScheduleRef, failed_attempts: u8) -> Option<u8> {
     let record = schedule_bytes(schedule);
-    let mut cumulative = 0_u8;
+    // Four byte-sized counts fit in u16 even for the largest record values.
+    let mut cumulative = 0_u16;
     let [r0, c0, r1, c1, r2, c2, r3, c3, ..] = *record;
     for (rate, count) in [(r0, c0), (r1, c1), (r2, c2), (r3, c3)] {
-        cumulative = cumulative.wrapping_add(count);
-        if failed_attempts < cumulative {
+        cumulative = cumulative.wrapping_add(u16::from(count));
+        if u16::from(failed_attempts) < cumulative {
             return Some(rate);
         }
     }
@@ -440,72 +444,94 @@ pub enum RateIndexMap {
     Lora,
 }
 
-/// Pure rate-code callback policy stored temporarily at record offset 0x78;
-/// `0xff` when the map has no record for the code.
-pub const fn rate_to_schedule_index(map: RateIndexMap, rate: u8) -> u8 {
-    match map {
+/// Pure rate-code callback policy stored temporarily at record offset 0x78.
+///
+/// Codes without a record in the selected family return `None`.
+/// Callers must handle absence before using an arena index.
+///
+/// ```compile_fail,E0308
+/// use oer_espressif_ieee80211_policy::rate_schedule::{RateIndexMap, rate_to_schedule_index};
+/// let index: u8 = rate_to_schedule_index(RateIndexMap::Dot11N, u8::MAX);
+/// ```
+///
+/// ```
+/// use oer_espressif_ieee80211_policy::rate_schedule::{RateIndexMap, rate_to_schedule_index};
+/// assert_eq!(rate_to_schedule_index(RateIndexMap::Dot11N, u8::MAX), None);
+/// assert_eq!(rate_to_schedule_index(RateIndexMap::Dot11N, 0x21), Some(0));
+/// ```
+pub const fn rate_to_schedule_index(map: RateIndexMap, rate: u8) -> Option<u8> {
+    let index = match map {
         RateIndexMap::Dot11B => match rate {
-            0 => 3,
-            1 | 5 => 2,
-            2 | 6 => 1,
-            3 | 7 => 0,
-            41 => 5,
-            42 => 4,
-            _ => 0xff,
+            0 => Some(3),
+            1 | 5 => Some(2),
+            2 | 6 => Some(1),
+            3 | 7 => Some(0),
+            41 => Some(5),
+            42 => Some(4),
+            _ => None,
         },
         RateIndexMap::Dot11G => {
             // SOURCE(esp32s31): `libpp.a[trc.o]` `.rodata` switch table of
             // `rc11GRate2SchedIdx`, including the long-range codes 0x29 and
             // 0x2a that select 802.11g records 12 and 11.
             match rate {
-                0 => 10,
-                1 | 5 => 9,
-                2 | 6 => 8,
-                8 => 1,
-                9 => 3,
-                10 => 5,
-                11 => 7,
-                12 => 0,
-                13 => 2,
-                14 => 4,
-                15 => 6,
-                41 => 12,
-                42 => 11,
-                _ => 0xff,
+                0 => Some(10),
+                1 | 5 => Some(9),
+                2 | 6 => Some(8),
+                8 => Some(1),
+                9 => Some(3),
+                10 => Some(5),
+                11 => Some(7),
+                12 => Some(0),
+                13 => Some(2),
+                14 => Some(4),
+                15 => Some(6),
+                41 => Some(12),
+                42 => Some(11),
+                _ => None,
             }
         }
         RateIndexMap::Dot11N => match rate {
-            0 => 11,
-            1 => 10,
-            2 => 9,
-            3 | 4 => 24_u8.wrapping_sub(rate),
-            5 => 10,
-            6 => 9,
-            0x21 => 0,
-            0x29 => 13,
-            0x2a => 12,
-            _ => 24_u8.wrapping_sub(rate),
+            0 => Some(11),
+            1 => Some(10),
+            2 => Some(9),
+            5 => Some(10),
+            6 => Some(9),
+            0x21 => Some(0),
+            0x29 => Some(13),
+            0x2a => Some(12),
+            _ => 24_u8.checked_sub(rate),
         },
         RateIndexMap::Dot11Ax => match rate {
-            0 => 13,
-            1 => 12,
-            2 => 11,
-            3 | 4 => 26_u8.wrapping_sub(rate),
-            5 => 12,
-            6 => 11,
-            0x17 => 3,
-            0x19 => 1,
-            0x22 => 2,
-            0x23 => 0,
-            0x29 => 15,
-            0x2a => 14,
-            _ => 26_u8.wrapping_sub(rate),
+            0 => Some(13),
+            1 => Some(12),
+            2 => Some(11),
+            5 => Some(12),
+            6 => Some(11),
+            0x17 => Some(3),
+            0x19 => Some(1),
+            0x22 => Some(2),
+            0x23 => Some(0),
+            0x29 => Some(15),
+            0x2a => Some(14),
+            _ => 26_u8.checked_sub(rate),
         },
         RateIndexMap::Lora => match rate {
-            0x29 => 1,
-            0x2a => 0,
-            _ => 0xff,
+            0x29 => Some(1),
+            0x2a => Some(0),
+            _ => None,
         },
+    };
+    let kind = match map {
+        RateIndexMap::Dot11B => RateScheduleKind::Dot11B,
+        RateIndexMap::Dot11G => RateScheduleKind::Dot11G,
+        RateIndexMap::Dot11N => RateScheduleKind::Dot11N,
+        RateIndexMap::Dot11Ax => RateScheduleKind::Dot11Ax,
+        RateIndexMap::Lora => RateScheduleKind::Lora,
+    };
+    match index {
+        Some(index) if (index as usize) < kind.record_count() => Some(index),
+        _ => None,
     }
 }
 
@@ -515,11 +541,9 @@ pub const fn rate_to_schedule_index(map: RateIndexMap, rate: u8) -> u8 {
 /// [`RateIndexMap::Dot11G`] branch of [`rate_to_schedule_index`]; the
 /// pointed-to record bytes come from the arenas above.
 pub const fn dot11g_schedule_for_legacy_rate(rate: u8) -> Option<RateScheduleRef> {
-    let index = rate_to_schedule_index(RateIndexMap::Dot11G, rate);
-    if index == 0xff {
-        None
-    } else {
-        RateScheduleRef::new(RateScheduleKind::Dot11G, index)
+    match rate_to_schedule_index(RateIndexMap::Dot11G, rate) {
+        Some(index) => RateScheduleRef::new(RateScheduleKind::Dot11G, index),
+        None => None,
     }
 }
 

@@ -49,6 +49,12 @@ records and consumers destructure fixed record arrays. On the 32-bit S31 a
 handle occupies eight bytes instead of the former two-byte kind/index pair;
 the table bytes and publication budgets stay the same.
 
+The rate-code maps return `Option<u8>`: an unknown code, a subtraction
+underflow or a position outside the family's arena has no index. Valid
+callback mappings retain their recovered values. The largest private arena
+has 16 records; adding four byte-sized retry counts uses `u16`, so neither
+its attached index nor the retry sum wraps.
+
 Rate observations carry a nonzero MPDU count and an explicit ACK outcome, or
 a `BlockAckTally` whose acknowledgements cannot exceed its attempted MPDUs.
 Those proofs survive through the vendor window's division; observing a

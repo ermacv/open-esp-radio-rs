@@ -473,17 +473,20 @@ fn sta_link_metric_preserves_the_blob_signed_byte_subtraction() {
 
 #[test]
 fn recovered_rate_callbacks_and_ampdu_table_are_finite() {
-    assert_eq!(rate_to_schedule_index(RateIndexMap::Dot11B, 0), 3);
-    assert_eq!(rate_to_schedule_index(RateIndexMap::Dot11B, 42), 4);
-    assert_eq!(rate_to_schedule_index(RateIndexMap::Dot11G, 15), 6);
+    assert_eq!(rate_to_schedule_index(RateIndexMap::Dot11B, 0), Some(3));
+    assert_eq!(rate_to_schedule_index(RateIndexMap::Dot11B, 42), Some(4));
+    assert_eq!(rate_to_schedule_index(RateIndexMap::Dot11G, 15), Some(6));
     // Long-range codes select the 802.11g arena's long-range records.
-    assert_eq!(rate_to_schedule_index(RateIndexMap::Dot11G, 0x29), 12);
-    assert_eq!(rate_to_schedule_index(RateIndexMap::Dot11G, 0x2a), 11);
-    assert_eq!(rate_to_schedule_index(RateIndexMap::Dot11N, 0x21), 0);
-    assert_eq!(rate_to_schedule_index(RateIndexMap::Dot11N, 0x29), 13);
-    assert_eq!(rate_to_schedule_index(RateIndexMap::Dot11Ax, 0x23), 0);
-    assert_eq!(rate_to_schedule_index(RateIndexMap::Dot11Ax, 0x2a), 14);
-    assert_eq!(rate_to_schedule_index(RateIndexMap::Lora, 0x28), 0xff);
+    assert_eq!(rate_to_schedule_index(RateIndexMap::Dot11G, 0x29), Some(12));
+    assert_eq!(rate_to_schedule_index(RateIndexMap::Dot11G, 0x2a), Some(11));
+    assert_eq!(rate_to_schedule_index(RateIndexMap::Dot11N, 0x21), Some(0));
+    assert_eq!(rate_to_schedule_index(RateIndexMap::Dot11N, 0x29), Some(13));
+    assert_eq!(rate_to_schedule_index(RateIndexMap::Dot11Ax, 0x23), Some(0));
+    assert_eq!(
+        rate_to_schedule_index(RateIndexMap::Dot11Ax, 0x2a),
+        Some(14)
+    );
+    assert_eq!(rate_to_schedule_index(RateIndexMap::Lora, 0x28), None);
 }
 
 fn association(phy: StaRateControlPhy, p2p: bool) -> StaRateControlAssociation {

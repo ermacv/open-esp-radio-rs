@@ -63,5 +63,36 @@ fn legacy_codes_locate_their_dot11g_records() {
         RateScheduleRef::new(RateScheduleKind::Dot11G, 10)
     );
     assert_eq!(dot11g_schedule_for_legacy_rate(0x10), None);
-    assert_eq!(rate_to_schedule_index(RateIndexMap::Lora, 0x2a), 0);
+    assert_eq!(rate_to_schedule_index(RateIndexMap::Lora, 0x2a), Some(0));
+}
+
+#[test]
+fn every_mapped_code_resolves_inside_its_family_arena() {
+    for (map, kind) in [
+        (RateIndexMap::Dot11B, RateScheduleKind::Dot11B),
+        (RateIndexMap::Dot11G, RateScheduleKind::Dot11G),
+        (RateIndexMap::Dot11N, RateScheduleKind::Dot11N),
+        (RateIndexMap::Dot11Ax, RateScheduleKind::Dot11Ax),
+        (RateIndexMap::Lora, RateScheduleKind::Lora),
+    ] {
+        for code in 0..=u8::MAX {
+            if let Some(index) = rate_to_schedule_index(map, code) {
+                assert!(
+                    RateScheduleRef::new(kind, index).is_some(),
+                    "{map:?} rate {code:#04x} has no record {index}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn arithmetic_rate_maps_refuse_underflow_and_out_of_arena_positions() {
+    for (map, last_subtracted) in [(RateIndexMap::Dot11N, 24), (RateIndexMap::Dot11Ax, 26)] {
+        assert_eq!(rate_to_schedule_index(map, last_subtracted), Some(0));
+        assert_eq!(rate_to_schedule_index(map, last_subtracted + 1), None);
+        assert_eq!(rate_to_schedule_index(map, 3), None);
+        assert_eq!(rate_to_schedule_index(map, 4), None);
+        assert_eq!(rate_to_schedule_index(map, u8::MAX), None);
+    }
 }

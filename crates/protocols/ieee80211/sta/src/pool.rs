@@ -7,7 +7,7 @@ pub(crate) const POOL_CAPACITY: usize = 8;
 pub(crate) struct Pool<X> {
     items: [Option<X>; POOL_CAPACITY],
     /// Tokens given back to a full pool: dropped, counted.
-    lost: oer_ieee80211_lower_mac::Counter,
+    lost: crate::Counter,
 }
 
 impl<X> Pool<X> {
@@ -25,7 +25,7 @@ impl<X> Pool<X> {
         };
         let mut pool = Self {
             items: [const { None }; POOL_CAPACITY],
-            lost: oer_ieee80211_lower_mac::Counter::ZERO,
+            lost: crate::Counter::ZERO,
         };
         for (slot, item) in pool.items.iter_mut().zip(items) {
             *slot = Some(item);
@@ -57,7 +57,7 @@ impl<X> Pool<X> {
     }
 
     /// The tokens dropped because the pool was full.
-    pub(crate) const fn lost(&self) -> oer_ieee80211_lower_mac::Counter {
+    pub(crate) const fn lost(&self) -> crate::Counter {
         self.lost
     }
 }

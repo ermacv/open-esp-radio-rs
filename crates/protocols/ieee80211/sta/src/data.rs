@@ -20,8 +20,9 @@
 //! names the lent one when it submits, and only the station removes it),
 //! the replay check and, on a non-QoS BSS, the station's sequence space.
 
+use crate::Counter;
 use oer_ieee80211_lower_mac::{
-    AckHeader, Counter, HeaderSpec, MpduLength, ReturnedMpdu, RxCryptoStatus, RxEvidence, RxMeta,
+    AckHeader, HeaderSpec, MpduLength, ReturnedMpdu, RxCryptoStatus, RxEvidence, RxMeta,
     SizedFrame, TxBufferMemory, TxOutcome,
 };
 use oer_ieee80211_mac::address::IndividualAddress;

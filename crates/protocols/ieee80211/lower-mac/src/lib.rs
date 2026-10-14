@@ -53,9 +53,7 @@
 //! the port and its values; it never waits on it.
 
 pub mod capabilities;
-pub mod counter;
 mod layout;
-pub use counter::Counter;
 pub use layout::{
     CheckedAggregate, CheckedSubframe, CheckedTxSource, FreshSource, FreshSubframe, HeaderLayout,
     LaidOut, LayoutError, LayoutRefused, MpduKind, MpduLayout, MpduProtection,

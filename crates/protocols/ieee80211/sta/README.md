@@ -55,6 +55,9 @@ Data writes an open MAC header directly into its proven span, so it fits an
 exact-size buffer without a temporary CCMP gap or a second payload move.
 The PM owner retains a NonZero beacon period through its divisions. Vendor
 timer arithmetic keeps its original wrapping width; diagnostics saturate.
+The station owns `Counter`, the saturating diagnostic value its data path
+and service loop report. It carries no lower-MAC contract, resource capacity
+or protocol-state decision.
 
 The crate uses tidy's canonical strict lint block. Compile-time checks use
 private functions scoped inside const expressions, with the explicit

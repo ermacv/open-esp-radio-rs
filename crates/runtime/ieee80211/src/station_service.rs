@@ -154,16 +154,16 @@ const MAX_INPUT_STEPS_PER_BATCH: u8 = 8;
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ServiceCounters {
     /// Indications of lost port events; EventsLost carries no frame count.
-    pub events_lost: oer_ieee80211_lower_mac::Counter,
+    pub events_lost: oer_ieee80211_sta::Counter,
     /// RX payloads larger than the network's checked Ethernet contract.
-    pub rx_msdus_too_long: oer_ieee80211_lower_mac::Counter,
+    pub rx_msdus_too_long: oer_ieee80211_sta::Counter,
     /// Frames not sent: no rate of their plan is on the port's channel, or
     /// they do not fit their buffer class. Their tokens came back.
-    pub unsent_frames: oer_ieee80211_lower_mac::Counter,
+    pub unsent_frames: oer_ieee80211_sta::Counter,
     /// MSDUs the network stack sent that do not fit a buffer.
-    pub tx_msdus_too_long: oer_ieee80211_lower_mac::Counter,
+    pub tx_msdus_too_long: oer_ieee80211_sta::Counter,
     /// Received MSDUs the network stack's full queue could not take.
-    pub rx_msdus_queue_full: oer_ieee80211_lower_mac::Counter,
+    pub rx_msdus_queue_full: oer_ieee80211_sta::Counter,
 }
 
 /// A marker of the install `'id` and two types.

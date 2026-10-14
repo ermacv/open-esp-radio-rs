@@ -1,7 +1,23 @@
-//! Saturating diagnostics shared by the portable Wi-Fi owners.
+//! Saturating diagnostics for the station and its service loop.
 
 /// A diagnostic count. Exhaustion keeps the maximum and never changes
 /// protocol state, operation identity, or admission capacity.
+///
+/// Diagnostics belong to the station and its service, outside the lower-MAC
+/// port contract:
+///
+/// ```compile_fail,E0432
+/// use oer_ieee80211_lower_mac::Counter;
+/// let mut count = Counter::ZERO;
+/// count.increment();
+/// ```
+///
+/// ```
+/// use oer_ieee80211_sta::Counter;
+/// let mut count = Counter::ZERO;
+/// count.increment();
+/// assert_eq!(count.get(), 1);
+/// ```
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Counter(u32);
 

@@ -119,7 +119,13 @@ definition through the service's retry-plan limit.
 A data context keeps the link epoch, original TID, order, checked
 `SizedFrame<AckHeader, K>`, access category and protection. The immutable
 frame description preserves its header/length proof through an unpublished
-return; no constructor or frame-byte inspection runs again. A submitted
+return; no constructor or frame-byte inspection runs again. `DataTransmit`
+has closed fields and consumes into context, ticket and buffer. Frame and
+access category occur only in the context; the admission permission holds
+only its pool bit. `DataProtection` records Open or CCMP at encoding and
+borrows the matching link's key at submission. A changed epoch or protection
+returns `TxRefusal::LinkChanged` with every resource, before preparation;
+a protected encoding cannot fall through to an open transmission. A submitted
 context owns an `AcPermit` from the pool sized by backend queue depth
 (and bounded by the tickets granted to Data). Returning the context returns
 that permission; there is no `at_port` counter, in-flight metadata FIFO or

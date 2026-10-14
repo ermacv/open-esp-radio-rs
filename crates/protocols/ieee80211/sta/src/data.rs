@@ -123,19 +123,101 @@ pub enum DataAction<'id, D: StaDataTokens, K> {
 /// One data MPDU to submit: its tokens, its kind and its access category.
 /// It names no key: on a protected link the service submits it under the
 /// link's pairwise key.
+///
+/// The operation cannot be changed into an open frame by changing a flag:
+///
+/// ```compile_fail,E0609
+/// use oer_ieee80211_sta::data::{DataTransmit, StaDataTokens};
+/// fn open<D: StaDataTokens, K>(transmit: &mut DataTransmit<'_, D, K>) {
+///     transmit.protected = false;
+/// }
+/// ```
+///
+/// Its frame and access category belong only to the closed context:
+///
+/// ```compile_fail,E0609
+/// use oer_ieee80211_sta::data::{DataTransmit, StaDataTokens};
+/// fn replace<D: StaDataTokens, K>(
+///     first: &mut DataTransmit<'_, D, K>, second: DataTransmit<'_, D, K>,
+/// ) { first.frame = second.frame; }
+/// ```
+///
+/// ```compile_fail,E0609
+/// use oer_ieee80211_mac::qos::WmmAccessCategory;
+/// use oer_ieee80211_sta::data::{DataTransmit, StaDataTokens};
+/// fn change_category<D: StaDataTokens, K>(transmit: &mut DataTransmit<'_, D, K>) {
+///     transmit.access_category = WmmAccessCategory::Voice;
+/// }
+/// ```
+///
+/// The service consumes the operation and returns every resource on refusal:
+///
+/// ```
+/// use oer_ieee80211_sta::data::{DataReturn, DataTransmit, DataTransmitParts, StaDataTokens};
+/// use oer_ieee80211_sta::machine::TxRefusal;
+/// fn refuse<D: StaDataTokens, K>(transmit: DataTransmit<'_, D, K>) -> DataReturn<'_, D, K> {
+///     let DataTransmitParts { context, ticket, buffer } = transmit.into_parts();
+///     DataReturn::Refused { context, ticket, buffer, reason: TxRefusal::NoRate }
+/// }
+/// ```
+#[must_use = "the operation owns a ticket, buffer and admission permission"]
 pub struct DataTransmit<'id, D: StaDataTokens, K, A = AcPermit> {
     /// The operation identity and parameters, moved through the port.
-    pub context: DataTxContext<'id, K, D::Class, A>,
+    context: DataTxContext<'id, K, D::Class, A>,
     /// Its ticket.
-    pub ticket: D::Ticket,
+    ticket: D::Ticket,
     /// The buffer holding the MPDU, from its header on.
+    buffer: ReturnedMpdu<D::Buffer, D::Sent>,
+}
+
+impl<'id, D: StaDataTokens, K, A> DataTransmit<'id, D, K, A> {
+    /// Consume the operation, preserving its context and both resource owners.
+    pub fn into_parts(self) -> DataTransmitParts<'id, D, K, A> {
+        DataTransmitParts {
+            context: self.context,
+            ticket: self.ticket,
+            buffer: self.buffer,
+        }
+    }
+}
+
+/// All owners consumed from a data action for submission or a refusal return.
+/// The frame, protection and access category remain in the closed context.
+#[must_use = "all owners must reach the port or return to Data"]
+pub struct DataTransmitParts<'id, D: StaDataTokens, K, A = AcPermit> {
+    /// The original operation and its admission permission.
+    pub context: DataTxContext<'id, K, D::Class, A>,
+    /// The operation's ticket.
+    pub ticket: D::Ticket,
+    /// Its fresh or previously published MPDU.
     pub buffer: ReturnedMpdu<D::Buffer, D::Sent>,
-    /// Its kind: an individual frame to the access point.
-    pub frame: oer_ieee80211_lower_mac::ClassSizedFrame<D::Class, AckHeader, K>,
-    /// The access category of its priority.
-    pub access_category: WmmAccessCategory,
-    /// It goes under the link's pairwise key.
-    pub protected: bool,
+}
+
+/// The protection selected from the station's link for one data operation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DataProtection<K> {
+    /// An ordinary open MPDU, without a CCMP header or key.
+    Open,
+    /// A CCMP MPDU using the link's pairwise key.
+    Ccmp(K),
+}
+
+impl<'a, T: StaTokens> From<&LinkProtection<'a, T>> for DataProtection<&'a T::PairwiseKey> {
+    fn from(protection: &LinkProtection<'a, T>) -> Self {
+        match protection {
+            LinkProtection::Open => Self::Open,
+            LinkProtection::Ccmp { key, .. } => Self::Ccmp(key),
+        }
+    }
+}
+
+impl<K> DataProtection<K> {
+    fn without_key(&self) -> DataProtection<()> {
+        match self {
+            Self::Open => DataProtection::Open,
+            Self::Ccmp(_) => DataProtection::Ccmp(()),
+        }
+    }
 }
 
 /// Why an MSDU did not become an MPDU.
@@ -158,7 +240,7 @@ pub struct DataTxContext<'id, K, C, A = AcPermit> {
     tid: WmmUserPriority,
     frame: oer_ieee80211_lower_mac::ClassSizedFrame<C, AckHeader, K>,
     access_category: WmmAccessCategory,
-    protected: bool,
+    protection: DataProtection<()>,
     order: u32,
 }
 
@@ -166,7 +248,6 @@ pub struct DataTxContext<'id, K, C, A = AcPermit> {
 /// Only the data machine's depth pool creates it; the context returns it.
 #[derive(Debug)]
 pub struct AcPermit {
-    category: WmmAccessCategory,
     bit: core::num::NonZeroU8,
 }
 
@@ -214,15 +295,39 @@ impl Admissions {
         let pool = self.pool(category);
         let bit = core::num::NonZeroU8::new(*pool & pool.wrapping_neg())?;
         *pool &= !bit.get();
-        Some(AcPermit { category, bit })
+        Some(AcPermit { bit })
     }
 
-    fn put(&mut self, permit: AcPermit) {
-        *self.pool(permit.category) |= permit.bit.get();
+    fn put(&mut self, category: WmmAccessCategory, permit: AcPermit) {
+        *self.pool(category) |= permit.bit.get();
     }
 }
 
 impl<'id, K, C, A> DataTxContext<'id, K, C, A> {
+    /// The checked MPDU description selected when the bytes were encoded.
+    pub const fn frame(&self) -> &oer_ieee80211_lower_mac::ClassSizedFrame<C, AckHeader, K> {
+        &self.frame
+    }
+
+    /// The sole access category of this operation and its admission permission.
+    pub const fn access_category(&self) -> WmmAccessCategory {
+        self.access_category
+    }
+
+    /// Borrow the matching link's protection for this operation. A stale link
+    /// or a changed protection mode refuses before the port sees the frame.
+    /// In particular, a CCMP encoding never falls through to open submission.
+    pub fn protection<'a, T: StaTokens>(
+        &self,
+        link: &LinkView<'a, 'id, T>,
+    ) -> Result<DataProtection<&'a T::PairwiseKey>, crate::machine::TxRefusal> {
+        let protection = DataProtection::from(&link.protection);
+        if self.link != link.epoch || self.protection != protection.without_key() {
+            return Err(crate::machine::TxRefusal::LinkChanged);
+        }
+        Ok(protection)
+    }
+
     fn admission<B>(self, admission: B) -> (DataTxContext<'id, K, C, B>, A) {
         (
             DataTxContext {
@@ -231,7 +336,7 @@ impl<'id, K, C, A> DataTxContext<'id, K, C, A> {
                 tid: self.tid,
                 frame: self.frame,
                 access_category: self.access_category,
-                protected: self.protected,
+                protection: self.protection,
                 order: self.order,
             },
             self.admission,
@@ -392,7 +497,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
                 reason: _,
             } => {
                 let (context, permit) = context.admission(());
-                self.admission.put(permit);
+                self.admission.put(context.access_category, permit);
                 if self.is_current(&context) {
                     self.preparation_refused.increment();
                 }
@@ -406,7 +511,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
                 completion,
             } => {
                 let (context, permit) = context.admission(());
-                self.admission.put(permit);
+                self.admission.put(context.access_category, permit);
                 if !self.is_current(&context) {
                     if matches!(completion, TxOutcome::Withdrawn(_)) {
                         self.left_behind.increment();
@@ -437,14 +542,10 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
                             | oer_ieee80211_lower_mac::WithdrawCause::Disabled
                     )
                 ) {
-                    let frame = context.frame;
                     let tid = context.tid;
                     let again = DataTransmit {
                         ticket,
                         buffer,
-                        frame,
-                        access_category: context.access_category,
-                        protected: context.protected,
                         context,
                     };
                     let next_order = self.next_order;
@@ -492,10 +593,10 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
                 } else {
                     (WmmUserPriority::UP0, WmmAccessCategory::BestEffort)
                 };
-                let protected = matches!(link.protection, LinkProtection::Ccmp { .. });
+                let protection = DataProtection::from(&link.protection).without_key();
                 // A frame that does not fit its buffer takes no sequence
                 // number.
-                if mpdu_len(qos, protected, msdu.payload.len())
+                if mpdu_len(qos, protection, msdu.payload.len())
                     .is_none_or(|length| length > buffer.bytes_mut().len())
                 {
                     self.tickets.put(ticket);
@@ -511,7 +612,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
                     qos,
                     msdu,
                     sequence_number,
-                    protected,
+                    protection,
                     buffer.bytes_mut(),
                 );
                 match frame {
@@ -524,16 +625,13 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
                             tid: slot,
                             frame,
                             access_category,
-                            protected,
+                            protection,
                             order,
                         };
                         let owed = DataTransmit {
                             context,
                             ticket,
                             buffer: ReturnedMpdu::Fresh(buffer),
-                            frame,
-                            access_category,
-                            protected,
                         };
                         if let Err(owed) = slot.select_mut(&mut self.owed).push(owed) {
                             self.overflowed(owed);
@@ -572,7 +670,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
             .filter_map(|tid| {
                 tid.select(&self.owed)
                     .front()
-                    .filter(|owed| self.admission.available(owed.access_category) != 0)
+                    .filter(|owed| self.admission.available(owed.context.access_category) != 0)
                     .map(|owed| (owed.context.order, tid))
             })
             .min_by_key(|&(order, _)| order.wrapping_sub(self.next_order))?
@@ -580,7 +678,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
         // A queue can be empty or an AC can have no free permit: both are
         // normal polling states. Reserve and pop under the same exclusive
         // borrow; no actor can change either between these operations.
-        let category = tid.select(&self.owed).front()?.access_category;
+        let category = tid.select(&self.owed).front()?.context.access_category;
         let permit = self.admission.take(category)?;
         tid.select_mut(&mut self.owed).pop().map(|transmit| {
             let (context, ()) = transmit.context.admission(permit);
@@ -588,9 +686,6 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
                 context,
                 ticket: transmit.ticket,
                 buffer: transmit.buffer,
-                frame: transmit.frame,
-                access_category: transmit.access_category,
-                protected: transmit.protected,
             })
         })
     }
@@ -688,12 +783,12 @@ pub fn received<'f, T: StaTokens>(
 /// The length of the MPDU of a payload of `payload` octets: its header,
 /// the CCMP header's room on a protected link, the LLC/SNAP header and the
 /// payload.
-const fn mpdu_len(qos: bool, protected: bool, payload: usize) -> Option<usize> {
-    let prefix = match (qos, protected) {
-        (false, false) => 32,
-        (true, false) => 34,
-        (false, true) => 40,
-        (true, true) => 42,
+const fn mpdu_len(qos: bool, protection: DataProtection<()>, payload: usize) -> Option<usize> {
+    let prefix = match (qos, protection) {
+        (false, DataProtection::Open) => 32,
+        (true, DataProtection::Open) => 34,
+        (false, DataProtection::Ccmp(())) => 40,
+        (true, DataProtection::Ccmp(())) => 42,
     };
     payload.checked_add(prefix)
 }
@@ -708,17 +803,17 @@ fn encode_frame<
     qos: bool,
     msdu: Msdu<'_>,
     sequence_number: SequenceNumber,
-    protected: bool,
+    protection: DataProtection<()>,
     output: &mut [u8],
 ) -> Option<oer_ieee80211_lower_mac::ClassSizedFrame<C, AckHeader, K>> {
-    if !protected {
+    if protection == DataProtection::Open {
         // Write the open encoding directly; it never needs a temporary CCMP
         // gap or a second move of the payload. The exact sized header is
         // validated once and written by the portable array encoder.
         if link.bssid == [0; 6] {
             return None;
         }
-        let length = mpdu_len(qos, false, msdu.payload.len())?;
+        let length = mpdu_len(qos, DataProtection::Open, msdu.payload.len())?;
         let frame = output.split_at_mut_checked(length)?.0;
         let header = HeaderSpec::new(
             oer_ieee80211_lower_mac::FrameControl::new(if qos { 0x0188 } else { 0x0108 })?,

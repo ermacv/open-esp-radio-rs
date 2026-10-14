@@ -26,6 +26,9 @@
 //! Cross-AC completion order has no bearing on ownership. Each machine
 //! returns stale-link resources without advancing its current protocol,
 //! and the service excludes those terminals from current-link rate control.
+//! A data operation's closed context supplies its frame, access category and
+//! checked `DataProtection`. Submission refuses a changed link or protection
+//! before preparation and returns the original context, ticket and buffer.
 //! Data admission is an owned permit per AC, including old-link work until
 //! its terminal, and preserves the station's Voice waiting bound.
 //! Preparation returns the original typed source on refusal; context and
@@ -72,12 +75,12 @@ use oer_ieee80211_mac::qos::{WmmAccessCategory, WmmUserPriority};
 use oer_ieee80211_port::{Disabled, Enabled, Failed, Owner, PoisonedOwner, PortBackend};
 use oer_ieee80211_sta::{
     data::{
-        self, DataAction, DataInput, DataRefusal, DataReturn, DataTxContext, Msdu, StaData,
-        StaDataTokens,
+        self, DataAction, DataInput, DataProtection, DataRefusal, DataReturn, DataTxContext, Msdu,
+        StaData, StaDataTokens,
     },
     machine::{
-        LinkProtection, Peer, StaAction, StaCommand, StaFrame, StaFrameClass, StaInput, StaNotice,
-        StaRatePlan, StaTokens, StaTransmit, StaTxContext, Station,
+        Peer, StaAction, StaCommand, StaFrame, StaFrameClass, StaInput, StaNotice, StaRatePlan,
+        StaTokens, StaTransmit, StaTxContext, Station,
     },
     power_save::NULL_TRANSMISSIONS,
 };
@@ -786,24 +789,31 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                         break;
                     };
                     progress = true;
-                    let key = match (&link.protection, transmit.protected) {
-                        (LinkProtection::Ccmp { key, .. }, true) => TxProtection::Ccmp(*key),
-                        _ => TxProtection::Open,
-                    };
-                    let plan = self
-                        .rates
-                        .plan(FrameRates::Data, |rate| phase.rate(rate))
-                        .ok_or(TxRefusal::NoRate);
-                    let prepared = match (transmit.buffer, plan) {
-                        (ReturnedMpdu::Fresh(buffer), Ok(plan)) => {
+                    let data::DataTransmitParts {
+                        context,
+                        ticket,
+                        buffer,
+                    } = transmit.into_parts();
+                    let access_category = context.access_category();
+                    let plan = context.protection(&link).and_then(|protection| {
+                        self.rates
+                            .plan(FrameRates::Data, |rate| phase.rate(rate))
+                            .map(|plan| (protection, plan))
+                            .ok_or(TxRefusal::NoRate)
+                    });
+                    let prepared = match (buffer, plan) {
+                        (ReturnedMpdu::Fresh(buffer), Ok((protection, plan))) => {
                             prepare_source::<B, B::Large>(TxSource::Fresh {
                                 buffer,
-                                frame: ClassFrame::individual(transmit.frame, plan),
+                                frame: ClassFrame::individual(*context.frame(), plan),
                                 body: None,
-                                protection: key,
+                                protection: match protection {
+                                    DataProtection::Open => TxProtection::Open,
+                                    DataProtection::Ccmp(key) => TxProtection::Ccmp(key),
+                                },
                             })
                         }
-                        (ReturnedMpdu::Sent(mpdu), Ok(plan)) => {
+                        (ReturnedMpdu::Sent(mpdu), Ok((_protection, plan))) => {
                             prepare_source::<B, B::Large>(TxSource::Retransmission {
                                 mpdu,
                                 plan: RetransmissionPlan::Individual(plan),
@@ -823,18 +833,18 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                     };
                     match prepared {
                         Err((reason, buffer)) => Ok(Follow::Refused {
-                            context: TxContext::Data(transmit.context),
-                            ticket: transmit.ticket,
+                            context: TxContext::Data(context),
+                            ticket,
                             buffer,
                             reason,
                         }),
                         Ok(source) => {
                             let submitted =
                                 phase.station().submit(oer_ieee80211_lower_mac::Attempt {
-                                    context: TxContext::Data(transmit.context),
-                                    ticket: transmit.ticket,
+                                    context: TxContext::Data(context),
+                                    ticket,
                                     source,
-                                    access_category: transmit.access_category,
+                                    access_category,
                                     protection: Protection::None,
                                     power: Levels::<B::Caps>::POWER,
                                     coex: Levels::<B::Caps>::NORMAL,

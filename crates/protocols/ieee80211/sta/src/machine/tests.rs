@@ -1502,16 +1502,21 @@ fn eapol_and_data_on_tid_7_share_one_counter_and_tid_0_runs_on_across_a_rekey() 
             let Some(DataAction::Transmit(transmit)) = data.poll_action(at(60)) else {
                 panic!("an MPDU is owed");
             };
-            let frame = match &transmit.buffer {
+            let crate::data::DataTransmitParts {
+                context,
+                ticket,
+                buffer,
+            } = transmit.into_parts();
+            let frame = match &buffer {
                 ReturnedMpdu::Fresh(buffer) | ReturnedMpdu::Sent(buffer) => &buffer.0,
             };
             let sent = tid_and_sequence(frame);
             data.returned(
                 at(60),
                 crate::data::DataReturn::TxDone {
-                    context: transmit.context,
-                    ticket: transmit.ticket,
-                    buffer: transmit.buffer,
+                    context,
+                    ticket,
+                    buffer,
                     completion: TxOutcome::Ended {
                         status: TxEndStatus::Delivered,
                         ack: None,

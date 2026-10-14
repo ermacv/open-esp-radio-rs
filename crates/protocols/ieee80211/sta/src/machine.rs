@@ -121,6 +121,9 @@ use crate::join::{
 /// It is not a radio terminal and never updates transmission statistics.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TxRefusal {
+    /// A data operation's connection epoch or protection no longer matches
+    /// the station's link. Its original resources return without submission.
+    LinkChanged,
     /// Service rate selection found no rate for the current phase.
     NoRate,
     /// The pool refused preparation and returned the unchanged source.

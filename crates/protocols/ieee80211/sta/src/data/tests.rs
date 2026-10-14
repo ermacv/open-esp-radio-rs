@@ -160,6 +160,70 @@ fn transmit(data: &mut StaData<'static, Data, Caps>) -> DataTransmit<'static, Da
 }
 
 #[test]
+fn a_changed_link_refuses_data_without_reinterpreting_the_encoding_or_losing_resources() {
+    for encoded_protected in [false, true] {
+        for change_epoch in [false, true] {
+            let mut data = machine();
+            let capacity = data.available(WmmAccessCategory::Voice);
+            let mut replay = epoch();
+            let mut link = qos_link(&(), &mut replay);
+            if !encoded_protected {
+                link.protection = LinkProtection::Open;
+            }
+            data.input(
+                NOW,
+                DataInput::Msdu {
+                    msdu: msdu(6),
+                    link: &mut link,
+                },
+            )
+            .unwrap();
+            let DataTransmitParts {
+                context,
+                ticket,
+                buffer,
+            } = transmit(&mut data).into_parts();
+            let expected = if encoded_protected {
+                DataProtection::Ccmp(&())
+            } else {
+                DataProtection::Open
+            };
+            assert_eq!(context.protection(&link), Ok(expected));
+            let encoded = memory(&buffer).to_vec();
+            let mut replacement_replay = epoch();
+            if change_epoch {
+                link.epoch = LinkEpoch::for_test(2);
+            } else if encoded_protected {
+                link.protection = LinkProtection::Open;
+            } else {
+                link.protection = LinkProtection::Ccmp {
+                    key: &(),
+                    replay: &mut replacement_replay,
+                };
+            }
+            let reason = context.protection(&link).unwrap_err();
+            assert_eq!(reason, crate::machine::TxRefusal::LinkChanged);
+            assert_eq!(memory(&buffer), encoded);
+            assert_eq!(data.available(WmmAccessCategory::Voice), capacity - 1);
+            data.returned(
+                NOW,
+                DataReturn::Refused {
+                    context,
+                    ticket,
+                    buffer,
+                    reason,
+                },
+            );
+            assert_eq!(data.available(WmmAccessCategory::Voice), capacity);
+            assert_eq!(data.counters().preparation_refused, 1);
+            assert!(data.poll_action(NOW).is_none());
+            assert_eq!(core::iter::from_fn(|| data.tickets.take()).count(), 2);
+            assert_eq!(core::iter::from_fn(|| data.buffers.take()).count(), 2);
+        }
+    }
+}
+
+#[test]
 fn interleaved_returns_keep_the_original_tid_order_and_admission_count() {
     let mut data = StaData::<Data, Caps>::new(
         [1, 2, 3, 4],
@@ -208,11 +272,7 @@ fn interleaved_returns_keep_the_original_tid_order_and_admission_count() {
             operation.context.frame.frame().len().get(),
             26 + 8 + 8 + 100
         );
-        assert_eq!(
-            operation.frame.frame().len().get(),
-            operation.context.frame.frame().len().get()
-        );
-        let spec = operation.frame.frame().header().header();
+        let spec = operation.context.frame().frame().header().header();
         let mut header = [0; 26];
         oer_ieee80211_lower_mac::HeaderLayout::new(*spec, &mut header)
             .unwrap()
@@ -248,7 +308,7 @@ fn repeated_unpublished_returns_keep_the_checked_frame_and_payload() {
     )
     .unwrap();
     let mut operation = transmit(&mut data);
-    let len = operation.frame.frame().len().get();
+    let len = operation.context.frame().frame().len().get();
     let payload = memory(&operation.buffer)[34..len].to_vec();
     for _ in 0..3 {
         fresh_memory(&mut operation.buffer)[..26].fill(0);
@@ -262,8 +322,8 @@ fn repeated_unpublished_returns_keep_the_checked_frame_and_payload() {
             },
         );
         operation = transmit(&mut data);
-        assert_eq!(operation.frame.frame().len().get(), len);
-        let spec = operation.frame.frame().header().header();
+        assert_eq!(operation.context.frame().frame().len().get(), len);
+        let spec = operation.context.frame().frame().header().header();
         let mut header = [0; 26];
         oer_ieee80211_lower_mac::HeaderLayout::new(*spec, &mut header)
             .unwrap()
@@ -439,11 +499,12 @@ fn preparation_refusal_ends_only_its_msdu_without_a_radio_terminal_or_retry() {
 fn a_protected_qos_msdu_leaves_room_for_the_ccmp_header_and_contends_by_its_priority() {
     let mut data = machine();
     let mut replay = epoch();
+    let mut link = qos_link(&(), &mut replay);
     data.input(
         NOW,
         DataInput::Msdu {
             msdu: msdu(6),
-            link: &mut qos_link(&(), &mut replay),
+            link: &mut link,
         },
     )
     .unwrap();
@@ -457,21 +518,25 @@ fn a_protected_qos_msdu_leaves_room_for_the_ccmp_header_and_contends_by_its_prio
     // The TID in the QoS Control field.
     assert_eq!(frame[24] & 0x0f, 6);
     // Header, the CCMP header's room, LLC/SNAP, payload; no MIC.
-    assert_eq!(sent.frame.frame().len().get(), 26 + 8 + 8 + 100);
+    assert_eq!(sent.context.frame().frame().len().get(), 26 + 8 + 8 + 100);
     assert_eq!(&frame[34..42], &[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x00]);
-    assert_eq!(sent.access_category, WmmAccessCategory::Voice);
-    assert!(sent.protected);
+    assert_eq!(sent.context.access_category(), WmmAccessCategory::Voice);
+    assert_eq!(
+        sent.context.protection(&link),
+        Ok(DataProtection::Ccmp(&()))
+    );
 }
 
 #[test]
 fn an_open_non_qos_msdu_takes_the_stations_sequence_number_and_no_ccmp_room() {
     let mut data = machine();
     let mut counter = StaSequenceCounter::new(SequenceNumber::new(42).unwrap());
+    let mut link = open_link(&mut counter);
     data.input(
         NOW,
         DataInput::Msdu {
             msdu: msdu(0),
-            link: &mut open_link(&mut counter),
+            link: &mut link,
         },
     )
     .unwrap();
@@ -479,9 +544,9 @@ fn an_open_non_qos_msdu_takes_the_stations_sequence_number_and_no_ccmp_room() {
     let frame = memory(&sent.buffer);
     assert_eq!(u16::from_le_bytes([frame[0], frame[1]]), 0x0108);
     assert_eq!(u16::from_le_bytes([frame[22], frame[23]]) >> 4, 42);
+    assert_eq!(sent.context.frame().frame().len().get(), 24 + 8 + 100);
+    assert_eq!(sent.context.protection(&link), Ok(DataProtection::Open));
     assert_eq!(counter.peek(), SequenceNumber::new(43).unwrap());
-    assert_eq!(sent.frame.frame().len().get(), 24 + 8 + 100);
-    assert!(!sent.protected);
 }
 
 #[test]
@@ -895,12 +960,15 @@ fn a_category_the_service_does_not_admit_waits_and_the_others_go_in_their_order(
         Some(DataAction::Transmit(transmit)) => transmit,
         None => panic!("best effort goes"),
     };
-    assert_eq!(first.access_category, WmmAccessCategory::BestEffort);
+    assert_eq!(
+        first.context.access_category(),
+        WmmAccessCategory::BestEffort
+    );
     assert!(data.poll_action(NOW).is_none());
     assert_eq!(data.available(WmmAccessCategory::BestEffort), capacity - 1);
     assert_eq!(data.available(WmmAccessCategory::Voice), 0);
     for permit in voice_permits {
-        data.admission.put(permit);
+        data.admission.put(WmmAccessCategory::Voice, permit);
     }
     // Voice admitted: its MPDUs go in their order.
     let voice = transmit(&mut data);

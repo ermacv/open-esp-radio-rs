@@ -128,7 +128,7 @@ pub use owner::{
 };
 pub use phase::{
     AccessPointPhase, Attempt, AttemptKey, CheckedPoolSource, ClassFrame, ClassSizedFrame,
-    GateClosed, GateIssuer, GateOpen, GatePlace, InterfaceAttempt, InterfaceKeys, InterfacePhase,
+    GateClosed, GateIssuer, GateOpen, GatePool, InterfaceAttempt, InterfaceKeys, InterfacePhase,
     KeyTypes, LowerMacEvent, LowerMacPhase, PhaseTypes, PoolMpdu, PoolPreparation, PoolSource,
     PreparationError, PreparationRefused, PreparedTx, RETRY_STAGES, Removed, RemovedKey,
     RetransmissionPlan, RetryPlan, RetryStage, ReturnedMpdu, RoleKeys, StationPhase, TxBufferClass,

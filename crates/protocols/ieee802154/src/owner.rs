@@ -52,7 +52,7 @@
 //! Every token carries the install's brand `'id`. The operation permit
 //! stays in the backend's held part of the install ([`OperationPermits`]):
 //! a client awaits it with its interface's seat in the operation's line
-//! ([`WorkPermits::new`] mints one per interface client, which the body's
+//! ([`Permits`](oer_radio_port::Permits) issues one per interface client to [`WorkPermits::new`], which the body's
 //! resources hand out and the caller keeps across takes) as a guard that
 //! gives it back when dropped before a submission; a submission moves it in, and the backend gives it back when
 //! it takes the operation's terminal, before it hands the event out. No
@@ -142,7 +142,7 @@
 //! An interface the capabilities do not state has no resources:
 //!
 //! ```compile_fail,E0080
-//! # use oer_ieee802154::owner::{Ieee802154Caps, InterfaceResources};
+//! # use oer_ieee802154::owner::{Ieee802154Caps, InterfacePool, InterfaceResources};
 //! # use oer_ieee802154::{Ieee802154Capabilities, RadioCapabilities};
 //! # use oer_radio_port::Mint;
 //! # struct One;
@@ -157,16 +157,16 @@
 //! #         enhanced_ack_header_ies: 0,
 //! #     };
 //! # }
-//! fn second<'id>(mint: &mut Mint<'id>) -> InterfaceResources<'id, 1, 4> {
-//!     InterfaceResources::mint::<One>(mint)
+//! fn second<'id>(mint: Mint<'id, InterfacePool<One, 1, 4>>) -> InterfaceResources<'id, 1, 4> {
+//!     mint.into_pools()
 //! }
-//! # fn main() { let _: fn(&mut Mint<'static>) -> InterfaceResources<'static, 1, 4> = second; }
+//! # fn main() { let _: fn(Mint<'static, InterfacePool<One, 1, 4>>) -> InterfaceResources<'static, 1, 4> = second; }
 //! ```
 //!
 //! Its compiling twin mints the resources of the interface it has:
 //!
 //! ```
-//! # use oer_ieee802154::owner::{Ieee802154Caps, InterfaceResources};
+//! # use oer_ieee802154::owner::{Ieee802154Caps, InterfacePool, InterfaceResources};
 //! # use oer_ieee802154::{Ieee802154Capabilities, RadioCapabilities};
 //! # use oer_radio_port::Mint;
 //! # struct One;
@@ -181,10 +181,10 @@
 //! #         enhanced_ack_header_ies: 0,
 //! #     };
 //! # }
-//! fn first<'id>(mint: &mut Mint<'id>) -> InterfaceResources<'id, 0, 4> {
-//!     InterfaceResources::mint::<One>(mint)
+//! fn first<'id>(mint: Mint<'id, InterfacePool<One, 0, 4>>) -> InterfaceResources<'id, 0, 4> {
+//!     mint.into_pools()
 //! }
-//! # fn main() { let _: fn(&mut Mint<'static>) -> InterfaceResources<'static, 0, 4> = first; }
+//! # fn main() { let _: fn(Mint<'static, InterfacePool<One, 0, 4>>) -> InterfaceResources<'static, 0, 4> = first; }
 //! ```
 //!
 //! A pending-table slot of one interface does not fit another's table:
@@ -210,7 +210,7 @@
 use core::{cell::RefCell, future::Future, marker::PhantomData};
 
 use oer_ieee802154_port::{PortBackend, RadioPortClient, RadioPortEvents, RadioWork, Work};
-use oer_radio_port::{Line, Mint, Permit, PermitPool, Poisoned, Seat, Slot};
+use oer_radio_port::{Line, Permit, PermitPool, Poisoned, Seat, Slot};
 
 use crate::{
     AppliedSecurity, CcaMode, Channel, CslReceiver, EnhancedAckGeneration, FrameCounterUpdate,
@@ -569,11 +569,17 @@ pub struct InterfaceResources<'id, const I: u8, const P: usize> {
     pub extended: [Slot<'id, ExtendedPending<I>>; P],
 }
 
-impl<'id, const I: u8, const P: usize> InterfaceResources<'id, I, P> {
-    /// Mint interface `I`'s resources for a backend of capabilities `K`:
-    /// another interface than `K` states, or pending slots without the
-    /// frame-pending table, does not compile.
-    pub fn mint<K: Ieee802154Caps>(mint: &mut Mint<'id>) -> Self {
+/// The complete pool layout of interface `I` for capabilities `K`.
+/// Another interface than `K` advertises, or pending slots without source
+/// matching, is rejected at compile time when the layout is issued.
+pub struct InterfacePool<K, const I: u8, const P: usize>(PhantomData<fn() -> K>);
+
+impl<K: Ieee802154Caps, const I: u8, const P: usize> oer_radio_port::PoolSet
+    for InterfacePool<K, I, P>
+{
+    type Pools<'id> = InterfaceResources<'id, I, P>;
+
+    fn build<'id>(builder: oer_radio_port::PoolBuilder<'id>) -> Self::Pools<'id> {
         const {
             assert!(
                 I < K::CAPS.interfaces,
@@ -584,11 +590,15 @@ impl<'id, const I: u8, const P: usize> InterfaceResources<'id, I, P> {
                 "pending slots need the frame-pending table"
             );
         };
-        let [interface] = mint.slots::<InterfaceKind<I>, 1>();
-        Self {
+        let ([interface], short, extended) = builder.into_pools::<(
+            oer_radio_port::Slots<InterfaceKind<I>, 1>,
+            oer_radio_port::Slots<ShortPending<I>, P>,
+            oer_radio_port::Slots<ExtendedPending<I>, P>,
+        )>();
+        InterfaceResources {
             interface,
-            short: mint.slots(),
-            extended: mint.slots(),
+            short,
+            extended,
         }
     }
 }
@@ -651,16 +661,19 @@ pub struct WorkPermits<'id, K, P> {
 pub type OperationPermits<'id, P> = WorkPermits<'id, Operation, P>;
 
 impl<'id, K, P: PermitPool<'id, K>> WorkPermits<'id, K, P> {
-    /// The permits of the install `mint` serves: its one permit of kind
-    /// `K`, handed to `pool` with the line of the kind's `S` seats, and the
+    /// Consume the installation's declared permit component: its one permit
+    /// of kind `K`, handed to `pool` with the line of its `S` seats, and the
     /// seats, one per interface client, which the body's resources hand
     /// out.
     pub fn new<const S: usize>(
-        mint: &mut Mint<'id>,
+        tokens: oer_radio_port::PermitTokens<'id, K, 1, S>,
         pool: impl FnOnce(Permit<'id, K>, Line<'id, K, S>) -> P,
     ) -> (Self, [Seat<'id, K>; S]) {
-        let [permit] = mint.permits::<K, 1>();
-        let (line, seats) = mint.seats::<K, S>();
+        let oer_radio_port::PermitTokens {
+            permits: [permit],
+            line,
+            seats,
+        } = tokens;
         (
             Self {
                 pool: pool(permit, line),

@@ -28,6 +28,8 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
 
 ## Traps
 
+- A backend declares its complete `PortBackend::Pools` layout and consumes `Mint::into_pools(self)` once. Include one `GatePool`; it yields `GateOpen` and the backend's `GateIssuer`, with no public `GatePlace` constructor. Test worlds that need another gate must use another branded installation.
+
 - Time follows [clocks, stamps and alarms](../../../docs/architecture.md#clocks-stamps-and-alarms).
 
 - Every port method but `next_event` is synchronous (`port.rs`, the trait's documentation).

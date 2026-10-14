@@ -7,10 +7,10 @@
 //!
 //! A backend keeps a [`FifoPermitPool`] in its held part of the install
 //! (`PortBackend::Held`) and fills it with permits its `resources` mint
-//! ([`Mint::permits`](oer_radio_port::Mint::permits)), so every permit in
+//! ([`Permits`](oer_radio_port::Permits)), so every permit in
 //! it is real capacity of that install. Its line holds a place for each
 //! seat of its kind: the backend mints them with the pool's [`Line`]
-//! ([`Mint::seats`](oer_radio_port::Mint::seats)) and hands each taker its
+//! ([`Permits`](oer_radio_port::Permits)) and hands each taker its
 //! seat. Takers wait in arrival order, never refused:
 //!
 //! - a taker takes its seat's place in the line at its first poll, and is
@@ -109,7 +109,7 @@ pub struct FifoPermitPool<'id, K, const PERMITS: usize, const SEATS: usize> {
 
 impl<'id, K, const PERMITS: usize, const SEATS: usize> FifoPermitPool<'id, K, PERMITS, SEATS> {
     /// A pool of `permits`, every one free, whose line holds a place for
-    /// each seat [`Mint::seats`](oer_radio_port::Mint::seats) made with
+    /// each seat [`Permits`](oer_radio_port::Permits) made with
     /// `line`.
     pub fn new(permits: [Permit<'id, K>; PERMITS], line: Line<'id, K, SEATS>) -> Self {
         let _ = line;
@@ -237,7 +237,7 @@ impl<'id, K, const PERMITS: usize, const SEATS: usize> PermitPool<'id, K>
     for FifoPermitPool<'id, K, PERMITS, SEATS>
 {
     fn take<'a>(&'a self, seat: &'a mut Seat<'id, K>) -> impl Future<Output = Permit<'id, K>> + 'a {
-        // `Mint::seats` numbers the seats of the line below `SEATS`, and a
+        // `Permits` numbers the seats of the line below `SEATS`, and a
         // kind's seats are minted once per install, so the seat's place is
         // in the line.
         let mut place = Place {

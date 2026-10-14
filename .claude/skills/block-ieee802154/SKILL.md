@@ -23,7 +23,7 @@ Layers and edges: [layer dependencies](../../../docs/architecture.md#layer-depen
 
 The port is the owner shape of `crates/protocols/ieee802154/src/owner.rs` over the lifecycle package `oer-ieee802154-port` (`crates/protocols/ieee802154/port`). Optional operations are `Ieee802154Capabilities` behind a capabilities marker (`Ieee802154Caps`); every value a call takes is validated by type. The backend is `Ieee802154RuntimeBackend` (`crates/runtime/espressif/ieee802154/src/backend.rs`), which `Ieee802154Runtime::install` returns: the composition (`start`) hands it out with its bound MAC route, the application runs it under `run_port`, and the port's end masks the route (`detach`) and returns the engine and MAC owners to `Ieee802154System::stop`. The engine stays in the runtime's blocking mutex shared with the MAC interrupt, an interim the owner allowed until #668. The role advertises `IEEE802154_RADIO_CAPABILITIES`.
   - interface `I` is a type parameter of its slots, its configured token and its client (owner decision on #603);
-  - the one operation permit sits in the backend's held part and comes back before its terminal is handed out; a client takes it with its interface's seat (`Seat<'id, Operation>`, one per interface client from `WorkPermits::new`), so the line has a place for every interface and serves them in arrival order (#581);
+  - the one operation permit sits in the backend's held part and comes back before its terminal is handed out; a client takes it with its interface's seat (`Seat<'id, Operation>`, one per interface client from `Permits<Operation, 1, S>`, passed to `WorkPermits::new`), so the line has a place for every interface and serves them in arrival order (#581);
   - receive and sleep are per-interface wishes; the radio receives their union on one shared channel;
   - a radio fault poisons the port.
 
@@ -32,6 +32,8 @@ The port is the owner shape of `crates/protocols/ieee802154/src/owner.rs` over t
 `crates/radio/port` (`ClockInfo`, `EventsLost`, lifecycle, failure classes), `crates/time` (`Ieee802154Instant` = `RadioInstant<Ieee802154Radio>`, `Clock`, `Timer`), `crates/radio/coex` and `crates/hardware/espressif/coex`, the shared radio system `crates/runtime/esp32s31/radio` (`RadioGuard::join_ieee802154`) and `crates/composition/esp32s31/embassy/radio`, the PHY concurrent domain, the HAL split `crates/hardware/esp32s31/hal/src/root.rs` (`Ieee802154RadioPartition`), PAC and `registers/`.
 
 ## Traps
+
+- `Ieee802154RuntimeCaps::Interfaces` is a `PoolSet` layout, composed from `InterfacePool<Caps, I, P>`. The runtime combines it with the operation permit layout and consumes `Mint::into_pools(self)` once. A composition that wraps several interfaces expands one tuple through its consumed `PoolBuilder`; it cannot mint each interface separately.
 
 - The radio clock is the runtime's monotonic clock (`ClockInfo::MONOTONIC_MICROS`), unlike Wi-Fi's affine MAC time; the engine stamps each frame at its SFD with the platform microsecond clock. The esp-hal adapter's `now_micros` needs `esp_hal::init` first.
 - The engine takes every deadline decision inside its ISR (`Ieee802154Engine::isr`: ACK and pending bit, enhanced ACK, ACK watchdog, next operation), as the vendor does; deferring them to a task cannot meet the deadlines ([driver port](../../../docs/vendor/esp32s31/ieee802154-driver-port.md)).

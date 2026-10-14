@@ -68,11 +68,8 @@ pub const RUNTIME_INTERFACES: usize = 4;
 /// What a composition's capabilities marker adds for the runtime: how many
 /// interfaces it mints resources for, as a type.
 pub trait Ieee802154RuntimeCaps: Ieee802154Caps {
-    /// The interfaces' port-lifetime resources.
-    type Interfaces<'id>;
-
-    /// Mint the interfaces' resources.
-    fn interfaces<'id>(mint: &mut Mint<'id>) -> Self::Interfaces<'id>;
+    /// The complete layout of the interfaces' port-lifetime resources.
+    type Interfaces: oer_radio_port::PoolSet;
 }
 
 /// What one interface asks of the radio's resting state.
@@ -523,8 +520,16 @@ where
     where
         Self: 'a,
         'id: 'a;
-    type Resources<'id> =
-        RuntimeResources<'r, 'id, K::Interfaces<'id>, Rt<'storage, M, H, T, R, EVENTS>>;
+    type Pools = (
+        K::Interfaces,
+        oer_radio_port::Permits<Operation, 1, RUNTIME_INTERFACES>,
+    );
+    type Resources<'id> = RuntimeResources<
+        'r,
+        'id,
+        oer_radio_port::Pools<'id, K::Interfaces>,
+        Rt<'storage, M, H, T, R, EVENTS>,
+    >;
     type Held<'id> = RuntimeHeld<'id>;
     type State = ();
     type Uninstall = ();
@@ -573,10 +578,13 @@ where
         }))
     }
 
-    fn resources<'id>(&mut self, mut mint: Mint<'id>) -> (RuntimeHeld<'id>, Self::Resources<'id>) {
-        let (permits, operation) = OperationPermits::new(&mut mint, |permit, line| {
-            FifoPermitPool::new([permit], line)
-        });
+    fn resources<'id>(
+        &mut self,
+        mint: Mint<'id, Self::Pools>,
+    ) -> (RuntimeHeld<'id>, Self::Resources<'id>) {
+        let (interfaces, work) = mint.into_pools();
+        let (permits, operation) =
+            OperationPermits::new(work, |permit, line| FifoPermitPool::new([permit], line));
         let held = RuntimeHeld {
             permits,
             kind: Cell::new(None),
@@ -585,7 +593,7 @@ where
             applied: Cell::new(None),
         };
         let resources = RuntimeResources {
-            interfaces: K::interfaces(&mut mint),
+            interfaces,
             operation,
             rssi: RuntimeRssi {
                 runtime: self.runtime,

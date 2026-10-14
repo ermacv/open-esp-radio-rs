@@ -195,6 +195,7 @@ impl PortBackend for NoRadio {
     where
         Self: 'a,
         'id: 'a;
+    type Pools = ();
     type Resources<'id> = ();
     type Held<'id> = ();
     type State = ();
@@ -220,7 +221,8 @@ impl PortBackend for NoRadio {
         ready(Ok(Ok(LeInstant::from_micros(0))))
     }
 
-    fn resources<'id>(&mut self, _: Mint<'id>) -> ((), ()) {
+    fn resources<'id>(&mut self, mint: Mint<'id, Self::Pools>) -> ((), ()) {
+        mint.into_pools();
         ((), ())
     }
 

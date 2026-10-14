@@ -4,7 +4,7 @@
 [`oer-radio-port`](../../../radio/port/README.md) without allocation:
 `FifoPermitPool<'id, K, PERMITS, SEATS>` holds `PERMITS` permits of one
 install, which the backend's `resources` mint, and serves its takers first in,
-first out. Its line holds a place for each of the `SEATS` seats `Mint::seats`
+first out. Its line holds a place for each of the `SEATS` seats `Permits`
 made with the `Line<'id, K, SEATS>` the pool is built with, and each taker
 waits with its own seat. A backend keeps it in its held part of the install
 (`PortBackend::Held`), so the permits of submitted work come back to it before

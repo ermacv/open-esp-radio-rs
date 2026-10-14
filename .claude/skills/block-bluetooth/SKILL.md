@@ -30,6 +30,8 @@ Layers and edges: [layer dependencies](../../../docs/architecture.md#layer-depen
 
 ## Traps
 
+- `PortBackend::Pools` declares the installation's shared token layout. The current BLE backends use `()` and consume `Mint::into_pools(self)` once; controller-internal pools remain in the controller. No per-kind Mint constructors exist.
+
 - The LE radio clock is the controller clock extended from its 32-bit latch, with no relation to the monotonic clock (`BluetoothBackend::CLOCK` publishes `monotonic: None`): never convert an `LeInstant` through monotonic time. The runtime samples it at least every `TIME_REFRESH` (60 s) to keep the extension; the modem LP timer is an alarm of its own domain, armed through a port operation, never an `oer_time::Timer`.
 - Controller time has two raw ticks per microsecond; fractional ticks round down, and scheduler positions wrap only inside the driver (`driver/bluetooth/README.md`, "Controller time"). A raw captured anchor is not a packet-start timestamp (catalog section `bluetooth-peripheral-timing-limits`). The S31 radio epoch starts 2^32 µs above zero and ends 2^32 µs below `u64::MAX` (`radio.rs`, `EPOCH_MARGIN`), so every capture and its packet-start correction are representable by construction; a sample past the end reports the epoch exhausted (`ClockError::EpochExhausted`) instead of advancing.
 - Events never overlap: the Controller core resolves role conflicts through one arbiter and places every window with the reservation function the backend shares (`RadioTiming::reservation`), so the S31 radio meets no overlapping window (a `debug_assert`, not a refusal) and never moves one. The radio role holds no register; the caller serializes every entry (`BluetoothRadio`).

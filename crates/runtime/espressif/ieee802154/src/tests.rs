@@ -32,15 +32,14 @@ use oer_ieee802154::{
     Ieee802154Capabilities, Interface, LinkMetrics, ProbingInitiator, RadioCapabilities,
     RadioFault, RadioState, RestingState, TxMode, TxSecurity, TxStatus,
     owner::{
-        Has, Ieee802154Caps, Ieee802154Client, Ieee802154Clients, Ieee802154Setup,
-        InterfaceResources, Operation, RadioSettings, RecentRssi, SupportedHeaderIes,
-        SupportedTransmit, Transmission,
+        Has, Ieee802154Caps, Ieee802154Client, Ieee802154Clients, Ieee802154Setup, Operation,
+        RadioSettings, RecentRssi, SupportedHeaderIes, SupportedTransmit, Transmission,
     },
 };
 use oer_ieee802154_port::{
     CancelError, Disabled, Ended, Owner, PortBody, RadioPortClient, RadioPortEvents, run_port,
 };
-use oer_radio_port::{EventsLost, Mint, Poisoned, Seat};
+use oer_radio_port::{EventsLost, Poisoned, Seat};
 use oer_time::Duration;
 use oer_time_virtual::VirtualClock;
 
@@ -82,11 +81,7 @@ impl Ieee802154Caps for Single {
 }
 
 impl Ieee802154RuntimeCaps for Single {
-    type Interfaces<'id> = InterfaceResources<'id, 0, PENDING_TABLE_SIZE>;
-
-    fn interfaces<'id>(mint: &mut Mint<'id>) -> Self::Interfaces<'id> {
-        InterfaceResources::mint::<Self>(mint)
-    }
+    type Interfaces = oer_ieee802154::owner::InterfacePool<Self, 0, PENDING_TABLE_SIZE>;
 }
 
 /// The capabilities of a two-interface multi-PAN runtime.
@@ -100,17 +95,10 @@ impl Ieee802154Caps for Multipan {
 }
 
 impl Ieee802154RuntimeCaps for Multipan {
-    type Interfaces<'id> = (
-        InterfaceResources<'id, 0, PENDING_TABLE_SIZE>,
-        InterfaceResources<'id, 1, PENDING_TABLE_SIZE>,
+    type Interfaces = (
+        oer_ieee802154::owner::InterfacePool<Self, 0, PENDING_TABLE_SIZE>,
+        oer_ieee802154::owner::InterfacePool<Self, 1, PENDING_TABLE_SIZE>,
     );
-
-    fn interfaces<'id>(mint: &mut Mint<'id>) -> Self::Interfaces<'id> {
-        (
-            InterfaceResources::mint::<Self>(mint),
-            InterfaceResources::mint::<Self>(mint),
-        )
-    }
 }
 
 /// 2006 data frame without an ACK request, as MAC bytes.
@@ -146,8 +134,12 @@ type Backend<K, const EVENTS: usize> = Ieee802154RuntimeBackend<
 
 type Parts = Ieee802154RuntimeParts<'static, Ieee802154LlModel>;
 
-type Resources<'id, K, const EVENTS: usize> =
-    RuntimeResources<'static, 'id, <K as Ieee802154RuntimeCaps>::Interfaces<'id>, Runtime<EVENTS>>;
+type Resources<'id, K, const EVENTS: usize> = RuntimeResources<
+    'static,
+    'id,
+    oer_radio_port::Pools<'id, <K as Ieee802154RuntimeCaps>::Interfaces>,
+    Runtime<EVENTS>,
+>;
 
 fn parts() -> Parts {
     let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));

@@ -2,15 +2,15 @@
 
 use super::*;
 use oer_ieee80211_lower_mac::{
-    BandSet, Channel, ChannelWidth, CoexPriority, CoexPrioritySet, GateIssuer, GatePlace,
+    BandSet, Channel, ChannelWidth, CoexPriority, CoexPrioritySet, GateIssuer, GatePool,
     HardwareServices, LowerMacCapabilities, PhyFormatSet, RateSupport, ReceiveFilter, WidthSet,
 };
 use oer_ieee80211_mac::phy::{HeMcs, HtMcs};
 use oer_radio_port::{Mint, branded};
 use std::vec::Vec;
 
-fn installed<R>(body: impl for<'id> FnOnce(&mut Mint<'id>) -> R) -> R {
-    let future = core::pin::pin!(branded(async |mut mint| body(&mut mint)));
+fn installed<R>(body: impl for<'id> FnOnce(Mint<'id, GatePool>) -> R) -> R {
+    let future = core::pin::pin!(branded(async |mint| body(mint)));
     let mut cx = core::task::Context::from_waker(core::task::Waker::noop());
     match core::future::Future::poll(future, &mut cx) {
         core::task::Poll::Ready(value) => value,
@@ -126,9 +126,9 @@ fn run<'id, R: ReservationMode>(
 }
 
 fn alone<'id, R: ReservationMode>(
-    mint: &mut Mint<'id>,
+    mint: Mint<'id, GatePool>,
 ) -> (TestArbiter<'id, R>, LeasePlace, Port<'id>) {
-    let (gate, issuer) = GatePlace::mint(mint);
+    let (gate, issuer) = mint.into_pools();
     let (arbiter, place, _) =
         Arbiter::new(ArbiterPolicy::DEFAULT, channel(1), gate, Duration::ZERO);
     (
@@ -154,7 +154,7 @@ fn running(arbiter: &mut TestArbiter<'_, impl ReservationMode>) {
 }
 
 fn beside_access_point<'id, R: ReservationMode>(
-    mint: &mut Mint<'id>,
+    mint: Mint<'id, GatePool>,
 ) -> (TestArbiter<'id, R>, LeasePlace, Port<'id>) {
     let (mut arbiter, place, port) = alone::<R>(mint);
     running(&mut arbiter);
@@ -453,7 +453,8 @@ fn a_failed_return_or_a_poisoned_port_stops_the_station_and_the_access_point() {
         ))));
         assert!(seen.contains(&Seen::AccessPoint(AccessPointCommand::Stop)));
         let _ = returning;
-
+    });
+    installed(|mint| {
         let (mut arbiter, place, mut port) = beside_access_point::<NoReservation>(mint);
         let poisoned = lease(arbiter.request(at(0), scan(6, 10), place));
         arbiter.port_failed();
@@ -787,6 +788,8 @@ fn a_lease_names_the_running_access_points_channel() {
         let (mut arbiter, place, _port) = beside_access_point::<NoReservation>(mint);
         let lease = lease(arbiter.request(at(0), scan(6, 10), place));
         assert_eq!(lease.access_point(), Some(channel(1)));
+    });
+    installed(|mint| {
         let (mut alone, place, _port) = alone::<NoReservation>(mint);
         assert_eq!(lease_of(&mut alone, place).access_point(), None);
     });
@@ -830,16 +833,16 @@ fn a_join_where_the_access_point_may_not_follow_stops_it_by_the_default_policy()
 /// A station connected on channel 1 beside an access point there, its
 /// primary lease running.
 fn connected<'id>(
-    mint: &mut Mint<'id>,
+    mint: Mint<'id, GatePool>,
 ) -> (TestArbiter<'id>, Lease<Caps>, AbsencePlace, Port<'id>) {
     connected_with_policy(mint, ArbiterPolicy::DEFAULT)
 }
 
 fn connected_with_policy<'id>(
-    mint: &mut Mint<'id>,
+    mint: Mint<'id, GatePool>,
     policy: ArbiterPolicy,
 ) -> (TestArbiter<'id>, Lease<Caps>, AbsencePlace, Port<'id>) {
-    let (gate, issuer) = GatePlace::mint(mint);
+    let (gate, issuer) = mint.into_pools();
     let mut port = Port {
         refuse: false,
         issuer,
@@ -918,7 +921,7 @@ fn a_connected_stations_absence_waits_for_its_readiness_and_returns_home() {
 #[test]
 fn an_absence_needs_the_running_primary_lease() {
     installed(|mint| {
-        let (gate, _issuer) = GatePlace::mint(mint);
+        let (gate, _issuer) = mint.into_pools();
         let (mut arbiter, place, absence) =
             Arbiter::<Caps>::new(ArbiterPolicy::DEFAULT, channel(1), gate, Duration::ZERO);
         let waiting = lease(arbiter.request(
@@ -1052,7 +1055,7 @@ fn returning_the_unique_place_proves_the_lease_ended_and_admits_the_next_lease()
 #[test]
 fn an_absence_reserves_one_publication_for_each_gate_and_the_return_starts_early() {
     installed(|mint| {
-        let (gate, issuer) = GatePlace::mint(mint);
+        let (gate, issuer) = mint.into_pools();
         let mut port = Port {
             refuse: false,
             issuer,
@@ -1116,8 +1119,8 @@ fn a_gate_wait_has_no_expired_deadline() {
 
 #[test]
 fn a_move_keeps_the_next_coordinator_retune_until_its_gate_opens() {
-    installed(|mint| {
-        for after_retune in [false, true] {
+    for after_retune in [false, true] {
+        installed(|mint| {
             let (mut arbiter, _, mut port) = beside_access_point::<NoReservation>(mint);
             arbiter.access_point(at(50), AccessPointFact::SwitchDue(channel(6)));
             let Some(ArbiterAction::CloseGate { gate, .. }) = arbiter.poll_action(at(50)) else {
@@ -1141,8 +1144,8 @@ fn a_move_keeps_the_next_coordinator_retune_until_its_gate_opens() {
             assert_eq!(arbiter.channel(), Some(channel(11)));
             assert_eq!(arbiter.home, channel(11));
             assert_eq!(arbiter.poll_deadline(), None);
-        }
-    });
+        });
+    }
 }
 
 #[test]

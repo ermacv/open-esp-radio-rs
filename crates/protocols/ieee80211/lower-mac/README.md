@@ -138,7 +138,8 @@ back; its operations are synchronous and never wait:
   plan and monitor reception take effect before the next submission; the
   latest value of each wins. A receive configuration and a gate's closing
   end in events (`Configured`, `GateClosed`).
-- **Gate evidence.** The install creates one `GatePlace` inside `GateOpen`
+- **Gate evidence.** The install includes one `GatePool` in its declared pool set.
+  Its private `GatePlace` starts inside `GateOpen`
   and retains one `GateIssuer` in the backend. Closing moves that place to
   the driver; only after the publication barrier does the issuer transform
   it into `GateClosed` for the event. Opening consumes that evidence and

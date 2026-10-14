@@ -1189,6 +1189,11 @@ impl PortBackend for OwnedModel {
     where
         Self: 'a,
         'id: 'a;
+    type Pools = (
+        crate::owner::InterfacePool<ModelCaps, 0, MODEL_PENDING_SLOTS>,
+        crate::owner::InterfacePool<ModelCaps, 1, MODEL_PENDING_SLOTS>,
+        oer_radio_port::Permits<crate::owner::Operation, 1, MODEL_INTERFACES>,
+    );
     type Resources<'id> = ModelResources<'id>;
     type Held<'id> = ModelHeld<'id>;
     type State = ();
@@ -1254,16 +1259,20 @@ impl PortBackend for OwnedModel {
         })
     }
 
-    fn resources<'id>(&mut self, mut mint: Mint<'id>) -> (ModelHeld<'id>, ModelResources<'id>) {
+    fn resources<'id>(
+        &mut self,
+        mint: Mint<'id, Self::Pools>,
+    ) -> (ModelHeld<'id>, ModelResources<'id>) {
+        let (interface0, interface1, work) = mint.into_pools();
         // The model's line grows on the heap, so it holds a place for every
         // seat without the line's size.
         let (permits, operation) =
-            OperationPermits::new(&mut mint, |permit, _| ModelPermitPool::new([permit]));
+            OperationPermits::new(work, |permit, _| ModelPermitPool::new([permit]));
         let held = ModelHeld { permits };
         let resources = ModelResources {
             operation,
-            interface0: InterfaceResources::mint::<ModelCaps>(&mut mint),
-            interface1: InterfaceResources::mint::<ModelCaps>(&mut mint),
+            interface0,
+            interface1,
             rssi: ModelRssi(self.shared.clone()),
         };
         (held, resources)

@@ -289,6 +289,7 @@ impl<'m> PortBackend for ModelBackend<'m> {
     where
         Self: 'a,
         'id: 'a;
+    type Pools = ();
     type Resources<'id> = ();
     type Held<'id> = ();
     type State = ();
@@ -346,7 +347,8 @@ impl<'m> PortBackend for ModelBackend<'m> {
         core::future::ready(self.0.clock())
     }
 
-    fn resources<'id>(&mut self, _: Mint<'id>) -> ((), ()) {
+    fn resources<'id>(&mut self, mint: Mint<'id, Self::Pools>) -> ((), ()) {
+        mint.into_pools();
         ((), ())
     }
 

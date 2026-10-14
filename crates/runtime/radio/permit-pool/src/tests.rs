@@ -75,6 +75,7 @@ impl<const N: usize, const S: usize> PortBackend for Probe<N, S> {
         = ()
     where
         'id: 'a;
+    type Pools = oer_radio_port::Permits<Kind, N, S>;
     type Resources<'id> = Tokens<'id, N, S>;
     type Held<'id> = ();
     type State = ();
@@ -102,9 +103,12 @@ impl<const N: usize, const S: usize> PortBackend for Probe<N, S> {
         ready(Ok(Ok(RadioInstant::from_micros(0))))
     }
 
-    fn resources<'id>(&mut self, mut mint: Mint<'id>) -> ((), Tokens<'id, N, S>) {
-        let permits = mint.permits();
-        let (line, seats) = mint.seats();
+    fn resources<'id>(&mut self, mint: Mint<'id, Self::Pools>) -> ((), Tokens<'id, N, S>) {
+        let oer_radio_port::PermitTokens {
+            permits,
+            line,
+            seats,
+        } = mint.into_pools();
         ((), (permits, line, seats))
     }
 

@@ -754,6 +754,7 @@ impl PortBackend for PoolProbe {
         = ()
     where
         'id: 'a;
+    type Pools = oer_radio_port::Permits<crate::owner::Operation, 1, 3>;
     type Resources<'id> = (
         ModelPermitPool<'id, crate::owner::Operation>,
         [oer_radio_port::Seat<'id, crate::owner::Operation>; 3],
@@ -795,7 +796,7 @@ impl PortBackend for PoolProbe {
 
     fn resources<'id>(
         &mut self,
-        mut mint: Mint<'id>,
+        mint: Mint<'id, Self::Pools>,
     ) -> (
         (),
         (
@@ -803,8 +804,11 @@ impl PortBackend for PoolProbe {
             [oer_radio_port::Seat<'id, crate::owner::Operation>; 3],
         ),
     ) {
-        let [permit] = mint.permits::<crate::owner::Operation, 1>();
-        let (_, seats) = mint.seats::<crate::owner::Operation, 3>();
+        let oer_radio_port::PermitTokens {
+            permits: [permit],
+            seats,
+            ..
+        } = mint.into_pools();
         ((), (ModelPermitPool::new([permit]), seats))
     }
 

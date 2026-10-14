@@ -498,6 +498,8 @@ pub type EnableResult<R, F> = Result<Result<(), R>, Poisoned<F>>;
 /// in the body's owner, joins its driver with the body, and the owner and
 /// `run_port` call each method only in the state its documentation names.
 pub trait PortBackend: Sized {
+    /// The complete capacity layout issued once for each installation.
+    type Pools: oer_radio_port::PoolSet;
     /// One owned event.
     type Event<'id>;
     /// The clock domain of the port's radio instants.
@@ -569,12 +571,13 @@ pub trait PortBackend: Sized {
     ) -> impl Future<Output = PortResult<RadioInstant<Self::Domain>, ClockError, Self::Fault>> + '_;
 
     /// The port-lifetime part the backend keeps and the resources the body
-    /// receives of the install `'id`, minted with `mint`; [`run_port`] calls
-    /// it once.
+    /// receives of the install `'id`. Consume `mint.into_pools()` once to
+    /// issue the declared layout, then distribute its owners. [`run_port`]
+    /// calls this once.
     #[allow(clippy::type_complexity, reason = "the install's three parts")]
     fn resources<'id>(
         &mut self,
-        mint: Mint<'id>,
+        mint: Mint<'id, Self::Pools>,
     ) -> (Self::Held<'id>, Self::Local<'id>, Self::Resources<'id>);
 
     /// Lend the disabled-only settings of the install `'id`. An
@@ -783,7 +786,7 @@ pub async fn run_port<B: PortBackend>(
 async fn install<'id, B: PortBackend>(
     mut backend: B,
     body: impl PortBody<B>,
-    mint: Mint<'id>,
+    mint: Mint<'id, B::Pools>,
 ) -> Option<B::Uninstalled> {
     let (held, local, resources) = backend.resources(mint);
     let install = Install {

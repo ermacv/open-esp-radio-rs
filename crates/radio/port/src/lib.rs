@@ -33,7 +33,10 @@ pub mod conformance;
 pub mod pool;
 mod relation;
 
-pub use pool::{Line, Mint, Permit, PermitPool, Seat, Slot, branded};
+pub use pool::{
+    Line, Mint, Permit, PermitPool, PermitTokens, Permits, PoolBuilder, PoolSet, Pools, Seat, Slot,
+    Slots, branded,
+};
 pub use relation::{
     ClockInfo, ClockRelation, ClockSample, Generation, GenerationSource, Projected,
     ProjectionError, RadioStamp, RelationRate, RelationSample, Stamp,

@@ -103,7 +103,7 @@ use oer_time::RadioInstant;
 use oer_ieee80211_lower_mac::{
     AccessPoint, AccessPointPhase, BandSet, BssColor, Ccmp128Key, Channel, CheckedAggregate,
     CheckedPoolSource, CheckedSubframe, CheckedTxSource, CoexPriority, CoexPrioritySet,
-    ConnectionEpochKind, FreshSource, FreshSubframe, GateClosed, GateIssuer, GateOpen, GatePlace,
+    ConnectionEpochKind, FreshSource, FreshSubframe, GateClosed, GateIssuer, GateOpen, GatePool,
     HardwareServices, Ieee80211Capabilities, Ieee80211Radio, IndeterminateCause,
     InterfaceAggregateAttempt, InterfaceAttempt, InterfacePhase, KeyTypes, LinkMetric,
     LowerMacBackend, LowerMacCapabilities, LowerMacEvent, LowerMacPhase, LowerMacSetup, MpduKind,
@@ -1451,6 +1451,18 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
     where
         Self: 'a,
         'id: 'a;
+    type Pools = (
+        GatePool,
+        oer_radio_port::Slots<ModelTickets, MODEL_TICKETS>,
+        oer_radio_port::Slots<ModelSmall, MODEL_SMALL_BUFFERS>,
+        oer_radio_port::Slots<ModelLarge, MODEL_LARGE_BUFFERS>,
+        oer_radio_port::Slots<ConnectionEpochKind, 1>,
+        oer_radio_port::Slots<ModelPairwiseKeys<Station>, MODEL_KEY_SLOTS>,
+        oer_radio_port::Slots<ModelGroupKeys<Station>, MODEL_KEY_SLOTS>,
+        oer_radio_port::Slots<ModelPairwiseKeys<AccessPoint>, MODEL_KEY_SLOTS>,
+        oer_radio_port::Slots<ModelGroupKeys<AccessPoint>, MODEL_KEY_SLOTS>,
+        oer_radio_port::Slots<ModelBlockAcks, MODEL_BLOCK_ACK_SLOTS>,
+    );
     type Resources<'id> = ModelResources<'id>;
     type Held<'id> = ModelHeld<'id, X>;
     type Local<'id> = ModelLocal<'id>;
@@ -1510,12 +1522,20 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
 
     fn resources<'id>(
         &mut self,
-        mut mint: Mint<'id>,
+        mint: Mint<'id, Self::Pools>,
     ) -> (ModelHeld<'id, X>, ModelLocal<'id>, ModelResources<'id>) {
-        let (gate, gate_issuer) = GatePlace::mint(&mut mint);
-        let tickets: [Slot<'id, ModelTickets>; MODEL_TICKETS] = mint.slots();
-        let small: [Slot<'id, ModelSmall>; MODEL_SMALL_BUFFERS] = mint.slots();
-        let large: [Slot<'id, ModelLarge>; MODEL_LARGE_BUFFERS] = mint.slots();
+        let (
+            (gate, gate_issuer),
+            tickets,
+            small,
+            large,
+            [epoch_slot],
+            station_pairwise,
+            station_group,
+            access_point_pairwise,
+            access_point_group,
+            block_acks,
+        ) = mint.into_pools();
         let held = ModelHeld {
             air: self.air.clone(),
             commands: Bounded::new(MODEL_COMMANDS, "command"),
@@ -1531,7 +1551,6 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
             gate_issuer: RefCell::new(gate_issuer),
             draining: Cell::new(false),
         };
-        let [epoch_slot] = mint.slots::<ConnectionEpochKind, 1>();
         let resources = ModelResources {
             connection_epoch: epoch_slot,
             tickets: tickets.into_iter().collect(),
@@ -1549,11 +1568,11 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
                     memory: ModelMemory::Large(Box::new([0; ModelLarge::CAPACITY])),
                 })
                 .collect(),
-            station_pairwise: mint.slots(),
-            station_group: mint.slots(),
-            access_point_pairwise: mint.slots(),
-            access_point_group: mint.slots(),
-            block_acks: mint.slots(),
+            station_pairwise,
+            station_group,
+            access_point_pairwise,
+            access_point_group,
+            block_acks,
             gate,
         };
         (held, ModelLocal::default(), resources)

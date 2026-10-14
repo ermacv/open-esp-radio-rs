@@ -85,6 +85,7 @@ impl<'m> PortBackend for Backend<'m> {
     where
         Self: 'a,
         'id: 'a;
+    type Pools = oer_radio_port::Slots<ModelCaps, 2>;
     type Resources<'id> = [Slot<'id, ModelCaps>; 2];
     /// The phases lent and the disables run over the install's held part.
     type Held<'id> = core::cell::Cell<(u32, u32)>;
@@ -163,9 +164,9 @@ impl<'m> PortBackend for Backend<'m> {
 
     fn resources<'id>(
         &mut self,
-        mut mint: Mint<'id>,
+        mint: Mint<'id, Self::Pools>,
     ) -> (core::cell::Cell<(u32, u32)>, u32, [Slot<'id, ModelCaps>; 2]) {
-        (core::cell::Cell::new((0, 0)), 0, mint.slots())
+        (core::cell::Cell::new((0, 0)), 0, mint.into_pools())
     }
 
     fn setup<'a, 'id>(&'a mut self, _: &'a mut u32) -> Self::Setup<'a, 'id> {

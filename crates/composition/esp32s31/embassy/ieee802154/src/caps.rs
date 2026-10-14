@@ -10,7 +10,6 @@ use oer_ieee802154::{
     CcaThresholdCapability, Ieee802154Capabilities, RadioCapabilities, TransmitPowerCapability,
     owner::{Ieee802154Caps, InterfaceResources},
 };
-use oer_radio_port::Mint;
 
 /// The CCA threshold the radio starts with: the PIB default.
 const CCA_RESET_DBM: i8 = -75;
@@ -43,11 +42,7 @@ impl Ieee802154Caps for Esp32s31Ieee802154 {
 }
 
 impl Ieee802154RuntimeCaps for Esp32s31Ieee802154 {
-    type Interfaces<'id> = InterfaceResources<'id, 0, PENDING_TABLE_SIZE>;
-
-    fn interfaces<'id>(mint: &mut Mint<'id>) -> Self::Interfaces<'id> {
-        InterfaceResources::mint::<Self>(mint)
-    }
+    type Interfaces = oer_ieee802154::owner::InterfacePool<Self, 0, PENDING_TABLE_SIZE>;
 }
 
 /// A multi-PAN ESP32-S31 radio of four interfaces
@@ -74,14 +69,24 @@ pub struct MultipanInterfaces<'id> {
 }
 
 impl Ieee802154RuntimeCaps for Esp32s31Ieee802154Multipan {
-    type Interfaces<'id> = MultipanInterfaces<'id>;
+    type Interfaces = Self;
+}
 
-    fn interfaces<'id>(mint: &mut Mint<'id>) -> Self::Interfaces<'id> {
+impl oer_radio_port::PoolSet for Esp32s31Ieee802154Multipan {
+    type Pools<'id> = MultipanInterfaces<'id>;
+
+    fn build<'id>(builder: oer_radio_port::PoolBuilder<'id>) -> Self::Pools<'id> {
+        let (interface0, interface1, interface2, interface3) = builder.into_pools::<(
+            oer_ieee802154::owner::InterfacePool<Self, 0, PENDING_TABLE_SIZE>,
+            oer_ieee802154::owner::InterfacePool<Self, 1, PENDING_TABLE_SIZE>,
+            oer_ieee802154::owner::InterfacePool<Self, 2, PENDING_TABLE_SIZE>,
+            oer_ieee802154::owner::InterfacePool<Self, 3, PENDING_TABLE_SIZE>,
+        )>();
         MultipanInterfaces {
-            interface0: InterfaceResources::mint::<Self>(mint),
-            interface1: InterfaceResources::mint::<Self>(mint),
-            interface2: InterfaceResources::mint::<Self>(mint),
-            interface3: InterfaceResources::mint::<Self>(mint),
+            interface0,
+            interface1,
+            interface2,
+            interface3,
         }
     }
 }

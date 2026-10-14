@@ -188,6 +188,7 @@ impl<
     where
         Self: 'a,
         'id: 'a;
+    type Pools = ();
     type Resources<'id> = ();
     /// The shared part lives in the runtime the backend and the driver
     /// both reach.
@@ -247,7 +248,8 @@ impl<
         self.runtime.read_now()
     }
 
-    fn resources<'id>(&mut self, _: Mint<'id>) -> ((), ()) {
+    fn resources<'id>(&mut self, mint: Mint<'id, Self::Pools>) -> ((), ()) {
+        mint.into_pools();
         ((), ())
     }
 

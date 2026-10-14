@@ -82,11 +82,8 @@
 //! No caller mints a token: a gate, a ticket or a buffer comes only from
 //! the install's resources.
 //!
-//! ```compile_fail,E0451
-//! # use oer_ieee80211_lower_mac::{GateOpen, GatePlace};
-//! fn forge<'id>(place: GatePlace<'id>) -> GateOpen<'id> {
-//!     GateOpen { place }
-//! }
+//! ```compile_fail,E0432
+//! use oer_ieee80211_lower_mac::GatePlace;
 //! ```
 //!
 //! Nor copies one:
@@ -194,7 +191,7 @@
 
 use oer_ieee80211_mac::ccmp::GroupKeyId;
 use oer_ieee80211_port::PortPhase;
-use oer_radio_port::{Mint, Poisoned, Slot};
+use oer_radio_port::{Poisoned, Slot};
 
 use crate::{
     Channel, PhyRate, Protection, TbttEvent, TxOutcome, VifRole,
@@ -208,29 +205,40 @@ use oer_ieee80211_mac::address::IndividualAddress;
 
 enum GateKind {}
 
-/// The install's unique gate place, held inside exactly one gate state.
+/// The gate component of a lower-MAC backend's pool set.
 ///
-/// Only the backend's resource factory has the install's [`Mint`]. It calls
-/// [`GatePlace::mint`] once, hands the open state to the body and retains the
-/// issuer. Neither state nor this place can be copied or independently minted
-/// by the body. The issuer converts that same place; it never creates another.
+/// The backend receives its open gate and issuer together when its one
+/// [`oer_radio_port::Mint`] is consumed. The unique place remains private.
 ///
-/// ```compile_fail,E0599
-/// # use oer_ieee80211_lower_mac::GatePlace;
-/// fn copy<'id>(place: &GatePlace<'id>) -> GatePlace<'id> {
-///     place.clone()
+/// ```compile_fail,E0432
+/// use oer_ieee80211_lower_mac::GatePlace;
+/// ```
+///
+/// ```
+/// use oer_ieee80211_lower_mac::{GateIssuer, GateOpen, GatePool};
+/// use oer_radio_port::Mint;
+/// fn gate<'id>(mint: Mint<'id, GatePool>) -> (GateOpen<'id>, GateIssuer<'id>) {
+///     mint.into_pools()
 /// }
 /// ```
+pub struct GatePool;
+
+impl oer_radio_port::PoolSet for GatePool {
+    type Pools<'id> = (GateOpen<'id>, GateIssuer<'id>);
+
+    fn build<'id>(builder: oer_radio_port::PoolBuilder<'id>) -> Self::Pools<'id> {
+        GatePlace::mint(builder.into_pools::<oer_radio_port::Slots<GateKind, 1>>())
+    }
+}
+
+/// The install's unique gate place, held inside exactly one gate state.
 #[must_use = "the unique gate place stays in one gate state"]
-pub struct GatePlace<'id> {
+struct GatePlace<'id> {
     slot: Slot<'id, GateKind>,
 }
 
 impl<'id> GatePlace<'id> {
-    /// Create the one open gate and its backend issuer during installation.
-    /// The backend calls this exactly once per install; the body has no Mint.
-    pub fn mint(mint: &mut Mint<'id>) -> (GateOpen<'id>, GateIssuer<'id>) {
-        let [slot] = mint.slots();
+    fn mint([slot]: [Slot<'id, GateKind>; 1]) -> (GateOpen<'id>, GateIssuer<'id>) {
         (
             GateOpen {
                 place: Self { slot },
@@ -260,10 +268,10 @@ pub struct GateOpen<'id> {
 /// Evidence that the backend publishes no attempt; it does not prove quiet air.
 /// Only the retained backend issuer constructs this state after its barrier.
 ///
-/// ```compile_fail,E0451
-/// # use oer_ieee80211_lower_mac::{GateClosed, GatePlace};
-/// fn forge<'id>(place: GatePlace<'id>) -> GateClosed<'id> {
-///     GateClosed { place }
+/// ```compile_fail,E0616
+/// # use oer_ieee80211_lower_mac::{GateClosed, GateOpen};
+/// fn forge<'id>(gate: GateOpen<'id>) -> GateClosed<'id> {
+///     GateClosed { place: gate.place }
 /// }
 /// ```
 #[derive(Debug)]

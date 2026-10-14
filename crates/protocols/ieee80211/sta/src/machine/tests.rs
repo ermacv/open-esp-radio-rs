@@ -9,7 +9,7 @@ use oer_ieee80211_arbiter::{
     AccessPointCommand, AccessPointFact, Arbiter, ArbiterAction, ArbiterPolicy, NoReservation,
 };
 use oer_ieee80211_lower_mac::{
-    BandSet, Channel, ChannelWidth, CoexPriority, CoexPrioritySet, GateIssuer, GatePlace,
+    BandSet, Channel, ChannelWidth, CoexPriority, CoexPrioritySet, GateIssuer, GatePool,
     HardwareServices, LowerMacCapabilities, PhyFormatSet, RateSupport, RxMeta, WidthSet,
 };
 use oer_ieee80211_mac::channel_switch::ChannelSwitchMode;
@@ -17,8 +17,8 @@ use oer_ieee80211_mac::phy::{HeMcs, HtMcs, LegacyRate, PhyRate};
 use oer_radio_port::{Mint, branded};
 use std::vec::Vec;
 
-fn installed<R>(body: impl for<'id> FnOnce(&mut Mint<'id>) -> R) -> R {
-    let future = core::pin::pin!(branded(async |mut mint| body(&mut mint)));
+fn installed<R>(body: impl for<'id> FnOnce(Mint<'id, GatePool>) -> R) -> R {
+    let future = core::pin::pin!(branded(async |mint| body(mint)));
     let mut cx = core::task::Context::from_waker(core::task::Waker::noop());
     match core::future::Future::poll(future, &mut cx) {
         core::task::Poll::Ready(value) => value,
@@ -219,16 +219,20 @@ struct World<'id> {
 }
 
 impl<'id> World<'id> {
-    fn new(mint: &mut Mint<'id>, skipped_absences: u8) -> Self {
+    fn new(mint: Mint<'id, GatePool>, skipped_absences: u8) -> Self {
         Self::with_security(mint, skipped_absences, StaSecurity::Open)
     }
 
-    fn with_security(mint: &mut Mint<'id>, skipped_absences: u8, security: StaSecurity) -> Self {
+    fn with_security(
+        mint: Mint<'id, GatePool>,
+        skipped_absences: u8,
+        security: StaSecurity,
+    ) -> Self {
         Self::with_group_slots(mint, skipped_absences, security, 2)
     }
 
     fn with_group_slots(
-        mint: &mut Mint<'id>,
+        mint: Mint<'id, GatePool>,
         skipped_absences: u8,
         security: StaSecurity,
         group_slots: u8,
@@ -240,7 +244,7 @@ impl<'id> World<'id> {
     }
 
     fn with_groups<const G: usize>(
-        mint: &mut Mint<'id>,
+        mint: Mint<'id, GatePool>,
         skipped_absences: u8,
         security: StaSecurity,
         group_slots: [Slot; G],
@@ -249,13 +253,13 @@ impl<'id> World<'id> {
     }
 
     fn with_pools<const TX: usize, const G: usize>(
-        mint: &mut Mint<'id>,
+        mint: Mint<'id, GatePool>,
         skipped_absences: u8,
         security: StaSecurity,
         group_slots: [Slot; G],
     ) -> Self {
         let channels = heapless::Vec::from_slice(&[channel(1), channel(6)]).unwrap();
-        let (gate, gate_issuer) = GatePlace::mint(mint);
+        let (gate, gate_issuer) = mint.into_pools();
         let (arbiter, place, absence) =
             Arbiter::new(ArbiterPolicy::DEFAULT, channel(1), gate, Duration::ZERO);
         let station = Station::new(
@@ -888,7 +892,7 @@ const NULL_POWER_SAVE: u16 = 0x1048;
 
 /// A world whose station is connected to the open network on channel 6,
 /// alone on the port.
-fn connected_world<'id>(mint: &mut Mint<'id>) -> World<'id> {
+fn connected_world<'id>(mint: Mint<'id, GatePool>) -> World<'id> {
     let world = World::new(mint, 3);
     connect_open_world(world)
 }
@@ -1304,7 +1308,7 @@ fn a_station_joins_a_wpa2_network_through_the_four_way_handshake() {
 /// A WPA2 world whose station holds `group_slots` group key slots, up to
 /// Message 3 at 33 ms; the PTK of its handshake.
 fn wpa2_associated<'id>(
-    mint: &mut Mint<'id>,
+    mint: Mint<'id, GatePool>,
     group_slots: u8,
 ) -> (World<'id>, oer_ieee80211_rsn::Ptk) {
     wpa2_associated_by(mint, group_slots, &wpa2_beacon())
@@ -1312,7 +1316,7 @@ fn wpa2_associated<'id>(
 
 /// [`wpa2_associated`] with the access point's `beacon`.
 fn wpa2_associated_by<'id>(
-    mint: &mut Mint<'id>,
+    mint: Mint<'id, GatePool>,
     group_slots: u8,
     beacon: &[u8],
 ) -> (World<'id>, oer_ieee80211_rsn::Ptk) {
@@ -1353,7 +1357,7 @@ fn wpa2_associated_by<'id>(
 
 /// The world of [`wpa2_associated`], connected with group key 1.
 fn wpa2_connected<'id>(
-    mint: &mut Mint<'id>,
+    mint: Mint<'id, GatePool>,
     group_slots: u8,
 ) -> (World<'id>, oer_ieee80211_rsn::Ptk) {
     wpa2_connected_by(mint, group_slots, &wpa2_beacon())
@@ -1361,7 +1365,7 @@ fn wpa2_connected<'id>(
 
 /// [`wpa2_connected`] with the access point's `beacon`.
 fn wpa2_connected_by<'id>(
-    mint: &mut Mint<'id>,
+    mint: Mint<'id, GatePool>,
     group_slots: u8,
     beacon: &[u8],
 ) -> (World<'id>, oer_ieee80211_rsn::Ptk) {
@@ -1824,7 +1828,7 @@ fn beacon_from(bssid: [u8; 6], number: u8) -> [u8; 55] {
 /// The network on channel 1, where the access point beside the station
 /// runs, at `beside` dBm and on channel 6 at -56 dBm: the channel the join
 /// goes to, and whether the access point announces a move.
-fn joined_beside<'id>(mint: &mut Mint<'id>, beside: i8) -> (u8, bool) {
+fn joined_beside<'id>(mint: Mint<'id, GatePool>, beside: i8) -> (u8, bool) {
     let mut world = World::new(mint, 3);
     access_point_on_1(&mut world);
     world
@@ -1868,6 +1872,8 @@ fn a_candidate_on_the_access_points_channel_wins_within_the_margin() {
         // 4 dB weaker: within 6 dB, the join stays on the access point's
         // channel and nothing moves.
         assert_eq!(joined_beside(mint, -60), (1, false));
+    });
+    installed(|mint| {
         // 14 dB weaker: the strongest wins, and the access point announces its
         // move.
         assert_eq!(joined_beside(mint, -70), (6, true));
@@ -1876,11 +1882,11 @@ fn a_candidate_on_the_access_points_channel_wins_within_the_margin() {
 
 #[test]
 fn stale_handshake_installations_are_removed_in_the_order_they_return() {
-    installed(|mint| {
-        use oer_ieee80211_mac::security::rsn::Akm;
-        use oer_ieee80211_rsn::frames::RsnTxFrame;
+    use oer_ieee80211_mac::security::rsn::Akm;
+    use oer_ieee80211_rsn::frames::RsnTxFrame;
 
-        for reverse in [false, true] {
+    for reverse in [false, true] {
+        installed(|mint| {
             let (mut world, ptk) = wpa2_associated(mint, 2);
             let mut plain = Vec::new();
             plain.extend_from_slice(&RSN);
@@ -1939,8 +1945,8 @@ fn stale_handshake_installations_are_removed_in_the_order_they_return() {
                 .station
                 .input(at(36), StaInput::Command(StaCommand::Connect));
             assert!(world.station.current_epoch().is_some());
-        }
-    });
+        });
+    }
 }
 
 #[test]

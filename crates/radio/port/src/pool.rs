@@ -26,7 +26,7 @@
 //! - A **seat** ([`Seat`]) is a place in a permit pool's line: a taker
 //!   lends its seat to [`PermitPool::take`] for as long as it waits, so a
 //!   taker without one cannot exist, and a pool whose line has a place per
-//!   seat never overflows. [`Mint::seats`] makes a kind's seats with the
+//!   seat never overflows. [`Permits`] issues a kind's seats with the
 //!   [`Line`] that sizes its pools, so the line's capacity is a value, as
 //!   every other capacity is. A line is a copyable receipt: several pools
 //!   whose takers are the same seats (a transmit queue's pool each) take
@@ -56,8 +56,9 @@
 //! one that holds none turns that into its protocol's decision (an access
 //! point refuses an association).
 //!
-//! A backend mints the tokens of each kind once per install: the kind keeps
-//! pools apart, so a second set of one kind would pass for the first's.
+//! A backend declares one pool for each kind in its `Pools` layout. Consuming
+//! [`Mint::into_pools`] issues the whole set once; the factory cannot repeat
+//! issuance with the same mint. The kind keeps the declared pools apart.
 //!
 //! No token is `Clone`, `Copy` or `Default`, and only a [`Mint`] makes
 //! one, so no caller adds capacity:
@@ -160,19 +161,12 @@
 //!
 //! The brand is invariant: even a brand that outlives another does not
 //! shrink to it, so a slot of an outer install never passes for an inner
-//! one's, nor an owner for another's:
+//! one's:
 //!
 //! ```compile_fail
 //! # use oer_radio_port::Slot;
 //! fn shrink<'a: 'b, 'b, K>(slot: Slot<'a, K>) -> Slot<'b, K> {
 //!     slot
-//! }
-//! ```
-//!
-//! ```compile_fail
-//! # use oer_radio_port::{Disabled, Owner, PortBackend};
-//! fn shrink<'p, 'a: 'b, 'b, B: PortBackend>(owner: Owner<'p, 'a, B, Disabled>) -> Owner<'p, 'b, B, Disabled> {
-//!     owner
 //! }
 //! ```
 //!
@@ -198,71 +192,8 @@ use core::{future::Future, marker::PhantomData};
 /// The brand of one install.
 type Brand<'id> = PhantomData<fn(&'id ()) -> &'id ()>;
 
-/// The one maker of an install's slots and permits. Only [`branded`] makes
-/// one, for a brand no other install shares, and a block's port lifecycle
-/// hands it to its backend's `resources` once, so no caller ever holds one
-/// and every slot and permit of an install counts real capacity. It keeps
-/// no state: the backend places what it mints.
-pub struct Mint<'id> {
-    brand: Brand<'id>,
-}
-
-/// Run `install` with the [`Mint`] of a fresh brand: `install` is generic
-/// over the brand `'id`, so it names no concrete one, nothing branded by
-/// `'id` leaves it, and a second `branded` inside it mints another brand.
-/// Each block's port lifecycle runs one install in it.
-pub async fn branded<R>(install: impl for<'id> AsyncFnOnce(Mint<'id>) -> R) -> R {
-    install(Mint::new()).await
-}
-
-impl<'id> Mint<'id> {
-    pub(crate) const fn new() -> Self {
-        Self { brand: PhantomData }
-    }
-
-    /// The `N` slots of a pool of the kind `Kind`, indexed 0 to `N - 1`.
-    /// `N` is a plain constant: a backend generic over several pool sizes
-    /// mints one pool per hardware pool rather than summing them.
-    pub fn slots<Kind, const N: usize>(&mut self) -> [Slot<'id, Kind>; N] {
-        const { assert!(N <= 256, "a pool holds at most 256 tokens") };
-        core::array::from_fn(|index| Slot {
-            index: index_of(index),
-            brand: PhantomData,
-            kind: PhantomData,
-        })
-    }
-
-    /// The `N` permits of a pool of the kind `Kind`, indexed 0 to `N - 1`,
-    /// which the backend's [`PermitPool`] hands out and takes back.
-    pub fn permits<Kind, const N: usize>(&mut self) -> [Permit<'id, Kind>; N] {
-        const { assert!(N <= 256, "a pool holds at most 256 tokens") };
-        core::array::from_fn(|index| Permit {
-            index: index_of(index),
-            brand: PhantomData,
-            kind: PhantomData,
-        })
-    }
-
-    /// The `N` seats of the line of a permit pool of the kind `Kind`,
-    /// indexed 0 to `N - 1`, and the [`Line`] the pool takes to hold a
-    /// place for each: the backend keeps the line in its pool and hands
-    /// each taker its seat (one per interface client, per queue).
-    pub fn seats<Kind, const N: usize>(&mut self) -> (Line<'id, Kind, N>, [Seat<'id, Kind>; N]) {
-        const { assert!(N <= 256, "a pool holds at most 256 tokens") };
-        let seats = core::array::from_fn(|index| Seat {
-            index: index_of(index),
-            brand: PhantomData,
-            kind: PhantomData,
-        });
-        (
-            Line {
-                brand: PhantomData,
-                kind: PhantomData,
-            },
-            seats,
-        )
-    }
-}
+mod mint;
+pub use mint::{Mint, PermitTokens, Permits, PoolBuilder, PoolSet, Pools, Slots, branded};
 
 /// The index of a token of a pool of at most 256, which `Mint` asserts at
 /// compile time.
@@ -358,7 +289,7 @@ impl<Kind, const N: usize> Line<'_, Kind, N> {
 /// A pool of the permits of one install of the kind `Kind`, which a runtime
 /// crate or a backend keeps; it lives in one task, shared by reference by
 /// the port's body and its phases, never across executor tasks. Its line
-/// holds a place for each seat of its kind, which [`Mint::seats`] made with
+/// holds a place for each seat of its kind, which [`Permits`] issued with
 /// the [`Line`] the pool was built with.
 pub trait PermitPool<'id, Kind> {
     /// Take a permit with `seat`, waiting while every permit is held, never

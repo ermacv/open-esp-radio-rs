@@ -405,14 +405,17 @@ parameterized by branded token types and own them directly; BLE and
 IEEE 802.15.4 retain their existing core and boundary arrangements.
 
 **Capacity as tokens.** An install's capacity is tokens a stateless
-`Mint<'id>` makes once for the backend's `resources`: slots (`Slot<'id, K>`,
+`Mint<'id, P>::into_pools(self)` issues once for the backend's `resources`.
+The backend declares its complete layout as `type Pools: PoolSet`; a custom
+layout consumes one `PoolBuilder` to expand its components. `Slots<K, N>`
+and `Permits<K, N, S>` describe: slots (`Slot<'id, K>`,
 of a pool kind `Kind`, any marker type that keeps pools apart), which a caller takes
 synchronously from the ones it holds, an installed resource holding its slot
 until its removal gives it back; and permits (`Permit<'id, K>`), which a
 `PermitPool` hands out to awaiting takers and takes back when the work that
 held one ends with its terminal event, not when a handle drops. A taker
 waits for a permit with a seat (`Seat<'id, K>`), its place in the pool's
-line, which it keeps across takes: `Mint::seats` makes a kind's seats with
+line, which it keeps across takes: `Permits` issues a kind's seats with
 the `Line` that sizes the pool's line, so a taker without a place cannot
 exist and a pool never overflows. A pool's
 free list, its waiters and its order belong to a runtime crate or the

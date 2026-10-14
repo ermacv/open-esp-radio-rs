@@ -26,7 +26,10 @@
 //! [`MODEL_AMPDU_SUBFRAMES`] subframes: under a key the new subframes are
 //! numbered at their first transmission and a retransmitted one keeps its
 //! number and gets the Retry bit; the air answers each aggregate with a
-//! Block Ack ([`ModelAir::block_ack`], every subframe by default).
+//! Block Ack ([`ModelAir::block_ack`], every subframe by default). Single
+//! MPDUs and aggregates consume the same injected publication results: ACK/BA,
+//! missing response, collision or hardware timeout. An aggregate consumes its
+//! selected BA bitmap even when that publication receives no response.
 //!
 //! Each concrete class pool uses the portable `MpduLayout` proof before
 //! writing headers or copying an external body. Its allocation is privately
@@ -1092,7 +1095,7 @@ impl ModelAir {
         self.sent.borrow().clone()
     }
 
-    /// Answer the next transmission: acknowledged or not.
+    /// Answer the next publication, single or aggregate: ACK/BA or timeout.
     pub fn answer(&self, acknowledged: bool) {
         self.answers.borrow_mut().push_back(if acknowledged {
             AirResult::Acknowledged
@@ -1109,7 +1112,7 @@ impl ModelAir {
             .push_back(AirResult::HardwareTimeout);
     }
 
-    /// An internal collision before the MPDU reached the air. The driver
+    /// An internal collision before the PPDU reached the air. The driver
     /// consumes the next step of the plan without returning its resources.
     pub fn collision(&self) {
         self.answers.borrow_mut().push_back(AirResult::Collision);
@@ -1992,10 +1995,11 @@ impl<'id, X: ModelContext> Published<'id, X> {
                 );
             }
             Self::Aggregate { prepared, report } => {
-                let outcome = if matches!(result, AirResult::HardwareTimeout) {
-                    TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout)
-                } else {
-                    TxOutcome::Ended {
+                let outcome = match (result, cause) {
+                    (AirResult::HardwareTimeout, _) => {
+                        TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout)
+                    }
+                    (AirResult::Acknowledged, _) => TxOutcome::Ended {
                         status: TxEndStatus::Delivered,
                         transmissions: 1,
                         rate: Some(prepared.rate),
@@ -2003,7 +2007,22 @@ impl<'id, X: ModelContext> Published<'id, X> {
                             block_ack: Some(report),
                             ..TxAck::default()
                         }),
+                    },
+                    (AirResult::AckTimeout | AirResult::Collision, Some(cause)) => {
+                        TxOutcome::Withdrawn(cause)
                     }
+                    (AirResult::AckTimeout, None) => TxOutcome::Ended {
+                        status: TxEndStatus::AckTimeout,
+                        transmissions: 1,
+                        rate: Some(prepared.rate),
+                        ack: None,
+                    },
+                    (AirResult::Collision, None) => TxOutcome::Ended {
+                        status: TxEndStatus::ContentionLimit,
+                        transmissions: 0,
+                        rate: None,
+                        ack: None,
+                    },
                 };
                 terminal_aggregate(held, prepared, outcome);
             }
@@ -2171,7 +2190,7 @@ fn publish_aggregate<'id, X: ModelContext>(
     };
     Some(Publication {
         started: held.air.now_micros.get(),
-        result: AirResult::Acknowledged,
+        result: held.air.result(),
         work: Published::Aggregate {
             prepared: aggregate,
             report,

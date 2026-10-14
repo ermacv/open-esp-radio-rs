@@ -880,25 +880,21 @@ impl<A: ReceiverAddress> HeaderSpec<A> {
         )
     }
 
-    pub(crate) fn encoded_length(&self) -> HeaderLength {
+    /// The header's length in octets.
+    pub fn len(&self) -> usize {
         match (
             self.address4.is_some(),
             self.qos.is_some(),
             self.ht_control.is_some(),
         ) {
-            (false, false, false) => HeaderLength::L24,
-            (false, true, false) => HeaderLength::L26,
-            (false, false, true) => HeaderLength::L28,
-            (false, true, true) | (true, false, false) => HeaderLength::L30,
-            (true, true, false) => HeaderLength::L32,
-            (true, false, true) => HeaderLength::L34,
-            (true, true, true) => HeaderLength::L36,
+            (false, false, false) => 24,
+            (false, true, false) => 26,
+            (false, false, true) => 28,
+            (false, true, true) | (true, false, false) => 30,
+            (true, true, false) => 32,
+            (true, false, true) => 34,
+            (true, true, true) => 36,
         }
-    }
-
-    /// The header's length in octets.
-    pub fn len(&self) -> usize {
-        self.encoded_length().get()
     }
 
     /// Whether the header is empty: never.
@@ -906,10 +902,62 @@ impl<A: ReceiverAddress> HeaderSpec<A> {
         false
     }
 
-    pub(crate) fn encoder<const N: usize>(self, policy: QosAckPolicy) -> HeaderEncoder<A, N> {
-        HeaderEncoder {
-            header: self,
-            policy,
+    pub(crate) fn encoder(self, policy: QosAckPolicy) -> HeaderLength<A> {
+        let [f0, f1] = self.frame_control.get().to_le_bytes();
+        let [d0, d1] = self.duration.to_le_bytes();
+        let [r0, r1, r2, r3, r4, r5] = self.receiver.address();
+        let [t0, t1, t2, t3, t4, t5] = self.transmitter;
+        let [a0, a1, a2, a3, a4, a5] = self.address3;
+        let [s0, s1] = self.sequence_control.to_le_bytes();
+        // Every arm constructs its exact wire array. No caller can select N
+        // independently of these fields, and encoding copies the entire array.
+        match (
+            self.address4,
+            self.qos.map(|qos| qos.encode(policy).to_le_bytes()),
+            self.ht_control,
+        ) {
+            (None, None, None) => HeaderLength::L24(HeaderEncoder::new([
+                f0, f1, d0, d1, r0, r1, r2, r3, r4, r5, t0, t1, t2, t3, t4, t5, a0, a1, a2, a3, a4,
+                a5, s0, s1,
+            ])),
+            (None, Some([q0, q1]), None) => HeaderLength::L26(HeaderEncoder::new([
+                f0, f1, d0, d1, r0, r1, r2, r3, r4, r5, t0, t1, t2, t3, t4, t5, a0, a1, a2, a3, a4,
+                a5, s0, s1, q0, q1,
+            ])),
+            (None, None, Some([h0, h1, h2, h3])) => HeaderLength::L28(HeaderEncoder::new([
+                f0, f1, d0, d1, r0, r1, r2, r3, r4, r5, t0, t1, t2, t3, t4, t5, a0, a1, a2, a3, a4,
+                a5, s0, s1, h0, h1, h2, h3,
+            ])),
+            (None, Some([q0, q1]), Some([h0, h1, h2, h3])) => {
+                HeaderLength::L30(HeaderEncoder::new([
+                    f0, f1, d0, d1, r0, r1, r2, r3, r4, r5, t0, t1, t2, t3, t4, t5, a0, a1, a2, a3,
+                    a4, a5, s0, s1, q0, q1, h0, h1, h2, h3,
+                ]))
+            }
+            (Some([b0, b1, b2, b3, b4, b5]), None, None) => {
+                HeaderLength::L30(HeaderEncoder::new([
+                    f0, f1, d0, d1, r0, r1, r2, r3, r4, r5, t0, t1, t2, t3, t4, t5, a0, a1, a2, a3,
+                    a4, a5, s0, s1, b0, b1, b2, b3, b4, b5,
+                ]))
+            }
+            (Some([b0, b1, b2, b3, b4, b5]), Some([q0, q1]), None) => {
+                HeaderLength::L32(HeaderEncoder::new([
+                    f0, f1, d0, d1, r0, r1, r2, r3, r4, r5, t0, t1, t2, t3, t4, t5, a0, a1, a2, a3,
+                    a4, a5, s0, s1, b0, b1, b2, b3, b4, b5, q0, q1,
+                ]))
+            }
+            (Some([b0, b1, b2, b3, b4, b5]), None, Some([h0, h1, h2, h3])) => {
+                HeaderLength::L34(HeaderEncoder::new([
+                    f0, f1, d0, d1, r0, r1, r2, r3, r4, r5, t0, t1, t2, t3, t4, t5, a0, a1, a2, a3,
+                    a4, a5, s0, s1, b0, b1, b2, b3, b4, b5, h0, h1, h2, h3,
+                ]))
+            }
+            (Some([b0, b1, b2, b3, b4, b5]), Some([q0, q1]), Some([h0, h1, h2, h3])) => {
+                HeaderLength::L36(HeaderEncoder::new([
+                    f0, f1, d0, d1, r0, r1, r2, r3, r4, r5, t0, t1, t2, t3, t4, t5, a0, a1, a2, a3,
+                    a4, a5, s0, s1, b0, b1, b2, b3, b4, b5, q0, q1, h0, h1, h2, h3,
+                ]))
+            }
         }
     }
 }
@@ -933,61 +981,31 @@ impl<A: ReceiverAddress> HeaderSpec<A> {
 /// }
 /// ```
 pub struct HeaderEncoder<A, const N: usize> {
-    header: HeaderSpec<A>,
-    policy: QosAckPolicy,
+    bytes: [u8; N],
+    receiver: PhantomData<A>,
 }
 impl<A: ReceiverAddress, const N: usize> HeaderEncoder<A, N> {
+    fn new(bytes: [u8; N]) -> Self {
+        Self {
+            bytes,
+            receiver: PhantomData,
+        }
+    }
+
     /// Write this header into exactly its storage. This operation cannot fail.
     pub fn encode(self, out: &mut [u8; N]) {
-        let header = self.header;
-        let fields = header
-            .frame_control
-            .get()
-            .to_le_bytes()
-            .into_iter()
-            .chain(header.duration.to_le_bytes())
-            .chain(header.receiver.address())
-            .chain(header.transmitter)
-            .chain(header.address3)
-            .chain(header.sequence_control.to_le_bytes())
-            .chain(header.address4.into_iter().flatten())
-            .chain(
-                header
-                    .qos
-                    .map(|qos| qos.encode(self.policy).to_le_bytes())
-                    .into_iter()
-                    .flatten(),
-            )
-            .chain(header.ht_control.into_iter().flatten());
-        // HeaderLayout selects N from the same closed HeaderSpec shape.
-        // Consequently both iterators contain exactly N bytes.
-        for (out, byte) in out.iter_mut().zip(fields) {
-            *out = byte;
-        }
+        *out = self.bytes;
     }
 }
 
-pub(crate) enum HeaderLength {
-    L24,
-    L26,
-    L28,
-    L30,
-    L32,
-    L34,
-    L36,
-}
-impl HeaderLength {
-    const fn get(&self) -> usize {
-        match self {
-            Self::L24 => 24,
-            Self::L26 => 26,
-            Self::L28 => 28,
-            Self::L30 => 30,
-            Self::L32 => 32,
-            Self::L34 => 34,
-            Self::L36 => 36,
-        }
-    }
+pub(crate) enum HeaderLength<A> {
+    L24(HeaderEncoder<A, 24>),
+    L26(HeaderEncoder<A, 26>),
+    L28(HeaderEncoder<A, 28>),
+    L30(HeaderEncoder<A, 30>),
+    L32(HeaderEncoder<A, 32>),
+    L34(HeaderEncoder<A, 34>),
+    L36(HeaderEncoder<A, 36>),
 }
 
 /// A rate of the phase that carries an individual frame without an ACK,

@@ -45,8 +45,9 @@ back; its operations are synchronous and never wait:
   layout errors return the source before entering the backend. `HeaderLayout`
   accepts an `AckHeader`, `NoAckHeader` or group-addressed header; this type
   selects QoS Ack Policy, with no separate flag at encoding. It
-  obtains exactly sized arrays with `split_first_chunk_mut`, then the header
-  encoder writes into `&mut [u8; N]` without a fallible operation. Storage
+  obtains exactly sized arrays with `split_first_chunk_mut`. Each
+  `HeaderLength` variant carries an encoder built from an exact wire array;
+  encoding assigns the whole `[u8; N]` to its destination. Storage
   shortage, CCMP shortage and body overlap are `LayoutError`; backend
   `PreparationError` contains retransmission identity/kind, aggregate capacity
   and Block Ack window refusals.
@@ -59,6 +60,10 @@ back; its operations are synchronous and never wait:
   are pairwise; AP TX may use pairwise or group keys. The portable
   `MpduLayout` constructor checks CCMP room and tail-body overlap once,
   before any header/body write, admission or PN allocation.
+  Preparation borrows `TxBody::bytes` once and keeps that view for both the
+  length check and the complete tail copy. Re-reading an external body can
+  select another slice; even a shorter second view must not leave stale
+  payload bytes in an accepted MPDU. The body owner remains with its source.
   A refused preparation returns the original typed source and its owners;
   the caller still holds context and ticket. `submit` takes the prepared
   proof, context, ticket and attempt parameters and can refuse only poisoning.

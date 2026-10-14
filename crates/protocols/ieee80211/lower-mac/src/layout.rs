@@ -72,45 +72,45 @@ impl<'a, A: crate::ReceiverAddress> HeaderLayout<'a, A> {
         use crate::owner::HeaderLength;
         let policy = H::ACK_POLICY;
         let header = header.into_header();
-        let inner = match header.encoded_length() {
-            HeaderLength::L24 => HeaderStorage::H24(
-                header.encoder(policy),
+        let inner = match header.encoder(policy) {
+            HeaderLength::L24(encoder) => HeaderStorage::H24(
+                encoder,
                 out.split_first_chunk_mut::<24>()
                     .ok_or(LayoutError::StorageTooShort)?
                     .0,
             ),
-            HeaderLength::L26 => HeaderStorage::H26(
-                header.encoder(policy),
+            HeaderLength::L26(encoder) => HeaderStorage::H26(
+                encoder,
                 out.split_first_chunk_mut::<26>()
                     .ok_or(LayoutError::StorageTooShort)?
                     .0,
             ),
-            HeaderLength::L28 => HeaderStorage::H28(
-                header.encoder(policy),
+            HeaderLength::L28(encoder) => HeaderStorage::H28(
+                encoder,
                 out.split_first_chunk_mut::<28>()
                     .ok_or(LayoutError::StorageTooShort)?
                     .0,
             ),
-            HeaderLength::L30 => HeaderStorage::H30(
-                header.encoder(policy),
+            HeaderLength::L30(encoder) => HeaderStorage::H30(
+                encoder,
                 out.split_first_chunk_mut::<30>()
                     .ok_or(LayoutError::StorageTooShort)?
                     .0,
             ),
-            HeaderLength::L32 => HeaderStorage::H32(
-                header.encoder(policy),
+            HeaderLength::L32(encoder) => HeaderStorage::H32(
+                encoder,
                 out.split_first_chunk_mut::<32>()
                     .ok_or(LayoutError::StorageTooShort)?
                     .0,
             ),
-            HeaderLength::L34 => HeaderStorage::H34(
-                header.encoder(policy),
+            HeaderLength::L34(encoder) => HeaderStorage::H34(
+                encoder,
                 out.split_first_chunk_mut::<34>()
                     .ok_or(LayoutError::StorageTooShort)?
                     .0,
             ),
-            HeaderLength::L36 => HeaderStorage::H36(
-                header.encoder(policy),
+            HeaderLength::L36(encoder) => HeaderStorage::H36(
+                encoder,
                 out.split_first_chunk_mut::<36>()
                     .ok_or(LayoutError::StorageTooShort)?
                     .0,
@@ -392,17 +392,14 @@ impl<
                 body,
                 protection,
             } => {
+                let body_bytes = body.as_ref().map(crate::TxBody::bytes);
                 let checked = MpduLayout::new(
                     frame.frame(),
-                    body.as_ref().map_or(0, |body| body.bytes().len()),
+                    body_bytes.map_or(0, <[u8]>::len),
                     protection.layout(),
                 )
                 .and_then(|layout| {
-                    layout.initialize(
-                        buffer.bytes_mut(),
-                        frame.frame(),
-                        body.as_ref().map(crate::TxBody::bytes),
-                    )
+                    layout.initialize(buffer.bytes_mut(), frame.frame(), body_bytes)
                 });
                 match checked {
                     Ok(layout) => Ok(CheckedTxSource::Fresh(LaidOut {
@@ -472,11 +469,10 @@ impl MpduLayout {
                 );
             }
         }
-        // checked() and memory() prove exactly body.len() tail bytes.
+        // The same borrowed body view supplies checked()'s length and this
+        // copy. memory() therefore proves exactly body.len() tail bytes.
         if let Some(body) = body {
-            for (out, byte) in body_memory.iter_mut().zip(body) {
-                *out = *byte;
-            }
+            body_memory.copy_from_slice(body);
         }
         Ok(self)
     }
@@ -490,10 +486,9 @@ impl MpduLayout {
     ) -> Result<Self, LayoutError> {
         let (prefix, body_memory) = self.memory(bytes)?;
         HeaderLayout::new(frame.header(receiver, tid, self.protection), prefix)?.encode();
+        // The retained body view has exactly the tail length proved above.
         if let Some(body) = body {
-            for (out, byte) in body_memory.iter_mut().zip(body) {
-                *out = *byte;
-            }
+            body_memory.copy_from_slice(body);
         }
         Ok(self)
     }
@@ -565,9 +560,10 @@ impl<A, B: crate::TxBufferMemory, N, C: TxBufferClass, K: Ieee80211Capabilities,
                 frame,
                 body,
             } => {
+                let body_bytes = body.as_ref().map(crate::TxBody::bytes);
                 let checked = MpduLayout::subframe(
                     &frame,
-                    body.as_ref().map_or(0, |body| body.bytes().len()),
+                    body_bytes.map_or(0, <[u8]>::len),
                     aggregate.protection(),
                     aggregate.receiver(),
                     aggregate.tid(),
@@ -576,7 +572,7 @@ impl<A, B: crate::TxBufferMemory, N, C: TxBufferClass, K: Ieee80211Capabilities,
                     layout.initialize_subframe(
                         buffer.bytes_mut(),
                         &frame,
-                        body.as_ref().map(crate::TxBody::bytes),
+                        body_bytes,
                         aggregate.receiver(),
                         aggregate.tid(),
                     )

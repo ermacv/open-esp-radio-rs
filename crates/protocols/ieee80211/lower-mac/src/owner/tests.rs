@@ -158,3 +158,54 @@ fn a_header_decodes_as_it_was_encoded() {
         HeaderSpec::<IndividualAddress>::decode(&[0xd4, 0, 0, 0], IndividualAddress::new).is_none()
     );
 }
+
+#[test]
+fn every_valid_header_shape_writes_all_fields_and_leaves_its_tail_untouched() {
+    for raw in 0..=u16::MAX {
+        let Some(control) = FrameControl::new(raw) else {
+            continue;
+        };
+        let address4 = control.is_four_address().then_some([4, 3, 2, 1, 0, 9]);
+        let qos = control.is_qos_data().then_some(QosControl {
+            tid: Tid::new(9).unwrap(),
+            end_of_service_period: true,
+            amsdu_present: true,
+            high: 0x72,
+        });
+        let ht = control.has_ht_control().then_some([0x10, 0x20, 0x30, 0x40]);
+        let spec = HeaderSpec::new(
+            control,
+            0x5634,
+            GroupAddress::new([0xff; 6]).unwrap(),
+            A,
+            B,
+            0x789a,
+            address4,
+            qos,
+            ht,
+        )
+        .unwrap();
+        let mut expected = std::vec::Vec::new();
+        expected.extend(raw.to_le_bytes());
+        expected.extend(0x5634_u16.to_le_bytes());
+        expected.extend([0xff; 6]);
+        expected.extend(A);
+        expected.extend(B);
+        expected.extend(0x789a_u16.to_le_bytes());
+        if let Some(address4) = address4 {
+            expected.extend(address4);
+        }
+        if qos.is_some() {
+            expected.extend([0xb9, 0x72]);
+        }
+        if let Some(ht) = ht {
+            expected.extend(ht);
+        }
+        let mut out = [0xa5; 40];
+        crate::HeaderLayout::new(spec, &mut out).unwrap().encode();
+        assert_eq!(spec.len(), expected.len(), "control {raw:#06x}");
+        assert_eq!(&out[..expected.len()], expected, "control {raw:#06x}");
+        assert!(out[expected.len()..].iter().all(|byte| *byte == 0xa5));
+        assert_eq!(HeaderSpec::decode(&out, GroupAddress::new), Some(spec));
+    }
+}

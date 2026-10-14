@@ -182,6 +182,118 @@ fn body_and_ccmp_boundaries_are_checked_before_admission_or_packet_number_alloca
     block_on(run_port(backend, Body(Boundaries)));
 }
 
+/// A legal body provider can select a different immutable slice on a later
+/// call. The layout must retain the view it sized until that view is copied.
+struct ChangingBody {
+    reads: Rc<Cell<usize>>,
+    drops: Rc<Cell<usize>>,
+    later_length: usize,
+}
+impl TxBody for ChangingBody {
+    fn bytes(&self) -> &[u8] {
+        let reads = self.reads.get();
+        self.reads.set(reads + 1);
+        if reads == 0 {
+            &[0x5a; 8]
+        } else {
+            &[0x3c; 16][..self.later_length]
+        }
+    }
+}
+impl Drop for ChangingBody {
+    fn drop(&mut self) {
+        self.drops.set(self.drops.get() + 1);
+    }
+}
+
+struct BodyView {
+    aggregate: bool,
+}
+impl Work for BodyView {
+    async fn work<'p, 'id: 'p>(
+        self,
+        phase: &mut ModelPhase<'p, 'id>,
+        resources: ModelResources<'id>,
+    ) {
+        let ModelResources { mut small, .. } = resources;
+        let mut buffer = small.remove(0);
+        let slot = buffer.slot.index();
+        let memory = buffer.memory.as_ptr();
+        for later_length in [0, 4, 8, 16] {
+            buffer.memory.fill(0xa5);
+            let reads = Rc::new(Cell::new(0));
+            let drops = Rc::new(Cell::new(0));
+            let body = Some(ChangingBody {
+                reads: reads.clone(),
+                drops: drops.clone(),
+                later_length,
+            });
+            let (returned, body, layout) = if self.aggregate {
+                let rate = aggregate_rate(phase);
+                let aggregate = phase.station().aggregate(
+                    IndividualAddress::new(ACCESS_POINT).unwrap(),
+                    Tid::new(5).unwrap(),
+                    rate,
+                    TxProtection::Open,
+                );
+                let source: SubframeSource<_, (), _, _> = SubframeSource::Fresh {
+                    buffer,
+                    frame: ClassSubframe::<ModelSmall, _>::new(subframe_frame(0))
+                        .ok()
+                        .unwrap(),
+                    body,
+                };
+                let checked = CheckedAggregate::new(aggregate, source).ok().unwrap();
+                let (aggregate, source) = checked.into_parts();
+                let oer_ieee80211_lower_mac::CheckedSubframe::Fresh(source) = source else {
+                    panic!("fresh subframe stays fresh before backend preparation");
+                };
+                let (source, layout) = source.into_parts();
+                let (buffers, bodies) = aggregate.into_parts();
+                assert!(buffers.is_empty());
+                assert!(bodies.is_empty());
+                (source.buffer, source.body, layout)
+            } else {
+                let source: TxSource<'_, _, (), _, _, ()> = TxSource::Fresh {
+                    buffer,
+                    frame: frame(phase, 40, false),
+                    body,
+                    protection: TxProtection::Open,
+                };
+                let checked = source.check().ok().unwrap();
+                let oer_ieee80211_lower_mac::CheckedTxSource::Fresh(source) = checked else {
+                    panic!("fresh source stays fresh before backend preparation");
+                };
+                let (source, layout) = source.into_parts();
+                (source.buffer, source.body, layout)
+            };
+            buffer = returned;
+            assert_eq!(layout.body_start(), 32);
+            assert_eq!(&buffer.memory[32..40], &[0x5a; 8]);
+            assert_eq!(reads.get(), 1, "size and copy use the same borrowed view");
+            assert_eq!(buffer.slot.index(), slot);
+            assert_eq!(buffer.memory.as_ptr(), memory);
+            assert!(buffer.memory[40..].iter().all(|byte| *byte == 0xa5));
+            assert_eq!(drops.get(), 0, "checking retains the body's owner");
+            drop(body);
+            assert_eq!(drops.get(), 1, "cancellation returns the sole body owner");
+            assert!(phase.held.events.is_empty(), "no TX was submitted");
+        }
+    }
+}
+
+#[test]
+fn a_single_source_copies_exactly_the_body_view_whose_length_it_checked() {
+    let (backend, _) = backend();
+    block_on(run_port(backend, Body(BodyView { aggregate: false })));
+}
+
+#[test]
+fn an_aggregate_copies_exactly_the_body_view_whose_length_it_checked() {
+    let (backend, _) = backend();
+    block_on(run_port(backend, Body(BodyView { aggregate: true })));
+}
+
 fn aggregate_rate<'p, 'id: 'p>(phase: &mut ModelPhase<'p, 'id>) -> AmpduRate<'p> {
     let ht = oer_ieee80211_mac::phy::HtRate::new(
         HtMcs::new(7).unwrap(),

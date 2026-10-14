@@ -31,11 +31,7 @@ fn response_parameters() -> FtmResponseParameters {
 
 #[test]
 fn initial_request_round_trips_exact_parameter_element() {
-    let mut body = [0_u8; FTM_INITIAL_REQUEST_BODY_LEN];
-    assert_eq!(
-        encode_initial_request(request_parameters(), &mut body),
-        Ok(FTM_INITIAL_REQUEST_BODY_LEN)
-    );
+    let body = encode_initial_request(request_parameters());
     assert_eq!(&body[..3], &[4, 32, 1]);
     assert_eq!(body[3], 206);
     assert_eq!(body[4], 9);
@@ -175,4 +171,15 @@ fn duplicate_or_truncated_parameter_elements_are_rejected() {
         FtmRequest::decode_body(&[4, 32, 1, 206, 9, 0]),
         Err(FtmWireError::MalformedInformationElement)
     );
+}
+
+#[test]
+fn trigger_requests_are_complete_without_parameters() {
+    for trigger in [FtmTrigger::Stop, FtmTrigger::StartOrContinue] {
+        let body = encode_request_trigger(trigger);
+        let decoded = FtmRequest::decode_body(&body).unwrap();
+        assert_eq!(decoded.trigger, trigger);
+        assert!(decoded.information_elements.is_empty());
+        assert_eq!(decoded.parameters, None);
+    }
 }

@@ -308,6 +308,19 @@ pub enum FtmSessionFailure {
     ProtocolViolation,
 }
 
+/// Refusals of the requester state machine. Encoding checked initial
+/// parameters into their fixed-size Action body is infallible.
+///
+/// ```compile_fail,E0599
+/// use oer_ieee80211_sta::ftm::FtmRequesterError;
+/// let impossible = FtmRequesterError::RequestEncode;
+/// ```
+///
+/// ```
+/// use oer_ieee80211_sta::ftm::FtmRequesterError;
+/// let refused = FtmRequesterError::NoActiveSession;
+/// assert!(matches!(refused, FtmRequesterError::NoActiveSession));
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FtmRequesterError {
     Busy,
@@ -335,8 +348,6 @@ pub enum FtmRequesterError {
     InitialRetransmissionMismatch,
     UnsupportedNegotiation,
     TooManyMeasurements,
-    /// The initial request did not encode in its Action body.
-    RequestEncode,
     DialogTokenReused,
     DialogTokenOutOfSequence {
         expected: u8,
@@ -622,9 +633,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             .transmission_generation
             .checked_add(1)
             .ok_or(FtmRequesterError::GenerationExhausted)?;
-        let mut body = [0_u8; FTM_INITIAL_REQUEST_BODY_LEN];
-        encode_initial_request(self.config.parameters, &mut body)
-            .map_err(|_| FtmRequesterError::RequestEncode)?;
+        let body = encode_initial_request(self.config.parameters);
         let attempt = self
             .config
             .request_attempt_limit

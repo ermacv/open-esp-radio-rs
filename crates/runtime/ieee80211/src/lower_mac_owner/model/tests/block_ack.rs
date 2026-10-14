@@ -95,7 +95,15 @@ impl Work for Window {
                 min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
             })
             .unwrap();
-        let (ticket, buffers, bodies, report) = aggregate_completion(phase).await;
+        let (ticket, subframes, report) = aggregate_completion(phase).await;
+        let buffers: Vec<_> = subframes
+            .into_iter()
+            .map(|mpdu| {
+                let (buffer, body) = mpdu.into_parts();
+                assert!(body.is_none());
+                buffer
+            })
+            .collect();
         assert_eq!(ticket.index(), ticket_index);
         let report = report.unwrap();
         let expected: BTreeSet<u16> = self
@@ -113,7 +121,6 @@ impl Work for Window {
             .collect();
         assert_eq!(observed, expected);
         assert_eq!(buffers.len(), indices.len());
-        assert!(bodies.is_empty(), "published bodies stay in Sent");
         for (index, (buffer, original_index)) in buffers.into_iter().zip(indices).enumerate() {
             let ModelAnyBuffer::SmallSent(sent) = buffer else {
                 panic!()
@@ -219,7 +226,15 @@ impl Work for RefusedSent {
                 min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
             })
             .unwrap();
-        let (_, mut buffers, _, _) = aggregate_completion(phase).await;
+        let (_, subframes, _) = aggregate_completion(phase).await;
+        let mut buffers: Vec<_> = subframes
+            .into_iter()
+            .map(|mpdu| {
+                let (buffer, body) = mpdu.into_parts();
+                assert!(body.is_none());
+                buffer
+            })
+            .collect();
         let ModelAnyBuffer::SmallSent(mpdu) = buffers.remove(0) else {
             panic!()
         };

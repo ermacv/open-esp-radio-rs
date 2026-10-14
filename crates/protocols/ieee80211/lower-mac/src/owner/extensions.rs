@@ -174,12 +174,6 @@ pub type CheckedPoolAggregate<'k, 'p, 'id, T, C, R, K, S> = crate::CheckedAggreg
     <T as PhaseTypes<'id>>::TxBody,
 >;
 
-/// The resources released by cancelling an aggregate builder.
-pub type AggregateParts<'id, T> = (
-    <T as PhaseTypes<'id>>::TxBuffers,
-    <T as PhaseTypes<'id>>::TxBodies,
-);
-
 /// A rate the backend aggregates at, checked by [`AmpduPhase::ampdu_rate`].
 #[derive(Debug)]
 pub struct AmpduRate<'p, 'id, K>(PhaseRate<'p, 'id, K>);
@@ -232,6 +226,9 @@ impl<'p, 'id, K> AmpduRate<'p, 'id, K> {
 pub trait PhaseAggregate<'id> {
     /// The backend resource family.
     type Types: PhaseTypes<'id>;
+    /// Cancellation releases each complete MPDU, including for an empty
+    /// builder. It does not manufacture an admitted nonempty aggregate.
+    type Cancelled: IntoIterator<Item = <Self::Types as PhaseTypes<'id>>::TxMpdu>;
     /// The receiver fixed when this builder was created.
     fn receiver(&self) -> super::IndividualAddress;
     /// The TID fixed when this builder was created.
@@ -242,7 +239,7 @@ pub trait PhaseAggregate<'id> {
     fn subframes(&self) -> usize;
     /// Cancel preparation, recovering all original MPDUs and fresh bodies.
     /// No ticket was taken and no TX terminal is created.
-    fn into_parts(self) -> AggregateParts<'id, Self::Types>;
+    fn into_parts(self) -> Self::Cancelled;
 }
 
 /// The minimum MPDU start spacing of an aggregate, as the 802.11 encoding

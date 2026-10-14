@@ -278,6 +278,9 @@ pub struct Trace {
     pub returned: Vec<Returned>,
     /// Context destructors run, including fail-stop-owned contexts.
     pub contexts_dropped: usize,
+    /// Destructors observed after disable, before uninstall/fail-stop destroys
+    /// the installation. Poison must still own every unreturned context here.
+    pub before_teardown_dropped: usize,
     /// Publications observed by the backend fixture.
     pub publications: usize,
 }
@@ -326,6 +329,10 @@ pub async fn check(harness: &mut impl Harness) -> Result<(), (Scenario, Violatio
 
 fn verify(scenario: Scenario, trace: Trace) -> Result<(), Violation> {
     if trace.contexts_dropped != OPERATIONS.len() {
+        return Err(Violation::Lifetime);
+    }
+    let returned_before_teardown = if scenario == Scenario::Poison { 2 } else { 4 };
+    if trace.before_teardown_dropped != returned_before_teardown {
         return Err(Violation::Lifetime);
     }
     let expected_publications = match scenario {

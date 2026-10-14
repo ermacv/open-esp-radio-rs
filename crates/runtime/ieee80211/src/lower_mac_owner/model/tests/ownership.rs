@@ -24,6 +24,7 @@ type Backend = ModelBackend<ModelCaps, Contexts>;
 struct Operations {
     air: Rc<ModelAir>,
     dropped: Rc<Cell<usize>>,
+    before_teardown: Rc<Cell<usize>>,
     seen: Rc<RefCell<Vec<conformance::Returned>>>,
     scenario: Scenario,
 }
@@ -71,13 +72,16 @@ fn returned(
     seen: &RefCell<Vec<conformance::Returned>>,
 ) {
     match event {
-        LowerMacEvent::TxCompleted(TxCompleted::Single {
-            context,
-            ticket,
-            buffer,
-            completion,
-            body,
-        }) => {
+        LowerMacEvent::TxCompleted(TxCompleted::Single(terminal)) => {
+            let oer_ieee80211_lower_mac::TerminalParts {
+                context,
+                ticket,
+                outcome: completion,
+                payload,
+                ..
+            } = terminal.into_parts();
+            let (buffer, body) = payload.into_parts();
+
             let end = match completion {
                 TxOutcome::Ended {
                     last: Some((core::num::NonZeroU16::MIN, _)),
@@ -89,7 +93,7 @@ fn returned(
             };
             observe(context, ticket, buffer, body, end, seen);
         }
-        LowerMacEvent::TxCompleted(TxCompleted::Aggregate { .. }) => {
+        LowerMacEvent::TxCompleted(TxCompleted::Aggregate(_)) => {
             panic!("single submission must return Single")
         }
         _ => {}
@@ -245,8 +249,14 @@ impl PortBody<Backend> for Operations {
         }
         let mut sink = |event| returned(event, &self.seen);
         match owner.disable(&mut sink).await {
-            Ok(owner) => owner.uninstall(()),
-            Err(poisoned) => poisoned.fail_stop(),
+            Ok(owner) => {
+                self.before_teardown.set(self.dropped.get());
+                owner.uninstall(())
+            }
+            Err(poisoned) => {
+                self.before_teardown.set(self.dropped.get());
+                poisoned.fail_stop()
+            }
         }
     }
 }
@@ -262,12 +272,14 @@ impl Harness for ModelHarness {
             ],
         );
         let dropped = Rc::new(Cell::new(0));
+        let before_teardown = Rc::new(Cell::new(usize::MAX));
         let seen = Rc::new(RefCell::new(Vec::new()));
         run_port(
             backend,
             Operations {
                 air: air.clone(),
                 dropped: dropped.clone(),
+                before_teardown: before_teardown.clone(),
                 seen: seen.clone(),
                 scenario,
             },
@@ -276,6 +288,7 @@ impl Harness for ModelHarness {
         Trace {
             returned: core::mem::take(&mut *seen.borrow_mut()),
             contexts_dropped: dropped.get(),
+            before_teardown_dropped: before_teardown.get(),
             publications: air.sent().len(),
         }
     }
@@ -395,21 +408,24 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
                     break event;
                 }
             };
-            let LowerMacEvent::TxCompleted(TxCompleted::Aggregate {
-                context,
-                ticket,
-                buffers,
-                bodies,
-                completion,
-            }) = event
-            else {
+            let LowerMacEvent::TxCompleted(TxCompleted::Aggregate(terminal)) = event else {
                 unreachable!()
             };
+            let oer_ieee80211_lower_mac::TerminalParts {
+                context,
+                ticket,
+                payload,
+                outcome: completion,
+            } = terminal.into_parts();
+            let subframes: Vec<_> = payload.into_iter().map(TxMpdu::into_parts).collect();
             assert_eq!(ticket.index(), context.ticket);
             assert_eq!(matches!(completion, TxOutcome::Withdrawn(_)), self.withdraw);
-            assert_eq!(buffers.len(), 3);
-            assert_eq!(bodies.len(), if self.withdraw { 2 } else { 0 });
-            for (buffer, index) in buffers.iter().zip(&context.buffers) {
+            assert_eq!(subframes.len(), 3);
+            assert_eq!(
+                subframes.iter().filter(|(_, body)| body.is_some()).count(),
+                if self.withdraw { 2 } else { 0 }
+            );
+            for ((buffer, _), index) in subframes.iter().zip(&context.buffers) {
                 let slot = match buffer {
                     ModelAnyBuffer::Small(buffer) if self.withdraw => buffer.slot.index(),
                     ModelAnyBuffer::SmallSent(buffer) if !self.withdraw => {
@@ -420,9 +436,9 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
                 assert_eq!(slot, *index);
             }
             for (index, pointer) in &context.bodies {
-                let buffer = &buffers[usize::from(*index)];
+                let (buffer, fresh_body) = &subframes[usize::from(*index)];
                 let body = if self.withdraw {
-                    &bodies.iter().find(|(at, _)| at == index).unwrap().1
+                    fresh_body.as_ref().unwrap()
                 } else {
                     let ModelAnyBuffer::SmallSent(mpdu) = buffer else {
                         unreachable!()
@@ -466,6 +482,175 @@ fn aggregate_terminal_returns_its_context_and_each_subframes_resources_on_air_or
                 withdraw,
             },
         ));
+        assert_eq!(dropped.get(), 1);
+    }
+}
+
+struct FaultContext(Rc<Cell<usize>>);
+impl ModelContext for FaultContext {
+    type Context<'id> = Self;
+}
+impl Drop for FaultContext {
+    fn drop(&mut self) {
+        self.0.set(self.0.get() + 1);
+    }
+}
+struct PublicationFault {
+    aggregate: bool,
+    dropped: Rc<Cell<usize>>,
+}
+impl PortBody<ModelBackend<ModelCaps, FaultContext>> for PublicationFault {
+    async fn run<'p, 'id>(
+        self,
+        owner: Owner<'p, 'id, ModelBackend<ModelCaps, FaultContext>, Disabled>,
+        resources: ModelResources<'id>,
+    ) -> Ended<'id, ModelBackend<ModelCaps, FaultContext>> {
+        use oer_ieee80211_lower_mac::{AggregateAttempt, MpduStartSpacing};
+        let mut owner = owner.enable().await.ok().unwrap();
+        let ModelResources {
+            mut tickets,
+            mut small,
+            station_pairwise: [slot, _],
+            ..
+        } = resources;
+        {
+            let mut phase = owner.phase();
+            let key = phase.station().install_pairwise_key(
+                slot,
+                IndividualAddress::new(PEER).unwrap(),
+                Ccmp128Key([7; 16]),
+            );
+            // In the aggregate case the second fresh subframe exhausts PN;
+            // the first has already changed state but still belongs to this
+            // same operation. Neither owner may disappear on that failure.
+            key.identity
+                .0
+                .last
+                .set(oer_ieee80211_mac::ccmp::CCMP_PACKET_NUMBER_MAX - u64::from(self.aggregate));
+            let ticket = tickets.remove(0);
+            let ticket_index = ticket.index();
+            let context = FaultContext(self.dropped.clone());
+            let first = small.remove(0);
+            let first_index = first.slot.index();
+            let body = ModelBody(alloc::vec![0x7a; 4]);
+            let first_body = body.0.as_ptr();
+            if self.aggregate {
+                let ht = oer_ieee80211_mac::phy::HtRate::new(
+                    HtMcs::new(7).unwrap(),
+                    oer_ieee80211_mac::phy::PpduBandwidth::Mhz20,
+                    false,
+                )
+                .unwrap();
+                let rate = phase.rate(PhyRate::Ht(ht)).unwrap();
+                let mut station = phase.station();
+                let rate = station.ampdu_rate(rate).ok().unwrap();
+                let aggregate = station.aggregate(
+                    IndividualAddress::new(PEER).unwrap(),
+                    Tid::new(0).unwrap(),
+                    rate,
+                    TxProtection::Ccmp(&key),
+                );
+                let aggregate = push_subframe(aggregate, first, subframe_frame(0), Some(body));
+                let aggregate = push_subframe(
+                    aggregate,
+                    small.remove(0),
+                    subframe_frame(1),
+                    Some(ModelBody(alloc::vec![0x4b; 4])),
+                );
+                station
+                    .submit_ampdu(AggregateAttempt {
+                        context,
+                        ticket,
+                        aggregate,
+                        protection: Protection::None,
+                        power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+                        coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+                        min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
+                    })
+                    .unwrap();
+            } else {
+                let source = TxSource::Fresh {
+                    buffer: first,
+                    frame: ClassFrame::new(data_frame(&phase, true)).ok().unwrap(),
+                    body: Some(body),
+                    protection: TxProtection::Ccmp(&key),
+                };
+                let source = <ModelTypes<FaultContext> as TxBufferPool<ModelSmall>>::prepare::<
+                    Station,
+                    ModelCaps,
+                >(source.check().ok().unwrap())
+                .ok()
+                .unwrap();
+                phase
+                    .station()
+                    .submit(oer_ieee80211_lower_mac::Attempt {
+                        context,
+                        ticket,
+                        source,
+                        access_category: WmmAccessCategory::BestEffort,
+                        protection: Protection::None,
+                        power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+                        coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+                    })
+                    .unwrap();
+            }
+            assert!(phase.next_event().await.is_err());
+            assert_eq!(
+                self.dropped.get(),
+                0,
+                "quarantine retains the opaque context before teardown"
+            );
+            assert!(phase.held.events.is_empty(), "poison invents no terminal");
+            assert!(phase.held.air.sent().is_empty());
+            let quarantined = phase.held.quarantined.items.borrow();
+            assert_eq!(quarantined.len(), 1);
+            let mpdu = match quarantined.front().unwrap() {
+                super::super::Work::Single(operation) => {
+                    assert!(!self.aggregate);
+                    assert_eq!(operation.operation.ticket().index(), ticket_index);
+                    operation.operation.payload()
+                }
+                super::super::Work::Aggregate(operation) => {
+                    assert!(self.aggregate);
+                    assert_eq!(operation.operation.ticket().index(), ticket_index);
+                    let subframes = &operation.operation.payload().0;
+                    assert_eq!(subframes.len(), 2);
+                    assert_eq!(subframes[1].mpdu.body.as_ref().unwrap().0, [0x4b; 4]);
+                    &subframes[0].mpdu
+                }
+            };
+            let ModelAnyBuffer::Small(buffer) = &mpdu.buffer else {
+                panic!("original allocation")
+            };
+            assert_eq!(buffer.slot.index(), first_index);
+            assert_eq!(mpdu.body.as_ref().unwrap().0.as_ptr(), first_body);
+            assert_eq!(mpdu.body.as_ref().unwrap().0, [0x7a; 4]);
+        }
+        owner.fail_stop()
+    }
+}
+
+#[test]
+fn publication_fault_keeps_the_complete_single_or_aggregate_until_teardown() {
+    for aggregate in [false, true] {
+        let dropped = Rc::new(Cell::new(0));
+        let (backend, _) = ModelBackend::<ModelCaps, FaultContext>::new(
+            Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap(),
+            [
+                IndividualAddress::new(STATION).unwrap(),
+                IndividualAddress::new(ACCESS_POINT).unwrap(),
+            ],
+        );
+        assert!(
+            block_on(run_port(
+                backend,
+                PublicationFault {
+                    aggregate,
+                    dropped: dropped.clone()
+                }
+            ))
+            .is_none()
+        );
         assert_eq!(dropped.get(), 1);
     }
 }

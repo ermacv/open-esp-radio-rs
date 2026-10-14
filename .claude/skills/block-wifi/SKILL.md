@@ -43,6 +43,14 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   2.4 GHz proof from bypassing a second same-Caps installation's 5 GHz check;
   the phase loan prevents reuse after disable and retune.
 
+- Admission closes TX context, ticket and MPDU in `InFlight`; queues move
+  that whole owner through the terminal. `ExecutionPayload` projections must
+  lend only execution storage, never a public `&mut` to an MPDU owner or an
+  extraction/replacement operation. Aggregate subframes own their bodies;
+  cancellation iterates them without creating an admitted aggregate. Check
+  custody before teardown when injecting a publication fault: counting all
+  destructors only after `run_port` ends cannot detect an early owner drop.
+
 - Every port method but `next_event` is synchronous (`port.rs`, the trait's documentation).
 - A port has one event stream in occurrence order (#266 D8): the S31 runtime numbers every event under the core's lock and merges its four queues by that number (`runtime/esp32s31/ieee80211/src/lower_mac.rs`, `Queues::take`). An extension event names its kind and interface (`LowerMacEvent::Extension { kind, vif }`), and the router routes it by that interface, never by role.
 - Interrupt model ([ownership and refusals](../../../docs/architecture.md#ownership-and-refusals), #643): the MAC and power interrupts only read and clear their status and post the events, through `IrqConsumer::publish` (`hardware/esp32s31/driver/ieee80211/mac/src/irq/consumer.rs`); the port's owner task runs `LowerMacCore::service`. No Wi-Fi decision has a software deadline below 1 ms (ACK and Block Ack turnaround are hardware). The port backend `Esp32s31LowerMac` still runs `service` inside `on_interrupt` under the core's blocking lock; #563 removes it, so never add interrupt-side logic there.

@@ -93,16 +93,21 @@ impl Work for DuringPublication {
         } else {
             air.hold_completion(WmmAccessCategory::BestEffort, false);
         }
-        let Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Single {
-            ticket,
-            buffer: ModelAnyBuffer::SmallSent(mpdu),
-            completion,
-            body,
-            ..
-        }))) = phase.next_event().await
+        let Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Single(terminal)))) =
+            phase.next_event().await
         else {
             panic!("published head returns first, as Sent")
         };
+        let oer_ieee80211_lower_mac::TerminalParts {
+            ticket,
+            outcome: completion,
+            payload,
+            ..
+        } = terminal.into_parts();
+        let (ModelAnyBuffer::SmallSent(mpdu), body) = payload.into_parts() else {
+            panic!("terminal returned an unexpected MPDU state")
+        };
+
         assert_eq!(ticket.index(), head_ticket);
         assert!(body.is_none());
         assert_eq!(mpdu.packet_number(), first.packet_number);
@@ -131,15 +136,21 @@ impl Work for DuringPublication {
             state: MpduState::Sent,
             outcome: completion,
         }];
-        let Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Single {
-            ticket: tail,
-            buffer: ModelAnyBuffer::Small(_),
-            completion,
-            ..
-        }))) = phase.next_event().await
+        let Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Single(terminal)))) =
+            phase.next_event().await
         else {
             panic!("unpublished tail returns second, as Fresh")
         };
+        let oer_ieee80211_lower_mac::TerminalParts {
+            ticket: tail,
+            outcome: completion,
+            payload,
+            ..
+        } = terminal.into_parts();
+        let (ModelAnyBuffer::Small(_), _) = payload.into_parts() else {
+            panic!("terminal returned an unexpected MPDU state")
+        };
+
         assert_eq!(tail.index(), tail_ticket);
         let cause = if matches!(self.0, Barrier::RemoveKey) {
             WithdrawCause::KeyRemoved

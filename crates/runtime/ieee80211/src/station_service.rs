@@ -69,7 +69,7 @@ use oer_ieee80211_lower_mac::{
     LowerMacBackend, LowerMacEvent, LowerMacPhase, PhaseTypes, PoolMpdu, PoolSource, Protection,
     Removed, RemovedKey, RetransmissionPlan, ReturnedMpdu, RxBuffer, StationPhase,
     SupportedChannel, SupportedCoex, SupportedPower, TxBufferClass, TxBufferPool, TxCompleted,
-    TxOutcome, TxPower, TxProtection, TxSource, VifRole,
+    TxMpdu, TxOutcome, TxPower, TxProtection, TxSource, VifRole,
 };
 use oer_ieee80211_mac::qos::{WmmAccessCategory, WmmUserPriority};
 use oer_ieee80211_port::{Disabled, Enabled, Failed, Owner, PoisonedOwner, PortBackend};
@@ -1097,13 +1097,14 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
                 }
                 Some(frame)
             }
-            LowerMacEvent::TxCompleted(TxCompleted::Single {
-                context,
-                ticket,
-                buffer,
-                completion,
-                body,
-            }) => {
+            LowerMacEvent::TxCompleted(TxCompleted::Single(terminal)) => {
+                let oer_ieee80211_lower_mac::TerminalParts {
+                    context,
+                    ticket,
+                    payload,
+                    outcome: completion,
+                } = terminal.into_parts();
+                let (buffer, body) = payload.into_parts();
                 self.returned(
                     now,
                     context,
@@ -1115,7 +1116,7 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
                 drop(body);
                 None
             }
-            LowerMacEvent::TxCompleted(TxCompleted::Aggregate { .. }) => {
+            LowerMacEvent::TxCompleted(TxCompleted::Aggregate(_)) => {
                 // A backend terminal must have the same cardinality as submit.
                 return Err(BackendContractViolation);
             }

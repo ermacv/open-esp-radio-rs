@@ -277,12 +277,14 @@ async fn completion<'p, 'id: 'p>(
             let mut context = core::task::Context::from_waker(Waker::noop());
             Future::poll(event, &mut context)
         };
-        if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Single {
-            ticket,
-            buffer,
-            ..
-        })))) = event
+        if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Single(terminal))))) =
+            event
         {
+            let oer_ieee80211_lower_mac::TerminalParts {
+                ticket, payload, ..
+            } = terminal.into_parts();
+            let (buffer, _) = payload.into_parts();
+
             return (ticket, buffer);
         }
     }
@@ -897,12 +899,16 @@ impl Work for AbortHeld<'_> {
                 let mut context = core::task::Context::from_waker(Waker::noop());
                 Future::poll(event, &mut context)
             };
-            if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Single {
-                buffer,
-                completion,
-                ..
-            })))) = event
+            if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Single(terminal))))) =
+                event
             {
+                let oer_ieee80211_lower_mac::TerminalParts {
+                    outcome: completion,
+                    payload,
+                    ..
+                } = terminal.into_parts();
+                let (buffer, _) = payload.into_parts();
+
                 let mut seen = self.seen.borrow_mut();
                 seen.outcome = Some(completion);
                 if let Ok(mut fresh) = <ModelTypes as TxBufferPool<'id, ModelLarge>>::class(buffer)
@@ -1044,13 +1050,12 @@ fn subframe_frame(sequence: u16) -> SizedFrame<AckHeader, ModelCaps> {
     SizedFrame::new(header, MpduLength::new(40).unwrap()).unwrap()
 }
 
-/// The next terminal: its ticket, buffers and Block Ack.
+/// The next terminal: its ticket, complete subframes and Block Ack.
 async fn aggregate_completion<'p, 'id: 'p>(
     phase: &mut ModelPhase<'p, 'id>,
 ) -> (
     Slot<'id, ModelTickets, ModelPool<1>>,
-    Vec<ModelAnyBuffer<'id>>,
-    Vec<(u8, ModelBody)>,
+    ModelSubframes<'id>,
     Option<oer_ieee80211_lower_mac::BlockAckReport>,
 ) {
     loop {
@@ -1060,19 +1065,19 @@ async fn aggregate_completion<'p, 'id: 'p>(
             let mut context = core::task::Context::from_waker(Waker::noop());
             Future::poll(event, &mut context)
         };
-        if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Aggregate {
-            ticket,
-            buffers,
-            completion,
-            bodies,
-            ..
-        })))) = event
+        if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Aggregate(terminal))))) =
+            event
         {
+            let oer_ieee80211_lower_mac::TerminalParts {
+                ticket,
+                payload,
+                outcome,
+                ..
+            } = terminal.into_parts();
             return (
                 ticket,
-                buffers.into_iter().collect(),
-                bodies,
-                match completion {
+                payload,
+                match outcome {
                     TxOutcome::Ended { ack, .. } => ack.and_then(|ack| ack.block_ack),
                     other => panic!("aggregate did not end: {other:?}"),
                 },
@@ -1151,9 +1156,16 @@ impl Work for AggregateRetransmission<'_> {
         station
             .submit_ampdu(attempt(tickets.remove(0), aggregate))
             .unwrap();
-        let (ticket, mut buffers, bodies, report) = aggregate_completion(phase).await;
+        let (ticket, subframes, report) = aggregate_completion(phase).await;
+        let mut buffers: Vec<_> = subframes
+            .into_iter()
+            .map(|mpdu| {
+                let (buffer, body) = mpdu.into_parts();
+                assert!(body.is_none(), "numbered MPDUs retain their own bodies");
+                buffer
+            })
+            .collect();
         self.report.set(report);
-        assert!(bodies.is_empty(), "numbered MPDUs retain their own bodies");
         for (index, (buffer, pointer)) in buffers.iter().zip(&body_owners).enumerate() {
             let ModelAnyBuffer::SmallSent(mpdu) = buffer else {
                 panic!("numbered subframe")
@@ -1179,9 +1191,10 @@ impl Work for AggregateRetransmission<'_> {
         let (buffer, frame) = subframe(small.remove(0), 3);
         let aggregate = push_subframe(aggregate, buffer, frame, None);
         station.submit_ampdu(attempt(ticket, aggregate)).unwrap();
-        let (_, buffers, bodies, _) = aggregate_completion(phase).await;
-        assert!(bodies.is_empty());
-        let ModelAnyBuffer::SmallSent(mpdu) = &buffers[0] else {
+        let (_, subframes, _) = aggregate_completion(phase).await;
+        let (buffer, body) = subframes.into_iter().next().unwrap().into_parts();
+        assert!(body.is_none());
+        let ModelAnyBuffer::SmallSent(mpdu) = buffer else {
             panic!("numbered subframe")
         };
         assert_eq!(mpdu.body().unwrap().0.as_ptr(), body_owners[1]);
@@ -1254,14 +1267,18 @@ impl Work for TerminalOutcomes<'_> {
                 yield_now().await;
                 let next = core::pin::pin!(phase.next_event());
                 let mut cx = core::task::Context::from_waker(Waker::noop());
-                if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Single {
-                    ticket,
-                    buffer,
-                    completion,
-                    body,
-                    ..
-                })))) = Future::poll(next, &mut cx)
+                if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Single(
+                    terminal,
+                ))))) = Future::poll(next, &mut cx)
                 {
+                    let oer_ieee80211_lower_mac::TerminalParts {
+                        ticket,
+                        outcome: completion,
+                        payload,
+                        ..
+                    } = terminal.into_parts();
+                    let (buffer, body) = payload.into_parts();
+
                     assert_eq!(
                         ticket.index(),
                         expected,
@@ -1412,7 +1429,14 @@ impl Work for LongRetryPlan<'_> {
             let Ok(Ok(event)) = phase.next_event().await else {
                 panic!("terminal")
             };
-            if let LowerMacEvent::TxCompleted(TxCompleted::Single { completion, .. }) = event {
+            if let LowerMacEvent::TxCompleted(TxCompleted::Single(terminal)) = event {
+                let oer_ieee80211_lower_mac::TerminalParts {
+                    outcome: completion,
+                    payload,
+                    ..
+                } = terminal.into_parts();
+                let (_, _) = payload.into_parts();
+
                 assert!(matches!(
                     completion,
                     TxOutcome::Ended {
@@ -1490,14 +1514,15 @@ impl Work for LastRateBeforeCollision<'_> {
             let Ok(Ok(event)) = phase.next_event().await else {
                 panic!("terminal")
             };
-            if let LowerMacEvent::TxCompleted(TxCompleted::Single {
-                completion,
-                ticket,
-                buffer,
-                body,
-                ..
-            }) = event
-            {
+            if let LowerMacEvent::TxCompleted(TxCompleted::Single(terminal)) = event {
+                let oer_ieee80211_lower_mac::TerminalParts {
+                    ticket,
+                    outcome: completion,
+                    payload,
+                    ..
+                } = terminal.into_parts();
+                let (buffer, body) = payload.into_parts();
+
                 assert_eq!(
                     completion,
                     TxOutcome::Ended {

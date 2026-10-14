@@ -249,9 +249,7 @@ impl Work for BodyView {
                     panic!("fresh subframe stays fresh before backend preparation");
                 };
                 let (source, layout) = source.into_parts();
-                let (buffers, bodies) = aggregate.into_parts();
-                assert!(buffers.is_empty());
-                assert!(bodies.is_empty());
+                assert!(aggregate.into_parts().is_empty());
                 (source.buffer, source.body, layout)
             } else {
                 let source: TxSource<_, (), _, _, (), _> = TxSource::Fresh {
@@ -490,12 +488,13 @@ impl Work for AggregateBoundaries {
         // QoS header 26 + CCMP 8 + body 16: exact boundary is 50.
         let frame = SizedFrame::new(*frame.frame().header(), MpduLength::new(50).unwrap()).unwrap();
         let aggregate = push_subframe(aggregate, buffer, frame, body);
-        let (mut buffers, mut bodies) = aggregate.into_parts();
-        let ModelAnyBuffer::Small(buffer) = buffers.remove(0) else {
+        let mut subframes = aggregate.into_parts();
+        let (buffer, body) = subframes.next().unwrap().into_parts();
+        assert!(subframes.next().is_none());
+        let ModelAnyBuffer::Small(buffer) = buffer else {
             unreachable!()
         };
-        let (index, body) = bodies.remove(0);
-        assert_eq!(index, 0);
+        let body = body.unwrap();
         assert_eq!(buffer.memory.as_ptr(), memory);
         assert_eq!(body.0.as_ptr(), body_pointer);
         let aggregate = phase
@@ -514,9 +513,10 @@ impl Work for AggregateBoundaries {
                 min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
             })
             .unwrap();
-        let (_, mut buffers, bodies, _) = aggregate_completion(phase).await;
-        assert!(bodies.is_empty());
-        let ModelAnyBuffer::SmallSent(mpdu) = buffers.remove(0) else {
+        let (_, subframes, _) = aggregate_completion(phase).await;
+        let (buffer, body) = subframes.into_iter().next().unwrap().into_parts();
+        assert!(body.is_none());
+        let ModelAnyBuffer::SmallSent(mpdu) = buffer else {
             unreachable!()
         };
         assert_eq!(mpdu.buffer.memory.as_ptr(), memory);
@@ -603,12 +603,18 @@ impl Work for PreparedRemoval {
                     coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
                 })
                 .unwrap();
-            let Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Single {
-                buffer, completion, ..
-            }))) = phase.next_event().await
+            let Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Single(terminal)))) =
+                phase.next_event().await
             else {
                 panic!("terminal before removal")
             };
+            let oer_ieee80211_lower_mac::TerminalParts {
+                outcome: completion,
+                payload,
+                ..
+            } = terminal.into_parts();
+            let (buffer, _) = payload.into_parts();
+
             assert_eq!(completion, TxOutcome::Withdrawn(WithdrawCause::KeyRemoved));
             let ModelAnyBuffer::SmallSent(mpdu) = buffer else {
                 unreachable!()

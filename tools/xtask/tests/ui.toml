@@ -46,3 +46,15 @@ cases = [
     "crates/runtime/ieee80211/tests/ui/installation_no_ack.rs",
     "crates/runtime/ieee80211/tests/ui/retuned_rate.rs",
 ]
+
+[[suite]]
+name = "accepted-operation"
+packages = ["oer-ieee80211-lower-mac", "oer-ieee80211-runtime", "oer-radio-port"]
+features = ["oer-ieee80211-runtime/test-support"]
+targets = ["host", "esp32s31"]
+cases = [
+    "crates/protocols/ieee80211/lower-mac/tests/ui/accepted_owner.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/terminal_reconstruction.rs",
+    "crates/runtime/ieee80211/tests/ui/accepted_mpdu.rs",
+    "crates/runtime/ieee80211/tests/ui/partial_aggregate.rs",
+]

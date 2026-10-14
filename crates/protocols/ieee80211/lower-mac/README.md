@@ -31,12 +31,21 @@ back; its operations are synchronous and never wait:
   `PhaseTypes` also owns the single body type and backend fault type for
   the phase and both of its interfaces; interface submission and the event
   stream report that same fault.
-  `TxCompleted::Single` contains exactly one MPDU; `Aggregate` contains
-  its submitted subframes. The backend must return the original owners,
-  including when different classes share an AC queue. The common suite in
-  runtime `lower_mac_owner::conformance` checks this obligation against the
-  model now and is required of the S31 adapter at its runtime rewrite.
-  The backend moves that context unchanged;
+  At admission the backend consumes context, ticket and the prepared MPDU
+  into one closed `InFlight`. Queues, publication, withdrawal and quarantine
+  retain that whole owner. `TxCompleted::Single` returns its `Completed`;
+  `Aggregate` returns the complete ordered subframes. Each subframe owns its
+  fresh memory and optional body or its Sent value. There is no independent
+  body index array. Only consuming `Completed::into_parts` releases those
+  owners to the higher layer.
+  Backend execution uses `ExecutionPayload`'s narrow projection; it may lend
+  storage needed by the driver but may not expose a replaceable MPDU or
+  owner extraction. The model projections keep those fields private, and
+  host/RV32 UI pairs reject swapping tickets, contexts or MPDUs, reconstructing
+  a terminal through fields, and returning a partial aggregate.
+  The common `lower_mac_owner::conformance` suite checks actual returned
+  identities and destructor counts before teardown as well as after it.
+  S31 must supply that harness with its runtime rewrite. Context moves unchanged;
   no `Clone` bound, frame inspection or parallel lookup identifies the
   original operation. Bodies remain owned until the same terminal, even
   when the backend copies their octets into DMA memory. An empty pool is the caller's
@@ -103,8 +112,10 @@ back; its operations are synchronous and never wait:
   submitted. `AggregateFull` remains a push refusal, and an empty aggregate
   has no submit operation ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6156247280)).
   `PhaseAggregate::into_parts` cancels either state without a ticket or TX
-  terminal. Sent subframes retain their bodies; fresh subframes return
-  indexed external bodies. `renew` returns memory and body explicitly.
+  terminal. Cancellation iterates complete MPDUs and does not manufacture an
+  admitted aggregate from an empty builder. Sent subframes retain their
+  bodies; each fresh subframe returns its own body. `renew` returns memory
+  and body explicitly.
 - **Retry plans.** An individual frame carries its `RetryPlan`, a sequence
   of rates with their transmissions and protection, as mac80211's rate
   table. The first stage is mandatory; the tail is a bounded array with an

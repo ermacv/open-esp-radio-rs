@@ -194,7 +194,7 @@ use oer_ieee80211_port::PortPhase;
 use oer_radio_port::{Poisoned, PoolPath, Root, Slot};
 
 use crate::{
-    Channel, PhyRate, Protection, TbttEvent, TxOutcome, VifRole,
+    Channel, PhyRate, Protection, TbttEvent, VifRole,
     owner::{
         AccessPoint, BssColor, Ccmp128Key, Ieee80211Capabilities, InterfaceRole, PhaseRate,
         Station, StationReceive, SupportedBlockAck, SupportedCoex, SupportedEdca, SupportedFilter,
@@ -348,46 +348,31 @@ pub enum LowerMacEvent<'id, P: PhaseTypes<'id>> {
     GroupKeyReplaced(<P::StationKeys as KeyTypes<'id>>::GroupKey),
 }
 
-/// An accepted attempt's terminal, with the shape of its submission.
+/// An accepted attempt's terminal, retaining its closed operation owner.
+/// The higher layer consumes `Completed::into_parts` to recover context,
+/// ticket and the complete MPDU or aggregate. Queues cannot exchange their
+/// components before that terminal boundary.
 ///
-/// The backend must return exactly the original context, ticket and MPDU
-/// for a single attempt, or the original subframes for an aggregate, once.
-/// It moves the opaque context unchanged, including on withdrawal and during
-/// disable. Classes may share an AC queue, but may never exchange owners.
-/// The Rust shape guarantees cardinality for singles; identity remains a
-/// backend obligation, covered by the common backend conformance scenarios.
-/// A consumer detecting a context/resource mismatch must fail-stop just as
-/// for a poisoned backend. It must not count and continue with swapped owners.
-///
-/// [Owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6155986511).
+/// [Owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6169527922).
 pub enum TxCompleted<'id, P: PhaseTypes<'id>> {
-    /// Exactly one submitted MPDU, never an empty or multi-buffer list.
-    Single {
-        /// Original opaque context.
-        context: P::Context,
-        /// Original ticket.
-        ticket: Slot<'id, P::TicketKind, P::TicketPath>,
-        /// Original MPDU, fresh if unpublished or retaining its sent image.
-        buffer: P::AnyTxBuffer,
-        /// A fresh MPDU's external body; sent MPDUs retain theirs internally.
-        body: Option<P::TxBody>,
-        /// Terminal outcome.
-        completion: TxOutcome,
-    },
-    /// The aggregate's original subframes, in submitted order.
-    Aggregate {
-        /// Original opaque context.
-        context: P::Context,
-        /// Original ticket.
-        ticket: Slot<'id, P::TicketKind, P::TicketPath>,
-        /// Original subframes.
-        buffers: P::TxBuffers,
-        /// Fresh subframes' bodies by subframe index; sent MPDUs retain theirs.
-        bodies: P::TxBodies,
-        /// Terminal outcome, including any Block Ack report.
-        completion: TxOutcome,
-    },
+    /// Exactly one submitted MPDU, including its original body owner.
+    Single(SingleCompleted<'id, P>),
+    /// Every submitted subframe, in order, each owning its memory and body.
+    Aggregate(AggregateCompleted<'id, P>),
 }
+
+/// A backend's single terminal, with its original accepted owner.
+pub type SingleCompleted<'id, P> = crate::Completed<
+    <P as PhaseTypes<'id>>::Context,
+    Slot<'id, <P as PhaseTypes<'id>>::TicketKind, <P as PhaseTypes<'id>>::TicketPath>,
+    <P as PhaseTypes<'id>>::TxMpdu,
+>;
+/// A backend's aggregate terminal, with every complete submitted subframe.
+pub type AggregateCompleted<'id, P> = crate::Completed<
+    <P as PhaseTypes<'id>>::Context,
+    Slot<'id, <P as PhaseTypes<'id>>::TicketKind, <P as PhaseTypes<'id>>::TicketPath>,
+    <P as PhaseTypes<'id>>::TxAggregate,
+>;
 
 /// The keys of one role and their slots, which a phase's types name: they
 /// depend on the install alone, so a caller holds them across the phase's
@@ -535,17 +520,18 @@ pub trait PhaseTypes<'id>: Sized {
     type TicketKind;
     /// A transmit buffer of any class, as a completion gives it back.
     type AnyTxBuffer;
-    /// The buffers a completion gives back.
-    type TxBuffers: IntoIterator<Item = Self::AnyTxBuffer>;
+    /// One closed MPDU, with its fresh body or its complete Sent owner.
+    type TxMpdu: crate::TxMpdu<Buffer = Self::AnyTxBuffer, Body = Self::TxBody>
+        + crate::ExecutionPayload;
+    /// The complete submitted aggregate. Its subframes retain their bodies;
+    /// no independently indexed body collection exists.
+    type TxAggregate: IntoIterator<Item = Self::TxMpdu> + crate::ExecutionPayload;
     /// The memory of one received MPDU, which goes back through
     /// [`LowerMacPhase::recycle`].
     type RxBuffer: crate::RxBuffer;
     /// The metadata of one received MPDU: the portable fields and what the
     /// backend's type guarantees beyond them.
     type RxMeta: crate::RxMetadata;
-    /// External bodies of fresh returned MPDUs, with their subframe index.
-    /// A `Sent` MPDU retains its own body until retry or renewal.
-    type TxBodies: IntoIterator<Item = (u8, Self::TxBody)>;
     /// The station's keys and their slots.
     type StationKeys: KeyTypes<'id, Identity = Self::KeyIdentity>;
     /// The access point's keys and their slots.

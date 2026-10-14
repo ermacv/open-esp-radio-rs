@@ -136,9 +136,9 @@ fn continuous_receive_has_the_same_capacity_and_recycling_in_feature_builds() {
     run(run_port(backend, Receive(air))).unwrap();
 }
 
-struct Swap(Rc<ModelAir>);
+struct Owners;
 
-impl PortBody<ModelBackend> for Swap {
+impl PortBody<ModelBackend> for Owners {
     async fn run<'id>(
         self,
         owner: Owner<'_, 'id, ModelBackend, Disabled>,
@@ -149,8 +149,6 @@ impl PortBody<ModelBackend> for Swap {
         };
         {
             let mut phase = enabled.phase();
-            self.0.swap_next_two_single_buffers();
-            assert!(!self.0.terminal_buffers_swapped());
             macro_rules! submit {
                 ($class:ty, $buffer:expr) => {{
                     let rate = phase.rate(PhyRate::Legacy(LegacyRate::Ofdm6M)).unwrap();
@@ -209,22 +207,21 @@ impl PortBody<ModelBackend> for Swap {
             }
             let first = submit!(ModelSmall, resources.small.pop().unwrap());
             let second = submit!(ModelLarge, resources.large.pop().unwrap());
-            for (ticket_index, swapped_to_large) in [(first, true), (second, false)] {
+            for (ticket_index, large) in [(first, false), (second, true)] {
                 let event = phase.next_event().await.unwrap().unwrap();
-                let LowerMacEvent::TxCompleted(TxCompleted::Single { ticket, buffer, .. }) = event
-                else {
+                let LowerMacEvent::TxCompleted(TxCompleted::Single(terminal)) = event else {
                     panic!("one Single terminal per submission");
                 };
+                let oer_ieee80211_lower_mac::TerminalParts {
+                    ticket, payload, ..
+                } = terminal.into_parts();
+                let (buffer, _) = oer_ieee80211_lower_mac::TxMpdu::into_parts(payload);
                 assert_eq!(ticket.index(), ticket_index);
-                assert_eq!(
-                    matches!(buffer, ModelAnyBuffer::LargeSent(_)),
-                    swapped_to_large
-                );
-                if !swapped_to_large {
+                assert_eq!(matches!(buffer, ModelAnyBuffer::LargeSent(_)), large);
+                if !large {
                     assert!(matches!(buffer, ModelAnyBuffer::SmallSent(_)));
                 }
             }
-            assert!(self.0.terminal_buffers_swapped());
             assert!(poll_once(phase.next_event()).is_pending());
         }
         let Ok(disabled) = enabled
@@ -238,7 +235,7 @@ impl PortBody<ModelBackend> for Swap {
 }
 
 #[test]
-fn terminal_fault_injection_preserves_both_tickets_in_feature_builds() {
-    let (backend, air) = backend();
-    run(run_port(backend, Swap(air))).unwrap();
+fn feature_builds_keep_each_accepted_ticket_with_its_original_buffer() {
+    let (backend, _) = backend();
+    run(run_port(backend, Owners)).unwrap();
 }

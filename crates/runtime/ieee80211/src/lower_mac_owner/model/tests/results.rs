@@ -97,32 +97,29 @@ impl Work for Results {
                 panic!()
             };
             let (returned_ticket, returned_buffer, outcome) = match (form, completed) {
-                (
-                    Form::Single,
-                    TxCompleted::Single {
+                (Form::Single, TxCompleted::Single(terminal)) => {
+                    let oer_ieee80211_lower_mac::TerminalParts {
                         ticket,
-                        buffer,
-                        completion,
-                        body,
+                        outcome: completion,
+                        payload,
                         ..
-                    },
-                ) => {
+                    } = terminal.into_parts();
+                    let (buffer, body) = payload.into_parts();
+
                     assert!(body.is_none());
                     (ticket, buffer, completion)
                 }
-                (
-                    Form::Aggregate,
-                    TxCompleted::Aggregate {
+                (Form::Aggregate, TxCompleted::Aggregate(terminal)) => {
+                    let oer_ieee80211_lower_mac::TerminalParts {
                         ticket,
-                        mut buffers,
-                        completion,
-                        bodies,
+                        payload,
+                        outcome,
                         ..
-                    },
-                ) => {
-                    assert_eq!(buffers.len(), 1);
-                    assert!(bodies.is_empty());
-                    (ticket, buffers.remove(0), completion)
+                    } = terminal.into_parts();
+                    assert_eq!(payload.len(), 1);
+                    let (buffer, body) = payload.into_iter().next().unwrap().into_parts();
+                    assert!(body.is_none());
+                    (ticket, buffer, outcome)
                 }
                 _ => panic!("terminal changed operation kind"),
             };
@@ -272,11 +269,11 @@ impl Work for WrongAnswer {
         submit(phase, ticket, small.remove(0), None);
         assert!(phase.next_event().await.is_err());
         assert!(phase.held.air.sent().is_empty());
-        let held = phase.held.rejected_answer.items.borrow();
+        let held = phase.held.quarantined.items.borrow();
         let Some(super::super::Work::Single(operation)) = held.front() else {
             panic!("the rejected operation stays owned")
         };
-        assert_eq!(operation.ticket.index(), index);
+        assert_eq!(operation.operation.ticket().index(), index);
     }
 }
 

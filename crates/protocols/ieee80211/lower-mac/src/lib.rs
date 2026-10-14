@@ -53,6 +53,9 @@
 //! are the portable ones of `oer-ieee80211-mac`. This package only declares
 //! the port and its values; it never waits on it.
 
+mod in_flight;
+pub use in_flight::{Completed, ExecutionPayload, InFlight, TerminalParts, TxMpdu};
+
 pub mod capabilities;
 mod layout;
 pub use layout::{
@@ -120,19 +123,19 @@ pub use owner::{
     SupportedPower, Tid, TxFrame,
 };
 pub use owner::{
-    AggregateAttempt, AggregateParts, AggregatePushResult, AggregateRefused, AggregateState,
-    AirReservationPhase, AmpduPhase, AmpduRate, BeaconTimingPhase, BeaconWindow, ClassSubframe,
-    EmptyAggregate, InterfaceAggregate, InterfaceAggregateAttempt, InterfaceProtection,
-    MAX_RESERVATION_MICROS, MonitorPhase, MpduStartSpacing, NonEmptyAggregate, PhaseAggregate,
-    PoolSubframe, SubframeSource, TbttPlan,
+    AggregateAttempt, AggregatePushResult, AggregateRefused, AggregateState, AirReservationPhase,
+    AmpduPhase, AmpduRate, BeaconTimingPhase, BeaconWindow, ClassSubframe, EmptyAggregate,
+    InterfaceAggregate, InterfaceAggregateAttempt, InterfaceProtection, MAX_RESERVATION_MICROS,
+    MonitorPhase, MpduStartSpacing, NonEmptyAggregate, PhaseAggregate, PoolSubframe,
+    SubframeSource, TbttPlan,
 };
 pub use phase::{
-    AccessPointPhase, Attempt, AttemptKey, CheckedPoolSource, ClassFrame, ClassSizedFrame,
-    GateClosed, GateIssuer, GateOpen, GatePool, InterfaceAttempt, InterfaceKeys, InterfacePhase,
-    KeyTypes, LowerMacEvent, LowerMacPhase, PhaseTypes, PoolMpdu, PoolPreparation, PoolSource,
-    PreparationError, PreparationRefused, PreparedTx, RETRY_STAGES, Removed, RemovedKey,
-    RetransmissionPlan, RetryPlan, RetryStage, ReturnedMpdu, RoleKeys, StationPhase, TxBufferClass,
-    TxBufferMemory, TxBufferPool, TxCompleted, TxProtection, TxSource,
+    AccessPointPhase, AggregateCompleted, Attempt, AttemptKey, CheckedPoolSource, ClassFrame,
+    ClassSizedFrame, GateClosed, GateIssuer, GateOpen, GatePool, InterfaceAttempt, InterfaceKeys,
+    InterfacePhase, KeyTypes, LowerMacEvent, LowerMacPhase, PhaseTypes, PoolMpdu, PoolPreparation,
+    PoolSource, PreparationError, PreparationRefused, PreparedTx, RETRY_STAGES, Removed,
+    RemovedKey, RetransmissionPlan, RetryPlan, RetryStage, ReturnedMpdu, RoleKeys, SingleCompleted,
+    StationPhase, TxBufferClass, TxBufferMemory, TxBufferPool, TxCompleted, TxProtection, TxSource,
 };
 pub use rx::{
     LinkMetric, RxBuffer, RxCryptoStatus, RxEvidence, RxMeta, RxMetadata, SignalMetadata,

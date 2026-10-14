@@ -9,12 +9,12 @@ pub const DECISIONS: &[Decision] = &[
             compared effects does not record",
         places: &[
             (
-                "driver/ieee80211/mac/src/tx.rs",
-                "4 => match self.detail() {",
+                "driver/ieee80211/mac/src/tx/completion.rs",
+                "4 => tx_error(raw.detail, raw.handler_argument),",
             ),
             (
-                "driver/ieee80211/mac/src/tx.rs",
-                "1 | 3..=5 => TxCompletionDisposition::Collision,",
+                "driver/ieee80211/mac/src/tx/completion.rs",
+                "1 | 3..=5 if selector == 0 => Ok(Observed(TxStatus::Collision)),",
             ),
         ],
     },

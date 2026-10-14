@@ -1641,12 +1641,6 @@ code = "87434affc8653669f9e6430c74bfd45ed5dffe84edd9eaee9503c35ae5b9a11d"
 
 [[function]]
 artifact = "libnet80211"
-member = "ieee80211_action.o"
-symbol = "ieee80211_send_action"
-code = "048e57c04daefe447bc7314081872d0d44c8d80547fc79071e4d40a719a9168d"
-
-[[function]]
-artifact = "libnet80211"
 member = "ieee80211_api.o"
 symbol = "esp_wifi_config_11b_rate"
 code = "1528c64005a82939b2e65e6984a2708ba5aa9d2d6542acc894fe84b06bbfa4c9"
@@ -1674,6 +1668,12 @@ artifact = "libnet80211"
 member = "ieee80211_api.o"
 symbol = "esp_wifi_set_inactive_time"
 code = "7c050f1cea86a37301fc1ec15c17ab0e2d39602e251181b0b4309b5ebaa6a53a"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_api.o"
+symbol = "wifi_assert"
+code = "5eeec31b06ef92db53dd9e2251302f4da1b63f41091973fcca3dc62bf564aa51"
 
 [[function]]
 artifact = "libnet80211"
@@ -4117,6 +4117,18 @@ code = "0559fef06bab407ceb14400a469bb1445ea504db4a718bd66fdf53ee2cff433b"
 [[function]]
 artifact = "libpp"
 member = "lmac.o"
+symbol = "lmacProcessTxError"
+code = "039855052b3efd306806e72603bbbe77976e3b68d0fb346b1f02afc07c1a8e79"
+
+[[function]]
+artifact = "libpp"
+member = "lmac.o"
+symbol = "lmacProcessTxRtsError"
+code = "ffe2cc462d6a55e6d94e6f22608a1946e2eb185786db04847ad2488fb5e8284f"
+
+[[function]]
+artifact = "libpp"
+member = "lmac.o"
 symbol = "lmacProcessTxSuccess"
 code = "ec7260bc2880e4e3e05749a0056467c02b65b6ecd9c9561f70d8ec1332899e37"
 decisions = ["coverage.toml"]
@@ -4127,6 +4139,12 @@ member = "lmac.o"
 symbol = "lmacProcessTxopQComplete"
 code = "cbde0f1ade14f73b184be9f9bd87b265454bba5f3e5a478a8cbd33e3b561bbf4"
 decisions = ["coverage.toml"]
+
+[[function]]
+artifact = "libpp"
+member = "lmac.o"
+symbol = "lmacProcessTxseckiderr"
+code = "92c011f797b379df062d10b35258e72cb9ffd0dfce105798d34c851ae6bc3446"
 
 [[function]]
 artifact = "libpp"
@@ -4757,6 +4775,12 @@ code = "d8efee1e8731a5e5f4a5dfdfe8fd02a3494c3a898038712d12b2d2030fbe9606"
 [[function]]
 artifact = "libpp"
 member = "wdev.o"
+symbol = "wdev_funcs_init"
+code = "977a523d5e4a2f3993c60b2214919d0156dd88eac34a787bc586e7b6d4a2aa4d"
+
+[[function]]
+artifact = "libpp"
+member = "wdev.o"
 symbol = "wdev_process_tbtt"
 code = "101cd146279b40460a640dec5dbd08a3e81d22becf3437a1fdc0355cef22255e"
 
@@ -5043,6 +5067,12 @@ member = ""
 symbol = "lmacProcessShortFrameSuccess"
 code = "eb06e0ee3d5fb73d6c2530bb90eea527f1fb33a4810afe2db5861a0e9ce1d1d6"
 decisions = ["coverage.toml"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "lmacProcessTxComplete"
+code = "83e1d892883146ed6e33f60be2d8fad9bfd63f1389495384ee50e5fb1ab61a5a"
 
 [[function]]
 artifact = "rom"

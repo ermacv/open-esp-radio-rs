@@ -1313,12 +1313,13 @@ oer_probe_macros::probe! {
         descriptor: u32,
         buffer: u32,
     ) -> u32 {
-        use oer_esp32s31_ieee80211_mac::tx::{TxCompletionDisposition, runtime::OrdinaryRetryDecision};
+        use oer_esp32s31_ieee80211_mac::tx::runtime::OrdinaryRetryDecision;
+        use oer_ieee80211_lower_mac::TxStatus;
         let disposition = match disposition {
-            0 => TxCompletionDisposition::AckTimeout,
-            1 => TxCompletionDisposition::CtsTimeout,
-            2 => TxCompletionDisposition::Collision,
-            3 => TxCompletionDisposition::Success,
+            0 => TxStatus::AckTimeout,
+            1 => TxStatus::CtsTimeout,
+            2 => TxStatus::Collision,
+            3 => TxStatus::Success,
             _ => panic!("verification disposition is out of range"),
         };
         // SAFETY: see `RetryProbeState`; the reset entry ran first.
@@ -1410,18 +1411,18 @@ oer_probe_macros::probe! {
 
 oer_probe_macros::probe! {
     /// ABI projection around the exact production status-four classifier.
-    pub fn open_libpp_tx_retry_trace_lmac_process_tx_error(queue: u32, detail: u32, _selector: u32) {
-        use oer_esp32s31_ieee80211_mac::tx::{TxCompletion, TxCompletionDisposition, TxCookie};
+    pub fn open_libpp_tx_retry_trace_lmac_process_tx_error(queue: u32, detail: u32, selector: u32) {
+        use oer_esp32s31_ieee80211_mac::tx::{CompletionFault, CompletionObservation, CompletionRaw, decode};
+        use oer_ieee80211_lower_mac::TxStatus;
 
-        let completion = TxCompletion::new_validation(TxCookie(0), 4, detail as u8);
-        match completion.disposition() {
-            TxCompletionDisposition::AckTimeout => open_libpp_tx_retry_ack_timeout(queue),
-            TxCompletionDisposition::CtsTimeout => open_libpp_tx_retry_cts_timeout(queue),
-            TxCompletionDisposition::Collision => open_libpp_tx_retry_collision(queue),
-            TxCompletionDisposition::Terminal(
-                oer_esp32s31_ieee80211_mac::tx::TxCompletionFailure::SecurityKeyError,
-            ) => open_libpp_tx_retry_security_key_error(queue),
-            TxCompletionDisposition::Success | TxCompletionDisposition::Terminal(_) => {}
+        match decode(CompletionRaw::tx_error(detail as u8, selector)) {
+            Ok(CompletionObservation::Observed(TxStatus::AckTimeout)) => open_libpp_tx_retry_ack_timeout(queue),
+            Ok(CompletionObservation::Observed(TxStatus::CtsTimeout)) => open_libpp_tx_retry_cts_timeout(queue),
+            Ok(CompletionObservation::Observed(TxStatus::Collision)) => open_libpp_tx_retry_collision(queue),
+            Err(CompletionFault::SecurityKeyError) => open_libpp_tx_retry_security_key_error(queue),
+            Ok(CompletionObservation::NoEffect) => {},
+            Ok(CompletionObservation::Observed(TxStatus::Success | TxStatus::TimedOut))
+            | Err(CompletionFault::InvalidStatus { .. }) => {},
         }
     }
 }

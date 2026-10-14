@@ -127,12 +127,16 @@ fn frame<'p, 'id: 'p>(phase: &ModelPhase<'p, 'id>, kind: Frame) -> TxFrame<'p, '
 impl Case {
     fn check(&self, event: LowerMacEvent<'_, ModelTypes>, ticket_index: u8) -> bool {
         let (ticket, payload, outcome) = match event {
-            LowerMacEvent::TxCompleted(TxCompleted::Single(terminal)) => {
+            LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(TxCompleted::Single(
+                terminal,
+            ))) => {
                 assert!(!matches!(self.frame, Frame::Aggregate));
                 let terminal = terminal.into_parts();
                 (terminal.ticket, terminal.payload, terminal.outcome)
             }
-            LowerMacEvent::TxCompleted(TxCompleted::Aggregate(terminal)) => {
+            LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(TxCompleted::Aggregate(
+                terminal,
+            ))) => {
                 assert!(matches!(self.frame, Frame::Aggregate));
                 let terminal = terminal.into_parts();
                 assert_eq!(terminal.payload.len(), 1);
@@ -142,7 +146,7 @@ impl Case {
                     terminal.outcome,
                 )
             }
-            LowerMacEvent::GateClosed(_) => return false,
+            LowerMacEvent::Terminal(LowerMacTerminal::GateClosed(_)) => return false,
             _ => panic!("unexpected event"),
         };
         assert_eq!(ticket.index(), ticket_index);
@@ -309,7 +313,7 @@ impl PortBody<ModelBackend> for Case {
             return owner.fail_stop();
         }
         let mut sink = |event| {
-            seen += usize::from(self.check(event, ticket_index));
+            seen += usize::from(self.check(LowerMacEvent::Terminal(event), ticket_index));
         };
         let owner = owner.disable(&mut sink).await.ok().unwrap();
         assert_eq!(seen, 1);

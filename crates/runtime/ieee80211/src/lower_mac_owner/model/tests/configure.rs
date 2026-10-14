@@ -22,7 +22,7 @@ impl PortBody<ModelBackend> for ConfigureAcrossDisable {
         let mut configured = 0;
         let Ok(disabled) = enabled
             .disable(&mut |event| {
-                if matches!(event, LowerMacEvent::Configured(VifRole::Station)) {
+                if matches!(event, LowerMacTerminal::Configured(VifRole::Station)) {
                     configured += 1;
                 }
             })
@@ -48,7 +48,9 @@ impl PortBody<ModelBackend> for ConfigureAcrossDisable {
             assert!(
                 matches!(
                     core::pin::pin!(phase.next_event()).poll(&mut cx),
-                    Poll::Ready(Ok(Ok(LowerMacEvent::Configured(VifRole::Station))))
+                    Poll::Ready(Ok(Ok(LowerMacEvent::Terminal(
+                        LowerMacTerminal::Configured(VifRole::Station)
+                    ))))
                 ),
                 "Configured suppressed after a previous extraction"
             );
@@ -62,7 +64,7 @@ impl PortBody<ModelBackend> for ConfigureAcrossDisable {
         let mut extra = 0;
         let Ok(disabled) = enabled
             .disable(&mut |event| {
-                if matches!(event, LowerMacEvent::Configured(_)) {
+                if matches!(event, LowerMacTerminal::Configured(_)) {
                     extra += 1;
                 }
             })
@@ -113,36 +115,40 @@ impl PortBody<ModelBackend> for ReceiveAcrossDisable {
         };
         frames.push(frame);
         let Ok(disabled) = enabled
-            .disable(&mut |event| {
-                let LowerMacEvent::Received { frame, .. } = event else {
-                    panic!()
-                };
-                frames.push(frame);
-            })
+            .disable(&mut |_| panic!("RX cannot reach the terminal sink"))
             .await
         else {
             panic!()
         };
-        assert_eq!(frames.len(), MODEL_RX_EVENTS);
+        assert_eq!(frames.len(), 1);
         let Ok(mut enabled) = disabled.enable().await else {
             panic!()
         };
         assert_eq!(
             enabled.phase().held.rx_out.get(),
-            MODEL_RX_EVENTS,
-            "drain does not return owners held by the body"
+            1,
+            "only the buffer already lent to the body stays charged"
         );
         assert!(
             matches!(enabled.phase().next_event().await, Ok(Err(EventsLost))),
             "an unobserved loss survives disable"
         );
         air.receive(&[2], meta);
+        let LowerMacEvent::Received { frame, .. } =
+            enabled.phase().next_event().await.unwrap().unwrap()
+        else {
+            panic!("disable recycled unread RX capacity")
+        };
+        assert_eq!(frame.bytes(), &[2]);
+        assert_eq!(enabled.phase().held.rx_out.get(), 2);
+        enabled.phase().recycle(frame);
         for _ in 0..3 {
             yield_now().await;
         }
-        assert!(
-            matches!(enabled.phase().next_event().await, Ok(Err(EventsLost))),
-            "no capacity until the old owners return"
+        assert_eq!(
+            enabled.phase().held.rx_out.get(),
+            1,
+            "the pre-disable owner is still charged"
         );
         for frame in frames {
             enabled.phase().recycle(frame);

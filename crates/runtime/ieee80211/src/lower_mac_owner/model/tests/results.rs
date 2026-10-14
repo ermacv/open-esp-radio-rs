@@ -93,7 +93,9 @@ impl Work for Results {
                     rate
                 }
             };
-            let Ok(Ok(LowerMacEvent::TxCompleted(completed))) = phase.next_event().await else {
+            let Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(completed)))) =
+                phase.next_event().await
+            else {
                 panic!()
             };
             let (returned_ticket, returned_buffer, outcome) = match (form, completed) {

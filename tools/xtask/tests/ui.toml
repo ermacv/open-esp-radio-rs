@@ -55,6 +55,7 @@ targets = ["host", "esp32s31"]
 cases = [
     "crates/protocols/ieee80211/lower-mac/tests/ui/accepted_owner.rs",
     "crates/protocols/ieee80211/lower-mac/tests/ui/terminal_reconstruction.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/disable_rx.rs",
     "crates/runtime/ieee80211/tests/ui/accepted_mpdu.rs",
     "crates/runtime/ieee80211/tests/ui/partial_aggregate.rs",
 ]

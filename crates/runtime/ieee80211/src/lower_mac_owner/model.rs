@@ -122,7 +122,7 @@ use oer_ieee80211_lower_mac::{
     GateOpen, GatePool, HardwareServices, Ieee80211Capabilities, Ieee80211Radio, InFlight,
     IndeterminateCause, InterfaceAggregateAttempt, InterfaceAttempt, InterfacePhase, KeyTypes,
     LinkMetric, LowerMacBackend, LowerMacCapabilities, LowerMacEvent, LowerMacPhase, LowerMacSetup,
-    MpduKind, MpduLayout, PhaseRate, PhaseTypes, PhyFormatSet, PreparationError,
+    LowerMacTerminal, MpduKind, MpduLayout, PhaseRate, PhaseTypes, PhyFormatSet, PreparationError,
     PreparationRefused, PreparedTx, RateSupport, ReceiveFilter, Removed, RemovedKey,
     RetransmissionPlan, RoleKeys, RxBuffer, RxEvidence, RxMeta, RxMetadata, SignalMetadata,
     Station, StationPhase, StationReceive, SupportedBlockAck, SupportedChannel, SupportedEdca,
@@ -1724,7 +1724,7 @@ impl<'id, X: ModelContext> ModelHeld<'id, X> {
         if !*slot {
             *slot = true;
             self.configured.set(waiting);
-            self.post(LowerMacEvent::Configured(role));
+            self.post(LowerMacEvent::Terminal(LowerMacTerminal::Configured(role)));
         }
     }
 
@@ -1732,7 +1732,7 @@ impl<'id, X: ModelContext> ModelHeld<'id, X> {
     /// disable drains it. A later configuration can then produce a new event.
     fn take_event(&self) -> Option<LowerMacEvent<'id, ModelTypes<X>>> {
         let event = self.events.pop()?;
-        if let LowerMacEvent::Configured(role) = event {
+        if let LowerMacEvent::Terminal(LowerMacTerminal::Configured(role)) = event {
             let mut waiting = self.configured.get();
             let [station, access_point] = &mut waiting;
             *match role {
@@ -1805,6 +1805,7 @@ impl<C: Ieee80211Capabilities> LowerMacSetup for ModelSetup<'_, C> {
 
 impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, X> {
     type Event<'id> = LowerMacEvent<'id, ModelTypes<X>>;
+    type Terminal<'id> = LowerMacTerminal<'id, ModelTypes<X>>;
     type Domain = Ieee80211Radio;
     type Fault = ModelFault;
     type Refusal = ();
@@ -1853,13 +1854,13 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
         &'a mut self,
         held: &'a ModelHeld<'id, X>,
         _: &'a mut ModelLocal<'id>,
-        sink: &'a mut dyn FnMut(LowerMacEvent<'id, ModelTypes<X>>),
+        sink: &'a mut dyn FnMut(LowerMacTerminal<'id, ModelTypes<X>>),
     ) -> impl Future<Output = Result<(), Poisoned<ModelFault>>> + 'a
     where
         'id: 'a,
     {
-        // The driver ends every command it holds and takes every buffer
-        // back; then every event goes to the sink.
+        // The driver ends every admitted command. The terminal sink cannot
+        // receive unsolicited RX; this backend recycles those owners below.
         held.draining.set(true);
         held.air.wake_driver();
         poll_fn(move |cx| {
@@ -1872,11 +1873,23 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
                 return Poll::Pending;
             }
             while let Some(event) = held.take_event() {
-                sink(event);
+                match event {
+                    LowerMacEvent::Terminal(terminal) => sink(terminal),
+                    LowerMacEvent::Received { mut frame, .. } => {
+                        frame.recycled = true;
+                        held.rx_out.set(held.rx_out.get().saturating_sub(1));
+                        held.lost.set(true);
+                    }
+                    LowerMacEvent::Tbtt(_) => held.lost.set(true),
+                }
             }
-            // Draining transfers RX owners to the body, not back to the pool.
-            // Only recycle releases capacity. An unobserved `lost` indication
-            // likewise survives disable and is delivered after re-enable.
+            if !held.air.group_rx.borrow().is_empty() {
+                held.air.group_rx.borrow_mut().clear();
+                held.lost.set(true);
+            }
+            // Only owners actually recycled here release RX capacity; buffers
+            // previously lent to the body remain charged until their return.
+            // The coalesced loss remains observable after re-enable.
             Poll::Ready(Ok(()))
         })
     }
@@ -2175,7 +2188,9 @@ impl<'id, X: ModelContext> Driver<'id, X> {
             self.gate = match core::mem::replace(&mut self.gate, DriverGate::Closed) {
                 DriverGate::Closing(gate) => {
                     let closed = held.gate_issuer.borrow_mut().close(gate);
-                    held.post(LowerMacEvent::GateClosed(closed));
+                    held.post(LowerMacEvent::Terminal(LowerMacTerminal::GateClosed(
+                        closed,
+                    )));
                     DriverGate::Closed
                 }
                 state => state,
@@ -2235,13 +2250,13 @@ impl<'id, X: ModelContext> Driver<'id, X> {
             &held.air,
         );
         self.activate_group(held, &identity, true);
-        LowerMacEvent::GroupKeyInstalled(R::installed_group(
+        LowerMacEvent::Terminal(LowerMacTerminal::GroupKeyInstalled(R::installed_group(
             ModelGroupKey {
                 identity,
                 slot: pending.slot,
             },
             pending.permission,
-        ))
+        )))
     }
 
     fn group_change(
@@ -2282,23 +2297,23 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                     &held.air,
                 );
                 self.activate_group(held, &identity, true);
-                LowerMacEvent::GroupKeyReplaced {
+                LowerMacEvent::Terminal(LowerMacTerminal::GroupKeyReplaced {
                     key: ModelGroupKey {
                         identity,
                         slot: installed.slot,
                     },
                     permission,
-                }
+                })
             }
             GroupChange::Select {
                 permission,
                 installed,
             } => {
                 self.activate_group(held, &installed.identity, false);
-                LowerMacEvent::GroupKeySelected {
+                LowerMacEvent::Terminal(LowerMacTerminal::GroupKeySelected {
                     key: installed,
                     permission,
-                }
+                })
             }
             GroupChange::Remove { key, removed } => {
                 key.0.active.set(false);
@@ -2391,7 +2406,9 @@ impl<'id, X: ModelContext> Driver<'id, X> {
             } else if Rc::strong_count(&removal.key.0.preparations) == 1 {
                 held.air.remove_group_material(&removal.key);
                 self.keys.retain(|installed| *installed != removal.key);
-                held.post(LowerMacEvent::KeyRemoved(removal.removed));
+                held.post(LowerMacEvent::Terminal(LowerMacTerminal::KeyRemoved(
+                    removal.removed,
+                )));
             } else {
                 pending.push(removal);
             }
@@ -2694,8 +2711,8 @@ fn terminal_aggregate<'id, X: ModelContext>(
     aggregate: PreparedAggregate<'id, X>,
     completion: TxOutcome,
 ) {
-    held.post(LowerMacEvent::TxCompleted(TxCompleted::Aggregate(
-        aggregate.operation.complete(completion),
+    held.post(LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(
+        TxCompleted::Aggregate(aggregate.operation.complete(completion)),
     )));
 }
 
@@ -2759,8 +2776,8 @@ fn terminal<'id, X: ModelContext>(
     prepared: Prepared<'id, X>,
     outcome: TxOutcome,
 ) {
-    held.post(LowerMacEvent::TxCompleted(TxCompleted::Single(
-        prepared.operation.complete(outcome),
+    held.post(LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(
+        TxCompleted::Single(prepared.operation.complete(outcome)),
     )));
 }
 

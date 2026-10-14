@@ -36,9 +36,9 @@ use std::{rc::Rc, task::Waker};
 
 use oer_ieee80211_lower_mac::{
     AckHeader, Attempt, Channel, ChannelWidth, ClassFrame, CoexPriority, HeaderSpec,
-    InterfacePhase, LowerMacEvent, LowerMacPhase, MpduLength, Protection, RetryPlan, RetryStage,
-    RxBuffer, SizedFrame, Station, SupportedCoex, SupportedPower, TxBufferPool, TxCompleted,
-    TxFrame, TxPower, TxProtection, TxSource,
+    InterfacePhase, LowerMacEvent, LowerMacPhase, LowerMacTerminal, MpduLength, Protection,
+    RetryPlan, RetryStage, RxBuffer, SizedFrame, Station, SupportedCoex, SupportedPower,
+    TxBufferPool, TxCompleted, TxFrame, TxPower, TxProtection, TxSource,
 };
 use oer_ieee80211_mac::{
     address::IndividualAddress,
@@ -177,8 +177,12 @@ impl PortBody<ModelBackend> for ReceiveLoss {
                         }
                         phase.recycle(frame);
                     }
-                    Ok(LowerMacEvent::Configured(VifRole::Station)) => terminals.push(1),
-                    Ok(LowerMacEvent::GateClosed(_)) => terminals.push(2),
+                    Ok(LowerMacEvent::Terminal(LowerMacTerminal::Configured(VifRole::Station))) => {
+                        terminals.push(1)
+                    }
+                    Ok(LowerMacEvent::Terminal(LowerMacTerminal::GateClosed(_))) => {
+                        terminals.push(2)
+                    }
                     _ => panic!("unexpected event"),
                 }
                 // Return real RX capacity before the next observation, as a
@@ -282,7 +286,10 @@ impl PortBody<ModelBackend> for Owners {
             let second = submit!(ModelLarge, resources.large.pop().unwrap());
             for (ticket_index, large) in [(first, false), (second, true)] {
                 let event = phase.next_event().await.unwrap().unwrap();
-                let LowerMacEvent::TxCompleted(TxCompleted::Single(terminal)) = event else {
+                let LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(TxCompleted::Single(
+                    terminal,
+                ))) = event
+                else {
                     panic!("one Single terminal per submission");
                 };
                 let oer_ieee80211_lower_mac::TerminalParts {

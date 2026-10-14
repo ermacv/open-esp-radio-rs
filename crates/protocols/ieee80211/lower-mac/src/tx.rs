@@ -33,7 +33,7 @@ pub enum TxResponse {
 /// frame's payload, which the caller does not copy.
 ///
 /// The backend holds the body from the attempt's admission until the
-/// [`crate::LowerMacEvent::TxCompleted`] carries it back. A `Sent` MPDU
+/// [`crate::LowerMacTerminal::TxCompleted`] carries it back. A `Sent` MPDU
 /// retains its body inside the returned buffer for retransmission;
 /// [`crate::TxBufferPool::renew`] returns both memory and body. Fresh
 /// returned MPDUs carry bodies separately by subframe index. Dropping a body is how

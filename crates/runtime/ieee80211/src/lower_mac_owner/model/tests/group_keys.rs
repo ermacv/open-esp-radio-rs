@@ -22,18 +22,17 @@ async fn installed<'p, 'id: 'p>(
     phase: &mut ModelPhase<'p, 'id>,
 ) -> (ModelGroupKey<'id, Station>, StationGroupPermission<'id>) {
     match phase.next_event().await {
-        Ok(Ok(LowerMacEvent::GroupKeyInstalled(InstalledGroup::Station { key, permission }))) => {
-            (key, permission)
-        }
+        Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::GroupKeyInstalled(
+            InstalledGroup::Station { key, permission },
+        )))) => (key, permission),
         _ => panic!("expected the real installation terminal"),
     }
 }
 async fn removed<'p, 'id: 'p>(phase: &mut ModelPhase<'p, 'id>) -> StationGroupPermission<'id> {
     match phase.next_event().await {
-        Ok(Ok(LowerMacEvent::KeyRemoved(Removed::Station(RemovedKey::Group {
-            permission,
-            ..
-        })))) => permission,
+        Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::KeyRemoved(Removed::Station(
+            RemovedKey::Group { permission, .. },
+        ))))) => permission,
         _ => panic!("expected the real removal terminal"),
     }
 }
@@ -176,12 +175,17 @@ impl Boundary<'_> {
                     }
                     phase.recycle(frame);
                 }
-                Ok(Ok(LowerMacEvent::GroupKeyInstalled(InstalledGroup::Station {
+                Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::GroupKeyInstalled(
+                    InstalledGroup::Station { key, permission },
+                ))))
+                | Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::GroupKeyReplaced {
                     key,
                     permission,
                 })))
-                | Ok(Ok(LowerMacEvent::GroupKeyReplaced { key, permission }))
-                | Ok(Ok(LowerMacEvent::GroupKeySelected { key, permission })) => {
+                | Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::GroupKeySelected {
+                    key,
+                    permission,
+                }))) => {
                     break (key, permission);
                 }
                 _ => panic!("lost or misrouted boundary"),
@@ -280,13 +284,18 @@ impl Mutation {
 
 fn terminal_slot(event: &LowerMacEvent<'_, ModelTypes>) -> Option<u8> {
     match event {
-        LowerMacEvent::GroupKeyInstalled(InstalledGroup::Station { key, permission })
-        | LowerMacEvent::GroupKeyReplaced { key, permission }
-        | LowerMacEvent::GroupKeySelected { key, permission } => {
+        LowerMacEvent::Terminal(LowerMacTerminal::GroupKeyInstalled(InstalledGroup::Station {
+            key,
+            permission,
+        }))
+        | LowerMacEvent::Terminal(LowerMacTerminal::GroupKeyReplaced { key, permission })
+        | LowerMacEvent::Terminal(LowerMacTerminal::GroupKeySelected { key, permission }) => {
             assert_eq!(permission.index(), 0);
             Some(key.slot.index())
         }
-        LowerMacEvent::KeyRemoved(Removed::Station(RemovedKey::Group { slot, permission })) => {
+        LowerMacEvent::Terminal(LowerMacTerminal::KeyRemoved(Removed::Station(
+            RemovedKey::Group { slot, permission },
+        ))) => {
             assert_eq!(permission.index(), 0);
             Some(slot.index())
         }
@@ -411,7 +420,9 @@ impl PortBody<ModelBackend> for Interrupted<'_> {
             );
         }
         let mut terminals = Vec::new();
-        let disabled = owner.disable(&mut |event| terminals.push(event)).await;
+        let disabled = owner
+            .disable(&mut |event| terminals.push(LowerMacEvent::Terminal(event)))
+            .await;
         if self.fault.is_some() {
             assert!(terminals.is_empty());
             let Err(poisoned) = disabled else {
@@ -540,8 +551,10 @@ impl Work for IndependentIds<'_> {
             .install_group_key(permission, b, second, Ccmp128Key([2; 16]));
         let (b, permission) = installed(phase).await;
         phase.station().select_group_key(permission, a);
-        let Ok(Ok(LowerMacEvent::GroupKeySelected { key: a, permission })) =
-            phase.next_event().await
+        let Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::GroupKeySelected {
+            key: a,
+            permission,
+        }))) = phase.next_event().await
         else {
             panic!()
         };

@@ -360,8 +360,9 @@ impl Work for RetryIdentity {
         let index = key.identity.0.index;
         phase.station().remove_pairwise_key(key);
         let slot = loop {
-            if let Ok(Ok(LowerMacEvent::KeyRemoved(Removed::Station(RemovedKey::Pairwise(slot))))) =
-                phase.next_event().await
+            if let Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::KeyRemoved(
+                Removed::Station(RemovedKey::Pairwise(slot)),
+            )))) = phase.next_event().await
             {
                 break slot;
             }
@@ -603,8 +604,9 @@ impl Work for PreparedRemoval {
                     coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
                 })
                 .unwrap();
-            let Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Single(terminal)))) =
-                phase.next_event().await
+            let Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(
+                TxCompleted::Single(terminal),
+            )))) = phase.next_event().await
             else {
                 panic!("terminal before removal")
             };
@@ -622,7 +624,9 @@ impl Work for PreparedRemoval {
             assert_eq!(mpdu.packet_number(), pn);
             assert_eq!(mpdu.buffer.memory.as_ptr(), pointer);
         }
-        let Ok(Ok(LowerMacEvent::KeyRemoved(_))) = phase.next_event().await else {
+        let Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::KeyRemoved(_)))) =
+            phase.next_event().await
+        else {
             panic!("the preparation no longer refers to the key")
         };
         assert_eq!(air.sent().len(), sent_before, "retired key never publishes");

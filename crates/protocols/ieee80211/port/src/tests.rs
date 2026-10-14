@@ -73,6 +73,7 @@ fn end(model: &Model, slot: u32) {
 
 impl<'m> PortBackend for Backend<'m> {
     type Event<'id> = u32;
+    type Terminal<'id> = u32;
     type Domain = Port;
     type Fault = ();
     type Refusal = &'static str;

@@ -277,8 +277,9 @@ async fn completion<'p, 'id: 'p>(
             let mut context = core::task::Context::from_waker(Waker::noop());
             Future::poll(event, &mut context)
         };
-        if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Single(terminal))))) =
-            event
+        if let Poll::Ready(Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(
+            TxCompleted::Single(terminal),
+        ))))) = event
         {
             let oer_ieee80211_lower_mac::TerminalParts {
                 ticket, payload, ..
@@ -339,7 +340,9 @@ impl Work for Numbering {
             .expect("withdrawal preserves an already numbered MPDU");
         assert_eq!(numbered.packet_number(), number);
         assert_ne!(numbered.buffer.memory[1] & 0x08, 0);
-        let Ok(Ok(LowerMacEvent::GateClosed(closed))) = phase.next_event().await else {
+        let Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::GateClosed(closed)))) =
+            phase.next_event().await
+        else {
             panic!("gate closes after the attempt returns");
         };
         let _gate = phase.open_gate(closed);
@@ -435,7 +438,9 @@ fn drain<'p, 'id: 'p>(phase: &mut ModelPhase<'p, 'id>, stream: &mut Stream) {
             }
         };
         match event {
-            Ok(Ok(LowerMacEvent::TxCompleted(_))) => stream.completions += 1,
+            Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(_)))) => {
+                stream.completions += 1
+            }
             Ok(Ok(LowerMacEvent::Received { frame, .. })) => {
                 stream.received += 1;
                 phase.recycle(frame);
@@ -474,14 +479,7 @@ impl<W: Work> PortBody<ModelBackend> for Body<W> {
             let mut phase = enabled.phase();
             self.0.work(&mut phase, resources).await;
         }
-        match enabled
-            .disable(&mut |event| {
-                if let LowerMacEvent::Received { mut frame, .. } = event {
-                    frame.recycled = true;
-                }
-            })
-            .await
-        {
+        match enabled.disable(&mut |_| {}).await {
             Ok(disabled) => disabled.uninstall(()),
             Err(poisoned) => poisoned.fail_stop(),
         }
@@ -547,10 +545,12 @@ impl Work for GroupReplacement<'_> {
             GroupKeyId::new(1).unwrap(),
             Ccmp128Key([1; 16]),
         );
-        let Ok(Ok(LowerMacEvent::GroupKeyInstalled(InstalledGroup::Station {
-            key: installed,
-            permission,
-        }))) = phase.next_event().await
+        let Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::GroupKeyInstalled(
+            InstalledGroup::Station {
+                key: installed,
+                permission,
+            },
+        )))) = phase.next_event().await
         else {
             panic!("installation must complete before replacement")
         };
@@ -574,7 +574,8 @@ impl Work for GroupReplacement<'_> {
         };
         assert_eq!(frame.bytes, [1]);
         phase.recycle(frame);
-        let Ok(Ok(LowerMacEvent::GroupKeyReplaced { key, permission })) = phase.next_event().await
+        let Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::GroupKeyReplaced { key, permission }))) =
+            phase.next_event().await
         else {
             panic!("replacement returns its installed owner");
         };
@@ -587,8 +588,9 @@ impl Work for GroupReplacement<'_> {
         assert_eq!(frame.bytes, [2]);
         phase.recycle(frame);
         phase.station().remove_group_key(permission, key);
-        let Ok(Ok(LowerMacEvent::KeyRemoved(Removed::Station(RemovedKey::Group { slot, .. })))) =
-            phase.next_event().await
+        let Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::KeyRemoved(Removed::Station(
+            RemovedKey::Group { slot, .. },
+        ))))) = phase.next_event().await
         else {
             panic!("the replaced slot returns once");
         };
@@ -654,8 +656,12 @@ impl Work for KeyAttemptRemoval {
                 Future::poll(event, &mut context)
             };
             match event {
-                Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted(_)))) => events.push("completed"),
-                Poll::Ready(Ok(Ok(LowerMacEvent::KeyRemoved(_)))) => events.push("removed"),
+                Poll::Ready(Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(_))))) => {
+                    events.push("completed")
+                }
+                Poll::Ready(Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::KeyRemoved(_))))) => {
+                    events.push("removed")
+                }
                 _ => {}
             }
         }
@@ -913,8 +919,9 @@ impl Work for AbortHeld<'_> {
                 let mut context = core::task::Context::from_waker(Waker::noop());
                 Future::poll(event, &mut context)
             };
-            if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Single(terminal))))) =
-                event
+            if let Poll::Ready(Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(
+                TxCompleted::Single(terminal),
+            ))))) = event
             {
                 let oer_ieee80211_lower_mac::TerminalParts {
                     outcome: completion,
@@ -1079,8 +1086,9 @@ async fn aggregate_completion<'p, 'id: 'p>(
             let mut context = core::task::Context::from_waker(Waker::noop());
             Future::poll(event, &mut context)
         };
-        if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Aggregate(terminal))))) =
-            event
+        if let Poll::Ready(Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(
+            TxCompleted::Aggregate(terminal),
+        ))))) = event
         {
             let oer_ieee80211_lower_mac::TerminalParts {
                 ticket,
@@ -1281,9 +1289,9 @@ impl Work for TerminalOutcomes<'_> {
                 yield_now().await;
                 let next = core::pin::pin!(phase.next_event());
                 let mut cx = core::task::Context::from_waker(Waker::noop());
-                if let Poll::Ready(Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Single(
-                    terminal,
-                ))))) = Future::poll(next, &mut cx)
+                if let Poll::Ready(Ok(Ok(LowerMacEvent::Terminal(
+                    LowerMacTerminal::TxCompleted(TxCompleted::Single(terminal)),
+                )))) = Future::poll(next, &mut cx)
                 {
                     let oer_ieee80211_lower_mac::TerminalParts {
                         ticket,
@@ -1443,7 +1451,10 @@ impl Work for LongRetryPlan<'_> {
             let Ok(Ok(event)) = phase.next_event().await else {
                 panic!("terminal")
             };
-            if let LowerMacEvent::TxCompleted(TxCompleted::Single(terminal)) = event {
+            if let LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(TxCompleted::Single(
+                terminal,
+            ))) = event
+            {
                 let oer_ieee80211_lower_mac::TerminalParts {
                     outcome: completion,
                     payload,
@@ -1528,7 +1539,10 @@ impl Work for LastRateBeforeCollision<'_> {
             let Ok(Ok(event)) = phase.next_event().await else {
                 panic!("terminal")
             };
-            if let LowerMacEvent::TxCompleted(TxCompleted::Single(terminal)) = event {
+            if let LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(TxCompleted::Single(
+                terminal,
+            ))) = event
+            {
                 let oer_ieee80211_lower_mac::TerminalParts {
                     ticket,
                     outcome: completion,

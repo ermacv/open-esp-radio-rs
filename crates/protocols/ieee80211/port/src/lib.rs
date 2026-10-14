@@ -502,6 +502,9 @@ pub trait PortBackend: Sized {
     type Pools: oer_radio_port::PoolSet;
     /// One owned event.
     type Event<'id>;
+    /// Returned command owners; unsolicited RX is excluded. Disable recycles
+    /// such RX internally and preserves its loss indication for the next phase.
+    type Terminal<'id>;
     /// The clock domain of the port's radio instants.
     type Domain;
     /// The cause a poisoned backend reports.
@@ -560,7 +563,7 @@ pub trait PortBackend: Sized {
         &'a mut self,
         held: &'a Self::Held<'id>,
         local: &'a mut Self::Local<'id>,
-        sink: &'a mut dyn FnMut(Self::Event<'id>),
+        sink: &'a mut dyn FnMut(Self::Terminal<'id>),
     ) -> impl Future<Output = Result<(), Poisoned<Self::Fault>>> + 'a
     where
         'id: 'a;
@@ -1085,7 +1088,7 @@ impl<'p, 'id, B: PortBackend> Owner<'p, 'id, B, Enabled> {
     /// A poisoned backend.
     pub async fn disable(
         self,
-        sink: &mut dyn FnMut(B::Event<'id>),
+        sink: &mut dyn FnMut(B::Terminal<'id>),
     ) -> Result<Owner<'p, 'id, B, Disabled>, PoisonedOwner<'p, 'id, B>> {
         // The future holds the owner's sentry across the wait, as
         // `enable`'s does.

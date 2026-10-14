@@ -13,12 +13,12 @@
 //!
 //! | Token | Taken by | Given back by |
 //! | --- | --- | --- |
-//! | a transmit ticket ([`PhaseTypes::TicketKind`]) | [`InterfacePhase::submit`] | [`LowerMacEvent::TxCompleted`] |
-//! | a transmit buffer of a class ([`TxBufferClass`]), its memory ([`TxBufferMemory`]) | [`InterfacePhase::submit`], together with its [`ClassFrame`] | [`LowerMacEvent::TxCompleted`], every buffer of the attempt |
-//! | a key slot of a role's kind | [`InterfacePhase::install_pairwise_key`], [`InterfacePhase::install_group_key`] (the installed key holds it) | [`LowerMacEvent::KeyRemoved`], after a removal |
+//! | a transmit ticket ([`PhaseTypes::TicketKind`]) | [`InterfacePhase::submit`] | [`LowerMacTerminal::TxCompleted`] |
+//! | a transmit buffer of a class ([`TxBufferClass`]), its memory ([`TxBufferMemory`]) | [`InterfacePhase::submit`], together with its [`ClassFrame`] | [`LowerMacTerminal::TxCompleted`], every buffer of the attempt |
+//! | a key slot of a role's kind | [`InterfacePhase::install_pairwise_key`], [`InterfacePhase::install_group_key`] (the installed key holds it) | [`LowerMacTerminal::KeyRemoved`], after a removal |
 //! | one GTK mutation permission per interface ([`KeyTypes::GroupPermission`]) | install/replace/select/remove GTK | the corresponding FIFO success terminal; uncertainty keeps it for teardown |
 //! | a Block Ack slot | [`InterfacePhase::add_block_ack`] (the agreement holds it) | [`InterfacePhase::remove_block_ack`] |
-//! | the open gate ([`GateOpen`]) | [`LowerMacPhase::close_gate`] | [`LowerMacPhase::open_gate`], which takes the closed gate ([`GateClosed`]) that [`LowerMacEvent::GateClosed`] gave |
+//! | the open gate ([`GateOpen`]) | [`LowerMacPhase::close_gate`] | [`LowerMacPhase::open_gate`], which takes the closed gate ([`GateClosed`]) that [`LowerMacTerminal::GateClosed`] gave |
 //! | a received frame's buffer | [`LowerMacEvent::Received`] | [`LowerMacPhase::recycle`] |
 //!
 //! A ticket and a buffer are different tokens ([owner decisions on #563]).
@@ -328,10 +328,17 @@ pub enum LowerMacEvent<'id, P: PhaseTypes<'id>> {
         /// What the hardware observed of it.
         meta: P::RxMeta,
     },
-    /// The terminal preserves the submitted shape and all of its owners.
-    TxCompleted(TxCompleted<'id, P>),
     /// A TBTT of an interface's schedule.
     Tbtt(TbttEvent),
+    /// A command completion, carrying every returned owner.
+    Terminal(LowerMacTerminal<'id, P>),
+}
+
+/// Completions which a disabled port can return without lending an RX phase.
+/// Unsolicited RX and TBTT are not representable here.
+pub enum LowerMacTerminal<'id, P: PhaseTypes<'id>> {
+    /// The terminal preserves the submitted shape and all of its owners.
+    TxCompleted(TxCompleted<'id, P>),
     /// The paired TSF reading a
     /// [`BeaconTimingPhase::sample_tsf`](crate::BeaconTimingPhase::sample_tsf)
     /// asked for.
@@ -956,7 +963,7 @@ pub trait InterfacePhase<'p, 'id: 'p> {
 
     /// Remove `key`: queued attempts that use it return as
     /// `Withdrawn(KeyRemoved)`, a published one is waited for, and
-    /// [`LowerMacEvent::KeyRemoved`] gives its slot back.
+    /// [`LowerMacTerminal::KeyRemoved`] gives its slot back.
     fn remove_pairwise_key(
         &mut self,
         key: <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::PairwiseKey,
@@ -1016,7 +1023,7 @@ pub trait StationPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id, Role = Station> {
     /// holds that permission and the installed owner. The same finite RX cut
     /// and GROUP_COMMAND_BOUND as ordinary group installation apply.
     ///
-    /// [`LowerMacEvent::GroupKeyReplaced`] returns the new installed key with
+    /// [`LowerMacTerminal::GroupKeyReplaced`] returns the new installed key with
     /// the same slot. Its position in the event stream is the installation
     /// boundary for RX. A hardware write failure poisons the backend; any
     /// internal hardware rollback is not a successful port terminal.
@@ -1042,7 +1049,7 @@ pub trait StationPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id, Role = Station> {
 
     /// Set what the station receives once none of its frames is in flight:
     /// a frame the closed gate holds ends as aborted at once, a published
-    /// one is waited for, and [`LowerMacEvent::Configured`] follows.
+    /// one is waited for, and [`LowerMacTerminal::Configured`] follows.
     fn configure(&mut self, receive: StationReceive<Self::Caps>);
 
     /// The BSS color of the station's HE BSS.

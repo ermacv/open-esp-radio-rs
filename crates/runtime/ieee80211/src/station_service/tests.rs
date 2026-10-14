@@ -77,12 +77,16 @@ impl<'id> StationPort<'id> for ModelBackend<ModelCaps24, ServiceContexts> {
         setup.set_channel(channel);
     }
 
-    const RX_BUFFERS: usize = MODEL_RX_EVENTS;
-
     fn event(
         event: LowerMacEvent<'id, ModelTypes<ServiceContexts>>,
     ) -> LowerMacEvent<'id, ModelTypes<ServiceContexts>> {
         event
+    }
+
+    fn terminal(
+        terminal: LowerMacTerminal<'id, ModelTypes<ServiceContexts>>,
+    ) -> LowerMacTerminal<'id, ModelTypes<ServiceContexts>> {
+        terminal
     }
 
     fn tx_buffer(buffer: ModelAnyBuffer<'id>) -> StationTxBuffer<'id, Self> {
@@ -574,7 +578,7 @@ where
                 },
             )
             .unwrap_or_else(|_| panic!("protected fixture has group slots"));
-            let mut service = StationService::<_, _, 4>::new(
+            let mut service = StationService::<_, _>::new(
                 station,
                 StaData::new(data_tickets, large, MODEL_TX_QUEUE_DEPTH),
                 arbiter,

@@ -82,29 +82,34 @@ fn admitted(slot: u8, permission: u8) -> Owners {
 }
 fn terminal(event: LowerMacEvent<'_, ModelTypes>) -> Completion {
     let (mutation, owners) = match event {
-        LowerMacEvent::GroupKeyInstalled(InstalledGroup::Station { key, permission }) => (
+        LowerMacEvent::Terminal(LowerMacTerminal::GroupKeyInstalled(InstalledGroup::Station {
+            key,
+            permission,
+        })) => (
             Mutation::Install,
             admitted(key.slot.index(), permission.index()),
         ),
-        LowerMacEvent::GroupKeyInstalled(InstalledGroup::AccessPoint { key, permission }) => (
+        LowerMacEvent::Terminal(LowerMacTerminal::GroupKeyInstalled(
+            InstalledGroup::AccessPoint { key, permission },
+        )) => (
             Mutation::Install,
             admitted(key.slot.index(), permission.index()),
         ),
-        LowerMacEvent::GroupKeyReplaced { key, permission } => (
+        LowerMacEvent::Terminal(LowerMacTerminal::GroupKeyReplaced { key, permission }) => (
             Mutation::Replace,
             admitted(key.slot.index(), permission.index()),
         ),
-        LowerMacEvent::GroupKeySelected { key, permission } => (
+        LowerMacEvent::Terminal(LowerMacTerminal::GroupKeySelected { key, permission }) => (
             Mutation::Select,
             admitted(key.slot.index(), permission.index()),
         ),
-        LowerMacEvent::KeyRemoved(Removed::Station(RemovedKey::Group { slot, permission })) => {
-            (Mutation::Remove, admitted(slot.index(), permission.index()))
-        }
-        LowerMacEvent::KeyRemoved(Removed::AccessPoint(RemovedKey::Group { slot, permission })) => {
-            (Mutation::Remove, admitted(slot.index(), permission.index()))
-        }
-        LowerMacEvent::TxCompleted(TxCompleted::Single(tx)) => {
+        LowerMacEvent::Terminal(LowerMacTerminal::KeyRemoved(Removed::Station(
+            RemovedKey::Group { slot, permission },
+        ))) => (Mutation::Remove, admitted(slot.index(), permission.index())),
+        LowerMacEvent::Terminal(LowerMacTerminal::KeyRemoved(Removed::AccessPoint(
+            RemovedKey::Group { slot, permission },
+        ))) => (Mutation::Remove, admitted(slot.index(), permission.index())),
+        LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(TxCompleted::Single(tx))) => {
             let tx = tx.into_parts();
             let (buffer, _) = tx.payload.into_parts();
             return Completion::Transmit(TxOwners {
@@ -261,7 +266,7 @@ impl PortBody<ModelBackend> for Exercise<'_> {
         }
         let mut events = Vec::new();
         match owner
-            .disable(&mut |event| events.push(terminal(event)))
+            .disable(&mut |event| events.push(terminal(LowerMacEvent::Terminal(event))))
             .await
         {
             Ok(disabled) => {
@@ -293,10 +298,9 @@ impl Exercise<'_> {
                 id(),
                 Ccmp128Key([1; 16]),
             );
-            let Ok(Ok(LowerMacEvent::GroupKeyInstalled(InstalledGroup::AccessPoint {
-                key,
-                permission,
-            }))) = phase.next_event().await
+            let Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::GroupKeyInstalled(
+                InstalledGroup::AccessPoint { key, permission },
+            )))) = phase.next_event().await
             else {
                 panic!("AP install")
             };

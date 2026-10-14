@@ -144,6 +144,10 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   Keep the backend deadline waker separate from the watchdog's waker. Exercise
   expiry and exact poisoned custody for every mutation, disable before/after
   execution, and AP removal held by a published group transmission.
+- Wi-Fi disable delivers `PortBackend::Terminal`, not the phase's event type.
+  `LowerMacEvent::Terminal` is the same terminal in the enabled FIFO. The
+  backend recycles unsolicited RX during disable and keeps EventsLost for
+  re-enable; it never resets the accounting of RX already lent to the body.
 
 The MSDU/command SPSC sender's readiness returns a `SendPermit`. Keep the
 permit through publication: its exclusive sender borrow is the capacity

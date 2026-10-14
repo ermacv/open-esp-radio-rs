@@ -392,7 +392,7 @@ pub struct BeaconWindow {
 /// TBTT arrive as events.
 pub trait BeaconTimingPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id> {
     /// Ask for a paired reading of the interface's TSF and the port's radio
-    /// clock, which [`LowerMacEvent::TsfSampled`](crate::LowerMacEvent::TsfSampled)
+    /// clock, which [`LowerMacTerminal::TsfSampled`](crate::LowerMacTerminal::TsfSampled)
     /// answers.
     fn sample_tsf(&mut self);
 
@@ -413,7 +413,7 @@ pub trait BeaconTimingPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id> {
 pub trait AirReservationPhase<'p, 'id: 'p>: LowerMacPhase<'p, 'id> {
     /// Close the gate as [`LowerMacPhase::close_gate`] does, and after the
     /// published attempts end, before
-    /// [`LowerMacEvent::GateClosed`](crate::LowerMacEvent::GateClosed),
+    /// [`LowerMacTerminal::GateClosed`](crate::LowerMacTerminal::GateClosed),
     /// send the access point's CTS-to-self reserving the air until `until`:
     /// its Duration is `min(until − now, MAX_RESERVATION)` when it goes,
     /// and no frame goes once no time is left.

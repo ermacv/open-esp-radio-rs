@@ -267,6 +267,13 @@ fail-stop, no terminal is invented: backend-owned resources end with the
 install. The ESP32-S31 runtime still serves the earlier client shape; its
 port migration and image composition are the next stage of #563.
 
+`LowerMacEvent::Terminal(LowerMacTerminal)` carries TX, key, configuration,
+gate and requested clock completions in the normal FIFO. Disable returns
+only `LowerMacTerminal`; RX and TBTT are excluded by type. The backend
+recycles unread RX itself and reports the coalesced loss after re-enable.
+StationService therefore needs no retained-RX array or receive-capacity
+const parameter for disable.
+
 
 Station group-key slots are fungible, affine resources. The backend stores
 and returns each raw slot with its installed key; it carries no station-cell

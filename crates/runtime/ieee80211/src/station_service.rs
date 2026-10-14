@@ -71,10 +71,10 @@ use oer_ieee80211_arbiter::{
 };
 use oer_ieee80211_lower_mac::{
     Ccmp128Key, ClassFrame, CoexPriority, Ieee80211Capabilities, InstalledGroup, InterfacePhase,
-    KeyTypes, LowerMacBackend, LowerMacEvent, LowerMacPhase, PhaseTypes, PoolMpdu, PoolSource,
-    Protection, Removed, RemovedKey, RetransmissionPlan, ReturnedMpdu, RxBuffer, StationPhase,
-    SupportedChannel, SupportedCoex, SupportedPower, TxBufferClass, TxBufferPool, TxCompleted,
-    TxMpdu, TxOutcome, TxPower, TxProtection, TxSource, VifRole,
+    KeyTypes, LowerMacBackend, LowerMacEvent, LowerMacPhase, LowerMacTerminal, PhaseTypes,
+    PoolMpdu, PoolSource, Protection, Removed, RemovedKey, RetransmissionPlan, ReturnedMpdu,
+    RxBuffer, StationPhase, SupportedChannel, SupportedCoex, SupportedPower, TxBufferClass,
+    TxBufferPool, TxCompleted, TxMpdu, TxOutcome, TxPower, TxProtection, TxSource, VifRole,
 };
 use oer_ieee80211_mac::qos::{WmmAccessCategory, WmmUserPriority};
 use oer_ieee80211_port::{Disabled, Enabled, Failed, Owner, PoisonedOwner, PortBackend};
@@ -123,12 +123,11 @@ pub trait StationPort<'id>: LowerMacBackend {
     /// Tune the disabled port to `channel`.
     fn tune(setup: &mut Self::Setup<'_, 'id>, channel: SupportedChannel<Self::Caps>);
 
-    /// The received buffers the port lends at most at once: a disable
-    /// returns no more, and the service holds that many for the next phase.
-    const RX_BUFFERS: usize;
-
     /// One event of the port, as the contract's.
     fn event(event: Self::Event<'id>) -> LowerMacEvent<'id, Self::Types>;
+
+    /// A terminal returned by disable; unsolicited RX is excluded by type.
+    fn terminal(event: Self::Terminal<'id>) -> LowerMacTerminal<'id, Self::Types>;
 
     /// Recover the exhaustive resource type of this composition. Every
     /// returned buffer belongs to one of these two pools; no unknown-class
@@ -442,11 +441,9 @@ pub enum ServiceEnd<'p, 'id, B: PortBackend> {
     Poisoned(PoisonedOwner<'p, 'id, B>),
 }
 
-/// The station's service: its machines, the rate selection of its frames
-/// and the received buffers a disable returned, which go back with the
-/// next phase. `RX` bounds those buffers: at least the port's receive
-/// buffers.
-pub struct StationService<'id, B: StationPort<'id>, S, const RX: usize> {
+/// The station's service: its machines and the rate selection of its frames.
+/// Disable returns only command terminals; the backend recycles unsolicited RX.
+pub struct StationService<'id, B: StationPort<'id>, S> {
     /// The station.
     pub station: PortStation<'id, B>,
     /// Its data machine.
@@ -458,7 +455,6 @@ pub struct StationService<'id, B: StationPort<'id>, S, const RX: usize> {
     /// What the service dropped or could not send.
     pub counters: ServiceCounters,
     pending: PendingActions<'id, B>,
-    held: [Option<<B::Types as PhaseTypes<'id>>::RxBuffer>; RX],
 }
 
 struct PendingActions<'id, B: StationPort<'id>> {
@@ -493,9 +489,7 @@ enum Next<K> {
     Poisoned,
 }
 
-impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: usize>
-    StationService<'id, B, S, RX>
-{
+impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationService<'id, B, S> {
     /// The service of the machines the composition built, its frames at
     /// the rates `rates` selects.
     pub fn new(
@@ -504,16 +498,6 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
         arbiter: PortArbiter<'id, B>,
         rates: S,
     ) -> Self {
-        // The port's received buffers fit the held ones.
-        const {
-            #[cfg_attr(not(test), expect(clippy::panic, reason = "evaluated at build"))]
-            const fn checked<'id, B: StationPort<'id>, const RX: usize>() {
-                if RX < B::RX_BUFFERS {
-                    panic!("the service holds every received buffer its port lends");
-                }
-            }
-            checked::<'id, B, RX>();
-        };
         // The port's levels, checked as the type is built.
         const {
             let _connection = Levels::<B::Caps>::CONNECTION;
@@ -530,7 +514,6 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
                 configuring: None,
                 group: None,
             },
-            held: [const { None }; RX],
         }
     }
 
@@ -641,8 +624,7 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
         }
     }
 
-    /// Disable the port: the work it ends comes back as events, its
-    /// received buffers held for the next phase.
+    /// Disable the port: only command terminals reach the service.
     async fn disable<
         'p,
         const TX_DEPTH: usize,
@@ -661,7 +643,7 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
         PoisonedOwner<'p, 'id, B>,
     > {
         let mut delivery = Ok(());
-        let mut sink = |event: B::Event<'id>| {
+        let mut sink = |event: B::Terminal<'id>| {
             let now = timer.now();
             if delivery.is_err() {
                 // Fail-stop has consumed an invalid terminal. Later owners are
@@ -669,15 +651,8 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
                 drop(event);
                 return;
             }
-            match self.event(now, B::event(event), io) {
-                Ok(Some(buffer)) => match self.held.iter_mut().find(|slot| slot.is_none()) {
-                    Some(slot) => *slot = Some(buffer),
-                    None => {
-                        delivery = Err(BackendContractViolation);
-                    }
-                },
-                Ok(None) => {}
-                Err(error) => delivery = Err(error),
+            if let Err(error) = self.terminal(now, B::terminal(event)) {
+                delivery = Err(error);
             }
         };
         let disabled = owner.disable(&mut sink).await?;
@@ -704,11 +679,6 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
         'id: 'p,
         P: LowerMacPhase<'p, 'id, Caps = B::Caps, Types = B::Types>,
     {
-        for slot in &mut self.held {
-            if let Some(buffer) = slot.take() {
-                phase.recycle(buffer);
-            }
-        }
         // Each step consumes at most one input per source. Every source is
         // polled even when RX is ready; eight steps bound a batch before a
         // cooperative yield lets the driver and application progress.
@@ -1093,7 +1063,7 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
         event: LowerMacEvent<'id, B::Types>,
         io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
     ) -> Result<Option<<B::Types as PhaseTypes<'id>>::RxBuffer>, BackendContractViolation> {
-        Ok(match event {
+        match event {
             LowerMacEvent::Received { frame, meta } => {
                 let bytes = frame.bytes();
                 let result =
@@ -1117,9 +1087,23 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
                     self.counters.rx_frames_rejected.increment();
                     (io.output)(ServiceOutput::RxFrameRefused(reason));
                 }
-                Some(frame)
+                Ok(Some(frame))
             }
-            LowerMacEvent::TxCompleted(TxCompleted::Single(terminal)) => {
+            LowerMacEvent::Tbtt(_) => Ok(None),
+            LowerMacEvent::Terminal(terminal) => {
+                self.terminal(now, terminal)?;
+                Ok(None)
+            }
+        }
+    }
+
+    fn terminal(
+        &mut self,
+        now: Instant,
+        terminal: LowerMacTerminal<'id, B::Types>,
+    ) -> Result<(), BackendContractViolation> {
+        match terminal {
+            LowerMacTerminal::TxCompleted(TxCompleted::Single(terminal)) => {
                 let oer_ieee80211_lower_mac::TerminalParts {
                     context,
                     ticket,
@@ -1136,28 +1120,27 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
                 )?;
                 // This service submits no external bodies. Sent MPDUs own theirs.
                 drop(body);
-                None
             }
-            LowerMacEvent::TxCompleted(TxCompleted::Aggregate(_)) => {
+            LowerMacTerminal::TxCompleted(TxCompleted::Aggregate(_)) => {
                 // A backend terminal must have the same cardinality as submit.
                 return Err(BackendContractViolation);
             }
 
-            LowerMacEvent::GateClosed(closed) => {
+            LowerMacTerminal::GateClosed(closed) => {
                 self.arbiter.gate_closed(closed);
-                None
             }
-            LowerMacEvent::Configured(VifRole::Station) => {
+            LowerMacTerminal::Configured(VifRole::Station) => {
                 if let Some(pending) = self.pending.configuring.take() {
                     self.station.input(now, StaInput::Configured(pending));
                 }
-                None
             }
-            LowerMacEvent::KeyRemoved(Removed::Station(RemovedKey::Pairwise(slot))) => {
+            LowerMacTerminal::KeyRemoved(Removed::Station(RemovedKey::Pairwise(slot))) => {
                 self.station.input(now, StaInput::PairwiseKeyRemoved(slot));
-                None
             }
-            LowerMacEvent::KeyRemoved(Removed::Station(RemovedKey::Group { slot, permission })) => {
+            LowerMacTerminal::KeyRemoved(Removed::Station(RemovedKey::Group {
+                slot,
+                permission,
+            })) => {
                 let pending = self.pending.group.take().ok_or(BackendContractViolation)?;
                 if pending.slot
                     != <B::Types as PhaseTypes<'id>>::StationKeys::vacant_group_slot_identity(&slot)
@@ -1175,9 +1158,8 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
                         permission,
                     },
                 );
-                None
             }
-            LowerMacEvent::GroupKeyInstalled(InstalledGroup::Station { key, permission }) => {
+            LowerMacTerminal::GroupKeyInstalled(InstalledGroup::Station { key, permission }) => {
                 let pending = self.pending.group.take().ok_or(BackendContractViolation)?;
                 if pending.slot
                     != <B::Types as PhaseTypes<'id>>::StationKeys::group_slot_identity(&key)
@@ -1195,9 +1177,8 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
                         permission,
                     },
                 );
-                None
             }
-            LowerMacEvent::GroupKeyReplaced { key, permission } => {
+            LowerMacTerminal::GroupKeyReplaced { key, permission } => {
                 let pending = self.pending.group.take().ok_or(BackendContractViolation)?;
                 if pending.slot
                     != <B::Types as PhaseTypes<'id>>::StationKeys::group_slot_identity(&key)
@@ -1215,9 +1196,8 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
                         permission,
                     },
                 );
-                None
             }
-            LowerMacEvent::GroupKeySelected { key, permission } => {
+            LowerMacTerminal::GroupKeySelected { key, permission } => {
                 let pending = self.pending.group.take().ok_or(BackendContractViolation)?;
                 if pending.slot
                     != <B::Types as PhaseTypes<'id>>::StationKeys::group_slot_identity(&key)
@@ -1235,16 +1215,15 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const RX: u
                         permission,
                     },
                 );
-                None
             }
             // No access point runs in this service; the station follows no
             // TBTT or TSF sample yet.
-            LowerMacEvent::Configured(VifRole::AccessPoint)
-            | LowerMacEvent::KeyRemoved(Removed::AccessPoint(_))
-            | LowerMacEvent::GroupKeyInstalled(InstalledGroup::AccessPoint { .. })
-            | LowerMacEvent::Tbtt(_)
-            | LowerMacEvent::TsfSampled(_) => None,
-        })
+            LowerMacTerminal::Configured(VifRole::AccessPoint)
+            | LowerMacTerminal::KeyRemoved(Removed::AccessPoint(_))
+            | LowerMacTerminal::GroupKeyInstalled(InstalledGroup::AccessPoint { .. })
+            | LowerMacTerminal::TsfSampled(_) => (),
+        }
+        Ok(())
     }
 
     /// The context identifies the operation. Class is checked exactly once

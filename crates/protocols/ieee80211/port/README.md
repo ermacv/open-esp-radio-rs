@@ -18,6 +18,11 @@ prevents constructing `Ended` without consuming the owner through its
 uninstall or fail-stop path. The host model poisons unrecycled RX buffers;
 normal and test builds share the same lifecycle and cancellation behavior.
 
+`PortBackend::Terminal` is distinct from its running `Event`: disable's sink
+receives command completions only. The backend recycles unsolicited RX and
+preserves a coalesced loss indication for the next phase. RX buffers already
+lent to the body remain charged until that body returns them.
+
 The vocabulary the blocks share (the brand and `Mint`, slots, permits and
 seats, `PortResult`, `Poisoned`, `EventsLost` and the clock relation)
 is `oer-radio-port`'s.

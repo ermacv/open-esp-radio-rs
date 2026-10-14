@@ -72,7 +72,7 @@ fn returned(
     seen: &RefCell<Vec<conformance::Returned>>,
 ) {
     match event {
-        LowerMacEvent::TxCompleted(TxCompleted::Single(terminal)) => {
+        LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(TxCompleted::Single(terminal))) => {
             let oer_ieee80211_lower_mac::TerminalParts {
                 context,
                 ticket,
@@ -93,7 +93,7 @@ fn returned(
             };
             observe(context, ticket, buffer, body, end, seen);
         }
-        LowerMacEvent::TxCompleted(TxCompleted::Aggregate(_)) => {
+        LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(TxCompleted::Aggregate(_))) => {
             panic!("single submission must return Single")
         }
         _ => {}
@@ -247,7 +247,7 @@ impl PortBody<Backend> for Operations {
                 }
             }
         }
-        let mut sink = |event| returned(event, &self.seen);
+        let mut sink = |event| returned(LowerMacEvent::Terminal(event), &self.seen);
         match owner.disable(&mut sink).await {
             Ok(owner) => {
                 self.before_teardown.set(self.dropped.get());
@@ -406,11 +406,17 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
                 let Ok(Ok(event)) = phase.next_event().await else {
                     panic!("the aggregate ends")
                 };
-                if matches!(&event, LowerMacEvent::TxCompleted(_)) {
+                if matches!(
+                    &event,
+                    LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(_))
+                ) {
                     break event;
                 }
             };
-            let LowerMacEvent::TxCompleted(TxCompleted::Aggregate(terminal)) = event else {
+            let LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(TxCompleted::Aggregate(
+                terminal,
+            ))) = event
+            else {
                 unreachable!()
             };
             let oer_ieee80211_lower_mac::TerminalParts {
@@ -464,7 +470,7 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
         }
         let mut sink = |event| {
             assert!(
-                !matches!(event, LowerMacEvent::TxCompleted(_)),
+                !matches!(event, LowerMacTerminal::TxCompleted(_)),
                 "each attempt has one terminal"
             )
         };

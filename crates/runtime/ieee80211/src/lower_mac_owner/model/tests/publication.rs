@@ -93,8 +93,9 @@ impl Work for DuringPublication {
         } else {
             air.hold_completion(WmmAccessCategory::BestEffort, false);
         }
-        let Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Single(terminal)))) =
-            phase.next_event().await
+        let Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(TxCompleted::Single(
+            terminal,
+        ))))) = phase.next_event().await
         else {
             panic!("published head returns first, as Sent")
         };
@@ -136,8 +137,9 @@ impl Work for DuringPublication {
             state: MpduState::Sent,
             outcome: completion,
         }];
-        let Ok(Ok(LowerMacEvent::TxCompleted(TxCompleted::Single(terminal)))) =
-            phase.next_event().await
+        let Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(TxCompleted::Single(
+            terminal,
+        ))))) = phase.next_event().await
         else {
             panic!("unpublished tail returns second, as Fresh")
         };
@@ -173,11 +175,13 @@ impl Work for DuringPublication {
         if matches!(self.0, Barrier::RemoveKey) {
             assert!(matches!(
                 phase.next_event().await,
-                Ok(Ok(LowerMacEvent::KeyRemoved(_)))
+                Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::KeyRemoved(_))))
             ));
             events.push(BarrierEvent::KeyRemoved);
         } else {
-            let Ok(Ok(LowerMacEvent::GateClosed(closed))) = phase.next_event().await else {
+            let Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::GateClosed(closed)))) =
+                phase.next_event().await
+            else {
                 panic!("barrier follows both terminals")
             };
             events.push(BarrierEvent::GateClosed);

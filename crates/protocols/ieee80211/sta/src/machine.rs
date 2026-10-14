@@ -1590,8 +1590,9 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                         join.step = JoinStep::RetryAt(retry_at);
                         State::Join(join)
                     }
-                    (State::Scan(_), _) => State::Report(StaDisconnectReason::Refused(refusal)),
-                    (State::Join(_), _) => State::Report(StaDisconnectReason::Refused(refusal)),
+                    (State::Scan(_) | State::Join(_), _) => {
+                        leave_unkeyed(StaDisconnectReason::Refused(refusal))
+                    }
                     (state, _) => state,
                 }
             }
@@ -1855,7 +1856,11 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             }
             // The visit's listening is over: the next channel.
             State::Scan(scan) => self.visit(scan.visit.saturating_add(1), 0, scan.access_point),
-            State::Leave(leave) => self.report(leave),
+            State::Leave(leave) if leave.step == LeaveStep::AwaitEnd => self.report(leave),
+            // A terminal may arrive while an earlier leave action is still
+            // owed. Only AwaitEnd proves that deauthentication and receive
+            // shutdown completed; all preceding steps retain their payload.
+            State::Leave(leave) => State::Leave(leave),
             // The lease ended without the station's release: the port left;
             // the station leaves, its keys first.
             State::Connected(connected) => leave_connected(connected, lost, None),
@@ -2168,7 +2173,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 .filter(move |record| select_association_rsn(record, policy).is_ok())
         };
         let Some(strongest) = candidates().max_by_key(|record| record.rssi).copied() else {
-            return State::Report(StaDisconnectReason::NotFound { partial });
+            return leave_unkeyed(StaDisconnectReason::NotFound { partial });
         };
         let margin = i16::from(self.config.access_point_margin_db);
         let beside = access_point_channel.and_then(|channel| {
@@ -2182,7 +2187,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         });
         let access_point = beside.unwrap_or(strongest);
         let Ok(rsn) = select_association_rsn(&access_point, policy) else {
-            return State::Report(StaDisconnectReason::NotFound { partial });
+            return leave_unkeyed(StaDisconnectReason::NotFound { partial });
         };
         let Some(channel) = self
             .config
@@ -2192,7 +2197,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             .copied()
             .find(|channel| channel.channel().number() == access_point.channel)
         else {
-            return State::Report(StaDisconnectReason::NotFound { partial });
+            return leave_unkeyed(StaDisconnectReason::NotFound { partial });
         };
         State::Join(Join {
             access_point,

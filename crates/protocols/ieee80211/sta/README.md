@@ -82,6 +82,10 @@ reaches an external wait. The Associated action is a join step, delivered
 before Connected or handshake work. Disconnect waits for an absence to end
 before deauthentication, and waits for TX credit instead of discarding that
 frame. The bounded transition graph is documented beside `poll_action`.
+An unsuccessful or refused scan follows the same Leave path and disables
+reception before its terminal notice. A lease terminal received during Leave
+preserves pending key removals, deauthentication and configuration; it ends
+Leave only when the machine already waits for that lease terminal.
 
 Every `StaTransmit` or `DataTransmit` carries an owned context alongside its
 buffer and ticket. The service puts that context in the port attempt and

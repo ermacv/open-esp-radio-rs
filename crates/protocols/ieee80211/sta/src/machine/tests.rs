@@ -2320,3 +2320,119 @@ fn every_control_encoder_reserves_credit_before_consuming_its_sequence() {
         }
     }
 }
+
+#[test]
+fn unsuccessful_scan_disables_reception_before_reporting() {
+    for unsupported_channel in [false, true] {
+        installed(|mint| {
+            let mut world = World::new(mint, 3);
+            world
+                .station
+                .input(at(0), StaInput::Command(StaCommand::Connect));
+            world.run(at(0));
+            if unsupported_channel {
+                world.receive(at(1), &beacon_on(3));
+            }
+            world.advance();
+            world.advance();
+            let seen = world.take();
+            let off = seen
+                .iter()
+                .position(|event| *event == Seen::Configure("off"));
+            let reported = seen.iter().position(|event| {
+                matches!(
+                    event,
+                    Seen::Notify(StaNotice::Disconnected(
+                        StaDisconnectReason::NotFound { .. }
+                    ))
+                )
+            });
+            assert!(off.is_some(), "scan reception must be disabled: {seen:?}");
+            assert!(off < reported, "Off precedes NotFound: {seen:?}");
+            assert!(matches!(world.station.state, State::Idle));
+            assert!(world.station.poll_action(at(100)).is_none());
+        });
+    }
+}
+
+#[test]
+fn refused_scan_disables_reception_before_reporting() {
+    installed(|mint| {
+        let mut world = World::new(mint, 3);
+        world
+            .station
+            .input(at(0), StaInput::Command(StaCommand::Connect));
+        let Some(StaAction::RequestChannel(_, place)) = world.station.poll_action(at(0)) else {
+            panic!("the scan requests its first channel");
+        };
+        world.station.input(
+            at(0),
+            StaInput::Answer(Answer::Refused(Refusal::Unservable, place)),
+        );
+        let Some(StaAction::Configure(StationReceive::Off, pending)) =
+            world.station.poll_action(at(0))
+        else {
+            panic!("a refused scan still disables reception before reporting");
+        };
+        assert!(world.station.poll_action(at(0)).is_none());
+        world.station.input(at(0), StaInput::Configured(pending));
+        assert!(matches!(
+            world.station.poll_action(at(0)),
+            Some(StaAction::Notify(StaNotice::Disconnected(
+                StaDisconnectReason::Refused(Refusal::Unservable)
+            )))
+        ));
+        assert!(world.station.poll_action(at(0)).is_none());
+    });
+}
+
+#[test]
+fn a_lease_terminal_during_leave_preserves_deauthentication_and_configuration() {
+    for protected in [false, true] {
+        installed(|mint| {
+            let mut world = if protected {
+                wpa2_connected(mint, 2).0
+            } else {
+                connected_world(mint)
+            };
+            world
+                .station
+                .input(at(50), StaInput::Command(StaCommand::Disconnect));
+            // The lease terminal races the existing Leave, before the key
+            // removals or the deauthentication have been taken as actions.
+            let leaving = world.station.take_state();
+            world.station.state = world.station.lease_ended(leaving, false);
+            world.run(at(50));
+            let seen = world.take();
+            let sent = seen.iter().position(|event| {
+                matches!(
+                    event,
+                    Seen::Transmit {
+                        subtype: 0x00c0,
+                        ..
+                    }
+                )
+            });
+            let off = seen
+                .iter()
+                .position(|event| *event == Seen::Configure("off"));
+            let reported = seen.iter().position(|event| {
+                matches!(
+                    event,
+                    Seen::Notify(StaNotice::Disconnected(StaDisconnectReason::Requested))
+                )
+            });
+            assert!(
+                sent.is_some(),
+                "the leave must retain its deauthentication: {seen:?}"
+            );
+            assert!(
+                sent < off && off < reported,
+                "deauthentication, Off, notice: {seen:?}"
+            );
+            assert!(world.station.keys.clear());
+            assert_eq!(world.station.tickets.len(), 2);
+            assert_eq!(world.station.buffers.len(), 2);
+        });
+    }
+}

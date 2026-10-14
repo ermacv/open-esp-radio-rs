@@ -75,8 +75,8 @@ use oer_ieee80211_mac::qos::{WmmAccessCategory, WmmUserPriority};
 use oer_ieee80211_port::{Disabled, Enabled, Failed, Owner, PoisonedOwner, PortBackend};
 use oer_ieee80211_sta::{
     data::{
-        self, DataAction, DataInput, DataProtection, DataRefusal, DataReturn, DataTxContext, Msdu,
-        StaData, StaDataTokens,
+        self, DataInput, DataProtection, DataRefusal, DataReturn, DataTxContext, Msdu, StaData,
+        StaDataTokens,
     },
     machine::{
         Peer, StaAction, StaCommand, StaFrame, StaFrameClass, StaInput, StaNotice, StaRatePlan,
@@ -671,7 +671,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                 }
             }
             if transmit && self.data.accepts() && self.station.link().is_some() {
-                self.send(now, io);
+                self.send(io);
             }
             batch = batch.saturating_add(1);
             if batch == MAX_INPUT_STEPS_PER_BATCH {
@@ -685,7 +685,6 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
     /// station's link.
     fn send<const TX_DEPTH: usize, const RX_DEPTH: usize>(
         &mut self,
-        now: Instant,
         io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH>,
     ) {
         let Some(mut link) = self.station.link() else {
@@ -703,13 +702,10 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
         };
         // Admission was polled immediately above under this same exclusive
         // service borrow. A too-long MSDU is refused without changing bytes.
-        match self.data.input(
-            now,
-            DataInput::Msdu {
-                msdu,
-                link: &mut link,
-            },
-        ) {
+        match self.data.input(DataInput {
+            msdu,
+            link: &mut link,
+        }) {
             Ok(()) => {}
             Err(reason) => {
                 if reason == DataRefusal::TooLong {
@@ -785,7 +781,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                     let Some(link) = self.station.link() else {
                         break;
                     };
-                    let Some(DataAction::Transmit(transmit)) = self.data.poll_action(now) else {
+                    let Some(transmit) = self.data.poll_action() else {
                         break;
                     };
                     progress = true;
@@ -1108,7 +1104,7 @@ impl<'a, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const R
                         reason,
                     },
                 };
-                self.data.returned(now, input);
+                self.data.returned(input);
                 Ok(())
             }
             (TxContext::Station(_), StationTxBuffer::Large(_))

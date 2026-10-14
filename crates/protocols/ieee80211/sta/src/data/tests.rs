@@ -104,7 +104,6 @@ impl StaTokens for Station {
 const LOCAL: [u8; 6] = [2, 0, 0, 0, 0, 1];
 const BSSID: [u8; 6] = [2, 0, 0, 0, 0, 2];
 const PEER: [u8; 6] = [2, 0, 0, 0, 0, 3];
-const NOW: Instant = Instant::from_micros(0);
 
 fn qos_link<'a>(key: &'a (), replay: &'a mut CcmpRxReplayEpoch) -> LinkView<'a, 'static, Station> {
     LinkView {
@@ -153,8 +152,8 @@ fn epoch() -> CcmpRxReplayEpoch {
 }
 
 fn transmit(data: &mut StaData<'static, Data, Caps>) -> DataTransmit<'static, Data, Caps> {
-    match data.poll_action(NOW) {
-        Some(DataAction::Transmit(transmit)) => transmit,
+    match data.poll_action() {
+        Some(transmit) => transmit,
         None => panic!("an attempt is owed"),
     }
 }
@@ -170,13 +169,10 @@ fn a_changed_link_refuses_data_without_reinterpreting_the_encoding_or_losing_res
             if !encoded_protected {
                 link.protection = LinkProtection::Open;
             }
-            data.input(
-                NOW,
-                DataInput::Msdu {
-                    msdu: msdu(6),
-                    link: &mut link,
-                },
-            )
+            data.input(DataInput {
+                msdu: msdu(6),
+                link: &mut link,
+            })
             .unwrap();
             let DataTransmitParts {
                 context,
@@ -205,18 +201,15 @@ fn a_changed_link_refuses_data_without_reinterpreting_the_encoding_or_losing_res
             assert_eq!(reason, crate::machine::TxRefusal::LinkChanged);
             assert_eq!(memory(&buffer), encoded);
             assert_eq!(data.available(WmmAccessCategory::Voice), capacity - 1);
-            data.returned(
-                NOW,
-                DataReturn::Refused {
-                    context,
-                    ticket,
-                    buffer,
-                    reason,
-                },
-            );
+            data.returned(DataReturn::Refused {
+                context,
+                ticket,
+                buffer,
+                reason,
+            });
             assert_eq!(data.available(WmmAccessCategory::Voice), capacity);
             assert_eq!(data.counters().preparation_refused, 1);
-            assert!(data.poll_action(NOW).is_none());
+            assert!(data.poll_action().is_none());
             assert_eq!(core::iter::from_fn(|| data.tickets.take()).count(), 2);
             assert_eq!(core::iter::from_fn(|| data.buffers.take()).count(), 2);
         }
@@ -234,13 +227,10 @@ fn interleaved_returns_keep_the_original_tid_order_and_admission_count() {
     let mut replay = epoch();
     let mut link = qos_link(&(), &mut replay);
     for priority in [6, 4, 6, 7] {
-        data.input(
-            NOW,
-            DataInput::Msdu {
-                msdu: msdu(priority),
-                link: &mut link,
-            },
-        )
+        data.input(DataInput {
+            msdu: msdu(priority),
+            link: &mut link,
+        })
         .unwrap();
     }
     let mut operations: Vec<_> = (0..4).map(|_| transmit(&mut data)).collect();
@@ -252,15 +242,12 @@ fn interleaved_returns_keep_the_original_tid_order_and_admission_count() {
     operations.insert(0, video);
     for mut operation in operations {
         fresh_memory(&mut operation.buffer)[..26].fill(0);
-        data.returned(
-            NOW,
-            DataReturn::TxDone {
-                context: operation.context,
-                ticket: operation.ticket,
-                buffer: operation.buffer,
-                completion: TxOutcome::Withdrawn(WithdrawCause::GateClosed),
-            },
-        );
+        data.returned(DataReturn::TxDone {
+            context: operation.context,
+            ticket: operation.ticket,
+            buffer: operation.buffer,
+            completion: TxOutcome::Withdrawn(WithdrawCause::GateClosed),
+        });
     }
     assert_eq!(data.available(WmmAccessCategory::Voice), capacity);
     assert_eq!(data.available(WmmAccessCategory::Video), capacity);
@@ -278,15 +265,12 @@ fn interleaved_returns_keep_the_original_tid_order_and_admission_count() {
             .unwrap()
             .encode(false);
         assert_eq!(tid_and_sequence(&header), (tid, sequence));
-        data.returned(
-            NOW,
-            DataReturn::TxDone {
-                context: operation.context,
-                ticket: operation.ticket,
-                buffer: operation.buffer,
-                completion: ended(TxEndStatus::Delivered, 1),
-            },
-        );
+        data.returned(DataReturn::TxDone {
+            context: operation.context,
+            ticket: operation.ticket,
+            buffer: operation.buffer,
+            completion: ended(TxEndStatus::Delivered, 1),
+        });
     }
     assert_eq!(data.counters().lost_tokens, 0);
     assert_eq!(data.counters().overflows, 0);
@@ -299,28 +283,22 @@ fn repeated_unpublished_returns_keep_the_checked_frame_and_payload() {
     let capacity = data.available(WmmAccessCategory::Voice);
     let mut replay = epoch();
     let mut link = qos_link(&(), &mut replay);
-    data.input(
-        NOW,
-        DataInput::Msdu {
-            msdu: msdu(6),
-            link: &mut link,
-        },
-    )
+    data.input(DataInput {
+        msdu: msdu(6),
+        link: &mut link,
+    })
     .unwrap();
     let mut operation = transmit(&mut data);
     let len = operation.context.frame().frame().len().get();
     let payload = memory(&operation.buffer)[34..len].to_vec();
     for _ in 0..3 {
         fresh_memory(&mut operation.buffer)[..26].fill(0);
-        data.returned(
-            NOW,
-            DataReturn::TxDone {
-                context: operation.context,
-                ticket: operation.ticket,
-                buffer: operation.buffer,
-                completion: TxOutcome::Withdrawn(WithdrawCause::GateClosed),
-            },
-        );
+        data.returned(DataReturn::TxDone {
+            context: operation.context,
+            ticket: operation.ticket,
+            buffer: operation.buffer,
+            completion: TxOutcome::Withdrawn(WithdrawCause::GateClosed),
+        });
         operation = transmit(&mut data);
         assert_eq!(operation.context.frame().frame().len().get(), len);
         let spec = operation.context.frame().frame().header().header();
@@ -331,15 +309,12 @@ fn repeated_unpublished_returns_keep_the_checked_frame_and_payload() {
         assert_eq!(tid_and_sequence(&header), (6, 0));
         assert_eq!(&memory(&operation.buffer)[34..len], payload.as_slice());
     }
-    data.returned(
-        NOW,
-        DataReturn::TxDone {
-            context: operation.context,
-            ticket: operation.ticket,
-            buffer: operation.buffer,
-            completion: ended(TxEndStatus::Delivered, 1),
-        },
-    );
+    data.returned(DataReturn::TxDone {
+        context: operation.context,
+        ticket: operation.ticket,
+        buffer: operation.buffer,
+        completion: ended(TxEndStatus::Delivered, 1),
+    });
     assert_eq!(core::iter::from_fn(|| data.tickets.take()).count(), 2);
     assert_eq!(core::iter::from_fn(|| data.buffers.take()).count(), 2);
     assert_eq!(data.available(WmmAccessCategory::Voice), capacity);
@@ -351,60 +326,45 @@ fn a_late_old_link_terminal_does_not_take_a_new_links_metadata() {
     let capacity = data.available(WmmAccessCategory::Voice);
     let mut replay = epoch();
     let mut link = qos_link(&(), &mut replay);
-    data.input(
-        NOW,
-        DataInput::Msdu {
-            msdu: msdu(6),
-            link: &mut link,
-        },
-    )
+    data.input(DataInput {
+        msdu: msdu(6),
+        link: &mut link,
+    })
     .unwrap();
     let old = transmit(&mut data);
     data.leave();
     link.epoch = LinkEpoch::for_test(2);
-    data.input(
-        NOW,
-        DataInput::Msdu {
-            msdu: msdu(6),
-            link: &mut link,
-        },
-    )
+    data.input(DataInput {
+        msdu: msdu(6),
+        link: &mut link,
+    })
     .unwrap();
     let new = transmit(&mut data);
     assert!(!data.is_current(&old.context));
     assert!(data.is_current(&new.context));
-    data.returned(
-        NOW,
-        DataReturn::TxDone {
-            context: new.context,
-            ticket: new.ticket,
-            buffer: new.buffer,
-            completion: TxOutcome::Withdrawn(WithdrawCause::GateClosed),
-        },
-    );
-    data.returned(
-        NOW,
-        DataReturn::TxDone {
-            context: old.context,
-            ticket: old.ticket,
-            buffer: old.buffer,
-            completion: TxOutcome::Withdrawn(WithdrawCause::GateClosed),
-        },
-    );
+    data.returned(DataReturn::TxDone {
+        context: new.context,
+        ticket: new.ticket,
+        buffer: new.buffer,
+        completion: TxOutcome::Withdrawn(WithdrawCause::GateClosed),
+    });
+    data.returned(DataReturn::TxDone {
+        context: old.context,
+        ticket: old.ticket,
+        buffer: old.buffer,
+        completion: TxOutcome::Withdrawn(WithdrawCause::GateClosed),
+    });
     let again = transmit(&mut data);
     assert_eq!(again.ticket, 2);
     assert_eq!(again.context.order, 1);
-    assert!(data.poll_action(NOW).is_none());
+    assert!(data.poll_action().is_none());
     assert_eq!(data.counters().left_behind, 1);
-    data.returned(
-        NOW,
-        DataReturn::TxDone {
-            context: again.context,
-            ticket: again.ticket,
-            buffer: again.buffer,
-            completion: ended(TxEndStatus::Delivered, 1),
-        },
-    );
+    data.returned(DataReturn::TxDone {
+        context: again.context,
+        ticket: again.ticket,
+        buffer: again.buffer,
+        completion: ended(TxEndStatus::Delivered, 1),
+    });
     assert_eq!(data.available(WmmAccessCategory::Voice), capacity);
     assert!(data.tickets.take().is_some());
     assert!(data.tickets.take().is_some());
@@ -422,28 +382,22 @@ fn a_local_refusal_releases_admission_with_the_operation_resources() {
     let mut replay = epoch();
     let mut link = qos_link(&(), &mut replay);
     for _ in 0..8 {
-        data.input(
-            NOW,
-            DataInput::Msdu {
-                msdu: msdu(6),
-                link: &mut link,
-            },
-        )
+        data.input(DataInput {
+            msdu: msdu(6),
+            link: &mut link,
+        })
         .unwrap();
         let operation = transmit(&mut data);
         assert_eq!(data.available(WmmAccessCategory::Voice), capacity - 1);
-        data.returned(
-            NOW,
-            DataReturn::Refused {
-                context: operation.context,
-                ticket: operation.ticket,
-                buffer: operation.buffer,
-                reason: crate::machine::TxRefusal::NoRate,
-            },
-        );
+        data.returned(DataReturn::Refused {
+            context: operation.context,
+            ticket: operation.ticket,
+            buffer: operation.buffer,
+            reason: crate::machine::TxRefusal::NoRate,
+        });
         assert_eq!(data.available(WmmAccessCategory::Voice), capacity);
         assert!(data.accepts());
-        assert!(data.poll_action(NOW).is_none());
+        assert!(data.poll_action().is_none());
     }
     assert_eq!(data.counters().lost_tokens, 0);
 }
@@ -455,41 +409,32 @@ fn preparation_refusal_ends_only_its_msdu_without_a_radio_terminal_or_retry() {
     let mut replay = epoch();
     let mut link = qos_link(&(), &mut replay);
     for priority in [6, 4] {
-        data.input(
-            NOW,
-            DataInput::Msdu {
-                msdu: msdu(priority),
-                link: &mut link,
-            },
-        )
+        data.input(DataInput {
+            msdu: msdu(priority),
+            link: &mut link,
+        })
         .unwrap();
     }
     let rejected = transmit(&mut data);
     let accepted = transmit(&mut data);
-    data.returned(
-        NOW,
-        DataReturn::Refused {
-            context: rejected.context,
-            ticket: rejected.ticket,
-            buffer: rejected.buffer,
-            reason: crate::machine::TxRefusal::Layout(
-                oer_ieee80211_lower_mac::LayoutError::BodyOverlap,
-            ),
-        },
-    );
+    data.returned(DataReturn::Refused {
+        context: rejected.context,
+        ticket: rejected.ticket,
+        buffer: rejected.buffer,
+        reason: crate::machine::TxRefusal::Layout(
+            oer_ieee80211_lower_mac::LayoutError::BodyOverlap,
+        ),
+    });
     assert_eq!(data.available(WmmAccessCategory::Voice), capacity);
     assert_eq!(data.available(WmmAccessCategory::Video), capacity - 1);
     assert_eq!(data.counters().preparation_refused, 1);
-    assert!(data.poll_action(NOW).is_none());
-    data.returned(
-        NOW,
-        DataReturn::TxDone {
-            context: accepted.context,
-            ticket: accepted.ticket,
-            buffer: accepted.buffer,
-            completion: ended(TxEndStatus::Delivered, 1),
-        },
-    );
+    assert!(data.poll_action().is_none());
+    data.returned(DataReturn::TxDone {
+        context: accepted.context,
+        ticket: accepted.ticket,
+        buffer: accepted.buffer,
+        completion: ended(TxEndStatus::Delivered, 1),
+    });
     assert_eq!(core::iter::from_fn(|| data.tickets.take()).count(), 2);
     assert_eq!(core::iter::from_fn(|| data.buffers.take()).count(), 2);
     assert_eq!(data.counters().lost_tokens, 0);
@@ -500,16 +445,13 @@ fn a_protected_qos_msdu_leaves_room_for_the_ccmp_header_and_contends_by_its_prio
     let mut data = machine();
     let mut replay = epoch();
     let mut link = qos_link(&(), &mut replay);
-    data.input(
-        NOW,
-        DataInput::Msdu {
-            msdu: msdu(6),
-            link: &mut link,
-        },
-    )
+    data.input(DataInput {
+        msdu: msdu(6),
+        link: &mut link,
+    })
     .unwrap();
     let sent = transmit(&mut data);
-    assert!(data.poll_action(NOW).is_none());
+    assert!(data.poll_action().is_none());
     let frame = memory(&sent.buffer);
     // QoS Data, To DS, Protected.
     assert_eq!(u16::from_le_bytes([frame[0], frame[1]]), 0x4188);
@@ -532,13 +474,10 @@ fn an_open_non_qos_msdu_takes_the_stations_sequence_number_and_no_ccmp_room() {
     let mut data = machine();
     let mut counter = StaSequenceCounter::new(SequenceNumber::new(42).unwrap());
     let mut link = open_link(&mut counter);
-    data.input(
-        NOW,
-        DataInput::Msdu {
-            msdu: msdu(0),
-            link: &mut link,
-        },
-    )
+    data.input(DataInput {
+        msdu: msdu(0),
+        link: &mut link,
+    })
     .unwrap();
     let sent = transmit(&mut data);
     let frame = memory(&sent.buffer);
@@ -562,24 +501,18 @@ fn an_msdu_too_long_for_its_buffer_takes_no_sequence_number() {
         ..msdu(0)
     };
     assert_eq!(
-        data.input(
-            NOW,
-            DataInput::Msdu {
-                msdu: long,
-                link: &mut open_link(&mut counter)
-            }
-        ),
+        data.input(DataInput {
+            msdu: long,
+            link: &mut open_link(&mut counter)
+        }),
         Err(DataRefusal::TooLong)
     );
     assert_eq!(counter.peek(), SequenceNumber::new(42).unwrap());
     // The tokens stay, and a short MSDU takes the number.
-    data.input(
-        NOW,
-        DataInput::Msdu {
-            msdu: msdu(0),
-            link: &mut open_link(&mut counter),
-        },
-    )
+    data.input(DataInput {
+        msdu: msdu(0),
+        link: &mut open_link(&mut counter),
+    })
     .unwrap();
     let sent = transmit(&mut data);
     assert_eq!(
@@ -596,13 +529,10 @@ fn open_mpdu_fits_exactly_without_a_temporary_ccmp_gap() {
         core::num::NonZeroU8::new(8).unwrap(),
     );
     let mut counter = StaSequenceCounter::new(SequenceNumber::new(42).unwrap());
-    data.input(
-        NOW,
-        DataInput::Msdu {
-            msdu: msdu(0),
-            link: &mut open_link(&mut counter),
-        },
-    )
+    data.input(DataInput {
+        msdu: msdu(0),
+        link: &mut open_link(&mut counter),
+    })
     .unwrap();
     let sent = transmit(&mut data);
     let bytes = memory(&sent.buffer);
@@ -622,43 +552,31 @@ fn msdus_wait_while_the_tokens_are_out() {
     let mut data = machine();
     let mut replay = epoch();
     let mut link = qos_link(&(), &mut replay);
-    data.input(
-        NOW,
-        DataInput::Msdu {
-            msdu: msdu(0),
-            link: &mut link,
-        },
-    )
+    data.input(DataInput {
+        msdu: msdu(0),
+        link: &mut link,
+    })
     .unwrap();
-    data.input(
-        NOW,
-        DataInput::Msdu {
-            msdu: msdu(0),
-            link: &mut link,
-        },
-    )
+    data.input(DataInput {
+        msdu: msdu(0),
+        link: &mut link,
+    })
     .unwrap();
     assert!(!data.accepts());
     assert_eq!(
-        data.input(
-            NOW,
-            DataInput::Msdu {
-                msdu: msdu(0),
-                link: &mut link
-            }
-        ),
+        data.input(DataInput {
+            msdu: msdu(0),
+            link: &mut link
+        }),
         Err(DataRefusal::NoTokens)
     );
     let first = transmit(&mut data);
-    data.returned(
-        NOW,
-        DataReturn::TxDone {
-            context: first.context,
-            ticket: first.ticket,
-            buffer: first.buffer,
-            completion: ended(TxEndStatus::Delivered, 1),
-        },
-    );
+    data.returned(DataReturn::TxDone {
+        context: first.context,
+        ticket: first.ticket,
+        buffer: first.buffer,
+        completion: ended(TxEndStatus::Delivered, 1),
+    });
     assert!(data.accepts());
 }
 
@@ -806,52 +724,40 @@ fn an_attempt_aborted_before_the_air_goes_again_first_with_its_sequence_number()
     let mut replay = epoch();
     let mut link = qos_link(&(), &mut replay);
     // Two MSDUs of TID 6: the first is submitted, then a newer one waits.
-    data.input(
-        NOW,
-        DataInput::Msdu {
-            msdu: msdu(6),
-            link: &mut link,
-        },
-    )
+    data.input(DataInput {
+        msdu: msdu(6),
+        link: &mut link,
+    })
     .unwrap();
     let first = transmit(&mut data);
     let sent = tid_and_sequence(memory(&first.buffer));
-    data.input(
-        NOW,
-        DataInput::Msdu {
-            msdu: msdu(6),
-            link: &mut link,
-        },
-    )
+    data.input(DataInput {
+        msdu: msdu(6),
+        link: &mut link,
+    })
     .unwrap();
     // A closing gate aborts the first before any transmission.
-    data.returned(
-        NOW,
-        DataReturn::TxDone {
-            context: first.context,
-            ticket: first.ticket,
-            buffer: first.buffer,
-            completion: TxOutcome::Withdrawn(WithdrawCause::GateClosed),
-        },
-    );
+    data.returned(DataReturn::TxDone {
+        context: first.context,
+        ticket: first.ticket,
+        buffer: first.buffer,
+        completion: TxOutcome::Withdrawn(WithdrawCause::GateClosed),
+    });
     // It goes again at the head of its TID's queue, before the newer MSDU,
     // with the same sequence number, in its buffer.
     let again = transmit(&mut data);
     assert_eq!(tid_and_sequence(memory(&again.buffer)), sent);
     let newer = transmit(&mut data);
     assert_eq!(tid_and_sequence(memory(&newer.buffer)), (6, sent.1 + 1));
-    assert!(data.poll_action(NOW).is_none());
+    assert!(data.poll_action().is_none());
     // One that made a transmission ends: its tokens come back.
-    data.returned(
-        NOW,
-        DataReturn::TxDone {
-            context: again.context,
-            ticket: again.ticket,
-            buffer: again.buffer,
-            completion: ended(TxEndStatus::AckTimeout, 3),
-        },
-    );
-    assert!(data.poll_action(NOW).is_none());
+    data.returned(DataReturn::TxDone {
+        context: again.context,
+        ticket: again.ticket,
+        buffer: again.buffer,
+        completion: ended(TxEndStatus::AckTimeout, 3),
+    });
+    assert!(data.poll_action().is_none());
 }
 
 #[test]
@@ -868,61 +774,46 @@ fn a_link_that_ends_drains_its_queue_and_its_submitted_attempts_never_go_again()
     let mut replay = epoch();
     let mut link = qos_link(&(), &mut replay);
     // One MPDU submitted and two owed on the link.
-    data.input(
-        NOW,
-        DataInput::Msdu {
-            msdu: msdu(0),
-            link: &mut link,
-        },
-    )
+    data.input(DataInput {
+        msdu: msdu(0),
+        link: &mut link,
+    })
     .unwrap();
     let submitted = transmit(&mut data);
-    data.input(
-        NOW,
-        DataInput::Msdu {
-            msdu: msdu(0),
-            link: &mut link,
-        },
-    )
+    data.input(DataInput {
+        msdu: msdu(0),
+        link: &mut link,
+    })
     .unwrap();
-    data.input(
-        NOW,
-        DataInput::Msdu {
-            msdu: msdu(6),
-            link: &mut link,
-        },
-    )
+    data.input(DataInput {
+        msdu: msdu(6),
+        link: &mut link,
+    })
     .unwrap();
     assert!(!data.accepts());
     // The link ends: the owed ones drain into their tokens, counted.
     data.leave();
-    assert!(data.poll_action(NOW).is_none());
+    assert!(data.poll_action().is_none());
     assert_eq!(data.counters().left_behind, 2);
     // The submitted one, aborted before the air, returns its tokens and
     // does not go again: the retry rule holds within one link.
-    data.returned(
-        NOW,
-        DataReturn::TxDone {
-            context: submitted.context,
-            ticket: submitted.ticket,
-            buffer: submitted.buffer,
-            completion: TxOutcome::Withdrawn(WithdrawCause::GateClosed),
-        },
-    );
-    assert!(data.poll_action(NOW).is_none());
+    data.returned(DataReturn::TxDone {
+        context: submitted.context,
+        ticket: submitted.ticket,
+        buffer: submitted.buffer,
+        completion: TxOutcome::Withdrawn(WithdrawCause::GateClosed),
+    });
+    assert!(data.poll_action().is_none());
     assert_eq!(data.counters().left_behind, 3);
     assert_eq!(data.counters().lost_tokens, 0);
     // Every token is back: a new link takes three MSDUs again.
     let mut replay = epoch();
     let mut link = qos_link(&(), &mut replay);
     for _ in 0..3 {
-        data.input(
-            NOW,
-            DataInput::Msdu {
-                msdu: msdu(0),
-                link: &mut link,
-            },
-        )
+        data.input(DataInput {
+            msdu: msdu(0),
+            link: &mut link,
+        })
         .unwrap();
     }
     assert!(!data.accepts());
@@ -944,27 +835,24 @@ fn a_category_the_service_does_not_admit_waits_and_the_others_go_in_their_order(
     let mut link = qos_link(&(), &mut replay);
     // Voice (TID 6), then best effort (TID 0), then Voice again.
     for priority in [6, 0, 7] {
-        data.input(
-            NOW,
-            DataInput::Msdu {
-                msdu: msdu(priority),
-                link: &mut link,
-            },
-        )
+        data.input(DataInput {
+            msdu: msdu(priority),
+            link: &mut link,
+        })
         .unwrap();
     }
     // Voice is full at the port: best effort goes, Voice waits.
     let voice_permits: Vec<_> =
         core::iter::from_fn(|| data.admission.take(WmmAccessCategory::Voice)).collect();
-    let first = match data.poll_action(NOW) {
-        Some(DataAction::Transmit(transmit)) => transmit,
+    let first = match data.poll_action() {
+        Some(transmit) => transmit,
         None => panic!("best effort goes"),
     };
     assert_eq!(
         first.context.access_category(),
         WmmAccessCategory::BestEffort
     );
-    assert!(data.poll_action(NOW).is_none());
+    assert!(data.poll_action().is_none());
     assert_eq!(data.available(WmmAccessCategory::BestEffort), capacity - 1);
     assert_eq!(data.available(WmmAccessCategory::Voice), 0);
     for permit in voice_permits {
@@ -996,43 +884,34 @@ fn indeterminate_and_contention_limit_retire_the_msdu_and_release_admission() {
         let capacity = data.available(WmmAccessCategory::Voice);
         let mut replay = epoch();
         let mut link = qos_link(&(), &mut replay);
-        data.input(
-            NOW,
-            DataInput::Msdu {
-                msdu: msdu(6),
-                link: &mut link,
-            },
-        )
+        data.input(DataInput {
+            msdu: msdu(6),
+            link: &mut link,
+        })
         .unwrap();
         let operation = transmit(&mut data);
         let buffer = match operation.buffer {
             ReturnedMpdu::Fresh(buffer) => buffer,
             ReturnedMpdu::Sent(_) => panic!("a new MSDU is fresh"),
         };
-        data.returned(
-            NOW,
-            DataReturn::TxDone {
-                context: operation.context,
-                ticket: operation.ticket,
-                buffer: ReturnedMpdu::Sent(buffer),
-                completion: outcome,
-            },
-        );
+        data.returned(DataReturn::TxDone {
+            context: operation.context,
+            ticket: operation.ticket,
+            buffer: ReturnedMpdu::Sent(buffer),
+            completion: outcome,
+        });
         assert_eq!(data.available(WmmAccessCategory::Voice), capacity);
         assert_eq!(data.counters().indeterminate, indeterminate);
         assert_eq!(data.counters().contention_limited, contention);
         assert_eq!(data.counters().lost_tokens, 0);
         assert!(
-            data.poll_action(NOW).is_none(),
+            data.poll_action().is_none(),
             "final outcomes never retry the MSDU"
         );
-        data.input(
-            NOW,
-            DataInput::Msdu {
-                msdu: msdu(6),
-                link: &mut link,
-            },
-        )
+        data.input(DataInput {
+            msdu: msdu(6),
+            link: &mut link,
+        })
         .unwrap();
         assert_eq!(
             transmit(&mut data).ticket,
@@ -1048,29 +927,23 @@ fn key_removal_drops_a_published_msdu_and_returns_admission_once() {
     let capacity = data.available(WmmAccessCategory::Voice);
     let mut replay = epoch();
     let mut link = qos_link(&(), &mut replay);
-    data.input(
-        NOW,
-        DataInput::Msdu {
-            msdu: msdu(6),
-            link: &mut link,
-        },
-    )
+    data.input(DataInput {
+        msdu: msdu(6),
+        link: &mut link,
+    })
     .unwrap();
     let operation = transmit(&mut data);
     let ReturnedMpdu::Fresh(buffer) = operation.buffer else {
         unreachable!()
     };
-    data.returned(
-        NOW,
-        DataReturn::TxDone {
-            context: operation.context,
-            ticket: operation.ticket,
-            buffer: ReturnedMpdu::Sent(buffer),
-            completion: TxOutcome::Withdrawn(WithdrawCause::KeyRemoved),
-        },
-    );
+    data.returned(DataReturn::TxDone {
+        context: operation.context,
+        ticket: operation.ticket,
+        buffer: ReturnedMpdu::Sent(buffer),
+        completion: TxOutcome::Withdrawn(WithdrawCause::KeyRemoved),
+    });
     assert!(
-        data.poll_action(NOW).is_none(),
+        data.poll_action().is_none(),
         "the removed key's MSDU is not retried"
     );
     assert_eq!(data.available(WmmAccessCategory::Voice), capacity);

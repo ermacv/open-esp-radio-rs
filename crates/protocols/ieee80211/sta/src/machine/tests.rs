@@ -1467,7 +1467,7 @@ fn tid_and_sequence(frame: &[u8]) -> (u8, u16) {
 #[test]
 fn eapol_and_data_on_tid_7_share_one_counter_and_tid_0_runs_on_across_a_rekey() {
     installed(|mint| {
-        use crate::data::{DataAction, DataInput, Msdu, StaData};
+        use crate::data::{DataInput, Msdu, StaData};
         use oer_ieee80211_mac::qos::WmmUserPriority;
 
         // A QoS BSS: the beacon advertises WMM.
@@ -1491,15 +1491,12 @@ fn eapol_and_data_on_tid_7_share_one_counter_and_tid_0_runs_on_across_a_rekey() 
                 priority: WmmUserPriority::new(priority).unwrap(),
                 payload: &[0xab; 20],
             };
-            data.input(
-                at(60),
-                DataInput::Msdu {
-                    msdu,
-                    link: &mut link,
-                },
-            )
+            data.input(DataInput {
+                msdu,
+                link: &mut link,
+            })
             .unwrap();
-            let Some(DataAction::Transmit(transmit)) = data.poll_action(at(60)) else {
+            let Some(transmit) = data.poll_action() else {
                 panic!("an MPDU is owed");
             };
             let crate::data::DataTransmitParts {
@@ -1511,20 +1508,17 @@ fn eapol_and_data_on_tid_7_share_one_counter_and_tid_0_runs_on_across_a_rekey() 
                 ReturnedMpdu::Fresh(buffer) | ReturnedMpdu::Sent(buffer) => &buffer.0,
             };
             let sent = tid_and_sequence(frame);
-            data.returned(
-                at(60),
-                crate::data::DataReturn::TxDone {
-                    context,
-                    ticket,
-                    buffer,
-                    completion: TxOutcome::Ended {
-                        status: TxEndStatus::Delivered,
-                        ack: None,
-                        transmissions: 1,
-                        rate: None,
-                    },
+            data.returned(crate::data::DataReturn::TxDone {
+                context,
+                ticket,
+                buffer,
+                completion: TxOutcome::Ended {
+                    status: TxEndStatus::Delivered,
+                    ack: None,
+                    transmissions: 1,
+                    rate: None,
                 },
-            );
+            });
             sent
         }
         assert_eq!(send(&mut data, &mut world, 7), (7, 0));

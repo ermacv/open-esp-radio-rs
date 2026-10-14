@@ -32,7 +32,6 @@ use oer_ieee80211_mac::{
     sequence::SequenceNumber,
     station::StaProtectedDataFrame,
 };
-use oer_time::Instant;
 
 use crate::epoch::LinkEpoch;
 use crate::machine::{LinkMode, LinkProtection, LinkView, StaTokens};
@@ -69,15 +68,26 @@ pub struct Msdu<'a> {
     pub payload: &'a [u8],
 }
 
-/// One input of the data machine.
-pub enum DataInput<'a, 'l, 'v, 'id, T: StaTokens> {
-    /// An MSDU from the network stack, on the link it goes on.
-    Msdu {
-        /// The MSDU.
-        msdu: Msdu<'a>,
-        /// The station's link.
-        link: &'l mut LinkView<'v, 'id, T>,
-    },
+/// An MSDU and the station link on which it is submitted.
+///
+/// ```compile_fail,E0223
+/// use oer_ieee80211_sta::{data::DataInput, machine::StaTokens};
+/// fn variant<T: StaTokens>(input: DataInput<'_, '_, '_, '_, T>) -> bool {
+///     matches!(input, DataInput::Msdu { .. })
+/// }
+/// ```
+///
+/// ```
+/// use oer_ieee80211_sta::{data::DataInput, machine::StaTokens};
+/// fn payload_length<T: StaTokens>(input: DataInput<'_, '_, '_, '_, T>) -> usize {
+///     input.msdu.payload.len()
+/// }
+/// ```
+pub struct DataInput<'a, 'l, 'v, 'id, T: StaTokens> {
+    /// The MSDU from the network stack.
+    pub msdu: Msdu<'a>,
+    /// The station link on which it goes.
+    pub link: &'l mut LinkView<'v, 'id, T>,
 }
 
 /// Ownership returned from one operation; consuming it cannot refuse resources.
@@ -114,13 +124,13 @@ pub enum DataReturn<'id, D: StaDataTokens, K> {
     },
 }
 
-/// One action of the data machine.
-pub enum DataAction<'id, D: StaDataTokens, K> {
-    /// Submit a data MPDU.
-    Transmit(DataTransmit<'id, D, K>),
-}
-
 /// One data MPDU to submit: its tokens, its kind and its access category.
+///
+/// The data machine returns this operation directly:
+///
+/// ```compile_fail,E0432
+/// use oer_ieee80211_sta::data::DataAction;
+/// ```
 /// It names no key: on a protected link the service submits it under the
 /// link's pairwise key.
 ///
@@ -350,6 +360,15 @@ pub struct DataCounters {
 ///
 /// Data has no timer: its queued work advances on inputs and returned credits.
 ///
+/// ```compile_fail,E0061
+/// use oer_ieee80211_lower_mac::Ieee80211Capabilities;
+/// use oer_ieee80211_sta::data::{StaData, StaDataTokens};
+/// use oer_time::Instant;
+/// fn poll<D: StaDataTokens, K: Ieee80211Capabilities>(data: &mut StaData<'_, D, K>) {
+///     drop(data.poll_action(Instant::from_micros(1)));
+/// }
+/// ```
+///
 /// ```compile_fail,E0599
 /// use oer_ieee80211_lower_mac::Ieee80211Capabilities;
 /// use oer_ieee80211_sta::data::{StaData, StaDataTokens};
@@ -362,12 +381,11 @@ pub struct DataCounters {
 ///
 /// ```
 /// use oer_ieee80211_lower_mac::Ieee80211Capabilities;
-/// use oer_ieee80211_sta::data::{DataAction, StaData, StaDataTokens};
-/// use oer_time::Instant;
+/// use oer_ieee80211_sta::data::{DataTransmit, StaData, StaDataTokens};
 /// fn action<'id, D: StaDataTokens, K: Ieee80211Capabilities>(
-///     data: &mut StaData<'id, D, K>, now: Instant,
-/// ) -> Option<DataAction<'id, D, K>> {
-///     data.poll_action(now)
+///     data: &mut StaData<'id, D, K>,
+/// ) -> Option<DataTransmit<'id, D, K>> {
+///     data.poll_action()
 /// }
 /// ```
 pub struct StaData<'id, D: StaDataTokens, K, const CAP: usize = 8> {
@@ -468,7 +486,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
 
     /// Return an accepted terminal or a local refusal and all its owners.
     /// This operation always consumes the resources; it has no refusal result.
-    pub fn returned(&mut self, _now: Instant, input: DataReturn<'id, D, K>) {
+    pub fn returned(&mut self, input: DataReturn<'id, D, K>) {
         match input {
             DataReturn::Refused {
                 context,
@@ -551,79 +569,75 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
     /// Why an MSDU did not become an MPDU: it waits, or is too long.
     pub fn input<T: StaTokens>(
         &mut self,
-        _now: Instant,
         input: DataInput<'_, '_, '_, 'id, T>,
     ) -> Result<(), DataRefusal> {
-        match input {
-            DataInput::Msdu { msdu, link } => {
-                if self.link != Some(link.epoch) {
-                    self.leave();
-                    self.link = Some(link.epoch);
-                }
-                let ticket = self.tickets.take().ok_or(DataRefusal::NoTokens)?;
-                let Some(mut buffer) = self.buffers.take() else {
-                    self.tickets.put(ticket);
-                    return Err(DataRefusal::NoTokens);
-                };
-                let tid = msdu.priority;
-                let qos = matches!(link.mode, LinkMode::Qos(_));
-                // A non-QoS link has one queue, best effort.
-                let (slot, access_category) = if qos {
-                    (tid, msdu.priority.access_category())
-                } else {
-                    (WmmUserPriority::UP0, WmmAccessCategory::BestEffort)
-                };
-                let protection = DataProtection::from(&link.protection).without_key();
-                // A frame that does not fit its buffer takes no sequence
-                // number.
-                if mpdu_len(qos, protection, msdu.payload.len())
-                    .is_none_or(|length| length > buffer.bytes_mut().len())
-                {
-                    self.tickets.put(ticket);
-                    self.buffers.put(buffer);
-                    return Err(DataRefusal::TooLong);
-                }
-                let sequence_number = match &mut link.mode {
-                    LinkMode::Qos(counters) => tid.select_mut(counters).take(),
-                    LinkMode::NonQos(counter) => counter.take(),
-                };
-                let frame = encode_frame::<_, K, D::Class>(
-                    link,
-                    qos,
-                    msdu,
-                    sequence_number,
+        let DataInput { msdu, link } = input;
+        if self.link != Some(link.epoch) {
+            self.leave();
+            self.link = Some(link.epoch);
+        }
+        let ticket = self.tickets.take().ok_or(DataRefusal::NoTokens)?;
+        let Some(mut buffer) = self.buffers.take() else {
+            self.tickets.put(ticket);
+            return Err(DataRefusal::NoTokens);
+        };
+        let tid = msdu.priority;
+        let qos = matches!(link.mode, LinkMode::Qos(_));
+        // A non-QoS link has one queue, best effort.
+        let (slot, access_category) = if qos {
+            (tid, msdu.priority.access_category())
+        } else {
+            (WmmUserPriority::UP0, WmmAccessCategory::BestEffort)
+        };
+        let protection = DataProtection::from(&link.protection).without_key();
+        // A frame that does not fit its buffer takes no sequence
+        // number.
+        if mpdu_len(qos, protection, msdu.payload.len())
+            .is_none_or(|length| length > buffer.bytes_mut().len())
+        {
+            self.tickets.put(ticket);
+            self.buffers.put(buffer);
+            return Err(DataRefusal::TooLong);
+        }
+        let sequence_number = match &mut link.mode {
+            LinkMode::Qos(counters) => tid.select_mut(counters).take(),
+            LinkMode::NonQos(counter) => counter.take(),
+        };
+        let frame = encode_frame::<_, K, D::Class>(
+            link,
+            qos,
+            msdu,
+            sequence_number,
+            protection,
+            buffer.bytes_mut(),
+        );
+        match frame {
+            Some(frame) => {
+                let order = self.next_order;
+                self.next_order = self.next_order.wrapping_add(1);
+                let context = DataTxContext {
+                    admission: (),
+                    link: link.epoch,
+                    tid: slot,
+                    frame,
+                    access_category,
                     protection,
-                    buffer.bytes_mut(),
-                );
-                match frame {
-                    Some(frame) => {
-                        let order = self.next_order;
-                        self.next_order = self.next_order.wrapping_add(1);
-                        let context = DataTxContext {
-                            admission: (),
-                            link: link.epoch,
-                            tid: slot,
-                            frame,
-                            access_category,
-                            protection,
-                            order,
-                        };
-                        let owed = DataTransmit {
-                            context,
-                            ticket,
-                            buffer: ReturnedMpdu::Fresh(buffer),
-                        };
-                        if let Err(owed) = slot.select_mut(&mut self.owed).push(owed) {
-                            self.overflowed(owed);
-                        }
-                        Ok(())
-                    }
-                    None => {
-                        self.tickets.put(ticket);
-                        self.buffers.put(buffer);
-                        Err(DataRefusal::TooLong)
-                    }
+                    order,
+                };
+                let owed = DataTransmit {
+                    context,
+                    ticket,
+                    buffer: ReturnedMpdu::Fresh(buffer),
+                };
+                if let Err(owed) = slot.select_mut(&mut self.owed).push(owed) {
+                    self.overflowed(owed);
                 }
+                Ok(())
+            }
+            None => {
+                self.tickets.put(ticket);
+                self.buffers.put(buffer);
+                Err(DataRefusal::TooLong)
             }
         }
     }
@@ -643,7 +657,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
     /// The next action whose category owns a free admission permission.
     /// The context carries that permission until its return; queued work
     /// consumes none. The service takes every action before waiting.
-    pub fn poll_action(&mut self, _now: Instant) -> Option<DataAction<'id, D, K>> {
+    pub fn poll_action(&mut self) -> Option<DataTransmit<'id, D, K>> {
         // The earliest MSDU of an admitted category first, whatever its TID.
         let tid = WmmUserPriority::ALL
             .into_iter()
@@ -662,11 +676,11 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
         let permit = self.admission.take(category)?;
         tid.select_mut(&mut self.owed).pop().map(|transmit| {
             let (context, ()) = transmit.context.admission(permit);
-            DataAction::Transmit(DataTransmit {
+            DataTransmit {
                 context,
                 ticket: transmit.ticket,
                 buffer: transmit.buffer,
-            })
+            }
         })
     }
 }

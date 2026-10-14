@@ -2174,28 +2174,62 @@ fn disconnect_during_an_absence_sends_deauthentication_only_after_returning_home
 
 #[test]
 fn associated_is_the_first_action_after_the_association_response() {
-    installed(|mint| {
-        let mut world = World::new(mint, 3);
-        world
-            .station
-            .input(at(0), StaInput::Command(StaCommand::Connect));
-        world.run(at(0));
-        world.advance();
-        world.receive(at(13), &beacon());
-        world.advance();
-        world.answer_authentication(at(30), 0);
-        let _ = world
-            .station
-            .receive(at(31), &open_association_response(), meta(), |_| {});
-        assert!(matches!(
-            world.station.poll_action(at(31)),
-            Some(StaAction::Associated(_))
-        ));
-        assert!(matches!(
-            world.station.poll_action(at(31)),
-            Some(StaAction::Notify(StaNotice::Connected { .. }))
-        ));
-    });
+    for protected in [false, true] {
+        installed(|mint| {
+            let security = if protected {
+                StaSecurity::Wpa2Personal {
+                    pmk: Pmk::from_bytes(PMK),
+                }
+            } else {
+                StaSecurity::Open
+            };
+            let mut world = World::with_security(mint, 3, security);
+            world
+                .station
+                .input(at(0), StaInput::Command(StaCommand::Connect));
+            world.run(at(0));
+            world.advance();
+            if protected {
+                world.receive(at(13), &wpa2_beacon());
+            } else {
+                world.receive(at(13), &beacon());
+            }
+            world.advance();
+            world.answer_authentication(at(30), 0);
+            let response = if protected {
+                association_response(0)
+            } else {
+                open_association_response()
+            };
+            world
+                .station
+                .receive(at(31), &response, meta(), |_| {})
+                .unwrap();
+            assert!(matches!(
+                world.station.poll_action(at(31)),
+                Some(StaAction::Associated(_))
+            ));
+            if protected {
+                assert!(world.station.poll_action(at(31)).is_none());
+                assert!(matches!(
+                    world.station.state,
+                    State::Handshake(Handshake {
+                        step: HandshakeStep::Await,
+                        ..
+                    })
+                ));
+                assert!(
+                    world.station.poll_deadline().is_some(),
+                    "waiting for M1 has a deadline"
+                );
+            } else {
+                assert!(matches!(
+                    world.station.poll_action(at(31)),
+                    Some(StaAction::Notify(StaNotice::Connected { .. }))
+                ));
+            }
+        });
+    }
 }
 
 #[test]

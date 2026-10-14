@@ -37,6 +37,9 @@
 //! Each concrete class pool uses the portable `MpduLayout` proof before
 //! writing headers or copying an external body. Its allocation is privately
 //! minted at the class capacity; `ClassFrame` proves the MPDU fits it.
+//! Small and large classes share one pool implementation. Their private
+//! `ModelClass` dispatch only erases or recovers the appropriate owner
+//! variant, returning every other class unchanged on refusal.
 //! `TxProtection` alone determines Protected and the MAC/CCMP prefix. Sent returns own that layout, body and the
 //! identity of the original key installation. Retry supplies only a new
 //! attempt's rates, never an independently reconstructed MPDU or body.
@@ -114,6 +117,7 @@ use oer_ieee80211_lower_mac::{
     SubframeSource, Tid,
 };
 use oer_ieee80211_mac::address::IndividualAddress;
+use oer_ieee80211_mac::qos::WmmAccessCategory;
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
 /// The longest MPDU the model's large buffers hold.
@@ -290,8 +294,8 @@ pub struct ModelBuffer<'id, C> {
 }
 
 enum ModelMemory {
-    Small(Box<[u8; 256]>),
-    Large(Box<[u8; MODEL_MAX_MPDU]>),
+    Small(Box<[u8; ModelSmall::CAPACITY]>),
+    Large(Box<[u8; ModelLarge::CAPACITY]>),
 }
 impl core::ops::Deref for ModelMemory {
     type Target = [u8];
@@ -315,6 +319,9 @@ impl AsRef<[u8]> for ModelMemory {
         self
     }
 }
+/// Retry is bit 11 of Frame Control, bit 3 of its second wire octet.
+const RETRY_FLAG: u8 = 1 << 3;
+
 impl ModelMemory {
     fn sequence(&self) -> SequenceNumber {
         let control = match self {
@@ -385,11 +392,11 @@ impl ModelMemory {
         match self {
             Self::Small(bytes) => {
                 let [_, flags, ..] = bytes.as_mut();
-                *flags |= 0x08;
+                *flags |= RETRY_FLAG;
             }
             Self::Large(bytes) => {
                 let [_, flags, ..] = bytes.as_mut();
-                *flags |= 0x08;
+                *flags |= RETRY_FLAG;
             }
         }
     }
@@ -771,13 +778,13 @@ impl<'id, R: 'id> KeyTypes<'id> for ModelKeys<'id, R> {
     }
 }
 
-impl<'id, X: ModelContext> TxBufferPool<'id, ModelSmall> for ModelTypes<X> {
-    type Buffer = ModelBuffer<'id, ModelSmall>;
-    type Sent = ModelSent<'id, ModelSmall>;
+impl<'id, X: ModelContext, C: ModelClass> TxBufferPool<'id, C> for ModelTypes<X> {
+    type Buffer = ModelBuffer<'id, C>;
+    type Sent = ModelSent<'id, C>;
 
     fn prepare<'k, 'p, R: RoleKeys<'id, Self>, K: Ieee80211Capabilities>(
-        source: CheckedPoolSource<'k, 'p, 'id, Self, ModelSmall, K, R>,
-    ) -> oer_ieee80211_lower_mac::PoolPreparation<'k, 'p, 'id, Self, ModelSmall, K, R>
+        source: CheckedPoolSource<'k, 'p, 'id, Self, C, K, R>,
+    ) -> oer_ieee80211_lower_mac::PoolPreparation<'k, 'p, 'id, Self, C, K, R>
     where
         'id: 'k,
     {
@@ -785,17 +792,8 @@ impl<'id, X: ModelContext> TxBufferPool<'id, ModelSmall> for ModelTypes<X> {
     }
 
     fn push_aggregate<'k, 'p, R, K, S>(
-        operation: oer_ieee80211_lower_mac::CheckedPoolAggregate<
-            'k,
-            'p,
-            'id,
-            Self,
-            ModelSmall,
-            R,
-            K,
-            S,
-        >,
-    ) -> oer_ieee80211_lower_mac::AggregatePushResult<'k, 'p, 'id, Self, ModelSmall, R, K, S>
+        operation: oer_ieee80211_lower_mac::CheckedPoolAggregate<'k, 'p, 'id, Self, C, R, K, S>,
+    ) -> oer_ieee80211_lower_mac::AggregatePushResult<'k, 'p, 'id, Self, C, R, K, S>
     where
         R: RoleKeys<'id, Self>,
         K: Ieee80211Capabilities,
@@ -806,86 +804,19 @@ impl<'id, X: ModelContext> TxBufferPool<'id, ModelSmall> for ModelTypes<X> {
     }
 
     fn erase(buffer: Self::Buffer) -> ModelAnyBuffer<'id> {
-        ModelAnyBuffer::Small(buffer)
+        C::erase(buffer)
     }
 
     fn erase_sent(buffer: Self::Sent) -> ModelAnyBuffer<'id> {
-        ModelAnyBuffer::SmallSent(buffer)
+        C::erase_sent(buffer)
     }
 
     fn class(buffer: ModelAnyBuffer<'id>) -> Result<Self::Buffer, ModelAnyBuffer<'id>> {
-        match buffer {
-            ModelAnyBuffer::Small(buffer) => Ok(buffer),
-            buffer => Err(buffer),
-        }
+        C::class(buffer)
     }
 
     fn sent(buffer: ModelAnyBuffer<'id>) -> Result<Self::Sent, ModelAnyBuffer<'id>> {
-        match buffer {
-            ModelAnyBuffer::SmallSent(buffer) => Ok(buffer),
-            buffer => Err(buffer),
-        }
-    }
-
-    fn renew(mpdu: Self::Sent) -> (Self::Buffer, Option<ModelBody>) {
-        (mpdu.buffer, mpdu.body)
-    }
-}
-
-impl<'id, X: ModelContext> TxBufferPool<'id, ModelLarge> for ModelTypes<X> {
-    type Buffer = ModelBuffer<'id, ModelLarge>;
-    type Sent = ModelSent<'id, ModelLarge>;
-
-    fn prepare<'k, 'p, R: RoleKeys<'id, Self>, K: Ieee80211Capabilities>(
-        source: CheckedPoolSource<'k, 'p, 'id, Self, ModelLarge, K, R>,
-    ) -> oer_ieee80211_lower_mac::PoolPreparation<'k, 'p, 'id, Self, ModelLarge, K, R>
-    where
-        'id: 'k,
-    {
-        prepare_model(source)
-    }
-
-    fn push_aggregate<'k, 'p, R, K, S>(
-        operation: oer_ieee80211_lower_mac::CheckedPoolAggregate<
-            'k,
-            'p,
-            'id,
-            Self,
-            ModelLarge,
-            R,
-            K,
-            S,
-        >,
-    ) -> oer_ieee80211_lower_mac::AggregatePushResult<'k, 'p, 'id, Self, ModelLarge, R, K, S>
-    where
-        R: RoleKeys<'id, Self>,
-        K: Ieee80211Capabilities,
-        S: AggregateState,
-        'id: 'k + 'p,
-    {
-        push_model(operation)
-    }
-
-    fn erase(buffer: Self::Buffer) -> ModelAnyBuffer<'id> {
-        ModelAnyBuffer::Large(buffer)
-    }
-
-    fn erase_sent(buffer: Self::Sent) -> ModelAnyBuffer<'id> {
-        ModelAnyBuffer::LargeSent(buffer)
-    }
-
-    fn class(buffer: ModelAnyBuffer<'id>) -> Result<Self::Buffer, ModelAnyBuffer<'id>> {
-        match buffer {
-            ModelAnyBuffer::Large(buffer) => Ok(buffer),
-            buffer => Err(buffer),
-        }
-    }
-
-    fn sent(buffer: ModelAnyBuffer<'id>) -> Result<Self::Sent, ModelAnyBuffer<'id>> {
-        match buffer {
-            ModelAnyBuffer::LargeSent(buffer) => Ok(buffer),
-            buffer => Err(buffer),
-        }
+        C::sent(buffer)
     }
 
     fn renew(mpdu: Self::Sent) -> (Self::Buffer, Option<ModelBody>) {
@@ -1078,9 +1009,9 @@ pub struct ModelAir {
     /// The settings the driver applied.
     settings: Cell<u32>,
     /// The queues the air keeps busy: their attempts wait unpublished.
-    held: Cell<[bool; 4]>,
+    held: Cell<[bool; WmmAccessCategory::ALL.len()]>,
     /// Keep a published PPDU's result pending, independently of prepublication CCA.
-    held_results: Cell<[bool; 4]>,
+    held_results: Cell<[bool; WmmAccessCategory::ALL.len()]>,
     now_micros: Cell<u64>,
     /// The Block Acks of the next A-MPDUs, in order: bit `n` acknowledges
     /// the aggregate's subframe `n`; once none is queued, every subframe
@@ -1180,12 +1111,7 @@ impl ModelAir {
     /// expires. A queued successor cannot pass this publication.
     pub fn hold_completion(&self, category: oer_ieee80211_mac::qos::WmmAccessCategory, held: bool) {
         let mut results = self.held_results.get();
-        match category {
-            oer_ieee80211_mac::qos::WmmAccessCategory::BestEffort => results[0] = held,
-            oer_ieee80211_mac::qos::WmmAccessCategory::Background => results[1] = held,
-            oer_ieee80211_mac::qos::WmmAccessCategory::Video => results[2] = held,
-            oer_ieee80211_mac::qos::WmmAccessCategory::Voice => results[3] = held,
-        }
+        *category.select_mut(&mut results) = held;
         self.held_results.set(results);
         self.wake_driver();
     }
@@ -1596,14 +1522,14 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
                 .into_iter()
                 .map(|slot| ModelBuffer {
                     slot,
-                    memory: ModelMemory::Small(Box::new([0; 256])),
+                    memory: ModelMemory::Small(Box::new([0; ModelSmall::CAPACITY])),
                 })
                 .collect(),
             large: large
                 .into_iter()
                 .map(|slot| ModelBuffer {
                     slot,
-                    memory: ModelMemory::Large(Box::new([0; MODEL_MAX_MPDU])),
+                    memory: ModelMemory::Large(Box::new([0; ModelLarge::CAPACITY])),
                 })
                 .collect(),
             station_pairwise: mint.slots(),
@@ -1706,16 +1632,10 @@ enum DriverGate<'id> {
     Closed,
 }
 
-impl DriverGate<'_> {
-    fn is_open(&self) -> bool {
-        matches!(self, Self::Open)
-    }
-}
-
 /// The model's hardware, which only the driver owns.
 struct Driver<'id, X: ModelContext> {
     /// The prepared attempts of each queue, the head first.
-    queues: [TxQueue<'id, X>; 4],
+    queues: [TxQueue<'id, X>; WmmAccessCategory::ALL.len()],
     /// The installed hardware keys.
     keys: Vec<KeyIdentity>,
     removing: Vec<(KeyIdentity, Removed<'id, ModelTypes<X>>)>,
@@ -1841,13 +1761,8 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                         queue.air = Some(publication);
                         break;
                     }
-                    let cause = withdrawal(
-                        held.draining.get(),
-                        self.gate.is_open(),
-                        publication.work.key().is_some_and(|key| {
-                            self.removing.iter().any(|(removed, _)| removed == key)
-                        }),
-                    );
+                    let cause =
+                        withdrawal(held, &self.gate, publication.work.key(), &self.removing);
                     let result = if result_held {
                         AirResult::HardwareTimeout
                     } else {
@@ -1862,12 +1777,7 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                 let Some(work) = queue.waiting.pop_front() else {
                     break;
                 };
-                if let Some(cause) = withdrawal(
-                    held.draining.get(),
-                    self.gate.is_open(),
-                    work.key()
-                        .is_some_and(|key| self.removing.iter().any(|(removed, _)| removed == key)),
-                ) {
+                if let Some(cause) = withdrawal(held, &self.gate, work.key(), &self.removing) {
                     withdrawn(held, work, cause);
                 } else if busy {
                     queue.waiting.push_front(work);
@@ -1952,15 +1862,24 @@ enum Published<'id, X: ModelContext> {
         report: BlockAckReport,
     },
 }
-fn withdrawal(disabled: bool, gate_open: bool, key_removed: bool) -> Option<WithdrawCause> {
-    if disabled {
+/// Derive the terminal from the actual lifecycle barrier and key owner;
+/// callers cannot exchange three unrelated boolean arguments. Disable wins
+/// over key removal, which wins over a closing or closed gate.
+fn withdrawal<'id, X: ModelContext>(
+    held: &ModelHeld<'id, X>,
+    gate: &DriverGate<'id>,
+    key: Option<&KeyIdentity>,
+    removals: &[(KeyIdentity, Removed<'id, ModelTypes<X>>)],
+) -> Option<WithdrawCause> {
+    if held.draining.get() {
         Some(WithdrawCause::Disabled)
-    } else if key_removed {
+    } else if key.is_some_and(|key| removals.iter().any(|(removed, _)| removed == key)) {
         Some(WithdrawCause::KeyRemoved)
-    } else if !gate_open {
-        Some(WithdrawCause::GateClosed)
     } else {
-        None
+        match gate {
+            DriverGate::Open => None,
+            DriverGate::Closing(_) | DriverGate::Closed => Some(WithdrawCause::GateClosed),
+        }
     }
 }
 impl<'id, X: ModelContext> Published<'id, X> {
@@ -2335,17 +2254,19 @@ impl<'p, 'id: 'p, C: Ieee80211Capabilities, X: ModelContext> LowerMacPhase<'p, '
     }
 
     fn station(&mut self) -> ModelInterface<'p, '_, 'id, Station, C, X> {
+        let [station, _] = self.backend.addresses;
         ModelInterface {
             held: self.held,
-            address: self.backend.addresses[0],
+            address: station,
             role: PhantomData,
         }
     }
 
     fn access_point(&mut self) -> ModelInterface<'p, '_, 'id, AccessPoint, C, X> {
+        let [_, access_point] = self.backend.addresses;
         ModelInterface {
             held: self.held,
-            address: self.backend.addresses[1],
+            address: access_point,
             role: PhantomData,
         }
     }
@@ -2450,13 +2371,17 @@ impl<'id, R, K, X: ModelContext> PreparedTx<'id> for ModelPrepared<'_, '_, 'id, 
     }
 }
 
-trait ModelClass: TxBufferClass {
-    fn erase<'id>(buffer: ModelBuffer<'id, Self>) -> ModelAnyBuffer<'id>
-    where
-        Self: Sized;
-    fn erase_sent<'id>(mpdu: ModelSent<'id, Self>) -> ModelAnyBuffer<'id>
-    where
-        Self: Sized;
+#[expect(
+    clippy::result_large_err,
+    reason = "class refusal returns the original affine MPDU by value"
+)]
+trait ModelClass: TxBufferClass + Sized {
+    fn erase<'id>(buffer: ModelBuffer<'id, Self>) -> ModelAnyBuffer<'id>;
+    fn erase_sent<'id>(mpdu: ModelSent<'id, Self>) -> ModelAnyBuffer<'id>;
+    fn class<'id>(
+        buffer: ModelAnyBuffer<'id>,
+    ) -> Result<ModelBuffer<'id, Self>, ModelAnyBuffer<'id>>;
+    fn sent<'id>(buffer: ModelAnyBuffer<'id>) -> Result<ModelSent<'id, Self>, ModelAnyBuffer<'id>>;
 }
 
 impl ModelClass for ModelSmall {
@@ -2466,6 +2391,20 @@ impl ModelClass for ModelSmall {
     fn erase_sent<'id>(mpdu: ModelSent<'id, Self>) -> ModelAnyBuffer<'id> {
         ModelAnyBuffer::SmallSent(mpdu)
     }
+    fn class<'id>(
+        buffer: ModelAnyBuffer<'id>,
+    ) -> Result<ModelBuffer<'id, Self>, ModelAnyBuffer<'id>> {
+        match buffer {
+            ModelAnyBuffer::Small(buffer) => Ok(buffer),
+            buffer => Err(buffer),
+        }
+    }
+    fn sent<'id>(buffer: ModelAnyBuffer<'id>) -> Result<ModelSent<'id, Self>, ModelAnyBuffer<'id>> {
+        match buffer {
+            ModelAnyBuffer::SmallSent(buffer) => Ok(buffer),
+            buffer => Err(buffer),
+        }
+    }
 }
 impl ModelClass for ModelLarge {
     fn erase<'id>(buffer: ModelBuffer<'id, Self>) -> ModelAnyBuffer<'id> {
@@ -2473,6 +2412,20 @@ impl ModelClass for ModelLarge {
     }
     fn erase_sent<'id>(mpdu: ModelSent<'id, Self>) -> ModelAnyBuffer<'id> {
         ModelAnyBuffer::LargeSent(mpdu)
+    }
+    fn class<'id>(
+        buffer: ModelAnyBuffer<'id>,
+    ) -> Result<ModelBuffer<'id, Self>, ModelAnyBuffer<'id>> {
+        match buffer {
+            ModelAnyBuffer::Large(buffer) => Ok(buffer),
+            buffer => Err(buffer),
+        }
+    }
+    fn sent<'id>(buffer: ModelAnyBuffer<'id>) -> Result<ModelSent<'id, Self>, ModelAnyBuffer<'id>> {
+        match buffer {
+            ModelAnyBuffer::LargeSent(buffer) => Ok(buffer),
+            buffer => Err(buffer),
+        }
     }
 }
 

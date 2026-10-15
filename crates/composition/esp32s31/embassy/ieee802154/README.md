@@ -49,7 +49,8 @@ client through it, or through the `oer` facade's `embassy-ieee802154`
 feature at `oer::systems::esp32s31::embassy::ieee802154`, alone:
 `EspHalRadioPlatform` is what the facade's `radio::start` takes to create
 the `SharedRadio` and spawn its PHY tracking and coexistence schedule;
-`Ieee802154Parked::new` takes the radio's IEEE 802.15.4 partition and the
+`Ieee802154Parked::new` takes the boot's unique static runtime storage,
+the radio's IEEE 802.15.4 partition and the
 `Ieee802154PibDefaults`, and `start` joins the shared radio with them.
 `Ieee802154MacOwners` names the runtime's owners, and
 `Ieee802154CoexConfig` and `Ieee802154CoexLevel` the scene levels
@@ -224,8 +225,9 @@ while the rejected terminal, pending permits and queue remain in the shared
 teardown. The returned `Ieee802154Stopped` keeps stopped hardware separate
 from terminal quarantine; only `Reusable(Ieee802154Parked)` can feed `start`
 again. Reinstalling the returned hardware through the runtime API needs a
-new static runtime and its fresh queue permission. The composition's process
-singleton never reuses its quarantined queue.
+new static runtime and its fresh queue permission, or a chip reset. After
+`System::stop`, modem clocks, PHY membership and PTIs are released for other
+radio clients; the old runtime's terminals remain quarantined.
 
 `Uninstalled::Quarantined` does no MAC teardown.
 A quarantined runtime keeps its static engine and DMA backing installed;
@@ -235,11 +237,15 @@ that result touches no hardware and releases no ownership. A chip reset is
 required. This path never acquires the runtime's ISR mutex or the shared
 radio lease.
 
-The runtime claims queue permission once with an atomic compare/exchange.
-The permission contains a private reference to that claim; install checks
-its identity before touching hardware. Ordinary teardown returns it, while
-terminal quarantine retains it permanently. Hardware owners alone therefore cannot reconstruct an install over the
-old queue. This adds no shared lifecycle API and no new ISR lock.
+`Runtime::pin_static` consumes `&'static mut Runtime` and returns the shared
+runtime with its only `RuntimeQueue`. The staged `runtime_main` in the HIL
+agent and Thread example supplies this unique mutable reference at boot;
+`Ieee802154Parked::new`/`multipan` consume it and publish the shared IRQ view.
+The permission contains a private reference to a byte in that queue; install
+checks its identity before touching hardware. No acquisition flag or retry
+path remains. Ordinary teardown returns the permission; terminal quarantine
+retains it permanently. Hardware owners alone cannot reconstruct an install
+over the old queue. This adds no shared lifecycle API and no new ISR lock.
 
 ## Lifecycle cost
 

@@ -23,7 +23,7 @@ use log::{error, info};
 use oer::systems::esp32s31::embassy::ieee802154::{
     self as ieee802154, Esp32s31Ieee802154, EspHalRadioPlatform, Ieee802154CoexConfig,
     Ieee802154CoexLevel, Ieee802154Parked, Ieee802154PibDefaults, Ieee802154System,
-    Ieee802154SystemBackend, Ieee802154SystemClock,
+    Ieee802154SystemBackend, Ieee802154SystemClock, Ieee802154SystemRuntime,
     openthread::{
         MonotonicRadioClock, OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, PendingSlots,
         PortRssi,
@@ -120,6 +120,14 @@ extern "C" fn runtime_main() -> ! {
     let _psram =
         unsafe { oer_esp32s31_platform_board::adopt_psram(peripherals.PSRAM, INTERRUPT_TABLE) };
 
+    let storage = {
+        static mut STORAGE: Ieee802154SystemRuntime =
+            Ieee802154SystemRuntime::new(oer_time_embassy::EmbassyClock);
+        // SAFETY: bootstrap enters runtime_main once on CPU0 with interrupts
+        // disabled. This is STORAGE's only mutable reference; composition
+        // consumes it with Runtime::pin_static before publishing the runtime.
+        unsafe { &mut *core::ptr::addr_of_mut!(STORAGE) }
+    };
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     let interrupts = Interrupts::take().expect("the image takes its interrupt tokens once");
     assert!(
@@ -150,7 +158,7 @@ extern "C" fn runtime_main() -> ! {
     unsafe { oer_espressif_staged_runtime::enable_interrupts_after_handoff() };
     executor.run(interrupts.wake, |spawner| {
         spawner.spawn(
-            thread_task(spawner, platform, trng)
+            thread_task(spawner, platform, trng, storage)
                 .expect("thread task storage must be available once"),
         );
     })
@@ -161,12 +169,18 @@ async fn thread_task(
     spawner: embassy_executor::Spawner,
     platform: EspHalRadioPlatform,
     trng: Trng,
+    storage: &'static mut Ieee802154SystemRuntime,
 ) {
     let (radio, partitions) = shared_radio::start(spawner, platform, RadioStart::new())
         .expect("the shared radio starts once");
     let defaults = Ieee802154PibDefaults::default();
-    let parked = Ieee802154Parked::new(partitions.ieee802154, partitions.ieee802154_coex, defaults)
-        .expect("the IEEE 802.15.4 engine frames are taken once");
+    let parked = Ieee802154Parked::new(
+        partitions.ieee802154,
+        partitions.ieee802154_coex,
+        defaults,
+        storage,
+    )
+    .expect("the IEEE 802.15.4 engine frames are taken once");
     // Bring-up registers and calibrates the shared PHY; pin its future.
     let started = {
         let started = pin!(start(radio, parked, defaults));

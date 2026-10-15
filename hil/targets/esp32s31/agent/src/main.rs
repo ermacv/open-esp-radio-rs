@@ -425,6 +425,28 @@ extern "C" fn runtime_main() -> ! {
     // hardware mapping without reinitializing the PSRAM device or MMU.
     let _psram =
         unsafe { oer_esp32s31_platform_board::adopt_psram(peripherals.PSRAM, INTERRUPT_TABLE) };
+    #[cfg(any(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
+    let bluetooth_runtime = {
+        static mut STORAGE: oer_esp32s31_bluetooth_system::BluetoothSystemRuntime =
+            oer_esp32s31_bluetooth_system::BluetoothSystemRuntime::new(
+                oer_time_embassy::EmbassyClock,
+            );
+        // SAFETY: stage two enters runtime_main once on CPU0, before CPU1
+        // starts or interrupts are enabled. This is STORAGE's only mutable
+        // reference; composition consumes it with Runtime::pin_static.
+        unsafe { &mut *ptr::addr_of_mut!(STORAGE) }
+    };
+    #[cfg(feature = "ieee802154-radio")]
+    let ieee802154_runtime = {
+        static mut STORAGE: oer_esp32s31_ieee802154_system::Ieee802154SystemRuntime =
+            oer_esp32s31_ieee802154_system::Ieee802154SystemRuntime::new(
+                oer_time_embassy::EmbassyClock,
+            );
+        // SAFETY: the single CPU0 stage-two entry has not started CPU1 or
+        // enabled interrupts. This is STORAGE's only mutable reference;
+        // composition consumes it with Runtime::pin_static.
+        unsafe { &mut *ptr::addr_of_mut!(STORAGE) }
+    };
     exception::install_stack_guard(ptr::addr_of!(_stack_end) as usize);
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
     let l1_cache = L1_CACHE_PERFORMANCE.init(
@@ -534,6 +556,7 @@ extern "C" fn runtime_main() -> ! {
         ),
         transport::Usb::new(peripherals.USB_DEVICE, interrupts.console_usb),
         peripherals.RNG,
+        bluetooth_runtime,
     );
 
     #[cfg(feature = "system-panic-reset")]
@@ -596,6 +619,10 @@ extern "C" fn runtime_main() -> ! {
                 interrupts.wifi_mac,
                 interrupts.wifi_power,
             ),
+            #[cfg(feature = "ieee802154-radio")]
+            ieee802154_runtime,
+            #[cfg(feature = "wifi-ble-coex")]
+            bluetooth_runtime,
             #[cfg(feature = "wifi-ble-coex")]
             bluetooth_entropy,
             #[cfg(feature = "wifi-ble-coex")]

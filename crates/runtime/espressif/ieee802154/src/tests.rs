@@ -147,19 +147,36 @@ type Resources<'id, K, const EVENTS: usize> = RuntimeResources<
     Runtime<EVENTS>,
 >;
 
-fn parts<const EVENTS: usize>(runtime: &'static Runtime<EVENTS>) -> Parts {
+struct Fixture<const EVENTS: usize> {
+    runtime: &'static Runtime<EVENTS>,
+    queue: core::cell::Cell<Option<super::RuntimeQueue>>,
+}
+
+impl<const EVENTS: usize> core::ops::Deref for Fixture<EVENTS> {
+    type Target = Runtime<EVENTS>;
+    fn deref(&self) -> &Self::Target {
+        self.runtime
+    }
+}
+
+fn parts<const EVENTS: usize>(runtime: &'static Fixture<EVENTS>) -> Parts {
     let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
     let levels = Ieee802154TxPowerLevels::new(&LEVELS).unwrap();
     Ieee802154RuntimeParts {
         engine: Ieee802154Engine::new(buffers, levels, Ieee802154PibDefaults::default()),
         hardware: Ieee802154LlModel::default(),
-        queue: runtime.take_queue().unwrap(),
+        queue: runtime.queue.take().unwrap(),
     }
 }
 
 /// A new runtime for the test's whole life.
-fn runtime<const EVENTS: usize>() -> &'static Runtime<EVENTS> {
-    Box::leak(Box::new(Runtime::new(VirtualClock::new())))
+fn runtime<const EVENTS: usize>() -> &'static Fixture<EVENTS> {
+    let (runtime, queue) =
+        Runtime::pin_static(Box::leak(Box::new(Runtime::new(VirtualClock::new()))));
+    Box::leak(Box::new(Fixture {
+        runtime,
+        queue: core::cell::Cell::new(Some(queue)),
+    }))
 }
 
 /// Install `parts` in `runtime`: the backend of a disabled radio.
@@ -547,7 +564,6 @@ fn transmit_done(id: oer_ieee802154::RequestId, status: TxStatus) -> Ieee802154P
 fn a_radio_is_installed_once_and_sleeps_once_enabled() {
     let runtime = runtime::<4>();
     let backend = install::<Single, 4>(runtime, parts(runtime));
-    assert!(runtime.take_queue().is_none());
     assert_eq!(state(runtime), RadioState::Disabled);
     let reusable = run(backend, async |owner, _| {
         let owner = enabled_owner(owner.enable().await);
@@ -824,12 +840,11 @@ fn rejecting_first_or_middle_disable_event_quarantines_the_remaining_queue_and_o
         }
         assert_eq!(frames, 2 - reject_at);
         assert_eq!(terminals, 1);
-        assert!(runtime.take_queue().is_none());
         // Hardware can move to fresh storage. A fresh claim cannot unlock
         // the old queue, even when supplied to the wrong runtime explicitly.
         let fresh = self::runtime::<8>();
         let fresh_parts =
-            Ieee802154RuntimeParts::new(engine, hardware, fresh.take_queue().unwrap());
+            Ieee802154RuntimeParts::new(engine, hardware, fresh.queue.take().unwrap());
         let Err(fresh_parts) =
             runtime.install::<Single>(fresh_parts, FixedRandom, Ieee802154PibDefaults::default())
         else {
@@ -1162,7 +1177,7 @@ fn interface_keys_belong_to_their_interface() {
             Ieee802154Interfaces::new(2).unwrap(),
         ),
         hardware: Ieee802154LlModel::default(),
-        queue: runtime.take_queue().unwrap(),
+        queue: runtime.queue.take().unwrap(),
     };
     run(
         install::<Multipan, 4>(runtime, parts),
@@ -1476,7 +1491,6 @@ fn accounting_violation_during_disable_retains_terminals_but_returns_stopped_har
         1,
         "the real TX terminal remains retained"
     );
-    assert!(runtime.take_queue().is_none());
 }
 
 #[test]
@@ -1646,7 +1660,6 @@ fn abandonment_never_enters_the_lock_held_by_an_isr() {
                     cause: RadioFault::StateLost
                 })
             );
-            assert!(runtime.take_queue().is_none());
         });
     }
 }
@@ -1694,7 +1707,6 @@ fn poisoned_uninstall_keeps_backing_without_taking_the_isr_lock() {
                 .load(core::sync::atomic::Ordering::Acquire)
         );
     });
-    assert!(runtime.take_queue().is_none());
 }
 
 /// The runner owns neither the delay nor the transmission. Cancel at every

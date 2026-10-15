@@ -1694,6 +1694,14 @@ async fn report_network(iface: Iface<'static>, network_interface: WifiNetworkInt
 
 /// The platform owners of the shared radio and of its Wi-Fi client.
 pub(crate) struct RadioPlatforms {
+    /// Runtime storage handed over once by the staged CPU0 entry.
+    #[cfg(feature = "ieee802154-radio")]
+    pub(crate) ieee802154_runtime:
+        &'static mut oer_esp32s31_ieee802154_system::Ieee802154SystemRuntime,
+    /// Runtime storage handed over once by the staged CPU0 entry.
+    #[cfg(feature = "wifi-ble-coex")]
+    pub(crate) bluetooth_runtime:
+        &'static mut oer_esp32s31_bluetooth_system::BluetoothSystemRuntime,
     pub(crate) radio: oer_esp32s31_ieee80211_system::EspHalRadioPlatform,
     pub(crate) wifi: oer_esp32s31_ieee80211_system::EspHalWifiPlatform,
     /// The Bluetooth client's random source, which owns the SoC entropy
@@ -1761,7 +1769,8 @@ pub async fn run(
             let air_check = core::pin::pin!(ieee802154::run_air_check(
                 spawner,
                 platforms.radio,
-                check.request
+                check.request,
+                platforms.ieee802154_runtime,
             ));
             let evidence = air_check.await;
             publish_event_reliably(
@@ -1779,7 +1788,8 @@ pub async fn run(
                 spawner,
                 platforms.radio,
                 start.request_id,
-                start.config
+                start.config,
+                platforms.ieee802154_runtime,
             ));
             session.await;
             return;
@@ -1791,7 +1801,8 @@ pub async fn run(
                 spawner,
                 platforms.radio,
                 start.request_id,
-                start.request
+                start.request,
+                platforms.ieee802154_runtime,
             ));
             thread.await;
             return;
@@ -1933,6 +1944,10 @@ pub async fn run(
         .as_ref()
         .and_then(|artifact| crate::phy_calibration_artifact::decode(artifact.bytes()));
     let RadioPlatforms {
+        #[cfg(feature = "ieee802154-radio")]
+            ieee802154_runtime: _,
+        #[cfg(feature = "wifi-ble-coex")]
+        bluetooth_runtime,
         radio: radio_platform,
         wifi: wifi_platform,
         #[cfg(feature = "wifi-ble-coex")]
@@ -1972,6 +1987,7 @@ pub async fn run(
         bluetooth_interrupts,
         bluetooth_address,
         bluetooth_entropy,
+        bluetooth_runtime,
     );
 
     let started_at = Instant::now();

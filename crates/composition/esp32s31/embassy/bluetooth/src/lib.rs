@@ -7,7 +7,11 @@
 //! (`oer-esp32s31-radio-runtime`). [`BluetoothParked::new`] claims the static
 //! controller memory once per boot: the BLE PHY environment, the
 //! direction-finding workspace, one pool per role and both global receive
-//! chains, all placed in internal SRAM. [`start`] then runs one Controller
+//! chains, all placed in internal SRAM. It also consumes the unique
+//! `&'static mut BluetoothSystemRuntime` supplied by the staged `runtime_main`
+//! in `hil/targets/esp32s31/agent/src/main.rs`. `Runtime::pin_static` returns
+//! the shared runtime and its affine queue claim without an acquisition flag
+//! or retry path. [`start`] then runs one Controller
 //! epoch from the parked partition to an installed radio runtime:
 //!
 //! 1. enters common radio power and enables the Bluetooth module clocks,

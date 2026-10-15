@@ -54,6 +54,7 @@ enum Opening {
 /// host's commands until it stops the session or restarts the radio.
 struct SessionBody<'b> {
     config: Ieee802154SessionConfig,
+    storage: &'static mut oer_esp32s31_ieee802154_system::Ieee802154SystemRuntime,
     channel: Channel,
     opening: Opening,
     system: &'b mut Ieee802154System,
@@ -176,7 +177,7 @@ pub(in crate::product_hil) async fn run_session(
         .await;
         return;
     };
-    let Some((mut client, parked)) = Client::claim(spawner, platform) else {
+    let Some((mut client, parked)) = Client::claim(spawner, platform, storage) else {
         publish_event_reliably(
             0,
             request_id,

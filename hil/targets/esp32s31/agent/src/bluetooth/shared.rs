@@ -40,6 +40,7 @@ pub(crate) fn start(
     interrupts: oer_esp32s31_radio_esp_hal::EspHalBluetoothInterruptRoutes,
     public_address: BluetoothPublicDeviceAddress,
     entropy: &'static BluetoothEntropy<'static>,
+    storage: &'static mut oer_esp32s31_bluetooth_system::BluetoothSystemRuntime,
 ) {
     spawner.spawn(
         client(
@@ -50,6 +51,7 @@ pub(crate) fn start(
             interrupts,
             public_address,
             entropy,
+            storage,
         )
         .expect("Bluetooth client task must allocate once"),
     );
@@ -75,8 +77,9 @@ async fn client(
     interrupts: oer_esp32s31_radio_esp_hal::EspHalBluetoothInterruptRoutes,
     public_address: BluetoothPublicDeviceAddress,
     entropy: &'static BluetoothEntropy<'static>,
+    storage: &'static mut oer_esp32s31_bluetooth_system::BluetoothSystemRuntime,
 ) {
-    let Ok(parked) = BluetoothParked::new(partition, coex, interrupts) else {
+    let Ok(parked) = BluetoothParked::new(partition, coex, interrupts, storage) else {
         crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-memory\r\n");
     };
     let (system, backend) =

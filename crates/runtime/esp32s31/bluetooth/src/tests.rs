@@ -583,10 +583,12 @@ impl Fixture {
 /// A runtime for the model's scheduler policy and sleep clock, with no
 /// radio installed.
 fn new_runtime() -> Fixture {
-    let runtime = std::boxed::Box::leak(std::boxed::Box::new(Runtime::new(clock())));
+    let (runtime, queue) = Runtime::pin_static(std::boxed::Box::leak(std::boxed::Box::new(
+        Runtime::new(clock()),
+    )));
     Fixture {
         runtime,
-        queue: core::cell::Cell::new(runtime.take_queue()),
+        queue: core::cell::Cell::new(Some(queue)),
         driver: core::cell::Cell::new(None),
     }
 }
@@ -993,7 +995,6 @@ fn rejecting_first_or_middle_disable_outcome_preserves_it_and_its_successors() {
             remaining, expected,
             "dropping quarantine preserved every outcome"
         );
-        assert!(runtime.runtime.take_queue().is_none());
         drop(hardware);
         assert_eq!(
             Rc::strong_count(&model.0),

@@ -50,8 +50,8 @@
 //! returns hardware separately from the unread queue; composition can release
 //! its clocks and PHY membership. The stream ends `EventEnd::Quarantined`.
 //! Only the old queue and its affine [`RuntimeQueue`] claim remain retained.
-//! Initial installation consumes a claim from [`BluetoothRuntime::take_queue`];
-//! ordinary uninstall returns it. A rejected queue never issues another claim,
+//! Initial installation consumes a claim from [`BluetoothRuntime::pin_static`];
+//! ordinary uninstall returns it. A rejected queue has no second claim,
 //! so reinstalling returned hardware needs a fresh runtime and queue.
 //!
 //! Only confirmed retirement returns hardware; `BluetoothRetained`

@@ -237,7 +237,6 @@ controller_memory!(NON_SCANNING_CHAIN: LeRxChainStorage<RX_PACKETS> = LeRxChainS
 
 static CELLS: ControllerEventCells = ControllerEventCells::new();
 static PUBLISHED: StaticCell<Storage> = StaticCell::new();
-static RUNTIME: BluetoothSystemRuntime = BluetoothRuntime::new(EmbassyClock);
 static MODEM_TIMER_WAKE: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 static INTERRUPT_FAULT: Signal<CriticalSectionRawMutex, BluetoothInterruptFault> = Signal::new();
 static DISPATCH: Mutex<Cell<Option<Dispatch>>> = Mutex::new(Cell::new(None));
@@ -266,6 +265,12 @@ struct ControllerMemory {
     radio: BluetoothSystemMemory,
 }
 
+/// The boot's pinned runtime and its exclusive queue permission travel together.
+struct ParkedRuntime {
+    port: &'static BluetoothSystemRuntime,
+    queue: oer_esp32s31_bluetooth_runtime::RuntimeQueue,
+}
+
 /// The Bluetooth partition and the controller memory while the Controller
 /// is stopped.
 #[must_use = "the parked Bluetooth client retains its partition and memory"]
@@ -276,7 +281,7 @@ pub struct BluetoothParked {
     memory: ControllerMemory,
     /// Interrupt-owner storage published by an earlier epoch of this boot.
     published: Option<&'static Storage>,
-    queue: oer_esp32s31_bluetooth_runtime::RuntimeQueue,
+    queue: ParkedRuntime,
 }
 
 /// Hardware and controller memory after composition teardown, without the
@@ -317,6 +322,8 @@ impl BluetoothParked {
     /// Claim the static controller memory once per boot and park it with
     /// `partition` and its coexistence state `coex`; keep `interrupts`, the routes of the Controller's sources
     /// in the image's interrupt table, for every epoch of the boot.
+    /// `storage` is the unique mutable runtime provided by the platform's
+    /// staged entry; pinning it consumes the boot's queue claim.
     ///
     /// # Errors
     ///
@@ -326,6 +333,7 @@ impl BluetoothParked {
         partition: BluetoothPartition,
         coex: CoexAbsent<BluetoothClient>,
         interrupts: EspHalBluetoothInterruptRoutes,
+        storage: &'static mut BluetoothSystemRuntime,
     ) -> Result<Self, BluetoothMemoryError> {
         let numbers =
             SchedulerAllocationConfig::new((LEGACY + CONNECTABLE) as u16, CONNECTIONS as u16, 0)
@@ -384,6 +392,7 @@ impl BluetoothParked {
         {
             unreachable!("the boot claimed the Controller memory, and with it the routes, once");
         }
+        let (port, queue) = BluetoothRuntime::pin_static(storage);
         Ok(Self {
             coex,
             partition,
@@ -393,7 +402,7 @@ impl BluetoothParked {
                 radio,
             },
             published: None,
-            queue: claim(RUNTIME.take_queue())?,
+            queue: ParkedRuntime { port, queue },
         })
     }
 
@@ -629,6 +638,7 @@ struct Epoch {
 #[must_use = "the running Bluetooth client must be stopped"]
 // CAPABILITY: bluetooth-powered-shutdown, bluetooth-always-awake-controller, bluetooth-internal-wi-fi-bluetooth-coexistence, bluetooth-wi-fi-bluetooth-ieee-802-15-4-radio-coordination, coex-protocol-integration-and-lifetime-live-bt-ble-requests
 pub struct BluetoothSystem {
+    port: &'static BluetoothSystemRuntime,
     epoch: Epoch,
     /// The common power proof.
     power: CommonPower<BluetoothClient>,
@@ -661,17 +671,17 @@ impl BluetoothSystem {
         match select4(
             modem_timer,
             INTERRUPT_FAULT.wait(),
-            publish_coex_status(radio),
-            follow_coex_sharing(radio),
+            publish_coex_status(self.port, radio),
+            follow_coex_sharing(self.port, radio),
         )
         .await
         {
             Either4::First(fault) => {
-                RUNTIME.platform_fault();
+                self.port.platform_fault();
                 BluetoothRunnerFault::ModemTimer(fault)
             }
             Either4::Second(fault) => {
-                RUNTIME.platform_fault();
+                self.port.platform_fault();
                 BluetoothRunnerFault::Interrupt(fault)
             }
             Either4::Third(never) | Either4::Fourth(never) => match never {},
@@ -707,6 +717,7 @@ impl BluetoothSystem {
         radio: &RadioSystem<P, C, EmbassyClock>,
     ) -> Result<BluetoothStopped, BluetoothStopFailure> {
         let Self {
+            port,
             epoch,
             power,
             coexisting,
@@ -796,8 +807,8 @@ impl BluetoothSystem {
         let mut guard = radio.lock().await;
         // The scheduler is stopped: no role is active any more.
         guard.clear_coex_status_bits(CoexStatusType::Ble, BLE_COEX_STATUS_ALL);
-        RUNTIME.clear_activity();
-        RUNTIME.set_coexistence(false);
+        port.clear_activity();
+        port.set_coexistence(false);
         let (retired, last) = match retire(guard.lease(), task, retained, output, timer) {
             Ok(retired) => retired,
             Err(failure) => {
@@ -874,7 +885,7 @@ impl BluetoothSystem {
                     coex,
                     memory,
                     published: Some(published),
-                    queue,
+                    queue: ParkedRuntime { port, queue },
                 }),
                 QueueEnd::Quarantined(terminals) => BluetoothStopped::TerminalsQuarantined {
                     parts: BluetoothStoppedHardware {
@@ -901,6 +912,7 @@ impl BluetoothSystem {
 
 #[derive(Clone, Copy)]
 struct Dispatch {
+    port: &'static BluetoothSystemRuntime,
     published: &'static Storage,
     scheduler_wake: &'static SchedulerWakeCell,
     modem_timer_wake: &'static ModemLpTimerWorkerWakeCell,
@@ -933,7 +945,7 @@ fn dispatch(source: EspHalBluetoothInterruptSource) -> EspHalBluetoothInterruptD
                             scheduler: SchedulerWakePublication::WakeWorker,
                             ..
                         } => {
-                            RUNTIME.on_scheduler_wake();
+                            dispatch.port.on_scheduler_wake();
                             EspHalBluetoothInterruptDisposition::Serviced
                         }
                         PrimaryPublishedInterruptStep::Scheduler { .. }
@@ -979,11 +991,7 @@ fn dispatch(source: EspHalBluetoothInterruptSource) -> EspHalBluetoothInterruptD
 fn unwind_powered(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     powered: PoweredOwner,
-    parked: (
-        ControllerMemory,
-        Option<&'static Storage>,
-        oer_esp32s31_bluetooth_runtime::RuntimeQueue,
-    ),
+    parked: (ControllerMemory, Option<&'static Storage>, ParkedRuntime),
     error: BluetoothStartError,
     power: CommonPower<BluetoothClient>,
     coex: CoexAbsent<BluetoothClient>,
@@ -1209,11 +1217,12 @@ fn apply_coex_status<P, C: PlatformClockProvider>(
 /// Publish every change of the Controller's active roles as Bluetooth LE
 /// schedule status. [`BluetoothSystem::stop`] withdraws what is left.
 async fn publish_coex_status<P, C: PlatformClockProvider>(
+    port: &'static BluetoothSystemRuntime,
     radio: &RadioSystem<P, C, EmbassyClock>,
 ) -> core::convert::Infallible {
     let mut published = RadioActivity::IDLE;
     loop {
-        let activity = RUNTIME.next_activity().await;
+        let activity = port.next_activity().await;
         if activity == published {
             continue;
         }
@@ -1225,10 +1234,11 @@ async fn publish_coex_status<P, C: PlatformClockProvider>(
 /// Follow whether another radio shares the antenna, as the vendor BLE
 /// Controller's `coex_register_ble_cb` start and stop callbacks do.
 async fn follow_coex_sharing<P, C: PlatformClockProvider>(
+    port: &'static BluetoothSystemRuntime,
     radio: &RadioSystem<P, C, EmbassyClock>,
 ) -> core::convert::Infallible {
     loop {
-        RUNTIME.set_coexistence(radio.bluetooth_coex_started().await);
+        port.set_coexistence(radio.bluetooth_coex_started().await);
     }
 }
 
@@ -1239,7 +1249,7 @@ async fn publish_and_install(
     runtime: BlePhyRuntime<'static, MODEM_TIMER_CAPACITY>,
     radio_memory: BluetoothSystemMemory,
     published: Option<&'static Storage>,
-    queue: oer_esp32s31_bluetooth_runtime::RuntimeQueue,
+    queue: ParkedRuntime,
     power: CommonPower<BluetoothClient>,
     coexisting: Coexisting<BluetoothClient>,
 ) -> Result<
@@ -1249,6 +1259,7 @@ async fn publish_and_install(
     ),
     BluetoothStartFailure,
 > {
+    let ParkedRuntime { port, queue } = queue;
     let BlePhyRuntime {
         endpoints,
         output,
@@ -1303,6 +1314,7 @@ async fn publish_and_install(
     let modem_timer = ControllerModemTimerTask::new(published, modem_timer);
     critical_section::with(|cs| {
         DISPATCH.borrow(cs).set(Some(Dispatch {
+            port,
             published,
             scheduler_wake: interrupt.scheduler_wake(),
             modem_timer_wake: interrupt.modem_lp_timer_worker_wake(),
@@ -1324,7 +1336,7 @@ async fn publish_and_install(
             ));
         }
     };
-    let installed = RUNTIME
+    let installed = port
         .install(
             radio_memory,
             LiveBluetoothHardware::new(task, published, LOCAL_SLEEP_CLOCK_PPM),
@@ -1350,6 +1362,7 @@ async fn publish_and_install(
     };
     Ok((
         BluetoothSystem {
+            port,
             epoch: Epoch {
                 modem_timer,
                 bound,

@@ -102,6 +102,8 @@ sink returns `Break`. Uninstall must still run `mac_deinit` (disabled PTIs)
 and `engine.disable`. `TerminalsQuarantined` returns `MacStoppedParts` while
 retaining only unread events and permits. `System::stop` then releases clocks
 and shared PHY exactly as for reusable owners. `RuntimeQueue` is a private,
-affine claim issued once per static runtime; only normal reusable teardown
-returns it. Hardware extracted from terminal quarantine needs fresh queue
+affine claim obtained with `Runtime::pin_static(&'static mut Runtime)`; only
+normal reusable teardown returns it. The staged `runtime_main` in the HIL
+agent and Thread example supplies the unique mutable storage at boot, before
+interrupts are enabled. There is no acquisition flag or repeated request. Hardware extracted from terminal quarantine needs fresh queue
 storage and cannot be installed back with the old queue.

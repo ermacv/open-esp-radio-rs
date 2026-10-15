@@ -57,7 +57,7 @@
 //! shared `Quarantined`; composition releases clocks and PHY normally.
 //!
 //! [`RuntimeQueue`] is an affine claim on one static runtime's event storage.
-//! Claim it once through [`Ieee802154Runtime::take_queue`] and pass it to
+//! Obtain it through [`Ieee802154Runtime::pin_static`] and pass it to
 //! [`Ieee802154RuntimeParts::new`]. Ordinary uninstall returns the claim;
 //! terminal quarantine does not. Stopped hardware requires a new runtime
 //! and its fresh queue before another install. A foreign claim cannot unlock
@@ -277,13 +277,13 @@ pub struct Ieee802154RuntimeParts<'storage, H> {
 
 /// Affine permission to use one runtime's event storage.
 ///
-/// Only [`Ieee802154Runtime::take_queue`] creates this permission, once for
-/// each runtime. Ordinary uninstall returns it with the hardware. A rejected
-/// terminal retains it permanently: stopped hardware alone cannot reinstall
-/// the old queue.
+/// Only [`Ieee802154Runtime::pin_static`] creates this permission by consuming
+/// the runtime's unique static mutable borrow. Ordinary uninstall returns it
+/// with the hardware. A rejected terminal retains it permanently: stopped
+/// hardware alone cannot reinstall the old queue.
 #[must_use = "retain the exclusive queue claim through install and teardown"]
 pub struct RuntimeQueue {
-    claimed: &'static AtomicBool,
+    identity: &'static u8,
 }
 
 impl<'storage, H> Ieee802154RuntimeParts<'storage, H> {
@@ -326,7 +326,8 @@ pub enum Uninstalled<P, Stopped, S> {
     /// Ordinary teardown completed and returned its owners.
     Reusable(P),
     /// Hardware completed teardown; only undelivered terminals and their
-    /// queue remain quarantined. Reinstallation needs fresh queue storage.
+    /// queue remain quarantined. Reinstallation needs a new static runtime
+    /// or chip reset; composition releases clocks and PHY through `System::stop`.
     TerminalsQuarantined {
         /// Stopped hardware for composition to release clocks and PHY.
         parts: Stopped,
@@ -393,6 +394,8 @@ struct Entry {
 /// them, and the loss of received frames is reported in its order, in
 /// place of the first dropped frame.
 struct EventQueue<M: RawMutex, const EVENTS: usize> {
+    // Non-zero-sized, stable identity; its value has no state semantics.
+    identity: u8,
     entries: Channel<M, Entry, EVENTS>,
     owed: Mutex<M, RefCell<Owed>>,
     /// Raised when a loss is pending without a queued entry.
@@ -402,6 +405,7 @@ struct EventQueue<M: RawMutex, const EVENTS: usize> {
 impl<M: RawMutex, const EVENTS: usize> EventQueue<M, EVENTS> {
     const fn new() -> Self {
         Self {
+            identity: 0,
             entries: Channel::new(),
             owed: Mutex::new(RefCell::new(Owed {
                 lost: false,
@@ -546,7 +550,6 @@ pub struct Ieee802154Runtime<'storage, M: RawMutex, H, T, R, const EVENTS: usize
     timer: T,
     installed: Mutex<M, RefCell<Option<Installed<'storage, H, R>>>>,
     events: EventQueue<M, EVENTS>,
-    queue_claimed: AtomicBool,
     /// When the running backoff or retry delay ends.
     backoff_until: Mutex<M, Cell<Option<Instant>>>,
     /// Raised when a delay starts, so an awaiting consumer rearms.
@@ -593,7 +596,6 @@ impl<
             timer,
             installed: Mutex::new(RefCell::new(None)),
             events: EventQueue::new(),
-            queue_claimed: AtomicBool::new(false),
             backoff_until: Mutex::new(Cell::new(None)),
             backoff_started: Signal::new(),
             next_id: Mutex::new(Cell::new(1)),
@@ -609,18 +611,29 @@ impl<
         &self.timer
     }
 
-    /// Claim this runtime's event storage exactly once.
+    /// Permanently lend this runtime and return its one queue permission.
     ///
-    /// Keep the returned permission with the hardware across ordinary
-    /// uninstall/install cycles. If terminals are quarantined, use a new
-    /// runtime and its fresh queue; this runtime never issues another claim.
-    pub fn take_queue(&'static self) -> Option<RuntimeQueue> {
-        self.queue_claimed
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .ok()
-            .map(|_| RuntimeQueue {
-                claimed: &self.queue_claimed,
-            })
+    /// The platform or staged runtime entry supplies the unique mutable
+    /// reference once at boot. The S31 staged `runtime_main` entries in
+    /// `hil/targets/esp32s31/agent/src/main.rs` and
+    /// `examples/esp32s31/thread/src/main.rs` each create that reference before
+    /// enabling interrupts, then hand the storage to composition.
+    /// Consuming that borrow prevents a second token, moving the storage,
+    /// or recovering mutable access. There is no acquisition flag or retry.
+    ///
+    /// Ordinary uninstall returns the permission. After
+    /// [`Uninstalled::TerminalsQuarantined`], another installation needs a new
+    /// static runtime or a chip reset. Composition's completed `System::stop`
+    /// releases clocks and PHY membership; MAC teardown has restored PTIs,
+    /// so those resources remain available to other radios.
+    pub fn pin_static(storage: &'static mut Self) -> (&'static Self, RuntimeQueue) {
+        let runtime: &'static Self = storage;
+        (
+            runtime,
+            RuntimeQueue {
+                identity: &runtime.events.identity,
+            },
+        )
     }
 
     /// Start the timer of a transmission's backoff or retry delay, if one is
@@ -671,7 +684,7 @@ impl<
         'storage: 'static,
     {
         if self.abandoned.load(Ordering::Acquire)
-            || !core::ptr::eq(parts.queue.claimed, &self.queue_claimed)
+            || !core::ptr::eq(parts.queue.identity, &self.events.identity)
         {
             return Err(parts);
         }

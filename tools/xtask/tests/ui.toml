@@ -341,3 +341,17 @@ packages = ["oer-esp32s31-bluetooth-runtime"]
 features = []
 targets = ["esp32s31"]
 cases = ["crates/runtime/esp32s31/bluetooth/tests/ui/queue_once.rs"]
+
+[[suite]]
+name = "ieee802154-static-queue-permission"
+packages = ["oer-espressif-ieee802154-runtime", "oer-espressif-ieee802154-engine", "embassy-sync", "oer-time"]
+features = []
+targets = ["host", "esp32s31"]
+cases = ["crates/runtime/espressif/ieee802154/tests/ui/queue_storage_once.rs"]
+
+[[suite]]
+name = "bluetooth-static-queue-permission"
+packages = ["oer-esp32s31-bluetooth-runtime", "oer-esp32s31-bluetooth-system"]
+features = []
+targets = ["esp32s31"]
+cases = ["crates/runtime/esp32s31/bluetooth/tests/ui/queue_storage_once.rs"]

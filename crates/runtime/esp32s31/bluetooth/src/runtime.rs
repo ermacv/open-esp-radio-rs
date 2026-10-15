@@ -144,11 +144,12 @@ pub enum BluetoothUninstallError<E> {
 }
 
 /// Affine permission to use one runtime's outcome queue.
-/// Only `BluetoothRuntime::take_queue` creates it, once. Ordinary uninstall
-/// returns it; rejected outcomes retain it permanently with the old queue.
+/// Only `BluetoothRuntime::pin_static` creates it from the unique static
+/// mutable runtime borrow. Ordinary uninstall returns it; rejected outcomes
+/// retain it permanently with the old queue.
 #[must_use = "retain the exclusive queue claim through install and teardown"]
 pub struct RuntimeQueue {
-    claimed: &'static AtomicBool,
+    identity: &'static u8,
 }
 
 /// Hardware retirement and outcome-queue ownership are independent.
@@ -327,6 +328,8 @@ struct Entry {
 /// nothing acknowledges (advertising and scan reports) and reports the loss
 /// in place of the first dropped one.
 struct OutcomeQueue<M: RawMutex, const EVENTS: usize, const CONNECTIONS: usize> {
+    // Non-zero-sized, stable identity; its value has no state semantics.
+    identity: u8,
     entries: Channel<M, Entry, EVENTS>,
     owed: BlockingMutex<M, RefCell<Owed<CONNECTIONS>>>,
 }
@@ -336,6 +339,7 @@ impl<M: RawMutex, const EVENTS: usize, const CONNECTIONS: usize>
 {
     const fn new() -> Self {
         Self {
+            identity: 0,
             entries: Channel::new(),
             owed: BlockingMutex::new(RefCell::new(Owed {
                 lost: false,
@@ -640,7 +644,6 @@ pub struct BluetoothRuntime<
 > {
     /// A radio is installed: its driver and backend exist.
     occupied: AtomicBool,
-    queue_claimed: AtomicBool,
     terminal_rejected: AtomicBool,
     outcomes: OutcomeQueue<M, EVENTS, CONNECTIONS>,
     /// Why the radio or the driver faulted; a new install clears it.
@@ -830,7 +833,6 @@ impl<
         Self {
             timer,
             occupied: AtomicBool::new(false),
-            queue_claimed: AtomicBool::new(false),
             terminal_rejected: AtomicBool::new(false),
             outcomes: OutcomeQueue::new(),
             fault: BlockingMutex::new(RefCell::new(PoisonState::new())),
@@ -852,15 +854,24 @@ impl<
         }
     }
 
-    /// Claim this runtime's outcome storage once for the boot. Ordinary
-    /// uninstall returns this permission; rejected outcomes retain it.
-    pub fn take_queue(&'static self) -> Option<RuntimeQueue> {
-        self.queue_claimed
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .ok()
-            .map(|_| RuntimeQueue {
-                claimed: &self.queue_claimed,
-            })
+    /// Permanently lend the runtime and return its only queue permission.
+    ///
+    /// The platform or staged entry supplies the unique mutable reference
+    /// once at boot. The S31 HIL staged `runtime_main` in
+    /// `hil/targets/esp32s31/agent/src/main.rs` does this before starting CPU1
+    /// or enabling interrupts, then transfers the storage to composition.
+    /// Consuming the static borrow prevents a second token or mutable access;
+    /// no acquisition flag or
+    /// retry is needed. Ordinary uninstall returns this same permission;
+    /// quarantined outcomes retain it and require fresh static storage.
+    pub fn pin_static(storage: &'static mut Self) -> (&'static Self, RuntimeQueue) {
+        let runtime: &'static Self = storage;
+        (
+            runtime,
+            RuntimeQueue {
+                identity: &runtime.outcomes.identity,
+            },
+        )
     }
 
     /// Publish the receive chains of `memory`, take the first controller-time
@@ -997,7 +1008,7 @@ impl<
                 queue,
             ));
         }
-        if !core::ptr::eq(queue.claimed, &self.queue_claimed) {
+        if !core::ptr::eq(queue.identity, &self.outcomes.identity) {
             return Err((BluetoothInstallError::ForeignQueue, memory, hardware, queue));
         }
         if hardware.scheduler_config() != C::SCHEDULER

@@ -108,3 +108,10 @@ normally, returning `BluetoothStopped::TerminalsQuarantined`. Only ordinary
 `Reusable` returns the old queue claim; fresh hardware installation needs a
 fresh static runtime/queue. The stream reports `EventEnd::Quarantined` after
 sink rejection and never drains retained outcomes through the public API.
+
+`Runtime::pin_static(&'static mut Runtime)` consumes the boot's unique mutable
+storage and returns its shared view with the only `RuntimeQueue`; no queue
+acquisition flag or retry remains. The HIL agent's staged `runtime_main`
+supplies that reference before CPU1 starts or interrupts are enabled.
+Composition carries the shared runtime and queue claim through parked epochs;
+the dispatcher receives only the shared view. Install checks queue identity.

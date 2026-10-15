@@ -1739,6 +1739,7 @@ dependencies = [
  "oer-esp32s31-platform-layout",
  "oer-espressif-executor-embassy",
  "oer-espressif-staged-runtime",
+ "oer-time-embassy",
  "open-esp-radio",
  "openthread",
  "static_cell",

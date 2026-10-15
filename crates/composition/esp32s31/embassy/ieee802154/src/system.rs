@@ -1,6 +1,6 @@
 //! Bring-up and teardown of the IEEE 802.15.4 client on the chip.
 
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, once_lock::OnceLock};
 use oer_esp32s31_coex::CoexError;
 use oer_esp32s31_hal::{
     ieee802154::{
@@ -113,7 +113,14 @@ impl Ieee802154Random for HardwareRandom {
     }
 }
 
-static RUNTIME: Ieee802154SystemRuntime = Ieee802154Runtime::new(EmbassyClock);
+// Only the shared IRQ view is published here. The mutable storage comes
+// from runtime_main and is consumed by pin_static before the route is bound.
+static IRQ_RUNTIME: OnceLock<&'static Ieee802154SystemRuntime> = OnceLock::new();
+
+struct ParkedRuntime {
+    runtime: &'static Ieee802154SystemRuntime,
+    queue: RuntimeQueue,
+}
 
 /// The interrupt-table handler of `MODEM_ZB_MAC`.
 #[allow(
@@ -122,7 +129,9 @@ static RUNTIME: Ieee802154SystemRuntime = Ieee802154Runtime::new(EmbassyClock);
 )]
 #[unsafe(link_section = ".rwtext.open_radio_irq")]
 pub fn ieee802154_interrupt() {
-    RUNTIME.on_interrupt();
+    if let Some(runtime) = IRQ_RUNTIME.try_get() {
+        runtime.on_interrupt();
+    }
 }
 
 oer_memory::zeroed_static! {
@@ -143,7 +152,7 @@ pub struct Ieee802154Parked {
     pub coex: CoexAbsent<Ieee802154Client>,
     /// The MAC engine and its receive storage.
     pub engine: Ieee802154Engine<'static>,
-    queue: RuntimeQueue,
+    queue: ParkedRuntime,
 }
 
 /// Hardware after composition released clocks, PHY membership and common power.
@@ -175,14 +184,20 @@ pub enum Ieee802154Stopped {
 impl Ieee802154Parked {
     /// Park a partition with a fresh engine over the composition's
     /// DMA-visible frames, using the ESP32-S31 BTBB transmit-power levels.
+    /// `storage` is the unique static mutable runtime supplied by the
+    /// platform or staged `runtime_main` once at boot; this consumes its
+    /// queue permission and publishes only an IRQ reference.
     /// `None` once an engine took the frames.
     pub fn new(
         partition: Ieee802154RadioPartition,
         coex: CoexAbsent<Ieee802154Client>,
         defaults: Ieee802154PibDefaults,
+        storage: &'static mut Ieee802154SystemRuntime,
     ) -> Option<Self> {
         let buffers = ENGINE_BUFFERS.try_take()?;
-        let queue = RUNTIME.take_queue()?;
+        let (runtime, queue) = Ieee802154Runtime::pin_static(storage);
+        IRQ_RUNTIME.init(runtime).ok()?;
+        let queue = ParkedRuntime { runtime, queue };
         Some(Self {
             queue,
             partition,
@@ -199,15 +214,19 @@ impl Ieee802154Parked {
     /// interfaces (`CONFIG_IEEE802154_MULTI_PAN_ENABLE`,
     /// `CONFIG_IEEE802154_INTERFACE_NUM`): the runtime's radio then accepts
     /// interface settings and transmissions of each interface. `None` once
-    /// an engine took the composition's DMA-visible frames.
+    /// an engine took the composition's DMA-visible frames. `storage` comes
+    /// from the staged boot entry, as for [`Self::new`].
     pub fn multipan(
         partition: Ieee802154RadioPartition,
         coex: CoexAbsent<Ieee802154Client>,
         defaults: Ieee802154PibDefaults,
         interfaces: Ieee802154Interfaces,
+        storage: &'static mut Ieee802154SystemRuntime,
     ) -> Option<Self> {
         let buffers = ENGINE_BUFFERS.try_take()?;
-        let queue = RUNTIME.take_queue()?;
+        let (runtime, queue) = Ieee802154Runtime::pin_static(storage);
+        IRQ_RUNTIME.init(runtime).ok()?;
+        let queue = ParkedRuntime { runtime, queue };
         Some(Self {
             queue,
             partition,
@@ -328,6 +347,7 @@ pub struct Ieee802154StopFailure {
 #[must_use = "the running IEEE 802.15.4 client must be stopped"]
 // CAPABILITY: ieee802154-mac-operation-subset
 pub struct Ieee802154System {
+    runtime: &'static Ieee802154SystemRuntime,
     route: RegisteredIeee802154OperationalRoute,
     /// The scene levels the MAC's priorities were resolved with
     /// (`s_coex_config`).
@@ -371,7 +391,7 @@ fn unwind_clocked(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     clocked: Ieee802154Clocked,
     engine: Ieee802154Engine<'static>,
-    queue: RuntimeQueue,
+    queue: ParkedRuntime,
     error: Ieee802154StartError,
     power: CommonPower<Ieee802154Client>,
     coex: CoexAbsent<Ieee802154Client>,
@@ -394,7 +414,7 @@ fn unwind_powered(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     powered: Ieee802154Powered,
     engine: Ieee802154Engine<'static>,
-    queue: RuntimeQueue,
+    queue: ParkedRuntime,
     error: Ieee802154StartError,
     power: CommonPower<Ieee802154Client>,
     coex: CoexAbsent<Ieee802154Client>,
@@ -600,9 +620,10 @@ pub async fn start<K: Ieee802154RuntimeCaps, P, C: PlatformClockProvider>(
         route,
     } = RegisteredIeee802154Operational::new(foundation, membership);
     let interrupts = interrupts.activate(&mut task);
+    let ParkedRuntime { runtime, queue } = queue;
     let parts =
         Ieee802154RuntimeParts::new(engine, Ieee802154MacOwners::new(task, interrupts), queue);
-    let backend = match RUNTIME.install::<K>(parts, HardwareRandom, defaults) {
+    let backend = match runtime.install::<K>(parts, HardwareRandom, defaults) {
         Ok(handles) => handles,
         Err(parts) => {
             let (mut task, interrupts) = parts.hardware.into_parts();
@@ -625,6 +646,7 @@ pub async fn start<K: Ieee802154RuntimeCaps, P, C: PlatformClockProvider>(
     match bind() {
         Ok(bound) => Ok((
             Ieee802154System {
+                runtime,
                 route,
                 coex_config: Ieee802154CoexConfig::VENDOR,
                 power,
@@ -689,7 +711,7 @@ fn leave_and_unwind(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     clocked: Ieee802154Clocked,
     membership: Ieee802154PhyMembership,
-    parked: (Ieee802154Engine<'static>, RuntimeQueue),
+    parked: (Ieee802154Engine<'static>, ParkedRuntime),
     error: Ieee802154StartError,
     power: CommonPower<Ieee802154Client>,
     coex: CoexAbsent<Ieee802154Client>,
@@ -715,7 +737,7 @@ impl Ieee802154System {
     /// and its statistics. Commands and events go through the port of the
     /// backend [`start`] returned; its driver runs the CSMA-CA backoffs.
     pub fn runtime(&self) -> &'static Ieee802154SystemRuntime {
-        &RUNTIME
+        self.runtime
     }
 
     /// Read the arbiter's coexistence table again and publish the scene
@@ -729,13 +751,14 @@ impl Ieee802154System {
         config: Ieee802154CoexConfig,
     ) {
         let mut guard = radio.lock().await;
-        RUNTIME.set_coexistence(coexistence(guard.lease(), config));
+        self.runtime
+            .set_coexistence(coexistence(guard.lease(), config));
         self.coex_config = config;
     }
 
     /// The MAC's power-sequencing words, read under the runtime's lock.
     pub fn power_sequence(&self) -> oer_esp32s31_hal::ieee802154::Ieee802154PowerSequence {
-        RUNTIME
+        self.runtime
             .with_hardware(Ieee802154MacOwners::power_sequence)
             .expect("a running client's radio is installed")
     }
@@ -751,6 +774,7 @@ impl Ieee802154System {
         radio: &RadioSystem<P, C, EmbassyClock>,
     ) -> Self {
         let Self {
+            runtime,
             route,
             coex_config,
             power,
@@ -763,6 +787,7 @@ impl Ieee802154System {
             coexisting @ Ieee802154Coex::Coexisting(_) => coexisting,
         };
         Self {
+            runtime,
             route,
             coex_config,
             power,
@@ -789,6 +814,7 @@ impl Ieee802154System {
         radio: &RadioSystem<P, C, EmbassyClock>,
     ) -> Result<Self, (Self, CoexError)> {
         let Self {
+            runtime,
             route,
             coex_config,
             power,
@@ -801,6 +827,7 @@ impl Ieee802154System {
             }
         };
         let system = Self {
+            runtime,
             route,
             coex_config,
             power,
@@ -876,6 +903,7 @@ impl Ieee802154System {
         radio: &RadioSystem<P, C, EmbassyClock>,
     ) -> Result<Ieee802154Stopped, Ieee802154StopFailure> {
         let Self {
+            runtime,
             route,
             coex_config,
             power,
@@ -907,6 +935,7 @@ impl Ieee802154System {
                     error: Ieee802154StopError::Coexistence(error),
                     owner: Ok((
                         Self {
+                            runtime,
                             route,
                             coex_config,
                             power,
@@ -1001,7 +1030,7 @@ impl Ieee802154System {
                     partition: parts.partition,
                     coex: parts.coex,
                     engine: parts.engine,
-                    queue,
+                    queue: ParkedRuntime { runtime, queue },
                 })
             }
             crate::stop::Released::TerminalsQuarantined { parts, terminals } => {

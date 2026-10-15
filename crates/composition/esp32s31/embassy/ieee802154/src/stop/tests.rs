@@ -88,7 +88,8 @@ impl Drop for DropCount {
 
 #[test]
 fn terminal_quarantine_still_releases_composition_clocks_and_phy() {
-    let runtime = Box::leak(Box::new(Runtime::new(VirtualClock::new())));
+    let (runtime, queue) =
+        Runtime::pin_static(Box::leak(Box::new(Runtime::new(VirtualClock::new()))));
     let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
     let mut engine = Ieee802154Engine::new(
         buffers,
@@ -101,11 +102,7 @@ fn terminal_quarantine_still_releases_composition_clocks_and_phy() {
             &oer_esp32s31_hal::coex::CoexPtiTable::VENDOR,
         ),
     ));
-    let parts = Ieee802154RuntimeParts::new(
-        engine,
-        Ieee802154LlModel::default(),
-        runtime.take_queue().unwrap(),
-    );
+    let parts = Ieee802154RuntimeParts::new(engine, Ieee802154LlModel::default(), queue);
     let backend = runtime
         .install::<crate::Esp32s31Ieee802154>(parts, Random, Ieee802154PibDefaults::default())
         .unwrap_or_else(|_| panic!("install"));
@@ -146,23 +143,19 @@ fn terminal_quarantine_still_releases_composition_clocks_and_phy() {
     assert!(!phy.get());
     drop(terminals);
     assert_eq!(drops.get(), 0);
-    assert!(runtime.take_queue().is_none());
 }
 
 #[test]
 fn reusable_stop_returns_the_same_queue_permission() {
-    let runtime = Box::leak(Box::new(Runtime::new(VirtualClock::new())));
+    let (runtime, queue) =
+        Runtime::pin_static(Box::leak(Box::new(Runtime::new(VirtualClock::new()))));
     let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
     let engine = Ieee802154Engine::new(
         buffers,
         Ieee802154TxPowerLevels::new(&[0]).unwrap(),
         Ieee802154PibDefaults::default(),
     );
-    let parts = Ieee802154RuntimeParts::new(
-        engine,
-        Ieee802154LlModel::default(),
-        runtime.take_queue().unwrap(),
-    );
+    let parts = Ieee802154RuntimeParts::new(engine, Ieee802154LlModel::default(), queue);
     let backend = runtime
         .install::<crate::Esp32s31Ieee802154>(parts, Random, Ieee802154PibDefaults::default())
         .unwrap_or_else(|_| panic!("install"));

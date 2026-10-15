@@ -67,6 +67,7 @@ pub(super) fn start(
     platform: EspHalRadioPlatform,
     usb: crate::transport::Usb,
     rng: esp_hal::peripherals::RNG<'static>,
+    storage: &'static mut oer_esp32s31_bluetooth_system::BluetoothSystemRuntime,
 ) -> ! {
     let entropy = Entropy::new(rng);
     let boot = u64::from_le_bytes(entropy.random_bytes().expect("HIL boot entropy")).max(1);
@@ -91,6 +92,7 @@ pub(super) fn start(
                 entropy,
                 usb,
                 boot,
+                storage,
             )
             .expect("Bluetooth task"),
         );
@@ -112,13 +114,14 @@ async fn main(
     entropy: &'static BluetoothEntropy<'static>,
     usb: crate::transport::Usb,
     boot: u64,
+    storage: &'static mut oer_esp32s31_bluetooth_system::BluetoothSystemRuntime,
 ) {
     let ConcurrentPartitions {
         bluetooth,
         bluetooth_coex,
         ..
     } = partitions;
-    let Ok(parked) = BluetoothParked::new(bluetooth, bluetooth_coex, interrupts) else {
+    let Ok(parked) = BluetoothParked::new(bluetooth, bluetooth_coex, interrupts, storage) else {
         super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-memory\r\n");
     };
     let (system, backend) =

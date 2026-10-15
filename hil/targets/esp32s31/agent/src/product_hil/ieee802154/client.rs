@@ -35,6 +35,7 @@ impl Client {
     pub(super) fn claim(
         spawner: embassy_executor::Spawner,
         platform: EspHalRadioPlatform,
+        storage: &'static mut oer_esp32s31_ieee802154_system::Ieee802154SystemRuntime,
     ) -> Option<(Self, Ieee802154Parked)> {
         use oer_esp32s31_radio_system::{RadioStart, Schedule, Tracking};
         let start = RadioStart::new()
@@ -44,8 +45,12 @@ impl Client {
             oer_esp32s31_radio_system::start(spawner, platform, start).ok()?;
         crate::product_hil::phy_register_image::adopt(radio);
         let defaults = Ieee802154PibDefaults::default();
-        let parked =
-            Ieee802154Parked::new(partitions.ieee802154, partitions.ieee802154_coex, defaults)?;
+        let parked = Ieee802154Parked::new(
+            partitions.ieee802154,
+            partitions.ieee802154_coex,
+            defaults,
+            storage,
+        )?;
         Some((Self { radio, defaults }, parked))
     }
 

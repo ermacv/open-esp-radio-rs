@@ -51,12 +51,13 @@ pub(in crate::product_hil) async fn run_air_check(
     spawner: embassy_executor::Spawner,
     platform: EspHalRadioPlatform,
     request: Ieee802154AirCheckRequest,
+    storage: &'static mut oer_esp32s31_ieee802154_system::Ieee802154SystemRuntime,
 ) -> Ieee802154AirCheckEvidence {
     let mut evidence = Ieee802154AirCheckEvidence::default();
     let Ok(channel) = Channel::new(request.channel) else {
         return evidence;
     };
-    let Some((mut client, mut parked)) = Client::claim(spawner, platform) else {
+    let Some((mut client, mut parked)) = Client::claim(spawner, platform, storage) else {
         return evidence;
     };
     for index in 0..usize::from(request.cycles) {

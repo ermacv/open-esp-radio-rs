@@ -348,9 +348,10 @@ pub(in crate::product_hil) async fn run_thread(
     platform: EspHalRadioPlatform,
     request_id: u32,
     request: Ieee802154ThreadStartRequest,
+    storage: &'static mut oer_esp32s31_ieee802154_system::Ieee802154SystemRuntime,
 ) {
     let started = |result| oer_hil_protocol::ieee802154::ThreadStarted(result);
-    let Some((mut client, parked)) = Client::claim(spawner, platform) else {
+    let Some((mut client, parked)) = Client::claim(spawner, platform, storage) else {
         publish_event_reliably(
             0,
             request_id,

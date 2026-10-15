@@ -879,3 +879,7 @@ reason = "cargo xtask check ui checks the typed command and lifecycle diagnostic
 [[uncompiled]]
 path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/command_capacity.rs"
 reason = "cargo xtask check ui checks the exact mint-derived capacity and its compiling twin"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/send_without_permission.rs"
+reason = "cargo xtask check ui checks the indexed memory permission bound and its compiling twin on host and RV32"

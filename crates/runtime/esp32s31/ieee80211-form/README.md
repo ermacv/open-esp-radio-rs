@@ -210,14 +210,27 @@ reply would instead need its own affine request credit and a FIFO command;
 the current BA API has no such operation. This ordering is the required S31
 binding, not a claim that the old runtime already satisfies it.
 
-The private queue storage is part of the same scope bridge primitive. Its
-producer Release publishes a fully initialized value, the receiver Acquire
-moves it once, and receiver Release frees its cell before any command credit
-can return. Typed credits bound occupancy by the const capacity, including
-stage transitions and the internal OpenGate. Dropping an unregistered store
-destroys at most its fixed capacity. Registered callbacks never contain its
-address: a timed-out external step cannot keep a reference into Held after
-the common core frees its own future.
+Each permission's place is its memory credit. `AffineIndexedSpscQueue` in
+`oer-memory` keeps one value cell per place and the existing audited
+`AffineSpscQueue` as a ring of indices. The form implements the unsafe
+`UniqueQueueIndex` contract on a private command envelope: the sole Mint and
+disjoint ranges establish index bounds and uniqueness. Configure/TSF places
+are fixed by their concrete interface types; TX reads `InFlight::ticket()`,
+and key commands use their `Slot::index()`. There is no contract change,
+separate credit object, runtime lookup/pop, capacity refusal or extra await.
+
+Memory proves that a producer holding one of N unique places leaves at most
+N-1 indices in the ring. Release publishes the complete value and its index;
+Acquire receive finishes the move before its permission can return through
+the response. That transfer orders reuse across cores. OpenGate's two-place
+proof also uses FIFO order: the next Open needs a Close reply, whose receipt
+follows receipt of the previous Open. Only typed sends construct envelopes;
+the public unit OpenGate variant alone cannot authorize a memory send.
+Dropping a store destroys at most its fixed capacity. Registered callbacks
+never contain its address: a timed-out external step cannot keep a reference
+into Held after the common core frees its own future. Tests exercise full
+occupancy, reuse and response interleavings on another core; UI twins reject
+send without the audited permission bound.
 
 ## Shared lifecycle boundary
 
@@ -318,8 +331,9 @@ waker across detachment to exercise its wake-by-ref, wake and drop paths.
 
 ## The single unsafe primitive
 
-`scope.rs` and its private bridge storage own the permanent backing lease,
-command ownership transfer and all registration projections.
+`scope.rs` owns the permanent backing lease and all registration projections.
+Command-cell and ring access belongs to audited `oer-memory`; the form proves
+only the permission-to-index mapping through its private unsafe trait impl.
 Its unsafe binding constructor requires unique routing authority, synchronous
 masking on every bound core, an exclusive driver executor, cross-core IRQ-bank
 serialization, and bounded non-reentrant callbacks. Retained hardware is

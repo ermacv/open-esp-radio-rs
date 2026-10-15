@@ -5,13 +5,17 @@ use core::{future::Future, pin::pin, task::Waker};
 use oer_ieee80211_lower_mac::{ChannelWidth, LowerMacCapabilities, ReceiveFilter};
 use oer_radio_port::branded;
 use std::{
-    sync::{Arc, atomic::AtomicUsize},
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     task::Wake,
     vec::Vec,
 };
 
 struct Caps;
 impl Ieee80211Capabilities for Caps {
+    type SppScope = oer_ieee80211_mac::security::spp::Interface;
     const CAPS: LowerMacCapabilities =
         oer_esp32s31_ieee80211::lower_mac::esp32s31_lower_mac_capabilities(2048);
 }
@@ -376,5 +380,51 @@ fn cross_core_fifo_moves_non_static_configuration_context_unchanged() {
                 &access_point_context
             ));
         });
+    }));
+}
+
+#[test]
+fn configured_reply_and_gate_barrier_return_the_exact_cell_permissions() {
+    ready(branded::<CommandPools<0, 0>, _>(async |mint| {
+        let r = mint.into_pools();
+        let mut store = Storage::<0, 9>::new(r.bridge);
+        let (setup, mut rx) = store.split(r.issuer, r.enable, r.disable);
+        let mut tx = setup.enable();
+        let SetupCommand::Enable(enable) = rx.next().await else {
+            panic!("enable")
+        };
+        let mut rx = rx.enabled(enable);
+        let mut configure = r.station.configure;
+        let mut gate = r.gate;
+        for generation in 0..128 {
+            tx.configure(Configuration::Station {
+                permission: configure.with_context(generation),
+                receive: StationReceive::Off,
+            });
+            tx.close_gate(gate);
+            let PhaseCommand::Configure(configuration) = rx.next().await else {
+                panic!("configure")
+            };
+            // Hold the real terminal while the other command's cell is freed.
+            let terminal = configuration.configured::<payload::Types>();
+            let PhaseCommand::CloseGate(closing) = rx.next().await else {
+                panic!("close")
+            };
+            let closed = tx.closed(rx.gate_barrier(closing));
+            gate = tx.open_gate(closed);
+            let LowerMacTerminal::Configured(Configured::Station(permission)) = terminal else {
+                panic!("configured terminal")
+            };
+            let (returned, context) = permission.into_parts();
+            assert_eq!(context, generation);
+            configure = returned;
+            assert!(matches!(rx.next().await, PhaseCommand::OpenGate));
+        }
+        let waiting = tx.disable();
+        let PhaseCommand::Disable(disable) = rx.next().await else {
+            panic!("disable")
+        };
+        let (_, reply) = rx.disabled(disable);
+        let _setup = waiting.finished(reply);
     }));
 }

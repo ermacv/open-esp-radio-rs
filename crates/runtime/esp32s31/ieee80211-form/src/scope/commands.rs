@@ -6,11 +6,7 @@
 //! the held context with DriverScope or extend its lifetime.
 use atomic_waker::AtomicWaker;
 use core::{
-    cell::{Cell, UnsafeCell},
     future::poll_fn,
-    marker::PhantomData,
-    mem::MaybeUninit,
-    sync::atomic::{AtomicUsize, Ordering},
     task::{Context, Poll},
 };
 use oer_esp32s31_ieee80211::lower_mac::{CorePools, CoreResources, TxAdmission};
@@ -19,6 +15,9 @@ use oer_ieee80211_lower_mac::{
     GateOpen, GatePool, Ieee80211Capabilities, InFlight, InterfaceCommandPool,
     InterfacePermissions, LowerMacTerminal, PhaseTypes, SampledTsfPermission, Station,
     StationReceive, SupportedFilter, TerminalAccess, TransmitPool, TsfPermission, TsfSample,
+};
+use oer_memory::{
+    AffineIndexedSpscQueue, AffineIndexedSpscReceiver, AffineIndexedSpscSender, UniqueQueueIndex,
 };
 use oer_radio_port::{Child, PoolBuilder, PoolPath, PoolSet, Root, Slot, Slots};
 
@@ -237,6 +236,8 @@ pub enum PhaseCommand<'id, Caps: Ieee80211Capabilities, SC, AC, C, M> {
 /// Storage owned by Held, with two exclusive SPSC endpoint pairs. There is
 /// no general-purpose send operation: every producer method consumes one of
 /// the bounded admissions from this installation's sole mint.
+type IndexedStore<T, const N: usize> = AffineIndexedSpscQueue<Entry<T, N>, N>;
+
 pub struct CommandStorage<
     'id,
     Caps: Ieee80211Capabilities,
@@ -249,8 +250,10 @@ pub struct CommandStorage<
     const SETUP: usize,
     const PHASE: usize,
 > {
-    setup: Fifo<SetupCommand<'id, Caps, SC, AC>, SETUP>,
-    phase: Fifo<PhaseCommand<'id, Caps, SC, AC, C, M>, PHASE>,
+    setup: IndexedStore<SetupCommand<'id, Caps, SC, AC>, SETUP>,
+    phase: IndexedStore<PhaseCommand<'id, Caps, SC, AC, C, M>, PHASE>,
+    setup_wake: AtomicWaker,
+    phase_wake: AtomicWaker,
     _authority: CommandAuthority<'id, Root, T, K>,
 }
 /// The unique pair of endpoints lent by one command store.
@@ -283,8 +286,10 @@ impl<
             );
         }
         Self {
-            setup: Fifo::new(),
-            phase: Fifo::new(),
+            setup: AffineIndexedSpscQueue::new(),
+            phase: AffineIndexedSpscQueue::new(),
+            setup_wake: AtomicWaker::new(),
+            phase_wake: AtomicWaker::new(),
             _authority: authority,
         }
     }
@@ -294,22 +299,38 @@ impl<
         enable: Slot<'id, EnableKind, Child<Root, 8>>,
         disable: Slot<'id, DisableKind, Child<Root, 9>>,
     ) -> SetupEndpoints<'_, 'id, Caps, SC, AC, C, M, S, P> {
+        let (setup_tx, setup_rx) = self.setup.split();
+        let (phase_tx, phase_rx) = self.phase.split();
         (
             SetupSender {
                 channels: SendChannels {
-                    setup: &self.setup,
-                    phase: &self.phase,
+                    setup: Sender {
+                        queue: setup_tx,
+                        wake: &self.setup_wake,
+                    },
+                    phase: Sender {
+                        queue: phase_tx,
+                        wake: &self.phase_wake,
+                    },
+                    places: PhasePlaces {
+                        tickets: T,
+                        pairwise: K,
+                    },
                     issuer,
-                    _single: PhantomData,
                 },
                 enable: Enable { _place: enable },
                 disable: Disable { _place: disable },
             },
             SetupReceiver {
                 channels: ReceiveChannels {
-                    setup: &self.setup,
-                    phase: &self.phase,
-                    _single: PhantomData,
+                    setup: Receiver {
+                        queue: setup_rx,
+                        wake: &self.setup_wake,
+                    },
+                    phase: Receiver {
+                        queue: phase_rx,
+                        wake: &self.phase_wake,
+                    },
                 },
             },
         )
@@ -326,10 +347,10 @@ struct SendChannels<
     const S: usize,
     const P: usize,
 > {
-    setup: &'q Fifo<SetupCommand<'id, Caps, SC, AC>, S>,
-    phase: &'q Fifo<PhaseCommand<'id, Caps, SC, AC, C, M>, P>,
+    setup: Sender<'q, SetupCommand<'id, Caps, SC, AC>, S>,
+    phase: Sender<'q, PhaseCommand<'id, Caps, SC, AC, C, M>, P>,
     issuer: GateIssuer<'id, GatePath>,
-    _single: PhantomData<Cell<()>>,
+    places: PhasePlaces,
 }
 struct ReceiveChannels<
     'q,
@@ -342,9 +363,8 @@ struct ReceiveChannels<
     const S: usize,
     const P: usize,
 > {
-    setup: &'q Fifo<SetupCommand<'id, Caps, SC, AC>, S>,
-    phase: &'q Fifo<PhaseCommand<'id, Caps, SC, AC, C, M>, P>,
-    _single: PhantomData<Cell<()>>,
+    setup: Receiver<'q, SetupCommand<'id, Caps, SC, AC>, S>,
+    phase: Receiver<'q, PhaseCommand<'id, Caps, SC, AC, C, M>, P>,
 }
 #[must_use]
 pub struct SetupSender<
@@ -425,17 +445,17 @@ impl<'q, 'id, Caps: Ieee80211Capabilities, SC, AC, C, M, const S: usize, const P
     SetupSender<'q, 'id, Caps, SC, AC, C, M, S, P>
 {
     pub fn configure(&mut self, command: Configuration<'id, Caps, SC, AC>) {
-        self.channels.setup.send(SetupCommand::Configure(command));
+        self.channels.send_setup(SetupCommand::Configure(command));
     }
     pub fn retune(&mut self, permission: Slot<'id, RetuneKind, Child<Root, 7>>, channel: Channel) {
-        self.channels.setup.send(SetupCommand::Retune {
+        self.channels.send_setup(SetupCommand::Retune {
             permission,
             channel,
         });
     }
     /// Publishes the final setup command before transferring the producer.
-    pub fn enable(self) -> PhaseSender<'q, 'id, Caps, SC, AC, C, M, S, P> {
-        self.channels.setup.send(SetupCommand::Enable(self.enable));
+    pub fn enable(mut self) -> PhaseSender<'q, 'id, Caps, SC, AC, C, M, S, P> {
+        self.channels.send_setup(SetupCommand::Enable(self.enable));
         PhaseSender {
             channels: self.channels,
             disable: self.disable,
@@ -446,19 +466,18 @@ impl<'q, 'id, Caps: Ieee80211Capabilities, SC, AC, C, M, const S: usize, const P
     PhaseSender<'q, 'id, Caps, SC, AC, C, M, S, P>
 {
     pub fn configure(&mut self, command: Configuration<'id, Caps, SC, AC>) {
-        self.channels.phase.send(PhaseCommand::Configure(command));
+        self.channels.send_phase(PhaseCommand::Configure(command));
     }
     pub fn sample_tsf(&mut self, permission: Sampling<'id>) {
         self.channels
-            .phase
-            .send(PhaseCommand::SampleTsf(permission));
+            .send_phase(PhaseCommand::SampleTsf(permission));
     }
     pub fn submit(
         &mut self,
         operation: InFlight<C, Slot<'id, TicketKind, TicketPath>, M>,
         admission: TxAdmission<'id, CorePath>,
     ) {
-        self.channels.phase.send(PhaseCommand::Submit(Submission {
+        self.channels.send_phase(PhaseCommand::Submit(Submission {
             operation,
             admission,
         }));
@@ -469,13 +488,11 @@ impl<'q, 'id, Caps: Ieee80211Capabilities, SC, AC, C, M, const S: usize, const P
         key: Ccmp128Key,
     ) {
         self.channels
-            .phase
-            .send(PhaseCommand::InstallPairwise { permission, key });
+            .send_phase(PhaseCommand::InstallPairwise { permission, key });
     }
     pub fn remove_pairwise(&mut self, permission: Slot<'id, RemoveKeyKind, Child<Root, 4>>) {
         self.channels
-            .phase
-            .send(PhaseCommand::RemovePairwise(permission));
+            .send_phase(PhaseCommand::RemovePairwise(permission));
     }
     pub fn mutate_group(
         &mut self,
@@ -483,13 +500,11 @@ impl<'q, 'id, Caps: Ieee80211Capabilities, SC, AC, C, M, const S: usize, const P
         key: Ccmp128Key,
     ) {
         self.channels
-            .phase
-            .send(PhaseCommand::MutateGroup { permission, key });
+            .send_phase(PhaseCommand::MutateGroup { permission, key });
     }
     pub fn close_gate(&mut self, gate: GateOpen<'id, GatePath>) {
         self.channels
-            .phase
-            .send(PhaseCommand::CloseGate(ClosingGate { gate }));
+            .send_phase(PhaseCommand::CloseGate(ClosingGate { gate }));
     }
     /// Complete the driver's barrier reply at the original gate owner.
     pub fn closed(&mut self, barrier: GateBarrier<'id>) -> GateClosed<'id, GatePath> {
@@ -497,13 +512,12 @@ impl<'q, 'id, Caps: Ieee80211Capabilities, SC, AC, C, M, const S: usize, const P
     }
     /// No public command constructor or later publication step exists.
     pub fn open_gate(&mut self, gate: GateClosed<'id, GatePath>) -> GateOpen<'id, GatePath> {
-        self.channels.phase.send(PhaseCommand::OpenGate);
+        self.channels.send_phase(PhaseCommand::OpenGate);
         self.channels.issuer.open(gate)
     }
-    pub fn disable(self) -> DisablingSender<'q, 'id, Caps, SC, AC, C, M, S, P> {
+    pub fn disable(mut self) -> DisablingSender<'q, 'id, Caps, SC, AC, C, M, S, P> {
         self.channels
-            .phase
-            .send(PhaseCommand::Disable(self.disable));
+            .send_phase(PhaseCommand::Disable(self.disable));
         DisablingSender {
             channels: self.channels,
         }
@@ -572,94 +586,99 @@ impl<'q, 'id, Caps: Ieee80211Capabilities, SC, AC, C, M, const S: usize, const P
     }
 }
 
-// This is the command-storage part of the single scoped bridge primitive.
-// Its only send callers above consume the mint's credits. No endpoint or
-// generic send escapes this module. A removed command frees its cell before
-// its credit can return. Enable/Disable retain their places through the
-// opposite stage, so repeated transitions cannot create extra FIFO capacity.
-struct Fifo<T, const N: usize> {
-    cells: [UnsafeCell<MaybeUninit<T>>; N],
-    write: AtomicUsize,
-    read: AtomicUsize,
-    wake: AtomicWaker,
+// Only these private envelopes implement the memory credit contract. Public
+// commands alone cannot be submitted through a generic queue API (notably the
+// unit OpenGate variant). Construction happens only in the two typed sends.
+struct Entry<T, const N: usize> {
+    index: usize,
+    command: T,
 }
 #[allow(
     unsafe_code,
-    reason = "affine scoped endpoints transfer each initialized command once"
+    reason = "the sole Mint and typed sends own every indexed permission"
 )]
-// SAFETY: a unique producer writes only its next vacant cell, then Release
-// publishes it. One consumer Acquire reads it before Release freeing that
-// cell. The private typed sends bound occupancy by N. T: Send permits the
-// transfer across cores; no endpoint is Sync or publicly reconstructible.
-unsafe impl<T: Send, const N: usize> Sync for Fifo<T, N> {}
-impl<T, const N: usize> Fifo<T, N> {
-    const fn new() -> Self {
-        const {
-            assert!(N > 0 && N <= usize::MAX / 2);
-        }
-        Self {
-            cells: [const { UnsafeCell::new(MaybeUninit::uninit()) }; N],
-            write: AtomicUsize::new(0),
-            read: AtomicUsize::new(0),
-            wake: AtomicWaker::new(),
-        }
-    }
-    const fn advance(cursor: usize) -> usize {
-        if cursor + 1 == N * 2 { 0 } else { cursor + 1 }
-    }
-    fn send(&self, value: T) {
-        let write = self.write.load(Ordering::Relaxed);
-        // Acquire pairs with the consumer's release before a credit returns.
-        let _released = self.read.load(Ordering::Acquire);
-        #[allow(
-            unsafe_code,
-            reason = "the command's affine credit proves this producer cell vacant"
-        )]
-        // SAFETY: the cursor stays in 0..2N. The closed producer API and the
-        // const mint formula prove occupancy < N for this consumed admission.
-        unsafe {
-            (*self.cells.get_unchecked(write % N).get()).write(value);
-        }
-        self.write.store(Self::advance(write), Ordering::Release);
-        self.wake.wake();
-    }
-    fn poll(&self, cx: &mut Context<'_>) -> Poll<T> {
-        self.wake.register(cx.waker());
-        let read = self.read.load(Ordering::Relaxed);
-        if read == self.write.load(Ordering::Acquire) {
-            return Poll::Pending;
-        }
-        #[allow(
-            unsafe_code,
-            reason = "the sole consumer owns this Release-published command"
-        )]
-        // SAFETY: Acquire observed an initialized cell at this bounded cursor;
-        // the producer cannot reuse it before the following Release.
-        let value = unsafe { (*self.cells.get_unchecked(read % N).get()).assume_init_read() };
-        self.read.store(Self::advance(read), Ordering::Release);
-        Poll::Ready(value)
+// SAFETY: only send_setup/send_phase construct Entry. CommandAuthority binds
+// their capacities and brand to the one CommandPools mint. Slot indices occupy
+// disjoint ranges; configure/TSF have one place per concrete interface type.
+// A value consumes its permission until receive has freed its cell and the
+// terminal returns it. Enable/Disable cross phases by value. OpenGate's next
+// use requires a Close reply; FIFO receipt of that Close follows receipt of
+// the previous Open. The private GateIssuer cannot bypass that barrier.
+// Thus equal indices cannot coexist in the same queue. Returned owners / gate
+// barriers also order reuse across cores. N and the disjoint ranges are checked
+// at CommandStorage construction, not at send. There is no public constructor,
+// credit lookup or generic insertion, and invariant brands cannot be mixed.
+unsafe impl<T, const N: usize> UniqueQueueIndex<N> for Entry<T, N> {
+    fn queue_index(&self) -> usize {
+        self.index
     }
 }
-impl<T, const N: usize> Drop for Fifo<T, N> {
-    fn drop(&mut self) {
-        let mut read = *self.read.get_mut();
-        let write = *self.write.get_mut();
-        // Exclusive storage ownership excludes both endpoints; at most N
-        // commands remain. Dropping a queue cannot run an unbounded drain.
-        for _ in 0..N {
-            if read == write {
-                break;
+
+struct PhasePlaces {
+    tickets: usize,
+    pairwise: usize,
+}
+impl PhasePlaces {
+    fn index<Caps: Ieee80211Capabilities, SC, AC, C, M>(
+        &self,
+        command: &PhaseCommand<'_, Caps, SC, AC, C, M>,
+    ) -> usize {
+        let groups = self.tickets + 2 * self.pairwise;
+        let configure = groups + GROUP_PERMISSIONS;
+        match command {
+            PhaseCommand::Submit(submission) => usize::from(submission.operation.ticket().index()),
+            PhaseCommand::InstallPairwise { permission, .. } => {
+                self.tickets + usize::from(permission.index())
             }
-            #[allow(unsafe_code, reason = "only the owned published range is initialized")]
-            // SAFETY: no endpoint remains, and each initialized cell is
-            // destroyed once before moving the cursor within 0..2N.
-            unsafe {
-                self.cells
-                    .get_unchecked_mut(read % N)
-                    .get_mut()
-                    .assume_init_drop();
+            PhaseCommand::RemovePairwise(permission) => {
+                self.tickets + self.pairwise + usize::from(permission.index())
             }
-            read = Self::advance(read);
+            PhaseCommand::MutateGroup { permission, .. } => {
+                groups + usize::from(permission.index())
+            }
+            PhaseCommand::Configure(Configuration::Station { .. }) => configure,
+            PhaseCommand::Configure(Configuration::AccessPoint { .. }) => configure + 1,
+            PhaseCommand::SampleTsf(Sampling::Station(_)) => configure + 2,
+            PhaseCommand::SampleTsf(Sampling::AccessPoint(_)) => configure + 3,
+            PhaseCommand::CloseGate(_) => configure + 4,
+            PhaseCommand::OpenGate => configure + 5,
+            PhaseCommand::Disable(_) => configure + 6,
+        }
+    }
+}
+impl<'q, 'id, Caps: Ieee80211Capabilities, SC, AC, C, M, const S: usize, const P: usize>
+    SendChannels<'q, 'id, Caps, SC, AC, C, M, S, P>
+{
+    fn send_setup(&mut self, command: SetupCommand<'id, Caps, SC, AC>) {
+        let index = match &command {
+            SetupCommand::Configure(Configuration::Station { .. }) => 0,
+            SetupCommand::Configure(Configuration::AccessPoint { .. }) => 1,
+            SetupCommand::Retune { .. } => 2,
+            SetupCommand::Enable(_) => 3,
+        };
+        self.setup.queue.send(Entry { index, command });
+        self.setup.wake.wake();
+    }
+    fn send_phase(&mut self, command: PhaseCommand<'id, Caps, SC, AC, C, M>) {
+        let index = self.places.index(&command);
+        self.phase.queue.send(Entry { index, command });
+        self.phase.wake.wake();
+    }
+}
+struct Sender<'q, T, const N: usize> {
+    queue: AffineIndexedSpscSender<'q, Entry<T, N>, N>,
+    wake: &'q AtomicWaker,
+}
+struct Receiver<'q, T, const N: usize> {
+    queue: AffineIndexedSpscReceiver<'q, Entry<T, N>, N>,
+    wake: &'q AtomicWaker,
+}
+impl<T, const N: usize> Receiver<'_, T, N> {
+    fn poll(&mut self, cx: &mut Context<'_>) -> Poll<T> {
+        self.wake.register(cx.waker());
+        match self.queue.try_receive() {
+            Ok(entry) => Poll::Ready(entry.command),
+            Err(_) => Poll::Pending,
         }
     }
 }

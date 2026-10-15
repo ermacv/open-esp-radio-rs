@@ -401,10 +401,11 @@ cases = [
 
 [[suite]]
 name = "s31-form-commands"
-packages = ["oer-esp32s31-ieee80211-form", "oer-esp32s31-ieee80211", "oer-esp32s31-ieee80211-mac", "oer-ieee80211-lower-mac", "oer-radio-port"]
+packages = ["oer-ieee80211-mac", "oer-memory", "oer-esp32s31-ieee80211-form", "oer-esp32s31-ieee80211", "oer-esp32s31-ieee80211-mac", "oer-ieee80211-lower-mac", "oer-radio-port"]
 features = []
 targets = ["host", "esp32s31"]
 cases = [
+    "crates/runtime/esp32s31/ieee80211-form/tests/ui/send_without_permission.rs",
     "crates/runtime/esp32s31/ieee80211-form/tests/ui/configure_fifo_once.rs",
     "crates/runtime/esp32s31/ieee80211-form/tests/ui/sample_fifo_once.rs",
     "crates/runtime/esp32s31/ieee80211-form/tests/ui/setup_submit.rs",

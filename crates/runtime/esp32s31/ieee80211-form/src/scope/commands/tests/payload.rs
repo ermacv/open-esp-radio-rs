@@ -84,6 +84,29 @@ impl<'id> PhaseTypes<'id> for Types {
 }
 pub(super) struct NoKeys;
 impl<'id> KeyTypes<'id> for NoKeys {
+    const PAIRWISE_SLOTS: usize = 0;
+    const GROUP_SLOTS: usize = 0;
+    type AssociationStart = Infallible;
+    type Association = Infallible;
+    type VacantKeyBank = Infallible;
+    type VacantAssociation = Infallible;
+    fn begin_association(start: Infallible, _: oer_ieee80211_mac::security::Spp) -> Infallible {
+        match start {}
+    }
+    fn collect_key_bank<const N: usize>(
+        parts: association::KeyBankParts<Infallible, Infallible, N>,
+    ) -> Result<Infallible, association::KeyBankParts<Infallible, Infallible, N>> {
+        Err(parts)
+    }
+    fn end_association(association: Infallible, _: Infallible) -> Infallible {
+        match association {}
+    }
+    fn split_vacant<const N: usize>(
+        vacant: Infallible,
+    ) -> association::DistributedKeyBank<Infallible, Infallible, Infallible, N> {
+        match vacant {}
+    }
+
     type PairwiseSlot = Infallible;
     type GroupSlot = Infallible;
     type PairwiseKey = Infallible;

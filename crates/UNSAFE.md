@@ -102,11 +102,16 @@ and drop do not access an installation, and wake acquires fresh admission
 before reading the current registration. A retained waker after detach cannot
 reach an old backing. The unsafe binding constructor checks routing and step/stop callbacks
 together; a safe route configuration cannot authorize later arbitrary callbacks.
-The same bridge owns its private SPSC command storage: affine mint credits
-bound occupancy, producer Release publishes initialized cells, consumer
-Acquire moves each value once and Release frees the cell before its credit
-returns. The queue's typed endpoints are exclusive; no generic insertion or
-second issuer is public. These branded queues are never registered with an
+Command storage uses `oer-memory::AffineIndexedSpscQueue`: the permission's
+place selects its value cell, and the existing audited SPSC ring stores only
+indices. Memory derives available ring space from N distinct indices, without
+an occupancy check, a backend free-credit pool or another await. The form's
+only queue unsafe is the private `UniqueQueueIndex` implementation: its sole
+Mint, disjoint place ranges and typed terminal/gate transitions prove index
+bounds and uniqueness. Producer Release publishes cells; consumer Acquire
+moves them completely before permission return orders the next use. The
+queue's typed endpoints are exclusive; no uncredited insertion or second
+issuer is public. These branded queues are never registered with an
 external ISR or driver step. The S31 Driver value owns only its permanent
 backing lease and caller-side result loan. Its driving future borrows Driver;
 consuming owner recovery requires that loan to have ended. Explicit abandon

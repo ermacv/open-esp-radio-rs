@@ -106,13 +106,40 @@ Command storage uses `oer-memory::AffineIndexedSpscQueue`: the permission's
 place selects its value cell, and the existing audited SPSC ring stores only
 indices. Memory derives available ring space from N distinct indices, without
 an occupancy check, a backend free-credit pool or another await. The form's
-only queue unsafe is the private `UniqueQueueIndex` implementation: its sole
+queue index proof is the private `UniqueQueueIndex` implementation: its sole
 Mint, disjoint place ranges and typed terminal/gate transitions prove index
 bounds and uniqueness. Producer Release publishes cells; consumer Acquire
 moves them completely before permission return orders the next use. The
 queue's typed endpoints are exclusive; no uncredited insertion or second
 issuer is public. These branded queues are never registered with an
-external ISR or driver step. The S31 Driver value owns only its permanent
+external ISR or driver step.
+
+The direct command bridge additionally uses `oer-memory::IndexedCustody`.
+Its unsafe `CustodyDomain` binds one private store to its affine place names;
+this is stronger than an index bound. Two same-typed installations must not
+exchange names. The form consumes the Mint's sole command authority and an
+exclusive static execution store, then lends paired private endpoints.
+Neither the stores nor their names escape this binding. Insert returns an
+initialized-cell name; only returning that exact name through the reply
+endpoint permits take. A mutable name loan permits an in-place record step.
+The two nested names contain only an index, never a pointer or a borrow into
+Held. Request/reply Release-Acquire transfers order reuse. Initialization
+bits account for destructor work only; they never validate an insertion or
+search for a credit. The proof and unchecked cell operations live in memory,
+with only the sealed domain/index implementations in the form.
+
+Whole operations, contexts, permissions and KeyUse remain in Held. Permanent
+records contain model execution metadata; a key is zeroized in that cell
+immediately after programming and before reply publication. No model DMA
+address grants a hardware capability or a CPU dereference. Real S31 DMA
+submission and terminal proofs are a separate, pending binding: the model's
+finite completion cannot establish hardware quiescence. An unconfirmed
+installation must explicitly quarantine Held through the core's Quarantined;
+ordinary store destruction is permitted only after actors have drained and
+hardware use has ended. Forgetting an owner instead retains its stable DMA
+leases indefinitely, while a remote name can never call back into Context.
+
+The S31 Driver value owns only its permanent
 backing lease and caller-side result loan. Its driving future borrows Driver;
 consuming owner recovery requires that loan to have ended. Explicit abandon
 closes the same admission domain before the core quarantines Driver without

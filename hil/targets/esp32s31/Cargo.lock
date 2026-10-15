@@ -1973,6 +1973,7 @@ dependencies = [
  "oer-memory",
  "oer-radio-port",
  "oer-time",
+ "zeroize",
 ]
 
 [[package]]

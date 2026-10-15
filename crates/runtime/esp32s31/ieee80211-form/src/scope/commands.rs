@@ -4,6 +4,7 @@
 //! move by value. Configure is a FIFO command with its exact receive value;
 //! it is never a coalescing setting. These borrowed endpoints do not register
 //! the held context with DriverScope or extend its lifetime.
+pub mod bridge;
 use atomic_waker::AtomicWaker;
 use core::{
     future::poll_fn,
@@ -344,14 +345,14 @@ impl<
         (
             SetupSender {
                 channels: SendChannels {
-                    setup: Sender {
+                    setup: Sender::Queued(QueuedSender {
                         queue: setup_tx,
                         wake: &self.setup_wake,
-                    },
-                    phase: Sender {
+                    }),
+                    phase: Sender::Queued(QueuedSender {
                         queue: phase_tx,
                         wake: &self.phase_wake,
-                    },
+                    }),
                     issuer,
                 },
                 enable: Enable { _place: enable },
@@ -676,7 +677,8 @@ struct Entry<T, const N: usize> {
     unsafe_code,
     reason = "the sole Mint and typed sends own every indexed permission"
 )]
-// SAFETY: only send_setup/send_phase construct Entry. CommandAuthority binds
+// SAFETY: send_setup/send_phase create command Entries; the direct bridge
+// preserves that same index in its private unit Entry. CommandAuthority binds
 // their capacities and brand to the one CommandPools mint. Slot indices occupy
 // disjoint ranges; configure/TSF have one place per concrete interface type.
 // A value consumes its permission until receive has freed its cell and the
@@ -685,10 +687,12 @@ struct Entry<T, const N: usize> {
 // the previous Open. The private GateIssuer cannot bypass that barrier.
 // Thus equal indices cannot coexist in the same queue. Returned owners / gate
 // barriers also order reuse across cores. Const range ends are checked against
-// N at CommandStorage construction; singleton widths and both interface totals
+// N at CommandStorage / bridge Held construction; singleton widths and both interface totals
 // are checked at module compilation, so a contract change cannot escape the
 // index proof. There is no public constructor,
-// credit lookup or generic insertion, and invariant brands cannot be mixed.
+// credit lookup or generic insertion. Direct publication keeps the brand
+// in Held and routes pointer-free names only through its sealed paired lanes;
+// callers cannot interchange names or stores from different installations.
 unsafe impl<T, const N: usize> UniqueQueueIndex<N> for Entry<T, N> {
     fn queue_index(&self) -> usize {
         self.index
@@ -780,18 +784,31 @@ impl<
 {
     fn send_setup(&mut self, command: SetupCommand<'id, Caps, SC, AC>) {
         let index = SetupPlaces::index(&command);
-        self.setup.queue.send(Entry { index, command });
-        self.setup.wake.wake();
+        self.setup.send(Entry { index, command });
     }
     fn send_phase(&mut self, command: PhaseCommand<'id, Caps, SC, AC, C, M>) {
         let index = PhasePlaces::<T, K>::index(&command);
-        self.phase.queue.send(Entry { index, command });
-        self.phase.wake.wake();
+        self.phase.send(Entry { index, command });
     }
 }
-struct Sender<'q, T, const N: usize> {
+struct QueuedSender<'q, T, const N: usize> {
     queue: AffineIndexedSpscSender<'q, Entry<T, N>, N>,
     wake: &'q AtomicWaker,
+}
+enum Sender<'q, T, const N: usize> {
+    Queued(QueuedSender<'q, T, N>),
+    Direct(bridge::DirectSender<'q, T, N>),
+}
+impl<T, const N: usize> Sender<'_, T, N> {
+    fn send(&mut self, entry: Entry<T, N>) {
+        match self {
+            Self::Queued(sender) => {
+                sender.queue.send(entry);
+                sender.wake.wake();
+            }
+            Self::Direct(sender) => sender.send(entry),
+        }
+    }
 }
 struct Receiver<'q, T, const N: usize> {
     queue: AffineIndexedSpscReceiver<'q, Entry<T, N>, N>,

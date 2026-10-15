@@ -319,7 +319,6 @@ impl<
     /// # Panics
     /// The index must belong to this pool and name a free slot. A damaged
     /// DMA guard is a fatal hardware-boundary violation, not a pinning check.
-
     pub fn claim_network(
         &self,
         index: u8,

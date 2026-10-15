@@ -273,6 +273,102 @@ into Held after the common core frees its own future. Tests exercise full
 occupancy, reuse and response interleavings on another core; UI twins reject
 send without the audited permission bound.
 
+### Direct publication to a separate executor
+
+`scope::commands::bridge` is the command-boundary prototype. It does not
+implement `PortBackend`, endpoints or retune hardware. `Held::bind` consumes
+one command authority and one `&'static mut ExecutionStorage<S, P>`, returning
+caller-side Held and an independently movable executor. Only permanent
+records, private place names and their SPSC endpoints cross to that executor;
+Context, complete InFlight, MPDU leases and KeyUse remain in Held. Context may
+borrow a non-Send value. A payload may likewise retain a short CPU-only tag:
+`ProjectExecution::project` takes its narrow GAT view as an associated
+function, avoiding a higher-ranked GAT bound that would imply `M: 'static`.
+The UI twin instantiates the sender with that borrowed payload and rejects
+passing its mutable owner to projection. No future or Held address is published.
+
+The phase method publishes synchronously: retain the whole command by its
+place name, project execution data through its narrow view, initialize the
+permanent record, publish its name Release, then wake. There is no first
+command queue or forwarding pump in drive. `CommandStorage` above remains
+the local queue harness for the admission/index proof; a direct binding does
+not allocate it. The caller's reply wait acquires a completed name, removes
+the record, and takes exactly the original owner. No step reconstructs an
+InFlight from Context, ticket or separate body slots.
+
+`IndexedCustody` in oer-memory provides the waiting places. Insert consumes
+the unique private name and returns its only removal name. The record store
+retains that name and yields a second affine name; the same second name
+travels through request, finite step and reply, and is consumed to recover
+the first. Names contain only their index. The private `CustodyDomain`
+implementations and paired endpoints prevent mixing identical layouts from
+two installations; the index alone is not this association proof. There is
+no RefCell, Cell<Option>, free-credit pool, occupancy admission check or
+async send-permit. Initialization bits serve only destructor accounting.
+
+Both setup and phase keep their original S/P capacities and FIFO order.
+Enable is the last setup record; the executor then services phase. Disable
+is the last phase record; its reply follows every accepted record. A phase
+method publishes settings/BA before its command; the executor must Acquire
+the command before reading desired state. The model tests that ordering on
+another thread. The actual triple-buffer settings/BA binding still belongs
+to the shared-loop integration.
+
+After programming a key, the finite step calls `Zeroize` on the key bytes
+**in the permanent record, before publishing its reply**. The Held command's
+copy is erased during projection. A test pauses between programming and
+reply publication and inspects the actual record, rather than a moved copy.
+
+Every await in the bridge is a reply wait holding only a mutable endpoint
+loan. Cancellation leaves the operation in Held and the execution record in
+permanent storage, in a state which finish/retire/abandon can account for.
+After confirmed drain, the caller may withdraw all remaining owners.
+The consuming model `Executor::withdraw_pending` returns queued records as
+`Completion::Withdrawn` without applying them; already completed replies
+retain `Completion::Applied`. Withdrawal cannot fabricate a TSF sample. A reply distinguishes `Applied<T>`
+from `Withdrawn(T)`. Applied's constructor and fields are private; only an
+applied CloseGate/Disable reply can issue GateBarrier/Disabled. Taking the
+original owner consumes its Applied receipt. A withdrawn command cannot be
+substituted for this proof. UI twins reject both substitution and forged
+Applied construction; a regression withdraws CloseGate and Disable without
+executing either.
+Producers must have ended and the executor worker must have joined first. After
+unconfirmed shutdown it must explicitly use the core's `Quarantined<Held>`;
+no new quarantine type or destructor-driven hardware stop is introduced.
+Dropping the quarantine receipt, forgetting Held or forgetting a reply
+future cannot run Context/MPDU destructors or free the permanent records.
+The test pauses a step on the second thread across those transitions and
+checks zero drops and three still-reserved pinned TX allocations. Ordinary
+Held destruction alone is **not** a hardware shutdown operation.
+
+The model has no MMIO or DMA dereference. Its TxImage describes three
+fragments (header and two bodies), projected from actual pinned TX leases
+through ExecutionPayload; this is a fixture descriptor budget, not a
+production chain limit. Address metadata is not an independently usable
+DMA capability. Starting real DMA and proving its terminal remain S31 work;
+model completion is not a substitute for that proof. Multi-descriptor MPDU
+and CCMP-on-chain behavior still require HIL. The model's static execution
+store is consumed once and has no recovery/reinstall method; integrating
+reusable Released backing remains part of the production installation.
+
+The RV32 link fixture places the entire execution store in
+`.critical.data.open_radio_commands`; the ELF audit checks its full range in
+SRAM. It is separate from the exclusively borrowed driver region. For
+`T=2, K=2, S=4, P=15`, the record/queue backing is **2688 B**, independent of
+future or Context size. The caller-side representative Held is **548 B**
+(context word and three-word MPDU owner), and the executor is **44 B**.
+These are ABI measurements, not production memory budgets. Host tests use
+real three-lease MPDUs and report their separate host sizes. Compared with a
+forwarding pump, direct publication removes S+P initial FIFO cells, two
+order rings and one scheduled handoff; it keeps S+P retained-owner cells,
+S+P record cells, four order rings and two projection function pointers.
+
+Host `command_to_step_host_latency_fixture` reports 256 command-to-step
+samples using the actual request/reply wakers, including OS scheduling. These values neither set DrainBound nor
+bound RF retune. Production maxima, SRAM budgeting and the whole executable
+driver graph require the S31-2 measurement profile and HIL evidence.
+
+
 ## Shared lifecycle boundary
 
 The shared contract lends both `&Held<'id>` and `&mut Local<'id>` to setup,
@@ -476,7 +572,7 @@ scatter/gather implementation or the complete lower-MAC backend.
 
 | Checks | Code size | RAM and CPU | Signatures | Breakage | Alternatives | Reversal |
 | --- | --- | --- | --- | --- | --- | --- |
-| Affine lease, IRQ consumers, epoch and FIFO credits at compile time; finite atomic admission drain and IRQ-bank transactions at run time | 4644 B executable sections; 4914 B with diagnostics; one monomorphization per scheduler binding | Fixed permanent backing 124 B per installation, 156 B with diagnostics; 12 B ISR slot; total writable statics 145 / 177 B; command stores 1088 B; fixture caller frame 3008 B in both variants, separate 4096 B stack; backing size is independent of the body's future size | `ScopeStorage`, `ScopeLease`, `DriverScope`, `Released` / `Poisoned`, borrowed `IrqDiagnostics`; no `Context: 'static` | Consumers must own their IRQ handle; global snapshots lose IRQ fields; poison cannot yield hardware or a lease | Inline future storage cannot survive a timeout followed by free; priority ordering cannot prove cross-core quiescence | Reject bindings whose linked graph leaves SRAM, whose callbacks remain unresolved, or whose fixed backing and stack exceed composition's measured budget |
+| Affine lease, IRQ consumers, epoch and FIFO credits at compile time; finite atomic admission drain and IRQ-bank transactions at run time | 5304 B executable sections; 5574 B with diagnostics; one monomorphization per scheduler binding | Fixed permanent backing 124 B per installation, 156 B with diagnostics; 12 B ISR slot; total writable statics 2833 / 2865 B, including the separate 2688 B bridge backing; local command stores 1088 B; fixture caller frame 3392 B, separate 4096 B stack; backing size is independent of the body's future size | `ScopeStorage`, `ScopeLease`, `DriverScope`, `Released` / `Poisoned`, borrowed `IrqDiagnostics`; no `Context: 'static` | Consumers must own their IRQ handle; global snapshots lose IRQ fields; poison cannot yield hardware or a lease | Inline future storage cannot survive a timeout followed by free; priority ordering cannot prove cross-core quiescence | Reject bindings whose linked graph leaves SRAM, whose callbacks remain unresolved, or whose fixed backing and stack exceed composition's measured budget |
 
 Run `cargo test -p oer-esp32s31-ieee80211-form` and `cargo xtask check ui`.
 Generated ELF files and closure reports remain under ignored

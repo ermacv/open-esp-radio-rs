@@ -24,6 +24,16 @@ targets = ["host", "esp32s31"]
 cases = ["crates/hardware/esp32s31/driver/ieee80211/mac/tests/ui/tsf_snapshot_owner.rs"]
 
 [[suite]]
+name = "indexed-custody"
+packages = ["oer-memory"]
+features = []
+targets = ["host", "esp32s31"]
+cases = [
+    "crates/memory/tests/ui/custody_requires_returned_name.rs",
+    "crates/memory/tests/ui/custody_return_once.rs",
+]
+
+[[suite]]
 name = "pool-authority"
 packages = ["oer-radio-port", "oer-radio-permit-pool", "oer-ieee80211-lower-mac", "oer-ieee80211-sta"]
 features = []
@@ -436,4 +446,13 @@ cases = [
     "crates/runtime/esp32s31/ieee80211-form/tests/ui/quarantined_lease.rs",
     "crates/runtime/esp32s31/ieee80211-form/tests/ui/protected_submission.rs",
     "crates/runtime/esp32s31/ieee80211-form/tests/ui/command_capacity.rs",
+    "crates/runtime/esp32s31/ieee80211-form/tests/ui/bridge_context_stays_held.rs",
+    "crates/runtime/esp32s31/ieee80211-form/tests/ui/bridge_backing_static.rs",
+    "crates/runtime/esp32s31/ieee80211-form/tests/ui/bridge_dma_region.rs",
+    "crates/runtime/esp32s31/ieee80211-form/tests/ui/bridge_applied_gate.rs",
+    "crates/runtime/esp32s31/ieee80211-form/tests/ui/bridge_applied_disable.rs",
+    "crates/runtime/esp32s31/ieee80211-form/tests/ui/bridge_forged_applied.rs",
+    "crates/runtime/esp32s31/ieee80211-form/tests/ui/bridge_projection_owner.rs",
+
+
 ]

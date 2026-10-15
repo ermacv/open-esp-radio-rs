@@ -308,6 +308,27 @@ fn audit(root: &Path, bytes: &[u8]) -> Result<(Vec<String>, String)> {
         .find_map(|section| section.word(command_layout))
         .ok_or("unreadable command ABI measurement")?;
     report.push_str(&format!("command_storage_bytes={command_bytes}\n"));
+    let bridge = elf
+        .symbols()
+        .find(|symbol| symbol.demangled() == "scope_placement::image::BRIDGE_BACKING")
+        .ok_or("missing permanent command records")?;
+    if !sram.contains_range(bridge.address, bridge.address + bridge.size) {
+        failures.push("cached command execution backing".into());
+    }
+    report.push_str(&format!("bridge_backing_bytes={}\n", bridge.size));
+    for (symbol, label) in [
+        ("S31_BRIDGE_HELD_BYTES", "bridge_held_bytes"),
+        ("S31_BRIDGE_EXECUTOR_BYTES", "bridge_executor_bytes"),
+    ] {
+        let address = elf
+            .address(symbol)
+            .ok_or("missing bridge ABI measurement")?;
+        let value = elf
+            .sections()
+            .find_map(|section| section.word(address))
+            .ok_or("unreadable bridge ABI measurement")?;
+        report.push_str(&format!("{label}={value}\n"));
+    }
     let stack_begin = elf
         .address("__scope_stack_bottom")
         .ok_or("no scope stack")?;

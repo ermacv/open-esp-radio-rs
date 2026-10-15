@@ -107,6 +107,20 @@ mod image {
     #[unsafe(no_mangle)]
     static S31_COMMAND_STORAGE_BYTES: u32 = core::mem::size_of::<Commands<'static>>() as u32;
 
+    type BridgeHeld<'id> = bridge::Held<'id, Caps, u32, u32, usize, [usize; 3], 2, 2, 4, 15>;
+    #[allow(unsafe_code, reason = "export target ABI sizes for the bridge model")]
+    #[unsafe(no_mangle)]
+    static S31_BRIDGE_HELD_BYTES: u32 = core::mem::size_of::<BridgeHeld<'static>>() as u32;
+    #[allow(unsafe_code, reason = "export target ABI sizes for the bridge model")]
+    #[unsafe(no_mangle)]
+    static S31_BRIDGE_EXECUTOR_BYTES: u32 = core::mem::size_of::<bridge::Executor<4, 15>>() as u32;
+    #[allow(
+        unsafe_code,
+        reason = "composition-owned command records require permanent SRAM"
+    )]
+    #[unsafe(link_section = ".critical.data.open_radio_commands")]
+    static mut BRIDGE_BACKING: bridge::ExecutionStorage<4, 15> = bridge::ExecutionStorage::new();
+
     async fn command_workload() {
         oer_radio_port::branded::<CommandPools<2, 2>, _>(async |mint| {
             let r = mint.into_pools();
@@ -193,6 +207,9 @@ mod image {
     #[unsafe(no_mangle)]
     pub fn scope_main() -> ! {
         core::hint::black_box(&S31_COMMAND_STORAGE_BYTES);
+        core::hint::black_box(&S31_BRIDGE_HELD_BYTES);
+        core::hint::black_box(&S31_BRIDGE_EXECUTOR_BYTES);
+        core::hint::black_box(&raw mut BRIDGE_BACKING);
         let mut latch = ScopeReturnLatch::new();
         let route = ScopeRoute::new((), &SLOT, mask, acknowledge, enable, Scheduler, now);
         let radio = RadioRuntimeOwner::claim_for_validation();

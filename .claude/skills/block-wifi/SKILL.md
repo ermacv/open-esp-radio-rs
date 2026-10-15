@@ -326,6 +326,12 @@ carry real CCMP ciphertext and MIC; their separate `plaintext` view is the DMA
 input. Use the wire view and independently encrypted AESCCM/BIP fixtures for
 crypto assertions. `receive_ccmp` must verify MIC before publishing verified
 RX metadata, including SPP's A-MSDU-present bit.
+Management reception wraps the same `CcmpAssociation` transform with a separate
+PN frontier: do not duplicate its AAD/nonce or MIC-failure erasure. CCM accepts
+only header-built `Aad` layouts (22/24/28/30 bytes), never arbitrary AAD slices.
+The interface-scoped model holds one hardware CCMP record per interface; keys
+select that record by interface identity. The affine association owner remains
+unique, and the complete returned slot bank gates any change of mode.
 
 SPP A-MSDU belongs to the association. Backend capability `SppScope` chooses
 whether hardware can program each association or only an entire interface;

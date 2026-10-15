@@ -56,10 +56,17 @@ impl Work for WirePeer {
         else {
             panic!("GTK terminal");
         };
-        assert!(Rc::ptr_eq(
-            &key.identity.0.association,
-            &group.identity.0.association
-        ));
+        assert_eq!(key.identity.0.role, group.identity.0.role);
+        assert_eq!(
+            phase
+                .held
+                .air
+                .associations
+                .borrow()
+                .get(key.identity.0.role)
+                .spp(),
+            self.0
+        );
         assert_eq!(
             phase.held.air.crypto_operations(),
             [
@@ -80,6 +87,21 @@ impl Work for WirePeer {
                     slot: 0
                 },
             ]
+        );
+        // Installing a different mode at the other interface must leave this
+        // association's shared PTK/GTK policy and both wire directions intact.
+        let ap_spp = match self.0 {
+            Spp::Negotiated => Spp::NotNegotiated,
+            Spp::NotNegotiated => Spp::Negotiated,
+        };
+        let ap_association =
+            ModelKeys::<AccessPoint>::begin_association(resources.access_point_association, ap_spp);
+        let [ap_slot, _unused_ap_slot] = resources.access_point_pairwise;
+        let _ap_key = phase.access_point().install_pairwise_key(
+            &ap_association,
+            ap_slot,
+            IndividualAddress::new(STATION).unwrap(),
+            Ccmp128Key([0x48; 16]),
         );
         key.identity.0.last.set(0x0102_0304_0505);
         let mut body = alloc::vec![2, 0, 0, 0, 0, 3, 2, 0, 0, 0, 0, 1, 0, 12];
@@ -126,6 +148,26 @@ impl Work for WirePeer {
             },
         );
         let _returned = completion(phase, &mut terminal_access).await;
+        assert_eq!(
+            phase
+                .held
+                .air
+                .associations
+                .borrow()
+                .get(VifRole::AccessPoint)
+                .spp(),
+            ap_spp
+        );
+        assert_eq!(
+            phase
+                .held
+                .air
+                .associations
+                .borrow()
+                .get(VifRole::Station)
+                .spp(),
+            self.0
+        );
         assert_eq!(
             phase.held.air.sent()[0].frame,
             bytes(self.1),

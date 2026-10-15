@@ -59,8 +59,11 @@
 //! use ends. Uninstall and abandon deactivate the table, discard captured
 //! ingress and clear all secrets even if a test retains an identity. Normal
 //! disable/reenable preserves installed keys and their counters.
-//! Each installation refers to the immutable association record. The model
-//! applies its SPP mode before publishing material and records that order.
+//! The unique `ModelAssociation` owns the protocol's decision. Modeled hardware
+//! holds one CCMP record per interface; keys select it with their interface
+//! identity, without sharing ownership of the association. The driver applies
+//! its SPP mode before publishing material and records that order. A mode can
+//! change only after the complete returned bank permits a new association.
 //! `AirFrame::frame` contains actual CCMP ciphertext and MIC; `plaintext` is
 //! the DMA image before encryption. `ModelAir::receive_ccmp` authenticates
 //! encrypted input under the installed association before publishing verified
@@ -566,7 +569,6 @@ struct KeyInstall {
     peer: Option<IndividualAddress>,
     rx_active: Cell<bool>,
     preparations: Rc<()>,
-    association: Rc<oer_ieee80211_rsn::ccmp_mpdu::CcmpAssociation>,
     air: Weak<ModelAir>,
 }
 
@@ -587,7 +589,6 @@ impl KeyIdentity {
     fn new(
         index: u8,
         key_id: u8,
-        association: Rc<oer_ieee80211_rsn::ccmp_mpdu::CcmpAssociation>,
         role: VifRole,
         peer: IndividualAddress,
         air: &Rc<ModelAir>,
@@ -602,7 +603,6 @@ impl KeyIdentity {
             peer: Some(peer),
             rx_active: Cell::new(false),
             preparations: Rc::new(()),
-            association,
             air: Rc::downgrade(air),
         }))
     }
@@ -611,7 +611,6 @@ impl KeyIdentity {
         key_id: GroupKeyId,
         role: VifRole,
         key: CcmpKey,
-        association: Rc<oer_ieee80211_rsn::ccmp_mpdu::CcmpAssociation>,
         air: &Rc<ModelAir>,
     ) -> Self {
         let identity = Self(Rc::new(KeyInstall {
@@ -624,7 +623,6 @@ impl KeyIdentity {
             peer: None,
             rx_active: Cell::new(false),
             preparations: Rc::new(()),
-            association,
             air: Rc::downgrade(air),
         }));
         air.install_material(&identity, key);
@@ -862,9 +860,9 @@ impl<'id, D> ModelMpdu<'id, D> {
                 .find(|entry| entry.identity.ptr_eq(&Rc::downgrade(&identity.0)))
                 .ok_or(ModelFault)?;
             wire.extend_from_slice(&[0; 8]);
-            identity
-                .0
-                .association
+            air.associations
+                .borrow()
+                .get(identity.0.role)
                 .seal(material.key.as_bytes(), &mut wire)
                 .map_err(|_| ModelFault)?;
         }
@@ -1008,10 +1006,11 @@ impl<'id, X: ModelContext> PhaseTypes<'id> for ModelTypes<X> {
     type BlockAck = ModelBlockAck<'id>;
 }
 
-/// Immutable association record, retained by each installed key.
+/// The unique protocol owner selecting an interface's immutable association.
+/// Installed keys retain only their interface identity; the modeled hardware
+/// holds exactly one CCMP record at that interface's index.
 pub struct ModelAssociation<'id, R: ModelRole> {
     owner: Association<'id, R, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS, R::AssociationPath>,
-    record: Rc<oer_ieee80211_rsn::ccmp_mpdu::CcmpAssociation>,
 }
 
 /// The keys of the role `R` and their slots.
@@ -1033,7 +1032,6 @@ impl<'id, R: ModelRole + 'id> KeyTypes<'id> for ModelKeys<'id, R> {
     ) -> Self::Association {
         ModelAssociation {
             owner: start.begin(spp),
-            record: Rc::new(oer_ieee80211_rsn::ccmp_mpdu::CcmpAssociation::new(spp)),
         }
     }
     fn collect_key_bank<const N: usize>(
@@ -1375,6 +1373,7 @@ pub struct ModelAir {
     // Secret material belongs to this installation table, never to the
     // cloneable identity carried by captured RX or returned Sent owners.
     key_installations: RefCell<Vec<KeyInstallation>>,
+    associations: RefCell<InterfaceAssociations>,
     crypto_operations: RefCell<Vec<ModelCryptoOperation>>,
     group_rx: RefCell<VecDeque<CapturedGroupRx>>,
     group_writes: Cell<usize>,
@@ -1415,22 +1414,61 @@ pub enum ModelCcmpError {
     Authentication(oer_ieee80211_rsn::ccmp_mpdu::CcmpMpduError),
 }
 
+// ModelCaps declares Interface scope. These are hardware policy records,
+// indexed by the same interface identity that keys already carry. The
+// association owner is never cloned. A queued install takes its decision
+// from that owner and the driver applies it before publishing material.
+// Like key-table hardware, vacant interfaces retain their last mode; changing
+// it requires a new owner obtained through the complete returned slot bank.
+struct InterfaceAssociations {
+    station: oer_ieee80211_rsn::ccmp_mpdu::CcmpAssociation,
+    access_point: oer_ieee80211_rsn::ccmp_mpdu::CcmpAssociation,
+}
+impl Default for InterfaceAssociations {
+    fn default() -> Self {
+        use oer_ieee80211_mac::security::Spp;
+        use oer_ieee80211_rsn::ccmp_mpdu::CcmpAssociation;
+        Self {
+            station: CcmpAssociation::new(Spp::NotNegotiated),
+            access_point: CcmpAssociation::new(Spp::NotNegotiated),
+        }
+    }
+}
+impl InterfaceAssociations {
+    fn get(&self, role: VifRole) -> &oer_ieee80211_rsn::ccmp_mpdu::CcmpAssociation {
+        match role {
+            VifRole::Station => &self.station,
+            VifRole::AccessPoint => &self.access_point,
+        }
+    }
+    fn apply(&mut self, role: VifRole, spp: oer_ieee80211_mac::security::Spp) {
+        let record = match role {
+            VifRole::Station => &mut self.station,
+            VifRole::AccessPoint => &mut self.access_point,
+        };
+        *record = oer_ieee80211_rsn::ccmp_mpdu::CcmpAssociation::new(spp);
+    }
+}
+
 impl ModelAir {
     fn install_material(&self, identity: &KeyIdentity, key: CcmpKey) {
-        self.crypto_operations.borrow_mut().extend([
-            ModelCryptoOperation::Association {
-                role: identity.0.role,
-                spp: identity.0.association.spp(),
-            },
-            ModelCryptoOperation::Key {
+        self.crypto_operations
+            .borrow_mut()
+            .push(ModelCryptoOperation::Key {
                 role: identity.0.role,
                 slot: identity.0.index,
-            },
-        ]);
+            });
         self.key_installations.borrow_mut().push(KeyInstallation {
             identity: Rc::downgrade(&identity.0),
             key,
         });
+    }
+
+    fn apply_association(&self, role: VifRole, spp: oer_ieee80211_mac::security::Spp) {
+        self.associations.borrow_mut().apply(role, spp);
+        self.crypto_operations
+            .borrow_mut()
+            .push(ModelCryptoOperation::Association { role, spp });
     }
 
     /// Programming observations, in the same order as the driver's FIFO.
@@ -1479,8 +1517,9 @@ impl ModelAir {
             .upgrade()
             .ok_or(ModelCcmpError::MissingKey)?;
         let mut plaintext = frame.to_vec();
-        identity
-            .association
+        self.associations
+            .borrow()
+            .get(identity.role)
             .open(material.key.as_bytes(), &mut plaintext)
             .map_err(ModelCcmpError::Authentication)?;
         let (plaintext, _mic) = plaintext
@@ -1726,6 +1765,7 @@ enum Command<'id, X: ModelContext> {
     Submit(Box<Prepared<'id, X>>),
     SubmitAmpdu(PreparedAggregate<'id, X>),
     InstallKey {
+        spp: oer_ieee80211_mac::security::Spp,
         key: KeyIdentity,
         material: CcmpKey,
     },
@@ -1744,7 +1784,7 @@ enum Command<'id, X: ModelContext> {
 type StationGroupPermission<'id> = Slot<'id, ModelGroupPermission<Station>, ModelPool<8>>;
 
 struct PendingGroupInstall<'id, R: ModelRole> {
-    association: Rc<oer_ieee80211_rsn::ccmp_mpdu::CcmpAssociation>,
+    spp: oer_ieee80211_mac::security::Spp,
     slot: GroupKeySlot<'id, R, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS, R::AssociationPath>,
     permission: Slot<'id, ModelGroupPermission<R>, R::GroupPermissionPath>,
     key_id: GroupKeyId,
@@ -2399,7 +2439,8 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                         .waiting
                         .push_back(Work::Aggregate(aggregate));
                 }
-                Command::InstallKey { key, material } => {
+                Command::InstallKey { spp, key, material } => {
+                    held.air.apply_association(key.0.role, spp);
                     held.air.install_material(&key, material);
                     self.keys.push(key);
                 }
@@ -2505,12 +2546,12 @@ impl<'id, X: ModelContext> Driver<'id, X> {
     where
         R: ModelRole + RoleKeys<'id, ModelTypes<X>, Keys = ModelKeys<'id, R>>,
     {
+        held.air.apply_association(R::ROLE, pending.spp);
         let identity = KeyIdentity::group(
             pending.slot.index(),
             pending.key_id,
             R::ROLE,
             pending.key,
-            pending.association,
             &held.air,
         );
         self.activate_group(held, &identity, true);
@@ -2558,7 +2599,6 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                     key_id,
                     VifRole::Station,
                     key,
-                    installed.identity.0.association.clone(),
                     &held.air,
                 );
                 self.activate_group(held, &identity, true);
@@ -3510,15 +3550,9 @@ where
         peer: IndividualAddress,
         key: Ccmp128Key,
     ) -> ModelPairwiseKey<'id, R> {
-        let identity = KeyIdentity::new(
-            slot.index(),
-            0,
-            association.record.clone(),
-            R::ROLE,
-            peer,
-            &self.held.air,
-        );
+        let identity = KeyIdentity::new(slot.index(), 0, R::ROLE, peer, &self.held.air);
         self.held.command(Command::InstallKey {
+            spp: association.owner.spp(),
             material: CcmpKey::new(key.0),
             key: identity.clone(),
         });
@@ -3536,7 +3570,7 @@ where
         self.held.command(Command::Group {
             admitted_at: self.held.air.now_micros.get(),
             change: GroupChange::Install(R::installation(PendingGroupInstall {
-                association: association.record.clone(),
+                spp: association.owner.spp(),
                 slot,
                 permission,
                 key_id,

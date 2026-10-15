@@ -5,6 +5,11 @@
 //! endpoints in their own wake and telemetry policy without reopening unsafe
 //! slot access.
 
+mod indexed;
+pub use indexed::{
+    AffineIndexedSpscQueue, AffineIndexedSpscReceiver, AffineIndexedSpscSender, UniqueQueueIndex,
+};
+
 use core::{
     cell::{Cell, UnsafeCell},
     marker::PhantomData,
@@ -266,11 +271,11 @@ impl<T, const DEPTH: usize> AffineSpscSendPermit<'_, T, DEPTH> {
             unsafe_code,
             reason = "the sole producer's permit retains its proven vacant cell"
         )]
-        // SAFETY: vacant_slot acquired the consumer cursor after the previous
-        // value moved out. The permit's exclusive producer borrow prevents a
-        // competing publication or a second permit at this cursor. The only
-        // other endpoint can only advance the consumer, so this cell remains
-        // vacant until this write and its following Release publication.
+        // SAFETY: vacant_slot's Acquire cursor or the indexed queue's affine
+        // permission transfer proves the prior read complete and this cursor
+        // vacant. The unique producer is borrowed until this send finishes;
+        // neither constructor permits a competing publication at this cursor.
+        // The consumer can only free more cells before this Release write.
         unsafe {
             (*self.queue.values[self.producer % DEPTH].get()).write(value);
         }

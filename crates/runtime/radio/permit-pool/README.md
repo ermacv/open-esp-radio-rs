@@ -10,6 +10,11 @@ waits with its own seat. A backend keeps it in its held part of the install
 (`PortBackend::Held`), so the permits of submitted work come back to it before
 their terminal events are handed out.
 
+A line with any seats requires nonzero permit capacity, checked when its
+constructor is instantiated. Zero permits and zero seats remain a valid empty
+component. A zero-capacity line with live waiters cannot promise progress from
+any terminal, so it cannot be built.
+
 - A taker takes its seat's place in the line at its first poll and is served
   once it leads and a permit is free. A taker whose future drops gives up its
   place, and its seat stays with it.

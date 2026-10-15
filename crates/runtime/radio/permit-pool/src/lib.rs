@@ -122,11 +122,38 @@ impl<'id, K, const PERMITS: usize, const SEATS: usize, Pool: PoolPath, Waiters: 
 {
     /// A pool of `permits`, every one free, whose line holds a place for
     /// each seat [`Permits`](oer_radio_port::Permits) made with
-    /// `line`.
+    /// `line`. A line with seats requires at least one permit: a zero-capacity
+    /// waiter would have no operation whose terminal could ever wake it.
+    ///
+    /// ```compile_fail,E0080
+    /// use oer_radio_permit_pool::FifoPermitPool;
+    /// use oer_radio_port::{Mint, Permits};
+    /// fn build(mint: Mint<'static, Permits<(), 0, 1>>) {
+    ///     let tokens = mint.into_pools();
+    ///     let _pool = FifoPermitPool::new(tokens.supply, tokens.line);
+    /// }
+    /// fn main() { let _: fn(Mint<'static, Permits<(), 0, 1>>) = build; }
+    /// ```
+    ///
+    /// ```
+    /// use oer_radio_permit_pool::FifoPermitPool;
+    /// use oer_radio_port::{Mint, Permits};
+    /// fn build(mint: Mint<'static, Permits<(), 1, 1>>) {
+    ///     let tokens = mint.into_pools();
+    ///     let _pool = FifoPermitPool::new(tokens.supply, tokens.line);
+    /// }
+    /// fn main() { let _: fn(Mint<'static, Permits<(), 1, 1>>) = build; }
+    /// ```
     pub fn new(
         supply: PermitSupply<'id, K, PERMITS, Pool>,
         line: Line<'id, K, SEATS, Waiters>,
     ) -> Self {
+        const {
+            assert!(
+                PERMITS != 0 || SEATS == 0,
+                "FIFO waiters require nonzero permit capacity"
+            );
+        }
         Self {
             _authority: line,
             free: RefCell::new(supply.into_permits().map(Some)),

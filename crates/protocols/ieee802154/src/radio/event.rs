@@ -208,4 +208,6 @@ pub enum RadioFault {
     /// Delivery stops and owners remain quarantined; this says nothing
     /// about whether the hardware can subsequently be stopped.
     AccountingViolation,
+    /// The disable sink returned a terminal instead of accepting it.
+    TerminalRejected,
 }

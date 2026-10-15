@@ -719,3 +719,15 @@ reason = "cargo xtask check ui checks the affine loan/publication and its compil
 [[uncompiled]]
 path = "crates/radio/port/tests/ui/driver_loan_escape.rs"
 reason = "cargo xtask check ui checks the affine loan/publication and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/espressif/ieee802154/tests/ui/quarantined_queue_reinstall.rs"
+reason = "cargo xtask check ui checks terminal quarantine and affine queue reuse with compiling twins"
+
+[[uncompiled]]
+path = "crates/runtime/espressif/ieee802154/tests/ui/queue_once.rs"
+reason = "cargo xtask check ui checks terminal quarantine and affine queue reuse with compiling twins"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/bluetooth/tests/ui/queue_once.rs"
+reason = "cargo xtask check ui checks terminal quarantine and affine queue reuse with compiling twins"

@@ -72,7 +72,18 @@ impl Client {
         parts: Ieee802154SystemParts,
     ) -> Option<Ieee802154Parked> {
         let stopped = pin!(system.stop(parts, self.radio));
-        stopped.await.ok()
+        match stopped.await.ok()? {
+            oer_esp32s31_ieee802154_system::Ieee802154Stopped::Reusable(parked) => Some(parked),
+            oer_esp32s31_ieee802154_system::Ieee802154Stopped::TerminalsQuarantined {
+                parts,
+                terminals,
+            } => {
+                // These scenarios accept every disable terminal. Retain an
+                // unexpected rejection without reusing its queue.
+                drop(oer_radio_port::Quarantined::new((parts, terminals)));
+                None
+            }
+        }
     }
 }
 

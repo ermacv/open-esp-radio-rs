@@ -95,3 +95,13 @@ The driver observes `Retire::wait` while driving the runtime, then consumes
 its loan through `Retire::requested`. Its idle, backoff and retry waits
 retain progress in static runtime backing; cancellation tests subsequently
 disable and uninstall the same installation.
+
+A sink rejection is `TerminalRejected`, not an unconfirmed emergency stop.
+`disable_locked` already stopped TX/RX; clear wishes/applied even when the
+sink returns `Break`. Uninstall must still run `mac_deinit` (disabled PTIs)
+and `engine.disable`. `TerminalsQuarantined` returns `MacStoppedParts` while
+retaining only unread events and permits. `System::stop` then releases clocks
+and shared PHY exactly as for reusable owners. `RuntimeQueue` is a private,
+affine claim issued once per static runtime; only normal reusable teardown
+returns it. Hardware extracted from terminal quarantine needs fresh queue
+storage and cannot be installed back with the old queue.

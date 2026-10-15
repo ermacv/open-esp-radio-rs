@@ -216,11 +216,45 @@ closes RF after the last client, and `start` wakes it, as
 Modem retention and light sleep are not composed: closing RF keeps the MAC
 and baseband powered. On-air behaviour is qualified only by HIL runs.
 
-`Ieee802154SystemParts` distinguishes `Uninstalled::Reusable` from
-`Uninstalled::Quarantined`. Only reusable parts enter ordinary teardown.
+`Ieee802154SystemParts` has three outcomes. `Uninstalled::Reusable` returns
+hardware with its affine `RuntimeQueue` permission. `TerminalsQuarantined`
+returns `MacStoppedParts`: TX/RX stopped, PTIs restored and engine disabled,
+while the rejected terminal, pending permits and queue remain in the shared
+`Quarantined`. Both outcomes enter `System::stop`'s normal clock and PHY
+teardown. The returned `Ieee802154Stopped` keeps stopped hardware separate
+from terminal quarantine; only `Reusable(Ieee802154Parked)` can feed `start`
+again. Reinstalling the returned hardware through the runtime API needs a
+new static runtime and its fresh queue permission. The composition's process
+singleton never reuses its quarantined queue.
+
+`Uninstalled::Quarantined` does no MAC teardown.
 A quarantined runtime keeps its static engine and DMA backing installed;
 `stop` returns the explicit `Quarantined` error while preserving the route,
 power and coexistence owners in the shared core's `Quarantined<S>`. Destroying
 that result touches no hardware and releases no ownership. A chip reset is
 required. This path never acquires the runtime's ISR mutex or the shared
 radio lease.
+
+The runtime claims queue permission once with an atomic compare/exchange.
+The permission contains a private reference to that claim; install checks
+its identity before touching hardware. Ordinary teardown returns it, while
+terminal quarantine retains it permanently. Hardware owners alone therefore cannot reconstruct an install over the
+old queue. This adds no shared lifecycle API and no new ISR lock.
+
+## Lifecycle cost
+
+The unchanged lifecycle probe (Rust 1.97.1, RV32IMAFC, `opt-level=3`, LTO,
+one codegen unit, panic abort) was rebuilt for terminal quarantine:
+
+| Measurement | Accepted lifecycle | Terminal quarantine |
+| --- | ---: | ---: |
+| Test ELF `.text` | 6844 bytes | 6844 bytes |
+| `run_port` future per probe backend | 432 bytes | 432 bytes |
+
+This probe measures the shared core, which this change does not modify. It
+contains synthetic backends, so it does not measure concrete MAC teardown,
+composition or queue-claim code. The original pre-core ELF was 2282 bytes;
+its corresponding future was 184 bytes. The block API now adds `RuntimeQueue`,
+`MacStoppedParts`, `Uninstalled::TerminalsQuarantined` and `Ieee802154Stopped`;
+there is no additional allocation or lock in the ISR path. Wi-Fi has no API
+migration from this block-local change.

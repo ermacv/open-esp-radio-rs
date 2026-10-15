@@ -23,6 +23,10 @@
 
 mod caps;
 mod maintenance;
+#[cfg(any(target_arch = "riscv32", test))]
+mod stop;
+#[cfg(test)]
+extern crate std;
 #[cfg(target_arch = "riscv32")]
 mod system;
 
@@ -66,6 +70,7 @@ pub use oer_esp32s31_ieee802154_esp_hal::{
 pub use system::{
     IEEE802154_EVENT_CAPACITY, Ieee802154FailStop, Ieee802154MaintenanceError, Ieee802154Parked,
     Ieee802154StartError, Ieee802154StartFailure, Ieee802154StopError, Ieee802154StopFailure,
-    Ieee802154System, Ieee802154SystemBackend, Ieee802154SystemClock, Ieee802154SystemParts,
-    Ieee802154SystemRssi, Ieee802154SystemRuntime, ieee802154_interrupt, start,
+    Ieee802154Stopped, Ieee802154StoppedHardware, Ieee802154System, Ieee802154SystemBackend,
+    Ieee802154SystemClock, Ieee802154SystemParts, Ieee802154SystemRssi, Ieee802154SystemRuntime,
+    ieee802154_interrupt, start,
 };

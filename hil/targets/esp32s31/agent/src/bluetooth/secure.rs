@@ -256,8 +256,11 @@ async fn lifecycle(
         let parked = {
             let mut stop = pin!(system.stop(uninstalled, radio));
             match stop.as_mut().await {
-                Ok(parked) => parked,
-                Err(_) => crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-stop\r\n"),
+                Ok(oer_esp32s31_bluetooth_system::BluetoothStopped::Reusable(parked)) => parked,
+                Ok(oer_esp32s31_bluetooth_system::BluetoothStopped::TerminalsQuarantined {
+                    ..
+                })
+                | Err(_) => crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-stop\r\n"),
             }
         };
         let closed = old_hci_closed(&exit.controller).await;

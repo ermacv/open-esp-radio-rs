@@ -37,7 +37,7 @@ use oer_espressif_ieee802154_engine::{
 };
 use oer_espressif_ieee802154_runtime::{
     Ieee802154Random, Ieee802154Runtime, Ieee802154RuntimeBackend, Ieee802154RuntimeCaps,
-    Ieee802154RuntimeParts, Uninstalled,
+    Ieee802154RuntimeParts, MacStoppedParts, RuntimeQueue, Uninstalled,
 };
 use oer_time_embassy::EmbassyClock;
 
@@ -100,6 +100,7 @@ pub type Ieee802154SystemRssi =
 /// Reusable MAC owners or a permanent quarantine receipt, for [`Ieee802154System::stop`].
 pub type Ieee802154SystemParts = Uninstalled<
     Ieee802154RuntimeParts<'static, Ieee802154MacOwners>,
+    MacStoppedParts<'static, Ieee802154MacOwners>,
     &'static Ieee802154SystemRuntime,
 >;
 
@@ -142,6 +143,32 @@ pub struct Ieee802154Parked {
     pub coex: CoexAbsent<Ieee802154Client>,
     /// The MAC engine and its receive storage.
     pub engine: Ieee802154Engine<'static>,
+    queue: RuntimeQueue,
+}
+
+/// Hardware after composition released clocks, PHY membership and common power.
+/// It has no permission to reuse the quarantined runtime queue.
+pub struct Ieee802154StoppedHardware {
+    /// The stopped partition.
+    pub partition: Ieee802154RadioPartition,
+    /// The client is outside coexistence.
+    pub coex: CoexAbsent<Ieee802154Client>,
+    /// The disabled MAC engine and its durable DMA storage.
+    pub engine: Ieee802154Engine<'static>,
+}
+
+/// Completion of composition teardown; unread terminals remain separate.
+#[must_use = "retain the returned hardware and any terminal quarantine"]
+pub enum Ieee802154Stopped {
+    /// Hardware and the old queue may be installed again together.
+    Reusable(Ieee802154Parked),
+    /// Hardware is stopped, but another installation needs a fresh queue.
+    TerminalsQuarantined {
+        /// Hardware after clocks and PHY were released.
+        parts: Ieee802154StoppedHardware,
+        /// The old queue and all unread owners, without a reuse path.
+        terminals: oer_radio_port::Quarantined<&'static Ieee802154SystemRuntime>,
+    },
 }
 
 impl Ieee802154Parked {
@@ -154,7 +181,9 @@ impl Ieee802154Parked {
         defaults: Ieee802154PibDefaults,
     ) -> Option<Self> {
         let buffers = ENGINE_BUFFERS.try_take()?;
+        let queue = RUNTIME.take_queue()?;
         Some(Self {
+            queue,
             partition,
             coex,
             engine: Ieee802154Engine::new(
@@ -177,7 +206,9 @@ impl Ieee802154Parked {
         interfaces: Ieee802154Interfaces,
     ) -> Option<Self> {
         let buffers = ENGINE_BUFFERS.try_take()?;
+        let queue = RUNTIME.take_queue()?;
         Some(Self {
+            queue,
             partition,
             coex,
             engine: Ieee802154Engine::new_multipan(
@@ -339,6 +370,7 @@ fn unwind_clocked(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     clocked: Ieee802154Clocked,
     engine: Ieee802154Engine<'static>,
+    queue: RuntimeQueue,
     error: Ieee802154StartError,
     power: CommonPower<Ieee802154Client>,
     coex: CoexAbsent<Ieee802154Client>,
@@ -354,13 +386,14 @@ fn unwind_clocked(
             );
         }
     };
-    unwind_powered(lease, powered, engine, error, power, coex)
+    unwind_powered(lease, powered, engine, queue, error, power, coex)
 }
 
 fn unwind_powered(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     powered: Ieee802154Powered,
     engine: Ieee802154Engine<'static>,
+    queue: RuntimeQueue,
     error: Ieee802154StartError,
     power: CommonPower<Ieee802154Client>,
     coex: CoexAbsent<Ieee802154Client>,
@@ -372,6 +405,7 @@ fn unwind_powered(
                 partition: cold.into_partition(),
                 coex,
                 engine,
+                queue,
             }),
         },
         Err(failure) => {
@@ -426,6 +460,7 @@ pub async fn start<K: Ieee802154RuntimeCaps, P, C: PlatformClockProvider>(
         partition,
         coex,
         mut engine,
+        queue,
     } = parked;
     let mut guard = radio.lock().await;
     let (lease, _, clocks) = guard.parts();
@@ -439,6 +474,7 @@ pub async fn start<K: Ieee802154RuntimeCaps, P, C: PlatformClockProvider>(
                     partition: failure.into_owner().into_partition(),
                     coex,
                     engine,
+                    queue,
                 }),
             });
         }
@@ -459,6 +495,7 @@ pub async fn start<K: Ieee802154RuntimeCaps, P, C: PlatformClockProvider>(
                 lease,
                 failure.into_owner(),
                 engine,
+                queue,
                 error,
                 power,
                 coex,
@@ -486,7 +523,9 @@ pub async fn start<K: Ieee802154RuntimeCaps, P, C: PlatformClockProvider>(
                 Ieee802154JoinError::Client(error) => Ieee802154StartError::PhyClient(error),
             };
             let (lease, _, _) = guard.parts();
-            return Err(unwind_clocked(lease, clocked, engine, error, power, coex));
+            return Err(unwind_clocked(
+                lease, clocked, engine, queue, error, power, coex,
+            ));
         }
     };
     let (lease, platform, _) = guard.parts();
@@ -529,7 +568,7 @@ pub async fn start<K: Ieee802154RuntimeCaps, P, C: PlatformClockProvider>(
                 lease,
                 failure.into_clocked(),
                 membership,
-                engine,
+                (engine, queue),
                 error,
                 power,
                 coex,
@@ -544,7 +583,7 @@ pub async fn start<K: Ieee802154RuntimeCaps, P, C: PlatformClockProvider>(
                 lease,
                 failure.into_reset().into_clocked(),
                 membership,
-                engine,
+                (engine, queue),
                 error,
                 power,
                 coex,
@@ -560,10 +599,8 @@ pub async fn start<K: Ieee802154RuntimeCaps, P, C: PlatformClockProvider>(
         route,
     } = RegisteredIeee802154Operational::new(foundation, membership);
     let interrupts = interrupts.activate(&mut task);
-    let parts = Ieee802154RuntimeParts {
-        engine,
-        hardware: Ieee802154MacOwners::new(task, interrupts),
-    };
+    let parts =
+        Ieee802154RuntimeParts::new(engine, Ieee802154MacOwners::new(task, interrupts), queue);
     let backend = match RUNTIME.install::<K>(parts, HardwareRandom, defaults) {
         Ok(handles) => handles,
         Err(parts) => {
@@ -597,6 +634,25 @@ pub async fn start<K: Ieee802154RuntimeCaps, P, C: PlatformClockProvider>(
         Err(error) => {
             let (parts, _) = match backend.uninstall_unused() {
                 Uninstalled::Reusable(parts) => parts,
+                Uninstalled::TerminalsQuarantined { parts, terminals } => {
+                    let (engine, hardware) = parts.into_parts();
+                    drop(terminals);
+                    let (mut task, interrupts) = hardware.into_parts();
+                    let interrupts = interrupts.deactivate(&mut task);
+                    return Err(fail_stop(
+                        Ieee802154StartError::Quarantined,
+                        FailStopOwner::Installed(
+                            RegisteredIeee802154Operational {
+                                task,
+                                interrupts,
+                                route,
+                            },
+                            engine,
+                        ),
+                        power,
+                        coex,
+                    ));
+                }
                 Uninstalled::Quarantined(receipt) => {
                     // The static runtime retains all MAC backing. Dropping
                     // its receipt cannot free it or touch hardware.
@@ -632,15 +688,16 @@ fn leave_and_unwind(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     clocked: Ieee802154Clocked,
     membership: Ieee802154PhyMembership,
-    engine: Ieee802154Engine<'static>,
+    parked: (Ieee802154Engine<'static>, RuntimeQueue),
     error: Ieee802154StartError,
     power: CommonPower<Ieee802154Client>,
     coex: CoexAbsent<Ieee802154Client>,
 ) -> Ieee802154StartFailure {
+    let (engine, queue) = parked;
     if leave_ieee802154(lease, &clocked, membership).is_err() {
         return fail_stop(error, FailStopOwner::Clocked(clocked), power, coex);
     }
-    unwind_clocked(lease, clocked, engine, error, power, coex)
+    unwind_clocked(lease, clocked, engine, queue, error, power, coex)
 }
 
 /// The shared radio is a software-coexistence build: the MAC publishes the
@@ -816,16 +873,16 @@ impl Ieee802154System {
         self,
         parts: Ieee802154SystemParts,
         radio: &RadioSystem<P, C, EmbassyClock>,
-    ) -> Result<Ieee802154Parked, Ieee802154StopFailure> {
+    ) -> Result<Ieee802154Stopped, Ieee802154StopFailure> {
         let Self {
             route,
             coex_config,
             power,
             coex,
         } = self;
-        let parts = match parts {
-            Uninstalled::Reusable(parts) => parts,
-            Uninstalled::Quarantined(receipt) => {
+        let parts = match crate::stop::StoppedMac::take(parts) {
+            Ok(stopped) => stopped,
+            Err(receipt) => {
                 // Keep power, coexistence and route owners intact. The
                 // runtime remains installed; this path does no hardware work.
                 drop(receipt);
@@ -854,86 +911,102 @@ impl Ieee802154System {
                             power,
                             coex: Ieee802154Coex::Coexisting(proof),
                         },
-                        Uninstalled::Reusable(parts),
+                        parts.into_uninstalled(),
                     )),
                 });
             }
         };
         // The port's end masked the CPU route before it took the engine
         // (`Ieee802154RouteDetach`).
-        let engine = parts.engine;
-        let (mut task, interrupts) = parts.hardware.into_parts();
-        let interrupts = interrupts.deactivate(&mut task);
-        let (foundation, membership) = match route.into_foundation(task, interrupts) {
-            Ok(parts) => parts,
-            Err(failure) => {
-                let error = Ieee802154StopError::Foundation(failure.failure().error());
-                let (failure, membership) = failure.into_parts();
-                return Err(stop_fail_stop(
-                    error,
-                    FailStopOwner::Joined(failure.into_reset().into_clocked(), membership),
-                    power,
-                    coex,
-                ));
+        let released = parts
+            .release(async move |engine, hardware| {
+                let (mut task, interrupts) = hardware.into_parts();
+                let interrupts = interrupts.deactivate(&mut task);
+                let (foundation, membership) = match route.into_foundation(task, interrupts) {
+                    Ok(parts) => parts,
+                    Err(failure) => {
+                        let error = Ieee802154StopError::Foundation(failure.failure().error());
+                        let (failure, membership) = failure.into_parts();
+                        return Err(stop_fail_stop(
+                            error,
+                            FailStopOwner::Joined(failure.into_reset().into_clocked(), membership),
+                            power,
+                            coex,
+                        ));
+                    }
+                };
+                let clocked = foundation.into_clocked();
+                let mut guard = radio.lock().await;
+                let left = {
+                    let left = core::pin::pin!(guard.leave_ieee802154(&clocked, membership));
+                    left.await
+                };
+                let left = match left {
+                    Ok(left) => left,
+                    Err(failure) => {
+                        let error = Ieee802154StopError::PhyClient(failure.error());
+                        return Err(stop_fail_stop(
+                            error,
+                            FailStopOwner::Joined(clocked, failure.into_membership()),
+                            power,
+                            coex,
+                        ));
+                    }
+                };
+                // RF closed after the last client; it was already closed, or stays
+                // open for another client, otherwise.
+                if let Err(error) = left.rf_closed {
+                    return Err(stop_fail_stop(
+                        Ieee802154StopError::PhyClose(error),
+                        FailStopOwner::Clocked(clocked),
+                        power,
+                        coex,
+                    ));
+                }
+                let (lease, _, _) = guard.parts();
+                let powered = match clocked.disable_clocks(lease) {
+                    Ok(powered) => powered,
+                    Err(failure) => {
+                        return Err(stop_fail_stop(
+                            Ieee802154StopError::Clocks(failure.error()),
+                            FailStopOwner::Clocked(failure.into_owner()),
+                            power,
+                            coex,
+                        ));
+                    }
+                };
+                match powered.power_down(lease, power, &coex) {
+                    Ok(cold) => Ok(Ieee802154StoppedHardware {
+                        partition: cold.into_partition(),
+                        coex,
+                        engine,
+                    }),
+                    Err(failure) => {
+                        let error = Ieee802154StopError::Power(failure.error());
+                        let (powered, power) = failure.into_owner();
+                        Err(stop_fail_stop(
+                            error,
+                            FailStopOwner::Powered(powered),
+                            power,
+                            coex,
+                        ))
+                    }
+                }
+            })
+            .await?;
+        Ok(match released {
+            crate::stop::Released::Reusable { parts, queue } => {
+                Ieee802154Stopped::Reusable(Ieee802154Parked {
+                    partition: parts.partition,
+                    coex: parts.coex,
+                    engine: parts.engine,
+                    queue,
+                })
             }
-        };
-        let clocked = foundation.into_clocked();
-        let mut guard = radio.lock().await;
-        let left = {
-            let left = core::pin::pin!(guard.leave_ieee802154(&clocked, membership));
-            left.await
-        };
-        let left = match left {
-            Ok(left) => left,
-            Err(failure) => {
-                let error = Ieee802154StopError::PhyClient(failure.error());
-                return Err(stop_fail_stop(
-                    error,
-                    FailStopOwner::Joined(clocked, failure.into_membership()),
-                    power,
-                    coex,
-                ));
+            crate::stop::Released::TerminalsQuarantined { parts, terminals } => {
+                Ieee802154Stopped::TerminalsQuarantined { parts, terminals }
             }
-        };
-        // RF closed after the last client; it was already closed, or stays
-        // open for another client, otherwise.
-        if let Err(error) = left.rf_closed {
-            return Err(stop_fail_stop(
-                Ieee802154StopError::PhyClose(error),
-                FailStopOwner::Clocked(clocked),
-                power,
-                coex,
-            ));
-        }
-        let (lease, _, _) = guard.parts();
-        let powered = match clocked.disable_clocks(lease) {
-            Ok(powered) => powered,
-            Err(failure) => {
-                return Err(stop_fail_stop(
-                    Ieee802154StopError::Clocks(failure.error()),
-                    FailStopOwner::Clocked(failure.into_owner()),
-                    power,
-                    coex,
-                ));
-            }
-        };
-        match powered.power_down(lease, power, &coex) {
-            Ok(cold) => Ok(Ieee802154Parked {
-                partition: cold.into_partition(),
-                coex,
-                engine,
-            }),
-            Err(failure) => {
-                let error = Ieee802154StopError::Power(failure.error());
-                let (powered, power) = failure.into_owner();
-                Err(stop_fail_stop(
-                    error,
-                    FailStopOwner::Powered(powered),
-                    power,
-                    coex,
-                ))
-            }
-        }
+        })
     }
 }
 

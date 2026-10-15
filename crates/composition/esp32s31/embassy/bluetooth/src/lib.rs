@@ -34,8 +34,11 @@
 //! every status bit.
 //! [`BluetoothSystem::stop`] takes what the port's uninstall returned
 //! ([`BluetoothSystemUninstalled`]: the radio and hardware), reverses the
-//! epoch and returns the parked partition with the controller memory back at its allocation-time image,
-//! ready for the next [`start`]. Periodic PHY tracking belongs to the radio
+//! epoch and returns [`BluetoothStopped`]. Ordinary teardown returns a parked
+//! partition with reset controller memory and its affine outcome-queue claim.
+//! After `TerminalRejected`, the same teardown releases clocks and PHY, but
+//! returns stopped hardware separately from quarantined outcomes; it cannot
+//! feed the old queue to [`start`] again. Periodic PHY tracking belongs to the radio
 //! system (`RadioSystem::run_tracking`).
 //!
 //! [`start_bluetooth_hci`] creates the HCI Controller once per boot: the
@@ -44,6 +47,12 @@
 //! Controller epoch's port. Between Controller epochs the service retires the
 //! drained Host end and restarts it with a fresh core.
 //! [`BluetoothEntropy`] binds the SoC entropy service as its random source.
+//!
+//! The shared-core cost probe remains 6844 bytes of RV32 text and 432 bytes
+//! per probe future (Rust 1.97.1, opt-level 3, LTO, one codegen unit). It uses
+//! synthetic backends and does not measure the concrete Bluetooth retirement
+//! or queue-claim path. This block adds `RuntimeQueue`, the three named
+//! uninstall outcomes and `BluetoothStopped`; Wi-Fi's API does not change.
 //!
 //! Power and clock failures roll back to the parked client; any failure
 //! after the first Controller write keeps its owners fail-stop.
@@ -71,7 +80,8 @@ pub use oer_esp32s31_bluetooth_runtime::{BluetoothFault, BluetoothRuntimeFault};
 pub use system::{
     BluetoothFailStop, BluetoothInterruptFault, BluetoothMemoryError, BluetoothParked,
     BluetoothRunnerFault, BluetoothStartError, BluetoothStartFailure, BluetoothStopError,
-    BluetoothStopFailure, BluetoothSystem, BluetoothSystemBackend, BluetoothSystemDriver,
-    BluetoothSystemFault, BluetoothSystemMemory, BluetoothSystemRetained, BluetoothSystemRuntime,
-    BluetoothSystemUninstalled, EVENTS, ITEMS, MODEM_TIMER_CAPACITY, start,
+    BluetoothStopFailure, BluetoothStopped, BluetoothStoppedHardware, BluetoothSystem,
+    BluetoothSystemBackend, BluetoothSystemDriver, BluetoothSystemFault, BluetoothSystemMemory,
+    BluetoothSystemRetained, BluetoothSystemRuntime, BluetoothSystemUninstalled, EVENTS, ITEMS,
+    MODEM_TIMER_CAPACITY, start,
 };

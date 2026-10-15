@@ -43,7 +43,18 @@
 //! immediately without queue or fault locks, retaining unread ownership in
 //! `PortEnd`; commands keep reporting `Poisoned`. The end is final across
 //! repeated calls and phase loans.
-//! Only confirmed retirement returns reusable owners; `BluetoothRetained`
+//! A disable sink that rejects an outcome poisons with
+//! `BluetoothRuntimeFault::TerminalRejected`. The scheduler is already
+//! stopped and every admitted event accounted: the driver completes normal
+//! retirement, including PHY-route restoration. `Uninstalled::TerminalsQuarantined`
+//! returns hardware separately from the unread queue; composition can release
+//! its clocks and PHY membership. The stream ends `EventEnd::Quarantined`.
+//! Only the old queue and its affine [`RuntimeQueue`] claim remain retained.
+//! Initial installation consumes a claim from [`BluetoothRuntime::take_queue`];
+//! ordinary uninstall returns it. A rejected queue never issues another claim,
+//! so reinstalling returned hardware needs a fresh runtime and queue.
+//!
+//! Only confirmed retirement returns hardware; `BluetoothRetained`
 //! holds all other role, hardware and PHY-route owners in the shared
 //! `Quarantined`, whose destruction frees nothing and requires chip reset.
 //!
@@ -95,7 +106,7 @@ pub use port::{BluetoothBackend, BluetoothClient, BluetoothEvents, BluetoothPhas
 pub use runtime::{
     BluetoothDriver, BluetoothFault, BluetoothInstallError, BluetoothRetained, BluetoothRuntime,
     BluetoothRuntimeFault, BluetoothTimeError, BluetoothUninstallError, HARDWARE_RECHECK,
-    TIME_REFRESH, TRANSITION_BOUND,
+    RuntimeQueue, TIME_REFRESH, TRANSITION_BOUND, Uninstalled,
 };
 
 #[cfg(test)]

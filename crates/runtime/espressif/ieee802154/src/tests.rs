@@ -147,12 +147,13 @@ type Resources<'id, K, const EVENTS: usize> = RuntimeResources<
     Runtime<EVENTS>,
 >;
 
-fn parts() -> Parts {
+fn parts<const EVENTS: usize>(runtime: &'static Runtime<EVENTS>) -> Parts {
     let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
     let levels = Ieee802154TxPowerLevels::new(&LEVELS).unwrap();
     Ieee802154RuntimeParts {
         engine: Ieee802154Engine::new(buffers, levels, Ieee802154PibDefaults::default()),
         hardware: Ieee802154LlModel::default(),
+        queue: runtime.take_queue().unwrap(),
     }
 }
 
@@ -233,7 +234,7 @@ where
 fn poison_waits_for_the_admitted_terminal_before_reporting_drained() {
     let runtime = runtime::<4>();
     run(
-        install::<Single, 4>(runtime, parts()),
+        install::<Single, 4>(runtime, parts(runtime)),
         async |mut owner, resources| {
             let RuntimeResources {
                 interfaces,
@@ -285,7 +286,7 @@ fn event_end_classifies_outstanding_work_and_remains_final() {
     for quarantined in [false, true] {
         let runtime = runtime::<4>();
         let end = run_end(
-            install::<Single, 4>(runtime, parts()),
+            install::<Single, 4>(runtime, parts(runtime)),
             async |mut owner, resources| {
                 let RuntimeResources {
                     interfaces,
@@ -402,14 +403,15 @@ struct Phase<'s, 'a, 'id, const EVENTS: usize> {
 fn enabled<const EVENTS: usize>(
     scenario: impl for<'s, 'a, 'id> AsyncFnOnce(Phase<'s, 'a, 'id, EVENTS>),
 ) -> (&'static Runtime<EVENTS>, Parts, Vec<Ieee802154PortEvent>) {
-    enabled_with(parts(), scenario)
+    let runtime = runtime::<EVENTS>();
+    enabled_with(runtime, parts(runtime), scenario)
 }
 
 fn enabled_with<const EVENTS: usize>(
+    runtime: &'static Runtime<EVENTS>,
     parts: Parts,
     scenario: impl for<'s, 'a, 'id> AsyncFnOnce(Phase<'s, 'a, 'id, EVENTS>),
 ) -> (&'static Runtime<EVENTS>, Parts, Vec<Ieee802154PortEvent>) {
-    let runtime = runtime::<EVENTS>();
     let mut leftovers = Vec::new();
     let parts = run(
         install::<Single, EVENTS>(runtime, parts),
@@ -544,22 +546,18 @@ fn transmit_done(id: oer_ieee802154::RequestId, status: TxStatus) -> Ieee802154P
 #[test]
 fn a_radio_is_installed_once_and_sleeps_once_enabled() {
     let runtime = runtime::<4>();
-    let backend = install::<Single, 4>(runtime, parts());
-    assert!(
-        runtime
-            .install::<Single>(parts(), FixedRandom, Ieee802154PibDefaults::default())
-            .is_err()
-    );
+    let backend = install::<Single, 4>(runtime, parts(runtime));
+    assert!(runtime.take_queue().is_none());
     assert_eq!(state(runtime), RadioState::Disabled);
-    run(backend, async |owner, _| {
+    let reusable = run(backend, async |owner, _| {
         let owner = enabled_owner(owner.enable().await);
         assert_eq!(state(runtime), RadioState::Resting(RestingState::Sleeping));
         let owner = disabled_owner(owner.disable(&mut |_| panic!("nothing ran")).await);
         assert_eq!(state(runtime), RadioState::Disabled);
         oer_radio_port::Ended::uninstall(owner, (), ())
     });
-    // The uninstalled runtime installs again.
-    let _ = install::<Single, 4>(runtime, parts());
+    // Ordinary teardown returned permission to reuse this queue.
+    let _ = install::<Single, 4>(runtime, reusable);
 }
 
 #[test]
@@ -652,7 +650,7 @@ fn an_overflowing_queue_reports_the_loss_once() {
 fn a_fault_reaches_a_queue_full_of_frames_and_poisons_the_port() {
     let runtime = runtime::<4>();
     run(
-        install::<Single, 4>(runtime, parts()),
+        install::<Single, 4>(runtime, parts(runtime)),
         async |mut owner, resources| {
             let configured = owner.setup().configure(resources.interfaces.interface);
             let mut owner = enabled_owner(owner.enable().await);
@@ -760,7 +758,7 @@ impl PortBody<Backend<Single, 8>> for RejectDisable {
             .err()
             .expect("a rejected terminal poisons the owner");
         assert_eq!(offered, self.reject_at + 1);
-        assert_eq!(poisoned.cause(), RadioFault::StateLost);
+        assert_eq!(poisoned.cause(), RadioFault::TerminalRejected);
         Ended::uninstall(poisoned, (), ())
     }
 }
@@ -769,23 +767,40 @@ impl PortBody<Backend<Single, 8>> for RejectDisable {
 fn rejecting_first_or_middle_disable_event_quarantines_the_remaining_queue_and_owners() {
     for reject_at in [0, 1] {
         let runtime = runtime::<8>();
-        let backend = install::<Single, 8>(runtime, parts());
+        let mut parts = parts(runtime);
+        parts
+            .engine
+            .set_coexistence(Ieee802154Coexistence::Software(resolve_priorities(
+                Ieee802154CoexConfig::VENDOR,
+                &CoexPtiTable::VENDOR,
+            )));
+        let backend = install::<Single, 8>(runtime, parts);
         let end = block_on(run_port(
             backend.installed(),
             RejectDisable { runtime, reject_at },
         ));
         let oer_radio_port::PortEnd::Uninstalled {
-            uninstalled: Uninstalled::Quarantined(receipt),
+            uninstalled:
+                Uninstalled::TerminalsQuarantined {
+                    parts,
+                    terminals: receipt,
+                },
             ..
         } = end
         else {
-            panic!("undelivered owners cannot become reusable");
+            panic!("stopped hardware is separate from undelivered owners");
         };
         drop(receipt);
+        let (engine, hardware) = parts.into_parts();
+        assert_eq!(
+            engine.state(),
+            oer_espressif_ieee802154_engine::engine::Ieee802154State::Disable
+        );
+        assert_eq!((hardware.txrx_pti, hardware.ack_pti), (3, 3));
         assert!(
             runtime
                 .installed
-                .lock(|installed| installed.borrow().is_some())
+                .lock(|installed| installed.borrow().is_none())
         );
         assert!(runtime.events.owed(|owed| matches!(
             &owed.held, Some(super::HeldEvent::Rejected { terminal }) if received(terminal)
@@ -809,10 +824,21 @@ fn rejecting_first_or_middle_disable_event_quarantines_the_remaining_queue_and_o
         }
         assert_eq!(frames, 2 - reject_at);
         assert_eq!(terminals, 1);
+        assert!(runtime.take_queue().is_none());
+        // Hardware can move to fresh storage. A fresh claim cannot unlock
+        // the old queue, even when supplied to the wrong runtime explicitly.
+        let fresh = self::runtime::<8>();
+        let fresh_parts =
+            Ieee802154RuntimeParts::new(engine, hardware, fresh.take_queue().unwrap());
+        let Err(fresh_parts) =
+            runtime.install::<Single>(fresh_parts, FixedRandom, Ieee802154PibDefaults::default())
+        else {
+            panic!("a foreign claim cannot reuse the quarantined queue");
+        };
         assert!(
-            runtime
-                .install::<Single>(parts(), FixedRandom, Ieee802154PibDefaults::default())
-                .is_err()
+            fresh
+                .install::<Single>(fresh_parts, FixedRandom, Ieee802154PibDefaults::default())
+                .is_ok()
         );
     }
 }
@@ -824,7 +850,7 @@ fn rejecting_first_or_middle_disable_event_quarantines_the_remaining_queue_and_o
 fn disable_ends_the_operation_in_flight_and_enable_admits_again() {
     let runtime = runtime::<4>();
     run(
-        install::<Single, 4>(runtime, parts()),
+        install::<Single, 4>(runtime, parts(runtime)),
         async |mut owner, resources| {
             let RuntimeResources {
                 interfaces,
@@ -905,14 +931,15 @@ fn received_frames_leave_the_operation_its_terminal_slot() {
 /// and return to the disabled foundation image when the parts leave.
 #[test]
 fn uninstall_returns_the_coexistence_ptis_to_the_foundation_image() {
-    let mut parts = parts();
+    let runtime = runtime::<4>();
+    let mut parts = parts(runtime);
     parts
         .engine
         .set_coexistence(Ieee802154Coexistence::Software(resolve_priorities(
             Ieee802154CoexConfig::VENDOR,
             &CoexPtiTable::VENDOR,
         )));
-    let (_, parts, _) = enabled_with::<4>(parts, async |phase| {
+    let (_, parts, _) = enabled_with::<4>(runtime, parts, async |phase| {
         let runtime = phase.runtime;
         runtime.with_model(|hardware| assert_eq!((hardware.txrx_pti, hardware.ack_pti), (1, 8)));
         // A new table snapshot reaches the next scene switch.
@@ -1126,6 +1153,7 @@ fn txrx_statistics_are_collected_on_request() {
 fn interface_keys_belong_to_their_interface() {
     let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
     let levels = Ieee802154TxPowerLevels::new(&LEVELS).unwrap();
+    let runtime = runtime::<4>();
     let parts = Ieee802154RuntimeParts {
         engine: Ieee802154Engine::new_multipan(
             buffers,
@@ -1134,8 +1162,8 @@ fn interface_keys_belong_to_their_interface() {
             Ieee802154Interfaces::new(2).unwrap(),
         ),
         hardware: Ieee802154LlModel::default(),
+        queue: runtime.take_queue().unwrap(),
     };
-    let runtime = runtime::<4>();
     run(
         install::<Multipan, 4>(runtime, parts),
         async |mut owner, resources| {
@@ -1386,6 +1414,72 @@ fn a_fault_beyond_the_reserved_one_never_overruns_the_queue() {
 }
 
 #[test]
+fn accounting_violation_during_disable_retains_terminals_but_returns_stopped_hardware() {
+    let runtime = runtime::<8>();
+    let end = run_end(
+        install::<Single, 8>(runtime, parts(runtime)),
+        async |mut owner, resources| {
+            let RuntimeResources {
+                interfaces,
+                mut operation,
+                ..
+            } = resources;
+            let configured = owner.setup().configure(interfaces.interface);
+            let mut owner = enabled_owner(owner.enable().await);
+            {
+                let phase = owner.phase();
+                let client = phase.clients.client(&configured);
+                let permit = client.operation(&mut operation[0]).await;
+                let _work = client
+                    .transmit(permit, transmission(&MAC, TxMode::Direct, 0))
+                    .unwrap();
+                assert!(runtime.events.push(Ieee802154RadioEvent::EnergyScanDone {
+                    id: oer_ieee802154::RequestId::new(u32::MAX),
+                    energy_dbm: -30,
+                }));
+            }
+            let owner = owner
+                .disable(&mut |_| panic!("foreign identity stops delivery"))
+                .await
+                .err()
+                .unwrap();
+            assert_eq!(owner.cause(), RadioFault::AccountingViolation);
+            Ended::uninstall(owner, (), ())
+        },
+    );
+    let oer_radio_port::PortEnd::Uninstalled {
+        uninstalled: Uninstalled::TerminalsQuarantined { parts, terminals },
+        ..
+    } = end
+    else {
+        panic!("confirmed stop is independent of accounting corruption")
+    };
+    let (engine, _hardware) = parts.into_parts();
+    assert_eq!(
+        engine.state(),
+        oer_espressif_ieee802154_engine::engine::Ieee802154State::Disable
+    );
+    drop(terminals);
+    assert!(
+        runtime
+            .installed
+            .lock(|installed| installed.borrow().is_none())
+    );
+    assert!(
+        runtime
+            .events
+            .owed(|owed| matches!(owed.held, Some(super::HeldEvent::AccountingViolation(_))))
+    );
+    assert!(runtime.events.take().is_none());
+    assert_eq!(
+        runtime.events.entries.len(),
+        1,
+        "the real TX terminal remains retained"
+    );
+    assert!(runtime.take_queue().is_none());
+}
+
+#[test]
 fn a_foreign_terminal_poisons_without_releasing_the_admitted_permit() {
     use core::cell::Cell;
     use std::rc::Rc;
@@ -1403,7 +1497,7 @@ fn a_foreign_terminal_poisons_without_releasing_the_admitted_permit() {
     let runtime = runtime::<8>();
     let drops = Rc::new(Cell::new(0));
     let end = run_end(
-        install::<Single, 8>(runtime, parts()).with_route(RouteOwner(drops.clone())),
+        install::<Single, 8>(runtime, parts(runtime)).with_route(RouteOwner(drops.clone())),
         async |mut owner, resources| {
             let RuntimeResources {
                 interfaces,
@@ -1527,7 +1621,7 @@ impl PortBody<Backend<Single, 4>> for AbandonBody {
 fn abandonment_never_enters_the_lock_held_by_an_isr() {
     for fail_stop in [false, true] {
         let runtime = runtime::<4>();
-        let backend = install::<Single, 4>(runtime, parts());
+        let backend = install::<Single, 4>(runtime, parts(runtime));
         runtime.installed.lock(|installed| {
             // An entered ISR owns this mutable state. Emergency poisoning,
             // retirement and quarantined detach must not enter it again.
@@ -1552,11 +1646,7 @@ fn abandonment_never_enters_the_lock_held_by_an_isr() {
                     cause: RadioFault::StateLost
                 })
             );
-            assert!(
-                runtime
-                    .install::<Single>(parts(), FixedRandom, Ieee802154PibDefaults::default())
-                    .is_err()
-            );
+            assert!(runtime.take_queue().is_none());
         });
     }
 }
@@ -1564,7 +1654,7 @@ fn abandonment_never_enters_the_lock_held_by_an_isr() {
 #[test]
 fn cancellation_quarantines_without_entering_the_isr_lock() {
     let runtime = runtime::<4>();
-    let backend = install::<Single, 4>(runtime, parts());
+    let backend = install::<Single, 4>(runtime, parts(runtime));
     let mut port = Box::pin(run_port(backend.installed(), AbandonBody::Wait));
     assert!(
         port.as_mut()
@@ -1587,7 +1677,7 @@ fn cancellation_quarantines_without_entering_the_isr_lock() {
 #[test]
 fn poisoned_uninstall_keeps_backing_without_taking_the_isr_lock() {
     let runtime = runtime::<4>();
-    let backend = install::<Single, 4>(runtime, parts());
+    let backend = install::<Single, 4>(runtime, parts(runtime));
     runtime.installed.lock(|installed| {
         let entered_isr = installed.borrow_mut();
         runtime
@@ -1604,11 +1694,7 @@ fn poisoned_uninstall_keeps_backing_without_taking_the_isr_lock() {
                 .load(core::sync::atomic::Ordering::Acquire)
         );
     });
-    assert!(
-        runtime
-            .install::<Single>(parts(), FixedRandom, Ieee802154PibDefaults::default())
-            .is_err()
-    );
+    assert!(runtime.take_queue().is_none());
 }
 
 /// The runner owns neither the delay nor the transmission. Cancel at every

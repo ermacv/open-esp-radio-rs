@@ -285,9 +285,20 @@ where
     /// not yet detached.
     pub fn uninstall_unused(
         self,
-    ) -> Uninstalled<(Ieee802154RuntimeParts<'storage, H>, Option<D>), Self> {
+    ) -> Uninstalled<
+        (Ieee802154RuntimeParts<'storage, H>, Option<D>),
+        crate::MacStoppedParts<'storage, H>,
+        Self,
+    > {
         match self.runtime.uninstall() {
             Uninstalled::Reusable(parts) => Uninstalled::Reusable((parts, self.route)),
+            Uninstalled::TerminalsQuarantined { parts, terminals } => {
+                drop(terminals);
+                Uninstalled::TerminalsQuarantined {
+                    parts,
+                    terminals: oer_radio_port::Quarantined::new(self),
+                }
+            }
             Uninstalled::Quarantined(receipt) => {
                 // The runtime still owns the hardware. Retain the backend's
                 // route too, without invoking its destructor.
@@ -625,8 +636,11 @@ where
     type Held<'id> = RuntimeHeld<'id>;
     type State = ();
     type Uninstall = ();
-    type Uninstalled =
-        Uninstalled<Ieee802154RuntimeParts<'storage, H>, &'r Rt<'storage, M, H, T, R, EVENTS>>;
+    type Uninstalled = Uninstalled<
+        Ieee802154RuntimeParts<'storage, H>,
+        crate::MacStoppedParts<'storage, H>,
+        &'r Rt<'storage, M, H, T, R, EVENTS>,
+    >;
 
     fn enable<'a, 'id>(
         &'a mut self,
@@ -658,6 +672,8 @@ where
         // Disabling ends the operation in flight with its terminal; every
         // queued terminal goes to the sink, its permit back first.
         runtime.disable_locked();
+        *held.wishes.borrow_mut() = [Wish::Sleep; RUNTIME_INTERFACES];
+        held.applied.set(None);
         while let Some(taken) = runtime.events.take() {
             let Ok(event) = taken else { continue };
             let port = match take_terminal(runtime, held, event) {
@@ -675,13 +691,11 @@ where
                 runtime.events.owed(|owed| {
                     owed.held = Some(crate::HeldEvent::Rejected { terminal });
                 });
-                runtime.poison(RadioFault::StateLost);
+                runtime.poison(RadioFault::TerminalRejected);
                 held.wake_all();
                 return ready(runtime.poisoned());
             }
         }
-        *held.wishes.borrow_mut() = [Wish::Sleep; RUNTIME_INTERFACES];
-        held.applied.set(None);
         held.wake_all();
         ready(runtime.poisoned())
     }
@@ -813,10 +827,18 @@ where
         _: Self::Uninstall,
     ) -> Self::Uninstalled {
         let uninstalled = self.runtime.uninstall();
-        if matches!(uninstalled, Uninstalled::Quarantined(_)) {
-            drop(oer_radio_port::Quarantined::new((
-                self.route, held, local, retired,
-            )));
+        match &uninstalled {
+            Uninstalled::Quarantined(_) => {
+                drop(oer_radio_port::Quarantined::new((
+                    self.route, held, local, retired,
+                )));
+            }
+            Uninstalled::TerminalsQuarantined { .. } => {
+                // The detached route is ordinary stopped hardware. Only
+                // the undelivered operation's accounting stays retained.
+                drop(oer_radio_port::Quarantined::new((held, local, retired)));
+            }
+            Uninstalled::Reusable(_) => {}
         }
         uninstalled
     }

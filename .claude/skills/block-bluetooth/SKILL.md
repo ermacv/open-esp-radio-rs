@@ -97,3 +97,14 @@ all admitted terminals were delivered; missing terminals violate the contract.
 unread owners in `PortEnd`. The phase keeps its final variant and cause in
 `Local`, including across phase reborrows. The portable service fail-stops
 on quarantine without disable or more draining. Commands keep `PortResult`.
+
+A disable sink rejection has its own `TerminalRejected` cause. The scheduler
+was already stopped and admitted events accounted; the driver must finish
+normal retirement, including controller-time drain and PHY-route restoration,
+without treating the sink as a hardware failure. `Uninstalled::TerminalsQuarantined`
+returns stopped hardware and retains only unread outcomes plus the affine
+`RuntimeQueue` claim. `System::stop` releases PHY, clocks and common power
+normally, returning `BluetoothStopped::TerminalsQuarantined`. Only ordinary
+`Reusable` returns the old queue claim; fresh hardware installation needs a
+fresh static runtime/queue. The stream reports `EventEnd::Quarantined` after
+sink rejection and never drains retained outcomes through the public API.

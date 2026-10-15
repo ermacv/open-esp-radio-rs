@@ -25,6 +25,11 @@ oer-time-embassy = { path = "../../../../adapters/embassy/time" }
 oer-esp32s31-ieee802154-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/ieee802154", features = ["esp32s31"] }
 oer-esp32s31-radio-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/radio", features = ["esp32s31"] }
 
+[dev-dependencies]
+embassy-futures = "0.1.2"
+oer-espressif-ieee802154-runtime = { path = "../../../../runtime/espressif/ieee802154", features = ["model"] }
+oer-time-virtual = { path = "../../../../adapters/virtual/time" }
+
 [lints]
 workspace = true
 

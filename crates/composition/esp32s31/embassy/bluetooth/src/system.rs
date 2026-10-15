@@ -167,7 +167,14 @@ pub type BluetoothSystemBackend =
 
 /// What the port's uninstall returns, for [`BluetoothSystem::stop`]: the
 /// radio and its hardware, or the radio the driver did not leave, with why.
-pub type BluetoothSystemUninstalled = Result<(Radio, Hardware), BluetoothSystemRetained>;
+pub type BluetoothSystemUninstalled = oer_esp32s31_bluetooth_runtime::Uninstalled<
+    (Radio, Hardware),
+    BluetoothSystemRetained,
+    (
+        &'static BluetoothSystemRuntime,
+        oer_esp32s31_bluetooth_runtime::RuntimeQueue,
+    ),
+>;
 
 /// A radio the port's driver did not leave for the uninstall.
 pub type BluetoothSystemRetained = BluetoothRetained<
@@ -269,6 +276,44 @@ pub struct BluetoothParked {
     memory: ControllerMemory,
     /// Interrupt-owner storage published by an earlier epoch of this boot.
     published: Option<&'static Storage>,
+    queue: oer_esp32s31_bluetooth_runtime::RuntimeQueue,
+}
+
+/// Hardware and controller memory after composition teardown, without the
+/// old outcome queue's reuse permission.
+#[allow(
+    dead_code,
+    reason = "these fields retain the stopped owners until extraction or drop"
+)]
+pub struct BluetoothStoppedHardware {
+    partition: BluetoothPartition,
+    coex: CoexAbsent<BluetoothClient>,
+    memory: ControllerMemory,
+    published: &'static Storage,
+}
+
+impl BluetoothStoppedHardware {
+    /// Return the stopped partition, giving up controller memory for this boot.
+    pub fn into_partition(self) -> BluetoothPartition {
+        self.partition
+    }
+}
+
+/// Composition teardown completed; only the reusable case can feed `start`.
+#[must_use = "retain stopped hardware and any unread outcome quarantine"]
+pub enum BluetoothStopped {
+    /// Hardware and its emptied runtime queue can be installed again.
+    Reusable(BluetoothParked),
+    /// Hardware stopped normally, while the old queue remains unavailable.
+    TerminalsQuarantined {
+        /// Hardware after PHY, modem clocks and common power were released.
+        parts: BluetoothStoppedHardware,
+        /// Rejected outcomes and exclusive permission to use their queue.
+        terminals: oer_radio_port::Quarantined<(
+            &'static BluetoothSystemRuntime,
+            oer_esp32s31_bluetooth_runtime::RuntimeQueue,
+        )>,
+    },
 }
 
 impl BluetoothParked {
@@ -351,6 +396,7 @@ impl BluetoothParked {
                 radio,
             },
             published: None,
+            queue: claim(RUNTIME.take_queue())?,
         })
     }
 
@@ -640,7 +686,9 @@ impl BluetoothSystem {
     /// `uninstalled` is what the uninstall of the port [`start`] returned:
     /// the port's owner disabled it and handed every admitted event's end to
     /// its body, and its retired driver left the radio and hardware. A
-    /// radio the driver kept ([`BluetoothSystemRetained`]) stays fail-stop.
+    /// sink rejection returns the same stopped hardware while retaining its
+    /// queue separately; it follows this hardware teardown too. A radio the
+    /// driver kept ([`BluetoothSystemRetained`]) stays fail-stop.
     /// The steps reverse [`start`]: settle the source-127 task, remove the CPU routes
     /// and recover both interrupt owners, release the Controller output and
     /// leave the shared PHY domain and BTBB (the radio system closes RF after
@@ -660,15 +708,30 @@ impl BluetoothSystem {
         self,
         uninstalled: BluetoothSystemUninstalled,
         radio: &RadioSystem<P, C, EmbassyClock>,
-    ) -> Result<BluetoothParked, BluetoothStopFailure> {
+    ) -> Result<BluetoothStopped, BluetoothStopFailure> {
         let Self {
             epoch,
             power,
             coexisting,
         } = self;
-        let (role, hardware) = match uninstalled {
-            Ok(parts) => parts,
-            Err(retained) => {
+        enum QueueEnd {
+            Reusable(oer_esp32s31_bluetooth_runtime::RuntimeQueue),
+            Quarantined(
+                oer_radio_port::Quarantined<(
+                    &'static BluetoothSystemRuntime,
+                    oer_esp32s31_bluetooth_runtime::RuntimeQueue,
+                )>,
+            ),
+        }
+        let ((role, hardware), queue) = match uninstalled {
+            oer_esp32s31_bluetooth_runtime::Uninstalled::Reusable { parts, queue } => {
+                (parts, QueueEnd::Reusable(queue))
+            }
+            oer_esp32s31_bluetooth_runtime::Uninstalled::TerminalsQuarantined {
+                parts,
+                terminals,
+            } => (parts, QueueEnd::Quarantined(terminals)),
+            oer_esp32s31_bluetooth_runtime::Uninstalled::Quarantined(retained) => {
                 return Err(stop_fail(
                     BluetoothStopError::Runtime(retained.error),
                     FailStopOwner::Retained(epoch, retained),
@@ -808,11 +871,23 @@ impl BluetoothSystem {
             radio: radio_memory,
         };
         match powered.power_down(lease, power, &coex) {
-            Ok(cold) => Ok(BluetoothParked {
-                partition: cold.into_partition(),
-                coex,
-                memory,
-                published: Some(published),
+            Ok(cold) => Ok(match queue {
+                QueueEnd::Reusable(queue) => BluetoothStopped::Reusable(BluetoothParked {
+                    partition: cold.into_partition(),
+                    coex,
+                    memory,
+                    published: Some(published),
+                    queue,
+                }),
+                QueueEnd::Quarantined(terminals) => BluetoothStopped::TerminalsQuarantined {
+                    parts: BluetoothStoppedHardware {
+                        partition: cold.into_partition(),
+                        coex,
+                        memory,
+                        published,
+                    },
+                    terminals,
+                },
             }),
             Err(failure) => {
                 let error = BluetoothStopError::Power(failure.error());
@@ -907,12 +982,16 @@ fn dispatch(source: EspHalBluetoothInterruptSource) -> EspHalBluetoothInterruptD
 fn unwind_powered(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     powered: PoweredOwner,
-    memory: ControllerMemory,
-    published: Option<&'static Storage>,
+    parked: (
+        ControllerMemory,
+        Option<&'static Storage>,
+        oer_esp32s31_bluetooth_runtime::RuntimeQueue,
+    ),
     error: BluetoothStartError,
     power: CommonPower<BluetoothClient>,
     coex: CoexAbsent<BluetoothClient>,
 ) -> BluetoothStartFailure {
+    let (memory, published, queue) = parked;
     match powered.power_down(lease, power, &coex) {
         Ok(cold) => BluetoothStartFailure {
             error,
@@ -921,6 +1000,7 @@ fn unwind_powered(
                 coex,
                 memory,
                 published,
+                queue,
             }),
         },
         Err(failure) => {
@@ -982,6 +1062,7 @@ pub async fn start<P, C: PlatformClockProvider>(
         coex,
         memory,
         published,
+        queue,
     } = parked;
     let mut guard = radio.lock().await;
     let (lease, _, clocks) = guard.parts();
@@ -996,6 +1077,7 @@ pub async fn start<P, C: PlatformClockProvider>(
                     coex,
                     memory,
                     published,
+                    queue,
                 }),
             });
         }
@@ -1014,8 +1096,7 @@ pub async fn start<P, C: PlatformClockProvider>(
             return Err(unwind_powered(
                 lease,
                 failure.into_owner(),
-                memory,
-                published,
+                (memory, published, queue),
                 error,
                 power,
                 coex,
@@ -1110,7 +1191,7 @@ pub async fn start<P, C: PlatformClockProvider>(
     let coexisting = guard.enable_coex(coex);
     drop(guard);
 
-    publish_and_install(runtime, radio_memory, published, power, coexisting).await
+    publish_and_install(runtime, radio_memory, published, queue, power, coexisting).await
 }
 
 /// Move the published status from `published` to `activity`.
@@ -1161,6 +1242,7 @@ async fn publish_and_install(
     runtime: BlePhyRuntime<'static, MODEM_TIMER_CAPACITY>,
     radio_memory: BluetoothSystemMemory,
     published: Option<&'static Storage>,
+    queue: oer_esp32s31_bluetooth_runtime::RuntimeQueue,
     power: CommonPower<BluetoothClient>,
     coexisting: Coexisting<BluetoothClient>,
 ) -> Result<
@@ -1249,11 +1331,13 @@ async fn publish_and_install(
         .install(
             radio_memory,
             LiveBluetoothHardware::new(task, published, LOCAL_SLEEP_CLOCK_PPM),
+            queue,
         )
         .await;
     let backend = match installed {
         Ok(backend) => backend,
-        Err((error, radio_memory, hardware)) => {
+        Err((error, radio_memory, hardware, queue)) => {
+            drop(oer_radio_port::Quarantined::new(queue));
             return Err(fail_stop(
                 BluetoothStartError::Install(error),
                 FailStopOwner::Published {

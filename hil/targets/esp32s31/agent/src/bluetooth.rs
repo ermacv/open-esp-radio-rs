@@ -319,6 +319,9 @@ fn poisoned_reason(
         Fault::Runner(Runtime::Unsettled) => {
             c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-unsettled\r\n"
         }
+        Fault::Runner(Runtime::TerminalRejected) => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-terminal-rejected\r\n"
+        }
         Fault::Platform => c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-platform\r\n",
     }
 }

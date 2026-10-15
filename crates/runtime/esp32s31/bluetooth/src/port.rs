@@ -209,7 +209,7 @@ impl<
     type Uninstall = ();
     /// The radio and hardware, or the radio the driver did not leave for
     /// the uninstall, with why.
-    type Uninstalled = Result<
+    type Uninstalled = crate::Uninstalled<
         (
             Radio<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>,
             H,
@@ -224,8 +224,24 @@ impl<
             RX_PACKETS,
             ITEMS,
         >,
+        (
+            &'r BluetoothRuntime<
+                M,
+                H,
+                T,
+                C,
+                LEGACY,
+                CONNECTABLE,
+                SCANNERS,
+                CONNECTIONS,
+                SCAN_PACKETS,
+                RX_PACKETS,
+                ITEMS,
+                EVENTS,
+            >,
+            crate::RuntimeQueue,
+        ),
     >;
-
     fn enable<'a, 'id>(
         &'a mut self,
         _: Call,

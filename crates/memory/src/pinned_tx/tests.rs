@@ -118,6 +118,41 @@ fn forgotten_backing_remains_quarantined() {
 }
 
 #[test]
+fn forgotten_tagged_returning_lease_outlives_its_cpu_only_borrows() {
+    let pool = pinned_pool();
+    let returned = Cell::new(None);
+    let dma_address;
+    {
+        let mut tag = 17;
+        let returner = ReturnProbe {
+            pool,
+            returned: &returned,
+        };
+        let mut backing = TaggedStableDmaBacking::new(
+            &mut tag,
+            ReturningStableDmaBacking::new(prepared_radio(pool), returner),
+        );
+        let region = backing.stable_dma_region().into_mut_slice();
+        region[0] = 0x7b;
+        dma_address = region.as_ptr();
+        core::mem::forget(backing);
+        // Forget ends this borrow; keeping DMA alive must not touch the tag.
+        tag = 29;
+        assert_eq!(tag, 29);
+    }
+    assert_eq!(returned.get(), None);
+    assert_eq!(pool.slots[0].state.load(Ordering::Acquire), SLOT_RADIO);
+    #[allow(
+        unsafe_code,
+        reason = "the test models a DMA read after abandoning its lease"
+    )]
+    // SAFETY: the static pool stays allocated and the leaked lease keeps its
+    // slot reserved. No other CPU or DMA writer exists in this test.
+    let observed = unsafe { dma_address.read() };
+    assert_eq!(observed, 0x7b);
+}
+
+#[test]
 #[should_panic(expected = "pinned TX pool boundary changed")]
 fn explicit_pool_audit_checks_quarantined_slots() {
     type TwoSlotPool = PinnedDmaTxPool<32, 8, 4, 2>;

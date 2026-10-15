@@ -521,6 +521,10 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> PinnedAmpduDmaStorage<SLOTS, 
 /// is forgotten, destroying this arena leaks its leases and their allocations;
 /// it cannot free memory still visible to DMA. No destructor is required for
 /// this safety property, including the arena's own destructor.
+/// The [`StableDmaBacking`] contract requires the allocation and its exclusive
+/// reservation to survive a leaked lease; an ordinary borrowed backing is not
+/// sufficient. CPU-only metadata may still have a shorter lifetime because no
+/// forgotten owner accesses or destroys it.
 pub struct RetainedAmpduDmaStorage<B, const SLOTS: usize> {
     backings: [Option<ManuallyDrop<B>>; SLOTS],
     backing_identities: [Option<RetainedDmaBackingIdentity>; SLOTS],
@@ -837,7 +841,8 @@ impl<'retention, B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usi
     /// Retain one stable allocation and issue its non-forgeable identity.
     ///
     /// [`StableDmaBacking`] guarantees that the accepted allocation remains at
-    /// one address until the owner releases or quarantines it.
+    /// one address until the owner releases it, and remains allocated and
+    /// exclusively reserved if the owner is quarantined or forgotten.
     pub fn push_backing(&mut self, backing: B) -> Result<RetainedDmaBacking, AmpduDmaStorageError> {
         let (backing, region) = self.push_backing_region(backing)?;
         let empty = region.is_empty();

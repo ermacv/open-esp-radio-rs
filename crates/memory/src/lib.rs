@@ -152,7 +152,8 @@ impl<'storage> StableDmaRange<'storage> {
 ///
 /// The view itself is ordinary borrowed memory. Address stability beyond this
 /// short borrow is supplied by the [`StableDmaBacking`] implementation and is
-/// valid while the backing owner remains alive and exclusively retained.
+/// valid while the backing owner remains exclusively retained, including when
+/// that owner is leaked. The region's borrow does not itself prove this.
 pub struct StableDmaRegion<'a> {
     storage: &'a mut [u8],
 }
@@ -165,6 +166,8 @@ impl<'a> StableDmaRegion<'a> {
     ///
     /// `storage` must keep the same address until the `StableDmaBacking`
     /// owner which returned this region is dropped or explicitly released.
+    /// Forgetting that owner must leave the allocation live and exclusively
+    /// reserved indefinitely, even after any borrows carried by the owner end.
     #[allow(
         unsafe_code,
         reason = "constructor is the single stable-address proof boundary"
@@ -194,14 +197,25 @@ impl<'a> StableDmaRegion<'a> {
     }
 }
 
-/// An owned lease whose DMA region remains at one address until the lease is
-/// dropped.
+/// An owned lease whose DMA region remains at one address until its explicit
+/// release or destructor, and remains reserved indefinitely if it is leaked.
 ///
 /// # Safety
 ///
 /// Implementations must return the same non-moving allocation for the entire
 /// lifetime of `self`. No safe operation may release, relocate or alias that
 /// allocation while the owner is retained by a hardware transaction.
+/// This includes `mem::forget` and retention in `ManuallyDrop`: ending a borrow
+/// carried by the lease must not free the allocation or allow its reuse. A
+/// lease of ordinary stack memory or of another independently droppable owner
+/// cannot implement this trait. The allocation must instead be permanently
+/// retained storage, or owned by the lease so that leaking it leaks the memory.
+///
+/// CPU-only metadata and return callbacks may borrow shorter-lived objects.
+/// Hardware must not access them, and no leaked-owner path may invoke them or
+/// run their destructors. Thus `Self: 'static` is not necessary; the allocation
+/// and its exclusion from reuse, rather than every field of `Self`, must
+/// survive an abandoned transaction.
 #[allow(
     unsafe_code,
     reason = "implementing the stable-address invariant requires an audited pinned pool"

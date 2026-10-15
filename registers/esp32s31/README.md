@@ -65,6 +65,22 @@ model/API validation and independently check each configured output.
 `project publish` remains the investigation workflow requiring structural review
 scopes; an absent review is not silently replaced by model-only publication.
 
+## Shared TSF snapshot words
+
+`WIFI_MAC_STA_TSF_LOAD.CONTROL` publishes separate station and SoftAP
+snapshot selectors, but both domains read the same `SNAPSHOT_LOW/HIGH`
+pair. A transaction owner must serialize selector assertion, both reads
+and selector release across domains. Separate owners for those selectors
+would not provide independent snapshots. The SoftAP selector is TSF-1;
+its reviewed sources are in
+[`vendor-libpp.toml`](evidence/vendor-libpp.toml) and
+[`vendor-net80211.toml`](evidence/vendor-net80211.toml).
+
+The vendor's pre-transmit beacon buffer contains MAC local time, while a
+probe-response buffer initially contains zero. Snapshot publication does
+not prove that hardware replaces either timestamp in flight, nor which
+timer such a replacement uses. That property requires an on-air check.
+
 ## Words shared with ESP-HAL
 
 Several owned ranges are single fields of 32-bit words that ESP-HAL also

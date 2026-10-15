@@ -41487,6 +41487,13 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
+svd-name = "SNAPSHOT_SOFTAP_TSF"
+method = "snapshot_softap_tsf"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "LOAD_STATION_TSF"
 method = "load_station_tsf"
 bit-offset = 4

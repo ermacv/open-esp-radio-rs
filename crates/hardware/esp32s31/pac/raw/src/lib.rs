@@ -26541,14 +26541,14 @@ pub mod wifi_mac_sta_tbtt_target {
         }
     }
 }
-#[doc = "Shared station TSF load and coherent snapshot transaction."]
+#[doc = "Shared TSF load and coherent station/SoftAP snapshot transaction."]
 pub type WifiMacStaTsfLoad = crate::Periph<wifi_mac_sta_tsf_load::RegisterBlock, 0x2010_d814>;
 impl core::fmt::Debug for WifiMacStaTsfLoad {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("WifiMacStaTsfLoad").finish()
     }
 }
-#[doc = "Shared station TSF load and coherent snapshot transaction."]
+#[doc = "Shared TSF load and coherent station/SoftAP snapshot transaction."]
 pub mod wifi_mac_sta_tsf_load {
     #[repr(C)]
     #[doc = "Register block"]
@@ -26561,7 +26561,7 @@ pub mod wifi_mac_sta_tsf_load {
         tsf_deviation_control: TsfDeviationControl,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets then clears bit zero around its snapshot reads."]
+        #[doc = "0x00 - Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets then clears bit zero around its snapshot reads. Complete libpp\\[hal_mac.o\\]::hal_get_tsf_time selects station with bit zero or SoftAP with bit one, reads the shared snapshot words, then clears that selector through a fresh-read RMW. The whole select/read/release transaction must be serialized across TSF domains."]
         #[inline(always)]
         pub const fn control(&self) -> &Control {
             &self.control
@@ -26576,12 +26576,12 @@ pub mod wifi_mac_sta_tsf_load {
         pub const fn value_high(&self) -> &ValueHigh {
             &self.value_high
         }
-        #[doc = "0x0c - Project-assigned name. Coherently latched low 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf."]
+        #[doc = "0x0c - Project-assigned name. Shared coherently latched low 32 bits: conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf for station and read by complete libpp\\[hal_mac.o\\]::hal_get_tsf_time for the selected station/SoftAP domain."]
         #[inline(always)]
         pub const fn snapshot_low(&self) -> &SnapshotLow {
             &self.snapshot_low
         }
-        #[doc = "0x10 - Project-assigned name. Coherently latched high 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf."]
+        #[doc = "0x10 - Project-assigned name. Shared coherently latched high 32 bits: conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf for station and read by complete libpp\\[hal_mac.o\\]::hal_get_tsf_time for the selected station/SoftAP domain."]
         #[inline(always)]
         pub const fn snapshot_high(&self) -> &SnapshotHigh {
             &self.snapshot_high
@@ -26592,10 +26592,10 @@ pub mod wifi_mac_sta_tsf_load {
             &self.tsf_deviation_control
         }
     }
-    #[doc = "CONTROL (rw) register accessor: Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets then clears bit zero around its snapshot reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc = "CONTROL (rw) register accessor: Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets then clears bit zero around its snapshot reads. Complete libpp\\[hal_mac.o\\]::hal_get_tsf_time selects station with bit zero or SoftAP with bit one, reads the shared snapshot words, then clears that selector through a fresh-read RMW. The whole select/read/release transaction must be serialized across TSF domains.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
     #[doc(alias = "CONTROL")]
     pub type Control = crate::Reg<control::ControlSpec>;
-    #[doc = "Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets then clears bit zero around its snapshot reads."]
+    #[doc = "Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets then clears bit zero around its snapshot reads. Complete libpp\\[hal_mac.o\\]::hal_get_tsf_time selects station with bit zero or SoftAP with bit one, reads the shared snapshot words, then clears that selector through a fresh-read RMW. The whole select/read/release transaction must be serialized across TSF domains."]
     pub mod control {
         #[doc = "Register `CONTROL` reader"]
         pub type R = crate::R<ControlSpec>;
@@ -26605,6 +26605,10 @@ pub mod wifi_mac_sta_tsf_load {
         pub type SnapshotStationTsfR = crate::BitReader;
         #[doc = "Field `SNAPSHOT_STATION_TSF` writer - Project-assigned name. Complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
         pub type SnapshotStationTsfW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `SNAPSHOT_SOFTAP_TSF` reader - Project-assigned name. SoftAP TSF-1 snapshot selector. Complete libpp\\[hal_mac.o\\]::hal_get_tsf_time with a nonzero argument sets this bit, reads SNAPSHOT_HIGH then SNAPSHOT_LOW, and clears this bit through a fresh-read RMW. Both readback words are shared with the station snapshot; this selector does not establish on-air beacon or probe-response timestamp insertion."]
+        pub type SnapshotSoftapTsfR = crate::BitReader;
+        #[doc = "Field `SNAPSHOT_SOFTAP_TSF` writer - Project-assigned name. SoftAP TSF-1 snapshot selector. Complete libpp\\[hal_mac.o\\]::hal_get_tsf_time with a nonzero argument sets this bit, reads SNAPSHOT_HIGH then SNAPSHOT_LOW, and clears this bit through a fresh-read RMW. Both readback words are shared with the station snapshot; this selector does not establish on-air beacon or probe-response timestamp insertion."]
+        pub type SnapshotSoftapTsfW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `LOAD_STATION_TSF` reader - Project-assigned name. Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf."]
         pub type LoadStationTsfR = crate::BitReader;
         #[doc = "Field `LOAD_STATION_TSF` writer - Project-assigned name. Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf."]
@@ -26622,6 +26626,11 @@ pub mod wifi_mac_sta_tsf_load {
             #[inline(always)]
             pub fn snapshot_station_tsf(&self) -> SnapshotStationTsfR {
                 SnapshotStationTsfR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - Project-assigned name. SoftAP TSF-1 snapshot selector. Complete libpp\\[hal_mac.o\\]::hal_get_tsf_time with a nonzero argument sets this bit, reads SNAPSHOT_HIGH then SNAPSHOT_LOW, and clears this bit through a fresh-read RMW. Both readback words are shared with the station snapshot; this selector does not establish on-air beacon or probe-response timestamp insertion."]
+            #[inline(always)]
+            pub fn snapshot_softap_tsf(&self) -> SnapshotSoftapTsfR {
+                SnapshotSoftapTsfR::new(((self.bits >> 1) & 1) != 0)
             }
             #[doc = "Bit 4 - Project-assigned name. Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf."]
             #[inline(always)]
@@ -26645,6 +26654,11 @@ pub mod wifi_mac_sta_tsf_load {
             pub fn snapshot_station_tsf(&mut self) -> SnapshotStationTsfW<'_, ControlSpec> {
                 SnapshotStationTsfW::new(self, 0)
             }
+            #[doc = "Bit 1 - Project-assigned name. SoftAP TSF-1 snapshot selector. Complete libpp\\[hal_mac.o\\]::hal_get_tsf_time with a nonzero argument sets this bit, reads SNAPSHOT_HIGH then SNAPSHOT_LOW, and clears this bit through a fresh-read RMW. Both readback words are shared with the station snapshot; this selector does not establish on-air beacon or probe-response timestamp insertion."]
+            #[inline(always)]
+            pub fn snapshot_softap_tsf(&mut self) -> SnapshotSoftapTsfW<'_, ControlSpec> {
+                SnapshotSoftapTsfW::new(self, 1)
+            }
             #[doc = "Bit 4 - Project-assigned name. Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf."]
             #[inline(always)]
             pub fn load_station_tsf(&mut self) -> LoadStationTsfW<'_, ControlSpec> {
@@ -26661,7 +26675,7 @@ pub mod wifi_mac_sta_tsf_load {
                 LoadStationTbttTargetW::new(self, 8)
             }
         }
-        #[doc = "Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets then clears bit zero around its snapshot reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf sets then clears bit zero around its snapshot reads. Complete libpp\\[hal_mac.o\\]::hal_get_tsf_time selects station with bit zero or SoftAP with bit one, reads the shared snapshot words, then clears that selector through a fresh-read RMW. The whole select/read/release transaction must be serialized across TSF domains.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ControlSpec;
         impl crate::RegisterSpec for ControlSpec {
             type Ux = u32;
@@ -26725,10 +26739,10 @@ pub mod wifi_mac_sta_tsf_load {
             type Safety = crate::Safe;
         }
     }
-    #[doc = "SNAPSHOT_LOW (r) register accessor: Project-assigned name. Coherently latched low 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_low::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@snapshot_low`] module"]
+    #[doc = "SNAPSHOT_LOW (r) register accessor: Project-assigned name. Shared coherently latched low 32 bits: conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf for station and read by complete libpp\\[hal_mac.o\\]::hal_get_tsf_time for the selected station/SoftAP domain.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_low::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@snapshot_low`] module"]
     #[doc(alias = "SNAPSHOT_LOW")]
     pub type SnapshotLow = crate::Reg<snapshot_low::SnapshotLowSpec>;
-    #[doc = "Project-assigned name. Coherently latched low 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf."]
+    #[doc = "Project-assigned name. Shared coherently latched low 32 bits: conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf for station and read by complete libpp\\[hal_mac.o\\]::hal_get_tsf_time for the selected station/SoftAP domain."]
     pub mod snapshot_low {
         #[doc = "Register `SNAPSHOT_LOW` reader"]
         pub type R = crate::R<SnapshotLowSpec>;
@@ -26741,7 +26755,7 @@ pub mod wifi_mac_sta_tsf_load {
                 ValueR::new(self.bits)
             }
         }
-        #[doc = "Project-assigned name. Coherently latched low 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_low::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Shared coherently latched low 32 bits: conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf for station and read by complete libpp\\[hal_mac.o\\]::hal_get_tsf_time for the selected station/SoftAP domain.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_low::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SnapshotLowSpec;
         impl crate::RegisterSpec for SnapshotLowSpec {
             type Ux = u32;
@@ -26749,10 +26763,10 @@ pub mod wifi_mac_sta_tsf_load {
         #[doc = "`read()` method returns [`snapshot_low::R`](R) reader structure"]
         impl crate::Readable for SnapshotLowSpec {}
     }
-    #[doc = "SNAPSHOT_HIGH (r) register accessor: Project-assigned name. Coherently latched high 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_high::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@snapshot_high`] module"]
+    #[doc = "SNAPSHOT_HIGH (r) register accessor: Project-assigned name. Shared coherently latched high 32 bits: conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf for station and read by complete libpp\\[hal_mac.o\\]::hal_get_tsf_time for the selected station/SoftAP domain.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_high::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@snapshot_high`] module"]
     #[doc(alias = "SNAPSHOT_HIGH")]
     pub type SnapshotHigh = crate::Reg<snapshot_high::SnapshotHighSpec>;
-    #[doc = "Project-assigned name. Coherently latched high 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf."]
+    #[doc = "Project-assigned name. Shared coherently latched high 32 bits: conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf for station and read by complete libpp\\[hal_mac.o\\]::hal_get_tsf_time for the selected station/SoftAP domain."]
     pub mod snapshot_high {
         #[doc = "Register `SNAPSHOT_HIGH` reader"]
         pub type R = crate::R<SnapshotHighSpec>;
@@ -26765,7 +26779,7 @@ pub mod wifi_mac_sta_tsf_load {
                 ValueR::new(self.bits)
             }
         }
-        #[doc = "Project-assigned name. Coherently latched high 32 bits conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_high::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Shared coherently latched high 32 bits: conditionally read by complete libpp\\[hal_tsf.o\\]::hal_get_sta_tsf for station and read by complete libpp\\[hal_mac.o\\]::hal_get_tsf_time for the selected station/SoftAP domain.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_high::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SnapshotHighSpec;
         impl crate::RegisterSpec for SnapshotHighSpec {
             type Ux = u32;

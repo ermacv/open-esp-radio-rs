@@ -12131,12 +12131,12 @@
     </peripheral>
     <peripheral>
       <name>WIFI_MAC_STA_TSF_LOAD</name>
-      <description>Shared station TSF load and coherent snapshot transaction.</description>
+      <description>Shared TSF load and coherent station/SoftAP snapshot transaction.</description>
       <baseAddress>0x2010D814</baseAddress>
       <registers>
         <register>
           <name>CONTROL</name>
-          <description>Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete libpp[hal_tsf.o]::hal_get_sta_tsf sets then clears bit zero around its snapshot reads.</description>
+          <description>Project-assigned name. Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete libpp[hal_tsf.o]::hal_get_sta_tsf sets then clears bit zero around its snapshot reads. Complete libpp[hal_mac.o]::hal_get_tsf_time selects station with bit zero or SoftAP with bit one, reads the shared snapshot words, then clears that selector through a fresh-read RMW. The whole select/read/release transaction must be serialized across TSF domains.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -12145,6 +12145,12 @@
               <name>SNAPSHOT_STATION_TSF</name>
               <description>Project-assigned name. Complete libpp[hal_tsf.o]::hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads.</description>
               <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>SNAPSHOT_SOFTAP_TSF</name>
+              <description>Project-assigned name. SoftAP TSF-1 snapshot selector. Complete libpp[hal_mac.o]::hal_get_tsf_time with a nonzero argument sets this bit, reads SNAPSHOT_HIGH then SNAPSHOT_LOW, and clears this bit through a fresh-read RMW. Both readback words are shared with the station snapshot; this selector does not establish on-air beacon or probe-response timestamp insertion.</description>
+              <bitOffset>1</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
@@ -12211,7 +12217,7 @@
         </register>
         <register>
           <name>SNAPSHOT_LOW</name>
-          <description>Project-assigned name. Coherently latched low 32 bits conditionally read by complete libpp[hal_tsf.o]::hal_get_sta_tsf.</description>
+          <description>Project-assigned name. Shared coherently latched low 32 bits: conditionally read by complete libpp[hal_tsf.o]::hal_get_sta_tsf for station and read by complete libpp[hal_mac.o]::hal_get_tsf_time for the selected station/SoftAP domain.</description>
           <addressOffset>0xC</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
@@ -12226,7 +12232,7 @@
         </register>
         <register>
           <name>SNAPSHOT_HIGH</name>
-          <description>Project-assigned name. Coherently latched high 32 bits conditionally read by complete libpp[hal_tsf.o]::hal_get_sta_tsf.</description>
+          <description>Project-assigned name. Shared coherently latched high 32 bits: conditionally read by complete libpp[hal_tsf.o]::hal_get_sta_tsf for station and read by complete libpp[hal_mac.o]::hal_get_tsf_time for the selected station/SoftAP domain.</description>
           <addressOffset>0x10</addressOffset>
           <size>0x20</size>
           <access>read-only</access>

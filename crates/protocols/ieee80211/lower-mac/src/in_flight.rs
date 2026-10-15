@@ -1,6 +1,31 @@
 //! Custody of an accepted TX operation, from admission to its terminal.
 
 use crate::TxOutcome;
+use core::marker::PhantomData;
+use oer_radio_port::{PoolBuilder, PoolPath, PoolSet, Root, Slot, Slots};
+
+/// Tickets and the unique consumer authority for their terminals. The install
+/// gives the authority to the event consumer, never to the execution backend.
+pub struct TransmitPool<Kind, const N: usize>(PhantomData<fn() -> Kind>);
+
+impl<Kind, const N: usize> PoolSet for TransmitPool<Kind, N> {
+    type Pools<'id, Path: PoolPath> = ([Slot<'id, Kind, Path>; N], TerminalAccess<'id, Kind, Path>);
+
+    fn build<'id, Path: PoolPath>(builder: PoolBuilder<'id, Path>) -> Self::Pools<'id, Path> {
+        (
+            builder.into_pools::<Slots<Kind, N>>(),
+            TerminalAccess { proof: PhantomData },
+        )
+    }
+}
+
+type Authority<'id, Kind, Path> = fn(&'id (), Kind, Path) -> (&'id (), Kind, Path);
+
+/// Sole permission to recover completed owners of this installation and ticket
+/// pool. Completing an operation does not grant permission to unpack it.
+pub struct TerminalAccess<'id, Kind, Path: PoolPath = Root> {
+    proof: PhantomData<Authority<'id, Kind, Path>>,
+}
 
 /// A backend's execution projection. Its concrete view lends only the data
 /// needed to execute the payload: no owning MPDU, body or replaceable owner.
@@ -29,7 +54,7 @@ impl<C, T, M> InFlight<C, T, M> {
     /// Accept exactly these owners together at the interface's admission
     /// boundary. Callers assemble an attempt before this point; the backend
     /// enqueues this value and never reconstructs it from a side table.
-    pub const fn admit(context: C, ticket: T, payload: M) -> Self {
+    pub(crate) const fn admit(context: C, ticket: T, payload: M) -> Self {
         Self {
             context,
             ticket,
@@ -76,9 +101,15 @@ impl<C, T, M> Completed<C, T, M> {
     pub const fn outcome(&self) -> TxOutcome {
         self.outcome
     }
+}
 
-    /// The higher layer consumes the terminal before recovering its owners.
-    pub fn into_parts(self) -> TerminalParts<C, T, M> {
+impl<'id, C, Kind, Path: PoolPath, M> Completed<C, Slot<'id, Kind, Path>, M> {
+    /// Recover the owners using the consumer authority for this ticket pool.
+    /// A backend can create and forward terminals, but cannot reopen them.
+    pub fn into_parts(
+        self,
+        _: &mut TerminalAccess<'id, Kind, Path>,
+    ) -> TerminalParts<C, Slot<'id, Kind, Path>, M> {
         let InFlight {
             context,
             ticket,

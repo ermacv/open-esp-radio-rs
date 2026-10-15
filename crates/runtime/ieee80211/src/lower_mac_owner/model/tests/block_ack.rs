@@ -14,6 +14,7 @@ impl Work for Window {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let mut terminal_access = resources.terminal_access;
         let ModelResources {
             mut tickets,
             mut small,
@@ -85,17 +86,20 @@ impl Work for Window {
         let ticket = tickets.remove(0);
         let ticket_index = ticket.index();
         station
-            .submit_ampdu(AggregateAttempt {
-                context: (),
-                ticket,
-                aggregate,
-                protection: Protection::None,
-                power: SupportedPower::new(TxPower::Calibrated).unwrap(),
-                coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
-                min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
-            })
+            .submit_ampdu(
+                (AggregateAttempt {
+                    context: (),
+                    ticket,
+                    aggregate,
+                    protection: Protection::None,
+                    power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+                    coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+                    min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
+                })
+                .admit(),
+            )
             .unwrap();
-        let (ticket, subframes, report) = aggregate_completion(phase).await;
+        let (ticket, subframes, report) = aggregate_completion(phase, &mut terminal_access).await;
         let buffers: Vec<_> = subframes
             .into_iter()
             .map(|mpdu| {
@@ -184,6 +188,7 @@ impl Work for RefusedSent {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let mut terminal_access = resources.terminal_access;
         let ModelResources {
             mut tickets,
             mut small,
@@ -216,17 +221,20 @@ impl Work for RefusedSent {
             Some(ModelBody(alloc::vec![0x7a])),
         );
         station
-            .submit_ampdu(AggregateAttempt {
-                context: (),
-                ticket: tickets.remove(0),
-                aggregate,
-                protection: Protection::None,
-                power: SupportedPower::new(TxPower::Calibrated).unwrap(),
-                coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
-                min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
-            })
+            .submit_ampdu(
+                (AggregateAttempt {
+                    context: (),
+                    ticket: tickets.remove(0),
+                    aggregate,
+                    protection: Protection::None,
+                    power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+                    coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+                    min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
+                })
+                .admit(),
+            )
             .unwrap();
-        let (_, subframes, _) = aggregate_completion(phase).await;
+        let (_, subframes, _) = aggregate_completion(phase, &mut terminal_access).await;
         let mut buffers: Vec<_> = subframes
             .into_iter()
             .map(|mpdu| {

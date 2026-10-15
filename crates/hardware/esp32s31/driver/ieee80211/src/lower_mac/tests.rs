@@ -811,6 +811,22 @@ fn a_no_effect_rts_event_can_end_only_at_the_later_hardware_timeout() {
 }
 
 #[test]
+fn review_no_effect_cannot_postpone_an_expired_publication_watchdog() {
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    submit(&mut core, &mut hardware, values(&data_frame(BSSID), false)).unwrap();
+    let deadline = core.next_deadline().unwrap();
+    core.tx.timer.advance_to(deadline);
+    let mut events = Events::default();
+    // An RTS diagnostic is not a qualified stop. It must not hide an already
+    // expired watchdog or make that deadline wait depend on further input.
+    hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(1, 2));
+    let result = core.service(&mut hardware, WifiTxWake::Deadline, &mut events);
+    assert!(result.is_err(), "expired watchdog was bypassed: {result:?}");
+    assert!(events.completions.is_empty());
+}
+
+#[test]
 fn completion_faults_return_the_existing_backend_fault_without_a_tx_terminal() {
     use oer_esp32s31_ieee80211_mac::tx::CompletionFault;
     for (status, detail, fault) in [
@@ -925,6 +941,90 @@ fn a_block_ack_request_reports_its_block_ack() {
             ..
         } if start_sequence == SequenceNumber::new(100).unwrap()
     ));
+}
+
+#[test]
+fn review_bar_requires_the_solicited_block_ack_result_bit() {
+    for (status, received, expected) in [
+        (0, true, TxStatus::Success),
+        (0, false, TxStatus::AckTimeout),
+        (5, true, TxStatus::Success),
+        (5, false, TxStatus::AckTimeout),
+        (2, true, TxStatus::Success),
+        (2, false, TxStatus::CtsTimeout),
+    ] {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware);
+        let mut frame = [0; 24];
+        frame[0] = 0x84;
+        frame[4..10].copy_from_slice(&BSSID);
+        submit(&mut core, &mut hardware, values(&frame, false)).unwrap();
+        hardware.block_ack_completion[BE] =
+            Some(block_ack_completion(status, 100, 0b1011, received));
+        let mut events = Events::default();
+        core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+            .unwrap();
+        match events.completions[0] {
+            PublicationEnd::Completed {
+                status: actual,
+                block_ack,
+                ..
+            } => {
+                assert_eq!(
+                    actual, expected,
+                    "BAR status={status}, BA-received={received}"
+                );
+                assert_eq!(block_ack.is_some(), received);
+            }
+            other => panic!("wrong terminal: {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn review_bar_status_zero_without_block_ack_is_not_delivered() {
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    let mut frame = [0; 24];
+    frame[0] = 0x84;
+    frame[4..10].copy_from_slice(&BSSID);
+    submit(&mut core, &mut hardware, values(&frame, false)).unwrap();
+    hardware.block_ack_completion[BE] = Some(block_ack_completion(0, 100, 0b1011, false));
+    let mut events = Events::default();
+    core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+        .unwrap();
+    assert!(matches!(
+        events.completions[0],
+        PublicationEnd::Completed {
+            status: TxStatus::AckTimeout,
+            block_ack: None,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn review_aggregate_no_effect_cannot_postpone_expired_watchdog() {
+    let mut hardware = Hardware::default();
+    let core = enabled(&mut hardware);
+    let source = backings();
+    let published = publish_ampdu(
+        &core,
+        &mut hardware,
+        aggregate_of(source, 2, 26),
+        ampdu_values(ht_rate(7)),
+    )
+    .unwrap();
+    let deadline = published.deadline();
+    hardware.block_ack_completion[BE] = Some(block_ack_completion(1, 0, 0, false));
+    let result = ampdu::service(
+        &mut hardware,
+        published,
+        WifiTxWake::Deadline,
+        true,
+        deadline,
+    );
+    assert!(result.is_err(), "NoEffect hid an expired A-MPDU watchdog");
 }
 
 #[test]

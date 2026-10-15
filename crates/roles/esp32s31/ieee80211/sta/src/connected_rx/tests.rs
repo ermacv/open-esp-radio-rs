@@ -4,6 +4,7 @@ use std::vec::Vec;
 use oer_esp32s31_ieee80211_dma::descriptor::{BIT_30, BIT_31, LENGTH_SHIFT};
 
 use super::*;
+use oer_ieee80211_mac::address::IndividualAddress;
 
 const STATION: [u8; 6] = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15];
 const BSSID: [u8; 6] = [0x20, 0x21, 0x22, 0x23, 0x24, 0x25];
@@ -571,7 +572,7 @@ fn routes_only_probe_responses_from_the_associated_bssid() {
 fn config() -> ConnectedRxConfig {
     ConnectedRxConfig {
         station_address: OwnAddress::new(IndividualAddress::new(STATION).unwrap()),
-        bssid: Bssid::new(IndividualAddress::new(BSSID).unwrap()),
+        bssid: Bssid::new(IndividualAddress::new(BSSID).unwrap()).unwrap(),
         association_id: 7,
         ingress: RxIngressConfig {
             ring_entry_limit: 1,

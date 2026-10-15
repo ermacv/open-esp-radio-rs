@@ -4,6 +4,152 @@ use oer_ieee80211_mac::ftm::{
     encode_measurement,
 };
 
+#[test]
+fn equal_numeric_generations_never_route_a_completion_into_another_requester() {
+    let make = |peer| {
+        let session = FtmRequester::<1>::new(config(2, 1))
+            .start(peer, Instant::from_micros(0))
+            .unwrap();
+        let FtmRequesterService::Transmit(transmission) =
+            session.service(Instant::from_micros(0)).unwrap()
+        else {
+            panic!()
+        };
+        transmission
+    };
+    let first = make([1; 6]);
+    let second = make([2; 6]);
+    assert_eq!(first.session_generation(), second.session_generation());
+    assert_eq!(
+        first.transmission_generation(),
+        second.transmission_generation()
+    );
+    assert_eq!(first.body(), second.body());
+    let (session, _) = first.complete(true, Instant::from_micros(10)).unwrap();
+    assert_eq!(session.operation().peer, [1; 6]);
+    let (second_terminal, _) = second.reject_hardware_admission();
+    let (_, FtmOutcome::Failed { partial, reason }) = second_terminal.into_parts() else {
+        panic!()
+    };
+    assert_eq!(partial.operation.peer, [2; 6]);
+    assert_eq!(reason, FtmSessionFailure::HardwareAdmissionRejected);
+    assert_eq!(session.next_deadline(), Some(Instant::from_micros(1_010)));
+}
+
+#[test]
+fn cancellation_failure_and_timeout_return_samples_and_unmatched_local_timing() {
+    for ending in 0..3 {
+        let peer = [7; 6];
+        let mut session = start_published(FtmRequester::<3>::new(config(4, 1)), peer);
+        let initial = initial_body(1, 4);
+        session
+            .on_measurement(
+                peer,
+                FtmMeasurement::decode_body(&initial).unwrap(),
+                Some(FtmLocalExchangeTiming::new(1, ps(100), ps(120)).unwrap()),
+                Instant::from_micros(30),
+            )
+            .unwrap();
+        let follow_up = follow_up_body(2, 1, 80, 160);
+        let pending = FtmLocalExchangeTiming::new(2, ps(200), ps(220)).unwrap();
+        session
+            .on_measurement(
+                peer,
+                FtmMeasurement::decode_body(&follow_up).unwrap(),
+                Some(pending),
+                Instant::from_micros(40),
+            )
+            .unwrap();
+        let terminal = match ending {
+            0 => session.cancel(),
+            1 => {
+                let invalid = follow_up_body(4, 2, 180, 260);
+                assert_eq!(
+                    session.on_measurement(
+                        peer,
+                        FtmMeasurement::decode_body(&invalid).unwrap(),
+                        Some(FtmLocalExchangeTiming::new(4, ps(300), ps(320)).unwrap()),
+                        Instant::from_micros(50)
+                    ),
+                    Err(FtmRequesterError::DialogTokenOutOfSequence {
+                        expected: 3,
+                        actual: 4
+                    })
+                );
+                session.cancel()
+            }
+            _ => {
+                let deadline = session.next_deadline().unwrap();
+                let FtmRequesterService::Finished(terminal) = session.service(deadline).unwrap()
+                else {
+                    panic!("deadline produces terminal")
+                };
+                terminal
+            }
+        };
+        let (requester, outcome) = terminal.into_parts();
+        let partial = match (ending, outcome) {
+            (0, FtmOutcome::Cancelled(partial))
+            | (
+                1,
+                FtmOutcome::Failed {
+                    reason: FtmSessionFailure::ProtocolViolation,
+                    partial,
+                },
+            )
+            | (
+                2,
+                FtmOutcome::Failed {
+                    reason: FtmSessionFailure::SessionTimedOut,
+                    partial,
+                },
+            ) => partial,
+            _ => panic!("exact cancellation/failure reason must survive"),
+        };
+        assert_eq!(partial.operation.peer, peer);
+        assert_eq!(partial.sample_count(), 1);
+        assert_eq!(partial.pending, Some(pending));
+        let sample = partial.sample(0).unwrap();
+        assert_eq!(sample.dialog_token, 1);
+        let next = requester
+            .start([8; 6], Instant::from_micros(20_000))
+            .unwrap();
+        assert_eq!(next.operation().session_generation, 2);
+        assert_eq!(partial.sample(0), Some(sample));
+    }
+}
+
+#[test]
+fn cancel_after_rx_completed_delivers_the_unconsumed_result() {
+    let peer = [9; 6];
+    let mut session = start_published(FtmRequester::<1>::new(config(2, 1)), peer);
+    let initial = initial_body(1, 2);
+    session
+        .on_measurement(
+            peer,
+            FtmMeasurement::decode_body(&initial).unwrap(),
+            Some(FtmLocalExchangeTiming::new(1, ps(100), ps(120)).unwrap()),
+            Instant::from_micros(30),
+        )
+        .unwrap();
+    let final_body = follow_up_body(0, 1, 80, 160);
+    assert_eq!(
+        session.on_measurement(
+            peer,
+            FtmMeasurement::decode_body(&final_body).unwrap(),
+            None,
+            Instant::from_micros(40)
+        ),
+        Ok(FtmMeasurementDisposition::Complete { samples: 1 })
+    );
+    let (requester, FtmOutcome::Complete(result)) = session.cancel().into_parts() else {
+        panic!("cancellation must not erase a pending result")
+    };
+    assert_eq!(result.sample_count(), 1);
+    assert_eq!(result.sample(0).unwrap().dialog_token, 1);
+    assert!(requester.start([10; 6], Instant::from_micros(50)).is_ok());
+}
+
 fn ps(value: u64) -> FtmTimestampPs {
     FtmTimestampPs::new(value).unwrap()
 }
@@ -108,20 +254,37 @@ fn follow_up_body(
     )
 }
 
-fn start_published<const N: usize>(requester: &mut FtmRequester<N>, peer: [u8; 6]) {
-    requester
-        .start(peer, oer_time::Instant::from_micros(10))
-        .unwrap();
-    let FtmRequesterService::Transmit(transmission) = requester
-        .service(oer_time::Instant::from_micros(10))
-        .unwrap()
+fn start_published<const N: usize>(requester: FtmRequester<N>, peer: [u8; 6]) -> FtmSession<N> {
+    let session = requester.start(peer, Instant::from_micros(10)).unwrap();
+    let FtmRequesterService::Transmit(transmission) =
+        session.service(Instant::from_micros(10)).unwrap()
     else {
         panic!("request must be ready")
     };
     assert_eq!(transmission.body()[..3], [4, 32, 1]);
-    requester
-        .complete_transmission(transmission, true, oer_time::Instant::from_micros(20))
-        .unwrap();
+    transmission
+        .complete(true, Instant::from_micros(20))
+        .unwrap()
+        .0
+}
+
+fn finish<const N: usize>(session: FtmSession<N>) -> (FtmRequester<N>, FtmSessionResult<N>) {
+    let FtmRequesterService::Finished(terminal) =
+        session.service(Instant::from_micros(50)).unwrap()
+    else {
+        panic!("measurement already completed")
+    };
+    let (requester, FtmOutcome::Complete(result)) = terminal.into_parts() else {
+        panic!("complete result")
+    };
+    (requester, result)
+}
+
+fn failure<const N: usize>(session: FtmSession<N>) -> FtmSessionFailure {
+    let (_, FtmOutcome::Failed { reason, .. }) = session.cancel().into_parts() else {
+        panic!("session already failed")
+    };
+    reason
 }
 
 #[test]
@@ -171,113 +334,124 @@ fn config_rejects_unbounded_or_scheduled_profiles() {
 }
 
 #[test]
-fn request_retries_have_affine_transmission_identity() {
-    let mut requester = FtmRequester::<2>::new(config(2, 2));
-    requester
-        .start([1; 6], oer_time::Instant::from_micros(0))
+fn request_retries_transfer_the_only_session_owner() {
+    let session = FtmRequester::<2>::new(config(2, 2))
+        .start([1; 6], Instant::from_micros(0))
         .unwrap();
-    let FtmRequesterService::Transmit(first) = requester
-        .service(oer_time::Instant::from_micros(0))
-        .unwrap()
+    let refused = session.refuse_request(71);
+    assert_eq!(refused.request, 71);
+    assert_eq!(
+        refused.wait,
+        FtmWaitSource::SessionTerminal(session.operation())
+    );
+    let FtmRequesterService::Transmit(first) = session.service(Instant::from_micros(0)).unwrap()
     else {
         panic!()
     };
+    let first_generation = first.transmission_generation();
+    let (session, event) = first.complete(false, Instant::from_micros(10)).unwrap();
     assert_eq!(
-        requester.complete_transmission(first, false, oer_time::Instant::from_micros(10)),
-        Ok(FtmRequesterEvent::RequestRetryScheduled {
-            retry_at: oer_time::Instant::from_micros(110)
-        })
+        event,
+        FtmRequesterEvent::RequestRetryScheduled {
+            retry_at: Instant::from_micros(110)
+        }
     );
-    assert_eq!(
-        requester.service(oer_time::Instant::from_micros(109)),
-        Ok(FtmRequesterService::Idle)
-    );
-    let FtmRequesterService::Transmit(second) = requester
-        .service(oer_time::Instant::from_micros(110))
-        .unwrap()
+    let FtmRequesterService::Wait(session) = session.service(Instant::from_micros(109)).unwrap()
+    else {
+        panic!("retry must wait")
+    };
+    let FtmRequesterService::Transmit(second) = session.service(Instant::from_micros(110)).unwrap()
+    else {
+        panic!("retry due")
+    };
+    assert_ne!(first_generation, second.transmission_generation());
+    let (session, _) = second.complete(true, Instant::from_micros(111)).unwrap();
+    assert_eq!(session.next_deadline(), Some(Instant::from_micros(1_111)));
+}
+
+#[test]
+fn scheduling_overflow_returns_the_unchanged_requester_or_transmission() {
+    let requester = FtmRequester::<1>::new(config(2, 2));
+    let FtmRefusal {
+        error,
+        owner: requester,
+    } = requester
+        .start([1; 6], Instant::from_micros(u64::MAX))
+        .err()
+        .unwrap();
+    assert_eq!(error, FtmRequesterError::DeadlineOverflow);
+    let session = requester.start([1; 6], Instant::from_micros(0)).unwrap();
+    assert_eq!(session.operation().session_generation, 1);
+    let FtmRequesterService::Transmit(transmission) =
+        session.service(Instant::from_micros(0)).unwrap()
     else {
         panic!()
     };
-    assert_ne!(
-        first.transmission_generation(),
-        second.transmission_generation()
-    );
-    assert_eq!(
-        requester.complete_transmission(first, true, oer_time::Instant::from_micros(111)),
-        Err(FtmRequesterError::StaleTransmission)
-    );
-    requester
-        .complete_transmission(second, true, oer_time::Instant::from_micros(111))
+    let body = *transmission.body();
+    let FtmRefusal {
+        error,
+        owner: transmission,
+    } = transmission
+        .complete(true, Instant::from_micros(u64::MAX))
+        .err()
         .unwrap();
+    assert_eq!(error, FtmRequesterError::DeadlineOverflow);
+    assert_eq!(transmission.body(), &body);
+    assert_eq!(transmission.transmission_generation(), 1);
+    let FtmRefusal {
+        error,
+        owner: transmission,
+    } = transmission
+        .complete(false, Instant::from_micros(u64::MAX))
+        .err()
+        .unwrap();
+    assert_eq!(error, FtmRequesterError::DeadlineOverflow);
+    let terminal = transmission.cancel();
+    let (requester, FtmOutcome::Cancelled(partial)) = terminal.into_parts() else {
+        panic!()
+    };
+    assert_eq!(partial.sample_count(), 0);
     assert_eq!(
-        requester.next_deadline(),
-        Some(oer_time::Instant::from_micros(1_111))
+        requester
+            .start([2; 6], Instant::from_micros(0))
+            .unwrap()
+            .operation()
+            .session_generation,
+        2
     );
 }
 
 #[test]
-fn mutated_body_cannot_complete_or_reject_the_exact_pending_transmission() {
-    let mut completion = FtmRequester::<1>::new(config(2, 1));
-    completion
-        .start([1; 6], oer_time::Instant::from_micros(0))
+fn a_late_service_returns_the_queued_session_before_minting_a_transmission() {
+    let session = FtmRequester::<1>::new(config(2, 2))
+        .start([1; 6], Instant::from_micros(0))
         .unwrap();
-    let FtmRequesterService::Transmit(valid_completion) = completion
-        .service(oer_time::Instant::from_micros(0))
-        .unwrap()
-    else {
-        panic!()
-    };
-    let mut mutated_completion = valid_completion;
-    mutated_completion.body[2] = 0;
-    assert_eq!(
-        completion.complete_transmission(
-            mutated_completion,
-            true,
-            oer_time::Instant::from_micros(10)
-        ),
-        Err(FtmRequesterError::StaleTransmission)
-    );
-    assert_eq!(
-        completion.complete_transmission(
-            valid_completion,
-            true,
-            oer_time::Instant::from_micros(10)
-        ),
-        Ok(FtmRequesterEvent::RequestPublished {
-            response_deadline: oer_time::Instant::from_micros(1_010),
-            session_deadline: oer_time::Instant::from_micros(10_010),
-        })
-    );
-
-    let mut admission = FtmRequester::<1>::new(config(2, 1));
-    admission
-        .start([2; 6], oer_time::Instant::from_micros(20))
+    let operation = session.operation();
+    let deadline = session.next_deadline();
+    let FtmRefusal {
+        error,
+        owner: session,
+    } = session
+        .service(Instant::from_micros(u64::MAX))
+        .err()
         .unwrap();
-    let FtmRequesterService::Transmit(valid_admission) = admission
-        .service(oer_time::Instant::from_micros(20))
-        .unwrap()
+    assert_eq!(error, FtmRequesterError::DeadlineOverflow);
+    assert_eq!(session.operation(), operation);
+    assert_eq!(session.next_deadline(), deadline);
+    let FtmRequesterService::Transmit(transmission) =
+        session.service(Instant::from_micros(1)).unwrap()
     else {
-        panic!()
+        panic!("the queued request must remain available")
     };
-    let mut mutated_admission = valid_admission;
-    mutated_admission.body[0] = 0;
-    assert_eq!(
-        admission.reject_hardware_admission(mutated_admission),
-        Err(FtmRequesterError::StaleTransmission)
-    );
-    assert_eq!(
-        admission.reject_hardware_admission(valid_admission),
-        Ok(FtmRequesterEvent::Failed(
-            FtmSessionFailure::HardwareAdmissionRejected
-        ))
-    );
+    assert_eq!(transmission.transmission_generation(), 1);
+    let (_, outcome) = transmission.cancel().into_parts();
+    assert!(matches!(outcome, FtmOutcome::Cancelled(_)));
 }
 
 #[test]
 fn three_ftm_frames_deliver_two_owned_samples_without_claiming_distance() {
     let peer = [0x22; 6];
-    let mut requester = FtmRequester::<2>::new(config(3, 1));
-    start_published(&mut requester, peer);
+    let mut requester = start_published(FtmRequester::<2>::new(config(3, 1)), peer);
 
     let initial = initial_body(1, 3);
     assert_eq!(
@@ -318,7 +492,7 @@ fn three_ftm_frames_deliver_two_owned_samples_without_claiming_distance() {
         Ok(FtmMeasurementDisposition::Complete { samples: 2 })
     );
 
-    let result = requester.take_result().unwrap();
+    let (_requester, result) = finish(requester);
     assert_eq!(result.peer, peer);
     assert_eq!(result.sample_count(), 2);
     assert_eq!(
@@ -337,14 +511,13 @@ fn three_ftm_frames_deliver_two_owned_samples_without_claiming_distance() {
             difference_ps: 300,
         })
     );
-    assert!(requester.is_idle());
+    assert!(_requester.start(peer, Instant::from_micros(60)).is_ok());
 }
 
 #[test]
 fn ftm_retransmission_deduplicates_follow_up_but_owns_new_token() {
     let peer = [3; 6];
-    let mut requester = FtmRequester::<2>::new(config(3, 1));
-    start_published(&mut requester, peer);
+    let mut requester = start_published(FtmRequester::<2>::new(config(3, 1)), peer);
     let initial = initial_body(1, 3);
     requester
         .on_measurement(
@@ -382,7 +555,7 @@ fn ftm_retransmission_deduplicates_follow_up_but_owns_new_token() {
             oer_time::Instant::from_micros(60),
         )
         .unwrap();
-    let result = requester.take_result().unwrap();
+    let (_requester, result) = finish(requester);
     assert_eq!(result.sample_count(), 2);
     assert!(result.sample(0).is_some());
     assert_eq!(result.sample(1).unwrap().dialog_token, 3);
@@ -391,8 +564,7 @@ fn ftm_retransmission_deduplicates_follow_up_but_owns_new_token() {
 #[test]
 fn abandoned_retransmission_token_cannot_be_reused() {
     let peer = [4; 6];
-    let mut requester = FtmRequester::<3>::new(config(4, 1));
-    start_published(&mut requester, peer);
+    let mut requester = start_published(FtmRequester::<3>::new(config(4, 1)), peer);
     let initial = initial_body(1, 4);
     requester
         .on_measurement(
@@ -430,60 +602,56 @@ fn abandoned_retransmission_token_cannot_be_reused() {
         ),
         Err(FtmRequesterError::DialogTokenReused)
     );
-    assert_eq!(
-        requester.failure(),
-        Some(FtmSessionFailure::ProtocolViolation)
-    );
+    assert_eq!(failure(requester), FtmSessionFailure::ProtocolViolation);
 }
 
 #[test]
 fn capacity_and_hardware_admission_fail_before_publication() {
-    let mut too_small = FtmRequester::<1>::new(config(2, 1));
-    assert_eq!(
-        too_small.start([1; 6], oer_time::Instant::from_micros(0)),
-        Ok(1)
-    );
+    let requester = FtmRequester::<1>::new(config(2, 1));
+    let session = requester.start([1; 6], Instant::from_micros(0)).unwrap();
+    assert_eq!(session.operation().session_generation, 1);
     assert!(matches!(
-        too_small.service(oer_time::Instant::from_micros(0)),
+        session.service(Instant::from_micros(0)),
         Ok(FtmRequesterService::Transmit(_))
     ));
-
-    let mut too_small = FtmRequester::<1>::new(config(3, 1));
-    assert_eq!(
-        too_small.start([1; 6], oer_time::Instant::from_micros(0)),
-        Err(FtmRequesterError::CapacityTooSmall {
-            required_samples: 2,
-            capacity: 1,
-        })
-    );
-
-    let mut requester = FtmRequester::<2>::new(config(3, 1));
-    requester
-        .start([1; 6], oer_time::Instant::from_micros(0))
+    let too_small = FtmRequester::<1>::new(config(3, 1));
+    let refusal = too_small
+        .start([1; 6], Instant::from_micros(0))
+        .err()
         .unwrap();
-    let FtmRequesterService::Transmit(transmission) = requester
-        .service(oer_time::Instant::from_micros(0))
-        .unwrap()
+    assert_eq!(
+        refusal.error,
+        FtmRequesterError::CapacityTooSmall {
+            required_samples: 2,
+            capacity: 1
+        }
+    );
+    assert_eq!(refusal.owner.config(), config(3, 1));
+    let session = FtmRequester::<2>::new(config(3, 1))
+        .start([1; 6], Instant::from_micros(0))
+        .unwrap();
+    let FtmRequesterService::Transmit(transmission) =
+        session.service(Instant::from_micros(0)).unwrap()
     else {
         panic!()
     };
+    let (terminal, event) = transmission.reject_hardware_admission();
     assert_eq!(
-        requester.reject_hardware_admission(transmission),
-        Ok(FtmRequesterEvent::Failed(
-            FtmSessionFailure::HardwareAdmissionRejected
-        ))
+        event,
+        FtmRequesterEvent::Failed(FtmSessionFailure::HardwareAdmissionRejected)
     );
-    assert_eq!(
-        requester.take_failure(),
-        Ok(FtmSessionFailure::HardwareAdmissionRejected)
-    );
+    let (requester, FtmOutcome::Failed { reason, partial }) = terminal.into_parts() else {
+        panic!()
+    };
+    assert_eq!(reason, FtmSessionFailure::HardwareAdmissionRejected);
+    assert_eq!(partial.sample_count(), 0);
+    assert!(requester.start([2; 6], Instant::from_micros(0)).is_ok());
 }
 
 #[test]
 fn one_ftm_frame_is_a_terminal_initial_with_zero_samples() {
     let peer = [5; 6];
-    let mut requester = FtmRequester::<0>::new(config(1, 1));
-    start_published(&mut requester, peer);
+    let mut requester = start_published(FtmRequester::<0>::new(config(1, 1)), peer);
     let terminal_initial = initial_body(0, 1);
     assert_eq!(
         requester.on_measurement(
@@ -494,12 +662,11 @@ fn one_ftm_frame_is_a_terminal_initial_with_zero_samples() {
         ),
         Ok(FtmMeasurementDisposition::Complete { samples: 0 })
     );
-    let result = requester.take_result().unwrap();
+    let (_requester, result) = finish(requester);
     assert_eq!(result.negotiated.ftms_per_burst, 1);
     assert_eq!(result.sample_count(), 0);
 
-    let mut nonterminal = FtmRequester::<0>::new(config(1, 1));
-    start_published(&mut nonterminal, peer);
+    let mut nonterminal = start_published(FtmRequester::<0>::new(config(1, 1)), peer);
     let invalid = initial_body(1, 1);
     assert_eq!(
         nonterminal.on_measurement(
@@ -510,14 +677,13 @@ fn one_ftm_frame_is_a_terminal_initial_with_zero_samples() {
         ),
         Err(FtmRequesterError::TooManyMeasurements)
     );
-    assert_eq!(nonterminal.sample_count, 0);
+    assert_eq!(nonterminal.owner.sample_count, 0);
 }
 
 #[test]
 fn initial_retransmission_replaces_timing_and_tokens_wrap_consecutively() {
     let peer = [6; 6];
-    let mut requester = FtmRequester::<2>::new(config(3, 1));
-    start_published(&mut requester, peer);
+    let mut requester = start_published(FtmRequester::<2>::new(config(3, 1)), peer);
     let initial = initial_body(254, 3);
     requester
         .on_measurement(
@@ -564,7 +730,7 @@ fn initial_retransmission_replaces_timing_and_tokens_wrap_consecutively() {
             oer_time::Instant::from_micros(60),
         )
         .unwrap();
-    let result = requester.take_result().unwrap();
+    let (_requester, result) = finish(requester);
     assert_eq!(result.sample_count(), 2);
     assert_eq!(result.sample(0).unwrap().dialog_token, 255);
     assert_eq!(result.sample(0).unwrap().initiator_arrival_t2_ps, ps(200));
@@ -573,8 +739,7 @@ fn initial_retransmission_replaces_timing_and_tokens_wrap_consecutively() {
 #[test]
 fn nonconsecutive_dialog_token_fails_before_sample_mutation() {
     let peer = [7; 6];
-    let mut requester = FtmRequester::<2>::new(config(3, 1));
-    start_published(&mut requester, peer);
+    let mut requester = start_published(FtmRequester::<2>::new(config(3, 1)), peer);
     let initial = initial_body(1, 3);
     requester
         .on_measurement(
@@ -597,18 +762,14 @@ fn nonconsecutive_dialog_token_fails_before_sample_mutation() {
             actual: 3,
         })
     );
-    assert_eq!(requester.sample_count, 0);
-    assert_eq!(
-        requester.failure(),
-        Some(FtmSessionFailure::ProtocolViolation)
-    );
+    assert_eq!(requester.owner.sample_count, 0);
+    assert_eq!(failure(requester), FtmSessionFailure::ProtocolViolation);
 }
 
 #[test]
 fn initial_retransmission_must_preserve_the_negotiated_body() {
     let peer = [8; 6];
-    let mut requester = FtmRequester::<2>::new(config(3, 1));
-    start_published(&mut requester, peer);
+    let mut requester = start_published(FtmRequester::<2>::new(config(3, 1)), peer);
     let initial = initial_body(1, 3);
     requester
         .on_measurement(
@@ -629,11 +790,8 @@ fn initial_retransmission_must_preserve_the_negotiated_body() {
         ),
         Err(FtmRequesterError::InitialRetransmissionMismatch)
     );
-    assert_eq!(requester.sample_count, 0);
-    assert_eq!(
-        requester.failure(),
-        Some(FtmSessionFailure::ProtocolViolation)
-    );
+    assert_eq!(requester.owner.sample_count, 0);
+    assert_eq!(failure(requester), FtmSessionFailure::ProtocolViolation);
 }
 
 #[test]
@@ -677,13 +835,13 @@ fn local_timing_proves_a_nonzero_token_through_the_bitmap_boundary() {
         FtmLocalExchangeTiming::new(0, ps(100), ps(120)),
         Err(FtmRequesterError::ZeroLocalDialogToken),
     );
-    let mut requester = FtmRequester::<4>::new(config(3, 1));
+    let mut tokens = TokenSet::EMPTY;
     for token in [1, 31, 32, 254, 255] {
         let timing = FtmLocalExchangeTiming::new(token, ps(100), ps(120)).unwrap();
         assert_eq!(timing.dialog_token.get(), token);
-        assert!(!requester.dialog_tokens.contains(token));
-        requester.dialog_tokens.insert(timing.dialog_token);
-        assert!(requester.dialog_tokens.contains(token));
+        assert!(!tokens.contains(token));
+        tokens.insert(timing.dialog_token);
+        assert!(tokens.contains(token));
     }
-    assert!(!requester.dialog_tokens.contains(0));
+    assert!(!tokens.contains(0));
 }

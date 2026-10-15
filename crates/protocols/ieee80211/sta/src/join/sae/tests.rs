@@ -49,7 +49,8 @@ fn a_full_exchange_yields_the_access_point_pmk() {
         ),
         oer_ieee80211_mac::address::Bssid::new(
             oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-        ),
+        )
+        .unwrap(),
         commit(LOCAL, BSSID, 0x20),
         SaePwe::HuntingAndPecking,
     );
@@ -85,7 +86,8 @@ fn an_anti_clogging_refusal_repeats_the_commit_with_the_token() {
         ),
         oer_ieee80211_mac::address::Bssid::new(
             oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-        ),
+        )
+        .unwrap(),
         commit(LOCAL, BSSID, 0x20),
         SaePwe::HuntingAndPecking,
     );
@@ -110,7 +112,8 @@ fn the_timer_is_four_seconds_then_two_after_the_confirm() {
         ),
         oer_ieee80211_mac::address::Bssid::new(
             oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-        ),
+        )
+        .unwrap(),
         commit(LOCAL, BSSID, 0x20),
         SaePwe::HuntingAndPecking,
     );
@@ -155,7 +158,8 @@ fn a_wrong_password_or_a_refusal_fails() {
         ),
         oer_ieee80211_mac::address::Bssid::new(
             oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-        ),
+        )
+        .unwrap(),
         commit(LOCAL, BSSID, 0x20),
         SaePwe::HuntingAndPecking,
     );
@@ -185,7 +189,8 @@ fn a_wrong_password_or_a_refusal_fails() {
         ),
         oer_ieee80211_mac::address::Bssid::new(
             oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-        ),
+        )
+        .unwrap(),
         commit(LOCAL, BSSID, 0x20),
         SaePwe::HuntingAndPecking,
     );
@@ -203,7 +208,8 @@ fn a_wrong_password_or_a_refusal_fails() {
         ),
         oer_ieee80211_mac::address::Bssid::new(
             oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-        ),
+        )
+        .unwrap(),
         commit(LOCAL, BSSID, 0x20),
         SaePwe::HashToElement,
     );

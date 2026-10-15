@@ -647,6 +647,8 @@ pub enum StationDisconnectReason {
     /// The join beacon's TSF could not be advanced to the start of power
     /// management without crossing 2^64.
     JoinTsfUnrepresentable,
+    /// A monotonic deadline needed to preserve the connection cannot be represented.
+    DeadlineOverflow,
 }
 
 /// Stable station stage vocabulary used by HIL lifecycle evidence.

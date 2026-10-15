@@ -428,8 +428,10 @@ pub enum LowerMacFault {
 }
 
 /// How one attempt ended, as the ESP32-S31 observed it. The backend maps it
-/// onto the portable completion; a hardware timeout's mapping is an open
-/// question on #563 (whether its PPDU reached the air is unknown).
+/// onto the portable completion. A detached hardware timeout is
+/// `TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout)`: whether
+/// its PPDU reached the air is unknown. An executor watchdog without a
+/// qualified detach instead poisons and quarantines the publication.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PublicationEnd {
     /// Its completion arrived: the hardware's status, the ACK's SNR and a

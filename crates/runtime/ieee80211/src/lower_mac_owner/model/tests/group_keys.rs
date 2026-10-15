@@ -3,6 +3,7 @@ use crate::lower_mac_owner::conformance::group_keys as contract;
 use oer_time::{Clock, Timer};
 use oer_time_virtual::VirtualClock;
 
+mod ingress;
 mod progress;
 
 fn id() -> GroupKeyId {

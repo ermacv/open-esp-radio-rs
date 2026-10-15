@@ -147,10 +147,18 @@ impl StaPeerTransmit for MockTransmit {
 }
 
 fn he20_access_point() -> ScanRecord {
-    let mut access_point = ScanRecord::EMPTY;
+    let mut access_point = ScanRecord::new(
+        oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new([2, 0, 0, 0, 0, 1]).unwrap(),
+        )
+        .unwrap(),
+        6,
+        -40,
+    );
     access_point.bssid = oer_ieee80211_mac::address::Bssid::new(
         oer_ieee80211_mac::address::IndividualAddress::new([2, 3, 4, 5, 6, 7]).unwrap(),
-    );
+    )
+    .unwrap();
     access_point.ssid[..4].copy_from_slice(b"test");
     access_point.ssid_len = 4;
     access_point.beacon_interval_tu = 100;
@@ -177,10 +185,18 @@ fn ht40_mcs32_access_point() -> ScanRecord {
         oer_ieee80211_mac::protection::HtOperationProtection::default(),
     );
 
-    let mut access_point = ScanRecord::EMPTY;
+    let mut access_point = ScanRecord::new(
+        oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new([2, 0, 0, 0, 0, 1]).unwrap(),
+        )
+        .unwrap(),
+        6,
+        -40,
+    );
     access_point.bssid = oer_ieee80211_mac::address::Bssid::new(
         oer_ieee80211_mac::address::IndividualAddress::new([2, 3, 4, 5, 6, 7]).unwrap(),
-    );
+    )
+    .unwrap();
     access_point.ssid[..4].copy_from_slice(b"test");
     access_point.ssid_len = 4;
     access_point.channel = channel.primary();

@@ -211,31 +211,29 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         if psdu_length == 0 {
             return Err(HtAmpduTxError::Length(HtAmpduLengthError::ZeroMpduLength));
         }
-        let mut next = u32::from(self.prepared_length);
-        if self.count != 0 {
+        let previous = if self.count != 0 {
             let previous = usize::from(self.count - 1);
-            let previous_length = u32::from(self.psdu_lengths[previous]);
-            next = next
-                .checked_add((4 - (previous_length & 3)) & 3)
-                .and_then(|length| {
-                    length.checked_add(u32::from(self.empty_delimiters[previous]) * 4)
-                })
-                .ok_or(HtAmpduTxError::Length(
-                    HtAmpduLengthError::AggregateTooLong(u32::MAX),
-                ))?;
-        }
-        next = next
-            .checked_add(
-                4 + u32::from(psdu_length)
-                    + if hardware_he_control {
-                        u32::from(HARDWARE_HE_CONTROL_LENGTH)
-                    } else {
-                        0
-                    },
-            )
-            .ok_or(HtAmpduTxError::Length(
-                HtAmpduLengthError::AggregateTooLong(u32::MAX),
-            ))?;
+            Some((
+                u32::from(self.psdu_lengths[previous]),
+                u32::from(self.empty_delimiters[previous]),
+            ))
+        } else {
+            None
+        };
+        let next_psdu = u32::from(psdu_length)
+            + if hardware_he_control {
+                u32::from(HARDWARE_HE_CONTROL_LENGTH)
+            } else {
+                0
+            };
+        let next = oer_ieee80211_mac::ampdu::length_after_append(
+            u32::from(self.prepared_length),
+            previous,
+            next_psdu,
+        )
+        .ok_or(HtAmpduTxError::Length(
+            HtAmpduLengthError::AggregateTooLong(u32::MAX),
+        ))?;
         if next > u32::from(self.max_aggregate_bytes) {
             return Err(HtAmpduTxError::Length(
                 HtAmpduLengthError::AggregateTooLong(next),

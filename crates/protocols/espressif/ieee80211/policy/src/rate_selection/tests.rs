@@ -82,6 +82,12 @@ fn metric(db: i8) -> Measured {
 fn legacy_peer() -> RatePeer {
     RatePeer {
         phy: PhyMode::Legacy,
+        legacy_rates:
+            oer_ieee80211_upper_mac::rate_control::NegotiatedLegacyRates::from_rate_elements(
+                &[2, 4, 11, 22, 12, 18, 24, 36],
+                &[48, 72, 96, 108],
+            )
+            .unwrap(),
         ht_capabilities: None,
         he_capabilities: None,
         he_peer_state: None,
@@ -93,6 +99,12 @@ fn ht20_peer() -> RatePeer {
     element[..6].copy_from_slice(&[45, 26, 0x20, 0, 0x17, 0xff]);
     RatePeer {
         phy: PhyMode::Ht20,
+        legacy_rates:
+            oer_ieee80211_upper_mac::rate_control::NegotiatedLegacyRates::from_rate_elements(
+                &[2, 4, 11, 22, 12, 18, 24, 36],
+                &[48, 72, 96, 108],
+            )
+            .unwrap(),
         ht_capabilities: ht_peer_capabilities(&element),
         he_capabilities: None,
         he_peer_state: None,
@@ -292,6 +304,12 @@ fn ht40_peer() -> RatePeer {
     element[..6].copy_from_slice(&[45, 26, 0x02, 0, 0x17, 0xff]);
     RatePeer {
         phy: PhyMode::Ht40,
+        legacy_rates:
+            oer_ieee80211_upper_mac::rate_control::NegotiatedLegacyRates::from_rate_elements(
+                &[2, 4, 11, 22, 12, 18, 24, 36],
+                &[48, 72, 96, 108],
+            )
+            .unwrap(),
         ht_capabilities: ht_peer_capabilities(&element),
         he_capabilities: None,
         he_peer_state: None,
@@ -403,4 +421,60 @@ fn an_unrepresentable_walk_never_publishes_a_partial_retry_budget() {
 fn a_zero_retry_budget_never_creates_a_transmission() {
     let rate = PhyRate::Legacy(LegacyRate::Dsss1M);
     assert!(walk(rate, 0, |_| Some(rate)).is_none());
+}
+
+#[test]
+fn every_data_and_control_rate_belongs_to_the_negotiated_legacy_set() {
+    use oer_ieee80211_upper_mac::rate_control::NegotiatedLegacyRates;
+    let he = RatePeer {
+        phy: PhyMode::He20,
+        he_capabilities: Some(
+            oer_ieee80211_mac::he::parse_he20_capabilities(&[
+                255, 22, 35, 0x03, 0x18, 0x9c, 0xca, 0x10, 0x80, 0x00, 0x10, 0x8a, 0x1b, 0x0d,
+                0xc0, 0x1f, 0x00, 0x02, 0x82, 0x01, 0xfd, 0xff, 0xfd, 0xff,
+            ])
+            .unwrap(),
+        ),
+        ..ht20_peer()
+    };
+    for (supported, extended) in [
+        (&[0x82, 0x84, 0x8b, 0x96][..], &[][..]),
+        (&[0x82, 0x84][..], &[][..]),
+        (&[0x82, 0x8b][..], &[0x0c, 0x30][..]),
+        (&[0x8c][..], &[][..]),
+        (
+            &[0x82, 0x84, 0x8b, 0x96][..],
+            &[12, 18, 24, 36, 48, 72, 96, 108][..],
+        ),
+    ] {
+        for mut peer in [legacy_peer(), ht20_peer(), ht40_peer(), he] {
+            peer.legacy_rates =
+                NegotiatedLegacyRates::from_rate_elements(supported, extended).unwrap();
+            for signal in [-20, 0, 20, 60, 100] {
+                let mut selection = EspressifRateSelection::<Caps>::new();
+                RateSelection::<Measured>::associated(&mut selection, &peer, &metric(signal));
+                for _ in 0..32 {
+                    for class in [FrameRates::Control, FrameRates::Data] {
+                        let plan = plan_of(&selection, class);
+                        for (rate, _) in stages(&plan) {
+                            if let PhyRate::Legacy(rate) = rate {
+                                assert!(
+                                    peer.legacy_rates.contains(rate),
+                                    "{peer:?}, {class:?}: {rate:?}"
+                                );
+                            } else {
+                                assert_ne!(peer.phy, PhyMode::Legacy);
+                            }
+                        }
+                    }
+                    RateSelection::<Measured>::completed(
+                        &mut selection,
+                        Instant::from_micros(1),
+                        FrameRates::Data,
+                        &completion(TxEndStatus::AckTimeout, 32),
+                    );
+                }
+            }
+        }
+    }
 }

@@ -283,6 +283,9 @@ impl AmpduRetryState {
                 self.protection_failures = self.protection_failures.saturating_add(1);
                 // No subframe reached the recipient.
                 self.missing_original_indices = self.pending_original_indices;
+                if self.aged(now) {
+                    return Ok(AmpduRetryDecision::Finish { retry_mask: every });
+                }
                 if self.protection_failures < self.retry_limit {
                     return Ok(AmpduRetryDecision::RepublishUnchanged { retry_mask: every });
                 }

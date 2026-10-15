@@ -80,7 +80,10 @@ pub(super) async fn run_timed<F: Future>(
 fn admitted(slot: u8, permission: u8) -> Owners {
     Owners { slot, permission }
 }
-fn terminal(event: LowerMacEvent<'_, ModelTypes>) -> Completion {
+fn terminal<'id>(
+    event: LowerMacEvent<'id, ModelTypes>,
+    access: &mut oer_ieee80211_lower_mac::TerminalAccess<'id, ModelTickets, ModelPool<1>>,
+) -> Completion {
     let (mutation, owners) = match event {
         LowerMacEvent::Terminal(LowerMacTerminal::GroupKeyInstalled(InstalledGroup::Station {
             key,
@@ -110,7 +113,7 @@ fn terminal(event: LowerMacEvent<'_, ModelTypes>) -> Completion {
             RemovedKey::Group { slot, permission },
         ))) => (Mutation::Remove, admitted(slot.index(), permission.index())),
         LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(TxCompleted::Single(tx))) => {
-            let tx = tx.into_parts();
+            let tx = tx.into_parts(access);
             let (buffer, _) = tx.payload.into_parts();
             return Completion::Transmit(TxOwners {
                 ticket: tx.ticket.index(),
@@ -198,7 +201,7 @@ impl PortBody<ModelBackend> for Exercise<'_> {
     async fn run<'id>(
         self,
         owner: Owner<'_, 'id, ModelBackend, Disabled>,
-        resources: ModelResources<'id>,
+        mut resources: ModelResources<'id>,
     ) -> Ended<'id, ModelBackend> {
         if self.case == ProgressCase::PublishedRemoval {
             return self.published_removal(owner, resources).await;
@@ -266,7 +269,12 @@ impl PortBody<ModelBackend> for Exercise<'_> {
         }
         let mut events = Vec::new();
         match owner
-            .disable(&mut |event| events.push(terminal(LowerMacEvent::Terminal(event))))
+            .disable(&mut |event| {
+                events.push(terminal(
+                    LowerMacEvent::Terminal(event),
+                    &mut resources.terminal_access,
+                ))
+            })
             .await
         {
             Ok(disabled) => {
@@ -351,15 +359,18 @@ impl Exercise<'_> {
                 .hold_completion(WmmAccessCategory::BestEffort, true);
             phase
                 .access_point()
-                .submit(oer_ieee80211_lower_mac::Attempt {
-                    context: (),
-                    ticket,
-                    source,
-                    access_category: WmmAccessCategory::BestEffort,
-                    protection: Protection::None,
-                    power: SupportedPower::new(TxPower::Calibrated).unwrap(),
-                    coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
-                })
+                .submit(
+                    (oer_ieee80211_lower_mac::Attempt {
+                        context: (),
+                        ticket,
+                        source,
+                        access_category: WmmAccessCategory::BestEffort,
+                        protection: Protection::None,
+                        power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+                        coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+                    })
+                    .admit(),
+                )
                 .unwrap();
             for _ in 0..3 {
                 yield_now().await;
@@ -385,7 +396,10 @@ impl Exercise<'_> {
             // return TX before the group-removal bound, without test release.
             let mut events = Vec::new();
             for _ in 0..2 {
-                events.push(terminal(phase.next_event().await.unwrap().unwrap()));
+                events.push(terminal(
+                    phase.next_event().await.unwrap().unwrap(),
+                    &mut resources.terminal_access,
+                ));
             }
             self.record(owners, events, Vec::new(), Some((published, blocked)));
         }

@@ -392,15 +392,19 @@ fn spurious_status_neither_acknowledges_nor_wakes_the_driver() {
     assert_eq!(runtime.try_take_tx(), None);
 }
 
-static RX_UNMASK_CALLS: AtomicU32 = AtomicU32::new(0);
+std::thread_local! {
+    // A callback has no fixture argument. Each host test executes its callback
+    // on its own thread, so parallel moderation fixtures share no counter.
+    static RX_UNMASK_CALLS: Cell<u32> = const { Cell::new(0) };
+}
 
 fn record_rx_unmask() {
-    RX_UNMASK_CALLS.fetch_add(1, Ordering::Relaxed);
+    RX_UNMASK_CALLS.set(RX_UNMASK_CALLS.get() + 1);
 }
 
 #[test]
 fn moderated_rx_masks_before_ack_and_restores_only_on_bottom_half_drain() {
-    RX_UNMASK_CALLS.store(0, Ordering::Relaxed);
+    RX_UNMASK_CALLS.set(0);
     let status = MacInterruptObservation::from_semantic_events(
         MacInterruptEvents::RX_SUCCESS.union(MacInterruptEvents::TX_COMPLETE),
         false,
@@ -424,18 +428,18 @@ fn moderated_rx_masks_before_ack_and_restores_only_on_bottom_half_drain() {
     assert!(interrupt.rx_was_masked_before_ack.get());
     assert!(interrupt.acknowledged.get());
     assert_eq!(runtime.try_take_tx(), Some(EVENT_TX_COMPLETE));
-    assert_eq!(RX_UNMASK_CALLS.load(Ordering::Relaxed), 0);
+    assert_eq!(RX_UNMASK_CALLS.get(), 0);
 
     assert!(runtime.unmask_rx_after_drain());
-    assert_eq!(RX_UNMASK_CALLS.load(Ordering::Relaxed), 1);
+    assert_eq!(RX_UNMASK_CALLS.get(), 1);
     runtime.end_rx_moderation();
     assert!(!runtime.unmask_rx_after_drain());
-    assert_eq!(RX_UNMASK_CALLS.load(Ordering::Relaxed), 1);
+    assert_eq!(RX_UNMASK_CALLS.get(), 1);
 }
 
 #[test]
 fn moderated_irq_epoch_owns_activation_failure_and_quiesce_cleanup() {
-    RX_UNMASK_CALLS.store(0, Ordering::Relaxed);
+    RX_UNMASK_CALLS.set(0);
     let mac = IrqConsumer::new(Moderated::new(record_rx_unmask));
     let power = PowerIrqConsumer::new();
     let platform = Cell::new(10);

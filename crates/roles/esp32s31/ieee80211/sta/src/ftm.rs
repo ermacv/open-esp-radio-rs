@@ -83,8 +83,8 @@ pub enum StationFtmHardwareError {
 /// Validate the exact body produced by the portable requester, then stop at
 /// the first missing connected-runtime owner. No sequence number, DMA buffer,
 /// PHY bit or capability field is changed.
-pub fn station_ftm_request_frontier(
-    transmission: &FtmRequestTransmission,
+pub fn station_ftm_request_frontier<const N: usize>(
+    transmission: &FtmRequestTransmission<N>,
 ) -> StationFtmHardwareError {
     let Ok(request) = FtmRequest::decode_body(transmission.body()) else {
         return StationFtmHardwareError::InvalidPortableRequest;

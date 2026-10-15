@@ -193,6 +193,7 @@ where
 {
     type Small = S;
     type EpochPath = Ty::EpochPath;
+    type GatePath = Ty::GatePath;
     type Ticket = Slot<'id, Ty::TicketKind, Ty::TicketPath>;
     type SmallBuffer = <Ty as TxBufferPool<'id, S>>::Buffer;
     type Sent = <Ty as TxBufferPool<'id, S>>::Sent;
@@ -454,6 +455,11 @@ pub struct StationService<'id, B: StationPort<'id>, S> {
     pub rates: S,
     /// What the service dropped or could not send.
     pub counters: ServiceCounters,
+    terminal_access: oer_ieee80211_lower_mac::TerminalAccess<
+        'id,
+        <B::Types as PhaseTypes<'id>>::TicketKind,
+        <B::Types as PhaseTypes<'id>>::TicketPath,
+    >,
     pending: PendingActions<'id, B>,
 }
 
@@ -480,11 +486,11 @@ enum PendingGroupAction<'id, Path: oer_radio_port::PoolPath> {
 }
 
 /// What a step left the loop to do.
-enum Next<K> {
+enum Next<'id, K, Path: oer_radio_port::PoolPath> {
     /// Wait for the next input.
     Wait,
     /// Move the port to the channel.
-    Retune(oer_ieee80211_arbiter::PendingRetune<K>),
+    Retune(oer_ieee80211_arbiter::PendingRetune<'id, K, Path>),
     /// The port is poisoned.
     Poisoned,
 }
@@ -497,6 +503,11 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
         data: PortData<'id, B>,
         arbiter: PortArbiter<'id, B>,
         rates: S,
+        terminal_access: oer_ieee80211_lower_mac::TerminalAccess<
+            'id,
+            <B::Types as PhaseTypes<'id>>::TicketKind,
+            <B::Types as PhaseTypes<'id>>::TicketPath,
+        >,
     ) -> Self {
         // The port's levels, checked as the type is built.
         const {
@@ -509,6 +520,7 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
             data,
             arbiter,
             rates,
+            terminal_access,
             counters: ServiceCounters::default(),
             pending: PendingActions {
                 configuring: None,
@@ -582,7 +594,13 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
     >(
         &mut self,
         mut owner: Owner<'p, 'id, B, Disabled>,
-        mut pending: Option<oer_ieee80211_arbiter::PendingRetune<B::Caps>>,
+        mut pending: Option<
+            oer_ieee80211_arbiter::PendingRetune<
+                'id,
+                B::Caps,
+                <B::Types as PhaseTypes<'id>>::GatePath,
+            >,
+        >,
         io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
         timer: &impl Timer,
     ) -> Result<Owner<'p, 'id, B, Enabled>, ServiceEnd<'p, 'id, B>> {
@@ -674,7 +692,7 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
         phase: &mut P,
         io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
         timer: &impl Timer,
-    ) -> Served<B::Caps>
+    ) -> Served<'id, B::Caps, <B::Types as PhaseTypes<'id>>::GatePath>
     where
         'id: 'p,
         P: LowerMacPhase<'p, 'id, Caps = B::Caps, Types = B::Types>,
@@ -813,7 +831,7 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
         now: Instant,
         phase: &mut P,
         io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
-    ) -> Next<B::Caps>
+    ) -> Next<'id, B::Caps, <B::Types as PhaseTypes<'id>>::GatePath>
     where
         'id: 'p,
         P: LowerMacPhase<'p, 'id, Caps = B::Caps, Types = B::Types>,
@@ -923,8 +941,8 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
                             reason,
                         }),
                         Ok(source) => {
-                            let submitted =
-                                phase.station().submit(oer_ieee80211_lower_mac::Attempt {
+                            let submitted = phase.station().submit(
+                                (oer_ieee80211_lower_mac::Attempt {
                                     context: TxContext::Data(context),
                                     ticket,
                                     source,
@@ -932,7 +950,9 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
                                     protection: Protection::None,
                                     power: Levels::<B::Caps>::POWER,
                                     coex: Levels::<B::Caps>::NORMAL,
-                                });
+                                })
+                                .admit(),
+                            );
                             match submitted {
                                 Ok(()) => Ok(Follow::Nothing),
                                 Err(_) => Err(()),
@@ -1109,7 +1129,7 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
                     ticket,
                     payload,
                     outcome: completion,
-                } = terminal.into_parts();
+                } = terminal.into_parts(&mut self.terminal_access);
                 let (buffer, body) = payload.into_parts();
                 self.returned(
                     now,
@@ -1433,15 +1453,18 @@ where
         StaFrameClass::Normal => Levels::<B::Caps>::NORMAL,
     };
     let mut station = phase.station();
-    match station.submit(oer_ieee80211_lower_mac::Attempt {
-        context: TxContext::Station(context),
-        ticket,
-        source,
-        access_category: WmmAccessCategory::Voice,
-        protection: Protection::None,
-        power: Levels::<B::Caps>::POWER,
-        coex,
-    }) {
+    match station.submit(
+        (oer_ieee80211_lower_mac::Attempt {
+            context: TxContext::Station(context),
+            ticket,
+            source,
+            access_category: WmmAccessCategory::Voice,
+            protection: Protection::None,
+            power: Levels::<B::Caps>::POWER,
+            coex,
+        })
+        .admit(),
+    ) {
         Ok(()) => Ok(Follow::Nothing),
         Err(_) => Err(()),
     }
@@ -1606,9 +1629,9 @@ where
 }
 
 /// What serving a phase ended with.
-enum Served<K> {
+enum Served<'id, K, Path: oer_radio_port::PoolPath> {
     Stop,
-    Retune(oer_ieee80211_arbiter::PendingRetune<K>),
+    Retune(oer_ieee80211_arbiter::PendingRetune<'id, K, Path>),
     Poisoned,
 }
 

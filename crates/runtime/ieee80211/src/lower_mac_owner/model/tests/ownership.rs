@@ -67,9 +67,10 @@ fn observe(
     });
 }
 
-fn returned(
-    event: LowerMacEvent<'_, ModelTypes<Contexts>>,
+fn returned<'id>(
+    event: LowerMacEvent<'id, ModelTypes<Contexts>>,
     seen: &RefCell<Vec<conformance::Returned>>,
+    terminal_access: &mut oer_ieee80211_lower_mac::TerminalAccess<'id, ModelTickets, ModelPool<1>>,
 ) {
     match event {
         LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(TxCompleted::Single(terminal))) => {
@@ -79,7 +80,7 @@ fn returned(
                 outcome: completion,
                 payload,
                 ..
-            } = terminal.into_parts();
+            } = terminal.into_parts(terminal_access);
             let (buffer, body) = payload.into_parts();
 
             let end = match completion {
@@ -106,6 +107,7 @@ impl PortBody<Backend> for Operations {
         owner: Owner<'_, 'id, Backend, Disabled>,
         resources: ModelResources<'id>,
     ) -> Ended<'id, Backend> {
+        let mut terminal_access = resources.terminal_access;
         let Ok(mut owner) = owner.enable().await else {
             panic!("model enables")
         };
@@ -199,15 +201,18 @@ impl PortBody<Backend> for Operations {
                         assert_ne!(self.scenario, Scenario::Refuse);
                         phase
                             .station()
-                            .submit(oer_ieee80211_lower_mac::Attempt {
-                                context,
-                                ticket,
-                                source,
-                                access_category: operation.category,
-                                protection: Protection::None,
-                                power: SupportedPower::new(TxPower::Calibrated).unwrap(),
-                                coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
-                            })
+                            .submit(
+                                (oer_ieee80211_lower_mac::Attempt {
+                                    context,
+                                    ticket,
+                                    source,
+                                    access_category: operation.category,
+                                    protection: Protection::None,
+                                    power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+                                    coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+                                })
+                                .admit(),
+                            )
                             .unwrap();
                     }
                     Err((buffer, body)) => {
@@ -221,7 +226,7 @@ impl PortBody<Backend> for Operations {
                     let Ok(Ok(event)) = phase.next_event().await else {
                         panic!("unheld AC completes")
                     };
-                    returned(event, &self.seen);
+                    returned(event, &self.seen, &mut terminal_access);
                 }
                 assert!(
                     self.seen
@@ -242,12 +247,18 @@ impl PortBody<Backend> for Operations {
                         let Ok(Ok(event)) = phase.next_event().await else {
                             panic!("terminal")
                         };
-                        returned(event, &self.seen);
+                        returned(event, &self.seen, &mut terminal_access);
                     }
                 }
             }
         }
-        let mut sink = |event| returned(LowerMacEvent::Terminal(event), &self.seen);
+        let mut sink = |event| {
+            returned(
+                LowerMacEvent::Terminal(event),
+                &self.seen,
+                &mut terminal_access,
+            )
+        };
         match owner.disable(&mut sink).await {
             Ok(owner) => {
                 self.before_teardown.set(self.dropped.get());
@@ -331,6 +342,7 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
         owner: Owner<'_, 'id, ModelBackend<ModelCaps, AggregateContext>, Disabled>,
         resources: ModelResources<'id>,
     ) -> Ended<'id, ModelBackend<ModelCaps, AggregateContext>> {
+        let mut terminal_access = resources.terminal_access;
         use oer_ieee80211_lower_mac::{AggregateAttempt, AmpduPhase, MpduStartSpacing, Tid};
         let Ok(mut owner) = owner.enable().await else {
             panic!("the model enables")
@@ -389,15 +401,18 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
             }
             self.air.hold(WmmAccessCategory::Voice, self.withdraw);
             station
-                .submit_ampdu(AggregateAttempt {
-                    context,
-                    ticket,
-                    aggregate,
-                    protection: Protection::None,
-                    power: SupportedPower::new(TxPower::Calibrated).unwrap(),
-                    coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
-                    min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
-                })
+                .submit_ampdu(
+                    (AggregateAttempt {
+                        context,
+                        ticket,
+                        aggregate,
+                        protection: Protection::None,
+                        power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+                        coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+                        min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
+                    })
+                    .admit(),
+                )
                 .unwrap();
             if self.withdraw {
                 phase.close_gate(gate);
@@ -424,7 +439,7 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
                 ticket,
                 payload,
                 outcome: completion,
-            } = terminal.into_parts();
+            } = terminal.into_parts(&mut terminal_access);
             let subframes: Vec<_> = payload.into_iter().map(TxMpdu::into_parts).collect();
             assert_eq!(ticket.index(), context.ticket);
             assert_eq!(matches!(completion, TxOutcome::Withdrawn(_)), self.withdraw);
@@ -580,15 +595,18 @@ impl PortBody<ModelBackend<ModelCaps, FaultContext>> for PublicationFault {
                 if self.poisoned_before_submit {
                     station.held.poison();
                 }
-                let submitted = station.submit_ampdu(AggregateAttempt {
-                    context,
-                    ticket,
-                    aggregate,
-                    protection: Protection::None,
-                    power: SupportedPower::new(TxPower::Calibrated).unwrap(),
-                    coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
-                    min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
-                });
+                let submitted = station.submit_ampdu(
+                    (AggregateAttempt {
+                        context,
+                        ticket,
+                        aggregate,
+                        protection: Protection::None,
+                        power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+                        coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+                        min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
+                    })
+                    .admit(),
+                );
                 assert_eq!(submitted.is_err(), self.poisoned_before_submit);
             } else {
                 let source = TxSource::Fresh {
@@ -606,15 +624,18 @@ impl PortBody<ModelBackend<ModelCaps, FaultContext>> for PublicationFault {
                 if self.poisoned_before_submit {
                     phase.held.poison();
                 }
-                let submitted = phase.station().submit(oer_ieee80211_lower_mac::Attempt {
-                    context,
-                    ticket,
-                    source,
-                    access_category: WmmAccessCategory::BestEffort,
-                    protection: Protection::None,
-                    power: SupportedPower::new(TxPower::Calibrated).unwrap(),
-                    coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
-                });
+                let submitted = phase.station().submit(
+                    (oer_ieee80211_lower_mac::Attempt {
+                        context,
+                        ticket,
+                        source,
+                        access_category: WmmAccessCategory::BestEffort,
+                        protection: Protection::None,
+                        power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+                        coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+                    })
+                    .admit(),
+                );
                 assert_eq!(submitted.is_err(), self.poisoned_before_submit);
             }
             assert!(phase.next_event().await.is_err());

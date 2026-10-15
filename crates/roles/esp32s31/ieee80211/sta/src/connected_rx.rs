@@ -7,7 +7,7 @@
 //! through [`ConnectedRxSink`] and belong to the integration runner.
 
 use core::cell::RefCell;
-use oer_ieee80211_mac::address::{Bssid, IndividualAddress, OwnAddress};
+use oer_ieee80211_mac::address::{Bssid, OwnAddress};
 
 use critical_section::Mutex;
 use oer_esp32s31_ieee80211::protected_data_rx::{
@@ -1318,32 +1318,7 @@ fn commit_ccmp_replay(
 }
 
 impl ConnectedRxDispatcher {
-    /// Empty identity used only while a caller-owned protocol arena is parked.
-    ///
-    /// Frames must not be dispatched through this value. Call
-    /// [`Self::try_reconfigure`] at the connected-epoch start edge before
-    /// installing replay or ESP-NOW owners.
-    pub const fn unconfigured() -> Self {
-        #[expect(
-            clippy::expect_used,
-            reason = "compile-time checked individual literal"
-        )]
-        const PARKED: IndividualAddress = IndividualAddress::new([0; 6]).expect("individual");
-        Self::new(ConnectedRxConfig {
-            station_address: OwnAddress::new(PARKED),
-            bssid: Bssid::new(PARKED),
-            association_id: 0,
-            ingress: RxIngressConfig {
-                ring_entry_limit: 1,
-                csi_config: 0,
-                flags: 0,
-            },
-            security: LinkProtection::Ccmp,
-            peer_qos: true,
-            management_protection: false,
-        })
-    }
-
+    /// Construct routing state only after the association has a valid identity.
     pub const fn new(config: ConnectedRxConfig) -> Self {
         Self {
             config,
@@ -2628,12 +2603,6 @@ impl ConnectedRxDispatcher {
             return ConnectedRxDispatch::Duplicate;
         }
         rejected(protection, ConnectedRxError::CcmpReplay(error))
-    }
-}
-
-impl Default for ConnectedRxDispatcher {
-    fn default() -> Self {
-        Self::unconfigured()
     }
 }
 

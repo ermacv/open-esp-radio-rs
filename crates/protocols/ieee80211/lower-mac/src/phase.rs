@@ -53,9 +53,11 @@
 //!
 //! The queue is strictly first in, first out: no command replaces another.
 //! Its capacity is the tokens' ([owner decision]): one attempt per ticket,
-//! and two commands per key slot and the gate, since each token's install
-//! or closing and its removal or opening may wait at once —
-//! `tickets + 2 × (key slots + 1)`. Block Ack is per-slot desired state;
+//! two commands per pairwise slot, one command per interface's unique GTK
+//! mutation permission, and two commands for the gate. Pairwise install and
+//! removal, or gate closing and opening, may wait together; a GTK permission
+//! returns only at its terminal. Thus the command capacity is
+//! `tickets + 2 × pairwise slots + GTK permissions + 2`. Block Ack is per-slot desired state;
 //! repeated writes coalesce and never enter the command queue.
 //!
 //! [owner decision]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6130970169
@@ -151,8 +153,8 @@
 //! # use oer_ieee80211_lower_mac::*;
 //! fn twice<'p, 'id: 'p, I>(interface: &mut I, attempt: InterfaceAttempt<'_, 'p, 'id, I>)
 //! where I: InterfacePhase<'p, 'id> {
-//!     let _ = interface.submit(attempt);
-//!     let _ = interface.submit(attempt);
+//!     let _ = interface.submit(attempt.admit());
+//!     let _ = interface.submit(attempt.admit());
 //! }
 //! ```
 //!
@@ -162,7 +164,7 @@
 //! # use oer_ieee80211_lower_mac::*;
 //! fn one<'p, 'id: 'p, I>(interface: &mut I, attempt: InterfaceAttempt<'_, 'p, 'id, I>)
 //! where I: InterfacePhase<'p, 'id> {
-//!     let _ = interface.submit(attempt);
+//!     let _ = interface.submit(attempt.admit());
 //! }
 //! ```
 //!
@@ -176,7 +178,7 @@
 //!     I: InterfacePhase<'p, 'id>,
 //!     J: InterfacePhase<'q, 'id, Caps = I::Caps, Types = I::Types, Role = I::Role>,
 //! {
-//!     let _ = interface.submit(attempt);
+//!     let _ = interface.submit(attempt.admit());
 //! }
 //! ```
 //!
@@ -578,7 +580,7 @@ pub trait PhaseTypes<'id>: Sized {
     /// Opaque installed-key identity, retained by prepared and sent MPDUs.
     type KeyIdentity;
     /// Aggregate storage with a compile-time empty/nonempty state.
-    type Aggregate<'k, 'p, R, K, S>: crate::PhaseAggregate<'id, Types = Self>
+    type Aggregate<'k, 'p, R, K, S>: crate::PhaseAggregate<'id, Types = Self, State = S>
     where
         R: RoleKeys<'id, Self>,
         K: Ieee80211Capabilities,
@@ -718,6 +720,40 @@ pub struct Attempt<'id, T, M, K, X, Path: PoolPath = Root> {
     pub coex: SupportedCoex<K>,
 }
 
+/// An operation sealed before it crosses into backend custody. Execution
+/// metadata is separate; context, ticket and the complete MPDU remain together.
+pub struct AdmittedAttempt<'id, T, M: PreparedTx<'id>, K, X, Path: PoolPath = Root> {
+    /// Indivisible owner which the backend executes and completes.
+    pub operation: crate::InFlight<X, Slot<'id, T, Path>, <M::Types as PhaseTypes<'id>>::TxMpdu>,
+    /// Backend execution metadata, without independently owned MPDUs.
+    pub execution: M::Execution,
+    /// Access category selected by the caller.
+    pub access_category: oer_ieee80211_mac::qos::WmmAccessCategory,
+    /// Protection selected by the caller.
+    pub protection: Protection,
+    /// Transmit power selected by the caller.
+    pub power: SupportedPower<K>,
+    /// Coexistence level selected by the caller.
+    pub coex: SupportedCoex<K>,
+    proof: core::marker::PhantomData<fn(M) -> M>,
+}
+
+impl<'id, T, M: PreparedTx<'id>, K, X, Path: PoolPath> Attempt<'id, T, M, K, X, Path> {
+    /// Seal the whole prepared operation before passing it to the backend.
+    pub fn admit(self) -> AdmittedAttempt<'id, T, M, K, X, Path> {
+        let (payload, execution) = self.source.into_admission();
+        AdmittedAttempt {
+            operation: crate::InFlight::admit(self.context, self.ticket, payload),
+            execution,
+            access_category: self.access_category,
+            protection: self.protection,
+            power: self.power,
+            coex: self.coex,
+            proof: core::marker::PhantomData,
+        }
+    }
+}
+
 /// The installed key an attempt names.
 pub enum AttemptKey<'k, P, G> {
     /// A pairwise key.
@@ -791,6 +827,11 @@ pub type PoolMpdu<'id, T, C> =
 pub trait PreparedTx<'id> {
     /// The backend's resource family.
     type Types: PhaseTypes<'id>;
+    /// Metadata needed by the backend to execute this MPDU.
+    type Execution;
+    /// Lower preparation into the complete MPDU and execution metadata. Called
+    /// by `Attempt::admit`, before the backend receives any accepted owners.
+    fn into_admission(self) -> (<Self::Types as PhaseTypes<'id>>::TxMpdu, Self::Execution);
     /// Recover the buffer and any external body. A `Sent` MPDU keeps its
     /// body nested until renewal.
     fn into_parts(
@@ -804,6 +845,21 @@ pub trait PreparedTx<'id> {
 /// The attempt of the interface `I`, after its class pool prepared the MPDU.
 /// It remains bound to this phase, install, capabilities and role.
 pub type InterfaceAttempt<'k, 'p, 'id, I> = Attempt<
+    'id,
+    <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::TicketKind,
+    <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::Prepared<
+        'k,
+        'p,
+        <I as InterfacePhase<'p, 'id>>::Role,
+        <I as InterfacePhase<'p, 'id>>::Caps,
+    >,
+    <I as InterfacePhase<'p, 'id>>::Caps,
+    <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::Context,
+    <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::TicketPath,
+>;
+
+/// The sealed operation accepted by an interface backend.
+pub type InterfaceSubmission<'k, 'p, 'id, I> = AdmittedAttempt<
     'id,
     <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::TicketKind,
     <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::Prepared<
@@ -899,7 +955,7 @@ pub enum PreparationError {
 /// fn submit<'k, 'p, 'id: 'k + 'p, I: InterfacePhase<'p, 'id>>(
 ///     interface: &mut I, attempt: InterfaceAttempt<'k, 'p, 'id, I>,
 /// ) -> Result<(), Poisoned<<I::Types as PhaseTypes<'id>>::Fault>> {
-///     interface.submit(attempt)
+///     interface.submit(attempt.admit())
 /// }
 /// ```
 pub trait InterfacePhase<'p, 'id: 'p> {
@@ -912,7 +968,7 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     /// The interface's own address, which the install gave it.
     fn address(&self) -> IndividualAddress;
 
-    /// Admit the pool-prepared `attempt`. Its closed preparation proof
+    /// Accept the already sealed `attempt`. Its closed preparation proof
     /// retains phase, install and role; submission has no buffer-class
     /// parameter. A retransmission retains SN, PN and payload. An optional body remains
     /// owned by the attempt until its terminal, even if copied into DMA memory.
@@ -926,7 +982,7 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     /// the installation ends, without inventing a terminal.
     fn submit<'k>(
         &mut self,
-        attempt: InterfaceAttempt<'k, 'p, 'id, Self>,
+        attempt: InterfaceSubmission<'k, 'p, 'id, Self>,
     ) -> Result<(), Poisoned<<Self::Types as PhaseTypes<'id>>::Fault>>;
 
     /// Install `key` for frames with `peer` in `slot`.

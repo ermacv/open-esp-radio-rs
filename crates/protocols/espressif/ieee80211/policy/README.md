@@ -36,6 +36,14 @@ overrides) and programs its own beamforming report-rate registers, and a
 portable station uses it through `EspressifRateControl`, the station's
 `StaRateControl` seam, which decodes its schedules through `rate_code`.
 
+The portable `RatePeer` supplies all negotiated legacy rates, including the
+extended element. A DSSS/CCK-only association selects the 11b schedule.
+Every legacy rate from control, data, retry and fallback is constrained to
+that set: retain an admitted rate, otherwise choose the fastest admitted rate
+no faster than it, or the slowest member if all are faster. This preserves
+the publication budget and never adds OFDM to a B-only peer. HT/HE retain the
+same constraint when their retry ladder reaches legacy rates.
+
 Rate-control schedule literals are bounds-checked at compile time with an
 array-length equality. Initial PHY-mode selection chooses those complete
 records directly; it has no out-of-table index or clamp to the last record.

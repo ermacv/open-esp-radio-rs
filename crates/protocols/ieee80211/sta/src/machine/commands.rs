@@ -37,19 +37,26 @@ pub struct StaCommandRefused {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CommandRefusal {
-    /// The same kind of request already owns an operation.
+    /// The same kind of request already owns an operation. Its
+    /// `StaAction::CommandCompleted` releases this admission cell.
     Busy,
     /// Its previous terminal must be consumed before another admission.
+    /// `Station::poll_action` already has that terminal ready; no new input
+    /// or timer is needed before polling it.
     TerminalPending,
     AlreadyConnected,
     NotConnected,
-    /// A connection or teardown is still in progress.
+    /// A connection or teardown is still in progress. Wait for the Connect
+    /// terminal or the lifecycle `StaNotice::Disconnected` before retrying.
     Transitioning,
 }
 
 /// Why a background scan ended before covering its channel list.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BackgroundScanEnd {
+    /// A dwell deadline cannot be represented. The terminal is delivered
+    /// after restoring the connected link's receive configuration.
+    DeadlineOverflow,
     AbsenceRefused(AbsenceRefusal),
     CancelledAbsences,
     LinkEnded(StaDisconnectReason),

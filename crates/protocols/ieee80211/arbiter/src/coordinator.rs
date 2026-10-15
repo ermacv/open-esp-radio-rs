@@ -262,6 +262,9 @@ pub enum JoinAway {
     /// [`ApFollowPolicy::min_follow_interval`] ago; the station may try
     /// again at `retry_at`.
     TooSoon { retry_at: Instant },
+    /// The follow holdoff ends outside representable monotonic time. It
+    /// cannot authorize another move or supply a shortened retry deadline.
+    ScheduleExhausted,
 }
 
 /// A strictly positive AP beacon interval, in microseconds.
@@ -381,6 +384,11 @@ enum Upstream<K> {
     Rescanning {
         fallback: SupportedChannel<K>,
     },
+    /// The failed scan owes a return before its access point may start.
+    Returning {
+        fallback: SupportedChannel<K>,
+        since: Instant,
+    },
 }
 
 /// Where the access point is.
@@ -453,6 +461,11 @@ pub struct ChannelCoordinator<K> {
 }
 
 impl<K: Ieee80211Capabilities> ChannelCoordinator<K> {
+    #[cfg(test)]
+    pub(super) fn last_follow_for_test(&self) -> Option<Instant> {
+        self.last_follow
+    }
+
     pub const fn new(policy: ApFollowPolicy) -> Self {
         Self {
             policy,
@@ -486,27 +499,31 @@ impl<K: Ieee80211Capabilities> ChannelCoordinator<K> {
     /// The station, beside the running access point, joins on `channel`,
     /// away from the access point's, at `now`: the policy decides whether
     /// the access point follows, stops or keeps its channel, and how soon
-    /// it follows again.
-    pub fn station_joining_away(&mut self, channel: SupportedChannel<K>, now: Instant) -> JoinAway {
+    /// it follows again. This inspection changes no state: the arbiter
+    /// commits the announcement only after its complete schedule fits.
+    pub fn station_joining_away(&self, channel: SupportedChannel<K>, now: Instant) -> JoinAway {
         if !self.policy.serves(channel.channel()) {
             return match self.policy.unservable {
-                ApUnservable::StopAccessPoint => {
-                    self.access_point = AccessPoint::Stopped;
-                    JoinAway::StopAccessPoint
-                }
+                ApUnservable::StopAccessPoint => JoinAway::StopAccessPoint,
                 ApUnservable::LeaveUpstream => JoinAway::Refused,
             };
         }
-        if let Some(last) = self.last_follow
-            && let Some(retry_at) = last.checked_add(self.follow_interval)
-            && now < retry_at
-        {
-            return JoinAway::TooSoon { retry_at };
+        if let Some(last) = self.last_follow {
+            let Some(retry_at) = last.checked_add(self.follow_interval) else {
+                return JoinAway::ScheduleExhausted;
+            };
+            if now < retry_at {
+                return JoinAway::TooSoon { retry_at };
+            }
         }
-        self.last_follow = Some(now);
         JoinAway::Follow {
             count: self.policy.announce_count.get(),
         }
+    }
+
+    /// Commit the follow whose announcement and timeout the arbiter admitted.
+    pub(super) fn follow_announced(&mut self, now: Instant) {
+        self.last_follow = Some(now);
     }
 
     /// The composition wants the access point to run: on the upstream's
@@ -527,6 +544,13 @@ impl<K: Ieee80211Capabilities> ChannelCoordinator<K> {
     /// asked: a stopped access point may start there. The station owns its
     /// join lease and starts joining when that lease becomes ready.
     pub fn port_moved(&mut self, channel: SupportedChannel<K>) -> CoordinatorActions<K> {
+        if let Upstream::Returning { fallback, since } = self.upstream
+            && channel == fallback
+        {
+            self.upstream = Upstream::Searching { since };
+            self.access_point = AccessPoint::Starting;
+            return CoordinatorActions::one(CoordinatorAction::StartAccessPoint { channel });
+        }
         if let AccessPoint::Running(schedule) = &mut self.access_point {
             schedule.channel = channel;
         }
@@ -666,15 +690,14 @@ impl<K: Ieee80211Capabilities> ChannelCoordinator<K> {
         let Upstream::Rescanning { fallback } = self.upstream else {
             return CoordinatorActions::none();
         };
-        self.upstream = Upstream::Searching { since: now };
-        self.access_point = AccessPoint::Starting;
-        CoordinatorActions::two(
-            CoordinatorAction::Retune {
-                channel: fallback,
-                at: now,
-            },
-            CoordinatorAction::StartAccessPoint { channel: fallback },
-        )
+        self.upstream = Upstream::Returning {
+            fallback,
+            since: now,
+        };
+        CoordinatorActions::one(CoordinatorAction::Retune {
+            channel: fallback,
+            at: now,
+        })
     }
 
     /// A discovered upstream refused the join. Resume searching without

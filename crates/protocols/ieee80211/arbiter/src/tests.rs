@@ -2,14 +2,16 @@
 
 use super::*;
 use oer_ieee80211_lower_mac::{
-    BandSet, Channel, ChannelWidth, CoexPriority, CoexPrioritySet, GateIssuer, GatePool,
-    HardwareServices, LowerMacCapabilities, PhyFormatSet, RateSupport, ReceiveFilter, WidthSet,
+    BandSet, Channel, ChannelWidth, CoexPriority, CoexPrioritySet, GateIssuer, HardwareServices,
+    LowerMacCapabilities, PhyFormatSet, RateSupport, ReceiveFilter, WidthSet,
 };
 use oer_ieee80211_mac::phy::{HeMcs, HtMcs};
 use oer_radio_port::{Mint, branded};
 use std::vec::Vec;
 
-fn installed<R>(body: impl for<'id> FnOnce(Mint<'id, GatePool>) -> R) -> R {
+mod regressions;
+
+fn installed<R>(body: impl for<'id> FnOnce(Mint<'id, ArbiterPool>) -> R) -> R {
     let future = core::pin::pin!(branded(async |mint| body(mint)));
     let mut cx = core::task::Context::from_waker(core::task::Waker::noop());
     match core::future::Future::poll(future, &mut cx) {
@@ -67,8 +69,8 @@ fn at(millis: u32) -> Instant {
 
 /// What the arbiter did, its tokens handed back as the port would.
 #[derive(Debug, Eq, PartialEq)]
-enum Seen<Reserve> {
-    Station(StationNotice<Caps>),
+enum Seen<'id, Reserve> {
+    Station(StationNotice<'id, Caps>),
     AccessPoint(AccessPointCommand<Caps>),
     CloseGate(Reserve),
     Retune(u8),
@@ -87,7 +89,7 @@ fn run<'id, R: ReservationMode>(
     arbiter: &mut TestArbiter<'id, R>,
     port: &mut Port<'id>,
     now: Instant,
-) -> Vec<Seen<R::Reserve>> {
+) -> Vec<Seen<'id, R::Reserve>> {
     let mut seen = Vec::new();
     while let Some(action) = arbiter.poll_action(now) {
         match action {
@@ -126,11 +128,15 @@ fn run<'id, R: ReservationMode>(
 }
 
 fn alone<'id, R: ReservationMode>(
-    mint: Mint<'id, GatePool>,
-) -> (TestArbiter<'id, R>, LeasePlace, Port<'id>) {
-    let (gate, issuer) = mint.into_pools();
-    let (arbiter, place, _) =
-        Arbiter::new(ArbiterPolicy::DEFAULT, channel(1), gate, Duration::ZERO);
+    mint: Mint<'id, ArbiterPool>,
+) -> (TestArbiter<'id, R>, LeasePlace<'id>, Port<'id>) {
+    let (gate, issuer, authority) = mint.into_pools();
+    let (arbiter, place, _) = Arbiter::new(
+        ArbiterPolicy::DEFAULT.checked(Duration::ZERO).unwrap(),
+        channel(1),
+        authority,
+        gate,
+    );
     (
         arbiter,
         place,
@@ -154,8 +160,8 @@ fn running(arbiter: &mut TestArbiter<'_, impl ReservationMode>) {
 }
 
 fn beside_access_point<'id, R: ReservationMode>(
-    mint: Mint<'id, GatePool>,
-) -> (TestArbiter<'id, R>, LeasePlace, Port<'id>) {
+    mint: Mint<'id, ArbiterPool>,
+) -> (TestArbiter<'id, R>, LeasePlace<'id>, Port<'id>) {
     let (mut arbiter, place, port) = alone::<R>(mint);
     running(&mut arbiter);
     (arbiter, place, port)
@@ -170,7 +176,7 @@ fn scan(number: u8, dwell: u32) -> ChannelRequest<Caps> {
     }
 }
 
-fn lease(answer: Answer<Caps>) -> Lease<Caps> {
+fn lease<'id>(answer: Answer<'id, Caps>) -> Lease<'id, Caps> {
     match answer {
         Answer::Lease(lease) => lease,
         Answer::Refused(refusal, _) => panic!("refused: {refusal:?}"),
@@ -178,8 +184,10 @@ fn lease(answer: Answer<Caps>) -> Lease<Caps> {
 }
 
 /// A place to compare notices with: places are equal.
-fn place() -> LeasePlace {
-    LeasePlace { private: () }
+fn place<'id>() -> LeasePlace<'id> {
+    LeasePlace {
+        private: PhantomData,
+    }
 }
 
 #[test]
@@ -251,16 +259,29 @@ fn beside_an_access_point_a_scan_goes_in_an_absence_with_the_air_reserved() {
 }
 
 #[test]
-fn an_absence_longer_than_the_duration_field_goes_without_a_reservation() {
+fn an_explicitly_nonreserving_arbiter_can_use_a_longer_absence() {
     installed(|mint| {
-        let (mut arbiter, place, mut port) = alone::<AirReservation>(mint);
-        arbiter.policy.absence = Duration::from_millis(40);
+        let (gate, issuer, authority) = mint.into_pools();
+        let policy = ArbiterPolicy {
+            absence: Duration::from_millis(40),
+            ..ArbiterPolicy::DEFAULT
+        };
+        let (mut arbiter, place, _) = Arbiter::<Caps>::new(
+            policy.checked(Duration::ZERO).unwrap(),
+            channel(1),
+            authority,
+            gate,
+        );
+        let mut port = Port {
+            issuer,
+            refuse: false,
+        };
         running(&mut arbiter);
         let lease = lease(arbiter.request(at(0), scan(6, 100), place));
         assert_eq!(lease.until(), Some(at(92)));
         assert_eq!(
             run(&mut arbiter, &mut port, at(52)).first(),
-            Some(&Seen::CloseGate(None))
+            Some(&Seen::CloseGate(()))
         );
         let _ = lease;
     });
@@ -281,8 +302,7 @@ fn a_released_lease_always_ends_or_is_cancelled() {
             ))]
         );
 
-        // While its gate closes: the cycle onto its channel ends, then the
-        // lease's, back home.
+        // While its gate closes: cancel without moving off the home channel.
         let closing = lease(arbiter.request(at(0), scan(6, 10), self::place()));
         let Some(ArbiterAction::CloseGate { gate, .. }) = arbiter.poll_action(at(52)) else {
             panic!("the fixture expects a gate-closing action");
@@ -291,8 +311,14 @@ fn a_released_lease_always_ends_or_is_cancelled() {
         arbiter.gate_closed(port.issuer.close(gate));
         let seen = run(&mut arbiter, &mut port, at(52));
         assert_eq!(
-            seen.last(),
-            Some(&Seen::Station(StationNotice::LeaseEnded(self::place())))
+            seen,
+            [
+                Seen::Station(StationNotice::LeaseCancelled(
+                    CancelReason::Released,
+                    self::place()
+                )),
+                Seen::OpenGate
+            ]
         );
         assert_eq!(arbiter.channel(), Some(channel(1)));
 
@@ -706,17 +732,74 @@ fn a_second_join_elsewhere_within_the_follow_interval_is_refused_and_the_access_
     });
 }
 
+#[test]
+fn an_unrepresentable_follow_holdoff_refuses_without_a_move_or_lost_place() {
+    installed(|mint| {
+        let mut policy = ArbiterPolicy::DEFAULT;
+        policy.follow.min_follow_interval = Duration::from_micros(u64::MAX);
+        policy.follow.max_follow_interval = Duration::from_micros(u64::MAX);
+        let (gate, issuer, authority) = mint.into_pools();
+        let (mut arbiter, place, _) = Arbiter::<Caps, NoReservation>::new(
+            policy.checked(Duration::ZERO).unwrap(),
+            channel(1),
+            authority,
+            gate,
+        );
+        let mut port = Port {
+            refuse: false,
+            issuer,
+        };
+        running(&mut arbiter);
+        let mut place = failed_follow(&mut arbiter, &mut port, place, 6, at(1), at(550));
+        let last_follow = arbiter.coordinator.last_follow_for_test();
+        let next_id = arbiter.next_id;
+        for now in [at(1_000), at(2_000)] {
+            place = match arbiter.request(now, connect(11), place) {
+                Answer::Refused(Refusal::ScheduleExhausted, place) => place,
+                answer => panic!("holdoff overflow must not authorize a move: {answer:?}"),
+            };
+            assert!(run(&mut arbiter, &mut port, now).is_empty());
+            assert!(arbiter.primary.is_none());
+            assert_eq!(arbiter.channel(), Some(channel(6)));
+            assert_eq!(arbiter.coordinator.last_follow_for_test(), last_follow);
+            assert_eq!(arbiter.next_id, next_id);
+        }
+        // The same returned admission place still permits a local join.
+        let local = lease(arbiter.request(at(3_000), connect(6), place));
+        let started = run(&mut arbiter, &mut port, at(3_000));
+        assert_eq!(
+            started
+                .iter()
+                .filter(|event| matches!(event, Seen::Station(StationNotice::LeaseStarted { .. })))
+                .count(),
+            1,
+            "{started:?}"
+        );
+        assert!(
+            !started
+                .iter()
+                .any(|event| matches!(event, Seen::Retune(_) | Seen::AccessPoint(_))),
+            "{started:?}"
+        );
+        arbiter.release(local);
+        assert!(matches!(
+            run(&mut arbiter, &mut port, at(3_000)).last(),
+            Some(Seen::Station(StationNotice::LeaseEnded(_)))
+        ));
+    });
+}
+
 /// Join channel `number` at `now` beside the access point, its move due
 /// at `due`, then give the lease back without connecting; the place comes
 /// back.
 fn failed_follow<'id>(
     arbiter: &mut TestArbiter<'id>,
     port: &mut Port<'id>,
-    place: LeasePlace,
+    place: LeasePlace<'id>,
     number: u8,
     now: Instant,
     due: Instant,
-) -> LeasePlace {
+) -> LeasePlace<'id> {
     let lease = lease(arbiter.request(now, connect(number), place));
     run(arbiter, port, now);
     arbiter.access_point(due, AccessPointFact::SwitchDue(channel(number)));
@@ -728,7 +811,7 @@ fn failed_follow<'id>(
     }
 }
 
-fn retry_at(answer: Answer<Caps>) -> (Instant, LeasePlace) {
+fn retry_at<'id>(answer: Answer<'id, Caps>) -> (Instant, LeasePlace<'id>) {
     match answer {
         Answer::Refused(Refusal::TooSoon { retry_at }, place) => (retry_at, place),
         answer => panic!("{answer:?}"),
@@ -795,11 +878,11 @@ fn a_lease_names_the_running_access_points_channel() {
     });
 }
 
-fn lease_of(arbiter: &mut TestArbiter<'_>, place: LeasePlace) -> Lease<Caps> {
+fn lease_of<'id>(arbiter: &mut TestArbiter<'id>, place: LeasePlace<'id>) -> Lease<'id, Caps> {
     lease(arbiter.request(at(0), scan(6, 10), place))
 }
 
-fn lease_after(arbiter: &mut TestArbiter<'_>, place: LeasePlace) -> Lease<Caps> {
+fn lease_after<'id>(arbiter: &mut TestArbiter<'id>, place: LeasePlace<'id>) -> Lease<'id, Caps> {
     lease(arbiter.request(at(60_000), connect(11), place))
 }
 
@@ -833,21 +916,36 @@ fn a_join_where_the_access_point_may_not_follow_stops_it_by_the_default_policy()
 /// A station connected on channel 1 beside an access point there, its
 /// primary lease running.
 fn connected<'id>(
-    mint: Mint<'id, GatePool>,
-) -> (TestArbiter<'id>, Lease<Caps>, AbsencePlace, Port<'id>) {
+    mint: Mint<'id, ArbiterPool>,
+) -> (
+    TestArbiter<'id>,
+    Lease<'id, Caps>,
+    AbsencePlace<'id>,
+    Port<'id>,
+) {
     connected_with_policy(mint, ArbiterPolicy::DEFAULT)
 }
 
 fn connected_with_policy<'id>(
-    mint: Mint<'id, GatePool>,
+    mint: Mint<'id, ArbiterPool>,
     policy: ArbiterPolicy,
-) -> (TestArbiter<'id>, Lease<Caps>, AbsencePlace, Port<'id>) {
-    let (gate, issuer) = mint.into_pools();
+) -> (
+    TestArbiter<'id>,
+    Lease<'id, Caps>,
+    AbsencePlace<'id>,
+    Port<'id>,
+) {
+    let (gate, issuer, authority) = mint.into_pools();
     let mut port = Port {
         refuse: false,
         issuer,
     };
-    let (mut arbiter, place, absence) = Arbiter::new(policy, channel(1), gate, Duration::ZERO);
+    let (mut arbiter, place, absence) = Arbiter::new(
+        policy.checked(Duration::ZERO).unwrap(),
+        channel(1),
+        authority,
+        gate,
+    );
     running(&mut arbiter);
     let home = lease(arbiter.request(
         at(0),
@@ -865,15 +963,17 @@ fn connected_with_policy<'id>(
     (arbiter, home, absence, port)
 }
 
-fn absence(answer: AbsenceAnswer<Caps>) -> Lease<Caps> {
+fn absence<'id>(answer: AbsenceAnswer<'id, Caps>) -> Lease<'id, Caps> {
     match answer {
         AbsenceAnswer::Lease(lease) => lease,
         AbsenceAnswer::Refused(refusal, _) => panic!("refused: {refusal:?}"),
     }
 }
 
-fn absence_place() -> AbsencePlace {
-    AbsencePlace { private: () }
+fn absence_place<'id>() -> AbsencePlace<'id> {
+    AbsencePlace {
+        private: PhantomData,
+    }
 }
 
 #[test]
@@ -921,9 +1021,13 @@ fn a_connected_stations_absence_waits_for_its_readiness_and_returns_home() {
 #[test]
 fn an_absence_needs_the_running_primary_lease() {
     installed(|mint| {
-        let (gate, _issuer) = mint.into_pools();
-        let (mut arbiter, place, absence) =
-            Arbiter::<Caps>::new(ArbiterPolicy::DEFAULT, channel(1), gate, Duration::ZERO);
+        let (gate, _issuer, authority) = mint.into_pools();
+        let (mut arbiter, place, absence) = Arbiter::<Caps>::new(
+            ArbiterPolicy::DEFAULT.checked(Duration::ZERO).unwrap(),
+            channel(1),
+            authority,
+            gate,
+        );
         let waiting = lease(arbiter.request(
             at(0),
             ChannelRequest {
@@ -1003,7 +1107,7 @@ fn a_switch_during_an_absence_cancels_it_and_replaces_the_primary_lease() {
         // The station exchanges its primary lease: the old one goes, a new one
         // of the new channel comes, under a new name.
         let old = home.id();
-        let home = arbiter.exchange(home);
+        let home = arbiter.exchange(home).unwrap();
         assert_ne!(home.id(), old);
         assert_eq!(home.channel(), channel(11));
         // The old name is gone: a release of the new lease ends it.
@@ -1022,7 +1126,7 @@ fn an_exchange_without_a_move_gives_the_same_lease_back() {
     installed(|mint| {
         let (mut arbiter, home, _, _) = connected(mint);
         let id = home.id();
-        let home = arbiter.exchange(home);
+        let home = arbiter.exchange(home).unwrap_err();
         assert_eq!(home.id(), id);
         assert_eq!(home.channel(), channel(1));
     });
@@ -1055,14 +1159,18 @@ fn returning_the_unique_place_proves_the_lease_ended_and_admits_the_next_lease()
 #[test]
 fn an_absence_reserves_one_publication_for_each_gate_and_the_return_starts_early() {
     installed(|mint| {
-        let (gate, issuer) = mint.into_pools();
+        let (gate, issuer, authority) = mint.into_pools();
         let mut port = Port {
             refuse: false,
             issuer,
         };
         let publication = Duration::from_millis(3);
-        let (mut arbiter, place, absence_place) =
-            Arbiter::<Caps>::new(ArbiterPolicy::DEFAULT, channel(1), gate, publication);
+        let (mut arbiter, place, absence_place) = Arbiter::<Caps>::new(
+            ArbiterPolicy::DEFAULT.checked(publication).unwrap(),
+            channel(1),
+            authority,
+            gate,
+        );
         running(&mut arbiter);
         let home = lease(arbiter.request(
             at(0),
@@ -1170,7 +1278,7 @@ fn an_old_channel_tbtt_during_a_move_does_not_change_the_return_channel() {
         arbiter.gate_closed(port.issuer.close(gate));
         run(&mut arbiter, &mut port, at(52));
         assert_eq!(arbiter.home, channel(6));
-        let home = arbiter.exchange(home);
+        let home = arbiter.exchange(home).unwrap();
         let away = absence(arbiter.request_absence(at(53), scan(11, 5), &home, place));
         arbiter.ready(away.id());
         run(&mut arbiter, &mut port, away.from());

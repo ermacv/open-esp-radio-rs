@@ -90,6 +90,7 @@ impl StaDataTokens for Data {
 struct Station;
 
 impl StaTokens for Station {
+    type GatePath = oer_radio_port::Root;
     type EpochPath = oer_radio_port::Root;
     type Small = Buffer;
     type Ticket = u8;
@@ -118,7 +119,8 @@ fn qos_link<'a>(key: &'a (), replay: &'a mut CcmpRxReplayEpoch) -> LinkView<'a, 
         ),
         bssid: oer_ieee80211_mac::address::Bssid::new(
             oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-        ),
+        )
+        .unwrap(),
         association_id: 1,
         // The station's QoS sequence spaces, which the link lends.
         mode: LinkMode::Qos(std::boxed::Box::leak(std::boxed::Box::new(
@@ -136,7 +138,8 @@ fn open_link(counter: &mut StaSequenceCounter) -> LinkView<'_, 'static, Station>
         ),
         bssid: oer_ieee80211_mac::address::Bssid::new(
             oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-        ),
+        )
+        .unwrap(),
         association_id: 1,
         mode: LinkMode::NonQos(counter),
         protection: LinkProtection::Open,

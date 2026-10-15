@@ -115,7 +115,7 @@ pub struct BasicRates(u16);
 impl BasicRates {
     /// The rates in 500-kb/s units with their long-preamble form; bit `i`
     /// of the set is entry `i`.
-    const ORDER: [(u8, LegacyRate); 12] = [
+    pub(crate) const ORDER: [(u8, LegacyRate); 12] = [
         (2, LegacyRate::Dsss1M),
         (4, LegacyRate::Dsss2M(DsssPreamble::Long)),
         (11, LegacyRate::Cck5M5(DsssPreamble::Long)),

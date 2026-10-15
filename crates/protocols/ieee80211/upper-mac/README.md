@@ -10,12 +10,12 @@ plans and reports leave as values, and nothing waits.
 | Module | Decides | Inputs |
 | --- | --- | --- |
 | `retry` | Whether an MPDU is sent again, whether that attempt sets the Retry bit, how the contention window changes, and the rate of each attempt | `TxStatus`, `RetryLimits`, a `RateLadder` |
-| `aggregate` | How many queued frames one A-MPDU carries: the agreement's window, the port's capabilities, the recipient's Maximum A-MPDU Length and the TXOP limit with its BlockAck | `AmpduLimits` |
+| `aggregate` | How many queued frames one A-MPDU carries: the agreement's window, the port's capabilities, the recipient's Maximum A-MPDU Length and Minimum MPDU Start Spacing, and the TXOP limit with its BlockAck | `AmpduLimits` |
 | `ampdu` | Which subframes of an A-MPDU the next attempt resends after its BlockAck, republication after a failed protection exchange, the BlockAckReq after repeated failures, individual retries, aging and the end of the exchange | `BlockAckReport`, `AmpduRetryPolicy` |
 | `rate_control` | The first rate of a peer's MPDUs and A-MPDUs, one controller per peer (a station's access point, each station of an access point), learning from each exchange, starting from the `LinkMetric` (signal over the noise floor, required) of the frame that made the link; `FixedRateControl` | `RatePeer`, `TxReport` outcomes |
-| `rate_selection` | The retry plan of each frame an interface sends, by what it is for (`FrameRates`: probe, control, data), learning from each terminal and from the association with its peer; `RateSelection` is the seam a service drives | `RatePeer`, `TxCompletion` |
+| `rate_selection` | The retry plan of each frame an interface sends, by what it is for (`FrameRates`: probe, control, data), learning from each terminal and from the association with its peer; `RateSelection` is the seam a service drives | `RatePeer`, `TxOutcome` |
 | `protection` | RTS/CTS or CTS-to-self and the control-frame rate for each PPDU | `BssProtection`, dot11RTSThreshold, an `HeTxopRtsBudget` |
-| `tx` | `TxPlanner`: the next `TxAttemptPlan` (rate, protection, backoff, power, coexistence, content and Retry bits) of an MPDU or A-MPDU exchange, and its `TxReport` | `TxRequest`, `TxCompletion`, `RadioInstant`, entropy |
+| `tx` | `TxPlanner`: the next `TxAttemptPlan` (rate, protection, backoff, power, coexistence, content and Retry bits) of an MPDU or A-MPDU exchange, and its `TxReport` | `TxRequest`, `PublicationReport`, `RadioInstant`, entropy |
 
 The backoff is drawn by `oer-ieee80211-softmac`'s `EdcaContention`, one per
 access category inside the planner: doubled after each failed attempt that
@@ -34,6 +34,11 @@ for an ordinary MPDU, or a checked `BlockAckTally` for an aggregate. A tally
 cannot contain zero attempts or more acknowledgements than attempts. The
 controller returns `AmpduUnavailable` directly when it has no aggregate
 state, before changing its rate or ACK-SNR filter.
+
+`RatePeer` retains the nonempty `NegotiatedLegacyRates` from both rate elements,
+including non-basic rates. This set bounds legacy data, control and retry
+fallback on every PHY. An association with no recognized legacy rate is
+refused; `PhyMode::Legacy` alone does not imply OFDM support.
 
 ## Parameters and profiles
 
@@ -66,6 +71,9 @@ A-MPDU lifetime and aging margin are spans of the port's radio clock
 same radio epoch as the commit instant and starts strictly after
 `commit + lifetime - margin`; the exact first aged instant is checked before
 admission. An unrepresentable threshold is `AgingThresholdOutsideEpoch`.
+Every retry outcome observes that boundary, including a protection failure
+before any subframe reached the peer: an aged aggregate issues neither another
+publication nor a BlockAckReq. Its terminal retains the missing-subframe mask.
 The S31 adapter retains the commit stamp's generation and rejects a sample
 from another generation before consuming a completion or changing retry state.
 Its STA/AP runtimes read the existing MAC `ReceptionClock`; monotonic timers
@@ -75,7 +83,12 @@ WMM categories select one cell of an exact four-cell contention array.
 `AmpduRequest` owns its bounded lengths; asking for a subframe outside that
 request gives `None`, and the planner reports `SubframeOutsideAggregate`
 before publishing an attempt. An unrepresentable subframe size admits no
-frame and leaves the aggregate run unchanged. `ampdu::compact` operates on
+frame and leaves the aggregate run unchanged. `AmpduLimits` includes aligned
+empty delimiters between MPDUs for the peer's start spacing at the exact
+HT/HE symbol rate, in both the byte and TXOP bounds. The final MPDU needs no
+spacing tail. Admission and the S31 encoder share checked delimiter geometry
+from `oer-ieee80211-mac::ampdu`; the encoder separately applies its hardware
+limits and recovered vendor density rounding. `ampdu::compact` operates on
 fixed arrays of Copy metadata, never on affine MPDUs or payload owners.
 It swaps selected entries into the prefix in order, without a full-array
 temporary. Only the first 64 entries are addressable by its mask; callers

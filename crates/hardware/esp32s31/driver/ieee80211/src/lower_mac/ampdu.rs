@@ -28,10 +28,10 @@
 //!
 //! # Limits
 //!
-//! HT only, at most `SLOTS` subframes and [`ESP32S31_AMPDU_MAX_LENGTH`]
-//! octets. HE A-MPDU and Trigger-based aggregates stay outside the declared
-//! formats: the HE owner path needs the recipient's HE TXOP and Trigger
-//! reservations the port does not carry.
+//! HT and HE SU, at most `SLOTS` subframes and [`ESP32S31_AMPDU_MAX_LENGTH`]
+//! octets. The HE path carries the recipient's density and the access
+//! category's TXOP limit in its checked plan. Trigger-based aggregates stay
+//! outside the declared formats; they require a separate Trigger reservation.
 
 use core::fmt;
 
@@ -448,6 +448,8 @@ where
 /// queue's BlockAck completion, then its collision detach on a collision
 /// edge, then its timeout abort on a timeout edge or the expired deadline,
 /// begun only while no other queue's abort forces CCA.
+/// Diagnostic-only completion does not consume the step: latched events and
+/// an expired watchdog remain actionable even on an interrupt wake.
 pub fn service<'slot, B, H, const SLOTS: usize>(
     hardware: &mut H,
     mut published: PublishedAmpdu<'slot, B, SLOTS>,
@@ -482,9 +484,7 @@ where
                     owner: published.owner,
                 });
             }
-            oer_esp32s31_ieee80211_mac::tx::CompletionObservation::NoEffect => {
-                return Ok(AmpduProgress::Pending(published));
-            }
+            oer_esp32s31_ieee80211_mac::tx::CompletionObservation::NoEffect => {}
         }
     }
     let events = match wake {
@@ -497,7 +497,7 @@ where
             owner: published.owner,
         });
     }
-    let expired = matches!(wake, WifiTxWake::Deadline) && now >= published.deadline;
+    let expired = now >= published.deadline;
     if (events & EVENT_TX_TIMEOUT != 0 || expired) && may_begin_timeout_abort {
         if published.owner.begin_timeout_abort(hardware, cookie)? {
             published.settling = true;

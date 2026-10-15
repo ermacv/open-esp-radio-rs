@@ -362,13 +362,19 @@ impl fmt::Display for BeaconMonitorTrace {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExitReason {
     BeaconLoss,
-    PeerDeauthentication { reason_code: u16 },
-    PeerDisassociation { reason_code: u16 },
+    PeerDeauthentication {
+        reason_code: u16,
+    },
+    PeerDisassociation {
+        reason_code: u16,
+    },
     ControlMailboxOverflow,
     ActiveStateRestoreFailed,
     GroupKeyHandshakeFailed,
     SaQueryTimeout,
     JoinTsfUnrepresentable,
+    /// A monotonic deadline required by the association cannot be represented.
+    DeadlineOverflow,
 }
 
 /// A connected epoch ended; recording freezes a window after it.
@@ -397,6 +403,7 @@ impl Event for ControlExit {
             Reason::GroupKeyHandshakeFailed => [5, 0],
             Reason::SaQueryTimeout => [6, 0],
             Reason::JoinTsfUnrepresentable => [7, 0],
+            Reason::DeadlineOverflow => [8, 0],
         }
     }
 
@@ -412,6 +419,7 @@ impl Event for ControlExit {
             (5, 0) => Reason::GroupKeyHandshakeFailed,
             (6, 0) => Reason::SaQueryTimeout,
             (7, 0) => Reason::JoinTsfUnrepresentable,
+            (8, 0) => Reason::DeadlineOverflow,
             _ => return None,
         };
         Some(Self { reason })

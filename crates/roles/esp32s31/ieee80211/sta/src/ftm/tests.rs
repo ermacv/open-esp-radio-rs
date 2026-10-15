@@ -2,7 +2,7 @@ use super::*;
 use oer_ieee80211_mac::ftm::{FtmBurstDuration, FtmFormatAndBandwidth, FtmRequestParameters};
 use oer_ieee80211_sta::ftm::{FtmRequester, FtmRequesterConfig, FtmRequesterService};
 
-fn transmission() -> FtmRequestTransmission {
+fn transmission() -> FtmRequestTransmission<3> {
     let parameters = FtmRequestParameters::new(
         0,
         FtmBurstDuration::Millis8,
@@ -22,13 +22,12 @@ fn transmission() -> FtmRequestTransmission {
         1,
     )
     .unwrap();
-    let mut requester = FtmRequester::<3>::new(config);
-    requester
+    let requester = FtmRequester::<3>::new(config);
+    let session = requester
         .start([1; 6], oer_time::Instant::from_micros(0))
         .unwrap();
-    let FtmRequesterService::Transmit(transmission) = requester
-        .service(oer_time::Instant::from_micros(0))
-        .unwrap()
+    let FtmRequesterService::Transmit(transmission) =
+        session.service(oer_time::Instant::from_micros(0)).unwrap()
     else {
         panic!("new FTM request must be ready")
     };

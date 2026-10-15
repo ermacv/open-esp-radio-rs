@@ -161,7 +161,8 @@ fn authentication_is_encoded_and_completed_by_the_shared_owner() {
                         0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
                     ])
                     .unwrap(),
-                ),
+                )
+                .unwrap(),
                 sequence_number: SequenceNumber::new(7).unwrap(),
             },
             None,
@@ -210,7 +211,8 @@ fn erp_protected_join_eapol_leaves_at_the_dsss_schedule_rate_without_protection(
                         0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
                     ])
                     .unwrap(),
-                ),
+                )
+                .unwrap(),
                 destination: [0xff; 6],
                 sequence_number: SequenceNumber::new(7).unwrap(),
                 user_priority: 0,
@@ -252,7 +254,8 @@ fn ack_timeout_reuses_sequence_and_marks_the_retry_bit() {
                         0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
                     ])
                     .unwrap(),
-                ),
+                )
+                .unwrap(),
                 sequence_number: SequenceNumber::new(11).unwrap(),
             },
             None,
@@ -291,7 +294,8 @@ fn eapol_uses_the_recovered_voice_data_priority() {
                         0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
                     ])
                     .unwrap(),
-                ),
+                )
+                .unwrap(),
                 destination: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
                 sequence_number: SequenceNumber::new(8).unwrap(),
                 ether_type: 0x888e,
@@ -329,7 +333,8 @@ fn a_reconnecting_station_publishes_connection_frames_at_event_46_priority() {
                         0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
                     ])
                     .unwrap(),
-                ),
+                )
+                .unwrap(),
                 sequence_number: SequenceNumber::new(7).unwrap(),
             },
             Some(ReconnectFramePriority {
@@ -369,7 +374,8 @@ fn missing_hardware_timeout_edge_quarantines_without_drop_panic() {
                             0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
                         ])
                         .unwrap(),
-                    ),
+                    )
+                    .unwrap(),
                     sequence_number: SequenceNumber::new(13).unwrap(),
                 },
                 None,
@@ -426,7 +432,8 @@ fn connected_handoff_preserves_the_descriptor_and_association_policy() {
                         0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
                     ])
                     .unwrap(),
-                ),
+                )
+                .unwrap(),
                 ssid: oer_ieee80211_mac::ssid::WifiSsid::new(b"test").unwrap(),
                 peer_qos: true,
                 management_protection: false,
@@ -459,7 +466,8 @@ fn active_handoff_returns_tx_and_crypto_resources_for_later_retry() {
                 0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
             ])
             .unwrap(),
-        ),
+        )
+        .unwrap(),
         sequence_number: SequenceNumber::new(15).unwrap(),
     }
     .encode(&mut tx.ordinary.buffer_mut().unwrap()[TX_METADATA_SIZE..])
@@ -515,7 +523,8 @@ fn active_handoff_returns_tx_and_crypto_resources_for_later_retry() {
                     0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
                 ])
                 .unwrap(),
-            ),
+            )
+            .unwrap(),
             ssid: oer_ieee80211_mac::ssid::WifiSsid::new(b"test").unwrap(),
             peer_qos: true,
             management_protection: false,
@@ -568,7 +577,8 @@ fn idle_timer_rebind_preserves_policy_and_terminal_observation() {
                         0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
                     ])
                     .unwrap(),
-                ),
+                )
+                .unwrap(),
                 sequence_number: SequenceNumber::new(7).unwrap(),
             },
             None,

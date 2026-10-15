@@ -4,6 +4,10 @@
 //! compact publication plan. Descriptor ownership, EDCA state, retry state,
 //! calibrated power, entropy and executor deadlines remain here across both
 //! the pre-connected control path and the connected data path.
+//! A diagnostic-only completion retains the publication while the same step
+//! still handles collision, timeout and an expired watchdog. BAR terminals
+//! use the independent valid-BlockAck observation; raw TX status alone cannot
+//! prove either receipt or absence of the solicited response.
 
 use core::pin::Pin;
 
@@ -157,12 +161,13 @@ impl OrdinaryTxRetryReport {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OrdinaryTxCompleted {
     completion: TxCompletion,
+    status: oer_ieee80211_lower_mac::TxStatus,
     report: OrdinaryTxReport,
 }
 
 impl OrdinaryTxCompleted {
     pub const fn status(&self) -> oer_ieee80211_lower_mac::TxStatus {
-        self.completion.tx_status()
+        self.status
     }
 
     pub const fn report(self) -> OrdinaryTxReport {
@@ -443,7 +448,17 @@ struct FinishedTx {
 }
 
 impl ActiveTx {
-    fn finish(self, status: oer_ieee80211_lower_mac::TxStatus) -> FinishedTx {
+    fn finish(
+        self,
+        completion: TxCompletion,
+        block_ack: Option<HtBlockAckObservation>,
+    ) -> FinishedTx {
+        use oer_ieee80211_lower_mac::TxStatus;
+        let status = match (self.response, block_ack, completion.tx_status()) {
+            (MacLegacyTxResponse::BlockAck, Some(_), _) => TxStatus::Success,
+            (MacLegacyTxResponse::BlockAck, None, TxStatus::Success) => TxStatus::AckTimeout,
+            (_, _, status) => status,
+        };
         FinishedTx {
             active: self,
             status,
@@ -876,13 +891,10 @@ where
                     self.slot
                         .as_mut()
                         .detach_completed(hardware, active.cookie)?;
-                    let finished = active.finish(completion.tx_status());
+                    let finished = active.finish(completion, block_ack);
                     return self.finish_completion(hardware, finished, completion, block_ack);
                 }
-                CompletionObservation::NoEffect => {
-                    self.active = Some(active);
-                    return Ok(WifiTxProgress::Pending);
-                }
+                CompletionObservation::NoEffect => {}
             }
         }
         if events & EVENT_COLLISION != 0
@@ -893,7 +905,7 @@ where
         {
             return self.finish_aborted_attempt(hardware, active, false);
         }
-        let expired = matches!(wake, WifiTxWake::Deadline) && self.timer.now() >= active.deadline;
+        let expired = self.timer.now() >= active.deadline;
         if (events & EVENT_TX_TIMEOUT != 0 || expired) && may_begin_timeout_abort {
             if self
                 .slot
@@ -1077,39 +1089,35 @@ where
                 .reset_required(active, TxResetReason::ConflictingInterruptEvents(tx_events));
         }
 
-        if let Some(event) = self.acknowledge_completion(hardware, &active)? {
+        let observation = self.acknowledge_completion(hardware, &active)?;
+        let diagnostic = matches!(observation, Some(CompletionObservation::NoEffect));
+        if let Some(event) = observation {
             match event {
                 CompletionObservation::Observed((completion, block_ack)) => {
                     self.slot
                         .as_mut()
                         .detach_completed(hardware, active.cookie)?;
-                    let finished = active.finish(completion.tx_status());
+                    let finished = active.finish(completion, block_ack);
                     return self.finish_completion(hardware, finished, completion, block_ack);
                 }
-                CompletionObservation::NoEffect => {
-                    self.active = Some(active);
-                    return Ok(WifiTxProgress::Pending);
-                }
+                CompletionObservation::NoEffect => {}
             }
         }
 
         use oer_esp32s31_ieee80211_mac::irq::{
             EVENT_COLLISION, EVENT_TX_COMPLETE, EVENT_TX_TIMEOUT,
         };
-        if tx_events == EVENT_TX_COMPLETE {
+        if tx_events == EVENT_TX_COMPLETE && !diagnostic {
             return self.reset_required(active, TxResetReason::CompletionInterruptWithoutState);
         }
-        if tx_events == EVENT_TX_TIMEOUT || matches!(wake, WifiTxWake::Deadline) {
-            if matches!(wake, WifiTxWake::Deadline) && self.timer.now() < active.deadline {
-                self.active = Some(active);
-                return Ok(WifiTxProgress::Pending);
-            }
+        let expired = self.timer.now() >= active.deadline;
+        if tx_events == EVENT_TX_TIMEOUT || expired {
             if !self
                 .slot
                 .as_mut()
                 .begin_timeout_abort(hardware, active.cookie)?
             {
-                let reason = if matches!(wake, WifiTxWake::Deadline) {
+                let reason = if expired {
                     TxResetReason::ExecutorDeadline
                 } else {
                     TxResetReason::TimeoutInterruptWithoutState
@@ -1172,13 +1180,10 @@ where
                     self.slot
                         .as_mut()
                         .detach_completed(hardware, active.cookie)?;
-                    let finished = active.finish(completion.tx_status());
+                    let finished = active.finish(completion, block_ack);
                     return self.finish_completion(hardware, finished, completion, block_ack);
                 }
-                CompletionObservation::NoEffect => {
-                    self.active = Some(active);
-                    return Ok(WifiTxProgress::Pending);
-                }
+                CompletionObservation::NoEffect => {}
             }
         }
         if self
@@ -1217,9 +1222,7 @@ where
                 event.map(|completion| {
                     (
                         completion.tx,
-                        completion
-                            .block_ack_received
-                            .then_some(completion.block_ack),
+                        completion.valid_block_ack().map(|_| completion.block_ack),
                     )
                 })
             }))
@@ -1287,7 +1290,7 @@ where
                         result: if success {
                             MacTxResult::Transmitted
                         } else {
-                            MacTxResult::HardwareFailure(completion.tx_status())
+                            MacTxResult::HardwareFailure(status)
                         },
                         attempts,
                         final_rate,
@@ -1303,9 +1306,17 @@ where
                     block_ack: if success { block_ack } else { None },
                 };
                 self.last_outcome = Some(if success {
-                    OrdinaryTxOutcome::Success(OrdinaryTxCompleted { completion, report })
+                    OrdinaryTxOutcome::Success(OrdinaryTxCompleted {
+                        completion,
+                        status,
+                        report,
+                    })
                 } else {
-                    OrdinaryTxOutcome::HardwareFailure(OrdinaryTxCompleted { completion, report })
+                    OrdinaryTxOutcome::HardwareFailure(OrdinaryTxCompleted {
+                        completion,
+                        status,
+                        report,
+                    })
                 });
                 Ok(WifiTxProgress::Complete)
             }

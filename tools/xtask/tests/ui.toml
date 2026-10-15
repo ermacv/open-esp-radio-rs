@@ -35,6 +35,22 @@ cases = [
 ]
 
 [[suite]]
+name = "arbiter-authority"
+packages = ["oer-ieee80211-arbiter", "oer-ieee80211-lower-mac", "oer-radio-port", "oer-time"]
+features = []
+targets = ["host", "esp32s31"]
+cases = [
+    "crates/protocols/ieee80211/arbiter/tests/ui/foreign_retune.rs",
+    "crates/protocols/ieee80211/arbiter/tests/ui/foreign_lease.rs",
+    "crates/protocols/ieee80211/arbiter/tests/ui/sibling_retune.rs",
+    "crates/protocols/ieee80211/arbiter/tests/ui/sibling_lease.rs",
+    "crates/protocols/ieee80211/arbiter/tests/ui/repeat_retune.rs",
+    "crates/protocols/ieee80211/arbiter/tests/ui/repeated_construction.rs",
+    "crates/protocols/ieee80211/arbiter/tests/ui/foreign_place.rs",
+    "crates/protocols/ieee80211/arbiter/tests/ui/sibling_absence.rs",
+]
+
+[[suite]]
 name = "rate-installation"
 packages = ["oer-ieee80211-lower-mac", "oer-ieee80211-mac", "oer-ieee80211-port", "oer-ieee80211-runtime"]
 features = ["oer-ieee80211-runtime/test-support"]
@@ -58,6 +74,12 @@ cases = [
     "crates/protocols/ieee80211/lower-mac/tests/ui/disable_rx.rs",
     "crates/runtime/ieee80211/tests/ui/accepted_mpdu.rs",
     "crates/runtime/ieee80211/tests/ui/partial_aggregate.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/submission_owner.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/terminal_access.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/terminal_foreign_pool.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/terminal_foreign_install.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/repeat_terminal.rs",
+    "crates/runtime/ieee80211/tests/ui/inflight_model_swap.rs",
 ]
 
 [[suite]]
@@ -79,6 +101,29 @@ targets = ["host", "esp32s31"]
 cases = ["crates/protocols/ieee80211/sta/tests/ui/authentication_attempt.rs"]
 
 [[suite]]
+name = "ftm-owner"
+packages = ["oer-ieee80211-sta", "oer-time"]
+features = []
+targets = ["host", "esp32s31"]
+cases = [
+    "crates/protocols/ieee80211/sta/tests/ui/ftm_repeat_transmission.rs",
+    "crates/protocols/ieee80211/sta/tests/ui/ftm_foreign_completion.rs",
+    "crates/protocols/ieee80211/sta/tests/ui/ftm_body_private.rs",
+    "crates/protocols/ieee80211/sta/tests/ui/ftm_restart.rs",
+    "crates/protocols/ieee80211/sta/tests/ui/ftm_terminal_owner.rs",
+]
+
+[[suite]]
+name = "association-owner"
+packages = ["oer-ieee80211-sta", "oer-ieee80211-mac", "oer-time"]
+features = []
+targets = ["host", "esp32s31"]
+cases = [
+    "crates/protocols/ieee80211/sta/tests/ui/association_poll_owner.rs",
+    "crates/protocols/ieee80211/sta/tests/ui/association_rx_owner.rs",
+]
+
+[[suite]]
 name = "station-command"
 packages = ["oer-ieee80211-lower-mac", "oer-ieee80211-sta", "oer-time"]
 features = []
@@ -97,4 +142,15 @@ cases = [
     "crates/runtime/ieee80211/tests/ui/group_installation.rs",
     "crates/protocols/ieee80211/sta/tests/ui/group_removal_installation.rs",
     "crates/protocols/ieee80211/sta/tests/ui/group_removal_path.rs",
+]
+
+[[suite]]
+name = "port-lifecycle-privacy"
+packages = ["oer-ieee80211-port"]
+features = []
+targets = ["host", "esp32s31"]
+cases = [
+    "crates/protocols/ieee80211/port/tests/ui/owner_constructor.rs",
+    "crates/protocols/ieee80211/port/tests/ui/ended_constructor.rs",
+    "crates/protocols/ieee80211/port/tests/ui/backend_field.rs",
 ]

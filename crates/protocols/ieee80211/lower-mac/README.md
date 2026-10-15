@@ -31,13 +31,17 @@ back; its operations are synchronous and never wait:
   `PhaseTypes` also owns the single body type and backend fault type for
   the phase and both of its interfaces; interface submission and the event
   stream report that same fault.
-  At admission the backend consumes context, ticket and the prepared MPDU
-  into one closed `InFlight`. Queues, publication, withdrawal and quarantine
+  Before submission, `Attempt::admit` or `AggregateAttempt::admit` seals
+  context, ticket and every prepared MPDU into one closed `InFlight`.
+  The backend receives `InterfaceSubmission` or `InterfaceAggregateSubmission`,
+  with execution metadata beside the sealed owner. Queues, publication, withdrawal and quarantine
   retain that whole owner. `TxCompleted::Single` returns its `Completed`;
   `Aggregate` returns the complete ordered subframes. Each subframe owns its
   fresh memory and optional body or its Sent value. There is no independent
-  body index array. Only consuming `Completed::into_parts` releases those
-  owners to the higher layer.
+  body index array. `TransmitPool` mints tickets and one `TerminalAccess` for the consumer.
+  Only consuming `Completed::into_parts` with that installation- and
+  pool-specific permission releases owners. Completion alone grants no
+  unpacking authority, and raw `InFlight` admission is private.
   Backend execution uses `ExecutionPayload`'s narrow projection; it may lend
   storage needed by the driver but may not expose a replaceable MPDU or
   owner extraction. The model projections keep those fields private, and
@@ -87,8 +91,8 @@ back; its operations are synchronous and never wait:
   `mpdu_len`; neither has an empty state. Block Ack request lengths come from
   the MAC wire encoder's `BLOCK_ACK_REQUEST_LEN`.
   A refused preparation returns the original typed source and its owners;
-  the caller still holds context and ticket. `submit` takes the prepared
-  proof, context, ticket and attempt parameters and can refuse only poisoning.
+  the caller still holds context and ticket. `submit` takes the already sealed
+  operation and its attempt parameters and can refuse only poisoning.
   The queued operation owns backend data, never a borrow of a local machine.
   A retransmission takes the returned `Sent` MPDU and a phase-bound
   `RetransmissionPlan`: header, payload, body and installed-key identity

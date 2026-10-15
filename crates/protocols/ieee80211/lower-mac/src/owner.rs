@@ -1254,11 +1254,12 @@ pub trait AddressSetup: LowerMacSetup {
 mod extensions;
 
 pub use extensions::{
-    AggregateAttempt, AggregatePushResult, AggregateRefused, AggregateState, AirReservationPhase,
-    AmpduPhase, AmpduRate, BeaconTimingPhase, BeaconWindow, CheckedPoolAggregate, ClassSubframe,
-    EmptyAggregate, InterfaceAggregate, InterfaceAggregateAttempt, InterfaceProtection,
-    MAX_RESERVATION_MICROS, MonitorPhase, MpduStartSpacing, NonEmptyAggregate, PhaseAggregate,
-    PoolSubframe, SubframeSource, TbttPlan,
+    AdmittedAggregate, AggregateAttempt, AggregatePushResult, AggregateRefused, AggregateState,
+    AirReservationPhase, AmpduPhase, AmpduRate, BeaconTimingPhase, BeaconWindow,
+    CheckedPoolAggregate, ClassSubframe, EmptyAggregate, InterfaceAggregate,
+    InterfaceAggregateAttempt, InterfaceAggregateSubmission, InterfaceProtection,
+    MAX_RESERVATION_MICROS, MonitorPhase, MpduStartSpacing, NonEmptyAggregate, NonEmptyState,
+    PhaseAggregate, PoolSubframe, SubframeSource, TbttPlan,
 };
 
 #[cfg(test)]

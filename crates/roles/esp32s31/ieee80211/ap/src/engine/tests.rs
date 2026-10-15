@@ -955,7 +955,8 @@ fn a_wpa3_engine_hands_sae_to_the_responder_and_accepts_its_result() {
         ),
         bssid: oer_ieee80211_mac::address::Bssid::new(
             oer_ieee80211_mac::address::IndividualAddress::new(ap).unwrap(),
-        ),
+        )
+        .unwrap(),
         sequence_number: SequenceNumber::ZERO,
         transaction: 1,
         status_code: 126,

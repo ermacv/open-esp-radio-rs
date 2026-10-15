@@ -5,6 +5,51 @@ use super::{
 use oer_time::Instant;
 
 #[test]
+fn a_zero_bssid_cannot_enter_the_scan_table() {
+    let mut frame = [0_u8; 42];
+    frame[0] = 0x80;
+    frame[36..42].copy_from_slice(&[0, 4, b't', b'e', b's', b't']);
+    assert!(parse_management(&frame, 1, -40).is_none());
+    let mut table = ScanTable::<1>::new();
+    assert_eq!(
+        table.observe_management(&frame, 1, -40, None),
+        ScanObservation::Ignored
+    );
+    assert_eq!(table.summary().records, 0);
+}
+
+#[test]
+fn vacant_scan_slots_never_appear_as_observations() {
+    let mut table = ScanTable::<2>::new();
+    let mut frame = [0_u8; 42];
+    frame[0] = 0x80;
+    frame[16..22].copy_from_slice(&[2, 0, 0, 0, 0, 1]);
+    frame[36..42].copy_from_slice(&[0, 4, b't', b'e', b's', b't']);
+    assert_eq!(table.records().count(), 0);
+    for index in 0..2 {
+        frame[21] = index as u8 + 1;
+        assert_eq!(
+            table.observe_management(&frame, 6, -40, None),
+            ScanObservation::Inserted { index }
+        );
+    }
+    assert_eq!(table.records().count(), 2);
+    assert!(best_matching_ssid(table.records(), b"test").is_some());
+    table.clear();
+    assert_eq!(table.records().count(), 0);
+    assert!(best_matching_ssid(table.records(), b"test").is_none());
+    assert_eq!(
+        table.observe_management(&frame, 6, -40, None),
+        ScanObservation::Inserted { index: 0 }
+    );
+    assert_eq!(table.records().count(), 1);
+    assert_eq!(
+        table.records().next().unwrap().bssid.get(),
+        [2, 0, 0, 0, 0, 2]
+    );
+}
+
+#[test]
 fn a_group_bssid_cannot_enter_the_scan_table() {
     let mut frame = [0_u8; 42];
     frame[0] = 0x80;
@@ -27,18 +72,18 @@ fn a_record_keeps_the_time_of_its_latest_observation() {
     frame[36..42].copy_from_slice(&[0, 4, b't', b'e', b's', b't']);
     table.observe_management(&frame, 1, -70, Some(Instant::from_micros(1_000)));
     assert_eq!(
-        table.records()[0].received_at,
+        table.records().next().unwrap().received_at,
         Some(Instant::from_micros(1_000))
     );
     table.observe_management(&frame, 1, -60, Some(Instant::from_micros(2_500)));
     assert_eq!(
-        table.records()[0].received_at,
+        table.records().next().unwrap().received_at,
         Some(Instant::from_micros(2_500))
     );
     // The record's TSF comes from the latest frame, so does its reception
     // time, even when the receiver has none for it.
     table.observe_management(&frame, 1, -60, None);
-    assert_eq!(table.records()[0].received_at, None);
+    assert_eq!(table.records().next().unwrap().received_at, None);
 }
 
 #[test]
@@ -88,6 +133,7 @@ fn parses_beacon_into_owned_bounded_record() {
         crate::address::Bssid::new(
             crate::address::IndividualAddress::new([2, 2, 3, 4, 5, 6]).unwrap()
         )
+        .unwrap()
     );
     assert_eq!(record.channel, 11);
     assert_eq!(record.rssi, -42);
@@ -114,7 +160,14 @@ fn ht40_geometry_requires_matching_capability_and_operation() {
         channel: 6,
         ht_capability_ie_present: true,
         ht_operation_ie_present: true,
-        ..ScanRecord::EMPTY
+        ..ScanRecord::new(
+            crate::address::Bssid::new(
+                crate::address::IndividualAddress::new([2, 0, 0, 0, 0, 1]).unwrap(),
+            )
+            .unwrap(),
+            6,
+            -40,
+        )
     };
     record.ht_capability_ie[0..4].copy_from_slice(&[45, 26, 0x02, 0]);
     record.ht_operation_ie[0..4].copy_from_slice(&[61, 22, 6, 0x05]);
@@ -136,7 +189,14 @@ fn ht40_geometry_requires_matching_capability_and_operation() {
 fn ht_short_guard_intervals_are_read_from_capability_info() {
     let mut record = ScanRecord {
         ht_capability_ie_present: true,
-        ..ScanRecord::EMPTY
+        ..ScanRecord::new(
+            crate::address::Bssid::new(
+                crate::address::IndividualAddress::new([2, 0, 0, 0, 0, 1]).unwrap(),
+            )
+            .unwrap(),
+            6,
+            -40,
+        )
     };
     record.ht_capability_ie[0..4].copy_from_slice(&[45, 26, 1 << 5, 0]);
     assert!(record.supports_ht_short_guard_interval_20mhz());
@@ -162,12 +222,12 @@ fn table_deduplicates_by_bssid_and_retains_latest_record() {
         table.observe_management(&frame, 1, -30, None),
         ScanObservation::Updated { index: 0 }
     );
-    assert_eq!(table.records()[0].rssi, -30);
+    assert_eq!(table.records().next().unwrap().rssi, -30);
     assert_eq!(
         table.observe_management(&frame, 1, -60, None),
         ScanObservation::Updated { index: 0 }
     );
-    assert_eq!(table.records()[0].rssi, -60);
+    assert_eq!(table.records().next().unwrap().rssi, -60);
     assert_eq!(table.summary().observed_frames, 3);
 }
 
@@ -187,15 +247,15 @@ fn weaker_latest_beacon_replaces_stale_ht_protection() {
         table.observe_management(&frame, 11, -30, None),
         ScanObservation::Inserted { index: 0 }
     );
-    assert_eq!(table.records()[0].ht_operation_ie[4] & 0x03, 1);
+    assert_eq!(table.records().next().unwrap().ht_operation_ie[4] & 0x03, 1);
 
     frame[49] = 0;
     assert_eq!(
         table.observe_management(&frame, 11, -60, None),
         ScanObservation::Updated { index: 0 }
     );
-    assert_eq!(table.records()[0].ht_operation_ie[4] & 0x03, 0);
-    assert_eq!(table.records()[0].rssi, -60);
+    assert_eq!(table.records().next().unwrap().ht_operation_ie[4] & 0x03, 0);
+    assert_eq!(table.records().next().unwrap().rssi, -60);
 }
 
 #[test]
@@ -218,13 +278,20 @@ fn latest_hidden_beacon_preserves_probe_response_ssid() {
         table.observe_management(&beacon, 1, -55, None),
         ScanObservation::Updated { index: 0 }
     );
-    assert_eq!(table.records()[0].ssid_bytes(), b"test");
-    assert_eq!(table.records()[0].rssi, -55);
+    assert_eq!(table.records().next().unwrap().ssid_bytes(), b"test");
+    assert_eq!(table.records().next().unwrap().rssi, -55);
 }
 
 #[test]
 fn strongest_exact_ssid_ignores_invalid_channel() {
-    let mut records = [ScanRecord::EMPTY; 3];
+    let mut records = [ScanRecord::new(
+        crate::address::Bssid::new(
+            crate::address::IndividualAddress::new([2, 0, 0, 0, 0, 1]).unwrap(),
+        )
+        .unwrap(),
+        6,
+        -40,
+    ); 3];
     for (record, rssi, channel) in [(-70, 1), (-25, 6), (-10, 0)]
         .into_iter()
         .zip(&mut records)

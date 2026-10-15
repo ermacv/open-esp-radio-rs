@@ -13,7 +13,14 @@ const STANDARD_WMM: [u8; 26] = [
 ];
 
 fn he20_access_point() -> ScanRecord {
-    let mut access_point = ScanRecord::EMPTY;
+    let mut access_point = ScanRecord::new(
+        oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new([2, 0, 0, 0, 0, 1]).unwrap(),
+        )
+        .unwrap(),
+        6,
+        -40,
+    );
     access_point.rssi = -45;
     access_point.ht_capability_ie_present = true;
     access_point.ht_capability_ie[4] = 0x17;
@@ -115,7 +122,14 @@ fn rejected_association_cannot_produce_a_peer_plan() {
 
 #[test]
 fn scan_policy_collects_every_bss_protection_fact() {
-    let mut access_point = ScanRecord::EMPTY;
+    let mut access_point = ScanRecord::new(
+        oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new([2, 0, 0, 0, 0, 1]).unwrap(),
+        )
+        .unwrap(),
+        6,
+        -40,
+    );
     access_point.capability_info = 0x0421;
     access_point.supported_rates = [0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24];
     access_point.supported_rates_len = 8;

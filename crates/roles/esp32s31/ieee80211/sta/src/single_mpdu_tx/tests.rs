@@ -206,7 +206,8 @@ fn make_tx<'a>(
                 ),
                 bssid: oer_ieee80211_mac::address::Bssid::new(
                     oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-                ),
+                )
+                .unwrap(),
                 ssid: oer_ieee80211_mac::ssid::WifiSsid::new(b"test").unwrap(),
                 peer_qos: true,
                 management_protection: false,

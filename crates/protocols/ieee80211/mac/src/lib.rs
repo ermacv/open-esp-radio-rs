@@ -7,6 +7,10 @@
 //! MMIO, DMA, interrupt, executor, allocator, ESP32-S31, vendor archive, or
 //! ROM ABI dependency.
 //!
+//! [`address::Bssid`] proves a nonzero individual address. Scan storage keeps
+//! vacant cells as `None`; [`scan::ScanRecord::new`] requires the actual BSSID,
+//! channel and RSSI, and [`scan::ScanTable::records`] iterates present records.
+//!
 //! The parser contract of [the strict-lint milestone](https://github.com/ermacv/open-esp-radio-rs/issues/751)
 //! requires field boundaries established with `split_first_chunk` and
 //! retained as fixed-size arrays through subsequent processing. This is
@@ -14,6 +18,7 @@
 //! with `.get()` or suppressing its lint does not establish the contract.
 
 pub mod address;
+pub mod ampdu;
 pub mod ap;
 pub mod beacon;
 pub mod block_ack;

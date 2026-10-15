@@ -4,7 +4,7 @@
 //! deadline state, peer/token identity and raw four-timestamp results, but it
 //! performs no I/O. In particular, a chip backend must prove antenna-point
 //! RX/TX timestamp capture before publishing the request returned by
-//! [`FtmRequester::service`].
+//! [`FtmSession::service`].
 //! One token set tracks all nonzero dialog tokens, including 255. Zero is
 //! the protocol's absent-token value and cannot be inserted into that set.
 
@@ -318,22 +318,17 @@ pub enum FtmSessionFailure {
 ///
 /// ```
 /// use oer_ieee80211_sta::ftm::FtmRequesterError;
-/// let refused = FtmRequesterError::NoActiveSession;
-/// assert!(matches!(refused, FtmRequesterError::NoActiveSession));
+/// let refused = FtmRequesterError::DeadlineOverflow;
+/// assert!(matches!(refused, FtmRequesterError::DeadlineOverflow));
 /// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FtmRequesterError {
-    Busy,
-    NoActiveSession,
-    ResultNotReady,
-    FailureNotReady,
     CapacityTooSmall {
         required_samples: u8,
         capacity: usize,
     },
     GenerationExhausted,
     DeadlineOverflow,
-    StaleTransmission,
     ZeroLocalDialogToken,
     MissingLocalTiming,
     UnexpectedLocalTiming,
@@ -356,30 +351,152 @@ pub enum FtmRequesterError {
     ConflictingDuplicate,
 }
 
+/// Diagnostic identity within one requester's sequence. Completion authority
+/// is the owned transmission, never these copyable numbers.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct FtmRequestTransmission {
-    session_generation: u32,
-    transmission_generation: u32,
+pub struct FtmOperationId {
+    pub peer: [u8; 6],
+    pub session_generation: u32,
+}
+
+/// The input that releases a competing application's request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FtmWaitSource {
+    /// The coordinator delivers this session's owned terminal, then may start
+    /// the returned requester. No retry timer can substitute for that terminal.
+    SessionTerminal(FtmOperationId),
+}
+
+/// A competing request remains with its caller until the named terminal.
+#[must_use]
+pub struct FtmOccupied<T> {
+    pub request: T,
+    pub wait: FtmWaitSource,
+}
+
+/// A scheduling/validation refusal before changing the retained owner.
+#[must_use]
+pub struct FtmRefusal<T> {
+    pub error: FtmRequesterError,
+    pub owner: T,
+}
+
+impl<T> core::fmt::Debug for FtmRefusal<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("FtmRefusal")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+/// One transmission owns its complete session while the backend publishes it.
+/// Completion and pre-publication rejection consume this handle; there is no
+/// requester argument into which another session's terminal can be injected.
+#[must_use]
+pub struct FtmRequestTransmission<const MAX_SAMPLES: usize> {
+    owner: SessionData<MAX_SAMPLES>,
+    attempts_remaining: u8,
     attempt: u8,
     body: [u8; FTM_INITIAL_REQUEST_BODY_LEN],
 }
 
-impl FtmRequestTransmission {
-    pub const fn session_generation(self) -> u32 {
-        self.session_generation
+impl<const N: usize> FtmRequestTransmission<N> {
+    pub const fn session_generation(&self) -> u32 {
+        self.owner.requester.session_generation
     }
-
-    pub const fn transmission_generation(self) -> u32 {
-        self.transmission_generation
+    pub const fn transmission_generation(&self) -> u32 {
+        self.owner.requester.transmission_generation
     }
-
-    pub const fn attempt(self) -> u8 {
+    pub const fn attempt(&self) -> u8 {
         self.attempt
     }
-
-    /// Borrow the exact Action body owned by this transmission identity.
     pub const fn body(&self) -> &[u8; FTM_INITIAL_REQUEST_BODY_LEN] {
         &self.body
+    }
+
+    /// Finish this exact transmission. A clock-range refusal returns the
+    /// whole handle unchanged, so it can be cancelled or answered explicitly.
+    #[allow(
+        clippy::result_large_err,
+        reason = "refusal returns the complete affine session without allocation"
+    )]
+    pub fn complete(
+        self,
+        acknowledged: bool,
+        now: Instant,
+    ) -> Result<(FtmSession<N>, FtmRequesterEvent), FtmRefusal<Self>> {
+        let config = self.owner.requester.config;
+        let (phase, event) = if acknowledged {
+            let (Some(response_deadline), Some(session_deadline)) = (
+                now.checked_add(config.response_timeout),
+                now.checked_add(config.session_timeout),
+            ) else {
+                return Err(FtmRefusal {
+                    error: FtmRequesterError::DeadlineOverflow,
+                    owner: self,
+                });
+            };
+            (
+                FtmRequesterPhase::AwaitingInitial {
+                    attempts_remaining: self.attempts_remaining,
+                    response_deadline,
+                    session_deadline,
+                },
+                FtmRequesterEvent::RequestPublished {
+                    response_deadline,
+                    session_deadline,
+                },
+            )
+        } else if self.attempts_remaining == 0 {
+            (
+                FtmRequesterPhase::Failed(FtmSessionFailure::RequestTxFailed),
+                FtmRequesterEvent::Failed(FtmSessionFailure::RequestTxFailed),
+            )
+        } else {
+            let Some(retry_at) = now.checked_add(config.retry_interval) else {
+                return Err(FtmRefusal {
+                    error: FtmRequesterError::DeadlineOverflow,
+                    owner: self,
+                });
+            };
+            (
+                FtmRequesterPhase::RequestQueued {
+                    ready_at: retry_at,
+                    attempts_remaining: self.attempts_remaining,
+                },
+                FtmRequesterEvent::RequestRetryScheduled { retry_at },
+            )
+        };
+        Ok((
+            FtmSession {
+                owner: self.owner,
+                phase,
+            },
+            event,
+        ))
+    }
+
+    /// No DMA publication took place; return this session's owned failure.
+    pub fn reject_hardware_admission(self) -> (FtmTerminal<N>, FtmRequesterEvent) {
+        let reason = FtmSessionFailure::HardwareAdmissionRejected;
+        (
+            FtmSession {
+                owner: self.owner,
+                phase: FtmRequesterPhase::Failed(reason),
+            }
+            .cancel(),
+            FtmRequesterEvent::Failed(reason),
+        )
+    }
+
+    /// Cancel an unpublished transmission, retaining all collected samples.
+    /// A backend that accepted publication must first supply its TX terminal.
+    pub fn cancel(self) -> FtmTerminal<N> {
+        let partial = self.owner.partial();
+        FtmTerminal {
+            requester: self.owner.requester,
+            outcome: FtmOutcome::Cancelled(partial),
+        }
     }
 }
 
@@ -395,11 +512,62 @@ pub enum FtmRequesterEvent {
     Failed(FtmSessionFailure),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum FtmRequesterService {
-    Idle,
-    Transmit(FtmRequestTransmission),
-    Event(FtmRequesterEvent),
+/// An owned step: either wait on the returned session's deadline/measurement,
+/// perform its transmission, observe an event, or deliver its final result.
+#[must_use]
+pub enum FtmRequesterService<const N: usize> {
+    Wait(FtmSession<N>),
+    Transmit(FtmRequestTransmission<N>),
+    Event {
+        session: FtmSession<N>,
+        event: FtmRequesterEvent,
+    },
+    Finished(FtmTerminal<N>),
+}
+
+/// Samples and the unmatched local timestamp pair survive failure/cancellation.
+#[derive(Debug)]
+pub struct FtmPartialResult<const N: usize> {
+    pub operation: FtmOperationId,
+    pub pending: Option<FtmLocalExchangeTiming>,
+    samples: [Option<FtmRawExchange>; N],
+    sample_count: usize,
+}
+
+impl<const N: usize> FtmPartialResult<N> {
+    pub const fn sample_count(&self) -> usize {
+        self.sample_count
+    }
+    pub fn sample(&self, index: usize) -> Option<FtmRawExchange> {
+        self.samples.get(index).copied().flatten()
+    }
+}
+
+/// A terminal's complete outcome, including partial measurements on failure.
+#[derive(Debug)]
+pub enum FtmOutcome<const N: usize> {
+    Complete(FtmSessionResult<N>),
+    Failed {
+        reason: FtmSessionFailure,
+        partial: FtmPartialResult<N>,
+    },
+    Cancelled(FtmPartialResult<N>),
+}
+
+/// The only owner that returns the idle requester and its previous result.
+#[must_use]
+pub struct FtmTerminal<const N: usize> {
+    requester: FtmRequester<N>,
+    outcome: FtmOutcome<N>,
+}
+
+impl<const N: usize> FtmTerminal<N> {
+    pub fn outcome(&self) -> &FtmOutcome<N> {
+        &self.outcome
+    }
+    pub fn into_parts(self) -> (FtmRequester<N>, FtmOutcome<N>) {
+        (self.requester, self.outcome)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -431,13 +599,8 @@ pub enum FtmMeasurementDisposition {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum FtmRequesterPhase {
-    Idle,
     RequestQueued {
         ready_at: Instant,
-        attempts_remaining: u8,
-    },
-    RequestTransmitting {
-        transmission: FtmRequestTransmission,
         attempts_remaining: u8,
     },
     AwaitingInitial {
@@ -503,78 +666,119 @@ impl OwnedInformationElements {
     }
 }
 
-/// One fixed-capacity FTM requester.
+/// An idle requester. Starting consumes it; only the terminal of that session
+/// returns it for another request. Numerical IDs are diagnostic, not authority.
 // CAPABILITY: wifi-frequency-tx-power-antenna-ftm-and-esp-now-802-11mc-ftm
 pub struct FtmRequester<const MAX_SAMPLES: usize> {
     config: FtmRequesterConfig,
-    phase: FtmRequesterPhase,
-    peer: [u8; 6],
     session_generation: u32,
     transmission_generation: u32,
+}
+
+struct SessionData<const N: usize> {
+    requester: FtmRequester<N>,
+    peer: [u8; 6],
     dialog_tokens: TokenSet,
     pending: Option<FtmLocalExchangeTiming>,
     last_measurement: Option<LastMeasurement>,
-    samples: [Option<FtmRawExchange>; MAX_SAMPLES],
+    samples: [Option<FtmRawExchange>; N],
     sample_count: usize,
 }
 
-impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
+impl<const N: usize> SessionData<N> {
+    fn partial(&self) -> FtmPartialResult<N> {
+        FtmPartialResult {
+            operation: FtmOperationId {
+                peer: self.peer,
+                session_generation: self.requester.session_generation,
+            },
+            pending: self.pending,
+            samples: self.samples,
+            sample_count: self.sample_count,
+        }
+    }
+}
+
+/// One active operation, including any result waiting for the consumer.
+#[must_use]
+pub struct FtmSession<const N: usize> {
+    owner: SessionData<N>,
+    phase: FtmRequesterPhase,
+}
+
+impl<const N: usize> FtmRequester<N> {
     pub const fn new(config: FtmRequesterConfig) -> Self {
         Self {
             config,
-            phase: FtmRequesterPhase::Idle,
-            peer: [0; 6],
             session_generation: 0,
             transmission_generation: 0,
-            dialog_tokens: TokenSet::EMPTY,
-            pending: None,
-            last_measurement: None,
-            samples: [None; MAX_SAMPLES],
-            sample_count: 0,
         }
     }
-
     pub const fn config(&self) -> FtmRequesterConfig {
         self.config
     }
 
-    pub const fn is_idle(&self) -> bool {
-        matches!(self.phase, FtmRequesterPhase::Idle)
-    }
-
-    pub const fn failure(&self) -> Option<FtmSessionFailure> {
-        match self.phase {
-            FtmRequesterPhase::Failed(failure) => Some(failure),
-            _ => None,
-        }
-    }
-
-    pub fn start(&mut self, peer: [u8; 6], now: Instant) -> Result<u32, FtmRequesterError> {
-        if !self.is_idle() {
-            return Err(FtmRequesterError::Busy);
-        }
+    #[allow(
+        clippy::result_large_err,
+        reason = "validation returns the original requester"
+    )]
+    pub fn start(mut self, peer: [u8; 6], now: Instant) -> Result<FtmSession<N>, FtmRefusal<Self>> {
         let required_samples = self.config.maximum_deliverable_samples();
-        if usize::from(required_samples) > MAX_SAMPLES {
-            return Err(FtmRequesterError::CapacityTooSmall {
-                required_samples,
-                capacity: MAX_SAMPLES,
+        if usize::from(required_samples) > N {
+            return Err(FtmRefusal {
+                error: FtmRequesterError::CapacityTooSmall {
+                    required_samples,
+                    capacity: N,
+                },
+                owner: self,
             });
         }
-        self.session_generation = self
-            .session_generation
-            .checked_add(1)
-            .ok_or(FtmRequesterError::GenerationExhausted)?;
-        self.peer = peer;
-        self.dialog_tokens = TokenSet::EMPTY;
-        self.pending = None;
-        self.last_measurement = None;
-        self.samples.fill(None);
-        self.sample_count = 0;
-        self.phase = FtmRequesterPhase::RequestQueued {
+        if now.checked_add(self.config.session_timeout).is_none() {
+            return Err(FtmRefusal {
+                error: FtmRequesterError::DeadlineOverflow,
+                owner: self,
+            });
+        }
+        let Some(generation) = self.session_generation.checked_add(1) else {
+            return Err(FtmRefusal {
+                error: FtmRequesterError::GenerationExhausted,
+                owner: self,
+            });
+        };
+        self.session_generation = generation;
+        let phase = FtmRequesterPhase::RequestQueued {
             ready_at: now,
             attempts_remaining: self.config.request_attempt_limit,
         };
-        Ok(self.session_generation)
+        Ok(FtmSession {
+            owner: SessionData {
+                requester: self,
+                peer,
+                dialog_tokens: TokenSet::EMPTY,
+                pending: None,
+                last_measurement: None,
+                samples: [None; N],
+                sample_count: 0,
+            },
+            phase,
+        })
+    }
+}
+
+impl<const N: usize> FtmSession<N> {
+    pub const fn operation(&self) -> FtmOperationId {
+        FtmOperationId {
+            peer: self.owner.peer,
+            session_generation: self.owner.requester.session_generation,
+        }
+    }
+
+    /// Retain an external request and name the terminal that admits its retry.
+    pub fn refuse_request<T>(&self, request: T) -> FtmOccupied<T> {
+        FtmOccupied {
+            request,
+            wait: FtmWaitSource::SessionTerminal(self.operation()),
+        }
     }
 
     pub const fn next_deadline(&self) -> Option<Instant> {
@@ -586,147 +790,121 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             FtmRequesterPhase::Measuring {
                 session_deadline, ..
             } => Some(session_deadline),
-            _ => None,
+            FtmRequesterPhase::Complete { .. } | FtmRequesterPhase::Failed(_) => None,
         }
     }
 
-    pub fn service(&mut self, now: Instant) -> Result<FtmRequesterService, FtmRequesterError> {
+    #[allow(
+        clippy::result_large_err,
+        reason = "scheduling refusal retains the complete session"
+    )]
+    pub fn service(mut self, now: Instant) -> Result<FtmRequesterService<N>, FtmRefusal<Self>> {
         match self.phase {
+            FtmRequesterPhase::Complete { .. } | FtmRequesterPhase::Failed(_) => {
+                return Ok(FtmRequesterService::Finished(self.cancel()));
+            }
             FtmRequesterPhase::AwaitingInitial {
                 attempts_remaining,
                 response_deadline,
                 ..
             } if now >= response_deadline => {
                 if attempts_remaining == 0 {
-                    return Ok(self.fail(FtmSessionFailure::InitialResponseTimedOut));
+                    self.phase =
+                        FtmRequesterPhase::Failed(FtmSessionFailure::InitialResponseTimedOut);
+                    return Ok(FtmRequesterService::Finished(self.cancel()));
                 }
-                let retry_at = now
-                    .checked_add(self.config.retry_interval)
-                    .ok_or(FtmRequesterError::DeadlineOverflow)?;
+                let Some(retry_at) = now.checked_add(self.owner.requester.config.retry_interval)
+                else {
+                    return Err(FtmRefusal {
+                        error: FtmRequesterError::DeadlineOverflow,
+                        owner: self,
+                    });
+                };
                 self.phase = FtmRequesterPhase::RequestQueued {
                     ready_at: retry_at,
                     attempts_remaining,
                 };
-                return Ok(FtmRequesterService::Event(
-                    FtmRequesterEvent::RequestRetryScheduled { retry_at },
-                ));
+                return Ok(FtmRequesterService::Event {
+                    session: self,
+                    event: FtmRequesterEvent::RequestRetryScheduled { retry_at },
+                });
             }
             FtmRequesterPhase::Measuring {
                 session_deadline, ..
             } if now >= session_deadline => {
-                return Ok(self.fail(FtmSessionFailure::SessionTimedOut));
+                self.phase = FtmRequesterPhase::Failed(FtmSessionFailure::SessionTimedOut);
+                return Ok(FtmRequesterService::Finished(self.cancel()));
             }
             _ => {}
         }
-
         let FtmRequesterPhase::RequestQueued {
             ready_at,
             attempts_remaining,
         } = self.phase
         else {
-            return Ok(FtmRequesterService::Idle);
+            return Ok(FtmRequesterService::Wait(self));
         };
         if now < ready_at {
-            return Ok(FtmRequesterService::Idle);
+            return Ok(FtmRequesterService::Wait(self));
         }
-        self.transmission_generation = self
-            .transmission_generation
-            .checked_add(1)
-            .ok_or(FtmRequesterError::GenerationExhausted)?;
-        let body = encode_initial_request(self.config.parameters);
+        if now
+            .checked_add(self.owner.requester.config.session_timeout)
+            .is_none()
+        {
+            return Err(FtmRefusal {
+                error: FtmRequesterError::DeadlineOverflow,
+                owner: self,
+            });
+        }
+        let Some(generation) = self.owner.requester.transmission_generation.checked_add(1) else {
+            return Err(FtmRefusal {
+                error: FtmRequesterError::GenerationExhausted,
+                owner: self,
+            });
+        };
+        self.owner.requester.transmission_generation = generation;
+        let body = encode_initial_request(self.owner.requester.config.parameters);
         let attempt = self
+            .owner
+            .requester
             .config
             .request_attempt_limit
             .saturating_sub(attempts_remaining)
             .saturating_add(1);
-        let attempts_remaining = attempts_remaining.saturating_sub(1);
-        let transmission = FtmRequestTransmission {
-            session_generation: self.session_generation,
-            transmission_generation: self.transmission_generation,
+        Ok(FtmRequesterService::Transmit(FtmRequestTransmission {
+            owner: self.owner,
+            attempts_remaining: attempts_remaining.saturating_sub(1),
             attempt,
             body,
-        };
-        self.phase = FtmRequesterPhase::RequestTransmitting {
-            transmission,
-            attempts_remaining,
-        };
-        Ok(FtmRequesterService::Transmit(transmission))
+        }))
     }
 
-    pub fn complete_transmission(
-        &mut self,
-        transmission: FtmRequestTransmission,
-        acknowledged: bool,
-        now: Instant,
-    ) -> Result<FtmRequesterEvent, FtmRequesterError> {
-        let attempts_remaining = self.validate_exact_pending_transmission(&transmission)?;
-        if acknowledged {
-            let response_deadline = now
-                .checked_add(self.config.response_timeout)
-                .ok_or(FtmRequesterError::DeadlineOverflow)?;
-            let session_deadline = now
-                .checked_add(self.config.session_timeout)
-                .ok_or(FtmRequesterError::DeadlineOverflow)?;
-            self.phase = FtmRequesterPhase::AwaitingInitial {
-                attempts_remaining,
-                response_deadline,
-                session_deadline,
-            };
-            Ok(FtmRequesterEvent::RequestPublished {
-                response_deadline,
-                session_deadline,
-            })
-        } else if attempts_remaining == 0 {
-            self.phase = FtmRequesterPhase::Failed(FtmSessionFailure::RequestTxFailed);
-            Ok(FtmRequesterEvent::Failed(
-                FtmSessionFailure::RequestTxFailed,
-            ))
-        } else {
-            let retry_at = now
-                .checked_add(self.config.retry_interval)
-                .ok_or(FtmRequesterError::DeadlineOverflow)?;
-            self.phase = FtmRequesterPhase::RequestQueued {
-                ready_at: retry_at,
-                attempts_remaining,
-            };
-            Ok(FtmRequesterEvent::RequestRetryScheduled { retry_at })
+    /// Cancellation delivers a result already completed by RX unchanged.
+    /// Otherwise it returns failure or partial samples and the unmatched local
+    /// timing pair, together with the requester for a later session.
+    pub fn cancel(self) -> FtmTerminal<N> {
+        let operation = self.operation();
+        let owner = self.owner;
+        let partial = owner.partial();
+        let outcome = match self.phase {
+            FtmRequesterPhase::Complete {
+                negotiated,
+                termination,
+            } => FtmOutcome::Complete(FtmSessionResult {
+                peer: owner.peer,
+                session_generation: operation.session_generation,
+                negotiated,
+                termination,
+                samples: owner.samples,
+                sample_count: owner.sample_count,
+            }),
+            FtmRequesterPhase::Failed(reason) => FtmOutcome::Failed { reason, partial },
+            _ => FtmOutcome::Cancelled(partial),
+        };
+        FtmTerminal {
+            requester: owner.requester,
+            outcome,
         }
-    }
-
-    /// Reject a request before DMA/sequence publication at a chip admission
-    /// boundary. The transmission identity is still checked to prevent a stale
-    /// hardware result from ending a later session.
-    pub fn reject_hardware_admission(
-        &mut self,
-        transmission: FtmRequestTransmission,
-    ) -> Result<FtmRequesterEvent, FtmRequesterError> {
-        self.validate_exact_pending_transmission(&transmission)?;
-        self.phase = FtmRequesterPhase::Failed(FtmSessionFailure::HardwareAdmissionRejected);
-        Ok(FtmRequesterEvent::Failed(
-            FtmSessionFailure::HardwareAdmissionRejected,
-        ))
-    }
-
-    /// Validate the complete requester-owned value without consuming phase.
-    ///
-    /// Both completion paths use this one check so generation fields cannot
-    /// authorize a different encoded Action body. A mismatch leaves the exact
-    /// pending transmission available for its eventual valid completion.
-    fn validate_exact_pending_transmission(
-        &self,
-        candidate: &FtmRequestTransmission,
-    ) -> Result<u8, FtmRequesterError> {
-        let FtmRequesterPhase::RequestTransmitting {
-            transmission,
-            attempts_remaining,
-        } = self.phase
-        else {
-            return Err(FtmRequesterError::StaleTransmission);
-        };
-        if transmission != *candidate {
-            return Err(FtmRequesterError::StaleTransmission);
-        }
-        Ok(attempts_remaining)
     }
 
     pub fn on_measurement(
@@ -736,7 +914,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         local_timing: Option<FtmLocalExchangeTiming>,
         now: Instant,
     ) -> Result<FtmMeasurementDisposition, FtmRequesterError> {
-        if peer != self.peer {
+        if peer != self.owner.peer {
             return Ok(FtmMeasurementDisposition::ForeignPeer);
         }
         let session_deadline = match self.phase {
@@ -746,12 +924,10 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             | FtmRequesterPhase::Measuring {
                 session_deadline, ..
             } => session_deadline,
-            FtmRequesterPhase::Idle => return Err(FtmRequesterError::NoActiveSession),
             FtmRequesterPhase::Complete { .. } | FtmRequesterPhase::Failed(_) => {
                 return Ok(FtmMeasurementDisposition::Stale);
             }
-            FtmRequesterPhase::RequestQueued { .. }
-            | FtmRequesterPhase::RequestTransmitting { .. } => {
+            FtmRequesterPhase::RequestQueued { .. } => {
                 return Ok(FtmMeasurementDisposition::Stale);
             }
         };
@@ -761,7 +937,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
                 FtmSessionFailure::SessionTimedOut,
             ));
         }
-        if let Some(last) = self.last_measurement
+        if let Some(last) = self.owner.last_measurement
             && last.fields.dialog_token == measurement.fields.dialog_token
         {
             if last.fields == measurement.fields
@@ -769,7 +945,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
                 && last
                     .information_elements
                     .matches(measurement.information_elements)
-                && local_timing == self.pending
+                && local_timing == self.owner.pending
             {
                 return Ok(FtmMeasurementDisposition::Duplicate);
             }
@@ -780,7 +956,12 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         if matches!(self.phase, FtmRequesterPhase::AwaitingInitial { .. }) {
             return self.accept_initial(measurement, local_timing, session_deadline);
         }
-        self.accept_follow_up(measurement, local_timing)
+        match self.phase {
+            FtmRequesterPhase::Measuring { negotiated, .. } => {
+                self.accept_follow_up(measurement, local_timing, negotiated)
+            }
+            _ => Ok(FtmMeasurementDisposition::Stale),
+        }
     }
 
     fn accept_initial(
@@ -821,8 +1002,8 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             if local_timing.is_some() {
                 return self.protocol_error(FtmRequesterError::UnexpectedLocalTiming);
             }
-            self.pending = None;
-            self.last_measurement = Some(LastMeasurement {
+            self.owner.pending = None;
+            self.owner.last_measurement = Some(LastMeasurement {
                 fields: measurement.fields,
                 parameters: measurement.parameters,
                 information_elements,
@@ -837,9 +1018,9 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             return self.protocol_error(FtmRequesterError::TooManyMeasurements);
         }
         let local_timing = self.validate_new_local_timing(measurement, local_timing)?;
-        self.dialog_tokens.insert(local_timing.dialog_token);
-        self.pending = Some(local_timing);
-        self.last_measurement = Some(LastMeasurement {
+        self.owner.dialog_tokens.insert(local_timing.dialog_token);
+        self.owner.pending = Some(local_timing);
+        self.owner.last_measurement = Some(LastMeasurement {
             fields: measurement.fields,
             parameters: measurement.parameters,
             information_elements,
@@ -859,17 +1040,15 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         &mut self,
         measurement: FtmMeasurement<'_>,
         local_timing: Option<FtmLocalExchangeTiming>,
+        negotiated: FtmResponseParameters,
     ) -> Result<FtmMeasurementDisposition, FtmRequesterError> {
-        let FtmRequesterPhase::Measuring { negotiated, .. } = self.phase else {
-            return Err(FtmRequesterError::NoActiveSession);
-        };
         if measurement.parameters.is_some() {
             return self.accept_initial_retransmission(measurement, local_timing, negotiated);
         }
         if !measurement.information_elements.is_empty() {
             return self.protocol_error(FtmRequesterError::UnexpectedInformationElements);
         }
-        let Some(pending) = self.pending else {
+        let Some(pending) = self.owner.pending else {
             return self.protocol_error(FtmRequesterError::MissingLocalTiming);
         };
 
@@ -881,7 +1060,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
                 return self.protocol_error(error);
             }
             return Ok(FtmMeasurementDisposition::Complete {
-                samples: self.sample_count,
+                samples: self.owner.sample_count,
             });
         }
 
@@ -908,7 +1087,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             let Some(sample) = sample else {
                 return Ok(FtmMeasurementDisposition::Stale);
             };
-            if self.sample_count >= usize::from(negotiated.ftms_per_burst.saturating_sub(1)) {
+            if self.owner.sample_count >= usize::from(negotiated.ftms_per_burst.saturating_sub(1)) {
                 return self.protocol_error(FtmRequesterError::TooManyMeasurements);
             }
             self.push_sample(sample)?;
@@ -916,7 +1095,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
                 return self.protocol_error(error);
             }
             return Ok(FtmMeasurementDisposition::Complete {
-                samples: self.sample_count,
+                samples: self.owner.sample_count,
             });
         }
 
@@ -927,7 +1106,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         let local_timing = self.validate_new_local_timing(measurement, local_timing)?;
         let maximum_samples = usize::from(negotiated.ftms_per_burst.saturating_sub(1));
         let disposition = if let Some(sample) = sample {
-            if self.sample_count.saturating_add(1) >= maximum_samples {
+            if self.owner.sample_count.saturating_add(1) >= maximum_samples {
                 return self.protocol_error(FtmRequesterError::TooManyMeasurements);
             }
             let sample_index = self.push_sample(sample)?;
@@ -936,16 +1115,16 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
                 sample_index,
             }
         } else {
-            if self.sample_count >= maximum_samples {
+            if self.owner.sample_count >= maximum_samples {
                 return self.protocol_error(FtmRequesterError::TooManyMeasurements);
             }
             FtmMeasurementDisposition::DuplicateSample {
                 dialog_token: measurement.fields.follow_up_dialog_token,
             }
         };
-        self.dialog_tokens.insert(local_timing.dialog_token);
-        self.pending = Some(local_timing);
-        self.last_measurement = Some(LastMeasurement {
+        self.owner.dialog_tokens.insert(local_timing.dialog_token);
+        self.owner.pending = Some(local_timing);
+        self.owner.last_measurement = Some(LastMeasurement {
             fields: measurement.fields,
             parameters: None,
             information_elements: OwnedInformationElements::EMPTY,
@@ -959,10 +1138,10 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         local_timing: Option<FtmLocalExchangeTiming>,
         negotiated: FtmResponseParameters,
     ) -> Result<FtmMeasurementDisposition, FtmRequesterError> {
-        let Some(pending) = self.pending else {
+        let Some(pending) = self.owner.pending else {
             return self.protocol_error(FtmRequesterError::MissingLocalTiming);
         };
-        let Some(last) = self.last_measurement else {
+        let Some(last) = self.owner.last_measurement else {
             return self.protocol_error(FtmRequesterError::InitialRetransmissionMismatch);
         };
         if measurement.fields.dialog_token == 0
@@ -983,9 +1162,9 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         let local_timing = self.validate_new_local_timing(measurement, local_timing)?;
         let information_elements =
             self.own_information_elements(measurement.information_elements)?;
-        self.dialog_tokens.insert(local_timing.dialog_token);
-        self.pending = Some(local_timing);
-        self.last_measurement = Some(LastMeasurement {
+        self.owner.dialog_tokens.insert(local_timing.dialog_token);
+        self.owner.pending = Some(local_timing);
+        self.owner.last_measurement = Some(LastMeasurement {
             fields: measurement.fields,
             parameters: measurement.parameters,
             information_elements,
@@ -1007,8 +1186,8 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         negotiated: FtmResponseParameters,
     ) -> Result<(), FtmRequesterError> {
         let information_elements = OwnedInformationElements::new(measurement.information_elements)?;
-        self.pending = None;
-        self.last_measurement = Some(LastMeasurement {
+        self.owner.pending = None;
+        self.owner.last_measurement = Some(LastMeasurement {
             fields: measurement.fields,
             parameters: measurement.parameters,
             information_elements,
@@ -1024,7 +1203,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         &mut self,
         negotiated: FtmResponseParameters,
     ) -> Result<(), FtmRequesterError> {
-        let requested = self.config.parameters;
+        let requested = self.owner.requester.config.parameters;
         let request_format = requested.format_and_bandwidth();
         let format_allowed = matches!(
             negotiated.format_and_bandwidth,
@@ -1036,7 +1215,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             || !negotiated.asap_capable
             || negotiated.ftms_per_burst == 0
             || negotiated.ftms_per_burst > requested.ftms_per_burst()
-            || usize::from(negotiated.ftms_per_burst.saturating_sub(1)) > MAX_SAMPLES
+            || usize::from(negotiated.ftms_per_burst.saturating_sub(1)) > N
             || negotiated.min_delta_ftm_100us < requested.min_delta_ftm_100us()
             || negotiated.burst_duration == FtmBurstDuration::NoPreference
             || negotiated.burst_duration.wire() > requested.burst_duration().wire()
@@ -1054,7 +1233,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         previous: u8,
         actual: u8,
     ) -> Result<(), FtmRequesterError> {
-        if self.dialog_tokens.contains(actual) {
+        if self.owner.dialog_tokens.contains(actual) {
             return self.protocol_error(FtmRequesterError::DialogTokenReused);
         }
         let expected = if previous == u8::MAX {
@@ -1105,11 +1284,12 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
     }
 
     fn push_sample(&mut self, sample: FtmRawExchange) -> Result<usize, FtmRequesterError> {
-        if self.sample_count >= MAX_SAMPLES {
+        if self.owner.sample_count >= N {
             self.phase = FtmRequesterPhase::Failed(FtmSessionFailure::ProtocolViolation);
             return Err(FtmRequesterError::TooManyMeasurements);
         }
         let Some((index, slot)) = self
+            .owner
             .samples
             .iter_mut()
             .enumerate()
@@ -1119,12 +1299,12 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             return Err(FtmRequesterError::TooManyMeasurements);
         };
         *slot = Some(sample);
-        self.sample_count = self.sample_count.saturating_add(1);
+        self.owner.sample_count = self.owner.sample_count.saturating_add(1);
         Ok(index)
     }
 
     fn is_last_body_retransmission(&self, measurement: FtmMeasurement<'_>) -> bool {
-        self.last_measurement.is_some_and(|last| {
+        self.owner.last_measurement.is_some_and(|last| {
             last.parameters.is_none()
                 && last.information_elements.matches(&[])
                 && last.fields.follow_up_dialog_token == measurement.fields.follow_up_dialog_token
@@ -1133,48 +1313,6 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
                 && last.fields.tod_error == measurement.fields.tod_error
                 && last.fields.toa_error == measurement.fields.toa_error
         })
-    }
-
-    fn fail(&mut self, failure: FtmSessionFailure) -> FtmRequesterService {
-        self.phase = FtmRequesterPhase::Failed(failure);
-        FtmRequesterService::Event(FtmRequesterEvent::Failed(failure))
-    }
-
-    pub fn take_result(&mut self) -> Result<FtmSessionResult<MAX_SAMPLES>, FtmRequesterError> {
-        let FtmRequesterPhase::Complete {
-            negotiated,
-            termination,
-        } = self.phase
-        else {
-            return Err(FtmRequesterError::ResultNotReady);
-        };
-        let result = FtmSessionResult {
-            peer: self.peer,
-            session_generation: self.session_generation,
-            negotiated,
-            termination,
-            samples: self.samples,
-            sample_count: self.sample_count,
-        };
-        self.reset_to_idle();
-        Ok(result)
-    }
-
-    pub fn take_failure(&mut self) -> Result<FtmSessionFailure, FtmRequesterError> {
-        let FtmRequesterPhase::Failed(failure) = self.phase else {
-            return Err(FtmRequesterError::FailureNotReady);
-        };
-        self.reset_to_idle();
-        Ok(failure)
-    }
-
-    fn reset_to_idle(&mut self) {
-        self.phase = FtmRequesterPhase::Idle;
-        self.pending = None;
-        self.last_measurement = None;
-        self.samples.fill(None);
-        self.sample_count = 0;
-        self.dialog_tokens = TokenSet::EMPTY;
     }
 }
 

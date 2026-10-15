@@ -7,6 +7,8 @@
 //! outside the core; they are queued as [`ConnectedPowerCommand`]s for the
 //! runtime, which drains them in order after each control step.
 
+mod timing;
+
 use oer_esp32s31_hal::types::{MacPti, StaTbttSchedule};
 
 use oer_ieee80211_mac::station_power_save::StaPowerManagement;
@@ -19,7 +21,7 @@ use crate::{
     hardware::control::ConnectedControlHardware,
     modem_sleep::{
         CoexPhaseView, CoexView, ModemSleep, PmAction, PmActions, PmBeacon, PmClock, PmCoexAction,
-        PmState, PmTimer, PmTraffic, SleepType,
+        PmScheduleError, PmState, PmTimer, PmTraffic, SleepType,
     },
 };
 
@@ -499,17 +501,29 @@ impl ConnectedControlCore {
             }
             PowerInput::Tbtt => {
                 self.power.tbtt = false;
-                let actions = self.power.engine.tbtt(clock, coex, traffic);
+                let actions = self
+                    .power
+                    .engine
+                    .tbtt(clock, coex, traffic)
+                    .map_err(ConnectedControlError::PowerSchedule)?;
                 self.apply_power_actions(hardware, tx, actions)?;
             }
             PowerInput::Phase(phase) => {
                 self.power.phase = None;
-                let actions = self.power.engine.coex_phase(phase, clock, coex);
+                let actions = self
+                    .power
+                    .engine
+                    .coex_phase(phase, clock, coex)
+                    .map_err(ConnectedControlError::PowerSchedule)?;
                 self.apply_power_actions(hardware, tx, actions)?;
             }
             PowerInput::Preemption(end) => {
                 self.power.preemption = None;
-                let actions = self.power.engine.preemption_end(end, clock, coex, traffic);
+                let actions = self
+                    .power
+                    .engine
+                    .preemption_end(end, clock, coex, traffic)
+                    .map_err(ConnectedControlError::PowerSchedule)?;
                 self.apply_power_actions(hardware, tx, actions)?;
             }
             PowerInput::Timer(index) => {
@@ -528,7 +542,11 @@ impl ConnectedControlCore {
             PowerInput::NetworkTxReport => {
                 let report = tx.take_network_tx_report();
                 if report.started && !core::mem::take(&mut self.power.network_offered) {
-                    let (_hold, actions) = self.power.engine.tx_data(true, clock, coex, traffic);
+                    let (_hold, actions) = self
+                        .power
+                        .engine
+                        .tx_data(true, clock, coex, traffic)
+                        .map_err(ConnectedControlError::PowerSchedule)?;
                     // The frame already started; only offer admission can
                     // hold it. Still perform every effect of this report.
                     self.apply_power_actions(hardware, tx, actions)?;
@@ -540,7 +558,11 @@ impl ConnectedControlCore {
             }
             PowerInput::NetworkTxOffer => {
                 self.power.network_offered = true;
-                let (hold, actions) = self.power.engine.tx_data(true, clock, coex, traffic);
+                let (hold, actions) = self
+                    .power
+                    .engine
+                    .tx_data(true, clock, coex, traffic)
+                    .map_err(ConnectedControlError::PowerSchedule)?;
                 self.power.network_held = hold;
                 self.apply_power_actions(hardware, tx, actions)?;
             }
@@ -598,6 +620,8 @@ impl ConnectedControlCore {
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
     {
+        let now = tx.now();
+        timing::validate(&actions, now).map_err(ConnectedControlError::PowerSchedule)?;
         for action in actions {
             match action {
                 PmAction::SendNull { power_save } => {
@@ -623,20 +647,26 @@ impl ConnectedControlCore {
                     hardware.set_power_save_tx_block(false);
                 }
                 PmAction::Arm { timer, after } => {
-                    // A deadline past the representable time never comes.
-                    self.power.deadlines[timer_index(timer)] = tx.now().checked_add(after);
+                    self.power.deadlines[timer_index(timer)] = Some(now.checked_add(after).ok_or(
+                        ConnectedControlError::PowerSchedule(PmScheduleError::DeadlineOverflow),
+                    )?);
                 }
+                PmAction::ArmAt { timer, deadline } => {
+                    self.power.deadlines[timer_index(timer)] = Some(deadline)
+                }
+                PmAction::Due(timer) => self.power.deadlines[timer_index(timer)] = Some(now),
                 PmAction::Disarm(timer) => self.power.deadlines[timer_index(timer)] = None,
                 PmAction::ReleaseHeldFrames => self.power.network_held = false,
                 PmAction::StartTbtt(schedule) => hardware.start_station_tbtt(StaTbttSchedule {
                     first_tbtt_tsf: schedule.first_tbtt.as_micros(),
-                    interval_micros: schedule.interval_micros,
+                    interval_micros: timing::interval(schedule.interval_micros)
+                        .map_err(ConnectedControlError::PowerSchedule)?,
                     ahead_micros: schedule.ahead_micros,
                     wake_ahead_micros: schedule.wake_ahead_micros,
                 }),
-                PmAction::SetTbttInterval(interval) => {
-                    hardware.set_station_tbtt_interval(interval)?
-                }
+                PmAction::SetTbttInterval(interval) => hardware.set_station_tbtt_interval(
+                    timing::interval(interval).map_err(ConnectedControlError::PowerSchedule)?,
+                )?,
                 PmAction::StopTbtt => hardware.stop_station_tbtt(),
                 PmAction::SetTbttAhead {
                     ahead_micros,

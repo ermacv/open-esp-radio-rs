@@ -2120,12 +2120,12 @@ impl HeRate {
         if psdu_length == 0 || psdu_length > 0x3fff {
             return None;
         }
-        let current = ((psdu_length as u32 + 3) & !3) + 4;
         let minimum = self.minimum_ampdu_subframe_bytes(density) as u32;
-        if current >= minimum {
-            return Some(0);
-        }
-        let delimiters = (minimum - current).div_ceil(4);
+        let Some(delimiters) =
+            oer_ieee80211_mac::ampdu::empty_delimiters(psdu_length as u32, minimum)
+        else {
+            return None;
+        };
         if delimiters > u8::MAX as u32 {
             None
         } else {

@@ -38,6 +38,8 @@ pub struct AdmittedData<'a> {
 impl<'a> AdmittedData<'a> {
     /// Admit one infrastructure downlink. Protected MPDUs require a current
     /// replay owner and explicit integrity evidence; checking commits PN once.
+    /// Null, QoS Null and other subtypes without an MSDU are rejected before
+    /// replay admission, even when bytes resembling LLC/SNAP follow the header.
     pub fn admit(
         header: DecodedHeader<'a>,
         local: OwnAddress,
@@ -46,7 +48,7 @@ impl<'a> AdmittedData<'a> {
         replay: Option<&mut CcmpRxReplayEpoch>,
     ) -> Result<Self, RxDropReason> {
         let control = header.control();
-        if !control.is_data() || control.ds() != 2 {
+        if !control.is_data() || !matches!(control.subtype(), 0..=3 | 8..=11) || control.ds() != 2 {
             return Err(RxDropReason::FrameKind);
         }
         let receiver = header.receiver();
@@ -146,7 +148,7 @@ mod tests {
         AdmittedData::admit(
             DecodedHeader::decode(frame).ok_or(RxDropReason::Header)?,
             OwnAddress::new(IndividualAddress::new([2; 6]).unwrap()),
-            Bssid::new(IndividualAddress::new([4; 6]).unwrap()),
+            Bssid::new(IndividualAddress::new([4; 6]).unwrap()).unwrap(),
             integrity,
             Some(replay),
         )
@@ -173,6 +175,33 @@ mod tests {
                         admit(&frame, Integrity::DecryptedAndVerified, &mut replay),
                         Err(RxDropReason::Replay)
                     ));
+                }
+            }
+        }
+    }
+    #[test]
+    fn only_payload_bearing_data_subtypes_admit_msdus() {
+        for subtype in 0..16 {
+            for protected in [false, true] {
+                let mut frame = packet(subtype >= 8, false, protected);
+                frame[0] = 0x08 | (subtype << 4);
+                let mut replay =
+                    CcmpRxReplayEpoch::new([0; 8], GroupKeyId::new(1).unwrap(), [0; 8]).unwrap();
+                let result = admit(&frame, Integrity::DecryptedAndVerified, &mut replay);
+                if matches!(subtype, 0..=3 | 8..=11) {
+                    let admitted = result.unwrap();
+                    let parts = admitted.msdus().unwrap().next().unwrap().unwrap();
+                    assert_eq!(parts.ether_type, 0x888e);
+                    assert_eq!(parts.payload, [1, 2, 3]);
+                } else {
+                    assert!(
+                        matches!(result, Err(RxDropReason::FrameKind)),
+                        "subtype {subtype}"
+                    );
+                    // Rejected Null/reserved bodies cannot consume the PN of
+                    // a subsequent real data frame on the same replay lane.
+                    frame[0] = if subtype >= 8 { 0x88 } else { 0x08 };
+                    assert!(admit(&frame, Integrity::DecryptedAndVerified, &mut replay).is_ok());
                 }
             }
         }

@@ -22,7 +22,7 @@ use oer_ieee80211_mac::{
     station::association::PhyMode,
 };
 use oer_ieee80211_upper_mac::rate_control::{
-    AmpduUnavailable, BlockAckTally, MpduOutcome, RateControl, RatePeer,
+    AmpduUnavailable, BlockAckTally, MpduOutcome, NegotiatedLegacyRates, RateControl, RatePeer,
 };
 use oer_time::Instant;
 
@@ -1249,6 +1249,7 @@ pub struct EspressifRateControl {
 /// What turns a schedule into a rate the association can send.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct RateDecode {
+    legacy_rates: NegotiatedLegacyRates,
     high_throughput: bool,
     ht_bandwidth: PpduBandwidth,
     ht_short_gi: bool,
@@ -1281,17 +1282,19 @@ impl RateDecode {
                 rate.dcm(),
             )
             .map_or_else(|| self.fallback(), PhyRate::He),
+            Some(PhyRate::Legacy(rate)) => PhyRate::Legacy(self.legacy_rates.constrain(rate)),
             Some(rate) => rate,
             None => self.fallback(),
         }
     }
 
     /// The vendor station's fallback: HT MCS 7 with the long guard interval
-    /// on an HT association, at its width, or 54 Mb/s.
+    /// on an HT association, at its width, or the highest negotiated legacy
+    /// rate no faster than 54 Mb/s.
     fn fallback(self) -> PhyRate {
         match HtRate::new(HtMcs::SINGLE_STREAM_MAX, self.ht_bandwidth, false) {
             Some(rate) if self.high_throughput => PhyRate::Ht(rate),
-            _ => PhyRate::Legacy(LegacyRate::Ofdm54M),
+            _ => PhyRate::Legacy(self.legacy_rates.constrain(LegacyRate::Ofdm54M)),
         }
     }
 }
@@ -1302,6 +1305,7 @@ impl RateControl for EspressifRateControl {
     fn for_peer((): (), peer: &RatePeer, link_metric: LinkMetric) -> Self {
         let he = peer.he_capabilities;
         let phy = match peer.phy {
+            PhyMode::Legacy if !peer.legacy_rates.has_ofdm() => StaRateControlPhy::Dot11B,
             PhyMode::Legacy => StaRateControlPhy::Dot11G,
             PhyMode::Ht20 | PhyMode::Ht40 => StaRateControlPhy::Ht,
             PhyMode::He20 => StaRateControlPhy::He,
@@ -1339,6 +1343,7 @@ impl RateControl for EspressifRateControl {
         Self {
             association,
             decode: RateDecode {
+                legacy_rates: peer.legacy_rates,
                 high_throughput: peer.phy != PhyMode::Legacy,
                 ht_bandwidth,
                 ht_short_gi: peer
@@ -1389,6 +1394,14 @@ impl RateControl for EspressifRateControl {
 }
 
 impl EspressifRateControl {
+    /// Apply association admission to a control or retry schedule's rate.
+    pub(super) fn constrain_rate(&self, rate: PhyRate) -> PhyRate {
+        match rate {
+            PhyRate::Legacy(rate) => PhyRate::Legacy(self.decode.legacy_rates.constrain(rate)),
+            rate => rate,
+        }
+    }
+
     /// The association's rate control, as the vendor holds it.
     pub const fn association(&self) -> &StaRateControlAssociation {
         &self.association

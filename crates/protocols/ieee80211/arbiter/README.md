@@ -10,6 +10,20 @@ retained `GateIssuer` turns a completed hardware barrier into closed
 evidence. Arbiter actions transfer that place rather than abstract test
 tokens or independently minted slots.
 
+An arbiter-backed installation declares `ArbiterPool` in its complete pool
+set. It yields the open gate, backend issuer and one `ArbiterAuthority` at
+the same component path. `Arbiter::new` consumes that authority, so handing
+a gate out for a cycle cannot construct a second arbiter with new lease
+places. Primary/absence places, lease IDs, leases, replies, notices and
+pending retunes carry the invariant installation lifetime and gate path.
+Sibling components and separate installations cannot exchange those values.
+Station tokens retain this path independently of the connection epoch path.
+Lease identities never wrap: exhaustion returns `IdentityExhausted` and the
+original admission place before any announcement. An exchange that cannot
+issue a new identity returns `Err(old_lease)`; that lease still releases its
+original admission place. An unchanged or non-primary lease is also an
+explicit refusal, not a successful exchange.
+
 Only the arbiter changes the port's channel: it closes the transmit gate,
 retunes the port and opens the gate again. The station asks it for a channel
 (`Arbiter::request`) and gets its answer in the same step: a named `Lease`
@@ -38,6 +52,14 @@ access point's announced move there, by the `ApFollowPolicy`; the move is
 never withdrawn, and a second such join within the policy's
 `min_follow_interval` is refused with the moment to retry
 ([follow decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6130615564)).
+If the holdoff's end does not fit monotonic time, `ScheduleExhausted` returns
+the admission place without announcing a move, consuming an identity or
+changing the last-follow time. Overflow cannot bypass the holdoff.
+The switch instant and one further beacon interval must both fit before
+the arbiter commits an announcement or its follow backoff. If `SwitchDue`
+does not arrive by that deadline, `SwitchTimeout` returns the station's
+place once. A later AP switch cannot start that cancelled lease. Stopping
+the AP lets the join proceed alone at its original earliest start.
 
 `coordinator` keeps the access point's follow, search and loss policies
 (`ChannelCoordinator`, `ApFollowPolicy`, `ApSearchPolicy`,
@@ -49,7 +71,12 @@ discard the command after its state transition. The follow policy's
 announcement count is nonzero at construction; it reaches the beacon
 announcement without silently increasing a zero count to one.
 
-Composition passes the backend's `PUBLICATION_BOUND` to `Arbiter::new`.
+Composition passes the backend's `PUBLICATION_BOUND` to
+`ArbiterPolicy::checked::<ReservationMode>` before `Arbiter::new` consumes
+the gate and authority. Construction rejects inverted follow intervals,
+an absence too short for two publication/retune bounds plus minimum
+listening, and arithmetic overflow. Reserving mode also rejects absences
+longer than the Duration field; choosing `NoReservation` is explicit.
 Absences reserve one current publication plus retune time for each move;
 `listen_until` and the return deadline leave this budget before the absence
 ends. Once the outgoing gate has closed, the late-lease check counts only
@@ -79,6 +106,8 @@ command deferred by an absence belongs to its `AbsenceTerminal`, never a
 primary lease. Cancellation during Closing retains its original cause and
 skips the cancelled outgoing retune. Every terminal, including
 refusal and late cancellation, returns its place and releases the command.
+Releasing a lease during Closing is also a pre-start cancellation; it
+reopens the gate without an outbound retune or `LeaseStarted` notice.
 A refused lease move returns the next `PendingRetune` directly and enters
 `Retuning` before handing it out. `None` means the port stopped. Without an
 enabled phase, consumers poll `ArbiterNotice` through `poll_notice`; that
@@ -91,6 +120,10 @@ and sparse searches; the coordinator keeps follow and loss state without
 an independent poll loop or channel cursor. `UpstreamFact::JoinFailed`
 resumes the search from the original loss instant, including its loss
 policy deadline. Joining does not grant a new search period. The coordinator
+retains a failed rescan's AP restart until the return cycle has completed
+on the fallback channel and reopened its gate. A refused return never
+publishes that restart, including when the scan ended on another channel.
+The coordinator
 cannot be copied into another owner. The crate uses the canonical strict
 lint block checked by tidy.
 

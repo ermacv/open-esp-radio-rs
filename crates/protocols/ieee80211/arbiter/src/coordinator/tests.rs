@@ -307,14 +307,17 @@ fn a_rescan_that_finds_no_upstream_restarts_the_access_point_on_its_channel_and_
     let failed = at(FIRST_TBTT + 31_000_000);
     assert_eq!(
         actions(coordinator.upstream_rescan_failed(failed)),
-        [
-            CoordinatorAction::Retune {
-                channel: ghz2_4(6),
-                at: failed,
-            },
-            CoordinatorAction::StartAccessPoint { channel: ghz2_4(6) },
-        ]
+        [CoordinatorAction::Retune {
+            channel: ghz2_4(6),
+            at: failed,
+        }]
     );
+    assert!(actions(coordinator.port_moved(ghz2_4(11))).is_empty());
+    assert_eq!(
+        actions(coordinator.port_moved(ghz2_4(6))),
+        [CoordinatorAction::StartAccessPoint { channel: ghz2_4(6) }]
+    );
+    assert!(actions(coordinator.port_moved(ghz2_4(6))).is_empty());
     // Not due before the access point runs again, then `after` past the
     // failed scan.
     assert_eq!(coordinator.upstream_loss_due(policy), None);

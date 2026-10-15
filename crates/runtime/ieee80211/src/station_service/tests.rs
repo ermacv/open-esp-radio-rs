@@ -130,6 +130,7 @@ fn config(security: StaSecurity) -> StaConfig<ModelCaps24> {
         access_point_margin_db: 6,
         supported_rates: [0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24],
         association: &CAPABILITIES,
+        listen_interval: oer_ieee80211_sta::request::StationListenInterval::new(10).unwrap(),
         phy: PhyMode::Legacy,
         security,
         nonce,
@@ -303,6 +304,7 @@ struct World<'b> {
     refuse_rate: Cell<bool>,
     counters: Cell<Option<ServiceCounters>>,
     expect_queued_command_on_poison: Cell<bool>,
+    drop_stopped_service: Cell<bool>,
     /// The network stack's end of the transmit queue.
     stack: RefCell<MsduSender<'b, TxMsdu, 2>>,
     /// The network stack's end of the receive queue.
@@ -416,7 +418,7 @@ impl World<'_> {
         let message1 = RsnTxFrame::<512>::message1(Akm::Psk, LOCAL, 1, ANONCE).unwrap();
         self.air.receive(&eapol_frame(message1.as_bytes()), meta());
         let message2 = self.sent(seen, DATA).await;
-        assert_eq!(message2.rate, ofdm6());
+        assert_eq!(message2.rate, dsss1());
         Pmk::from_bytes(PMK).derive_ptk(
             Akm::Psk,
             PtkContext {
@@ -433,13 +435,14 @@ impl World<'_> {
         self.air.receive(&message3(&ptk), meta());
         // Message 4: the association's record, and unprotected.
         let message4 = self.sent(seen, DATA).await;
-        assert_eq!(message4.rate, ofdm6());
+        assert_eq!(message4.rate, dsss1());
         assert_eq!(message4.key, None);
         assert_eq!(message4.frame[1] & 0x40, 0);
         self.notice(StaNotice::Connected {
             bssid: oer_ieee80211_mac::address::Bssid::new(
                 oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-            ),
+            )
+            .unwrap(),
             channel: 6,
         })
         .await;
@@ -539,6 +542,7 @@ where
         {
             let ModelResources {
                 connection_epoch,
+                terminal_access,
                 tickets,
                 small,
                 large,
@@ -546,6 +550,7 @@ where
                 station_group,
                 station_group_permission,
                 gate,
+                arbiter_authority,
                 ..
             } = resources;
             let mut tickets = tickets.into_iter();
@@ -559,10 +564,12 @@ where
             let channel = SupportedChannel::new(channel6()).unwrap();
             let (arbiter, place, absence) =
                 PortArbiter::<ModelBackend<ModelCaps24, ServiceContexts>>::new(
-                    ArbiterPolicy::DEFAULT,
+                    ArbiterPolicy::DEFAULT.checked(
+                        <ModelBackend<ModelCaps24, ServiceContexts> as LowerMacBackend>::PUBLICATION_BOUND
+                    ).unwrap(),
                     channel,
+                    arbiter_authority,
                     gate,
-                    <ModelBackend<ModelCaps24, ServiceContexts> as LowerMacBackend>::PUBLICATION_BOUND,
                 );
             let station = Station::new(
                 self.config,
@@ -587,6 +594,7 @@ where
                     completions: &self.world.completions,
                     refuse_rate: &self.world.refuse_rate,
                 },
+                terminal_access,
             );
             let world = self.world;
             let mut output = |output| world.outputs.borrow_mut().push(output);
@@ -629,6 +637,16 @@ where
                 }
             }
             match end {
+                ServiceEnd::Stopped(owner) if world.drop_stopped_service.get() => {
+                    drop(service);
+                    let Ok(owner) = owner.enable().await else {
+                        panic!("dropping a stopped service must leave its disabled owner usable");
+                    };
+                    let Ok(owner) = owner.disable(&mut |_| {}).await else {
+                        panic!("the next epoch must also disable");
+                    };
+                    owner.uninstall(())
+                }
                 ServiceEnd::Stopped(owner) | ServiceEnd::Failed(owner) => owner.uninstall(()),
                 ServiceEnd::Poisoned(poisoned) => poisoned.uninstall(()),
             }
@@ -682,6 +700,7 @@ where
         refuse_rate: Cell::new(false),
         counters: Cell::new(None),
         expect_queued_command_on_poison: Cell::new(false),
+        drop_stopped_service: Cell::new(false),
         stack: RefCell::new(stack),
         delivered: RefCell::new(delivered),
     };
@@ -719,10 +738,6 @@ fn a_command_ready_with_a_poisoned_event_stays_owned_by_its_queue() {
     });
 }
 
-fn ofdm6() -> PhyRate {
-    PhyRate::Legacy(LegacyRate::Ofdm6M)
-}
-
 #[test]
 fn on_an_open_network_the_join_goes_on_the_default_record_and_then_the_associations() {
     run(StaSecurity::Open, |world| {
@@ -738,7 +753,8 @@ fn on_an_open_network_the_join_goes_on_the_default_record_and_then_the_associati
                 .notice(StaNotice::Connected {
                     bssid: oer_ieee80211_mac::address::Bssid::new(
                         oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-                    ),
+                    )
+                    .unwrap(),
                     channel: 6,
                 })
                 .await;
@@ -748,6 +764,9 @@ fn on_an_open_network_the_join_goes_on_the_default_record_and_then_the_associati
             let data = world.sent(&mut seen, DATA).await;
             let peer = oer_ieee80211_upper_mac::rate_control::RatePeer {
                 phy: PhyMode::Legacy,
+            legacy_rates: oer_ieee80211_upper_mac::rate_control::NegotiatedLegacyRates::from_rate_elements(
+                &[0x82, 0x84, 0x8b, 0x96], &[],
+            ).unwrap(),
                 ht_capabilities: None,
                 he_capabilities: None,
                 he_peer_state: None,
@@ -763,7 +782,7 @@ fn on_an_open_network_the_join_goes_on_the_default_record_and_then_the_associati
                 )))
                 .await;
             let deauthentication = world.sent(&mut seen, DEAUTHENTICATION).await;
-            assert_eq!(deauthentication.rate, ofdm6());
+            assert_eq!(deauthentication.rate, dsss1());
         })
     });
 }
@@ -781,7 +800,7 @@ fn on_wpa2_the_join_goes_on_the_default_record_and_the_handshake_on_the_associat
                 assert_eq!(authentication.rate, dsss1());
                 assert_eq!(association.rate, dsss1());
                 // Associated: the rates start from the association, so the
-                // handshake's Message 2 goes on its record, 6 Mb/s OFDM first
+                // handshake's Message 2 goes on its B-only record, 1 Mb/s DSSS
                 // (owner decision on #563).
                 let ptk = world.handshake(&mut seen).await;
                 // Connected: Group Message 2 goes under the pairwise key the
@@ -797,7 +816,7 @@ fn on_wpa2_the_join_goes_on_the_default_record_and_the_handshake_on_the_associat
                 );
                 assert_ne!(group_message2.frame[1] & 0x40, 0);
                 assert!(group_message2.packet_number.is_some());
-                assert_eq!(group_message2.rate, ofdm6());
+                assert_eq!(group_message2.rate, dsss1());
                 world
                     .command(ServiceCommand::Station(StaRequest::new(
                         2,
@@ -805,7 +824,7 @@ fn on_wpa2_the_join_goes_on_the_default_record_and_the_handshake_on_the_associat
                     )))
                     .await;
                 let deauthentication = world.sent(&mut seen, DEAUTHENTICATION).await;
-                assert_eq!(deauthentication.rate, ofdm6());
+                assert_eq!(deauthentication.rate, dsss1());
             })
         },
     );
@@ -1176,7 +1195,8 @@ fn a_disconnection_during_an_absence_leaves_no_old_frame_to_go_after_the_reconne
                 .notice(StaNotice::Connected {
                     bssid: oer_ieee80211_mac::address::Bssid::new(
                         oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-                    ),
+                    )
+                    .unwrap(),
                     channel: 6,
                 })
                 .await;
@@ -1260,7 +1280,8 @@ fn beside_an_access_point_msdus_survive_an_absence() {
                 .notice(StaNotice::Connected {
                     bssid: oer_ieee80211_mac::address::Bssid::new(
                         oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-                    ),
+                    )
+                    .unwrap(),
                     channel: 6,
                 })
                 .await;
@@ -1506,7 +1527,8 @@ fn continuous_rx_cannot_starve_data_tx_or_application_commands() {
                 .notice(StaNotice::Connected {
                     bssid: oer_ieee80211_mac::address::Bssid::new(
                         oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-                    ),
+                    )
+                    .unwrap(),
                     channel: 6,
                 })
                 .await;
@@ -1553,7 +1575,8 @@ fn lost_port_events_are_counted_and_the_service_keeps_running() {
                 .notice(StaNotice::Connected {
                     bssid: oer_ieee80211_mac::address::Bssid::new(
                         oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-                    ),
+                    )
+                    .unwrap(),
                     channel: 6,
                 })
                 .await;
@@ -1704,4 +1727,165 @@ fn message4_waits_for_the_actual_group_installation_terminal() {
             })
         },
     );
+}
+
+#[test]
+fn an_extended_ofdm_rate_set_reaches_the_data_and_control_plans() {
+    run(StaSecurity::Open, |world| {
+        Box::pin(async move {
+            let mut seen = 0;
+            let mut advertisement = beacon(false);
+            advertisement.extend_from_slice(&[50, 8, 12, 18, 24, 36, 48, 72, 96, 108]);
+            world.associate_with(&mut seen, advertisement, false).await;
+            world
+                .notice(StaNotice::Connected {
+                    bssid: oer_ieee80211_mac::address::Bssid::new(
+                        IndividualAddress::new(BSSID).unwrap(),
+                    )
+                    .unwrap(),
+                    channel: 6,
+                })
+                .await;
+            world.send_msdu([0x02, 0, 0, 0, 0, 0x07]);
+            let data = world.sent(&mut seen, DATA).await;
+            assert_eq!(data.rate, PhyRate::Legacy(LegacyRate::Ofdm54M));
+            world
+                .command(ServiceCommand::Station(StaRequest::new(
+                    2,
+                    StaCommand::Disconnect,
+                )))
+                .await;
+            let disconnect = world.sent(&mut seen, DEAUTHENTICATION).await;
+            assert_eq!(disconnect.rate, PhyRate::Legacy(LegacyRate::Ofdm6M));
+        })
+    });
+}
+
+#[test]
+fn negotiated_pmf_checks_received_management_and_keeps_the_tx_key_through_disconnect() {
+    for peer_disconnect in [false, true] {
+        run(
+            StaSecurity::Wpa2Personal {
+                pmk: Pmk::from_bytes(PMK),
+            },
+            |world| {
+                Box::pin(async move {
+                    let mut seen = 0;
+                    let mut rsn = RSN;
+                    rsn[20] |= 0x80;
+                    let mut advertised = beacon(true);
+                    let start = advertised
+                        .windows(RSN.len())
+                        .position(|bytes| bytes == RSN)
+                        .unwrap();
+                    advertised[start..start + RSN.len()].copy_from_slice(&rsn);
+                    world.associate_with(&mut seen, advertised, true).await;
+                    let ptk = world.start_handshake(&mut seen).await;
+                    let mut plain = Vec::from(rsn);
+                    plain.extend_from_slice(&[0xdd, 22, 0, 0x0f, 0xac, 1, 1, 0]);
+                    plain.extend_from_slice(&[0x99; 16]);
+                    plain.extend_from_slice(&[0xdd, 28, 0, 0x0f, 0xac, 9, 4, 0, 1, 0, 0, 0, 0, 0]);
+                    plain.extend_from_slice(&[0x77; 16]);
+                    plain.extend_from_slice(&[0xdd, 0, 0, 0]);
+                    let wrapped =
+                        oer_ieee80211_rsn::aes::software_aes128_key_wrap(ptk.kek(), &plain)
+                            .unwrap();
+                    let m3 = RsnTxFrame::<512>::message3(
+                        Akm::Psk,
+                        LOCAL,
+                        2,
+                        ANONCE,
+                        [0; 8],
+                        wrapped.as_bytes(),
+                    )
+                    .unwrap()
+                    .authenticate(&ptk);
+                    world.air.receive(&eapol_frame(m3.as_bytes()), meta());
+                    let _message4 = world.sent(&mut seen, DATA).await;
+                    world
+                        .notice(StaNotice::Connected {
+                            bssid: oer_ieee80211_mac::address::Bssid::new(
+                                IndividualAddress::new(BSSID).unwrap(),
+                            )
+                            .unwrap(),
+                            channel: 6,
+                        })
+                        .await;
+                    let mut forged = std::vec![0;26];
+                    forged[0] = 0xc0;
+                    forged[4..10].copy_from_slice(&LOCAL);
+                    forged[10..16].copy_from_slice(&BSSID);
+                    forged[16..22].copy_from_slice(&BSSID);
+                    forged[24] = 7;
+                    world.air.receive(&forged, decrypted());
+                    let query = world.sent(&mut seen, 0x00d0).await;
+                    assert_eq!(query.frame[..2], [0xd0, 0x40]);
+                    assert_eq!(query.frame[32..34], [8, 0]);
+                    assert!(matches!(query.key, Some((_, true))));
+                    assert_eq!(query.packet_number, Some(1));
+                    assert!(
+                        !world.outputs.borrow().iter().any(|o| matches!(
+                            o,
+                            ServiceOutput::Notice(StaNotice::Disconnected(_))
+                        ))
+                    );
+                    if peer_disconnect {
+                        // Independent Python AESCCM fixture; same public test PTK
+                        // as the full handshake, management nonce and PN 20.
+                        let hex = "c040000002000012345630055c11223330055c112233000014000020000000003f30f05c26540ce829d1";
+                        let valid: Vec<_> = hex
+                            .as_bytes()
+                            .chunks_exact(2)
+                            .map(|p| {
+                                u8::from_str_radix(core::str::from_utf8(p).unwrap(), 16).unwrap()
+                            })
+                            .collect();
+                        world.air.receive(&valid, meta());
+                        world
+                            .notice(StaNotice::Disconnected(
+                                oer_ieee80211_sta::machine::StaDisconnectReason::Peer {
+                                    reason_code: 7,
+                                },
+                            ))
+                            .await;
+                    } else {
+                        world
+                            .command(ServiceCommand::Station(StaRequest::new(
+                                2,
+                                StaCommand::Disconnect,
+                            )))
+                            .await;
+                        let deauthentication = world.sent(&mut seen, DEAUTHENTICATION).await;
+                        assert_eq!(deauthentication.frame[..2], [0xc0, 0x40]);
+                        assert!(matches!(deauthentication.key, Some((_, true))));
+                        assert_eq!(deauthentication.packet_number, Some(2));
+                        world
+                            .notice(StaNotice::Disconnected(
+                                oer_ieee80211_sta::machine::StaDisconnectReason::Requested,
+                            ))
+                            .await;
+                    }
+                })
+            },
+        );
+    }
+}
+
+#[test]
+fn stopped_service_returns_drained_rx_before_the_disabled_owner() {
+    run(StaSecurity::Open, |world| {
+        Box::pin(async move {
+            for _ in 0..4 {
+                yield_now().await;
+            }
+            world.drop_stopped_service.set(true);
+            for _ in 0..3 {
+                world.air.receive(&beacon(false), meta());
+            }
+            world.command(ServiceCommand::Stop).await;
+            for _ in 0..6 {
+                yield_now().await;
+            }
+        })
+    });
 }

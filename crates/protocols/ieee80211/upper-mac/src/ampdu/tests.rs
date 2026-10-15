@@ -412,3 +412,58 @@ fn aging_threshold_is_exact_at_radio_epoch_boundaries() {
         Err(AmpduRetryError::AgingThresholdOutsideEpoch)
     ));
 }
+
+#[test]
+fn every_retry_outcome_finishes_at_the_first_aged_instant() {
+    for prior_protection_failures in 0..POLICY.retry_limit {
+        for result in [
+            AmpduAttemptResult::ProtectionFailure,
+            AmpduAttemptResult::NoResponse,
+            AmpduAttemptResult::Answered(None),
+            answered(100, 0b0101),
+            answered(100, 0b1111),
+            AmpduAttemptResult::TriggerFlowEnd,
+        ] {
+            for now in [9_000, 9_001] {
+                let mut state =
+                    AmpduRetryState::new(seq(100), 4, POLICY, Ieee80211Instant::from_micros(0))
+                        .unwrap();
+                for _ in 0..prior_protection_failures {
+                    assert_eq!(
+                        state.observe(
+                            AmpduAttemptResult::ProtectionFailure,
+                            4,
+                            Ieee80211Instant::from_micros(1),
+                            true,
+                        ),
+                        Ok(AmpduRetryDecision::RepublishUnchanged { retry_mask: 0b1111 })
+                    );
+                }
+                let decision = state
+                    .observe(result, 4, Ieee80211Instant::from_micros(now), true)
+                    .unwrap();
+                if result == AmpduAttemptResult::TriggerFlowEnd {
+                    assert_eq!(decision, AmpduRetryDecision::FinishTriggerFlow);
+                } else if now == 9_001 {
+                    let retry_mask = match result {
+                        AmpduAttemptResult::Answered(Some(report)) => !report.bitmap & 0b1111,
+                        _ => 0b1111,
+                    };
+                    assert_eq!(
+                        decision,
+                        AmpduRetryDecision::Finish { retry_mask },
+                        "{result:?}"
+                    );
+                    assert_eq!(state.missing_original_indices(), retry_mask);
+                } else if result == answered(100, 0b1111) {
+                    assert_eq!(decision, AmpduRetryDecision::Finish { retry_mask: 0 });
+                } else {
+                    assert!(
+                        !matches!(decision, AmpduRetryDecision::Finish { .. }),
+                        "{result:?}: {decision:?}"
+                    );
+                }
+            }
+        }
+    }
+}

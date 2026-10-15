@@ -37,11 +37,15 @@ fn wpa2_rsn(record: &ScanRecord) -> SelectedRsn {
 }
 
 fn access_point_with_rsn(akms: &[[u8; 4]], capabilities: u16) -> ScanRecord {
-    let mut record = ScanRecord::EMPTY;
+    let mut record = ScanRecord::new(
+        crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap()).unwrap(),
+        6,
+        -40,
+    );
     record.ssid[..4].copy_from_slice(b"test");
     record.ssid_len = 4;
     record.bssid =
-        crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap());
+        crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap()).unwrap();
     record.channel = 6;
     record.privacy = true;
     record.rsn = true;
@@ -86,7 +90,8 @@ fn encodes_open_authentication_request() {
         source: crate::address::OwnAddress::new(
             crate::address::IndividualAddress::new(LOCAL).unwrap(),
         ),
-        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap()),
+        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap())
+            .unwrap(),
         sequence_number: seq(0x123),
     }
     .encode(&mut output)
@@ -110,7 +115,8 @@ fn encodes_sta_action_frame_around_owned_body() {
         source: crate::address::OwnAddress::new(
             crate::address::IndividualAddress::new(LOCAL).unwrap(),
         ),
-        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap()),
+        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap())
+            .unwrap(),
         sequence_number: seq(0x123),
         body: &body,
     }
@@ -136,7 +142,8 @@ fn encodes_protected_action_frame_with_its_ccmp_header() {
         source: crate::address::OwnAddress::new(
             crate::address::IndividualAddress::new(LOCAL).unwrap(),
         ),
-        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap()),
+        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap())
+            .unwrap(),
         sequence_number: seq(0x123),
         ccmp_header,
         body: &body,
@@ -163,7 +170,8 @@ fn a_deauthentication_carries_its_reason_plain_or_protected() {
         source: crate::address::OwnAddress::new(
             crate::address::IndividualAddress::new(LOCAL).unwrap(),
         ),
-        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap()),
+        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap())
+            .unwrap(),
         sequence_number: seq(0x10),
         body: &reason,
     }
@@ -174,7 +182,8 @@ fn a_deauthentication_carries_its_reason_plain_or_protected() {
         parse_sta_disconnect(
             &output[..length],
             crate::address::OwnAddress::new(crate::address::IndividualAddress::new(LOCAL).unwrap()),
-            crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap()),
+            crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap())
+                .unwrap(),
         ),
         None,
         "the station's own Deauthentication is not addressed to it"
@@ -189,7 +198,8 @@ fn a_deauthentication_carries_its_reason_plain_or_protected() {
         source: crate::address::OwnAddress::new(
             crate::address::IndividualAddress::new(LOCAL).unwrap(),
         ),
-        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap()),
+        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap())
+            .unwrap(),
         sequence_number: seq(0x11),
         ccmp_header,
         body: &reason,
@@ -210,7 +220,8 @@ fn sae_authentication_frames_round_trip() {
         source: crate::address::OwnAddress::new(
             crate::address::IndividualAddress::new(LOCAL).unwrap(),
         ),
-        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap()),
+        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap())
+            .unwrap(),
         sequence_number: seq(0x123),
         transaction: SAE_COMMIT_TRANSACTION,
         status_code: 126,
@@ -260,7 +271,7 @@ fn parses_only_matching_open_authentication_response() {
 fn disconnect_parser_checks_receiver_bss_geometry_and_protection() {
     use crate::address::{Bssid, IndividualAddress, OwnAddress};
     let local = OwnAddress::new(IndividualAddress::new(LOCAL).unwrap());
-    let bssid = Bssid::new(IndividualAddress::new(BSSID).unwrap());
+    let bssid = Bssid::new(IndividualAddress::new(BSSID).unwrap()).unwrap();
     for (control, kind) in [
         (
             DEAUTHENTICATION_FRAME_CONTROL,
@@ -562,7 +573,8 @@ fn sta_data_frame_encodes_to_ds_llc_snap() {
         ),
         bssid: crate::address::Bssid::new(
             crate::address::IndividualAddress::new([0x10, 0x11, 0x12, 0x13, 0x14, 0x15]).unwrap(),
-        ),
+        )
+        .unwrap(),
         destination: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
         sequence_number: seq(0x123),
         ether_type: 0x888e,
@@ -588,7 +600,8 @@ fn protected_data_frame_selects_the_recovered_legacy_or_qos_layout() {
         ),
         bssid: crate::address::Bssid::new(
             crate::address::IndividualAddress::new([0x10, 0x11, 0x12, 0x13, 0x14, 0x15]).unwrap(),
-        ),
+        )
+        .unwrap(),
         destination: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
         sequence_number: seq(0x123),
         user_priority: 7,
@@ -626,7 +639,8 @@ fn protected_data_frame_fully_overwrites_a_reused_dma_slot() {
         ),
         bssid: crate::address::Bssid::new(
             crate::address::IndividualAddress::new([0x10, 0x11, 0x12, 0x13, 0x14, 0x15]).unwrap(),
-        ),
+        )
+        .unwrap(),
         destination: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
         sequence_number: seq(0x123),
         user_priority: 7,
@@ -664,7 +678,8 @@ fn protected_ethernet_frame_reuses_payload_at_its_final_dma_offset() {
         ),
         bssid: crate::address::Bssid::new(
             crate::address::IndividualAddress::new(metadata.bssid).unwrap(),
-        ),
+        )
+        .unwrap(),
         destination: ethernet[..6].try_into().unwrap(),
         sequence_number: metadata.sequence_number,
         user_priority: metadata.user_priority,
@@ -737,7 +752,8 @@ fn protected_he_control_keeps_ccmp_immediately_after_qos() {
         ),
         bssid: crate::address::Bssid::new(
             crate::address::IndividualAddress::new([0x10, 0x11, 0x12, 0x13, 0x14, 0x15]).unwrap(),
-        ),
+        )
+        .unwrap(),
         destination: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
         sequence_number: seq(0x123),
         user_priority: 0,
@@ -992,10 +1008,16 @@ fn association_response_retains_complete_wmm_parameters() {
 #[test]
 fn open_ap_needs_no_security_ie() {
     let record = ScanRecord {
-        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap()),
+        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap())
+            .unwrap(),
         supported_rates: [0x82; 8],
         supported_rates_len: 1,
-        ..ScanRecord::EMPTY
+        ..ScanRecord::new(
+            crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap())
+                .unwrap(),
+            6,
+            -40,
+        )
     };
     assert!(
         select_association_rsn(&record, StaSecurityPolicy::Open)

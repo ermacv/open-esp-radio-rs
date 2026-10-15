@@ -46,3 +46,4 @@ workspace = true
 [package.metadata.open-radio]
 layer = "runtime"
 platform = "portable"
+test-feature-sets = ["test-support"]

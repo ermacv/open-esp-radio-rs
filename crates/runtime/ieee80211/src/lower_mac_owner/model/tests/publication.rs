@@ -26,6 +26,7 @@ impl Work for DuringPublication {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let mut terminal_access = resources.terminal_access;
         let ModelResources {
             mut tickets,
             mut small,
@@ -104,7 +105,7 @@ impl Work for DuringPublication {
             outcome: completion,
             payload,
             ..
-        } = terminal.into_parts();
+        } = terminal.into_parts(&mut terminal_access);
         let (ModelAnyBuffer::SmallSent(mpdu), body) = payload.into_parts() else {
             panic!("terminal returned an unexpected MPDU state")
         };
@@ -148,7 +149,7 @@ impl Work for DuringPublication {
             outcome: completion,
             payload,
             ..
-        } = terminal.into_parts();
+        } = terminal.into_parts(&mut terminal_access);
         let (ModelAnyBuffer::Small(_), _) = payload.into_parts() else {
             panic!("terminal returned an unexpected MPDU state")
         };
@@ -199,7 +200,7 @@ impl Work for DuringPublication {
                         plan: RetransmissionPlan::Individual(plan),
                     },
                 );
-                let (_, returned) = super::completion(phase).await;
+                let (_, returned) = super::completion(phase, &mut terminal_access).await;
                 assert!(matches!(returned, ModelAnyBuffer::SmallSent(_)));
                 let retried = air.sent().pop().unwrap();
                 assert_eq!(retried.packet_number, first.packet_number);

@@ -198,15 +198,18 @@ fn submit_frame<'k, 'p, 'id: 'p + 'k, C: ModelClass>(
     let source = prepare_model(source.check().ok().unwrap()).ok().unwrap();
     phase
         .station()
-        .submit(oer_ieee80211_lower_mac::Attempt {
-            context: (),
-            ticket,
-            source,
-            access_category: WmmAccessCategory::BestEffort,
-            protection: Protection::None,
-            power: SupportedPower::new(TxPower::Calibrated).unwrap(),
-            coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
-        })
+        .submit(
+            (oer_ieee80211_lower_mac::Attempt {
+                context: (),
+                ticket,
+                source,
+                access_category: WmmAccessCategory::BestEffort,
+                protection: Protection::None,
+                power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+                coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+            })
+            .admit(),
+        )
         .unwrap();
 }
 
@@ -269,6 +272,7 @@ fn push_retry<'k, 'p, 'id: 'k + 'p, X: ModelContext, S: AggregateState>(
 /// The next terminal's ticket and buffer.
 async fn completion<'p, 'id: 'p>(
     phase: &mut ModelPhase<'p, 'id>,
+    terminal_access: &mut oer_ieee80211_lower_mac::TerminalAccess<'id, ModelTickets, ModelPool<1>>,
 ) -> (Slot<'id, ModelTickets, ModelPool<1>>, ModelAnyBuffer<'id>) {
     loop {
         yield_now().await;
@@ -283,7 +287,7 @@ async fn completion<'p, 'id: 'p>(
         {
             let oer_ieee80211_lower_mac::TerminalParts {
                 ticket, payload, ..
-            } = terminal.into_parts();
+            } = terminal.into_parts(terminal_access);
             let (buffer, _) = payload.into_parts();
 
             return (ticket, buffer);
@@ -303,6 +307,7 @@ impl Work for Numbering {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let mut terminal_access = resources.terminal_access;
         let ModelResources {
             mut tickets,
             mut small,
@@ -317,7 +322,7 @@ impl Work for Numbering {
         );
         let key = self.protected.then_some(&key);
         submit(phase, tickets.remove(0), small.remove(0), key);
-        let (ticket, buffer) = completion(phase).await;
+        let (ticket, buffer) = completion(phase, &mut terminal_access).await;
         let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::sent(buffer)
             .expect("a protected attempt's buffer comes back numbered");
         let number = numbered.packet_number();
@@ -335,7 +340,7 @@ impl Work for Numbering {
             },
         );
         phase.close_gate(gate);
-        let (ticket, buffer) = completion(phase).await;
+        let (ticket, buffer) = completion(phase, &mut terminal_access).await;
         let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::sent(buffer)
             .expect("withdrawal preserves an already numbered MPDU");
         assert_eq!(numbered.packet_number(), number);
@@ -359,14 +364,14 @@ impl Work for Numbering {
                 plan: RetransmissionPlan::Individual(plan),
             },
         );
-        let (ticket, buffer) = completion(phase).await;
+        let (ticket, buffer) = completion(phase, &mut terminal_access).await;
         let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::sent(buffer)
             .expect("a retransmission's buffer comes back numbered");
         // Renewed, the memory holds a new MPDU, numbered anew.
         let (renewed, body) = <ModelTypes as TxBufferPool<'id, ModelSmall>>::renew(numbered);
         assert!(body.is_none());
         submit(phase, ticket, renewed, key);
-        let _ = completion(phase).await;
+        let _ = completion(phase, &mut terminal_access).await;
         let _ = key;
     }
 }
@@ -894,6 +899,7 @@ impl Work for AbortHeld<'_> {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let mut terminal_access = resources.terminal_access;
         let ModelResources {
             mut tickets,
             mut large,
@@ -927,7 +933,7 @@ impl Work for AbortHeld<'_> {
                     outcome: completion,
                     payload,
                     ..
-                } = terminal.into_parts();
+                } = terminal.into_parts(&mut terminal_access);
                 let (buffer, _) = payload.into_parts();
 
                 let mut seen = self.seen.borrow_mut();
@@ -1074,6 +1080,7 @@ fn subframe_frame(sequence: u16) -> SizedFrame<AckHeader, ModelCaps> {
 /// The next terminal: its ticket, complete subframes and Block Ack.
 async fn aggregate_completion<'p, 'id: 'p>(
     phase: &mut ModelPhase<'p, 'id>,
+    terminal_access: &mut oer_ieee80211_lower_mac::TerminalAccess<'id, ModelTickets, ModelPool<1>>,
 ) -> (
     Slot<'id, ModelTickets, ModelPool<1>>,
     ModelSubframes<'id>,
@@ -1095,7 +1102,7 @@ async fn aggregate_completion<'p, 'id: 'p>(
                 payload,
                 outcome,
                 ..
-            } = terminal.into_parts();
+            } = terminal.into_parts(terminal_access);
             return (
                 ticket,
                 payload,
@@ -1122,6 +1129,7 @@ impl Work for AggregateRetransmission<'_> {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let mut terminal_access = resources.terminal_access;
         use oer_ieee80211_lower_mac::{AggregateAttempt, AmpduPhase, MpduStartSpacing, Tid};
         let ModelResources {
             mut tickets,
@@ -1176,9 +1184,9 @@ impl Work for AggregateRetransmission<'_> {
             aggregate = push_subframe(aggregate, buffer, frame, Some(body));
         }
         station
-            .submit_ampdu(attempt(tickets.remove(0), aggregate))
+            .submit_ampdu((attempt(tickets.remove(0), aggregate)).admit())
             .unwrap();
-        let (ticket, subframes, report) = aggregate_completion(phase).await;
+        let (ticket, subframes, report) = aggregate_completion(phase, &mut terminal_access).await;
         let mut buffers: Vec<_> = subframes
             .into_iter()
             .map(|mpdu| {
@@ -1212,8 +1220,10 @@ impl Work for AggregateRetransmission<'_> {
         let aggregate = push_retry(aggregate, numbered);
         let (buffer, frame) = subframe(small.remove(0), 3);
         let aggregate = push_subframe(aggregate, buffer, frame, None);
-        station.submit_ampdu(attempt(ticket, aggregate)).unwrap();
-        let (_, subframes, _) = aggregate_completion(phase).await;
+        station
+            .submit_ampdu((attempt(ticket, aggregate)).admit())
+            .unwrap();
+        let (_, subframes, _) = aggregate_completion(phase, &mut terminal_access).await;
         let (buffer, body) = subframes.into_iter().next().unwrap().into_parts();
         assert!(body.is_none());
         let ModelAnyBuffer::SmallSent(mpdu) = buffer else {
@@ -1264,6 +1274,7 @@ impl Work for TerminalOutcomes<'_> {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let mut terminal_access = resources.terminal_access;
         let ModelResources {
             mut tickets,
             mut large,
@@ -1298,7 +1309,7 @@ impl Work for TerminalOutcomes<'_> {
                         outcome: completion,
                         payload,
                         ..
-                    } = terminal.into_parts();
+                    } = terminal.into_parts(&mut terminal_access);
                     let (buffer, body) = payload.into_parts();
 
                     assert_eq!(
@@ -1404,6 +1415,7 @@ impl Work for LongRetryPlan<'_> {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let mut terminal_access = resources.terminal_access;
         let ModelResources {
             mut tickets,
             mut large,
@@ -1459,7 +1471,7 @@ impl Work for LongRetryPlan<'_> {
                     outcome: completion,
                     payload,
                     ..
-                } = terminal.into_parts();
+                } = terminal.into_parts(&mut terminal_access);
                 let (_, _) = payload.into_parts();
 
                 assert!(matches!(
@@ -1497,6 +1509,7 @@ impl Work for LastRateBeforeCollision<'_> {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let mut terminal_access = resources.terminal_access;
         let ModelResources {
             mut tickets,
             mut small,
@@ -1548,7 +1561,7 @@ impl Work for LastRateBeforeCollision<'_> {
                     outcome: completion,
                     payload,
                     ..
-                } = terminal.into_parts();
+                } = terminal.into_parts(&mut terminal_access);
                 let (buffer, body) = payload.into_parts();
 
                 assert_eq!(

@@ -5,19 +5,20 @@
 use super::*;
 use crate::join::test_support::{BSSID, LOCAL, answer_authentication, association_response};
 use core::num::NonZeroU16;
+use oer_ieee80211_arbiter::ArbiterPool;
 use oer_ieee80211_arbiter::{
     AccessPointCommand, AccessPointFact, Arbiter, ArbiterAction, ArbiterPolicy, NoReservation,
 };
 use oer_ieee80211_lower_mac::{
-    BandSet, Channel, ChannelWidth, CoexPriority, CoexPrioritySet, GateIssuer, GatePool,
-    HardwareServices, LowerMacCapabilities, PhyFormatSet, RateSupport, RxMeta, WidthSet,
+    BandSet, Channel, ChannelWidth, CoexPriority, CoexPrioritySet, GateIssuer, HardwareServices,
+    LowerMacCapabilities, PhyFormatSet, RateSupport, RxMeta, WidthSet,
 };
 use oer_ieee80211_mac::channel_switch::ChannelSwitchMode;
 use oer_ieee80211_mac::phy::{HeMcs, HtMcs, LegacyRate, PhyRate};
 use oer_radio_port::{Mint, branded};
 use std::vec::Vec;
 
-fn installed<R>(body: impl for<'id> FnOnce(Mint<'id, GatePool>) -> R) -> R {
+fn installed<R>(body: impl for<'id> FnOnce(Mint<'id, ArbiterPool>) -> R) -> R {
     let future = core::pin::pin!(branded(async |mint| body(mint)));
     let mut cx = core::task::Context::from_waker(core::task::Waker::noop());
     match core::future::Future::poll(future, &mut cx) {
@@ -93,6 +94,7 @@ struct Key<S = Slot>(S);
 struct Tokens;
 
 impl StaTokens for Tokens {
+    type GatePath = oer_radio_port::Root;
     type EpochPath = oer_radio_port::Root;
     type Small = Buffer;
     type Ticket = Ticket;
@@ -247,12 +249,12 @@ struct World<'id> {
 }
 
 impl<'id> World<'id> {
-    fn new(mint: Mint<'id, GatePool>, skipped_absences: u8) -> Self {
+    fn new(mint: Mint<'id, ArbiterPool>, skipped_absences: u8) -> Self {
         Self::with_security(mint, skipped_absences, StaSecurity::Open)
     }
 
     fn with_security(
-        mint: Mint<'id, GatePool>,
+        mint: Mint<'id, ArbiterPool>,
         skipped_absences: u8,
         security: StaSecurity,
     ) -> Self {
@@ -260,7 +262,7 @@ impl<'id> World<'id> {
     }
 
     fn with_group_slots(
-        mint: Mint<'id, GatePool>,
+        mint: Mint<'id, ArbiterPool>,
         skipped_absences: u8,
         security: StaSecurity,
         group_slots: u8,
@@ -272,7 +274,7 @@ impl<'id> World<'id> {
     }
 
     fn with_groups<const G: usize>(
-        mint: Mint<'id, GatePool>,
+        mint: Mint<'id, ArbiterPool>,
         skipped_absences: u8,
         security: StaSecurity,
         group_slots: [Slot; G],
@@ -281,15 +283,19 @@ impl<'id> World<'id> {
     }
 
     fn with_pools<const TX: usize, const G: usize>(
-        mint: Mint<'id, GatePool>,
+        mint: Mint<'id, ArbiterPool>,
         skipped_absences: u8,
         security: StaSecurity,
         group_slots: [Slot; G],
     ) -> Self {
         let channels = heapless::Vec::from_slice(&[channel(1), channel(6)]).unwrap();
-        let (gate, gate_issuer) = mint.into_pools();
-        let (arbiter, place, absence) =
-            Arbiter::new(ArbiterPolicy::DEFAULT, channel(1), gate, Duration::ZERO);
+        let (gate, gate_issuer, authority) = mint.into_pools();
+        let (arbiter, place, absence) = Arbiter::new(
+            ArbiterPolicy::DEFAULT.checked(Duration::ZERO).unwrap(),
+            channel(1),
+            authority,
+            gate,
+        );
         let station = Station::new(
             StaConfig {
                 address: oer_ieee80211_mac::address::OwnAddress::new(
@@ -302,6 +308,7 @@ impl<'id> World<'id> {
                 access_point_margin_db: 6,
                 supported_rates: [0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24],
                 association: &CAPABILITIES,
+                listen_interval: StationListenInterval::new(10).unwrap(),
                 phy: PhyMode::Legacy,
                 security,
                 nonce,
@@ -577,6 +584,10 @@ impl<'id> World<'id> {
         // A protected frame carries the CCMP header's room,
         // a QoS one its QoS Control field.
         let protected = frame[1] & 0x40 != 0;
+        assert_eq!(
+            protected, keyed,
+            "encoded protection and actual key selection agree"
+        );
         let qos = subtype & 0x0080 != 0;
         let ether_type = 30 + usize::from(qos) * 2 + usize::from(protected) * 8;
         let eapol = subtype & 0x000c == 0x0008 && frame[ether_type..ether_type + 2] == [0x88, 0x8e];
@@ -594,8 +605,9 @@ impl<'id> World<'id> {
             }
         );
         if subtype == 0x00c0 {
+            let body = 24 + usize::from(protected) * 8;
             self.deauthentications
-                .push(u16::from_le_bytes([frame[24], frame[25]]));
+                .push(u16::from_le_bytes([frame[body], frame[body + 1]]));
         }
         let on = self.arbiter.channel().map_or(0, |c| c.channel().number());
         self.seen.push(Seen::Transmit { subtype, on });
@@ -718,7 +730,8 @@ fn a_station_alone_scans_joins_an_open_network_and_leaves_it() {
                 Seen::Notify(StaNotice::Connected {
                     bssid: oer_ieee80211_mac::address::Bssid::new(
                         oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap()
-                    ),
+                    )
+                    .unwrap(),
                     channel: 6
                 }),
                 Seen::Upstream(UpstreamFact::Connected(channel(6))),
@@ -824,7 +837,8 @@ fn absence_schedule_exhaustion_completes_the_accepted_background_scan() {
     use oer_ieee80211_arbiter::AbsenceRefusal;
     installed(|mint| {
         let mut world = connected_world(mint);
-        let now = Instant::from_micros(u64::MAX - 1);
+        // The dwell itself fits, but the arbiter's preparation and return do not.
+        let now = Instant::from_micros(u64::MAX - world.station.config.dwell.as_micros());
         world
             .station
             .command(now, StaRequest::new(61, StaCommand::BackgroundScan))
@@ -1106,9 +1120,44 @@ const NULL_POWER_SAVE: u16 = 0x1048;
 
 /// A world whose station is connected to the open network on channel 6,
 /// alone on the port.
-fn connected_world<'id>(mint: Mint<'id, GatePool>) -> World<'id> {
+fn connected_world<'id>(mint: Mint<'id, ArbiterPool>) -> World<'id> {
     let world = World::new(mint, 3);
     connect_open_world(world)
+}
+
+#[test]
+fn refused_lease_exchange_releases_the_original_lease_and_resources() {
+    installed(|mint| {
+        let mut world = connected_world(mint);
+        let Held::Lease(original) = core::mem::replace(&mut world.station.lease, Held::None) else {
+            panic!("connected station owns its lease")
+        };
+        // No move occurred: the public arbiter API returns the same owner in
+        // Err. Feed that refusal through the actual station cleanup path.
+        let refused = world.arbiter.exchange(original);
+        assert!(refused.is_err());
+        world.station.input(at(40), StaInput::Exchanged(refused));
+        world.run(at(40));
+        let events = world.take();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(
+                    event,
+                    Seen::Notify(StaNotice::Disconnected(
+                        StaDisconnectReason::LeaseExchangeRefused
+                    ))
+                ))
+                .count(),
+            1
+        );
+        assert!(matches!(world.station.state, State::Idle));
+        assert!(world.station.place.is_some());
+        assert!(world.station.poll_action(at(40)).is_none());
+        assert!(world.station.tokens().is_some());
+        assert!(world.station.tokens().is_some());
+        assert!(world.station.tokens().is_none());
+    });
 }
 
 fn connect_open_world(mut world: World<'_>) -> World<'_> {
@@ -1125,6 +1174,91 @@ fn connect_open_world(mut world: World<'_>) -> World<'_> {
     assert!(world.station.is_connected());
     world.take();
     world
+}
+
+#[test]
+fn association_advertises_the_configured_listen_interval() {
+    for beacon_intervals in [1, 13, u16::MAX] {
+        installed(|mint| {
+            let mut world = World::new(mint, 3);
+            world.station.config.listen_interval =
+                StationListenInterval::new(beacon_intervals).unwrap();
+            let mut world = connect_open_world(world);
+            let requests = world
+                .frames
+                .iter()
+                .filter(|frame| frame[0] & 0xfc == 0x00)
+                .collect::<Vec<_>>();
+            assert_eq!(requests.len(), 1);
+            assert_eq!(
+                u16::from_le_bytes(requests[0][26..28].try_into().unwrap()),
+                beacon_intervals
+            );
+            assert!(
+                world.completed.iter().any(|terminal| matches!(
+                    terminal.outcome,
+                    StaCommandOutcome::Connected { .. }
+                ))
+            );
+            world
+                .station
+                .command(at(40), StaRequest::new(2, StaCommand::Disconnect))
+                .unwrap();
+            world.run(at(40));
+            assert!(matches!(world.station.state, State::Idle));
+            assert!(world.station.tokens().is_some());
+            assert!(world.station.tokens().is_some());
+            assert!(world.station.tokens().is_none());
+        });
+    }
+}
+
+#[test]
+fn scan_without_a_ds_element_uses_the_received_channel_configuration() {
+    fn receive_observation(world: &mut World<'_>, now: Instant, received_channel: u8) {
+        let mut frame = beacon().to_vec();
+        // This BSS omits DS Parameter Set. Its receive metadata still carries
+        // the checked channel configured when this exact frame was captured.
+        frame.truncate(52);
+        let other_bssid = [0x02, 0, 0, 0, 0, received_channel];
+        frame[10..16].copy_from_slice(&other_bssid);
+        frame[16..22].copy_from_slice(&other_bssid);
+        let mut metadata = meta();
+        metadata.channel = channel(received_channel).channel();
+        world
+            .station
+            .receive(now, &frame, metadata, |_| {})
+            .unwrap();
+        let record = world
+            .station
+            .scan
+            .records()
+            .find(|record| record.bssid.get() == other_bssid)
+            .unwrap();
+        assert_eq!(record.channel, received_channel);
+    }
+    installed(|mint| {
+        let mut world = World::new(mint, 3);
+        world
+            .station
+            .command(at(0), StaRequest::new(1, StaCommand::Connect))
+            .unwrap();
+        world.run(at(0));
+        // A delayed observation can outlive the lease that captured it.
+        receive_observation(&mut world, at(1), 6);
+    });
+    installed(|mint| {
+        let mut world = connected_world(mint);
+        world
+            .station
+            .command(at(40), StaRequest::new(3, StaCommand::BackgroundScan))
+            .unwrap();
+        world.run(at(40));
+        let away = world.advance();
+        receive_observation(&mut world, away, 11);
+        let home = world.advance();
+        receive_observation(&mut world, home, 1);
+    });
 }
 
 #[test]
@@ -1172,7 +1306,8 @@ fn a_terminal_of_the_previous_connection_only_returns_its_resources() {
             .encode_null(
                 oer_ieee80211_mac::address::Bssid::new(
                     oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-                ),
+                )
+                .unwrap(),
                 StaPowerManagement::Active,
             )
             .unwrap();
@@ -1504,7 +1639,8 @@ fn a_station_joins_a_wpa2_network_through_the_four_way_handshake() {
                 Seen::Notify(StaNotice::Connected {
                     bssid: oer_ieee80211_mac::address::Bssid::new(
                         oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap()
-                    ),
+                    )
+                    .unwrap(),
                     channel: 6
                 }),
                 Seen::Upstream(UpstreamFact::Connected(channel(6))),
@@ -1535,7 +1671,7 @@ fn a_station_joins_a_wpa2_network_through_the_four_way_handshake() {
 /// A WPA2 world whose station holds `group_slots` group key slots, up to
 /// Message 3 at 33 ms; the PTK of its handshake.
 fn wpa2_associated<'id>(
-    mint: Mint<'id, GatePool>,
+    mint: Mint<'id, ArbiterPool>,
     group_slots: u8,
 ) -> (World<'id>, oer_ieee80211_rsn::Ptk) {
     wpa2_associated_by(mint, group_slots, &wpa2_beacon())
@@ -1543,7 +1679,7 @@ fn wpa2_associated<'id>(
 
 /// [`wpa2_associated`] with the access point's `beacon`.
 fn wpa2_associated_by<'id>(
-    mint: Mint<'id, GatePool>,
+    mint: Mint<'id, ArbiterPool>,
     group_slots: u8,
     beacon: &[u8],
 ) -> (World<'id>, oer_ieee80211_rsn::Ptk) {
@@ -1585,7 +1721,7 @@ fn wpa2_associated_by<'id>(
 
 /// The world of [`wpa2_associated`], connected with group key 1.
 fn wpa2_connected<'id>(
-    mint: Mint<'id, GatePool>,
+    mint: Mint<'id, ArbiterPool>,
     group_slots: u8,
 ) -> (World<'id>, oer_ieee80211_rsn::Ptk) {
     wpa2_connected_by(mint, group_slots, &wpa2_beacon())
@@ -1593,7 +1729,7 @@ fn wpa2_connected<'id>(
 
 /// [`wpa2_connected`] with the access point's `beacon`.
 fn wpa2_connected_by<'id>(
-    mint: Mint<'id, GatePool>,
+    mint: Mint<'id, ArbiterPool>,
     group_slots: u8,
     beacon: &[u8],
 ) -> (World<'id>, oer_ieee80211_rsn::Ptk) {
@@ -2135,7 +2271,7 @@ fn beacon_from(bssid: [u8; 6], number: u8) -> [u8; 55] {
 /// The network on channel 1, where the access point beside the station
 /// runs, at `beside` dBm and on channel 6 at -56 dBm: the channel the join
 /// goes to, and whether the access point announces a move.
-fn joined_beside<'id>(mint: Mint<'id, GatePool>, beside: i8) -> (u8, bool) {
+fn joined_beside<'id>(mint: Mint<'id, ArbiterPool>, beside: i8) -> (u8, bool) {
     let mut world = World::new(mint, 3);
     access_point_on_1(&mut world);
     world
@@ -2463,7 +2599,8 @@ fn deauthentication_waits_for_the_ticket_and_buffer_of_an_accepted_transmission(
                     .encode_null(
                         oer_ieee80211_mac::address::Bssid::new(
                             oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-                        ),
+                        )
+                        .unwrap(),
                         StaPowerManagement::Active,
                     )
                     .unwrap(),
@@ -2677,21 +2814,25 @@ fn association_waits_for_credit_without_consuming_a_request_and_still_expires() 
         while let Some(ticket) = world.station.tickets.take() {
             held.push(ticket);
         }
-        let access_point = world.station.scan.records()[0];
+        let access_point = *world.station.scan.records().next().unwrap();
         let join = || Join {
             rsn: select_association_rsn(&access_point, world.station.policy()).unwrap(),
             access_point,
             channel: world.station.config.channels[0],
-            step: JoinStep::Associate(StaAssociationRuntime::new(
-                oer_ieee80211_mac::address::OwnAddress::new(
-                    oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
-                ),
-                oer_ieee80211_mac::address::Bssid::new(
-                    oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-                ),
-                oer_ieee80211_mac::security::LinkProtection::Open,
-                at(100),
-            )),
+            step: JoinStep::Associate(
+                StaAssociationRuntime::new(
+                    oer_ieee80211_mac::address::OwnAddress::new(
+                        oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+                    ),
+                    oer_ieee80211_mac::address::Bssid::new(
+                        oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+                    )
+                    .unwrap(),
+                    oer_ieee80211_mac::security::LinkProtection::Open,
+                    at(100),
+                )
+                .unwrap(),
+            ),
         };
         world.station.state = State::Join(join());
         let before = world.station.sequence;
@@ -2911,7 +3052,7 @@ fn handshake_deadline_covers_every_message_key_and_tx_wait() {
 #[test]
 fn every_control_encoder_reserves_credit_before_consuming_its_sequence() {
     for hold_buffers in [false, true] {
-        for encoding in 0..6 {
+        for encoding in 0..7 {
             installed(|mint| {
                 let mut world = connected_world(mint);
                 let mut tickets = Vec::new();
@@ -2937,7 +3078,8 @@ fn every_control_encoder_reserves_credit_before_consuming_its_sequence() {
                                 oer_ieee80211_mac::address::Bssid::new(
                                     oer_ieee80211_mac::address::IndividualAddress::new(BSSID)
                                         .unwrap(),
-                                ),
+                                )
+                                .unwrap(),
                                 &[],
                                 TxPurpose::HandshakeResponse,
                             )
@@ -2947,7 +3089,8 @@ fn every_control_encoder_reserves_credit_before_consuming_its_sequence() {
                                 oer_ieee80211_mac::address::Bssid::new(
                                     oer_ieee80211_mac::address::IndividualAddress::new(BSSID)
                                         .unwrap(),
-                                ),
+                                )
+                                .unwrap(),
                                 StaPowerManagement::Active,
                             )
                             .ok(),
@@ -2956,7 +3099,8 @@ fn every_control_encoder_reserves_credit_before_consuming_its_sequence() {
                                 oer_ieee80211_mac::address::Bssid::new(
                                     oer_ieee80211_mac::address::IndividualAddress::new(BSSID)
                                         .unwrap(),
-                                ),
+                                )
+                                .unwrap(),
                                 None,
                                 &[],
                                 Sending::GroupResponse,
@@ -2967,22 +3111,25 @@ fn every_control_encoder_reserves_credit_before_consuming_its_sequence() {
                                 oer_ieee80211_mac::address::Bssid::new(
                                     oer_ieee80211_mac::address::IndividualAddress::new(BSSID)
                                         .unwrap(),
-                                ),
+                                )
+                                .unwrap(),
                                 Some(qos),
                                 &[],
                                 Sending::GroupResponse,
                             )
                             .ok(),
                         4 => station.encode_probe(TxPurpose::Probe).ok(),
-                        5 => station
+                        5 | 6 => station
                             .encode_management(
                                 StaManagementSubtype::Deauthentication,
                                 oer_ieee80211_mac::address::Bssid::new(
                                     oer_ieee80211_mac::address::IndividualAddress::new(BSSID)
                                         .unwrap(),
-                                ),
+                                )
+                                .unwrap(),
                                 &REASON_UNSPECIFIED.to_le_bytes(),
                                 TxPurpose::Deauthentication,
+                                encoding == 6,
                             )
                             .ok(),
                         _ => unreachable!(),
@@ -3019,7 +3166,7 @@ fn every_control_encoder_reserves_credit_before_consuming_its_sequence() {
                 }
                 assert_eq!(world.station.sequence, expected);
                 assert_eq!(qos, expected_qos);
-                world.transmitted(transmit, false);
+                world.transmitted(transmit, matches!(encoding, 2 | 3 | 6));
                 world.end_transmissions(at(50));
                 assert_eq!(world.station.tickets.len(), 2);
                 assert_eq!(world.station.buffers.len(), 2);
@@ -3952,3 +4099,271 @@ fn delivered_m4_retires_every_superseded_owner_and_leave_finishes_the_chain() {
         exercise::<4>(leave);
     }
 }
+
+#[test]
+fn previous_auth_terminal_cannot_finish_new_attempt() {
+    use oer_ieee80211_lower_mac::{IndeterminateCause, WithdrawCause};
+    for outcome in [
+        Some(ended(TxEndStatus::Delivered)),
+        Some(ended(TxEndStatus::AckTimeout)),
+        Some(TxOutcome::Withdrawn(WithdrawCause::GateClosed)),
+        Some(TxOutcome::Indeterminate(
+            IndeterminateCause::HardwareTimeout,
+        )),
+        None, // A delayed refusal before admission also belongs to attempt 1.
+    ] {
+        for rx_first in [false, true] {
+            installed(|mint| {
+                let mut world = World::with_pools::<2, 1>(mint, 3, StaSecurity::Open, [Slot(1)]);
+                world
+                    .station
+                    .command(at(0), StaRequest::new(92, StaCommand::Connect))
+                    .unwrap();
+                world.run(at(0));
+                world.advance();
+                world.receive(at(13), &beacon());
+                world.hold_configured = true;
+                let now = world.advance();
+                let pending = world.configuring.take().unwrap();
+                world.station.input(now, StaInput::Configured(pending));
+                let Some(StaAction::Transmit(first_auth)) = world.station.poll_action(now) else {
+                    panic!("first authentication");
+                };
+                let mut peer_reset = [0; 26];
+                peer_reset[..2].copy_from_slice(&0x00c0_u16.to_le_bytes());
+                peer_reset[4..10].copy_from_slice(&LOCAL);
+                peer_reset[10..16].copy_from_slice(&BSSID);
+                peer_reset[16..22].copy_from_slice(&BSSID);
+                peer_reset[24..26].copy_from_slice(&7_u16.to_le_bytes());
+                world
+                    .station
+                    .receive(now, &peer_reset, meta(), |_| {})
+                    .unwrap();
+                let Some(StaAction::Transmit(second_auth)) = world.station.poll_action(now) else {
+                    panic!("retry authentication");
+                };
+                assert_eq!(world.station.tickets.len(), 0);
+                assert_eq!(world.station.buffers.len(), 0);
+                world.transmitted(second_auth, false);
+                let response = answer_authentication(world.frames.last().unwrap(), 0).unwrap();
+                if rx_first {
+                    world
+                        .station
+                        .receive(now, &response, meta(), |_| {})
+                        .unwrap();
+                }
+                let input = match outcome {
+                    Some(completion) => StaInput::TxDone {
+                        context: first_auth.context,
+                        ticket: first_auth.ticket,
+                        buffer: ReturnedMpdu::Fresh(first_auth.buffer),
+                        completion,
+                    },
+                    None => StaInput::Unsent {
+                        context: first_auth.context,
+                        ticket: first_auth.ticket,
+                        buffer: ReturnedMpdu::Fresh(first_auth.buffer),
+                        reason: TxRefusal::NoRate,
+                    },
+                };
+                world.station.input(now, input);
+                assert_eq!(world.station.tickets.len(), 1);
+                assert_eq!(world.station.buffers.len(), 1);
+                if rx_first {
+                    assert!(matches!(
+                        &world.station.state,
+                        State::Join(Join {
+                            step: JoinStep::Associate(_),
+                            ..
+                        })
+                    ));
+                } else {
+                    assert!(
+                        matches!(
+                            &world.station.state,
+                            State::Join(Join {
+                                step: JoinStep::Authenticate(Authenticate::Exchange {
+                                    stage: AuthStage::AwaitSent { .. },
+                                    ..
+                                }),
+                                ..
+                            })
+                        ),
+                        "old {outcome:?} changed the second attempt"
+                    );
+                }
+                // The current terminal returns the second owner's resources once.
+                world.end_transmissions(now);
+                assert_eq!(world.station.tickets.len(), 2);
+                assert_eq!(world.station.buffers.len(), 2);
+                if !rx_first {
+                    world
+                        .station
+                        .receive(now, &response, meta(), |_| {})
+                        .unwrap();
+                }
+                assert!(matches!(
+                    &world.station.state,
+                    State::Join(Join {
+                        step: JoinStep::Associate(_),
+                        ..
+                    })
+                ));
+                assert!(world.completed.is_empty());
+            });
+        }
+    }
+}
+
+#[test]
+fn selected_sae_finishes_connect_without_join_or_fallback_and_returns_resources() {
+    use oer_ieee80211_mac::security::{
+        AssociationAkm, AssociationSecurity, RsnAssociation, SaePwe,
+    };
+
+    for transition in [false, true] {
+        for h2e in [false, true] {
+            installed(|mint| {
+                let mut advertised = wpa2_beacon().to_vec();
+                advertised[55 + 19] = 8; // SAE, retaining CCMP and the scan geometry.
+                advertised[55 + 20] |= 0x80; // MFPC.
+                if transition {
+                    advertised[55 + 1] += 4;
+                    advertised[55 + 14] = 2;
+                    advertised.splice(55 + 20..55 + 20, [0, 0x0f, 0xac, 2]);
+                }
+                if h2e {
+                    advertised.extend_from_slice(&[244, 1, 0x20]);
+                }
+                let mut world = World::with_security(
+                    mint,
+                    3,
+                    StaSecurity::Wpa2Personal {
+                        pmk: Pmk::from_bytes(PMK),
+                    },
+                );
+                // The same pools must serve a second Connect after the refusal.
+                for (request_id, start) in [(91, 0), (92, 100)] {
+                    world
+                        .station
+                        .command(at(start), StaRequest::new(request_id, StaCommand::Connect))
+                        .unwrap();
+                    world.run(at(start));
+                    world.advance();
+                    world.receive(at(start + 13), &advertised);
+                    let selected = select_association_rsn(
+                        world.station.scan.records().next().unwrap(),
+                        StaSecurityPolicy::Wpa2Personal,
+                    )
+                    .unwrap();
+                    assert!(
+                        matches!(selected.security(), AssociationSecurity::Rsn(RsnAssociation {
+                        akm: AssociationAkm::Sae(method), ..
+                    }) if method == if h2e { SaePwe::HashToElement } else { SaePwe::HuntingAndPecking })
+                    );
+                    // A weaker PSK-only BSS must not become an automatic fallback.
+                    let mut psk = wpa2_beacon();
+                    psk[10] ^= 0x04;
+                    psk[16] ^= 0x04;
+                    world.rssi = -80;
+                    world.receive(at(start + 14), &psk);
+                    world.rssi = i8::MIN;
+                    world.advance();
+                    assert_eq!(
+                        world.completed.last(),
+                        Some(&StaCommandTerminal {
+                            request: StaRequest::new(request_id, StaCommand::Connect),
+                            outcome: StaCommandOutcome::ConnectFailed(
+                                StaDisconnectReason::SaeUnsupported
+                            ),
+                        })
+                    );
+                    assert!(matches!(world.station.state, State::Idle));
+                    assert!(world.station.link().is_none());
+                    assert!(world.station.place.is_some());
+                    assert!(world.station.absence_place.is_some());
+                    assert!(world.station.configuration.is_some());
+                    assert!(world.station.keys.clear());
+                    assert!(world.station.keys.group_permission.is_some());
+                    assert_eq!(world.station.tickets.len(), 2);
+                    assert_eq!(world.station.buffers.len(), 2);
+                    assert!(world.submitted.is_empty());
+                    assert!(world.configuring.is_none());
+                    assert!(world.pending_installs.is_empty());
+                    assert!(world.pending_removals.is_empty());
+                    assert!(world.station.poll_action(at(start + 40)).is_none());
+                }
+                assert_eq!(world.completed.len(), 2);
+                assert_eq!(
+                    world
+                        .seen
+                        .iter()
+                        .filter(|event| matches!(
+                            event,
+                            Seen::Notify(StaNotice::Disconnected(
+                                StaDisconnectReason::SaeUnsupported
+                            ))
+                        ))
+                        .count(),
+                    2
+                );
+                // Inspect the frames the wire peer would receive, not just action names.
+                assert_eq!(world.frames.len(), 4);
+                assert!(world.frames.iter().all(|frame| frame[0] & 0xfc == 0x40));
+                assert!(!world.seen.contains(&Seen::Configure("bss")));
+                assert!(world.associated.is_none());
+                assert!(world.eapol.is_empty());
+            });
+        }
+    }
+}
+
+#[test]
+fn review_negotiated_pmf_rejects_unprotected_deauthentication() {
+    use oer_ieee80211_mac::security::rsn::Akm;
+    use oer_ieee80211_rsn::frames::RsnTxFrame;
+    installed(|mint| {
+        let mut advertised_rsn = RSN;
+        advertised_rsn[20] |= 0x80;
+        let mut advertised_beacon = wpa2_beacon();
+        advertised_beacon[55..].copy_from_slice(&advertised_rsn);
+        let (mut world, ptk) = wpa2_associated_by(mint, 2, &advertised_beacon);
+        match &world.station.state {
+            State::Handshake(handshake) => assert!(handshake.supplicant.management_protection()),
+            _ => panic!("expected handshake"),
+        }
+        let mut plain = Vec::from(advertised_rsn);
+        plain.extend_from_slice(&[0xdd, 22, 0x00, 0x0f, 0xac, 0x01, 0x01, 0x00]);
+        plain.extend_from_slice(&[0x99; 16]);
+        plain.extend_from_slice(&[0xdd, 28, 0, 0x0f, 0xac, 9, 4, 0, 1, 0, 0, 0, 0, 0]);
+        plain.extend_from_slice(&[0x77; 16]);
+        // RFC3394 padding to an eight-octet boundary.
+        while plain.len() % 8 != 0 {
+            plain.push(if plain.len() == 76 { 0xdd } else { 0 });
+        }
+        let wrapped = oer_ieee80211_rsn::aes::software_aes128_key_wrap(ptk.kek(), &plain).unwrap();
+        let m3 =
+            RsnTxFrame::<512>::message3(Akm::Psk, LOCAL, 2, ANONCE, [0; 8], wrapped.as_bytes())
+                .unwrap()
+                .authenticate(&ptk);
+        world.receive(at(33), &eapol_frame(m3.as_bytes()));
+        assert!(
+            world.station.is_connected(),
+            "PMF-capable peer completed handshake"
+        );
+        let mut deauthentication = [0; 26];
+        deauthentication[..2].copy_from_slice(&0x00c0_u16.to_le_bytes());
+        deauthentication[4..10].copy_from_slice(&LOCAL);
+        deauthentication[10..16].copy_from_slice(&BSSID);
+        deauthentication[16..22].copy_from_slice(&BSSID);
+        deauthentication[24..26].copy_from_slice(&7_u16.to_le_bytes());
+        world.receive(at(50), &deauthentication);
+        assert!(
+            world.station.is_connected(),
+            "unprotected deauth must not tear down negotiated PMF association"
+        );
+    });
+}
+
+mod deadlines;
+mod management;

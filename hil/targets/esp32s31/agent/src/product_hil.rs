@@ -1549,6 +1549,9 @@ fn station_status_edge(state: StationLinkState) -> Option<StationLinkEdge> {
                 ConnectedDisconnectReason::JoinTsfUnrepresentable => {
                     StationDisconnectReason::JoinTsfUnrepresentable
                 }
+                ConnectedDisconnectReason::DeadlineOverflow => {
+                    StationDisconnectReason::DeadlineOverflow
+                }
             }))
         }
         StationLinkState::Disconnected(None) => None,

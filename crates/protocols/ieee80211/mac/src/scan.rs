@@ -112,41 +112,45 @@ pub struct ScanRecord {
 }
 
 impl ScanRecord {
-    pub const EMPTY: Self = Self {
-        ssid: [0; 32],
-        ssid_len: 0,
-        bssid: Bssid::new(IndividualAddress::ZERO),
-        channel: 0,
-        rssi: i8::MIN,
-        privacy: false,
-        rsn: false,
-        rsn_ie_count: 0,
-        legacy_wpa: false,
-        information_elements_truncated: false,
-        capability_info: 0,
-        timestamp: crate::tsf::TsfInstant::from_micros(0),
-        received_at: None,
-        beacon_interval_tu: 0,
-        supported_rates: [0; 8],
-        supported_rates_len: 0,
-        extended_supported_rates: [0; EXTENDED_RATES_CAPACITY],
-        extended_supported_rates_len: 0,
-        erp_information: None,
-        ht_capability_ie: [0; HT_CAPABILITY_IE_LEN],
-        ht_capability_ie_present: false,
-        ht_operation_ie: [0; HT_OPERATION_IE_LEN],
-        ht_operation_ie_present: false,
-        he_capability_ie: [0; HE_CAPABILITY_IE_CAPACITY],
-        he_capability_ie_len: 0,
-        he_operation_ie: [0; HE_OPERATION_IE_CAPACITY],
-        he_operation_ie_len: 0,
-        wmm_ie: [0; WMM_IE_CAPACITY],
-        wmm_ie_len: 0,
-        rsn_ie: [0; RSN_IE_CAPACITY],
-        rsn_ie_len: 0,
-        rsnxe: [0; RSNXE_CAPACITY],
-        rsnxe_len: 0,
-    };
+    /// An observation's identity and signal sample, before its information
+    /// elements are decoded. Empty table slots use `None`, never this record.
+    pub const fn new(bssid: Bssid, channel: u8, rssi: i8) -> Self {
+        Self {
+            ssid: [0; 32],
+            ssid_len: 0,
+            bssid,
+            channel,
+            rssi,
+            privacy: false,
+            rsn: false,
+            rsn_ie_count: 0,
+            legacy_wpa: false,
+            information_elements_truncated: false,
+            capability_info: 0,
+            timestamp: crate::tsf::TsfInstant::from_micros(0),
+            received_at: None,
+            beacon_interval_tu: 0,
+            supported_rates: [0; 8],
+            supported_rates_len: 0,
+            extended_supported_rates: [0; EXTENDED_RATES_CAPACITY],
+            extended_supported_rates_len: 0,
+            erp_information: None,
+            ht_capability_ie: [0; HT_CAPABILITY_IE_LEN],
+            ht_capability_ie_present: false,
+            ht_operation_ie: [0; HT_OPERATION_IE_LEN],
+            ht_operation_ie_present: false,
+            he_capability_ie: [0; HE_CAPABILITY_IE_CAPACITY],
+            he_capability_ie_len: 0,
+            he_operation_ie: [0; HE_OPERATION_IE_CAPACITY],
+            he_operation_ie_len: 0,
+            wmm_ie: [0; WMM_IE_CAPACITY],
+            wmm_ie_len: 0,
+            rsn_ie: [0; RSN_IE_CAPACITY],
+            rsn_ie_len: 0,
+            rsnxe: [0; RSNXE_CAPACITY],
+            rsnxe_len: 0,
+        }
+    }
 
     pub fn ssid_bytes(&self) -> &[u8] {
         &self.ssid[..usize::from(self.ssid_len)]
@@ -300,7 +304,7 @@ pub enum ScanObservation {
 
 /// Fixed-capacity BSS table owned by one radio task.
 pub struct ScanTable<const N: usize = SCAN_RECORD_CAPACITY> {
-    records: [ScanRecord; N],
+    records: [Option<ScanRecord>; N],
     length: usize,
     observed_frames: u32,
     dropped_unique_bss: u32,
@@ -309,7 +313,7 @@ pub struct ScanTable<const N: usize = SCAN_RECORD_CAPACITY> {
 impl<const N: usize> ScanTable<N> {
     pub const fn new() -> Self {
         Self {
-            records: [ScanRecord::EMPTY; N],
+            records: [None; N],
             length: 0,
             observed_frames: 0,
             dropped_unique_bss: 0,
@@ -317,14 +321,15 @@ impl<const N: usize> ScanTable<N> {
     }
 
     pub fn clear(&mut self) {
-        self.records.fill(ScanRecord::EMPTY);
+        self.records.fill(None);
         self.length = 0;
         self.observed_frames = 0;
         self.dropped_unique_bss = 0;
     }
 
-    pub fn records(&self) -> &[ScanRecord] {
-        &self.records[..self.length]
+    /// Present observations in insertion order, excluding vacant cells.
+    pub fn records(&self) -> impl Iterator<Item = &ScanRecord> + Clone {
+        self.records.iter().flatten()
     }
 
     pub fn summary(&self) -> ScanSummary {
@@ -351,6 +356,9 @@ impl<const N: usize> ScanTable<N> {
         self.observed_frames = self.observed_frames.saturating_add(1);
 
         for (index, existing) in self.records[..self.length].iter_mut().enumerate() {
+            let Some(existing) = existing else {
+                continue;
+            };
             if existing.bssid == record.bssid {
                 // A BSS record is current control-plane state, not a sample
                 // selected by peak RSSI. HT/ERP protection, WMM and Operation
@@ -392,7 +400,7 @@ impl<const N: usize> ScanTable<N> {
             return ScanObservation::Dropped;
         }
         let index = self.length;
-        self.records[index] = record;
+        self.records[index] = Some(record);
         self.length += 1;
         ScanObservation::Inserted { index }
     }
@@ -405,9 +413,12 @@ impl<const N: usize> Default for ScanTable<N> {
 }
 
 /// Select the strongest complete observation with an exact SSID match.
-pub fn best_matching_ssid<'a>(records: &'a [ScanRecord], ssid: &[u8]) -> Option<&'a ScanRecord> {
+pub fn best_matching_ssid<'a>(
+    records: impl IntoIterator<Item = &'a ScanRecord>,
+    ssid: &[u8],
+) -> Option<&'a ScanRecord> {
     records
-        .iter()
+        .into_iter()
         .filter(|record| record.ssid_bytes() == ssid && (1..=13).contains(&record.channel))
         .max_by_key(|record| record.rssi)
 }
@@ -415,12 +426,12 @@ pub fn best_matching_ssid<'a>(records: &'a [ScanRecord], ssid: &[u8]) -> Option<
 /// Select the strongest exact SSID match that admits the station's security
 /// policy.
 pub fn best_matching_ssid_and_security<'a>(
-    records: &'a [ScanRecord],
+    records: impl IntoIterator<Item = &'a ScanRecord>,
     ssid: &[u8],
     policy: crate::security::StaSecurityPolicy,
 ) -> Option<&'a ScanRecord> {
     records
-        .iter()
+        .into_iter()
         .filter(|record| {
             record.ssid_bytes() == ssid
                 && (1..=13).contains(&record.channel)
@@ -441,10 +452,8 @@ pub fn parse_management(frame: &[u8], fallback_channel: u8, rssi: i8) -> Option<
         return None;
     }
 
-    let mut record = ScanRecord::EMPTY;
-    record.bssid = Bssid::new(IndividualAddress::new(header[16..22].try_into().ok()?)?);
-    record.channel = fallback_channel;
-    record.rssi = rssi;
+    let bssid = Bssid::new(IndividualAddress::new(header[16..22].try_into().ok()?)?)?;
+    let mut record = ScanRecord::new(bssid, fallback_channel, rssi);
     let [.., t0, t1, t2, t3, t4, t5, t6, t7, b0, b1, c0, c1] = *header;
     record.timestamp =
         crate::tsf::TsfInstant::from_micros(u64::from_le_bytes([t0, t1, t2, t3, t4, t5, t6, t7]));

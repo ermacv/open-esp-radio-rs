@@ -9,7 +9,8 @@ fn frame(power_management: StaPowerManagement) -> StaNullDataFrame {
         station_address: crate::address::OwnAddress::new(
             crate::address::IndividualAddress::new(STATION).unwrap(),
         ),
-        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap()),
+        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap())
+            .unwrap(),
         sequence_number: seq(0x123),
         power_management,
     }
@@ -52,16 +53,17 @@ fn power_save_changes_only_the_power_management_bit() {
 #[test]
 fn validation_happens_before_output_is_mutated() {
     let mut output = [0xa5; STA_NULL_DATA_FRAME_LEN];
-    assert_eq!(
+    let encoded = crate::address::Bssid::new(
+        crate::address::IndividualAddress::new([0; 6]).unwrap(),
+    )
+    .map(|bssid| {
         StaNullDataFrame {
-            bssid: crate::address::Bssid::new(
-                crate::address::IndividualAddress::new([0; 6]).unwrap()
-            ),
+            bssid,
             ..frame(StaPowerManagement::PowerSave)
         }
-        .encode(&mut output),
-        Err(StationFrameError::InvalidBssid)
-    );
+        .encode(&mut output)
+    });
+    assert_eq!(encoded, None);
     assert_eq!(output, [0xa5; STA_NULL_DATA_FRAME_LEN]);
 }
 

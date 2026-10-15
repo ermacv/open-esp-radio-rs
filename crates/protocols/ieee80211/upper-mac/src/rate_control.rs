@@ -20,12 +20,19 @@ use oer_ieee80211_mac::{
 };
 use oer_time::Instant;
 
+mod legacy;
+pub use legacy::NegotiatedLegacyRates;
+
 /// What a controller knows of the peer it sends to: the PHY mode of the
 /// link and the peer's receive capabilities.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RatePeer {
     /// The mode the link runs in: the peers' common format and width.
     pub phy: PhyMode,
+    /// Every supported non-HT rate of the association, including non-basic
+    /// rates and the Extended Supported Rates element. Control and retry
+    /// fallback must remain within this nonempty set even on an HT/HE link.
+    pub legacy_rates: NegotiatedLegacyRates,
     pub ht_capabilities: Option<HtPeerCapabilities>,
     pub he_capabilities: Option<He20Capabilities>,
     /// The HE state of an HE link.
@@ -207,6 +214,11 @@ mod tests {
         let rate = PhyRate::Legacy(LegacyRate::Ofdm24M);
         let peer = RatePeer {
             phy: PhyMode::Legacy,
+            legacy_rates: NegotiatedLegacyRates::from_rate_elements(
+                &[2, 4, 11, 22, 12, 18, 24, 36],
+                &[48, 72, 96, 108],
+            )
+            .unwrap(),
             ht_capabilities: None,
             he_capabilities: None,
             he_peer_state: None,

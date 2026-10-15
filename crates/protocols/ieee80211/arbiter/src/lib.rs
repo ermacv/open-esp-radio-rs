@@ -155,7 +155,9 @@
 //! No caller makes a lease place, so no station holds two leases:
 //!
 //! ```compile_fail,E0451
-//! let _ = oer_ieee80211_arbiter::LeasePlace { private: () };
+//! let _ = oer_ieee80211_arbiter::LeasePlace::<oer_radio_port::Root> {
+//!     private: core::marker::PhantomData,
+//! };
 //! ```
 //!
 //! [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129596602
@@ -170,7 +172,7 @@ extern crate std;
 pub mod channel;
 pub mod coordinator;
 
-use core::fmt::Debug;
+use core::{fmt::Debug, marker::PhantomData};
 
 use oer_ieee80211_lower_mac::{
     AirReservationPhase, GateClosed, GateOpen, Ieee80211Capabilities, Ieee80211Instant,
@@ -189,16 +191,46 @@ use coordinator::{
 /// microseconds.
 pub const MAX_RESERVATION: Duration = Duration::from_micros(32_767);
 
+type Brand<'id, Path> = PhantomData<fn(&'id (), Path) -> (&'id (), Path)>;
+
+/// One gate and its arbiter's unique construction authority.
+///
+/// The installation's mint builds this component once. Returning a gate
+/// after a cycle does not mint another arbiter or another pair of lease places.
+pub struct ArbiterPool;
+
+impl oer_radio_port::PoolSet for ArbiterPool {
+    type Pools<'id, Path: PoolPath> = (
+        oer_ieee80211_lower_mac::GateOpen<'id, Path>,
+        oer_ieee80211_lower_mac::GateIssuer<'id, Path>,
+        ArbiterAuthority<'id, Path>,
+    );
+
+    fn build<'id, Path: PoolPath>(
+        builder: oer_radio_port::PoolBuilder<'id, Path>,
+    ) -> Self::Pools<'id, Path> {
+        let (open, issuer) = builder.into_pools::<oer_ieee80211_lower_mac::GatePool>();
+        (open, issuer, ArbiterAuthority { brand: PhantomData })
+    }
+}
+
+/// The sole right to construct the arbiter of this installation's gate.
+#[derive(Debug)]
+#[must_use = "construct the arbiter exactly once with its initial gate"]
+pub struct ArbiterAuthority<'id, Path: PoolPath = Root> {
+    brand: Brand<'id, Path>,
+}
+
 /// The name of one lease.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LeaseId(u32);
+pub struct LeaseId<'id, Path: PoolPath = Root>(u64, Brand<'id, Path>);
 
 /// The station's right to hold one lease: a request takes it, and the
 /// lease's end or cancellation gives it back. Only the arbiter makes one.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "retain the sole place for the station's next channel request"]
-pub struct LeasePlace {
-    private: (),
+pub struct LeasePlace<'id, Path: PoolPath = Root> {
+    private: Brand<'id, Path>,
 }
 
 /// The connected station's right to one absence from its primary lease's
@@ -206,8 +238,8 @@ pub struct LeasePlace {
 /// cancellation gives it back. Only the arbiter makes one.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "retain the sole place for the station's next absence request"]
-pub struct AbsencePlace {
-    private: (),
+pub struct AbsencePlace<'id, Path: PoolPath = Root> {
+    private: Brand<'id, Path>,
 }
 
 /// The port's channel, leased to the station from `from` until `until`
@@ -215,8 +247,8 @@ pub struct AbsencePlace {
 /// and the station gives it back by value.
 #[derive(Debug)]
 #[must_use = "a lease goes back through `Arbiter::release`, or ends by its notice"]
-pub struct Lease<K> {
-    id: LeaseId,
+pub struct Lease<'id, K, Path: PoolPath = Root> {
+    id: LeaseId<'id, Path>,
     channel: SupportedChannel<K>,
     from: Instant,
     until: Option<Instant>,
@@ -224,7 +256,7 @@ pub struct Lease<K> {
     access_point: Option<SupportedChannel<K>>,
 }
 
-impl<K> PartialEq for Lease<K> {
+impl<'id, K, Path: PoolPath> PartialEq for Lease<'id, K, Path> {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
             && self.channel == other.channel
@@ -235,11 +267,11 @@ impl<K> PartialEq for Lease<K> {
     }
 }
 
-impl<K> Eq for Lease<K> {}
+impl<'id, K, Path: PoolPath> Eq for Lease<'id, K, Path> {}
 
-impl<K> Lease<K> {
+impl<'id, K, Path: PoolPath> Lease<'id, K, Path> {
     /// Its name.
-    pub const fn id(&self) -> LeaseId {
+    pub const fn id(&self) -> LeaseId<'id, Path> {
         self.id
     }
 
@@ -301,18 +333,20 @@ pub struct ChannelRequest<K> {
 /// The arbiter's answer to a connected station's absence.
 #[derive(Debug)]
 #[must_use = "deliver the lease or retain the returned absence place"]
-pub enum AbsenceAnswer<K> {
+pub enum AbsenceAnswer<'id, K, Path: PoolPath = Root> {
     /// The absence, leased: it starts a preparation window later, once the
     /// station said [`Arbiter::ready`], and returns to the primary lease's
     /// channel.
-    Lease(Lease<K>),
+    Lease(Lease<'id, K, Path>),
     /// No absence now; the place comes back.
-    Refused(AbsenceRefusal, AbsencePlace),
+    Refused(AbsenceRefusal, AbsencePlace<'id, Path>),
 }
 
 /// Why the arbiter refused an absence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AbsenceRefusal {
+    /// This installation used every lease identity; its places still return.
+    IdentityExhausted,
     /// No future beacon/absence slot fits the clock's representable range.
     ScheduleExhausted,
     /// The primary lease named is not the running one.
@@ -326,20 +360,22 @@ pub enum AbsenceRefusal {
 /// The arbiter's answer to a request.
 #[derive(Debug)]
 #[must_use = "deliver the lease or retain the returned admission place"]
-pub enum Answer<K> {
+pub enum Answer<'id, K, Path: PoolPath = Root> {
     /// The channel, leased; the arbiter keeps the place until the lease
     /// ends. A join away from the running access point's channel, which
     /// the access point follows, starts once the access point's announced
     /// move took the port there: its `from` is the expected switch. The
     /// move is never withdrawn, whether the station joins or not.
-    Lease(Lease<K>),
+    Lease(Lease<'id, K, Path>),
     /// The station may not have the channel; the place comes back.
-    Refused(Refusal, LeasePlace),
+    Refused(Refusal, LeasePlace<'id, Path>),
 }
 
 /// Why the arbiter refused a request.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Refusal {
+    /// This installation used every lease identity; its place still returns.
+    IdentityExhausted,
     /// No future beacon/absence slot fits the clock's representable range.
     ScheduleExhausted,
     /// The station joins where the access point beside it may not follow,
@@ -386,6 +422,9 @@ pub enum CancelReason {
     Refused,
     /// The gate closed too late for the lease.
     Late,
+    /// The access point did not complete its announced move within one
+    /// beacon interval of the promised switch instant.
+    SwitchTimeout,
     /// The port failed.
     PortFailed,
 }
@@ -393,20 +432,20 @@ pub enum CancelReason {
 /// What the arbiter tells the station.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "deliver the notice and return any admission place to the station"]
-pub enum StationNotice<K> {
+pub enum StationNotice<'id, K, Path: PoolPath = Root> {
     /// The lease started: the port runs on its channel.
-    LeaseStarted(LeaseId),
+    LeaseStarted(LeaseId<'id, Path>),
     /// The lease ended: the port left its channel; the place comes back.
-    LeaseEnded(LeasePlace),
+    LeaseEnded(LeasePlace<'id, Path>),
     /// The lease ended without its own end; the place comes back.
-    LeaseCancelled(CancelReason, LeasePlace),
+    LeaseCancelled(CancelReason, LeasePlace<'id, Path>),
     /// The absence started: the port runs on its channel.
-    AbsenceStarted(LeaseId),
+    AbsenceStarted(LeaseId<'id, Path>),
     /// The absence ended: the port is back on the primary lease's channel;
     /// the place comes back.
-    AbsenceEnded(AbsencePlace),
+    AbsenceEnded(AbsencePlace<'id, Path>),
     /// The absence ended without its own end; the place comes back.
-    AbsenceCancelled(CancelReason, AbsencePlace),
+    AbsenceCancelled(CancelReason, AbsencePlace<'id, Path>),
     /// The port moved without the station's request. A station that holds
     /// its primary lease exchanges it for one on the new channel
     /// ([`Arbiter::exchange`]).
@@ -481,6 +520,8 @@ pub enum UpstreamFact<K> {
 /// type parameter, so only a phase that sends the reservation closes its
 /// gates ([`CloseGateWith`]).
 pub trait ReservationMode {
+    /// Maximum absence representable by this mode's air reservation, if any.
+    const MAX_ABSENCE: Option<Duration>;
     /// What a gate's closing carries: the end of the reservation, or
     /// nothing.
     type Reserve: Copy + Debug + Eq;
@@ -497,6 +538,7 @@ pub trait ReservationMode {
 pub enum NoReservation {}
 
 impl ReservationMode for NoReservation {
+    const MAX_ABSENCE: Option<Duration> = None;
     type Reserve = ();
 
     fn reserve(_: Instant, _: Duration) {}
@@ -509,6 +551,7 @@ impl ReservationMode for NoReservation {
 pub enum AirReservation {}
 
 impl ReservationMode for AirReservation {
+    const MAX_ABSENCE: Option<Duration> = Some(MAX_RESERVATION);
     type Reserve = Option<Instant>;
 
     fn reserve(until: Instant, length: Duration) -> Option<Instant> {
@@ -564,7 +607,7 @@ impl<'p, 'id: 'p, P: AirReservationPhase<'p, 'id>> CloseGateWith<'p, 'id, AirRes
 /// ```compile_fail
 /// #![deny(unused_must_use)]
 /// use oer_ieee80211_arbiter::PendingRetune;
-/// fn ignore<K>(next: impl FnOnce() -> PendingRetune<K>) {
+/// fn ignore<'id, K, Path: oer_radio_port::PoolPath>(next: impl FnOnce() -> PendingRetune<'id, K, Path>) {
 ///     next();
 /// }
 /// ```
@@ -572,7 +615,7 @@ impl<'p, 'id: 'p, P: AirReservationPhase<'p, 'id>> CloseGateWith<'p, 'id, AirRes
 /// ```
 /// #![deny(unused_must_use)]
 /// use oer_ieee80211_arbiter::PendingRetune;
-/// fn forward<K>(next: impl FnOnce() -> PendingRetune<K>) -> PendingRetune<K> {
+/// fn forward<'id, K, Path: oer_radio_port::PoolPath>(next: impl FnOnce() -> PendingRetune<'id, K, Path>) -> PendingRetune<'id, K, Path> {
 ///     next()
 /// }
 /// ```
@@ -589,12 +632,13 @@ impl<'p, 'id: 'p, P: AirReservationPhase<'p, 'id>> CloseGateWith<'p, 'id, AirRes
 /// ```
 #[derive(Debug)]
 #[must_use = "finish or refuse the retune with this token"]
-pub struct PendingRetune<K> {
+pub struct PendingRetune<'id, K, Path: PoolPath = Root> {
+    brand: Brand<'id, Path>,
     to: SupportedChannel<K>,
     purpose: CyclePurpose<K>,
 }
 
-impl<K> PendingRetune<K> {
+impl<'id, K, Path: PoolPath> PendingRetune<'id, K, Path> {
     /// The checked channel this action asks the service to tune.
     pub const fn channel(&self) -> SupportedChannel<K> {
         self.to
@@ -606,7 +650,7 @@ impl<K> PendingRetune<K> {
 #[must_use = "perform the action and retain any gate or retune token"]
 pub enum ArbiterAction<'id, K, R: ReservationMode, Path: PoolPath = Root> {
     /// Tell the station.
-    Station(StationNotice<K>),
+    Station(StationNotice<'id, K, Path>),
     /// Tell the access point.
     AccessPoint(AccessPointCommand<K>),
     /// Close the port's transmit gate ([`Arbiter::gate_closed`] follows),
@@ -619,7 +663,7 @@ pub enum ArbiterAction<'id, K, R: ReservationMode, Path: PoolPath = Root> {
     },
     /// Move the port to the channel: disable, set it, enable
     /// ([`Arbiter::retuned`] or [`Arbiter::retune_refused`] follows).
-    Retune(PendingRetune<K>),
+    Retune(PendingRetune<'id, K, Path>),
     /// Open the port's transmit gate ([`Arbiter::gate_opened`] takes the
     /// open gate back).
     OpenGate(GateClosed<'id, Path>),
@@ -649,6 +693,36 @@ pub struct ArbiterPolicy {
 }
 
 impl ArbiterPolicy {
+    /// Check the complete absence budget against the backend's publication
+    /// bound before moving any gate or arbiter construction authority.
+    pub fn checked<R: ReservationMode>(
+        self,
+        publication_bound: Duration,
+    ) -> Result<CheckedArbiterPolicy<R>, ArbiterPolicyError> {
+        if self.follow.min_follow_interval > self.follow.max_follow_interval {
+            return Err(ArbiterPolicyError::FollowIntervalOrder);
+        }
+        if R::MAX_ABSENCE.is_some_and(|limit| self.absence > limit) {
+            return Err(ArbiterPolicyError::ReservationTooLong);
+        }
+        let needed = publication_bound
+            .as_micros()
+            .checked_add(self.retune.as_micros())
+            .and_then(|one| one.checked_mul(2))
+            .and_then(|moves| moves.checked_add(self.min_listen.as_micros()))
+            .ok_or(ArbiterPolicyError::AbsenceBudgetOverflow)?;
+        if needed > self.absence.as_micros() {
+            return Err(ArbiterPolicyError::AbsenceTooShort {
+                needed: Duration::from_micros(needed),
+            });
+        }
+        Ok(CheckedArbiterPolicy {
+            policy: self,
+            publication_bound,
+            mode: PhantomData,
+        })
+    }
+
     /// A 10 ms preparation, absences 2 ms after the TBTT, at most 20 ms
     /// with their two retunes of at most 2 ms each, at least 5 ms of
     /// listening, and the coordinator's default policies.
@@ -662,6 +736,26 @@ impl ArbiterPolicy {
         search: ApSearchPolicy::DEFAULT,
         loss: UpstreamLossPolicy::DEFAULT,
     };
+}
+
+/// An arbiter policy checked for one reservation mode and publication bound.
+pub struct CheckedArbiterPolicy<R: ReservationMode> {
+    policy: ArbiterPolicy,
+    publication_bound: Duration,
+    mode: PhantomData<R>,
+}
+
+/// A policy rejected before constructing any arbiter or lease places.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ArbiterPolicyError {
+    /// The minimum follow interval exceeds its ceiling.
+    FollowIntervalOrder,
+    /// The absence exceeds the reservation Duration field.
+    ReservationTooLong,
+    /// Two publication/retune bounds and minimum listening do not fit time.
+    AbsenceBudgetOverflow,
+    /// The configured absence cannot contain both moves and minimum listening.
+    AbsenceTooShort { needed: Duration },
 }
 
 /// `a + b`, at most the longest duration.
@@ -710,8 +804,8 @@ enum Which {
 }
 
 /// A lease the arbiter granted, by its steps.
-struct Granted<K> {
-    id: LeaseId,
+struct Granted<'id, K, Path: PoolPath> {
+    id: LeaseId<'id, Path>,
     channel: SupportedChannel<K>,
     from: Instant,
     until: Option<Instant>,
@@ -722,12 +816,12 @@ struct Granted<K> {
 }
 
 /// Only an absence terminal may carry a deferred leave command.
-struct AbsenceTerminal {
-    place: AbsencePlace,
+struct AbsenceTerminal<'id, Path: PoolPath> {
+    place: AbsencePlace<'id, Path>,
     then_leave: Option<LeaveReason>,
 }
 
-impl<K> Granted<K> {
+impl<'id, K, Path: PoolPath> Granted<'id, K, Path> {
     /// Leave enough time to close the gate and restore the return channel.
     fn listen_end(&self, retune: Duration) -> Option<Instant> {
         self.until.map(|until| {
@@ -746,7 +840,7 @@ enum LeaseStep {
     Waiting { ready: bool },
     /// A join's lease that starts with the access point's announced move
     /// onto its channel.
-    AwaitingMove,
+    AwaitingMove { deadline: Instant },
     /// The outgoing gate is closing; the late admission check is still due.
     Closing,
     /// The outgoing retune was admitted. Its time is no longer charged again.
@@ -851,11 +945,11 @@ impl<K> Clone for CyclePurpose<K> {
 ///   a lease starts only in a cycle: one of each per cycle.
 /// - A command to leave keeps the port's failure over any other reason.
 /// - The access point's stop withdraws its start and its announcement.
-struct Outbox<K> {
-    primary_started: Option<LeaseId>,
-    absence_started: Option<LeaseId>,
-    primary_end: Option<(Option<CancelReason>, LeasePlace)>,
-    absence_end: Option<(Option<CancelReason>, AbsencePlace)>,
+struct Outbox<'id, K, Path: PoolPath> {
+    primary_started: Option<LeaseId<'id, Path>>,
+    absence_started: Option<LeaseId<'id, Path>>,
+    primary_end: Option<(Option<CancelReason>, LeasePlace<'id, Path>)>,
+    absence_end: Option<(Option<CancelReason>, AbsencePlace<'id, Path>)>,
     moved: Option<SupportedChannel<K>>,
     leave: Option<LeaveReason>,
     stop: bool,
@@ -863,7 +957,7 @@ struct Outbox<K> {
     announce: Option<AccessPointCommand<K>>,
 }
 
-impl<K> Outbox<K> {
+impl<'id, K, Path: PoolPath> Outbox<'id, K, Path> {
     const fn new() -> Self {
         Self {
             primary_started: None,
@@ -893,7 +987,7 @@ impl<K> Outbox<K> {
     /// The next thing owed: the access point's commands, then the
     /// station's notices, starts before ends and absences before the
     /// primary lease.
-    fn take(&mut self) -> Option<ArbiterNotice<K>> {
+    fn take(&mut self) -> Option<ArbiterNotice<'id, K, Path>> {
         if core::mem::take(&mut self.stop) {
             return Some(ArbiterNotice::AccessPoint(AccessPointCommand::Stop));
         }
@@ -931,8 +1025,8 @@ impl<K> Outbox<K> {
 /// A notice deliverable without owning an enabled port phase.
 #[derive(Debug)]
 #[must_use = "deliver the notice and retain any admission place"]
-pub enum ArbiterNotice<K> {
-    Station(StationNotice<K>),
+pub enum ArbiterNotice<'id, K, Path: PoolPath = Root> {
+    Station(StationNotice<'id, K, Path>),
     AccessPoint(AccessPointCommand<K>),
 }
 
@@ -953,28 +1047,34 @@ pub struct Arbiter<
     /// lease's, or the port's alone.
     home: SupportedChannel<K>,
     /// The station's primary lease and its place.
-    primary: Option<(Granted<K>, LeasePlace)>,
+    primary: Option<(Granted<'id, K, Path>, LeasePlace<'id, Path>)>,
     /// The connected station's absence and its place.
-    absence: Option<(Granted<K>, AbsenceTerminal)>,
+    absence: Option<(Granted<'id, K, Path>, AbsenceTerminal<'id, Path>)>,
     /// The primary lease is a join the access point moved for, which has
     /// not connected yet.
     following: bool,
     cycle: Option<Cycle<K, R::Reserve>>,
-    next_id: u32,
-    outbox: Outbox<K>,
+    next_id: Option<u64>,
+    outbox: Outbox<'id, K, Path>,
 }
 
 impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<'id, K, R, Path> {
     /// The arbiter of a port on `channel`, holding its open gate, and the
     /// station's places for its primary lease and its absence.
-    /// `publication_bound` comes from the backend's `PUBLICATION_BOUND`, not
-    /// its retry-plan length. Each move reserves this drain plus its retune.
+    /// The checked policy uses the backend's `PUBLICATION_BOUND`, not its
+    /// retry-plan length. Each move reserves this drain plus its retune.
     pub fn new(
-        policy: ArbiterPolicy,
+        policy: CheckedArbiterPolicy<R>,
         channel: SupportedChannel<K>,
+        authority: ArbiterAuthority<'id, Path>,
         gate: GateOpen<'id, Path>,
-        publication_bound: Duration,
-    ) -> (Self, LeasePlace, AbsencePlace) {
+    ) -> (Self, LeasePlace<'id, Path>, AbsencePlace<'id, Path>) {
+        let CheckedArbiterPolicy {
+            policy,
+            publication_bound,
+            mode: _,
+        } = policy;
+        let ArbiterAuthority { brand: _ } = authority;
         (
             Self {
                 policy,
@@ -988,11 +1088,15 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
                 absence: None,
                 following: false,
                 cycle: None,
-                next_id: 0,
+                next_id: Some(0),
                 outbox: Outbox::new(),
             },
-            LeasePlace { private: () },
-            AbsencePlace { private: () },
+            LeasePlace {
+                private: PhantomData,
+            },
+            AbsencePlace {
+                private: PhantomData,
+            },
         )
     }
 
@@ -1040,10 +1144,8 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
         matches!(self.pair, Pair::Moving { at, .. } if now >= at)
     }
 
-    fn next_id(&mut self) -> LeaseId {
-        let id = LeaseId(self.next_id);
-        self.next_id = self.next_id.wrapping_add(1);
-        id
+    fn available_id(&self) -> Option<LeaseId<'id, Path>> {
+        self.next_id.map(|id| LeaseId(id, PhantomData))
     }
 
     /// The absence slot and end for `dwell` from `earliest`: beside an
@@ -1068,7 +1170,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
         Some((from, from.checked_add(length)?))
     }
 
-    fn lease_value(&self, granted: &Granted<K>) -> Lease<K> {
+    fn lease_value(&self, granted: &Granted<'id, K, Path>) -> Lease<'id, K, Path> {
         let retune = sum(self.publication_bound, self.policy.retune);
         Lease {
             access_point: self.schedule().map(|_| self.home),
@@ -1086,11 +1188,14 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
         &mut self,
         now: Instant,
         request: ChannelRequest<K>,
-        place: LeasePlace,
-    ) -> Answer<K> {
+        place: LeasePlace<'id, Path>,
+    ) -> Answer<'id, K, Path> {
         if matches!(self.port, Port::Failed) {
             return Answer::Refused(Refusal::PortFailed, place);
         }
+        let Some(id) = self.available_id() else {
+            return Answer::Refused(Refusal::IdentityExhausted, place);
+        };
         let away = request.channel != self.home;
         let mut follows = None;
         if away
@@ -1099,18 +1204,23 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
         {
             match self.coordinator.station_joining_away(request.channel, now) {
                 JoinAway::Follow { count } => {
+                    let Some((at, deadline)) = schedule.switch_at(now, count).and_then(|at| {
+                        at.checked_add(schedule.beacon_interval.duration())
+                            .map(|deadline| (at, deadline))
+                    }) else {
+                        return Answer::Refused(Refusal::ScheduleExhausted, place);
+                    };
+                    self.coordinator.follow_announced(now);
                     self.outbox.announce = Some(AccessPointCommand::AnnounceSwitch {
                         target: request.channel,
                         mode: ChannelSwitchMode::Continue,
                         count,
                     });
-                    let Some(at) = schedule.switch_at(now, count) else {
-                        return Answer::Refused(Refusal::ScheduleExhausted, place);
-                    };
-                    follows = Some(at);
+                    follows = Some((at, deadline));
                     self.following = true;
                 }
                 JoinAway::StopAccessPoint => {
+                    self.coordinator.access_point_stopped();
                     self.access_point_gone();
                     self.outbox.stop();
                 }
@@ -1118,10 +1228,12 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
                 JoinAway::TooSoon { retry_at } => {
                     return Answer::Refused(Refusal::TooSoon { retry_at }, place);
                 }
+                JoinAway::ScheduleExhausted => {
+                    return Answer::Refused(Refusal::ScheduleExhausted, place);
+                }
             }
         }
-        let id = self.next_id();
-        if let Some(switch) = follows {
+        if let Some((switch, deadline)) = follows {
             let granted = Granted {
                 id,
                 channel: request.channel,
@@ -1129,9 +1241,10 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
                 until: None,
                 returns: false,
                 end: LeaseEnd::Own,
-                step: LeaseStep::AwaitingMove,
+                step: LeaseStep::AwaitingMove { deadline },
             };
             let lease = self.lease_value(&granted);
+            self.next_id = id.0.checked_add(1);
             self.primary = Some((granted, place));
             return Answer::Lease(lease);
         }
@@ -1197,6 +1310,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
             step: LeaseStep::Waiting { ready: true },
         };
         let lease = self.lease_value(&granted);
+        self.next_id = id.0.checked_add(1);
         self.primary = Some((granted, place));
         Answer::Lease(lease)
     }
@@ -1207,9 +1321,9 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
         &mut self,
         now: Instant,
         request: ChannelRequest<K>,
-        home: &Lease<K>,
-        place: AbsencePlace,
-    ) -> AbsenceAnswer<K> {
+        home: &Lease<'id, K, Path>,
+        place: AbsencePlace<'id, Path>,
+    ) -> AbsenceAnswer<'id, K, Path> {
         if matches!(self.port, Port::Failed) {
             return AbsenceAnswer::Refused(AbsenceRefusal::PortFailed, place);
         }
@@ -1219,7 +1333,9 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
         if !connected {
             return AbsenceAnswer::Refused(AbsenceRefusal::NotConnected, place);
         }
-        let id = self.next_id();
+        let Some(id) = self.available_id() else {
+            return AbsenceAnswer::Refused(AbsenceRefusal::IdentityExhausted, place);
+        };
         let dwell = match request.purpose {
             Purpose::Scan { dwell } | Purpose::Search { dwell } => Some(dwell),
             Purpose::Connect => None,
@@ -1247,6 +1363,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
             step: LeaseStep::Waiting { ready: false },
         };
         let lease = self.lease_value(&granted);
+        self.next_id = id.0.checked_add(1);
         self.absence = Some((
             granted,
             AbsenceTerminal {
@@ -1260,26 +1377,32 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
     /// Exchange the primary lease `old`, after a [`StationNotice::Moved`],
     /// for the lease of the channel the port moved to, under a new name:
     /// the old lease goes by value, so the station never holds two. A
-    /// lease that is not the running primary one comes back unchanged.
-    pub fn exchange(&mut self, old: Lease<K>) -> Lease<K> {
-        let id = LeaseId(self.next_id);
+    /// A lease that is not the moved primary one, or for which no fresh
+    /// identity remains, comes back unchanged in `Err`.
+    pub fn exchange(
+        &mut self,
+        old: Lease<'id, K, Path>,
+    ) -> Result<Lease<'id, K, Path>, Lease<'id, K, Path>> {
+        let Some(id) = self.available_id() else {
+            return Err(old);
+        };
         let Some((granted, _)) = self.primary.as_mut() else {
-            return old;
+            return Err(old);
         };
         if granted.id != old.id || granted.channel == old.channel {
-            return old;
+            return Err(old);
         }
-        self.next_id = self.next_id.wrapping_add(1);
+        self.next_id = id.0.checked_add(1);
         granted.id = id;
         match &self.primary {
-            Some((granted, _)) => self.lease_value(granted),
-            None => old,
+            Some((granted, _)) => Ok(self.lease_value(granted)),
+            None => Err(old),
         }
     }
 
     /// The station is ready for its absence `lease`: it told its access
     /// point it leaves.
-    pub fn ready(&mut self, lease: LeaseId) {
+    pub fn ready(&mut self, lease: LeaseId<'id, Path>) {
         if let Some((granted, _)) = &mut self.absence
             && granted.id == lease
             && let LeaseStep::Waiting { ready } = &mut granted.step
@@ -1292,7 +1415,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
     /// ends with its cancellation before its start, with its end after,
     /// once the gate's cycle that runs ended. A primary lease ends after
     /// the absence.
-    pub fn release(&mut self, lease: Lease<K>) {
+    pub fn release(&mut self, lease: Lease<'id, K, Path>) {
         let which = if self
             .primary
             .as_ref()
@@ -1314,7 +1437,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
         self.end_lease(which, LeaseEnd::Released);
     }
 
-    fn granted(&mut self, which: Which) -> Option<&mut Granted<K>> {
+    fn granted(&mut self, which: Which) -> Option<&mut Granted<'id, K, Path>> {
         match which {
             Which::Primary => self.primary.as_mut().map(|(granted, _)| granted),
             Which::Absence => self.absence.as_mut().map(|(granted, _)| granted),
@@ -1328,7 +1451,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
             return;
         };
         match granted.step {
-            LeaseStep::Waiting { .. } | LeaseStep::AwaitingMove => {
+            LeaseStep::Waiting { .. } | LeaseStep::AwaitingMove { .. } => {
                 let reason = match end {
                     LeaseEnd::Cancelled(reason) => reason,
                     LeaseEnd::Own | LeaseEnd::Released => CancelReason::Released,
@@ -1438,10 +1561,9 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
                 // A join that waited for the access point's move goes
                 // alone.
                 if let Some((granted, _)) = &mut self.primary
-                    && granted.step == LeaseStep::AwaitingMove
+                    && matches!(granted.step, LeaseStep::AwaitingMove { .. })
                 {
                     granted.step = LeaseStep::Waiting { ready: true };
-                    granted.from = now;
                 }
                 // A lease away from its channel is cancelled and returns.
                 let reason = LeaseEnd::Cancelled(CancelReason::AccessPointStopped);
@@ -1583,6 +1705,10 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
 
     /// What a cycle was for, once the gate opened again.
     fn finish(&mut self, cycle: Cycle<K, R::Reserve>) {
+        // The return/move is complete and the gate is open. Only this
+        // boundary can release an AP restart retained by the coordinator.
+        let actions = self.coordinator.port_moved(cycle.to);
+        self.apply(actions);
         match cycle.purpose {
             CyclePurpose::LeaseStart(which) => {
                 if which == Which::Primary
@@ -1623,7 +1749,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
                 match self.primary.as_mut() {
                     // A join's lease starts with the move onto its channel.
                     Some((granted, _))
-                        if granted.step == LeaseStep::AwaitingMove
+                        if matches!(granted.step, LeaseStep::AwaitingMove { .. })
                             && granted.channel == cycle.to =>
                     {
                         granted.step = LeaseStep::Running;
@@ -1643,17 +1769,18 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
     }
 
     /// The requested retune completed and the port runs on its channel.
-    pub fn retuned(&mut self, pending: PendingRetune<K>) {
+    pub fn retuned(&mut self, pending: PendingRetune<'id, K, Path>) {
         self.port = Port::On(pending.to);
-        let actions = self.coordinator.port_moved(pending.to);
-        self.apply(actions);
     }
 
     /// The requested retune was refused: a move onto a lease's channel
     /// cancels that lease and returns home; a refused return or shared move
     /// stops the station and the access point.
     #[must_use = "the next retune owns the return move; None means the port stopped"]
-    pub fn retune_refused(&mut self, pending: PendingRetune<K>) -> Option<PendingRetune<K>> {
+    pub fn retune_refused(
+        &mut self,
+        pending: PendingRetune<'id, K, Path>,
+    ) -> Option<PendingRetune<'id, K, Path>> {
         match pending.purpose {
             CyclePurpose::LeaseStart(which) => {
                 self.cancel(which, CancelReason::Refused);
@@ -1664,6 +1791,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
                     purpose: CyclePurpose::Return { to: self.home },
                 });
                 Some(PendingRetune {
+                    brand: PhantomData,
                     to: self.home,
                     purpose: CyclePurpose::Return { to: self.home },
                 })
@@ -1697,6 +1825,10 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
         let pending_due = self.move_due(now);
         let granted = self.granted(which)?;
         match granted.step {
+            LeaseStep::AwaitingMove { deadline } if now >= deadline && !pending_due => {
+                self.cancel(which, CancelReason::SwitchTimeout);
+                None
+            }
             LeaseStep::Waiting { ready } if now >= granted.from => {
                 if !ready {
                     self.cancel(which, CancelReason::NotReady);
@@ -1825,6 +1957,9 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
                         Some((LeaseStep::Closing, LeaseEnd::Cancelled(reason))) => {
                             Some((which, reason))
                         }
+                        Some((LeaseStep::Closing, LeaseEnd::Released)) => {
+                            Some((which, CancelReason::Released))
+                        }
                         _ if self.too_late(which, now) => Some((which, CancelReason::Late)),
                         _ => None,
                     }
@@ -1857,6 +1992,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
                         self.gate = Gate::Closed(closed);
                         self.port = Port::Retuning;
                         Some(ArbiterAction::Retune(PendingRetune {
+                            brand: PhantomData,
                             to: cycle.to,
                             purpose: cycle.purpose,
                         }))
@@ -1874,7 +2010,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
     /// deadlines, but this API never takes a gate or issues a retune token.
     /// Access-point notices precede station notices, as in `poll_action`.
     #[must_use = "deliver the notice before waiting"]
-    pub fn poll_notice(&mut self, now: Instant) -> Option<ArbiterNotice<K>> {
+    pub fn poll_notice(&mut self, now: Instant) -> Option<ArbiterNotice<'id, K, Path>> {
         if let Some(notice) = self.outbox.take() {
             return Some(notice);
         }
@@ -1916,8 +2052,9 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
             return None;
         }
         let retune = sum(self.publication_bound, self.policy.retune);
-        let lease = |granted: &Granted<K>| match granted.step {
+        let lease = |granted: &Granted<'id, K, Path>| match granted.step {
             LeaseStep::Waiting { .. } => Some(granted.from),
+            LeaseStep::AwaitingMove { deadline } => Some(deadline),
             LeaseStep::Running => granted.listen_end(retune),
             _ => None,
         };

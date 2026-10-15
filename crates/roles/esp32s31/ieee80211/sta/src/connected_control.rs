@@ -101,6 +101,8 @@ pub enum ConnectedDisconnectReason {
     /// The access point did not answer the SA Query that an unprotected
     /// disconnect started, so the association no longer holds.
     SaQueryTimeout,
+    /// A deadline needed to preserve the protected association cannot be represented.
+    DeadlineOverflow,
     /// The join beacon's TSF, advanced to the start of power management,
     /// crosses 2^64: the station cannot follow the access point's TSF.
     JoinTsfUnrepresentable,
@@ -120,6 +122,7 @@ impl From<ConnectedDisconnectReason> for ExitReason {
             ConnectedDisconnectReason::ActiveStateRestoreFailed => Self::ActiveStateRestoreFailed,
             ConnectedDisconnectReason::GroupKeyHandshakeFailed => Self::GroupKeyHandshakeFailed,
             ConnectedDisconnectReason::SaQueryTimeout => Self::SaQueryTimeout,
+            ConnectedDisconnectReason::DeadlineOverflow => Self::DeadlineOverflow,
             ConnectedDisconnectReason::JoinTsfUnrepresentable => Self::JoinTsfUnrepresentable,
         }
     }
@@ -539,6 +542,8 @@ pub enum ConnectedControlError {
     BeaconDeadline(StaBeaconLossConfigError),
     /// The station TBTT schedule rejected power management's request.
     PowerTbtt(oer_esp32s31_hal::types::StaTbttScheduleError),
+    /// A PM deadline or backend interval cannot represent the requested time.
+    PowerSchedule(oer_ieee80211_sta::modem_sleep::PmScheduleError),
     /// Power management produced more deferred work than the runtime drained.
     PowerCommandOverflow,
     /// The power agent could not perform a coexistence or RF command.
@@ -746,18 +751,26 @@ impl ConnectedControlCore {
         config: FtmRequesterConfig,
         now: oer_time::Instant,
     ) -> Result<ConnectedFtmRequestFrontier, ConnectedControlError> {
-        let mut requester = FtmRequester::<CONNECTED_FTM_FRONTIER_SAMPLE_CAPACITY>::new(config);
-        let session_generation = requester.start(self.peer, now)?;
-        let FtmRequesterService::Transmit(transmission) = requester.service(now)? else {
+        let requester = FtmRequester::<CONNECTED_FTM_FRONTIER_SAMPLE_CAPACITY>::new(config);
+        let session = requester
+            .start(self.peer, now)
+            .map_err(|refusal| refusal.error)?;
+        let session_generation = session.operation().session_generation;
+        let FtmRequesterService::Transmit(transmission) =
+            session.service(now).map_err(|refusal| refusal.error)?
+        else {
             unreachable!("a newly queued FTM request is immediately serviceable")
         };
         let hardware_error = station_ftm_request_frontier(&transmission);
-        let protocol_event = requester.reject_hardware_admission(transmission)?;
+        let transmission_generation = transmission.transmission_generation();
+        let attempt = transmission.attempt();
+        let (terminal, protocol_event) = transmission.reject_hardware_admission();
+        let (_requester, _outcome) = terminal.into_parts();
         Ok(ConnectedFtmRequestFrontier {
             peer: self.peer,
             session_generation,
-            transmission_generation: transmission.transmission_generation(),
-            attempt: transmission.attempt(),
+            transmission_generation,
+            attempt,
             protocol_event,
             hardware_error,
         })
@@ -1085,13 +1098,17 @@ impl ConnectedControlCore {
                     let traffic = self.power_traffic(context, control_event_pending);
                     let clock = power_clock(tx);
                     let coex = self.power.coex_view();
-                    let actions = self.power.engine.null_done(
-                        advertised == StaPowerManagement::PowerSave,
-                        success,
-                        clock,
-                        coex,
-                        traffic,
-                    );
+                    let actions = self
+                        .power
+                        .engine
+                        .null_done(
+                            advertised == StaPowerManagement::PowerSave,
+                            success,
+                            clock,
+                            coex,
+                            traffic,
+                        )
+                        .map_err(ConnectedControlError::PowerSchedule)?;
                     self.apply_power_actions(hardware, tx, actions)?;
                     return Ok(DatapathControlProgress::More);
                 }
@@ -1289,8 +1306,14 @@ impl ConnectedControlCore {
             let Some(random) = self.sa_query_random else {
                 return Ok(DatapathControlProgress::More);
             };
-            let Some(transaction) = self.sa_query.start(tx.now(), random()) else {
-                return Ok(DatapathControlProgress::More);
+            let transaction = match self.sa_query.start(tx.now(), random()) {
+                Ok(Some(transaction)) => transaction,
+                Ok(None) => return Ok(DatapathControlProgress::More),
+                Err(_) => {
+                    return Ok(DatapathControlProgress::Exit(
+                        ConnectedDisconnectReason::DeadlineOverflow,
+                    ));
+                }
             };
             return self.start_sa_query(hardware, tx, SaQuery::Request { transaction });
         }
@@ -1355,7 +1378,11 @@ impl ConnectedControlCore {
             let traffic = self.power_traffic(context, control_event_pending);
             let clock = power_clock(tx);
             let coex = self.power.coex_view();
-            let actions = self.power.engine.beacon(beacon, clock, coex, traffic);
+            let actions = self
+                .power
+                .engine
+                .beacon(beacon, clock, coex, traffic)
+                .map_err(ConnectedControlError::PowerSchedule)?;
             self.apply_power_actions(hardware, tx, actions)?;
             return Ok(DatapathControlProgress::More);
         }

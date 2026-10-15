@@ -61,6 +61,18 @@ impl AggregateState for NonEmptyAggregate {
     }
 }
 
+/// Closed proof that an aggregate has a first subframe. Only
+/// `NonEmptyAggregate` implements this refinement of `AggregateState`.
+pub trait NonEmptyState: AggregateState {
+    /// Recover the first subframe's fact without a runtime empty case.
+    fn into_head<T>(head: Self::Head<T>) -> T;
+}
+impl NonEmptyState for NonEmptyAggregate {
+    fn into_head<T>(head: T) -> T {
+        head
+    }
+}
+
 /// A class-checked QoS data description. The builder supplies receiver and
 /// TID when encoding it, together with its one protection. Other header fields
 /// and the MPDU length remain this subframe's own.
@@ -226,6 +238,20 @@ impl<'p, 'id, K> AmpduRate<'p, 'id, K> {
 pub trait PhaseAggregate<'id> {
     /// The backend resource family.
     type Types: PhaseTypes<'id>;
+    /// Whether this builder owns any subframes.
+    type State: AggregateState;
+    /// Backend execution metadata, separate from the complete aggregate.
+    type Execution;
+    /// Lower the nonempty builder before backend custody. Empty builders
+    /// have cancellation only and cannot invoke this operation.
+    fn into_admission(
+        self,
+    ) -> (
+        <Self::Types as PhaseTypes<'id>>::TxAggregate,
+        Self::Execution,
+    )
+    where
+        Self::State: NonEmptyState;
     /// Cancellation releases each complete MPDU, including for an empty
     /// builder. It does not manufacture an admitted nonempty aggregate.
     type Cancelled: IntoIterator<Item = <Self::Types as PhaseTypes<'id>>::TxMpdu>;
@@ -281,9 +307,56 @@ pub struct AggregateAttempt<'id, T, A, K, X, Path: PoolPath = Root> {
     pub min_mpdu_start_spacing: MpduStartSpacing,
 }
 
+/// A complete aggregate sealed before backend custody, retaining its original
+/// preparation's phase, installation and key borrow until submission.
+pub struct AdmittedAggregate<'id, T, A: PhaseAggregate<'id>, K, X, Path: PoolPath = Root> {
+    /// Indivisible owner of every submitted MPDU and body.
+    pub operation:
+        crate::InFlight<X, Slot<'id, T, Path>, <A::Types as PhaseTypes<'id>>::TxAggregate>,
+    /// Backend execution metadata, without owning subframes.
+    pub execution: A::Execution,
+    /// Protection selected by the caller.
+    pub protection: Protection,
+    /// Transmit power selected by the caller.
+    pub power: SupportedPower<K>,
+    /// Coexistence level selected by the caller.
+    pub coex: SupportedCoex<K>,
+    /// Minimum MPDU start spacing of the recipient.
+    pub min_mpdu_start_spacing: MpduStartSpacing,
+    proof: core::marker::PhantomData<fn(A) -> A>,
+}
+
+impl<'id, T, A: PhaseAggregate<'id, State = NonEmptyAggregate>, K, X, Path: PoolPath>
+    AggregateAttempt<'id, T, A, K, X, Path>
+{
+    /// Seal every subframe together before passing the attempt to a backend.
+    pub fn admit(self) -> AdmittedAggregate<'id, T, A, K, X, Path> {
+        let (payload, execution) = self.aggregate.into_admission();
+        AdmittedAggregate {
+            operation: crate::InFlight::admit(self.context, self.ticket, payload),
+            execution,
+            protection: self.protection,
+            power: self.power,
+            coex: self.coex,
+            min_mpdu_start_spacing: self.min_mpdu_start_spacing,
+            proof: core::marker::PhantomData,
+        }
+    }
+}
+
 /// The aggregate attempt of this interface, including its context and
 /// every subframe. A preparation refusal returns this same value.
 pub type InterfaceAggregateAttempt<'k, 'p, 'id, I> = AggregateAttempt<
+    'id,
+    <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::TicketKind,
+    InterfaceAggregate<'k, 'p, 'id, I, NonEmptyAggregate>,
+    <I as InterfacePhase<'p, 'id>>::Caps,
+    <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::Context,
+    <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::TicketPath,
+>;
+
+/// A sealed nonempty aggregate, as received by an interface backend.
+pub type InterfaceAggregateSubmission<'k, 'p, 'id, I> = AdmittedAggregate<
     'id,
     <<I as InterfacePhase<'p, 'id>>::Types as PhaseTypes<'id>>::TicketKind,
     InterfaceAggregate<'k, 'p, 'id, I, NonEmptyAggregate>,
@@ -313,14 +386,14 @@ pub type InterfaceProtection<'k, 'p, 'id, I> = TxProtection<
 ///
 /// An empty builder cannot be submitted:
 ///
-/// ```compile_fail,E0308
+/// ```compile_fail,E0599
 /// use oer_ieee80211_lower_mac::*;
 /// fn empty<'k, 'p, 'id: 'k + 'p, I: AmpduPhase<'p, 'id>>(
 ///     port: &mut I,
 ///     attempt: AggregateAttempt<'id, <I::Types as PhaseTypes<'id>>::TicketKind,
 ///         InterfaceAggregate<'k, 'p, 'id, I, EmptyAggregate>, I::Caps,
 ///         <I::Types as PhaseTypes<'id>>::Context>,
-/// ) { let _ = port.submit_ampdu(attempt); }
+/// ) { let _ = port.submit_ampdu(attempt.admit()); }
 /// ```
 pub trait AmpduPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id> {
     /// What the backend aggregates.
@@ -354,7 +427,7 @@ pub trait AmpduPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id> {
     /// only poisoning can refuse this operation, with the usual fail-stop.
     fn submit_ampdu<'k>(
         &mut self,
-        attempt: InterfaceAggregateAttempt<'k, 'p, 'id, Self>,
+        attempt: InterfaceAggregateSubmission<'k, 'p, 'id, Self>,
     ) -> Result<(), Poisoned<<Self::Types as PhaseTypes<'id>>::Fault>>
     where
         'id: 'k;

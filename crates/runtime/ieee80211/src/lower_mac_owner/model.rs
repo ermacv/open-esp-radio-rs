@@ -61,6 +61,10 @@
 //! Pending GTK installation owns only a vacant slot, permission, KeyID and
 //! material. The driver creates its identity and installed owner after the
 //! hardware step, then publishes the success terminal at the RX boundary.
+//! The key-table mutation and finite ingress capture do not wake the body.
+//! Delivery wakes only after the old ingress is closed: reentrant capture
+//! under the new key stays queued behind the terminal, while the frozen old
+//! DMA/ISR/software facts are delivered before it.
 //! A prepared retry submitted after removal is withdrawn in its AC's order,
 //! without publication. Cancellation wakes the driver to finish the barrier.
 //! An aggregate preflights every MPDU and the entire fresh-PN range before
@@ -119,16 +123,15 @@ use oer_ieee80211_lower_mac::{
     AccessPoint, AccessPointPhase, BandSet, BssColor, Ccmp128Key, Channel, CheckedAggregate,
     CheckedPoolSource, CheckedSubframe, CheckedTxSource, CoexPriority, CoexPrioritySet,
     ConnectionEpochKind, ExecutionPayload, FreshSource, FreshSubframe, GateClosed, GateIssuer,
-    GateOpen, GatePool, HardwareServices, Ieee80211Capabilities, Ieee80211Radio, InFlight,
-    IndeterminateCause, InterfaceAggregateAttempt, InterfaceAttempt, InterfacePhase, KeyTypes,
-    LinkMetric, LowerMacBackend, LowerMacCapabilities, LowerMacEvent, LowerMacPhase, LowerMacSetup,
-    LowerMacTerminal, MpduKind, MpduLayout, PhaseRate, PhaseTypes, PhyFormatSet, PreparationError,
-    PreparationRefused, PreparedTx, RateSupport, ReceiveFilter, Removed, RemovedKey,
-    RetransmissionPlan, RoleKeys, RxBuffer, RxEvidence, RxMeta, RxMetadata, SignalMetadata,
-    Station, StationPhase, StationReceive, SupportedBlockAck, SupportedChannel, SupportedEdca,
-    SupportedFilter, TxAck, TxBody, TxBufferClass, TxBufferMemory, TxBufferPool, TxCompleted,
-    TxEndStatus, TxFrame, TxMpdu, TxOutcome, TxProtection, TxSource, VifRole, WidthSet,
-    WithdrawCause,
+    GateOpen, HardwareServices, Ieee80211Capabilities, Ieee80211Radio, InFlight,
+    IndeterminateCause, InterfacePhase, KeyTypes, LinkMetric, LowerMacBackend,
+    LowerMacCapabilities, LowerMacEvent, LowerMacPhase, LowerMacSetup, LowerMacTerminal, MpduKind,
+    MpduLayout, PhaseRate, PhaseTypes, PhyFormatSet, PreparationError, PreparationRefused,
+    PreparedTx, RateSupport, ReceiveFilter, Removed, RemovedKey, RetransmissionPlan, RoleKeys,
+    RxBuffer, RxEvidence, RxMeta, RxMetadata, SignalMetadata, Station, StationPhase,
+    StationReceive, SupportedBlockAck, SupportedChannel, SupportedEdca, SupportedFilter, TxAck,
+    TxBody, TxBufferClass, TxBufferMemory, TxBufferPool, TxCompleted, TxEndStatus, TxFrame, TxMpdu,
+    TxOutcome, TxProtection, TxSource, VifRole, WidthSet, WithdrawCause,
 };
 use oer_ieee80211_lower_mac::{
     AggregateRefused, AggregateState, AmpduCapabilities, AmpduPhase, AmpduRate, BlockAckReport,
@@ -171,7 +174,7 @@ pub const MODEL_CAPABILITIES: LowerMacCapabilities = LowerMacCapabilities {
     individual_no_ack: PhyFormatSet::NON_HT,
     station_receive_filters: ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::OTHER_BSS_MANAGEMENT),
     access_point_receive_filters: ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::PROBE_REQUESTS),
-    key_slots: 4,
+    key_slots: (4 * MODEL_KEY_SLOTS) as u8,
     rx_block_ack_agreements: 2,
     rx_block_ack_max_tid: 7,
     rx_block_ack_max_window: 64,
@@ -1109,6 +1112,8 @@ pub struct ModelResources<'id> {
     pub connection_epoch: Slot<'id, ConnectionEpochKind, ModelPool<4>>,
     /// The transmit tickets.
     pub tickets: Vec<Slot<'id, ModelTickets, ModelPool<1>>>,
+    /// Sole permission for the body to unpack TX terminals.
+    pub terminal_access: oer_ieee80211_lower_mac::TerminalAccess<'id, ModelTickets, ModelPool<1>>,
     /// The small transmit buffers.
     pub small: Vec<ModelBuffer<'id, ModelSmall>>,
     /// The large transmit buffers.
@@ -1128,6 +1133,8 @@ pub struct ModelResources<'id> {
     pub access_point_group_permission: Slot<'id, ModelGroupPermission<AccessPoint>, ModelPool<11>>,
     /// The receive Block Ack slots both roles share.
     pub block_acks: [Slot<'id, ModelBlockAcks, ModelPool<9>>; MODEL_BLOCK_ACK_SLOTS],
+    /// The sole authority to construct this installation's arbiter.
+    pub arbiter_authority: oer_ieee80211_arbiter::ArbiterAuthority<'id, ModelPool<0>>,
     /// The open transmit gate.
     pub gate: GateOpen<'id, ModelPool<0>>,
 }
@@ -1819,8 +1826,8 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
         Self: 'a,
         'id: 'a;
     type Pools = (
-        GatePool,
-        oer_radio_port::Slots<ModelTickets, MODEL_TICKETS>,
+        oer_ieee80211_arbiter::ArbiterPool,
+        oer_ieee80211_lower_mac::TransmitPool<ModelTickets, MODEL_TICKETS>,
         oer_radio_port::Slots<ModelSmall, MODEL_SMALL_BUFFERS>,
         oer_radio_port::Slots<ModelLarge, MODEL_LARGE_BUFFERS>,
         oer_radio_port::Slots<ConnectionEpochKind, 1>,
@@ -1906,8 +1913,8 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
         mint: Mint<'id, Self::Pools>,
     ) -> (ModelHeld<'id, X>, ModelLocal<'id>, ModelResources<'id>) {
         let (
-            (gate, gate_issuer),
-            tickets,
+            (gate, gate_issuer, arbiter_authority),
+            (tickets, terminal_access),
             small,
             large,
             [epoch_slot],
@@ -1947,6 +1954,7 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
         let resources = ModelResources {
             connection_epoch: epoch_slot,
             tickets: tickets.into_iter().collect(),
+            terminal_access,
             small: small
                 .into_iter()
                 .map(|slot| ModelBuffer {
@@ -1969,6 +1977,7 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
             station_group_permission,
             access_point_group_permission,
             gate,
+            arbiter_authority,
         };
         (held, ModelLocal::default(), resources)
     }
@@ -2231,9 +2240,8 @@ impl<'id, X: ModelContext> Driver<'id, X> {
         }
     }
 
-    /// Called only after captured old RX crossed the FIFO boundary. Until
-    /// this step the command owns vacant resources and material, not an
-    /// installed owner or an allocation identity.
+    /// Apply the mutation without waking the consumer. The installed owner
+    /// stays private until all frozen old RX precedes its FIFO terminal.
     fn install_group<R>(
         &mut self,
         held: &ModelHeld<'id, X>,
@@ -2265,19 +2273,19 @@ impl<'id, X: ModelContext> Driver<'id, X> {
         admitted_at: u64,
         change: GroupChange<'id, X>,
     ) {
-        // A finite capture of all old ingress stages. Continuous RX is a
-        // separate source; no drain-to-idle loop can postpone this boundary.
-        self.receive(held);
+        // Snapshot and mutate before any wake can reenter ModelAir. This
+        // single-threaded model has no other interleaving during these steps.
+        // New-key ingress captured by delivery callbacks stays in the live
+        // queues until after this command's terminal. No drain-to-idle loop
+        // can postpone the boundary under continuous traffic.
+        let received = core::mem::take(&mut *held.air.rx.borrow_mut());
         let captured = core::mem::take(&mut *held.air.group_rx.borrow_mut());
-        for received in captured {
-            self.deliver(held, received.frame, received.meta);
-        }
         let terminal = match change {
             GroupChange::Install(GroupInstallationCommand::Station(pending)) => {
-                self.install_group(held, pending)
+                Some(self.install_group(held, pending))
             }
             GroupChange::Install(GroupInstallationCommand::AccessPoint(pending)) => {
-                self.install_group(held, pending)
+                Some(self.install_group(held, pending))
             }
             GroupChange::Replace {
                 permission,
@@ -2297,23 +2305,27 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                     &held.air,
                 );
                 self.activate_group(held, &identity, true);
-                LowerMacEvent::Terminal(LowerMacTerminal::GroupKeyReplaced {
-                    key: ModelGroupKey {
-                        identity,
-                        slot: installed.slot,
+                Some(LowerMacEvent::Terminal(
+                    LowerMacTerminal::GroupKeyReplaced {
+                        key: ModelGroupKey {
+                            identity,
+                            slot: installed.slot,
+                        },
+                        permission,
                     },
-                    permission,
-                })
+                ))
             }
             GroupChange::Select {
                 permission,
                 installed,
             } => {
                 self.activate_group(held, &installed.identity, false);
-                LowerMacEvent::Terminal(LowerMacTerminal::GroupKeySelected {
-                    key: installed,
-                    permission,
-                })
+                Some(LowerMacEvent::Terminal(
+                    LowerMacTerminal::GroupKeySelected {
+                        key: installed,
+                        permission,
+                    },
+                ))
             }
             GroupChange::Remove { key, removed } => {
                 key.0.active.set(false);
@@ -2325,8 +2337,17 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                 });
                 // AP removal can still wait for a published TX to end. Its
                 // permission remains in removing, not in a success terminal.
-                return;
+                None
             }
+        };
+        for (frame, meta) in received {
+            self.deliver(held, frame, meta);
+        }
+        for received in captured {
+            self.deliver(held, received.frame, received.meta);
+        }
+        let Some(terminal) = terminal else {
+            return;
         };
         if held.air.group_failure.get() == Some(GroupFaultStage::After) {
             let _capacity_fault = held.failed_group_terminal.push(terminal);
@@ -2988,8 +3009,23 @@ pub struct ModelPrepared<'k, 'p, 'id, R, K, X: ModelContext = ()> {
     key_borrow: PhantomData<&'k ()>,
     proof: PhaseProof<'p, (R, K, X)>,
 }
+/// Metadata lowered before single-MPDU admission; it owns no payload.
+pub struct ModelTxExecution {
+    plan: oer_ieee80211_lower_mac::RetryPlan<PhyRate>,
+    key: Option<PreparedKey>,
+}
 impl<'id, R, K, X: ModelContext> PreparedTx<'id> for ModelPrepared<'_, '_, 'id, R, K, X> {
     type Types = ModelTypes<X>;
+    type Execution = ModelTxExecution;
+    fn into_admission(self) -> (ModelMpdu<'id>, Self::Execution) {
+        (
+            self.mpdu,
+            ModelTxExecution {
+                plan: self.plan,
+                key: self.key,
+            },
+        )
+    }
     fn into_parts(self) -> (ModelAnyBuffer<'id>, Option<ModelBody>) {
         self.mpdu.into_parts()
     }
@@ -3171,13 +3207,11 @@ where
 
     fn submit<'k>(
         &mut self,
-        attempt: InterfaceAttempt<'k, 'p, 'id, Self>,
+        attempt: oer_ieee80211_lower_mac::InterfaceSubmission<'k, 'p, 'id, Self>,
     ) -> Result<(), Poisoned<ModelFault>> {
-        let ModelPrepared {
-            mpdu, plan, key, ..
-        } = attempt.source;
+        let ModelTxExecution { plan, key } = attempt.execution;
         self.held.command(Command::Submit(Box::new(Prepared {
-            operation: InFlight::admit(attempt.context, attempt.ticket, mpdu),
+            operation: attempt.operation,
             role: R::ROLE,
             queue: attempt.access_category,
             plan,
@@ -3346,10 +3380,33 @@ impl<R, K, X: ModelContext, S: AggregateState> ModelAggregate<'_, '_, '_, R, K, 
         .then_some(bit)
     }
 }
+/// Metadata lowered before aggregate admission; subframes stay in the sealed owner.
+pub struct ModelAggregateExecution {
+    first: SequenceNumber,
+    tid: Tid,
+    rate: PhyRate,
+    key: Option<PreparedKey>,
+}
 impl<'id, R, K, X: ModelContext, S: AggregateState> PhaseAggregate<'id>
     for ModelAggregate<'_, '_, 'id, R, K, X, S>
 {
     type Types = ModelTypes<X>;
+    type State = S;
+    type Execution = ModelAggregateExecution;
+    fn into_admission(self) -> (ModelSubframes<'id>, Self::Execution)
+    where
+        S: oer_ieee80211_lower_mac::NonEmptyState,
+    {
+        (
+            ModelSubframes(self.subframes),
+            ModelAggregateExecution {
+                first: S::into_head(self.first),
+                tid: self.tid,
+                rate: self.rate.rate().get(),
+                key: self.key,
+            },
+        )
+    }
     type Cancelled = ModelSubframeIter<'id>;
     fn receiver(&self) -> IndividualAddress {
         self.receiver
@@ -3540,29 +3597,27 @@ where
     }
     fn submit_ampdu<'k>(
         &mut self,
-        attempt: InterfaceAggregateAttempt<'k, 'p, 'id, Self>,
+        attempt: oer_ieee80211_lower_mac::InterfaceAggregateSubmission<'k, 'p, 'id, Self>,
     ) -> Result<(), Poisoned<ModelFault>>
     where
         'id: 'k,
     {
-        let ModelAggregate {
-            subframes,
+        let ModelAggregateExecution {
             first,
             tid,
             rate,
             key,
-            ..
-        } = attempt.aggregate;
+        } = attempt.execution;
         let queue = match oer_ieee80211_mac::qos::WmmUserPriority::new(tid.get()) {
             Some(priority) => priority.access_category(),
             None => oer_ieee80211_mac::qos::WmmAccessCategory::BestEffort,
         };
         self.held.command(Command::SubmitAmpdu(PreparedAggregate {
-            operation: InFlight::admit(attempt.context, attempt.ticket, ModelSubframes(subframes)),
+            operation: attempt.operation,
             role: R::ROLE,
             start_sequence: first,
             queue,
-            rate: rate.rate().get(),
+            rate,
             key,
         }));
         if self.held.air.poisoned.get() {

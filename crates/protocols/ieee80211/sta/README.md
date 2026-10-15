@@ -24,16 +24,60 @@ from request completion. A scan result retains partial observations and names
 the exact absence refusal, cancelled-absence limit or link-ending reason.
 The correlation value is caller data and confers no resource authority.
 
+Operation deadlines use checked monotonic arithmetic. Authentication,
+Association and handshake overflow end Connect with `DeadlineOverflow`.
+A background dwell overflow ends only its original scan request with
+`BackgroundScanEnd::DeadlineOverflow`; a delayed widened-receive terminal
+first restores member receive rules, then returns the scan terminal. The
+working channel, gate and primary lease remain available to the connection.
+If cleanup fails or a deadline required by the connection itself cannot be
+represented (including SA Query), the link ends with the concrete failure
+reason. An overflowing deadline is never replaced by `now` or a wrapped time.
+
+The new `machine::Station` accepts Open or a prederived WPA2 PMK. Network
+selection still prefers SAE when advertised, including a transition BSS
+offering both SAE and PSK. A selected SAE BSS ends Connect with
+`ConnectFailed(SaeUnsupported)` before entering Join or sending Authentication
+or Association. It releases the scan lease and returns its frame credits and
+key resources; it does not retry PSK or another candidate automatically.
+The shared SAE selection/exchange code and its existing consumers retain
+their behavior. Full WPA3-SAE and PMKSA integration remains required in #563
+step 2, with credentials, randomness, secret ownership and exchange completion
+introduced together with their consumer. That replacement must be complete
+before the old WPA3 implementation is removed. This refusal does not provide
+WPA3 support or resolve the separate PMF integration requirement.
+
 The local transmitter is `OwnAddress`; a scan record validates its individual
 BSS address as `Bssid` before it can enter Join. Authentication, Association,
 SAE, the handshake, the connected link and station frame encoders keep those
 roles. Wire writers unwrap the octets at the encoding boundary, so beginning
 an attempt cannot uncover a previously unchecked address.
-Authentication, Association, SAE, Handshake and Connected share MAC's
-disconnect parser with those address roles. It admits our unicast or broadcast
-from the selected BSSID and rejects foreign receivers, fragments, invalid
-geometry and Protected bodies. This portable station has no PMF integration;
-an integrity flag alone does not authorize interpreting protected management.
+Association also retains every advertised legacy rate from Supported and
+Extended Supported Rates in `StaAssociatedPeer::rate_peer`, alongside the
+separate basic-rate set for protection. A response cannot create a peer from
+an advertisement containing no usable legacy rate.
+Authentication TX contexts also retain the attempt ordinal inside their link
+epoch. A late terminal or preparation refusal returns its credit and buffer
+but cannot end a later RX-driven retry or arm that retry's response timer.
+RX may still complete the current exchange before its TX terminal arrives.
+
+Open links and pre-key authentication use MAC's disconnect parser. A PMF
+handshake retains a software management CCMP receiver when it installs its
+pairwise key. The IGTK becomes active at the group installation terminal;
+connected state owns both receivers and their independent PN/IPN frontiers.
+Only authenticated management from the selected BSSID can disconnect that
+link. Hardware integrity metadata alone grants no authority. A repeated M3
+retains the pairwise frontier, and reinstalling the same IGTK keeps its IPN.
+The owner and its software secrets end with the association.
+
+An unprotected class-2/3 disconnect starts the existing SA Query procedure,
+using fresh randomness from `StaConfig::nonce`. Requests and responses go
+under the installed pairwise key; only a matching protected response ends
+the query. Retry and absolute timeout wake independently of receive traffic.
+One pending response is retained while control TX is busy; additional peer
+requests rely on retransmission. A protected Deauthentication keeps its key
+until its TX terminal or preparation refusal, before key removal begins.
+These paths have host wire-peer tests; they are not S31 HIL evidence.
 
 Module map:
 
@@ -67,6 +111,32 @@ Module map:
 - `request`: caller-visible station configuration and selection values.
 
 This is not a generic 802.11 frame crate and it is not an ESP32 backend.
+
+`StaAssociationRuntime` owns one of the initial request epoch, comeback wait
+or returned request epoch. Both polling and management RX consume this owner;
+only a continuing result returns it. Success, rejection and timeout consume
+the association, so no terminal flag or repeatable terminal operation remains.
+A comeback retains the received-frame count and gets a fresh request schedule
+and response deadline after its wait. A second temporary refusal ends it.
+
+FTM starts by consuming `FtmRequester` into an owned `FtmSession`.
+`service` transfers that session into the transmission handle until
+`complete` or `reject_hardware_admission` consumes it; a completion takes
+no separate requester argument. The copyable generation numbers are
+diagnostics within one requester, not completion authority. Only an owned
+`FtmTerminal` returns the requester for another operation. A competing
+request retains its value and names the current `SessionTerminal` as its
+wait source; waiting sessions expose their exact `next_deadline`.
+
+Cancelling a session with a completed RX result returns that result.
+Cancellation and failure otherwise return collected samples plus the
+unmatched local timestamp pair. Scheduling overflow returns the unchanged
+requester, session or transmission before advancing its state. Forgetting
+an affine handle forfeits that operation; it cannot unlock or complete a
+different one. The S31 source-frontier consumer still rejects hardware
+admission before publication; these ownership contracts establish no FTM
+timestamp-capture or calibrated-distance capability.
+
 Frame parsing/building belongs in `crates/protocols/ieee80211/mac`; ESP32-S31 ordering
 and hardware ownership belong in `crates/roles/esp32s31/ieee80211/sta`; clocks, tasks,
 DMA wakeups and network leases belong to the radio runtime; final resource
@@ -75,13 +145,25 @@ claims and board composition belong to integration.
 The station's SSID and SAE bodies own their bounded lengths in heapless
 vectors. The SSID bound comes from MAC's `MAX_SSID_LEN`. Scan channels form
 a bounded, contiguous vector of checked `SupportedChannel` values, so a
-hole cannot terminate a scan before its remaining channels.
+hole cannot terminate a scan before its remaining channels. If a received BSS
+frame omits a channel element, the scan uses that frame's checked receive-channel
+configuration from `RxMeta`, including delayed delivery after a lease changed.
+The current lease or absence is not a substitute for that captured configuration.
 WMM priorities and TWT flow IDs select exact arrays without numeric
 indexing; an unpublished data return retains its checked frame description.
 Data writes an open MAC header directly into its proven span, so it fits an
 exact-size buffer without a temporary CCMP gap or a second payload move.
-The PM owner retains a NonZero beacon period through its divisions. Vendor
-timer arithmetic keeps its original wrapping width; diagnostics saturate.
+The PM owner retains a NonZero beacon period through its divisions. Listen
+intervals and TBTT periods keep their full `u64` value. Monotonic arithmetic
+is checked: a short slice emits `Due`, and a future slice or preemption uses
+an absolute `ArmAt` deadline, so delayed execution cannot extend it. Fallible
+clock inputs return `PmScheduleError` without changing state or publishing
+effects. It validates a transition on a value-only copy before committing it
+and emitting all its state-trace edges. Both passes have the same finite
+effect bound; there is no extra trace queue or allocation. Relative
+timers are validated against one captured clock before a consumer applies the
+batch; a backend must also reject intervals its hardware cannot represent.
+Only the activity presence counter retains intentional modular rollover.
 Each modem-sleep input returns a fresh `PmActions` batch. Before changing
 state, its helpers receive fixed arrays of affine effect places: writing
 consumes a place, so neither overflow nor overwriting another effect is
@@ -101,6 +183,10 @@ be called from the runtime path; their checked values remain in closed types.
 
 
 ## Transmit ownership
+
+`StaConfig::listen_interval` uses the checked nonzero `StationListenInterval`
+in beacon intervals. Association advertises that exact value; the composition
+chooses it together with its power-save policy, without a hidden station default.
 
 The interface configuration carries `OwnAddress`; an Open Authentication
 request takes it separately from the peer's `Bssid`. Both wrap the MAC
@@ -325,7 +411,11 @@ all slots and the GTK permission before reporting.
 `Configure` carries `PendingConfiguration`. Station grants only one such
 token until it returns in `Configured`; an old epoch's reply releases that
 permission without completing the new transition. The service keeps only
-this outstanding action token. Arbiter responses are already proved by
+this outstanding action token. `StaTokens::GatePath` carries the channel
+arbiter's component independently of `EpochPath`. Lease places, leases and
+arbiter responses keep that path and the invariant installation lifetime;
+neither another installation nor another gate in this one may answer them.
+Arbiter responses are proved by
 affine resources: Answer returns LeasePlace or Lease, AbsenceAnswer returns
 AbsencePlace or Lease, and Exchanged consumes the old Lease and returns its
 replacement. The service returns these synchronous answers in the same step.

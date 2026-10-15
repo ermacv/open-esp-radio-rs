@@ -1,4 +1,6 @@
 //! Exercise the library compiled with `test-support`, without `cfg(test)`.
+//! The package's `open-radio.test-feature-sets` enrolls this target in both
+//! the changed-package gate and the full CI feature-set check.
 #![cfg(feature = "test-support")]
 #![deny(
     clippy::let_underscore_must_use,
@@ -269,15 +271,18 @@ impl PortBody<ModelBackend> for Owners {
                     let index = ticket.index();
                     phase
                         .station()
-                        .submit(Attempt {
-                            context: (),
-                            ticket,
-                            source,
-                            access_category: WmmAccessCategory::BestEffort,
-                            protection: Protection::None,
-                            power: SupportedPower::new(TxPower::Calibrated).unwrap(),
-                            coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
-                        })
+                        .submit(
+                            (Attempt {
+                                context: (),
+                                ticket,
+                                source,
+                                access_category: WmmAccessCategory::BestEffort,
+                                protection: Protection::None,
+                                power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+                                coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+                            })
+                            .admit(),
+                        )
                         .unwrap();
                     index
                 }};
@@ -294,7 +299,7 @@ impl PortBody<ModelBackend> for Owners {
                 };
                 let oer_ieee80211_lower_mac::TerminalParts {
                     ticket, payload, ..
-                } = terminal.into_parts();
+                } = terminal.into_parts(&mut resources.terminal_access);
                 let (buffer, _) = oer_ieee80211_lower_mac::TxMpdu::into_parts(payload);
                 assert_eq!(ticket.index(), ticket_index);
                 assert_eq!(matches!(buffer, ModelAnyBuffer::LargeSent(_)), large);

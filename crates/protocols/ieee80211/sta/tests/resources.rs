@@ -48,6 +48,7 @@ impl oer_ieee80211_lower_mac::TxBufferClass for Buffer {
     const CAPACITY: usize = 256;
 }
 impl StaTokens for Tokens {
+    type GatePath = oer_radio_port::Root;
     type EpochPath = oer_radio_port::Root;
     type Small = Buffer;
     type Ticket = u8;
@@ -66,8 +67,8 @@ impl StaTokens for Tokens {
 fn construct<'id, const T: usize, const B: usize, const G: usize>(
     epochs: LinkEpochSource<'id>,
     config: StaConfig<Caps>,
-    place: LeasePlace,
-    absence: AbsencePlace,
+    place: LeasePlace<'id>,
+    absence: AbsencePlace<'id>,
 ) -> Station<'id, Tokens, Caps> {
     Station::new(
         config,

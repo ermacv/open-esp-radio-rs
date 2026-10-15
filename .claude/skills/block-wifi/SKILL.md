@@ -32,7 +32,7 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   snapshots retain lint configuration and reject build-input symlinks; a
   symlink to a shared configuration prevents image capture before compilation.
 
-- A backend declares its complete `PortBackend::Pools` layout and consumes `Mint::into_pools(self)` once. Include one `GatePool`; it yields `GateOpen` and the backend's `GateIssuer`, with no public `GatePlace` constructor. Each tuple component has a sealed pool path, including duplicate `GatePool` components; retain that path through gate/issuer and the phase's `GatePath`. Do not erase ticket, key, buffer or connection-source paths in wrappers. The source's path also stays in station/data epochs and contexts; two sources in one installation cannot produce interchangeable epochs.
+- A backend declares its complete `PortBackend::Pools` layout and consumes `Mint::into_pools(self)` once. An arbiter-backed installation uses `ArbiterPool`, yielding `GateOpen`, the backend's `GateIssuer` and the unique `ArbiterAuthority`. An independent gate uses `GatePool` without arbiter construction authority. A gate returned from a cycle must never mint another arbiter or lease places. Each tuple component has a sealed pool path; retain it through gate/issuer, the phase's `GatePath`, station `StaTokens::GatePath`, leases, replies and pending retunes. Do not erase ticket, key, buffer or connection-source paths in wrappers. The source's path also stays in station/data epochs and contexts; two sources in one installation cannot produce interchangeable epochs.
 
 - Time follows [clocks, stamps and alarms](../../../docs/architecture.md#clocks-stamps-and-alarms).
 
@@ -61,6 +61,8 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   future. Each controller keeps its returned owner until consuming `try_finish`;
   an auxiliary group retains either child's early result across cancellation
   and deadline expiry. Readiness is repeatable and does not release storage.
+  Before publishing Idle, consuming retirement clears the old stop latch:
+  a repeated stop after completion must never stop the next task epoch.
 
 - CCMP replay preparation returns an exclusive borrow of the selected
   frontier. Commit the token itself before publication, or drop it to cancel.
@@ -80,6 +82,23 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   call an active-exchange RX parser while waiting for credit or restore
   separate `active`/`terminal` flags beside the machine's owned stage.
 
+- Association polling and RX consume their runtime owner. Only a continuing
+  result returns it; terminal results do not leave a second usable handle.
+  A comeback owns its future epoch and retains RX accounting across the wait;
+  it restarts the request ordinal, but not the station's sequence counter.
+
+- A home-channel background dwell starts after Configure completes. Check
+  overflow both before widening and on its delayed terminal; a failure after
+  widening must restore member rules before returning the scan request.
+  SA Query's final timeout is checked before it starts; later retries outside
+  that window are absent, while the final timeout remains a wake source.
+
+- `machine::Station` has Open and prederived WPA2-PMK inputs only. Shared
+  selection may choose SAE even under the WPA2 policy; reject that result
+  with `SaeUnsupported` before Join, never rerun selection with PSK or send
+  Open Authentication. Full SAE/PMKSA belongs to #563 step 2 alongside its
+  credentials/randomness/secret owners; keep shared SAE and existing users.
+
 - Connected plaintext EAPOL may recover only the exact authenticated completed
   M3, through `on_duplicate_message3`. Its owned M4 stage coalesces repeats
   until TX ends and precedes the next group response after a busy control TX.
@@ -91,6 +110,11 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   broadcast from that BSS. It never parses Protected ciphertext as a reason;
   PMF requires its separate authenticated-management owner, not RX metadata.
 
+- `Bssid` proves both individual and nonzero. Vacant scan cells are `None`,
+  and `ScanRecord::new` takes a real BSSID/channel/RSSI observation; its
+  constructor is not an empty-record factory. A parked connected RX arena
+  likewise has no dispatcher until its association identity is available.
+
 - Station commands enter through `Station::command`, consuming `StaRequest`.
   Each command kind reserves its own terminal cell; completion returns that
   request and refusal returns it synchronously. Never replace those cells
@@ -100,17 +124,34 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
 - Every port method but `next_event` is synchronous (`port.rs`, the trait's documentation).
 - A port has one event stream in occurrence order (#266 D8): the S31 runtime numbers every event under the core's lock and merges its four queues by that number (`runtime/esp32s31/ieee80211/src/lower_mac.rs`, `Queues::take`). An extension event names its kind and interface (`LowerMacEvent::Extension { kind, vif }`), and the router routes it by that interface, never by role.
 - Interrupt model ([ownership and refusals](../../../docs/architecture.md#ownership-and-refusals), #643): the MAC and power interrupts only read and clear their status and post the events, through `IrqConsumer::publish` (`hardware/esp32s31/driver/ieee80211/mac/src/irq/consumer.rs`); the port's owner task runs `LowerMacCore::service`. No Wi-Fi decision has a software deadline below 1 ms (ACK and Block Ack turnaround are hardware). The port backend `Esp32s31LowerMac` still runs `service` inside `on_interrupt` under the core's blocking lock; #563 removes it, so never add interrupt-side logic there.
+- Pinning an executor scope does not extend external borrows inside its
+  `Context`: forgetting an owning pin leaks the allocation but ends the
+  borrow visible to its caller. A persistent callback must neither access
+  nor drop that context after forget. Keep the context on the caller side;
+  the registered kernel may touch only independently retained hardware,
+  payload storage and context-free queue records. A forgotten stack
+  `Pin<&mut Scope>` still runs the backing scope's destructor at block exit,
+  which must detach synchronously before releasing its task memory.
 - `RxEvidence` keeps provenance: never derive a value and report it `HardwareObserved` (`RxEvidence`, `lower-mac/src/rx.rs`). `RxMeta::channel` is configuration, not a per-frame observation (same file).
+- A BSS frame without a channel element uses its captured `RxMeta::channel`
+  for scanning. The current lease/absence may already have changed before RX
+  delivery; looking up that newer lease either mislabels the observation or
+  invents channel zero when the lease is gone.
 - The IRQ handoff belongs to the MAC driver, with no Embassy or runtime dependency. `take_batch` captures one finite RX-before-TX batch; work published during its processing stays for the next step. `Moderated` requires the platform's restore function at construction. Drain only after route quiescence; a failed quiesce retains facts and moderation. `irq-counters` counts hardware RX publications, including coalesced ones; diagnostics reads it outside the ISR. Software handoff and returned capacity do not increment it. Lane waits and batch processing have one driver consumer and must not run concurrently.
 - The S31 port's radio clock is the MAC local time, affine to the monotonic clock (`MAC_CLOCK_RELATION`, `runtime/esp32s31/ieee80211/src/mac_clock.rs`): convert a port instant or stamp through that relation with a `clock_sample()` of its generation (`ClockRelation::project`), never by reading its microseconds as monotonic time. A generation comes only from its relation owner's `GenerationSource`, which is neither `Copy` nor `Clone`.
 - A received frame carries `RxTimes { handoff, stamp }` (`hardware/esp32s31/driver/ieee80211/mac/src/rx/pool.rs`): the monotonic executor handoff and the raw MAC local-time receive stamp. The RX path never reads a clock; a consumer that needs the reception time converts the stamp: the station's beacon TSF follow in MAC time (`connected_control.rs`, `mac_local_time() - stamp`), the scan through a `MacClockSnapshot` (`runtime/esp32s31/ieee80211/src/mac_clock.rs`). HE Trigger/NDPA deadlines count from the handoff.
 - The S31 station TSF has one writer, `StationTsf` (`hardware/esp32s31/driver/ieee80211/src/station_tsf.rs`): the hardware write takes a `StationTsfWrite` only the owner constructs, and the owner records every write in the portable `TsfRelation` (`lower-mac/src/extensions.rs`), whose generation changes at a jump, not at a beacon follow's drift. The port core and the role's connected control (one per association) each hold one, created with an epoch from `MacClockHandle::tsf_epoch`, so generations never repeat across reconnections or radio starts; never add a write around it. The access-point TSF has the same shape: `AccessPointTsf` (`hardware/esp32s31/driver/ieee80211/mac/src/ap_tsf.rs`) holds the `AccessPointTsfWrite` for `ApTsfHardware`'s reset and stop, and each restart or stop is a new generation.
 - The TSF is never modular: a set across 2^64, or one after the counter passed 2^64, is a jump (`TsfRelation::set`), and TWT planning refuses a window past 2^64 (`BeyondTsfRange`). A TWT wake plan carries the station TSF generation it was computed in (`StationTwtWakePlan`); a plan of another generation is stale and must never be armed. No hardware TWT wake exists yet (#85).
 - A beacon whose TSF the station cannot follow is malformed, and the station takes nothing from it: its TSF, TBTT schedule, TIM and liveness come from one frame. `connected_rx` rejects a beacon that a 32-bit MAC-time elapsed could carry past 2^64 (`beacon_tsf_followable`, `ConnectedRxError::UnfollowableBeaconTsf`), so control's follow never overflows. A join beacon that cannot be advanced to the start of power management ends the association as a disconnect (`ConnectedDisconnectReason::JoinTsfUnrepresentable`, candidate refresh), not a control error, which would stop the station terminally. Never drop only the TSF write: power management would then place TBTT in a TSF the station never took.
-- The connected control (`ConnectedControl`, ~2.3 KB) is placed in a static slot (`runtime/esp32s31/ieee80211/src/roles/station/control_slot.rs`) and reached through a `PlacedControl` lease: configure it with `&mut` setters after placement, and never move it by value through services, teardown or faults, where each copy multiplies its size in the connected epoch's frames. Its `.psram.bss` cell is a `ZeroedStatic<MaybeUninit<_>>` written with `ConnectedControlSlot::new()` at the one-time claim: an empty slot is not all-zero bytes, and a zeroed region discards any other initializer ([statics in zeroed regions](../../../docs/architecture.md#statics-in-zeroed-regions)).
+- `ConnectedControl` remains in `roles/esp32s31/ieee80211/sta/src/connected_control.rs`; its former runtime placement slot was removed with station orchestration. The new S31 Driver/State form must own its placement before product integration. A `.psram.bss` `ZeroedStatic<MaybeUninit<_>>` needs an explicit initializer at one-time claim; zero bytes do not stand for arbitrary Rust states ([statics in zeroed regions](../../../docs/architecture.md#statics-in-zeroed-regions)).
 - The RX descriptor-to-buffer binding (`dma/src/rx_storage.rs`) stores each descriptor's offset to its buffer, so the arena's zero bytes are the identity binding the host `prepare_ring` path relies on; `dma_layout_rotated` writes a rotation.
 - The station's power-save default is `SleepType::None` (`ConnectedPower::new`, `roles/esp32s31/ieee80211/sta/src/connected_control/power.rs`): RF sleeps only for coexistence, so ordinary HIL runs never exercise modem sleep.
-- The TX completion and publication timeout is one composition constant, 250 ms (`TX_COMPLETION_TIMEOUT`, `composition/esp32s31/embassy/ieee80211/src/supervisor/mod.rs`).
+- PM coexistence deadlines are monotonic, not wrapping vendor counters. A
+  slice shorter than its leave margin produces `Due`; future slice and
+  preemption deadlines stay absolute across delayed batch execution.
+  Listen-interval scaling stays wide until the S31 checked TBTT projection.
+  Clock-input refusal retains the complete PM state and emits no effects.
+- The core receives its publication watchdog in `LowerMacConfig::publication_timeout` (`hardware/esp32s31/driver/ieee80211/src/lower_mac.rs`); the old composition supervisor and its 250 ms constant were removed. The core tests supply 250 ms explicitly. A diagnostic-only `NoEffect` must still service a latched event or expired watchdog in the same bounded step. BAR completion uses the independent valid BA observation, not raw status zero alone.
 - `cargo verification copies` lists MMIO-differing pairs, not all duplicate symbols. Use `check provenance` to detect ROM/library name ambiguity, and qualify every completion citation by its actual copy.
 - Completion dispatch executes the library copy: `libpp[pp.o]::ppTask +0x19c` calls it directly; `libpp[wdev.o]::wdev_funcs_init +0x42c/+0x430/+0x434` installs its address for ROM table calls too. Library status 3 stops at `libpp[lmac.o]::lmacProcessTxComplete +0x252` (`wifi_assert(0)`); it is `InvalidStatus -> Poisoned`, even though the ROM body differs.
 - Pinned RTS-error dispatch is not a generic protection failure: `lmacProcessTxRtsError` sends details `1`, `3..5`, `0xa0..0xad` to collision (`+0x124`), and `0xc0` to the key-error end (`+0xe6`). The remaining details only log (`+0x72`) and produce no terminal. Keep that publication until its real result or timeout ([owner clarification](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6158453731)).
@@ -120,6 +161,8 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
 - Each MSDU queue endpoint has one `AtomicWaker`. Its readiness future borrows the endpoint exclusively until completion or cancellation, registers before inspecting the queue, and owns no value or credit. Keep an outgoing value with its caller until `try_send` publishes it; cancellation of readiness cannot discard it.
 - Association's deadline starts at entry, before its first TX credit. A temporary comeback starts the next deadline at the scheduled return, so an occupied credit cannot leave either wait unbounded. Open station construction may have no group slots; protected construction returns its config and resources if the slot is missing.
 - Portable station RX enters `Station::receive` once. MAC's `DecodedHeader` and `AdmittedData` locate QoS/HT/CCMP, require integrity evidence and commit replay before EAPOL/MSDU dispatch. The old data receive entry point exists only as a test helper; production cannot commit the same PN through a second API. `FrameControl` lives in MAC's `frame` module, shared by RX and lower-MAC header encoding.
+  MSDU admission also checks the payload-bearing subtype before replay:
+  Null/QoS Null and reserved subtypes cannot carry EAPOL or network data.
 - GTK's two-bit wire ID includes zero (IEEE 802.11-2020, 12.7.2 and the pinned ESP-IDF `wpa.c:1064`). Frame addressing distinguishes PTK from GTK; group replay records use `GroupKeyId::select`, separately from the backend's slot pool. S31 STA accepts `GroupKeyId`, including zero, in hardware slot 1. Its AP installation takes `ApGroupKeyId` (1 through 3), validated before hardware. S31 AP's `1 + key_id` layout excludes zero because it would collide with that station slot; do not impose this AP restriction on the portable station.
 - Every GTK mutation consumes the installation's one permission for that
   interface; only its FIFO success terminal returns an ordinary permission.
@@ -198,3 +241,10 @@ turn a hardware-capable signature into a temporary-memory DMA binding.
 Skills: `protocol-change`, `driver-or-hardware-change`, `hil-run`, `vendor-evidence`, `qualification-entry` (catalog `qualification/catalog/esp32s31/wifi-phy.toml`), `push-and-ci`.
 
 Package detail: the READMEs of [lower-mac](../../../crates/protocols/ieee80211/lower-mac/README.md), [upper-mac](../../../crates/protocols/ieee80211/upper-mac/README.md), [sta](../../../crates/protocols/ieee80211/sta/README.md), [arbiter](../../../crates/protocols/ieee80211/arbiter/README.md), [S31 station role](../../../crates/roles/esp32s31/ieee80211/sta/README.md), [S31 AP role](../../../crates/roles/esp32s31/ieee80211/ap/README.md) and [S31 composition](../../../crates/composition/esp32s31/embassy/ieee80211/README.md).
+
+Portable Station PMF keeps management CCMP replay separate from data TIDs.
+Its IGTK switches only at the group-key terminal; repeated M3 and same-IGTK
+rekey must preserve the existing management PN/IPN. Never remove the pairwise
+key before a protected leaving Deauthentication's terminal. The model reports
+key/PN use but does not encrypt TX payloads; incoming PMF tests therefore use
+independently encrypted AESCCM/BIP fixtures, not a model integrity flag.

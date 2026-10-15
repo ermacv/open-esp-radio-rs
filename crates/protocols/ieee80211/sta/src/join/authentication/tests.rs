@@ -6,7 +6,7 @@ use oer_ieee80211_mac::station::StaDisconnectKind;
 fn runtime() -> StaAuthenticationRuntime {
     StaAuthenticationRuntime::new(
         OwnAddress::new(IndividualAddress::new(LOCAL).unwrap()),
-        Bssid::new(IndividualAddress::new(BSSID).unwrap()),
+        Bssid::new(IndividualAddress::new(BSSID).unwrap()).unwrap(),
     )
 }
 

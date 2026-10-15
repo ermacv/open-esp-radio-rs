@@ -11,7 +11,7 @@ const BSSID: [u8; 6] = [2, 0, 0, 0, 0, 2];
 fn eapol_copy_accepts_only_the_selected_station_link() {
     let station = Wpa2Station::new(
         OwnAddress::new(oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap()),
-        Bssid::new(oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap()),
+        Bssid::new(oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap()).unwrap(),
     );
     let mut frame = [0_u8; 160];
     frame[4..10].copy_from_slice(&LOCAL);

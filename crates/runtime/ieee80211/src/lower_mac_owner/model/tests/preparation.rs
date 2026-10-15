@@ -52,15 +52,18 @@ fn try_source<'k, 'p, 'id: 'p + 'k>(
     };
     phase
         .station()
-        .submit(oer_ieee80211_lower_mac::Attempt {
-            context: (),
-            ticket,
-            source,
-            access_category: WmmAccessCategory::BestEffort,
-            protection: Protection::None,
-            power: SupportedPower::new(TxPower::Calibrated).unwrap(),
-            coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
-        })
+        .submit(
+            (oer_ieee80211_lower_mac::Attempt {
+                context: (),
+                ticket,
+                source,
+                access_category: WmmAccessCategory::BestEffort,
+                protection: Protection::None,
+                power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+                coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+            })
+            .admit(),
+        )
         .expect("preparation does not poison the model");
     Ok(())
 }
@@ -72,6 +75,7 @@ impl Work for Boundaries {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let mut terminal_access = resources.terminal_access;
         let ModelResources {
             mut tickets,
             mut small,
@@ -154,7 +158,8 @@ impl Work for Boundaries {
                 assert_eq!(body.unwrap().0.as_ptr(), body_pointer);
             } else {
                 assert!(result.is_ok());
-                let (returned_ticket, returned_buffer) = completion(phase).await;
+                let (returned_ticket, returned_buffer) =
+                    completion(phase, &mut terminal_access).await;
                 ticket = returned_ticket;
                 let ModelAnyBuffer::SmallSent(mpdu) = returned_buffer else {
                     unreachable!()
@@ -309,6 +314,7 @@ impl Work for RetryIdentity {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let mut terminal_access = resources.terminal_access;
         let ModelResources {
             mut tickets,
             mut small,
@@ -329,7 +335,7 @@ impl Work for RetryIdentity {
             protection: TxProtection::Ccmp(&key),
         };
         submit_frame::<ModelSmall>(phase, tickets.remove(0), source);
-        let (ticket, buffer) = completion(phase).await;
+        let (ticket, buffer) = completion(phase, &mut terminal_access).await;
         let ModelAnyBuffer::SmallSent(mpdu) = buffer else {
             unreachable!()
         };
@@ -348,7 +354,7 @@ impl Work for RetryIdentity {
                 plan: RetransmissionPlan::Individual(plan),
             },
         );
-        let (ticket, buffer) = completion(phase).await;
+        let (ticket, buffer) = completion(phase, &mut terminal_access).await;
         let ModelAnyBuffer::SmallSent(mpdu) = buffer else {
             unreachable!()
         };
@@ -440,6 +446,7 @@ impl Work for AggregateBoundaries {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let mut terminal_access = resources.terminal_access;
         let ModelResources {
             mut tickets,
             mut small,
@@ -504,17 +511,20 @@ impl Work for AggregateBoundaries {
         let aggregate = push_subframe(aggregate, buffer, frame, Some(body));
         phase
             .station()
-            .submit_ampdu(AggregateAttempt {
-                context: (),
-                ticket: tickets.remove(0),
-                aggregate,
-                protection: Protection::None,
-                power: SupportedPower::new(TxPower::Calibrated).unwrap(),
-                coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
-                min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
-            })
+            .submit_ampdu(
+                (AggregateAttempt {
+                    context: (),
+                    ticket: tickets.remove(0),
+                    aggregate,
+                    protection: Protection::None,
+                    power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+                    coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+                    min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
+                })
+                .admit(),
+            )
             .unwrap();
-        let (_, subframes, _) = aggregate_completion(phase).await;
+        let (_, subframes, _) = aggregate_completion(phase, &mut terminal_access).await;
         let (buffer, body) = subframes.into_iter().next().unwrap().into_parts();
         assert!(body.is_none());
         let ModelAnyBuffer::SmallSent(mpdu) = buffer else {
@@ -543,6 +553,7 @@ impl Work for PreparedRemoval {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let mut terminal_access = resources.terminal_access;
         let ModelResources {
             mut tickets,
             mut small,
@@ -555,7 +566,7 @@ impl Work for PreparedRemoval {
             Ccmp128Key([7; 16]),
         );
         submit(phase, tickets.remove(0), small.remove(0), Some(&key));
-        let (ticket, buffer) = completion(phase).await;
+        let (ticket, buffer) = completion(phase, &mut terminal_access).await;
         let ModelAnyBuffer::SmallSent(mpdu) = buffer else {
             unreachable!()
         };
@@ -594,15 +605,18 @@ impl Work for PreparedRemoval {
         } else {
             phase
                 .station()
-                .submit(oer_ieee80211_lower_mac::Attempt {
-                    context: (),
-                    ticket,
-                    source: prepared,
-                    access_category: WmmAccessCategory::BestEffort,
-                    protection: Protection::None,
-                    power: SupportedPower::new(TxPower::Calibrated).unwrap(),
-                    coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
-                })
+                .submit(
+                    (oer_ieee80211_lower_mac::Attempt {
+                        context: (),
+                        ticket,
+                        source: prepared,
+                        access_category: WmmAccessCategory::BestEffort,
+                        protection: Protection::None,
+                        power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+                        coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+                    })
+                    .admit(),
+                )
                 .unwrap();
             let Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(
                 TxCompleted::Single(terminal),
@@ -614,7 +628,7 @@ impl Work for PreparedRemoval {
                 outcome: completion,
                 payload,
                 ..
-            } = terminal.into_parts();
+            } = terminal.into_parts(&mut terminal_access);
             let (buffer, _) = payload.into_parts();
 
             assert_eq!(completion, TxOutcome::Withdrawn(WithdrawCause::KeyRemoved));
@@ -647,6 +661,7 @@ impl Work for RetryRole {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let mut terminal_access = resources.terminal_access;
         let ModelResources {
             mut tickets,
             mut small,
@@ -667,17 +682,20 @@ impl Work for RetryRole {
         .unwrap();
         phase
             .access_point()
-            .submit(oer_ieee80211_lower_mac::Attempt {
-                context: (),
-                ticket: tickets.remove(0),
-                source,
-                access_category: WmmAccessCategory::BestEffort,
-                protection: Protection::None,
-                power: SupportedPower::new(TxPower::Calibrated).unwrap(),
-                coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
-            })
+            .submit(
+                (oer_ieee80211_lower_mac::Attempt {
+                    context: (),
+                    ticket: tickets.remove(0),
+                    source,
+                    access_category: WmmAccessCategory::BestEffort,
+                    protection: Protection::None,
+                    power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+                    coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+                })
+                .admit(),
+            )
             .unwrap();
-        let (_ticket, buffer) = completion(phase).await;
+        let (_ticket, buffer) = completion(phase, &mut terminal_access).await;
         let ModelAnyBuffer::SmallSent(mpdu) = buffer else {
             unreachable!()
         };

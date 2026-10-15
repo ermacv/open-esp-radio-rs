@@ -556,6 +556,12 @@ mod seam {
         element[..6].copy_from_slice(&[45, 26, if short_gi { 0x20 } else { 0 }, 0, 0x17, 0xff]);
         RatePeer {
             phy: PhyMode::Ht20,
+            legacy_rates:
+                oer_ieee80211_upper_mac::rate_control::NegotiatedLegacyRates::from_rate_elements(
+                    &[2, 4, 11, 22, 12, 18, 24, 36],
+                    &[48, 72, 96, 108],
+                )
+                .unwrap(),
             ht_capabilities: ht_peer_capabilities(&element),
             he_capabilities: None,
             he_peer_state: None,
@@ -636,6 +642,12 @@ mod seam {
     fn an_unavailable_aggregate_controller_returns_the_refusal_without_mutation() {
         let peer = RatePeer {
             phy: PhyMode::Legacy,
+            legacy_rates:
+                oer_ieee80211_upper_mac::rate_control::NegotiatedLegacyRates::from_rate_elements(
+                    &[2, 4, 11, 22, 12, 18, 24, 36],
+                    &[48, 72, 96, 108],
+                )
+                .unwrap(),
             ht_capabilities: None,
             he_capabilities: None,
             he_peer_state: None,

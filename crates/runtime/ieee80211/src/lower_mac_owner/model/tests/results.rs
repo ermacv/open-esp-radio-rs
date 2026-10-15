@@ -18,6 +18,7 @@ impl Work for Results {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let mut terminal_access = resources.terminal_access;
         let ModelResources {
             mut tickets,
             mut small,
@@ -80,15 +81,18 @@ impl Work for Results {
                     );
                     let aggregate = push_subframe(aggregate, buffer, subframe_frame(0), None);
                     station
-                        .submit_ampdu(AggregateAttempt {
-                            context: (),
-                            ticket,
-                            aggregate,
-                            protection: Protection::None,
-                            power: SupportedPower::new(TxPower::Calibrated).unwrap(),
-                            coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
-                            min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
-                        })
+                        .submit_ampdu(
+                            (AggregateAttempt {
+                                context: (),
+                                ticket,
+                                aggregate,
+                                protection: Protection::None,
+                                power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+                                coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+                                min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
+                            })
+                            .admit(),
+                        )
                         .unwrap();
                     rate
                 }
@@ -105,7 +109,7 @@ impl Work for Results {
                         outcome: completion,
                         payload,
                         ..
-                    } = terminal.into_parts();
+                    } = terminal.into_parts(&mut terminal_access);
                     let (buffer, body) = payload.into_parts();
 
                     assert!(body.is_none());
@@ -117,7 +121,7 @@ impl Work for Results {
                         payload,
                         outcome,
                         ..
-                    } = terminal.into_parts();
+                    } = terminal.into_parts(&mut terminal_access);
                     assert_eq!(payload.len(), 1);
                     let (buffer, body) = payload.into_iter().next().unwrap().into_parts();
                     assert!(body.is_none());

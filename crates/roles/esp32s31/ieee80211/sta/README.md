@@ -34,10 +34,21 @@ Module map:
 `crates/protocols/ieee80211/sta` owns portable MLME, reconnect and association
 preference policy. The chip profile determines eligible modes and lowers the
 selected mode to S31 PHY parameters.
+The FTM frontier consumes the portable session into its transmission handle,
+inspects that handle's immutable body, then consumes a hardware-admission
+rejection and its terminal. It never accepts another requester's TX identity
+as a completion and still performs no FTM publication or timestamp capture.
 Connected control consumes a fresh ordered `PmActions` batch for each power
 input. A network report containing both TX start and TX completion applies
 the start's batch before producing and applying the completion's batch.
-`ConnectedRxConfig` retains the validated `OwnAddress` and `Bssid` roles.
+It validates relative deadlines and the 32-bit TBTT interval projection for
+the complete batch before executing effects. `PowerSchedule` reports an
+unrepresentable request; it never truncates an interval or silently disarms
+an overflowing timer. `Due` becomes ready timer work and `ArmAt` retains the
+deadline computed by the portable power manager.
+`ConnectedRxConfig` retains the validated `OwnAddress` and nonzero `Bssid`
+roles. Construct `ConnectedRxDispatcher` from that association identity;
+an unconfigured arena holds no dispatcher and has no placeholder BSSID.
 Unprotected disconnects use MAC's common receiver/BSS parser; negotiated
 robust-management protection still dispatches through the separate PMF path.
 `crates/runtime/esp32s31/ieee80211` supplies concrete timers, DMA/TX

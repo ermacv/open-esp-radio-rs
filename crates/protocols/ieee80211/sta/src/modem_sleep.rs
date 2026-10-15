@@ -171,12 +171,29 @@ pub enum PmTimer {
     Preemption,
 }
 
+/// A schedule cannot be represented without changing its meaning.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PmScheduleError {
+    /// A phase percentage is outside 0 through 100.
+    InvalidSharePercent(u8),
+    /// An absolute deadline is outside the monotonic clock's range.
+    DeadlineOverflow,
+    /// The supplied clock precedes this association's cycle anchor.
+    ClockBeforeCycleAnchor,
+    /// Active coexistence has no positive cycle to schedule.
+    ZeroCycle,
+    /// A coexistence request exceeds the backend's duration field.
+    RequestDurationOutOfRange { micros: u64 },
+    /// A TBTT interval exceeds the backend's interval field.
+    TbttIntervalOutOfRange { micros: u64 },
+}
+
 /// One station TBTT schedule.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PmTbttSchedule {
     /// A TBTT of the schedule, in the station TSF.
     pub first_tbtt: TsfInstant,
-    pub interval_micros: u32,
+    pub interval_micros: u64,
     pub ahead_micros: u16,
     pub wake_ahead_micros: u16,
 }
@@ -219,6 +236,12 @@ pub enum PmAction {
     RfWake,
     /// Arm a timer to expire after the given time.
     Arm { timer: PmTimer, after: Duration },
+    /// Arm at an already computed monotonic deadline. Applying a batch
+    /// later must not extend a coexistence slice or preemption gap.
+    ArmAt { timer: PmTimer, deadline: Instant },
+    /// The deadline has already arrived. Queue this timer as ready work;
+    /// do not turn an elapsed margin into a future delay.
+    Due(PmTimer),
     /// Disarm a timer.
     Disarm(PmTimer),
     /// Transmit the frames held while the station was in power save.
@@ -226,7 +249,7 @@ pub enum PmAction {
     /// Program the station TBTT schedule.
     StartTbtt(PmTbttSchedule),
     /// Replace the TBTT interval.
-    SetTbttInterval(u32),
+    SetTbttInterval(u64),
     /// Stop the station TBTT.
     StopTbtt,
     /// Replace the TBTT lead and the wake lead beside it.
@@ -292,6 +315,19 @@ pub struct PmActions {
 }
 
 impl PmActions {
+    /// Check every relative timer before performing any effect in this batch.
+    /// Use this same `now` when arming the validated timers. A refusal keeps
+    /// every effect available for the caller's terminal failure path.
+    pub fn validate_deadlines(&self, now: Instant) -> Result<(), PmScheduleError> {
+        for action in self.iter() {
+            if let PmAction::Arm { after, .. } = action {
+                now.checked_add(after)
+                    .ok_or(PmScheduleError::DeadlineOverflow)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Number of effects this input produced.
     pub fn len(&self) -> usize {
         self.iter().count()
@@ -330,6 +366,12 @@ impl EffectPlace<'_> {
 
 type Places<'a, const N: usize> = [EffectPlace<'a>; N];
 
+struct PhaseTiming {
+    slice_end: u64,
+    duration_micros: u32,
+    deadline: Option<u64>,
+}
+
 /// Coexistence as Wi-Fi reads it at one instant.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CoexView {
@@ -367,10 +409,15 @@ impl CoexView {
     }
 
     /// One schedule cycle, in microseconds.
+    #[cfg_attr(
+        not(test),
+        expect(clippy::arithmetic_side_effects, reason = "u8 * u32 * 100 fits u64")
+    )]
     const fn cycle_micros(self) -> u64 {
+        // u8 * u32 * 100 is at most 109_521_666_022_500.
         (self.overall_period() as u64)
-            .saturating_mul(self.interval as u64)
-            .saturating_mul(SCHEDULE_INTERVAL_UNIT_MICROS as u64)
+            * (self.interval as u64)
+            * (SCHEDULE_INTERVAL_UNIT_MICROS as u64)
     }
 }
 
@@ -467,6 +514,9 @@ impl PmTraffic {
 #[derive(Clone, Debug, Eq, PartialEq)]
 // CAPABILITY: wifi-tsf-beacon-monitoring-and-power-saving-legacy-station-power-save, coex-coexistence-policy-and-scheduler-tbtt-anchored-periods
 pub struct ModemSleep {
+    /// False only on the private arithmetic-validation copy. The committed
+    /// transition emits every state edge, including intermediate wake states.
+    emit_state_trace: bool,
     sleep_type: SleepType,
     /// `[14]`: power management runs for an associated station.
     started: bool,
@@ -501,7 +551,7 @@ pub struct ModemSleep {
     /// `[34]`: the listen interval in beacons, rounded to the DTIM
     /// (`scale_listen_interval`); max-modem's TBTT interval. `pm_attach`
     /// starts it at one.
-    listen_interval_beacons: u16,
+    listen_interval_beacons: u64,
     /// `[12]`: the overall period the TBTT interval was last derived from.
     tbtt_period: u8,
     /// `[112]`: end of the Wi-Fi slice, monotonic.
@@ -525,7 +575,7 @@ pub struct ModemSleep {
     /// `[60]`: the beacon window requested at each TBTT.
     beacon_window_micros: u32,
     /// `[56]`: the active timeout.
-    active_timeout_micros: u32,
+    active_timeout_micros: u64,
     /// `[44]`: the TBTT lead.
     tbtt_ahead_micros: u16,
     /// `[48]`: the wake window added to the TBTT lead.
@@ -548,11 +598,35 @@ impl ModemSleep {
         (result, actions)
     }
 
+    /// Arithmetic refusals retain the input state and publish no effects.
+    /// This state contains only values; no hardware or affine owner is cloned.
+    fn try_transition<R>(
+        &mut self,
+        clock: PmClock,
+        step: impl Fn(&mut Self, Places<'_, PM_ACTION_CAPACITY>) -> Result<R, PmScheduleError>,
+    ) -> Result<(R, PmActions), PmScheduleError> {
+        let mut next = self.clone();
+        next.emit_state_trace = false;
+        let mut actions = PmActions {
+            items: [None; PM_ACTION_CAPACITY],
+        };
+        let _validated = step(&mut next, actions.items.each_mut().map(EffectPlace))?;
+        actions.validate_deadlines(clock.now)?;
+        // All inputs are captured values and helpers perform no IO besides
+        // tracing. Replay after validation is deterministic, preserving every
+        // original trace edge without a separately bounded trace queue. Both
+        // passes reserve at most PM_ACTION_CAPACITY places and never loop on
+        // external events; only the committed pass emits traces.
+        let (result, actions) = self.transition(step);
+        result.map(|result| (result, actions))
+    }
+
     /// Stopped power management with the vendor attach defaults.
     ///
     /// SOURCE(esp32s31): `pm_attach`.
     pub const fn new(sleep_type: SleepType) -> Self {
         Self {
+            emit_state_trace: true,
             sleep_type,
             started: false,
             state: PmState::Awake,
@@ -581,7 +655,7 @@ impl ModemSleep {
             preempted: false,
             preemption_end: 0,
             beacon_window_micros: BEACON_WINDOW_MICROS,
-            active_timeout_micros: ACTIVE_TIMEOUT_MICROS,
+            active_timeout_micros: ACTIVE_TIMEOUT_MICROS as u64,
             tbtt_ahead_micros: TBTT_AHEAD_MICROS,
             tbtt_window_micros: TBTT_WAKE_WINDOW_MICROS,
             coex_was_active: false,
@@ -592,9 +666,10 @@ impl ModemSleep {
         self.state
     }
 
-    /// Move to `state`, recording an actual change.
+    /// Record every committed state edge. The validation pass suppresses
+    /// tracing, so a refused schedule emits no attempted state changes.
     fn enter(&mut self, state: PmState) {
-        if self.state != state {
+        if self.emit_state_trace && self.state != state {
             oer_trace::emit(&PowerStateTrace {
                 from: self.state.traced(),
                 to: state.traced(),
@@ -645,6 +720,8 @@ impl ModemSleep {
     }
 
     fn incr_activity(&mut self) {
+        // Presence counter, not a time or deadline. Zero means no activity;
+        // preserving a nonzero value across modular rollover is intentional.
         self.activity = self.activity.wrapping_add(1);
         if self.activity == 0 {
             self.activity = 1;
@@ -774,7 +851,7 @@ impl ModemSleep {
         if self.sleep_type != SleepType::None {
             arm.write(PmAction::Arm {
                 timer: PmTimer::Active,
-                after: Duration::from_micros(u64::from(self.active_timeout_micros)),
+                after: Duration::from_micros(self.active_timeout_micros),
             });
         }
     }
@@ -816,46 +893,72 @@ impl ModemSleep {
 
     /// `pm_coex_recalculate_wifi_time_slice`: place the station in the cycle
     /// counted from the TBTT anchor and re-arm the slice-end timer.
+    #[cfg_attr(
+        not(test),
+        expect(
+            clippy::arithmetic_side_effects,
+            reason = "bounded u8/u32 products fit u64; offset <= now and validated share <= cycle"
+        )
+    )]
     fn recalculate_slice(
         &mut self,
         clock: PmClock,
         force: bool,
         coex: CoexView,
         places: Places<'_, 2>,
-    ) {
+    ) -> Result<(), PmScheduleError> {
         let [disarm, arm] = places;
         if !coex.active {
-            return;
+            return Ok(());
         }
         let now = clock.now.as_micros();
-        if !force && now < self.slice_end.wrapping_add(self.cycle_remainder) {
-            return;
+        let cycle_end = self
+            .slice_end
+            .checked_add(self.cycle_remainder)
+            .ok_or(PmScheduleError::DeadlineOverflow)?;
+        if !force && now < cycle_end {
+            return Ok(());
         }
-        let cycle = coex.cycle_micros();
-        let offset = match core::num::NonZeroU64::new(cycle) {
-            None => 0, // An inactive zero-length coexistence cycle has no phase.
-            Some(cycle) => clock.now.as_micros().wrapping_sub(self.cycle_anchor) % cycle,
-        };
+        if coex.phase0_share_percent > 100 {
+            return Err(PmScheduleError::InvalidSharePercent(
+                coex.phase0_share_percent,
+            ));
+        }
+        let cycle =
+            core::num::NonZeroU64::new(coex.cycle_micros()).ok_or(PmScheduleError::ZeroCycle)?;
+        let offset = now
+            .checked_sub(self.cycle_anchor)
+            .ok_or(PmScheduleError::ClockBeforeCycleAnchor)?
+            % cycle;
         let slice = u64::from(coex.phase0_share_percent)
-            .saturating_mul(u64::from(coex.interval))
-            .saturating_mul(u64::from(coex.current_period));
-        self.slice_end = now.wrapping_sub(offset).wrapping_add(slice);
-        self.slice_deadline = self.slice_end.wrapping_sub(if self.started {
+            * u64::from(coex.interval)
+            * u64::from(coex.current_period);
+        self.slice_end = (now - offset)
+            .checked_add(slice)
+            .ok_or(PmScheduleError::DeadlineOverflow)?;
+        let margin = if self.started {
             u64::from(SLEEP_DELAY_MICROS)
         } else {
             u64::from(IDLE_SLICE_MARGIN_MICROS)
-        });
-        self.cycle_remainder = cycle.wrapping_sub(slice);
+        };
+        self.cycle_remainder = cycle.get() - slice;
         disarm.write(PmAction::Disarm(PmTimer::SliceEnd));
-        if now < self.slice_deadline {
-            self.in_slice = true;
-            arm.write(PmAction::Arm {
-                timer: PmTimer::SliceEnd,
-                after: Duration::from_micros(self.slice_deadline.saturating_sub(now)),
-            });
-        } else {
-            self.in_slice = false;
+        match self.slice_end.checked_sub(margin) {
+            Some(deadline) if deadline > now => {
+                self.slice_deadline = deadline;
+                self.in_slice = true;
+                arm.write(PmAction::ArmAt {
+                    timer: PmTimer::SliceEnd,
+                    deadline: Instant::from_micros(deadline),
+                });
+            }
+            _ => {
+                self.slice_deadline = now;
+                self.in_slice = false;
+                arm.write(PmAction::Due(PmTimer::SliceEnd));
+            }
         }
+        Ok(())
     }
 
     /// `pm_is_in_wifi_slice_threshold`: whether at least `threshold` of the
@@ -866,23 +969,23 @@ impl ModemSleep {
         threshold: u32,
         coex: CoexView,
         places: Places<'_, 2>,
-    ) -> bool {
+    ) -> Result<bool, PmScheduleError> {
         let [disarm, arm] = places;
-        self.recalculate_slice(clock, false, coex, [disarm, arm]);
+        self.recalculate_slice(clock, false, coex, [disarm, arm])?;
         if !coex.active {
-            return true;
+            return Ok(true);
         }
         let now = clock.now.as_micros();
         let threshold = u64::from(threshold);
         if now >= self.slice_deadline || self.slice_deadline.saturating_sub(now) < threshold {
-            return false;
+            return Ok(false);
         }
         if self.preempted
             && (now >= self.preemption_end || self.preemption_end.saturating_sub(now) < threshold)
         {
-            return false;
+            return Ok(false);
         }
-        true
+        Ok(true)
     }
 
     /// `pm_send_nullfunc`: send a Null advertising `power_save`. The caller
@@ -936,14 +1039,14 @@ impl ModemSleep {
         coex: CoexView,
         traffic: PmTraffic,
         places: Places<'_, 7>,
-    ) -> WakeResult {
+    ) -> Result<WakeResult, PmScheduleError> {
         let [wake, active0, active1, held, slice0, slice1, send] = places;
         if !self.started {
-            return WakeResult::NotStarted;
+            return Ok(WakeResult::NotStarted);
         }
         if !self.in_slice {
             self.wake_deferred = true;
-            return WakeResult::Deferred;
+            return Ok(WakeResult::Deferred);
         }
         if self.state == PmState::Dozing {
             self.dream(coex, Some(clock), [wake]);
@@ -951,22 +1054,22 @@ impl ModemSleep {
         if self.active_null_in_flight || tx_wake {
             self.active_null_in_flight = true;
             self.active_wake_acknowledged([active0, active1, held]);
-            return WakeResult::Awake;
+            return Ok(WakeResult::Awake);
         }
         let pending = traffic.connection_pending;
         if pending {
             self.active_null_in_flight = true;
             self.active_wake_acknowledged([active0, active1, held]);
         }
-        if self.in_slice_threshold(clock, WAKE_SLICE_THRESHOLD_MICROS, coex, [slice0, slice1]) {
+        if self.in_slice_threshold(clock, WAKE_SLICE_THRESHOLD_MICROS, coex, [slice0, slice1])? {
             self.send_null(false, [send]);
-            return WakeResult::Waking;
+            return Ok(WakeResult::Waking);
         }
         if pending {
-            return WakeResult::Awake;
+            return Ok(WakeResult::Awake);
         }
         self.wake_deferred = true;
-        WakeResult::Deferred
+        Ok(WakeResult::Deferred)
     }
 
     /// Complete an acknowledged active Null. Callers already woke a dozing
@@ -1029,8 +1132,8 @@ impl ModemSleep {
         clock: PmClock,
         coex: CoexView,
         traffic: PmTraffic,
-    ) -> PmActions {
-        self.transition(|this, [a, b, c, d, e, f, g, ..]| {
+    ) -> Result<PmActions, PmScheduleError> {
+        self.try_transition(clock, |this, [a, b, c, d, e, f, g, ..]| {
             this.null_done_into(
                 power_save,
                 acknowledged,
@@ -1040,7 +1143,7 @@ impl ModemSleep {
                 [a, b, c, d, e, f, g],
             )
         })
-        .1
+        .map(|(_, actions)| actions)
     }
 
     fn null_done_into(
@@ -1051,15 +1154,15 @@ impl ModemSleep {
         coex: CoexView,
         traffic: PmTraffic,
         places: Places<'_, 7>,
-    ) {
+    ) -> Result<(), PmScheduleError> {
         let [normalize, wake, a, b, c, d, e] = places;
         let succeeded =
             acknowledged || (!power_save && self.active_null_failures > NULL_RETRY_LIMIT);
         if !self.may_sleep(coex, [normalize]) && !self.started {
-            return;
+            return Ok(());
         }
         if !self.active_null_in_flight && !self.power_save_null_in_flight {
-            return;
+            return Ok(());
         }
         if succeeded {
             if self.state == PmState::Dozing {
@@ -1067,11 +1170,11 @@ impl ModemSleep {
             }
             if !power_save {
                 self.active_wake_acknowledged([a, b, c]);
-                return;
+                return Ok(());
             }
             self.power_save_null_failures = 0;
             if !self.power_save_null_in_flight {
-                return;
+                return Ok(());
             }
             self.power_save_null_in_flight = false;
             if self.preempted && clock.now.as_micros() >= self.preemption_end {
@@ -1079,24 +1182,24 @@ impl ModemSleep {
             } else {
                 self.enable_sleep_delay_timer([a, b]);
             }
-            return;
+            return Ok(());
         }
         if !power_save {
             if !self.active_null_in_flight {
-                return;
+                return Ok(());
             }
             self.active_null_in_flight = false;
-            if self.in_slice_threshold(clock, WAKE_SLICE_THRESHOLD_MICROS, coex, [a, b]) {
+            if self.in_slice_threshold(clock, WAKE_SLICE_THRESHOLD_MICROS, coex, [a, b])? {
                 self.active_null_failures = self.active_null_failures.saturating_add(1);
                 self.send_null(false, [c]);
             } else {
                 self.active_null_failures = 0;
                 self.wake_deferred = true;
             }
-            return;
+            return Ok(());
         }
         if !self.power_save_null_in_flight {
-            return;
+            return Ok(());
         }
         self.power_save_null_in_flight = false;
         if self.in_slice {
@@ -1107,13 +1210,21 @@ impl ModemSleep {
             self.wake_deferred = true;
             self.enable_sleep_delay_timer([a, b]);
         }
+        Ok(())
     }
 
     /// `pm_tbtt_process` with `pm_coex_tbtt_process`, `pm_set_next_tbtt`
     /// and `pm_update_params`: the station TBTT event fired.
-    pub fn tbtt(&mut self, clock: PmClock, coex: CoexView, traffic: PmTraffic) -> PmActions {
-        self.transition(|this, places| this.tbtt_into(clock, coex, traffic, places))
-            .1
+    pub fn tbtt(
+        &mut self,
+        clock: PmClock,
+        coex: CoexView,
+        traffic: PmTraffic,
+    ) -> Result<PmActions, PmScheduleError> {
+        self.try_transition(clock, |this, places| {
+            this.tbtt_into(clock, coex, traffic, places)
+        })
+        .map(|(_, actions)| actions)
     }
 
     fn tbtt_into(
@@ -1122,7 +1233,7 @@ impl ModemSleep {
         coex: CoexView,
         traffic: PmTraffic,
         places: Places<'_, 24>,
-    ) {
+    ) -> Result<(), PmScheduleError> {
         let [
             normalize,
             wake,
@@ -1154,7 +1265,7 @@ impl ModemSleep {
             c0.write(PmAction::Disarm(PmTimer::SliceEnd));
             self.in_slice = true;
             c1.write(PmAction::UnblockTx);
-            return;
+            return Ok(());
         }
         let beacon_was_expected = self.beacon_expected;
         self.beacon_expected = true;
@@ -1201,19 +1312,27 @@ impl ModemSleep {
             coex,
             traffic,
             [c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12],
-        );
+        )?;
         self.set_next_tbtt(coex, [next]);
-        self.update_params(clock, coex, traffic, [u0, u1, u2, u3, u4, u5, u6, u7]);
+        self.update_params(clock, coex, traffic, [u0, u1, u2, u3, u4, u5, u6, u7])?;
+        Ok(())
     }
 
     /// `pm_coex_tbtt_process`.
+    #[cfg_attr(
+        not(test),
+        expect(
+            clippy::arithmetic_side_effects,
+            reason = "u8 period * u32 beacon interval fits u64; absolute time uses checked_add"
+        )
+    )]
     fn coex_tbtt(
         &mut self,
         clock: PmClock,
         coex: CoexView,
         traffic: PmTraffic,
         places: Places<'_, 13>,
-    ) {
+    ) -> Result<(), PmScheduleError> {
         let [
             disarm,
             interval,
@@ -1232,10 +1351,13 @@ impl ModemSleep {
         disarm.write(PmAction::Disarm(PmTimer::SliceEnd));
         self.in_slice = true;
         if coex.active {
-            self.slice_deadline = clock.now.as_micros().wrapping_add(
-                u64::from(coex.overall_period())
-                    .saturating_mul(u64::from(self.beacon_interval_micros.get())),
-            );
+            self.slice_deadline = clock
+                .now
+                .as_micros()
+                .checked_add(
+                    u64::from(coex.overall_period()) * u64::from(self.beacon_interval_micros.get()),
+                )
+                .ok_or(PmScheduleError::DeadlineOverflow)?;
             interval.write(PmAction::Coex(PmCoexAction::SetInterval(
                 self.beacon_interval_micros.get() / SCHEDULE_INTERVAL_UNIT_MICROS,
             )));
@@ -1251,19 +1373,27 @@ impl ModemSleep {
             }
             if self.sleep_type == SleepType::None || self.wake_deferred {
                 self.wake_deferred = false;
-                self.go_to_wake(false, clock, coex, traffic, [w0, w1, w2, w3, w4, w5, w6]);
+                self.go_to_wake(false, clock, coex, traffic, [w0, w1, w2, w3, w4, w5, w6])?;
             }
-            return;
+            return Ok(());
         }
         if !self.is_sleeping() {
             unblock.write(PmAction::UnblockTx);
             if traffic.connection_pending {
-                self.go_to_wake(true, clock, coex, traffic, [w0, w1, w2, w3, w4, w5, w6]);
+                self.go_to_wake(true, clock, coex, traffic, [w0, w1, w2, w3, w4, w5, w6])?;
             }
         }
+        Ok(())
     }
 
     /// `pm_set_next_tbtt`: follow a changed schedule period.
+    #[cfg_attr(
+        not(test),
+        expect(
+            clippy::arithmetic_side_effects,
+            reason = "u8 period * u32 beacon interval fits u64"
+        )
+    )]
     fn set_next_tbtt(&mut self, coex: CoexView, places: Places<'_, 1>) {
         let [interval] = places;
         let period = coex.overall_period();
@@ -1272,27 +1402,34 @@ impl ModemSleep {
         }
         self.tbtt_period = period;
         interval.write(PmAction::SetTbttInterval(
-            u32::from(period).wrapping_mul(self.beacon_interval_micros.get()),
+            u64::from(period) * u64::from(self.beacon_interval_micros.get()),
         ));
         self.update_tbtt_at_next_beacon = true;
     }
 
     /// `pm_update_params`.
+    #[cfg_attr(
+        not(test),
+        expect(
+            clippy::arithmetic_side_effects,
+            reason = "u8 * u32 fits u64; the two fixed wake leads sum to at most 5000"
+        )
+    )]
     fn update_params(
         &mut self,
         clock: PmClock,
         coex: CoexView,
         traffic: PmTraffic,
         places: Places<'_, 8>,
-    ) {
+    ) -> Result<(), PmScheduleError> {
         let [set_ahead, w0, w1, w2, w3, w4, w5, w6] = places;
         let (active_timeout, ahead) = if coex.active {
             (
-                u32::from(coex.overall_period()).wrapping_mul(self.beacon_interval_micros.get()),
+                u64::from(coex.overall_period()) * u64::from(self.beacon_interval_micros.get()),
                 SHARED_TBTT_AHEAD_MICROS,
             )
         } else {
-            (ACTIVE_TIMEOUT_MICROS, TBTT_AHEAD_MICROS)
+            (u64::from(ACTIVE_TIMEOUT_MICROS), TBTT_AHEAD_MICROS)
         };
         self.active_timeout_micros = active_timeout;
         if self.tbtt_ahead_micros != ahead || self.tbtt_window_micros != TBTT_WAKE_WINDOW_MICROS {
@@ -1300,7 +1437,7 @@ impl ModemSleep {
             self.tbtt_window_micros = TBTT_WAKE_WINDOW_MICROS;
             set_ahead.write(PmAction::SetTbttAhead {
                 ahead_micros: ahead,
-                wake_ahead_micros: TBTT_WAKE_WINDOW_MICROS.wrapping_add(ahead),
+                wake_ahead_micros: TBTT_WAKE_WINDOW_MICROS + ahead,
             });
         }
         if coex.active != self.coex_was_active {
@@ -1308,10 +1445,11 @@ impl ModemSleep {
             // A station without power save that slept only for coexistence
             // wakes when coexistence ends.
             if self.coex_was_active && self.sleep_type == SleepType::None {
-                self.go_to_wake(false, clock, coex, traffic, [w0, w1, w2, w3, w4, w5, w6]);
+                self.go_to_wake(false, clock, coex, traffic, [w0, w1, w2, w3, w4, w5, w6])?;
             }
             self.coex_was_active = coex.active;
         }
+        Ok(())
     }
 
     /// `pm_on_beacon_rx` with `pm_parse_beacon`, `pm_update_next_tbtt`,
@@ -1323,8 +1461,9 @@ impl ModemSleep {
         clock: PmClock,
         coex: CoexView,
         traffic: PmTraffic,
-    ) -> PmActions {
-        self.transition(
+    ) -> Result<PmActions, PmScheduleError> {
+        self.try_transition(
+            clock,
             |this, [a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, ..]| {
                 this.beacon_into(
                     beacon,
@@ -1335,7 +1474,7 @@ impl ModemSleep {
                 )
             },
         )
-        .1
+        .map(|(_, actions)| actions)
     }
 
     fn beacon_into(
@@ -1345,7 +1484,7 @@ impl ModemSleep {
         coex: CoexView,
         traffic: PmTraffic,
         places: Places<'_, 16>,
-    ) {
+    ) -> Result<(), PmScheduleError> {
         let [
             p0,
             p1,
@@ -1365,7 +1504,7 @@ impl ModemSleep {
             priority,
         ] = places;
         if !self.started {
-            return;
+            return Ok(());
         }
         self.parse_beacon(beacon, coex, [p0, p1, p2]);
         self.update_next_tbtt(beacon, coex, [tbtt]);
@@ -1379,11 +1518,12 @@ impl ModemSleep {
             coex,
             traffic,
             [t0, t1, t2, t3, t4, t5, t6, t7, t8, t9],
-        );
+        )?;
         release.write(PmAction::Coex(PmCoexAction::Release(
             PmCoexEvent::BeaconWindow,
         )));
         priority.write(PmAction::ClearRxBeaconPriority);
+        Ok(())
     }
 
     /// `pm_parse_beacon`.
@@ -1449,6 +1589,10 @@ impl ModemSleep {
     /// (`ic_update_listen_interval`; here the power mode is fixed for a
     /// whole association).
     ///
+    /// Intentional arithmetic difference: retain the full u64 product and
+    /// beacon count. The vendor's u32 multiplication and u16 truncation are
+    /// not valid for this monotonic schedule. Backend projection is checked.
+    ///
     /// The ROM carries its own copies, which this model does not follow.
     /// Its scaling computes the same value and store, then calls two of its
     /// function-table entries (offsets 1428, then 1472 as a tail call)
@@ -1479,24 +1623,38 @@ impl ModemSleep {
     /// intervals kept in step with the DTIM. When the DTIM is not yet
     /// aligned with that period, the interval first runs up to the DTIM
     /// and is re-derived at the next beacon.
-    fn handle_tbtt_interval(&mut self, beacons: u16, tim: Option<PmTim>) -> u32 {
+    #[cfg_attr(
+        not(test),
+        expect(
+            clippy::arithmetic_side_effects,
+            reason = "private callers pass at most u16::MAX * 102400 + 255 beacons; their u32-period product fits u64"
+        )
+    )]
+    fn handle_tbtt_interval(&mut self, beacons: u64, tim: Option<PmTim>) -> u64 {
         let Some(tim) = tim else {
             self.update_tbtt_at_next_beacon = true;
-            return self.beacon_interval_micros.get();
+            return u64::from(self.beacon_interval_micros.get());
         };
-        let beacons = core::num::NonZeroU16::new(beacons).unwrap_or(core::num::NonZeroU16::MIN);
-        let period = u16::from(tim.dtim_period.max(1));
+        let beacons = core::num::NonZeroU64::new(beacons).unwrap_or(core::num::NonZeroU64::MIN);
+        let period = u64::from(tim.dtim_period.max(1));
         let compatible =
             beacons.get().is_multiple_of(period) || period.is_multiple_of(beacons.get());
-        let offset = u16::from(tim.dtim_count) % beacons;
+        let offset = u64::from(tim.dtim_count) % beacons;
         if !compatible || offset == 0 {
-            return u32::from(beacons.get()).wrapping_mul(self.beacon_interval_micros.get());
+            return beacons.get() * u64::from(self.beacon_interval_micros.get());
         }
         self.update_tbtt_at_next_beacon = true;
-        u32::from(offset).wrapping_mul(self.beacon_interval_micros.get())
+        offset * u64::from(self.beacon_interval_micros.get())
     }
 
     /// `pm_update_next_tbtt`: program the TBTT schedule from this beacon.
+    #[cfg_attr(
+        not(test),
+        expect(
+            clippy::arithmetic_side_effects,
+            reason = "the two fixed wake leads sum to at most 5000"
+        )
+    )]
     fn update_next_tbtt(&mut self, beacon: PmBeacon, coex: CoexView, places: Places<'_, 1>) {
         let [tbtt] = places;
         if !self.update_tbtt_at_next_beacon {
@@ -1511,16 +1669,16 @@ impl ModemSleep {
         self.tbtt_ahead_micros = ahead;
         self.tbtt_window_micros = TBTT_WAKE_WINDOW_MICROS;
         let interval = if coex.active {
-            self.handle_tbtt_interval(u16::from(coex.overall_period()), beacon.tim)
+            self.handle_tbtt_interval(u64::from(coex.overall_period()), beacon.tim)
         } else {
             match self.sleep_type {
                 SleepType::MinModem => {
-                    self.handle_tbtt_interval(u16::from(self.dtim_period), beacon.tim)
+                    self.handle_tbtt_interval(u64::from(self.dtim_period), beacon.tim)
                 }
                 SleepType::MaxModem(_) => {
                     self.handle_tbtt_interval(self.listen_interval_beacons, beacon.tim)
                 }
-                SleepType::None => self.beacon_interval_micros.get(),
+                SleepType::None => u64::from(self.beacon_interval_micros.get()),
             }
         };
         let timestamp = beacon.timestamp_tsf.as_micros();
@@ -1529,11 +1687,18 @@ impl ModemSleep {
             first_tbtt: TsfInstant::from_micros(timestamp.saturating_sub(phase)),
             interval_micros: interval,
             ahead_micros: ahead,
-            wake_ahead_micros: TBTT_WAKE_WINDOW_MICROS.wrapping_add(ahead),
+            wake_ahead_micros: TBTT_WAKE_WINDOW_MICROS + ahead,
         }));
     }
 
     /// `pm_process_tim`.
+    #[cfg_attr(
+        not(test),
+        expect(
+            clippy::arithmetic_side_effects,
+            reason = "the branch establishes slice_end > now before subtraction"
+        )
+    )]
     fn process_tim(
         &mut self,
         unicast: bool,
@@ -1542,26 +1707,29 @@ impl ModemSleep {
         coex: CoexView,
         traffic: PmTraffic,
         places: Places<'_, 10>,
-    ) {
+    ) -> Result<(), PmScheduleError> {
         let [a, b, c, d, e, f, g, h, i, j] = places;
         match self.state {
             PmState::PowerSave => {
                 if unicast {
-                    if self.in_slice_threshold(clock, WAKE_SLICE_THRESHOLD_MICROS, coex, [a, b]) {
+                    if self.in_slice_threshold(clock, WAKE_SLICE_THRESHOLD_MICROS, coex, [a, b])? {
                         self.receiving = true;
-                        self.request_slice_until_end(clock.now.as_micros(), [c]);
-                        self.go_to_wake(false, clock, coex, traffic, [d, e, f, g, h, i, j]);
+                        self.request_slice_until_end(clock.now.as_micros(), [c])?;
+                        self.go_to_wake(false, clock, coex, traffic, [d, e, f, g, h, i, j])?;
                     } else {
                         self.wake_deferred = true;
                     }
                 } else if group {
-                    if self.in_slice_threshold(clock, GROUP_SLICE_THRESHOLD_MICROS, coex, [a, b]) {
+                    if self.in_slice_threshold(clock, GROUP_SLICE_THRESHOLD_MICROS, coex, [a, b])? {
                         self.receiving = true;
                         self.enable_dream_timer([c, d]);
                         let now = clock.now.as_micros();
                         if now < self.slice_end {
-                            let remaining = u32::try_from(self.slice_end.saturating_sub(now))
-                                .unwrap_or(u32::MAX);
+                            // The beacon-window bound fits u32; cap the physical
+                            // request to that window before projecting it.
+                            let remaining = (self.slice_end - now)
+                                .min(u64::from(self.beacon_window_micros))
+                                as u32;
                             e.write(PmAction::Coex(PmCoexAction::Request {
                                 event: PmCoexEvent::GroupTraffic,
                                 duration_micros: remaining.min(self.beacon_window_micros),
@@ -1578,6 +1746,7 @@ impl ModemSleep {
             }
             PmState::Awake | PmState::Dozing => {}
         }
+        Ok(())
     }
 
     /// `pm_tx_data_process`: the TX path offers a frame. Returns whether the
@@ -1590,8 +1759,8 @@ impl ModemSleep {
         clock: PmClock,
         coex: CoexView,
         traffic: PmTraffic,
-    ) -> (bool, PmActions) {
-        self.transition(|this, [a, b, c, d, e, f, g, h, i, j, k, l, ..]| {
+    ) -> Result<(bool, PmActions), PmScheduleError> {
+        self.try_transition(clock, |this, [a, b, c, d, e, f, g, h, i, j, k, l, ..]| {
             this.tx_data_into(
                 is_data,
                 clock,
@@ -1609,23 +1778,23 @@ impl ModemSleep {
         coex: CoexView,
         traffic: PmTraffic,
         places: Places<'_, 12>,
-    ) -> bool {
+    ) -> Result<bool, PmScheduleError> {
         let [normalize, a, b, c, d, e, f, g, h, i, j, k] = places;
         if !self.may_sleep(coex, [normalize]) {
-            return false;
+            return Ok(false);
         }
         match self.state {
             PmState::PowerSave | PmState::Dozing => {
                 let dozing = self.state == PmState::Dozing;
                 let mut hold = false;
-                if self.in_slice_threshold(clock, WAKE_SLICE_THRESHOLD_MICROS, coex, [a, b]) {
-                    self.request_slice_until_end(clock.now.as_micros(), [c]);
+                if self.in_slice_threshold(clock, WAKE_SLICE_THRESHOLD_MICROS, coex, [a, b])? {
+                    self.request_slice_until_end(clock.now.as_micros(), [c])?;
                     if dozing {
                         self.dream(coex, Some(clock), [d]);
                     }
                     if is_data {
                         let woke =
-                            self.go_to_wake(true, clock, coex, traffic, [e, f, g, h, i, j, k]);
+                            self.go_to_wake(true, clock, coex, traffic, [e, f, g, h, i, j, k])?;
                         hold = matches!(woke, WakeResult::NotStarted | WakeResult::Deferred);
                     }
                 } else if is_data {
@@ -1635,7 +1804,7 @@ impl ModemSleep {
                 if is_data {
                     self.incr_activity();
                 }
-                hold
+                Ok(hold)
             }
             PmState::Awake => {
                 if is_data {
@@ -1644,7 +1813,7 @@ impl ModemSleep {
                     }
                     self.incr_activity();
                 }
-                false
+                Ok(false)
             }
         }
     }
@@ -1730,61 +1899,117 @@ impl ModemSleep {
 
     /// `pm_coex_schm_process`: the schedule entered a phase that notifies
     /// Wi-Fi.
+    #[cfg_attr(
+        not(test),
+        expect(
+            clippy::arithmetic_side_effects,
+            reason = "validated percentage <= 100 times u8 and u32 fits u64"
+        )
+    )]
     pub fn coex_phase(
         &mut self,
         phase: CoexPhaseView,
         clock: PmClock,
         coex: CoexView,
-    ) -> PmActions {
-        self.transition(|this, [a, b, c, d, e, f, ..]| {
-            this.coex_phase_into(phase, clock, coex, [a, b, c, d, e, f])
-        })
-        .1
+    ) -> Result<PmActions, PmScheduleError> {
+        // Validate the complete schedule before changing state or releasing
+        // any effect. The bounded source fields make these products fit u64.
+        if phase.share_percent > 100 {
+            return Err(PmScheduleError::InvalidSharePercent(phase.share_percent));
+        }
+        let slice = u64::from(phase.share_percent)
+            * u64::from(coex.interval)
+            * u64::from(coex.current_period);
+        let slice_end = clock
+            .now
+            .as_micros()
+            .checked_add(slice)
+            .ok_or(PmScheduleError::DeadlineOverflow)?;
+        let duration_micros = u32::try_from(slice)
+            .map_err(|_| PmScheduleError::RequestDurationOutOfRange { micros: slice })?;
+        let margin = if self.started {
+            SLEEP_DELAY_MICROS
+        } else {
+            IDLE_SLICE_MARGIN_MICROS
+        };
+        let deadline = match slice_end.checked_sub(u64::from(margin)) {
+            Some(deadline) if deadline > clock.now.as_micros() => Some(deadline),
+            _ => None,
+        };
+        Ok(self
+            .transition(|this, [a, b, c, d, e, f, ..]| {
+                this.coex_phase_into(
+                    phase,
+                    clock,
+                    coex,
+                    PhaseTiming {
+                        slice_end,
+                        duration_micros,
+                        deadline,
+                    },
+                    [a, b, c, d, e, f],
+                )
+            })
+            .1)
     }
 
+    #[cfg_attr(
+        not(test),
+        expect(
+            clippy::arithmetic_side_effects,
+            reason = "validated share <= 100 and current_period <= overall_period establish slice <= cycle"
+        )
+    )]
     fn coex_phase_into(
         &mut self,
         phase: CoexPhaseView,
         clock: PmClock,
         coex: CoexView,
+        timing: PhaseTiming,
         places: Places<'_, 6>,
     ) {
         let [request, unblock, disarm, arm, shared, block] = places;
+        let PhaseTiming {
+            slice_end,
+            duration_micros,
+            deadline,
+        } = timing;
         let now = clock.now.as_micros();
-        let slice = u64::from(phase.share_percent)
-            .saturating_mul(u64::from(coex.interval))
-            .saturating_mul(u64::from(coex.current_period));
-        let slice_end = now.wrapping_add(slice);
+        let slice = u64::from(duration_micros);
         if phase.wifi & CoexPhaseView::WIFI_SLICE != 0 {
             request.write(PmAction::Coex(PmCoexAction::Request {
                 event: PmCoexEvent::Slice,
-                duration_micros: u32::try_from(slice).unwrap_or(u32::MAX),
+                duration_micros,
             }));
             self.in_slice = true;
             self.slice_end = slice_end;
-            self.cycle_remainder = coex.cycle_micros().wrapping_sub(slice);
+            // share <= 100 and current_period <= overall_period.
+            self.cycle_remainder = coex.cycle_micros() - slice;
             if !self.is_sleeping() {
                 unblock.write(PmAction::UnblockTx);
             }
         }
         if phase.wifi & CoexPhaseView::SLICE_END != 0 {
             disarm.write(PmAction::Disarm(PmTimer::SliceEnd));
-            let margin = if self.started {
-                u64::from(SLEEP_DELAY_MICROS)
-            } else {
-                u64::from(IDLE_SLICE_MARGIN_MICROS)
-            };
-            self.slice_deadline = slice_end.wrapping_sub(margin);
-            arm.write(PmAction::Arm {
-                timer: PmTimer::SliceEnd,
-                after: Duration::from_micros(self.slice_deadline.wrapping_sub(now)),
-            });
+            match deadline {
+                Some(deadline) => {
+                    self.slice_deadline = deadline;
+                    arm.write(PmAction::ArmAt {
+                        timer: PmTimer::SliceEnd,
+                        deadline: Instant::from_micros(deadline),
+                    });
+                }
+                None => {
+                    self.slice_deadline = now;
+                    arm.write(PmAction::Due(PmTimer::SliceEnd));
+                }
+            }
         }
         if phase.wifi & CoexPhaseView::SHARED != 0 {
             if !self.is_sleeping() {
                 shared.write(PmAction::Coex(PmCoexAction::Request {
                     event: PmCoexEvent::Slice,
-                    duration_micros: u32::try_from(slice).unwrap_or(u32::MAX),
+                    duration_micros,
                 }));
             }
             block.write(PmAction::BlockTx);
@@ -1909,17 +2134,20 @@ impl ModemSleep {
         clock: PmClock,
         coex: CoexView,
         traffic: PmTraffic,
-    ) -> PmActions {
-        self.transition(|this, [a, b, c, d, e, f, g, h, i, j, k, l, m, n, ..]| {
-            this.preemption_end_into(
-                end_micros,
-                clock,
-                coex,
-                traffic,
-                [a, b, c, d, e, f, g, h, i, j, k, l, m, n],
-            )
-        })
-        .1
+    ) -> Result<PmActions, PmScheduleError> {
+        self.try_transition(
+            clock,
+            |this, [a, b, c, d, e, f, g, h, i, j, k, l, m, n, ..]| {
+                this.preemption_end_into(
+                    end_micros,
+                    clock,
+                    coex,
+                    traffic,
+                    [a, b, c, d, e, f, g, h, i, j, k, l, m, n],
+                )
+            },
+        )
+        .map(|(_, actions)| actions)
     }
 
     fn preemption_end_into(
@@ -1929,29 +2157,34 @@ impl ModemSleep {
         coex: CoexView,
         traffic: PmTraffic,
         places: Places<'_, 14>,
-    ) {
+    ) -> Result<(), PmScheduleError> {
         let [disarm, arm, a, b, c, d, e, f, g, h, i, j, k, set_time] = places;
         let now = clock.now.as_micros();
         let was_preempted = self.preempted;
         self.preempted = end_micros.is_some();
         let margin = if self.started { 2_000 } else { 1_000 };
-        self.preemption_end = end_micros.unwrap_or(now).wrapping_sub(margin);
+        // An expired margin is due in this input, including before clock
+        // origin. The branch below executes the timeout when awake.
+        self.preemption_end = match end_micros.and_then(|end| end.checked_sub(margin)) {
+            Some(deadline) if deadline > now => deadline,
+            _ => now,
+        };
         disarm.write(PmAction::Disarm(PmTimer::Preemption));
         if self.preempted && now < self.preemption_end {
-            arm.write(PmAction::Arm {
+            arm.write(PmAction::ArmAt {
                 timer: PmTimer::Preemption,
-                after: Duration::from_micros(self.preemption_end.saturating_sub(now)),
+                deadline: Instant::from_micros(self.preemption_end),
             });
         }
         if self.started {
             if self.state != PmState::Awake {
-                if self.wake_deferred && self.in_slice_threshold(clock, 2_000, coex, [a, b]) {
+                if self.wake_deferred && self.in_slice_threshold(clock, 2_000, coex, [a, b])? {
                     self.wake_deferred = false;
                     if self.state == PmState::Dozing {
                         self.dream(coex, Some(clock), [c]);
                     }
-                    self.go_to_wake(false, clock, coex, traffic, [d, e, f, g, h, i, j]);
-                    self.request_slice_until_end(now, [k]);
+                    self.go_to_wake(false, clock, coex, traffic, [d, e, f, g, h, i, j])?;
+                    self.request_slice_until_end(now, [k])?;
                 } else {
                     c.write(PmAction::Disarm(PmTimer::Preemption));
                 }
@@ -1971,35 +2204,60 @@ impl ModemSleep {
                 time_micros: time,
             });
         }
+        Ok(())
     }
 
     /// Request the slice until its end when it has not ended.
-    fn request_slice_until_end(&mut self, now: u64, places: Places<'_, 1>) {
+    #[cfg_attr(
+        not(test),
+        expect(
+            clippy::arithmetic_side_effects,
+            reason = "the branch establishes slice_end > now before subtraction"
+        )
+    )]
+    fn request_slice_until_end(
+        &mut self,
+        now: u64,
+        places: Places<'_, 1>,
+    ) -> Result<(), PmScheduleError> {
         let [request] = places;
         if now < self.slice_end {
             request.write(PmAction::Coex(PmCoexAction::Request {
                 event: PmCoexEvent::Slice,
-                duration_micros: u32::try_from(self.slice_end.saturating_sub(now))
-                    .unwrap_or(u32::MAX),
+                duration_micros: u32::try_from(self.slice_end - now).map_err(|_| {
+                    PmScheduleError::RequestDurationOutOfRange {
+                        micros: self.slice_end - now,
+                    }
+                })?,
             }));
         }
+        Ok(())
     }
 }
 
 /// `pm_scale_listen_interval`'s arithmetic: `listen_interval` 100-TU units
 /// in beacons of `beacon_interval_micros`, rounded to the DTIM period.
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::arithmetic_side_effects,
+        reason = "u16 * 102400 + u8 fits u64; divisor is nonzero; down <= beacons <= up"
+    )
+)]
 fn scaled_listen_interval(
     listen_interval: u16,
     beacon_interval_micros: core::num::NonZeroU32,
     dtim_period: u8,
-) -> u16 {
-    let raw = (u32::from(listen_interval).wrapping_mul(102_400) / beacon_interval_micros) as u16;
+) -> u64 {
+    // The configured u16 count is in 100 TU units. Keep the product and
+    // the rounded beacon count wide, even with a one-microsecond divisor.
+    let raw = u64::from(listen_interval) * 102_400 / u64::from(beacon_interval_micros.get());
     let beacons = raw.max(1);
     let dtim =
-        core::num::NonZeroU16::new(u16::from(dtim_period)).unwrap_or(core::num::NonZeroU16::MIN);
+        core::num::NonZeroU64::new(u64::from(dtim_period)).unwrap_or(core::num::NonZeroU64::MIN);
     let (down, up) = if beacons >= dtim.get() {
         let down = beacons.saturating_sub(beacons % dtim);
-        (down, down.wrapping_add(dtim.get()))
+        (down, down + dtim.get())
     } else {
         let up = (beacons..=dtim.get())
             .find(|divisor| dtim.get().checked_rem(*divisor) == Some(0))
@@ -2010,7 +2268,7 @@ fn scaled_listen_interval(
             .unwrap_or(1);
         (down, up)
     };
-    if beacons.saturating_sub(down) < up.wrapping_sub(beacons) {
+    if beacons.saturating_sub(down) < up - beacons {
         down
     } else {
         up

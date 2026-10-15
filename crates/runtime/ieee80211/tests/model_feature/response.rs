@@ -1,6 +1,7 @@
 //! Public-port response policy, independent of the model's private classifiers.
 use super::*;
 use embassy_futures::yield_now;
+use oer_ieee80211_lower_mac::PhaseTypes;
 use oer_ieee80211_lower_mac::{
     AggregateAttempt, AmpduPhase, BlockAckReport, CheckedAggregate, ClassSubframe, GroupAddress,
     IndeterminateCause, MpduStartSpacing, NoAckHeader, QosControl, SubframeSource, Tid, TxAck,
@@ -125,20 +126,29 @@ fn frame<'p, 'id: 'p>(phase: &ModelPhase<'p, 'id>, kind: Frame) -> TxFrame<'p, '
 }
 
 impl Case {
-    fn check(&self, event: LowerMacEvent<'_, ModelTypes>, ticket_index: u8) -> bool {
+    fn check<'id>(
+        &self,
+        event: LowerMacEvent<'id, ModelTypes>,
+        ticket_index: u8,
+        terminal_access: &mut oer_ieee80211_lower_mac::TerminalAccess<
+            'id,
+            <ModelTypes as PhaseTypes<'id>>::TicketKind,
+            <ModelTypes as PhaseTypes<'id>>::TicketPath,
+        >,
+    ) -> bool {
         let (ticket, payload, outcome) = match event {
             LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(TxCompleted::Single(
                 terminal,
             ))) => {
                 assert!(!matches!(self.frame, Frame::Aggregate));
-                let terminal = terminal.into_parts();
+                let terminal = terminal.into_parts(terminal_access);
                 (terminal.ticket, terminal.payload, terminal.outcome)
             }
             LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(TxCompleted::Aggregate(
                 terminal,
             ))) => {
                 assert!(matches!(self.frame, Frame::Aggregate));
-                let terminal = terminal.into_parts();
+                let terminal = terminal.into_parts(terminal_access);
                 assert_eq!(terminal.payload.len(), 1);
                 (
                     terminal.ticket,
@@ -253,15 +263,18 @@ impl PortBody<ModelBackend> for Case {
                     .ok()
                     .unwrap();
                 station
-                    .submit_ampdu(AggregateAttempt {
-                        context: (),
-                        ticket,
-                        aggregate,
-                        protection: Protection::None,
-                        power: SupportedPower::new(TxPower::Calibrated).unwrap(),
-                        coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
-                        min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
-                    })
+                    .submit_ampdu(
+                        (AggregateAttempt {
+                            context: (),
+                            ticket,
+                            aggregate,
+                            protection: Protection::None,
+                            power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+                            coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+                            min_mpdu_start_spacing: MpduStartSpacing::new(0).unwrap(),
+                        })
+                        .admit(),
+                    )
                     .unwrap();
             } else {
                 let source = TxSource::Fresh {
@@ -277,15 +290,18 @@ impl PortBody<ModelBackend> for Case {
                 .unwrap();
                 phase
                     .station()
-                    .submit(Attempt {
-                        context: (),
-                        ticket,
-                        source,
-                        access_category: WmmAccessCategory::BestEffort,
-                        protection: Protection::None,
-                        power: SupportedPower::new(TxPower::Calibrated).unwrap(),
-                        coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
-                    })
+                    .submit(
+                        (Attempt {
+                            context: (),
+                            ticket,
+                            source,
+                            access_category: WmmAccessCategory::BestEffort,
+                            protection: Protection::None,
+                            power: SupportedPower::new(TxPower::Calibrated).unwrap(),
+                            coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
+                        })
+                        .admit(),
+                    )
                     .unwrap();
             }
             if matches!(self.expected, Expected::Rejected) {
@@ -302,9 +318,11 @@ impl PortBody<ModelBackend> for Case {
                     .hold_completion(WmmAccessCategory::BestEffort, false);
                 if !matches!(self.barrier, Barrier::Disable) {
                     while seen == 0 {
-                        seen += usize::from(
-                            self.check(phase.next_event().await.unwrap().unwrap(), ticket_index),
-                        );
+                        seen += usize::from(self.check(
+                            phase.next_event().await.unwrap().unwrap(),
+                            ticket_index,
+                            &mut resources.terminal_access,
+                        ));
                     }
                 }
             }
@@ -313,7 +331,11 @@ impl PortBody<ModelBackend> for Case {
             return owner.fail_stop();
         }
         let mut sink = |event| {
-            seen += usize::from(self.check(LowerMacEvent::Terminal(event), ticket_index));
+            seen += usize::from(self.check(
+                LowerMacEvent::Terminal(event),
+                ticket_index,
+                &mut resources.terminal_access,
+            ));
         };
         let owner = owner.disable(&mut sink).await.ok().unwrap();
         assert_eq!(seen, 1);

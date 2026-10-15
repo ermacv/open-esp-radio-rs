@@ -400,7 +400,8 @@ fn dispatcher_config() -> ConnectedRxConfig {
         ),
         bssid: oer_ieee80211_mac::address::Bssid::new(
             oer_ieee80211_mac::address::IndividualAddress::new([8, 9, 10, 11, 12, 13]).unwrap(),
-        ),
+        )
+        .unwrap(),
         association_id: 1,
         ingress: RxIngressConfig {
             ring_entry_limit: 1,

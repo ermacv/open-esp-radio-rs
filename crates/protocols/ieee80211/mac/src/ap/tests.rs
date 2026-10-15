@@ -462,7 +462,8 @@ fn sae_authentication_frames_cross_between_station_and_access_point() {
         ),
         bssid: crate::address::Bssid::new(
             crate::address::IndividualAddress::new(access_point).unwrap(),
-        ),
+        )
+        .unwrap(),
         sequence_number: seq(1),
         transaction: 1,
         status_code: 126,

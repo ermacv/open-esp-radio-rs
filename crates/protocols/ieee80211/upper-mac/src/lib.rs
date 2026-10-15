@@ -50,9 +50,9 @@
 //!   statistics.
 //!
 //! The package is sans-IO: completions and the radio time enter as values,
-//! attempt plans and reports leave as values, and nothing waits. The driver
-//! that submits the plans to a port and awaits its events is
-//! `oer-ieee80211-upper-mac-service`. Vendor retry schedules, limits and
+//! attempt plans and reports leave as values, and nothing waits. The station
+//! service in `oer-ieee80211-runtime` submits to the port and feeds its
+//! terminals into rate selection. Vendor retry schedules, limits and
 //! duration estimates are parameters a profile supplies, such as
 //! `oer-espressif-ieee80211-policy`.
 

@@ -18,12 +18,20 @@ fn wpa2_rsn(record: &ScanRecord) -> oer_ieee80211_mac::station::SelectedRsn {
 }
 
 fn access_point_with_rsn(akms: &[[u8; 4]], capabilities: u16) -> ScanRecord {
-    let mut record = ScanRecord::EMPTY;
+    let mut record = ScanRecord::new(
+        oer_ieee80211_mac::address::Bssid::new(
+            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
+        )
+        .unwrap(),
+        6,
+        -40,
+    );
     record.ssid[..4].copy_from_slice(b"test");
     record.ssid_len = 4;
     record.bssid = oer_ieee80211_mac::address::Bssid::new(
         oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-    );
+    )
+    .unwrap();
     record.channel = 6;
     record.privacy = true;
     record.rsn = true;

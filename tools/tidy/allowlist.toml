@@ -5,6 +5,18 @@
 # Rust files rustc compiles directly by path, outside every crate root.
 
 [[uncompiled]]
+path = "crates/protocols/ieee80211/port/tests/ui/owner_constructor.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/port/tests/ui/ended_constructor.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/port/tests/ui/backend_field.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
 path = "tools/process/tests/fixtures/process_tree.rs"
 reason = "the process tests compile this child-process tree with rustc"
 
@@ -251,3 +263,88 @@ reason = "Compiled as positive and negative UI twins on host and RV32 by cargo x
 [[uncompiled]]
 path = "crates/protocols/ieee80211/lower-mac/tests/ui/disable_rx.rs"
 reason = "Compiled as positive and negative UI twins on host and RV32 by cargo xtask check ui"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/submission_owner.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/terminal_access.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/terminal_foreign_pool.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/terminal_foreign_install.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/repeat_terminal.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/ieee80211/tests/ui/inflight_model_swap.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/arbiter/tests/ui/foreign_lease.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/arbiter/tests/ui/foreign_place.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/arbiter/tests/ui/foreign_retune.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/arbiter/tests/ui/repeat_retune.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/arbiter/tests/ui/repeated_construction.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/arbiter/tests/ui/sibling_absence.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/arbiter/tests/ui/sibling_lease.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/arbiter/tests/ui/sibling_retune.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/sta/tests/ui/ftm_body_private.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/sta/tests/ui/ftm_foreign_completion.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/sta/tests/ui/ftm_repeat_transmission.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/sta/tests/ui/association_poll_owner.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/sta/tests/ui/association_rx_owner.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/sta/tests/ui/ftm_restart.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/sta/tests/ui/ftm_terminal_owner.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."

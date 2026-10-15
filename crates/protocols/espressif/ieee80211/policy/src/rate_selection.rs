@@ -219,11 +219,15 @@ fn walk(
 /// The plan of a control schedule record: its rates, its budget; `None`
 /// for a record whose first rate is no legacy rate (none the station uses:
 /// a test pins it), and the frame does not go.
-fn control_plan(schedule: RateScheduleRef) -> Option<RetryPlan<PhyRate>> {
+fn control_plan(
+    schedule: RateScheduleRef,
+    constrain: impl Fn(PhyRate) -> PhyRate,
+) -> Option<RetryPlan<PhyRate>> {
     let rate = |failures| {
         schedule_rate_after_failures(schedule, failures)
             .and_then(legacy_rate)
             .map(PhyRate::Legacy)
+            .map(&constrain)
     };
     walk(rate(0)?, schedule_publication_limit(schedule), rate)
 }
@@ -360,11 +364,20 @@ impl<K: Ieee80211Capabilities> EspressifRateSelection<K> {
                 walk(
                     initial,
                     schedule_publication_limit(control.association().current_schedule()),
-                    |failures| ordinary_retry_rate(initial, failures),
+                    |failures| {
+                        ordinary_retry_rate(initial, failures)
+                            .map(|rate| control.constrain_rate(rate))
+                    },
                 )
             }
             // No data goes before an association; it would go as control.
-            (FrameRates::Control | FrameRates::Data, _) => control_plan(self.control_schedule()),
+            (FrameRates::Control | FrameRates::Data, control) => {
+                control_plan(self.control_schedule(), |rate| {
+                    control
+                        .as_ref()
+                        .map_or(rate, |control| control.constrain_rate(rate))
+                })
+            }
         }
     }
 }

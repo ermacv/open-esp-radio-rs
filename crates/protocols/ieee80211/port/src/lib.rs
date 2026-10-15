@@ -255,13 +255,13 @@
 //!
 //! A body cannot end without an uninstall or a fail-stop:
 //!
-//! ```compile_fail,E0451
+//! ```compile_fail,E0624
 //! # use oer_ieee80211_port::{Disabled, Ended, Owner, PortBackend, PortBody};
 //! struct Forget;
 //! impl<B: PortBackend> PortBody<B> for Forget {
 //!     async fn run<'id>(self, owner: Owner<'_, 'id, B, Disabled>, _: B::Resources<'id>) -> Ended<'id, B> {
 //!         drop(owner);
-//!         Ended { uninstall: None }
+//!         Ended::fail_stop()
 //!     }
 //! }
 //! ```
@@ -282,8 +282,8 @@
 //!
 //! ```compile_fail,E0624
 //! # use oer_ieee80211_port::{Disabled, Owner, PortBackend};
-//! fn forge<'p, 'id, B: PortBackend>(backend: B) -> Owner<'p, 'id, B, Disabled> {
-//!     Owner::new(backend)
+//! fn forge<B: PortBackend>() {
+//!     let _ = Owner::<B, Disabled>::new;
 //! }
 //! ```
 //!
@@ -351,7 +351,7 @@
 //! ```compile_fail,E0616
 //! # use oer_ieee80211_port::{Enabled, Owner, PortBackend};
 //! fn reach_the_backend<'id, B: PortBackend>(owner: &mut Owner<'_, 'id, B, Enabled>) {
-//!     let _ = &mut owner.backend;
+//!     let _ = &mut owner.owned;
 //! }
 //! ```
 //!

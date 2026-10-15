@@ -122,9 +122,9 @@ impl PortBody<ModelBackend> for Target<'_, '_, '_> {
                 coex: SupportedCoex::new(CoexPriority::Normal).unwrap(),
             };
             #[cfg(ui_reject)]
-            destination.station().submit(attempt).unwrap();
+            destination.station().submit((attempt).admit()).unwrap();
             #[cfg(not(ui_reject))]
-            source.station().submit(attempt).unwrap();
+            source.station().submit((attempt).admit()).unwrap();
         }
         // Exchanging the rates would force the two independent installation
         // lifetimes to be equal. The returned owner exposes both directions.

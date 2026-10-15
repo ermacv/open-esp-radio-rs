@@ -364,6 +364,43 @@ impl PhyRate {
         }
     }
 
+    /// Octets between MPDU starts required by the HT A-MPDU Parameters
+    /// field's spacing encoding (0, 0.25, 0.5, 1, 2, 4, 8 or 16 us).
+    /// Uses the exact symbol rate and rounds up, including short GI and HE
+    /// fractional coding rates. Legacy rates cannot carry an A-MPDU.
+    pub const fn minimum_mpdu_spacing_bytes(self, encoding: u8) -> Option<u32> {
+        let spacing_ns = match encoding {
+            0 => 0,
+            1..=7 => 250_u64 << (encoding - 1),
+            _ => return None,
+        };
+        let (bits, divisor, symbol_ns) = match self {
+            Self::Legacy(_) => return None,
+            Self::Ht(rate) => {
+                let long_gi = HtRate {
+                    short_gi: false,
+                    ..rate
+                };
+                (
+                    long_gi.nominal_kbps() as u64 * 4 / 1_000,
+                    1,
+                    if rate.short_gi { 3_600 } else { 4_000 },
+                )
+            }
+            Self::He(rate) => {
+                let (numerator, denominator) = rate.data_bits_per_symbol();
+                (
+                    numerator,
+                    denominator,
+                    12_800 + rate.gi_ltf.guard_interval_ns() as u64,
+                )
+            }
+        };
+        // At most eight streams, 160 MHz and 16 us: every intermediate is
+        // bounded well below u64::MAX and the byte result fits in u32.
+        Some((bits * spacing_ns).div_ceil(divisor * symbol_ns * 8) as u32)
+    }
+
     /// An upper bound of the time on air, in microseconds, of a 2.4 GHz
     /// PPDU carrying `psdu_octets` at this rate (TXTIME, IEEE Std
     /// 802.11-2020 15.4.3, 17.4.3, 19.4.3 and 802.11ax-2021 27.4.3): the

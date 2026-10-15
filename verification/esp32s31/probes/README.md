@@ -29,7 +29,9 @@ probe wrappers.
 The radio probe uses the MAC's executor-neutral `irq::consumer` directly;
 its graph contains neither the Wi-Fi runtime nor role-sta. The retained
 `open_mac_irq_publication` entry calls the production MAC and power handoffs
-through opaque borrows, preserving their waker paths under LTO. Their
+through opaque borrows of locally owned, split storage, preserving their waker
+paths under LTO. The TX observation wrapper consumes the exclusive finite
+batch; the probe owns no global IRQ register store. Their
 `.rwtext` functions link inside the S31 SRAM window, separately from the
 synthetic trace code. Inspect symbols and function records with Blobray;
 registered waker callbacks remain indirect and need the final composition's

@@ -139,6 +139,8 @@ raw_enum!(
         NotExecuted = 2,
         /// Withdrawn after publication without a completion status.
         Aborted = 3,
+        /// Faulted after possible execution; device withdrawal is unproved.
+        Indeterminate = 4,
     }
 );
 

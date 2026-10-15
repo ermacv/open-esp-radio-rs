@@ -973,6 +973,14 @@ fn a_runner_fault_poisons_the_port_with_its_cause() {
     let poisoned = Poisoned {
         cause: BluetoothFault::Runner(fault),
     };
+    assert_eq!(
+        block_on(runtime.wait_event()),
+        Ok(Ok(BluetoothOutcome::EventEnded {
+            id: EventId::new(4),
+            result: EventResult::NotExecuted,
+        }))
+    );
+    assert!(model.0.borrow().started.is_empty());
     let mut context = core::task::Context::from_waker(core::task::Waker::noop());
     assert_eq!(
         core::pin::pin!(runtime.wait_event()).poll(&mut context),
@@ -980,6 +988,82 @@ fn a_runner_fault_poisons_the_port_with_its_cause() {
     );
     assert_eq!(block_on(runtime.submit_request(configure())), Err(poisoned));
     assert_eq!(block_on(runtime.read_now()), Err(poisoned));
+}
+
+#[test]
+fn a_fault_in_flight_is_indeterminate_and_dropping_the_receipt_keeps_hardware() {
+    let model = Model::default();
+    model.0.borrow_mut().defer_execution = true;
+    let runtime = installed(&model);
+    block_on(runtime.submit_request(test_receive(5)))
+        .unwrap()
+        .unwrap();
+    run_for_a_millisecond(&runtime);
+    assert!(model.0.borrow().running);
+    runtime.runtime.platform_fault();
+    // Command poisoning precedes the driver's terminal accounting. The
+    // stream must not claim completion during that interval.
+    assert!(embassy_futures::poll_once(core::pin::pin!(runtime.wait_event())).is_pending());
+    let _fault = block_on(runtime.run());
+    assert_eq!(
+        block_on(runtime.wait_event()),
+        Ok(Ok(BluetoothOutcome::EventEnded {
+            id: EventId::new(5),
+            result: EventResult::Indeterminate,
+        }))
+    );
+    assert_eq!(
+        block_on(runtime.wait_event()),
+        Err(Poisoned {
+            cause: BluetoothFault::Platform
+        })
+    );
+    let owners = Rc::strong_count(&model.0);
+    assert!(block_on(runtime.take()).is_err());
+    // The helper drops BluetoothRetained after reading its cause. Its
+    // quarantine must retain the hardware's Rc owner without running Drop.
+    assert_eq!(Rc::strong_count(&model.0), owners);
+    assert!(model.0.borrow().running, "no hardware stop was invented");
+    assert_eq!(
+        model.0.borrow().routes_restored,
+        0,
+        "software accounting performs no MMIO"
+    );
+    assert!(matches!(
+        block_on(runtime.runtime.install(model_memory(), model.clone())),
+        Err((crate::BluetoothInstallError::AlreadyInstalled, _, _))
+    ));
+}
+
+#[test]
+fn a_fault_before_publication_delivers_the_pending_terminal_before_poison() {
+    let model = Model::default();
+    let runtime = installed(&model);
+    block_on(runtime.submit_request(configure()))
+        .unwrap()
+        .unwrap();
+    block_on(runtime.submit_request(advertise(8, 10_000)))
+        .unwrap()
+        .unwrap();
+    assert!(model.0.borrow().started.is_empty());
+    runtime.runtime.platform_fault();
+    assert!(embassy_futures::poll_once(core::pin::pin!(runtime.wait_event())).is_pending());
+    let _fault = block_on(runtime.run());
+    assert_eq!(
+        block_on(runtime.wait_event()),
+        Ok(Ok(BluetoothOutcome::EventEnded {
+            id: EventId::new(8),
+            result: EventResult::NotExecuted,
+        }))
+    );
+    for _ in 0..2 {
+        assert_eq!(
+            block_on(runtime.wait_event()),
+            Err(Poisoned {
+                cause: BluetoothFault::Platform
+            })
+        );
+    }
 }
 
 #[test]

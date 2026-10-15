@@ -114,6 +114,7 @@ enum Seen {
     Acknowledged(ConnectionId),
     Test(EventId, TestReport),
     Aborted(EventId),
+    Indeterminate(EventId),
     Fault,
 }
 
@@ -138,6 +139,10 @@ impl BluetoothRadioSink for Sink {
                 id,
                 result: EventResult::Aborted,
             } => Seen::Aborted(id),
+            RadioOutcome::EventEnded {
+                id,
+                result: EventResult::Indeterminate,
+            } => Seen::Indeterminate(id),
             RadioOutcome::EventEnded { id, result } => {
                 Seen::Ended(id, matches!(result, EventResult::Executed { .. }))
             }
@@ -227,6 +232,49 @@ fn the_timing_follows_the_scheduler_policy() {
     // receive guard is the private options' 10 us.
     assert_eq!(connection.widening_jitter.as_micros(), 16);
     assert_eq!(connection.receive_guard.as_micros(), 10);
+}
+
+#[test]
+fn fault_accounting_ends_once_without_releasing_the_list_or_its_memory() {
+    for started in [false, true] {
+        let mut radio = radio();
+        let mut sink = Sink::default();
+        configure_legacy(&mut radio);
+        radio
+            .ask(advertise(1, 10_000, AdvertisingChannels::ALL))
+            .unwrap();
+        assert!(matches!(
+            radio.drive(view(false), &mut sink),
+            RadioStep::Start(_)
+        ));
+        if started {
+            radio.started();
+        }
+        let listed: Vec<_> = radio.executor.list().iter().map(|(id, _)| id).collect();
+        radio.end_faulted(&mut sink);
+        assert_eq!(
+            sink.0,
+            [if started {
+                Seen::Indeterminate(EventId::new(1))
+            } else {
+                Seen::Ended(EventId::new(1), false)
+            }]
+        );
+        for id in listed {
+            assert!(radio.executor.list().contains(id));
+            assert!(
+                radio.memory.legacy.is_listed(id),
+                "fault accounting returns no pool item"
+            );
+        }
+        radio.end_faulted(&mut sink);
+        assert_eq!(
+            sink.0.len(),
+            1,
+            "no duplicate terminal on repeated fault observation"
+        );
+        assert!(radio.is_faulted());
+    }
 }
 
 #[test]

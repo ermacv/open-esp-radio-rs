@@ -35,6 +35,14 @@
 //!   lease with the vendor grant-protect brackets, and an event that loses
 //!   RF to it ends as an ordinary outcome.
 //!
+//! A runner or platform fault first ends every admitted event's software
+//! record. An event never exposed to execution ends `NotExecuted`; an event
+//! whose execution may have begun ends `Indeterminate`. These fault terminals
+//! release no hardware memory. The consumer drains them before seeing poison.
+//! Only confirmed retirement returns reusable owners; `BluetoothRetained`
+//! holds all other role, hardware and PHY-route owners in the shared
+//! `Quarantined`, whose destruction frees nothing and requires chip reset.
+//!
 //! A refused request is an answer to the Controller core, and a fault
 //! poisons the port with its [`BluetoothFault`]. Submission and the clock
 //! stay asynchronous because each takes a fresh controller-time latch,

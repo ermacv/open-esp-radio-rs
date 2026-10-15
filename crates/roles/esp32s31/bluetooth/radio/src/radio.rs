@@ -168,6 +168,9 @@ struct Event {
     /// Items waiting for insertion.
     pending: u8,
     executed: bool,
+    /// RUN was published, or a live insertion linked an item into SRAM
+    /// reachable from the running list. Fault accounting cannot undo this.
+    exposed: bool,
     /// An item was released after a scheduler stop without a completion
     /// status, though its start had passed: the hardware may have run it.
     unconfirmed: bool,
@@ -185,6 +188,7 @@ impl Event {
             listed: 0,
             pending: items,
             executed: false,
+            exposed: false,
             unconfirmed: false,
             cancel: false,
             receiver: false,
@@ -976,7 +980,18 @@ impl<
     ) -> Result<RadioStep<ITEMS>, SchedulerTransactionFault> {
         let mut items = space(&self.memory);
         match self.executor.advance(&mut items, observation) {
-            Ok(step) => Ok(self.after_step(step, sink)),
+            Ok(step) => {
+                // A live insertion links SRAM before returning the actions
+                // that publish/release the hardware bracket. Even if those
+                // actions later fail, it is no longer software-only work.
+                if let Some(id) = self.inserting
+                    && self.executor.list().contains(id)
+                    && let Some(event) = self.event_mut(id)
+                {
+                    event.exposed = true;
+                }
+                Ok(self.after_step(step, sink))
+            }
             Err(fault) => {
                 match fault {
                     SchedulerTransactionFault::UnexpectedObservation
@@ -1037,6 +1052,71 @@ impl<
     /// The stopped receipt the executor holds.
     pub const fn stopped(&self) -> Option<&BluetoothSchedulerStopped> {
         self.executor.stopped()
+    }
+
+    /// Record successful publication of RUN for the current idle list.
+    /// Call only after the hardware's `start` succeeded. A refused start
+    /// publishes no RUN and leaves these events definitely unexecuted.
+    pub fn started(&mut self) {
+        let mut ids = [None; ITEMS];
+        for (slot, (id, _)) in ids.iter_mut().zip(self.executor.list().iter()) {
+            *slot = Some(id);
+        }
+        for id in ids.into_iter().flatten() {
+            if let Some(event) = self.event_mut(id) {
+                event.exposed = true;
+            }
+        }
+    }
+
+    /// End software accounting after a driver or platform fault.
+    ///
+    /// This never reads or writes hardware-owned memory, releases an item,
+    /// or claims the device stopped. Only the software event records leave;
+    /// pools, lists and backing stay retained for uninstall or quarantine.
+    /// Every admitted event still in those records gets exactly one terminal.
+    pub fn end_faulted(&mut self, sink: &mut impl BluetoothRadioSink) {
+        self.faulted = true;
+        let events = self
+            .legacy
+            .iter_mut()
+            .chain(&mut self.connectable)
+            .flatten()
+            .map(|slot| &mut slot.event)
+            .chain(
+                self.scanners
+                    .iter_mut()
+                    .flatten()
+                    .map(|slot| &mut slot.event),
+            )
+            .chain(
+                self.connections
+                    .iter_mut()
+                    .flatten()
+                    .map(|(slot, _)| &mut slot.event),
+            )
+            .chain(self.dtm.iter_mut().map(|slot| &mut slot.event));
+        for event in events.filter_map(Option::take) {
+            let result = if event.exposed || event.executed || event.unconfirmed {
+                EventResult::Indeterminate
+            } else {
+                EventResult::NotExecuted
+            };
+            crate::trace::emit(|| oer_bluetooth_trace::RoleEventEnd {
+                id: event.id.get(),
+                result: if result == EventResult::Indeterminate {
+                    oer_bluetooth_trace::EndResult::Indeterminate
+                } else {
+                    oer_bluetooth_trace::EndResult::NotExecuted
+                },
+                received: 0,
+                discarded: 0,
+            });
+            sink.outcome(RadioOutcome::EventEnded {
+                id: event.id,
+                result,
+            });
+        }
     }
 
     /// Consume the stopped receipt against a fresh time sample.
@@ -2399,6 +2479,7 @@ impl<
                 EventResult::Executed { anchor: None } => oer_bluetooth_trace::EndResult::Executed,
                 EventResult::NotExecuted => oer_bluetooth_trace::EndResult::NotExecuted,
                 EventResult::Aborted => oer_bluetooth_trace::EndResult::Aborted,
+                EventResult::Indeterminate => oer_bluetooth_trace::EndResult::Indeterminate,
             },
             received: counts.received,
             discarded: counts.discarded,

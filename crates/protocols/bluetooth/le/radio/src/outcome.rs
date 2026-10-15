@@ -23,13 +23,19 @@ pub enum EventResult {
         anchor: Option<LeInstant>,
     },
     /// The event left the schedule without executing: it was cancelled,
-    /// skipped or its window passed while the radio was stopped.
+    /// skipped, refused before execution, or its window passed while the
+    /// radio was stopped. This is its final terminal, not a retry request.
     NotExecuted,
     /// The radio withdrew the event after publishing it to its hardware,
     /// which left no completion status: the hardware may or may not have
     /// executed it. The hardware no longer reaches the event's memory, so
     /// its resources are returned; it establishes no anchor.
     Aborted,
+    /// A fault ended software accounting after hardware may have reached
+    /// the event. Execution and completion are unknown. Unlike `Aborted`,
+    /// this proves no withdrawal or memory release: hardware owners remain
+    /// retained until confirmed teardown, otherwise in quarantine.
+    Indeterminate,
 }
 
 /// What a Direct Test Mode receiver event returned.

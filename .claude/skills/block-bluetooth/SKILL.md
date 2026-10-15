@@ -76,3 +76,17 @@ The retirement handoff also consumes the loan. Each await must preserve
 retire/abandon-safe state in the driver or durable backing. Runtime tests
 cancel clock, transition, stop and retirement waits at successive polls,
 then retire/uninstall the same owners.
+
+Runner faults must end software accounting before the event stream reports
+poison. `BluetoothRadio::end_faulted` takes only software event records; it
+never releases a pool item or reads device-owned memory. Successful RUN marks
+the idle list exposed; live insertion marks an event when its SRAM link enters
+the running list, before the remaining publication actions. A refused start
+publishes no RUN (including `SchedulerStartError::Interrupts`, which can have
+published the head). Unexposed events end `NotExecuted`; possibly executed
+ones end `Indeterminate`, which grants no memory release. Runtime fault
+publication can precede these terminals, so its event consumer waits for the
+driver's accounting completion. Failed teardown returns `BluetoothRetained`
+with the same shared `Quarantined` used by the lifecycle core, keeping the
+role, hardware and any PHY route without Drop; only confirmed retirement
+returns reusable owners.

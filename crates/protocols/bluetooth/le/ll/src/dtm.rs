@@ -100,6 +100,8 @@ pub struct DtmCounters {
     /// Events withdrawn after publication whose execution the hardware
     /// left unconfirmed.
     pub aborted: u32,
+    /// Events whose execution and device withdrawal are unknown after a fault.
+    pub indeterminate: u32,
     /// Receiver events that returned no packet.
     pub empty: u32,
     /// Receiver events whose packet failed its check.
@@ -169,6 +171,7 @@ impl DtmSession {
                 executed: 0,
                 not_executed: 0,
                 aborted: 0,
+                indeterminate: 0,
                 empty: 0,
                 failed: 0,
                 received: 0,
@@ -350,6 +353,7 @@ impl DtmSession {
                     EventResult::Executed { .. } => self.counters.executed += 1,
                     EventResult::NotExecuted => self.counters.not_executed += 1,
                     EventResult::Aborted => self.counters.aborted += 1,
+                    EventResult::Indeterminate => self.counters.indeterminate += 1,
                 }
                 self.outstanding = None;
                 self.next_id = self.next_id.wrapping_add(1);

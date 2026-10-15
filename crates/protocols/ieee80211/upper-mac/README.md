@@ -74,10 +74,9 @@ admission. An unrepresentable threshold is `AgingThresholdOutsideEpoch`.
 Every retry outcome observes that boundary, including a protection failure
 before any subframe reached the peer: an aged aggregate issues neither another
 publication nor a BlockAckReq. Its terminal retains the missing-subframe mask.
-The S31 adapter retains the commit stamp's generation and rejects a sample
+Backend adapters retain the commit stamp's generation and reject a sample
 from another generation before consuming a completion or changing retry state.
-Its STA/AP runtimes read the existing MAC `ReceptionClock`; monotonic timers
-remain the source for waiting and transmit watchdogs.
+Monotonic timers remain the source for waiting and transmit watchdogs.
 
 WMM categories select one cell of an exact four-cell contention array.
 `AmpduRequest` owns its bounded lengths; asking for a subframe outside that
@@ -86,9 +85,9 @@ before publishing an attempt. An unrepresentable subframe size admits no
 frame and leaves the aggregate run unchanged. `AmpduLimits` includes aligned
 empty delimiters between MPDUs for the peer's start spacing at the exact
 HT/HE symbol rate, in both the byte and TXOP bounds. The final MPDU needs no
-spacing tail. Admission and the S31 encoder share checked delimiter geometry
-from `oer-ieee80211-mac::ampdu`; the encoder separately applies its hardware
-limits and recovered vendor density rounding. `ampdu::compact` operates on
+spacing tail. Admission and backend encoders share checked delimiter geometry
+from `oer-ieee80211-mac::ampdu`; each encoder separately applies its hardware
+limits. `ampdu::compact` operates on
 fixed arrays of Copy metadata, never on affine MPDUs or payload owners.
 It swaps selected entries into the prefix in order, without a full-array
 temporary. Only the first 64 entries are addressable by its mask; callers

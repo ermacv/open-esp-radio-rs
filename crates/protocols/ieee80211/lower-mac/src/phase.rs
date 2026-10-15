@@ -1139,7 +1139,7 @@ pub trait StationPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id, Role = Station> {
     /// The same RX boundary and completion bound as installation apply.
     /// The owner and permission return exactly once in `GroupKeySelected`.
     /// An evicted hardware entry is not an installed owner and cannot be
-    /// restored by this operation (S31 has one station group slot).
+    /// restored by this operation, regardless of the backend's slot count.
     fn select_group_key(
         &mut self,
         permission: <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::GroupPermission,

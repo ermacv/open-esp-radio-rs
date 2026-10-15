@@ -1322,8 +1322,7 @@ enum JoinStep<M> {
 
 /// The access point as the association made it: what it negotiated, and
 /// the metadata its Association Response arrived with, whose type is the
-/// port's: a rate selection starts from it (owner decision on #563, fresher
-/// than the scan record the old ESP32-S31 path took), and one that needs a
+/// port's: rate selection starts from the Association Response, and one that needs a
 /// signal measurement requires a port whose metadata carries one.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Peer<M> {
@@ -5091,13 +5090,11 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
 
     /// An EAPOL frame of the connected station under its pairwise key: the
     /// Protected bit and the CCMP header's room, which the backend fills;
-    /// QoS Data at user priority 7 on a QoS BSS, as the old ESP32-S31 path
-    /// sent it.
+    /// QoS Data at user priority 7 on a QoS BSS.
     ///
     /// On a QoS BSS it takes TID 7's number, which data at priority 7
-    /// shares, not TID 0's as the old path did: a rekey's EAPOL would leave
-    /// holes in TID 0's sequence under its Block Ack (owner decision on
-    /// #563).
+    /// shares. Allocating from TID 0 instead would leave holes in that TID's
+    /// sequence under its Block Ack.
     fn encode_protected_eapol(
         &mut self,
         bssid: Bssid,

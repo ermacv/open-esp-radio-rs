@@ -26,7 +26,7 @@ back; its operations are synchronous and never wait:
   chosen by the composition with `type Context: 'id` in `PhaseTypes<'id>`.
   The bound retains install-branded epochs and excludes a reference to a
   machine local to the generic `PortBody::run`. Portable contexts need not
-  be `Send`; only a backend such as S31 crossing execution contexts requires
+  be `Send`; only a backend crossing execution contexts requires
   it ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6155221933)).
   `PhaseTypes` also owns the single body type and backend fault type for
   the phase and both of its interfaces; interface submission and the event
@@ -49,7 +49,7 @@ back; its operations are synchronous and never wait:
   a terminal through fields, and returning a partial aggregate.
   The common `lower_mac_owner::conformance` suite checks actual returned
   identities and destructor counts before teardown as well as after it.
-  S31 must supply that harness with its runtime rewrite. Context moves unchanged;
+  Each hardware backend supplies its own fixture for that harness. Context moves unchanged;
   no `Clone` bound, frame inspection or parallel lookup identifies the
   original operation. Bodies remain owned until the same terminal, even
   when the backend copies their octets into DMA memory. An empty pool is the caller's
@@ -213,10 +213,9 @@ and exchanges it at the terminal. The port knows no replay state.
 `Identity` still names the actual material installation used for TX.
 
 The model covers retained same-ID selection and delayed ingress through the
-shared conformance harness. S31 has one STA group slot: an evicted key is no
-longer installed and cannot be selected from a RAM copy. Its hardware cut
-still requires proof with the compiling S31 form; these portable tests do
-not establish it ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6169527922)).
+shared conformance harness. An evicted key is no longer installed and
+cannot be selected from a RAM copy. Physical slot counts belong to backend
+pools; each hardware backend must prove its own RX boundary ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6169527922)).
 
 The install mints one `Slot<ConnectionEpochKind>` for Station's epoch source.
 This slot kind belongs to the lower-MAC contract; the backend neither depends
@@ -282,8 +281,7 @@ The host model in `oer-ieee80211-runtime` implements the phase with
 composition-selected context types. It returns queued operations on gate
 close and normal disable, including queues held by the model air. On
 fail-stop, no terminal is invented: backend-owned resources end with the
-install. The ESP32-S31 runtime still serves the earlier client shape; its
-port migration and image composition are the next stage of #563.
+install. Hardware backends provide the same resource and terminal contract.
 
 `LowerMacEvent::Terminal(LowerMacTerminal)` carries TX, key, configuration,
 gate and requested clock completions in the normal FIFO. Disable returns

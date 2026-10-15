@@ -1,8 +1,7 @@
 //! The service on the model, the test playing the access point: the
 //! station's frames go at the rates its selection picks, and the control
 //! record switches once the station associated, the handshake's EAPOL on
-//! the association's record (owner decision on #563, a deliberate
-//! departure from the old ESP32-S31 path, which switched once connected).
+//! the association's record.
 
 use core::cell::{Cell, RefCell};
 use core::future::{Future, poll_fn};

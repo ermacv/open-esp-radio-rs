@@ -1,9 +1,8 @@
 //! Bounded, allocation-free AP beacon field ownership.
 //!
-//! The S31 vendor builder derives DTIM from a ROM TSF leaf which remains zero
-//! in the strict runtime. This module owns only the stateless correction:
-//! locate the fixed-size TIM element and derive its phase from the executor
-//! timestamp and the beacon's advertised interval.
+//! Locate the fixed-size TIM element and derive its DTIM phase from the
+//! supplied timestamp and the beacon's advertised interval. The caller owns
+//! the clock relation; this codec does not read a backend or executor clock.
 
 use crate::{
     ap::profile::Advertisement,

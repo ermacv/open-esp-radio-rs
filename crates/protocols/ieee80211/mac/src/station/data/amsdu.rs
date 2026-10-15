@@ -2,7 +2,7 @@
 
 use super::*;
 
-/// One protected QoS A-MSDU prepared for S31 hardware CCMP encryption.
+/// One protected QoS A-MSDU prepared for backend CCMP encryption.
 ///
 /// Every borrowed element is a complete Ethernet-II frame. The encoder emits
 /// one outer To-DS QoS MPDU and converts each Ethernet frame to the IEEE

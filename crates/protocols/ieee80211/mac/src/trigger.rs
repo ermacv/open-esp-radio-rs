@@ -332,8 +332,8 @@ pub enum TriggerRuAllocation {
     },
     /// The blob labels every encoding at or above 69 as `484 OFDM`.
     ///
-    /// This is retained for diagnostics but is outside the ESP32-S31
-    /// 20-MHz-only non-AP transmit profile.
+    /// This is retained for diagnostics but lies outside the HE20-specific
+    /// narrow-RU representation. Transmit bandwidth support belongs to the backend.
     WiderThan242,
 }
 

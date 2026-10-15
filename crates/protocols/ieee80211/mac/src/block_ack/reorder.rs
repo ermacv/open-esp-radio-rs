@@ -173,7 +173,7 @@ impl<const WINDOW_CAPACITY: usize, const SLOT_CAPACITY: usize>
     ///
     /// This is a recovery edge the caller chooses to apply; the Espressif
     /// reorder path applies it with `use_received_sequence` for formats newer
-    /// than HT (`ESP32-S31` receive runtime).
+    /// than HT, as selected by the receive backend.
     pub fn resynchronize_stale_initial_ampdu(
         &mut self,
         sequence: SequenceNumber,

@@ -324,3 +324,13 @@ rekey must preserve the existing management PN/IPN. Never remove the pairwise
 key before a protected leaving Deauthentication's terminal. The model reports
 key/PN use but does not encrypt TX payloads; incoming PMF tests therefore use
 independently encrypted AESCCM/BIP fixtures, not a model integrity flag.
+
+SPP A-MSDU belongs to the association. Backend capability `SppScope` chooses
+whether hardware can program each association or only an entire interface;
+AP admission is generic over that type. S31 is interface-scoped: the fourth
+argument of `hal_crypto_enable` reaches interface-control bit 9, not a key
+entry. Keep PTK/GTK on the same association, apply its decision before PTK,
+and retain it through the last key removal. In software CCMP, SPP retains
+the QoS A-MSDU-present bit in both AAD and nonce flags (Linux v6.12
+`ccmp_gcmp_aad` / `ccmp_special_blocks`). The first-DA injection guard remains
+required independently of this negotiation.

@@ -48,7 +48,7 @@ pub fn he_default_packet_extension_duration(he_operation_ie: &[u8]) -> Option<u8
     Some(he_operation_ie[3] & 0x07)
 }
 
-/// Recover the HE Operation `ER-SU-Disable` bit consumed by the ESP32-S31.
+/// Recover the peer's HE Operation `ER-SU-Disable` bit.
 ///
 /// Complete
 /// `libnet80211.a[ieee80211_he.o]::ieee80211_parse_heopr`

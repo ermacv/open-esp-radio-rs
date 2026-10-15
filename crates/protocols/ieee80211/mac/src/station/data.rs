@@ -56,7 +56,7 @@ impl StaDataFrame<'_> {
     }
 }
 
-/// One protected data MPDU prepared for S31 hardware CCMP encryption.
+/// One protected data MPDU prepared for backend CCMP encryption.
 ///
 /// The CCMP header carries the packet number owned by the installed hardware
 /// key token. The payload remains plaintext in DMA memory; the MAC encrypts it
@@ -85,8 +85,8 @@ impl StaProtectedDataFrame<'_> {
     /// Encode a protected QoS MPDU with a hardware-generated HE-Control field.
     ///
     /// The returned chip-independent DMA image keeps CCMP immediately after
-    /// the 26-byte QoS header. ESP32-S31 accounts for the four bytes inserted
-    /// on air in private TX metadata, not as bytes in this frame.
+    /// the 26-byte QoS header. The backend accounts for the four bytes inserted
+    /// on air through its explicit HE-Control insertion capability.
     pub fn encode_with_he_control(
         self,
         he_control: DataHeControl,
@@ -278,7 +278,7 @@ impl StaProtectedEthernetFrame {
     ///
     /// The first Ethernet payload is moved forward inside `storage`; the
     /// second frame is copied behind it. The returned MPDU starts at the same
-    /// offset as [`Self::encode_in_place`], so an S31 metadata word can remain
+    /// offset as [`Self::encode_in_place`], so backend metadata can remain
     /// immediately before it. The caller may release the second frame as soon
     /// as this method returns successfully.
     ///

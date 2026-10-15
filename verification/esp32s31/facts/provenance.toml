@@ -2035,6 +2035,12 @@ code = "54aa547f67604149b60b319d298604194d0f7f89cf5d5b58a7b7972169a15f89"
 [[function]]
 artifact = "libnet80211"
 member = "ieee80211_supplicant.o"
+symbol = "ieee80211_get_spp"
+code = "003d39a2e4b854dbd472454dbe010092f903cf36748a3911d055542d5f85fd18"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_supplicant.o"
 symbol = "wifi_set_rx_policy"
 code = "b270f09898a38eb62eda6f291600b82a75fe5479fdfb6930cf905e35e8fcbe8c"
 decisions = ["coverage.toml", "state.rs"]
@@ -3955,6 +3961,12 @@ artifact = "libpp"
 member = "if_hwctrl.o"
 symbol = "ic_set_he_rts_threshold_bytes_tab"
 code = "274db8e6faf8b53f6e67be75ffd48d65b670e605b14b77d2493d54a4345d01b7"
+
+[[function]]
+artifact = "libpp"
+member = "if_hwctrl.o"
+symbol = "ic_set_key"
+code = "acb94bd31b3ada9188d94847544ff18e3b63b01ce8c07f67989294997eed7a31"
 
 [[function]]
 artifact = "libpp"

@@ -179,7 +179,7 @@ impl ApUnprotectedDataFrame<'_> {
 /// One protected Ethernet-II frame sent from an AP to its authorized peer.
 ///
 /// The caller owns the pairwise packet number. This codec merely places the
-/// supplied CCMP header in the DMA image; ESP32-S31 hardware encrypts the
+/// supplied CCMP header in the DMA image; the backend encrypts the
 /// plaintext LLC/SNAP payload and appends the MIC.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ApProtectedDataFrame<'frame> {

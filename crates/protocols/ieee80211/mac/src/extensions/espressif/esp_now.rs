@@ -561,7 +561,7 @@ impl<'payload> EspNowV1Frame<'payload> {
 /// The Action body is intentionally opaque ciphertext. Parsing this envelope
 /// proves only structural admission: it does not authenticate, decrypt or
 /// interpret the body, and it does not advance a replay window. The exact
-/// ESP-NOW Action-frame AAD and S31 transform contract are not present in the
+/// ESP-NOW Action-frame AAD and authenticated transform contract are not present in the
 /// reviewed evidence, so no encrypted encoder/decoder is exposed here.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EspNowProtectedV1Envelope<'frame> {

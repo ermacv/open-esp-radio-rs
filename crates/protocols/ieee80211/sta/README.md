@@ -165,8 +165,7 @@ Cancellation and failure otherwise return collected samples plus the
 unmatched local timestamp pair. Scheduling overflow returns the unchanged
 requester, session or transmission before advancing its state. Forgetting
 an affine handle forfeits that operation; it cannot unlock or complete a
-different one. The S31 source-frontier consumer still rejects hardware
-admission before publication; these ownership contracts establish no FTM
+different one. These ownership contracts establish no FTM
 timestamp-capture or calibrated-distance capability.
 Samples live in one bounded `heapless::Vec`, whose length is the count.
 The terminal takes this vector by value, preserving order through completion,
@@ -262,10 +261,8 @@ defines the GTK KDE's two-bit KeyID. Frame addressing distinguishes PTK
 and GTK. The pinned
 [ESP-IDF parser](https://github.com/espressif/esp-idf/blob/4d59230ddff16327812782151ef0afef202dc6d7/components/wpa_supplicant/src/rsn_supp/wpa.c#L1064)
 also accepts all four IDs. `GroupKeyId::select` addresses four protocol
-records; physical slots come from the backend's pool. S31 STA accepts ID zero
-in its dedicated group slot. S31 AP excludes it because its `1 + key_id`
-layout would collide with the station group slot. That hardware restriction
-does not narrow the portable WPA2 receive contract. Legacy WPA/TKIP and mesh
+records; physical slots come from the backend's pool. The wire ID does not
+prescribe a hardware slot layout or narrow the portable WPA2 receive contract. Legacy WPA/TKIP and mesh
 key-selection policies are outside this station's supported WPA2-CCMP mode.
 
 `poll_action` drains internal transitions until it produces an action or
@@ -464,10 +461,9 @@ a group mutation; two group mutations cannot overlap.
 
 Hardware rejection poisons the port; internal rollback is not a success
 terminal. The model and shared conformance exercise delayed ingress and
-fault/disable custody. This does not prove S31's hardware boundary: its one
-STA group slot cannot retain an evicted installation. A RAM material copy is
-not a selectable installed owner. S31's compiling form and migration remain
-separate ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6169527922)).
+fault/disable custody. Each hardware backend must independently prove its
+RX boundary. An evicted installation cannot be selected from a RAM material
+copy ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6169527922)).
 
 Installation actions carry private pending tokens naming their cell, key ID
 and link epoch. An old epoch's terminal returns its resources for normal

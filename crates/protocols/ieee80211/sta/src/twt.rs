@@ -1062,8 +1062,8 @@ const fn next_dialog_token(current: u8) -> u8 {
 /// must explicitly prove hardware admission before enabling requester work.
 pub const INDIVIDUAL_TWT_REQUESTER_DISABLED: Option<IndividualTwtRequesterConfig> = None;
 
-/// Conservative portable profile; it is not installed by any production
-/// ESP32-S31 composition while the hardware boundary remains unsupported.
+/// Portable profile whose use requires an explicit backend admission proof.
+/// Its existence does not advertise hardware TWT support.
 pub const fn conservative_individual_twt_requester_config() -> IndividualTwtRequesterConfig {
     IndividualTwtRequesterConfig {
         response_timeout: Duration::from_secs(1),

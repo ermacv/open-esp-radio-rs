@@ -1,5 +1,5 @@
-//! Backend-independent TX ownership scenarios. The model runs these now;
-//! S31 must supply the same harness when its port runtime is rewritten.
+//! Backend-independent TX ownership scenarios. The model runs these;
+//! each backend supplies a fixture for this shared contract suite.
 //! Harnesses submit the operations in `OPERATIONS`, retain the original
 //! identities in opaque contexts, and report identities of actual returned
 //! resources. No observation may be synthesized from the expected identity.
@@ -69,7 +69,7 @@ pub struct BarrierTrace {
     pub retried_frames: Vec<Vec<u8>>,
 }
 
-/// The same publication/barrier suite for the model and the S31 Held fixture.
+/// The publication/barrier suite shared by model and hardware fixtures.
 pub trait BarrierHarness {
     fn exercise_barrier(
         &mut self,

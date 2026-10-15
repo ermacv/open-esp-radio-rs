@@ -9,8 +9,7 @@
 //!
 //! The receive path checks a frame here once it is decrypted and verified,
 //! and after the reorder of its TID, when the receiver has one: within a
-//! lane the packet numbers then strictly increase. Moved from the ESP32-S31
-//! station's connected receive path ([layering decision on #563]).
+//! lane the packet numbers then strictly increase ([layering decision on #563]).
 //!
 //! [layering decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6128926225
 

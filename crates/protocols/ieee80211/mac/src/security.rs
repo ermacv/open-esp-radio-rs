@@ -112,7 +112,7 @@ pub enum GroupManagementCipher {
 }
 
 /// Whether this association authenticates the QoS A-MSDU-present bit in CCMP.
-/// The decision is fixed once for an interface association. Its PTK and GTK
+/// The decision is fixed once for an association. Its PTK and GTK
 /// refer to that association; keys cannot choose an independent mode.
 /// Receiving a verified MIC alone does not establish negotiated SPP.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

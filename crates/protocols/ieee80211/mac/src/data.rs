@@ -37,11 +37,10 @@ pub use duplicate::RxDuplicateFilter;
 
 /// HE-Control policy for an ordinary QoS data MPDU.
 ///
-/// The ESP32-S31 vendor path sets Frame Control's Order bit while keeping
-/// CCMP immediately after the 26-byte DMA-resident QoS header. Its MAC-owned
-/// metadata separately accounts for the four bytes inserted on air. Keeping
-/// this choice explicit prevents an ordinary HT QoS frame from accidentally
-/// advertising a field that is absent on air.
+/// A backend that explicitly supports hardware insertion keeps CCMP
+/// immediately after the 26-byte QoS header and accounts separately for the
+/// four bytes inserted on air. Keeping this capability explicit prevents an
+/// ordinary HT QoS frame from advertising a field absent on air.
 ///
 /// SOURCE(esp32s31): complete `libnet80211[ieee80211_he.o]::ieee80211_encap_esfbuf_htc` sets Order and descriptor HTC metadata;
 /// `libpp[hal_mac_ctl.o]::hal_he_set_htc` writes the per-queue HTC

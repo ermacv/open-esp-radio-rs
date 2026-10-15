@@ -32,6 +32,12 @@ pub struct TerminalAccess<'id, Kind, Path: PoolPath = Root> {
 /// The backend keeps the projection's fields private and exposes operations
 /// on borrowed storage. In particular, the view must not contain a public
 /// `&mut Self` or offer an owner extraction/replacement operation.
+///
+/// Implementations must also reject mutable-owner coercion (`DerefMut`) and
+/// owning iteration or `TxMpdu::into_parts` on the view. The runtime's
+/// `execution_projection` UI pair checks these boundaries for both its single
+/// MPDU and aggregate on host and RV32. A new backend supplies the same pair
+/// for its concrete views: this open trait does not seal their implementations.
 pub trait ExecutionPayload {
     /// Narrow execution borrow; it cannot outlive the accepted operation.
     type Execution<'a>

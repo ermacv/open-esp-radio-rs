@@ -26542,14 +26542,14 @@ pub mod wifi_mac_sta_tbtt_target {
     }
 }
 #[doc = "Shared TSF load and coherent station/SoftAP snapshot transaction."]
-pub type WifiMacStaTsfLoad = crate::Periph<wifi_mac_sta_tsf_load::RegisterBlock, 0x2010_d814>;
-impl core::fmt::Debug for WifiMacStaTsfLoad {
+pub type WifiMacTsfLoad = crate::Periph<wifi_mac_tsf_load::RegisterBlock, 0x2010_d814>;
+impl core::fmt::Debug for WifiMacTsfLoad {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("WifiMacStaTsfLoad").finish()
+        f.debug_struct("WifiMacTsfLoad").finish()
     }
 }
 #[doc = "Shared TSF load and coherent station/SoftAP snapshot transaction."]
-pub mod wifi_mac_sta_tsf_load {
+pub mod wifi_mac_tsf_load {
     #[repr(C)]
     #[doc = "Register block"]
     pub struct RegisterBlock {
@@ -58948,8 +58948,8 @@ pub struct Peripherals {
     pub wifi_mac_tsf_status: WifiMacTsfStatus,
     #[doc = "WIFI_MAC_STA_TBTT_TARGET"]
     pub wifi_mac_sta_tbtt_target: WifiMacStaTbttTarget,
-    #[doc = "WIFI_MAC_STA_TSF_LOAD"]
-    pub wifi_mac_sta_tsf_load: WifiMacStaTsfLoad,
+    #[doc = "WIFI_MAC_TSF_LOAD"]
+    pub wifi_mac_tsf_load: WifiMacTsfLoad,
     #[doc = "WIFI_MAC_RTC_TIMER_UPDATE"]
     pub wifi_mac_rtc_timer_update: WifiMacRtcTimerUpdate,
     #[doc = "WIFI_MAC_AUX_TSF_CONTROL"]
@@ -59136,7 +59136,7 @@ impl Peripherals {
             wifi_mac_antenna_init: unsafe { WifiMacAntennaInit::steal() },
             wifi_mac_tsf_status: unsafe { WifiMacTsfStatus::steal() },
             wifi_mac_sta_tbtt_target: unsafe { WifiMacStaTbttTarget::steal() },
-            wifi_mac_sta_tsf_load: unsafe { WifiMacStaTsfLoad::steal() },
+            wifi_mac_tsf_load: unsafe { WifiMacTsfLoad::steal() },
             wifi_mac_rtc_timer_update: unsafe { WifiMacRtcTimerUpdate::steal() },
             wifi_mac_aux_tsf_control: unsafe { WifiMacAuxTsfControl::steal() },
             wifi_mac_txrx_prefix: unsafe { WifiMacTxrxPrefix::steal() },
@@ -59755,7 +59755,7 @@ pub mod peripheral_ownership {
         pub wifi_mac_rx_statistics: crate::WifiMacRxStatistics,
         pub wifi_mac_sta_beacon_filter: crate::WifiMacStaBeaconFilter,
         pub wifi_mac_sta_tbtt_target: crate::WifiMacStaTbttTarget,
-        pub wifi_mac_sta_tsf_load: crate::WifiMacStaTsfLoad,
+        pub wifi_mac_tsf_load: crate::WifiMacTsfLoad,
         pub wifi_mac_tsf_status: crate::WifiMacTsfStatus,
         pub wifi_mac_tsf_timer: crate::WifiMacTsfTimer,
         pub wifi_mac_txrx_callbacks: crate::WifiMacTxrxCallbacks,
@@ -59956,7 +59956,7 @@ pub mod peripheral_ownership {
             wifi_mac_antenna_init,
             wifi_mac_tsf_status,
             wifi_mac_sta_tbtt_target,
-            wifi_mac_sta_tsf_load,
+            wifi_mac_tsf_load,
             wifi_mac_rtc_timer_update,
             wifi_mac_aux_tsf_control,
             wifi_mac_txrx_prefix,
@@ -60054,7 +60054,7 @@ pub mod peripheral_ownership {
                 wifi_mac_rx_statistics,
                 wifi_mac_sta_beacon_filter,
                 wifi_mac_sta_tbtt_target,
-                wifi_mac_sta_tsf_load,
+                wifi_mac_tsf_load,
                 wifi_mac_tsf_status,
                 wifi_mac_tsf_timer,
                 wifi_mac_txrx_callbacks,
@@ -60173,9 +60173,9 @@ pub mod full_register_write {
         }
     }
 
-    /// Write every bit of `WIFI_MAC_STA_TSF_LOAD`.`VALUE_LOW` through its full-width field.
+    /// Write every bit of `WIFI_MAC_TSF_LOAD`.`VALUE_LOW` through its full-width field.
     #[inline]
-    pub fn station_tsf_value_low(registers: &crate::WifiMacStaTsfLoad, value: u32) {
+    pub fn station_tsf_value_low(registers: &crate::WifiMacTsfLoad, value: u32) {
         // SAFETY: generator validation proves that this is the only field,
         // it covers all 32 bits and accepts every `u32`; no zero-filled
         // reserved or partially described bits remain.
@@ -60186,9 +60186,9 @@ pub mod full_register_write {
         }
     }
 
-    /// Write every bit of `WIFI_MAC_STA_TSF_LOAD`.`VALUE_HIGH` through its full-width field.
+    /// Write every bit of `WIFI_MAC_TSF_LOAD`.`VALUE_HIGH` through its full-width field.
     #[inline]
-    pub fn station_tsf_value_high(registers: &crate::WifiMacStaTsfLoad, value: u32) {
+    pub fn station_tsf_value_high(registers: &crate::WifiMacTsfLoad, value: u32) {
         // SAFETY: generator validation proves that this is the only field,
         // it covers all 32 bits and accepts every `u32`; no zero-filled
         // reserved or partially described bits remain.

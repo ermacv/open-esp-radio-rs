@@ -51,7 +51,7 @@ peripherals = [
     "WIFI_MAC_RX_STATISTICS",
     "WIFI_MAC_STA_BEACON_FILTER",
     "WIFI_MAC_STA_TBTT_TARGET",
-    "WIFI_MAC_STA_TSF_LOAD",
+    "WIFI_MAC_TSF_LOAD",
     "WIFI_MAC_TSF_STATUS",
     "WIFI_MAC_TSF_TIMER",
     "WIFI_MAC_TXRX_CALLBACKS",
@@ -1423,14 +1423,14 @@ sources = ["BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT"]
 [[opaque-domains]]
 name = "StationTsfLowWord"
 description = "Low word of one station TSF value; sequencing remains owned by the station-TSF capability."
-peripheral = "WIFI_MAC_STA_TSF_LOAD"
+peripheral = "WIFI_MAC_TSF_LOAD"
 register = "VALUE_LOW"
 sources = ["BLOB_LIBPP_HAL_TSF"]
 
 [[opaque-domains]]
 name = "StationTsfHighWord"
 description = "High word of one station TSF value; sequencing remains owned by the station-TSF capability."
-peripheral = "WIFI_MAC_STA_TSF_LOAD"
+peripheral = "WIFI_MAC_TSF_LOAD"
 register = "VALUE_HIGH"
 sources = ["BLOB_LIBPP_HAL_TSF"]
 
@@ -1732,7 +1732,7 @@ sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 
 [[full-register-writes]]
 name = "station_tsf_value_low"
-peripheral = "WIFI_MAC_STA_TSF_LOAD"
+peripheral = "WIFI_MAC_TSF_LOAD"
 register = "VALUE_LOW"
 field = "VALUE"
 domain = "StationTsfLowWord"
@@ -1741,7 +1741,7 @@ sources = ["BLOB_LIBPP_HAL_TSF"]
 
 [[full-register-writes]]
 name = "station_tsf_value_high"
-peripheral = "WIFI_MAC_STA_TSF_LOAD"
+peripheral = "WIFI_MAC_TSF_LOAD"
 register = "VALUE_HIGH"
 field = "VALUE"
 domain = "StationTsfHighWord"

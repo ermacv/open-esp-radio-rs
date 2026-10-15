@@ -70,7 +70,7 @@ use oer_ieee80211_mac::ccmp::GroupKeyId;
 
 use oer_ieee80211_arbiter::{
     AbsenceAnswer, AbsencePlace, Answer, ChannelRequest, Lease, LeaseId, LeasePlace, LeaveReason,
-    Purpose, Refusal, StationNotice, UpstreamFact,
+    Purpose, Refusal, StationNotice, StationPlaceReturns, StationPlaces, UpstreamFact,
 };
 use oer_ieee80211_lower_mac::{
     AckHeader, Channel, GroupAddress, HeaderSpec, Ieee80211Capabilities, MpduLength, ReceiveFilter,
@@ -767,7 +767,7 @@ pub struct Station<'id, T: StaTokens, K: Ieee80211Capabilities> {
 /// until its caller retires it with the installation.
 pub struct RetiredStation<'id, T: StaTokens, K: Ieee80211Capabilities> {
     /// Authenticated successors returned by disable without protocol effects.
-    pub deferred_eapol: DeferredEapol,
+    deferred_eapol: DeferredEapol,
     config: StaConfig<K>,
     security: StaSecurity,
     epochs: LinkEpochSource<'id, T::EpochPath>,
@@ -775,10 +775,6 @@ pub struct RetiredStation<'id, T: StaTokens, K: Ieee80211Capabilities> {
     configuration: Option<ConfigurationPlace>,
     tickets: Pool<T::Ticket>,
     buffers: Pool<T::SmallBuffer>,
-    place: Option<LeasePlace<'id, T::GatePath>>,
-    lease: Held<'id, K, T::GatePath>,
-    absence_place: Option<AbsencePlace<'id, T::GatePath>>,
-    absence: Option<Lease<'id, K, T::GatePath>>,
     commands: Commands,
     sequence: StaSequenceCounter,
     pmksa: StaPmksaCache,
@@ -795,27 +791,24 @@ pub enum StaFinalOutput {
 /// Its first actions reclaim retained keys and receive configuration; it cannot
 /// admit a new Connect before those real port terminals return.
 pub struct StationRestart<'id, T: StaTokens, K: Ieee80211Capabilities> {
-    pub station: Station<'id, T, K>,
-    pub deferred_eapol: DeferredEapol,
-    pub notice: Option<StaNotice>,
+    station: Station<'id, T, K>,
+    deferred_eapol: DeferredEapol,
+    notice: Option<StaNotice>,
+}
+
+impl<'id, T: StaTokens, K: Ieee80211Capabilities> StationRestart<'id, T, K> {
+    /// Consume the restart into its machine and the previous run's outputs.
+    pub fn into_parts(self) -> (Station<'id, T, K>, DeferredEapol, Option<StaNotice>) {
+        (self.station, self.deferred_eapol, self.notice)
+    }
 }
 
 impl<'id, T: StaTokens, K: Ieee80211Capabilities> RetiredStation<'id, T, K> {
     /// Reuse this installation's owners, sequence and connection-epoch source.
-    /// The arbiter must first return both admission places. An incomplete bank
-    /// returns unchanged, so no owner or authority can be fabricated.
-    #[expect(
-        clippy::result_large_err,
-        reason = "an incomplete affine bank returns intact without allocation"
-    )]
-    pub fn restart(self) -> Result<StationRestart<'id, T, K>, Self> {
-        if !matches!(self.lease, Held::None)
-            || self.place.is_none()
-            || self.absence.is_some()
-            || self.absence_place.is_none()
-        {
-            return Err(self);
-        }
+    /// The stopped arbiter supplies both admission places by value. A partial
+    /// return collection cannot enter this infallible transition.
+    pub fn restart(self, places: StationPlaces<'id, T::GatePath>) -> StationRestart<'id, T, K> {
+        let (place, absence_place) = places.into_parts();
         let Self {
             config,
             security,
@@ -824,17 +817,13 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> RetiredStation<'id, T, K> {
             configuration,
             tickets,
             buffers,
-            place,
-            lease,
-            absence_place,
-            absence,
             commands,
             sequence,
             pmksa,
             notice,
             deferred_eapol,
         } = self;
-        Ok(StationRestart {
+        StationRestart {
             station: Station {
                 config,
                 security,
@@ -843,10 +832,10 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> RetiredStation<'id, T, K> {
                 configuration,
                 tickets,
                 buffers,
-                place,
-                lease,
-                absence_place,
-                absence,
+                place: Some(place),
+                lease: Held::None,
+                absence_place: Some(absence_place),
+                absence: None,
                 commands,
                 sequence,
                 pmksa,
@@ -856,7 +845,27 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> RetiredStation<'id, T, K> {
             },
             notice,
             deferred_eapol,
-        })
+        }
+    }
+
+    /// Return deferred frames and the remaining notice together with the
+    /// resource bank. Consuming the bank prevents a second extraction of the
+    /// same authenticated frame owner.
+    pub fn into_outputs(self) -> (Self, DeferredEapol, Option<StaNotice>) {
+        let Self {
+            deferred_eapol,
+            notice,
+            ..
+        } = self;
+        (
+            Self {
+                deferred_eapol: DeferredEapol::Empty,
+                notice: None,
+                ..self
+            },
+            deferred_eapol,
+            notice,
+        )
     }
 
     /// Drain original accepted requests before the one lifecycle notice.
@@ -865,24 +874,6 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> RetiredStation<'id, T, K> {
             .poll()
             .map(StaFinalOutput::CommandCompleted)
             .or_else(|| self.notice.take().map(StaFinalOutput::Notify))
-    }
-
-    /// Return the arbiter's terminal places without running protocol transitions.
-    pub fn return_arbiter_notice(&mut self, notice: StationNotice<'id, K, T::GatePath>) {
-        match notice {
-            StationNotice::LeaseEnded(place) | StationNotice::LeaseCancelled(_, place) => {
-                self.lease = Held::None;
-                self.place = Some(place);
-            }
-            StationNotice::AbsenceEnded(place) | StationNotice::AbsenceCancelled(_, place) => {
-                self.absence = None;
-                self.absence_place = Some(place);
-            }
-            StationNotice::LeaseStarted(_)
-            | StationNotice::AbsenceStarted(_)
-            | StationNotice::Moved(_)
-            | StationNotice::Leave(_) => {}
-        }
     }
 
     /// Free frame credits retained before the installation is torn down.
@@ -1863,7 +1854,13 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     /// this path owes no configuration, key removal or transmission to a port
     /// which can no longer execute it. Pending owners remain with the bank or
     /// the installation that must now be retired.
-    pub fn finish(mut self, reason: StaDisconnectReason) -> RetiredStation<'id, T, K> {
+    pub fn finish(
+        mut self,
+        reason: StaDisconnectReason,
+    ) -> (
+        RetiredStation<'id, T, K>,
+        StationPlaceReturns<'id, T::GatePath>,
+    ) {
         self.complete_commands();
         let notice = match self.state {
             State::Idle => None,
@@ -1893,9 +1890,9 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             tickets,
             buffers,
             place,
-            lease,
+            lease: _,
             absence_place,
-            absence,
+            absence: _,
             commands,
             sequence,
             pmksa,
@@ -1903,32 +1900,31 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             scan: _,
             epoch: _,
         } = self;
-        RetiredStation {
-            deferred_eapol: match state {
-                State::Leave(Leave { deferred, .. }) => deferred,
-                State::Connected(Connected { rsn: Some(rsn), .. })
-                | State::Confirming(Confirming {
-                    connected: Connected { rsn: Some(rsn), .. },
-                    ..
-                }) => rsn.deferred,
-                _ => DeferredEapol::Empty,
+        (
+            RetiredStation {
+                deferred_eapol: match state {
+                    State::Leave(Leave { deferred, .. }) => deferred,
+                    State::Connected(Connected { rsn: Some(rsn), .. })
+                    | State::Confirming(Confirming {
+                        connected: Connected { rsn: Some(rsn), .. },
+                        ..
+                    }) => rsn.deferred,
+                    _ => DeferredEapol::Empty,
+                },
+                config,
+                security,
+                epochs,
+                keys,
+                configuration,
+                tickets,
+                buffers,
+                commands,
+                sequence,
+                pmksa,
+                notice,
             },
-            config,
-            security,
-            epochs,
-            keys,
-            configuration,
-            tickets,
-            buffers,
-            place,
-            lease,
-            absence_place,
-            absence,
-            commands,
-            sequence,
-            pmksa,
-            notice,
-        }
+            StationPlaceReturns::new(place, absence_place),
+        )
     }
 
     /// Build an open station; its backend may grant zero group slots.

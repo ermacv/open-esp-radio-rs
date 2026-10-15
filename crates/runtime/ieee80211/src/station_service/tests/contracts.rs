@@ -66,11 +66,21 @@ impl PortBody<ModelBackend<ModelCaps24, ServiceContexts>> for ContractBody {
         let [ap_group, _] = access_point_group;
         if let ContractCase::Disable { prior, overflow } = self.0 {
             let mut owner = owner.enable().await.ok().unwrap();
-            let bank = service
+            let (bank, places) = service
                 .state
                 .station
                 .finish(oer_ieee80211_sta::machine::StaDisconnectReason::Requested);
-            service.state.station = bank.restart().ok().unwrap().station;
+            let RetiredArbiter::Stopped(stopped) = service.arbiter.finish(ArbiterEnd::Stopped)
+            else {
+                panic!()
+            };
+            let (arbiter, places) = stopped
+                .restart(SupportedChannel::new(channel6()).unwrap(), places)
+                .ok()
+                .unwrap()
+                .into_parts();
+            service.arbiter = arbiter;
+            service.state.station = bank.restart(places).into_parts().0;
             let Some(StaAction::Configure(receive, pending)) =
                 service.state.station.poll_action(Instant::EPOCH)
             else {

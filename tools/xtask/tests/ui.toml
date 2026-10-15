@@ -185,7 +185,7 @@ cases = [
 
 [[suite]]
 name = "service-finalization"
-packages = ["oer-ieee80211-runtime", "oer-ieee80211-sta", "oer-ieee80211-port", "oer-ieee80211-lower-mac", "oer-ieee80211-upper-mac", "oer-time"]
+packages = ["oer-ieee80211-arbiter", "oer-ieee80211-runtime", "oer-ieee80211-sta", "oer-ieee80211-port", "oer-ieee80211-lower-mac", "oer-ieee80211-upper-mac", "oer-time"]
 features = []
 targets = ["host", "esp32s31"]
 cases = [
@@ -196,6 +196,8 @@ cases = [
     "crates/runtime/ieee80211/tests/ui/station_external_body.rs",
     "crates/protocols/ieee80211/sta/tests/ui/retired_station_diagnostics.rs",
     "crates/protocols/ieee80211/sta/tests/ui/retired_station.rs",
+    "crates/protocols/ieee80211/sta/tests/ui/restart_places.rs",
+    "crates/protocols/ieee80211/sta/tests/ui/retired_outputs.rs",
     "crates/protocols/ieee80211/sta/tests/ui/retired_data.rs",
 ]
 

@@ -360,7 +360,14 @@ fn an_application_stop_does_not_report_port_failure() {
 fn stopped_bank_reuses_places_and_gate_without_reusing_lease_identity() {
     for closed in [false, true] {
         installed(|mint| {
-            let (mut arbiter, place, mut port) = alone::<NoReservation>(mint);
+            let (gate, issuer, authority) = mint.into_pools();
+            let (mut arbiter, place, absence) = Arbiter::<Caps>::new(
+                ArbiterPolicy::DEFAULT.checked(Duration::ZERO).unwrap(),
+                channel(1),
+                authority,
+                gate,
+            );
+            let mut port = Port { issuer };
             let first = lease(arbiter.request(at(0), scan(6, 10), place));
             arbiter.ready(first.id());
             if closed {
@@ -370,22 +377,19 @@ fn stopped_bank_reuses_places_and_gate_without_reusing_lease_identity() {
                 arbiter.gate_closed(port.issuer.close(gate));
             }
             let mut retired = arbiter.finish(ArbiterEnd::Stopped);
-            let mut returned = None;
+            let mut places = StationPlaceReturns::new(None, Some(absence));
             while let Some(notice) = retired.poll_notice() {
-                if let ArbiterNotice::Station(StationNotice::LeaseCancelled(
-                    CancelReason::Stopped,
-                    place,
-                )) = notice
-                {
-                    assert!(returned.replace(place).is_none());
+                if let ArbiterNotice::Station(notice) = notice {
+                    places.returned(notice);
                 }
             }
             let RetiredArbiter::Stopped(bank) = retired else {
                 panic!("Stop is reusable")
             };
-            let mut arbiter = bank
-                .restart(channel(1))
-                .unwrap_or_else(|_| panic!("the gate terminal was returned"));
+            let (mut arbiter, places) = bank
+                .restart(channel(1), places)
+                .unwrap_or_else(|_| panic!("the gate terminal was returned"))
+                .into_parts();
             let reopened = run(&mut arbiter, &mut port, at(1));
             assert_eq!(
                 reopened
@@ -394,7 +398,8 @@ fn stopped_bank_reuses_places_and_gate_without_reusing_lease_identity() {
                     .count(),
                 usize::from(closed)
             );
-            let second = lease(arbiter.request(at(2), scan(6, 10), returned.unwrap()));
+            let (place, _absence) = places.into_parts();
+            let second = lease(arbiter.request(at(2), scan(6, 10), place));
             assert_ne!(
                 second.id(),
                 first.id(),
@@ -407,7 +412,14 @@ fn stopped_bank_reuses_places_and_gate_without_reusing_lease_identity() {
 #[test]
 fn stop_retains_a_missing_gate_terminal_instead_of_minting_authority() {
     installed(|mint| {
-        let (mut arbiter, place, mut port) = alone::<NoReservation>(mint);
+        let (gate, issuer, authority) = mint.into_pools();
+        let (mut arbiter, place, absence) = Arbiter::<Caps>::new(
+            ArbiterPolicy::DEFAULT.checked(Duration::ZERO).unwrap(),
+            channel(1),
+            authority,
+            gate,
+        );
+        let mut port = Port { issuer };
         let first = lease(arbiter.request(at(0), scan(6, 10), place));
         arbiter.ready(first.id());
         let Some(ArbiterAction::CloseGate { gate, .. }) = arbiter.poll_action(at(0)) else {
@@ -416,14 +428,25 @@ fn stop_retains_a_missing_gate_terminal_instead_of_minting_authority() {
         let RetiredArbiter::Stopped(bank) = arbiter.finish(ArbiterEnd::Stopped) else {
             panic!()
         };
-        let Err(MissingGateTerminal { bank }) = bank.restart(channel(1)) else {
+        let Err(IncompleteArbiter {
+            bank,
+            mut places,
+            missing,
+        }) = bank.restart(channel(1), StationPlaceReturns::new(None, Some(absence)))
+        else {
             panic!("a pending gate has no restart proof")
         };
+        assert_eq!(missing, MissingArbiterReturn::GateTerminal);
         let mut retired = RetiredArbiter::Stopped(bank);
         retired.return_closed_gate(port.issuer.close(gate));
+        while let Some(notice) = retired.poll_notice() {
+            if let ArbiterNotice::Station(notice) = notice {
+                places.returned(notice);
+            }
+        }
         let RetiredArbiter::Stopped(bank) = retired else {
             panic!()
         };
-        assert!(bank.restart(channel(1)).is_ok());
+        assert!(bank.restart(channel(1), places).is_ok());
     });
 }

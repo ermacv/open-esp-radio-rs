@@ -3559,7 +3559,7 @@ fn only_delivered_m4_connects_and_other_terminals_keep_the_original_deadline() {
                     })
                 ));
                 assert!(world.station.poll_action(at(34)).is_none());
-                let bank = world.station.finish(StaDisconnectReason::Requested);
+                let (bank, _places) = world.station.finish(StaDisconnectReason::Requested);
                 assert_eq!(bank.frame_credits(), (2, 2));
                 assert_eq!(bank.key_owners(), (1, 2, true));
                 return;

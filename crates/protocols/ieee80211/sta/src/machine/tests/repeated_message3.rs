@@ -333,10 +333,11 @@ fn disabled_returns_both_deferred_frame_owners_with_the_station_resources() {
                 })
             ));
             assert_eq!(world.frames.len(), before);
-            let bank = world.station.finish(StaDisconnectReason::Requested);
+            let (bank, _places) = world.station.finish(StaDisconnectReason::Requested);
             assert_eq!(bank.frame_credits(), (2, 2));
             assert_eq!(bank.key_owners(), (1, 2, true));
-            let DeferredEapol::Both { message3, group } = bank.deferred_eapol else {
+            let (_bank, deferred, _notice) = bank.into_outputs();
+            let DeferredEapol::Both { message3, group } = deferred else {
                 panic!("disable must return both affine owners")
             };
             for (frame, counter) in [(message3.into_frame(), 4), (group.into_frame(), 5)] {

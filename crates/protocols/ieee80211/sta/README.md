@@ -25,15 +25,17 @@ the exact absence refusal, cancelled-absence limit or link-ending reason.
 The correlation value is caller data and confers no resource authority.
 
 After the port's terminal failure, `Station::finish` consumes the protocol
-machine into `RetiredStation`, with separate epoch, key, frame, channel and
+machine into `RetiredStation`, with separate epoch, key, frame and
 command resource fields instead of a runnable station. This path retains its
 owners and emits only the
 original request terminals and one lifecycle notice; it cannot issue Configure,
-key removal or TX effects to the failed port. The arbiter's returned places
-enter this bank directly, without advancing scan/join transitions. `StaData::finish`
-returns queued frames to its own terminal bank. A complete station bank can
-consume itself through `restart`, preserving its epoch source and all minted
-resources. The resulting station reclaims old keys and receive configuration
+key removal or TX effects to the failed port. Idle channel places return
+separately in `StationPlaceReturns`, without advancing scan/join transitions. The stopped arbiter consumes this collection
+and the cancelled lease returns, then hands out the complete `StationPlaces`
+by value. The infallible station restart requires that complete owner.
+`StaData::finish` returns queued frames to its own terminal bank. A complete station bank can
+consume itself through `restart(self, StationPlaces)`, preserving its epoch
+source and all minted resources. The resulting station reclaims old keys and receive configuration
 before accepting commands; the data bank preserves admission permits and its
 ordering frontier. Deferred EAPOL owners return separately for the old association.
 Only the service's ordinary Stop continuation supplies the reusable disabled
@@ -335,7 +337,7 @@ data. Replacing a deferred frame never extends that deadline. Connected has
 no rekey or repeated-M3 timeout: the port guarantees a finite TX terminal,
 including watchdog Indeterminate. The AP ends an unsuccessful exchange by
 deauthentication. Disabled enters Leave and returns both deferred owners in
-`RetiredStation::deferred_eapol`, together with the key and frame resources;
+`RetiredStation::into_outputs`, together with the key and frame resources;
 no cleanup operations are sent to a disabled port. The rustdoc of
 [`deferred_eapol`](src/machine/deferred_eapol.rs) links the pinned vendor replay,
 group-exchange and TX-callback paths and its empty auth-timeout cancellation.

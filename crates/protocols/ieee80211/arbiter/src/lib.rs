@@ -242,6 +242,56 @@ pub struct AbsencePlace<'id, Path: PoolPath = Root> {
     private: Brand<'id, Path>,
 }
 
+/// Complete station admission bank returned by a stopped arbiter. Both places
+/// are actual returned owners; a station restart cannot accept a partial bank.
+#[must_use = "move both places into the restarted station"]
+pub struct StationPlaces<'id, Path: PoolPath = Root> {
+    lease: LeasePlace<'id, Path>,
+    absence: AbsencePlace<'id, Path>,
+}
+
+impl<'id, Path: PoolPath> StationPlaces<'id, Path> {
+    pub fn into_parts(self) -> (LeasePlace<'id, Path>, AbsencePlace<'id, Path>) {
+        (self.lease, self.absence)
+    }
+}
+
+/// Places already idle when the station stopped, followed by the places of
+/// leases cancelled by arbiter retirement. This collection has no restart
+/// authority. Only the stopped arbiter consumes it into `StationPlaces`.
+#[must_use = "return the collection to the stopped arbiter or retire it"]
+pub struct StationPlaceReturns<'id, Path: PoolPath = Root> {
+    lease: Option<LeasePlace<'id, Path>>,
+    absence: Option<AbsencePlace<'id, Path>>,
+}
+
+impl<'id, Path: PoolPath> StationPlaceReturns<'id, Path> {
+    pub fn new(
+        lease: Option<LeasePlace<'id, Path>>,
+        absence: Option<AbsencePlace<'id, Path>>,
+    ) -> Self {
+        Self { lease, absence }
+    }
+
+    /// The installation has exactly one place of each kind. These notices
+    /// return owners which had left the station, so they cannot duplicate an
+    /// idle place retained by the same branded collection.
+    pub fn returned<K>(&mut self, notice: StationNotice<'id, K, Path>) {
+        match notice {
+            StationNotice::LeaseEnded(place) | StationNotice::LeaseCancelled(_, place) => {
+                self.lease = Some(place);
+            }
+            StationNotice::AbsenceEnded(place) | StationNotice::AbsenceCancelled(_, place) => {
+                self.absence = Some(place);
+            }
+            StationNotice::LeaseStarted(_)
+            | StationNotice::AbsenceStarted(_)
+            | StationNotice::Moved(_)
+            | StationNotice::Leave(_) => {}
+        }
+    }
+}
+
 /// The port's channel, leased to the station from `from` until `until`
 /// (`None`: until the station gives it back). Only the arbiter makes one,
 /// and the station gives it back by value.
@@ -1074,8 +1124,31 @@ pub struct StoppedArbiter<'id, K, R: ReservationMode = NoReservation, Path: Pool
 /// A backend did not return the gate operation before declaring itself
 /// disabled. The bank stays owned here; no replacement authority is minted.
 #[must_use = "retain the incomplete stopped bank"]
-pub struct MissingGateTerminal<'id, K, R: ReservationMode, Path: PoolPath> {
+pub struct IncompleteArbiter<'id, K, R: ReservationMode, Path: PoolPath> {
     pub bank: StoppedArbiter<'id, K, R, Path>,
+    pub places: StationPlaceReturns<'id, Path>,
+    pub missing: MissingArbiterReturn,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MissingArbiterReturn {
+    GateTerminal,
+    StationPlaces,
+}
+
+/// The restarted coordinator and the complete station admission bank.
+#[must_use = "return the admission places to the station"]
+pub struct ArbiterRestart<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> {
+    arbiter: Arbiter<'id, K, R, Path>,
+    places: StationPlaces<'id, Path>,
+}
+
+impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath>
+    ArbiterRestart<'id, K, R, Path>
+{
+    pub fn into_parts(self) -> (Arbiter<'id, K, R, Path>, StationPlaces<'id, Path>) {
+        (self.arbiter, self.places)
+    }
 }
 
 impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath>
@@ -1091,10 +1164,28 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath>
     pub fn restart(
         self,
         channel: SupportedChannel<K>,
-    ) -> Result<Arbiter<'id, K, R, Path>, MissingGateTerminal<'id, K, R, Path>> {
+        places: StationPlaceReturns<'id, Path>,
+    ) -> Result<ArbiterRestart<'id, K, R, Path>, IncompleteArbiter<'id, K, R, Path>> {
         if matches!(self.returns.gate, Gate::Closing | Gate::Opening) {
-            return Err(MissingGateTerminal { bank: self });
+            return Err(IncompleteArbiter {
+                bank: self,
+                places,
+                missing: MissingArbiterReturn::GateTerminal,
+            });
         }
+        let places = match places {
+            StationPlaceReturns {
+                lease: Some(lease),
+                absence: Some(absence),
+            } => StationPlaces { lease, absence },
+            places => {
+                return Err(IncompleteArbiter {
+                    bank: self,
+                    places,
+                    missing: MissingArbiterReturn::StationPlaces,
+                });
+            }
+        };
         let cycle = matches!(self.returns.gate, Gate::Closed(_)).then(|| Cycle {
             to: channel,
             reserve: R::none(),
@@ -1105,20 +1196,23 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath>
             publication_bound,
             mode: _,
         } = self.policy;
-        Ok(Arbiter {
-            policy,
-            publication_bound,
-            coordinator: ChannelCoordinator::new(policy.follow),
-            gate: self.returns.gate,
-            port: Port::On(channel),
-            pair: Pair::Alone,
-            home: channel,
-            primary: None,
-            absence: None,
-            following: false,
-            cycle,
-            next_id: self.next_id,
-            outbox: self.returns.outbox,
+        Ok(ArbiterRestart {
+            arbiter: Arbiter {
+                policy,
+                publication_bound,
+                coordinator: ChannelCoordinator::new(policy.follow),
+                gate: self.returns.gate,
+                port: Port::On(channel),
+                pair: Pair::Alone,
+                home: channel,
+                primary: None,
+                absence: None,
+                following: false,
+                cycle,
+                next_id: self.next_id,
+                outbox: self.returns.outbox,
+            },
+            places,
         })
     }
 }

@@ -8,23 +8,26 @@ fn stopped_bank_reclaims_old_keys_then_connects_using_the_same_installation() {
         let previous_epoch = world.station.epoch;
         let previous_lease = world.station.lease.id();
         let mut arbiter = world.arbiter.finish(ArbiterEnd::Stopped);
-        let mut bank = world.station.finish(StaDisconnectReason::Requested);
+        let (mut bank, mut places) = world.station.finish(StaDisconnectReason::Requested);
         while let Some(notice) = arbiter.poll_notice() {
             if let ArbiterNotice::Station(notice) = notice {
-                bank.return_arbiter_notice(notice);
+                places.returned(notice);
             }
         }
         while bank.poll_output().is_some() {}
-        let Ok(restarted) = bank.restart() else {
-            panic!("Stop returned both admission places")
-        };
-        assert!(matches!(restarted.deferred_eapol, DeferredEapol::Empty));
-        assert!(restarted.notice.is_none());
-        world.station = restarted.station;
         let RetiredArbiter::Stopped(stopped) = arbiter else {
             panic!()
         };
-        world.arbiter = stopped.restart(channel(6)).ok().unwrap();
+        let (arbiter, places) = stopped
+            .restart(channel(6), places)
+            .ok()
+            .unwrap()
+            .into_parts();
+        let (station, deferred, notice) = bank.restart(places).into_parts();
+        assert!(matches!(deferred, DeferredEapol::Empty));
+        assert!(notice.is_none());
+        world.station = station;
+        world.arbiter = arbiter;
         world.take();
         world.hold_group_removals = true;
         world.run(at(50));
@@ -96,16 +99,36 @@ fn stopped_bank_reclaims_old_keys_then_connects_using_the_same_installation() {
 }
 
 #[test]
-fn a_bank_without_arbiter_returns_keeps_every_owner_and_cannot_restart() {
+fn a_missing_place_is_retained_by_the_arbiter_and_cannot_form_a_restart_bank() {
     installed(|mint| {
         let (world, _) = wpa2_connected::<2>(mint);
-        let bank = world.station.finish(StaDisconnectReason::Requested);
-        let Err(bank) = bank.restart() else {
-            panic!("a missing lease terminal is not a new place")
+        let (bank, places) = world.station.finish(StaDisconnectReason::Requested);
+        let RetiredArbiter::Stopped(stopped) = world.arbiter.finish(ArbiterEnd::Stopped) else {
+            panic!()
         };
+        let incomplete = stopped.restart(channel(6), places).err().unwrap();
+        assert_eq!(
+            incomplete.missing,
+            oer_ieee80211_arbiter::MissingArbiterReturn::StationPlaces
+        );
         assert_eq!(bank.frame_credits(), (2, 2));
         assert_eq!(bank.key_owners(), (1, 2, true));
-        assert!(matches!(bank.lease, Held::Lease(_)));
-        assert!(bank.place.is_none());
+        let mut arbiter = RetiredArbiter::Stopped(incomplete.bank);
+        let mut places = incomplete.places;
+        while let Some(notice) = arbiter.poll_notice() {
+            if let ArbiterNotice::Station(notice) = notice {
+                places.returned(notice);
+            }
+        }
+        let RetiredArbiter::Stopped(stopped) = arbiter else {
+            panic!()
+        };
+        let (_arbiter, places) = stopped
+            .restart(channel(6), places)
+            .ok()
+            .unwrap()
+            .into_parts();
+        let (_station, deferred, _notice) = bank.restart(places).into_parts();
+        assert!(matches!(deferred, DeferredEapol::Empty));
     });
 }

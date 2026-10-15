@@ -51,7 +51,10 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
 
 - A stopped station service restarts only by consuming `StoppedService` with
   its matching disabled port owner. Reuse its returned banks: reminting loses
-  epoch, lease and data-order frontiers. Startup reclaims old keys and receive
+  epoch, lease and data-order frontiers. Retirement returns idle channel
+  places separately from the station bank; the stopped arbiter collects all
+  returns and issues the complete `StationPlaces` required by the infallible
+  station restart. Startup reclaims old keys and receive
   settings before dequeuing application commands. After a terminal violates
   the contract, `TerminalCustody` retains that return and all later terminals
   without feeding machines; a full sink returns the next owner to poisoned

@@ -607,13 +607,21 @@ impl<'p, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const G
                 retired,
             });
         }
-        let arbiter = match retired._arbiter {
-            RetiredArbiter::Stopped(stopped) => match stopped.restart(channel) {
-                Ok(arbiter) => arbiter,
+        let (arbiter, places) = match retired._arbiter {
+            RetiredArbiter::Stopped(stopped) => match stopped.restart(channel, retired._places) {
+                Ok(restarted) => restarted.into_parts(),
                 Err(missing) => {
                     retired._arbiter = RetiredArbiter::Stopped(missing.bank);
+                    retired._places = missing.places;
                     return Err(RestartFailed {
-                        reason: RestartFailure::MissingGateTerminal,
+                        reason: match missing.missing {
+                            oer_ieee80211_arbiter::MissingArbiterReturn::GateTerminal => {
+                                RestartFailure::MissingGateTerminal
+                            }
+                            oer_ieee80211_arbiter::MissingArbiterReturn::StationPlaces => {
+                                RestartFailure::MissingStationPlaces
+                            }
+                        },
                         owner: FailedInstallation { owner },
                         retired,
                     });
@@ -628,18 +636,7 @@ impl<'p, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const G
                 });
             }
         };
-        let restarted = match retired.station.restart() {
-            Ok(station) => station,
-            Err(station) => {
-                retired.station = station;
-                retired._arbiter = arbiter.finish(ArbiterEnd::PortFailed);
-                return Err(RestartFailed {
-                    reason: RestartFailure::MissingStationPlaces,
-                    owner: FailedInstallation { owner },
-                    retired,
-                });
-            }
-        };
+        let (station, deferred_eapol, notice) = retired.station.restart(places).into_parts();
         let RetiredService {
             data,
             counters,
@@ -657,7 +654,7 @@ impl<'p, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const G
             service: StationService {
                 arbiter,
                 state: ServiceState {
-                    station: restarted.station,
+                    station,
                     data: data.restart(),
                     counters,
                     rates,
@@ -665,8 +662,8 @@ impl<'p, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const G
                     terminal_access,
                 },
             },
-            deferred_eapol: restarted.deferred_eapol,
-            notice: restarted.notice,
+            deferred_eapol,
+            notice,
         })
     }
 
@@ -694,6 +691,8 @@ pub struct RetiredService<'id, B: StationPort<'id>, S, const GROUPS: usize = 2> 
         oer_ieee80211_sta::data::RetiredData<'id, PortDataTokens<'id, B::Types, B::Large>, B::Caps>,
     pub counters: ServiceCounters,
     pub rates: S,
+    _places:
+        oer_ieee80211_arbiter::StationPlaceReturns<'id, <B::Types as PhaseTypes<'id>>::GatePath>,
     _arbiter: RetiredArbiter<'id, B::Caps, NoReservation, <B::Types as PhaseTypes<'id>>::GatePath>,
     _pending: PendingActions<'id, B>,
     _terminal_access: oer_ieee80211_lower_mac::TerminalAccess<
@@ -845,12 +844,12 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUP
             pending,
             terminal_access,
         } = state;
-        let mut station = station.finish(reason);
+        let (mut station, mut places) = station.finish(reason);
         let data = data.finish();
         rates.disconnected();
         while let Some(notice) = arbiter.poll_notice() {
             match notice {
-                ArbiterNotice::Station(notice) => station.return_arbiter_notice(notice),
+                ArbiterNotice::Station(notice) => places.returned(notice),
                 ArbiterNotice::AccessPoint(command) => {
                     (io.output)(ServiceOutput::AccessPoint(command))
                 }
@@ -874,6 +873,7 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUP
                 rates,
                 counters,
                 _arbiter: arbiter,
+                _places: places,
                 _pending: pending,
                 _terminal_access: terminal_access,
             },

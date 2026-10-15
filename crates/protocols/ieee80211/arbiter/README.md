@@ -116,10 +116,14 @@ exhaustive type contains only station/AP notices and cannot take a gate or
 retune token. `finish(self, ArbiterEnd)` consumes planning and coordinator
 authority. `PortFailed` returns `FailedArbiter`, which only drains its outbox
 and retains late gate/retune returns. `Stopped` cancels leases with `Stopped`
-and returns a distinct `StoppedArbiter` bank. Its `restart(channel)` preserves
-the policy, gate and monotonic lease sequence without minting another place.
-An unreturned gate terminal yields `MissingGateTerminal` with the whole bank;
-a closed gate is reopened through the new coordinator's first cycle. It has no request, ready, retuned or coordinator input methods;
+and returns a distinct `StoppedArbiter` bank. Idle station places and cancelled
+lease places are retained in `StationPlaceReturns`; they have no restart
+authority. A successful restart returns the complete `StationPlaces` owner
+alongside the arbiter. Its fields are private, so partial return collections
+cannot be passed into a station restart. `StoppedArbiter::restart(channel, returns)`
+preserves the policy, gate and monotonic lease sequence without minting another place.
+An unreturned gate terminal or admission place yields `IncompleteArbiter`
+with both resource collections; a closed gate is reopened through the new coordinator's first cycle. It has no request, ready, retuned or coordinator input methods;
 draining requires no clock and cannot issue another AP Start. Failure cancels
 each still-held admission place once, withdraws a queued AP start/announcement
 and preserves already owed terminals. Failure recovery needs a new installation and its unique `ArbiterAuthority`;

@@ -606,7 +606,7 @@ where
             };
             let mut station = match security {
                 StaSecurity::Open => Station::new_open(config, resources),
-                StaSecurity::Wpa2Personal { password, pmk } => {
+                StaSecurity::Personal { password, pmk } => {
                     Station::new_personal(config, password, pmk, resources)
                 }
             };
@@ -1025,7 +1025,7 @@ fn on_an_open_network_the_join_goes_on_the_default_record_and_then_the_associati
 #[test]
 fn on_wpa2_the_join_goes_on_the_default_record_and_the_handshake_on_the_associations() {
     run(
-        StaSecurity::Wpa2Personal {
+        StaSecurity::Personal {
             password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
             pmk: Pmk::from_bytes(PMK),
         },
@@ -1070,7 +1070,7 @@ fn on_wpa2_the_join_goes_on_the_default_record_and_the_handshake_on_the_associat
 fn a_one_slot_station_completes_group_replacement_through_the_service_event_stream() {
     use oer_ieee80211_sta::machine::StaDisconnectReason;
     run_with_groups::<_, 1>(
-        config(StaSecurity::Wpa2Personal {
+        config(StaSecurity::Personal {
             password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
             pmk: Pmk::from_bytes(PMK),
         }),
@@ -1116,7 +1116,7 @@ fn message3(ptk: &oer_ieee80211_rsn::Ptk) -> Vec<u8> {
 #[test]
 fn refusing_m4_releases_handshake_resources_without_connecting_and_service_can_reconnect() {
     run(
-        StaSecurity::Wpa2Personal {
+        StaSecurity::Personal {
             password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
             pmk: Pmk::from_bytes(PMK),
         },
@@ -1169,7 +1169,7 @@ fn refusing_m4_releases_handshake_resources_without_connecting_and_service_can_r
 #[test]
 fn a_data_preparation_refusal_releases_admission_and_the_next_msdu_can_go() {
     run(
-        StaSecurity::Wpa2Personal {
+        StaSecurity::Personal {
             password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
             pmk: Pmk::from_bytes(PMK),
         },
@@ -1233,7 +1233,7 @@ fn decrypted() -> ModelRxMeta {
 #[test]
 fn a_station_scans_joins_handshakes_carries_data_both_ways_and_disconnects() {
     run(
-        StaSecurity::Wpa2Personal {
+        StaSecurity::Personal {
             password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
             pmk: Pmk::from_bytes(PMK),
         },
@@ -1329,7 +1329,7 @@ const NULL: u16 = 0x0048;
 fn data_takes_all_its_tokens_and_eapol_null_and_deauthentication_still_go() {
     // A second channel, so the background scan leaves the home channel
     // and announces its absence with a Null.
-    let mut config = config(StaSecurity::Wpa2Personal {
+    let mut config = config(StaSecurity::Personal {
         password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
         pmk: Pmk::from_bytes(PMK),
     });
@@ -1607,7 +1607,7 @@ fn data_before(air: &[AirFrame], from: usize, until: impl Fn(&AirFrame) -> bool)
 #[test]
 fn interleaved_station_and_data_terminals_keep_their_owner_and_voice_order() {
     run(
-        StaSecurity::Wpa2Personal {
+        StaSecurity::Personal {
             password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
             pmk: Pmk::from_bytes(PMK),
         },
@@ -1693,7 +1693,7 @@ fn interleaved_station_and_data_terminals_keep_their_owner_and_voice_order() {
 #[test]
 fn eapol_and_deauthentication_wait_for_at_most_the_queue_depth_and_one_data_attempt() {
     run(
-        StaSecurity::Wpa2Personal {
+        StaSecurity::Personal {
             password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
             pmk: Pmk::from_bytes(PMK),
         },
@@ -1889,7 +1889,7 @@ fn protected_qos_ht_group_message_rekeys_once_after_integrity_and_replay_admissi
         receive::RxDropReason,
     };
     let counters = run_with(
-        config(StaSecurity::Wpa2Personal {
+        config(StaSecurity::Personal {
             password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
             pmk: Pmk::from_bytes(PMK),
         }),
@@ -1946,7 +1946,7 @@ fn protected_qos_ht_group_message_rekeys_once_after_integrity_and_replay_admissi
 #[test]
 fn message4_waits_for_the_actual_group_installation_terminal() {
     run(
-        StaSecurity::Wpa2Personal {
+        StaSecurity::Personal {
             password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
             pmk: Pmk::from_bytes(PMK),
         },
@@ -1986,7 +1986,7 @@ fn stop_or_fault_with_an_accepted_group_install_keeps_owners_and_sends_no_messag
     use oer_ieee80211_sta::machine::{StaCommandOutcome, StaDisconnectReason};
     for poisoned in [false, true] {
         run(
-            StaSecurity::Wpa2Personal {
+            StaSecurity::Personal {
                 password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
                 pmk: Pmk::from_bytes(PMK),
             },
@@ -2078,7 +2078,7 @@ fn an_extended_ofdm_rate_set_reaches_the_data_and_control_plans() {
 fn negotiated_pmf_checks_received_management_and_keeps_the_tx_key_through_disconnect() {
     for peer_disconnect in [false, true] {
         run(
-            StaSecurity::Wpa2Personal {
+            StaSecurity::Personal {
                 password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
                 pmk: Pmk::from_bytes(PMK),
             },
@@ -2208,7 +2208,7 @@ fn stopped_service_returns_drained_rx_before_the_disabled_owner() {
 fn stopped_service_reconnects_and_sends_data_on_the_same_installation() {
     for protected in [false, true] {
         let security = if protected {
-            StaSecurity::Wpa2Personal {
+            StaSecurity::Personal {
                 password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
                 pmk: Pmk::from_bytes(PMK),
             }

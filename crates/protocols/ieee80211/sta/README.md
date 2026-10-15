@@ -227,6 +227,9 @@ crate's checked `IndividualAddress`, so a request cannot swap the local
 transmitter and BSS identities. The test access point admits a request only
 after checking its subtype and all three header addresses.
 
+`StaSecurity::Personal` carries both the SAE password and PSK PMK; AKM
+selection follows the BSS qualification.
+
 `Station::new_open` and `Station::new_personal` require one to eight tickets
 and small buffers at compile time. Resources must match the backend token
 type's `StaTokens::GROUP_SLOTS`. Open mode accepts zero group slots; the

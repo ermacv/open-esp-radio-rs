@@ -168,7 +168,7 @@ fn handshake_deadline_overflow_finishes_connect_without_sending_eapol() {
             let mut world = World::with_groups(
                 mint,
                 3,
-                StaSecurity::Wpa2Personal {
+                StaSecurity::Personal {
                     password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
                     pmk: Pmk::from_bytes(PMK),
                 },

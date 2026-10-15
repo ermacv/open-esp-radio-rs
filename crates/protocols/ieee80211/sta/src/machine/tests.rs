@@ -286,7 +286,7 @@ impl<'id> World<'id> {
         Self::with_builder::<TX, G>(mint, skipped_absences, group_slots, |config, resources| {
             match security {
                 StaSecurity::Open => Station::new_open(config, resources),
-                StaSecurity::Wpa2Personal { password, pmk } => {
+                StaSecurity::Personal { password, pmk } => {
                     Station::new_personal(config, password, pmk, resources)
                 }
             }
@@ -1591,7 +1591,7 @@ fn a_station_joins_a_wpa2_network_through_the_four_way_handshake() {
         let mut world = World::with_security(
             mint,
             3,
-            StaSecurity::Wpa2Personal {
+            StaSecurity::Personal {
                 password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
                 pmk: Pmk::from_bytes(PMK),
             },
@@ -1704,7 +1704,7 @@ fn wpa2_associated_by<'id, const G: usize>(
     let mut world = World::with_groups(
         mint,
         3,
-        StaSecurity::Wpa2Personal {
+        StaSecurity::Personal {
             password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
             pmk: Pmk::from_bytes(PMK),
         },
@@ -2710,7 +2710,7 @@ fn associated_is_the_first_action_after_the_association_response() {
     for protected in [false, true] {
         installed(|mint| {
             let security = if protected {
-                StaSecurity::Wpa2Personal {
+                StaSecurity::Personal {
                     password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
                     pmk: Pmk::from_bytes(PMK),
                 }
@@ -2926,7 +2926,7 @@ fn handshake_deadline_covers_every_message_key_and_tx_wait() {
             let mut world = World::with_security(
                 mint,
                 3,
-                StaSecurity::Wpa2Personal {
+                StaSecurity::Personal {
                     password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
                     pmk: Pmk::from_bytes(PMK),
                 },
@@ -4001,7 +4001,7 @@ fn delivered_m4_retains_all_installed_groups_until_leave() {
             let mut world = World::with_groups(
                 mint,
                 3,
-                StaSecurity::Wpa2Personal {
+                StaSecurity::Personal {
                     password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
                     pmk: Pmk::from_bytes(PMK),
                 },

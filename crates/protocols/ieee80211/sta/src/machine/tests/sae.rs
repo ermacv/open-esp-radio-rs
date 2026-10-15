@@ -23,7 +23,7 @@ fn advertised(transition: bool, h2e: bool) -> Vec<u8> {
 }
 
 fn personal() -> StaSecurity {
-    StaSecurity::Wpa2Personal {
+    StaSecurity::Personal {
         password: SaePassword::new(b"password").unwrap(),
         // Deliberately unrelated to the SAE password: a SAE handshake must
         // prove the negotiated PMK, never this provisioned PSK.

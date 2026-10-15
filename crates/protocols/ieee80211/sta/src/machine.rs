@@ -191,7 +191,7 @@ pub enum StaSecurity {
     Open,
     /// Personal credentials: the password supports SAE and the prederived
     /// PMK supports PSK. Selection prefers SAE whenever the BSS offers it.
-    Wpa2Personal { password: SaePassword, pmk: Pmk },
+    Personal { password: SaePassword, pmk: Pmk },
 }
 
 /// What the application asks of the station.
@@ -1956,11 +1956,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             }
             check(GROUPS);
         }
-        Self::from_config(
-            config,
-            StaSecurity::Wpa2Personal { password, pmk },
-            resources,
-        )
+        Self::from_config(config, StaSecurity::Personal { password, pmk }, resources)
     }
 
     fn from_config<const TICKETS: usize, const BUFFERS: usize, const GROUPS: usize>(
@@ -2107,7 +2103,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     const fn policy(&self) -> StaSecurityPolicy {
         match self.security {
             StaSecurity::Open => StaSecurityPolicy::Open,
-            StaSecurity::Wpa2Personal { .. } => StaSecurityPolicy::Wpa2Personal,
+            StaSecurity::Personal { .. } => StaSecurityPolicy::Wpa2Personal,
         }
     }
 
@@ -3106,7 +3102,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         let bssid = join.access_point.bssid;
         let key = match &self.security {
             StaSecurity::Open => AssociationKey::Open,
-            StaSecurity::Wpa2Personal { password, pmk } => {
+            StaSecurity::Personal { password, pmk } => {
                 if let AssociationSecurity::Rsn(RsnAssociation {
                     akm: AssociationAkm::Sae(pwe),
                     ..
@@ -3449,7 +3445,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                                         StaSecurity::Open => {
                                             oer_ieee80211_mac::security::LinkProtection::Open
                                         }
-                                        StaSecurity::Wpa2Personal { .. } => {
+                                        StaSecurity::Personal { .. } => {
                                             oer_ieee80211_mac::security::LinkProtection::Ccmp
                                         }
                                     },

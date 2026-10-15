@@ -52,7 +52,7 @@ impl WifiRadioRegisters {
 
     pub fn validation_station_tsf(&mut self, low: Option<&mut u32>, high: Option<&mut u32>) {
         crate::wifi::mac::tsf::snapshot_station_tsf(
-            &self.peripherals.wifi_mac.wifi_mac_sta_tsf_load,
+            &self.peripherals.wifi_mac.wifi_mac_tsf_load,
             low,
             high,
         );

@@ -20,7 +20,7 @@ impl WifiRadioRegisters {
             .softap_control();
         control.modify(|_, writer| writer.tsf_enable().clear_bit().bit_30_opaque().clear_bit());
 
-        let load = &self.peripherals.wifi_mac.wifi_mac_sta_tsf_load;
+        let load = &self.peripherals.wifi_mac.wifi_mac_tsf_load;
         crate::generated::station_tsf_value_low(load, crate::generated::StationTsfLowWord::new(0));
         crate::generated::station_tsf_value_high(
             load,

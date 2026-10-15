@@ -12130,7 +12130,7 @@
       </registers>
     </peripheral>
     <peripheral>
-      <name>WIFI_MAC_STA_TSF_LOAD</name>
+      <name>WIFI_MAC_TSF_LOAD</name>
       <description>Shared TSF load and coherent station/SoftAP snapshot transaction.</description>
       <baseAddress>0x2010D814</baseAddress>
       <registers>

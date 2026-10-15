@@ -38,27 +38,7 @@ pub enum State<
     S: WakeScheduler<P>,
 > {
     Released(ReleasedScope<H, I, P, E, S>),
-    Quarantined(Quarantine<H, I, P, E, S>),
-}
-
-/// No access to owners, backing, or a HardwareStopped proof. The saved
-/// disposition reports whether stopping succeeded, but grants no reuse.
-#[must_use = "the composition must report the fault and reset the chip"]
-pub struct Quarantine<
-    H: Send + 'static,
-    I: InterruptOwner,
-    P: Sync + 'static,
-    E: 'static,
-    S: WakeScheduler<P>,
-> {
-    retained: ManuallyDrop<ScopeReturn<H, I, P, E, S>>,
-}
-impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: WakeScheduler<P>>
-    Quarantine<H, I, P, E, S>
-{
-    pub fn hardware_stopping_confirmed(&self) -> bool {
-        matches!(&*self.retained, ScopeReturn::Released(_))
-    }
+    Quarantined(Quarantined<ScopeReturn<H, I, P, E, S>>),
 }
 
 impl<
@@ -82,6 +62,15 @@ impl<
     /// After a route error, the binding publishes Held's fault and synchronously
     /// abandons the installation. Unconfirmed requires the core to retain Driver
     /// without Drop; only a confirmed teardown may consume it through finish.
+    ///
+    /// At every await, Driver remains in a state accepted by retirement and
+    /// synchronous abandonment. Its two suspension points are the core's
+    /// retirement request and the executor's completed retirement. All owners,
+    /// descriptors and hardware work remain in permanent backing; no ownership
+    /// is parked in this future. Dropping it only ends the loan. The core must
+    /// then retire, abandon, or consume finish before reclaiming any owners.
+    /// Successful finish drains actors and stops once; timeout retains the
+    /// complete backing in reset-only quarantine without calling stop.
     pub async fn drive(&mut self, retire: Retire<'_>) -> Result<RetireProof, E> {
         self.scope
             .run_body(retire, async |retire, _access| retire.requested().await)
@@ -107,17 +96,7 @@ impl<
             {
                 State::Released(released)
             }
-            returned => State::Quarantined(Quarantine::retain(returned)),
-        }
-    }
-}
-
-impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: WakeScheduler<P>>
-    Quarantine<H, I, P, E, S>
-{
-    fn retain(returned: ScopeReturn<H, I, P, E, S>) -> Self {
-        Self {
-            retained: ManuallyDrop::new(returned),
+            returned => State::Quarantined(Quarantined::retain(returned)),
         }
     }
 }
@@ -131,7 +110,7 @@ impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: Wak
         // destructor; its backend has already masked/closed the backing.
         // A real destructor cannot await and uses the same synchronous domain.
         self.scope.abandon();
-        let _retained = Quarantine::retain(self.scope.complete());
+        let _retained = Quarantined::retain(self.scope.complete());
         // ManuallyDrop is the explicit quarantine owner, not a destructor
         // side effect of an otherwise releasable driver state.
         // The common core does not grant backing reuse after either abandon

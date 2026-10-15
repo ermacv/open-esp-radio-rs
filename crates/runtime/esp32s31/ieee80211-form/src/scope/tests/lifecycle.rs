@@ -1,6 +1,8 @@
 //! Execute the actual shared lifecycle with the S31 Driver as B::Driver.
 //! The port-facing mock has no radio traffic; hardware dispatch and teardown
 //! are the same production registration primitive as the placement fixture.
+mod cancellation;
+
 use super::*;
 use crate::scope::driver::{Driver, State};
 use core::future::pending;
@@ -14,10 +16,13 @@ use oer_time::RadioInstant;
 type S31Driver<'a> = Driver<'a, Hardware, Interrupts, Platform, Infallible, Schedule>;
 type S31State = State<Hardware, Interrupts, Platform, Infallible, Schedule>;
 enum HeldKind {}
-struct Held<'id, 'context> {
+struct Held<'id, 'control, 'context> {
     _place: Slot<'id, HeldKind>,
+    storage: &'control Storage,
+    bound: DrainBound,
     context: &'context str,
     returned_quarantine: Count,
+    cancellation: Option<cancellation::Cut>,
 }
 struct Backend<'a, 'context> {
     storage: &'a Storage,
@@ -26,6 +31,7 @@ struct Backend<'a, 'context> {
     detached: Count,
     returned_quarantine: Count,
     deadline: Arc<AtomicBool>,
+    cancellation: Option<cancellation::Cut>,
 }
 struct Phase;
 impl PortPhase for Phase {
@@ -52,7 +58,7 @@ impl<'a, 'context> PortBackend for Backend<'a, 'context> {
         Self: 'p,
         'id: 'p;
     type Resources<'id> = ();
-    type Held<'id> = Held<'id, 'context>;
+    type Held<'id> = Held<'id, 'a, 'context>;
     type Local<'id> = ();
     // No &mut Backend, installation brand or context lifetime in Driver.
     type Driver = S31Driver<'a>;
@@ -83,8 +89,11 @@ impl<'a, 'context> PortBackend for Backend<'a, 'context> {
         InstallParts {
             held: Held {
                 _place: place,
+                storage: self.storage,
+                bound: self.bound,
                 context: self.context,
                 returned_quarantine: self.returned_quarantine.clone(),
+                cancellation: self.cancellation.clone(),
             },
             local: (),
             resources: (),
@@ -103,6 +112,27 @@ impl<'a, 'context> PortBackend for Backend<'a, 'context> {
         retire: Retire<'p>,
     ) -> DriverExit<Self::State, Infallible> {
         assert_eq!(held.context, "non-static context");
+        if let Some(cut) = &held.cancellation {
+            {
+                // Use the real Retire minted by run_port and the production
+                // Driver future. The wrapper chooses the cancellation cut.
+                let mut waiting = Box::pin(driver.drive(retire));
+                poll_fn(|cx| {
+                    if cut.cancel.load(Ordering::Acquire) {
+                        return Poll::Ready(());
+                    }
+                    assert!(waiting.as_mut().poll(cx).is_pending());
+                    cut.polled(held.storage);
+                    Poll::Pending
+                })
+                .await;
+                drop(waiting);
+            }
+            cut.finish(driver, held.storage, held.bound);
+            // No synthetic RetireProof: the cancelled drive consumed its
+            // receiver. The test drops run_port after observing completion.
+            return pending().await;
+        }
         let proof = match driver.drive(retire).await {
             Ok(proof) => proof,
             Err(never) => match never {},
@@ -195,6 +225,7 @@ struct Caller {
     detached: Count,
     returned_quarantine: Count,
     deadline: Arc<AtomicBool>,
+    cancellation: Option<cancellation::Cut>,
 }
 fn installed<'a, 'context>(
     scope: DriverScope<'a, Hardware, Interrupts, Platform, Infallible>,
@@ -220,6 +251,7 @@ fn installed<'a, 'context>(
         detached: caller.detached.clone(),
         returned_quarantine: caller.returned_quarantine.clone(),
         deadline: caller.deadline.clone(),
+        cancellation: caller.cancellation.clone(),
     };
     let body = Body {
         end: caller.end.clone(),

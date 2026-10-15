@@ -452,9 +452,20 @@ pub struct ReturnedOwners<H, I, P, E, S = fn(&P, WakePlan)> {
     pub interrupts: I,
     pub route: ScopeRoute<P, E, S>,
 }
+/// Temporary stand-in for the shared core's pending `Quarantined<S>`.
+/// The Driver and its returned state use this same holder: dropping it never
+/// drops the contents. The DriverLoan integration removes this declaration
+/// and uses the core type directly, with no alias or compatibility wrapper.
 #[must_use = "abandoned hardware cannot be reused without a physical reset proof"]
-pub struct Quarantined<H> {
-    _hardware: ManuallyDrop<H>,
+pub struct Quarantined<S> {
+    _retained: ManuallyDrop<S>,
+}
+impl<S> Quarantined<S> {
+    fn retain(state: S) -> Self {
+        Self {
+            _retained: ManuallyDrop::new(state),
+        }
+    }
 }
 #[must_use]
 pub enum DetachedOwners<H> {
@@ -1111,9 +1122,7 @@ impl<
         let owners = if *irq.retired.get_mut() && !*irq.signals.abandon.get_mut() {
             DetachedOwners::Retired(owners)
         } else {
-            DetachedOwners::Abandoned(Quarantined {
-                _hardware: ManuallyDrop::new(owners),
-            })
+            DetachedOwners::Abandoned(Quarantined::retain(owners))
         };
         // The non-Drop driver projection ends with this function, before the
         // returned lease can be used. IRQ's owned waker is destroyed here.

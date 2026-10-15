@@ -24,8 +24,8 @@ The tests retain a non-static context and an affine installation slot in
 `Held<'id>`, and never register an address into Held with either executor.
 
 After the driving loan ends, consuming `Driver::finish` returns
-`State::Released` or `State::Quarantined` explicitly. The latter owns a
-`ManuallyDrop<ScopeReturn>` and has no owner or lease extraction. On
+`State::Released` or `State::Quarantined` explicitly. The latter retains
+`ScopeReturn` in `Quarantined<S>` and has no owner or lease extraction. On
 `Abandon::Unconfirmed`, the core must instead retain Driver itself without
 calling `finish` or its destructor. The synchronous backend abandon path has
 already masked the inputs and closed admission. The entered ISR or step can
@@ -41,6 +41,21 @@ no Driver destructor. An owned Driver's Drop remains a synchronous cancellation
 safety net; the core's Unconfirmed path must not rely on it. Unlike ordinary
 Released return, the common core's abandonment policy retains even a
 successfully stopped installation's backing until reset.
+
+Driver and returned state share one temporary `Quarantined<S>` holder with
+`ManuallyDrop<S>` contents. Its drop releases nothing. The DriverLoan
+integration must remove this declaration and use the shared core's
+`Quarantined<S>` directly, without an alias or an S31 wrapper.
+
+Every await in `Driver::drive` preserves a state accepted by retirement,
+abandon and consuming finish. Cancellation only ends the loan: it cannot
+take a descriptor, queue or hardware owner out of backing. The two suspension
+points wait for the core's retirement request and the executor's retirement
+completion. A parameterized host test uses the real Retire from run_port,
+cancels before polling and after 1–3 polls at each await, then exercises finish,
+retirement and abandon separately. Its bounded DMA ownership model verifies
+that each published address retains its exact queued buffer, successful
+teardown clears every descriptor and queue, and each buffer returns once.
 
 ## Ownership and return
 
@@ -82,6 +97,10 @@ the registration while an entered actor still uses it. Permanent backing
 survives owning-future drop, `forget`, and timeout. The reclamation regression
 holds an actor on a second core, drops the owning pinned future after timeout,
 then lets the actor finish against its still-live backing.
+The separate forget regression pauses MAC ISR, POWER ISR or a driver step,
+forgets the owning future, then resumes that actor. Registration identity and
+queued buffer owners remain unchanged, no lease returns, and body, hardware,
+IRQ and buffer drop counters all stay zero.
 
 The body runs on the caller's executor. Scheduling only pends a separate
 driver step. A normal body return requests retirement and retains the result

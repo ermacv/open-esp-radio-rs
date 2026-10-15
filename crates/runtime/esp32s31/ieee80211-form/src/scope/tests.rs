@@ -1,6 +1,8 @@
 extern crate std;
 
+mod forget;
 mod lifecycle;
+mod work;
 
 use super::*;
 use core::{cell::RefCell, convert::Infallible, future::Future, task::Context};
@@ -110,6 +112,7 @@ impl Block {
     }
 }
 struct Hardware {
+    work: work::DmaQueue,
     steps: Count,
     drops: Count,
     stops: Count,
@@ -127,6 +130,7 @@ impl Drop for Hardware {
 }
 fn hardware(platform: &Platform) -> Hardware {
     Hardware {
+        work: work::DmaQueue::default(),
         steps: Count::default(),
         drops: Count::default(),
         stops: Count::default(),
@@ -145,6 +149,7 @@ fn step(
     signals: &DriverSignals,
 ) -> DriverStep {
     assert_eq!(h.stops.get(), 0);
+    h.work.assert_owned();
     if events.mac.rx_capacity_returned() {
         h.capacity.increment();
     }
@@ -159,6 +164,7 @@ fn step(
         assert!(slot.mac_interrupt().had_status);
     }
     if signals.retirement_requested() {
+        h.work.drain();
         DriverStep::Retired
     } else {
         DriverStep::Wake(WakePlan::until(
@@ -176,6 +182,7 @@ fn stop(h: &mut Hardware, _: &mut IrqControl<Interrupts>) {
         "stop runs exactly once after all actors exit"
     );
     h.stops.increment();
+    h.work.drain();
 }
 #[derive(Default)]
 struct Interrupts {
@@ -606,7 +613,7 @@ fn unconfirmed_can_free_driver_container_without_drop_or_reclaiming_backing() {
         drop(future);
         drop(context);
         // Model core quarantine, then free the outer allocation without Drop.
-        let quarantine = Box::new(ManuallyDrop::new(driver::Driver::new(scope)));
+        let quarantine = Box::new(Quarantined::retain(driver::Driver::new(scope)));
         drop(quarantine);
         assert!(latch.into_return().is_none(), "Driver::drop must not run");
         assert_eq!(slot.entry.load(Ordering::Acquire), registered);

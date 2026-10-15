@@ -195,3 +195,21 @@ cases = [
     "crates/protocols/ieee80211/sta/tests/ui/retired_station.rs",
     "crates/protocols/ieee80211/sta/tests/ui/retired_data.rs",
 ]
+
+[[suite]]
+name = "s31-core-owner"
+packages = ["oer-esp32s31-ieee80211", "oer-radio-port", "oer-time"]
+features = []
+targets = ["host", "esp32s31"]
+cases = [
+    "crates/hardware/esp32s31/driver/ieee80211/tests/ui/queue_owner.rs",
+    "crates/hardware/esp32s31/driver/ieee80211/tests/ui/foreign_queue.rs",
+    "crates/hardware/esp32s31/driver/ieee80211/tests/ui/sibling_queue.rs",
+    "crates/hardware/esp32s31/driver/ieee80211/tests/ui/mpdu_values.rs",
+    "crates/hardware/esp32s31/driver/ieee80211/tests/ui/failed_gate.rs",
+    "crates/hardware/esp32s31/driver/ieee80211/tests/ui/key_removed.rs",
+    "crates/hardware/esp32s31/driver/ieee80211/tests/ui/key_use_clone.rs",
+    "crates/hardware/esp32s31/driver/ieee80211/tests/ui/key_use_required.rs",
+    "crates/hardware/esp32s31/driver/ieee80211/tests/ui/key_use_once.rs",
+    "crates/hardware/esp32s31/driver/ieee80211/tests/ui/key_use_foreign.rs",
+]

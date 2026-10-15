@@ -422,6 +422,20 @@ pub enum QueuedSingleAttemptProgress<'slot, const BUFFER_SIZE: usize> {
     },
 }
 
+/// An execution fault retains the potentially published DMA slot for reset.
+/// Its ownership cannot be projected back into an ordinary submission.
+#[must_use = "retain the quarantined DMA owner until the backend is reset"]
+pub struct QuarantinedSingleAttempt<'slot, const BUFFER_SIZE: usize> {
+    _slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
+}
+
+/// A failed execution returns custody of its publication, never a free slot.
+#[must_use = "move the failed publication into the backend's quarantine"]
+pub struct QueuedSingleAttemptFailed<'slot, const BUFFER_SIZE: usize> {
+    pub error: OrdinaryTxError,
+    pub quarantine: QuarantinedSingleAttempt<'slot, BUFFER_SIZE>,
+}
+
 /// A queued attempt that was not published; its slot comes back.
 #[must_use = "retain the unpublished slot and handle the refusal"]
 pub struct QueuedSingleAttemptRefused<'slot, const BUFFER_SIZE: usize> {
@@ -846,17 +860,23 @@ where
     /// abort settles; the attempt then stays pending with its timeout latched
     /// in the queue state until it is serviced again.
     ///
-    /// On an error the attempt is dropped: the owner poisoned or quarantined
-    /// its descriptor, and only a radio reset recovers the slot.
+    /// On an error the descriptor and its slot stay in the returned quarantine;
+    /// only a radio reset can recover it.
     pub fn service_queued_single_attempt<H: TxHardware>(
         &mut self,
         hardware: &mut H,
         queued: QueuedSingleAttempt<'slot, BUFFER_SIZE>,
         wake: WifiTxWake,
         may_begin_timeout_abort: bool,
-    ) -> Result<QueuedSingleAttemptProgress<'slot, BUFFER_SIZE>, OrdinaryTxError> {
+    ) -> Result<
+        QueuedSingleAttemptProgress<'slot, BUFFER_SIZE>,
+        QueuedSingleAttemptFailed<'slot, BUFFER_SIZE>,
+    > {
         if self.active.is_some() {
-            return Err(OrdinaryTxError::Busy);
+            return Err(QueuedSingleAttemptFailed {
+                error: OrdinaryTxError::Busy,
+                quarantine: QuarantinedSingleAttempt { _slot: queued.slot },
+            });
         }
         let QueuedSingleAttempt { mut slot, active } = queued;
         core::mem::swap(&mut self.slot, &mut slot);
@@ -882,7 +902,10 @@ where
             }),
             Err(error) => {
                 self.active = None;
-                Err(error)
+                Err(QueuedSingleAttemptFailed {
+                    error,
+                    quarantine: QuarantinedSingleAttempt { _slot: slot },
+                })
             }
         }
     }

@@ -407,10 +407,213 @@ fn entropy() -> u32 {
     0x1234_5678
 }
 
-type Core = LowerMacCore<'static, Power, fn() -> u32, Timer, 512>;
+type DeviceCore<'core> = LowerMacCore<'core, 'static, Power, fn() -> u32, Timer, 512>;
+
+/// The test driver recycles a queue only when the actual terminal returns it.
+struct Core<'core> {
+    inner: DeviceCore<'core>,
+    free: [Option<FreeQueue<'core>>; LOWER_MAC_TX_QUEUES],
+    tickets: [Option<TxTicket<'core>>; 4],
+}
+
+impl<'core> core::ops::Deref for Core<'core> {
+    type Target = DeviceCore<'core>;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+impl core::ops::DerefMut for Core<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+struct CoreParts<'core> {
+    inner: LowerMacCoreParts<'core, 'static, Power, fn() -> u32, Timer, 512>,
+    free: [Option<FreeQueue<'core>>; LOWER_MAC_TX_QUEUES],
+    tickets: [Option<TxTicket<'core>>; 4],
+}
+
+impl<'core> Core<'core> {
+    fn reclaim(&mut self, events: &mut Events<'core>) {
+        for ticket in events.returned_tickets.drain(..) {
+            let index = ticket.index();
+            assert!(self.tickets[index].replace(ticket).is_none());
+        }
+        for queue in events.returned.drain(..) {
+            let index = queue_of(queue.category());
+            assert!(self.free[index].replace(queue).is_none());
+        }
+    }
+
+    fn submit_checked(
+        &mut self,
+        hardware: &mut Hardware,
+        request: Request,
+    ) -> Result<(), SubmitFault<'core, 'static, 512>> {
+        let queue = self.free[queue_of(request.category)]
+            .take()
+            .expect("the driver holds a free queue");
+        let ticket = self.take_ticket();
+        self.inner
+            .submit_checked(hardware, queue, TxAdmission::Open(ticket), request.values)
+    }
+
+    fn take_ticket(&mut self) -> TxTicket<'core> {
+        self.tickets
+            .iter_mut()
+            .find_map(Option::take)
+            .expect("one free ticket")
+    }
+
+    fn submit_protected(
+        &mut self,
+        hardware: &mut Hardware,
+        key: &KeyHandle<'core>,
+        mut request: Request,
+    ) -> Result<(), SubmitFault<'core, 'static, 512>> {
+        let queue = self.free[queue_of(request.category)].take().unwrap();
+        let ticket = self.take_ticket();
+        let key_use = self.inner.admit_key(key, ticket).ok().expect("TX key");
+        let frame = &mut request.slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE..];
+        let control =
+            oer_ieee80211_mac::frame::FrameControl::new(u16::from_le_bytes([frame[0], frame[1]]))
+                .unwrap();
+        frame[..2].copy_from_slice(&control.with_protected(true).get().to_le_bytes());
+        self.inner.submit_checked(
+            hardware,
+            queue,
+            TxAdmission::Protected(key_use),
+            request.values,
+        )
+    }
+
+    fn plan_ampdu(
+        &mut self,
+        values: AmpduValues,
+        buffer: &mut Aggregate,
+    ) -> Result<AmpduPlan<'core>, AmpduRefusal> {
+        let index = queue_of(values.access_category);
+        let queue = self.free[index].take().expect("free aggregate queue");
+        let admission = TxAdmission::Open(self.take_ticket());
+        self.inner
+            .plan_ampdu(queue, admission, values, buffer)
+            .map_err(|refused| {
+                self.free[index] = Some(refused.queue);
+                let TxAdmission::Open(ticket) = refused.admission else {
+                    panic!("open fixture")
+                };
+                let index = ticket.index();
+                self.tickets[index] = Some(ticket);
+                refused.reason
+            })
+    }
+
+    fn service(
+        &mut self,
+        hardware: &mut Hardware,
+        wake: WifiTxWake,
+        events: &mut Events<'core>,
+    ) -> Result<(), LowerMacFault> {
+        let result = self.inner.service(hardware, wake, events);
+        self.reclaim(events);
+        result
+    }
+
+    fn disable_checked(&mut self, hardware: &mut Hardware, events: &mut Events<'core>) {
+        self.inner.disable_checked(hardware, events).unwrap();
+        self.reclaim(events);
+    }
+
+    fn withdraw_held_attempts(&mut self, hardware: &mut Hardware, events: &mut Events<'core>) {
+        self.inner.withdraw_held_attempts(hardware, events);
+        self.reclaim(events);
+    }
+
+    #[expect(
+        clippy::result_large_err,
+        reason = "exercise the production transition with its complete owner"
+    )]
+    fn open_gate(self, hardware: &mut Hardware) -> Result<Self, GateOpenFailed<DeviceCore<'core>>> {
+        let mut events = Events::default();
+        match self.inner.open_gate(hardware, &mut events) {
+            Ok(inner) => Ok(Self {
+                inner,
+                free: self.free,
+                tickets: self.tickets,
+            }),
+            Err(failure) => Err(failure),
+        }
+    }
+
+    #[expect(
+        clippy::result_large_err,
+        reason = "the test retains all unconsumed core resources"
+    )]
+    fn dismantle(self) -> Result<CoreParts<'core>, Self> {
+        match self.inner.dismantle() {
+            Ok(inner) => Ok(CoreParts {
+                inner,
+                free: self.free,
+                tickets: self.tickets,
+            }),
+            Err(inner) => Err(Self {
+                inner,
+                free: self.free,
+                tickets: self.tickets,
+            }),
+        }
+    }
+
+    fn from_parts(parts: CoreParts<'core>) -> Self {
+        Self {
+            inner: DeviceCore::from_parts(parts.inner),
+            free: parts.free,
+            tickets: parts.tickets,
+        }
+    }
+}
+
+fn installed<R>(body: impl for<'core> FnOnce(CoreResources<'core>) -> R) -> R {
+    use core::{
+        future::Future,
+        task::{Context, Poll, Waker},
+    };
+    let mut future = core::pin::pin!(oer_radio_port::branded::<CorePools, _>(async |mint| {
+        body(mint.into_pools())
+    }));
+    match future
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()))
+    {
+        Poll::Ready(result) => result,
+        Poll::Pending => panic!("the core fixture has no asynchronous steps"),
+    }
+}
+
+/// Request values plus the test driver's choice of which free queue to use.
+struct Request {
+    category: WmmAccessCategory,
+    values: MpduValues<'static, 512>,
+}
+impl core::ops::Deref for Request {
+    type Target = MpduValues<'static, 512>;
+    fn deref(&self) -> &Self::Target {
+        &self.values
+    }
+}
+impl core::ops::DerefMut for Request {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.values
+    }
+}
 
 #[derive(Default)]
-struct Events {
+struct Events<'core> {
+    returned: Vec<FreeQueue<'core>>,
+    returned_tickets: Vec<TxTicket<'core>>,
+    removed: Vec<KeyRemoved<'core>>,
+    order: Vec<&'static str>,
     completions: Vec<PublicationEnd>,
     /// The rate of each ended attempt, in order.
     rates: Vec<PhyRate>,
@@ -422,18 +625,39 @@ struct Events {
     tbtts: Vec<TbttEvent>,
 }
 
-impl LowerMacSink<'static, 512> for Events {
+impl<'core> LowerMacSink<'core, 'static, 512> for Events<'core> {
     fn tx_completed(
         &mut self,
-        queue: WmmAccessCategory,
+        queue: FreeQueue<'core>,
+        ticket: TxTicket<'core>,
         slot: Pin<&'static mut TxSlot<512>>,
         end: PublicationEnd,
         rate: PhyRate,
     ) {
-        self.queues.push(queue);
+        self.returned_tickets.push(ticket);
+        self.order.push("tx");
+        self.queues.push(queue.category());
+        self.returned.push(queue);
         self.slots.push(slot);
         self.completions.push(end);
         self.rates.push(rate);
+    }
+
+    fn ampdu_completed(
+        &mut self,
+        queue: FreeQueue<'core>,
+        ticket: TxTicket<'core>,
+        end: PublicationEnd,
+    ) {
+        self.returned.push(queue);
+        self.returned_tickets.push(ticket);
+        self.completions.push(end);
+        self.order.push("tx");
+    }
+
+    fn key_removed(&mut self, removed: KeyRemoved<'core>) {
+        self.removed.push(removed);
+        self.order.push("key");
     }
 
     fn disabled(&mut self) {
@@ -454,23 +678,28 @@ fn slot() -> Pin<&'static mut TxSlot<512>> {
     Pin::static_mut(Box::leak(Box::new(TxSlot::new_model().unwrap())))
 }
 
-fn core() -> Core {
-    LowerMacCore::new(
-        OrdinaryTxOwner::new(WifiTxResources {
-            slot: slot(),
-            policy: WifiTxRuntimePolicy::vendor_defaults(),
-            power: Power,
-            entropy: entropy as fn() -> u32,
-            timer: Timer::default(),
-        }),
-        LowerMacConfig {
-            station_address: STATION,
-            channel: channel(6),
-            publication_timeout: oer_time::Duration::from_micros(TIMEOUT),
-            tsf_epoch: 1,
-        },
-        &RadioNine,
-    )
+fn core(resources: CoreResources<'_>) -> Core<'_> {
+    Core {
+        free: resources.queues.map(Some),
+        tickets: resources.tickets.map(Some),
+        inner: LowerMacCore::new(
+            resources.authority,
+            OrdinaryTxOwner::new(WifiTxResources {
+                slot: slot(),
+                policy: WifiTxRuntimePolicy::vendor_defaults(),
+                power: Power,
+                entropy: entropy as fn() -> u32,
+                timer: Timer::default(),
+            }),
+            LowerMacConfig {
+                station_address: STATION,
+                channel: channel(6),
+                publication_timeout: oer_time::Duration::from_micros(TIMEOUT),
+                tsf_epoch: 1,
+            },
+            &RadioNine,
+        ),
+    }
 }
 
 fn station() -> CoreVif {
@@ -492,8 +721,8 @@ fn access_point() -> CoreVif {
 }
 
 /// An enabled core with a station interface on channel 6.
-fn enabled(hardware: &mut Hardware) -> Core {
-    let mut core = core();
+fn enabled<'core>(hardware: &mut Hardware, resources: CoreResources<'core>) -> Core<'core> {
+    let mut core = core(resources);
     core.configure_checked_vif(hardware, station()).unwrap();
     assert_eq!(core.enable_checked(), LifecycleStart::Enabled);
     core
@@ -515,40 +744,37 @@ const OFDM24: PhyRate = PhyRate::Legacy(LegacyRate::Ofdm24M);
 
 /// The station's best-effort attempt of `frame` at 24 Mb/s, in its own
 /// slot, acknowledged unless `no_ack`.
-fn values(frame: &[u8], no_ack: bool) -> MpduValues<'static, 512> {
+fn values(frame: &[u8], no_ack: bool) -> Request {
     let mut slot = slot();
     slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE..TX_METADATA_SIZE + frame.len()]
         .copy_from_slice(frame);
-    MpduValues {
-        role: VifRole::Station,
-        access_category: WmmAccessCategory::BestEffort,
-        slot,
-        len: frame.len(),
-        no_ack,
-        rate: TxPhyRate::try_from(OFDM24).unwrap(),
-        reported: OFDM24,
-        protection: Protection::None,
-        key: None,
-        power_ceiling_dbm: None,
-        backoff_slots: 7,
-        coex: CoexPriority::Normal,
-        retry: false,
+    Request {
+        category: WmmAccessCategory::BestEffort,
+        values: MpduValues {
+            role: VifRole::Station,
+            slot,
+            len: frame.len(),
+            no_ack,
+            rate: TxPhyRate::try_from(OFDM24).unwrap(),
+            reported: OFDM24,
+            protection: Protection::None,
+            power_ceiling_dbm: None,
+            backoff_slots: 7,
+            coex: CoexPriority::Normal,
+            retry: false,
+        },
     }
 }
 
 /// `values` at `rate`.
-fn at_rate(mut values: MpduValues<'static, 512>, rate: PhyRate) -> MpduValues<'static, 512> {
+fn at_rate(mut values: Request, rate: PhyRate) -> Request {
     values.rate = TxPhyRate::try_from(rate).unwrap();
     values.reported = rate;
     values
 }
 
 /// Submit, the fault without its slot.
-fn submit(
-    core: &mut Core,
-    hardware: &mut Hardware,
-    values: MpduValues<'static, 512>,
-) -> Result<(), LowerMacFault> {
+fn submit(core: &mut Core, hardware: &mut Hardware, values: Request) -> Result<(), LowerMacFault> {
     core.submit_checked(hardware, values)
         .map_err(|refused| refused.fault)
 }
@@ -593,7 +819,7 @@ fn complete_with(
 }
 
 /// The single attempt published on queue `index`.
-fn queued(core: &Core, index: usize) -> &QueuedSingleAttempt<'static, 512> {
+fn queued<'a>(core: &'a Core<'_>, index: usize) -> &'a QueuedSingleAttempt<'static, 512> {
     match core.queues[index].as_ref().map(|attempt| &attempt.work) {
         Some(Work::Published(queued)) => queued,
         _ => panic!("queue {index} holds a published MPDU"),
@@ -640,190 +866,204 @@ fn capabilities_are_the_s31_limits_on_2_4_ghz() {
 
 #[test]
 fn an_attempt_is_published_from_the_slot_it_was_written_in() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    let frame = data_frame(BSSID);
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let frame = data_frame(BSSID);
 
-    let request = values(&frame, false);
-    let written = request.slot.as_ref().buffer_address();
-    assert_eq!(submit(&mut core, &mut hardware, request), Ok(()));
-    // The queue publishes the slot the MPDU was written in, which comes
-    // back with its completion.
-    assert_eq!(queued(&core, BE).slot().buffer_address(), written);
-    assert!(core.queue_busy(WmmAccessCategory::BestEffort));
-    assert_eq!(hardware.legacy.len(), 1);
-    assert_eq!(hardware.legacy[0].1.interface(), MacInterface::Station);
-    assert_eq!(
-        core.next_deadline(),
-        Some(oer_time::Instant::from_micros(TIMEOUT))
-    );
+        let request = values(&frame, false);
+        let written = request.slot.as_ref().buffer_address();
+        assert_eq!(submit(&mut core, &mut hardware, request), Ok(()));
+        // The queue publishes the slot the MPDU was written in, which comes
+        // back with its completion.
+        assert_eq!(queued(&core, BE).slot().buffer_address(), written);
+        assert!(core.queue_busy(WmmAccessCategory::BestEffort));
+        assert_eq!(hardware.legacy.len(), 1);
+        assert_eq!(hardware.legacy[0].1.interface(), MacInterface::Station);
+        assert_eq!(
+            core.next_deadline(),
+            Some(oer_time::Instant::from_micros(TIMEOUT))
+        );
 
-    hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(0, 0));
-    let mut events = Events::default();
-    core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
-        .unwrap();
-    assert_eq!(
-        events.completions,
-        [completed(TxStatus::Success, Some(0x60))]
-    );
-    assert_eq!(events.queues, [WmmAccessCategory::BestEffort]);
-    assert_eq!(events.slots[0].as_ref().buffer_address(), written);
-    assert_eq!(core.next_deadline(), None);
-    assert!(!core.queue_busy(WmmAccessCategory::BestEffort));
-    let next = values(&frame, false);
-    assert_eq!(submit(&mut core, &mut hardware, next), Ok(()));
+        hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(0, 0));
+        let mut events = Events::default();
+        core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+            .unwrap();
+        assert_eq!(
+            events.completions,
+            [completed(TxStatus::Success, Some(0x60))]
+        );
+        assert_eq!(events.queues, [WmmAccessCategory::BestEffort]);
+        assert_eq!(events.slots[0].as_ref().buffer_address(), written);
+        assert_eq!(core.next_deadline(), None);
+        assert!(!core.queue_busy(WmmAccessCategory::BestEffort));
+        let next = values(&frame, false);
+        assert_eq!(submit(&mut core, &mut hardware, next), Ok(()));
+    });
 }
 
 #[test]
 fn the_callers_backoff_is_counted_down_instead_of_a_draw() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    let frame = data_frame(BSSID);
-    for slots in [0, 700, 1023] {
-        let mut request = values(&frame, false);
-        request.backoff_slots = slots;
-        submit(&mut core, &mut hardware, request).unwrap();
-        assert_eq!(hardware.legacy.last().unwrap().1.contention_window(), slots);
-        assert_eq!(
-            queued(&core, BE).slot().work().backoff_slots,
-            u32::from(slots)
-        );
-        complete(&mut core, &mut hardware, 5);
-    }
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let frame = data_frame(BSSID);
+        for slots in [0, 700, 1023] {
+            let mut request = values(&frame, false);
+            request.backoff_slots = slots;
+            submit(&mut core, &mut hardware, request).unwrap();
+            assert_eq!(hardware.legacy.last().unwrap().1.contention_window(), slots);
+            assert_eq!(
+                queued(&core, BE).slot().work().backoff_slots,
+                u32::from(slots)
+            );
+            complete(&mut core, &mut hardware, 5);
+        }
+    });
 }
 
 #[test]
 fn a_power_ceiling_bounds_the_data_and_the_control_frame() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    let frame = data_frame(BSSID);
-    // The profile's calibrated codes are 5 and 6.
-    for (ceiling, data, control) in [
-        (None, 5, (5, 6)),
-        (Some(3), 3, (3, 3)),
-        (Some(10), 5, (5, 6)),
-        (Some(0), 0, (0, 0)),
-    ] {
-        let mut request = values(&frame, false);
-        request.power_ceiling_dbm = ceiling;
-        request.protection = Protection::RtsCts;
-        submit(&mut core, &mut hardware, request).unwrap();
-        let program = hardware.legacy.last().unwrap().1;
-        assert_eq!(program.data_power(), data);
-        let control_frame = program.control();
-        assert_eq!(
-            (control_frame.power_primary, control_frame.power_alternate),
-            control
-        );
-        complete(&mut core, &mut hardware, 0);
-    }
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let frame = data_frame(BSSID);
+        // The profile's calibrated codes are 5 and 6.
+        for (ceiling, data, control) in [
+            (None, 5, (5, 6)),
+            (Some(3), 3, (3, 3)),
+            (Some(10), 5, (5, 6)),
+            (Some(0), 0, (0, 0)),
+        ] {
+            let mut request = values(&frame, false);
+            request.power_ceiling_dbm = ceiling;
+            request.protection = Protection::RtsCts;
+            submit(&mut core, &mut hardware, request).unwrap();
+            let program = hardware.legacy.last().unwrap().1;
+            assert_eq!(program.data_power(), data);
+            let control_frame = program.control();
+            assert_eq!(
+                (control_frame.power_primary, control_frame.power_alternate),
+                control
+            );
+            complete(&mut core, &mut hardware, 0);
+        }
+    });
 }
 
 #[test]
 fn an_unacknowledged_attempt_is_reported_and_never_published_again() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    let frame = data_frame(BSSID);
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let frame = data_frame(BSSID);
 
-    // ACK timeout, CTS timeout and a collision completion each end the
-    // attempt after its single publication: the driver carries the retry
-    // plan out, the core never publishes again on its own.
-    let mut slots = Vec::new();
-    for (status, detail, expected) in [
-        (5, 0, TxStatus::AckTimeout),
-        (2, 0, TxStatus::CtsTimeout),
-        (4, 1, TxStatus::Collision),
-    ] {
-        let published = hardware.publications();
-        let request = values(&frame, false);
-        assert_eq!(submit(&mut core, &mut hardware, request), Ok(()));
-        hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(status, detail));
-        let mut events = Events::default();
-        core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
-            .unwrap();
-        assert_eq!(events.completions.len(), 1);
-        assert_eq!(events.completions[0], completed(expected, None));
-        assert_eq!(hardware.publications(), published + 1);
-        slots.extend(events.slots);
-    }
-    // The core sets no Retry bit of its own.
-    assert!(
-        slots
-            .iter_mut()
-            .all(|slot| slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE + 1] == 0x01)
-    );
+        // ACK timeout, CTS timeout and a collision completion each end the
+        // attempt after its single publication: the driver carries the retry
+        // plan out, the core never publishes again on its own.
+        let mut slots = Vec::new();
+        for (status, detail, expected) in [
+            (5, 0, TxStatus::AckTimeout),
+            (2, 0, TxStatus::CtsTimeout),
+            (4, 1, TxStatus::Collision),
+        ] {
+            let published = hardware.publications();
+            let request = values(&frame, false);
+            assert_eq!(submit(&mut core, &mut hardware, request), Ok(()));
+            hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(status, detail));
+            let mut events = Events::default();
+            core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+                .unwrap();
+            assert_eq!(events.completions.len(), 1);
+            assert_eq!(events.completions[0], completed(expected, None));
+            assert_eq!(hardware.publications(), published + 1);
+            slots.extend(events.slots);
+        }
+        // The core sets no Retry bit of its own.
+        assert!(
+            slots
+                .iter_mut()
+                .all(|slot| slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE + 1] == 0x01)
+        );
+    });
 }
 
 #[test]
 fn a_no_effect_rts_event_retains_its_published_owner_until_the_real_result() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    let request = values(&data_frame(BSSID), false);
-    let address = request.slot.as_ref().buffer_address();
-    submit(&mut core, &mut hardware, request).unwrap();
-    let deadline = core.next_deadline();
-    let mut events = Events::default();
-    hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(1, 2));
-    core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
-        .unwrap();
-    assert!(events.completions.is_empty());
-    assert!(events.slots.is_empty());
-    assert_eq!(hardware.publications(), 1);
-    assert_eq!(queued(&core, BE).slot().buffer_address(), address);
-    assert_eq!(
-        queued(&core, BE).slot().state(),
-        oer_esp32s31_ieee80211_mac::tx::TxSlotState::HardwareOwned
-    );
-    assert_eq!(core.next_deadline(), deadline);
-    hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(0, 0));
-    core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
-        .unwrap();
-    assert_eq!(
-        events.completions,
-        [completed(TxStatus::Success, Some(0x60))]
-    );
-    assert_eq!(events.slots.len(), 1);
-    assert_eq!(events.slots[0].as_ref().buffer_address(), address);
-    assert_eq!(hardware.publications(), 1);
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let request = values(&data_frame(BSSID), false);
+        let address = request.slot.as_ref().buffer_address();
+        submit(&mut core, &mut hardware, request).unwrap();
+        let deadline = core.next_deadline();
+        let mut events = Events::default();
+        hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(1, 2));
+        core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+            .unwrap();
+        assert!(events.completions.is_empty());
+        assert!(events.slots.is_empty());
+        assert_eq!(hardware.publications(), 1);
+        assert_eq!(queued(&core, BE).slot().buffer_address(), address);
+        assert_eq!(
+            queued(&core, BE).slot().state(),
+            oer_esp32s31_ieee80211_mac::tx::TxSlotState::HardwareOwned
+        );
+        assert_eq!(core.next_deadline(), deadline);
+        hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(0, 0));
+        core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+            .unwrap();
+        assert_eq!(
+            events.completions,
+            [completed(TxStatus::Success, Some(0x60))]
+        );
+        assert_eq!(events.slots.len(), 1);
+        assert_eq!(events.slots[0].as_ref().buffer_address(), address);
+        assert_eq!(hardware.publications(), 1);
+    });
 }
 
 #[test]
 fn a_no_effect_rts_event_can_end_only_at_the_later_hardware_timeout() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    submit(&mut core, &mut hardware, values(&data_frame(BSSID), false)).unwrap();
-    let mut events = Events::default();
-    hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(1, 0xff));
-    core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
-        .unwrap();
-    assert!(events.completions.is_empty());
-    hardware.timeout_pending[BE] = true;
-    core.service(&mut hardware, interrupt(EVENT_TX_TIMEOUT), &mut events)
-        .unwrap();
-    assert!(events.completions.is_empty());
-    let settle = core.next_deadline().unwrap();
-    core.tx.timer.advance_to(settle);
-    core.service(&mut hardware, WifiTxWake::Deadline, &mut events)
-        .unwrap();
-    assert_eq!(events.completions, [PublicationEnd::TimedOut]);
-    assert_eq!(events.slots.len(), 1);
-    assert_eq!(hardware.publications(), 1);
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        submit(&mut core, &mut hardware, values(&data_frame(BSSID), false)).unwrap();
+        let mut events = Events::default();
+        hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(1, 0xff));
+        core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+            .unwrap();
+        assert!(events.completions.is_empty());
+        hardware.timeout_pending[BE] = true;
+        core.service(&mut hardware, interrupt(EVENT_TX_TIMEOUT), &mut events)
+            .unwrap();
+        assert!(events.completions.is_empty());
+        let settle = core.next_deadline().unwrap();
+        core.tx.timer.advance_to(settle);
+        core.service(&mut hardware, WifiTxWake::Deadline, &mut events)
+            .unwrap();
+        assert_eq!(events.completions, [PublicationEnd::TimedOut]);
+        assert_eq!(events.slots.len(), 1);
+        assert_eq!(hardware.publications(), 1);
+    });
 }
 
 #[test]
 fn review_no_effect_cannot_postpone_an_expired_publication_watchdog() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    submit(&mut core, &mut hardware, values(&data_frame(BSSID), false)).unwrap();
-    let deadline = core.next_deadline().unwrap();
-    core.tx.timer.advance_to(deadline);
-    let mut events = Events::default();
-    // An RTS diagnostic is not a qualified stop. It must not hide an already
-    // expired watchdog or make that deadline wait depend on further input.
-    hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(1, 2));
-    let result = core.service(&mut hardware, WifiTxWake::Deadline, &mut events);
-    assert!(result.is_err(), "expired watchdog was bypassed: {result:?}");
-    assert!(events.completions.is_empty());
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        submit(&mut core, &mut hardware, values(&data_frame(BSSID), false)).unwrap();
+        let deadline = core.next_deadline().unwrap();
+        core.tx.timer.advance_to(deadline);
+        let mut events = Events::default();
+        // An RTS diagnostic is not a qualified stop. It must not hide an already
+        // expired watchdog or make that deadline wait depend on further input.
+        hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(1, 2));
+        let result = core.service(&mut hardware, WifiTxWake::Deadline, &mut events);
+        assert!(result.is_err(), "expired watchdog was bypassed: {result:?}");
+        assert!(events.completions.is_empty());
+    });
 }
 
 #[test]
@@ -835,30 +1075,32 @@ fn completion_faults_return_the_existing_backend_fault_without_a_tx_terminal() {
         (3, 0, CompletionFault::InvalidStatus { status: 3 }),
         (9, 0, CompletionFault::InvalidStatus { status: 9 }),
     ] {
-        let mut hardware = Hardware::default();
-        let mut core = enabled(&mut hardware);
-        submit(&mut core, &mut hardware, values(&data_frame(BSSID), false)).unwrap();
-        hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(status, detail));
-        let mut events = Events::default();
-        assert_eq!(
-            core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events),
-            Err(LowerMacFault::Tx(OrdinaryTxError::Tx(TxError::Completion(
-                fault
-            ))))
-        );
-        assert!(events.completions.is_empty());
-        assert!(events.slots.is_empty());
-        assert_eq!(hardware.publications(), 1);
+        installed(|pools| {
+            let mut hardware = Hardware::default();
+            let mut core = enabled(&mut hardware, pools);
+            submit(&mut core, &mut hardware, values(&data_frame(BSSID), false)).unwrap();
+            hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(status, detail));
+            let mut events = Events::default();
+            assert_eq!(
+                core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events),
+                Err(LowerMacFault::Tx(OrdinaryTxError::Tx(TxError::Completion(
+                    fault
+                ))))
+            );
+            assert!(events.completions.is_empty());
+            assert!(events.slots.is_empty());
+            assert_eq!(hardware.publications(), 1);
+        });
     }
 }
 
 #[test]
 fn a_transmission_the_plan_sends_again_carries_the_retry_bit() {
-    {
+    installed(|pools| {
         use oer_ieee80211_mac::frame::FrameControl;
 
         let mut hardware = Hardware::default();
-        let mut core = enabled(&mut hardware);
+        let mut core = enabled(&mut hardware, pools);
         let mut frame = data_frame(BSSID).to_vec();
         frame[2..4].copy_from_slice(&87_u16.to_le_bytes());
         frame[22..24].copy_from_slice(&0x1370_u16.to_le_bytes());
@@ -877,81 +1119,116 @@ fn a_transmission_the_plan_sends_again_carries_the_retry_bit() {
         assert!(control.retry());
         assert_eq!(control.with_retry(false).get().to_le_bytes(), frame[..2]);
         assert_eq!(returned[2..], frame[2..]);
+    });
+}
+
+#[test]
+fn an_invalid_retry_header_returns_its_slot_without_publishing_or_rewriting() {
+    for frame in [
+        &[][..],
+        &[0x88][..],
+        &[0x89, 0x01][..], // Unsupported protocol version.
+        &[0x84, 0][..],    // A control frame is not a data/management retry.
+        &[0x0c, 0][..],    // Unsupported frame kind.
+    ] {
+        installed(|pools| {
+            let mut hardware = Hardware::default();
+            let mut core = enabled(&mut hardware, pools);
+            let mut request = values(frame, false);
+            let original = request.slot.as_mut().buffer_mut().unwrap().to_vec();
+            request.retry = true;
+            let Err(mut refused) = core.submit_checked(&mut hardware, request) else {
+                panic!("an invalid retry header must be refused before publication");
+            };
+            assert_eq!(
+                refused.fault,
+                LowerMacFault::Tx(OrdinaryTxError::InvalidRetryHeader)
+            );
+            assert_eq!(hardware.publications(), 0);
+            assert_eq!(refused.slot.as_mut().buffer_mut().unwrap()[..], original);
+            assert!(core.queues.iter().all(Option::is_none));
+        });
     }
 }
 
 #[test]
 fn a_collision_detach_ends_the_attempt_without_a_transmission() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    let frame = data_frame(BSSID);
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let frame = data_frame(BSSID);
 
-    let request = values(&frame, false);
-    submit(&mut core, &mut hardware, request).unwrap();
-    hardware.collision_pending[BE] = true;
-    let mut events = Events::default();
-    core.service(&mut hardware, interrupt(EVENT_COLLISION), &mut events)
-        .unwrap();
-    assert_eq!(events.completions, [PublicationEnd::Collision]);
-    assert_eq!(hardware.publications(), 1);
+        let request = values(&frame, false);
+        submit(&mut core, &mut hardware, request).unwrap();
+        hardware.collision_pending[BE] = true;
+        let mut events = Events::default();
+        core.service(&mut hardware, interrupt(EVENT_COLLISION), &mut events)
+            .unwrap();
+        assert_eq!(events.completions, [PublicationEnd::Collision]);
+        assert_eq!(hardware.publications(), 1);
+    });
 }
 
 #[test]
 fn a_hardware_timeout_ends_the_publication_with_an_unknown_result() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    let frame = data_frame(BSSID);
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let frame = data_frame(BSSID);
 
-    let request = values(&frame, false);
-    submit(&mut core, &mut hardware, request).unwrap();
-    hardware.timeout_pending[BE] = true;
-    let mut events = Events::default();
-    core.service(&mut hardware, interrupt(EVENT_TX_TIMEOUT), &mut events)
-        .unwrap();
-    assert!(events.completions.is_empty());
-    let settle = core.next_deadline().unwrap();
-    core.tx
-        .timer
-        .advance_to(oer_time::Instant::from_micros(settle.as_micros()));
-    core.service(&mut hardware, WifiTxWake::Deadline, &mut events)
-        .unwrap();
-    assert_eq!(events.completions.len(), 1);
-    assert_eq!(events.completions[0], PublicationEnd::TimedOut);
-    assert_eq!(hardware.publications(), 1);
+        let request = values(&frame, false);
+        submit(&mut core, &mut hardware, request).unwrap();
+        hardware.timeout_pending[BE] = true;
+        let mut events = Events::default();
+        core.service(&mut hardware, interrupt(EVENT_TX_TIMEOUT), &mut events)
+            .unwrap();
+        assert!(events.completions.is_empty());
+        let settle = core.next_deadline().unwrap();
+        core.tx
+            .timer
+            .advance_to(oer_time::Instant::from_micros(settle.as_micros()));
+        core.service(&mut hardware, WifiTxWake::Deadline, &mut events)
+            .unwrap();
+        assert_eq!(events.completions.len(), 1);
+        assert_eq!(events.completions[0], PublicationEnd::TimedOut);
+        assert_eq!(hardware.publications(), 1);
+    });
 }
 
 #[test]
 fn a_block_ack_request_reports_its_block_ack() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    let mut frame = [0; 24];
-    // A BlockAckReq: control type, subtype eight.
-    frame[0] = 0x84;
-    frame[4..10].copy_from_slice(&BSSID);
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let mut frame = [0; 24];
+        // A BlockAckReq: control type, subtype eight.
+        frame[0] = 0x84;
+        frame[4..10].copy_from_slice(&BSSID);
 
-    submit(&mut core, &mut hardware, values(&frame, false)).unwrap();
-    assert_eq!(
-        hardware.legacy[0].1.response(),
-        MacLegacyTxResponse::BlockAck
-    );
-    hardware.block_ack_completion[BE] = Some(MacHtAmpduCompletionObservation::new_model(
-        MacTxCompletionObservation::new_model(0, 0),
-        0,
-        100,
-        0b1011,
-        true,
-    ));
-    let mut events = Events::default();
-    core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
-        .unwrap();
-    assert!(matches!(
-        events.completions[0],
-        PublicationEnd::Completed {
-            status: TxStatus::Success,
-            block_ack: Some(BlockAckReport { start_sequence, bitmap: 0b1011 }),
-            ..
-        } if start_sequence == SequenceNumber::new(100).unwrap()
-    ));
+        submit(&mut core, &mut hardware, values(&frame, false)).unwrap();
+        assert_eq!(
+            hardware.legacy[0].1.response(),
+            MacLegacyTxResponse::BlockAck
+        );
+        hardware.block_ack_completion[BE] = Some(MacHtAmpduCompletionObservation::new_model(
+            MacTxCompletionObservation::new_model(0, 0),
+            0,
+            100,
+            0b1011,
+            true,
+        ));
+        let mut events = Events::default();
+        core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+            .unwrap();
+        assert!(matches!(
+            events.completions[0],
+            PublicationEnd::Completed {
+                status: TxStatus::Success,
+                block_ack: Some(BlockAckReport { start_sequence, bitmap: 0b1011 }),
+                ..
+            } if start_sequence == SequenceNumber::new(100).unwrap()
+        ));
+    });
 }
 
 #[test]
@@ -964,292 +1241,313 @@ fn review_bar_requires_the_solicited_block_ack_result_bit() {
         (2, true, TxStatus::Success),
         (2, false, TxStatus::CtsTimeout),
     ] {
-        let mut hardware = Hardware::default();
-        let mut core = enabled(&mut hardware);
-        let mut frame = [0; 24];
-        frame[0] = 0x84;
-        frame[4..10].copy_from_slice(&BSSID);
-        submit(&mut core, &mut hardware, values(&frame, false)).unwrap();
-        hardware.block_ack_completion[BE] =
-            Some(block_ack_completion(status, 100, 0b1011, received));
-        let mut events = Events::default();
-        core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
-            .unwrap();
-        match events.completions[0] {
-            PublicationEnd::Completed {
-                status: actual,
-                block_ack,
-                ..
-            } => {
-                assert_eq!(
-                    actual, expected,
-                    "BAR status={status}, BA-received={received}"
-                );
-                assert_eq!(block_ack.is_some(), received);
+        installed(|pools| {
+            let mut hardware = Hardware::default();
+            let mut core = enabled(&mut hardware, pools);
+            let mut frame = [0; 24];
+            frame[0] = 0x84;
+            frame[4..10].copy_from_slice(&BSSID);
+            submit(&mut core, &mut hardware, values(&frame, false)).unwrap();
+            hardware.block_ack_completion[BE] =
+                Some(block_ack_completion(status, 100, 0b1011, received));
+            let mut events = Events::default();
+            core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+                .unwrap();
+            match events.completions[0] {
+                PublicationEnd::Completed {
+                    status: actual,
+                    block_ack,
+                    ..
+                } => {
+                    assert_eq!(
+                        actual, expected,
+                        "BAR status={status}, BA-received={received}"
+                    );
+                    assert_eq!(block_ack.is_some(), received);
+                }
+                other => panic!("wrong terminal: {other:?}"),
             }
-            other => panic!("wrong terminal: {other:?}"),
-        }
+        });
     }
 }
 
 #[test]
 fn review_bar_status_zero_without_block_ack_is_not_delivered() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    let mut frame = [0; 24];
-    frame[0] = 0x84;
-    frame[4..10].copy_from_slice(&BSSID);
-    submit(&mut core, &mut hardware, values(&frame, false)).unwrap();
-    hardware.block_ack_completion[BE] = Some(block_ack_completion(0, 100, 0b1011, false));
-    let mut events = Events::default();
-    core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
-        .unwrap();
-    assert!(matches!(
-        events.completions[0],
-        PublicationEnd::Completed {
-            status: TxStatus::AckTimeout,
-            block_ack: None,
-            ..
-        }
-    ));
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let mut frame = [0; 24];
+        frame[0] = 0x84;
+        frame[4..10].copy_from_slice(&BSSID);
+        submit(&mut core, &mut hardware, values(&frame, false)).unwrap();
+        hardware.block_ack_completion[BE] = Some(block_ack_completion(0, 100, 0b1011, false));
+        let mut events = Events::default();
+        core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+            .unwrap();
+        assert!(matches!(
+            events.completions[0],
+            PublicationEnd::Completed {
+                status: TxStatus::AckTimeout,
+                block_ack: None,
+                ..
+            }
+        ));
+    });
 }
 
 #[test]
 fn review_aggregate_no_effect_cannot_postpone_expired_watchdog() {
-    let mut hardware = Hardware::default();
-    let core = enabled(&mut hardware);
-    let source = backings();
-    let published = publish_ampdu(
-        &core,
-        &mut hardware,
-        aggregate_of(source, 2, 26),
-        ampdu_values(ht_rate(7)),
-    )
-    .unwrap();
-    let deadline = published.deadline();
-    hardware.block_ack_completion[BE] = Some(block_ack_completion(1, 0, 0, false));
-    let result = ampdu::service(
-        &mut hardware,
-        published,
-        WifiTxWake::Deadline,
-        true,
-        deadline,
-    );
-    assert!(result.is_err(), "NoEffect hid an expired A-MPDU watchdog");
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let source = backings();
+        let published = publish_ampdu(
+            &mut core,
+            &mut hardware,
+            aggregate_of(source, 2, 26),
+            ampdu_values(ht_rate(7)),
+        )
+        .unwrap();
+        let deadline = published.deadline();
+        hardware.block_ack_completion[BE] = Some(block_ack_completion(1, 0, 0, false));
+        let result = ampdu::service(
+            &mut hardware,
+            published,
+            WifiTxWake::Deadline,
+            true,
+            deadline,
+        );
+        assert!(result.is_err(), "NoEffect hid an expired A-MPDU watchdog");
+    });
 }
 
 #[test]
 fn ht_and_he_attempts_use_their_programs() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    let frame = data_frame(BSSID);
-    let ht = PhyRate::Ht(
-        phy::HtRate::new(phy::HtMcs::new(7).unwrap(), PpduBandwidth::Mhz20, true).unwrap(),
-    );
-    let he = PhyRate::He(
-        phy::HeRate::new(
-            phy::HeMcs::new(7).unwrap(),
-            SpatialStreams::new(1).unwrap(),
-            PpduBandwidth::Mhz20,
-            HeGiLtf::Ltf2xGi800Ns,
-            FecCoding::Ldpc,
-            false,
-        )
-        .unwrap(),
-    );
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let frame = data_frame(BSSID);
+        let ht = PhyRate::Ht(
+            phy::HtRate::new(phy::HtMcs::new(7).unwrap(), PpduBandwidth::Mhz20, true).unwrap(),
+        );
+        let he = PhyRate::He(
+            phy::HeRate::new(
+                phy::HeMcs::new(7).unwrap(),
+                SpatialStreams::new(1).unwrap(),
+                PpduBandwidth::Mhz20,
+                HeGiLtf::Ltf2xGi800Ns,
+                FecCoding::Ldpc,
+                false,
+            )
+            .unwrap(),
+        );
 
-    submit(&mut core, &mut hardware, at_rate(values(&frame, false), ht)).unwrap();
-    assert_eq!(hardware.ht.len(), 1);
-    complete(&mut core, &mut hardware, 0);
+        submit(&mut core, &mut hardware, at_rate(values(&frame, false), ht)).unwrap();
+        assert_eq!(hardware.ht.len(), 1);
+        complete(&mut core, &mut hardware, 0);
 
-    submit(&mut core, &mut hardware, at_rate(values(&frame, false), he)).unwrap();
-    assert_eq!(hardware.he.len(), 1);
-    hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(0, 0));
-    let mut events = Events::default();
-    core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
-        .unwrap();
-    // The end names the rate the attempt went at.
-    assert_eq!(events.rates, [he]);
-    assert_eq!(hardware.publications(), 2);
+        submit(&mut core, &mut hardware, at_rate(values(&frame, false), he)).unwrap();
+        assert_eq!(hardware.he.len(), 1);
+        hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(0, 0));
+        let mut events = Events::default();
+        core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+            .unwrap();
+        // The end names the rate the attempt went at.
+        assert_eq!(events.rates, [he]);
+        assert_eq!(hardware.publications(), 2);
+    });
 }
 
 #[test]
 fn the_callers_protection_is_published() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    let frame = data_frame(BSSID);
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let frame = data_frame(BSSID);
 
-    for (protection, expected) in [
-        (Protection::RtsCts, MacTxProtection::RtsCts),
-        (Protection::CtsToSelf, MacTxProtection::CtsToSelf),
-        (Protection::None, MacTxProtection::None),
-    ] {
-        let mut request = values(&frame, false);
-        request.protection = protection;
-        submit(&mut core, &mut hardware, request).unwrap();
-        assert_eq!(
-            hardware.legacy.last().unwrap().1.control().protection,
-            expected
-        );
-        complete(&mut core, &mut hardware, 0);
-    }
+        for (protection, expected) in [
+            (Protection::RtsCts, MacTxProtection::RtsCts),
+            (Protection::CtsToSelf, MacTxProtection::CtsToSelf),
+            (Protection::None, MacTxProtection::None),
+        ] {
+            let mut request = values(&frame, false);
+            request.protection = protection;
+            submit(&mut core, &mut hardware, request).unwrap();
+            assert_eq!(
+                hardware.legacy.last().unwrap().1.control().protection,
+                expected
+            );
+            complete(&mut core, &mut hardware, 0);
+        }
+    });
 }
 
 #[test]
 fn a_legacy_unicast_frame_is_sent_without_acknowledgement_on_request() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    let frame = data_frame(BSSID);
-    submit(&mut core, &mut hardware, values(&frame, true)).unwrap();
-    assert_eq!(hardware.legacy[0].1.response(), MacLegacyTxResponse::None);
-    assert_eq!(
-        status_of(&complete(&mut core, &mut hardware, 0)[0]),
-        Some(TxStatus::Success)
-    );
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let frame = data_frame(BSSID);
+        submit(&mut core, &mut hardware, values(&frame, true)).unwrap();
+        assert_eq!(hardware.legacy[0].1.response(), MacLegacyTxResponse::None);
+        assert_eq!(
+            status_of(&complete(&mut core, &mut hardware, 0)[0]),
+            Some(TxStatus::Success)
+        );
+    });
 }
 
 #[test]
 fn a_group_frame_solicits_no_response() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    let frame = data_frame([0xff; 6]);
-    assert_eq!(
-        submit(&mut core, &mut hardware, values(&frame, false)),
-        Ok(())
-    );
-    assert_eq!(hardware.legacy[0].1.response(), MacLegacyTxResponse::None);
-    assert_eq!(
-        status_of(&complete(&mut core, &mut hardware, 0)[0]),
-        Some(TxStatus::Success)
-    );
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let frame = data_frame([0xff; 6]);
+        assert_eq!(
+            submit(&mut core, &mut hardware, values(&frame, false)),
+            Ok(())
+        );
+        assert_eq!(hardware.legacy[0].1.response(), MacLegacyTxResponse::None);
+        assert_eq!(
+            status_of(&complete(&mut core, &mut hardware, 0)[0]),
+            Some(TxStatus::Success)
+        );
+    });
 }
 
 #[test]
 fn a_channel_change_retunes_at_enable() {
-    let mut core = core();
-    let mut events = Events::default();
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = core(pools);
+        let mut events = Events::default();
 
-    core.set_checked_channel(channel(11));
-    assert_eq!(core.enable_checked(), LifecycleStart::Retune(channel(11)));
-    assert!(core.finish_retune(true));
-    assert_eq!(
-        core.channel(),
-        Channel::ghz2_4(11, ChannelWidth::Mhz20).unwrap()
-    );
+        core.set_checked_channel(channel(11));
+        assert_eq!(core.enable_checked(), LifecycleStart::Retune(channel(11)));
+        assert!(core.finish_retune(true));
+        assert_eq!(
+            core.channel(),
+            Channel::ghz2_4(11, ChannelWidth::Mhz20).unwrap()
+        );
 
-    core.disable_checked(&mut events);
-    assert_eq!(events.disabled, 1);
-    // The radio is already on channel 11: no retune.
-    assert_eq!(core.enable_checked(), LifecycleStart::Enabled);
+        core.disable_checked(&mut hardware, &mut events);
+        assert_eq!(events.disabled, 1);
+        // The radio is already on channel 11: no retune.
+        assert_eq!(core.enable_checked(), LifecycleStart::Enabled);
+    });
 }
 
 #[test]
 fn a_failed_retune_fails_enable_recoverably_and_leaves_the_port_disabled() {
-    let mut core = core();
-    core.set_checked_channel(channel(1));
-    assert_eq!(core.enable_checked(), LifecycleStart::Retune(channel(1)));
-    assert!(!core.finish_retune(false));
-    assert_eq!(core.state, PortState::Disabled);
-    // The channel stays configured: the next Enable retunes again.
-    assert_eq!(core.enable_checked(), LifecycleStart::Retune(channel(1)));
+    installed(|pools| {
+        let mut core = core(pools);
+        core.set_checked_channel(channel(1));
+        assert_eq!(core.enable_checked(), LifecycleStart::Retune(channel(1)));
+        assert!(!core.finish_retune(false));
+        assert_eq!(core.state, PortState::Disabled);
+        // The channel stays configured: the next Enable retunes again.
+        assert_eq!(core.enable_checked(), LifecycleStart::Retune(channel(1)));
+    });
 }
 
 #[test]
 fn receive_filters_map_onto_the_smallest_superset_policy() {
-    let mut hardware = Hardware::default();
-    let mut core = core();
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = core(pools);
 
-    for (receive, bssid, expected) in [
-        (
-            ReceiveFilter::BSS_MEMBER,
-            Some(BSSID),
-            StationPolicy::Link(BSSID),
-        ),
-        // A subset of a policy's rules takes that policy.
-        (
-            ReceiveFilter::OWN_UNICAST,
-            Some(BSSID),
-            StationPolicy::Link(BSSID),
-        ),
-        (
-            ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::OTHER_BSS_MANAGEMENT),
-            Some(BSSID),
-            StationPolicy::OtherBss(BSSID),
-        ),
-        // Scanning outside a BSS matches the broadcast BSSID.
-        (
-            ReceiveFilter::OTHER_BSS_MANAGEMENT,
-            None,
-            StationPolicy::OtherBss([0xff; 6]),
-        ),
-    ] {
+        for (receive, bssid, expected) in [
+            (
+                ReceiveFilter::BSS_MEMBER,
+                Some(BSSID),
+                StationPolicy::Link(BSSID),
+            ),
+            // A subset of a policy's rules takes that policy.
+            (
+                ReceiveFilter::OWN_UNICAST,
+                Some(BSSID),
+                StationPolicy::Link(BSSID),
+            ),
+            (
+                ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::OTHER_BSS_MANAGEMENT),
+                Some(BSSID),
+                StationPolicy::OtherBss(BSSID),
+            ),
+            // Scanning outside a BSS matches the broadcast BSSID.
+            (
+                ReceiveFilter::OTHER_BSS_MANAGEMENT,
+                None,
+                StationPolicy::OtherBss([0xff; 6]),
+            ),
+        ] {
+            core.configure_checked_vif(
+                &mut hardware,
+                CoreVif {
+                    receive,
+                    bssid,
+                    ..station()
+                },
+            )
+            .unwrap();
+            assert_eq!(hardware.station_policy, Some(expected));
+        }
+        core.configure_checked_vif(&mut hardware, access_point())
+            .unwrap();
+        assert_eq!(hardware.access_point_policy, Some(ACCESS_POINT));
+
+        // Rules no policy provides a superset of, a station address other than
+        // the published one and an access point whose BSSID is not its address
+        // change no register.
+        for config in [
+            CoreVif {
+                bssid: None,
+                ..station()
+            },
+            CoreVif {
+                address: PEER,
+                ..station()
+            },
+            CoreVif {
+                receive: ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::OTHER_BSS_MANAGEMENT),
+                ..access_point()
+            },
+            CoreVif {
+                bssid: Some(PEER),
+                ..access_point()
+            },
+        ] {
+            assert_eq!(
+                core.configure_checked_vif(&mut hardware, config),
+                Err(UnsupportedVif)
+            );
+        }
+        assert_eq!(
+            hardware.station_policy,
+            Some(StationPolicy::OtherBss([0xff; 6]))
+        );
+        assert_eq!(hardware.access_point_policy, Some(ACCESS_POINT));
+
+        // No receive filter closes the role's context.
         core.configure_checked_vif(
             &mut hardware,
             CoreVif {
-                receive,
-                bssid,
+                receive: ReceiveFilter::NONE,
+                bssid: None,
                 ..station()
             },
         )
         .unwrap();
-        assert_eq!(hardware.station_policy, Some(expected));
-    }
-    core.configure_checked_vif(&mut hardware, access_point())
+        assert_eq!(hardware.station_disabled, 1);
+        core.configure_checked_vif(
+            &mut hardware,
+            CoreVif {
+                receive: ReceiveFilter::NONE,
+                ..access_point()
+            },
+        )
         .unwrap();
-    assert_eq!(hardware.access_point_policy, Some(ACCESS_POINT));
-
-    // Rules no policy provides a superset of, a station address other than
-    // the published one and an access point whose BSSID is not its address
-    // change no register.
-    for config in [
-        CoreVif {
-            bssid: None,
-            ..station()
-        },
-        CoreVif {
-            address: PEER,
-            ..station()
-        },
-        CoreVif {
-            receive: ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::OTHER_BSS_MANAGEMENT),
-            ..access_point()
-        },
-        CoreVif {
-            bssid: Some(PEER),
-            ..access_point()
-        },
-    ] {
-        assert_eq!(
-            core.configure_checked_vif(&mut hardware, config),
-            Err(UnsupportedVif)
-        );
-    }
-    assert_eq!(
-        hardware.station_policy,
-        Some(StationPolicy::OtherBss([0xff; 6]))
-    );
-    assert_eq!(hardware.access_point_policy, Some(ACCESS_POINT));
-
-    // No receive filter closes the role's context.
-    core.configure_checked_vif(
-        &mut hardware,
-        CoreVif {
-            receive: ReceiveFilter::NONE,
-            bssid: None,
-            ..station()
-        },
-    )
-    .unwrap();
-    assert_eq!(hardware.station_disabled, 1);
-    core.configure_checked_vif(
-        &mut hardware,
-        CoreVif {
-            receive: ReceiveFilter::NONE,
-            ..access_point()
-        },
-    )
-    .unwrap();
-    assert_eq!(hardware.access_point_disabled, 1);
+        assert_eq!(hardware.access_point_disabled, 1);
+    });
 }
 
 fn normalized(mpdu: &[u8]) -> NormalizedRxFrame<'_> {
@@ -1283,431 +1581,432 @@ fn management(subtype: u8, receiver: MacAddress, bssid: MacAddress) -> [u8; 24] 
 
 #[test]
 fn received_frames_are_narrowed_to_the_requested_rules() {
-    let mut hardware = Hardware::default();
-    let mut core = core();
-    let unicast = data_frame(STATION);
-    let beacon = management(8, [0xff; 6], BSSID);
-    let other_beacon = management(8, [0xff; 6], OTHER_BSS);
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = core(pools);
+        let unicast = data_frame(STATION);
+        let beacon = management(8, [0xff; 6], BSSID);
+        let other_beacon = management(8, [0xff; 6], OTHER_BSS);
 
-    assert!(core.received(&hardware, &normalized(&unicast)).is_none());
-    // Unicast only: the link policy passes the BSS's beacons as well.
-    core.configure_checked_vif(
-        &mut hardware,
-        CoreVif {
-            receive: ReceiveFilter::OWN_UNICAST,
-            ..station()
-        },
-    )
-    .unwrap();
-    assert_eq!(core.enable_checked(), LifecycleStart::Enabled);
-    let (bytes, received) = core.received(&hardware, &normalized(&unicast)).unwrap();
-    // The frame carries the PHY's noise-floor estimate and its signal over
-    // it.
-    assert_eq!(received.link_metric(), LinkMetric::new(-42, -96));
-    let meta = *received.common();
-    assert_eq!(meta.noise_floor_dbm, RxEvidence::HardwareObserved(-96));
-    assert_eq!(bytes, unicast);
-    assert_eq!(meta.channel, Channel::from_wifi_channel(channel(6)));
-    assert_eq!(meta.rssi_dbm, RxEvidence::HardwareObserved(-42));
-    assert!(core.received(&hardware, &normalized(&beacon)).is_none());
+        assert!(core.received(&hardware, &normalized(&unicast)).is_none());
+        // Unicast only: the link policy passes the BSS's beacons as well.
+        core.configure_checked_vif(
+            &mut hardware,
+            CoreVif {
+                receive: ReceiveFilter::OWN_UNICAST,
+                ..station()
+            },
+        )
+        .unwrap();
+        assert_eq!(core.enable_checked(), LifecycleStart::Enabled);
+        let (bytes, received) = core.received(&hardware, &normalized(&unicast)).unwrap();
+        // The frame carries the PHY's noise-floor estimate and its signal over
+        // it.
+        assert_eq!(received.link_metric(), LinkMetric::new(-42, -96));
+        let meta = *received.common();
+        assert_eq!(meta.noise_floor_dbm, RxEvidence::HardwareObserved(-96));
+        assert_eq!(bytes, unicast);
+        assert_eq!(meta.channel, Channel::from_wifi_channel(channel(6)));
+        assert_eq!(meta.rssi_dbm, RxEvidence::HardwareObserved(-42));
+        assert!(core.received(&hardware, &normalized(&beacon)).is_none());
 
-    // Scanning while joined: the ESP-NOW policy passes everything the
-    // filter names, and nothing else is delivered.
-    core.configure_checked_vif(
-        &mut hardware,
-        CoreVif {
-            receive: ReceiveFilter::OWN_BSS_BEACONS.union(ReceiveFilter::OTHER_BSS_MANAGEMENT),
-            ..station()
-        },
-    )
-    .unwrap();
-    assert!(core.received(&hardware, &normalized(&beacon)).is_some());
-    assert!(
-        core.received(&hardware, &normalized(&other_beacon))
-            .is_some()
-    );
-    assert!(core.received(&hardware, &normalized(&unicast)).is_none());
+        // Scanning while joined: the ESP-NOW policy passes everything the
+        // filter names, and nothing else is delivered.
+        core.configure_checked_vif(
+            &mut hardware,
+            CoreVif {
+                receive: ReceiveFilter::OWN_BSS_BEACONS.union(ReceiveFilter::OTHER_BSS_MANAGEMENT),
+                ..station()
+            },
+        )
+        .unwrap();
+        assert!(core.received(&hardware, &normalized(&beacon)).is_some());
+        assert!(
+            core.received(&hardware, &normalized(&other_beacon))
+                .is_some()
+        );
+        assert!(core.received(&hardware, &normalized(&unicast)).is_none());
+    });
 }
 
 #[test]
 fn monitor_reception_runs_only_while_no_interface_receives() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    let other_beacon = management(8, [0xff; 6], OTHER_BSS);
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let other_beacon = management(8, [0xff; 6], OTHER_BSS);
 
-    assert_eq!(core.set_monitor(&mut hardware, true), Err(UnsupportedVif));
-    assert!(!hardware.promiscuous);
-    core.configure_checked_vif(
-        &mut hardware,
-        CoreVif {
-            receive: ReceiveFilter::NONE,
-            ..station()
-        },
-    )
-    .unwrap();
-    assert_eq!(core.set_monitor(&mut hardware, true), Ok(()));
-    assert!(hardware.promiscuous);
-    assert!(
-        core.received(&hardware, &normalized(&other_beacon))
-            .is_some()
-    );
-    assert_eq!(core.set_monitor(&mut hardware, false), Ok(()));
-    assert!(!hardware.promiscuous);
-    assert!(
-        core.received(&hardware, &normalized(&other_beacon))
-            .is_none()
-    );
+        assert_eq!(core.set_monitor(&mut hardware, true), Err(UnsupportedVif));
+        assert!(!hardware.promiscuous);
+        core.configure_checked_vif(
+            &mut hardware,
+            CoreVif {
+                receive: ReceiveFilter::NONE,
+                ..station()
+            },
+        )
+        .unwrap();
+        assert_eq!(core.set_monitor(&mut hardware, true), Ok(()));
+        assert!(hardware.promiscuous);
+        assert!(
+            core.received(&hardware, &normalized(&other_beacon))
+                .is_some()
+        );
+        assert_eq!(core.set_monitor(&mut hardware, false), Ok(()));
+        assert!(!hardware.promiscuous);
+        assert!(
+            core.received(&hardware, &normalized(&other_beacon))
+                .is_none()
+        );
+    });
 }
 
 #[test]
 fn keys_install_into_their_role_slots_and_protect_attempts() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    core.configure_checked_vif(&mut hardware, access_point())
-        .unwrap();
-    static KEY: [u8; 16] = [0x5a; 16];
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        core.configure_checked_vif(&mut hardware, access_point())
+            .unwrap();
+        static KEY: [u8; 16] = [0x5a; 16];
 
-    let pairwise = core
-        .install_checked_key(
-            &mut hardware,
-            CheckedKeyScope::StationPairwise { peer: BSSID },
-            &KEY,
-        )
-        .unwrap();
-    assert_eq!(hardware.installed_keys[0].0, 4);
-    core.install_checked_key(
-        &mut hardware,
-        CheckedKeyScope::AccessPointPairwise {
-            peer: PEER,
-            association_id: 1,
-        },
-        &KEY,
-    )
-    .unwrap();
-    // The access point's pairwise key of association identifier one.
-    assert_eq!(hardware.installed_keys[1].0, 8);
+        let pairwise = core
+            .install_checked_key(
+                &mut hardware,
+                CheckedKeyScope::StationPairwise { peer: BSSID },
+                &KEY,
+            )
+            .unwrap();
+        assert_eq!(hardware.installed_keys[0].0, 4);
+        let _ap_key = core
+            .install_checked_key(
+                &mut hardware,
+                CheckedKeyScope::AccessPointPairwise {
+                    peer: PEER,
+                    association_id: 1,
+                },
+                &KEY,
+            )
+            .unwrap();
+        // The access point's pairwise key of association identifier one.
+        assert_eq!(hardware.installed_keys[1].0, 8);
 
-    let frame = data_frame(BSSID);
-    let mut protected = values(&frame, false);
-    protected.key = Some(pairwise);
-    submit(&mut core, &mut hardware, protected).unwrap();
-    assert_eq!(hardware.legacy.len(), 1);
-    assert!(core.key_in_use(pairwise));
-    complete(&mut core, &mut hardware, 0);
-    assert!(!core.key_in_use(pairwise));
-    core.remove_checked_key(&mut hardware, pairwise);
-    assert_eq!(hardware.cleared_keys, [4]);
-    // A removed index is nothing to remove.
-    core.remove_checked_key(&mut hardware, pairwise);
-    assert_eq!(hardware.cleared_keys, [4]);
+        let frame = data_frame(BSSID);
+        let protected = values(&frame, false);
+        core.submit_protected(&mut hardware, &pairwise, protected)
+            .ok()
+            .unwrap();
+        assert_eq!(hardware.legacy.len(), 1);
+        assert_eq!(core.keys.uses[pairwise.index], 1);
+        complete(&mut core, &mut hardware, 0);
+        assert_eq!(core.keys.uses[pairwise.index], 0);
+        let mut events = Events::default();
+        core.remove_checked_key(&mut hardware, pairwise, &mut events);
+        assert_eq!(hardware.cleared_keys, [4]);
+        assert_eq!(events.removed.len(), 1);
+    });
 }
 
 #[test]
 fn a_fresh_protected_mpdu_is_numbered_by_its_key_and_the_station_group_key_refuses_tx() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    static KEY: [u8; 16] = [0x5a; 16];
-    let pairwise = core
-        .install_checked_key(
-            &mut hardware,
-            CheckedKeyScope::StationPairwise { peer: BSSID },
-            &KEY,
-        )
-        .unwrap();
-    let group = core
-        .install_checked_key(
-            &mut hardware,
-            CheckedKeyScope::StationGroup {
-                key_id: oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
-            },
-            &KEY,
-        )
-        .unwrap();
-    let mut slot = slot();
-    // The vendor's step of three: a new key emits PN 3, then 6.
-    for expected in [3, 6] {
-        assert_eq!(core.number(pairwise, &mut slot, 26), Ok(()));
-        let header = &slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE + 26..][..8];
-        assert_eq!(header, &[expected, 0, 0, 0x20, 0, 0, 0, 0]);
-    }
-    // The station's group key remains installed for RX, but cannot prepare TX.
-    slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE + 26..][..8].fill(0xee);
-    assert_eq!(
-        core.number(group, &mut slot, 26),
-        Err(CcmpNumberingError::ReceiveOnlyKey)
-    );
-    assert_eq!(
-        slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE + 26..][..8],
-        [0xee; 8]
-    );
-}
-
-#[test]
-fn numbering_refuses_a_removed_key_without_writing_the_buffer() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    static KEY: [u8; 16] = [0x5a; 16];
-    let key = core
-        .install_checked_key(
-            &mut hardware,
-            CheckedKeyScope::StationPairwise { peer: BSSID },
-            &KEY,
-        )
-        .unwrap();
-    core.remove_checked_key(&mut hardware, key);
-    let mut slot = slot();
-    slot.as_mut().buffer_mut().unwrap().fill(0xee);
-
-    assert_eq!(
-        core.number(key, &mut slot, 26),
-        Err(CcmpNumberingError::MissingKey)
-    );
-    assert_eq!(slot.as_mut().buffer_mut().unwrap(), &[0xee; 512]);
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        static KEY: [u8; 16] = [0x5a; 16];
+        let mut pairwise = core
+            .install_checked_key(
+                &mut hardware,
+                CheckedKeyScope::StationPairwise { peer: BSSID },
+                &KEY,
+            )
+            .unwrap();
+        let mut group = core
+            .install_checked_key(
+                &mut hardware,
+                CheckedKeyScope::StationGroup {
+                    key_id: oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
+                },
+                &KEY,
+            )
+            .unwrap();
+        let mut slot = slot();
+        // The vendor's step of three: a new key emits PN 3, then 6.
+        for expected in [3, 6] {
+            assert_eq!(core.number(&mut pairwise, &mut slot, 26), Ok(()));
+            let header = &slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE + 26..][..8];
+            assert_eq!(header, &[expected, 0, 0, 0x20, 0, 0, 0, 0]);
+        }
+        // The station's group key remains installed for RX, but cannot prepare TX.
+        slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE + 26..][..8].fill(0xee);
+        assert_eq!(
+            core.number(&mut group, &mut slot, 26),
+            Err(CcmpNumberingError::ReceiveOnlyKey)
+        );
+        assert_eq!(
+            slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE + 26..][..8],
+            [0xee; 8]
+        );
+    });
 }
 
 #[test]
 fn numbering_refuses_an_unavailable_buffer_without_allocating_a_packet_number() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    static KEY: [u8; 16] = [0x5a; 16];
-    let key = core
-        .install_checked_key(
-            &mut hardware,
-            CheckedKeyScope::StationPairwise { peer: BSSID },
-            &KEY,
-        )
-        .unwrap();
-    let mut slot = slot();
-    slot.as_mut().buffer_mut().unwrap().fill(0xee);
-    let cookie = slot.as_mut().reserve(512, 64).unwrap();
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        static KEY: [u8; 16] = [0x5a; 16];
+        let mut key = core
+            .install_checked_key(
+                &mut hardware,
+                CheckedKeyScope::StationPairwise { peer: BSSID },
+                &KEY,
+            )
+            .unwrap();
+        let mut slot = slot();
+        slot.as_mut().buffer_mut().unwrap().fill(0xee);
+        let cookie = slot.as_mut().reserve(512, 64).unwrap();
 
-    assert_eq!(
-        core.number(key, &mut slot, 26),
-        Err(CcmpNumberingError::BufferUnavailable(TxError::Busy))
-    );
-    slot.as_mut().cancel_reservation(cookie).unwrap();
-    assert_eq!(slot.as_mut().buffer_mut().unwrap(), &[0xee; 512]);
-    assert_eq!(core.number(key, &mut slot, 26), Ok(()));
-    assert_eq!(
-        slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE + 26..][..8],
-        [3, 0, 0, 0x20, 0, 0, 0, 0]
-    );
+        assert_eq!(
+            core.number(&mut key, &mut slot, 26),
+            Err(CcmpNumberingError::BufferUnavailable(TxError::Busy))
+        );
+        slot.as_mut().cancel_reservation(cookie).unwrap();
+        assert_eq!(slot.as_mut().buffer_mut().unwrap(), &[0xee; 512]);
+        assert_eq!(core.number(&mut key, &mut slot, 26), Ok(()));
+        assert_eq!(
+            slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE + 26..][..8],
+            [3, 0, 0, 0x20, 0, 0, 0, 0]
+        );
+    });
 }
 
 #[test]
 fn numbering_checks_header_space_and_offset_overflow_before_allocating_a_packet_number() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    static KEY: [u8; 16] = [0x5a; 16];
-    let key = core
-        .install_checked_key(
-            &mut hardware,
-            CheckedKeyScope::StationPairwise { peer: BSSID },
-            &KEY,
-        )
-        .unwrap();
-    let mut slot = slot();
-    slot.as_mut().buffer_mut().unwrap().fill(0xee);
-    let last_header_len = 512 - TX_METADATA_SIZE - CCMP_HEADER_LEN;
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        static KEY: [u8; 16] = [0x5a; 16];
+        let mut key = core
+            .install_checked_key(
+                &mut hardware,
+                CheckedKeyScope::StationPairwise { peer: BSSID },
+                &KEY,
+            )
+            .unwrap();
+        let mut slot = slot();
+        slot.as_mut().buffer_mut().unwrap().fill(0xee);
+        let last_header_len = 512 - TX_METADATA_SIZE - CCMP_HEADER_LEN;
 
-    for header_len in [
-        last_header_len + 1,
-        512,
-        usize::MAX - TX_METADATA_SIZE,
-        usize::MAX,
-    ] {
+        for header_len in [
+            last_header_len + 1,
+            512,
+            usize::MAX - TX_METADATA_SIZE,
+            usize::MAX,
+        ] {
+            assert_eq!(
+                core.number(&mut key, &mut slot, header_len),
+                Err(CcmpNumberingError::InsufficientSpace)
+            );
+            assert_eq!(slot.as_mut().buffer_mut().unwrap(), &[0xee; 512]);
+        }
+        assert_eq!(core.number(&mut key, &mut slot, last_header_len), Ok(()));
         assert_eq!(
-            core.number(key, &mut slot, header_len),
-            Err(CcmpNumberingError::InsufficientSpace)
+            slot.as_mut().buffer_mut().unwrap()[512 - CCMP_HEADER_LEN..],
+            [3, 0, 0, 0x20, 0, 0, 0, 0]
         );
-        assert_eq!(slot.as_mut().buffer_mut().unwrap(), &[0xee; 512]);
-    }
-    assert_eq!(core.number(key, &mut slot, last_header_len), Ok(()));
-    assert_eq!(
-        slot.as_mut().buffer_mut().unwrap()[512 - CCMP_HEADER_LEN..],
-        [3, 0, 0, 0x20, 0, 0, 0, 0]
-    );
+    });
 }
 
 #[test]
 fn receive_block_ack_agreements_use_the_ordinary_banks() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    let agreement = |tid, window| RxBlockAckValues {
-        role: VifRole::Station,
-        peer: BSSID,
-        tid,
-        start_sequence: SequenceNumber::new(10).unwrap(),
-        window,
-    };
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let agreement = |tid, window| RxBlockAckValues {
+            role: VifRole::Station,
+            peer: BSSID,
+            tid,
+            start_sequence: SequenceNumber::new(10).unwrap(),
+            window,
+        };
 
-    core.start_checked_rx_block_ack(&mut hardware, agreement(0, 32))
-        .unwrap();
-    assert_eq!(hardware.rx_block_acks[0].interface, MacInterface::Station);
-    assert_eq!(hardware.rx_block_acks[0].window, 32);
-    // An agreement of the same peer and TID replaces it in its bank.
-    core.start_checked_rx_block_ack(&mut hardware, agreement(0, 16))
-        .unwrap();
-    assert_eq!(hardware.rx_block_acks[1].hardware_index, 0);
-    assert_eq!(hardware.rx_block_acks[1].window, 16);
-    for tid in 1..RESOURCES.rx_block_ack_entries {
-        core.start_checked_rx_block_ack(&mut hardware, agreement(tid, 8))
+        core.start_checked_rx_block_ack(&mut hardware, agreement(0, 32))
             .unwrap();
-    }
-    // Every bank taken: an agreement of another peer finds none.
-    let mut other_peer = agreement(0, 8);
-    other_peer.peer = PEER;
-    assert_eq!(
-        core.start_checked_rx_block_ack(&mut hardware, other_peer),
-        Err(LowerMacFault::NoRxBlockAckBank)
-    );
+        assert_eq!(hardware.rx_block_acks[0].interface, MacInterface::Station);
+        assert_eq!(hardware.rx_block_acks[0].window, 32);
+        // An agreement of the same peer and TID replaces it in its bank.
+        core.start_checked_rx_block_ack(&mut hardware, agreement(0, 16))
+            .unwrap();
+        assert_eq!(hardware.rx_block_acks[1].hardware_index, 0);
+        assert_eq!(hardware.rx_block_acks[1].window, 16);
+        for tid in 1..RESOURCES.rx_block_ack_entries {
+            core.start_checked_rx_block_ack(&mut hardware, agreement(tid, 8))
+                .unwrap();
+        }
+        // Every bank taken: an agreement of another peer finds none.
+        let mut other_peer = agreement(0, 8);
+        other_peer.peer = PEER;
+        assert_eq!(
+            core.start_checked_rx_block_ack(&mut hardware, other_peer),
+            Err(LowerMacFault::NoRxBlockAckBank)
+        );
 
-    assert_eq!(
-        core.end_checked_rx_block_ack(&mut hardware, VifRole::Station, BSSID, 0),
-        Ok(true)
-    );
-    assert_eq!(hardware.cleared_rx_block_acks, [0]);
-    assert_eq!(
-        core.end_checked_rx_block_ack(&mut hardware, VifRole::Station, BSSID, 0),
-        Ok(false)
-    );
+        assert_eq!(
+            core.end_checked_rx_block_ack(&mut hardware, VifRole::Station, BSSID, 0),
+            Ok(true)
+        );
+        assert_eq!(hardware.cleared_rx_block_acks, [0]);
+        assert_eq!(
+            core.end_checked_rx_block_ack(&mut hardware, VifRole::Station, BSSID, 0),
+            Ok(false)
+        );
+    });
 }
 
 #[test]
 fn the_station_tsf_is_set_and_read_and_the_access_point_tsf_only_restarts() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
 
-    assert_eq!(
-        core.set_station_tsf(&mut hardware, TsfInstant::from_micros(123_456)),
-        Ok(())
-    );
-    assert_eq!(
-        core.station_tsf_reading(&mut hardware).0,
-        VifTsf {
-            vif: VifRole::Station,
-            at: TsfInstant::from_micros(123_456),
-        }
-    );
-    core.restart_access_point_tsf(&mut hardware);
-    assert_eq!(hardware.access_point_tsf_resets, 1);
-    let caps = ESP32S31_BEACON_TIMING_CAPABILITIES;
-    assert!(caps.tsf_restart.contains(VifRole::AccessPoint));
-    assert!(!caps.tsf_read.contains(VifRole::AccessPoint));
+        assert_eq!(
+            core.set_station_tsf(&mut hardware, TsfInstant::from_micros(123_456)),
+            Ok(())
+        );
+        assert_eq!(
+            core.station_tsf_reading(&mut hardware).0,
+            VifTsf {
+                vif: VifRole::Station,
+                at: TsfInstant::from_micros(123_456),
+            }
+        );
+        core.restart_access_point_tsf(&mut hardware);
+        assert_eq!(hardware.access_point_tsf_resets, 1);
+        let caps = ESP32S31_BEACON_TIMING_CAPABILITIES;
+        assert!(caps.tsf_restart.contains(VifRole::AccessPoint));
+        assert!(!caps.tsf_read.contains(VifRole::AccessPoint));
+    });
 }
 
 #[test]
 fn the_station_tbtt_schedule_is_programmed_and_its_events_announce_the_next_tbtt() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    let next = TsfInstant::from_micros(1_000_000);
-    assert_eq!(
-        core.set_station_tbtt(&mut hardware, next, 102_400, 3_000),
-        Ok(())
-    );
-    assert_eq!(
-        hardware.tbtt,
-        Some(StaTbttSchedule {
-            first_tbtt_tsf: 1_000_000,
-            interval_micros: 102_400,
-            ahead_micros: 3_000,
-            wake_ahead_micros: 4_500,
-        })
-    );
-
-    let mut events = Events::default();
-    for (now, announced) in [
-        (997_000, 1_000_000),
-        (1_099_400, 1_102_400),
-        // A missed event does not shift the schedule.
-        (1_304_000, 1_307_200),
-    ] {
-        hardware.station_tsf = now;
-        core.station_tbtt(&mut hardware, &mut events);
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let next = TsfInstant::from_micros(1_000_000);
         assert_eq!(
-            events.tbtts.pop(),
-            Some(TbttEvent {
-                tbtt: VifTsf {
-                    vif: VifRole::Station,
-                    at: TsfInstant::from_micros(announced),
-                }
+            core.set_station_tbtt(&mut hardware, next, 102_400, 3_000),
+            Ok(())
+        );
+        assert_eq!(
+            hardware.tbtt,
+            Some(StaTbttSchedule {
+                first_tbtt_tsf: 1_000_000,
+                interval_micros: 102_400,
+                ahead_micros: 3_000,
+                wake_ahead_micros: 4_500,
             })
         );
-    }
 
-    for (interval, lead) in [
-        (0, 3_000),
-        (u64::from(u32::MAX) + 1, 3_000),
-        (102_400, u64::from(u16::MAX)),
-    ] {
-        assert_eq!(
-            core.set_station_tbtt(&mut hardware, next, interval, lead),
-            Err(UnsupportedTbtt)
-        );
-    }
+        let mut events = Events::default();
+        for (now, announced) in [
+            (997_000, 1_000_000),
+            (1_099_400, 1_102_400),
+            // A missed event does not shift the schedule.
+            (1_304_000, 1_307_200),
+        ] {
+            hardware.station_tsf = now;
+            core.station_tbtt(&mut hardware, &mut events);
+            assert_eq!(
+                events.tbtts.pop(),
+                Some(TbttEvent {
+                    tbtt: VifTsf {
+                        vif: VifRole::Station,
+                        at: TsfInstant::from_micros(announced),
+                    }
+                })
+            );
+        }
 
-    core.stop_station_tbtt(&mut hardware);
-    assert_eq!(hardware.tbtt, None);
-    assert_eq!(hardware.tbtt_stops, 1);
-    // A stale edge after the stop reports nothing.
-    core.station_tbtt(&mut hardware, &mut events);
-    assert!(events.tbtts.is_empty());
+        for (interval, lead) in [
+            (0, 3_000),
+            (u64::from(u32::MAX) + 1, 3_000),
+            (102_400, u64::from(u16::MAX)),
+        ] {
+            assert_eq!(
+                core.set_station_tbtt(&mut hardware, next, interval, lead),
+                Err(UnsupportedTbtt)
+            );
+        }
+
+        core.stop_station_tbtt(&mut hardware);
+        assert_eq!(hardware.tbtt, None);
+        assert_eq!(hardware.tbtt_stops, 1);
+        // A stale edge after the stop reports nothing.
+        core.station_tbtt(&mut hardware, &mut events);
+        assert!(events.tbtts.is_empty());
+    });
 }
 
 #[test]
 fn beacons_are_received_at_the_radio_system_s_beacon_window_priority() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    core.set_rx_beacon_priority(&mut hardware, RxBeaconPriority::BeaconWindow);
-    assert_eq!(hardware.rx_beacon_pti, MacPti::new(9));
-    core.set_rx_beacon_priority(&mut hardware, RxBeaconPriority::Zero);
-    assert_eq!(hardware.rx_beacon_pti, MacPti::new(0));
-    core.set_rx_beacon_priority(&mut hardware, RxBeaconPriority::Cleared);
-    assert_eq!(hardware.rx_beacon_pti_clears, 1);
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        core.set_rx_beacon_priority(&mut hardware, RxBeaconPriority::BeaconWindow);
+        assert_eq!(hardware.rx_beacon_pti, MacPti::new(9));
+        core.set_rx_beacon_priority(&mut hardware, RxBeaconPriority::Zero);
+        assert_eq!(hardware.rx_beacon_pti, MacPti::new(0));
+        core.set_rx_beacon_priority(&mut hardware, RxBeaconPriority::Cleared);
+        assert_eq!(hardware.rx_beacon_pti_clears, 1);
+    });
 }
 
 #[test]
 fn a_closed_gate_blocks_the_queues_and_holds_the_attempt_until_it_opens() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    let frame = data_frame(BSSID);
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let frame = data_frame(BSSID);
 
-    core.hold_new_attempts();
-    assert!(core.published_idle());
-    core.block_held_queues(&mut hardware);
-    assert!(hardware.tx_blocked);
-    assert_eq!(
-        submit(&mut core, &mut hardware, values(&frame, false)),
-        Ok(())
-    );
-    assert_eq!(hardware.publications(), 0);
-    assert_eq!(core.next_deadline(), None);
-    core.open_gate(&mut hardware)
-        .map_err(|refused| refused.fault)
-        .unwrap();
-    assert!(!hardware.tx_blocked);
-    assert_eq!(hardware.publications(), 1);
-    assert_eq!(
-        status_of(&complete(&mut core, &mut hardware, 0)[0]),
-        Some(TxStatus::Success)
-    );
+        core.hold_new_attempts();
+        assert!(core.published_idle());
+        core.block_held_queues(&mut hardware);
+        assert!(hardware.tx_blocked);
+        assert_eq!(
+            submit(&mut core, &mut hardware, values(&frame, false)),
+            Ok(())
+        );
+        assert_eq!(hardware.publications(), 0);
+        assert_eq!(core.next_deadline(), None);
+        let mut core = core
+            .open_gate(&mut hardware)
+            .map_err(|refused| refused.fault)
+            .unwrap();
+        assert!(!hardware.tx_blocked);
+        assert_eq!(hardware.publications(), 1);
+        assert_eq!(
+            status_of(&complete(&mut core, &mut hardware, 0)[0]),
+            Some(TxStatus::Success)
+        );
 
-    // A held attempt the closed gate gives back ends without a
-    // transmission, its slot with it.
-    core.hold_new_attempts();
-    core.block_held_queues(&mut hardware);
-    submit(&mut core, &mut hardware, values(&frame, false)).unwrap();
-    let mut events = Events::default();
-    core.withdraw_held_attempts(&mut events);
-    assert_eq!(events.completions, [PublicationEnd::Withdrawn]);
-    assert_eq!(events.slots.len(), 1);
-    assert_eq!(hardware.publications(), 1);
+        // A held attempt the closed gate gives back ends without a
+        // transmission, its slot with it.
+        core.hold_new_attempts();
+        core.block_held_queues(&mut hardware);
+        submit(&mut core, &mut hardware, values(&frame, false)).unwrap();
+        let mut events = Events::default();
+        core.withdraw_held_attempts(&mut hardware, &mut events);
+        assert_eq!(events.completions, [PublicationEnd::Withdrawn]);
+        assert_eq!(events.slots.len(), 1);
+        assert_eq!(hardware.publications(), 1);
+    });
 }
 
 /// The station's attempt of `category` carrying a QoS Data MPDU to the BSS.
-fn values_on(category: WmmAccessCategory) -> MpduValues<'static, 512> {
+fn values_on(category: WmmAccessCategory) -> Request {
     let mut request = values(&data_frame(BSSID), false);
-    request.access_category = category;
+    request.category = category;
     request
 }
 
@@ -1725,119 +2024,127 @@ fn service(core: &mut Core, hardware: &mut Hardware, wake: WifiTxWake) -> Vec<Wm
 
 #[test]
 fn each_queue_holds_one_attempt_and_they_complete_in_any_order() {
-    use WmmAccessCategory::{Background, BestEffort, Video, Voice};
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
+    installed(|pools| {
+        use WmmAccessCategory::{Background, BestEffort, Video, Voice};
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
 
-    for category in [Voice, BestEffort, Video, Background] {
-        assert!(!core.queue_busy(category));
+        for category in [Voice, BestEffort, Video, Background] {
+            assert!(!core.queue_busy(category));
+            assert_eq!(
+                submit(&mut core, &mut hardware, values_on(category)),
+                Ok(())
+            );
+            assert!(core.queue_busy(category));
+        }
+        // Four attempts in flight, one publication each, one per queue.
+        let mut queues: Vec<u8> = hardware.legacy.iter().map(|(queue, _)| *queue).collect();
+        queues.sort_unstable();
+        assert_eq!(queues, [0, 1, 2, 3]);
         assert_eq!(
-            submit(&mut core, &mut hardware, values_on(category)),
-            Ok(())
+            core.next_deadline(),
+            Some(oer_time::Instant::from_micros(TIMEOUT))
         );
-        assert!(core.queue_busy(category));
-    }
-    // Four attempts in flight, one publication each, one per queue.
-    let mut queues: Vec<u8> = hardware.legacy.iter().map(|(queue, _)| *queue).collect();
-    queues.sort_unstable();
-    assert_eq!(queues, [0, 1, 2, 3]);
-    assert_eq!(
-        core.next_deadline(),
-        Some(oer_time::Instant::from_micros(TIMEOUT))
-    );
 
-    // The last queue completes first; the others stay published.
-    hardware.completion[queue_of(Background)] = Some(MacTxCompletionObservation::new_model(0, 0));
-    assert_eq!(
-        service(&mut core, &mut hardware, interrupt(EVENT_TX_COMPLETE)),
-        [Background]
-    );
-    assert_eq!(core.queues.iter().flatten().count(), 3);
+        // The last queue completes first; the others stay published.
+        hardware.completion[queue_of(Background)] =
+            Some(MacTxCompletionObservation::new_model(0, 0));
+        assert_eq!(
+            service(&mut core, &mut hardware, interrupt(EVENT_TX_COMPLETE)),
+            [Background]
+        );
+        assert_eq!(core.queues.iter().flatten().count(), 3);
 
-    // Two queues completing under one coalesced edge each report theirs.
-    hardware.completion[queue_of(Voice)] = Some(MacTxCompletionObservation::new_model(5, 0));
-    hardware.completion[queue_of(Video)] = Some(MacTxCompletionObservation::new_model(0, 0));
-    assert_eq!(
-        service(&mut core, &mut hardware, interrupt(EVENT_TX_COMPLETE)),
-        [Voice, Video]
-    );
+        // Two queues completing under one coalesced edge each report theirs.
+        hardware.completion[queue_of(Voice)] = Some(MacTxCompletionObservation::new_model(5, 0));
+        hardware.completion[queue_of(Video)] = Some(MacTxCompletionObservation::new_model(0, 0));
+        assert_eq!(
+            service(&mut core, &mut hardware, interrupt(EVENT_TX_COMPLETE)),
+            [Voice, Video]
+        );
 
-    // An edge no queue shows is ignored.
-    assert!(service(&mut core, &mut hardware, interrupt(EVENT_TX_COMPLETE)).is_empty());
-    assert_eq!(complete(&mut core, &mut hardware, 0).len(), 1);
+        // An edge no queue shows is ignored.
+        assert!(service(&mut core, &mut hardware, interrupt(EVENT_TX_COMPLETE)).is_empty());
+        assert_eq!(complete(&mut core, &mut hardware, 0).len(), 1);
 
-    // No attempt was published twice.
-    assert_eq!(hardware.publications(), 4);
-    assert_eq!(submit(&mut core, &mut hardware, values_on(Voice)), Ok(()));
+        // No attempt was published twice.
+        assert_eq!(hardware.publications(), 4);
+        assert_eq!(submit(&mut core, &mut hardware, values_on(Voice)), Ok(()));
+    });
 }
 
 #[test]
 fn a_collision_or_timeout_on_one_queue_leaves_the_others_published() {
-    use WmmAccessCategory::{BestEffort, Video, Voice};
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    for category in [Voice, BestEffort, Video] {
-        submit(&mut core, &mut hardware, values_on(category)).unwrap();
-    }
+    installed(|pools| {
+        use WmmAccessCategory::{BestEffort, Video, Voice};
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        for category in [Voice, BestEffort, Video] {
+            submit(&mut core, &mut hardware, values_on(category)).unwrap();
+        }
 
-    hardware.collision_pending[queue_of(BestEffort)] = true;
-    assert_eq!(
-        service(&mut core, &mut hardware, interrupt(EVENT_COLLISION)),
-        [BestEffort]
-    );
-    assert!(core.queues[queue_of(Voice)].is_some());
-    assert!(core.queues[queue_of(Video)].is_some());
+        hardware.collision_pending[queue_of(BestEffort)] = true;
+        assert_eq!(
+            service(&mut core, &mut hardware, interrupt(EVENT_COLLISION)),
+            [BestEffort]
+        );
+        assert!(core.queues[queue_of(Voice)].is_some());
+        assert!(core.queues[queue_of(Video)].is_some());
 
-    // A timeout forces CCA for its settle; a second queue's timeout during
-    // that settle waits for it instead of forcing CCA again.
-    hardware.timeout_pending[queue_of(Voice)] = true;
-    assert!(service(&mut core, &mut hardware, interrupt(EVENT_TX_TIMEOUT)).is_empty());
-    let settle = core.next_deadline().unwrap();
-    assert_eq!(settle, oer_time::Instant::from_micros(16));
-    hardware.timeout_pending[queue_of(Video)] = true;
-    assert!(service(&mut core, &mut hardware, interrupt(EVENT_TX_TIMEOUT)).is_empty());
-    assert_eq!(core.next_deadline(), Some(settle));
+        // A timeout forces CCA for its settle; a second queue's timeout during
+        // that settle waits for it instead of forcing CCA again.
+        hardware.timeout_pending[queue_of(Voice)] = true;
+        assert!(service(&mut core, &mut hardware, interrupt(EVENT_TX_TIMEOUT)).is_empty());
+        let settle = core.next_deadline().unwrap();
+        assert_eq!(settle, oer_time::Instant::from_micros(16));
+        hardware.timeout_pending[queue_of(Video)] = true;
+        assert!(service(&mut core, &mut hardware, interrupt(EVENT_TX_TIMEOUT)).is_empty());
+        assert_eq!(core.next_deadline(), Some(settle));
 
-    core.tx
-        .timer
-        .advance_to(oer_time::Instant::from_micros(settle.as_micros()));
-    assert_eq!(
-        service(&mut core, &mut hardware, WifiTxWake::Deadline),
-        [Voice]
-    );
-    // The waiting queue's abort began as the first settle ended.
-    assert!(hardware.cca_forced);
-    let settle = core.next_deadline().unwrap();
-    assert_eq!(settle, oer_time::Instant::from_micros(32));
-    core.tx
-        .timer
-        .advance_to(oer_time::Instant::from_micros(settle.as_micros()));
-    assert_eq!(
-        service(&mut core, &mut hardware, WifiTxWake::Deadline),
-        [Video]
-    );
-    assert!(!hardware.cca_forced);
-    assert_eq!(hardware.publications(), 3);
+        core.tx
+            .timer
+            .advance_to(oer_time::Instant::from_micros(settle.as_micros()));
+        assert_eq!(
+            service(&mut core, &mut hardware, WifiTxWake::Deadline),
+            [Voice]
+        );
+        // The waiting queue's abort began as the first settle ended.
+        assert!(hardware.cca_forced);
+        let settle = core.next_deadline().unwrap();
+        assert_eq!(settle, oer_time::Instant::from_micros(32));
+        core.tx
+            .timer
+            .advance_to(oer_time::Instant::from_micros(settle.as_micros()));
+        assert_eq!(
+            service(&mut core, &mut hardware, WifiTxWake::Deadline),
+            [Video]
+        );
+        assert!(!hardware.cca_forced);
+        assert_eq!(hardware.publications(), 3);
+    });
 }
 
 #[test]
 fn a_closed_gate_holds_every_queue_and_opening_it_publishes_them() {
-    use WmmAccessCategory::{BestEffort, Voice};
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    core.hold_new_attempts();
-    core.block_held_queues(&mut hardware);
-    for category in [Voice, BestEffort] {
-        submit(&mut core, &mut hardware, values_on(category)).unwrap();
-    }
-    assert_eq!(hardware.publications(), 0);
-    assert_eq!(core.next_deadline(), None);
+    installed(|pools| {
+        use WmmAccessCategory::{BestEffort, Voice};
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        core.hold_new_attempts();
+        core.block_held_queues(&mut hardware);
+        for category in [Voice, BestEffort] {
+            submit(&mut core, &mut hardware, values_on(category)).unwrap();
+        }
+        assert_eq!(hardware.publications(), 0);
+        assert_eq!(core.next_deadline(), None);
 
-    core.open_gate(&mut hardware)
-        .map_err(|refused| refused.fault)
-        .unwrap();
-    assert_eq!(hardware.legacy.len(), 2);
-    assert!(!core.published_idle());
+        let core = core
+            .open_gate(&mut hardware)
+            .map_err(|refused| refused.fault)
+            .unwrap();
+        assert_eq!(hardware.legacy.len(), 2);
+        assert!(!core.published_idle());
+    });
 }
 
 /// The WMM set of an access point whose best-effort category has a TXOP
@@ -1867,142 +2174,155 @@ fn wmm_with_best_effort_txop(
 
 #[test]
 fn an_elevated_mpdu_carries_the_radio_system_s_connection_priorities() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    assert!(
-        esp32s31_lower_mac_capabilities(512)
-            .coex_priorities
-            .contains(CoexPriority::Elevated)
-    );
-    let mut request = values(&data_frame(BSSID), false);
-    request.coex = CoexPriority::Elevated;
-    submit(&mut core, &mut hardware, request).unwrap();
-    let program = hardware.legacy[0].1;
-    assert_eq!(
-        (
-            program.scheduler_priority(),
-            program.packet_priority(),
-            program.priority_count()
-        ),
-        (4, 6, CONNECTION_FRAME_PRIORITY_COUNT)
-    );
-    complete(&mut core, &mut hardware, 0);
-    submit(&mut core, &mut hardware, values(&data_frame(BSSID), false)).unwrap();
-    assert_eq!(hardware.legacy[1].1.priority_count(), 1);
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        assert!(
+            esp32s31_lower_mac_capabilities(512)
+                .coex_priorities
+                .contains(CoexPriority::Elevated)
+        );
+        let mut request = values(&data_frame(BSSID), false);
+        request.coex = CoexPriority::Elevated;
+        submit(&mut core, &mut hardware, request).unwrap();
+        let program = hardware.legacy[0].1;
+        assert_eq!(
+            (
+                program.scheduler_priority(),
+                program.packet_priority(),
+                program.priority_count()
+            ),
+            (4, 6, CONNECTION_FRAME_PRIORITY_COUNT)
+        );
+        complete(&mut core, &mut hardware, 0);
+        submit(&mut core, &mut hardware, values(&data_frame(BSSID), false)).unwrap();
+        assert_eq!(hardware.legacy[1].1.priority_count(), 1);
+    });
 }
 
 #[test]
 fn the_station_s_he_bss_color_is_installed() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    core.set_checked_he_bss_color(63);
-    assert_eq!(core.tx.policy().he_bss_color(), 63);
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        core.set_checked_he_bss_color(63);
+        assert_eq!(core.tx.policy().he_bss_color(), 63);
+    });
 }
 
 #[test]
 fn the_tsf_relation_breaks_at_a_jump_a_channel_change_and_a_new_bss() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    let generation = |core: &Core, hardware: &mut Hardware| core.station_tsf_reading(hardware).1;
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let generation =
+            |core: &Core, hardware: &mut Hardware| core.station_tsf_reading(hardware).1;
 
-    // The first set starts a generation.
-    let start = generation(&core, &mut hardware);
-    core.set_station_tsf(&mut hardware, TsfInstant::from_micros(1_000_000))
+        // The first set starts a generation.
+        let start = generation(&core, &mut hardware);
+        core.set_station_tsf(&mut hardware, TsfInstant::from_micros(1_000_000))
+            .unwrap();
+        let followed = generation(&core, &mut hardware);
+        assert_ne!(followed, start);
+
+        let allowed = |elapsed: u64| {
+            (elapsed * u64::from(TSF_DRIFT_PPM)).div_ceil(1_000_000)
+                + crate::station_tsf::STATION_TSF_SAMPLE_UNCERTAINTY.as_micros()
+        };
+        let interval = 102_400;
+
+        // After ten missed beacons the follow corrects the drift of ten
+        // intervals: more than one interval allows, within what ten allow.
+        let mut last = 1_000_000;
+        let reading = last + 10 * interval;
+        let corrected = reading + allowed(10 * interval);
+        assert!(corrected - reading > allowed(interval));
+        hardware.station_tsf = reading;
+        core.set_station_tsf(&mut hardware, TsfInstant::from_micros(corrected))
+            .unwrap();
+        assert_eq!(generation(&core, &mut hardware), followed);
+        last = corrected;
+
+        // At the next beacon, one interval later, the same correction is a
+        // real jump.
+        let reading = last + interval;
+        hardware.station_tsf = reading;
+        core.set_station_tsf(
+            &mut hardware,
+            TsfInstant::from_micros(reading + allowed(interval) + 1),
+        )
         .unwrap();
-    let followed = generation(&core, &mut hardware);
-    assert_ne!(followed, start);
+        let jumped = generation(&core, &mut hardware);
+        assert_ne!(jumped, followed);
 
-    let allowed = |elapsed: u64| {
-        (elapsed * u64::from(TSF_DRIFT_PPM)).div_ceil(1_000_000)
-            + crate::station_tsf::STATION_TSF_SAMPLE_UNCERTAINTY.as_micros()
-    };
-    let interval = 102_400;
-
-    // After ten missed beacons the follow corrects the drift of ten
-    // intervals: more than one interval allows, within what ten allow.
-    let mut last = 1_000_000;
-    let reading = last + 10 * interval;
-    let corrected = reading + allowed(10 * interval);
-    assert!(corrected - reading > allowed(interval));
-    hardware.station_tsf = reading;
-    core.set_station_tsf(&mut hardware, TsfInstant::from_micros(corrected))
+        // The same BSS again keeps the relation; another BSS (a roam) breaks
+        // it.
+        core.configure_checked_vif(&mut hardware, station())
+            .unwrap();
+        assert_eq!(generation(&core, &mut hardware), jumped);
+        core.configure_checked_vif(
+            &mut hardware,
+            CoreVif {
+                bssid: Some(OTHER_BSS),
+                ..station()
+            },
+        )
         .unwrap();
-    assert_eq!(generation(&core, &mut hardware), followed);
-    last = corrected;
-
-    // At the next beacon, one interval later, the same correction is a
-    // real jump.
-    let reading = last + interval;
-    hardware.station_tsf = reading;
-    core.set_station_tsf(
-        &mut hardware,
-        TsfInstant::from_micros(reading + allowed(interval) + 1),
-    )
-    .unwrap();
-    let jumped = generation(&core, &mut hardware);
-    assert_ne!(jumped, followed);
-
-    // The same BSS again keeps the relation; another BSS (a roam) breaks
-    // it.
-    core.configure_checked_vif(&mut hardware, station())
-        .unwrap();
-    assert_eq!(generation(&core, &mut hardware), jumped);
-    core.configure_checked_vif(
-        &mut hardware,
-        CoreVif {
-            bssid: Some(OTHER_BSS),
-            ..station()
-        },
-    )
-    .unwrap();
-    assert_ne!(generation(&core, &mut hardware), jumped);
+        assert_ne!(generation(&core, &mut hardware), jumped);
+    });
 }
 
 #[test]
 fn only_a_disabled_idle_core_comes_apart() {
-    let mut hardware = Hardware::default();
-    let core = enabled(&mut hardware);
-    // An enabled core keeps running: it is returned unchanged.
-    let Err(mut core) = core.dismantle() else {
-        panic!("an enabled core does not come apart");
-    };
-    let mut events = Events::default();
-    core.disable_checked(&mut events);
-    assert_eq!(events.disabled, 1);
-    let Ok(parts) = core.dismantle() else {
-        panic!("a disabled idle core comes apart");
-    };
-    assert_eq!(parts.config.channel, channel(6));
-    // The rebuilt core is disabled, as at a radio start.
-    let mut rebuilt = Core::from_parts(parts);
-    assert_eq!(rebuilt.enable_checked(), LifecycleStart::Enabled);
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let core = enabled(&mut hardware, pools);
+        // An enabled core keeps running: it is returned unchanged.
+        let Err(mut core) = core.dismantle() else {
+            panic!("an enabled core does not come apart");
+        };
+        let mut events = Events::default();
+        core.disable_checked(&mut hardware, &mut events);
+        assert_eq!(events.disabled, 1);
+        let Ok(parts) = core.dismantle() else {
+            panic!("a disabled idle core comes apart");
+        };
+        assert_eq!(parts.inner.config.channel, channel(6));
+        // The rebuilt core is disabled, as at a radio start.
+        let mut rebuilt = Core::from_parts(parts);
+        assert_eq!(rebuilt.enable_checked(), LifecycleStart::Enabled);
+    });
 }
 
 #[test]
 fn a_disable_ends_once_the_published_attempt_completes() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    submit(&mut core, &mut hardware, values(&data_frame(BSSID), false)).unwrap();
-    let mut events = Events::default();
-    core.disable_checked(&mut events);
-    assert_eq!(events.disabled, 0);
-    hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(0, 0));
-    core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
-        .unwrap();
-    assert_eq!(events.completions.len(), 1);
-    assert_eq!(events.disabled, 1);
-    assert!(core.idle_disabled());
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        submit(&mut core, &mut hardware, values(&data_frame(BSSID), false)).unwrap();
+        let mut events = Events::default();
+        core.disable_checked(&mut hardware, &mut events);
+        assert_eq!(events.disabled, 0);
+        hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(0, 0));
+        core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+            .unwrap();
+        assert_eq!(events.completions.len(), 1);
+        assert_eq!(events.disabled, 1);
+        assert!(core.idle_disabled());
+    });
 }
 
 #[test]
 fn a_core_handed_a_radio_on_another_channel_retunes_at_enable() {
-    let mut core = core();
-    // The radio start left the PHY on channel 11; the core is configured
-    // for channel 6.
-    assert!(core.radio_tuned_to(channel(11)));
-    assert_eq!(core.enable_checked(), LifecycleStart::Retune(channel(6)));
-    // An enabling core records nothing.
-    assert!(!core.radio_tuned_to(channel(1)));
+    installed(|pools| {
+        let mut core = core(pools);
+        // The radio start left the PHY on channel 11; the core is configured
+        // for channel 6.
+        assert!(core.radio_tuned_to(channel(11)));
+        assert_eq!(core.enable_checked(), LifecycleStart::Retune(channel(6)));
+        // An enabling core records nothing.
+        assert!(!core.radio_tuned_to(channel(1)));
+    });
 }
 
 #[test]
@@ -2019,31 +2339,33 @@ fn the_longest_mpdu_is_bounded_by_the_transmit_programs_too() {
 
 #[test]
 fn an_edca_set_outside_the_limits_leaves_the_installed_one() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    core.set_checked_edca(wmm_with_best_effort_txop(94))
-        .unwrap();
-    // A best-effort ECWmax of 11 lies outside the hardware's exponents.
-    let record = |aifsn, ecw_max| oer_ieee80211_mac::extensions::wmm::WmmAcParameters {
-        admission_control_mandatory: false,
-        aifsn,
-        ecw_min: 4,
-        ecw_max,
-        txop_limit_units_32_us: 47,
-    };
-    let outside = oer_ieee80211_mac::extensions::wmm::WmmParameterSet::new(
-        0,
-        false,
-        [record(3, 11), record(7, 10), record(2, 10), record(2, 10)],
-    );
-    assert!(core.set_checked_edca(outside).is_err());
-    assert_eq!(
-        core.tx
-            .policy()
-            .access_policy(LegacyTxQueue::BestEffort)
-            .txop_limit_units_32_us(),
-        94
-    );
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        core.set_checked_edca(wmm_with_best_effort_txop(94))
+            .unwrap();
+        // A best-effort ECWmax of 11 lies outside the hardware's exponents.
+        let record = |aifsn, ecw_max| oer_ieee80211_mac::extensions::wmm::WmmAcParameters {
+            admission_control_mandatory: false,
+            aifsn,
+            ecw_min: 4,
+            ecw_max,
+            txop_limit_units_32_us: 47,
+        };
+        let outside = oer_ieee80211_mac::extensions::wmm::WmmParameterSet::new(
+            0,
+            false,
+            [record(3, 11), record(7, 10), record(2, 10), record(2, 10)],
+        );
+        assert!(core.set_checked_edca(outside).is_err());
+        assert_eq!(
+            core.tx
+                .policy()
+                .access_policy(LegacyTxQueue::BestEffort)
+                .txop_limit_units_32_us(),
+            94
+        );
+    });
 }
 
 /// Subframes of one aggregate.
@@ -2154,7 +2476,6 @@ fn ampdu_values(rate: PhyRate) -> AmpduValues {
         access_category: WmmAccessCategory::BestEffort,
         rate: TxPhyRate::try_from(rate).unwrap(),
         protection: Protection::None,
-        key: None,
         power_ceiling_dbm: None,
         backoff_slots: 9,
         coex: CoexPriority::Normal,
@@ -2164,12 +2485,12 @@ fn ampdu_values(rate: PhyRate) -> AmpduValues {
 
 /// Plan and publish `buffer`: a refused one keeps its subframes, which
 /// dropping it returns.
-fn publish_ampdu(
-    core: &Core,
+fn publish_ampdu<'core>(
+    core: &mut Core<'core>,
     hardware: &mut Hardware,
     mut buffer: Aggregate,
     values: AmpduValues,
-) -> Result<PublishedAmpdu<'static, Backing, SUBFRAMES>, AmpduRefusal> {
+) -> Result<PublishedAmpdu<'core, 'static, Backing, SUBFRAMES>, AmpduRefusal> {
     let plan = core.plan_ampdu(values, &mut buffer)?;
     Ok(ampdu::publish(
         hardware,
@@ -2182,10 +2503,10 @@ fn publish_ampdu(
 }
 
 /// Serve a completion edge of the published aggregate: how it ended.
-fn end_ampdu(
-    core: &Core,
+fn end_ampdu<'core>(
+    core: &mut Core<'core>,
     hardware: &mut Hardware,
-    published: PublishedAmpdu<'static, Backing, SUBFRAMES>,
+    published: PublishedAmpdu<'core, 'static, Backing, SUBFRAMES>,
 ) -> PublicationEnd {
     match ampdu::service(
         hardware,
@@ -2196,7 +2517,14 @@ fn end_ampdu(
     )
     .unwrap()
     {
-        AmpduProgress::Complete { outcome, .. } => outcome.end(),
+        AmpduProgress::Complete(completed) => {
+            let mut events = Events::default();
+            let _owner = core
+                .complete_ampdu(hardware, completed, &mut events)
+                .unwrap();
+            core.reclaim(&mut events);
+            events.completions[0]
+        }
         AmpduProgress::Pending(_) => panic!("the aggregate ends"),
     }
 }
@@ -2218,270 +2546,850 @@ fn block_ack_completion(
 
 #[test]
 fn an_aggregate_is_planned_published_once_and_reports_its_block_ack() {
-    let mut hardware = Hardware::default();
-    let core = enabled(&mut hardware);
-    let source = backings();
-    let capabilities = esp32s31_ampdu_capabilities(SUBFRAMES);
-    assert_eq!(capabilities.max_length, 6_490);
-    assert!(
-        !capabilities
-            .formats
-            .contains_rate(PhyRate::Legacy(LegacyRate::Ofdm24M))
-    );
-
-    let buffer = aggregate_of(source, 3, 26);
-    assert_eq!(source.free(), BACKINGS - 3);
-    let published = publish_ampdu(&core, &mut hardware, buffer, ampdu_values(ht_rate(7))).unwrap();
-    assert_eq!(hardware.ht.len(), 1);
-    assert_eq!(usize::from(hardware.ht[0].0), BE);
-    assert_eq!(hardware.ht[0].1.control().protection, MacTxProtection::None);
-    assert_eq!(published.owner().frame_count(), 3);
-    assert_eq!(published.owner().work().backoff_slots, 9);
-    assert_eq!(
-        published.deadline(),
-        oer_time::Instant::from_micros(TIMEOUT)
-    );
-
-    // A BlockAck arrived: the end carries its window, and the subframes go
-    // back to their source.
-    hardware.block_ack_completion[BE] = Some(block_ack_completion(0, 100, 0b101, true));
-    assert_eq!(
-        end_ampdu(&core, &mut hardware, published),
-        PublicationEnd::Completed {
-            status: TxStatus::Success,
-            ack_snr_db: Some(0x60),
-            block_ack: Some(BlockAckReport {
-                start_sequence: SequenceNumber::new(100).unwrap(),
-                bitmap: 0b101,
-            }),
-        }
-    );
-    assert_eq!(source.free(), BACKINGS);
-
-    // The BlockAck result decides, not the completion status; without it
-    // the stale bitmap words are not reported.
-    for (status, received, expected) in [
-        (5, true, TxStatus::Success),
-        (5, false, TxStatus::AckTimeout),
-        (0, false, TxStatus::AckTimeout),
-        (2, false, TxStatus::CtsTimeout),
-    ] {
-        let buffer = aggregate_of(source, 2, 26);
-        let published =
-            publish_ampdu(&core, &mut hardware, buffer, ampdu_values(ht_rate(7))).unwrap();
-        hardware.block_ack_completion[BE] = Some(block_ack_completion(status, 100, 0b01, received));
-        let end = end_ampdu(&core, &mut hardware, published);
-        assert_eq!(status_of(&end), Some(expected));
-        assert_eq!(
-            matches!(
-                end,
-                PublicationEnd::Completed {
-                    block_ack: Some(_),
-                    ..
-                }
-            ),
-            received
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let source = backings();
+        let capabilities = esp32s31_ampdu_capabilities(SUBFRAMES);
+        assert_eq!(capabilities.max_length, 6_490);
+        assert!(
+            !capabilities
+                .formats
+                .contains_rate(PhyRate::Legacy(LegacyRate::Ofdm24M))
         );
-    }
-    // One publication per aggregate, never a retained retry.
-    assert_eq!(hardware.ht.len(), 5);
-    assert_eq!(source.free(), BACKINGS);
+
+        let buffer = aggregate_of(source, 3, 26);
+        assert_eq!(source.free(), BACKINGS - 3);
+        let published =
+            publish_ampdu(&mut core, &mut hardware, buffer, ampdu_values(ht_rate(7))).unwrap();
+        assert_eq!(hardware.ht.len(), 1);
+        assert_eq!(usize::from(hardware.ht[0].0), BE);
+        assert_eq!(hardware.ht[0].1.control().protection, MacTxProtection::None);
+        assert_eq!(published.owner().frame_count(), 3);
+        assert_eq!(published.owner().work().backoff_slots, 9);
+        assert_eq!(
+            published.deadline(),
+            oer_time::Instant::from_micros(TIMEOUT)
+        );
+
+        // A BlockAck arrived: the end carries its window, and the subframes go
+        // back to their source.
+        hardware.block_ack_completion[BE] = Some(block_ack_completion(0, 100, 0b101, true));
+        assert_eq!(
+            end_ampdu(&mut core, &mut hardware, published),
+            PublicationEnd::Completed {
+                status: TxStatus::Success,
+                ack_snr_db: Some(0x60),
+                block_ack: Some(BlockAckReport {
+                    start_sequence: SequenceNumber::new(100).unwrap(),
+                    bitmap: 0b101,
+                }),
+            }
+        );
+        assert_eq!(source.free(), BACKINGS);
+
+        // The BlockAck result decides, not the completion status; without it
+        // the stale bitmap words are not reported.
+        for (status, received, expected) in [
+            (5, true, TxStatus::Success),
+            (5, false, TxStatus::AckTimeout),
+            (0, false, TxStatus::AckTimeout),
+            (2, false, TxStatus::CtsTimeout),
+        ] {
+            let buffer = aggregate_of(source, 2, 26);
+            let published =
+                publish_ampdu(&mut core, &mut hardware, buffer, ampdu_values(ht_rate(7))).unwrap();
+            hardware.block_ack_completion[BE] =
+                Some(block_ack_completion(status, 100, 0b01, received));
+            let end = end_ampdu(&mut core, &mut hardware, published);
+            assert_eq!(status_of(&end), Some(expected));
+            assert_eq!(
+                matches!(
+                    end,
+                    PublicationEnd::Completed {
+                        block_ack: Some(_),
+                        ..
+                    }
+                ),
+                received
+            );
+        }
+        // One publication per aggregate, never a retained retry.
+        assert_eq!(hardware.ht.len(), 5);
+        assert_eq!(source.free(), BACKINGS);
+    });
 }
 
 #[test]
 fn he_aggregates_publish_an_he_program_with_the_station_bss_color() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    let source = backings();
-    assert!(
-        esp32s31_ampdu_capabilities(SUBFRAMES)
-            .formats
-            .contains_rate(he_rate())
-    );
-    core.set_checked_he_bss_color(0x2a);
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let source = backings();
+        assert!(
+            esp32s31_ampdu_capabilities(SUBFRAMES)
+                .formats
+                .contains_rate(he_rate())
+        );
+        core.set_checked_he_bss_color(0x2a);
 
-    let mut buffer = aggregate_of(source, 3, 26);
-    let plan = core
-        .plan_ampdu(ampdu_values(he_rate()), &mut buffer)
+        let mut buffer = aggregate_of(source, 3, 26);
+        let plan = core
+            .plan_ampdu(ampdu_values(he_rate()), &mut buffer)
+            .unwrap();
+        assert!(matches!(
+            plan.settings.format,
+            AmpduFormat::He {
+                bss_color: 0x2a,
+                ..
+            }
+        ));
+        let published = ampdu::publish(
+            &mut hardware,
+            buffer,
+            plan,
+            core.now(),
+            oer_time::Duration::from_micros(TIMEOUT),
+        )
         .unwrap();
-    assert!(matches!(
-        plan.format,
-        AmpduFormat::He {
-            bss_color: 0x2a,
-            ..
-        }
-    ));
-    let published = ampdu::publish(
-        &mut hardware,
-        buffer,
-        plan,
-        core.now(),
-        oer_time::Duration::from_micros(TIMEOUT),
-    )
-    .unwrap();
-    assert_eq!(hardware.he.len(), 1);
-    assert_eq!(usize::from(hardware.he[0].0), BE);
-    assert!(hardware.ht.is_empty());
-    assert_eq!(published.owner().frame_count(), 3);
+        assert_eq!(hardware.he.len(), 1);
+        assert_eq!(usize::from(hardware.he[0].0), BE);
+        assert!(hardware.ht.is_empty());
+        assert_eq!(published.owner().frame_count(), 3);
 
-    hardware.block_ack_completion[BE] = Some(block_ack_completion(0, 100, 0b111, true));
-    assert_eq!(
-        status_of(&end_ampdu(&core, &mut hardware, published)),
-        Some(TxStatus::Success)
-    );
-    assert_eq!(source.free(), BACKINGS);
+        hardware.block_ack_completion[BE] = Some(block_ack_completion(0, 100, 0b111, true));
+        assert_eq!(
+            status_of(&end_ampdu(&mut core, &mut hardware, published)),
+            Some(TxStatus::Success)
+        );
+        assert_eq!(source.free(), BACKINGS);
+    });
 }
 
 #[test]
 fn an_access_category_with_a_txop_limit_takes_ht_and_he_aggregates() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    let source = backings();
-    core.set_checked_edca(wmm_with_best_effort_txop(94))
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let source = backings();
+        core.set_checked_edca(wmm_with_best_effort_txop(94))
+            .unwrap();
+        // The caller keeps an aggregate within the limit: the core refuses
+        // neither format by it.
+        let published = publish_ampdu(
+            &mut core,
+            &mut hardware,
+            aggregate_of(source, 2, 26),
+            ampdu_values(ht_rate(7)),
+        )
         .unwrap();
-    // The caller keeps an aggregate within the limit: the core refuses
-    // neither format by it.
-    let published = publish_ampdu(
-        &core,
-        &mut hardware,
-        aggregate_of(source, 2, 26),
-        ampdu_values(ht_rate(7)),
-    )
-    .unwrap();
-    assert_eq!(hardware.ht.len(), 1);
-    hardware.block_ack_completion[BE] = Some(block_ack_completion(0, 100, 0b11, true));
-    end_ampdu(&core, &mut hardware, published);
-    publish_ampdu(
-        &core,
-        &mut hardware,
-        aggregate_of(source, 2, 26),
-        ampdu_values(he_rate()),
-    )
-    .unwrap();
-    assert_eq!(hardware.he.len(), 1);
+        assert_eq!(hardware.ht.len(), 1);
+        hardware.block_ack_completion[BE] = Some(block_ack_completion(0, 100, 0b11, true));
+        end_ampdu(&mut core, &mut hardware, published);
+        publish_ampdu(
+            &mut core,
+            &mut hardware,
+            aggregate_of(source, 2, 26),
+            ampdu_values(he_rate()),
+        )
+        .unwrap();
+        assert_eq!(hardware.he.len(), 1);
+    });
 }
 
 #[test]
 fn aggregates_outside_the_limits_are_refused_with_their_subframes() {
-    let mut hardware = Hardware::default();
-    let core = enabled(&mut hardware);
-    let source = backings();
-    let refused = |values: AmpduValues, buffer: Aggregate, hardware: &mut Hardware| {
-        publish_ampdu(&core, hardware, buffer, values).err()
-    };
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let source = backings();
+        let mut refused = |values: AmpduValues, buffer: Aggregate, hardware: &mut Hardware| {
+            publish_ampdu(&mut core, hardware, buffer, values).err()
+        };
 
-    // Non-HT aggregates are outside the declared formats; a start spacing
-    // above 7 is no encoding; a connection frame's level is not data's.
-    let legacy = ampdu_values(PhyRate::Legacy(LegacyRate::Ofdm24M));
-    assert_eq!(
-        refused(legacy, aggregate_of(source, 2, 26), &mut hardware),
-        Some(AmpduRefusal::LegacyRate)
-    );
-    let mut spacing = ampdu_values(ht_rate(7));
-    spacing.min_mpdu_start_spacing = 8;
-    assert_eq!(
-        refused(spacing, aggregate_of(source, 2, 26), &mut hardware),
-        Some(AmpduRefusal::StartSpacing)
-    );
-    let mut elevated = ampdu_values(ht_rate(7));
-    elevated.coex = CoexPriority::Elevated;
-    assert_eq!(
-        refused(elevated, aggregate_of(source, 2, 26), &mut hardware),
-        Some(AmpduRefusal::ElevatedCoexistence)
-    );
+        // Non-HT aggregates are outside the declared formats; a start spacing
+        // above 7 is no encoding; a connection frame's level is not data's.
+        let legacy = ampdu_values(PhyRate::Legacy(LegacyRate::Ofdm24M));
+        assert_eq!(
+            refused(legacy, aggregate_of(source, 2, 26), &mut hardware),
+            Some(AmpduRefusal::LegacyRate)
+        );
+        let mut spacing = ampdu_values(ht_rate(7));
+        spacing.min_mpdu_start_spacing = 8;
+        assert_eq!(
+            refused(spacing, aggregate_of(source, 2, 26), &mut hardware),
+            Some(AmpduRefusal::StartSpacing)
+        );
+        let mut elevated = ampdu_values(ht_rate(7));
+        elevated.coex = CoexPriority::Elevated;
+        assert_eq!(
+            refused(elevated, aggregate_of(source, 2, 26), &mut hardware),
+            Some(AmpduRefusal::ElevatedCoexistence)
+        );
 
-    // An empty aggregate, a group receiver and one longer than the declared
-    // maximum length.
-    assert_eq!(
-        refused(
+        // An empty aggregate, a group receiver and one longer than the declared
+        // maximum length.
+        assert_eq!(
+            refused(
+                ampdu_values(ht_rate(7)),
+                aggregate_of(source, 0, 26),
+                &mut hardware
+            ),
+            Some(AmpduRefusal::Empty)
+        );
+        let mut group = aggregate_of(source, 0, 26);
+        group
+            .push_mpdu(26)
+            .unwrap()
+            .copy_from_slice(&data_frame([0xff; 6]));
+        assert_eq!(
+            refused(ampdu_values(ht_rate(7)), group, &mut hardware),
+            Some(AmpduRefusal::GroupRecipient)
+        );
+        assert_eq!(
+            refused(
+                ampdu_values(ht_rate(7)),
+                aggregate_of(source, 4, 2_000),
+                &mut hardware
+            ),
+            Some(AmpduRefusal::Length)
+        );
+        let fits = publish_ampdu(
+            &mut core,
+            &mut hardware,
+            aggregate_of(source, 3, 2_000),
             ampdu_values(ht_rate(7)),
-            aggregate_of(source, 0, 26),
-            &mut hardware
-        ),
-        Some(AmpduRefusal::Empty)
-    );
-    let mut group = aggregate_of(source, 0, 26);
-    group
-        .push_mpdu(26)
-        .unwrap()
-        .copy_from_slice(&data_frame([0xff; 6]));
-    assert_eq!(
-        refused(ampdu_values(ht_rate(7)), group, &mut hardware),
-        Some(AmpduRefusal::GroupRecipient)
-    );
-    assert_eq!(
-        refused(
-            ampdu_values(ht_rate(7)),
-            aggregate_of(source, 4, 2_000),
-            &mut hardware
-        ),
-        Some(AmpduRefusal::Length)
-    );
-    let fits = publish_ampdu(
-        &core,
-        &mut hardware,
-        aggregate_of(source, 3, 2_000),
-        ampdu_values(ht_rate(7)),
-    )
-    .unwrap();
-    hardware.block_ack_completion[BE] = Some(block_ack_completion(0, 100, 0b111, true));
-    end_ampdu(&core, &mut hardware, fits);
+        )
+        .unwrap();
+        hardware.block_ack_completion[BE] = Some(block_ack_completion(0, 100, 0b111, true));
+        end_ampdu(&mut core, &mut hardware, fits);
 
-    // No more subframes than the owner's slots, nor MPDUs the backings
-    // cannot hold with their metadata, MIC and FCS.
-    let mut buffer = aggregate_of(source, 0, 26);
-    for _ in 0..SUBFRAMES {
-        assert!(buffer.push_mpdu(26).is_some());
-    }
-    assert!(buffer.push_mpdu(26).is_none());
-    assert_eq!(buffer.subframes(), SUBFRAMES);
-    drop(buffer.into_owner());
-    let mut buffer = aggregate_of(source, 0, 26);
-    assert!(buffer.push_mpdu(BACKING - 20).is_some());
-    assert!(buffer.push_mpdu(BACKING - 19).is_none());
-    drop(buffer);
+        // No more subframes than the owner's slots, nor MPDUs the backings
+        // cannot hold with their metadata, MIC and FCS.
+        let mut buffer = aggregate_of(source, 0, 26);
+        for _ in 0..SUBFRAMES {
+            assert!(buffer.push_mpdu(26).is_some());
+        }
+        assert!(buffer.push_mpdu(26).is_none());
+        assert_eq!(buffer.subframes(), SUBFRAMES);
+        drop(buffer.into_owner());
+        let mut buffer = aggregate_of(source, 0, 26);
+        assert!(buffer.push_mpdu(BACKING - 20).is_some());
+        assert!(buffer.push_mpdu(BACKING - 19).is_none());
+        drop(buffer);
 
-    // Refused and dropped aggregates published nothing and kept no
-    // backing.
-    assert_eq!(hardware.ht.len(), 1);
-    assert_eq!(source.free(), BACKINGS);
+        // Refused and dropped aggregates published nothing and kept no
+        // backing.
+        assert_eq!(hardware.ht.len(), 1);
+        assert_eq!(source.free(), BACKINGS);
+    });
 }
 
 #[test]
 fn the_backoff_is_drawn_from_the_category_s_contention_window() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    // The vendor defaults: best effort's CWmin is 15 slots.
-    for _ in 0..16 {
-        assert!(core.draw_backoff(WmmAccessCategory::BestEffort) <= 15);
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        // The vendor defaults: best effort's CWmin is 15 slots.
+        for _ in 0..16 {
+            assert!(core.draw_backoff(WmmAccessCategory::BestEffort) <= 15);
+        }
+    });
+}
+
+#[test]
+fn a_failed_gate_open_returns_every_unpublished_owner_then_drains_the_prefix() {
+    use WmmAccessCategory::{Background, BestEffort, Video, Voice};
+    for fail_at in 0..LOWER_MAC_TX_QUEUES {
+        installed(|pools| {
+            let mut hardware = Hardware::default();
+            let mut core = enabled(&mut hardware, pools);
+            core.hold_new_attempts();
+            core.block_held_queues(&mut hardware);
+            let categories = [Voice, Video, BestEffort, Background];
+            let mut addresses = Vec::new();
+            for (index, category) in categories.into_iter().enumerate() {
+                let mut request = values_on(category);
+                if index == fail_at {
+                    // Inject the ordinary owner's refusal into an otherwise
+                    // held queue; no DMA publication occurs for this attempt.
+                    request.backoff_slots = MAX_SINGLE_ATTEMPT_BACKOFF_SLOTS + 1;
+                }
+                addresses.push(core::ptr::from_ref(request.slot.as_ref().get_ref()));
+                submit(&mut core, &mut hardware, request).unwrap();
+            }
+            let mut events = Events::default();
+            let Err(mut failure) = core.inner.open_gate(&mut hardware, &mut events) else {
+                panic!("the injected publication refusal must fail the transition");
+            };
+            assert_eq!(
+                failure.fault,
+                LowerMacFault::Tx(OrdinaryTxError::Tx(TxError::Invalid))
+            );
+            assert_eq!(hardware.publications(), fail_at);
+            assert_eq!(
+                events.completions,
+                std::vec![PublicationEnd::Withdrawn; 4 - fail_at]
+            );
+            assert_eq!(events.queues, categories[fail_at..]);
+            assert_eq!(events.disabled, usize::from(fail_at == 0));
+            assert!(
+                failure
+                    .core
+                    .queues
+                    .iter()
+                    .flatten()
+                    .all(|attempt| !attempt.work.held())
+            );
+            for (returned, original) in events.slots.iter().zip(&addresses[fail_at..]) {
+                assert_eq!(core::ptr::from_ref(returned.as_ref().get_ref()), *original);
+            }
+            // Return each earlier publication through its real terminal.
+            for category in &categories[..fail_at] {
+                hardware.completion[queue_of(*category)] =
+                    Some(MacTxCompletionObservation::new_model(0, 0));
+            }
+            failure
+                .service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+                .unwrap();
+            assert_eq!(events.disabled, 1);
+            assert_eq!(events.returned.len(), LOWER_MAC_TX_QUEUES);
+            for category in categories {
+                assert_eq!(
+                    events
+                        .returned
+                        .iter()
+                        .filter(|queue| queue.category() == category)
+                        .count(),
+                    1
+                );
+            }
+            assert!(failure.finish().is_ok());
+        });
     }
 }
 
 #[test]
-fn an_invalid_retry_header_returns_its_slot_without_publishing_or_rewriting() {
-    for frame in [
-        &[][..],
-        &[0x88][..],
-        &[0x89, 0x01][..], // Unsupported protocol version.
-        &[0x84, 0][..],    // A control frame is not a data/management retry.
-        &[0x0c, 0][..],    // Unsupported frame kind.
+fn key_removal_waits_for_both_parallel_attempts_and_follows_the_last_terminal() {
+    for scope in [
+        CheckedKeyScope::StationPairwise { peer: BSSID },
+        CheckedKeyScope::AccessPointPairwise {
+            peer: PEER,
+            association_id: 1,
+        },
+        CheckedKeyScope::AccessPointGroup {
+            key_id: oer_esp32s31_ieee80211_mac::crypto::ApGroupKeyId::new(1).unwrap(),
+        },
     ] {
-        {
-            let mut hardware = Hardware::default();
-            let mut core = enabled(&mut hardware);
-            let mut request = values(frame, false);
-            let original = request.slot.as_mut().buffer_mut().unwrap().to_vec();
-            request.retry = true;
-            let Err(mut refused) = core.submit_checked(&mut hardware, request) else {
-                panic!("an invalid retry header must be refused before publication");
-            };
-            assert_eq!(
-                refused.fault,
-                LowerMacFault::Tx(OrdinaryTxError::InvalidRetryHeader)
-            );
-            assert_eq!(hardware.publications(), 0);
-            assert_eq!(refused.slot.as_mut().buffer_mut().unwrap()[..], original);
-            assert!(core.queues.iter().all(Option::is_none));
+        for second_status in [0, 5] {
+            installed(|pools| {
+                let mut hardware = Hardware::default();
+                let mut core = enabled(&mut hardware, pools);
+                core.configure_checked_vif(&mut hardware, access_point())
+                    .unwrap();
+                let key = core
+                    .install_checked_key(&mut hardware, scope, &[0x59; 16])
+                    .unwrap();
+                let selector = key.token.hardware_index();
+                let index = key.index;
+                for category in [WmmAccessCategory::Video, WmmAccessCategory::BestEffort] {
+                    let mut request = values_on(category);
+                    request.role = scope.role();
+                    core.submit_protected(&mut hardware, &key, request)
+                        .ok()
+                        .unwrap();
+                }
+                assert_eq!(core.keys.uses[index], 2);
+                assert_eq!(hardware.publications(), 2);
+                let mut events = Events::default();
+                core.remove_checked_key(&mut hardware, key, &mut events);
+                assert!(events.removed.is_empty());
+                assert!(hardware.cleared_keys.is_empty());
+                // A second installation cannot overwrite the still-programmed material.
+                assert!(matches!(
+                    core.install_checked_key(&mut hardware, scope, &[0x28; 16]),
+                    Err(LowerMacFault::Key(CryptoKeyError::Occupied))
+                ));
+                assert_eq!(hardware.installed_keys.len(), 1);
+                hardware.completion[1] = Some(MacTxCompletionObservation::new_model(0, 0));
+                core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+                    .unwrap();
+                assert_eq!(events.order, ["tx"]);
+                assert!(hardware.cleared_keys.is_empty());
+                hardware.completion[BE] =
+                    Some(MacTxCompletionObservation::new_model(second_status, 0));
+                core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+                    .unwrap();
+                assert_eq!(events.order, ["tx", "tx", "key"]);
+                assert_eq!(events.removed.len(), 1);
+                assert_eq!(events.removed[0].scope(), scope);
+                assert_eq!(hardware.cleared_keys, [selector]);
+                assert_eq!(core.keys.uses[index], 0);
+                assert_eq!(core.tickets.iter().flatten().count(), 4);
+                core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+                    .unwrap();
+                assert_eq!(events.removed.len(), 1);
+            });
         }
     }
+}
+
+#[test]
+fn key_removal_without_uses_completes_at_the_remove_command() {
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let scope = CheckedKeyScope::StationPairwise { peer: BSSID };
+        let key = core
+            .install_checked_key(&mut hardware, scope, &[0x71; 16])
+            .unwrap();
+        let mut events = Events::default();
+        core.remove_checked_key(&mut hardware, key, &mut events);
+        assert_eq!(events.order, ["key"]);
+        assert_eq!(hardware.cleared_keys, [4]);
+        let key = core
+            .install_checked_key(&mut hardware, scope, &[0x72; 16])
+            .unwrap();
+        core.remove_checked_key(&mut hardware, key, &mut events);
+        assert_eq!(events.order, ["key", "key"]);
+        assert_eq!(hardware.cleared_keys, [4, 4]);
+    });
+}
+
+#[test]
+fn held_withdrawal_and_indeterminate_timeout_return_their_key_rights() {
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let key = core
+            .install_checked_key(
+                &mut hardware,
+                CheckedKeyScope::StationPairwise { peer: BSSID },
+                &[0x51; 16],
+            )
+            .unwrap();
+        core.submit_protected(&mut hardware, &key, values_on(WmmAccessCategory::Video))
+            .ok()
+            .unwrap();
+        core.hold_new_attempts();
+        core.submit_protected(
+            &mut hardware,
+            &key,
+            values_on(WmmAccessCategory::BestEffort),
+        )
+        .ok()
+        .unwrap();
+        let mut events = Events::default();
+        core.remove_checked_key(&mut hardware, key, &mut events);
+        core.disable_checked(&mut hardware, &mut events);
+        assert_eq!(events.completions, [PublicationEnd::Withdrawn]);
+        assert!(events.removed.is_empty());
+        hardware.timeout_pending[1] = true;
+        core.service(&mut hardware, interrupt(EVENT_TX_TIMEOUT), &mut events)
+            .unwrap();
+        let settle = core.next_deadline().unwrap();
+        core.tx.timer.advance_to(settle);
+        core.service(&mut hardware, WifiTxWake::Deadline, &mut events)
+            .unwrap();
+        assert_eq!(
+            events.completions,
+            [PublicationEnd::Withdrawn, PublicationEnd::TimedOut]
+        );
+        assert_eq!(events.order, ["tx", "tx", "key"]);
+        assert_eq!(events.disabled, 1);
+        assert_eq!(hardware.cleared_keys, [4]);
+    });
+}
+
+#[test]
+fn poisoned_attempts_retain_key_rights_and_never_report_key_removed() {
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let key = core
+            .install_checked_key(
+                &mut hardware,
+                CheckedKeyScope::StationPairwise { peer: BSSID },
+                &[0x51; 16],
+            )
+            .unwrap();
+        let index = key.index;
+        for category in [WmmAccessCategory::Video, WmmAccessCategory::BestEffort] {
+            core.submit_protected(&mut hardware, &key, values_on(category))
+                .ok()
+                .unwrap();
+        }
+        let mut events = Events::default();
+        core.remove_checked_key(&mut hardware, key, &mut events);
+        let deadline = core.next_deadline().unwrap();
+        core.tx.timer.advance_to(deadline);
+        assert!(
+            core.service(&mut hardware, WifiTxWake::Deadline, &mut events)
+                .is_err()
+        );
+        assert_eq!(core.keys.uses[index], 2);
+        assert!(matches!(
+            core.queues[1].as_ref().unwrap().work,
+            Work::Quarantined { .. }
+        ));
+        assert!(events.removed.is_empty());
+        assert!(events.completions.is_empty());
+        assert!(hardware.cleared_keys.is_empty());
+        hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(0, 0));
+        assert!(
+            core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+                .is_err()
+        );
+        assert!(
+            core.inner
+                .disable_checked(&mut hardware, &mut events)
+                .is_err()
+        );
+        assert_eq!(core.keys.uses[index], 2);
+        assert!(events.order.is_empty());
+        assert!(hardware.cleared_keys.is_empty());
+    });
+}
+
+#[test]
+fn refused_publication_returns_the_key_right_until_its_owner_releases_it() {
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let key = core
+            .install_checked_key(
+                &mut hardware,
+                CheckedKeyScope::StationPairwise { peer: BSSID },
+                &[0x51; 16],
+            )
+            .unwrap();
+        let mut request = values_on(WmmAccessCategory::BestEffort);
+        // The checked public constructor refuses this; the internal fixture
+        // exercises the hardware admission's full-owner error path.
+        request.backoff_slots = u16::MAX;
+        let refused = core
+            .submit_protected(&mut hardware, &key, request)
+            .err()
+            .unwrap();
+        assert_eq!(hardware.publications(), 0);
+        let mut events = Events::default();
+        core.remove_checked_key(&mut hardware, key, &mut events);
+        assert!(events.removed.is_empty());
+        let _ticket = core
+            .return_admission(&mut hardware, refused.admission, &mut events)
+            .ok()
+            .unwrap();
+        assert_eq!(events.order, ["key"]);
+        assert_eq!(hardware.cleared_keys, [4]);
+    });
+}
+
+#[test]
+fn key_bank_survives_a_disabled_core_round_trip() {
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let key = core
+            .install_checked_key(
+                &mut hardware,
+                CheckedKeyScope::StationPairwise { peer: BSSID },
+                &[0x51; 16],
+            )
+            .unwrap();
+        let mut events = Events::default();
+        core.disable_checked(&mut hardware, &mut events);
+        let parts = core.dismantle().ok().unwrap();
+        let mut core = Core::from_parts(parts);
+        core.configure_checked_vif(&mut hardware, station())
+            .unwrap();
+        core.enable_checked();
+        core.submit_protected(
+            &mut hardware,
+            &key,
+            values_on(WmmAccessCategory::BestEffort),
+        )
+        .ok()
+        .unwrap();
+        core.remove_checked_key(&mut hardware, key, &mut events);
+        assert!(hardware.cleared_keys.is_empty());
+        hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(0, 0));
+        core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+            .unwrap();
+        assert_eq!(events.order, ["tx", "key"]);
+        assert_eq!(hardware.cleared_keys, [4]);
+    });
+}
+
+#[test]
+fn key_right_is_retained_by_an_aggregate_through_completion_or_quarantine() {
+    for poison in [false, true] {
+        installed(|pools| {
+            let mut hardware = Hardware::default();
+            let mut core = enabled(&mut hardware, pools);
+            let key = core
+                .install_checked_key(
+                    &mut hardware,
+                    CheckedKeyScope::StationPairwise { peer: BSSID },
+                    &[0x51; 16],
+                )
+                .unwrap();
+            let index = key.index;
+            let ticket = core.take_ticket();
+            let admission = TxAdmission::Protected(core.admit_key(&key, ticket).ok().unwrap());
+            let queue = core.free[BE].take().unwrap();
+            let source = backings();
+            let mut buffer = aggregate_of(source, 0, 26);
+            for _ in 0..2 {
+                let frame = buffer.push_mpdu(26).unwrap();
+                frame.copy_from_slice(&data_frame(BSSID));
+                let fc = oer_ieee80211_mac::frame::FrameControl::new(u16::from_le_bytes([
+                    frame[0], frame[1],
+                ]))
+                .unwrap();
+                frame[..2].copy_from_slice(&fc.with_protected(true).get().to_le_bytes());
+            }
+            let plan = core
+                .inner
+                .plan_ampdu(queue, admission, ampdu_values(ht_rate(7)), &mut buffer)
+                .unwrap();
+            let published = ampdu::publish(
+                &mut hardware,
+                buffer,
+                plan,
+                core.now(),
+                oer_time::Duration::from_micros(TIMEOUT),
+            )
+            .unwrap();
+            let mut events = Events::default();
+            core.remove_checked_key(&mut hardware, key, &mut events);
+            assert!(hardware.cleared_keys.is_empty());
+            if poison {
+                let deadline = published.deadline();
+                let fault = ampdu::service(
+                    &mut hardware,
+                    published,
+                    WifiTxWake::Deadline,
+                    true,
+                    deadline,
+                )
+                .err()
+                .unwrap();
+                assert_eq!(
+                    fault.error,
+                    oer_esp32s31_ieee80211_mac::tx::ampdu::HtAmpduTxError::ResetRequired
+                );
+                assert_eq!(core.keys.uses[index], 1);
+                assert!(events.removed.is_empty());
+                assert!(hardware.cleared_keys.is_empty());
+                assert!(source.free() < BACKINGS);
+                drop(fault);
+                assert!(source.free() < BACKINGS);
+            } else {
+                hardware.block_ack_completion[BE] = Some(block_ack_completion(0, 100, 0b11, true));
+                let AmpduProgress::Complete(completed) = ampdu::service(
+                    &mut hardware,
+                    published,
+                    interrupt(EVENT_TX_COMPLETE),
+                    true,
+                    core.now(),
+                )
+                .unwrap() else {
+                    panic!("terminal")
+                };
+                let _owner = core
+                    .complete_ampdu(&mut hardware, completed, &mut events)
+                    .unwrap();
+                assert_eq!(events.order, ["tx", "key"]);
+                assert_eq!(hardware.cleared_keys, [4]);
+                assert_eq!(core.keys.uses[index], 0);
+            }
+        });
+    }
+}
+
+#[test]
+fn failed_gate_open_returns_key_uses_of_every_held_attempt() {
+    for failing_queue in 0..4 {
+        installed(|pools| {
+            let mut hardware = Hardware::default();
+            let mut core = enabled(&mut hardware, pools);
+            let key = core
+                .install_checked_key(
+                    &mut hardware,
+                    CheckedKeyScope::StationPairwise { peer: BSSID },
+                    &[0x39; 16],
+                )
+                .unwrap();
+            core.hold_new_attempts();
+            for category in [
+                WmmAccessCategory::Background,
+                WmmAccessCategory::Video,
+                WmmAccessCategory::BestEffort,
+                WmmAccessCategory::Voice,
+            ] {
+                core.submit_protected(&mut hardware, &key, values_on(category))
+                    .ok()
+                    .unwrap();
+            }
+            let Work::Held { single, .. } = &mut core.queues[failing_queue].as_mut().unwrap().work
+            else {
+                panic!("held")
+            };
+            single.backoff_slots = u16::MAX;
+            let mut events = Events::default();
+            core.remove_checked_key(&mut hardware, key, &mut events);
+            let mut failed = core
+                .inner
+                .open_gate(&mut hardware, &mut events)
+                .err()
+                .unwrap();
+            assert_eq!(events.completions.len(), 4 - failing_queue);
+            assert_eq!(events.removed.len(), usize::from(failing_queue == 0));
+            for queue in 0..failing_queue {
+                hardware.completion[queue] = Some(MacTxCompletionObservation::new_model(0, 0));
+            }
+            failed
+                .service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+                .unwrap();
+            assert_eq!(events.order, ["tx", "tx", "tx", "tx", "key"]);
+            assert_eq!(events.returned_tickets.len(), 4);
+            assert_eq!(hardware.cleared_keys, [4]);
+            assert!(failed.finish().is_ok());
+        });
+    }
+}
+
+#[test]
+fn an_unpublished_right_returned_after_poison_stays_in_custody() {
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let key = core
+            .install_checked_key(
+                &mut hardware,
+                CheckedKeyScope::StationPairwise { peer: BSSID },
+                &[0x39; 16],
+            )
+            .unwrap();
+        let index = key.index;
+        core.submit_protected(
+            &mut hardware,
+            &key,
+            values_on(WmmAccessCategory::BestEffort),
+        )
+        .ok()
+        .unwrap();
+        let ticket = core.take_ticket();
+        let outside = core.admit_key(&key, ticket).ok().unwrap();
+        let mut events = Events::default();
+        core.remove_checked_key(&mut hardware, key, &mut events);
+        let deadline = core.next_deadline().unwrap();
+        core.tx.timer.advance_to(deadline);
+        assert!(
+            core.service(&mut hardware, WifiTxWake::Deadline, &mut events)
+                .is_err()
+        );
+        let _custody = core
+            .return_admission(&mut hardware, TxAdmission::Protected(outside), &mut events)
+            .err()
+            .unwrap();
+        assert_eq!(core.keys.uses[index], 2);
+        assert!(hardware.cleared_keys.is_empty());
+        assert!(events.order.is_empty());
+    });
+}
+
+#[test]
+fn checked_mpdu_values_retain_refused_slots_and_prevent_unchecked_lengths() {
+    let parameters = MpduParameters {
+        role: VifRole::Station,
+        len: 26,
+        no_ack: false,
+        rate: OFDM24,
+        protection: Protection::None,
+        power_ceiling_dbm: None,
+        backoff_slots: 7,
+        coex: CoexPriority::Normal,
+        retry: false,
+    };
+    for (invalid, reason) in [
+        (
+            MpduParameters {
+                len: 0,
+                ..parameters
+            },
+            MpduValueError::Length,
+        ),
+        (
+            MpduParameters {
+                len: 512,
+                ..parameters
+            },
+            MpduValueError::Length,
+        ),
+        (
+            MpduParameters {
+                backoff_slots: u16::MAX,
+                ..parameters
+            },
+            MpduValueError::Backoff,
+        ),
+        (
+            MpduParameters {
+                coex: CoexPriority::Critical,
+                ..parameters
+            },
+            MpduValueError::Coexistence,
+        ),
+        (
+            MpduParameters {
+                power_ceiling_dbm: Some(-1),
+                ..parameters
+            },
+            MpduValueError::PowerCeiling,
+        ),
+        (
+            MpduParameters {
+                no_ack: true,
+                rate: ht_rate(0),
+                ..parameters
+            },
+            MpduValueError::NoAck,
+        ),
+    ] {
+        let slot = slot();
+        let address = core::ptr::from_ref(slot.as_ref().get_ref());
+        let refused = MpduValues::checked(slot, invalid).err().unwrap();
+        assert_eq!(refused.reason, reason);
+        assert_eq!(
+            core::ptr::from_ref(refused.slot.as_ref().get_ref()),
+            address
+        );
+        assert!(MpduValues::checked(refused.slot, parameters).is_ok());
+    }
+}
+
+#[test]
+fn a_protected_wire_frame_cannot_publish_with_an_open_ticket() {
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware, pools);
+        let mut frame = data_frame(BSSID);
+        let fc =
+            oer_ieee80211_mac::frame::FrameControl::new(u16::from_le_bytes([frame[0], frame[1]]))
+                .unwrap();
+        frame[..2].copy_from_slice(&fc.with_protected(true).get().to_le_bytes());
+        let refused = core
+            .submit_checked(&mut hardware, values(&frame, false))
+            .err()
+            .unwrap();
+        assert_eq!(refused.fault, LowerMacFault::KeyUseMismatch);
+        assert_eq!(hardware.publications(), 0);
+        let mut events = Events::default();
+        let _ticket = core
+            .return_admission(&mut hardware, refused.admission, &mut events)
+            .ok()
+            .unwrap();
+        assert!(events.order.is_empty());
+    });
 }

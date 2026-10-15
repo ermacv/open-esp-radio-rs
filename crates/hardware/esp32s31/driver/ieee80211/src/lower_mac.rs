@@ -11,12 +11,20 @@
 //!
 //! # Checked operations
 //!
-//! The phase contract's types rule out every refusal a caller controls, so
-//! each checked operation takes values its caller's types guarantee
-//! ([`MpduValues`], [`CheckedKeyScope`], [`RxBlockAckValues`],
-//! [`CoreVif`]) and refuses nothing: its state preconditions are invariants
-//! the core asserts in debug builds, and what the hardware refuses is a
-//! [`LowerMacFault`].
+//! Submission consumes a branded free queue and an admission ticket. Key
+//! installation returns an affine `KeyHandle`; `admit_key` borrows that live
+//! handle and consumes a ticket to issue one `KeyUse`. The installed material
+//! cannot be removed while any attempt holds a right. `MpduValues::checked`
+//! validates the caller's untrusted request before its fields become private.
+//! Hardware failures retain the submitted owners, including quarantine.
+//!
+//! `CorePools<N>` issues the construction authority and exactly `N` TX
+//! tickets. The backend uses its phase ticket count for that same `N`. A
+//! protected MPDU or A-MPDU plan owns its right, whose selector identifies the
+//! still-programmed CCMP material; publication never searches by a copied
+//! key index. Removal consumes the handle and completes at its FIFO position
+//! when there are no rights, or immediately after the last TX terminal.
+//! Poisoned retains rights and DMA owners and never reports `KeyRemoved`.
 //!
 //! # Transmit buffers
 //!
@@ -38,6 +46,10 @@
 //! and power ceiling. Its completion, a collision detach or the hardware
 //! timeout abort ends it; the driver carries known-result retries out by
 //! submitting the same MPDU again (`MpduValues::retry`).
+//! Retry marking uses the checked management/data `FrameControl` and the
+//! encoded MPDU's length. An incomplete or unsupported field returns
+//! `InvalidRetryHeader` with the original slot before publication; neither
+//! slot capacity nor a failed buffer borrow can silently skip the marking.
 //!
 //! The chip's pure completion decoder returns `Observed(status)` or
 //! `NoEffect`, or a `CompletionFault`. Only Observed constructs completed
@@ -83,6 +95,7 @@
 //! records.
 
 use core::pin::Pin;
+use oer_radio_port::{PoolPath, Root};
 
 #[cfg(test)]
 use oer_time::Clock;
@@ -135,6 +148,13 @@ use oer_ieee80211_mac::{
 use oer_ieee80211_softmac::MacTxPlan;
 
 pub mod ampdu;
+mod resources;
+pub use resources::{CoreAuthority, CorePools, CoreResources, FreeQueue, TxTicket};
+mod keys;
+pub use keys::{
+    KeyAdmissionError, KeyAdmissionRefused, KeyHandle, KeyRemoved, KeyUse, QuarantinedAdmission,
+    TxAdmission,
+};
 
 pub use ampdu::{
     AmpduBacking, AmpduBackingSource, AmpduFormat, AmpduOutcome, AmpduPlan, AmpduProgress,
@@ -146,9 +166,10 @@ use crate::{
     ampdu_tx::AmpduTxRoleAdapter,
     ordinary_tx::{
         MAX_SINGLE_ATTEMPT_BACKOFF_SLOTS, OrdinaryTxError, OrdinaryTxInterface, OrdinaryTxOutcome,
-        OrdinaryTxOwner, OrdinaryTxPlan, QueuedSingleAttempt, QueuedSingleAttemptProgress,
-        QueuedSingleAttemptRefused, SingleAttempt, SingleAttemptProtection, TX_CCMP_MIC_SIZE,
-        TX_FCS_SIZE, TX_METADATA_SIZE, WifiTxEntropy, WifiTxPowerProfile,
+        OrdinaryTxOwner, OrdinaryTxPlan, QuarantinedSingleAttempt, QueuedSingleAttempt,
+        QueuedSingleAttemptFailed, QueuedSingleAttemptProgress, QueuedSingleAttemptRefused,
+        SingleAttempt, SingleAttemptProtection, TX_CCMP_MIC_SIZE, TX_FCS_SIZE, TX_METADATA_SIZE,
+        WifiTxEntropy, WifiTxPowerProfile,
     },
     tx::WifiTxWake,
 };
@@ -392,16 +413,26 @@ impl<H> LowerMacHardware for H where
 }
 
 /// Receiver of the events one core call produces.
-pub trait LowerMacSink<'slot, const BUFFER_SIZE: usize> {
+pub trait LowerMacSink<'core, 'slot, const BUFFER_SIZE: usize, Path: PoolPath = Root> {
     /// The attempt of `queue`, submitted at `rate`, ended as `end`: its
     /// slot comes back with it.
     fn tx_completed(
         &mut self,
-        queue: WmmAccessCategory,
+        queue: FreeQueue<'core, Path>,
+        ticket: TxTicket<'core, Path>,
         slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
         end: PublicationEnd,
         rate: PhyRate,
     );
+    /// A detached aggregate ended, returning its queue and admission credit.
+    fn ampdu_completed(
+        &mut self,
+        queue: FreeQueue<'core, Path>,
+        ticket: TxTicket<'core, Path>,
+        end: PublicationEnd,
+    );
+    /// The last admitted use returned and the programmed key was cleared.
+    fn key_removed(&mut self, removed: KeyRemoved<'core, Path>);
     /// A disable the core started has ended: no attempt is left.
     fn disabled(&mut self);
     /// The station's TBTT event announced the TBTT `event` names.
@@ -425,6 +456,8 @@ pub enum LowerMacFault {
     /// The port's owner abandoned the backend: a fail-stop or a dropped
     /// owner. Only a reset restores it.
     Abandoned,
+    /// The MPDU protection or interface does not match its admitted key right.
+    KeyUseMismatch,
 }
 
 /// How one attempt ended, as the ESP32-S31 observed it. The backend maps it
@@ -548,16 +581,10 @@ fn frame_bssid(frame: &[u8]) -> Option<MacAddress> {
     }
 }
 
-/// An installed key, by the core's index.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct KeyIndex(u8);
-
 /// Why a fresh MPDU has not received a CCMP header and must not be
 /// submitted as numbered protected TX.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CcmpNumberingError {
-    /// The index no longer names an installed key.
-    MissingKey,
     /// A station group key is valid for reception only; it cannot prepare TX.
     ReceiveOnlyKey,
     /// Software cannot currently write the slot's buffer.
@@ -607,10 +634,21 @@ pub struct LowerMacConfig {
 
 /// The owners a disabled, idle [`LowerMacCore`] is built from, which
 /// [`LowerMacCore::dismantle`] returns.
-pub struct LowerMacCoreParts<'slot, P, E, T, const BUFFER_SIZE: usize> {
-    pub tx: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
-    pub config: LowerMacConfig,
-    pub coex: &'slot dyn RadioCoexPriorities,
+pub struct LowerMacCoreParts<
+    'core,
+    'slot,
+    P,
+    E,
+    T,
+    const BUFFER_SIZE: usize,
+    Path: PoolPath = Root,
+    const TICKETS: usize = 4,
+> {
+    authority: CoreAuthority<'core, Path, TICKETS>,
+    tx: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
+    config: LowerMacConfig,
+    coex: &'slot dyn RadioCoexPriorities,
+    keys: KeyBank<'core, Path>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -619,6 +657,7 @@ enum PortState {
     Enabling,
     Enabled,
     Disabling,
+    Poisoned(LowerMacFault),
 }
 
 enum KeyToken {
@@ -648,8 +687,20 @@ impl KeyToken {
     }
 }
 
-struct InstalledKey {
-    token: KeyToken,
+struct KeyBank<'core, Path: PoolPath> {
+    installed: [Option<CheckedKeyScope>; LOWER_MAC_KEY_SLOTS],
+    uses: [usize; LOWER_MAC_KEY_SLOTS],
+    removals: [Option<KeyHandle<'core, Path>>; LOWER_MAC_KEY_SLOTS],
+}
+
+impl<Path: PoolPath> KeyBank<'_, Path> {
+    const fn new() -> Self {
+        Self {
+            installed: [None; LOWER_MAC_KEY_SLOTS],
+            uses: [0; LOWER_MAC_KEY_SLOTS],
+            removals: [const { None }; LOWER_MAC_KEY_SLOTS],
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -669,6 +720,9 @@ enum Work<'slot, const BUFFER_SIZE: usize> {
         single: SingleAttempt,
     },
     Published(QueuedSingleAttempt<'slot, BUFFER_SIZE>),
+    Quarantined {
+        _owner: QuarantinedSingleAttempt<'slot, BUFFER_SIZE>,
+    },
 }
 
 impl<const BUFFER_SIZE: usize> Work<'_, BUFFER_SIZE> {
@@ -681,15 +735,16 @@ impl<const BUFFER_SIZE: usize> Work<'_, BUFFER_SIZE> {
     const fn deadline(&self) -> Option<(oer_time::Instant, bool)> {
         match self {
             Self::Published(queued) => Some((queued.deadline(), queued.abort_settling())),
-            Self::Held { .. } => None,
+            Self::Held { .. } | Self::Quarantined { .. } => None,
         }
     }
 }
 
 /// The attempt occupying one queue.
-struct Attempt<'slot, const BUFFER_SIZE: usize> {
+struct Attempt<'core, 'slot, const BUFFER_SIZE: usize, Path: PoolPath> {
+    queue: FreeQueue<'core, Path>,
     role: VifRole,
-    key: Option<KeyIndex>,
+    admission: TxAdmission<'core, Path>,
     /// The rate of its publication, which its completion reports.
     rate: PhyRate,
     work: Work<'slot, BUFFER_SIZE>,
@@ -727,7 +782,7 @@ impl StationTbtt {
 /// use oer_esp32s31_ieee80211::lower_mac::LowerMacCore;
 /// use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile};
 /// fn borrow_tx<P: WifiTxPowerProfile, E: WifiTxEntropy, T: oer_time::Timer, const N: usize>(
-///     core: &LowerMacCore<'_, P, E, T, N>,
+///     core: &LowerMacCore<'_, '_, P, E, T, N>,
 /// ) {
 ///     core.tx();
 /// }
@@ -742,12 +797,22 @@ impl StationTbtt {
 /// use oer_esp32s31_ieee80211::lower_mac::LowerMacCore;
 /// use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile};
 /// fn deadline<P: WifiTxPowerProfile, E: WifiTxEntropy, T: oer_time::Timer, const N: usize>(
-///     core: &LowerMacCore<'_, P, E, T, N>,
+///     core: &LowerMacCore<'_, '_, P, E, T, N>,
 /// ) -> Option<oer_time::Instant> {
 ///     core.next_deadline()
 /// }
 /// ```
-pub struct LowerMacCore<'slot, P, E, T, const BUFFER_SIZE: usize> {
+pub struct LowerMacCore<
+    'core,
+    'slot,
+    P,
+    E,
+    T,
+    const BUFFER_SIZE: usize,
+    Path: PoolPath = Root,
+    const TICKETS: usize = 4,
+> {
+    authority: CoreAuthority<'core, Path, TICKETS>,
     tx: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
     config: LowerMacConfig,
     state: PortState,
@@ -756,7 +821,7 @@ pub struct LowerMacCore<'slot, P, E, T, const BUFFER_SIZE: usize> {
     channel: WifiChannel,
     tuned: WifiChannel,
     vifs: [Option<CoreVif>; LOWER_MAC_VIFS as usize],
-    keys: [Option<InstalledKey>; LOWER_MAC_KEY_SLOTS],
+    keys: KeyBank<'core, Path>,
     rx_block_acks: [Option<RxBlockAckEntry>; RX_BLOCK_ACK_BANKS],
     gate_open: bool,
     monitor: bool,
@@ -767,13 +832,14 @@ pub struct LowerMacCore<'slot, P, E, T, const BUFFER_SIZE: usize> {
     access_point_tsf: oer_esp32s31_ieee80211_mac::ap_tsf::AccessPointTsf,
     /// The attempt of each ordinary queue, by its hardware index
     /// ([`LegacyTxQueue::hardware_index`]).
-    queues: [Option<Attempt<'slot, BUFFER_SIZE>>; LOWER_MAC_TX_QUEUES],
+    queues: [Option<Attempt<'core, 'slot, BUFFER_SIZE, Path>>; LOWER_MAC_TX_QUEUES],
     /// The radio system's coexistence priorities: the beacon window's and
     /// a connection frame's.
     coex: &'slot dyn RadioCoexPriorities,
 }
 
-impl<'slot, P, E, T, const BUFFER_SIZE: usize> LowerMacCore<'slot, P, E, T, BUFFER_SIZE>
+impl<'core, 'slot, P, E, T, const BUFFER_SIZE: usize, Path: PoolPath, const TICKETS: usize>
+    LowerMacCore<'core, 'slot, P, E, T, BUFFER_SIZE, Path, TICKETS>
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
@@ -783,18 +849,20 @@ where
     /// system the core shares its RF with: beacon reception and connection
     /// frames ask for the air at its priorities.
     pub fn new(
+        authority: CoreAuthority<'core, Path, TICKETS>,
         tx: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
         config: LowerMacConfig,
         coex: &'slot dyn RadioCoexPriorities,
     ) -> Self {
         Self {
+            authority,
             tx,
             config,
             state: PortState::Disabled,
             channel: config.channel,
             tuned: config.channel,
             vifs: [None; LOWER_MAC_VIFS as usize],
-            keys: [const { None }; LOWER_MAC_KEY_SLOTS],
+            keys: KeyBank::new(),
             rx_block_acks: [None; RX_BLOCK_ACK_BANKS],
             gate_open: true,
             monitor: false,
@@ -810,9 +878,19 @@ where
 
     /// A disabled core over the owners a dismantled core returned: the
     /// state of the core they came from is gone, as at a radio start.
-    pub fn from_parts(parts: LowerMacCoreParts<'slot, P, E, T, BUFFER_SIZE>) -> Self {
-        let LowerMacCoreParts { tx, config, coex } = parts;
-        Self::new(tx, config, coex)
+    pub fn from_parts(
+        parts: LowerMacCoreParts<'core, 'slot, P, E, T, BUFFER_SIZE, Path, TICKETS>,
+    ) -> Self {
+        let LowerMacCoreParts {
+            authority,
+            tx,
+            config,
+            coex,
+            keys,
+        } = parts;
+        let mut core = Self::new(authority, tx, config, coex);
+        core.keys = keys;
+        core
     }
 
     /// Take the core apart into the owners it was built from, for a later
@@ -823,14 +901,18 @@ where
         clippy::result_large_err,
         reason = "the no-alloc driver returns the unconsumed core by value"
     )]
-    pub fn dismantle(self) -> Result<LowerMacCoreParts<'slot, P, E, T, BUFFER_SIZE>, Self> {
+    pub fn dismantle(
+        self,
+    ) -> Result<LowerMacCoreParts<'core, 'slot, P, E, T, BUFFER_SIZE, Path, TICKETS>, Self> {
         if !self.idle_disabled() {
             return Err(self);
         }
         Ok(LowerMacCoreParts {
+            authority: self.authority,
             tx: self.tx,
             config: self.config,
             coex: self.coex,
+            keys: self.keys,
         })
     }
 
@@ -911,7 +993,7 @@ where
         matches!(self.state, PortState::Enabled)
     }
 
-    fn attempts(&self) -> impl Iterator<Item = &Attempt<'slot, BUFFER_SIZE>> {
+    fn attempts(&self) -> impl Iterator<Item = &Attempt<'core, 'slot, BUFFER_SIZE, Path>> {
         self.queues.iter().flatten()
     }
 
@@ -936,21 +1018,16 @@ where
     ///
     /// # Errors
     ///
-    /// A missing key, a receive-only station group key, an unavailable
+    /// A receive-only station group key, an unavailable
     /// buffer, insufficient header space or packet-number exhaustion is a
     /// distinct [`CcmpNumberingError`]. A receive-only key remains valid
     /// for reception, but never reports successful TX preparation here.
     pub fn number(
         &mut self,
-        key: KeyIndex,
+        key: &mut KeyHandle<'core, Path>,
         slot: &mut Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
         header_len: usize,
     ) -> Result<(), CcmpNumberingError> {
-        let installed = self
-            .keys
-            .get_mut(usize::from(key.0))
-            .and_then(Option::as_mut)
-            .ok_or(CcmpNumberingError::MissingKey)?;
         let buffer = slot
             .as_mut()
             .buffer_mut()
@@ -962,7 +1039,7 @@ where
             .get_mut(at..)
             .and_then(|remaining| remaining.get_mut(..CCMP_HEADER_LEN))
             .ok_or(CcmpNumberingError::InsufficientSpace)?;
-        let header = match &mut installed.token {
+        let header = match &mut key.token {
             KeyToken::StaPairwise(key) => key.next_tx_ccmp_header(),
             KeyToken::StaGroup(_) => return Err(CcmpNumberingError::ReceiveOnlyKey),
             KeyToken::ApPairwise(key) => key.next_tx_ccmp_header(),
@@ -986,29 +1063,77 @@ where
     pub fn submit_checked<H: LowerMacHardware>(
         &mut self,
         hardware: &mut H,
+        queue: FreeQueue<'core, Path>,
+        admission: TxAdmission<'core, Path>,
         values: MpduValues<'slot, BUFFER_SIZE>,
-    ) -> Result<(), SubmitFault<'slot, BUFFER_SIZE>> {
+    ) -> Result<(), SubmitFault<'core, 'slot, BUFFER_SIZE, Path>> {
         let MpduValues {
             role,
-            access_category,
             mut slot,
             len,
             no_ack,
             rate,
             reported,
             protection,
-            key,
             power_ceiling_dbm,
             backoff_slots,
             coex,
             retry,
         } = values;
+        if let PortState::Poisoned(fault) = self.state {
+            return Err(SubmitFault {
+                queue,
+                admission,
+                fault,
+                slot,
+            });
+        }
+        let access_category = queue.category();
         debug_assert_eq!(self.state, PortState::Enabled, "a phase submits");
         if retry {
-            let marked = slot.as_mut().buffer_mut().map_err(OrdinaryTxError::from)
+            let marked = slot
+                .as_mut()
+                .buffer_mut()
+                .map_err(OrdinaryTxError::from)
                 .and_then(|buffer| crate::ordinary_tx::mark_retry(buffer, len));
             if let Err(error) = marked {
-                return Err(SubmitFault { fault: LowerMacFault::Tx(error), slot });
+                return Err(SubmitFault {
+                    queue,
+                    admission,
+                    fault: LowerMacFault::Tx(error),
+                    slot,
+                });
+            }
+        }
+        let matches_admission = slot
+            .as_mut()
+            .buffer_mut()
+            .map(|buffer| {
+                admission.matches_frame(
+                    role,
+                    buffer
+                        .get(TX_METADATA_SIZE..)
+                        .and_then(|frame| frame.get(..len)),
+                )
+            })
+            .map_err(OrdinaryTxError::from);
+        match matches_admission {
+            Ok(true) => {}
+            Ok(false) => {
+                return Err(SubmitFault {
+                    queue,
+                    admission,
+                    slot,
+                    fault: LowerMacFault::KeyUseMismatch,
+                });
+            }
+            Err(error) => {
+                return Err(SubmitFault {
+                    queue,
+                    admission,
+                    slot,
+                    fault: LowerMacFault::Tx(error),
+                });
             }
         }
         let common = self.plan_common(
@@ -1016,22 +1141,22 @@ where
             role,
             rate,
             protection,
-            key,
+            &admission,
             power_ceiling_dbm,
             backoff_slots,
         );
-        let admission = self.plan_mpdu(common, len, access_category, coex, no_ack);
-        let index = usize::from(admission.queue.hardware_index());
+        let planned = self.plan_mpdu(common, len, access_category, coex, no_ack);
+        let index = usize::from(planned.queue.hardware_index());
         let work = if self.gate_open {
-            match self.tx.start_queued_single_attempt(
-                hardware,
-                slot,
-                admission.plan,
-                admission.single,
-            ) {
+            match self
+                .tx
+                .start_queued_single_attempt(hardware, slot, planned.plan, planned.single)
+            {
                 Ok(queued) => Work::Published(queued),
                 Err(QueuedSingleAttemptRefused { error, slot }) => {
                     return Err(SubmitFault {
+                        queue,
+                        admission,
                         fault: LowerMacFault::Tx(error),
                         slot,
                     });
@@ -1040,13 +1165,14 @@ where
         } else {
             Work::Held {
                 slot,
-                plan: admission.plan,
-                single: admission.single,
+                plan: planned.plan,
+                single: planned.single,
             }
         };
         self.queues[index] = Some(Attempt {
+            queue,
             role,
-            key: admission.key,
+            admission,
             rate: reported,
             work,
         });
@@ -1062,22 +1188,15 @@ where
         role: VifRole,
         rate: TxPhyRate,
         protection: Protection,
-        key: Option<KeyIndex>,
+        admission: &TxAdmission<'core, Path>,
         power_ceiling_dbm: Option<i8>,
         backoff_slots: u16,
     ) -> CommonAdmission {
-        let selector = key
-            .and_then(|key| self.key(key))
-            .map(|installed| installed.token.hardware_index());
-        let (hardware_key_selector, hardware_mic_length) = match selector {
-            None => (0, 0),
-            Some(index) => (index, TX_CCMP_MIC_SIZE),
-        };
+        let (hardware_key_selector, hardware_mic_length) = admission.hardware();
         CommonAdmission {
             queue: LegacyTxQueue::from_access_category(access_category),
             role,
             rate,
-            key: selector.and(key),
             hardware_key_selector,
             hardware_mic_length,
             single: SingleAttempt {
@@ -1148,12 +1267,71 @@ where
                 no_ack,
                 ..common.single
             },
-            key: common.key,
         }
     }
 
-    fn key(&self, key: KeyIndex) -> Option<&InstalledKey> {
-        self.keys.get(usize::from(key.0)).and_then(Option::as_ref)
+    /// Plan one aggregate while retaining its queue and encryption admission.
+    /// A refusal returns both owners and leaves the subframes in the buffer.
+    pub fn plan_ampdu<S: AmpduBacking, const SLOTS: usize>(
+        &self,
+        queue: FreeQueue<'core, Path>,
+        admission: TxAdmission<'core, Path>,
+        mut values: AmpduValues,
+        buffer: &mut Esp32s31AmpduBuffer<'slot, S, SLOTS>,
+    ) -> Result<AmpduPlan<'core, Path>, AmpduPlanningRefused<'core, Path>> {
+        values.access_category = queue.category();
+        match self.ampdu_settings(values, &admission, buffer) {
+            Ok(settings) => Ok(AmpduPlan {
+                queue,
+                admission,
+                settings,
+            }),
+            Err(reason) => Err(AmpduPlanningRefused {
+                queue,
+                admission,
+                reason,
+            }),
+        }
+    }
+
+    /// Publish a detached aggregate's terminal and return its owner. A
+    /// quarantined aggregate has no such projection or key-release operation.
+    #[allow(
+        clippy::result_large_err,
+        reason = "a poisoned core retains the full aggregate and key right"
+    )]
+    pub fn complete_ampdu<
+        H: CcmpKeyHardware,
+        K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>,
+        B,
+        const SLOTS: usize,
+    >(
+        &mut self,
+        hardware: &mut H,
+        completed: ampdu::CompletedAmpdu<'core, 'slot, B, SLOTS, Path>,
+        sink: &mut K,
+    ) -> Result<
+        ampdu::Esp32s31AmpduOwner<'slot, B, SLOTS>,
+        ampdu::AmpduFault<'core, 'slot, B, SLOTS, Path>,
+    > {
+        if matches!(self.state, PortState::Poisoned(_)) {
+            return Err(ampdu::AmpduFault::retain_completed(completed));
+        }
+        let ampdu::CompletedAmpdu {
+            outcome,
+            owner,
+            queue,
+            admission,
+        } = completed;
+        match admission {
+            TxAdmission::Open(ticket) => sink.ampdu_completed(queue, ticket, outcome.end()),
+            TxAdmission::Protected(key) => {
+                self.keys.uses[key.index] -= 1;
+                sink.ampdu_completed(queue, key.ticket, outcome.end());
+                self.finish_key_removal(hardware, key.index, sink);
+            }
+        }
+        Ok(owner)
     }
 
     /// Plan an aggregate whose values a caller's types guarantee
@@ -1166,22 +1344,25 @@ where
     ///
     /// Why the aggregate cannot go as one publication.
     // CAPABILITY: wifi-interfaces-and-operating-modes-lower-mac-port-a-mpdu
-    pub fn plan_ampdu<S: AmpduBacking, const SLOTS: usize>(
+    fn ampdu_settings<S: AmpduBacking, const SLOTS: usize>(
         &self,
         values: AmpduValues,
+        admission: &TxAdmission<'core, Path>,
         buffer: &mut Esp32s31AmpduBuffer<'slot, S, SLOTS>,
-    ) -> Result<AmpduPlan, AmpduRefusal> {
+    ) -> Result<ampdu::AmpduSettings, AmpduRefusal> {
         let AmpduValues {
             role,
             access_category,
             rate,
             protection,
-            key,
             power_ceiling_dbm,
             backoff_slots,
             coex,
             min_mpdu_start_spacing,
         } = values;
+        if !buffer.matches_admission(role, admission) {
+            return Err(AmpduRefusal::KeyUseMismatch);
+        }
         // Connection frames are single MPDUs: an aggregate is ordinary data.
         if coex != CoexPriority::Normal {
             return Err(AmpduRefusal::ElevatedCoexistence);
@@ -1191,7 +1372,7 @@ where
             role,
             rate,
             protection,
-            key,
+            admission,
             power_ceiling_dbm,
             backoff_slots,
         );
@@ -1287,7 +1468,7 @@ where
             },
             (_, None) => return Err(AmpduRefusal::LegacyRate),
         };
-        Ok(AmpduPlan {
+        Ok(ampdu::AmpduSettings {
             queue,
             format,
             role: AmpduTxRoleAdapter {
@@ -1309,12 +1490,18 @@ where
     /// # Errors
     ///
     /// A fault of the transmit owner.
-    pub fn service<H: HtAmpduHardware, K: LowerMacSink<'slot, BUFFER_SIZE>>(
+    pub fn service<
+        H: HtAmpduHardware + CcmpKeyHardware,
+        K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>,
+    >(
         &mut self,
         hardware: &mut H,
         wake: WifiTxWake,
         sink: &mut K,
     ) -> Result<(), LowerMacFault> {
+        if let PortState::Poisoned(fault) = self.state {
+            return Err(fault);
+        }
         let mut wake = wake;
         loop {
             let mut abort_ended = false;
@@ -1324,16 +1511,18 @@ where
                 };
                 let may_begin_timeout_abort = !self.abort_settling();
                 let Attempt {
+                    queue,
                     role,
-                    key,
+                    admission,
                     rate,
                     work,
                 } = attempt;
                 let queued = match work {
-                    held @ Work::Held { .. } => {
+                    held @ (Work::Held { .. } | Work::Quarantined { .. }) => {
                         self.queues[index] = Some(Attempt {
+                            queue,
                             role,
-                            key,
+                            admission,
                             rate,
                             work: held,
                         });
@@ -1342,27 +1531,44 @@ where
                     Work::Published(queued) => queued,
                 };
                 let settling = queued.abort_settling();
-                match self
-                    .tx
-                    .service_queued_single_attempt(hardware, queued, wake, may_begin_timeout_abort)
-                    .map_err(LowerMacFault::Tx)?
-                {
-                    QueuedSingleAttemptProgress::Pending(queued) => {
+                match self.tx.service_queued_single_attempt(
+                    hardware,
+                    queued,
+                    wake,
+                    may_begin_timeout_abort,
+                ) {
+                    Ok(QueuedSingleAttemptProgress::Pending(queued)) => {
                         self.queues[index] = Some(Attempt {
+                            queue,
                             role,
-                            key,
+                            admission,
                             rate,
                             work: Work::Published(queued),
                         });
                     }
-                    QueuedSingleAttemptProgress::Complete { outcome, slot } => {
+                    Ok(QueuedSingleAttemptProgress::Complete { outcome, slot }) => {
                         abort_ended |= settling;
-                        sink.tx_completed(
-                            queue_category(index),
+                        self.finish_attempt(
+                            hardware,
+                            queue,
+                            admission,
                             slot,
                             publication_end(outcome),
                             rate,
+                            sink,
                         );
+                    }
+                    Err(QueuedSingleAttemptFailed { error, quarantine }) => {
+                        self.queues[index] = Some(Attempt {
+                            queue,
+                            role,
+                            admission,
+                            rate,
+                            work: Work::Quarantined { _owner: quarantine },
+                        });
+                        let fault = LowerMacFault::Tx(error);
+                        self.state = PortState::Poisoned(fault);
+                        return Err(fault);
                     }
                 }
             }
@@ -1377,8 +1583,32 @@ where
         Ok(())
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one terminal returns the complete admitted attempt"
+    )]
+    fn finish_attempt<H: CcmpKeyHardware, K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>>(
+        &mut self,
+        hardware: &mut H,
+        queue: FreeQueue<'core, Path>,
+        admission: TxAdmission<'core, Path>,
+        slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
+        end: PublicationEnd,
+        rate: PhyRate,
+        sink: &mut K,
+    ) {
+        match admission {
+            TxAdmission::Open(ticket) => sink.tx_completed(queue, ticket, slot, end, rate),
+            TxAdmission::Protected(key) => {
+                self.keys.uses[key.index] -= 1;
+                sink.tx_completed(queue, key.ticket, slot, end, rate);
+                self.finish_key_removal(hardware, key.index, sink);
+            }
+        }
+    }
+
     /// Finish a disable that waited for the attempts.
-    fn settle<K: LowerMacSink<'slot, BUFFER_SIZE>>(&mut self, sink: &mut K) {
+    fn settle<K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>>(&mut self, sink: &mut K) {
         if self.state == PortState::Disabling && self.attempts().next().is_none() {
             self.state = PortState::Disabled;
             sink.disabled();
@@ -1445,40 +1675,68 @@ where
     /// Disable an enabled port: every held attempt ends as aborted at once,
     /// the published ones with their own completions, then
     /// [`LowerMacSink::disabled`] follows.
-    pub fn disable_checked<K: LowerMacSink<'slot, BUFFER_SIZE>>(&mut self, sink: &mut K) {
+    pub fn disable_checked<H: CcmpKeyHardware, K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>>(
+        &mut self,
+        hardware: &mut H,
+        sink: &mut K,
+    ) -> Result<(), LowerMacFault> {
+        if let PortState::Poisoned(fault) = self.state {
+            return Err(fault);
+        }
         debug_assert_eq!(self.state, PortState::Enabled, "an enabled port disables");
         self.state = PortState::Disabling;
         for index in 0..LOWER_MAC_TX_QUEUES {
-            self.abort_held(index, sink);
+            self.abort_held(hardware, index, sink);
         }
         self.settle(sink);
+        Ok(())
     }
 
     /// End a queue's held attempt as [`PublicationEnd::Withdrawn`]: it
     /// never reached the hardware, and its slot comes back with it.
-    fn abort_held<K: LowerMacSink<'slot, BUFFER_SIZE>>(&mut self, index: usize, sink: &mut K) {
-        if !self.queues[index]
-            .as_ref()
-            .is_some_and(|attempt| attempt.work.held())
-        {
-            return;
-        }
-        let Some(Attempt {
-            work: Work::Held { slot, .. },
-            rate,
-            ..
-        }) = self.queues[index].take()
-        else {
+    fn abort_held<H: CcmpKeyHardware, K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>>(
+        &mut self,
+        hardware: &mut H,
+        index: usize,
+        sink: &mut K,
+    ) {
+        let Some(attempt) = self.queues[index].take() else {
             return;
         };
-        sink.tx_completed(queue_category(index), slot, PublicationEnd::Withdrawn, rate);
+        match attempt {
+            Attempt {
+                queue,
+                work: Work::Held { slot, .. },
+                admission,
+                rate,
+                ..
+            } => {
+                self.finish_attempt(
+                    hardware,
+                    queue,
+                    admission,
+                    slot,
+                    PublicationEnd::Withdrawn,
+                    rate,
+                    sink,
+                );
+            }
+            published => self.queues[index] = Some(published),
+        }
     }
 
     /// Return every held attempt without publishing it.
     #[cfg(test)]
-    fn withdraw_held_attempts<K: LowerMacSink<'slot, BUFFER_SIZE>>(&mut self, sink: &mut K) {
+    fn withdraw_held_attempts<
+        H: CcmpKeyHardware,
+        K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>,
+    >(
+        &mut self,
+        hardware: &mut H,
+        sink: &mut K,
+    ) {
         for index in 0..LOWER_MAC_TX_QUEUES {
-            self.abort_held(index, sink);
+            self.abort_held(hardware, index, sink);
         }
     }
 
@@ -1594,9 +1852,22 @@ where
         hardware: &mut H,
         scope: CheckedKeyScope,
         temporal_key: &[u8; CCMP_128_KEY_BYTES],
-    ) -> Result<KeyIndex, LowerMacFault> {
+    ) -> Result<KeyHandle<'core, Path>, LowerMacFault> {
+        if let PortState::Poisoned(fault) = self.state {
+            return Err(fault);
+        }
+        if self
+            .keys
+            .installed
+            .iter()
+            .flatten()
+            .any(|installed| installed.same_slot(scope))
+        {
+            return Err(LowerMacFault::Key(CryptoKeyError::Occupied));
+        }
         let free = self
             .keys
+            .installed
             .iter()
             .position(Option::is_none)
             .ok_or(LowerMacFault::Key(CryptoKeyError::Occupied))?;
@@ -1617,22 +1888,106 @@ where
             }
         }
         .map_err(LowerMacFault::Key)?;
-        self.keys[free] = Some(InstalledKey { token });
-        Ok(KeyIndex(free as u8))
+        self.keys.installed[free] = Some(scope);
+        Ok(KeyHandle {
+            index: free,
+            token,
+            scope,
+            brand: core::marker::PhantomData,
+        })
     }
 
-    /// Whether an attempt in flight uses `key`.
-    fn key_in_use(&self, key: KeyIndex) -> bool {
-        self.attempts().any(|attempt| attempt.key == Some(key))
-    }
-
-    /// Remove an installed key no attempt in flight uses; another index is
-    /// nothing to remove.
-    pub fn remove_checked_key<H: CcmpKeyHardware>(&mut self, hardware: &mut H, key: KeyIndex) {
-        debug_assert!(!self.key_in_use(key), "a key in use is waited for");
-        if let Some(installed) = self.keys.get_mut(usize::from(key.0)).and_then(Option::take) {
-            installed.token.clear(hardware);
+    /// Admit one protected attempt from the live handle and one TX ticket.
+    /// No reference into the core is held. The ticket bounds all admissions
+    /// by the same `TICKETS` used by `CorePools<TICKETS>`; the counter cannot
+    /// overflow and there is no capacity-refusal branch.
+    pub fn admit_key(
+        &mut self,
+        key: &KeyHandle<'core, Path>,
+        ticket: TxTicket<'core, Path>,
+    ) -> Result<KeyUse<'core, Path>, KeyAdmissionRefused<'core, Path>> {
+        if matches!(self.state, PortState::Poisoned(_)) {
+            return Err(KeyAdmissionRefused {
+                ticket,
+                reason: KeyAdmissionError::Poisoned,
+            });
         }
+        if matches!(key.token, KeyToken::StaGroup(_)) {
+            return Err(KeyAdmissionRefused {
+                ticket,
+                reason: KeyAdmissionError::ReceiveOnly,
+            });
+        }
+        self.keys.uses[key.index] += 1;
+        Ok(KeyUse {
+            ticket,
+            index: key.index,
+            selector: key.token.hardware_index(),
+            role: key.scope.role(),
+        })
+    }
+
+    /// Consume the sole installed handle at removal's FIFO position. The
+    /// programmed material stays until the last admitted use returns. No
+    /// further right can be obtained from the moved handle.
+    pub fn remove_checked_key<
+        H: CcmpKeyHardware,
+        K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>,
+    >(
+        &mut self,
+        hardware: &mut H,
+        key: KeyHandle<'core, Path>,
+        sink: &mut K,
+    ) {
+        let index = key.index;
+        self.keys.removals[index] = Some(key);
+        self.finish_key_removal(hardware, index, sink);
+    }
+
+    fn finish_key_removal<H: CcmpKeyHardware, K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>>(
+        &mut self,
+        hardware: &mut H,
+        index: usize,
+        sink: &mut K,
+    ) {
+        if matches!(self.state, PortState::Poisoned(_)) || self.keys.uses[index] != 0 {
+            return;
+        }
+        if let Some(key) = self.keys.removals[index].take() {
+            key.token.clear(hardware);
+            self.keys.installed[index] = None;
+            sink.key_removed(KeyRemoved {
+                scope: key.scope,
+                brand: key.brand,
+            });
+        }
+    }
+
+    /// Return an admission which was never published (including submission
+    /// refusal), or one carried by a detached aggregate's terminal. Published
+    /// MPDUs keep this owner private and return it through their terminal.
+    pub fn return_admission<
+        H: CcmpKeyHardware,
+        K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>,
+    >(
+        &mut self,
+        hardware: &mut H,
+        admission: TxAdmission<'core, Path>,
+        sink: &mut K,
+    ) -> Result<TxTicket<'core, Path>, QuarantinedAdmission<'core, Path>> {
+        if matches!(self.state, PortState::Poisoned(_)) {
+            return Err(QuarantinedAdmission {
+                _admission: admission,
+            });
+        }
+        Ok(match admission {
+            TxAdmission::Open(ticket) => ticket,
+            TxAdmission::Protected(key) => {
+                self.keys.uses[key.index] -= 1;
+                self.finish_key_removal(hardware, key.index, sink);
+                key.ticket
+            }
+        })
     }
 
     /// Start an agreement whose values a caller's types guarantee: its TID
@@ -1725,26 +2080,33 @@ where
         hardware.set_power_save_tx_block(true);
     }
 
-    /// Open the transmit gate: the power-save block lifts, and every held
-    /// attempt is published.
+    /// Consume the closed-gate core and publish its held attempts.
     ///
-    /// # Errors
-    ///
-    /// A fault of the transmit owner, with the slot it could not publish.
-    #[allow(clippy::result_large_err, reason = "the slot goes back by value")]
-    pub fn open_gate<H: LowerMacHardware>(
-        &mut self,
+    /// On the first publication fault, every unpublished attempt returns
+    /// through `sink` as `Withdrawn`, including the refused publication.
+    /// The failure owns a draining core: already published attempts keep
+    /// their slots until their own terminals, and no new submit is possible.
+    #[allow(
+        clippy::result_large_err,
+        reason = "the failure retains the complete draining core"
+    )]
+    pub fn open_gate<H: LowerMacHardware, K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>>(
+        mut self,
         hardware: &mut H,
-    ) -> Result<(), SubmitFault<'slot, BUFFER_SIZE>> {
+        sink: &mut K,
+    ) -> Result<Self, GateOpenFailed<Self>> {
+        if let PortState::Poisoned(fault) = self.state {
+            return Err(GateOpenFailed { fault, core: self });
+        }
         hardware.set_power_save_tx_block(false);
-        self.gate_open = true;
         for index in 0..LOWER_MAC_TX_QUEUES {
             let Some(attempt) = self.queues[index].take() else {
                 continue;
             };
             let Attempt {
+                queue,
                 role,
-                key,
+                admission,
                 rate,
                 work,
             } = attempt;
@@ -1756,23 +2118,39 @@ where
                     {
                         Ok(queued) => Work::Published(queued),
                         Err(QueuedSingleAttemptRefused { error, slot }) => {
-                            return Err(SubmitFault {
-                                fault: LowerMacFault::Tx(error),
+                            self.finish_attempt(
+                                hardware,
+                                queue,
+                                admission,
                                 slot,
+                                PublicationEnd::Withdrawn,
+                                rate,
+                                sink,
+                            );
+                            self.state = PortState::Disabling;
+                            for index in 0..LOWER_MAC_TX_QUEUES {
+                                self.abort_held(hardware, index, sink);
+                            }
+                            self.settle(sink);
+                            return Err(GateOpenFailed {
+                                fault: LowerMacFault::Tx(error),
+                                core: self,
                             });
                         }
                     }
                 }
-                published @ Work::Published(_) => published,
+                published @ (Work::Published(_) | Work::Quarantined { .. }) => published,
             };
             self.queues[index] = Some(Attempt {
+                queue,
                 role,
-                key,
+                admission,
                 rate,
                 work,
             });
         }
-        Ok(())
+        self.gate_open = true;
+        Ok(self)
     }
 
     /// The station's TSF and the generation of its relation, for a
@@ -1868,7 +2246,7 @@ where
     /// Report the station TBTT whose event the power interrupt delivered
     /// (`MacPowerWakeCause::StaTbtt`). Without a schedule the edge is stale
     /// and reports nothing.
-    pub fn station_tbtt<H: StationTsfHardware, K: LowerMacSink<'slot, BUFFER_SIZE>>(
+    pub fn station_tbtt<H: StationTsfHardware, K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>>(
         &self,
         hardware: &mut H,
         sink: &mut K,
@@ -1923,9 +2301,67 @@ const PRIORITY_ZERO: MacPti = match MacPti::new(0) {
 /// A publication the transmit owner refused: its fault, and the slot that
 /// goes back.
 #[must_use = "retain the returned transmit slot and handle the publication fault"]
-pub struct SubmitFault<'slot, const BUFFER_SIZE: usize> {
+pub struct SubmitFault<'core, 'slot, const BUFFER_SIZE: usize, Path: PoolPath = Root> {
+    pub queue: FreeQueue<'core, Path>,
     pub fault: LowerMacFault,
     pub slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
+    pub admission: TxAdmission<'core, Path>,
+}
+
+/// A failed gate transition owns the core while its published prefix drains.
+/// Only terminals can advance it; neither reopening nor submission is exposed.
+#[must_use = "drain the published attempts and retain the failed core's resources"]
+pub struct GateOpenFailed<C> {
+    pub fault: LowerMacFault,
+    core: C,
+}
+
+impl<
+    'core,
+    'slot,
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: oer_time::Timer,
+    const BUFFER_SIZE: usize,
+    Path: PoolPath,
+    const TICKETS: usize,
+> GateOpenFailed<LowerMacCore<'core, 'slot, P, E, T, BUFFER_SIZE, Path, TICKETS>>
+{
+    /// The next deadline of the attempts published before opening failed.
+    pub fn next_deadline(&self) -> Option<oer_time::Instant> {
+        self.core.next_deadline()
+    }
+
+    /// Drain only the already published attempts, preserving their own outcomes.
+    pub fn service<
+        H: HtAmpduHardware + CcmpKeyHardware,
+        K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>,
+    >(
+        &mut self,
+        hardware: &mut H,
+        wake: WifiTxWake,
+        sink: &mut K,
+    ) -> Result<(), LowerMacFault> {
+        self.core.service(hardware, wake, sink)
+    }
+
+    /// Recover the core's construction resources once the last terminal ended
+    /// disable. Before then the complete failed owner returns unchanged.
+    #[allow(
+        clippy::result_large_err,
+        reason = "retain every resource until the published prefix ends"
+    )]
+    pub fn finish(
+        self,
+    ) -> Result<LowerMacCoreParts<'core, 'slot, P, E, T, BUFFER_SIZE, Path, TICKETS>, Self> {
+        match self.core.dismantle() {
+            Ok(parts) => Ok(parts),
+            Err(core) => Err(Self {
+                fault: self.fault,
+                core,
+            }),
+        }
+    }
 }
 
 /// An interface configuration the receive policies cannot take.
@@ -1936,28 +2372,11 @@ pub struct UnsupportedVif;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct UnsupportedTbtt;
 
-/// The access category of the queue at hardware index `index`.
-fn queue_category(index: usize) -> WmmAccessCategory {
-    [
-        LegacyTxQueue::Voice,
-        LegacyTxQueue::Video,
-        LegacyTxQueue::BestEffort,
-        LegacyTxQueue::Background,
-    ]
-    .into_iter()
-    .find(|queue| usize::from(queue.hardware_index()) == index)
-    .map_or(
-        WmmAccessCategory::BestEffort,
-        LegacyTxQueue::access_category,
-    )
-}
-
 /// What every attempt shares.
 struct CommonAdmission {
     queue: LegacyTxQueue,
     role: VifRole,
     rate: TxPhyRate,
-    key: Option<KeyIndex>,
     hardware_key_selector: u8,
     hardware_mic_length: usize,
     /// Protection, backoff and power ceiling; `no_ack` is the MPDU's.
@@ -1982,6 +2401,33 @@ pub enum CheckedKeyScope {
     },
 }
 
+impl CheckedKeyScope {
+    const fn role(self) -> VifRole {
+        match self {
+            Self::StationPairwise { .. } | Self::StationGroup { .. } => VifRole::Station,
+            Self::AccessPointPairwise { .. } | Self::AccessPointGroup { .. } => {
+                VifRole::AccessPoint
+            }
+        }
+    }
+    fn same_slot(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::StationPairwise { .. }, Self::StationPairwise { .. })
+            | (Self::StationGroup { .. }, Self::StationGroup { .. }) => true,
+            (
+                Self::AccessPointPairwise {
+                    association_id: a, ..
+                },
+                Self::AccessPointPairwise {
+                    association_id: b, ..
+                },
+            ) => a == b,
+            (Self::AccessPointGroup { key_id: a }, Self::AccessPointGroup { key_id: b }) => a == b,
+            _ => false,
+        }
+    }
+}
+
 /// The values of an MPDU attempt a caller's types guarantee: the port
 /// enabled, the access category's queue free, `role` configured, `key`
 /// installed for `role`, the rate carried on the channel, the power,
@@ -1990,25 +2436,103 @@ pub enum CheckedKeyScope {
 /// `max_mpdu_length`, and `no_ack` only of an individual frame at a rate
 /// that sends one without an ACK ([`LowerMacCore::submit_checked`]).
 pub struct MpduValues<'slot, const BUFFER_SIZE: usize> {
-    pub role: VifRole,
-    pub access_category: WmmAccessCategory,
+    role: VifRole,
     /// The slot holding the MPDU after the TX metadata word.
-    pub slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
+    slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
     /// The MPDU's length, without its MIC and FCS.
-    pub len: usize,
+    len: usize,
     /// An individual frame sent without soliciting its ACK.
-    pub no_ack: bool,
-    pub rate: TxPhyRate,
+    no_ack: bool,
+    rate: TxPhyRate,
     /// The rate the completion reports.
-    pub reported: PhyRate,
-    pub protection: Protection,
-    pub key: Option<KeyIndex>,
-    pub power_ceiling_dbm: Option<i8>,
+    reported: PhyRate,
+    protection: Protection,
+    power_ceiling_dbm: Option<i8>,
     /// The backoff selected for this publication, in slots.
+    backoff_slots: u16,
+    coex: CoexPriority,
+    /// A transmission of an MPDU the plan sends again.
+    retry: bool,
+}
+
+/// Untrusted parameters checked before constructing an MPDU publication.
+#[derive(Clone, Copy, Debug)]
+pub struct MpduParameters {
+    pub role: VifRole,
+    pub len: usize,
+    pub no_ack: bool,
+    pub rate: PhyRate,
+    pub protection: Protection,
+    pub power_ceiling_dbm: Option<i8>,
     pub backoff_slots: u16,
     pub coex: CoexPriority,
-    /// A transmission of an MPDU the plan sends again.
     pub retry: bool,
+}
+
+/// Why an MPDU cannot become checked submission values.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MpduValueError {
+    Length,
+    Rate,
+    Backoff,
+    Coexistence,
+    PowerCeiling,
+    NoAck,
+}
+
+/// Checked construction refuses with the complete, unpublished slot.
+#[must_use = "retain the refused slot"]
+pub struct MpduValuesRefused<'slot, const BUFFER_SIZE: usize> {
+    pub slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
+    pub reason: MpduValueError,
+}
+
+impl<'slot, const BUFFER_SIZE: usize> MpduValues<'slot, BUFFER_SIZE> {
+    /// Validate the public request once; callers cannot mutate the resulting
+    /// length, rate or protection fields before submission. Encryption itself
+    /// comes from the separately consumed `TxAdmission`, never these values.
+    pub fn checked(
+        slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
+        values: MpduParameters,
+    ) -> Result<Self, MpduValuesRefused<'slot, BUFFER_SIZE>> {
+        let capabilities = esp32s31_lower_mac_capabilities(BUFFER_SIZE);
+        let checked = (|| {
+            if !(MIN_FRAME_LENGTH..=usize::from(capabilities.max_mpdu_length)).contains(&values.len)
+            {
+                return Err(MpduValueError::Length);
+            }
+            let rate = TxPhyRate::try_from(values.rate).map_err(|_| MpduValueError::Rate)?;
+            if values.backoff_slots > MAX_SINGLE_ATTEMPT_BACKOFF_SLOTS {
+                return Err(MpduValueError::Backoff);
+            }
+            if !matches!(values.coex, CoexPriority::Normal | CoexPriority::Elevated) {
+                return Err(MpduValueError::Coexistence);
+            }
+            if values.power_ceiling_dbm.is_some_and(|ceiling| ceiling < 0) {
+                return Err(MpduValueError::PowerCeiling);
+            }
+            if values.no_ack && !matches!(rate, TxPhyRate::Legacy(_)) {
+                return Err(MpduValueError::NoAck);
+            }
+            Ok(rate)
+        })();
+        match checked {
+            Ok(rate) => Ok(Self {
+                role: values.role,
+                slot,
+                len: values.len,
+                no_ack: values.no_ack,
+                rate,
+                reported: values.rate,
+                protection: values.protection,
+                power_ceiling_dbm: values.power_ceiling_dbm,
+                backoff_slots: values.backoff_slots,
+                coex: values.coex,
+                retry: values.retry,
+            }),
+            Err(reason) => Err(MpduValuesRefused { slot, reason }),
+        }
+    }
 }
 
 /// The values of an aggregate a caller's types guarantee: `role`
@@ -2020,13 +2544,28 @@ pub struct AmpduValues {
     pub access_category: WmmAccessCategory,
     pub rate: TxPhyRate,
     pub protection: Protection,
-    pub key: Option<KeyIndex>,
     pub power_ceiling_dbm: Option<i8>,
     /// The backoff selected for this publication, in slots.
     pub backoff_slots: u16,
     pub coex: CoexPriority,
     /// The recipient's Minimum MPDU Start Spacing encoding, 0 to 7.
     pub min_mpdu_start_spacing: u8,
+}
+
+/// A refused aggregate plan returns its admission without publishing.
+#[must_use = "retain both admission owners and handle the reason"]
+pub struct AmpduPlanningRefused<'core, Path: PoolPath = Root> {
+    pub queue: FreeQueue<'core, Path>,
+    pub admission: TxAdmission<'core, Path>,
+    pub reason: AmpduRefusal,
+}
+
+impl<Path: PoolPath> core::fmt::Debug for AmpduPlanningRefused<'_, Path> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("AmpduPlanningRefused")
+            .field("reason", &self.reason)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Why an aggregate cannot go as one publication.
@@ -2050,6 +2589,8 @@ pub enum AmpduRefusal {
     Length,
     /// A non-HT rate: aggregates go in HT or HE PPDUs.
     LegacyRate,
+    /// A subframe or interface does not match the owned encryption admission.
+    KeyUseMismatch,
 }
 
 /// An MPDU submission planned.
@@ -2057,7 +2598,6 @@ struct Admission {
     queue: LegacyTxQueue,
     plan: OrdinaryTxPlan,
     single: SingleAttempt,
-    key: Option<KeyIndex>,
 }
 
 const fn mac_interface(role: VifRole) -> MacInterface {

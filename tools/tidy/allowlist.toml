@@ -416,3 +416,43 @@ reason = "Standalone compiler contract executed by the host/RV32 UI catalog with
 [[uncompiled]]
 path = "crates/protocols/ieee80211/sta/tests/ui/retired_station_diagnostics.rs"
 reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/queue_owner.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/foreign_queue.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/sibling_queue.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/mpdu_values.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/failed_gate.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/key_removed.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/key_use_clone.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/key_use_required.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/key_use_once.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/key_use_foreign.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"

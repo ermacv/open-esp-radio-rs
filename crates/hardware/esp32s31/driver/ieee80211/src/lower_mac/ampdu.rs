@@ -33,7 +33,9 @@
 //! category's TXOP limit in its checked plan. Trigger-based aggregates stay
 //! outside the declared formats; they require a separate Trigger reservation.
 
+use super::{FreeQueue, TxAdmission};
 use core::fmt;
+use oer_radio_port::{PoolPath, Root};
 
 use oer_esp32s31_ieee80211_mac::tx::{
     HeAmpduTxConfig, HtAmpduDensity, HtChannelWidth, HtGuardInterval, HtMcs, HtProtectionSpacing,
@@ -167,6 +169,22 @@ impl<'slot, S: AmpduBacking, const SLOTS: usize> Esp32s31AmpduBuffer<'slot, S, S
 }
 
 impl<S: AmpduBacking, const SLOTS: usize> Esp32s31AmpduBuffer<'_, S, SLOTS> {
+    pub(super) fn matches_admission<Path: PoolPath>(
+        &mut self,
+        role: oer_ieee80211_lower_mac::VifRole,
+        admission: &TxAdmission<'_, Path>,
+    ) -> bool {
+        self.subframes.iter_mut().flatten().all(|subframe| {
+            let region = subframe.backing.stable_dma_region().into_mut_slice();
+            admission.matches_frame(
+                role,
+                region
+                    .get(TX_AMPDU_METADATA_SIZE..)
+                    .and_then(|frame| frame.get(..subframe.len)),
+            )
+        })
+    }
+
     /// The first MPDU, for the checks of admission.
     pub fn first_mpdu(&mut self) -> Option<&[u8]> {
         let subframe = self.subframes.first_mut()?.as_mut()?;
@@ -226,9 +244,17 @@ impl<S: AmpduBacking, const SLOTS: usize> fmt::Debug for Esp32s31AmpduBuffer<'_,
     }
 }
 
-/// The queue-state choices of one admitted aggregate.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct AmpduPlan {
+/// The affine publication plan owns both its queue and encryption authority.
+/// A protected plan cannot be forged or retained after publication.
+#[must_use = "publish the aggregate or return its admission"]
+pub struct AmpduPlan<'core, Path: PoolPath = Root> {
+    pub(super) queue: FreeQueue<'core, Path>,
+    pub(super) admission: TxAdmission<'core, Path>,
+    pub(super) settings: AmpduSettings,
+}
+
+/// Register values already derived from the owned admission.
+pub(super) struct AmpduSettings {
     pub queue: LegacyTxQueue,
     pub format: AmpduFormat,
     pub role: AmpduTxRoleAdapter,
@@ -274,7 +300,9 @@ pub const fn protection_spacing(min_mpdu_start_spacing: u8) -> HtProtectionSpaci
 }
 
 /// A published aggregate on its queue.
-pub struct PublishedAmpdu<'slot, B, const SLOTS: usize> {
+pub struct PublishedAmpdu<'core, 'slot, B, const SLOTS: usize, Path: PoolPath = Root> {
+    queue: FreeQueue<'core, Path>,
+    admission: TxAdmission<'core, Path>,
     owner: Esp32s31AmpduOwner<'slot, B, SLOTS>,
     cookie: TxCookie,
     /// The publication deadline, or the end of the abort settle.
@@ -282,7 +310,7 @@ pub struct PublishedAmpdu<'slot, B, const SLOTS: usize> {
     settling: bool,
 }
 
-impl<B, const SLOTS: usize> PublishedAmpdu<'_, B, SLOTS> {
+impl<B, const SLOTS: usize, Path: PoolPath> PublishedAmpdu<'_, '_, B, SLOTS, Path> {
     pub const fn deadline(&self) -> oer_time::Instant {
         self.deadline
     }
@@ -335,25 +363,69 @@ impl AmpduOutcome {
     }
 }
 
-pub enum AmpduProgress<'slot, B, const SLOTS: usize> {
-    Pending(PublishedAmpdu<'slot, B, SLOTS>),
+pub enum AmpduProgress<'core, 'slot, B, const SLOTS: usize, Path: PoolPath = Root> {
+    Pending(PublishedAmpdu<'core, 'slot, B, SLOTS, Path>),
     /// The aggregate ended and released its subframes; the owner is idle.
-    Complete {
-        outcome: AmpduOutcome,
-        owner: Esp32s31AmpduOwner<'slot, B, SLOTS>,
-    },
+    Complete(CompletedAmpdu<'core, 'slot, B, SLOTS, Path>),
+}
+
+/// The detached aggregate and its affine terminal. Only the installing core
+/// releases the queue and key right while publishing the terminal to its sink.
+#[must_use = "return the detached aggregate through its core"]
+pub struct CompletedAmpdu<'core, 'slot, B, const SLOTS: usize, Path: PoolPath = Root> {
+    pub(super) outcome: AmpduOutcome,
+    pub(super) owner: Esp32s31AmpduOwner<'slot, B, SLOTS>,
+    pub(super) queue: FreeQueue<'core, Path>,
+    pub(super) admission: TxAdmission<'core, Path>,
+}
+
+/// An aggregate fault retains every admitted right and its DMA owner. It has
+/// no release operation: a poisoned backend carries it through reset custody.
+#[must_use = "retain the poisoned aggregate in the backend's quarantine"]
+pub struct AmpduFault<'core, 'slot, B, const SLOTS: usize, Path: PoolPath = Root> {
+    pub error: HtAmpduTxError,
+    _owner: Esp32s31AmpduOwner<'slot, B, SLOTS>,
+    _queue: FreeQueue<'core, Path>,
+    _admission: TxAdmission<'core, Path>,
+}
+
+impl<'core, 'slot, B, const SLOTS: usize, Path: PoolPath> AmpduFault<'core, 'slot, B, SLOTS, Path> {
+    pub(super) fn retain_completed(
+        completed: CompletedAmpdu<'core, 'slot, B, SLOTS, Path>,
+    ) -> Self {
+        Self {
+            error: HtAmpduTxError::ResetRequired,
+            _owner: completed.owner,
+            _queue: completed.queue,
+            _admission: completed.admission,
+        }
+    }
+}
+
+impl<B, const SLOTS: usize, Path: PoolPath> fmt::Debug for AmpduFault<'_, '_, B, SLOTS, Path> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AmpduFault")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Commit the buffer's subframes to its owner and publish the aggregate
-/// once. An error leaves the owner to be dropped: a reserved aggregate
-/// returns its subframes, a published one is quarantined.
-pub fn publish<'slot, S, H, const SLOTS: usize>(
+/// once. An error returns the owner and its admission in sealed quarantine.
+#[allow(
+    clippy::result_large_err,
+    reason = "retain the complete DMA and key owners without allocation"
+)]
+pub fn publish<'core, 'slot, S, H, const SLOTS: usize, Path: PoolPath>(
     hardware: &mut H,
     buffer: Esp32s31AmpduBuffer<'slot, S, SLOTS>,
-    plan: AmpduPlan,
+    plan: AmpduPlan<'core, Path>,
     now: oer_time::Instant,
     publication_timeout: oer_time::Duration,
-) -> Result<PublishedAmpdu<'slot, S::Backing, SLOTS>, HtAmpduTxError>
+) -> Result<
+    PublishedAmpdu<'core, 'slot, S::Backing, SLOTS, Path>,
+    AmpduFault<'core, 'slot, S::Backing, SLOTS, Path>,
+>
 where
     S: AmpduBacking,
     H: HtAmpduHardware,
@@ -363,84 +435,102 @@ where
         subframes,
         ..
     } = buffer;
-    let deadline = now
-        .checked_add(publication_timeout)
-        .ok_or(HtAmpduTxError::ResetRequired)?;
-    let cookie = owner.begin()?;
-    for subframe in subframes.into_iter().flatten() {
-        let layout = AmpduFrameLayout::new(
-            0,
-            AmpduFrameSize::new(subframe.len, plan.hardware_mic_length),
-        )
-        .ok_or(HtAmpduTxError::FrameTooLong)?;
+    let AmpduPlan {
+        queue,
+        admission,
+        settings: plan,
+    } = plan;
+    let result = (|| {
+        let deadline = now
+            .checked_add(publication_timeout)
+            .ok_or(HtAmpduTxError::ResetRequired)?;
+        let cookie = owner.begin()?;
+        for subframe in subframes.into_iter().flatten() {
+            let layout = AmpduFrameLayout::new(
+                0,
+                AmpduFrameSize::new(subframe.len, plan.hardware_mic_length),
+            )
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+            match plan.format {
+                AmpduFormat::Ht { rate, .. } => owner.commit_ht(
+                    cookie,
+                    subframe.backing,
+                    HtAmpduFrameRequest::new(layout, 0, rate),
+                )?,
+                AmpduFormat::He { policy, .. } => owner.commit_he(
+                    cookie,
+                    subframe.backing,
+                    HeAmpduFrameRequest::new(layout, policy),
+                )?,
+            }
+        }
+        let aggregate = owner.prepared_aggregate(cookie)?;
+        let publication = plan.publication;
         match plan.format {
-            AmpduFormat::Ht { rate, .. } => owner.commit_ht(
-                cookie,
-                subframe.backing,
-                HtAmpduFrameRequest::new(layout, 0, rate),
-            )?,
-            AmpduFormat::He { policy, .. } => owner.commit_he(
-                cookie,
-                subframe.backing,
-                HeAmpduFrameRequest::new(layout, policy),
-            )?,
+            AmpduFormat::Ht {
+                rate,
+                protection_spacing,
+            } => {
+                let config = ht_ampdu_publication_config(
+                    plan.role,
+                    HtAmpduPublicationInputs {
+                        rate,
+                        aggregate_length: aggregate.bytes,
+                        subframes: aggregate.subframes,
+                        protection_spacing,
+                        data_power_primary: publication.data_power_primary,
+                        data_power_alternate: publication.data_power_alternate,
+                        control: publication.control,
+                        aifsn: publication.aifsn,
+                        contention_window: publication.contention_window,
+                        scheduler_priority: publication.scheduler_priority,
+                        packet_priority: publication.packet_priority,
+                    },
+                )
+                .ok_or(HtAmpduTxError::AggregateConfigurationMismatch)?;
+                owner.submit(hardware, cookie, plan.queue, config)?;
+            }
+            AmpduFormat::He { policy, bss_color } => {
+                let mut config = HeAmpduTxConfig::new_with_txop(
+                    policy.rate(),
+                    bss_color,
+                    aggregate.bytes,
+                    aggregate.subframes,
+                    policy.density(),
+                    policy.txop_limit(),
+                )
+                .ok_or(HtAmpduTxError::AggregateConfigurationMismatch)?;
+                config.data_power_primary = publication.data_power_primary;
+                config.data_power_alternate = publication.data_power_alternate;
+                config.control = publication.control;
+                config.aifsn = publication.aifsn;
+                config.contention_window = publication.contention_window;
+                config.interface = plan.role.interface;
+                config.scheduler_priority = publication.scheduler_priority;
+                config.pti = publication.packet_priority;
+                config.pti_count = 1;
+                config.hardware_key_selector = plan.role.hardware_key_selector;
+                owner.submit_he(hardware, cookie, plan.queue, config)?;
+            }
         }
+        Ok((cookie, deadline))
+    })();
+    match result {
+        Ok((cookie, deadline)) => Ok(PublishedAmpdu {
+            owner,
+            cookie,
+            deadline,
+            settling: false,
+            queue,
+            admission,
+        }),
+        Err(error) => Err(AmpduFault {
+            error,
+            _owner: owner,
+            _queue: queue,
+            _admission: admission,
+        }),
     }
-    let aggregate = owner.prepared_aggregate(cookie)?;
-    let publication = plan.publication;
-    match plan.format {
-        AmpduFormat::Ht {
-            rate,
-            protection_spacing,
-        } => {
-            let config = ht_ampdu_publication_config(
-                plan.role,
-                HtAmpduPublicationInputs {
-                    rate,
-                    aggregate_length: aggregate.bytes,
-                    subframes: aggregate.subframes,
-                    protection_spacing,
-                    data_power_primary: publication.data_power_primary,
-                    data_power_alternate: publication.data_power_alternate,
-                    control: publication.control,
-                    aifsn: publication.aifsn,
-                    contention_window: publication.contention_window,
-                    scheduler_priority: publication.scheduler_priority,
-                    packet_priority: publication.packet_priority,
-                },
-            )
-            .ok_or(HtAmpduTxError::AggregateConfigurationMismatch)?;
-            owner.submit(hardware, cookie, plan.queue, config)?;
-        }
-        AmpduFormat::He { policy, bss_color } => {
-            let mut config = HeAmpduTxConfig::new_with_txop(
-                policy.rate(),
-                bss_color,
-                aggregate.bytes,
-                aggregate.subframes,
-                policy.density(),
-                policy.txop_limit(),
-            )
-            .ok_or(HtAmpduTxError::AggregateConfigurationMismatch)?;
-            config.data_power_primary = publication.data_power_primary;
-            config.data_power_alternate = publication.data_power_alternate;
-            config.control = publication.control;
-            config.aifsn = publication.aifsn;
-            config.contention_window = publication.contention_window;
-            config.interface = plan.role.interface;
-            config.scheduler_priority = publication.scheduler_priority;
-            config.pti = publication.packet_priority;
-            config.pti_count = 1;
-            config.hardware_key_selector = plan.role.hardware_key_selector;
-            owner.submit_he(hardware, cookie, plan.queue, config)?;
-        }
-    }
-    Ok(PublishedAmpdu {
-        owner,
-        cookie,
-        deadline,
-        settling: false,
-    })
 }
 
 /// Consume one interrupt or deadline edge several queues share, as
@@ -450,39 +540,64 @@ where
 /// begun only while no other queue's abort forces CCA.
 /// Diagnostic-only completion does not consume the step: latched events and
 /// an expired watchdog remain actionable even on an interrupt wake.
-pub fn service<'slot, B, H, const SLOTS: usize>(
+#[allow(
+    clippy::result_large_err,
+    reason = "a fault retains the complete publication in quarantine"
+)]
+pub fn service<'core, 'slot, B, H, const SLOTS: usize, Path: PoolPath>(
     hardware: &mut H,
-    mut published: PublishedAmpdu<'slot, B, SLOTS>,
+    mut published: PublishedAmpdu<'core, 'slot, B, SLOTS, Path>,
     wake: WifiTxWake,
     may_begin_timeout_abort: bool,
     now: oer_time::Instant,
-) -> Result<AmpduProgress<'slot, B, SLOTS>, HtAmpduTxError>
+) -> Result<AmpduProgress<'core, 'slot, B, SLOTS, Path>, AmpduFault<'core, 'slot, B, SLOTS, Path>>
+where
+    B: StableDmaBacking,
+    H: HtAmpduHardware,
+{
+    match service_step(hardware, &mut published, wake, may_begin_timeout_abort, now) {
+        Ok(None) => Ok(AmpduProgress::Pending(published)),
+        Ok(Some(outcome)) => Ok(AmpduProgress::Complete(CompletedAmpdu {
+            outcome,
+            owner: published.owner,
+            queue: published.queue,
+            admission: published.admission,
+        })),
+        Err(error) => Err(AmpduFault {
+            error,
+            _owner: published.owner,
+            _queue: published.queue,
+            _admission: published.admission,
+        }),
+    }
+}
+
+fn service_step<B, H, const SLOTS: usize, Path: PoolPath>(
+    hardware: &mut H,
+    published: &mut PublishedAmpdu<'_, '_, B, SLOTS, Path>,
+    wake: WifiTxWake,
+    may_begin_timeout_abort: bool,
+    now: oer_time::Instant,
+) -> Result<Option<AmpduOutcome>, HtAmpduTxError>
 where
     B: StableDmaBacking,
     H: HtAmpduHardware,
 {
     use oer_esp32s31_ieee80211_mac::irq::{EVENT_COLLISION, EVENT_TX_TIMEOUT};
-
     let cookie = published.cookie;
     if published.settling {
         if now < published.deadline {
-            return Ok(AmpduProgress::Pending(published));
+            return Ok(None);
         }
         published.owner.finish_timeout_abort(hardware, cookie)?;
-        return Ok(AmpduProgress::Complete {
-            outcome: AmpduOutcome::Aborted,
-            owner: published.owner,
-        });
+        return Ok(Some(AmpduOutcome::Aborted));
     }
     if let Some(event) = published.owner.acknowledge_completion(hardware)? {
         match event {
             oer_esp32s31_ieee80211_mac::tx::CompletionObservation::Observed(completion) => {
                 published.owner.detach_completed(hardware, cookie)?;
                 published.owner.release_completed(cookie)?;
-                return Ok(AmpduProgress::Complete {
-                    outcome: AmpduOutcome::Completed(completion),
-                    owner: published.owner,
-                });
+                return Ok(Some(AmpduOutcome::Completed(completion)));
             }
             oer_esp32s31_ieee80211_mac::tx::CompletionObservation::NoEffect => {}
         }
@@ -492,10 +607,7 @@ where
         WifiTxWake::Deadline => 0,
     };
     if events & EVENT_COLLISION != 0 && published.owner.abort_collision(hardware, cookie)? {
-        return Ok(AmpduProgress::Complete {
-            outcome: AmpduOutcome::Collision,
-            owner: published.owner,
-        });
+        return Ok(Some(AmpduOutcome::Collision));
     }
     let expired = now >= published.deadline;
     if (events & EVENT_TX_TIMEOUT != 0 || expired) && may_begin_timeout_abort {
@@ -504,14 +616,12 @@ where
             published.deadline = now
                 .checked_add(TX_ABORT_SETTLE)
                 .ok_or(HtAmpduTxError::ResetRequired)?;
-            return Ok(AmpduProgress::Pending(published));
+            return Ok(None);
         }
         if expired {
-            // No qualified timeout edge: the leases stay retained until a
-            // radio reset.
             published.owner.require_reset(cookie)?;
             return Err(HtAmpduTxError::ResetRequired);
         }
     }
-    Ok(AmpduProgress::Pending(published))
+    Ok(None)
 }

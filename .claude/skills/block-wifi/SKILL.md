@@ -28,6 +28,23 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
 
 ## Traps
 
+- S31 ordinary queue places belong to `CorePools`: the branded authority
+  constructs one core, and each `FreeQueue` moves through submit and its
+  terminal. A failed gate opening withdraws every unpublished owner and
+  retains the published prefix in `GateOpenFailed`, which only drains.
+  Host model DMA bus addresses can alias between slots; ownership tests
+  must compare the pinned Rust owners, not just their model bus addresses.
+
+- `CorePools<N>` issues the core authority and exactly `N` TX tickets.
+  Both open and protected attempts consume a ticket. `KeyHandle` is affine;
+  removal consumes it and `KeyUse` retains each already admitted use until
+  its MPDU or A-MPDU terminal. Publication takes the selector directly from
+  that right. Never clear or reprogram the slot while a right exists;
+  `KeyRemoved` follows the last TX terminal without polling. Poisoned keeps
+  DMA, queue and key rights in sealed quarantine. `LowerMacCoreParts` keeps
+  the key ledger across a disabled restart; extracting only the transmitter
+  would lose the outstanding rights and is not exposed.
+
 - A stopped station service restarts only by consuming `StoppedService` with
   its matching disabled port owner. Reuse its returned banks: reminting loses
   epoch, lease and data-order frontiers. Startup reclaims old keys and receive

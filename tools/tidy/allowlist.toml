@@ -727,3 +727,11 @@ reason = "cargo xtask check ui checks terminal quarantine and affine queue reuse
 [[uncompiled]]
 path = "crates/runtime/esp32s31/bluetooth/tests/ui/queue_once.rs"
 reason = "cargo xtask check ui checks terminal quarantine and affine queue reuse with compiling twins"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/hal/tests/ui/poisoned_clock_retry.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/hal/tests/ui/repeat_clock_release.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"

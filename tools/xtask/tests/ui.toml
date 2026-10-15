@@ -345,3 +345,13 @@ packages = ["oer-esp32s31-bluetooth-runtime"]
 features = []
 targets = ["esp32s31"]
 cases = ["crates/runtime/esp32s31/bluetooth/tests/ui/queue_once.rs"]
+
+[[suite]]
+name = "s31-clock-obligation"
+packages = ["oer-esp32s31-hal"]
+features = []
+targets = ["host", "esp32s31"]
+cases = [
+    "crates/hardware/esp32s31/hal/tests/ui/repeat_clock_release.rs",
+    "crates/hardware/esp32s31/hal/tests/ui/poisoned_clock_retry.rs",
+]

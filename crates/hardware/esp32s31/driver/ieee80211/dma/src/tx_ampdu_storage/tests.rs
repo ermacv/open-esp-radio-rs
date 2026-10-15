@@ -70,6 +70,7 @@ impl Drop for TestBacking {
 )]
 // SAFETY: the boxed bytes never move or get released while this backing
 // exists, and the backing exposes no operation that frees them early.
+// Forgetting the backing leaks its Box, so the allocation survives indefinitely.
 unsafe impl StableDmaBacking for TestBacking {
     fn stable_dma_region(&mut self) -> StableDmaRegion<'_> {
         if let Some(calls) = &self.region_calls {
@@ -92,6 +93,7 @@ unsafe impl StableDmaBacking for TestBacking {
 )]
 // SAFETY: the boxed bytes never move or get released while this backing
 // exists, and the backing exposes no operation that frees them early.
+// Forgetting the backing leaks its Box, so the allocation survives indefinitely.
 unsafe impl StableDmaBacking for LargeTestBacking {
     fn stable_dma_region(&mut self) -> StableDmaRegion<'_> {
         // SAFETY: moving `LargeTestBacking` does not move its boxed allocation.
@@ -777,4 +779,47 @@ fn review_forgotten_dma_owner_cannot_release_live_backings_from_retention() {
         0,
         "hardware-visible backing was returned/freed without detach"
     );
+}
+
+#[test]
+#[allow(
+    clippy::drop_non_drop,
+    reason = "ending the retention arena explicitly demonstrates that its borrowed metadata can end before DMA custody"
+)]
+fn forgotten_aggregate_retains_allocation_after_borrowed_metadata_ends() {
+    let drops = Rc::new(Cell::new(0));
+    let dma_address;
+    {
+        let mut tag = 3;
+        let mut retention = RetainedAmpduDmaStorage::new();
+        let mut owner = RetainedAmpduDma::new(descriptor_only_storage(), &mut retention);
+        owner.begin().unwrap();
+        let lease =
+            oer_memory::TaggedStableDmaBacking::new(&mut tag, TestBacking::new(drops.clone()));
+        let (backing, region) = owner.push_backing_region(lease).unwrap();
+        region[0] = 0x5d;
+        dma_address = region.as_ptr();
+        let descriptor = backing
+            .external_descriptor(dma_address.addr(), 64, 32)
+            .unwrap();
+        owner
+            .publish_external_chain(&[descriptor])
+            .unwrap()
+            .commit(|_| {});
+        core::mem::forget(owner);
+        // The arena and the CPU-only metadata can both end. Neither owns the
+        // allocation once the lease is retained in its ManuallyDrop cell.
+        drop(retention);
+        tag = 8;
+        assert_eq!(tag, 8);
+    }
+    assert_eq!(drops.get(), 0);
+    #[allow(
+        unsafe_code,
+        reason = "the test models a DMA read after the retaining arena ends"
+    )]
+    // SAFETY: TestBacking owns the Box; forgetting its owner and dropping the
+    // ManuallyDrop arena leave that allocation live, with no competing writer.
+    let observed = unsafe { dma_address.read() };
+    assert_eq!(observed, 0x5d);
 }

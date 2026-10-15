@@ -35,6 +35,9 @@ use oer_ieee80211_mac::{
 };
 use oer_time::{Duration, Instant};
 
+mod publication;
+pub use publication::{ApBeaconPublication, ApBeaconTxContext, ApBeaconTxOutcome, ApDtimRelease};
+
 pub struct ApBeacon<'storage> {
     storage: &'storage mut [u8; AP_BEACON_CAPACITY],
     len: usize,
@@ -255,6 +258,11 @@ impl<'storage> ApBeacon<'storage> {
 
     /// Stamp one frame using `now` and advance its TBTT schedule.
     ///
+    /// The returned publication owns the exact group queue prefix advertised
+    /// by this frame. Retain its context until the TX terminal; only a
+    /// delivered beacon grants that prefix's release. Later queue arrivals
+    /// and later TIM phases cannot enlarge it.
+    ///
     /// The returned frame can wait in a software TX queue before submission.
     /// This method does not refresh the timestamp at hardware submission or
     /// on-air transmission.
@@ -265,16 +273,16 @@ impl<'storage> ApBeacon<'storage> {
         &mut self,
         now: Instant,
         management_sequence: SequenceNumber,
-        group_pending: bool,
+        buffered_group_frames: u16,
         unicast_tim_bitmap: TimPartialVirtualBitmap<'_>,
-    ) -> Option<&mut [u8]> {
+    ) -> Option<ApBeaconPublication<'_>> {
         if self.channel_switch_due().is_some() {
             return None;
         }
         stamp(
             &mut self.storage[..self.len],
             now.as_micros(),
-            group_pending,
+            buffered_group_frames != 0,
         )?;
         self.storage[22..24].copy_from_slice(&management_sequence.sequence_control().to_le_bytes());
         self.len = write_tim_partial_virtual_bitmap(self.storage, self.len, unicast_tim_bitmap)?;
@@ -286,7 +294,16 @@ impl<'storage> ApBeacon<'storage> {
         }
         let schedule_base = self.next_publication.unwrap_or(now);
         self.next_publication = Some(next_tbtt(schedule_base, self.interval, now)?);
-        Some(&mut self.storage[..self.len])
+        let frame = &mut self.storage[..self.len];
+        let (_, dtim_count, _) = dtim(frame)?;
+        Some(ApBeaconPublication::new(
+            frame,
+            if dtim_count == 0 {
+                buffered_group_frames
+            } else {
+                0
+            },
+        ))
     }
 
     /// The next TBTT, once the first beacon has established the schedule.

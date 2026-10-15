@@ -117,6 +117,10 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   corrupt the new frontier. A new material epoch starts at KeyRSC; keeping
   identical material means keeping the original replay owner.
 
+- A beacon publication retains `ApBeaconTxContext`, including the exact DTIM
+  group prefix from preparation. Only confirmed publication releases that
+  prefix. Later queue arrivals and a later TIM phase cannot enlarge it;
+  failed, withdrawn, indeterminate and unsent beacons leave it buffered.
 - AP EAPOL publication retains `ApEapolTxContext` from frame construction to
   terminal delivery. RX can advance to M3 before the M1 TX terminal, or finish
   M4 before the M3 terminal. Compare the retained association/message/replay

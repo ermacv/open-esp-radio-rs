@@ -30,13 +30,12 @@ use oer_ieee80211_mac::{ap::ApPeerDisconnectKind, security::LinkProtection};
 
 use oer_ieee80211_ap::{
     ApEapolTransmit, ApEapolTxContext, ApPeerClose, ApPeerPowerState, ApServiceError,
+    beacon::{ApBeaconTxContext, ApBeaconTxOutcome, ApDtimRelease},
 };
 
 #[derive(Debug)]
 enum PendingPublication {
-    Beacon {
-        dtim_group_frames: u16,
-    },
+    Beacon(ApBeaconTxContext),
     Authentication,
     ProbeResponse {
         #[cfg(any(feature = "diagnostics", test))]
@@ -78,7 +77,7 @@ pub enum ApPendingPublicationKind {
 impl PendingPublication {
     const fn kind(&self) -> ApPendingPublicationKind {
         match self {
-            Self::Beacon { .. } => ApPendingPublicationKind::Beacon,
+            Self::Beacon(_) => ApPendingPublicationKind::Beacon,
             Self::ProbeResponse { .. } => ApPendingPublicationKind::ProbeResponse,
             Self::Authentication => ApPendingPublicationKind::Authentication,
             Self::Association { .. } => ApPendingPublicationKind::Association,
@@ -206,14 +205,12 @@ struct ApMacObserver {
     first_probe_failure: Option<ProbeFailure>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum ApTxCompletionAction {
     None,
     /// A concrete DTIM beacon advertising this caller-owned queue prefix
     /// reached terminal hardware publication success.
-    DtimGroupRelease {
-        advertised_frames: u16,
-    },
+    DtimGroupRelease(ApDtimRelease),
     BeginWpa2 {
         peer: [u8; 6],
     },
@@ -448,11 +445,15 @@ where
             .engine
             .prepare_beacon_publication(now)
             .ok_or(ApMacError::Engine(ApEngineError::BeaconPreparation))?;
-        self.transmit
-            .start_encoded(hardware, ApTxClass::Beacon, publication.frame)?;
-        self.pending = Some(PendingPublication::Beacon {
-            dtim_group_frames: publication.dtim_group_frames,
-        });
+        let (frame, context) = publication.into_parts();
+        if let Err(error) = self
+            .transmit
+            .start_encoded(hardware, ApTxClass::Beacon, frame)
+        {
+            let _retained_prefix = context.complete(ApBeaconTxOutcome::Unsent);
+            return Err(error.into());
+        }
+        self.pending = Some(PendingPublication::Beacon(context));
         Ok(())
     }
 
@@ -950,12 +951,16 @@ where
                         self.engine.observe_wpa2_transmit(context, false, now)?;
                         ApTxCompletionAction::PublicationFailed
                     }
+                    PendingPublication::Beacon(context) => {
+                        let _retained_prefix = context.complete(ApBeaconTxOutcome::NotDelivered);
+                        ApTxCompletionAction::PublicationFailed
+                    }
                     _ => ApTxCompletionAction::PublicationFailed,
                 },
             ));
         }
         let action = match pending {
-            PendingPublication::Beacon { dtim_group_frames } => {
+            PendingPublication::Beacon(context) => {
                 #[cfg(any(feature = "diagnostics", test))]
                 {
                     self.observer.observation.beacons_transmitted = self
@@ -964,12 +969,9 @@ where
                         .beacons_transmitted
                         .saturating_add(1);
                 }
-                if dtim_group_frames == 0 {
-                    ApTxCompletionAction::None
-                } else {
-                    ApTxCompletionAction::DtimGroupRelease {
-                        advertised_frames: dtim_group_frames,
-                    }
+                match context.complete(ApBeaconTxOutcome::Delivered) {
+                    Some(release) => ApTxCompletionAction::DtimGroupRelease(release),
+                    None => ApTxCompletionAction::None,
                 }
             }
             PendingPublication::ProbeResponse { .. } => ApTxCompletionAction::None,

@@ -34,7 +34,7 @@ use oer_ieee80211_mac::{
         write_ap_peer_disconnect, write_ht_association_response_frame_for_security,
         write_open_authentication_response, write_sae_authentication,
     },
-    beacon::{AP_BEACON_CAPACITY, ApBeaconBuildError, dtim, write_ht_beacon},
+    beacon::{AP_BEACON_CAPACITY, ApBeaconBuildError, write_ht_beacon},
     block_ack::{OperationalTxBlockAck, TxBlockAckResponse, TxBlockAckRetry},
     ccmp::{CcmpKeyId, CcmpReplayLane},
     channel::WifiChannel,
@@ -48,8 +48,10 @@ use oer_ieee80211_ap::{
     ApBufferedUnicastRelease, ApDownlinkAdmission, ApDownlinkDisposition, ApEapolTransmit,
     ApEapolTxCompletion, ApEapolTxContext, ApMlmeAction, ApPeerBinding, ApPeerClose,
     ApPeerCloseKind, ApPeerPhase, ApPeerPowerState, ApPeerStatus, ApPowerSaveAction,
-    ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress, beacon::ApBeacon,
-    pmksa::AP_PMKID_LEN, sae::ApSaeReply,
+    ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
+    beacon::{ApBeacon, ApBeaconPublication},
+    pmksa::AP_PMKID_LEN,
+    sae::ApSaeReply,
 };
 
 use oer_ieee80211_rsn::{OwnedEapolFrame, Pmk, frames::RsnTxFrame};
@@ -124,17 +126,6 @@ fn rejected_rx_security(error: ApSecurityError) -> ApRxAdmission<'static> {
         | ApSecurityError::AssociationIdAlreadyInstalled
         | ApSecurityError::WrongPeer => ApRxAdmission::rejected(ApRxError::KeyGenerationMismatch),
     }
-}
-
-/// One executor-stamped beacon and the exact group queue prefix it advertised.
-///
-/// `dtim_group_frames` is nonzero only when this concrete frame carries
-/// DTIM-count zero and TIM bitmap-control bit zero. It is still only a
-/// publication candidate: the MAC must wait for terminal beacon TX success
-/// before handing this count to the caller-owned group queue.
-pub struct ApBeaconPublication<'frame> {
-    pub frame: &'frame mut [u8],
-    pub dtim_group_frames: u16,
 }
 
 pub struct ApEngineStartFailure<'storage> {
@@ -519,11 +510,6 @@ impl<'storage> ApEngine<'storage> {
         self.observer.observe(event);
     }
 
-    pub fn prepare_beacon(&mut self, now: oer_time::Instant) -> Option<&mut [u8]> {
-        self.prepare_beacon_publication(now)
-            .map(|publication| publication.frame)
-    }
-
     /// Prepare one beacon together with the exact DTIM group prefix encoded in
     /// that frame. The returned count must not be released until terminal
     /// beacon publication succeeds.
@@ -531,31 +517,23 @@ impl<'storage> ApEngine<'storage> {
         &mut self,
         now: oer_time::Instant,
     ) -> Option<ApBeaconPublication<'_>> {
-        let group_pending = self.service.group_traffic_pending();
         let buffered_group_frames = self.service.buffered_group_frames();
         let unicast_tim_bitmap = self.service.unicast_tim_bitmap().ok()?;
         let unicast_tim_bitmap = unicast_tim_bitmap.partial();
         self.advertise_current_protection().ok()?;
         let management_sequence = self.service.next_management_sequence();
-        let beacon =
-            self.beacon
-                .prepare(now, management_sequence, group_pending, unicast_tim_bitmap);
+        let beacon = self.beacon.prepare(
+            now,
+            management_sequence,
+            buffered_group_frames,
+            unicast_tim_bitmap,
+        );
         if beacon.is_some() {
             #[cfg(any(feature = "diagnostics", test))]
             self.observer
                 .observe(ApEngineObservationEvent::BeaconPrepared);
         }
-        let frame = beacon?;
-        let (tim_offset, dtim_count, _) = dtim(frame)?;
-        let group_indicated = dtim_count == 0 && frame.get(tim_offset + 4).copied()? & 1 != 0;
-        Some(ApBeaconPublication {
-            frame,
-            dtim_group_frames: if group_indicated {
-                buffered_group_frames
-            } else {
-                0
-            },
-        })
+        beacon
     }
 
     pub const fn next_beacon(&self) -> Option<oer_time::Instant> {

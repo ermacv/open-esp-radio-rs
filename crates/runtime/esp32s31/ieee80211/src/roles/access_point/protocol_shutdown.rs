@@ -200,13 +200,13 @@ where
             }
         }
         match action {
-            ApTxCompletionAction::DtimGroupRelease { advertised_frames } => {
+            ApTxCompletionAction::DtimGroupRelease(release) => {
                 if self.pending_dtim_group_frames.is_some() {
                     return Err(
                         AccessPointControlError::DtimGroupReleaseAlreadyPending,
                     );
                 }
-                self.pending_dtim_group_frames = Some(advertised_frames);
+                self.pending_dtim_group_frames = Some(release.into_frame_count().get());
             }
             ApTxCompletionAction::BeginWpa2 { peer } => {
                 #[cfg(feature = "diagnostics")]

@@ -136,7 +136,7 @@ fn active_epoch_owns_policy_group_key_management_and_stop_frontier() {
     );
     assert!(
         engine
-            .prepare_beacon(oer_time::Instant::from_micros(102_400))
+            .prepare_beacon_publication(oer_time::Instant::from_micros(102_400))
             .is_some()
     );
 
@@ -894,9 +894,9 @@ fn non_erp_association_updates_the_advertised_erp_and_ht_protection() {
         (frame[erp + 2], frame[ht + 4])
     };
     let initial = engine
-        .prepare_beacon(oer_time::Instant::from_micros(0))
+        .prepare_beacon_publication(oer_time::Instant::from_micros(0))
         .unwrap();
-    assert_eq!(protection_fields(initial), (0, 0));
+    assert_eq!(protection_fields(initial.frame()), (0, 0));
 
     let mut authentication = [0; 30];
     authentication[..2].copy_from_slice(&0x00b0_u16.to_le_bytes());
@@ -944,9 +944,9 @@ fn non_erp_association_updates_the_advertised_erp_and_ht_protection() {
     assert!(bss.erp.long_preamble_required());
     assert_eq!(bss.ht, HtProtectionMode::NonHtMixed);
     let updated = engine
-        .prepare_beacon(oer_time::Instant::from_micros(102_400))
+        .prepare_beacon_publication(oer_time::Instant::from_micros(102_400))
         .unwrap();
-    assert_eq!(protection_fields(updated), (0x07, 0x03));
+    assert_eq!(protection_fields(updated.frame()), (0x07, 0x03));
 }
 
 #[test]

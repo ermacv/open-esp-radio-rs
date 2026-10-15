@@ -38,6 +38,25 @@ const GROUP_PERMISSIONS: usize = 2;
 const GATE_COMMANDS: usize = 2;
 const LIFECYCLE_COMMAND: usize = 1;
 const RETUNE_COMMAND: usize = 1;
+const CONFIGURE_PER_INTERFACE: usize = 1;
+const TSF_PER_INTERFACE: usize = 1;
+
+// Lower-MAC exports a total, while the form maps the two concrete permission
+// types separately. A changed total must stop compilation, not silently move
+// a cell beyond its allocation. Singleton commands likewise own one place.
+const _: () = {
+    assert!(
+        InterfaceCommandPool::<Station>::COMMAND_CAPACITY
+            == CONFIGURE_PER_INTERFACE + TSF_PER_INTERFACE
+    );
+    assert!(
+        InterfaceCommandPool::<AccessPoint>::COMMAND_CAPACITY
+            == CONFIGURE_PER_INTERFACE + TSF_PER_INTERFACE
+    );
+    assert!(CONFIGURE_PER_INTERFACE == 1 && TSF_PER_INTERFACE == 1);
+    assert!(GATE_COMMANDS == 2);
+    assert!(LIFECYCLE_COMMAND == 1 && RETUNE_COMMAND == 1);
+};
 
 /// The same parameters issue the tickets/slots and determine both FIFO sizes.
 pub struct CommandPools<const TICKETS: usize, const PAIRWISE: usize>;
@@ -51,7 +70,8 @@ impl<const T: usize, const K: usize> CommandPools<T, K> {
     /// The phase-contract formula plus the separate consuming Disable place.
     pub const PHASE_STORAGE: usize = Self::PHASE_COMMAND_CAPACITY + LIFECYCLE_COMMAND;
     /// One configure per interface, one retune and the final Enable.
-    pub const SETUP_STORAGE: usize = 2 + RETUNE_COMMAND + LIFECYCLE_COMMAND;
+    pub const SETUP_STORAGE: usize =
+        2 * CONFIGURE_PER_INTERFACE + RETUNE_COMMAND + LIFECYCLE_COMMAND;
 }
 type Layout<const T: usize, const K: usize> = (
     CorePools<T>,
@@ -61,9 +81,9 @@ type Layout<const T: usize, const K: usize> = (
     Slots<RemoveKeyKind, K>,
     Slots<GroupMutationKind, GROUP_PERMISSIONS>,
     GatePool,
-    Slots<RetuneKind, 1>,
-    Slots<EnableKind, 1>,
-    Slots<DisableKind, 1>,
+    Slots<RetuneKind, RETUNE_COMMAND>,
+    Slots<EnableKind, LIFECYCLE_COMMAND>,
+    Slots<DisableKind, LIFECYCLE_COMMAND>,
     Slots<BridgeKind, 1>,
     TransmitPool<TicketKind, T>,
 );
@@ -257,8 +277,20 @@ pub struct CommandStorage<
     _authority: CommandAuthority<'id, Root, T, K>,
 }
 /// The unique pair of endpoints lent by one command store.
-pub type SetupEndpoints<'q, 'id, Caps, SC, AC, C, M, const S: usize, const P: usize> = (
-    SetupSender<'q, 'id, Caps, SC, AC, C, M, S, P>,
+pub type SetupEndpoints<
+    'q,
+    'id,
+    Caps,
+    SC,
+    AC,
+    C,
+    M,
+    const T: usize,
+    const K: usize,
+    const S: usize,
+    const P: usize,
+> = (
+    SetupSender<'q, 'id, Caps, SC, AC, C, M, T, K, S, P>,
     SetupReceiver<'q, 'id, Caps, SC, AC, C, M, S, P>,
 );
 impl<
@@ -284,6 +316,14 @@ impl<
                 P == CommandPools::<T, K>::PHASE_STORAGE,
                 "phase storage must include every permission and Disable"
             );
+            assert!(
+                SetupPlaces::END == S,
+                "every setup cell is in the allocation"
+            );
+            assert!(
+                PhasePlaces::<T, K>::END == P,
+                "every phase cell is in the allocation"
+            );
         }
         Self {
             setup: AffineIndexedSpscQueue::new(),
@@ -298,7 +338,7 @@ impl<
         issuer: GateIssuer<'id, GatePath>,
         enable: Slot<'id, EnableKind, Child<Root, 8>>,
         disable: Slot<'id, DisableKind, Child<Root, 9>>,
-    ) -> SetupEndpoints<'_, 'id, Caps, SC, AC, C, M, S, P> {
+    ) -> SetupEndpoints<'_, 'id, Caps, SC, AC, C, M, T, K, S, P> {
         let (setup_tx, setup_rx) = self.setup.split();
         let (phase_tx, phase_rx) = self.phase.split();
         (
@@ -311,10 +351,6 @@ impl<
                     phase: Sender {
                         queue: phase_tx,
                         wake: &self.phase_wake,
-                    },
-                    places: PhasePlaces {
-                        tickets: T,
-                        pairwise: K,
                     },
                     issuer,
                 },
@@ -344,13 +380,14 @@ struct SendChannels<
     AC,
     C,
     M,
+    const T: usize,
+    const K: usize,
     const S: usize,
     const P: usize,
 > {
     setup: Sender<'q, SetupCommand<'id, Caps, SC, AC>, S>,
     phase: Sender<'q, PhaseCommand<'id, Caps, SC, AC, C, M>, P>,
     issuer: GateIssuer<'id, GatePath>,
-    places: PhasePlaces,
 }
 struct ReceiveChannels<
     'q,
@@ -375,10 +412,12 @@ pub struct SetupSender<
     AC,
     C,
     M,
+    const T: usize,
+    const K: usize,
     const S: usize,
     const P: usize,
 > {
-    channels: SendChannels<'q, 'id, Caps, SC, AC, C, M, S, P>,
+    channels: SendChannels<'q, 'id, Caps, SC, AC, C, M, T, K, S, P>,
     enable: Enable<'id>,
     disable: Disable<'id>,
 }
@@ -391,10 +430,12 @@ pub struct PhaseSender<
     AC,
     C,
     M,
+    const T: usize,
+    const K: usize,
     const S: usize,
     const P: usize,
 > {
-    channels: SendChannels<'q, 'id, Caps, SC, AC, C, M, S, P>,
+    channels: SendChannels<'q, 'id, Caps, SC, AC, C, M, T, K, S, P>,
     disable: Disable<'id>,
 }
 /// The sole producer waiting for its owned Disable reply; no command method.
@@ -407,10 +448,12 @@ pub struct DisablingSender<
     AC,
     C,
     M,
+    const T: usize,
+    const K: usize,
     const S: usize,
     const P: usize,
 > {
-    channels: SendChannels<'q, 'id, Caps, SC, AC, C, M, S, P>,
+    channels: SendChannels<'q, 'id, Caps, SC, AC, C, M, T, K, S, P>,
 }
 #[must_use]
 pub struct SetupReceiver<
@@ -441,8 +484,19 @@ pub struct PhaseReceiver<
     channels: ReceiveChannels<'q, 'id, Caps, SC, AC, C, M, S, P>,
     enable: Enable<'id>,
 }
-impl<'q, 'id, Caps: Ieee80211Capabilities, SC, AC, C, M, const S: usize, const P: usize>
-    SetupSender<'q, 'id, Caps, SC, AC, C, M, S, P>
+impl<
+    'q,
+    'id,
+    Caps: Ieee80211Capabilities,
+    SC,
+    AC,
+    C,
+    M,
+    const T: usize,
+    const K: usize,
+    const S: usize,
+    const P: usize,
+> SetupSender<'q, 'id, Caps, SC, AC, C, M, T, K, S, P>
 {
     pub fn configure(&mut self, command: Configuration<'id, Caps, SC, AC>) {
         self.channels.send_setup(SetupCommand::Configure(command));
@@ -454,7 +508,7 @@ impl<'q, 'id, Caps: Ieee80211Capabilities, SC, AC, C, M, const S: usize, const P
         });
     }
     /// Publishes the final setup command before transferring the producer.
-    pub fn enable(mut self) -> PhaseSender<'q, 'id, Caps, SC, AC, C, M, S, P> {
+    pub fn enable(mut self) -> PhaseSender<'q, 'id, Caps, SC, AC, C, M, T, K, S, P> {
         self.channels.send_setup(SetupCommand::Enable(self.enable));
         PhaseSender {
             channels: self.channels,
@@ -462,8 +516,19 @@ impl<'q, 'id, Caps: Ieee80211Capabilities, SC, AC, C, M, const S: usize, const P
         }
     }
 }
-impl<'q, 'id, Caps: Ieee80211Capabilities, SC, AC, C, M, const S: usize, const P: usize>
-    PhaseSender<'q, 'id, Caps, SC, AC, C, M, S, P>
+impl<
+    'q,
+    'id,
+    Caps: Ieee80211Capabilities,
+    SC,
+    AC,
+    C,
+    M,
+    const T: usize,
+    const K: usize,
+    const S: usize,
+    const P: usize,
+> PhaseSender<'q, 'id, Caps, SC, AC, C, M, T, K, S, P>
 {
     pub fn configure(&mut self, command: Configuration<'id, Caps, SC, AC>) {
         self.channels.send_phase(PhaseCommand::Configure(command));
@@ -515,7 +580,7 @@ impl<'q, 'id, Caps: Ieee80211Capabilities, SC, AC, C, M, const S: usize, const P
         self.channels.send_phase(PhaseCommand::OpenGate);
         self.channels.issuer.open(gate)
     }
-    pub fn disable(mut self) -> DisablingSender<'q, 'id, Caps, SC, AC, C, M, S, P> {
+    pub fn disable(mut self) -> DisablingSender<'q, 'id, Caps, SC, AC, C, M, T, K, S, P> {
         self.channels
             .send_phase(PhaseCommand::Disable(self.disable));
         DisablingSender {
@@ -523,10 +588,24 @@ impl<'q, 'id, Caps: Ieee80211Capabilities, SC, AC, C, M, const S: usize, const P
         }
     }
 }
-impl<'q, 'id, Caps: Ieee80211Capabilities, SC, AC, C, M, const S: usize, const P: usize>
-    DisablingSender<'q, 'id, Caps, SC, AC, C, M, S, P>
+impl<
+    'q,
+    'id,
+    Caps: Ieee80211Capabilities,
+    SC,
+    AC,
+    C,
+    M,
+    const T: usize,
+    const K: usize,
+    const S: usize,
+    const P: usize,
+> DisablingSender<'q, 'id, Caps, SC, AC, C, M, T, K, S, P>
 {
-    pub fn finished(self, reply: Disabled<'id>) -> SetupSender<'q, 'id, Caps, SC, AC, C, M, S, P> {
+    pub fn finished(
+        self,
+        reply: Disabled<'id>,
+    ) -> SetupSender<'q, 'id, Caps, SC, AC, C, M, T, K, S, P> {
         SetupSender {
             channels: self.channels,
             enable: reply.enable,
@@ -605,8 +684,10 @@ struct Entry<T, const N: usize> {
 // use requires a Close reply; FIFO receipt of that Close follows receipt of
 // the previous Open. The private GateIssuer cannot bypass that barrier.
 // Thus equal indices cannot coexist in the same queue. Returned owners / gate
-// barriers also order reuse across cores. N and the disjoint ranges are checked
-// at CommandStorage construction, not at send. There is no public constructor,
+// barriers also order reuse across cores. Const range ends are checked against
+// N at CommandStorage construction; singleton widths and both interface totals
+// are checked at module compilation, so a contract change cannot escape the
+// index proof. There is no public constructor,
 // credit lookup or generic insertion, and invariant brands cannot be mixed.
 unsafe impl<T, const N: usize> UniqueQueueIndex<N> for Entry<T, N> {
     fn queue_index(&self) -> usize {
@@ -614,53 +695,96 @@ unsafe impl<T, const N: usize> UniqueQueueIndex<N> for Entry<T, N> {
     }
 }
 
-struct PhasePlaces {
-    tickets: usize,
-    pairwise: usize,
-}
-impl PhasePlaces {
-    fn index<Caps: Ieee80211Capabilities, SC, AC, C, M>(
-        &self,
-        command: &PhaseCommand<'_, Caps, SC, AC, C, M>,
+// Each base follows the whole preceding minted range. The final end is
+// checked against the independently stated capacity in CommandStorage::new.
+// These types have no instances or runtime geometry fields.
+struct SetupPlaces;
+impl SetupPlaces {
+    const STATION_CONFIGURE: usize = 0;
+    const ACCESS_POINT_CONFIGURE: usize = Self::STATION_CONFIGURE + CONFIGURE_PER_INTERFACE;
+    const RETUNE: usize = Self::ACCESS_POINT_CONFIGURE + CONFIGURE_PER_INTERFACE;
+    const ENABLE: usize = Self::RETUNE + RETUNE_COMMAND;
+    const END: usize = Self::ENABLE + LIFECYCLE_COMMAND;
+
+    fn index<Caps: Ieee80211Capabilities, SC, AC>(
+        command: &SetupCommand<'_, Caps, SC, AC>,
     ) -> usize {
-        let groups = self.tickets + 2 * self.pairwise;
-        let configure = groups + GROUP_PERMISSIONS;
         match command {
-            PhaseCommand::Submit(submission) => usize::from(submission.operation.ticket().index()),
-            PhaseCommand::InstallPairwise { permission, .. } => {
-                self.tickets + usize::from(permission.index())
+            SetupCommand::Configure(Configuration::Station { .. }) => Self::STATION_CONFIGURE,
+            SetupCommand::Configure(Configuration::AccessPoint { .. }) => {
+                Self::ACCESS_POINT_CONFIGURE
             }
-            PhaseCommand::RemovePairwise(permission) => {
-                self.tickets + self.pairwise + usize::from(permission.index())
-            }
-            PhaseCommand::MutateGroup { permission, .. } => {
-                groups + usize::from(permission.index())
-            }
-            PhaseCommand::Configure(Configuration::Station { .. }) => configure,
-            PhaseCommand::Configure(Configuration::AccessPoint { .. }) => configure + 1,
-            PhaseCommand::SampleTsf(Sampling::Station(_)) => configure + 2,
-            PhaseCommand::SampleTsf(Sampling::AccessPoint(_)) => configure + 3,
-            PhaseCommand::CloseGate(_) => configure + 4,
-            PhaseCommand::OpenGate => configure + 5,
-            PhaseCommand::Disable(_) => configure + 6,
+            SetupCommand::Retune { .. } => Self::RETUNE,
+            SetupCommand::Enable(_) => Self::ENABLE,
         }
     }
 }
-impl<'q, 'id, Caps: Ieee80211Capabilities, SC, AC, C, M, const S: usize, const P: usize>
-    SendChannels<'q, 'id, Caps, SC, AC, C, M, S, P>
+struct PhasePlaces<const T: usize, const K: usize>;
+impl<const T: usize, const K: usize> PhasePlaces<T, K> {
+    const SUBMIT: usize = 0;
+    const INSTALL: usize = Self::SUBMIT + T;
+    const REMOVE: usize = Self::INSTALL + K;
+    const GROUP: usize = Self::REMOVE + K;
+    const STATION_CONFIGURE: usize = Self::GROUP + GROUP_PERMISSIONS;
+    const STATION_TSF: usize = Self::STATION_CONFIGURE + CONFIGURE_PER_INTERFACE;
+    const ACCESS_POINT_CONFIGURE: usize =
+        Self::STATION_CONFIGURE + InterfaceCommandPool::<Station>::COMMAND_CAPACITY;
+    const ACCESS_POINT_TSF: usize = Self::ACCESS_POINT_CONFIGURE + CONFIGURE_PER_INTERFACE;
+    const CLOSE_GATE: usize =
+        Self::ACCESS_POINT_CONFIGURE + InterfaceCommandPool::<AccessPoint>::COMMAND_CAPACITY;
+    const OPEN_GATE: usize = Self::CLOSE_GATE + 1;
+    const DISABLE: usize = Self::CLOSE_GATE + GATE_COMMANDS;
+    const END: usize = Self::DISABLE + LIFECYCLE_COMMAND;
+
+    fn index<Caps: Ieee80211Capabilities, SC, AC, C, M>(
+        command: &PhaseCommand<'_, Caps, SC, AC, C, M>,
+    ) -> usize {
+        match command {
+            PhaseCommand::Submit(submission) => {
+                Self::SUBMIT + usize::from(submission.operation.ticket().index())
+            }
+            PhaseCommand::InstallPairwise { permission, .. } => {
+                Self::INSTALL + usize::from(permission.index())
+            }
+            PhaseCommand::RemovePairwise(permission) => {
+                Self::REMOVE + usize::from(permission.index())
+            }
+            PhaseCommand::MutateGroup { permission, .. } => {
+                Self::GROUP + usize::from(permission.index())
+            }
+            PhaseCommand::Configure(Configuration::Station { .. }) => Self::STATION_CONFIGURE,
+            PhaseCommand::Configure(Configuration::AccessPoint { .. }) => {
+                Self::ACCESS_POINT_CONFIGURE
+            }
+            PhaseCommand::SampleTsf(Sampling::Station(_)) => Self::STATION_TSF,
+            PhaseCommand::SampleTsf(Sampling::AccessPoint(_)) => Self::ACCESS_POINT_TSF,
+            PhaseCommand::CloseGate(_) => Self::CLOSE_GATE,
+            PhaseCommand::OpenGate => Self::OPEN_GATE,
+            PhaseCommand::Disable(_) => Self::DISABLE,
+        }
+    }
+}
+impl<
+    'q,
+    'id,
+    Caps: Ieee80211Capabilities,
+    SC,
+    AC,
+    C,
+    M,
+    const T: usize,
+    const K: usize,
+    const S: usize,
+    const P: usize,
+> SendChannels<'q, 'id, Caps, SC, AC, C, M, T, K, S, P>
 {
     fn send_setup(&mut self, command: SetupCommand<'id, Caps, SC, AC>) {
-        let index = match &command {
-            SetupCommand::Configure(Configuration::Station { .. }) => 0,
-            SetupCommand::Configure(Configuration::AccessPoint { .. }) => 1,
-            SetupCommand::Retune { .. } => 2,
-            SetupCommand::Enable(_) => 3,
-        };
+        let index = SetupPlaces::index(&command);
         self.setup.queue.send(Entry { index, command });
         self.setup.wake.wake();
     }
     fn send_phase(&mut self, command: PhaseCommand<'id, Caps, SC, AC, C, M>) {
-        let index = self.places.index(&command);
+        let index = PhasePlaces::<T, K>::index(&command);
         self.phase.queue.send(Entry { index, command });
         self.phase.wake.wake();
     }

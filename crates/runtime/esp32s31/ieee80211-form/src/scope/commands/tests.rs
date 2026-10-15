@@ -428,3 +428,94 @@ fn configured_reply_and_gate_barrier_return_the_exact_cell_permissions() {
         let _setup = waiting.finished(reply);
     }));
 }
+
+fn assert_bijection(indices: impl Iterator<Item = usize>, capacity: usize) {
+    let mut indices: Vec<_> = indices.collect();
+    indices.sort_unstable();
+    assert_eq!(indices, (0..capacity).collect::<Vec<_>>());
+}
+
+fn command_index_bijection<const T: usize, const K: usize>() {
+    ready(branded::<CommandPools<T, K>, _>(async |mint| {
+        let r = mint.into_pools();
+        let setup: [SetupCommand<'_, Caps, (), ()>; 4] = [
+            SetupCommand::Configure(Configuration::Station {
+                permission: r.station.configure,
+                receive: StationReceive::Off,
+            }),
+            SetupCommand::Configure(Configuration::AccessPoint {
+                permission: r.access_point.configure,
+                receive: ap_filter(),
+            }),
+            SetupCommand::Retune {
+                permission: r.retune,
+                channel: Channel::ghz2_4(1, ChannelWidth::Mhz20).unwrap(),
+            },
+            SetupCommand::Enable(Enable { _place: r.enable }),
+        ];
+        assert_bijection(
+            setup.iter().map(SetupPlaces::index),
+            CommandPools::<T, K>::SETUP_STORAGE,
+        );
+    }));
+    ready(branded::<CommandPools<T, K>, _>(async |mint| {
+        let r = mint.into_pools();
+        let mut phase: Vec<PhaseCommand<'_, Caps, (), (), &str, payload::Mpdu>> = std::vec![
+            PhaseCommand::Configure(Configuration::Station {
+                permission: r.station.configure,
+                receive: StationReceive::Off,
+            }),
+            PhaseCommand::Configure(Configuration::AccessPoint {
+                permission: r.access_point.configure,
+                receive: ap_filter(),
+            }),
+            PhaseCommand::SampleTsf(Sampling::Station(r.station.tsf)),
+            PhaseCommand::SampleTsf(Sampling::AccessPoint(r.access_point.tsf)),
+            PhaseCommand::CloseGate(ClosingGate { gate: r.gate }),
+            PhaseCommand::OpenGate,
+            PhaseCommand::Disable(Disable { _place: r.disable }),
+        ];
+        for (ticket, core_ticket) in r.tickets.into_iter().zip(r.core.tickets) {
+            let ordinal = ticket.index();
+            phase.push(PhaseCommand::Submit(Submission {
+                operation: payload::admit("index permission", ticket, ordinal),
+                admission: TxAdmission::Open(core_ticket),
+            }));
+        }
+        for permission in r.installs {
+            phase.push(PhaseCommand::InstallPairwise {
+                permission,
+                key: Ccmp128Key([1; 16]),
+            });
+        }
+        for permission in r.removes {
+            phase.push(PhaseCommand::RemovePairwise(permission));
+        }
+        for permission in r.groups {
+            phase.push(PhaseCommand::MutateGroup {
+                permission,
+                key: Ccmp128Key([2; 16]),
+            });
+        }
+        // These are real owners from Mint, including the first and last
+        // index of every range. The expected image is the entire allocation,
+        // independently of the order or arithmetic used by PhasePlaces.
+        assert_bijection(
+            phase.iter().map(PhasePlaces::<T, K>::index),
+            CommandPools::<T, K>::PHASE_STORAGE,
+        );
+    }));
+}
+
+#[test]
+fn every_command_variant_maps_bijectively_at_pool_boundaries() {
+    command_index_bijection::<0, 0>();
+    command_index_bijection::<1, 1>();
+    command_index_bijection::<2, 2>();
+    command_index_bijection::<3, 7>();
+    command_index_bijection::<7, 3>();
+    // Mint's full u8 index domain, and each empty neighboring range.
+    command_index_bijection::<0, 256>();
+    command_index_bijection::<256, 0>();
+    command_index_bijection::<256, 256>();
+}

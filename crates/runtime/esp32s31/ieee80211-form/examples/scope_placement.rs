@@ -5,6 +5,11 @@
 //! Linked placement fixture, never a bootable application or HIL evidence.
 //! A synthetic separate executor retains the same scope/IRQ monomorphization;
 //! all register transactions are the real typed HAL operations.
+//!
+//! `DrainBound::from_maxima::<100, 20, 30>()` contains fixture placeholders
+//! (microseconds), not measured production bounds. The S31 implementation step
+//! must supply step/ISR maxima with measurement provenance and a justified
+//! margin, together with an independent monotonic clock.
 
 #[cfg(not(target_arch = "riscv32"))]
 fn main() {}

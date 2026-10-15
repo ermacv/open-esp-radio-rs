@@ -248,6 +248,13 @@ disjoint ranges establish index bounds and uniqueness. Configure/TSF places
 are fixed by their concrete interface types; TX reads `InFlight::ticket()`,
 and key commands use their `Slot::index()`. There is no contract change,
 separate credit object, runtime lookup/pop, capacity refusal or extra await.
+The senders retain T/K as const parameters, with no runtime geometry fields.
+Every cell range starts after the preceding minted range. Compile-time checks
+bind each interface's exported COMMAND_CAPACITY to its mapped configure/TSF
+permissions, check singleton widths, and equate the final range ends with the
+two allocation capacities. A changed lower-MAC total therefore fails compilation
+until the mapping is updated. A bijection regression covers every command and
+all issued indices, including empty pools and the full 0..256 mint domain.
 
 Memory proves that a producer holding one of N unique places leaves at most
 N-1 indices in the ring. Release publishes the complete value and its index;
@@ -465,7 +472,7 @@ scatter/gather implementation or the complete lower-MAC backend.
 
 | Checks | Code size | RAM and CPU | Signatures | Breakage | Alternatives | Reversal |
 | --- | --- | --- | --- | --- | --- | --- |
-| Affine lease, IRQ consumers, epoch and FIFO credits at compile time; finite atomic admission drain and IRQ-bank transactions at run time | 4748 B executable sections; 5018 B with diagnostics; one monomorphization per scheduler binding | Fixed permanent backing 124 B per installation, 156 B with diagnostics; 12 B ISR slot; total writable statics 145 / 177 B; command stores 1088 B; fixture caller frame 3136 B in both variants, separate 4096 B stack; backing size is independent of the body's future size | `ScopeStorage`, `ScopeLease`, `DriverScope`, `Released` / `Poisoned`, borrowed `IrqDiagnostics`; no `Context: 'static` | Consumers must own their IRQ handle; global snapshots lose IRQ fields; poison cannot yield hardware or a lease | Inline future storage cannot survive a timeout followed by free; priority ordering cannot prove cross-core quiescence | Reject bindings whose linked graph leaves SRAM, whose callbacks remain unresolved, or whose fixed backing and stack exceed composition's measured budget |
+| Affine lease, IRQ consumers, epoch and FIFO credits at compile time; finite atomic admission drain and IRQ-bank transactions at run time | 4644 B executable sections; 4914 B with diagnostics; one monomorphization per scheduler binding | Fixed permanent backing 124 B per installation, 156 B with diagnostics; 12 B ISR slot; total writable statics 145 / 177 B; command stores 1088 B; fixture caller frame 3008 B in both variants, separate 4096 B stack; backing size is independent of the body's future size | `ScopeStorage`, `ScopeLease`, `DriverScope`, `Released` / `Poisoned`, borrowed `IrqDiagnostics`; no `Context: 'static` | Consumers must own their IRQ handle; global snapshots lose IRQ fields; poison cannot yield hardware or a lease | Inline future storage cannot survive a timeout followed by free; priority ordering cannot prove cross-core quiescence | Reject bindings whose linked graph leaves SRAM, whose callbacks remain unresolved, or whose fixed backing and stack exceed composition's measured budget |
 
 Run `cargo test -p oer-esp32s31-ieee80211-form` and `cargo xtask check ui`.
 Generated ELF files and closure reports remain under ignored

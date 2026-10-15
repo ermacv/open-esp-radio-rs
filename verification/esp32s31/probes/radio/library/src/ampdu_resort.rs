@@ -30,7 +30,10 @@ use oer_ieee80211_lower_mac::{
     GenerationSource, Ieee80211ClockGeneration, Ieee80211Instant, Ieee80211Stamp,
 };
 use oer_ieee80211_mac::sequence::SequenceNumber;
-use oer_memory::{HardwareOwnedTxDma, PinnedDmaTxPool, PinnedDmaTxRadioLease, PreparedTxDma};
+use oer_memory::{
+    HardwareOwnedTxDma, PinnedDmaTxPool, PinnedDmaTxPoolHandle, PinnedDmaTxRadioLease,
+    PreparedTxDma,
+};
 use oer_time::RadioDuration;
 
 /// MPDUs one compared aggregate may hold.
@@ -102,11 +105,9 @@ static RETENTION: ProbeCell<RetainedAmpduDmaStorage<Backing, SLOTS>> =
     ProbeCell(core::cell::UnsafeCell::new(RetainedAmpduDmaStorage::new()));
 
 /// The pinned pool; each entry runs on a freshly loaded image.
-fn pool() -> &'static Pool {
+fn pool() -> PinnedDmaTxPoolHandle<FRAME_CAPACITY, 0, 0, SLOTS> {
     // SAFETY: the single-threaded image takes the pool once per entry.
     Pool::pin_static(unsafe { &mut *POOL.0.get() })
-        .into_ref()
-        .get_ref()
 }
 
 /// A hardware double: publication succeeds, the queue detaches at once, and

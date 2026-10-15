@@ -1,4 +1,12 @@
 //! Permanently located TX storage and its finite ownership transitions.
+//!
+//! Pinning is a type boundary: only the affine [`PinnedDmaTxPoolHandle`]
+//! issues leases. Slot indices still follow the caller's free/ready queues:
+//! an out-of-range index or a claim in the wrong state panics, rather than
+//! lending aliased bytes. Guard damage is a fatal observation of an external
+//! DMA boundary violation; it is checked on claim, publish and release, with
+//! an explicit whole-pool diagnostic pass. It does not prove DMA has stopped.
+//! Publication lengths must fit the frame capacity before the writer runs.
 
 use core::{
     cell::UnsafeCell,
@@ -212,8 +220,8 @@ unsafe impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: u
 /// Its zero bytes are the free pool `new` builds: every slot free and empty,
 /// the guards not yet installed and no prepare hook (coherent memory). Use a
 /// pool only through [`Self::pin_static`], which installs the DMA overrun
-/// guards: a slot's first release from an unpinned pool fails its guard
-/// check.
+/// guards and consumes the permanent allocation into a
+/// [`PinnedDmaTxPoolHandle`]. An unpinned pool has no claim operations.
 pub struct PinnedDmaTxPool<
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
@@ -256,7 +264,11 @@ impl<
         }
     }
 
-    pub fn pin_static(storage: &'static mut Self) -> Pin<&'static mut Self> {
+    /// Consume permanent storage into its sole, non-cloneable claim handle.
+    /// Dropping or forgetting the handle never frees or unpins the storage.
+    pub fn pin_static(
+        storage: &'static mut Self,
+    ) -> PinnedDmaTxPoolHandle<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH> {
         Self::pin_static_with_dma_read_prepare(storage, coherent_dma_read)
     }
 
@@ -265,18 +277,53 @@ impl<
     pub fn pin_static_with_dma_read_prepare(
         storage: &'static mut Self,
         prepare_for_dma_read: fn(&mut [u8]),
-    ) -> Pin<&'static mut Self> {
+    ) -> PinnedDmaTxPoolHandle<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH> {
         for slot in &mut storage.slots {
             *slot.dma_overrun_guard.get_mut() = [DMA_OVERRUN_GUARD_BYTE; DMA_OVERRUN_GUARD_SIZE];
         }
         storage.prepare_for_dma_read = Some(prepare_for_dma_read);
-        Pin::static_mut(storage)
+        PinnedDmaTxPoolHandle {
+            pool: Pin::static_mut(storage).into_ref(),
+        }
     }
+}
+
+/// Affine authority to claim slots in one permanently pinned TX pool.
+///
+/// Only [`PinnedDmaTxPool::pin_static`] and its cache-maintenance variant
+/// construct this handle, consuming exclusive static storage. It exposes
+/// neither that storage nor another handle. Individual leases retain the
+/// static allocation and the existing atomic slot protocol; a slot index is
+/// not a lease. Their lifetime does not depend on the handle's location.
+/// The handle's destruction never resets slots, releases DMA owners or makes
+/// the allocation available for a second initialization. A forgotten lease
+/// therefore reserves its allocation even after this handle is gone.
+pub struct PinnedDmaTxPoolHandle<
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> {
+    pool: Pin<&'static PinnedDmaTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>>,
+}
+
+impl<
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> PinnedDmaTxPoolHandle<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+{
+    /// Claim a free slot for a unique network writer.
+    ///
+    /// # Panics
+    /// The index must belong to this pool and name a free slot. A damaged
+    /// DMA guard is a fatal hardware-boundary violation, not a pinning check.
 
     pub fn claim_network(
         &self,
         index: u8,
-    ) -> PinnedDmaTxNetworkLease<'_, FRAME_CAPACITY, HEADROOM, TRAILER> {
+    ) -> PinnedDmaTxNetworkLease<'static, FRAME_CAPACITY, HEADROOM, TRAILER> {
         // The selected slot is checked by `claim` below, and a DMA-owned slot
         // is checked again before RADIO -> FREE. Scanning every guard in the
         // pool here made an unrelated O(QUEUE_DEPTH) diagnostic audit part of
@@ -285,6 +332,8 @@ impl<
         // Keep the complete scan explicit for lifecycle/diagnostic use while
         // retaining fail-closed checks at both real ownership boundaries.
         let slot = self
+            .pool
+            .get_ref()
             .slots
             .get(usize::from(index))
             .expect("pinned TX index belongs to this pool");
@@ -309,23 +358,31 @@ impl<
     /// which will deliberately never return to the free queue.
     fn assert_dma_boundaries(&self) {
         if let Some((damaged_slot, (offset, byte))) = self
+            .pool
             .slots
             .iter()
             .enumerate()
             .find_map(|(slot, value)| value.dma_boundary_damage().map(|damage| (slot, damage)))
         {
-            let prefix = self.slots[damaged_slot].dma_boundary_prefix();
+            let prefix = self.pool.slots[damaged_slot].dma_boundary_prefix();
             panic!(
                 "pinned TX pool boundary changed; damaged_slot={damaged_slot} offset={offset} value={byte} guard_prefix={prefix:#018x}"
             );
         }
     }
 
+    /// Claim a slot whose network writer has published its complete frame.
+    ///
+    /// # Panics
+    /// The index must belong to this pool and name a ready slot. A damaged
+    /// DMA guard is a fatal hardware-boundary violation.
     pub fn claim_radio(
         &self,
         index: u8,
-    ) -> PinnedDmaTxRadioLease<'_, FRAME_CAPACITY, HEADROOM, TRAILER> {
+    ) -> PinnedDmaTxRadioLease<'static, FRAME_CAPACITY, HEADROOM, TRAILER> {
         let slot = self
+            .pool
+            .get_ref()
             .slots
             .get(usize::from(index))
             .expect("pinned TX index belongs to this pool");
@@ -339,7 +396,7 @@ impl<
             slot,
             index,
             live: true,
-            prepare_for_dma_read: self.prepare_for_dma_read.unwrap_or(coherent_dma_read),
+            prepare_for_dma_read: self.pool.prepare_for_dma_read.unwrap_or(coherent_dma_read),
         }
     }
 
@@ -350,7 +407,8 @@ impl<
     /// before such a transition can be added.
     pub fn claimed_slots(&self) -> usize {
         self.assert_dma_boundaries();
-        self.slots
+        self.pool
+            .slots
             .iter()
             .filter(|slot| slot.state.load(Ordering::Acquire) != SLOT_FREE)
             .count()
@@ -384,6 +442,12 @@ pub struct PinnedDmaTxNetworkLease<
 impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
     PinnedDmaTxNetworkLease<'_, FRAME_CAPACITY, HEADROOM, TRAILER>
 {
+    /// Write and publish one frame, consuming its network lease.
+    ///
+    /// # Panics
+    /// `length` must fit `FRAME_CAPACITY`. The writer may itself panic; on
+    /// unwind the unpublished network lease returns its slot. Guard damage
+    /// or a corrupted ownership state is fatal.
     pub fn publish<R>(mut self, length: usize, write: impl FnOnce(&mut [u8]) -> R) -> (u8, R) {
         assert!(length <= FRAME_CAPACITY, "TX frame exceeds slot capacity");
         // SAFETY: this non-Clone Network lease is the unique SLOT_NETWORK
@@ -406,6 +470,10 @@ impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
     /// The error branch returns the still-live network lease. Bytes written by
     /// a failed callback remain private to that lease and can never be
     /// observed by a radio owner.
+    ///
+    /// # Panics
+    /// As with [`Self::publish`], an oversized length or damaged guard is
+    /// fatal. A callback's ordinary `Err` returns the live lease instead.
     pub fn try_publish<R, E>(
         mut self,
         length: usize,
@@ -529,13 +597,11 @@ impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
     unsafe_code,
     reason = "radio lease proves the stable DMA backing contract"
 )]
-// SAFETY: the only public initialization of the private nonzero slot guards is
-// `pin_static`, which consumes &'static mut pool storage and pins it. Claiming
-// a slot currently calls the runtime assert_dma_boundary guard, which panics
-// for a local pool made through public new()/Default before issuing a lease.
-// This exclusion is a runtime guard, not a type proof; until the S31 runtime
-// migration, claim_network/claim_radio remain available on those local pools.
-// That step must restrict claims to the affine handle returned by pin_static.
+// SAFETY: claims exist only on PinnedDmaTxPoolHandle, whose private constructor
+// consumes &'static mut pool storage and pins it permanently. Neither a local
+// pool nor an independently pinned borrow can issue a lease. The handle
+// exposes no storage recovery or reinitialization, and dropping it does not
+// reclaim the allocation. This type proof is independent of guard assertions.
 // A successfully claimed allocation therefore outlives even a shortened 'pool
 // borrow. Forgetting this non-Clone lease leaves the slot in SLOT_RADIO: neither
 // the pool nor another lease can reclaim it, and its backing remains allocated.

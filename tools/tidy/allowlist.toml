@@ -9,6 +9,18 @@ path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/ui/tsf_snapshot_owne
 reason = "cargo xtask check ui prevents overlapping STA/AP snapshot owners, with a compiling sequential twin on host and RV32"
 
 [[uncompiled]]
+path = "crates/memory/tests/ui/unpinned_tx_network.rs"
+reason = "cargo xtask check ui rejects claims from local TX pools, with a compiling pinned-handle twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/memory/tests/ui/unpinned_tx_radio.rs"
+reason = "cargo xtask check ui rejects claims from independently pinned TX pools, with a compiling handle twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/memory/tests/ui/pinned_tx_handle_once.rs"
+reason = "cargo xtask check ui verifies the TX claim handle is affine, with a compiling twin on host and RV32"
+
+[[uncompiled]]
 path = "crates/protocols/ieee80211/mac/tests/ui/ccmp_key_constructor.rs"
 reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
 

@@ -24,7 +24,7 @@ pub(crate) trait AkmKeys {
     /// Key Information descriptor version carried by every EAPOL-Key frame.
     fn key_descriptor_version(self) -> u8;
     /// Expand a PMK over the canonical address/nonce context into a PTK.
-    fn expand_ptk(self, pmk: &[u8; 32], context: &[u8; 76]) -> [u8; RSN_PTK_LEN];
+    fn expand_ptk(self, pmk: &[u8; 32], context: &[u8; 76], output: &mut [u8; RSN_PTK_LEN]);
     fn mic(self, kck: &[u8; RSN_KCK_LEN]) -> EapolMic;
 }
 
@@ -37,10 +37,12 @@ impl AkmKeys for Akm {
         }
     }
 
-    fn expand_ptk(self, pmk: &[u8; 32], context: &[u8; 76]) -> [u8; RSN_PTK_LEN] {
+    fn expand_ptk(self, pmk: &[u8; 32], context: &[u8; 76], output: &mut [u8; RSN_PTK_LEN]) {
         match self {
-            Self::Psk => prf_sha1(pmk, context),
-            Self::PskSha256 | Self::Sae => kdf_sha256(pmk, context),
+            Self::Psk => prf_sha1(pmk, context, output),
+            Self::PskSha256 | Self::Sae => {
+                crate::kdf::kdf_sha256(pmk, PTK_EXPANSION_LABEL, context, output);
+            }
         }
     }
 
@@ -103,8 +105,7 @@ impl EapolMic {
 }
 
 /// IEEE 802.11 PRF-384 with HMAC-SHA1 and the pairwise expansion label.
-fn prf_sha1(pmk: &[u8; 32], context: &[u8; 76]) -> [u8; RSN_PTK_LEN] {
-    let mut ptk = [0; RSN_PTK_LEN];
+fn prf_sha1(pmk: &[u8; 32], context: &[u8; 76], ptk: &mut [u8; RSN_PTK_LEN]) {
     let mut written = 0;
     let mut counter = 0_u8;
     while written < ptk.len() {
@@ -121,19 +122,17 @@ fn prf_sha1(pmk: &[u8; 32], context: &[u8; 76]) -> [u8; RSN_PTK_LEN] {
         written += count;
         counter = counter.wrapping_add(1);
     }
-    ptk
-}
-
-/// IEEE 802.11 KDF-SHA-256-384 with the pairwise expansion label.
-fn kdf_sha256(pmk: &[u8; 32], context: &[u8; 76]) -> [u8; RSN_PTK_LEN] {
-    let mut ptk = [0; RSN_PTK_LEN];
-    crate::kdf::kdf_sha256(pmk, PTK_EXPANSION_LABEL, context, &mut ptk);
-    ptk
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn expanded(akm: Akm, pmk: &[u8; 32], context: &[u8; 76]) -> [u8; RSN_PTK_LEN] {
+        let mut bytes = [0; RSN_PTK_LEN];
+        akm.expand_ptk(pmk, context, &mut bytes);
+        bytes
+    }
 
     #[test]
     fn suite_selectors_round_trip_and_unknown_suites_are_unsupported() {
@@ -177,7 +176,7 @@ mod tests {
             0x11, 0xfa, 0x6b, 0x7b, 0x86, 0xea, 0xca, 0xbc, 0x7a, 0xde, 0xcc, 0x4a, 0xe7, 0xd5,
             0x81, 0xc5, 0xac, 0xb1, 0x5c, 0xf9,
         ];
-        assert_eq!(Akm::PskSha256.expand_ptk(&pmk, &context), expected);
+        assert_eq!(expanded(Akm::PskSha256, &pmk, &context), expected);
         assert_eq!(Akm::PskSha256.key_descriptor_version(), 3);
 
         // Computed independently with Python's cryptography CMAC.
@@ -203,8 +202,8 @@ mod tests {
         let pmk: [u8; 32] = core::array::from_fn(|index| index as u8);
         let context: [u8; 76] = core::array::from_fn(|index| 100 + index as u8);
         assert_eq!(
-            Akm::Sae.expand_ptk(&pmk, &context),
-            Akm::PskSha256.expand_ptk(&pmk, &context)
+            expanded(Akm::Sae, &pmk, &context),
+            expanded(Akm::PskSha256, &pmk, &context)
         );
         let mut sae = Akm::Sae.mic(&[7; RSN_KCK_LEN]);
         sae.update(b"eapol-frame-bytes");

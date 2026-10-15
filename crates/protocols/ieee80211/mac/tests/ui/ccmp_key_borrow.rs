@@ -1,5 +1,5 @@
 #![no_std]
-use oer_ieee80211_lower_mac::Ccmp128Key;
+use oer_ieee80211_mac::ccmp::Ccmp128Key;
 pub fn programming(key: Ccmp128Key) -> u8 {
     let bytes = key.as_bytes();
     #[cfg(ui_reject)]

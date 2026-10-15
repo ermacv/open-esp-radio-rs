@@ -517,7 +517,7 @@ impl<'peers, S: SppScope> AccessPointService<'peers, S> {
             RsnIgtk::new(
                 igtk.key_id(),
                 self.storage().message3_management_ipns[index],
-                *igtk.key(),
+                igtk.key(),
             )
             .expect("the existing IGTK key identifier is valid")
         });

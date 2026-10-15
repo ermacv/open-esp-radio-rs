@@ -44,7 +44,7 @@ impl Work for DuringPublication {
             &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
-            Ccmp128Key::new([7; 16]),
+            Ccmp128Key::new(&[7; 16]),
         ));
         air.hold_completion(WmmAccessCategory::BestEffort, true);
         air.answer(if matches!(self.0, Barrier::GateAck) {

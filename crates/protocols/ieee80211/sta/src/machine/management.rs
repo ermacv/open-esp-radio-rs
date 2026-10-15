@@ -30,7 +30,7 @@ pub(super) struct ManagementProtection {
 }
 
 impl ManagementProtection {
-    pub(super) fn new(temporal_key: [u8; 16]) -> Self {
+    pub(super) fn new(temporal_key: &[u8; 16]) -> Self {
         Self {
             individual: ManagementCcmpReceiver::new(temporal_key),
             group: None,

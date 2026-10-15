@@ -187,12 +187,14 @@ back; its operations are synchronous and never wait:
 - **Reception.** A received frame's buffer goes back through `recycle`; a
   lagging body loses unsolicited frames as `EventsLost`, never a terminal.
 
-`Ccmp128Key` is the affine, zeroizing owner of installation material. Its
+`oer_ieee80211_mac::ccmp::Ccmp128Key` is the shared affine, zeroizing owner
+of installation material. RSN moves this owner into installation. Its
 bytes are private; hardware programming and software CCMP borrow them.
 It has no `Clone`, `Copy`, equality or owned byte extraction, and Debug is
 redacted. The model moves that same owner through its command FIFO into
 the key table, where removal or teardown zeroizes it independently of any
-surviving slot identity.
+surviving slot identity. Quarantine intentionally retains the key without
+calling `Drop`, until chip reset.
 
 An `AssociationPool` mints one start permission and the complete PTK/GTK
 bank of its association domain. Beginning consumes that permission and fixes

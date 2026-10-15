@@ -98,7 +98,7 @@ impl Backend {
         let gtk = RsnGtk::new(
             oer_ieee80211_mac::ccmp::GroupKeyId::new(2).unwrap(),
             false,
-            [0x5a; 16],
+            &[0x5a; 16],
         );
         let plain = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
         let frame = RsnTxFrame::<512>::message3(

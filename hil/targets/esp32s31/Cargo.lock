@@ -2393,7 +2393,6 @@ dependencies = [
  "oer-radio-coex",
  "oer-radio-port",
  "oer-time",
- "zeroize",
 ]
 
 [[package]]
@@ -2401,6 +2400,7 @@ name = "oer-ieee80211-mac"
 version = "0.1.0"
 dependencies = [
  "oer-time",
+ "zeroize",
 ]
 
 [[package]]

@@ -72,7 +72,7 @@ pub struct StationManagementProtection {
 
 impl StationManagementProtection {
     /// Protection under the association's temporal key and its first IGTK.
-    pub fn new(temporal_key: [u8; 16], igtk: &RsnIgtk) -> Self {
+    pub fn new(temporal_key: &[u8; 16], igtk: &RsnIgtk) -> Self {
         Self {
             individual: ManagementCcmpReceiver::new(temporal_key),
             group: BipReceiver::new(igtk),

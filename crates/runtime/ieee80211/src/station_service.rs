@@ -103,11 +103,11 @@ use oer_ieee80211_arbiter::{
     NoReservation, RetiredArbiter, RetuneRefused,
 };
 use oer_ieee80211_lower_mac::{
-    Ccmp128Key, ClassFrame, CoexPriority, Ieee80211Capabilities, InstalledGroup, InterfacePhase,
-    KeyTypes, LowerMacBackend, LowerMacEvent, LowerMacPhase, LowerMacTerminal, PhaseTypes,
-    PoolMpdu, PoolSource, Protection, Removed, RemovedKey, RetransmissionPlan, ReturnedMpdu,
-    RxBuffer, StationPhase, SupportedChannel, SupportedCoex, SupportedPower, TxBufferClass,
-    TxBufferPool, TxCompleted, TxMpdu, TxOutcome, TxPower, TxProtection, TxSource,
+    ClassFrame, CoexPriority, Ieee80211Capabilities, InstalledGroup, InterfacePhase, KeyTypes,
+    LowerMacBackend, LowerMacEvent, LowerMacPhase, LowerMacTerminal, PhaseTypes, PoolMpdu,
+    PoolSource, Protection, Removed, RemovedKey, RetransmissionPlan, ReturnedMpdu, RxBuffer,
+    StationPhase, SupportedChannel, SupportedCoex, SupportedPower, TxBufferClass, TxBufferPool,
+    TxCompleted, TxMpdu, TxOutcome, TxPower, TxProtection, TxSource,
 };
 use oer_ieee80211_mac::qos::{WmmAccessCategory, WmmUserPriority};
 use oer_ieee80211_sta::{
@@ -2185,12 +2185,9 @@ where
         } => StaInput::PairwiseKeyInstalled {
             pending,
             key: StationPairwiseKey {
-                key: phase.station().install_pairwise_key(
-                    &association,
-                    slot,
-                    peer,
-                    Ccmp128Key::new(*key.as_bytes()),
-                ),
+                key: phase
+                    .station()
+                    .install_pairwise_key(&association, slot, peer, key),
                 association,
             },
         },
@@ -2211,13 +2208,9 @@ where
             pending_actions
                 .admissions
                 .insert(PendingTerminal::Control(ControlTerminal::GroupChange));
-            phase.station().install_group_key(
-                association,
-                permission,
-                slot,
-                key_id,
-                Ccmp128Key::new(*key.as_bytes()),
-            );
+            phase
+                .station()
+                .install_group_key(association, permission, slot, key_id, key);
             return Ok(Follow::Nothing);
         }
         StaAction::RemovePairwiseKey(key) => {
@@ -2244,12 +2237,9 @@ where
             pending_actions
                 .admissions
                 .insert(PendingTerminal::Control(ControlTerminal::GroupChange));
-            phase.station().replace_group_key(
-                permission,
-                installed,
-                key_id,
-                Ccmp128Key::new(*key.as_bytes()),
-            );
+            phase
+                .station()
+                .replace_group_key(permission, installed, key_id, key);
             return Ok(Follow::Nothing);
         }
         StaAction::SelectGroupKey {

@@ -202,15 +202,15 @@
 //! [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6128926225
 //! [owner decisions on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129037560
 
-use oer_ieee80211_mac::ccmp::GroupKeyId;
+use oer_ieee80211_mac::ccmp::{Ccmp128Key, GroupKeyId};
 use oer_radio_port::PortPhase;
 use oer_radio_port::{Poisoned, PoolPath, Root, Slot};
 
 use crate::{
     Channel, PhyRate, Protection, TbttEvent,
     owner::{
-        AccessPoint, BssColor, Ccmp128Key, Ieee80211Capabilities, InterfaceRole, PhaseRate,
-        Station, StationReceive, SupportedBlockAck, SupportedCoex, SupportedEdca, SupportedFilter,
+        AccessPoint, BssColor, Ieee80211Capabilities, InterfaceRole, PhaseRate, Station,
+        StationReceive, SupportedBlockAck, SupportedCoex, SupportedEdca, SupportedFilter,
         SupportedNoAck, SupportedPower, TxFrame,
     },
 };

@@ -94,7 +94,7 @@ impl Work for Cut {
                     resources.station_group_permission,
                     a_slot,
                     id(),
-                    Ccmp128Key::new([1; 16]),
+                    Ccmp128Key::new(&[1; 16]),
                 );
                 let (a, mut permission) = installed(phase).await;
                 let mut spare = Some(b_slot);
@@ -104,7 +104,7 @@ impl Work for Cut {
                         permission,
                         spare.take().unwrap(),
                         id(),
-                        Ccmp128Key::new([2; 16]),
+                        Ccmp128Key::new(&[2; 16]),
                     );
                     let (b, returned) = installed(phase).await;
                     permission = returned;
@@ -126,13 +126,13 @@ impl Work for Cut {
                         permission,
                         spare.unwrap(),
                         id(),
-                        Ccmp128Key::new([2; 16]),
+                        Ccmp128Key::new(&[2; 16]),
                     ),
                     Change::Replace => phase.station().replace_group_key(
                         permission,
                         a,
                         id(),
-                        Ccmp128Key::new([2; 16]),
+                        Ccmp128Key::new(&[2; 16]),
                     ),
                     Change::Select => phase.station().select_group_key(permission, a),
                     Change::Remove => phase.station().remove_group_key(permission, a),
@@ -145,7 +145,7 @@ impl Work for Cut {
                     resources.access_point_group_permission,
                     a_slot,
                     id(),
-                    Ccmp128Key::new([1; 16]),
+                    Ccmp128Key::new(&[1; 16]),
                 );
                 let Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::GroupKeyInstalled(
                     InstalledGroup::AccessPoint { key, permission },
@@ -167,7 +167,7 @@ impl Work for Cut {
                         permission,
                         b_slot,
                         id(),
-                        Ccmp128Key::new([2; 16]),
+                        Ccmp128Key::new(&[2; 16]),
                     ),
                     Change::Remove => phase.access_point().remove_group_key(permission, key),
                     Change::Replace | Change::Select => unreachable!(),

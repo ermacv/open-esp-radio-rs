@@ -1,5 +1,5 @@
-//! Hardware-independent CCMP header, transmit packet numbers and receive
-//! replay ownership.
+//! Hardware-independent CCMP key material, headers, transmit packet numbers
+//! and receive replay ownership.
 //!
 //! Packet numbers are allocated above the lower-MAC port unless a backend
 //! reports `HardwareServices::PACKET_NUMBERS`; key-slot mapping and hardware
@@ -9,11 +9,17 @@
 //! frontier. A caller must prepare replay only after its per-TID BlockAck
 //! reorder release, then commit only after cryptographic authentication and
 //! peer admission.
+//!
+//! [`Ccmp128Key`] is the shared zeroizing temporal-key owner. RSN constructs
+//! it from a borrowed PTK or GTK and moves it into lower-MAC installation;
+//! software CCMP and hardware programming borrow the same owner's bytes.
 
 use core::num::NonZeroU8;
 
+mod key;
 mod replay;
 
+pub use key::Ccmp128Key;
 pub use replay::{CcmpRxProtection, CcmpRxReplayEpoch, CcmpRxReplayError};
 
 pub const CCMP_HEADER_LEN: usize = 8;

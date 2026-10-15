@@ -22,7 +22,7 @@
 //! | a duplicate attempt identifier | the ticket, which comes back with the terminal |
 //! | an invalid length | [`MpduLength`] and [`ClassFrame`](crate::ClassFrame) |
 //! | no key slot, an unknown key | a key slot ([`Slot`](oer_radio_port::Slot) of the interface's own kind) and the installed key token an attempt names |
-//! | an invalid key | [`Ccmp128Key`], [`GroupKeyId`](oer_ieee80211_mac::ccmp::GroupKeyId), an [`IndividualAddress`] peer |
+//! | an invalid key | [`Ccmp128Key`](oer_ieee80211_mac::ccmp::Ccmp128Key), [`GroupKeyId`](oer_ieee80211_mac::ccmp::GroupKeyId), an [`IndividualAddress`] peer |
 //! | no Block Ack slot, an invalid agreement | a Block Ack slot, [`SupportedBlockAck`] and the agreement token that holds the slot |
 //! | an unsupported EDCA record or BSS color | [`SupportedEdca`], [`BssColor`] |
 //!
@@ -566,38 +566,6 @@ impl BssColor {
     /// The color.
     pub const fn get(self) -> u8 {
         self.color
-    }
-}
-
-/// An affine CCMP-128 temporal-key owner, zeroized on drop.
-///
-/// Installation transfers this owner into the backend. A queued install or
-/// software key table retains the owner; hardware programming and software
-/// CCMP borrow its bytes. There is no cloning or owned byte extraction, and
-/// `Debug` never reveals the material. Zeroization covers this owner's
-/// storage, not copies the compiler may have made while moving it.
-#[derive(zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
-#[must_use]
-pub struct Ccmp128Key {
-    bytes: [u8; 16],
-}
-
-impl Ccmp128Key {
-    /// Move freshly derived temporal-key material into its installation owner.
-    pub const fn new(bytes: [u8; 16]) -> Self {
-        Self { bytes }
-    }
-
-    /// Lend the material for key programming or software CCMP. The backend
-    /// retains this owner for as long as those operations need the material.
-    pub const fn as_bytes(&self) -> &[u8; 16] {
-        &self.bytes
-    }
-}
-
-impl core::fmt::Debug for Ccmp128Key {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter.write_str("Ccmp128Key(..)")
     }
 }
 

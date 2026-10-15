@@ -111,7 +111,7 @@ fn service(
         RsnGtk::new(
             oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
             true,
-            [0x55; 16],
+            &[0x55; 16],
         ),
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::default(),
@@ -496,7 +496,7 @@ fn associated_activity_refreshes_the_configured_inactivity_frontier() {
         RsnGtk::new(
             oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
             true,
-            [0x55; 16],
+            &[0x55; 16],
         ),
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::new(10).unwrap(),
@@ -1039,7 +1039,7 @@ fn all_fifteen_aids_are_stable_and_reused_after_removal() {
         RsnGtk::new(
             oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
             true,
-            [0x55; 16],
+            &[0x55; 16],
         ),
         AccessPointClientLimit::new(15).unwrap(),
         AccessPointInactiveTimeout::default(),
@@ -1487,7 +1487,7 @@ fn a_station_resuming_a_pmksa_is_refused_by_an_access_point_without_a_cache() {
         RsnGtk::new(
             oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
             true,
-            [0x55; 16],
+            &[0x55; 16],
         ),
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::new(10).unwrap(),
@@ -1516,9 +1516,9 @@ fn wpa3_service(
         RsnGtk::new(
             oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
             true,
-            [0x55; 16],
+            &[0x55; 16],
         ),
-        RsnIgtk::new(4, [0; 6], [0x66; 16]).unwrap(),
+        RsnIgtk::new(4, [0; 6], &[0x66; 16]).unwrap(),
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::default(),
         storage.lend(),
@@ -1992,7 +1992,7 @@ fn interface_scoped_ap_sends_refusal_for_required_spp_without_admitting_peer() {
             RsnGtk::new(
                 oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
                 true,
-                [0x55; 16],
+                &[0x55; 16],
             ),
             AccessPointClientLimit::new(2).unwrap(),
             AccessPointInactiveTimeout::default(),

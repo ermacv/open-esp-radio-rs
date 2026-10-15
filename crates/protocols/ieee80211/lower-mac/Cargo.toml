@@ -14,7 +14,6 @@ test-support = ["oer-radio-port/test-support"]
 
 [dependencies]
 heapless = "0.9.3"
-zeroize = { version = "1.9.0", default-features = false, features = ["derive"] }
 oer-ieee80211-mac = { path = "../mac" }
 oer-radio-coex = { path = "../../../radio/coex" }
 oer-radio-port = { path = "../../../radio/port" }

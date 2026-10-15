@@ -182,9 +182,10 @@ impl RsnStaKeyInstallRequest {
         self.group.igtk()
     }
 
-    /// After pairwise installation, retain only group publication authority.
-    pub fn into_group(self) -> RsnStaRetryInstall {
-        self.group
+    /// Move the pairwise installation to its consumer and retain group
+    /// publication authority separately. No temporal-key bytes are copied.
+    pub fn into_parts(self) -> (RsnKeyInstall, RsnStaRetryInstall) {
+        (self.pairwise, self.group)
     }
 }
 
@@ -874,7 +875,9 @@ impl RsnStaSupplicant {
         request: RsnStaKeyInstallRequest,
         installed: bool,
     ) -> Result<RsnStaReady<N>, RsnStaSupplicantError> {
-        self.complete_retry_install(request.into_group(), installed)
+        let (pairwise, group) = request.into_parts();
+        drop(pairwise);
+        self.complete_retry_install(group, installed)
     }
 
     /// Complete group work without obtaining pairwise installation authority.

@@ -229,7 +229,7 @@ impl PortBody<ModelBackend> for Exercise<'_> {
                     resources.station_group_permission,
                     slot,
                     id(),
-                    Ccmp128Key::new([1; 16]),
+                    Ccmp128Key::new(&[1; 16]),
                 );
                 let (key, permission) = installed(&mut phase).await;
                 (Some(key), permission, None)
@@ -249,13 +249,13 @@ impl PortBody<ModelBackend> for Exercise<'_> {
                     permission,
                     vacant.unwrap(),
                     id(),
-                    Ccmp128Key::new([2; 16]),
+                    Ccmp128Key::new(&[2; 16]),
                 ),
                 Mutation::Replace => phase.station().replace_group_key(
                     permission,
                     key.unwrap(),
                     id(),
-                    Ccmp128Key::new([2; 16]),
+                    Ccmp128Key::new(&[2; 16]),
                 ),
                 Mutation::Select => phase.station().select_group_key(permission, key.unwrap()),
                 Mutation::Remove => phase.station().remove_group_key(permission, key.unwrap()),
@@ -318,7 +318,7 @@ impl Exercise<'_> {
                 resources.access_point_group_permission,
                 slot,
                 id(),
-                Ccmp128Key::new([1; 16]),
+                Ccmp128Key::new(&[1; 16]),
             );
             let Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::GroupKeyInstalled(
                 InstalledGroup::AccessPoint { key, permission },

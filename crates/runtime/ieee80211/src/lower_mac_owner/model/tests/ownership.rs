@@ -381,7 +381,7 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
                 &association,
                 slot,
                 IndividualAddress::new(PEER).unwrap(),
-                Ccmp128Key::new([7; 16]),
+                Ccmp128Key::new(&[7; 16]),
             );
             key.identity.0.last.set(self.initial_pn);
             let rate = station.ampdu_rate(rate).ok().unwrap();
@@ -583,7 +583,7 @@ impl PortBody<ModelBackend<ModelCaps, FaultContext>> for PublicationFault {
                 &station_association,
                 slot,
                 IndividualAddress::new(PEER).unwrap(),
-                Ccmp128Key::new([7; 16]),
+                Ccmp128Key::new(&[7; 16]),
             );
             let last = oer_ieee80211_mac::ccmp::CCMP_PACKET_NUMBER_MAX - self.remaining;
             key.identity.0.last.set(last);

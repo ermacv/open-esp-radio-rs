@@ -147,7 +147,7 @@ fn completed_connected() -> (RsnConnectedSupplicant, crate::OwnedEapolFrame<512>
     let gtk = RsnGtk::new(
         oer_ieee80211_mac::ccmp::GroupKeyId::new(2).unwrap(),
         false,
-        [0x5a; 16],
+        &[0x5a; 16],
     );
     let plain = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     let message3 = encrypted_message3(&expected_ptk, [7, 6, 5, 4, 3, 2, 1, 0], plain.as_bytes());
@@ -194,7 +194,7 @@ fn resolves_m1_through_typed_install_and_authenticated_m4() {
     let gtk = RsnGtk::new(
         oer_ieee80211_mac::ccmp::GroupKeyId::new(2).unwrap(),
         false,
-        [0x5a; 16],
+        &[0x5a; 16],
     );
     let plain = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     let rsc = [7, 6, 5, 4, 3, 2, 1, 0];
@@ -246,7 +246,7 @@ fn invalid_message3_mic_is_ignored_and_valid_retry_can_install() {
     let gtk = RsnGtk::new(
         oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
         false,
-        [9; 16],
+        &[9; 16],
     );
     let plain = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     let message3 = encrypted_message3(&expected_ptk, [0; 8], plain.as_bytes());
@@ -654,7 +654,7 @@ fn awaiting_encrypted_message3() -> (RsnStaSupplicant, crate::OwnedEapolFrame<51
     let gtk = RsnGtk::new(
         oer_ieee80211_mac::ccmp::GroupKeyId::new(2).unwrap(),
         false,
-        [0x5a; 16],
+        &[0x5a; 16],
     );
     let plain = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     let message3 = encrypted_message3(&ptk, [0; 8], plain.as_bytes());

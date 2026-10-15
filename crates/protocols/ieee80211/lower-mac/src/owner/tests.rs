@@ -1,17 +1,5 @@
 use super::*;
 
-#[test]
-fn temporal_key_redacts_debug_and_owns_zeroization() {
-    use zeroize::{Zeroize, ZeroizeOnDrop};
-    fn erases_on_drop<T: ZeroizeOnDrop>(_: &T) {}
-    let mut key = Ccmp128Key::new([0xad; 16]);
-    erases_on_drop(&key);
-    assert_eq!(std::format!("{key:?}"), "Ccmp128Key(..)");
-    assert_eq!(key.as_bytes(), &[0xad; 16]);
-    key.zeroize();
-    assert_eq!(key.as_bytes(), &[0; 16]);
-}
-
 const A: MacAddress = [2, 0, 0, 0, 0, 1];
 const B: MacAddress = [2, 0, 0, 0, 0, 2];
 

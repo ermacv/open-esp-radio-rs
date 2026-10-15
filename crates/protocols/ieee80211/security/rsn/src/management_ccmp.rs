@@ -25,7 +25,7 @@
 use crate::ccm::MIC_LEN;
 use crate::ccmp_mpdu::{CcmpAssociation, CcmpMpduError};
 use oer_ieee80211_mac::{
-    ccmp::{CCMP_HEADER_LEN, CcmpHeader, CcmpHeaderError},
+    ccmp::{CCMP_HEADER_LEN, Ccmp128Key, CcmpHeader, CcmpHeaderError},
     frame::DecodedHeader,
     security::Spp,
 };
@@ -56,14 +56,16 @@ pub enum ManagementCcmpError {
 /// The receive state of protected management frames under one pairwise key.
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct ManagementCcmpReceiver {
-    temporal_key: [u8; 16],
+    temporal_key: Ccmp128Key,
     last_packet_number: Option<u64>,
 }
 
 impl ManagementCcmpReceiver {
-    pub fn new(temporal_key: [u8; 16]) -> Self {
+    /// Copy from the association's zeroizing key owner directly into this
+    /// zeroizing software receiver, without a by-value array argument.
+    pub fn new(temporal_key: &[u8; 16]) -> Self {
         Self {
-            temporal_key,
+            temporal_key: Ccmp128Key::new(temporal_key),
             last_packet_number: None,
         }
     }
@@ -106,7 +108,7 @@ impl ManagementCcmpReceiver {
         // SPP only affects QoS data; management uses the same transform in
         // either association mode. The receiver owns its separate PN frontier.
         let body = CcmpAssociation::new(Spp::NotNegotiated)
-            .open(&self.temporal_key, frame)
+            .open(self.temporal_key.as_bytes(), frame)
             .map_err(ManagementCcmpError::from)?;
         self.last_packet_number = Some(packet_number);
         Ok(body)

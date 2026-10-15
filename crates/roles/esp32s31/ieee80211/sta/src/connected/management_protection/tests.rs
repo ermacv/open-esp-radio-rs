@@ -31,8 +31,8 @@ fn hex(text: &str) -> Vec<u8> {
 
 fn protection() -> StationManagementProtection {
     StationManagementProtection::new(
-        core::array::from_fn(|index| index as u8),
-        &RsnIgtk::new(4, [8, 0, 0, 0, 0, 0], [0x77; 16]).unwrap(),
+        &core::array::from_fn(|index| index as u8),
+        &RsnIgtk::new(4, [8, 0, 0, 0, 0, 0], &[0x77; 16]).unwrap(),
     )
 }
 

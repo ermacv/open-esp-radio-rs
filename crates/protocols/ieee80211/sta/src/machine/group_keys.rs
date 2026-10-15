@@ -1,7 +1,7 @@
 //! Installed group owners and reserved record places. A pending installation
 //! owns its vacant place, so its return cannot overflow a retirement pool.
 
-use super::{CcmpKey, CcmpRxReplayEpoch, GroupKeyId, Pool};
+use super::{Ccmp128Key, CcmpRxReplayEpoch, GroupKeyId, Pool};
 use oer_ieee80211_mac::ccmp::CcmpRxReplayState;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -30,7 +30,7 @@ mod tests {
                 Installed {
                     place,
                     key_id: id,
-                    material: CcmpKey::new([value; 16]),
+                    material: Ccmp128Key::new(&[value; 16]),
                     key: value,
                     replay: Replay::Retained(
                         CcmpRxReplayState::from_receive_sequence([0; 8]).unwrap(),
@@ -108,7 +108,7 @@ pub(super) struct GroupPlace(Index);
 pub(super) struct Installed<Key> {
     pub(super) place: GroupPlace,
     pub(super) key_id: GroupKeyId,
-    pub(super) material: CcmpKey,
+    pub(super) material: Ccmp128Key,
     pub(super) key: Key,
     pub(super) replay: Replay,
 }

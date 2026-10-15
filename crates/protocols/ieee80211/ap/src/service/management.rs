@@ -201,7 +201,7 @@ impl<S: SppScope> AccessPointService<'_, S> {
         let AccessPointSecurityMaterial::Wpa3Personal { igtk, .. } = &mut self.security else {
             unreachable!("a BIP transmitter belongs to a WPA3 security epoch");
         };
-        *igtk = RsnIgtk::new(igtk.key_id(), packet_number, *igtk.key())
+        *igtk = RsnIgtk::new(igtk.key_id(), packet_number, igtk.key())
             .expect("the existing IGTK key identifier is valid");
         Ok(protected)
     }

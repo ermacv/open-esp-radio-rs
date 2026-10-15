@@ -1,5 +1,6 @@
 #![no_std]
-use oer_ieee80211_lower_mac::{Ccmp128Key, InterfacePhase, KeyTypes, LowerMacPhase, Station};
+use oer_ieee80211_mac::ccmp::Ccmp128Key;
+use oer_ieee80211_lower_mac::{InterfacePhase, KeyTypes, LowerMacPhase, Station};
 use oer_ieee80211_mac::address::IndividualAddress;
 use oer_ieee80211_mac::security::Spp;
 use oer_ieee80211_runtime::lower_mac_owner::model::{ModelKeys, ModelPhase, ModelResources};
@@ -14,7 +15,7 @@ pub fn keys<'p, 'id: 'p>(
     let _first =
         phase
             .station()
-            .install_pairwise_key(&association, first, peer, Ccmp128Key::new([1; 16]));
+            .install_pairwise_key(&association, first, peer, Ccmp128Key::new(&[1; 16]));
     #[cfg(ui_reject)]
     let second_association = ModelKeys::<Station>::begin_association(start, Spp::NotNegotiated); // ui-error: E0382
     #[cfg(not(ui_reject))]
@@ -23,6 +24,6 @@ pub fn keys<'p, 'id: 'p>(
         &second_association,
         second,
         peer,
-        Ccmp128Key::new([2; 16]),
+        Ccmp128Key::new(&[2; 16]),
     );
 }

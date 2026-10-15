@@ -1,5 +1,6 @@
 #![no_std]
-use oer_ieee80211_lower_mac::{Ccmp128Key, InterfacePhase, KeyTypes, LowerMacPhase, Station};
+use oer_ieee80211_mac::ccmp::Ccmp128Key;
+use oer_ieee80211_lower_mac::{InterfacePhase, KeyTypes, LowerMacPhase, Station};
 use oer_ieee80211_mac::address::IndividualAddress;
 use oer_ieee80211_runtime::lower_mac_owner::model::{ModelAssociation, ModelKeys, ModelPhase};
 pub fn key<'p, 'id: 'p>(
@@ -11,10 +12,10 @@ pub fn key<'p, 'id: 'p>(
     #[cfg(ui_reject)]
     let _key = phase
         .station()
-        .install_pairwise_key(slot, peer, Ccmp128Key::new([1; 16])); // ui-error: E0061
+        .install_pairwise_key(slot, peer, Ccmp128Key::new(&[1; 16])); // ui-error: E0061
     #[cfg(not(ui_reject))]
     let _key =
         phase
             .station()
-            .install_pairwise_key(&association, slot, peer, Ccmp128Key::new([1; 16]));
+            .install_pairwise_key(&association, slot, peer, Ccmp128Key::new(&[1; 16]));
 }

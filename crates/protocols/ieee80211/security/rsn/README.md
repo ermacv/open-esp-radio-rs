@@ -30,10 +30,14 @@ validated Association element; the supplicant takes it from its own
 Association element. Both reject EAPOL-Key frames whose descriptor version
 differs from that suite.
 
-`CcmpKey` owns its temporal-key bytes, redacts Debug output and zeroizes its
-storage on drop. Pending actions and retained station records use the same
-owner; adapters and comparisons borrow the bytes. This covers those owners,
-not arbitrary compiler temporaries.
+`oer_ieee80211_mac::ccmp::Ccmp128Key` owns temporal-key bytes, redacts Debug
+output and zeroizes its storage on drop. RSN copies directly from borrowed,
+zeroizing PTK/GTK storage into this owner; lower-MAC installation moves the
+same type without extracting an intermediate array. PTK derivation writes
+directly into the zeroizing PTK, and GTK parsing borrows the key-data buffer
+into a zeroizing GTK. Pending actions, PMF reception and retained station
+records use the common owner; adapters and comparisons borrow its bytes.
+This covers those owners, not arbitrary compiler temporaries.
 
 `CcmpAssociation` authenticates the QoS A-MSDU-present bit in both AAD and
 nonce flags when SPP was negotiated. Without SPP it masks that bit according

@@ -2574,7 +2574,7 @@ fn group_removal_returns_permission_before_another_owner_can_leave() {
             InstalledGroup {
                 place,
                 key_id: GroupKeyId::new(id).unwrap(),
-                material: CcmpKey::new([id; 16]),
+                material: Ccmp128Key::new(&[id; 16]),
                 key: Key(Slot(slot)),
                 replay: GroupReplay::Retained(
                     oer_ieee80211_mac::ccmp::CcmpRxReplayState::from_receive_sequence([0; 8])
@@ -3812,19 +3812,19 @@ fn pending_group_material_is_redacted_and_moves_into_the_installed_record() {
         let mut keys = Keys::<Tokens<1>>::new::<1>((Slot(0), [Slot(1)]), GroupPermission);
         let mut epochs = LinkEpochSource::for_test(0);
         let id = GroupKeyId::new(1).unwrap();
-        let material = CcmpKey::new([173; 16]);
+        let material = Ccmp128Key::new(&[173; 16]);
         let slot = keys.group_slots.free.take().unwrap();
         let pending = PendingGroupKey {
             epoch: epochs.begin(),
             key_id: id,
-            material: CcmpKey::new(*material.as_bytes()),
+            material: Ccmp128Key::new(material.as_bytes()),
             place: keys.groups.reserve().unwrap(),
             replay: GroupReplay::Retained(
                 oer_ieee80211_mac::ccmp::CcmpRxReplayState::from_receive_sequence([0; 8]).unwrap(),
             ),
         };
         let printed = std::format!("{pending:?}");
-        assert!(printed.contains("[REDACTED]"));
+        assert!(printed.contains("Ccmp128Key(..)"));
         assert!(!printed.contains("173"));
         let permission = keys.group_permission.take().unwrap();
         keys.group_installed(pending, Key(slot), permission, true, None, false);

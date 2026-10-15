@@ -120,7 +120,7 @@ fn management_wire_vector_matches_the_replay_receiver_in_both_spp_modes() {
         assert_eq!(mode(spp).open(&key(), &mut mpdu).unwrap(), MANAGEMENT_BODY);
         mode(spp).seal(&key(), &mut mpdu).unwrap();
         assert_eq!(mpdu, wire);
-        let mut receiver = crate::management_ccmp::ManagementCcmpReceiver::new(key());
+        let mut receiver = crate::management_ccmp::ManagementCcmpReceiver::new(&key());
         assert_eq!(receiver.open(&mut mpdu).unwrap(), MANAGEMENT_BODY);
     }
 }

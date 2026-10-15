@@ -36,14 +36,16 @@ cases = [
 
 [[suite]]
 name = "ccmp-key-owner"
-packages = ["oer-ieee80211-lower-mac"]
+packages = ["oer-ieee80211-mac"]
 features = []
 targets = ["host", "esp32s31"]
 cases = [
-    "crates/protocols/ieee80211/lower-mac/tests/ui/ccmp_key_clone.rs",
-    "crates/protocols/ieee80211/lower-mac/tests/ui/ccmp_key_copy.rs",
-    "crates/protocols/ieee80211/lower-mac/tests/ui/ccmp_key_bytes.rs",
-    "crates/protocols/ieee80211/lower-mac/tests/ui/ccmp_key_borrow.rs",
+    "crates/protocols/ieee80211/mac/tests/ui/ccmp_key_clone.rs",
+    "crates/protocols/ieee80211/mac/tests/ui/ccmp_key_copy.rs",
+    "crates/protocols/ieee80211/mac/tests/ui/ccmp_key_bytes.rs",
+    "crates/protocols/ieee80211/mac/tests/ui/ccmp_key_borrow.rs",
+    "crates/protocols/ieee80211/mac/tests/ui/ccmp_key_constructor.rs",
+    "crates/protocols/ieee80211/mac/tests/ui/ccmp_key_owned_bytes.rs",
 ]
 
 [[suite]]

@@ -3,7 +3,7 @@ use super::*;
 use crate::ccmp_mpdu::test_vector::{MANAGEMENT_BODY, management_wire as frame};
 
 fn receiver() -> ManagementCcmpReceiver {
-    ManagementCcmpReceiver::new(core::array::from_fn(|index| index as u8))
+    ManagementCcmpReceiver::new(&core::array::from_fn(|index| index as u8))
 }
 
 #[test]

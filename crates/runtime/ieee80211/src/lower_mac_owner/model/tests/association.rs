@@ -38,14 +38,14 @@ impl Work for WirePeer {
             &association,
             ptk_slot,
             IndividualAddress::new(ACCESS_POINT).unwrap(),
-            Ccmp128Key::new(material),
+            Ccmp128Key::new(&material),
         );
         phase.station().install_group_key(
             &association,
             resources.station_group_permission,
             gtk_slot,
             GroupKeyId::new(1).unwrap(),
-            Ccmp128Key::new([0x47; 16]),
+            Ccmp128Key::new(&[0x47; 16]),
         );
         let Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::GroupKeyInstalled(
             InstalledGroup::Station {
@@ -101,7 +101,7 @@ impl Work for WirePeer {
             &ap_association,
             ap_slot,
             IndividualAddress::new(STATION).unwrap(),
-            Ccmp128Key::new([0x48; 16]),
+            Ccmp128Key::new(&[0x48; 16]),
         );
         key.identity.0.last.set(0x0102_0304_0505);
         let mut body = alloc::vec![2, 0, 0, 0, 0, 3, 2, 0, 0, 0, 0, 1, 0, 12];
@@ -250,7 +250,7 @@ impl Work for WirePeer {
             &next,
             pairwise,
             IndividualAddress::new(ACCESS_POINT).unwrap(),
-            Ccmp128Key::new([3; 16]),
+            Ccmp128Key::new(&[3; 16]),
         );
     }
 }

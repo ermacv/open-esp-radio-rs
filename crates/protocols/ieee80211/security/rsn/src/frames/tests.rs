@@ -37,7 +37,7 @@ fn gtk_key_data_round_trips_with_key_wrap_padding() {
     let gtk = RsnGtk::new(
         oer_ieee80211_mac::ccmp::GroupKeyId::new(2).unwrap(),
         false,
-        [0x5a; 16],
+        &[0x5a; 16],
     );
     let data = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     assert_eq!(data.as_bytes().len() % 8, 0);
@@ -59,9 +59,9 @@ fn protected_key_data_carries_the_rsnxe_and_an_igtk_the_station_reads() {
     let gtk = RsnGtk::new(
         oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
         false,
-        [0x5a; 16],
+        &[0x5a; 16],
     );
-    let igtk = RsnIgtk::new(4, [1, 0, 0, 0, 0, 0], [0x6b; 16]).unwrap();
+    let igtk = RsnIgtk::new(4, [1, 0, 0, 0, 0, 0], &[0x6b; 16]).unwrap();
     let data = RsnPlainKeyData::<96>::build(&elements, &gtk, Some(&igtk)).unwrap();
     assert_eq!(data.as_bytes().len() % 8, 0);
     let keys = parse_gtk_key_data(data.as_bytes(), rsn.as_bytes(), &rsnxe, true).unwrap();
@@ -133,7 +133,7 @@ fn parser_rejects_changed_rsn_ie_and_duplicate_gtk() {
     let gtk = RsnGtk::new(
         oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
         false,
-        [7; 16],
+        &[7; 16],
     );
     let data = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     let mut other = [0; 22];
@@ -165,7 +165,7 @@ fn parser_validates_authenticator_rsnxe_without_ignoring_unknown_elements() {
     let gtk = RsnGtk::new(
         oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
         false,
-        [7; 16],
+        &[7; 16],
     );
     let data = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     let rsnxe = [RSNXE_ELEMENT_ID, 2, 0x20, 0x00];
@@ -221,7 +221,7 @@ fn protected_management_requires_exactly_one_igtk_beside_the_gtk() {
     let gtk = RsnGtk::new(
         oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
         false,
-        [0x55; 16],
+        &[0x55; 16],
     );
     let rsn = rsn_ie();
     let data = RsnPlainKeyData::<96>::build(rsn.as_bytes(), &gtk, None).unwrap();

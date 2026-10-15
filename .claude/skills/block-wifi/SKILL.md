@@ -141,9 +141,13 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   phase lets a late terminal arm another exchange. A different peer's table
   mutation must not invalidate the original peer's association identity.
 
-- Pending key actions and installed GTK records retain `CcmpKey`, whose
+- Pending key actions and installed GTK records retain `mac::ccmp::Ccmp128Key`, whose
   Debug is redacted and whose destructor zeroizes its bytes. Compare through
   borrowed material; a raw `[u8; 16]` in a derived Debug token exposes GTK.
+  Constructors borrow zeroizing PTK/GTK storage and installation moves the
+  common key owner from RSN through lower-MAC. Do not stage an unowned array.
+  Register programming reads octets as words without casting the key object,
+  so the owner does not require a C layout or word alignment.
   This owner discipline does not prove erasure of compiler temporaries.
 
 - Authentication's `NeedCredit` owns only the retry runtime. An active

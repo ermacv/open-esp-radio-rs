@@ -47,7 +47,7 @@ fn teardown_clears_pairwise_before_group_and_cannot_alias_a_second_peer() {
     let gtk = RsnGtk::new(
         oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
         true,
-        [0x55; 16],
+        &[0x55; 16],
     );
     let mut pairwise = ApPairwiseKeyStorage::new();
     let mut security = ApSecurity::install_group(&mut hardware, &gtk, &mut pairwise).unwrap();
@@ -110,7 +110,7 @@ fn all_public_aids_own_disjoint_pairwise_slots() {
     let gtk = RsnGtk::new(
         oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
         true,
-        [0x55; 16],
+        &[0x55; 16],
     );
     let mut pairwise = ApPairwiseKeyStorage::new();
     let mut security = ApSecurity::install_group(&mut hardware, &gtk, &mut pairwise).unwrap();
@@ -171,7 +171,7 @@ fn rx_replay_is_per_tid_and_fenced_across_pairwise_key_reinstall() {
     let gtk = RsnGtk::new(
         oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
         true,
-        [0x55; 16],
+        &[0x55; 16],
     );
     let mut pairwise = ApPairwiseKeyStorage::new();
     let mut security = ApSecurity::install_group(&mut hardware, &gtk, &mut pairwise).unwrap();

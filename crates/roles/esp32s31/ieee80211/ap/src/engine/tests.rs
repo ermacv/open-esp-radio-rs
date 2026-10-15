@@ -81,7 +81,7 @@ fn service(
         RsnGtk::new(
             oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
             true,
-            [0x55; 16],
+            &[0x55; 16],
         ),
         oer_ieee80211_ap::AccessPointClientLimit::new(2).unwrap(),
         oer_ieee80211_ap::AccessPointInactiveTimeout::default(),
@@ -982,9 +982,9 @@ fn a_wpa3_engine_hands_sae_to_the_responder_and_accepts_its_result() {
         RsnGtk::new(
             oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
             true,
-            [0x55; 16],
+            &[0x55; 16],
         ),
-        oer_ieee80211_rsn::frames::RsnIgtk::new(4, [0; 6], [0x66; 16]).unwrap(),
+        oer_ieee80211_rsn::frames::RsnIgtk::new(4, [0; 6], &[0x66; 16]).unwrap(),
         oer_ieee80211_ap::AccessPointClientLimit::new(2).unwrap(),
         oer_ieee80211_ap::AccessPointInactiveTimeout::default(),
         peers.lend(),

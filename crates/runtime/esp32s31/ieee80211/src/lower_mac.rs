@@ -2399,7 +2399,7 @@ where
         let handle = self
             .runtime
             .with_phase(|core, hardware, _, _| {
-                core.install_checked_key(hardware, vif_of(Role::ROLE), scope, &key.0)
+                core.install_checked_key(hardware, vif_of(Role::ROLE), scope, key.as_bytes())
             })
             .ok();
         Esp32s31PairwiseKey { handle, slot }
@@ -2415,7 +2415,7 @@ where
         let handle = self
             .runtime
             .with_phase(|core, hardware, _, _| {
-                core.install_checked_key(hardware, vif_of(Role::ROLE), scope?, &key.0)
+                core.install_checked_key(hardware, vif_of(Role::ROLE), scope?, key.as_bytes())
             })
             .ok();
         Esp32s31GroupKey { handle, slot }

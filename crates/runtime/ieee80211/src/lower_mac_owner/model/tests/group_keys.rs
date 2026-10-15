@@ -62,7 +62,7 @@ impl Work for Boundary<'_> {
             resources.station_group_permission,
             a_slot,
             id(),
-            Ccmp128Key([1; 16]),
+            Ccmp128Key::new([1; 16]),
         );
         let (a, mut permission) = installed(phase).await;
         let mut spare = Some(b_slot);
@@ -75,7 +75,7 @@ impl Work for Boundary<'_> {
                 permission,
                 spare.take().unwrap(),
                 id(),
-                Ccmp128Key([2; 16]),
+                Ccmp128Key::new([2; 16]),
             );
             let (b, returned) = installed(phase).await;
             permission = returned;
@@ -105,14 +105,14 @@ impl Work for Boundary<'_> {
                     permission,
                     spare.take().unwrap(),
                     id(),
-                    Ccmp128Key([2; 16]),
+                    Ccmp128Key::new([2; 16]),
                 );
                 retained = Some(a);
             }
             Case::Replace => {
                 phase
                     .station()
-                    .replace_group_key(permission, a, id(), Ccmp128Key([2; 16]))
+                    .replace_group_key(permission, a, id(), Ccmp128Key::new([2; 16]))
             }
             Case::SelectRetained | Case::SelectCurrent => {
                 phase.station().select_group_key(permission, a)
@@ -397,7 +397,7 @@ impl PortBody<ModelBackend> for Interrupted<'_> {
                     resources.station_group_permission,
                     slot,
                     id(),
-                    Ccmp128Key([1; 16]),
+                    Ccmp128Key::new([1; 16]),
                 );
                 let (key, permission) = installed(&mut phase).await;
                 (permission, Some(key), None)
@@ -413,13 +413,13 @@ impl PortBody<ModelBackend> for Interrupted<'_> {
                     permission,
                     vacant.unwrap(),
                     id(),
-                    Ccmp128Key([2; 16]),
+                    Ccmp128Key::new([2; 16]),
                 ),
                 Mutation::Replace => phase.station().replace_group_key(
                     permission,
                     key.unwrap(),
                     id(),
-                    Ccmp128Key([2; 16]),
+                    Ccmp128Key::new([2; 16]),
                 ),
                 Mutation::Select => phase.station().select_group_key(permission, key.unwrap()),
                 Mutation::Remove => phase.station().remove_group_key(permission, key.unwrap()),
@@ -511,7 +511,7 @@ impl Work for Deadline<'_> {
             resources.station_group_permission,
             slot,
             id(),
-            Ccmp128Key([1; 16]),
+            Ccmp128Key::new([1; 16]),
         );
         for _ in 0..3 {
             yield_now().await;
@@ -575,7 +575,7 @@ impl Work for IndependentIds<'_> {
             resources.station_group_permission,
             a,
             id(),
-            Ccmp128Key([1; 16]),
+            Ccmp128Key::new([1; 16]),
         );
         let (a, permission) = installed(phase).await;
         let second = GroupKeyId::new(2).unwrap();
@@ -584,7 +584,7 @@ impl Work for IndependentIds<'_> {
             permission,
             b,
             second,
-            Ccmp128Key([2; 16]),
+            Ccmp128Key::new([2; 16]),
         );
         let (b, permission) = installed(phase).await;
         phase.station().select_group_key(permission, a);
@@ -675,7 +675,7 @@ impl PortBody<ModelBackend> for Teardown<'_> {
                 resources.station_group_permission,
                 slot,
                 id(),
-                Ccmp128Key([1; 16]),
+                Ccmp128Key::new([1; 16]),
             );
             let (key, permission) = installed(&mut phase).await;
             self.identity.replace(Some(key.identity.clone()));
@@ -784,7 +784,7 @@ impl PortBody<ModelBackend> for ReenableGroup<'_> {
                 resources.station_group_permission,
                 slot,
                 id(),
-                Ccmp128Key([1; 16]),
+                Ccmp128Key::new([1; 16]),
             );
             installed(&mut phase).await
         };
@@ -855,7 +855,7 @@ impl Work for Admission<'_> {
             resources.station_group_permission,
             slot,
             id(),
-            Ccmp128Key([1; 16]),
+            Ccmp128Key::new([1; 16]),
         );
         for _ in 0..3 {
             yield_now().await;

@@ -2189,7 +2189,7 @@ where
                     &association,
                     slot,
                     peer,
-                    Ccmp128Key(*key.as_bytes()),
+                    Ccmp128Key::new(*key.as_bytes()),
                 ),
                 association,
             },
@@ -2216,7 +2216,7 @@ where
                 permission,
                 slot,
                 key_id,
-                Ccmp128Key(*key.as_bytes()),
+                Ccmp128Key::new(*key.as_bytes()),
             );
             return Ok(Follow::Nothing);
         }
@@ -2248,7 +2248,7 @@ where
                 permission,
                 installed,
                 key_id,
-                Ccmp128Key(*key.as_bytes()),
+                Ccmp128Key::new(*key.as_bytes()),
             );
             return Ok(Follow::Nothing);
         }

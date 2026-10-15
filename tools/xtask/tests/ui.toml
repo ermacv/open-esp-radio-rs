@@ -35,6 +35,18 @@ cases = [
 ]
 
 [[suite]]
+name = "ccmp-key-owner"
+packages = ["oer-ieee80211-lower-mac"]
+features = []
+targets = ["host", "esp32s31"]
+cases = [
+    "crates/protocols/ieee80211/lower-mac/tests/ui/ccmp_key_clone.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/ccmp_key_copy.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/ccmp_key_bytes.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/ccmp_key_borrow.rs",
+]
+
+[[suite]]
 name = "arbiter-authority"
 packages = ["oer-ieee80211-arbiter", "oer-ieee80211-lower-mac", "oer-radio-port", "oer-time"]
 features = []

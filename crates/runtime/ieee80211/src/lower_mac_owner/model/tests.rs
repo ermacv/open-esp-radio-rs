@@ -336,7 +336,7 @@ impl Work for Numbering {
             &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
-            Ccmp128Key([7; 16]),
+            Ccmp128Key::new([7; 16]),
         );
         let key = self.protected.then_some(&key);
         submit(phase, tickets.remove(0), small.remove(0), key);
@@ -537,7 +537,7 @@ impl Work for KeyThenAttempt {
             &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
-            Ccmp128Key([7; 16]),
+            Ccmp128Key::new([7; 16]),
         );
         submit(phase, tickets.remove(0), small.remove(0), Some(&key));
         let mut stream = Stream::default();
@@ -582,7 +582,7 @@ impl Work for GroupReplacement<'_> {
             resources.station_group_permission,
             slot,
             GroupKeyId::new(1).unwrap(),
-            Ccmp128Key([1; 16]),
+            Ccmp128Key::new([1; 16]),
         );
         let Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::GroupKeyInstalled(
             InstalledGroup::Station {
@@ -602,7 +602,7 @@ impl Work for GroupReplacement<'_> {
             permission,
             installed,
             GroupKeyId::new(2).unwrap(),
-            Ccmp128Key([2; 16]),
+            Ccmp128Key::new([2; 16]),
         );
         if self.reject {
             assert!(phase.next_event().await.is_err());
@@ -688,7 +688,7 @@ impl Work for KeyAttemptRemoval {
             &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
-            Ccmp128Key([7; 16]),
+            Ccmp128Key::new([7; 16]),
         );
         submit(phase, tickets.remove(0), small.remove(0), Some(&key));
         phase
@@ -864,7 +864,7 @@ impl Work for MaxWork<'_> {
                     &station_association,
                     slot,
                     peer,
-                    Ccmp128Key([1; 16]),
+                    Ccmp128Key::new([1; 16]),
                 );
                 keys += 1;
             }
@@ -874,7 +874,7 @@ impl Work for MaxWork<'_> {
                 station_group_permission,
                 slot,
                 group,
-                Ccmp128Key([2; 16]),
+                Ccmp128Key::new([2; 16]),
             );
             keys += 1;
             for slot in access_point_pairwise {
@@ -882,7 +882,7 @@ impl Work for MaxWork<'_> {
                     &access_point_association,
                     slot,
                     peer,
-                    Ccmp128Key([3; 16]),
+                    Ccmp128Key::new([3; 16]),
                 );
                 keys += 1;
             }
@@ -892,7 +892,7 @@ impl Work for MaxWork<'_> {
                 access_point_group_permission,
                 slot,
                 group,
-                Ccmp128Key([4; 16]),
+                Ccmp128Key::new([4; 16]),
             );
             keys += 1;
             assert_eq!(keys, 2 * MODEL_KEY_SLOTS + 2);
@@ -982,7 +982,7 @@ impl Work for AbortHeld<'_> {
             &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
-            Ccmp128Key([7; 16]),
+            Ccmp128Key::new([7; 16]),
         );
         self.air.hold(WmmAccessCategory::BestEffort, true);
         submit(phase, tickets.remove(0), large.remove(0), Some(&key));
@@ -1218,7 +1218,7 @@ impl Work for AggregateRetransmission<'_> {
             &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
-            Ccmp128Key([7; 16]),
+            Ccmp128Key::new([7; 16]),
         );
         let ht = oer_ieee80211_mac::phy::HtRate::new(
             HtMcs::new(7).unwrap(),
@@ -1368,7 +1368,7 @@ impl Work for TerminalOutcomes<'_> {
             &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
-            Ccmp128Key([7; 16]),
+            Ccmp128Key::new([7; 16]),
         );
         if self.collision {
             self.air.answer(AirAnswer::Collision);

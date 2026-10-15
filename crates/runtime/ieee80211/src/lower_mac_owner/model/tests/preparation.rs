@@ -91,7 +91,7 @@ impl Work for Boundaries {
             &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
-            Ccmp128Key([7; 16]),
+            Ccmp128Key::new([7; 16]),
         );
         let mut ticket = tickets.remove(0);
         let mut buffer = small.remove(0);
@@ -336,7 +336,7 @@ impl Work for RetryIdentity {
             &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
-            Ccmp128Key([7; 16]),
+            Ccmp128Key::new([7; 16]),
         );
         let body = ModelBody(alloc::vec![0x66; 8]);
         let body_pointer = body.0.as_ptr();
@@ -391,7 +391,7 @@ impl Work for RetryIdentity {
             &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
-            Ccmp128Key([7; 16]),
+            Ccmp128Key::new([7; 16]),
         );
         assert_eq!(replacement.identity.0.index, index);
         let TxFrame::Individual { plan, .. } = data_frame(phase, true) else {
@@ -477,7 +477,7 @@ impl Work for AggregateBoundaries {
             &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
-            Ccmp128Key([7; 16]),
+            Ccmp128Key::new([7; 16]),
         );
         let rate = aggregate_rate(phase);
         let receiver = IndividualAddress::new(ACCESS_POINT).unwrap();
@@ -590,7 +590,7 @@ impl Work for PreparedRemoval {
             &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
-            Ccmp128Key([7; 16]),
+            Ccmp128Key::new([7; 16]),
         );
         submit(phase, tickets.remove(0), small.remove(0), Some(&key));
         let (ticket, buffer) = completion(phase, &mut terminal_access).await;

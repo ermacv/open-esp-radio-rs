@@ -569,10 +569,31 @@ impl BssColor {
     }
 }
 
-/// A CCMP-128 temporal key. It is not `Copy`, and its `Debug` hides its
-/// octets, so a key reaches no log.
-#[derive(Clone, Eq, PartialEq)]
-pub struct Ccmp128Key(pub [u8; 16]);
+/// An affine CCMP-128 temporal-key owner, zeroized on drop.
+///
+/// Installation transfers this owner into the backend. A queued install or
+/// software key table retains the owner; hardware programming and software
+/// CCMP borrow its bytes. There is no cloning or owned byte extraction, and
+/// `Debug` never reveals the material. Zeroization covers this owner's
+/// storage, not copies the compiler may have made while moving it.
+#[derive(zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
+#[must_use]
+pub struct Ccmp128Key {
+    bytes: [u8; 16],
+}
+
+impl Ccmp128Key {
+    /// Move freshly derived temporal-key material into its installation owner.
+    pub const fn new(bytes: [u8; 16]) -> Self {
+        Self { bytes }
+    }
+
+    /// Lend the material for key programming or software CCMP. The backend
+    /// retains this owner for as long as those operations need the material.
+    pub const fn as_bytes(&self) -> &[u8; 16] {
+        &self.bytes
+    }
+}
 
 impl core::fmt::Debug for Ccmp128Key {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {

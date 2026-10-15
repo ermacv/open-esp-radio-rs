@@ -1300,6 +1300,7 @@ dependencies = [
  "oer-radio-coex",
  "oer-radio-port",
  "oer-time",
+ "zeroize",
 ]
 
 [[package]]

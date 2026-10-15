@@ -126,7 +126,6 @@ use oer_ieee80211_lower_mac::association::{
     PairwiseKeySlot, VacantAssociation, VacantKeyBank,
 };
 use oer_ieee80211_mac::ccmp::GroupKeyId;
-use oer_ieee80211_rsn::keys::CcmpKey;
 
 use oer_ieee80211_mac::phy::{HeMcs, HtMcs, PhyRate};
 use oer_radio_port::{
@@ -578,7 +577,7 @@ struct KeyInstall {
 #[derive(Debug)]
 struct KeyInstallation {
     identity: Weak<KeyInstall>,
-    key: CcmpKey,
+    key: Ccmp128Key,
 }
 
 impl PartialEq for KeyIdentity {
@@ -613,7 +612,7 @@ impl KeyIdentity {
         index: u8,
         key_id: GroupKeyId,
         role: VifRole,
-        key: CcmpKey,
+        key: Ccmp128Key,
         air: &Rc<ModelAir>,
     ) -> Self {
         let identity = Self(Rc::new(KeyInstall {
@@ -1465,7 +1464,7 @@ impl InterfaceAssociations {
 }
 
 impl ModelAir {
-    fn install_material(&self, identity: &KeyIdentity, key: CcmpKey) {
+    fn install_material(&self, identity: &KeyIdentity, key: Ccmp128Key) {
         self.crypto_operations
             .borrow_mut()
             .push(ModelCryptoOperation::Key {
@@ -1563,7 +1562,7 @@ impl ModelAir {
             }
         }
         self.group_rx.borrow_mut().clear();
-        // CcmpKey clears its bytes even if an external identity still exists.
+        // Ccmp128Key clears its bytes even if an external identity still exists.
         installations.clear();
     }
 
@@ -1817,7 +1816,7 @@ enum Command<'id, X: ModelContext> {
     InstallKey {
         spp: oer_ieee80211_mac::security::Spp,
         key: KeyIdentity,
-        material: CcmpKey,
+        material: Ccmp128Key,
     },
     Group {
         admitted_at: u64,
@@ -1838,7 +1837,7 @@ struct PendingGroupInstall<'id, R: ModelRole> {
     slot: GroupKeySlot<'id, R, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS, R::AssociationPath>,
     permission: Slot<'id, ModelGroupPermission<R>, R::GroupPermissionPath>,
     key_id: GroupKeyId,
-    key: CcmpKey,
+    key: Ccmp128Key,
 }
 
 enum GroupInstallationCommand<'id> {
@@ -1867,7 +1866,7 @@ enum GroupChange<'id, X: ModelContext> {
         permission: StationGroupPermission<'id>,
         installed: ModelGroupKey<'id, Station>,
         key_id: GroupKeyId,
-        key: CcmpKey,
+        key: Ccmp128Key,
     },
     Select {
         permission: StationGroupPermission<'id>,
@@ -3687,7 +3686,7 @@ where
         let identity = KeyIdentity::new(slot.index(), 0, R::ROLE, peer, &self.held.air);
         self.held.command(Command::InstallKey {
             spp: association.owner.spp(),
-            material: CcmpKey::new(key.0),
+            material: key,
             key: identity.clone(),
         });
         ModelPairwiseKey { identity, slot }
@@ -3708,7 +3707,7 @@ where
                 slot,
                 permission,
                 key_id,
-                key: CcmpKey::new(key.0),
+                key,
             })),
         });
     }
@@ -4112,7 +4111,7 @@ impl<'p, 'v, 'id: 'p, C: Ieee80211Capabilities, X: ModelContext> StationPhase<'p
                 permission,
                 installed,
                 key_id,
-                key: CcmpKey::new(key.0),
+                key,
             },
         });
     }

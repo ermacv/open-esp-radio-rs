@@ -5,6 +5,22 @@
 # Rust files rustc compiles directly by path, outside every crate root.
 
 [[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/ccmp_key_borrow.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/ccmp_key_bytes.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/ccmp_key_clone.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/ccmp_key_copy.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
 path = "crates/protocols/ieee80211/lower-mac/tests/ui/lifecycle_owner_constructor.rs"
 reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
 

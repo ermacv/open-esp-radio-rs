@@ -1,4 +1,4 @@
-//! Safe generated-PAC ownership for the station TSF transaction.
+//! TSF transactions serialized by the single Wi-Fi register owner.
 
 #![forbid(unsafe_code)]
 
@@ -40,6 +40,30 @@ pub(crate) fn snapshot_station_tsf(
 }
 
 impl WifiRadioRegisters {
+    /// Return one coherent access-point TSF snapshot.
+    ///
+    /// The exclusive register owner covers select, both shared readback
+    /// words and release. STA snapshots and TSF writes require the same
+    /// owner, so no domain can change the selector within this transaction.
+    /// No selected-register handle or callback escapes the method.
+    ///
+    /// SOURCE: complete pinned `libpp[hal_mac.o]::hal_get_tsf_time`, with
+    /// interface one, selects SoftAP, reads high then low, and releases the
+    /// selector using a fresh control read. The reviewed field is published
+    /// as SNAPSHOT_SOFTAP_TSF; the words are shared with the station snapshot.
+    pub fn access_point_tsf(&mut self) -> u64 {
+        let registers = &self.peripherals.wifi_mac.wifi_mac_sta_tsf_load;
+        registers
+            .control()
+            .modify(|_, writer| writer.snapshot_softap_tsf().set_bit());
+        let high = registers.snapshot_high().read().value().bits();
+        let low = registers.snapshot_low().read().value().bits();
+        registers
+            .control()
+            .modify(|_, writer| writer.snapshot_softap_tsf().clear_bit());
+        u64::from(low) | (u64::from(high) << 32)
+    }
+
     /// Return one coherent station TSF snapshot.
     ///
     /// SOURCE: complete rev0 ROM `rom[]::hal_get_sta_tsf` at `0x2f82c15c` sets

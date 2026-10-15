@@ -69,8 +69,10 @@ scopes; an absent review is not silently replaced by model-only publication.
 
 `WIFI_MAC_STA_TSF_LOAD.CONTROL` publishes separate station and SoftAP
 snapshot selectors, but both domains read the same `SNAPSHOT_LOW/HIGH`
-pair. A transaction owner must serialize selector assertion, both reads
-and selector release across domains. Separate owners for those selectors
+pair. `WifiRadioRegisters` serializes selector assertion, both reads
+and selector release through its exclusive borrow; the AP driver owner
+reaches that transaction through `AccessPointTsf::read` and the HAL.
+Separate owners for those selectors
 would not provide independent snapshots. The SoftAP selector is TSF-1;
 its reviewed sources are in
 [`vendor-libpp.toml`](evidence/vendor-libpp.toml) and

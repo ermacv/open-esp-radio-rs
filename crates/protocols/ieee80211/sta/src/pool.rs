@@ -33,6 +33,19 @@ impl<X> Pool<X> {
         pool
     }
 
+    pub(crate) fn from_collection(items: heapless::Vec<X, POOL_CAPACITY>) -> Self {
+        let mut items = items.into_iter();
+        Self {
+            items: core::array::from_fn(|_| items.next()),
+            lost: crate::Counter::ZERO,
+        }
+    }
+
+    /// Drain the bounded resource collection; each element vacates its credit.
+    pub(crate) fn take_all(&mut self) -> heapless::Vec<X, POOL_CAPACITY> {
+        self.items.iter_mut().filter_map(Option::take).collect()
+    }
+
     pub(crate) fn take(&mut self) -> Option<X> {
         self.items.iter_mut().find_map(Option::take)
     }

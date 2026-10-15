@@ -34,6 +34,13 @@
 //! group key); responses return those tokens with the keys. A stale install
 //! is removed normally. Group slots are fungible: removal returns a raw slot
 //! to the free pool, whose fullness proves that every group key came back.
+//! Construction receives the complete vacant association bank, retaining even
+//! spare PTK and GTK slots outside the station's selected active capacity.
+//! The negotiated SPP decision moves into the PTK installation and its returned
+//! owner. GTK installation waits for that owner and borrows the same decision.
+//! Leave removes every GTK before the PTK, then synchronously ends the
+//! association with the complete returned bank. No extra timer or terminal
+//! is introduced; pending key installation stays under the original D4 deadline.
 //!
 //! # Channels
 //!
@@ -155,6 +162,10 @@ pub enum TxRefusal {
 
 /// The tokens a station holds: the port's, or a host test's.
 pub trait StaTokens {
+    /// Total slots in the complete bank; unused PTKs remain with the station.
+    const PAIRWISE_SLOTS: usize;
+    /// Physical GTK slots, including those outside the selected active bank.
+    const TOTAL_GROUP_SLOTS: usize;
     /// Group slots granted by this backend resource type.
     const GROUP_SLOTS: usize;
     /// Component owning the station's channel arbiter and lease admission.
@@ -174,6 +185,51 @@ pub trait StaTokens {
     type Sent;
     /// Release a completed MPDU for a new frame, ending its retained body owner.
     fn renew(mpdu: Self::Sent) -> Self::SmallBuffer;
+    /// The affine start permission, reclaimed only through the complete key bank.
+    type AssociationStart;
+    /// Immutable association policy shared by every installed key.
+    type Association;
+    /// Every vacant PTK and GTK slot of this interface.
+    type VacantKeyBank;
+    /// A start permission together with every vacant slot.
+    type VacantAssociation;
+    /// Split the complete initial bank; one PTK is active, the rest are retained.
+    fn split_vacant(
+        vacant: Self::VacantAssociation,
+    ) -> oer_ieee80211_lower_mac::association::DistributedKeyBank<
+        Self::AssociationStart,
+        Self::PairwiseSlot,
+        Self::GroupSlot,
+        8,
+    >;
+    /// Select SPP once before installing PTK.
+    fn begin_association(
+        start: Self::AssociationStart,
+        spp: oer_ieee80211_mac::security::Spp,
+    ) -> Self::Association;
+    /// Collect returns; a partial bank remains owned on failure.
+    fn collect_key_bank(
+        parts: oer_ieee80211_lower_mac::association::KeyBankParts<
+            Self::PairwiseSlot,
+            Self::GroupSlot,
+            8,
+        >,
+    ) -> Result<
+        Self::VacantKeyBank,
+        oer_ieee80211_lower_mac::association::KeyBankParts<Self::PairwiseSlot, Self::GroupSlot, 8>,
+    >;
+    /// End synchronously, then distribute the complete bank for another association.
+    fn end_association(
+        association: Self::Association,
+        bank: Self::VacantKeyBank,
+    ) -> oer_ieee80211_lower_mac::association::DistributedKeyBank<
+        Self::AssociationStart,
+        Self::PairwiseSlot,
+        Self::GroupSlot,
+        8,
+    >;
+    /// The installed PTK retains the association owner until its removal terminal.
+    fn association(key: &Self::PairwiseKey) -> &Self::Association;
     /// A pairwise key slot.
     type PairwiseSlot;
     /// A unique, fungible group slot retained by the backend until removal.
@@ -186,6 +242,15 @@ pub trait StaTokens {
     type GroupPermission;
     /// The metadata the port gives a received frame.
     type RxMeta: RxMetadata;
+}
+
+/// A resource-return violation prevents any further key or association mutation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaKeyContractViolation {
+    /// Removal returned the association before all of its slots were recovered.
+    IncompleteBank,
+    /// A group installation has no installed PTK association owner.
+    MissingAssociation,
 }
 
 /// How the station protects its link.
@@ -292,7 +357,12 @@ pub enum StaInput<'id, T: StaTokens, K> {
         permission: T::GroupPermission,
     },
     /// A removed pairwise key's slot.
-    PairwiseKeyRemoved(T::PairwiseSlot),
+    PairwiseKeyRemoved {
+        /// Returned key slot.
+        slot: T::PairwiseSlot,
+        /// The same association retained through removal.
+        association: T::Association,
+    },
     /// A removed group key's slot and its unique mutation permission.
     GroupKeyRemoved {
         pending: PendingGroupRemoval<'id, T::EpochPath>,
@@ -323,6 +393,8 @@ pub enum StaInput<'id, T: StaTokens, K> {
 /// ```
 #[must_use = "carry out the action or return its owners through a terminal path"]
 pub enum StaAction<'a, 'id, T: StaTokens, K> {
+    /// Stop the port; the machine retains the incomplete resource bank.
+    ContractViolation(StaKeyContractViolation),
     /// Ask the arbiter for a channel, with the station's place; the service
     /// hands the answer back ([`StaInput::Answer`]) in the same step.
     RequestChannel(ChannelRequest<K>, LeasePlace<'id, T::GatePath>),
@@ -360,6 +432,8 @@ pub enum StaAction<'a, 'id, T: StaTokens, K> {
     ),
     /// Install a pairwise key ([`StaInput::PairwiseKeyInstalled`]).
     InstallPairwiseKey {
+        /// Unique policy owner, returned inside the installed pairwise owner.
+        association: T::Association,
         /// The response must return this token.
         pending: PendingPairwiseKey<'id, T::EpochPath>,
         /// The slot it takes.
@@ -371,6 +445,8 @@ pub enum StaAction<'a, 'id, T: StaTokens, K> {
     },
     /// Install a group key ([`StaInput::GroupKeyInstalled`]).
     InstallGroupKey {
+        /// The decision retained by the PTK of this association.
+        association: &'a T::Association,
         /// Exclusive GTK mutation permission, held through the terminal.
         permission: T::GroupPermission,
         /// The response must return this token.
@@ -1062,11 +1138,17 @@ pub struct StaConfigurationContext<'id, Path: PoolPath = Root> {
 }
 
 /// The state of a key cell, independent of the protocol's current state.
-enum KeyCell<Key, Slot> {
-    Free(Slot),
+enum KeyCell<T: StaTokens> {
+    Free(VacantPairwise<T>),
     Installing,
-    Installed(Key),
+    Installed(T::PairwiseKey),
     Removing,
+    /// Backend contract violation: every returned owner remains in custody.
+    UnreturnedBank {
+        _association: T::Association,
+        _parts:
+            oer_ieee80211_lower_mac::association::KeyBankParts<T::PairwiseSlot, T::GroupSlot, 8>,
+    },
 }
 
 /// Free slots are fungible credits from the installation's declared pool.
@@ -1077,41 +1159,57 @@ struct GroupSlots<T: StaTokens> {
 }
 
 impl<T: StaTokens> GroupSlots<T> {
-    fn new<const N: usize>(slots: [T::GroupSlot; N]) -> Self {
-        const {
-            #[cfg_attr(not(test), expect(clippy::panic, reason = "evaluated at build"))]
-            const fn check(resources: usize, capacity: usize) {
-                if resources != capacity {
-                    panic!("group resources must match their backend type");
-                }
-            }
-            check(N, T::GROUP_SLOTS);
-        }
-        Self {
-            free: Pool::new(slots),
-        }
-    }
     fn is_full(&self) -> bool {
         self.free.len() == T::GROUP_SLOTS
     }
 }
 
+struct VacantPairwise<T: StaTokens> {
+    slot: T::PairwiseSlot,
+    association: T::AssociationStart,
+}
+
 struct Keys<T: StaTokens> {
-    pairwise: KeyCell<T::PairwiseKey, T::PairwiseSlot>,
+    pairwise: KeyCell<T>,
+    spare_pairwise: heapless::Vec<T::PairwiseSlot, 8>,
+    spare_group: heapless::Vec<T::GroupSlot, 8>,
     group_slots: GroupSlots<T>,
     group_permission: Option<T::GroupPermission>,
     groups: GroupKeys<T::GroupKey>,
 }
 
+type PairwiseAdmission<'id, T> = (
+    <T as StaTokens>::Association,
+    <T as StaTokens>::PairwiseSlot,
+    PendingPairwiseKey<'id, <T as StaTokens>::EpochPath>,
+);
+
 impl<T: StaTokens> Keys<T> {
-    fn new<const N: usize>(
-        pairwise: T::PairwiseSlot,
-        groups: [T::GroupSlot; N],
-        permission: T::GroupPermission,
-    ) -> Self {
+    fn new<const N: usize>(vacant: T::VacantAssociation, permission: T::GroupPermission) -> Self {
+        const {
+            #[cfg_attr(not(test), expect(clippy::panic, reason = "evaluated at build time"))]
+            const fn check(active: usize, selected: usize, group: usize, pairwise: usize) {
+                if active != selected
+                    || active > group
+                    || group > 8
+                    || pairwise == 0
+                    || pairwise > 8
+                {
+                    panic!("station collections must retain the complete key bank");
+                }
+            }
+            check(N, T::GROUP_SLOTS, T::TOTAL_GROUP_SLOTS, T::PAIRWISE_SLOTS);
+        }
+        let (association, slot, parts) = T::split_vacant(vacant);
+        let mut groups = parts.group.into_iter();
+        let free = groups.by_ref().take(N).collect();
         Self {
-            pairwise: KeyCell::Free(pairwise),
-            group_slots: GroupSlots::new(groups),
+            pairwise: KeyCell::Free(VacantPairwise { slot, association }),
+            spare_pairwise: parts.pairwise,
+            spare_group: groups.collect(),
+            group_slots: GroupSlots {
+                free: Pool::from_collection(free),
+            },
             group_permission: Some(permission),
             groups: GroupKeys::new(),
         }
@@ -1120,9 +1218,11 @@ impl<T: StaTokens> Keys<T> {
     fn take_pairwise_slot<'id>(
         &mut self,
         epoch: LinkEpoch<'id, T::EpochPath>,
-    ) -> Option<(T::PairwiseSlot, PendingPairwiseKey<'id, T::EpochPath>)> {
+        spp: oer_ieee80211_mac::security::Spp,
+    ) -> Option<PairwiseAdmission<'id, T>> {
         match core::mem::replace(&mut self.pairwise, KeyCell::Installing) {
-            KeyCell::Free(slot) => Some((
+            KeyCell::Free(VacantPairwise { slot, association }) => Some((
+                T::begin_association(association, spp),
                 slot,
                 PendingPairwiseKey {
                     cell: PairwiseCell,
@@ -1365,6 +1465,7 @@ struct Handshake<T: StaTokens, K> {
     qos: bool,
     peer: Peer<T::RxMeta>,
     supplicant: RsnStaSupplicant,
+    spp: oer_ieee80211_mac::security::Spp,
     pmk: Pmk,
     qos_sequences: [StaSequenceCounter; 8],
     /// The deadline of the message the station waits for.
@@ -1768,6 +1869,7 @@ enum Done {
 /// An action a state owes.
 enum Owed<'id, T: StaTokens, K> {
     InstallPairwise {
+        association: T::Association,
         pending: PendingPairwiseKey<'id, T::EpochPath>,
         slot: T::PairwiseSlot,
         peer: IndividualAddress,
@@ -1863,10 +1965,8 @@ pub struct StationResources<
     pub place: LeasePlace<'id, T::GatePath>,
     /// Temporary channel-absence admission.
     pub absence_place: AbsencePlace<'id, T::GatePath>,
-    /// Pairwise-key installation slot.
-    pub pairwise: T::PairwiseSlot,
-    /// Receive group-key installation slots.
-    pub groups: [T::GroupSlot; GROUPS],
+    /// The interface association permission and its complete vacant key bank.
+    pub keys: T::VacantAssociation,
     /// This station interface's unique GTK mutation permission.
     pub group_permission: T::GroupPermission,
 }
@@ -2006,15 +2106,14 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             buffers,
             place,
             absence_place,
-            pairwise,
-            groups,
+            keys,
             group_permission,
         } = resources;
         Self {
             config,
             security,
             state: State::Idle,
-            keys: Keys::new(pairwise, groups, group_permission),
+            keys: Keys::new::<GROUPS>(keys, group_permission),
             configuration: Some(configure),
             tickets: Pool::new(tickets),
             buffers: Pool::new(buffers),
@@ -2093,7 +2192,10 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         }
         let pairwise = match &self.keys.pairwise {
             KeyCell::Installed(key) => Some(key),
-            KeyCell::Free(_) | KeyCell::Installing | KeyCell::Removing => None,
+            KeyCell::Free(_)
+            | KeyCell::Installing
+            | KeyCell::Removing
+            | KeyCell::UnreturnedBank { .. } => None,
         };
         let replay = match &mut connected.rsn {
             Some(rsn) => Some(&mut rsn.replay),
@@ -2323,8 +2425,38 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 self.group_transition(pending.install, key, permission, None, true);
                 return;
             }
-            StaInput::PairwiseKeyRemoved(slot) => {
-                self.keys.pairwise = KeyCell::Free(slot);
+            StaInput::PairwiseKeyRemoved { slot, association } => {
+                // A complete initial bank and affine returns bound these
+                // collections by the same const capacities checked in Keys::new.
+                let spare = core::mem::take(&mut self.keys.spare_pairwise);
+                let parts = oer_ieee80211_lower_mac::association::KeyBankParts {
+                    pairwise: core::iter::once(slot).chain(spare).collect(),
+                    group: self
+                        .keys
+                        .group_slots
+                        .free
+                        .take_all()
+                        .into_iter()
+                        .chain(core::mem::take(&mut self.keys.spare_group))
+                        .collect(),
+                };
+                match T::collect_key_bank(parts) {
+                    Ok(bank) => {
+                        let (association, slot, parts) = T::end_association(association, bank);
+                        self.keys.pairwise = KeyCell::Free(VacantPairwise { association, slot });
+                        self.keys.spare_pairwise = parts.pairwise;
+                        let mut groups = parts.group.into_iter();
+                        self.keys.group_slots.free =
+                            Pool::from_collection(groups.by_ref().take(T::GROUP_SLOTS).collect());
+                        self.keys.spare_group = groups.collect();
+                    }
+                    Err(parts) => {
+                        self.keys.pairwise = KeyCell::UnreturnedBank {
+                            _association: association,
+                            _parts: parts,
+                        };
+                    }
+                }
                 return;
             }
             StaInput::GroupKeyRemoved {
@@ -3685,6 +3817,11 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     /// either Connected or the first handshake action.
     #[must_use = "perform the returned action before waiting for another input"]
     pub fn poll_action(&mut self, now: Instant) -> Option<StaAction<'_, 'id, T, K>> {
+        if matches!(self.keys.pairwise, KeyCell::UnreturnedBank { .. }) {
+            return Some(StaAction::ContractViolation(
+                StaKeyContractViolation::IncompleteBank,
+            ));
+        }
         let owed = loop {
             self.complete_commands();
             if let Some(terminal) = self.commands.poll() {
@@ -3715,11 +3852,13 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             },
             Owed::Ready(id) => StaAction::Ready(id),
             Owed::InstallPairwise {
+                association,
                 pending,
                 slot,
                 peer,
                 key,
             } => StaAction::InstallPairwiseKey {
+                association,
                 pending,
                 slot,
                 peer,
@@ -3731,12 +3870,23 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 slot,
                 key_id,
                 key,
-            } => StaAction::InstallGroupKey {
-                permission,
-                pending,
-                slot,
-                key_id,
-                key,
+            } => match &self.keys.pairwise {
+                KeyCell::Installed(pairwise) => StaAction::InstallGroupKey {
+                    association: T::association(pairwise),
+                    permission,
+                    pending,
+                    slot,
+                    key_id,
+                    key,
+                },
+                _ => {
+                    self.keys.group_slots.free.put(slot);
+                    self.keys.groups.release(pending.place);
+                    self.keys.group_permission = Some(permission);
+                    return Some(StaAction::ContractViolation(
+                        StaKeyContractViolation::MissingAssociation,
+                    ));
+                }
             },
             Owed::RemovePairwise(key) => StaAction::RemovePairwiseKey(key),
             Owed::ReplaceGroup {
@@ -3878,15 +4028,17 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     fn owe_reclaim(&mut self, reclaim: Reclaim) -> ActionStep<'id, T, K> {
         match reclaim {
             Reclaim::Keys => {
-                if let Some(key) = self.keys.take_pairwise_key() {
-                    (
-                        State::Reclaiming(Reclaim::Keys),
-                        ActionProgress::Action(Owed::RemovePairwise(key)),
-                    )
-                } else if let Some(removal) = self.group_removal(false) {
+                if let Some(removal) = self.group_removal(false) {
                     (
                         State::Reclaiming(Reclaim::Keys),
                         ActionProgress::Action(removal),
+                    )
+                } else if self.keys.group_slots.is_full()
+                    && let Some(key) = self.keys.take_pairwise_key()
+                {
+                    (
+                        State::Reclaiming(Reclaim::Keys),
+                        ActionProgress::Action(Owed::RemovePairwise(key)),
                     )
                 } else if self.keys.clear() {
                     (
@@ -3916,10 +4068,12 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 return (State::Leave(leave), ActionProgress::Transition);
             }
             LeaveStep::RemoveKeys(deauthentication) => {
-                if let Some(key) = self.keys.take_pairwise_key() {
-                    Some(Owed::RemovePairwise(key))
-                } else if let Some(removal) = self.group_removal(false) {
+                if let Some(removal) = self.group_removal(false) {
                     Some(removal)
+                } else if self.keys.group_slots.is_full()
+                    && let Some(key) = self.keys.take_pairwise_key()
+                {
+                    Some(Owed::RemovePairwise(key))
                 } else if self.keys.clear() {
                     // Every key is back: the next step owes the action.
                     leave.step = match deauthentication {
@@ -4078,9 +4232,9 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 let peer = handshake.bssid.individual();
                 match self
                     .current_epoch()
-                    .and_then(|epoch| self.keys.take_pairwise_slot(epoch))
+                    .and_then(|epoch| self.keys.take_pairwise_slot(epoch, handshake.spp))
                 {
-                    Some((slot, pending)) => {
+                    Some((association, slot, pending)) => {
                         let key = CcmpKey::new(*request.pairwise().key().as_bytes());
                         if handshake.supplicant.management_protection()
                             && handshake.management.is_none()
@@ -4090,6 +4244,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                         (
                             HandshakeStep::InstallGroup(request.into_group(), replay, protection),
                             Some(Owed::InstallPairwise {
+                                association,
                                 pending,
                                 slot,
                                 peer,
@@ -4099,6 +4254,16 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                     }
                     None => (HandshakeStep::Install(request, protection), None),
                 }
+            }
+            HandshakeStep::InstallGroup(request, replay, protection)
+                if !matches!(self.keys.pairwise, KeyCell::Installed(_)) =>
+            {
+                // PairwiseKeyInstalled returns the sole association owner.
+                // Its typed response unlocks GTK installation; D4 is unchanged.
+                (
+                    HandshakeStep::InstallGroup(request, replay, protection),
+                    None,
+                )
             }
             HandshakeStep::InstallGroup(request, replay, protection) => {
                 match self.begin_group_change(request.group()) {
@@ -4982,6 +5147,12 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         );
         match supplicant {
             Ok(supplicant) => State::Handshake(Handshake {
+                spp: match join.rsn.security() {
+                    AssociationSecurity::Rsn(rsn) => rsn.spp,
+                    AssociationSecurity::Open => {
+                        return leave_unkeyed(StaDisconnectReason::AssociationFailed);
+                    }
+                },
                 bssid,
                 channel,
                 association_id,

@@ -8,8 +8,9 @@
 //! plays on: the air answers each transmission, delivers received frames
 //! and records what the hardware saw. Receive Block Ack agreements are
 //! per-slot desired state: updates coalesce before the driver applies them,
-//! without occupying the command queue. A configuration confirmation occupies
-//! its coalescing slot until that event is taken, including by disable's drain.
+//! without occupying the command queue. Configure and TSF sampling consume
+//! their affine permissions in the FIFO; their terminals return those same
+//! permissions, including through disable's drain.
 //!
 //! The backend has the phase's shape ([owner decisions on #563]): the phase
 //! is the body's handle over queues to the model's driver
@@ -53,11 +54,17 @@
 //! Prepared operations retain a use of their key installation through their
 //! terminal or cancellation. `KeyRemoved` waits for these owners; a returned
 //! Sent retains only identity and therefore permits removal and slot reuse.
-//! GTK material lives in the model's installation table, separately from
+//! PTK and GTK material live in the model's installation table, separately from
 //! cloneable identities. Removal clears its material after the last prepared
 //! use ends. Uninstall and abandon deactivate the table, discard captured
 //! ingress and clear all secrets even if a test retains an identity. Normal
 //! disable/reenable preserves installed keys and their counters.
+//! Each installation refers to the immutable association record. The model
+//! applies its SPP mode before publishing material and records that order.
+//! `AirFrame::frame` contains actual CCMP ciphertext and MIC; `plaintext` is
+//! the DMA image before encryption. `ModelAir::receive_ccmp` authenticates
+//! encrypted input under the installed association before publishing verified
+//! RX metadata. Full-bank association end is a pure ownership transition.
 //! Pending GTK installation owns only a vacant slot, permission, KeyID and
 //! material. The driver creates its identity and installed owner after the
 //! hardware step, then publishes the success terminal at the RX boundary.
@@ -89,8 +96,8 @@
 
 //! Publication and completion are separate owners. Tests may hold a result
 //! while posting gate/key/disable barriers; only that publication can finish.
-//! The model's 1 ms publication bound is synthetic model time, not an S31
-//! timing claim. `set_time` feeds the test's virtual clock. Hardware backends
+//! The model's 1 ms publication bound is synthetic model time. `set_time`
+//! feeds the test's virtual clock. Hardware backends
 //! must declare their own PPDU plus response/timeout bound.
 //!
 //! Unit tests and the `test-support` library use the same implementation,
@@ -110,6 +117,10 @@ use core::{
     marker::PhantomData,
     num::NonZeroU16,
     task::{Poll, Waker},
+};
+use oer_ieee80211_lower_mac::association::{
+    self, Association, AssociationPool, AssociationStart, GroupKeySlot, KeyBankParts,
+    PairwiseKeySlot, VacantAssociation, VacantKeyBank,
 };
 use oer_ieee80211_mac::ccmp::GroupKeyId;
 use oer_ieee80211_rsn::keys::CcmpKey;
@@ -317,27 +328,19 @@ pub type ModelPool<const I: u8> = oer_radio_port::Child<oer_radio_port::Root, I>
 /// The distinct key pools belonging to each modeled interface role.
 pub trait ModelRole: oer_ieee80211_lower_mac::InterfaceRole {
     /// Component containing the role's pairwise slots.
-    type PairwisePath: oer_radio_port::PoolPath;
-    /// Component containing the role's group slots.
-    type GroupPath: oer_radio_port::PoolPath;
+    type AssociationPath: oer_radio_port::PoolPath;
     /// Component containing the unique GTK mutation permission.
     type GroupPermissionPath: oer_radio_port::PoolPath;
 }
 impl ModelRole for Station {
-    type PairwisePath = ModelPool<5>;
-    type GroupPath = ModelPool<6>;
-    type GroupPermissionPath = ModelPool<10>;
+    type AssociationPath = ModelPool<5>;
+    type GroupPermissionPath = ModelPool<8>;
 }
 impl ModelRole for AccessPoint {
-    type PairwisePath = ModelPool<7>;
-    type GroupPath = ModelPool<8>;
-    type GroupPermissionPath = oer_radio_port::Child<ModelPool<11>, 0>;
+    type AssociationPath = ModelPool<6>;
+    type GroupPermissionPath = oer_radio_port::Child<ModelPool<9>, 0>;
 }
 
-/// The kind of the pairwise key slots of the role `R`.
-pub struct ModelPairwiseKeys<R>(PhantomData<fn() -> R>);
-/// The kind of the group key slots of the role `R`.
-pub struct ModelGroupKeys<R>(PhantomData<fn() -> R>);
 /// The kind of the one GTK mutation permission per interface.
 pub struct ModelGroupPermission<R>(PhantomData<fn() -> R>);
 /// The kind of the receive Block Ack slots.
@@ -559,13 +562,16 @@ struct KeyInstall {
     last: Cell<u64>,
     active: Cell<bool>,
     group_role: Option<VifRole>,
+    role: VifRole,
+    peer: Option<IndividualAddress>,
     rx_active: Cell<bool>,
     preparations: Rc<()>,
+    association: Rc<oer_ieee80211_rsn::ccmp_mpdu::CcmpAssociation>,
     air: Weak<ModelAir>,
 }
 
 #[derive(Debug)]
-struct GroupInstallation {
+struct KeyInstallation {
     identity: Weak<KeyInstall>,
     key: CcmpKey,
 }
@@ -578,15 +584,25 @@ impl PartialEq for KeyIdentity {
 impl Eq for KeyIdentity {}
 
 impl KeyIdentity {
-    fn new(index: u8, key_id: u8, air: &Rc<ModelAir>) -> Self {
+    fn new(
+        index: u8,
+        key_id: u8,
+        association: Rc<oer_ieee80211_rsn::ccmp_mpdu::CcmpAssociation>,
+        role: VifRole,
+        peer: IndividualAddress,
+        air: &Rc<ModelAir>,
+    ) -> Self {
         Self(Rc::new(KeyInstall {
             index,
             key_id,
             last: Cell::new(0),
             active: Cell::new(true),
             group_role: None,
+            role,
+            peer: Some(peer),
             rx_active: Cell::new(false),
             preparations: Rc::new(()),
+            association,
             air: Rc::downgrade(air),
         }))
     }
@@ -595,6 +611,7 @@ impl KeyIdentity {
         key_id: GroupKeyId,
         role: VifRole,
         key: CcmpKey,
+        association: Rc<oer_ieee80211_rsn::ccmp_mpdu::CcmpAssociation>,
         air: &Rc<ModelAir>,
     ) -> Self {
         let identity = Self(Rc::new(KeyInstall {
@@ -603,16 +620,14 @@ impl KeyIdentity {
             last: Cell::new(0),
             active: Cell::new(true),
             group_role: Some(role),
+            role,
+            peer: None,
             rx_active: Cell::new(false),
             preparations: Rc::new(()),
+            association,
             air: Rc::downgrade(air),
         }));
-        air.group_installations
-            .borrow_mut()
-            .push(GroupInstallation {
-                identity: Rc::downgrade(&identity.0),
-                key,
-            });
+        air.install_material(&identity, key);
         identity
     }
     fn check_packet_numbers(&self, count: usize) -> Result<(), ModelFault> {
@@ -838,9 +853,25 @@ impl<'id, D> ModelMpdu<'id, D> {
             .split_at_checked(self.layout.mpdu_len())
             .ok_or(ModelFault)?
             .0;
+        let mut wire: Vec<u8> = bytes.into();
+        if let Some(identity) = key {
+            let air = identity.0.air.upgrade().ok_or(ModelFault)?;
+            let installations = air.key_installations.borrow();
+            let material = installations
+                .iter()
+                .find(|entry| entry.identity.ptr_eq(&Rc::downgrade(&identity.0)))
+                .ok_or(ModelFault)?;
+            wire.extend_from_slice(&[0; 8]);
+            identity
+                .0
+                .association
+                .seal(material.key.as_bytes(), &mut wire)
+                .map_err(|_| ModelFault)?;
+        }
         Ok(AirFrame {
             role,
-            frame: bytes.into(),
+            plaintext: bytes.into(),
+            frame: wire,
             rate,
             key: key.map(|key| (key.0.index, keys.contains(key))),
             packet_number: self
@@ -944,15 +975,15 @@ pub struct ModelTypes<X: ModelContext = ()>(PhantomData<fn() -> X>);
 
 impl<'id, X: ModelContext> PhaseTypes<'id> for ModelTypes<X> {
     const COMMAND_CAPACITY: usize = MODEL_COMMANDS;
-    type StationCommandPath = oer_radio_port::Child<ModelPool<11>, 1>;
-    type AccessPointCommandPath = oer_radio_port::Child<ModelPool<11>, 2>;
+    type StationCommandPath = oer_radio_port::Child<ModelPool<9>, 1>;
+    type AccessPointCommandPath = oer_radio_port::Child<ModelPool<9>, 2>;
     type StationConfigureContext = X::StationConfigureContext<'id>;
     type AccessPointConfigureContext = X::AccessPointConfigureContext<'id>;
     const TERMINAL_CAPACITY: usize = MODEL_TERMINALS;
     type EpochPath = ModelPool<4>;
     type GatePath = ModelPool<0>;
     type TicketPath = ModelPool<1>;
-    type BlockAckPath = ModelPool<9>;
+    type BlockAckPath = ModelPool<7>;
     type Fault = ModelFault;
     type Context = X::Context<'id>;
     type Prepared<'k, 'p, R, K: Ieee80211Capabilities> = ModelPrepared<'k, 'p, 'id, R, K, X>;
@@ -977,12 +1008,67 @@ impl<'id, X: ModelContext> PhaseTypes<'id> for ModelTypes<X> {
     type BlockAck = ModelBlockAck<'id>;
 }
 
+/// Immutable association record, retained by each installed key.
+pub struct ModelAssociation<'id, R: ModelRole> {
+    owner: Association<'id, R, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS, R::AssociationPath>,
+    record: Rc<oer_ieee80211_rsn::ccmp_mpdu::CcmpAssociation>,
+}
+
 /// The keys of the role `R` and their slots.
 pub struct ModelKeys<'id, R>(PhantomData<fn(&'id ()) -> R>);
 
 impl<'id, R: ModelRole + 'id> KeyTypes<'id> for ModelKeys<'id, R> {
-    type PairwiseSlot = Slot<'id, ModelPairwiseKeys<R>, R::PairwisePath>;
-    type GroupSlot = Slot<'id, ModelGroupKeys<R>, R::GroupPath>;
+    const PAIRWISE_SLOTS: usize = MODEL_KEY_SLOTS;
+    const GROUP_SLOTS: usize = MODEL_KEY_SLOTS;
+    type AssociationStart =
+        AssociationStart<'id, R, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS, R::AssociationPath>;
+    type Association = ModelAssociation<'id, R>;
+    type VacantKeyBank =
+        VacantKeyBank<'id, R, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS, R::AssociationPath>;
+    type VacantAssociation =
+        VacantAssociation<'id, R, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS, R::AssociationPath>;
+    fn begin_association(
+        start: Self::AssociationStart,
+        spp: oer_ieee80211_mac::security::Spp,
+    ) -> Self::Association {
+        ModelAssociation {
+            owner: start.begin(spp),
+            record: Rc::new(oer_ieee80211_rsn::ccmp_mpdu::CcmpAssociation::new(spp)),
+        }
+    }
+    fn collect_key_bank<const N: usize>(
+        parts: KeyBankParts<Self::PairwiseSlot, Self::GroupSlot, N>,
+    ) -> Result<Self::VacantKeyBank, KeyBankParts<Self::PairwiseSlot, Self::GroupSlot, N>> {
+        VacantKeyBank::collect(parts)
+    }
+    fn end_association(
+        association: Self::Association,
+        vacant: Self::VacantKeyBank,
+    ) -> Self::VacantAssociation {
+        association::end_association(association.owner, vacant)
+    }
+    fn split_vacant<const N: usize>(
+        vacant: Self::VacantAssociation,
+    ) -> (
+        Self::AssociationStart,
+        Self::PairwiseSlot,
+        KeyBankParts<Self::PairwiseSlot, Self::GroupSlot, N>,
+    ) {
+        let (start, bank) = vacant.into_parts();
+        let ([first, spare], group) = bank.into_parts();
+        (
+            start,
+            first,
+            KeyBankParts {
+                pairwise: heapless::Vec::from_array([spare]),
+                group: heapless::Vec::from_array(group),
+            },
+        )
+    }
+
+    type PairwiseSlot =
+        PairwiseKeySlot<'id, R, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS, R::AssociationPath>;
+    type GroupSlot = GroupKeySlot<'id, R, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS, R::AssociationPath>;
     type PairwiseKey = ModelPairwiseKey<'id, R>;
     type GroupKey = ModelGroupKey<'id, R>;
     type GroupPermission = Slot<'id, ModelGroupPermission<R>, R::GroupPermissionPath>;
@@ -1142,12 +1228,18 @@ pub struct ModelFault;
 
 /// The tokens the install gives the body once.
 pub struct ModelResources<'id> {
+    /// Station's unique association-mode selection permission.
+    pub station_association:
+        AssociationStart<'id, Station, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS, ModelPool<5>>,
+    /// AP's interface-wide association-mode selection permission.
+    pub access_point_association:
+        AssociationStart<'id, AccessPoint, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS, ModelPool<6>>,
     /// Station command admission from its own installation component.
     pub station_commands:
-        InterfacePermissions<'id, Station, oer_radio_port::Child<ModelPool<11>, 1>>,
+        InterfacePermissions<'id, Station, oer_radio_port::Child<ModelPool<9>, 1>>,
     /// Access-point command admission from its own installation component.
     pub access_point_commands:
-        InterfacePermissions<'id, AccessPoint, oer_radio_port::Child<ModelPool<11>, 2>>,
+        InterfacePermissions<'id, AccessPoint, oer_radio_port::Child<ModelPool<9>, 2>>,
     /// The install's single epoch-source slot; Station constructs its source.
     pub connection_epoch: Slot<'id, ConnectionEpochKind, ModelPool<4>>,
     /// The transmit tickets.
@@ -1159,21 +1251,27 @@ pub struct ModelResources<'id> {
     /// The large transmit buffers.
     pub large: Vec<ModelBuffer<'id, ModelLarge>>,
     /// The station's pairwise key slots.
-    pub station_pairwise: [Slot<'id, ModelPairwiseKeys<Station>, ModelPool<5>>; MODEL_KEY_SLOTS],
+    pub station_pairwise:
+        [PairwiseKeySlot<'id, Station, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS, ModelPool<5>>;
+            MODEL_KEY_SLOTS],
     /// The station's group key slots.
-    pub station_group: [Slot<'id, ModelGroupKeys<Station>, ModelPool<6>>; MODEL_KEY_SLOTS],
+    pub station_group: [GroupKeySlot<'id, Station, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS, ModelPool<5>>;
+        MODEL_KEY_SLOTS],
     /// The access point's pairwise key slots.
     pub access_point_pairwise:
-        [Slot<'id, ModelPairwiseKeys<AccessPoint>, ModelPool<7>>; MODEL_KEY_SLOTS],
+        [PairwiseKeySlot<'id, AccessPoint, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS, ModelPool<6>>;
+            MODEL_KEY_SLOTS],
     /// The access point's group key slots.
-    pub access_point_group: [Slot<'id, ModelGroupKeys<AccessPoint>, ModelPool<8>>; MODEL_KEY_SLOTS],
+    pub access_point_group:
+        [GroupKeySlot<'id, AccessPoint, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS, ModelPool<6>>;
+            MODEL_KEY_SLOTS],
     /// The station's sole GTK mutation permission.
-    pub station_group_permission: Slot<'id, ModelGroupPermission<Station>, ModelPool<10>>,
+    pub station_group_permission: Slot<'id, ModelGroupPermission<Station>, ModelPool<8>>,
     /// The access point's sole GTK mutation permission.
     pub access_point_group_permission:
-        Slot<'id, ModelGroupPermission<AccessPoint>, oer_radio_port::Child<ModelPool<11>, 0>>,
+        Slot<'id, ModelGroupPermission<AccessPoint>, oer_radio_port::Child<ModelPool<9>, 0>>,
     /// The receive Block Ack slots both roles share.
-    pub block_acks: [Slot<'id, ModelBlockAcks, ModelPool<9>>; MODEL_BLOCK_ACK_SLOTS],
+    pub block_acks: [Slot<'id, ModelBlockAcks, ModelPool<7>>; MODEL_BLOCK_ACK_SLOTS],
     /// The sole authority to construct this installation's arbiter.
     pub arbiter_authority: oer_ieee80211_arbiter::ArbiterAuthority<'id, ModelPool<0>>,
     /// The open transmit gate.
@@ -1187,6 +1285,8 @@ pub struct AirFrame {
     pub role: VifRole,
     /// The MPDU, header and body, without the FCS.
     pub frame: Vec<u8>,
+    /// The DMA input before modeled hardware encryption, without a hardware MIC.
+    pub plaintext: Vec<u8>,
     /// Its rate.
     pub rate: PhyRate,
     /// The hardware key it named, and whether that key was installed when
@@ -1274,7 +1374,8 @@ pub struct ModelAir {
     group_held: Cell<bool>,
     // Secret material belongs to this installation table, never to the
     // cloneable identity carried by captured RX or returned Sent owners.
-    group_installations: RefCell<Vec<GroupInstallation>>,
+    key_installations: RefCell<Vec<KeyInstallation>>,
+    crypto_operations: RefCell<Vec<ModelCryptoOperation>>,
     group_rx: RefCell<VecDeque<CapturedGroupRx>>,
     group_writes: Cell<usize>,
     poisoned: Cell<bool>,
@@ -1293,15 +1394,115 @@ pub struct ModelAir {
     receive_agreements: RefCell<BTreeMap<u8, ModelReceiveAgreement>>,
 }
 
+/// Mode application precedes publication of each key's material.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ModelCryptoOperation {
+    Association {
+        role: VifRole,
+        spp: oer_ieee80211_mac::security::Spp,
+    },
+    Key {
+        role: VifRole,
+        slot: u8,
+    },
+}
+
+/// A wire MPDU could not pass modeled CCMP reception.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ModelCcmpError {
+    MalformedHeader,
+    MissingKey,
+    Authentication(oer_ieee80211_rsn::ccmp_mpdu::CcmpMpduError),
+}
+
 impl ModelAir {
-    fn remove_group_material(&self, identity: &KeyIdentity) {
-        self.group_installations
+    fn install_material(&self, identity: &KeyIdentity, key: CcmpKey) {
+        self.crypto_operations.borrow_mut().extend([
+            ModelCryptoOperation::Association {
+                role: identity.0.role,
+                spp: identity.0.association.spp(),
+            },
+            ModelCryptoOperation::Key {
+                role: identity.0.role,
+                slot: identity.0.index,
+            },
+        ]);
+        self.key_installations.borrow_mut().push(KeyInstallation {
+            identity: Rc::downgrade(&identity.0),
+            key,
+        });
+    }
+
+    /// Programming observations, in the same order as the driver's FIFO.
+    pub fn crypto_operations(&self) -> Vec<ModelCryptoOperation> {
+        self.crypto_operations.borrow().clone()
+    }
+
+    /// Receive actual encrypted data. Only successful MIC verification can
+    /// publish decrypted metadata; a changed SPP A-MSDU bit never reaches RX.
+    pub fn receive_ccmp(
+        &self,
+        frame: &[u8],
+        meta: ModelRxMeta,
+        role: VifRole,
+    ) -> Result<(), ModelCcmpError> {
+        use oer_ieee80211_mac::{ccmp::CcmpHeader, frame::DecodedHeader};
+        let header = DecodedHeader::decode(frame).ok_or(ModelCcmpError::MalformedHeader)?;
+        let ccmp = header
+            .body()
+            .first_chunk::<8>()
+            .ok_or(ModelCcmpError::MalformedHeader)?;
+        let key_id = CcmpHeader::parse(*ccmp)
+            .map_err(|_| ModelCcmpError::MalformedHeader)?
+            .key_id()
+            .value();
+        let group = oer_ieee80211_lower_mac::GroupAddress::new(header.receiver()).is_some();
+        let installations = self.key_installations.borrow();
+        let material = installations
+            .iter()
+            .find(|entry| {
+                entry.identity.upgrade().is_some_and(|key| {
+                    key.role == role
+                        && key.key_id == key_id
+                        && key.active.get()
+                        && if group {
+                            key.group_role.is_some() && key.rx_active.get()
+                        } else {
+                            key.peer
+                                .is_some_and(|peer| peer.get() == header.transmitter())
+                        }
+                })
+            })
+            .ok_or(ModelCcmpError::MissingKey)?;
+        let identity = material
+            .identity
+            .upgrade()
+            .ok_or(ModelCcmpError::MissingKey)?;
+        let mut plaintext = frame.to_vec();
+        identity
+            .association
+            .open(material.key.as_bytes(), &mut plaintext)
+            .map_err(ModelCcmpError::Authentication)?;
+        let (plaintext, _mic) = plaintext
+            .split_last_chunk::<8>()
+            .ok_or(ModelCcmpError::MalformedHeader)?;
+        self.receive(
+            plaintext,
+            meta.with_crypto(RxEvidence::HardwareObserved(
+                oer_ieee80211_lower_mac::RxCryptoStatus::DecryptedAndIntegrityVerified,
+            )),
+        );
+        Ok(())
+    }
+
+    fn remove_key_material(&self, identity: &KeyIdentity) {
+        self.key_installations
             .borrow_mut()
             .retain(|entry| !entry.identity.ptr_eq(&Rc::downgrade(&identity.0)));
     }
 
     fn end_installation(&self) {
-        let mut installations = self.group_installations.borrow_mut();
+        let mut installations = self.key_installations.borrow_mut();
         for entry in installations.iter() {
             if let Some(identity) = entry.identity.upgrade() {
                 identity.active.set(false);
@@ -1346,7 +1547,7 @@ impl ModelAir {
         stage: GroupRxStage,
     ) -> bool {
         let installation = self
-            .group_installations
+            .key_installations
             .borrow()
             .iter()
             .filter_map(|entry| {
@@ -1526,6 +1727,7 @@ enum Command<'id, X: ModelContext> {
     SubmitAmpdu(PreparedAggregate<'id, X>),
     InstallKey {
         key: KeyIdentity,
+        material: CcmpKey,
     },
     Group {
         admitted_at: u64,
@@ -1539,10 +1741,11 @@ enum Command<'id, X: ModelContext> {
     OpenGate,
 }
 
-type StationGroupPermission<'id> = Slot<'id, ModelGroupPermission<Station>, ModelPool<10>>;
+type StationGroupPermission<'id> = Slot<'id, ModelGroupPermission<Station>, ModelPool<8>>;
 
 struct PendingGroupInstall<'id, R: ModelRole> {
-    slot: Slot<'id, ModelGroupKeys<R>, R::GroupPath>,
+    association: Rc<oer_ieee80211_rsn::ccmp_mpdu::CcmpAssociation>,
+    slot: GroupKeySlot<'id, R, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS, R::AssociationPath>,
     permission: Slot<'id, ModelGroupPermission<R>, R::GroupPermissionPath>,
     key_id: GroupKeyId,
     key: CcmpKey,
@@ -1848,10 +2051,8 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
         oer_radio_port::Slots<ModelSmall, MODEL_SMALL_BUFFERS>,
         oer_radio_port::Slots<ModelLarge, MODEL_LARGE_BUFFERS>,
         oer_radio_port::Slots<ConnectionEpochKind, 1>,
-        oer_radio_port::Slots<ModelPairwiseKeys<Station>, MODEL_KEY_SLOTS>,
-        oer_radio_port::Slots<ModelGroupKeys<Station>, MODEL_KEY_SLOTS>,
-        oer_radio_port::Slots<ModelPairwiseKeys<AccessPoint>, MODEL_KEY_SLOTS>,
-        oer_radio_port::Slots<ModelGroupKeys<AccessPoint>, MODEL_KEY_SLOTS>,
+        AssociationPool<Station, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS>,
+        AssociationPool<AccessPoint, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS>,
         oer_radio_port::Slots<ModelBlockAcks, MODEL_BLOCK_ACK_SLOTS>,
         oer_radio_port::Slots<ModelGroupPermission<Station>, 1>,
         (
@@ -1951,14 +2152,16 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
             small,
             large,
             [epoch_slot],
-            station_pairwise,
-            station_group,
-            access_point_pairwise,
-            access_point_group,
+            station_vacant,
+            access_point_vacant,
             block_acks,
             [station_group_permission],
             ([access_point_group_permission], station_commands, access_point_commands),
         ) = mint.into_pools();
+        let (station_association, station_bank) = station_vacant.into_parts();
+        let (station_pairwise, station_group) = station_bank.into_parts();
+        let (access_point_association, access_point_bank) = access_point_vacant.into_parts();
+        let (access_point_pairwise, access_point_group) = access_point_bank.into_parts();
         let held = ModelHeld {
             air: self.air.clone(),
             driver_state: RefCell::new(Driver {
@@ -1984,6 +2187,8 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
             draining: Cell::new(false),
         };
         let resources = ModelResources {
+            station_association,
+            access_point_association,
             station_commands,
             access_point_commands,
             connection_epoch: epoch_slot,
@@ -2194,7 +2399,10 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                         .waiting
                         .push_back(Work::Aggregate(aggregate));
                 }
-                Command::InstallKey { key } => self.keys.push(key),
+                Command::InstallKey { key, material } => {
+                    held.air.install_material(&key, material);
+                    self.keys.push(key);
+                }
                 Command::Group {
                     admitted_at,
                     change,
@@ -2302,6 +2510,7 @@ impl<'id, X: ModelContext> Driver<'id, X> {
             pending.key_id,
             R::ROLE,
             pending.key,
+            pending.association,
             &held.air,
         );
         self.activate_group(held, &identity, true);
@@ -2342,13 +2551,14 @@ impl<'id, X: ModelContext> Driver<'id, X> {
             } => {
                 installed.identity.0.active.set(false);
                 installed.identity.0.rx_active.set(false);
-                held.air.remove_group_material(&installed.identity);
+                held.air.remove_key_material(&installed.identity);
                 self.keys.retain(|key| *key != installed.identity);
                 let identity = KeyIdentity::group(
                     installed.slot.index(),
                     key_id,
                     VifRole::Station,
                     key,
+                    installed.identity.0.association.clone(),
                     &held.air,
                 );
                 self.activate_group(held, &identity, true);
@@ -2482,7 +2692,7 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                 pending.push(removal);
                 held.poison();
             } else if Rc::strong_count(&removal.key.0.preparations) == 1 {
-                held.air.remove_group_material(&removal.key);
+                held.air.remove_key_material(&removal.key);
                 self.keys.retain(|installed| *installed != removal.key);
                 held.post(LowerMacEvent::Terminal(LowerMacTerminal::KeyRemoved(
                     removal.removed,
@@ -2999,18 +3209,18 @@ pub struct ModelInterface<'p, 'v, 'id, R, C = ModelCaps, X: ModelContext = ()> {
 /// A key the model installed.
 pub struct ModelPairwiseKey<'id, R: ModelRole> {
     identity: KeyIdentity,
-    slot: Slot<'id, ModelPairwiseKeys<R>, R::PairwisePath>,
+    slot: PairwiseKeySlot<'id, R, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS, R::AssociationPath>,
 }
 
 /// A group key the model installed.
 pub struct ModelGroupKey<'id, R: ModelRole> {
     identity: KeyIdentity,
-    slot: Slot<'id, ModelGroupKeys<R>, R::GroupPath>,
+    slot: GroupKeySlot<'id, R, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS, R::AssociationPath>,
 }
 
 /// A receive Block Ack agreement the model keeps.
 pub struct ModelBlockAck<'id> {
-    slot: Slot<'id, ModelBlockAcks, ModelPool<9>>,
+    slot: Slot<'id, ModelBlockAcks, ModelPool<7>>,
 }
 
 /// A retry plan's stages, as the model's hardware takes them.
@@ -3295,12 +3505,21 @@ where
 
     fn install_pairwise_key(
         &mut self,
-        slot: Slot<'id, ModelPairwiseKeys<R>, R::PairwisePath>,
-        _: IndividualAddress,
-        _: Ccmp128Key,
+        association: &ModelAssociation<'id, R>,
+        slot: PairwiseKeySlot<'id, R, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS, R::AssociationPath>,
+        peer: IndividualAddress,
+        key: Ccmp128Key,
     ) -> ModelPairwiseKey<'id, R> {
-        let identity = KeyIdentity::new(slot.index(), 0, &self.held.air);
+        let identity = KeyIdentity::new(
+            slot.index(),
+            0,
+            association.record.clone(),
+            R::ROLE,
+            peer,
+            &self.held.air,
+        );
         self.held.command(Command::InstallKey {
+            material: CcmpKey::new(key.0),
             key: identity.clone(),
         });
         ModelPairwiseKey { identity, slot }
@@ -3308,14 +3527,16 @@ where
 
     fn install_group_key(
         &mut self,
+        association: &ModelAssociation<'id, R>,
         permission: Slot<'id, ModelGroupPermission<R>, R::GroupPermissionPath>,
-        slot: Slot<'id, ModelGroupKeys<R>, R::GroupPath>,
+        slot: GroupKeySlot<'id, R, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS, R::AssociationPath>,
         key_id: GroupKeyId,
         key: Ccmp128Key,
     ) {
         self.held.command(Command::Group {
             admitted_at: self.held.air.now_micros.get(),
             change: GroupChange::Install(R::installation(PendingGroupInstall {
+                association: association.record.clone(),
                 slot,
                 permission,
                 key_id,
@@ -3324,11 +3545,18 @@ where
         });
     }
 
-    fn remove_pairwise_key(&mut self, key: ModelPairwiseKey<'id, R>) {
+    fn remove_pairwise_key(
+        &mut self,
+        association: ModelAssociation<'id, R>,
+        key: ModelPairwiseKey<'id, R>,
+    ) {
         key.identity.0.active.set(false);
         self.held.command(Command::RemoveKey {
             key: key.identity,
-            removed: R::removed(RemovedKey::Pairwise(key.slot)),
+            removed: R::removed(RemovedKey::Pairwise {
+                slot: key.slot,
+                association,
+            }),
         });
     }
 
@@ -3351,7 +3579,7 @@ where
 
     fn add_block_ack(
         &mut self,
-        slot: Slot<'id, ModelBlockAcks, ModelPool<9>>,
+        slot: Slot<'id, ModelBlockAcks, ModelPool<7>>,
         agreement: SupportedBlockAck<K>,
     ) -> ModelBlockAck<'id> {
         self.held.settings.borrow_mut().block_acks.insert(
@@ -3378,7 +3606,7 @@ where
     fn remove_block_ack(
         &mut self,
         agreement: ModelBlockAck<'id>,
-    ) -> Slot<'id, ModelBlockAcks, ModelPool<9>> {
+    ) -> Slot<'id, ModelBlockAcks, ModelPool<7>> {
         self.held
             .settings
             .borrow_mut()
@@ -3740,7 +3968,7 @@ impl<'p, 'v, 'id: 'p, C: Ieee80211Capabilities, X: ModelContext> StationPhase<'p
         permission: ConfigurePermission<
             'id,
             Station,
-            oer_radio_port::Child<ModelPool<11>, 1>,
+            oer_radio_port::Child<ModelPool<9>, 1>,
             X::StationConfigureContext<'id>,
         >,
         _: StationReceive<C>,
@@ -3763,7 +3991,7 @@ impl<'p, 'v, 'id: 'p, C: Ieee80211Capabilities, X: ModelContext> AccessPointPhas
         permission: ConfigurePermission<
             'id,
             AccessPoint,
-            oer_radio_port::Child<ModelPool<11>, 2>,
+            oer_radio_port::Child<ModelPool<9>, 2>,
             X::AccessPointConfigureContext<'id>,
         >,
         _: SupportedFilter<C, AccessPoint>,

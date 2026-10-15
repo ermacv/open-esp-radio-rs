@@ -415,6 +415,45 @@ pub type AggregateCompleted<'id, P> = crate::Completed<
 /// depend on the install alone, so a caller holds them across the phase's
 /// lends ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6131533566)).
 pub trait KeyTypes<'id> {
+    /// Total PTK slots in the same installation pool as the association owner.
+    const PAIRWISE_SLOTS: usize;
+    /// Total GTK slots in that pool, including slots unused by a consumer.
+    const GROUP_SLOTS: usize;
+    /// The one affine permission to choose this association's SPP mode.
+    type AssociationStart: 'id;
+    /// Immutable association owner required by every PTK/GTK installation.
+    type Association: 'id;
+    /// Complete vacant bank, containing every slot of the association domain.
+    type VacantKeyBank: 'id;
+    /// Returned association permission together with its complete bank.
+    type VacantAssociation: 'id;
+    /// Pure selection; the backend applies it before publishing key material.
+    fn begin_association(
+        start: Self::AssociationStart,
+        spp: oer_ieee80211_mac::security::Spp,
+    ) -> Self::Association;
+    /// A partial collection cannot cross the association-end boundary.
+    fn collect_key_bank<const N: usize>(
+        parts: crate::association::KeyBankParts<Self::PairwiseSlot, Self::GroupSlot, N>,
+    ) -> Result<
+        Self::VacantKeyBank,
+        crate::association::KeyBankParts<Self::PairwiseSlot, Self::GroupSlot, N>,
+    >;
+    /// Pure, infallible end after all key-removal terminals. No new command or
+    /// terminal exists; the returned association retains its complete bank.
+    fn end_association(
+        association: Self::Association,
+        vacant: Self::VacantKeyBank,
+    ) -> Self::VacantAssociation;
+    /// Distribute the retained bank for the next exchange.
+    fn split_vacant<const N: usize>(
+        vacant: Self::VacantAssociation,
+    ) -> crate::association::DistributedKeyBank<
+        Self::AssociationStart,
+        Self::PairwiseSlot,
+        Self::GroupSlot,
+        N,
+    >;
     /// The role's affine pairwise key slots (an access point's: its
     /// association identifiers).
     type PairwiseSlot: 'id;
@@ -446,7 +485,12 @@ pub trait KeyTypes<'id> {
 /// A removed key's slot, of its kind.
 pub enum RemovedKey<'id, K: KeyTypes<'id>> {
     /// A pairwise key's slot.
-    Pairwise(K::PairwiseSlot),
+    Pairwise {
+        /// Vacant physical key slot, after its last admitted use.
+        slot: K::PairwiseSlot,
+        /// Association owner retained through removal; the full bank is still required to end it.
+        association: K::Association,
+    },
     /// A group key's slot.
     Group {
         /// The now-vacant physical slot.
@@ -1031,6 +1075,7 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     /// Install `key` for frames with `peer` in `slot`.
     fn install_pairwise_key(
         &mut self,
+        association: &<InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::Association,
         slot: <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::PairwiseSlot,
         peer: IndividualAddress,
         key: Ccmp128Key,
@@ -1054,6 +1099,7 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     /// retains any operation that cannot complete, never fabricating success.
     fn install_group_key(
         &mut self,
+        association: &<InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::Association,
         permission: <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::GroupPermission,
         slot: <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::GroupSlot,
         key_id: GroupKeyId,
@@ -1062,9 +1108,12 @@ pub trait InterfacePhase<'p, 'id: 'p> {
 
     /// Remove `key`: queued attempts that use it return as
     /// `Withdrawn(KeyRemoved)`, a published one is waited for, and
-    /// [`LowerMacTerminal::KeyRemoved`] gives its slot back.
+    /// [`LowerMacTerminal::KeyRemoved`] gives its slot and association owner back.
+    /// The owner is retained through queued, published and quarantined uses;
+    /// receiving it alone cannot end the association without the full bank.
     fn remove_pairwise_key(
         &mut self,
+        association: <<Self::Role as RoleKeys<'id, Self::Types>>::Keys as KeyTypes<'id>>::Association,
         key: <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::PairwiseKey,
     );
 

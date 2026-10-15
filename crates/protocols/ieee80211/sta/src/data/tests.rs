@@ -91,6 +91,35 @@ impl StaDataTokens for Data {
 struct Station;
 
 impl StaTokens for Station {
+    type AssociationStart = ();
+    type Association = ();
+    type VacantKeyBank = oer_ieee80211_lower_mac::association::KeyBankParts<(), (), 8>;
+    type VacantAssociation = [(); 0];
+    fn begin_association(_: (), _: oer_ieee80211_mac::security::Spp) {}
+    fn association(key: &()) -> &() {
+        key
+    }
+    fn split_vacant(group: Self::VacantAssociation) -> ((), (), Self::VacantKeyBank) {
+        (
+            (),
+            (),
+            oer_ieee80211_lower_mac::association::KeyBankParts {
+                pairwise: heapless::Vec::new(),
+                group: group.into_iter().collect(),
+            },
+        )
+    }
+    fn collect_key_bank(
+        parts: Self::VacantKeyBank,
+    ) -> Result<Self::VacantKeyBank, Self::VacantKeyBank> {
+        Ok(parts)
+    }
+    fn end_association(_: (), mut bank: Self::VacantKeyBank) -> ((), (), Self::VacantKeyBank) {
+        bank.pairwise.pop();
+        ((), (), bank)
+    }
+    const PAIRWISE_SLOTS: usize = 1;
+    const TOTAL_GROUP_SLOTS: usize = 0;
     const GROUP_SLOTS: usize = 0;
     type GatePath = oer_radio_port::Root;
     type EpochPath = oer_radio_port::Root;

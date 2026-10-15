@@ -26,6 +26,11 @@ impl Work for DuringPublication {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let station_association = ModelKeys::<Station>::begin_association(
+            resources.station_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
         let mut terminal_access = resources.terminal_access;
         let ModelResources {
             mut tickets,
@@ -36,6 +41,7 @@ impl Work for DuringPublication {
         } = resources;
         let air = phase.held.air.clone();
         let mut key = Some(phase.station().install_pairwise_key(
+            &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
             Ccmp128Key([7; 16]),
@@ -65,7 +71,9 @@ impl Work for DuringPublication {
         let before_request = held_snapshot(phase);
         let first = air.sent().remove(0);
         if matches!(self.0, Barrier::RemoveKey) {
-            phase.station().remove_pairwise_key(key.take().unwrap());
+            phase
+                .station()
+                .remove_pairwise_key(station_association, key.take().unwrap());
         } else {
             phase.close_gate(gate);
         }
@@ -204,19 +212,19 @@ impl Work for DuringPublication {
                 assert!(matches!(returned, ModelAnyBuffer::SmallSent(_)));
                 let retried = air.sent().pop().unwrap();
                 assert_eq!(retried.packet_number, first.packet_number);
-                assert_eq!(&retried.frame[22..24], &first.frame[22..24]);
+                assert_eq!(&retried.plaintext[22..24], &first.plaintext[22..24]);
                 assert_eq!(
-                    &retried.frame[24..],
-                    &first.frame[24..],
+                    &retried.plaintext[24..],
+                    &first.plaintext[24..],
                     "CCMP and payload unchanged"
                 );
-                assert_eq!(first.frame[1] & 0x08, 0);
-                assert_ne!(retried.frame[1] & 0x08, 0);
+                assert_eq!(first.plaintext[1] & 0x08, 0);
+                assert_ne!(retried.plaintext[1] & 0x08, 0);
                 retried_frames = air
                     .sent()
                     .into_iter()
                     .skip(1)
-                    .map(|frame| frame.frame)
+                    .map(|frame| frame.plaintext)
                     .collect();
             }
         }
@@ -228,7 +236,7 @@ impl Work for DuringPublication {
                 just_before_timeout,
                 publications_at_barrier,
                 events,
-                first_frame: first.frame,
+                first_frame: first.plaintext,
                 retried_frames,
             });
         }

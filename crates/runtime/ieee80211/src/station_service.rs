@@ -218,11 +218,19 @@ type Marker<'id, A, B> = PhantomData<fn(&'id ()) -> (A, B)>;
 /// buffers of the class `S`.
 pub struct PortStaTokens<'id, Ty, S, const GROUPS: usize = 2>(Marker<'id, Ty, S>);
 
+/// The station PTK retains the unique association owner until its removal terminal.
+pub struct StationPairwiseKey<'id, K: KeyTypes<'id>> {
+    key: K::PairwiseKey,
+    association: K::Association,
+}
+
 impl<'id, Ty, S, const GROUPS: usize> StaTokens for PortStaTokens<'id, Ty, S, GROUPS>
 where
     Ty: PhaseTypes<'id, TxBody = core::convert::Infallible> + TxBufferPool<'id, S>,
     S: TxBufferClass,
 {
+    const PAIRWISE_SLOTS: usize = Ty::StationKeys::PAIRWISE_SLOTS;
+    const TOTAL_GROUP_SLOTS: usize = Ty::StationKeys::GROUP_SLOTS;
     const GROUP_SLOTS: usize = GROUPS;
     type Small = S;
     type EpochPath = Ty::EpochPath;
@@ -241,7 +249,52 @@ where
     }
     type PairwiseSlot = <Ty::StationKeys as KeyTypes<'id>>::PairwiseSlot;
     type GroupSlot = <Ty::StationKeys as KeyTypes<'id>>::GroupSlot;
-    type PairwiseKey = <Ty::StationKeys as KeyTypes<'id>>::PairwiseKey;
+    type PairwiseKey = StationPairwiseKey<'id, Ty::StationKeys>;
+    type AssociationStart = <Ty::StationKeys as KeyTypes<'id>>::AssociationStart;
+    type Association = <Ty::StationKeys as KeyTypes<'id>>::Association;
+    type VacantKeyBank = <Ty::StationKeys as KeyTypes<'id>>::VacantKeyBank;
+    type VacantAssociation = <Ty::StationKeys as KeyTypes<'id>>::VacantAssociation;
+    fn begin_association(
+        start: Self::AssociationStart,
+        spp: oer_ieee80211_mac::security::Spp,
+    ) -> Self::Association {
+        Ty::StationKeys::begin_association(start, spp)
+    }
+    fn collect_key_bank(
+        parts: oer_ieee80211_lower_mac::association::KeyBankParts<
+            Self::PairwiseSlot,
+            Self::GroupSlot,
+            8,
+        >,
+    ) -> Result<
+        Self::VacantKeyBank,
+        oer_ieee80211_lower_mac::association::KeyBankParts<Self::PairwiseSlot, Self::GroupSlot, 8>,
+    > {
+        Ty::StationKeys::collect_key_bank(parts)
+    }
+    fn split_vacant(
+        vacant: Self::VacantAssociation,
+    ) -> (
+        Self::AssociationStart,
+        Self::PairwiseSlot,
+        oer_ieee80211_lower_mac::association::KeyBankParts<Self::PairwiseSlot, Self::GroupSlot, 8>,
+    ) {
+        Ty::StationKeys::split_vacant(vacant)
+    }
+    fn end_association(
+        association: Self::Association,
+        bank: Self::VacantKeyBank,
+    ) -> (
+        Self::AssociationStart,
+        Self::PairwiseSlot,
+        oer_ieee80211_lower_mac::association::KeyBankParts<Self::PairwiseSlot, Self::GroupSlot, 8>,
+    ) {
+        Ty::StationKeys::split_vacant(Ty::StationKeys::end_association(association, bank))
+    }
+    fn association(key: &Self::PairwiseKey) -> &Self::Association {
+        &key.association
+    }
+
     type GroupKey = <Ty::StationKeys as KeyTypes<'id>>::GroupKey;
     type GroupPermission = <Ty::StationKeys as KeyTypes<'id>>::GroupPermission;
     type RxMeta = Ty::RxMeta;
@@ -425,6 +478,7 @@ pub enum BackendContractViolation {
     GroupSlotMismatch,
     GroupTerminalKindMismatch,
     TxContextBufferMismatch,
+    StationKeyBank(oer_ieee80211_sta::machine::StaKeyContractViolation),
 }
 
 /// The original failure that ended this service. A poisoned disabled owner
@@ -1308,7 +1362,7 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUP
                                 body: None,
                                 protection: match protection {
                                     DataProtection::Open => TxProtection::Open,
-                                    DataProtection::Ccmp(key) => TxProtection::Ccmp(key),
+                                    DataProtection::Ccmp(key) => TxProtection::Ccmp(&key.key),
                                 },
                             })
                         }
@@ -1507,8 +1561,12 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUP
             )) => {
                 self.station.input(now, StaInput::Configured(permission));
             }
-            LowerMacTerminal::KeyRemoved(Removed::Station(RemovedKey::Pairwise(slot))) => {
-                self.station.input(now, StaInput::PairwiseKeyRemoved(slot));
+            LowerMacTerminal::KeyRemoved(Removed::Station(RemovedKey::Pairwise {
+                slot,
+                association,
+            })) => {
+                self.station
+                    .input(now, StaInput::PairwiseKeyRemoved { slot, association });
             }
             terminal @ (LowerMacTerminal::KeyRemoved(Removed::Station(RemovedKey::Group {
                 ..
@@ -1913,17 +1971,25 @@ where
             return Ok(Follow::Nothing);
         }
         StaAction::InstallPairwiseKey {
+            association,
             pending,
             slot,
             peer,
             key,
         } => StaInput::PairwiseKeyInstalled {
             pending,
-            key: phase
-                .station()
-                .install_pairwise_key(slot, peer, Ccmp128Key(*key.as_bytes())),
+            key: StationPairwiseKey {
+                key: phase.station().install_pairwise_key(
+                    &association,
+                    slot,
+                    peer,
+                    Ccmp128Key(*key.as_bytes()),
+                ),
+                association,
+            },
         },
         StaAction::InstallGroupKey {
+            association,
             pending,
             permission,
             slot,
@@ -1937,6 +2003,7 @@ where
                 action: PendingGroupAction::Install(pending),
             });
             phase.station().install_group_key(
+                association,
                 permission,
                 slot,
                 key_id,
@@ -1945,7 +2012,9 @@ where
             return Ok(Follow::Nothing);
         }
         StaAction::RemovePairwiseKey(key) => {
-            phase.station().remove_pairwise_key(key);
+            phase
+                .station()
+                .remove_pairwise_key(key.association, key.key);
             return Ok(Follow::Nothing);
         }
         StaAction::ReplaceGroupKey {
@@ -1998,7 +2067,12 @@ where
             return submit_station::<B, P, S, GROUPS>(phase, rates, None, transmit);
         }
         StaAction::TransmitProtected { transmit, key } => {
-            return submit_station::<B, P, S, GROUPS>(phase, rates, Some(key), transmit);
+            return submit_station::<B, P, S, GROUPS>(phase, rates, Some(&key.key), transmit);
+        }
+        StaAction::ContractViolation(reason) => {
+            return Err(ServiceFault::Contract(
+                BackendContractViolation::StationKeyBank(reason),
+            ));
         }
         StaAction::Notify(notice) => {
             (io.output)(ServiceOutput::Notice(notice));

@@ -321,9 +321,11 @@ Package detail: the READMEs of [lower-mac](../../../crates/protocols/ieee80211/l
 Portable Station PMF keeps management CCMP replay separate from data TIDs.
 Its IGTK switches only at the group-key terminal; repeated M3 and same-IGTK
 rekey must preserve the existing management PN/IPN. Never remove the pairwise
-key before a protected leaving Deauthentication's terminal. The model reports
-key/PN use but does not encrypt TX payloads; incoming PMF tests therefore use
-independently encrypted AESCCM/BIP fixtures, not a model integrity flag.
+key before a protected leaving Deauthentication's terminal. Model air frames
+carry real CCMP ciphertext and MIC; their separate `plaintext` view is the DMA
+input. Use the wire view and independently encrypted AESCCM/BIP fixtures for
+crypto assertions. `receive_ccmp` must verify MIC before publishing verified
+RX metadata, including SPP's A-MSDU-present bit.
 
 SPP A-MSDU belongs to the association. Backend capability `SppScope` chooses
 whether hardware can program each association or only an entire interface;
@@ -334,3 +336,12 @@ and retain it through the last key removal. In software CCMP, SPP retains
 the QoS A-MSDU-present bit in both AAD and nonce flags (Linux v6.12
 `ccmp_gcmp_aad` / `ccmp_special_blocks`). The first-DA injection guard remains
 required independently of this negotiation.
+
+Association end consumes the owner and its complete `VacantKeyBank`, including
+unused spare slots. Only KeyRemoved returns an installed slot; Poisoned retains
+it. A partial collection cannot end an association or select another mode.
+S31 needs no end command: `wDev_remove_KeyEntry` calls
+`hal_crypto_clr_key_entry`, which clears validity and key words without touching
+interface SPP. With the full bank back, the old bit has no CCMP effect; the next
+association programs its decision before its first key. Station teardown removes
+GTK before PTK so the returned PTK association owner can reunite the full bank.

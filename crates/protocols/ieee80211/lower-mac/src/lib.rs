@@ -58,6 +58,7 @@ pub use in_flight::{
     Completed, ExecutionPayload, InFlight, TerminalAccess, TerminalParts, TransmitPool, TxMpdu,
 };
 
+pub mod association;
 pub mod capabilities;
 mod layout;
 pub use layout::{

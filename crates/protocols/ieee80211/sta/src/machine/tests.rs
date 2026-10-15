@@ -103,9 +103,71 @@ struct Slot(u8);
 #[derive(Debug, Eq, PartialEq)]
 struct Key<S = Slot>(S);
 
+#[derive(Debug, Eq, PartialEq)]
+struct Pairwise(Key, oer_ieee80211_mac::security::Spp);
 struct Tokens<const G: usize = 2>;
 
 impl<const G: usize> StaTokens for Tokens<G> {
+    type AssociationStart = ();
+    type Association = oer_ieee80211_mac::security::Spp;
+    type VacantKeyBank = (Slot, heapless::Vec<Slot, 8>);
+    type VacantAssociation = (Slot, [Slot; G]);
+    fn begin_association(_: (), spp: Self::Association) -> Self::Association {
+        spp
+    }
+    fn association(key: &Pairwise) -> &Self::Association {
+        &key.1
+    }
+    fn split_vacant(
+        (pairwise, group): Self::VacantAssociation,
+    ) -> (
+        (),
+        Slot,
+        oer_ieee80211_lower_mac::association::KeyBankParts<Slot, Slot, 8>,
+    ) {
+        (
+            (),
+            pairwise,
+            oer_ieee80211_lower_mac::association::KeyBankParts {
+                pairwise: heapless::Vec::new(),
+                group: group.into_iter().collect(),
+            },
+        )
+    }
+    fn collect_key_bank(
+        parts: oer_ieee80211_lower_mac::association::KeyBankParts<Slot, Slot, 8>,
+    ) -> Result<
+        Self::VacantKeyBank,
+        oer_ieee80211_lower_mac::association::KeyBankParts<Slot, Slot, 8>,
+    > {
+        if parts.pairwise.len() != 1 || parts.group.len() != G {
+            return Err(parts);
+        }
+        let oer_ieee80211_lower_mac::association::KeyBankParts {
+            mut pairwise,
+            group,
+        } = parts;
+        Ok((pairwise.pop().unwrap(), group))
+    }
+    fn end_association(
+        _: Self::Association,
+        (pairwise, group): Self::VacantKeyBank,
+    ) -> (
+        (),
+        Slot,
+        oer_ieee80211_lower_mac::association::KeyBankParts<Slot, Slot, 8>,
+    ) {
+        (
+            (),
+            pairwise,
+            oer_ieee80211_lower_mac::association::KeyBankParts {
+                pairwise: heapless::Vec::new(),
+                group,
+            },
+        )
+    }
+    const PAIRWISE_SLOTS: usize = 1;
+    const TOTAL_GROUP_SLOTS: usize = G;
     const GROUP_SLOTS: usize = G;
     type GatePath = TestGatePath;
     type EpochPath = oer_radio_port::Root;
@@ -119,7 +181,7 @@ impl<const G: usize> StaTokens for Tokens<G> {
     }
     type PairwiseSlot = Slot;
     type GroupSlot = Slot;
-    type PairwiseKey = Key;
+    type PairwiseKey = Pairwise;
     type GroupKey = Key<Slot>;
     type GroupPermission = GroupPermission;
     type RxMeta = RxMeta;
@@ -344,8 +406,7 @@ impl<'id> World<'id> {
             buffers: core::array::from_fn::<_, TX, _>(|_| Buffer([0; 512], 512)),
             place,
             absence_place: absence,
-            pairwise: Slot(0),
-            groups: group_slots,
+            keys: (Slot(0), group_slots),
             group_permission: GroupPermission,
         };
         let station = build(config, resources);
@@ -396,16 +457,23 @@ impl<'id, const G: usize> World<'id, G> {
                         let answer = self.arbiter.request_absence(now, request, home, place);
                         self.station.input(now, StaInput::AbsenceAnswer(answer));
                     }
+                    StaAction::ContractViolation(reason) => {
+                        panic!("unexpected contract violation: {reason:?}")
+                    }
                     StaAction::Ready(id) => self.arbiter.ready(id),
                     StaAction::InstallPairwiseKey {
-                        pending, slot, key, ..
+                        association,
+                        pending,
+                        slot,
+                        key,
+                        ..
                     } => {
                         self.seen.push(Seen::InstallPairwise(*key.as_bytes()));
                         self.installed(
                             now,
                             StaInput::PairwiseKeyInstalled {
                                 pending,
-                                key: Key(slot),
+                                key: Pairwise(Key(slot), association),
                             },
                         );
                     }
@@ -426,9 +494,10 @@ impl<'id, const G: usize> World<'id, G> {
                             },
                         );
                     }
-                    StaAction::RemovePairwiseKey(Key(slot)) => {
+                    StaAction::RemovePairwiseKey(Pairwise(Key(slot), association)) => {
                         self.seen.push(Seen::RemoveKey);
-                        self.station.input(now, StaInput::PairwiseKeyRemoved(slot));
+                        self.station
+                            .input(now, StaInput::PairwiseKeyRemoved { slot, association });
                     }
                     StaAction::RemoveGroupKey {
                         pending,
@@ -1865,7 +1934,7 @@ fn a_wpa2_gtk_kde_with_id_zero_uses_a_group_slot() {
         world.run(at(34));
         assert!(matches!(
             world.station.keys.pairwise,
-            KeyCell::Free(Slot(0))
+            KeyCell::Free(VacantPairwise { slot: Slot(0), .. })
         ));
         assert_eq!(world.station.keys.group_slots.free.len(), 1);
     });
@@ -2358,11 +2427,11 @@ fn a_candidate_on_the_access_points_channel_wins_within_the_margin() {
 }
 
 #[test]
-fn stale_handshake_installations_are_removed_in_the_order_they_return() {
+fn stale_handshake_installations_return_the_association_only_after_all_keys() {
     use oer_ieee80211_mac::security::rsn::Akm;
     use oer_ieee80211_rsn::frames::RsnTxFrame;
 
-    for reverse in [false, true] {
+    for group_pending in [false, true] {
         installed(|mint| {
             let (mut world, ptk) = wpa2_associated::<2>(mint);
             let mut plain = Vec::new();
@@ -2378,7 +2447,13 @@ fn stale_handshake_installations_are_removed_in_the_order_they_return() {
                     .authenticate(&ptk);
             world.hold_key_installs = true;
             world.receive(at(33), &eapol_frame(message3.as_bytes()));
-            assert_eq!(world.pending_installs.len(), 2);
+            assert_eq!(world.pending_installs.len(), 1);
+            if group_pending {
+                let pairwise = world.pending_installs.pop().unwrap();
+                world.station.input(at(33), pairwise);
+                world.run(at(33));
+                assert_eq!(world.pending_installs.len(), 1);
+            }
             world
                 .station
                 .command(at(34), StaRequest::new(2, StaCommand::Disconnect))
@@ -2393,11 +2468,8 @@ fn stale_handshake_installations_are_removed_in_the_order_they_return() {
                 .unwrap_err();
             assert_eq!(refused.reason, CommandRefusal::Transitioning);
             assert!(world.station.current_epoch().is_none());
-            let mut returned = core::mem::take(&mut world.pending_installs);
-            if reverse {
-                returned.reverse();
-            }
-            for (index, input) in returned.into_iter().enumerate() {
+            let returned = core::mem::take(&mut world.pending_installs);
+            for input in returned {
                 world.station.input(at(35), input);
                 world.run(at(35));
                 assert_eq!(
@@ -2406,7 +2478,7 @@ fn stale_handshake_installations_are_removed_in_the_order_they_return() {
                         .iter()
                         .filter(|event| **event == Seen::RemoveKey)
                         .count(),
-                    index + 1
+                    if group_pending { 2 } else { 1 }
                 );
                 assert!(!world.station.is_connected());
             }
@@ -2493,7 +2565,7 @@ fn a_replacement_terminal_after_disconnect_returns_its_slot_through_removal() {
 
 #[test]
 fn group_removal_returns_permission_before_another_owner_can_leave() {
-    let mut keys = Keys::<Tokens>::new(Slot(0), [Slot(7), Slot(42)], GroupPermission);
+    let mut keys = Keys::<Tokens>::new::<2>((Slot(0), [Slot(7), Slot(42)]), GroupPermission);
     for (id, slot) in [(1, 7), (2, 42)] {
         let place = keys.groups.reserve().unwrap();
         let free = keys.group_slots.free.take().unwrap();
@@ -3004,17 +3076,23 @@ fn handshake_deadline_covers_every_message_key_and_tx_wait() {
                 );
             }
             if point >= 4 {
-                let Some(StaAction::InstallPairwiseKey { pending, slot, .. }) =
-                    world.station.poll_action(at(33))
+                let Some(StaAction::InstallPairwiseKey {
+                    association,
+                    pending,
+                    slot,
+                    ..
+                }) = world.station.poll_action(at(33))
                 else {
                     panic!("PTK")
                 };
                 world.pending_installs.push(StaInput::PairwiseKeyInstalled {
                     pending,
-                    key: Key(slot),
+                    key: Pairwise(Key(slot), association),
                 });
             }
             if point >= 5 {
+                let pairwise = world.pending_installs.pop().unwrap();
+                world.station.input(at(33), pairwise);
                 let Some(StaAction::InstallGroupKey {
                     pending,
                     slot,
@@ -3731,7 +3809,7 @@ fn probe_encoding_failure_returns_credit_and_missing_epoch_reports_link_change()
 #[test]
 fn pending_group_material_is_redacted_and_moves_into_the_installed_record() {
     installed(|_mint| {
-        let mut keys = Keys::<Tokens<1>>::new(Slot(0), [Slot(1)], GroupPermission);
+        let mut keys = Keys::<Tokens<1>>::new::<1>((Slot(0), [Slot(1)]), GroupPermission);
         let mut epochs = LinkEpochSource::for_test(0);
         let id = GroupKeyId::new(1).unwrap();
         let material = CcmpKey::new([173; 16]);
@@ -4269,3 +4347,63 @@ fn review_negotiated_pmf_rejects_unprotected_deauthentication() {
 
 mod deadlines;
 mod management;
+
+#[test]
+fn negotiated_spp_from_the_association_is_retained_by_the_ptk_owner() {
+    use oer_ieee80211_mac::security::{
+        Spp,
+        rsn::{Akm, RSN_CAPABILITY_SPP_AMSDU_CAPABLE, RSN_CAPABILITY_SPP_AMSDU_REQUIRED},
+    };
+    use oer_ieee80211_rsn::frames::RsnTxFrame;
+    for (capabilities, expected) in [
+        (0, Spp::NotNegotiated),
+        (RSN_CAPABILITY_SPP_AMSDU_CAPABLE, Spp::Negotiated),
+        (
+            RSN_CAPABILITY_SPP_AMSDU_CAPABLE | RSN_CAPABILITY_SPP_AMSDU_REQUIRED,
+            Spp::Negotiated,
+        ),
+    ] {
+        installed(|mint| {
+            let mut rsn = RSN;
+            rsn[20..22].copy_from_slice(&capabilities.to_le_bytes());
+            let mut beacon = wpa2_beacon();
+            beacon[55..].copy_from_slice(&rsn);
+            let (mut world, ptk) = wpa2_associated_by::<2>(mint, &beacon);
+            let mut plain = rsn.to_vec();
+            plain.extend_from_slice(&[0xdd, 22, 0, 0x0f, 0xac, 1, 1, 0]);
+            plain.extend_from_slice(&[0x99; 16]);
+            plain.extend_from_slice(&[0xdd, 0]);
+            let wrapped =
+                oer_ieee80211_rsn::aes::software_aes128_key_wrap(ptk.kek(), &plain).unwrap();
+            let message3 =
+                RsnTxFrame::<512>::message3(Akm::Psk, LOCAL, 2, ANONCE, [0; 8], wrapped.as_bytes())
+                    .unwrap()
+                    .authenticate(&ptk);
+            world.hold_key_installs = true;
+            world.receive(at(33), &eapol_frame(message3.as_bytes()));
+            assert_eq!(
+                world.pending_installs.len(),
+                1,
+                "GTK waits for the PTK association owner"
+            );
+            let installed = world.pending_installs.pop().unwrap();
+            let StaInput::PairwiseKeyInstalled { ref key, .. } = installed else {
+                panic!("PTK installation");
+            };
+            assert_eq!(*Tokens::<2>::association(key), expected);
+            world.hold_key_installs = false;
+            world.station.input(at(33), installed);
+            world.run(at(33));
+            assert!(world.station.is_connected());
+            world
+                .station
+                .command(at(34), StaRequest::new(2, StaCommand::Disconnect))
+                .unwrap();
+            world.run(at(34));
+            assert!(
+                world.station.keys.clear(),
+                "the complete bank permits another association"
+            );
+        });
+    }
+}

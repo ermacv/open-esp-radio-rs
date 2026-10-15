@@ -22,6 +22,8 @@ impl PortBody<ModelBackend<ModelCaps24, ServiceContexts>> for ContractBody {
             tickets,
             small,
             large,
+            station_association,
+            access_point_association,
             station_pairwise,
             station_group,
             station_group_permission,
@@ -39,19 +41,22 @@ impl PortBody<ModelBackend<ModelCaps24, ServiceContexts>> for ContractBody {
         let mut tickets = tickets.into_iter();
         let station_tickets: [_; 4] = core::array::from_fn(|_| tickets.next().unwrap());
         let data_tickets: [_; 4] = core::array::from_fn(|_| tickets.next().unwrap());
-        let [pairwise, _] = station_pairwise;
-        let [group, _] = station_group;
         let station = Station::new_open(
             config(StaSecurity::Open).0,
-            StationResources {
+            StationResources::<_, 4, 4, 1> {
                 configure: station_commands.configure,
                 epochs: oer_ieee80211_sta::epoch::LinkEpochSource::new(connection_epoch),
                 tickets: station_tickets,
                 buffers: <[_; 4]>::try_from(small).ok().unwrap(),
                 place,
                 absence_place: absence,
-                pairwise,
-                groups: [group],
+                keys: oer_ieee80211_lower_mac::association::reunite_vacant(
+                    station_association,
+                    oer_ieee80211_lower_mac::association::VacantKeyBank::new(
+                        station_pairwise,
+                        station_group,
+                    ),
+                ),
                 group_permission: station_group_permission,
             },
         );
@@ -66,6 +71,11 @@ impl PortBody<ModelBackend<ModelCaps24, ServiceContexts>> for ContractBody {
             EspressifRateSelection::<ModelCaps24>::new(),
             terminal_access,
         );
+        let access_point_association =
+            <ModelTypes<ServiceContexts> as PhaseTypes>::AccessPointKeys::begin_association(
+                access_point_association,
+                oer_ieee80211_mac::security::Spp::NotNegotiated,
+            );
         let [ap_pairwise, _] = access_point_pairwise;
         let [ap_group, _] = access_point_group;
         if let ContractCase::Disable { prior, overflow } = self.0 {
@@ -90,9 +100,10 @@ impl PortBody<ModelBackend<ModelCaps24, ServiceContexts>> for ContractBody {
             else {
                 panic!("the restart reclaims receive configuration")
             };
-            let first = LowerMacTerminal::KeyRemoved(Removed::AccessPoint(RemovedKey::Pairwise(
-                ap_pairwise,
-            )));
+            let first = LowerMacTerminal::KeyRemoved(Removed::AccessPoint(RemovedKey::Pairwise {
+                slot: ap_pairwise,
+                association: access_point_association,
+            }));
             if overflow {
                 CUSTODY_LIMIT.set(Some(1));
             }
@@ -163,7 +174,7 @@ impl PortBody<ModelBackend<ModelCaps24, ServiceContexts>> for ContractBody {
                 BackendContractViolation::UnexpectedAccessPointTerminal
             );
             let RejectedTerminal::Sealed(LowerMacTerminal::KeyRemoved(Removed::AccessPoint(
-                RemovedKey::Pairwise(slot),
+                RemovedKey::Pairwise { slot, .. },
             ))) = first
             else {
                 panic!("the first owner was discarded")
@@ -228,9 +239,10 @@ impl PortBody<ModelBackend<ModelCaps24, ServiceContexts>> for ContractBody {
                 BackendContractViolation::UnexpectedAccessPointTerminal,
             ),
             (
-                LowerMacTerminal::KeyRemoved(Removed::AccessPoint(RemovedKey::Pairwise(
-                    ap_pairwise,
-                ))),
+                LowerMacTerminal::KeyRemoved(Removed::AccessPoint(RemovedKey::Pairwise {
+                    slot: ap_pairwise,
+                    association: access_point_association,
+                })),
                 BackendContractViolation::UnexpectedAccessPointTerminal,
             ),
             (

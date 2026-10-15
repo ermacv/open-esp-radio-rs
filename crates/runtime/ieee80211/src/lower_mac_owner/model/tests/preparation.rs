@@ -75,6 +75,11 @@ impl Work for Boundaries {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let station_association = ModelKeys::<Station>::begin_association(
+            resources.station_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
         let mut terminal_access = resources.terminal_access;
         let ModelResources {
             mut tickets,
@@ -83,6 +88,7 @@ impl Work for Boundaries {
             ..
         } = resources;
         let key = phase.station().install_pairwise_key(
+            &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
             Ccmp128Key([7; 16]),
@@ -314,6 +320,11 @@ impl Work for RetryIdentity {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let station_association = ModelKeys::<Station>::begin_association(
+            resources.station_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
         let mut terminal_access = resources.terminal_access;
         let ModelResources {
             mut tickets,
@@ -322,6 +333,7 @@ impl Work for RetryIdentity {
             ..
         } = resources;
         let key = phase.station().install_pairwise_key(
+            &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
             Ccmp128Key([7; 16]),
@@ -364,16 +376,19 @@ impl Work for RetryIdentity {
         assert_eq!(mpdu.packet_number(), pn);
         assert_eq!(mpdu.body().unwrap().0.as_ptr(), body_pointer);
         let index = key.identity.0.index;
-        phase.station().remove_pairwise_key(key);
-        let slot = loop {
+        phase
+            .station()
+            .remove_pairwise_key(station_association, key);
+        let (slot, station_association) = loop {
             if let Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::KeyRemoved(
-                Removed::Station(RemovedKey::Pairwise(slot)),
+                Removed::Station(RemovedKey::Pairwise { slot, association }),
             )))) = phase.next_event().await
             {
-                break slot;
+                break (slot, association);
             }
         };
         let replacement = phase.station().install_pairwise_key(
+            &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
             Ccmp128Key([7; 16]),
@@ -446,6 +461,11 @@ impl Work for AggregateBoundaries {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let station_association = ModelKeys::<Station>::begin_association(
+            resources.station_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
         let mut terminal_access = resources.terminal_access;
         let ModelResources {
             mut tickets,
@@ -454,6 +474,7 @@ impl Work for AggregateBoundaries {
             ..
         } = resources;
         let key = phase.station().install_pairwise_key(
+            &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
             Ccmp128Key([7; 16]),
@@ -553,6 +574,11 @@ impl Work for PreparedRemoval {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let station_association = ModelKeys::<Station>::begin_association(
+            resources.station_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
         let mut terminal_access = resources.terminal_access;
         let ModelResources {
             mut tickets,
@@ -561,6 +587,7 @@ impl Work for PreparedRemoval {
             ..
         } = resources;
         let key = phase.station().install_pairwise_key(
+            &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
             Ccmp128Key([7; 16]),
@@ -588,7 +615,9 @@ impl Work for PreparedRemoval {
         .unwrap();
         let air = phase.held.air.clone();
         let sent_before = air.sent().len();
-        phase.station().remove_pairwise_key(key);
+        phase
+            .station()
+            .remove_pairwise_key(station_association, key);
         yield_now().await;
         assert!(
             phase.held.events.is_empty(),

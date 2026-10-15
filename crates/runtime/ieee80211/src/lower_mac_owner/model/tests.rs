@@ -311,6 +311,11 @@ impl Work for Numbering {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let station_association = ModelKeys::<Station>::begin_association(
+            resources.station_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
         let mut terminal_access = resources.terminal_access;
         let ModelResources {
             mut tickets,
@@ -320,6 +325,7 @@ impl Work for Numbering {
             ..
         } = resources;
         let key = phase.station().install_pairwise_key(
+            &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
             Ccmp128Key([7; 16]),
@@ -396,11 +402,11 @@ fn an_open_sent_mpdu_retransmits_without_rebuilding_its_sn_or_payload() {
     assert_eq!(frames.len(), 3);
     assert_eq!(frames[0].packet_number, None);
     assert_eq!(frames[1].packet_number, None);
-    let mut original = frames[0].frame.clone();
+    let mut original = frames[0].plaintext.clone();
     original[1] |= 0x08;
-    assert_eq!(frames[1].frame, original);
+    assert_eq!(frames[1].plaintext, original);
     assert_eq!(
-        frames[0].frame, frames[2].frame,
+        frames[0].plaintext, frames[2].plaintext,
         "renewal starts a fresh MPDU"
     );
 }
@@ -507,6 +513,11 @@ impl Work for KeyThenAttempt {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let station_association = ModelKeys::<Station>::begin_association(
+            resources.station_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
         let ModelResources {
             mut tickets,
             mut small,
@@ -514,6 +525,7 @@ impl Work for KeyThenAttempt {
             ..
         } = resources;
         let key = phase.station().install_pairwise_key(
+            &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
             Ccmp128Key([7; 16]),
@@ -549,9 +561,15 @@ impl Work for GroupReplacement<'_> {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let station_association = ModelKeys::<Station>::begin_association(
+            resources.station_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
         let [slot, _] = resources.station_group;
         let slot_id = slot.index();
         phase.station().install_group_key(
+            &station_association,
             resources.station_group_permission,
             slot,
             GroupKeyId::new(1).unwrap(),
@@ -646,6 +664,11 @@ impl Work for KeyAttemptRemoval {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let station_association = ModelKeys::<Station>::begin_association(
+            resources.station_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
         let ModelResources {
             mut tickets,
             mut small,
@@ -653,12 +676,15 @@ impl Work for KeyAttemptRemoval {
             ..
         } = resources;
         let key = phase.station().install_pairwise_key(
+            &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
             Ccmp128Key([7; 16]),
         );
         submit(phase, tickets.remove(0), small.remove(0), Some(&key));
-        phase.station().remove_pairwise_key(key);
+        phase
+            .station()
+            .remove_pairwise_key(station_association, key);
         let mut events = Vec::new();
         while events.len() < 2 {
             yield_now().await;
@@ -772,6 +798,16 @@ impl Work for MaxWork<'_> {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let station_association = ModelKeys::<Station>::begin_association(
+            resources.station_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
+        let access_point_association = ModelKeys::<AccessPoint>::begin_association(
+            resources.access_point_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
         let ModelResources {
             tickets,
             small,
@@ -815,14 +851,17 @@ impl Work for MaxWork<'_> {
             let group = GroupKeyId::new(1).unwrap();
             let mut keys = 0;
             for slot in station_pairwise {
-                let _installed =
-                    phase
-                        .station()
-                        .install_pairwise_key(slot, peer, Ccmp128Key([1; 16]));
+                let _installed = phase.station().install_pairwise_key(
+                    &station_association,
+                    slot,
+                    peer,
+                    Ccmp128Key([1; 16]),
+                );
                 keys += 1;
             }
             let [slot, _] = station_group;
             phase.station().install_group_key(
+                &station_association,
                 station_group_permission,
                 slot,
                 group,
@@ -830,14 +869,17 @@ impl Work for MaxWork<'_> {
             );
             keys += 1;
             for slot in access_point_pairwise {
-                let _installed =
-                    phase
-                        .access_point()
-                        .install_pairwise_key(slot, peer, Ccmp128Key([3; 16]));
+                let _installed = phase.access_point().install_pairwise_key(
+                    &access_point_association,
+                    slot,
+                    peer,
+                    Ccmp128Key([3; 16]),
+                );
                 keys += 1;
             }
             let [slot, _] = access_point_group;
             phase.access_point().install_group_key(
+                &access_point_association,
                 access_point_group_permission,
                 slot,
                 group,
@@ -914,6 +956,11 @@ impl Work for AbortHeld<'_> {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let station_association = ModelKeys::<Station>::begin_association(
+            resources.station_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
         let mut terminal_access = resources.terminal_access;
         let ModelResources {
             mut tickets,
@@ -923,6 +970,7 @@ impl Work for AbortHeld<'_> {
             ..
         } = resources;
         let key = phase.station().install_pairwise_key(
+            &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
             Ccmp128Key([7; 16]),
@@ -1144,6 +1192,11 @@ impl Work for AggregateRetransmission<'_> {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let station_association = ModelKeys::<Station>::begin_association(
+            resources.station_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
         let mut terminal_access = resources.terminal_access;
         use oer_ieee80211_lower_mac::{AggregateAttempt, AmpduPhase, MpduStartSpacing, Tid};
         let ModelResources {
@@ -1153,6 +1206,7 @@ impl Work for AggregateRetransmission<'_> {
             ..
         } = resources;
         let key = phase.station().install_pairwise_key(
+            &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
             Ccmp128Key([7; 16]),
@@ -1268,7 +1322,7 @@ fn a_lost_subframe_goes_again_with_its_packet_number_beside_new_ones_numbered_an
     // The retransmitted subframe carries the Retry bit; the others do not.
     let retry: Vec<_> = sent
         .iter()
-        .map(|frame| frame.frame[1] & 0x08 != 0)
+        .map(|frame| frame.plaintext[1] & 0x08 != 0)
         .collect();
     assert_eq!(retry, [false, false, false, true, false]);
 }
@@ -1289,6 +1343,11 @@ impl Work for TerminalOutcomes<'_> {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let station_association = ModelKeys::<Station>::begin_association(
+            resources.station_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
         let mut terminal_access = resources.terminal_access;
         let ModelResources {
             mut tickets,
@@ -1297,6 +1356,7 @@ impl Work for TerminalOutcomes<'_> {
             ..
         } = resources;
         let key = phase.station().install_pairwise_key(
+            &station_association,
             slot,
             IndividualAddress::new(PEER).unwrap(),
             Ccmp128Key([7; 16]),
@@ -1378,7 +1438,7 @@ fn a_timeout_is_final_and_does_not_stop_or_withdraw_the_queue_tail() {
         (sent[0].packet_number, sent[1].packet_number),
         (Some(1), Some(2))
     );
-    assert!(sent.iter().all(|frame| frame.frame[1] & 0x08 == 0));
+    assert!(sent.iter().all(|frame| frame.plaintext[1] & 0x08 == 0));
 }
 
 #[test]
@@ -1412,7 +1472,7 @@ fn collisions_retry_the_head_then_end_at_contention_limit_without_air_transmissi
     let sent = air.sent();
     assert_eq!(sent.len(), 3);
     assert_eq!(
-        sent[0].frame, sent[1].frame,
+        sent[0].plaintext, sent[1].plaintext,
         "collision keeps SN, PN, payload and Retry bit"
     );
     assert_eq!(
@@ -1509,11 +1569,11 @@ fn ended_preserves_the_full_retry_budget_and_last_transmitted_rate() {
     block_on(run_port(backend, Body(LongRetryPlan(&air))));
     let sent = air.sent();
     assert_eq!(sent.len(), 1020);
-    assert_eq!(sent[0].frame[1] & 8, 0);
-    assert!(sent[1..].iter().all(|frame| frame.frame[1] & 8 != 0));
+    assert_eq!(sent[0].plaintext[1] & 8, 0);
+    assert!(sent[1..].iter().all(|frame| frame.plaintext[1] & 8 != 0));
     assert!(
         sent.iter()
-            .all(|frame| frame.frame[22..24] == sent[0].frame[22..24])
+            .all(|frame| frame.plaintext[22..24] == sent[0].plaintext[22..24])
     );
 }
 
@@ -1681,3 +1741,5 @@ mod results;
 mod block_ack;
 
 mod group_keys;
+
+mod association;

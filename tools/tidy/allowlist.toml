@@ -544,3 +544,23 @@ reason = "Compile-pass and compile-fail affine interface command contract, regis
 [[uncompiled]]
 path = "crates/runtime/ieee80211/tests/ui/configure_installation.rs"
 reason = "Compile-pass and compile-fail affine interface command contract, registered in tools/xtask/tests/ui.toml."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/association_full_bank.rs"
+reason = "Affine association and complete-bank contract, checked with its compiling twin on host and RV32 by cargo xtask check ui."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/association_interface.rs"
+reason = "Affine association and complete-bank contract, checked with its compiling twin on host and RV32 by cargo xtask check ui."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/association_next_mode.rs"
+reason = "Affine association and complete-bank contract, checked with its compiling twin on host and RV32 by cargo xtask check ui."
+
+[[uncompiled]]
+path = "crates/runtime/ieee80211/tests/ui/association_mixed_keys.rs"
+reason = "Affine association and complete-bank contract, checked with its compiling twin on host and RV32 by cargo xtask check ui."
+
+[[uncompiled]]
+path = "crates/runtime/ieee80211/tests/ui/association_required.rs"
+reason = "Affine association and complete-bank contract, checked with its compiling twin on host and RV32 by cargo xtask check ui."

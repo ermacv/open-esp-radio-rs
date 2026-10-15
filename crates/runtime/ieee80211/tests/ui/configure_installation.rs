@@ -29,7 +29,7 @@ impl PortBody<ModelBackend> for Outer {
         owner.uninstall(())
     }
 }
-struct Inner<'outer>(ConfigurePermission<'outer, Station, Child<ModelPool<11>, 1>>);
+struct Inner<'outer>(ConfigurePermission<'outer, Station, Child<ModelPool<9>, 1>>);
 impl PortBody<ModelBackend> for Inner<'_> {
     async fn run<'p, 'id>(
         self,

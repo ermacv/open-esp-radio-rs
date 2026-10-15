@@ -187,6 +187,24 @@ back; its operations are synchronous and never wait:
 - **Reception.** A received frame's buffer goes back through `recycle`; a
   lagging body loses unsolicited frames as `EventsLost`, never a terminal.
 
+An `AssociationPool` mints one start permission and the complete PTK/GTK
+bank of its association domain. Beginning consumes that permission and fixes
+`Spp::{Negotiated, NotNegotiated}`. Every key installation borrows this owner
+and consumes a slot from the same installation, role and pool path. Keys
+cannot choose independent SPP modes. The backend applies the association's
+mode before publishing its first key; its `SppScope` capability declares
+whether domains occupy whole interfaces or individual associations.
+
+Pairwise removal carries the association owner through its `KeyRemoved`
+terminal. The station first removes its group keys, then the PTK; spare
+unused slots remain owned throughout. Only the exact complete `VacantKeyBank`
+can enter `end_association(owner, bank)`, which synchronously returns a
+`VacantAssociation` for the next exchange. No command or terminal is added.
+A partial bank or quarantined key cannot release the association permission.
+On an AP, carrying the owner through a pairwise removal temporarily defers
+new key installations until that terminal returns; existing keys retain
+their immutable mode and admitted transmissions proceed normally.
+
 Each interface receives one affine `KeyTypes::GroupPermission`, minted once
 with the installation and branded to that port and interface. Every GTK
 install, replacement, selection and removal consumes it and reserves a FIFO

@@ -371,7 +371,12 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
             .unwrap();
             let rate = phase.rate(PhyRate::Ht(ht)).unwrap();
             let mut station = phase.station();
+            let association = ModelKeys::<Station>::begin_association(
+                resources.station_association,
+                oer_ieee80211_mac::security::Spp::NotNegotiated,
+            );
             let key = station.install_pairwise_key(
+                &association,
                 slot,
                 IndividualAddress::new(PEER).unwrap(),
                 Ccmp128Key([7; 16]),
@@ -556,6 +561,11 @@ impl PortBody<ModelBackend<ModelCaps, FaultContext>> for PublicationFault {
         owner: Owner<'p, 'id, ModelBackend<ModelCaps, FaultContext>, Disabled>,
         resources: ModelResources<'id>,
     ) -> Ended<'id, ModelBackend<ModelCaps, FaultContext>> {
+        let station_association = ModelKeys::<Station>::begin_association(
+            resources.station_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
         use oer_ieee80211_lower_mac::{AggregateAttempt, MpduStartSpacing};
         let mut owner = owner.enable().await.ok().unwrap();
         let ModelResources {
@@ -567,6 +577,7 @@ impl PortBody<ModelBackend<ModelCaps, FaultContext>> for PublicationFault {
         {
             let mut phase = owner.phase();
             let key = phase.station().install_pairwise_key(
+                &station_association,
                 slot,
                 IndividualAddress::new(PEER).unwrap(),
                 Ccmp128Key([7; 16]),

@@ -71,6 +71,16 @@ impl Work for Cut {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let station_association = ModelKeys::<Station>::begin_association(
+            resources.station_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
+        let access_point_association = ModelKeys::<AccessPoint>::begin_association(
+            resources.access_point_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
         let old = if matches!(self.change, Change::Select) {
             [2; 16]
         } else {
@@ -80,6 +90,7 @@ impl Work for Cut {
             VifRole::Station => {
                 let [a_slot, b_slot] = resources.station_group;
                 phase.station().install_group_key(
+                    &station_association,
                     resources.station_group_permission,
                     a_slot,
                     id(),
@@ -89,6 +100,7 @@ impl Work for Cut {
                 let mut spare = Some(b_slot);
                 let _retained = if matches!(self.change, Change::Select) {
                     phase.station().install_group_key(
+                        &station_association,
                         permission,
                         spare.take().unwrap(),
                         id(),
@@ -110,6 +122,7 @@ impl Work for Cut {
                 ));
                 match self.change {
                     Change::Install => phase.station().install_group_key(
+                        &station_association,
                         permission,
                         spare.unwrap(),
                         id(),
@@ -127,6 +140,7 @@ impl Work for Cut {
             VifRole::AccessPoint => {
                 let [a_slot, b_slot] = resources.access_point_group;
                 phase.access_point().install_group_key(
+                    &access_point_association,
                     resources.access_point_group_permission,
                     a_slot,
                     id(),
@@ -148,6 +162,7 @@ impl Work for Cut {
                 ));
                 match self.change {
                     Change::Install => phase.access_point().install_group_key(
+                        &access_point_association,
                         permission,
                         b_slot,
                         id(),

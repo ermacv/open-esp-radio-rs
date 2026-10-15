@@ -243,3 +243,16 @@ cases = [
     "crates/protocols/ieee80211/lower-mac/tests/ui/sample_tsf_role.rs",
     "crates/runtime/ieee80211/tests/ui/configure_installation.rs",
 ]
+
+[[suite]]
+name = "association-spp-bank"
+packages = ["oer-radio-port", "oer-ieee80211-lower-mac", "oer-ieee80211-mac", "oer-ieee80211-runtime"]
+features = ["oer-ieee80211-runtime/test-support"]
+targets = ["host", "esp32s31"]
+cases = [
+    "crates/protocols/ieee80211/lower-mac/tests/ui/association_full_bank.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/association_interface.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/association_next_mode.rs",
+    "crates/runtime/ieee80211/tests/ui/association_mixed_keys.rs",
+    "crates/runtime/ieee80211/tests/ui/association_required.rs",
+]

@@ -49,6 +49,35 @@ impl oer_ieee80211_lower_mac::TxBufferClass for Buffer {
     const CAPACITY: usize = 256;
 }
 impl<const GROUPS: usize> StaTokens for Tokens<GROUPS> {
+    type AssociationStart = ();
+    type Association = ();
+    type VacantKeyBank = oer_ieee80211_lower_mac::association::KeyBankParts<(), (), 8>;
+    type VacantAssociation = [(); GROUPS];
+    fn begin_association(_: (), _: oer_ieee80211_mac::security::Spp) {}
+    fn association(key: &()) -> &() {
+        key
+    }
+    fn split_vacant(group: Self::VacantAssociation) -> ((), (), Self::VacantKeyBank) {
+        (
+            (),
+            (),
+            oer_ieee80211_lower_mac::association::KeyBankParts {
+                pairwise: core::iter::empty().collect(),
+                group: group.into_iter().collect(),
+            },
+        )
+    }
+    fn collect_key_bank(
+        parts: Self::VacantKeyBank,
+    ) -> Result<Self::VacantKeyBank, Self::VacantKeyBank> {
+        Ok(parts)
+    }
+    fn end_association(_: (), mut bank: Self::VacantKeyBank) -> ((), (), Self::VacantKeyBank) {
+        bank.pairwise.pop();
+        ((), (), bank)
+    }
+    const PAIRWISE_SLOTS: usize = 1;
+    const TOTAL_GROUP_SLOTS: usize = GROUPS;
     const GROUP_SLOTS: usize = GROUPS;
     type GatePath = oer_radio_port::Root;
     type EpochPath = oer_radio_port::Root;
@@ -74,7 +103,7 @@ fn construct<'id, const T: usize, const B: usize, const G: usize>(
     absence: AbsencePlace<'id>,
     configure: oer_ieee80211_lower_mac::ConfigurePermission<'id, oer_ieee80211_lower_mac::Station>,
 ) -> Station<'id, Tokens<G>, Caps> {
-    Station::new_open(
+    Station::new_open::<T, B, G>(
         config,
         StationResources {
             configure,
@@ -83,8 +112,7 @@ fn construct<'id, const T: usize, const B: usize, const G: usize>(
             buffers: [const { Buffer }; B],
             place,
             absence_place: absence,
-            pairwise: (),
-            groups: [(); G],
+            keys: [(); G],
             group_permission: (),
         },
     )

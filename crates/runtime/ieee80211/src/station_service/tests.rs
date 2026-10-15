@@ -274,7 +274,7 @@ fn meta() -> ModelRxMeta {
 
 /// The Frame Control subtype bits of a frame.
 fn kind(frame: &AirFrame) -> u16 {
-    u16::from_le_bytes([frame.frame[0], frame.frame[1]]) & 0x00fc
+    u16::from_le_bytes([frame.plaintext[0], frame.plaintext[1]]) & 0x00fc
 }
 
 const PROBE_REQUEST: u16 = 0x0040;
@@ -473,7 +473,7 @@ impl World<'_> {
         let message4 = self.sent(seen, DATA).await;
         assert_eq!(message4.rate, dsss1());
         assert_eq!(message4.key, None);
-        assert_eq!(message4.frame[1] & 0x40, 0);
+        assert_eq!(message4.plaintext[1] & 0x40, 0);
         self.notice(StaNotice::Connected {
             bssid: oer_ieee80211_mac::address::Bssid::new(
                 oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
@@ -543,7 +543,7 @@ impl World<'_> {
         let probe = self.sent(seen, PROBE_REQUEST).await;
         self.air.receive(&beacon, meta());
         let authentication = self.sent(seen, AUTHENTICATION).await;
-        let response = authentication_response(&authentication.frame)
+        let response = authentication_response(&authentication.plaintext)
             .expect("the test AP requires a valid wire Authentication Request");
         self.air.receive(&response, meta());
         let association = self.sent(seen, ASSOCIATION_REQUEST).await;
@@ -584,6 +584,7 @@ where
                 tickets,
                 small,
                 large,
+                station_association,
                 station_pairwise,
                 station_group,
                 station_group_permission,
@@ -596,9 +597,7 @@ where
             let data_tickets: [_; 4] = core::array::from_fn(|_| tickets.next().unwrap());
             let small: [_; 4] = small.try_into().ok().unwrap();
             let large: [_; 4] = large.try_into().ok().unwrap();
-            let [pairwise, _] = station_pairwise;
-            let mut group_slots = station_group.into_iter();
-            let groups: [_; GROUPS] = core::array::from_fn(|_| group_slots.next().unwrap());
+
             let channel = SupportedChannel::new(channel6()).unwrap();
             let (arbiter, place, absence) =
                 PortArbiter::<ModelBackend<ModelCaps24, ServiceContexts>>::new(
@@ -610,15 +609,20 @@ where
                     gate,
                 );
             let (config, security) = self.config;
-            let resources = StationResources {
+            let resources = StationResources::<_, 4, 4, GROUPS> {
                 configure: station_commands.configure,
                 epochs: oer_ieee80211_sta::epoch::LinkEpochSource::new(connection_epoch),
                 tickets: station_tickets,
                 buffers: small,
                 place,
                 absence_place: absence,
-                pairwise,
-                groups,
+                keys: oer_ieee80211_lower_mac::association::reunite_vacant(
+                    station_association,
+                    oer_ieee80211_lower_mac::association::VacantKeyBank::new(
+                        station_pairwise,
+                        station_group,
+                    ),
+                ),
                 group_permission: station_group_permission,
             };
             let mut station = match security {
@@ -693,7 +697,7 @@ where
                     }
                     world.send_msdu(ACCESS_POINT_ADDRESS);
                     let data = world.sent(&mut seen, DATA).await;
-                    assert_eq!(data.frame[4..10], BSSID);
+                    assert_eq!(data.plaintext[4..10], BSSID);
                     assert_eq!(data.key.is_some(), protected);
                     world.command(ServiceCommand::Stop).await;
                 })
@@ -1067,7 +1071,7 @@ fn on_wpa2_the_join_goes_on_the_default_record_and_the_handshake_on_the_associat
                     matches!(group_message2.key, Some((_, true))),
                     "{group_message2:?}"
                 );
-                assert_ne!(group_message2.frame[1] & 0x40, 0);
+                assert_ne!(group_message2.plaintext[1] & 0x40, 0);
                 assert!(group_message2.packet_number.is_some());
                 assert_eq!(group_message2.rate, dsss1());
                 world
@@ -1268,13 +1272,16 @@ fn a_station_scans_joins_handshakes_carries_data_both_ways_and_disconnects() {
                 let data = world.sent(&mut seen, DATA).await;
                 assert!(matches!(data.key, Some((_, true))), "{data:?}");
                 assert!(data.packet_number.is_some());
-                assert_ne!(data.frame[1] & 0x40, 0);
-                assert_eq!(data.frame[1] & 0x03, 0x01, "to the DS");
-                assert_eq!(data.frame[4..10], BSSID);
-                assert_eq!(data.frame[10..16], LOCAL);
-                assert_eq!(data.frame[16..22], destination);
-                assert_eq!(data.frame[32..40], [0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x00]);
-                assert_eq!(data.frame[40..], [0xab; 100]);
+                assert_ne!(data.plaintext[1] & 0x40, 0);
+                assert_eq!(data.plaintext[1] & 0x03, 0x01, "to the DS");
+                assert_eq!(data.plaintext[4..10], BSSID);
+                assert_eq!(data.plaintext[10..16], LOCAL);
+                assert_eq!(data.plaintext[16..22], destination);
+                assert_eq!(
+                    data.plaintext[32..40],
+                    [0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x00]
+                );
+                assert_eq!(data.plaintext[40..], [0xab; 100]);
 
                 // RX: a decrypted MPDU reaches the stack as its Ethernet
                 // frame; its replay, an unverified one and an unprotected
@@ -1311,7 +1318,7 @@ fn a_station_scans_joins_handshakes_carries_data_both_ways_and_disconnects() {
                     )))
                     .await;
                 let deauthentication = world.sent(&mut seen, DEAUTHENTICATION).await;
-                assert_eq!(deauthentication.frame[4..10], BSSID);
+                assert_eq!(deauthentication.plaintext[4..10], BSSID);
                 world
                     .notice(StaNotice::Disconnected(
                         oer_ieee80211_sta::machine::StaDisconnectReason::Requested,
@@ -1384,8 +1391,8 @@ fn data_takes_all_its_tokens_and_eapol_null_and_deauthentication_still_go() {
             let group_message2 = world.sent(&mut seen, DATA).await;
             // Protected after the handshake: the EtherType follows the
             // CCMP header's room.
-            assert_ne!(group_message2.frame[1] & 0x40, 0);
-            assert_eq!(group_message2.frame[38..40], [0x88, 0x8e], "EAPOL");
+            assert_ne!(group_message2.plaintext[1] & 0x40, 0);
+            assert_eq!(group_message2.plaintext[38..40], [0x88, 0x8e], "EAPOL");
 
             world
                 .command(ServiceCommand::Station(StaRequest::new(
@@ -1394,7 +1401,7 @@ fn data_takes_all_its_tokens_and_eapol_null_and_deauthentication_still_go() {
                 )))
                 .await;
             let null = world.sent(&mut seen, NULL).await;
-            assert_ne!(null.frame[1] & 0x10, 0, "PM=1 before the absence");
+            assert_ne!(null.plaintext[1] & 0x10, 0, "PM=1 before the absence");
 
             world
                 .command(ServiceCommand::Station(StaRequest::new(
@@ -1447,7 +1454,9 @@ fn a_disconnection_during_an_absence_leaves_no_old_frame_to_go_after_the_reconne
             const OLD: [u8; 6] = [0x02, 0, 0, 0, 0, 0x0a];
             const NEW: [u8; 6] = [0x02, 0, 0, 0, 0, 0x0b];
             let to = |destination: [u8; 6]| {
-                move |frame: &AirFrame| kind(frame) == DATA && frame.frame[16..22] == destination
+                move |frame: &AirFrame| {
+                    kind(frame) == DATA && frame.plaintext[16..22] == destination
+                }
             };
             let mut seen = 0;
             world.associate(&mut seen, false).await;
@@ -1564,7 +1573,7 @@ fn beside_an_access_point_msdus_survive_an_absence() {
                 )))
                 .await;
             let away = world.sent(&mut seen, NULL).await;
-            assert_ne!(away.frame[1] & 0x10, 0, "PM=1 before the absence");
+            assert_ne!(away.plaintext[1] & 0x10, 0, "PM=1 before the absence");
             assert!(world.clock.now() >= tbtt, "the absence follows a TBTT");
             let left = seen;
             let destinations = [[0x02, 0, 0, 0, 0, 0x0c], [0x02, 0, 0, 0, 0, 0x0d]];
@@ -1572,7 +1581,7 @@ fn beside_an_access_point_msdus_survive_an_absence() {
                 world.send_msdu(destination);
             }
             let back = world.sent(&mut seen, NULL).await;
-            assert_eq!(back.frame[1] & 0x10, 0, "PM=0 once back");
+            assert_eq!(back.plaintext[1] & 0x10, 0, "PM=0 once back");
             let returned = seen;
             assert!(
                 world.air.sent()[left..returned]
@@ -1588,7 +1597,9 @@ fn beside_an_access_point_msdus_survive_an_absence() {
                 assert_eq!(
                     air[returned..]
                         .iter()
-                        .filter(|frame| kind(frame) == DATA && frame.frame[16..22] == destination)
+                        .filter(
+                            |frame| kind(frame) == DATA && frame.plaintext[16..22] == destination
+                        )
                         .count(),
                     1,
                     "{destination:02x?} went once"
@@ -1608,7 +1619,7 @@ const WMM: [u8; 26] = [
 
 /// Whether `frame` is a protected QoS Data frame carrying EAPOL.
 fn carries_eapol(frame: &AirFrame) -> bool {
-    kind(frame) == QOS_DATA && frame.frame.get(40..42) == Some(&[0x88, 0x8e][..])
+    kind(frame) == QOS_DATA && frame.plaintext.get(40..42) == Some(&[0x88, 0x8e][..])
 }
 
 /// The data attempts the air saw from `from` before the first frame
@@ -1662,14 +1673,14 @@ fn interleaved_station_and_data_terminals_keep_their_owner_and_voice_order() {
                 ] {
                     world.air.hold(category, false);
                     let frame = world.sent(&mut seen, QOS_DATA).await;
-                    assert_eq!(frame.frame[21], destination);
+                    assert_eq!(frame.plaintext[21], destination);
                     assert!(!carries_eapol(&frame));
                 }
                 world.air.hold(WmmAccessCategory::Voice, false);
                 for (destination, tid) in [(0, 6), (2, 7)] {
                     let frame = world.sent(&mut seen, QOS_DATA).await;
-                    assert_eq!(frame.frame[21], destination);
-                    assert_eq!(frame.frame[24] & 0x0f, tid);
+                    assert_eq!(frame.plaintext[21], destination);
+                    assert_eq!(frame.plaintext[24] & 0x0f, tid);
                     assert!(!carries_eapol(&frame));
                 }
                 assert!(carries_eapol(&world.sent(&mut seen, QOS_DATA).await));
@@ -1688,7 +1699,7 @@ fn interleaved_station_and_data_terminals_keep_their_owner_and_voice_order() {
                 for priority in [0, 4, 6, 7] {
                     assert!(world.try_send_msdu_at([2, 0, 0, 0, 1, priority], priority));
                     let frame = world.sent(&mut seen, QOS_DATA).await;
-                    assert_eq!(frame.frame[21], priority);
+                    assert_eq!(frame.plaintext[21], priority);
                 }
                 world
                     .command(ServiceCommand::Station(StaRequest::new(
@@ -1851,7 +1862,7 @@ fn lost_port_events_are_counted_and_the_service_keeps_running() {
             }
             world.send_msdu(ACCESS_POINT_ADDRESS);
             let data = world.sent(&mut seen, DATA).await;
-            assert_eq!(data.frame[4..10], BSSID);
+            assert_eq!(data.plaintext[4..10], BSSID);
         })
     });
     assert_eq!(counters.events_lost.get(), 1);
@@ -1940,7 +1951,8 @@ fn protected_qos_ht_group_message_rekeys_once_after_integrity_and_replay_admissi
                 world.air.receive(&protected, decrypted());
                 let reply = world.sent(&mut seen, DATA).await;
                 assert!(reply.key.is_some());
-                let header = oer_ieee80211_mac::frame::DecodedHeader::decode(&reply.frame).unwrap();
+                let header =
+                    oer_ieee80211_mac::frame::DecodedHeader::decode(&reply.plaintext).unwrap();
                 assert_eq!(header.body()[14..16], [0x88, 0x8e]);
                 let after = world.air.sent().len();
                 world.air.receive(&protected, decrypted());
@@ -2150,8 +2162,8 @@ fn negotiated_pmf_checks_received_management_and_keeps_the_tx_key_through_discon
                     forged[24] = 7;
                     world.air.receive(&forged, decrypted());
                     let query = world.sent(&mut seen, 0x00d0).await;
-                    assert_eq!(query.frame[..2], [0xd0, 0x40]);
-                    assert_eq!(query.frame[32..34], [8, 0]);
+                    assert_eq!(query.plaintext[..2], [0xd0, 0x40]);
+                    assert_eq!(query.plaintext[32..34], [8, 0]);
                     assert!(matches!(query.key, Some((_, true))));
                     assert_eq!(query.packet_number, Some(1));
                     assert!(
@@ -2187,7 +2199,7 @@ fn negotiated_pmf_checks_received_management_and_keeps_the_tx_key_through_discon
                             )))
                             .await;
                         let deauthentication = world.sent(&mut seen, DEAUTHENTICATION).await;
-                        assert_eq!(deauthentication.frame[..2], [0xc0, 0x40]);
+                        assert_eq!(deauthentication.plaintext[..2], [0xc0, 0x40]);
                         assert!(matches!(deauthentication.key, Some((_, true))));
                         assert_eq!(deauthentication.packet_number, Some(2));
                         world

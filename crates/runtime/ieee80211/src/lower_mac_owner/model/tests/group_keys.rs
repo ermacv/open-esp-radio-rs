@@ -50,9 +50,15 @@ impl Work for Boundary<'_> {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let station_association = ModelKeys::<Station>::begin_association(
+            resources.station_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
         use contract::Case;
         let [a_slot, b_slot] = resources.station_group;
         phase.station().install_group_key(
+            &station_association,
             resources.station_group_permission,
             a_slot,
             id(),
@@ -65,6 +71,7 @@ impl Work for Boundary<'_> {
         let mut retained = None;
         let (old_material, new_material) = if self.case == Case::SelectRetained {
             phase.station().install_group_key(
+                &station_association,
                 permission,
                 spare.take().unwrap(),
                 id(),
@@ -94,6 +101,7 @@ impl Work for Boundary<'_> {
         match self.case {
             Case::InstallBeside => {
                 phase.station().install_group_key(
+                    &station_association,
                     permission,
                     spare.take().unwrap(),
                     id(),
@@ -369,6 +377,11 @@ impl PortBody<ModelBackend> for Interrupted<'_> {
         owner: Owner<'_, 'id, ModelBackend, Disabled>,
         resources: ModelResources<'id>,
     ) -> Ended<'id, ModelBackend> {
+        let station_association = ModelKeys::<Station>::begin_association(
+            resources.station_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
         let mut owner = owner.enable().await.ok().unwrap();
         let [slot, _] = resources.station_group;
         let expected_slot = slot.index();
@@ -378,6 +391,7 @@ impl PortBody<ModelBackend> for Interrupted<'_> {
                 (resources.station_group_permission, None, Some(slot))
             } else {
                 phase.station().install_group_key(
+                    &station_association,
                     resources.station_group_permission,
                     slot,
                     id(),
@@ -393,6 +407,7 @@ impl PortBody<ModelBackend> for Interrupted<'_> {
                 .hold_group_commands(!self.applied && self.fault.is_none());
             match self.mutation {
                 Mutation::Install => phase.station().install_group_key(
+                    &station_association,
                     permission,
                     vacant.unwrap(),
                     id(),
@@ -464,7 +479,7 @@ fn fault_and_disable_keep_each_gtk_mutations_owner_and_permission() {
                     },
                 ));
                 assert!(
-                    air.group_installations
+                    air.key_installations
                         .borrow()
                         .iter()
                         .all(|entry| entry.identity.upgrade().is_none())
@@ -481,10 +496,16 @@ impl Work for Deadline<'_> {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let station_association = ModelKeys::<Station>::begin_association(
+            resources.station_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
         let [slot, _] = resources.station_group;
         let expected = slot.index();
         self.0.hold_group_commands(true);
         phase.station().install_group_key(
+            &station_association,
             resources.station_group_permission,
             slot,
             id(),
@@ -541,8 +562,14 @@ impl Work for IndependentIds<'_> {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let station_association = ModelKeys::<Station>::begin_association(
+            resources.station_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
         let [a, b] = resources.station_group;
         phase.station().install_group_key(
+            &station_association,
             resources.station_group_permission,
             a,
             id(),
@@ -550,9 +577,13 @@ impl Work for IndependentIds<'_> {
         );
         let (a, permission) = installed(phase).await;
         let second = GroupKeyId::new(2).unwrap();
-        phase
-            .station()
-            .install_group_key(permission, b, second, Ccmp128Key([2; 16]));
+        phase.station().install_group_key(
+            &station_association,
+            permission,
+            b,
+            second,
+            Ccmp128Key([2; 16]),
+        );
         let (b, permission) = installed(phase).await;
         phase.station().select_group_key(permission, a);
         let Ok(Ok(LowerMacEvent::Terminal(LowerMacTerminal::GroupKeySelected {
@@ -627,11 +658,17 @@ impl PortBody<ModelBackend> for Teardown<'_> {
         owner: Owner<'_, 'id, ModelBackend, Disabled>,
         resources: ModelResources<'id>,
     ) -> Ended<'id, ModelBackend> {
+        let station_association = ModelKeys::<Station>::begin_association(
+            resources.station_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
         let mut owner = owner.enable().await.ok().unwrap();
         {
             let mut phase = owner.phase();
             let [slot, _] = resources.station_group;
             phase.station().install_group_key(
+                &station_association,
                 resources.station_group_permission,
                 slot,
                 id(),
@@ -700,7 +737,7 @@ fn teardown_ends_delayed_group_ingress_and_material_despite_external_identities(
             assert!(!identity.0.active.get());
             assert!(!identity.0.rx_active.get());
             assert!(
-                air.group_installations.borrow().is_empty(),
+                air.key_installations.borrow().is_empty(),
                 "no secret survives in identity clones"
             );
             assert!(
@@ -726,11 +763,17 @@ impl PortBody<ModelBackend> for ReenableGroup<'_> {
         owner: Owner<'_, 'id, ModelBackend, Disabled>,
         resources: ModelResources<'id>,
     ) -> Ended<'id, ModelBackend> {
+        let station_association = ModelKeys::<Station>::begin_association(
+            resources.station_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
         let mut owner = owner.enable().await.ok().unwrap();
         let (key, permission) = {
             let mut phase = owner.phase();
             let [slot, _] = resources.station_group;
             phase.station().install_group_key(
+                &station_association,
                 resources.station_group_permission,
                 slot,
                 id(),
@@ -745,7 +788,7 @@ impl PortBody<ModelBackend> for ReenableGroup<'_> {
             .await
             .ok()
             .unwrap();
-        assert_eq!(self.0.group_installations.borrow().len(), 1);
+        assert_eq!(self.0.key_installations.borrow().len(), 1);
         let mut owner = disabled.enable().await.ok().unwrap();
         assert_eq!(snapshot(&key), before);
         {
@@ -765,7 +808,7 @@ impl PortBody<ModelBackend> for ReenableGroup<'_> {
             phase.recycle(frame);
             phase.station().remove_group_key(permission, key);
             let _permission = removed(&mut phase).await;
-            assert!(self.0.group_installations.borrow().is_empty());
+            assert!(self.0.key_installations.borrow().is_empty());
         }
         owner
             .disable(&mut |_| core::ops::ControlFlow::Continue(()))
@@ -789,10 +832,16 @@ impl Work for Admission<'_> {
         phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let station_association = ModelKeys::<Station>::begin_association(
+            resources.station_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
         let [slot, _] = resources.station_group;
         let slot_id = slot.index();
         self.0.hold_group_commands(true);
         phase.station().install_group_key(
+            &station_association,
             resources.station_group_permission,
             slot,
             id(),
@@ -817,7 +866,7 @@ impl Work for Admission<'_> {
         }
         assert!(phase.held.driver_state.borrow().keys.is_empty());
         assert!(phase.held.events.is_empty());
-        assert!(self.0.group_installations.borrow().is_empty());
+        assert!(self.0.key_installations.borrow().is_empty());
         assert_eq!(self.0.group_writes(), 0);
         assert!(!self.0.receive_group(
             &[1],
@@ -831,7 +880,7 @@ impl Work for Admission<'_> {
         let (key, permission) = installed(phase).await;
         assert_eq!(key.slot.index(), slot_id);
         assert_eq!(self.0.group_writes(), 1);
-        assert_eq!(self.0.group_installations.borrow().len(), 1);
+        assert_eq!(self.0.key_installations.borrow().len(), 1);
         phase.station().remove_group_key(permission, key);
         let _permission = removed(phase).await;
     }

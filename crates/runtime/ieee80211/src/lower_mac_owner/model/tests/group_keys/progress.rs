@@ -206,6 +206,11 @@ impl PortBody<ModelBackend> for Exercise<'_> {
         if self.case == ProgressCase::PublishedRemoval {
             return self.published_removal(owner, resources).await;
         }
+        let station_association = ModelKeys::<Station>::begin_association(
+            resources.station_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
+
         let mut owner = owner.enable().await.ok().unwrap();
         let mutation = match self.case {
             ProgressCase::Disable { mutation, .. } | ProgressCase::Expire(mutation) => mutation,
@@ -219,6 +224,7 @@ impl PortBody<ModelBackend> for Exercise<'_> {
                 (None, resources.station_group_permission, Some(slot))
             } else {
                 phase.station().install_group_key(
+                    &station_association,
                     resources.station_group_permission,
                     slot,
                     id(),
@@ -238,6 +244,7 @@ impl PortBody<ModelBackend> for Exercise<'_> {
             )));
             match mutation {
                 Mutation::Install => phase.station().install_group_key(
+                    &station_association,
                     permission,
                     vacant.unwrap(),
                     id(),
@@ -296,12 +303,17 @@ impl Exercise<'_> {
         owner: Owner<'_, 'id, ModelBackend, Disabled>,
         mut resources: ModelResources<'id>,
     ) -> Ended<'id, ModelBackend> {
+        let access_point_association = ModelKeys::<AccessPoint>::begin_association(
+            resources.access_point_association,
+            oer_ieee80211_mac::security::Spp::NotNegotiated,
+        );
         use oer_ieee80211_lower_mac::{AttemptKey, GroupAddress};
         let mut owner = owner.enable().await.ok().unwrap();
         {
             let mut phase = owner.phase();
             let [slot, _] = resources.access_point_group;
             phase.access_point().install_group_key(
+                &access_point_association,
                 resources.access_point_group_permission,
                 slot,
                 id(),

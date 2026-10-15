@@ -529,8 +529,12 @@ impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
     unsafe_code,
     reason = "radio lease proves the stable DMA backing contract"
 )]
-// SAFETY: this non-Clone lease retains a separately pinned pool slot in the
-// Radio state. Moving the lease cannot move or release its allocation.
+// SAFETY: the only public initialization of the private nonzero slot guards is
+// `pin_static`, which consumes &'static mut pool storage and pins it. Claiming
+// a slot checks that guard before issuing a lease; an uninitialized local pool
+// cannot issue one. Its allocation therefore outlives even a shortened 'pool
+// borrow. Forgetting this non-Clone lease leaves the slot in SLOT_RADIO: neither
+// the pool nor another lease can reclaim it, and its backing remains allocated.
 unsafe impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
     StableDmaBacking for PinnedDmaTxRadioLease<'_, FRAME_CAPACITY, HEADROOM, TRAILER>
 {
@@ -615,7 +619,9 @@ impl<T, B> DerefMut for TaggedStableDmaBacking<T, B> {
     reason = "metadata wrapper retains the same audited stable DMA owner"
 )]
 // SAFETY: immutable CPU metadata cannot move, release, or alias the wrapped
-// stable backing. The exact allocation remains retained by `backing`.
+// stable backing. The exact allocation remains retained by `backing`. Forgetting
+// this wrapper forgets both fields, so the backing's leak guarantee is preserved
+// even when the CPU-only tag contains a shorter-lived borrow.
 unsafe impl<T, B: StableDmaBacking> StableDmaBacking for TaggedStableDmaBacking<T, B> {
     fn stable_dma_region(&mut self) -> StableDmaRegion<'_> {
         self.backing.stable_dma_region()
@@ -658,7 +664,9 @@ impl<B: IndexedStableDmaLease, R: DmaIndexReturn> DerefMut for ReturningStableDm
     reason = "wrapper retains the same audited stable DMA owner"
 )]
 // SAFETY: the wrapper retains the exact stable backing and exposes no
-// operation which can release it before this owner is dropped.
+// operation which can release it before this owner is dropped. Forgetting the
+// wrapper leaks `backing` without invoking the returner: the allocation stays
+// reserved by B's contract even after any borrow inside R ends.
 unsafe impl<B: IndexedStableDmaLease, R: DmaIndexReturn> StableDmaBacking
     for ReturningStableDmaBacking<B, R>
 {

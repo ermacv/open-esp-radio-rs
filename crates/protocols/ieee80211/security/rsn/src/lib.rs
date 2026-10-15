@@ -21,7 +21,7 @@ pub mod aes;
 pub mod akm;
 pub mod bip;
 mod ccm;
-pub mod data_ccmp;
+pub mod ccmp_mpdu;
 pub mod element;
 pub mod frames;
 mod kdf;

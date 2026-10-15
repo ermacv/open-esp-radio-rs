@@ -1,4 +1,4 @@
-//! Software CCMP for data, including negotiated SPP A-MSDU.
+//! Software CCMP for data and management, including negotiated SPP A-MSDU.
 //!
 //! The association owns the SPP decision; individual keys do not select it.
 //! The transform consumes the same checked MAC geometry as hardware-backed RX.
@@ -18,11 +18,11 @@ use oer_ieee80211_mac::{ccmp::CcmpHeader, frame::DecodedHeader, security::Spp};
 use subtle::ConstantTimeEq;
 use zeroize::Zeroize;
 
-/// Why a CCMP data MPDU cannot be authenticated.
+/// Why a protected data or management MPDU cannot be authenticated.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum DataCcmpError {
+pub enum CcmpMpduError {
     MalformedHeader,
-    NotProtectedData,
+    NotProtected,
     InvalidCcmpHeader,
     Truncated,
     TooLong,
@@ -47,7 +47,7 @@ impl CcmpAssociation {
 
     /// Encrypt an MPDU in place. The caller has already allocated its PN and
     /// encoded the CCMP header, and reserved eight trailing bytes for the MIC.
-    pub fn seal(&self, key: &[u8; 16], frame: &mut [u8]) -> Result<(), DataCcmpError> {
+    pub fn seal(&self, key: &[u8; 16], frame: &mut [u8]) -> Result<(), CcmpMpduError> {
         let blocks = self.blocks(frame)?;
         let (_, body_and_mic) = frame.split_at_mut(blocks.body_start);
         let (body, mic) = body_and_mic.split_at_mut(blocks.body_len);
@@ -64,7 +64,7 @@ impl CcmpAssociation {
 
     /// Verify and decrypt. Failed authentication erases the tentative plaintext;
     /// a caller must discard the frame and leave its replay frontier unchanged.
-    pub fn open<'a>(&self, key: &[u8; 16], frame: &'a mut [u8]) -> Result<&'a [u8], DataCcmpError> {
+    pub fn open<'a>(&self, key: &[u8; 16], frame: &'a mut [u8]) -> Result<&'a [u8], CcmpMpduError> {
         let blocks = self.blocks(frame)?;
         let (_, body_and_mic) = frame.split_at_mut(blocks.body_start);
         let (body, mic) = body_and_mic.split_at_mut(blocks.body_len);
@@ -76,30 +76,31 @@ impl CcmpAssociation {
         expected.zeroize();
         if !valid {
             body.zeroize();
-            return Err(DataCcmpError::InvalidMic);
+            return Err(CcmpMpduError::InvalidMic);
         }
         Ok(body)
     }
 
-    fn blocks(&self, frame: &[u8]) -> Result<Blocks, DataCcmpError> {
-        let header = DecodedHeader::decode(frame).ok_or(DataCcmpError::MalformedHeader)?;
+    fn blocks(&self, frame: &[u8]) -> Result<Blocks, CcmpMpduError> {
+        let header = DecodedHeader::decode(frame).ok_or(CcmpMpduError::MalformedHeader)?;
         let control = header.control();
-        if !control.is_data() || !control.protected() {
-            return Err(DataCcmpError::NotProtectedData);
+        if !control.protected() {
+            return Err(CcmpMpduError::NotProtected);
         }
         let (ccmp, protected) = header
             .body()
             .split_first_chunk::<8>()
-            .ok_or(DataCcmpError::Truncated)?;
-        let ccmp = CcmpHeader::parse(*ccmp).map_err(|_| DataCcmpError::InvalidCcmpHeader)?;
+            .ok_or(CcmpMpduError::Truncated)?;
+        let ccmp = CcmpHeader::parse(*ccmp).map_err(|_| CcmpMpduError::InvalidCcmpHeader)?;
         let body_len = protected
             .len()
             .checked_sub(MIC_LEN)
-            .ok_or(DataCcmpError::Truncated)?;
-        u16::try_from(body_len).map_err(|_| DataCcmpError::TooLong)?;
+            .ok_or(CcmpMpduError::Truncated)?;
+        u16::try_from(body_len).map_err(|_| CcmpMpduError::TooLong)?;
         let mut aad = [0; 30];
         // Mutable FC subtype bits 4..6 and Retry/PM/MoreData are not authenticated.
-        let mut fc = control.get() & !0x3870;
+        let masked = if control.is_data() { 0x3870 } else { 0x3800 };
+        let mut fc = control.get() & !masked;
         if control.is_qos_data() {
             fc &= !0x8000;
         }
@@ -122,8 +123,11 @@ impl CcmpAssociation {
             aad[aad_len] = flags;
             aad_len += 2;
             flags
-        } else {
+        } else if control.is_data() {
             0
+        } else {
+            // Management frames retain subtype in AAD and set the nonce flag.
+            0x10
         };
         let mut nonce = [0; NONCE_LEN];
         nonce[0] = flags;

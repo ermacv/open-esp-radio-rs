@@ -13,6 +13,7 @@ wait on its ports.
 | `akm` | Key descriptor version, PTK expansion and EAPOL-Key MIC of each `oer_ieee80211_mac::security::rsn::Akm` |
 | `sae` | SAE commit/confirm, hunting-and-pecking and hash-to-element password elements, anti-clogging tokens |
 | `bip`, `management_ccmp` | BIP-CMAC-128 for group-addressed and CCMP for individually addressed robust management frames |
+| `ccmp_mpdu` | Software CCMP for wire data and management MPDUs, using one immutable association SPP decision |
 | `element` | Association RSN element policy and selection of its first supported suite; wire syntax is `oer_ieee80211_mac::security::rsn` |
 | `crypto` | Zeroizing PMK/PTK owners, PSK passphrase derivation and the association security binding |
 | `eapol` | Validated borrowed/owned EAPOL-Key packets and MIC verification |
@@ -33,6 +34,14 @@ differs from that suite.
 storage on drop. Pending actions and retained station records use the same
 owner; adapters and comparisons borrow the bytes. This covers those owners,
 not arbitrary compiler temporaries.
+
+`CcmpAssociation` authenticates the QoS A-MSDU-present bit in both AAD and
+nonce flags when SPP was negotiated. Without SPP it masks that bit according
+to ordinary CCMP. Management MPDUs retain their subtype in AAD and use the
+management nonce flag, independently of SPP. The model applies this transform
+to transmitted wire bytes and verifies incoming encrypted fixtures; a failed
+MIC erases the tentative plaintext before returning the error. Packet-number
+allocation and replay admission remain with their separate installed owners.
 
 GTK KDE parsing retains `GroupKeyId` in `RsnGtk` and `RsnKeyKind::Group`;
 IDs outside the two-bit wire domain never reach a key installation. The

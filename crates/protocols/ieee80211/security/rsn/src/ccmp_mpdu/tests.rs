@@ -64,7 +64,7 @@ fn spp_authenticates_amsdu_present_but_ordinary_ccmp_does_not() {
         changed[24] ^= 0x80;
         let result = mode(spp).open(&key(), &mut changed);
         if spp {
-            assert_eq!(result, Err(DataCcmpError::InvalidMic));
+            assert_eq!(result, Err(CcmpMpduError::InvalidMic));
         } else {
             assert!(result.is_ok());
         }
@@ -83,7 +83,7 @@ fn mutable_retry_power_and_sequence_fields_do_not_change_mic() {
         tampered[4] ^= 2;
         assert_eq!(
             mode(spp).open(&key(), &mut tampered),
-            Err(DataCcmpError::InvalidMic)
+            Err(CcmpMpduError::InvalidMic)
         );
         assert!(
             tampered[34..tampered.len() - 8]
@@ -101,12 +101,32 @@ fn oversized_data_is_refused_before_encryption_or_decryption() {
     let association = mode(false);
     assert_eq!(
         association.seal(&key(), &mut oversized),
-        Err(DataCcmpError::TooLong)
+        Err(CcmpMpduError::TooLong)
     );
     assert_eq!(oversized, before);
     assert_eq!(
         association.open(&key(), &mut oversized),
-        Err(DataCcmpError::TooLong)
+        Err(CcmpMpduError::TooLong)
     );
     assert_eq!(oversized, before);
+}
+
+#[test]
+fn management_frames_share_ccm_but_keep_their_own_aad_and_nonce_flags() {
+    use oer_ieee80211_mac::ccmp::{CcmpHeader, CcmpKeyId, CcmpPacketNumber};
+    for spp in [false, true] {
+        let mut frame = std::vec![0; 24];
+        frame[..2].copy_from_slice(&0x40d0_u16.to_le_bytes());
+        frame[4..10].copy_from_slice(&[2, 0, 0, 0, 0, 1]);
+        frame[10..16].copy_from_slice(&[2, 0, 0, 0, 0, 2]);
+        frame[16..22].copy_from_slice(&[2, 0, 0, 0, 0, 2]);
+        frame.extend_from_slice(
+            &CcmpHeader::new(CcmpPacketNumber::new(1).unwrap(), CcmpKeyId::PAIRWISE).encode(),
+        );
+        frame.extend_from_slice(&[8, 0, 0x42, 0x23]);
+        frame.extend_from_slice(&[0; 8]);
+        mode(spp).seal(&key(), &mut frame).unwrap();
+        let mut receiver = crate::management_ccmp::ManagementCcmpReceiver::new(key());
+        assert_eq!(receiver.open(&mut frame).unwrap(), [8, 0, 0x42, 0x23]);
+    }
 }

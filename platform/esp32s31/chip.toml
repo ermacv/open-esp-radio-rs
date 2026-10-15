@@ -237,7 +237,7 @@ network = [
     { boundary = "owned-product", manifest = "examples/esp32s31/access-point/Cargo.toml", features = ["--no-default-features", "--features", "owned-network"] },
     { boundary = "owned-product", manifest = "hil/targets/esp32s31/agent/Cargo.toml", features = ["--no-default-features", "--features", "open-radio-hil,owned-network"] },
     { boundary = "radio-core", manifest = "crates/runtime/esp32s31/ieee80211/Cargo.toml", features = ["--no-default-features"] },
-    { boundary = "owned-composition", manifest = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml" },
+    { boundary = "owned-product", manifest = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml" },
     { boundary = "owned-product", manifest = "examples/esp32s31/station/Cargo.toml", features = ["--no-default-features", "--features", "owned-network"] },
 ]
 

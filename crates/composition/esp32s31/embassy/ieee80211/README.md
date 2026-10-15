@@ -18,13 +18,6 @@ portable `oer_ieee80211_sta::machine` beside the channel arbiter
 (`oer-ieee80211-arbiter`). The ESP32-S31 HIL agent's Wi-Fi workloads and every
 Wi-Fi HIL scenario wait for it; the scenarios are marked `unsupported`.
 
-`cargo xtask check network` audits this crate as `owned-composition`: its
-`owned-network` feature reaches the owned adapter and the pinned Xarxa driver
-contract. Every reachable network API must retain its full revision pin and
-agree with the other packages from that source. Applications and HIL keep the
-`owned-product` check, which also requires the Xarxa and Embassy stacks. This
-crate returns to `owned-product` when its product runner is restored.
-
 What stays here:
 
 - the interrupt bindings (`mac_interrupt`, `power_interrupt`);

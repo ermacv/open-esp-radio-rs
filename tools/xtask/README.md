@@ -374,14 +374,6 @@ dependencies do not define a production ownership boundary. Library profiles
 use isolated consumers so unrelated workspace features cannot hide a
 dependency leak.
 
-The `owned-composition` boundary checks a chip composition that currently
-provides the owned adapter and its pinned Xarxa driver contract without the
-product runner. It resolves for the chip target, requires `owned-network`,
-and applies the same pin and source-coherence checks to every reachable
-network API. The `owned-product` boundary of applications and HIL additionally
-requires both the Xarxa and Embassy stacks. Restore that boundary on the
-composition when its full product runner returns.
-
 ## Orchestration tests
 
 Run the orchestration regressions with:

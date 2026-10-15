@@ -63,160 +63,49 @@ owned-network = ["dep:owned"]
     fixture
 }
 
-fn composition() -> Fixture {
-    let fixture = Fixture::new();
-    fixture.package(
-        "adapter",
-        "network-adapter-fixture",
-        r#"
-[dependencies]
-platform = { package = "device-registers", path = "../crates/hardware/test-radio" }
-owned = { package = "oer-embassy-net-owned", path = "../owned", optional = true }
-[features]
-default = ["owned-network"]
-owned-network = ["dep:owned"]
-"#,
-    );
-    fixture.package(
-        "owned",
-        "oer-embassy-net-owned",
-        "[dependencies]\ndevice = { package = \"xarxa-driver\", path = \"../helper\" }\n",
-    );
-    fixture.package("helper", "xarxa-driver", "");
-    fixture
-}
-
 #[test]
-fn composition_accepts_the_owned_driver_without_advertising_a_full_product() {
-    let fixture = composition();
-    let mut metadata = fixture.metadata();
-    source(&mut metadata, "xarxa-driver", XARXA);
-    audit(&fixture, metadata.clone(), Boundary::OwnedComposition).unwrap();
-    let error = audit(&fixture, metadata, Boundary::OwnedProduct)
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("missing owned Xarxa stack"), "{error}");
-}
-
-#[test]
-fn composition_requires_the_owned_adapter_and_its_driver_contract() {
-    let fixture = composition();
-    fixture.package("owned", "oer-embassy-net-owned", "");
-    let error = audit(&fixture, fixture.metadata(), Boundary::OwnedComposition)
-        .unwrap_err()
-        .to_string();
-    assert!(
-        error.contains("missing owned Xarxa driver contract"),
-        "{error}"
-    );
-
-    fixture.package(
-        "adapter",
-        "network-adapter-fixture",
-        r#"
-[dependencies]
-device = { package = "xarxa-driver", path = "../helper" }
-[features]
-default = ["owned-network"]
-owned-network = []
-"#,
-    );
-    let mut metadata = fixture.metadata();
-    source(&mut metadata, "xarxa-driver", XARXA);
-    let error = audit(&fixture, metadata, Boundary::OwnedComposition)
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("missing owned network adapter"), "{error}");
-}
-
-#[test]
-fn composition_requires_the_selected_owned_network_feature() {
-    let fixture = composition();
-    let manifest = std::fs::read_to_string(&fixture.manifest).unwrap();
-    fixture.write(
-        "adapter/Cargo.toml",
-        &manifest.replace("default = [\"owned-network\"]", "default = [\"dep:owned\"]"),
-    );
-    let mut metadata = fixture.metadata();
-    source(&mut metadata, "xarxa-driver", XARXA);
-    let error = audit(&fixture, metadata, Boundary::OwnedComposition)
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("owned-network is not selected"), "{error}");
-}
-
-#[test]
-fn composition_and_product_reject_unpinned_or_conflicting_network_sources() {
-    let fixture = product();
-    fixture.package(
-        "stack",
-        "embassy-net",
-        "[dependencies]\ndriver = { package = \"embassy-net-driver\", path = \"../embassy-driver\" }\n",
-    );
-    fixture.package("embassy-driver", "embassy-net-driver", "");
-    let mut metadata = fixture.metadata();
-    source(&mut metadata, "embassy-net", EMBASSY);
-    source(&mut metadata, "embassy-net-driver", EMBASSY);
-    source(&mut metadata, "xarxa", XARXA);
-    source(&mut metadata, "xarxa-driver", XARXA);
-    let other = "git+https://example.invalid/other?rev=4444444444444444444444444444444444444444#4444444444444444444444444444444444444444";
-    for boundary in [Boundary::OwnedComposition, Boundary::OwnedProduct] {
-        audit(&fixture, metadata.clone(), boundary).unwrap();
-        for (package, replacement, reason) in [
-            ("xarxa-driver", REGISTRY, "require full Git revision pins"),
-            (
-                "embassy-net-driver",
-                REGISTRY,
-                "require full Git revision pins",
-            ),
-            (
-                "xarxa-driver",
-                other,
-                "Xarxa packages must resolve to the same pinned source",
-            ),
-            (
-                "embassy-net-driver",
-                other,
-                "Embassy network packages must resolve to one pinned source",
-            ),
-        ] {
-            let mut changed = metadata.clone();
-            source(&mut changed, package, replacement);
-            let error = audit(&fixture, changed, boundary).unwrap_err().to_string();
-            assert!(error.contains(reason), "{boundary:?}, {package}: {error}");
-        }
-    }
-}
-
-#[test]
-fn products_require_both_stack_layers_even_when_the_composition_is_valid() {
-    for (dependency, package, description) in [
-        ("api", "embassy-net", "owned Embassy network stack"),
-        ("network", "xarxa", "owned Xarxa stack"),
-    ] {
+fn s31_composition_requires_both_network_stacks() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let chips = oer_repo::chips::Chips::at(&root).unwrap();
+    let profile = network::profiles(&chips)
+        .unwrap()
+        .into_iter()
+        .find(|profile| {
+            profile.manifest
+                == std::path::Path::new("crates/composition/esp32s31/embassy/ieee80211/Cargo.toml")
+        })
+        .unwrap();
+    for omitted in [&["api"][..], &["network"][..], &["api", "network"][..]] {
         let fixture = product();
         let manifest = std::fs::read_to_string(&fixture.manifest).unwrap();
-        let manifest = manifest
-            .lines()
-            .filter(|line| !line.starts_with(&format!("{dependency} =")))
-            .collect::<Vec<_>>()
-            .join("\n");
-        fixture.write("adapter/Cargo.toml", &manifest);
+        fixture.write(
+            "adapter/Cargo.toml",
+            &manifest
+                .lines()
+                .filter(|line| {
+                    !omitted
+                        .iter()
+                        .any(|name| line.starts_with(&format!("{name} =")))
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
         let mut metadata = fixture.metadata();
-        for (name, pin) in [
-            ("embassy-net", EMBASSY),
-            ("xarxa", XARXA),
-            ("xarxa-driver", XARXA),
-        ] {
-            if name != package {
-                source(&mut metadata, name, pin);
-            }
+        source(&mut metadata, "xarxa-driver", XARXA);
+        if !omitted.contains(&"api") {
+            source(&mut metadata, "embassy-net", EMBASSY);
         }
-        audit(&fixture, metadata.clone(), Boundary::OwnedComposition).unwrap();
-        let error = audit(&fixture, metadata, Boundary::OwnedProduct)
-            .unwrap_err()
+        if !omitted.contains(&"network") {
+            source(&mut metadata, "xarxa", XARXA);
+        }
+        let error = audit(&fixture, metadata, profile.boundary)
+            .expect_err("the configured S31 boundary must require both stacks")
             .to_string();
-        assert!(error.contains(&format!("missing {description}")), "{error}");
+        assert!(
+            error.contains("missing owned Xarxa stack")
+                || error.contains("missing owned Embassy network stack"),
+            "{error}"
+        );
     }
 }
 

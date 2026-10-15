@@ -34,6 +34,7 @@ pub mod ble_phy;
 pub mod controller_hal;
 /// Event-driven controller-time latch and scheduler-epoch projection.
 pub mod controller_time;
+pub mod emergency;
 pub mod interrupt;
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 pub mod low_power;

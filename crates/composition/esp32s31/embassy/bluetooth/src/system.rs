@@ -2,6 +2,7 @@
 //! and the client tasks beside the port.
 
 use core::cell::Cell;
+use oer_esp32s31_bluetooth::emergency::{EmergencyInterruptStorage, PortEmergencyStop};
 
 use critical_section::Mutex;
 use embassy_futures::select::{Either4, select4};
@@ -142,6 +143,7 @@ pub type BluetoothSystemRuntime = BluetoothRuntime<
 >;
 
 type Hardware = LiveBluetoothHardware<'static, Storage>;
+type Emergency = oer_esp32s31_bluetooth::emergency::ControllerEmergencyStop<'static, Storage>;
 
 /// The independent driver paired with the running client's port backend.
 pub type BluetoothSystemDriver = BluetoothDriver<
@@ -167,7 +169,7 @@ pub type BluetoothSystemBackend =
 
 /// What the port's uninstall returns, for [`BluetoothSystem::stop`]: the
 /// radio and its hardware, or the radio the driver did not leave, with why.
-pub type BluetoothSystemUninstalled = Result<(Radio, Hardware), BluetoothSystemRetained>;
+pub type BluetoothSystemUninstalled = Result<(Radio, Hardware, Emergency), BluetoothSystemRetained>;
 
 /// A radio the port's driver did not leave for the uninstall.
 pub type BluetoothSystemRetained = BluetoothRetained<
@@ -443,6 +445,15 @@ enum FailStopOwner {
         memory: BluetoothSystemMemory,
     },
     Retained(Epoch, BluetoothSystemRetained),
+    QuarantinedPort(Epoch, Radio, Hardware, Emergency),
+    FailedPortInstall {
+        hardware: Hardware,
+        emergency: Emergency,
+        modem_timer: ModemTimerTask,
+        retained: BlePhyRetainedOwners,
+        bound: BoundEspHalBluetoothInterruptEpoch<'static>,
+        memory: BluetoothSystemMemory,
+    },
     TimerRetired {
         role: Radio,
         task: TaskRuntime,
@@ -501,6 +512,8 @@ pub struct BluetoothStartFailure {
 /// Why teardown stopped.
 #[derive(Debug)]
 pub enum BluetoothStopError {
+    /// Task/emergency reunion was rejected; every owner remains quarantined.
+    Quarantined,
     /// The port's driver did not leave the radio: it stopped on a fault, or
     /// the port was poisoned while enabled.
     Runtime(BluetoothUninstallError<EspHalBluetoothSchedulerRunInterruptError>),
@@ -557,6 +570,8 @@ pub enum BluetoothInterruptFault {
 /// Why the client's tasks beside the port stopped.
 #[derive(Debug)]
 pub enum BluetoothRunnerFault {
+    /// Emergency closure woke and ended the installation runner.
+    Quarantined,
     /// The source-127 task could not exchange its owner with storage.
     ModemTimer(
         ModemTimerFault<
@@ -615,14 +630,19 @@ impl BluetoothSystem {
             &MODEM_TIMER_WAKE,
             &EmbassyClock,
         );
-        match select4(
+        let gate = self.epoch.published.emergency_gate();
+        let mut running = core::pin::pin!(select4(
             modem_timer,
             INTERRUPT_FAULT.wait(),
             publish_coex_status(radio),
             follow_coex_sharing(radio),
-        )
-        .await
-        {
+        ));
+        let result = core::future::poll_fn(|cx| gate.poll_runner(running.as_mut(), cx)).await;
+        let result = match result {
+            Ok(result) => result,
+            Err(_) => return BluetoothRunnerFault::Quarantined,
+        };
+        match result {
             Either4::First(fault) => {
                 RUNTIME.platform_fault();
                 BluetoothRunnerFault::ModemTimer(fault)
@@ -666,12 +686,22 @@ impl BluetoothSystem {
             power,
             coexisting,
         } = self;
-        let (role, hardware) = match uninstalled {
+        let (role, hardware, emergency) = match uninstalled {
             Ok(parts) => parts,
             Err(retained) => {
                 return Err(stop_fail(
                     BluetoothStopError::Runtime(retained.error),
                     FailStopOwner::Retained(epoch, retained),
+                    BluetoothPower::Coexisting(power, coexisting),
+                ));
+            }
+        };
+        let task = match hardware.into_task(emergency) {
+            Ok(task) => task,
+            Err((hardware, emergency)) => {
+                return Err(stop_fail(
+                    BluetoothStopError::Quarantined,
+                    FailStopOwner::QuarantinedPort(epoch, role, hardware, emergency),
                     BluetoothPower::Coexisting(power, coexisting),
                 ));
             }
@@ -682,7 +712,6 @@ impl BluetoothSystem {
             retained,
             published,
         } = epoch;
-        let task = hardware.into_task();
         let uninstalled = |role, task, modem_timer, bound, retained| FailStopOwner::Uninstalled {
             role,
             task,
@@ -1245,22 +1274,20 @@ async fn publish_and_install(
             ));
         }
     };
-    let installed = RUNTIME
-        .install(
-            radio_memory,
-            LiveBluetoothHardware::new(task, published, LOCAL_SLEEP_CLOCK_PPM),
-        )
-        .await;
+    let (hardware, emergency) = LiveBluetoothHardware::new(task, published, LOCAL_SLEEP_CLOCK_PPM);
+    let installed = RUNTIME.install(radio_memory, hardware, emergency).await;
     let backend = match installed {
         Ok(backend) => backend,
-        Err((error, radio_memory, hardware)) => {
+        Err((error, radio_memory, hardware, mut emergency)) => {
+            let _quarantine = emergency.stop();
             return Err(fail_stop(
                 BluetoothStartError::Install(error),
-                FailStopOwner::Published {
-                    task: hardware.into_task(),
+                FailStopOwner::FailedPortInstall {
+                    hardware,
+                    emergency,
                     modem_timer,
                     retained,
-                    bound: Some(bound),
+                    bound,
                     memory: radio_memory,
                 },
                 BluetoothPower::Coexisting(power, coexisting),

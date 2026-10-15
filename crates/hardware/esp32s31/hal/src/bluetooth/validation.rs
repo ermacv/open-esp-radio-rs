@@ -9,6 +9,14 @@ use oer_esp32s31_pac::{
     BluetoothMemoryListSlot,
 };
 
+/// Execute the shipping bounded emergency scheduler transaction. CPU route
+/// masking is platform-owned and outside this isolated MMIO comparison.
+pub fn emergency_stop(
+    budget: super::BluetoothDiagnosticReadBudget,
+) -> super::emergency::EmergencyOutcome {
+    super::emergency::for_validation(budget)
+}
+
 /// Execute the exact production NRT acknowledgement transaction.
 #[inline(always)]
 pub fn capture_and_acknowledge_interrupts() {

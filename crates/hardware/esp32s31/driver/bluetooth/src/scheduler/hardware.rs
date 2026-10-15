@@ -90,6 +90,8 @@ pub(crate) trait SchedulerHardwareBackend {
 /// unchanged.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SchedulerHardwareError {
+    /// Emergency quarantine permanently closed hardware admission.
+    Quarantined,
     /// The action does not continue the publications in progress.
     OutOfOrder(SchedulerAction),
     /// The awaited publication is not in progress.
@@ -104,20 +106,34 @@ pub enum SchedulerHardwareError {
     /// [`DIAGNOSTIC_READ_BUDGET`](super::DIAGNOSTIC_READ_BUDGET).
     DiagnosticUnsettled,
 }
+impl From<oer_esp32s31_hal::bluetooth::emergency::EmergencyClosed> for SchedulerHardwareError {
+    fn from(_: oer_esp32s31_hal::bluetooth::emergency::EmergencyClosed) -> Self {
+        Self::Quarantined
+    }
+}
 
 /// Why the scheduler stop sequence ended before the scheduler stopped.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SchedulerStopError {
+    /// Emergency quarantine permanently closed hardware admission.
+    Quarantined,
     /// Platform storage does not hold the stable interrupt owner.
     InterruptOwnerUnavailable,
     /// A BUSY sample never settled within
     /// [`DIAGNOSTIC_READ_BUDGET`](super::DIAGNOSTIC_READ_BUDGET).
     DiagnosticUnsettled,
 }
+impl From<oer_esp32s31_hal::bluetooth::emergency::EmergencyClosed> for SchedulerStopError {
+    fn from(_: oer_esp32s31_hal::bluetooth::emergency::EmergencyClosed) -> Self {
+        Self::Quarantined
+    }
+}
 
 /// Why an idle scheduler was not started.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SchedulerStartError<E> {
+    /// Emergency quarantine permanently closed hardware admission.
+    Quarantined,
     /// A list transaction still holds a publication.
     TransactionActive,
     /// The head is no submitted item of the item space.
@@ -125,6 +141,11 @@ pub enum SchedulerStartError<E> {
     /// The interrupt owner could not prepare the run interrupts. The head is
     /// published; a later start publishes it again.
     Interrupts(E),
+}
+impl<E> From<oer_esp32s31_hal::bluetooth::emergency::EmergencyClosed> for SchedulerStartError<E> {
+    fn from(_: oer_esp32s31_hal::bluetooth::emergency::EmergencyClosed) -> Self {
+        Self::Quarantined
+    }
 }
 
 /// Publications of the list transaction in progress and the latest RUN.

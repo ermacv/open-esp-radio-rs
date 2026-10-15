@@ -22,7 +22,10 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-use core::cell::{Cell, RefCell};
+use core::{
+    cell::{Cell, RefCell},
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use critical_section::Mutex;
 use esp_hal::{interrupt::Priority, peripherals::Interrupt, rng::Rng, system::Cpu, time::Instant};
@@ -48,7 +51,9 @@ pub fn random() -> u32 {
 static ROUTE_CLAIMED: Mutex<Cell<bool>> = Mutex::new(Cell::new(false));
 
 /// Source 132's route in the image's interrupt table, once [`install`]ed.
-static ROUTE: Mutex<RefCell<Option<Route>>> = Mutex::new(RefCell::new(None));
+static ROUTE: Mutex<RefCell<Option<&'static Route>>> = Mutex::new(RefCell::new(None));
+static ROUTE_BACKING: static_cell::StaticCell<Route> = static_cell::StaticCell::new();
+static QUARANTINED: AtomicBool = AtomicBool::new(false);
 
 /// The route of modem source 132 at the vendor's `Priority1`, from its token
 /// in the image's interrupt table: another source's or another level's token
@@ -86,7 +91,10 @@ pub fn install(source: EspHalIeee802154Source) -> Result<(), EspHalIeee802154Sou
         if route.is_some() {
             return Err(source);
         }
-        *route = Some(source.0);
+        let Some(backing) = ROUTE_BACKING.try_uninit() else {
+            return Err(source);
+        };
+        *route = Some(backing.write(source.0));
         Ok(())
     })
 }
@@ -100,6 +108,8 @@ pub enum EspHalIeee802154InterruptRouteError {
     NotInstalled,
     /// The route was bound, or torn down, on a CPU other than its table's.
     WrongCore,
+    /// Emergency masking retained the route until chip reset.
+    Quarantined,
 }
 
 /// Active ESP-HAL route for modem source 132.
@@ -109,6 +119,7 @@ pub enum EspHalIeee802154InterruptRouteError {
 #[must_use = "source 132 must be disabled before the MAC owners are recovered"]
 pub struct BoundEspHalIeee802154InterruptRoute {
     core: Cpu,
+    route: &'static Route,
 }
 
 /// Route modem source 132 to the handler its interrupt-table entry names.
@@ -118,6 +129,9 @@ pub struct BoundEspHalIeee802154InterruptRoute {
 /// No route is installed, a route is already bound, or the caller runs on
 /// another core than the table's.
 pub fn bind() -> Result<BoundEspHalIeee802154InterruptRoute, EspHalIeee802154InterruptRouteError> {
+    if QUARANTINED.load(Ordering::Acquire) {
+        return Err(EspHalIeee802154InterruptRouteError::Quarantined);
+    }
     critical_section::with(|critical_section| {
         let route = ROUTE.borrow_ref(critical_section);
         let route = route
@@ -132,17 +146,34 @@ pub fn bind() -> Result<BoundEspHalIeee802154InterruptRoute, EspHalIeee802154Int
         claimed.set(true);
         Ok(BoundEspHalIeee802154InterruptRoute {
             core: Cpu::current(),
+            route,
         })
     })
 }
 
 impl BoundEspHalIeee802154InterruptRoute {
+    /// Mask the already-bound source without entering a critical section.
+    ///
+    /// The runtime closes its atomic admission before this call and then
+    /// joins entered handlers within its finite observation budget. A route
+    /// remembers its CPU, so the typed matrix write works from either core
+    /// and affects only source 132. This never acknowledges MAC events,
+    /// releases the route claim, or proves device/DMA completion. Repeated
+    /// masking is idempotent; no later bind succeeds until chip reset.
+    pub fn emergency_mask(&self) {
+        QUARANTINED.store(true, Ordering::Release);
+        interrupt_table::disable_route(self.route);
+    }
+
     /// Disable source 132 on the binding core and release the claim.
     ///
     /// # Errors
     ///
     /// On another core nothing changes and the route owner is returned.
     pub fn quiesce(self) -> Result<(), (EspHalIeee802154InterruptRouteError, Self)> {
+        if QUARANTINED.load(Ordering::Acquire) {
+            return Err((EspHalIeee802154InterruptRouteError::Quarantined, self));
+        }
         if Cpu::current() != self.core {
             return Err((EspHalIeee802154InterruptRouteError::WrongCore, self));
         }

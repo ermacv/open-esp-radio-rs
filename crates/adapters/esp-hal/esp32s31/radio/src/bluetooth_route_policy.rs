@@ -4,6 +4,9 @@
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EspHalBluetoothInterruptRouteError {
+    /// Emergency quarantine permanently closed this boot's BLE admission.
+    #[cfg(feature = "esp32s31")]
+    Quarantined,
     /// A required register owner is currently outside stable ISR storage.
     OwnersUnavailable,
     /// A complete Bluetooth route epoch is already live process-wide.
@@ -17,6 +20,12 @@ pub enum EspHalBluetoothInterruptRouteError {
 /// Why both Bluetooth ISR owners could not be published atomically.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EspHalBluetoothInterruptStorageError {
+    /// Routes must have stable backing before the interrupt epoch is published.
+    #[cfg(feature = "esp32s31")]
+    RoutesMissing,
+    /// An emergency-closed installation cannot publish another epoch.
+    #[cfg(feature = "esp32s31")]
+    Quarantined,
     /// A preceding Controller epoch already reserved this storage.
     AlreadyPublished,
     /// Exactly one slot was occupied, so the process-wide invariant is broken.

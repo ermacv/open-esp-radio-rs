@@ -77,8 +77,13 @@ Each terminal carries its interface, recovered from the matching affine
 `Completed` proof; a foreign request ID retains the in-flight permit and
 poisons the port. Lifecycle and faults never masquerade as port events.
 
-The shared lifecycle's current runtime abandon path returns `Unconfirmed`.
-It publishes permanent logical poisoning atomically and never takes the mutex
-that contains `radio.isr`. Quarantined detach retains the bound route; ordinary
-uninstall still detaches it. Hardware exclusion and stopping are not proved,
-so the installation and its backing require chip reset before reuse.
+The runtime's emergency path closes one atomic admission/count word before
+masking the already-bound route. The adapter retains a static reference to that
+route: emergency masking never takes the mutex that contains `radio.isr`.
+ISR entry and task hardware operations retain a counted entry through their
+accesses; late entries reject before locking. A finite CPU join always ends in
+`Unconfirmed`, because CPU exclusion alone cannot prove MAC/DMA completion.
+Install requires static runtime and engine buffers. The route claim and all
+backing remain quarantined until chip reset; ordinary uninstall keeps its
+existing hardware sequence. Never turn a successful CPU join into permission
+to return or reuse the engine's DMA backing.

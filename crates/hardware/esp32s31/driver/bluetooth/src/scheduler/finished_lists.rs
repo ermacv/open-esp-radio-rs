@@ -30,8 +30,17 @@ impl SchedulerFinishedListBackend for ControllerHal<'_> {
 /// Why a fresh task-side finished-list transfer was not admitted.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SchedulerFinishedListCaptureError {
+    /// Emergency quarantine permanently closed hardware admission.
+    Quarantined,
     /// A previous captured observation still contains unconsumed list work.
     DrainAlreadyActive,
+}
+impl From<oer_esp32s31_hal::bluetooth::emergency::EmergencyClosed>
+    for SchedulerFinishedListCaptureError
+{
+    fn from(_: oer_esp32s31_hal::bluetooth::emergency::EmergencyClosed) -> Self {
+        Self::Quarantined
+    }
 }
 
 /// Result of one bounded finished-list worker step.

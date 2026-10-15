@@ -8,6 +8,7 @@ use oer_bluetooth_radio::{
     CancelError, ClockError, ClockInfo, EventId, EventsLost, LeInstant, LeRadio, LeRadioBackend,
     Poisoned, PortResult, RadioActivity, RadioOutcome, RadioRequest, RequestError,
 };
+use oer_esp32s31_bluetooth::emergency::PortEmergencyStop;
 use oer_esp32s31_bluetooth_radio::{BluetoothCapabilities, BluetoothRadioConfig};
 use oer_radio_port::Mint;
 use oer_radio_port::{
@@ -34,15 +35,42 @@ use crate::{
 /// it, and the interrupt entry only wakes it. The uninstall takes the
 /// retired driver's radio and hardware out by value.
 #[must_use = "an installed radio leaves only through its owner's uninstall or fail-stop"]
-pub struct BluetoothBackend<'r, R, D> {
+pub struct BluetoothBackend<'r, R, D: InstalledDriver> {
     runtime: &'r R,
+    emergency: D::EmergencyStop,
     driver: core::marker::PhantomData<fn() -> D>,
 }
 
-impl<'r, R, D> BluetoothBackend<'r, R, D> {
-    pub(crate) const fn new(runtime: &'r R) -> Self {
+/// The emergency authority paired with an installed independent driver.
+pub trait InstalledDriver {
+    /// This owner remains in the backend when the driver moves into its future.
+    type EmergencyStop: PortEmergencyStop;
+}
+
+impl<
+    'r,
+    M: RawMutex,
+    H: BluetoothRadioHardware,
+    T,
+    C: BluetoothRadioConfig,
+    const L: usize,
+    const A: usize,
+    const S: usize,
+    const C_N: usize,
+    const SP: usize,
+    const RP: usize,
+    const I: usize,
+    const E: usize,
+> InstalledDriver for BluetoothDriver<'r, M, H, T, C, L, A, S, C_N, SP, RP, I, E>
+{
+    type EmergencyStop = H::EmergencyStop;
+}
+
+impl<'r, R, D: InstalledDriver> BluetoothBackend<'r, R, D> {
+    pub(crate) const fn new(runtime: &'r R, emergency: D::EmergencyStop) -> Self {
         Self {
             runtime,
+            emergency,
             driver: core::marker::PhantomData,
         }
     }
@@ -210,6 +238,7 @@ impl<
         (
             Radio<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>,
             H,
+            H::EmergencyStop,
         ),
         BluetoothRetained<
             H,
@@ -355,12 +384,21 @@ impl<
         _: Detached<'id>,
         _: Self::Uninstall,
     ) -> Self::Uninstalled {
-        retired.into_state().into_parts()
+        retired.into_state().into_parts(self.emergency)
     }
 
     fn abandon(&mut self, call: oer_radio_port::Quarantine) -> oer_radio_port::Abandon {
         self.runtime.abandon();
-        oer_radio_port::Abandon::Unconfirmed(call)
+        let outcome = self.emergency.stop();
+
+        match outcome {
+            oer_esp32s31_bluetooth::emergency::EmergencyOutcome::Stopped => {
+                oer_radio_port::Abandon::Stopped(call.stopped())
+            }
+            oer_esp32s31_bluetooth::emergency::EmergencyOutcome::Unconfirmed(_) => {
+                oer_radio_port::Abandon::Unconfirmed(call)
+            }
+        }
     }
 }
 

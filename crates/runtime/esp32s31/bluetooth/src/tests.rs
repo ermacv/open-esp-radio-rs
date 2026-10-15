@@ -1,4 +1,7 @@
 use core::cell::RefCell;
+use oer_esp32s31_bluetooth::emergency::{
+    EmergencyClosed, EmergencyOutcome, EmergencyUnconfirmed, PortEmergencyStop,
+};
 use std::{boxed::Box, rc::Rc, vec, vec::Vec};
 
 use embassy_futures::{
@@ -68,6 +71,8 @@ struct State {
     device_tables: Vec<LeDeviceTablePublication>,
     /// Controller-time latch requests.
     time_requests: usize,
+    emergency_stops: usize,
+    quarantined: bool,
 }
 
 /// The model's owner of a disabled BLE PHY ETM route.
@@ -78,7 +83,35 @@ struct ModelRoute;
 #[derive(Clone, Default)]
 struct Model(Rc<RefCell<State>>);
 
+struct ModelEmergency(Model);
+impl PortEmergencyStop for ModelEmergency {
+    fn stop(&mut self) -> EmergencyOutcome {
+        let mut state = self.0.0.borrow_mut();
+        if !state.quarantined {
+            state.emergency_stops += 1;
+            state.quarantined = true;
+        }
+        if state.stop_never_settles {
+            EmergencyOutcome::Unconfirmed(EmergencyUnconfirmed::SchedulerBusy)
+        } else {
+            state.running = false;
+            EmergencyOutcome::Stopped
+        }
+    }
+}
+
+impl Model {
+    fn admit(&self) -> Result<(), EmergencyClosed> {
+        if self.0.borrow().quarantined {
+            Err(EmergencyClosed)
+        } else {
+            Ok(())
+        }
+    }
+}
+
 impl BluetoothRadioHardware for Model {
+    type EmergencyStop = ModelEmergency;
     type StartError = ();
     type DisabledPhyRoute = ModelRoute;
 
@@ -95,6 +128,7 @@ impl BluetoothRadioHardware for Model {
     }
 
     fn request_time(&mut self) -> Result<ControllerTimeRequest, ControllerTimeRequestError> {
+        self.admit()?;
         self.0.borrow_mut().time_requests += 1;
         Ok(ControllerTimeRequest::for_validation(1))
     }
@@ -103,6 +137,7 @@ impl BluetoothRadioHardware for Model {
         &mut self,
         request: ControllerTimeRequest,
     ) -> Result<ControllerTimeEventStep, ControllerTimeEventError> {
+        self.admit()?;
         Ok(ControllerTimeEventStep::Sample {
             request,
             sample: ControllerTimeSample::for_validation(self.0.borrow().time),
@@ -110,6 +145,7 @@ impl BluetoothRadioHardware for Model {
     }
 
     fn drain_time(&mut self) -> Result<ControllerTimeEventStep, ControllerTimeEventError> {
+        self.admit()?;
         Ok(ControllerTimeEventStep::Idle)
     }
 
@@ -118,6 +154,8 @@ impl BluetoothRadioHardware for Model {
         _scanning: &LeRxChain<SCANNING>,
         _non_scanning: &LeRxChain<NON_SCANNING>,
     ) -> Result<(), RxChainPublicationError> {
+        self.admit()
+            .map_err(|_| RxChainPublicationError::Quarantined)?;
         let mut state = self.0.borrow_mut();
         if state.refuse_chains {
             return Err(RxChainPublicationError::SchedulerStarted);
@@ -126,22 +164,31 @@ impl BluetoothRadioHardware for Model {
         Ok(())
     }
 
-    fn publish_scan_start(&mut self) {
+    fn publish_scan_start(&mut self) -> Result<(), EmergencyClosed> {
+        self.admit()?;
         self.0.borrow_mut().scan_starts += 1;
+        Ok(())
     }
 
-    fn publish_device_table(&mut self, publication: LeDeviceTablePublication) {
+    fn publish_device_table(
+        &mut self,
+        publication: LeDeviceTablePublication,
+    ) -> Result<(), EmergencyClosed> {
+        self.admit()?;
         self.0.borrow_mut().device_tables.push(publication);
+        Ok(())
     }
 
-    fn take_wake(&mut self) -> Option<SchedulerWakeBatch> {
-        self.0.borrow().wake.take()
+    fn take_wake(&mut self) -> Result<Option<SchedulerWakeBatch>, EmergencyClosed> {
+        self.admit()?;
+        Ok(self.0.borrow().wake.take())
     }
 
     fn capture_finished_lists(
         &mut self,
         _wake: SchedulerWakeBatch,
     ) -> Result<(), SchedulerFinishedListCaptureError> {
+        self.admit()?;
         if self.0.borrow().finished.is_some() {
             return Err(SchedulerFinishedListCaptureError::DrainAlreadyActive);
         }
@@ -154,6 +201,7 @@ impl BluetoothRadioHardware for Model {
         &mut self,
         _stopped: &BluetoothSchedulerStopped,
     ) -> Result<(), SchedulerFinishedListCaptureError> {
+        self.admit()?;
         if self.0.borrow().finished.is_some() {
             return Err(SchedulerFinishedListCaptureError::DrainAlreadyActive);
         }
@@ -162,11 +210,12 @@ impl BluetoothRadioHardware for Model {
         Ok(())
     }
 
-    fn next_finished_list(&mut self) -> SchedulerFinishedListWorkerStep {
+    fn next_finished_list(&mut self) -> Result<SchedulerFinishedListWorkerStep, EmergencyClosed> {
+        self.admit()?;
         let Some(observation) = self.0.borrow_mut().finished.take() else {
-            return SchedulerFinishedListWorkerStep::Idle;
+            return Ok(SchedulerFinishedListWorkerStep::Idle);
         };
-        match observation.pop_lowest() {
+        Ok(match observation.pop_lowest() {
             BluetoothSchedulerFinishedListPop::Complete => {
                 SchedulerFinishedListWorkerStep::Complete
             }
@@ -180,10 +229,11 @@ impl BluetoothRadioHardware for Model {
                 }
                 SchedulerFinishedListWorkerStep::List { observed, more }
             }
-        }
+        })
     }
 
     fn observe(&mut self) -> Result<SchedulerHardwareView, SchedulerHardwareError> {
+        self.admit()?;
         // A started item whose execution is deferred keeps the scheduler busy.
         let busy = self.0.borrow().running;
         Ok(SchedulerHardwareView {
@@ -192,14 +242,17 @@ impl BluetoothRadioHardware for Model {
         })
     }
 
-    fn disable_phy_etm_route(&mut self) -> ModelRoute {
+    fn disable_phy_etm_route(&mut self) -> Result<ModelRoute, EmergencyClosed> {
+        self.admit()?;
         self.0.borrow_mut().routes_disabled += 1;
-        ModelRoute
+        Ok(ModelRoute)
     }
 
-    fn restore_phy_etm_route(&mut self, route: ModelRoute) {
+    fn restore_phy_etm_route(&mut self, route: ModelRoute) -> Result<(), EmergencyClosed> {
+        self.admit()?;
         let ModelRoute = route;
         self.0.borrow_mut().routes_restored += 1;
+        Ok(())
     }
 
     fn start(
@@ -207,6 +260,7 @@ impl BluetoothRadioHardware for Model {
         items: &SchedulerItemSpace<'_>,
         insertion: SchedulerIdleInsertion,
     ) -> Result<(), SchedulerStartError<()>> {
+        self.admit()?;
         let id = items
             .listed_item(insertion.head)
             .ok_or(SchedulerStartError::ForeignItem(insertion.head))?;
@@ -235,6 +289,7 @@ impl BluetoothRadioHardware for Model {
         _items: &SchedulerItemSpace<'_>,
         _step: &SchedulerStep<I, CAPACITY>,
     ) -> Result<(), SchedulerHardwareError> {
+        self.admit()?;
         Ok(())
     }
 
@@ -242,16 +297,21 @@ impl BluetoothRadioHardware for Model {
         &mut self,
         wait: SchedulerWait,
     ) -> Result<SchedulerObservation, SchedulerHardwareError> {
+        self.admit()?;
         Err(SchedulerHardwareError::NotAwaiting(wait))
     }
 
-    fn recover(&mut self, _fault: SchedulerTransactionFault) {}
+    fn recover(&mut self, _fault: SchedulerTransactionFault) -> Result<(), EmergencyClosed> {
+        self.admit()?;
+        Ok(())
+    }
 
     fn step_stop(
         &mut self,
         stop: BluetoothSchedulerStop,
     ) -> Result<BluetoothSchedulerStopStep, oer_esp32s31_bluetooth::scheduler::SchedulerStopError>
     {
+        self.admit()?;
         let mut state = self.0.borrow_mut();
         if state.stop_never_settles {
             return Ok(BluetoothSchedulerStopStep::Pending(stop));
@@ -405,6 +465,7 @@ type Memory = oer_esp32s31_bluetooth_radio::BluetoothRadioMemory<1, 1, 1, 1, 2, 
 struct Fixture {
     runtime: &'static Runtime,
     driver: core::cell::Cell<Option<Driver>>,
+    emergency: core::cell::Cell<Option<ModelEmergency>>,
 }
 
 /// The fixture's driver, lent out of its cell while a call polls it; it
@@ -458,7 +519,9 @@ impl Fixture {
         memory: Memory,
         hardware: Model,
     ) -> Result<(), (crate::BluetoothInstallError, Memory, Model)> {
+        let emergency = ModelEmergency(hardware.clone());
         let driver = self.runtime.install_driver(memory, hardware).await?;
+        self.emergency.set(Some(emergency));
         self.driver.set(Some(driver));
         Ok(())
     }
@@ -519,7 +582,10 @@ impl Fixture {
     > {
         let mut driver = self.driver.take().expect("a radio is installed");
         let _stopped = driver.run(|| true, core::future::ready(())).await;
-        driver.into_parts().map_err(|retained| retained.error)
+        driver
+            .into_parts(self.emergency.take().unwrap())
+            .map(|(radio, hardware, _)| (radio, hardware))
+            .map_err(|retained| retained.error)
     }
 
     async fn with_radio<R>(
@@ -548,6 +614,7 @@ fn new_runtime() -> Fixture {
     Fixture {
         runtime: std::boxed::Box::leak(std::boxed::Box::new(Runtime::new(clock()))),
         driver: core::cell::Cell::new(None),
+        emergency: core::cell::Cell::new(None),
     }
 }
 
@@ -1299,10 +1366,14 @@ impl oer_radio_port::PortBody<Backend> for ConfigureOnce {
 fn a_port_body_runs_beside_its_driver_and_the_uninstall_returns_the_radio() {
     let model = Model::default();
     let runtime = new_runtime();
-    let backend = block_on(runtime.runtime.install(model_memory(), model.clone()))
-        .unwrap_or_else(|_| panic!("the first install succeeds"));
+    let backend = block_on(runtime.runtime.install(
+        model_memory(),
+        model.clone(),
+        ModelEmergency(model.clone()),
+    ))
+    .unwrap_or_else(|_| panic!("the first install succeeds"));
     let oer_radio_port::PortEnd::Uninstalled {
-        uninstalled: Ok((radio, hardware)),
+        uninstalled: Ok((radio, hardware, emergency)),
         ..
     } = block_on(oer_radio_port::run_port(backend, ConfigureOnce))
     else {
@@ -1310,7 +1381,7 @@ fn a_port_body_runs_beside_its_driver_and_the_uninstall_returns_the_radio() {
     };
     let memory =
         radio.into_memory(&oer_esp32s31_hal::bluetooth::BluetoothControllerReset::for_validation());
-    let backend = block_on(runtime.runtime.install(memory, hardware))
+    let backend = block_on(runtime.runtime.install(memory, hardware, emergency))
         .unwrap_or_else(|_| panic!("the next epoch installs"));
     // The next port starts with an empty queue (#457).
     assert_eq!(taken(&runtime), None);
@@ -1566,8 +1637,12 @@ impl oer_radio_port::PortBody<Backend> for WaitThenUninstall {
 fn a_retire_request_wakes_an_idle_driver() {
     let model = Model::default();
     let runtime = new_runtime();
-    let backend = block_on(runtime.runtime.install(model_memory(), model.clone()))
-        .unwrap_or_else(|_| panic!("the install succeeds"));
+    let backend = block_on(runtime.runtime.install(
+        model_memory(),
+        model.clone(),
+        ModelEmergency(model.clone()),
+    ))
+    .unwrap_or_else(|_| panic!("the install succeeds"));
     let mut port = core::pin::pin!(oer_radio_port::run_port(backend, WaitThenUninstall));
     let mut context = core::task::Context::from_waker(core::task::Waker::noop());
     let started = clock().now();
@@ -1589,6 +1664,8 @@ fn a_retire_request_wakes_an_idle_driver() {
     );
     assert_eq!(clock().now(), started);
 }
+
+mod emergency;
 
 struct UnconfirmedStop(bool);
 impl oer_radio_port::PortBody<Backend> for UnconfirmedStop {
@@ -1616,9 +1693,11 @@ impl oer_radio_port::PortBody<Backend> for UnconfirmedStop {
 fn abandonment_is_unconfirmed_and_does_not_enter_runtime_fault_storage() {
     for fail_stop in [false, true] {
         let model = Model::default();
+        model.0.borrow_mut().stop_never_settles = true;
         let runtime = new_runtime().runtime;
-        let installed = block_on(runtime.install(model_memory(), model.clone()))
-            .unwrap_or_else(|_| panic!("install"));
+        let installed =
+            block_on(runtime.install(model_memory(), model.clone(), ModelEmergency(model.clone())))
+                .unwrap_or_else(|_| panic!("install"));
         runtime.with_fault_held_for_test(|| {
             let end = block_on(oer_radio_port::run_port(
                 installed,
@@ -1637,8 +1716,8 @@ fn abandonment_is_unconfirmed_and_does_not_enter_runtime_fault_storage() {
             );
         });
         assert!(matches!(
-            block_on(runtime.install(model_memory(), model.clone())),
-            Err((crate::BluetoothInstallError::Abandoned, _, _))
+            block_on(runtime.install(model_memory(), model.clone(), ModelEmergency(model.clone()))),
+            Err((crate::BluetoothInstallError::Abandoned, ..))
         ));
     }
 }

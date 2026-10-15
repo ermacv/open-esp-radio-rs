@@ -8,8 +8,6 @@
 //! primary, modem-timer and NRT callbacks. The resulting affine epoch is the
 //! only value that may keep those routes live.
 
-#![forbid(unsafe_code)]
-
 use core::cell::RefCell;
 
 use crate::bluetooth_route_policy::{
@@ -28,6 +26,7 @@ use oer_interrupt_table::Entry;
 use esp_hal::{interrupt::Priority, peripherals::Interrupt, system::Cpu};
 
 use oer_esp32s31_bluetooth::{
+    emergency::{EmergencyGate, EmergencyInterruptStorage},
     interrupt::{
         InterruptOwnerStorage, NrtDefaultInterruptEpoch, PrimaryInterruptStep,
         SharedInterruptDispatchStorage, step_nrt_default_interrupt, step_primary_interrupt,
@@ -52,8 +51,14 @@ pub(crate) const NRT_INTERRUPT: Interrupt = Interrupt::MODEM_BT_MAC_INT1;
 
 /// The routes of the Controller's three interrupt sources in the image's
 /// interrupt table, which the adapter keeps for every epoch of the boot.
-static ROUTES: Mutex<RefCell<Option<EspHalBluetoothInterruptRoutes>>> =
+static ROUTES: Mutex<RefCell<Option<&'static EspHalBluetoothInterruptRoutes>>> =
     Mutex::new(RefCell::new(None));
+
+static ROUTE_BACKING: static_cell::StaticCell<EspHalBluetoothInterruptRoutes> =
+    static_cell::StaticCell::new();
+
+// Local to Bluetooth; closure survives every abandoned controller owner.
+static EMERGENCY_GATE: EmergencyGate = EmergencyGate::new();
 
 /// The routes of `MODEM_BT_MAC`, `MODEM_LP_TIMER` and `MODEM_BT_MAC_INT1`,
 /// from their tokens in the image's interrupt table, whose entries name
@@ -142,6 +147,9 @@ struct BoundRouteDispatch {
 }
 
 pub(crate) fn dispatch_bound_source(source: EspHalBluetoothInterruptSource) {
+    let Ok(_entry) = EMERGENCY_GATE.enter() else {
+        return;
+    };
     let bound = critical_section::with(|critical_section| {
         BOUND_ROUTE_DISPATCH
             .borrow_ref(critical_section)
@@ -195,12 +203,18 @@ impl EspHalBluetoothInterruptStorage {
         &self,
         routes: EspHalBluetoothInterruptRoutes,
     ) -> Result<(), EspHalBluetoothInterruptRoutes> {
+        let Ok(_entry) = EMERGENCY_GATE.enter() else {
+            return Err(routes);
+        };
         critical_section::with(|critical_section| {
             let mut slot = ROUTES.borrow_ref_mut(critical_section);
             if slot.is_some() {
                 return Err(routes);
             }
-            *slot = Some(routes);
+            let Some(backing) = ROUTE_BACKING.try_uninit() else {
+                return Err(routes);
+            };
+            *slot = Some(backing.write(routes));
             Ok(())
         })
     }
@@ -213,7 +227,32 @@ impl EspHalBluetoothInterruptStorage {
 /// Controller borrows cannot yet be reclaimed. Only board reset clears it.
 #[must_use = "retain the ISR storage reservation through Controller teardown"]
 pub struct PublishedEspHalBluetoothInterruptOwners {
-    _private: (),
+    routes: &'static EspHalBluetoothInterruptRoutes,
+}
+
+#[allow(
+    unsafe_code,
+    reason = "all published-owner access paths retain the same static admission entry"
+)]
+// SAFETY: dispatch_bound_source retains EMERGENCY_GATE through the callback
+// and its wake publication. Direct storage operations and the platform runner
+// enter that same gate, which never reopens. Stable ISR slots, typed CPU routes
+// and controller-visible allocations remain static after emergency closure.
+unsafe impl EmergencyInterruptStorage for PublishedEspHalBluetoothInterruptOwners {
+    fn emergency_gate(&self) -> &EmergencyGate {
+        &EMERGENCY_GATE
+    }
+
+    fn mask_emergency_routes(&self) {
+        // Source 127 can publish timer work, so mask it first. Source 133
+        // has opaque acknowledgement without a reviewed peripheral mask;
+        // mask it before source 124's scheduler groups are disabled.
+        // Each affine route retains its own CPU/source. No global critical
+        // section is acquired and no neighbouring radio route is touched.
+        interrupt_table::disable_route(&self.routes.modem_lp_timer);
+        interrupt_table::disable_route(&self.routes.nrt);
+        interrupt_table::disable_route(&self.routes.primary);
+    }
 }
 
 /// Actual shared register partition after removal from inactive ISR storage.
@@ -246,6 +285,9 @@ impl PublishedEspHalBluetoothInterruptOwners {
         &self,
     ) -> Result<RetiredEspHalBluetoothInterruptRegisters, EspHalBluetoothInterruptRetirementError>
     {
+        let _entry = EMERGENCY_GATE
+            .enter()
+            .map_err(|_| EspHalBluetoothInterruptRetirementError::RoutesBound)?;
         critical_section::with(|cs| {
             retire_interrupt_owner(
                 &mut INTERRUPT_REGISTERS.borrow_ref_mut(cs),
@@ -295,20 +337,22 @@ pub enum EspHalBluetoothNrtInterruptStep {
 /// Why the shared primary/NRT owner could not service an interrupt entry.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EspHalBluetoothSharedInterruptDispatchError {
-    /// The shared owner is absent from process-wide stable storage.
+    /// The shared owner is absent or emergency admission has closed.
     Unavailable,
 }
 
 /// Why scheduler-start interrupt preparation could not borrow stable storage.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EspHalBluetoothSchedulerRunInterruptError {
-    /// The shared owner is absent from process-wide stable storage.
+    /// The shared owner is absent or emergency admission has closed.
     Unavailable,
 }
 
 /// Why task-side source-127 ownership could not enter or leave stable storage.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EspHalBluetoothModemLpTimerStorageError {
+    /// Emergency closure permanently retains this installation's timer.
+    Quarantined,
     /// No timer owner is present in the process-wide slot.
     Missing,
     /// The stable owner is ready for an IRQ and has no pending software work.
@@ -333,6 +377,9 @@ impl PublishedEspHalBluetoothInterruptOwners {
         &self,
     ) -> Result<BluetoothSchedulerRunInterruptsPrepared, EspHalBluetoothSchedulerRunInterruptError>
     {
+        let _entry = EMERGENCY_GATE
+            .enter()
+            .map_err(|_| EspHalBluetoothSchedulerRunInterruptError::Unavailable)?;
         critical_section::with(|critical_section| {
             let mut slot = INTERRUPT_REGISTERS.borrow_ref_mut(critical_section);
             service_stable_owner(&mut slot, |owner| owner.prepare_scheduler_run_interrupts())
@@ -369,6 +416,9 @@ impl PublishedEspHalBluetoothInterruptOwners {
     pub fn take_modem_lp_timer_software_pending(
         &self,
     ) -> Result<ModemLpTimerSoftwarePendingOwner, EspHalBluetoothModemLpTimerStorageError> {
+        let _entry = EMERGENCY_GATE
+            .enter()
+            .map_err(|_| EspHalBluetoothModemLpTimerStorageError::Quarantined)?;
         critical_section::with(|critical_section| {
             let mut slot = MODEM_LP_TIMER.borrow_ref_mut(critical_section);
             let phase = slot
@@ -400,6 +450,12 @@ impl PublishedEspHalBluetoothInterruptOwners {
         &self,
         owner: ModemLpTimerInterruptReadyOwner,
     ) -> Result<(), EspHalBluetoothModemLpTimerRestoreFailure> {
+        let Ok(_entry) = EMERGENCY_GATE.enter() else {
+            return Err(EspHalBluetoothModemLpTimerRestoreFailure {
+                error: EspHalBluetoothModemLpTimerStorageError::Quarantined,
+                owner,
+            });
+        };
         critical_section::with(|critical_section| {
             let mut slot = MODEM_LP_TIMER.borrow_ref_mut(critical_section);
             if !ready_owner_restore_is_admitted(slot.is_some()) {
@@ -421,6 +477,9 @@ impl PublishedEspHalBluetoothInterruptOwners {
 /// Calling it before the consuming route bind or after successful disable is
 /// fail-closed and performs no register access.
 fn service_bound_bluetooth_primary_interrupt() -> EspHalBluetoothPrimaryInterruptStep {
+    let Ok(_entry) = EMERGENCY_GATE.enter() else {
+        return EspHalBluetoothPrimaryInterruptStep::Unavailable;
+    };
     critical_section::with(|critical_section| {
         if BOUND_ROUTE_DISPATCH
             .borrow_ref(critical_section)
@@ -444,6 +503,9 @@ fn service_bound_bluetooth_primary_interrupt() -> EspHalBluetoothPrimaryInterrup
 /// acknowledges only the reviewed default disposition and publishes no
 /// synthetic controller work.
 fn service_bound_bluetooth_nrt_default_interrupt() -> EspHalBluetoothNrtInterruptStep {
+    let Ok(_entry) = EMERGENCY_GATE.enter() else {
+        return EspHalBluetoothNrtInterruptStep::Unavailable;
+    };
     critical_section::with(|critical_section| {
         if BOUND_ROUTE_DISPATCH
             .borrow_ref(critical_section)
@@ -467,6 +529,9 @@ fn service_bound_bluetooth_nrt_default_interrupt() -> EspHalBluetoothNrtInterrup
 /// task ownership remains in stable storage, and executor notification stays
 /// the responsibility of the Controller interrupt service.
 fn service_bound_bluetooth_modem_lp_timer_interrupt() -> EspHalBluetoothModemLpTimerInterruptStep {
+    let Ok(_entry) = EMERGENCY_GATE.enter() else {
+        return EspHalBluetoothModemLpTimerInterruptStep::Unavailable;
+    };
     critical_section::with(|critical_section| {
         if BOUND_ROUTE_DISPATCH
             .borrow_ref(critical_section)
@@ -531,6 +596,9 @@ impl SchedulerRunInterruptStorage for PublishedEspHalBluetoothInterruptOwners {
         value: T,
         operation: impl FnOnce(&mut InterruptRegistersOwner, T) -> R,
     ) -> Result<R, T> {
+        let Ok(_entry) = EMERGENCY_GATE.enter() else {
+            return Err(value);
+        };
         critical_section::with(|cs| {
             let mut slot = INTERRUPT_REGISTERS.borrow_ref_mut(cs);
             match slot.as_mut() {
@@ -558,7 +626,23 @@ impl InterruptOwnerStorage for EspHalBluetoothInterruptStorage {
             ModemLpTimerInterruptReadyOwner,
         ),
     > {
+        let Ok(_entry) = EMERGENCY_GATE.enter() else {
+            return Err((
+                EspHalBluetoothInterruptStorageError::Quarantined,
+                self,
+                interrupts,
+                timer,
+            ));
+        };
         critical_section::with(|critical_section| {
+            let Some(routes) = *ROUTES.borrow_ref(critical_section) else {
+                return Err((
+                    EspHalBluetoothInterruptStorageError::RoutesMissing,
+                    self,
+                    interrupts,
+                    timer,
+                ));
+            };
             let mut interrupt_slot = INTERRUPT_REGISTERS.borrow_ref_mut(critical_section);
             let mut timer_slot = MODEM_LP_TIMER.borrow_ref_mut(critical_section);
             match STORAGE_RESERVATION
@@ -568,7 +652,7 @@ impl InterruptOwnerStorage for EspHalBluetoothInterruptStorage {
                 Ok(()) => {
                     *interrupt_slot = Some(interrupts);
                     *timer_slot = Some(StoredBluetoothModemLpTimerOwner::Ready(timer));
-                    Ok(PublishedEspHalBluetoothInterruptOwners { _private: () })
+                    Ok(PublishedEspHalBluetoothInterruptOwners { routes })
                 }
                 Err(error) => Err((error, self, interrupts, timer)),
             }
@@ -582,6 +666,9 @@ impl ModemLpTimerRetirementStorage for PublishedEspHalBluetoothInterruptOwners {
     fn take_modem_lp_timer_ready_after_routes_disabled(
         &self,
     ) -> Result<ModemLpTimerInterruptReadyOwner, Self::RetireError> {
+        let _entry = EMERGENCY_GATE
+            .enter()
+            .map_err(|_| Self::RetireError::RoutesBound)?;
         critical_section::with(|cs| {
             // A retained (even quarantined) dispatch prevents extraction. Full
             // same-core disable removes it only after every route is inactive.
@@ -720,6 +807,9 @@ impl PublishedEspHalBluetoothInterruptOwners {
         &self,
         dispatch: fn(EspHalBluetoothInterruptSource) -> EspHalBluetoothInterruptDisposition,
     ) -> Result<BoundEspHalBluetoothInterruptEpoch<'_>, EspHalBluetoothInterruptRouteError> {
+        let _entry = EMERGENCY_GATE
+            .enter()
+            .map_err(|_| EspHalBluetoothInterruptRouteError::Quarantined)?;
         let core = Cpu::current();
         critical_section::with(|critical_section| {
             let mut live_route = BOUND_ROUTE_DISPATCH.borrow_ref_mut(critical_section);
@@ -791,6 +881,12 @@ impl<'published> BoundEspHalBluetoothInterruptEpoch<'published> {
     /// acknowledgement path has no controller-side baseline mask. A wrong-core
     /// or inactive-marker rejection returns the complete live epoch unchanged.
     pub fn disable(self) -> Result<(), EspHalBluetoothInterruptRouteDisableFailure<'published>> {
+        let Ok(_entry) = EMERGENCY_GATE.enter() else {
+            return Err(EspHalBluetoothInterruptRouteDisableFailure {
+                error: EspHalBluetoothInterruptRouteError::Quarantined,
+                epoch: self,
+            });
+        };
         let current_core = Cpu::current();
         let disabled = critical_section::with(|critical_section| {
             let mut live_route = BOUND_ROUTE_DISPATCH.borrow_ref_mut(critical_section);
@@ -897,6 +993,13 @@ impl oer_esp32s31_bluetooth::interrupt::InterruptOwnerRestartStorage
             ModemLpTimerInterruptReadyOwner,
         ),
     > {
+        let Ok(_entry) = EMERGENCY_GATE.enter() else {
+            return Err((
+                EspHalBluetoothInterruptStorageError::Quarantined,
+                interrupts,
+                timer,
+            ));
+        };
         critical_section::with(|cs| {
             let mut irq_slot = INTERRUPT_REGISTERS.borrow_ref_mut(cs);
             let mut timer_slot = MODEM_LP_TIMER.borrow_ref_mut(cs);

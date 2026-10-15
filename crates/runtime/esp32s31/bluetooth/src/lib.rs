@@ -14,8 +14,9 @@
 //! await.
 //!
 //! - [`BluetoothRuntime::install`] publishes the global receive chains, takes
-//!   the first controller-time sample and returns the backend with the
-//!   independent driver in `Installed`, so no call is refused as not installed.
+//!   the first controller-time sample and returns an `Installed` pair. The
+//!   backend retains the independent emergency authority and the driver owns
+//!   ordinary radio execution, so no call is refused as not installed.
 //! - The driver, which `run_port` joins with the port's body, drives the
 //!   scheduler: it reports finished events, inserts admitted events, starts
 //!   the idle scheduler, carries list transactions through their hardware
@@ -52,6 +53,13 @@
 //! `LiveBluetoothHardware` joins the powered task endpoint of one Controller
 //! epoch with the platform's interrupt-owner storage, and `run_modem_timer`
 //! drives the source-127 timer task beside the radio.
+//!
+//! Fail-stop publishes permanent poisoning without taking an ISR mutex, then
+//! uses the separate emergency owner to close admission, mask CPU routes and
+//! attempt bounded scheduler stopping. `Stopped` confirms that observation;
+//! `Unconfirmed` also permits outstanding CPU/device work. Both quarantine
+//! static DMA backing until chip reset and neither releases shared clocks,
+//! PHY membership or coexistence ownership.
 
 #[cfg(test)]
 extern crate std;
@@ -76,7 +84,9 @@ pub use hardware::{BluetoothRadioHardware, RxChainPublicationError};
 pub use modem_timer::{ModemTimerFault, run_modem_timer, settle_modem_timer};
 pub use outcome::{BluetoothOutcome, BluetoothReceivedPdu, MAX_PDU_BYTES};
 #[cfg(any(target_arch = "riscv32", test))]
-pub use port::{BluetoothBackend, BluetoothClient, BluetoothEvents, BluetoothPhaseControl};
+pub use port::{
+    BluetoothBackend, BluetoothClient, BluetoothEvents, BluetoothPhaseControl, InstalledDriver,
+};
 #[cfg(any(target_arch = "riscv32", test))]
 pub use runtime::{
     BluetoothDriver, BluetoothFault, BluetoothInstallError, BluetoothRetained, BluetoothRuntime,

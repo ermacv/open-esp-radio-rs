@@ -143,6 +143,8 @@ mod worker {
     /// Why a fresh logical controller-time request was not published.
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub enum ControllerTimeRequestError {
+        /// Emergency quarantine permanently closed hardware admission.
+        Quarantined,
         /// Another logical request or orphan drain is active; no MMIO occurred.
         Busy,
         /// The lower owner already held a request although the durable worker was
@@ -152,6 +154,11 @@ mod worker {
         GenerationExhausted,
         /// A prior ownership mismatch put the worker into fail-stop.
         Faulted,
+    }
+    impl From<oer_esp32s31_hal::bluetooth::emergency::EmergencyClosed> for ControllerTimeRequestError {
+        fn from(_: oer_esp32s31_hal::bluetooth::emergency::EmergencyClosed) -> Self {
+            Self::Quarantined
+        }
     }
 
     /// Result of exactly one controller-time recheck event.
@@ -177,12 +184,19 @@ mod worker {
     /// Fail-stop result of a controller-time recheck event.
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub enum ControllerTimeEventError {
+        /// Emergency quarantine permanently closed hardware admission.
+        Quarantined,
         /// The caller did not present the identity owned by the active request.
         RequestMismatch,
         /// The lower sticky owner disappeared while the worker was active.
         OwnershipLost,
         /// A previous ownership mismatch already stopped this worker.
         Faulted,
+    }
+    impl From<oer_esp32s31_hal::bluetooth::emergency::EmergencyClosed> for ControllerTimeEventError {
+        fn from(_: oer_esp32s31_hal::bluetooth::emergency::EmergencyClosed) -> Self {
+            Self::Quarantined
+        }
     }
 
     /// Executor-neutral logical owner of controller-time sampling.

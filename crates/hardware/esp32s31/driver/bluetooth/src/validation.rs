@@ -44,6 +44,13 @@ pub fn sample_scheduler_stop_busy() -> Option<bool> {
     .ok()
 }
 
+/// Execute the production emergency transaction with its production budgets.
+pub fn emergency_stop() -> crate::emergency::EmergencyOutcome {
+    oer_esp32s31_hal::bluetooth::validation::emergency_stop(
+        crate::scheduler::DIAGNOSTIC_READ_BUDGET,
+    )
+}
+
 /// Run the production execution modify of hardware list `index` until it
 /// leaves `Pending`: zero when command one became ready, one when hardware
 /// rejected it, three when a diagnostic sample never settled, `None` for an

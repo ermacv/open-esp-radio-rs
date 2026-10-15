@@ -4,6 +4,8 @@ pub(crate) mod baseband;
 
 mod connection_control;
 
+pub(crate) mod emergency;
+
 pub(crate) mod controller;
 
 pub(crate) mod device_table;

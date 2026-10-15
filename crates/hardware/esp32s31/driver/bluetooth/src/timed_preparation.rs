@@ -161,6 +161,7 @@ where
 
 const fn event_error(error: ControllerTimeEventError) -> ControllerTimeAcquisitionError {
     match error {
+        ControllerTimeEventError::Quarantined => ControllerTimeAcquisitionError::Quarantined,
         ControllerTimeEventError::RequestMismatch => {
             ControllerTimeAcquisitionError::RequestMismatch
         }

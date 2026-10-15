@@ -29,6 +29,7 @@ inventory.
 | `timed_preparation` | Controller-time preparation shared by timed scheduler admissions |
 | `resources` | Task and inactive interrupt owners split from the clocked client |
 | `runtime_resources` | Interrupt-shared event cells reused by every epoch, and the workers and list-zero publications of one powered epoch; the powered task endpoint performs executor steps, starts the idle scheduler, stops it, publishes the global receive chains and retires its task owner |
+| `emergency` | Independent affine emergency authority, counted task borrows and permanent quarantine |
 | `shutdown` | Retirement of a stopped epoch (Controller output, PHY and BTBB exit) and the Controller reset that returns the clocked client and the BLE PHY allocations |
 | `memory` | Controller-SRAM storage owners and completion values from the memory crate |
 
@@ -61,3 +62,58 @@ fits. Absolute scheduler timestamps keep their reviewed modular projection;
 that representation does not authorize wrapping a portable radio instant.
 First-receive and recurring waits validate their complete geometry before
 encoding the controller-SRAM fields.
+
+## Emergency quarantine
+
+`separate_emergency` consumes the powered task and returns `PortController`
+and `ControllerEmergencyStop`. The backend retains the latter outside the
+unbranded driver. Ordinary task borrows and the complete ISR, including its
+wake publications, enter the same installation-local atomic gate. Emergency
+entry and its bounded waits never enter the ISR's critical section. The gate never
+reopens after an emergency; forgetting a counted borrow fails closed.
+
+`stop` closes admission, wakes the platform runner, then masks the bound CPU
+routes in order 127 (timer work), 133 (opaque NRT source), 124 (primary dynamic
+groups). The affine routes retain their target CPU; emergency masking works
+from either hart and changes no Wi-Fi or IEEE 802.15.4 route. The emergency
+owner holds a reference to the static routes, so neither lookup nor the
+three matrix writes takes the route-storage critical section. An entered operation
+that misses that join prevents every emergency register access.
+
+After CPU exclusion the restricted PAC view samples scheduler BUSY, masks
+the dynamic groups, disables the RUN-event source, waits for command readiness,
+publishes the lifecycle request and waits for a stable BUSY-clear sample.
+An initially idle scheduler skips that transaction, as the vendor does.
+SOURCE(esp32s31): libbtdm_common[18.o]::r_sym_bt_74l62ZLsZuXg67pPHSd7;
+libbtdm_common[18.o]::r_sym_bt_Ak3CRkSbyZRhUlneqclG;
+libble_app[scan_2.o]::brk_sym_scan_fd4yzdFac8vdFTlQ4BPA.
+
+Command readiness permits 10,000 attempts: the vendor increments its counter
+then compares with 9999. BUSY permits 65,536 failed samples, the vendor's
+0x10000 counter threshold. The vendor asserts and continues; the bounded
+implementation returns `Unconfirmed`, omitting the vendor's extra sample
+before its BUSY assertion. Diagnostic-pair stabilization uses the existing
+finite diagnostic budget. The CPU join's 10,000 observations are an agent
+policy using the command ceiling, not a vendor guarantee about ISR latency.
+SOURCE(esp32s31): libbtdm_common[18.o]::r_sym_bt_B8fDByebTHuwRe8FZuRt;
+libbtdm_common[18.o]::r_sym_bt_74l62ZLsZuXg67pPHSd7.
+
+`Stopped` confirms the bounded scheduler observation. `Unconfirmed` names the
+failed join, diagnostic sample, command wait or BUSY wait. Both permanently
+quarantine all static controller-visible storage; neither can reunite the
+ordinary owner or authorize DMA reuse. The runtime publishes permanent
+poisoning and the fail-stop proof carries the hardware outcome; installation
+is refused until chip reset. Dropping or forgetting
+the driver cannot free the `Pin<&'static mut ...>` backing. An unconfirmed
+installation can still have active hardware or a previously entered handler.
+
+Emergency stopping acquires no `SharedRadioLease` and touches no common
+reset, PHY membership, coex configuration or modem clock release. Recovery
+without chip reset is a separate experimental path requiring hardware proof
+of DMA completion and removal of the hardware BLE coex request. Blobray's
+captured `coex_core_release` calls the indexed hardware-timer disable; that
+helper clears enable in the timer's control word and acknowledges its status.
+This observation does not establish that controller emergency shutdown
+reaches it, that DMA writes ended, or that neighboring radios remain usable.
+SOURCE(esp32s31): libcoexist[coexist_core.o]::coex_core_release;
+libcoexist[coexist_hw.o]::coex_hw_timer_disable.

@@ -2634,6 +2634,7 @@ dependencies = [
 name = "oer-esp32s31-hal"
 version = "0.1.0"
 dependencies = [
+ "atomic-waker",
  "critical-section",
  "oer-esp32s31-pac",
  "oer-espressif-coex",
@@ -2831,6 +2832,7 @@ dependencies = [
  "esp-hal",
  "oer-espressif-interrupt-table-esp-hal",
  "oer-interrupt-table",
+ "static_cell",
 ]
 
 [[package]]
@@ -2916,6 +2918,7 @@ dependencies = [
  "oer-esp32s31-phy",
  "oer-espressif-interrupt-table-esp-hal",
  "oer-interrupt-table",
+ "static_cell",
 ]
 
 [[package]]

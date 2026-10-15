@@ -313,7 +313,7 @@ fn poisoned_reason(
         Fault::Runner(Runtime::TransitionTimedOut) => {
             c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-transition-timed-out\r\n"
         }
-        Fault::Runner(Runtime::Abandoned) => {
+        Fault::Runner(Runtime::Abandoned | Runtime::Quarantined) => {
             c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned-abandoned\r\n"
         }
         Fault::Runner(Runtime::Unsettled) => {

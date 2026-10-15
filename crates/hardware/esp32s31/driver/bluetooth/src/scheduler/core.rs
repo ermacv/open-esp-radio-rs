@@ -24,6 +24,8 @@ use crate::{
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ControllerTimeAcquisitionError {
+    /// Emergency quarantine closed the controller's hardware admission.
+    Quarantined,
     /// Another request or abandoned request still owns the latch worker.
     Busy,
     /// The logical worker and lower sticky latch owner disagreed at begin.

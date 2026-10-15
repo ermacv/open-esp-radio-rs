@@ -97,6 +97,20 @@ pub struct TaskResources {
 
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 impl TaskResources {
+    /// Forward the consumed port task's exclusive-admission obligation.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "only the consuming port split calls this forwarding boundary"
+    )]
+    pub(crate) unsafe fn emergency_registers(
+        &mut self,
+    ) -> oer_esp32s31_hal::bluetooth::emergency::EmergencyRegisters {
+        // SAFETY: the caller retains this task behind counted admission and
+        // consumes the one emergency view before exposing the ordinary owner.
+        unsafe { self.registers.emergency_registers() }
+    }
+
     /// The HAL task owner, which proves the Bluetooth module clocks to the
     /// shared PHY domain and BTBB.
     #[cfg(target_arch = "riscv32")]

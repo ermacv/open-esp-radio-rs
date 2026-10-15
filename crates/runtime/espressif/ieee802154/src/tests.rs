@@ -41,7 +41,7 @@ use oer_radio_port::{
 };
 use oer_radio_port::{Child, Root};
 use oer_radio_port::{EventsLost, Poisoned, Seat};
-use oer_time::Duration;
+use oer_time::{Clock, Duration};
 use oer_time_virtual::VirtualClock;
 
 use super::{
@@ -124,7 +124,7 @@ fn channel(number: u8) -> Channel {
 type Runtime<const EVENTS: usize> =
     Ieee802154Runtime<'static, NoopRawMutex, Ieee802154LlModel, VirtualClock, FixedRandom, EVENTS>;
 
-type Backend<K, const EVENTS: usize> = Ieee802154RuntimeBackend<
+type Backend<K, const EVENTS: usize, D = super::NoRoute> = Ieee802154RuntimeBackend<
     'static,
     'static,
     K,
@@ -133,6 +133,7 @@ type Backend<K, const EVENTS: usize> = Ieee802154RuntimeBackend<
     VirtualClock,
     FixedRandom,
     EVENTS,
+    D,
 >;
 
 type Parts = Ieee802154RuntimeParts<'static, Ieee802154LlModel>;
@@ -323,7 +324,7 @@ fn next<const EVENTS: usize>(
 
 /// The radio state of the installed radio.
 fn state<const EVENTS: usize>(runtime: &Runtime<EVENTS>) -> RadioState {
-    runtime.with_installed(|radio, _, _| radio.state())
+    runtime.with_installed(|radio, _, _| radio.state()).unwrap()
 }
 
 fn transmission(frame: &[u8], mode: TxMode, retries: u8) -> SupportedTransmit<'_, Single> {
@@ -633,11 +634,14 @@ fn the_pending_mode_reaches_the_pib_of_the_installed_radio() {
         phase
             .client
             .set_pending_mode(Has::from_const(), oer_ieee802154::AutoPendingMode::Enhanced);
-        let mode = phase.runtime.with_installed(|radio, _, _| {
-            radio.engine().pib().pending_mode(
-                oer_espressif_ieee802154_engine::types::Ieee802154MultipanIndex::CONTEXT0,
-            )
-        });
+        let mode = phase
+            .runtime
+            .with_installed(|radio, _, _| {
+                radio.engine().pib().pending_mode(
+                    oer_espressif_ieee802154_engine::types::Ieee802154MultipanIndex::CONTEXT0,
+                )
+            })
+            .unwrap();
         assert_eq!(mode, oer_ieee802154::AutoPendingMode::Enhanced);
     });
 }
@@ -774,7 +778,8 @@ fn the_clock_and_csl_state_belong_to_the_installed_radio() {
         assert_eq!(
             phase
                 .runtime
-                .with_installed(|radio, _, _| (radio.csl().period, radio.csl().sample_time)),
+                .with_installed(|radio, _, _| (radio.csl().period, radio.csl().sample_time))
+                .unwrap(),
             (100, 5_000)
         );
     });
@@ -841,9 +846,13 @@ fn interface_keys_belong_to_their_interface() {
             let (zero, one) = resources.interfaces;
             let zero = owner.setup().configure(zero.interface);
             let one = owner.setup().configure(one.interface);
-            assert!(runtime.with_installed(|radio, _, _| {
-                radio.capabilities().contains(RadioCapabilities::MULTI_PAN)
-            }));
+            assert!(
+                runtime
+                    .with_installed(|radio, _, _| {
+                        radio.capabilities().contains(RadioCapabilities::MULTI_PAN)
+                    })
+                    .unwrap()
+            );
             let mut owner = enabled_owner(owner.enable().await);
             {
                 let mut phase_loan = owner.phase();
@@ -856,12 +865,14 @@ fn interface_keys_belong_to_their_interface() {
                 second.update_frame_counter(FrameCounterUpdate::SetIfLarger(5));
                 assert_eq!(second.frame_counter(), Some(9));
                 assert_eq!(first.frame_counter(), None);
-                let security = runtime.with_installed(|radio, _, _| {
-                    radio
-                        .interface_mac_keys(Interface::new(1))
-                        .and_then(|keys| *keys)
-                        .map(|mut keys| keys.transmit_security(false))
-                });
+                let security = runtime
+                    .with_installed(|radio, _, _| {
+                        radio
+                            .interface_mac_keys(Interface::new(1))
+                            .and_then(|keys| *keys)
+                            .map(|mut keys| keys.transmit_security(false))
+                    })
+                    .unwrap();
                 let security = security.unwrap();
                 assert_eq!((security.key_id, security.key), (Some(1), [2; 16]));
                 second.remove_mac_keys();
@@ -910,7 +921,8 @@ fn the_role_states_the_runtime_capabilities() {
         assert_eq!(
             phase
                 .runtime
-                .with_installed(|radio, _, _| radio.capabilities()),
+                .with_installed(|radio, _, _| radio.capabilities())
+                .unwrap(),
             IEEE802154_RADIO_CAPABILITIES
         );
     });
@@ -952,14 +964,16 @@ fn enhanced_ack_header_ies_are_kept_while_generation_is_off() {
     enabled::<4>(async |phase| {
         let runtime = phase.runtime;
         let held = || {
-            runtime.with_installed(|radio, _, _| {
-                radio.enhanced_ack().as_mut().map(|generator| {
-                    (
-                        generator.header_ies().to_vec(),
-                        generator.probing().noise_floor(),
-                    )
+            runtime
+                .with_installed(|radio, _, _| {
+                    radio.enhanced_ack().as_mut().map(|generator| {
+                        (
+                            generator.header_ies().to_vec(),
+                            generator.probing().noise_floor(),
+                        )
+                    })
                 })
-            })
+                .unwrap()
         };
         assert!(SupportedHeaderIes::<Single>::new(&[0; 17]).is_none());
         phase
@@ -1001,16 +1015,21 @@ fn enhanced_ack_probing_is_kept_while_generation_is_off() {
             },
         };
         let held = || {
-            phase.runtime.with_installed(|radio, _, _| {
-                radio.enhanced_ack().as_mut().map(|generator| {
-                    let probing = generator.probing();
-                    (
-                        probing.metrics(FrameAddress::Short(initiator.short_address.to_le_bytes())),
-                        probing.metrics(FrameAddress::Extended(initiator.extended_address)),
-                        probing.noise_floor(),
-                    )
+            phase
+                .runtime
+                .with_installed(|radio, _, _| {
+                    radio.enhanced_ack().as_mut().map(|generator| {
+                        let probing = generator.probing();
+                        (
+                            probing.metrics(FrameAddress::Short(
+                                initiator.short_address.to_le_bytes(),
+                            )),
+                            probing.metrics(FrameAddress::Extended(initiator.extended_address)),
+                            probing.noise_floor(),
+                        )
+                    })
                 })
-            })
+                .unwrap()
         };
         phase.control.set_enhanced_ack_probing(&[initiator]);
         assert_eq!(held(), None, "generation is off");
@@ -1130,13 +1149,13 @@ enum AbandonBody {
     Drop,
     Wait,
 }
-impl PortBody<Backend<Single, 4>> for AbandonBody {
+impl<D: super::Ieee802154RouteDetach> PortBody<Backend<Single, 4, D>> for AbandonBody {
     type Output = ();
     async fn run<'p, 'id>(
         self,
-        owner: Owner<'p, 'id, Backend<Single, 4>, Disabled>,
+        owner: Owner<'p, 'id, Backend<Single, 4, D>, Disabled>,
         _: Resources<'id, Single, 4>,
-    ) -> Ended<'id, Backend<Single, 4>, ()> {
+    ) -> Ended<'id, Backend<Single, 4, D>, ()> {
         match self {
             Self::FailStop => {
                 let proof = owner.fail_stop();
@@ -1214,5 +1233,147 @@ fn cancellation_quarantines_without_entering_the_isr_lock() {
                 cause: RadioFault::StateLost
             })
         );
+    });
+}
+
+#[test]
+fn emergency_masks_before_join_and_excludes_late_isr_and_task_entries() {
+    use core::cell::Cell;
+    struct Route {
+        runtime: &'static Runtime<4>,
+        masked: std::rc::Rc<Cell<u32>>,
+    }
+    impl super::Ieee802154RouteDetach for Route {
+        fn detach(&mut self) {
+            panic!("quarantine cannot release the route claim");
+        }
+        fn emergency_mask(&self) {
+            assert!(self.runtime.admission.is_closed(), "close before masking");
+            self.masked.set(self.masked.get() + 1);
+        }
+    }
+    let runtime = runtime::<4>();
+    let masked = std::rc::Rc::new(Cell::new(0));
+    let backend = install::<Single, 4>(runtime, parts()).with_route(Route {
+        runtime,
+        masked: masked.clone(),
+    });
+    let entered = runtime.admission.enter().unwrap();
+    runtime.installed.lock(|installed| {
+        let isr = installed.borrow_mut();
+        let end = block_on(run_port(backend.installed(), AbandonBody::FailStop));
+        assert!(matches!(
+            end,
+            oer_radio_port::PortEnd::FailStopped { output: () }
+        ));
+        assert_eq!(masked.get(), 1);
+        // The first handler still holds its entry and the actual ISR lock.
+        // Late callbacks and tasks must reject before either lock acquisition.
+        runtime.on_interrupt();
+        runtime.set_txrx_statistics(true);
+        runtime.clear_txrx_statistics();
+        assert!(
+            runtime
+                .with_hardware(|_| panic!("quarantined hardware"))
+                .is_none()
+        );
+        assert!(
+            runtime
+                .with_installed(|_, _, _| panic!("quarantined state"))
+                .is_err()
+        );
+        assert!(isr.is_some(), "backing remains installed");
+    });
+    drop(entered);
+    assert!(runtime.admission.is_closed());
+    assert!(runtime.admission.enter().is_err());
+}
+
+struct WaitAfterActiveFailStop<'a> {
+    stop: &'a embassy_sync::signal::Signal<NoopRawMutex, ()>,
+    finish: &'a embassy_sync::signal::Signal<NoopRawMutex, ()>,
+}
+
+#[test]
+fn a_quarantined_runner_never_arms_a_backoff_wait() {
+    let runtime = runtime::<4>();
+    let deadline = runtime
+        .clock()
+        .deadline_after(Duration::from_millis(1))
+        .unwrap();
+    runtime
+        .backoff_until
+        .lock(|backoff| backoff.set(Some(deadline)));
+    let _closed = runtime.admission.close();
+    let mut runner = pin!(runtime.run());
+    assert!(embassy_futures::poll_once(runner.as_mut()).is_pending());
+    assert!(runtime.clock().next_deadline().is_none());
+}
+
+impl PortBody<Backend<Single, 4>> for WaitAfterActiveFailStop<'_> {
+    type Output = u32;
+    async fn run<'p, 'id>(
+        self,
+        mut owner: Owner<'p, 'id, Backend<Single, 4>, Disabled>,
+        resources: Resources<'id, Single, 4>,
+    ) -> Ended<'id, Backend<Single, 4>, u32> {
+        let configured = owner.setup().configure(resources.interfaces.interface);
+        let mut owner = enabled_owner(owner.enable().await);
+        {
+            let phase = owner.phase();
+            let client = phase.clients.client(&configured);
+            assert_eq!(client.receive(channel(11)).await, Ok(()));
+        }
+        self.stop.wait().await;
+        let proof = owner.fail_stop();
+        assert!(matches!(
+            proof.outcome(),
+            oer_radio_port::Abandon::Unconfirmed(_)
+        ));
+        self.finish.wait().await;
+        Ended::fail_stopped(proof, 132)
+    }
+}
+
+#[test]
+fn active_receive_is_quarantined_while_the_body_waits_and_its_output_survives() {
+    use embassy_sync::signal::Signal;
+    let runtime = runtime::<4>();
+    let backend = install::<Single, 4>(runtime, parts());
+    let stop = Signal::new();
+    let finish = Signal::new();
+    let mut port = pin!(run_port(
+        backend.installed(),
+        WaitAfterActiveFailStop {
+            stop: &stop,
+            finish: &finish,
+        }
+    ));
+    assert!(embassy_futures::poll_once(port.as_mut()).is_pending());
+    assert_eq!(
+        state(runtime),
+        RadioState::Resting(RestingState::Receiving {
+            channel: channel(11)
+        })
+    );
+    stop.signal(());
+    assert!(embassy_futures::poll_once(port.as_mut()).is_pending());
+    assert!(runtime.admission.is_closed());
+    runtime.installed.lock(|installed| {
+        let held = installed.borrow_mut();
+        // Retirement has not removed backing or claimed device stopping.
+        assert_eq!(
+            held.as_ref().unwrap().radio.state(),
+            RadioState::Resting(RestingState::Receiving {
+                channel: channel(11)
+            })
+        );
+        runtime.on_interrupt();
+        finish.signal(());
+        assert!(matches!(
+            block_on(port),
+            oer_radio_port::PortEnd::FailStopped { output: 132 }
+        ));
+        assert!(held.is_some());
     });
 }

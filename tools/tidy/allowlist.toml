@@ -645,3 +645,15 @@ reason = "cargo xtask check ui checks the affine emergency authority and its com
 [[uncompiled]]
 path = "crates/radio/port/tests/ui/hardware_stopped_requires_quarantine.rs"
 reason = "cargo xtask check ui checks the affine emergency authority and its compiling twin"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/bluetooth/tests/ui/emergency_affine.rs"
+reason = "cargo xtask check ui checks the affine emergency authority and its compiling twin"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/bluetooth/tests/ui/emergency_borrow.rs"
+reason = "cargo xtask check ui checks the affine emergency authority and its compiling twin"
+
+[[uncompiled]]
+path = "crates/runtime/espressif/ieee802154/tests/ui/durable_installation.rs"
+reason = "cargo xtask check ui rejects temporary installation backing and checks its compiling twin"

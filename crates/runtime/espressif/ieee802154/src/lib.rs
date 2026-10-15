@@ -36,22 +36,24 @@
 //! `phy_common.c` does: the runtime never pauses for it, and an operation
 //! that loses RF ends with its ordinary terminal event.
 //!
-//! Abandonment publishes permanent logical poisoning atomically. It never
-//! enters the mutex that contains the ISR and returns `Unconfirmed`: neither
-//! hardware stopping nor IRQ exclusion is proved. The installation and its
-//! backing remain quarantined until chip reset; ordinary uninstall retains
-//! its existing hardware sequence.
+//! Abandonment closes the installation's atomic admission, masks the already
+//! bound CPU route without the ISR mutex, and joins admitted ISR/task entries
+//! within a finite observation budget. It returns `Unconfirmed`: even a
+//! completed CPU join is no proof that the MAC or DMA stopped. A missed join
+//! also leaves previously admitted CPU work unconfirmed. Installation requires
+//! static runtime and buffer backing; neither can be reused before chip reset.
+//! Ordinary uninstall retains its existing hardware sequence.
 
 #[cfg(test)]
 extern crate std;
 
 mod backend;
+mod emergency;
 mod trace;
 
 use core::{
     cell::{Cell, RefCell},
     convert::Infallible,
-    sync::atomic::{AtomicBool, Ordering},
 };
 
 use embassy_futures::select::{Either, select};
@@ -77,6 +79,7 @@ use oer_ieee802154::{
     FrameCounterUpdate, Interface, LifecycleEvent, MacKeys, RadioCommand, RadioEvent, RadioFault,
     RadioSetting, RadioState, ReceivedFrame, RequestId, RxMetadata, SettingError, TxStatus,
 };
+use oer_radio_port::{Poisoned, PortResult};
 use oer_time::{Duration, Instant, Timer};
 
 pub use backend::{
@@ -450,7 +453,7 @@ pub struct Ieee802154Runtime<'storage, M: RawMutex, H, T, R, const EVENTS: usize
     /// The radio fault that poisoned the port.
     fault: Mutex<M, Cell<Option<RadioFault>>>,
     /// Permanent logical poisoning; emergency entry never takes the ISR lock.
-    abandoned: AtomicBool,
+    admission: emergency::Admission,
 }
 
 impl<
@@ -491,7 +494,7 @@ impl<
             backoff_started: Signal::new(),
             next_id: Mutex::new(Cell::new(1)),
             fault: Mutex::new(Cell::new(None)),
-            abandoned: AtomicBool::new(false),
+            admission: emergency::Admission::new(),
         }
     }
 
@@ -525,34 +528,40 @@ impl<
     /// Returns the installed radio as the port's backend, with the
     /// capabilities marker `K` its composition names; the composition hands
     /// it to `run_port`, whose end returns the engine and the hardware.
+    /// The static receiver and buffer lifetime keep every installation access
+    /// valid when an unconfirmed ISR or DMA outlives a cancelled port future.
     ///
     /// # Errors
     ///
-    /// Returns the parts unchanged if a radio is already installed.
+    /// Returns the parts unchanged if a radio is already installed or the
+    /// runtime has been permanently quarantined.
     #[allow(
         clippy::result_large_err,
         clippy::type_complexity,
         reason = "the no-alloc runtime returns the unconsumed owners by value"
     )]
     pub fn install<K>(
-        &self,
+        &'static self,
         mut parts: Ieee802154RuntimeParts<'storage, H>,
         random: R,
         defaults: Ieee802154PibDefaults,
     ) -> Result<
-        Ieee802154RuntimeBackend<'_, 'storage, K, M, H, T, R, EVENTS>,
+        Ieee802154RuntimeBackend<'static, 'storage, K, M, H, T, R, EVENTS>,
         Ieee802154RuntimeParts<'storage, H>,
-    > {
-        if self.abandoned.load(Ordering::Acquire) {
+    >
+    where
+        'storage: 'static,
+    {
+        let Ok(_entry) = self.admission.enter() else {
             return Err(parts);
-        }
+        };
         #[allow(
             clippy::result_large_err,
             reason = "the no-alloc runtime returns the unconsumed owners by value"
         )]
         let install = |installed: &RefCell<Option<Installed<'storage, H, R>>>| {
             let mut installed = installed.borrow_mut();
-            if self.abandoned.load(Ordering::Acquire) || installed.is_some() {
+            if self.admission.is_closed() || installed.is_some() {
                 return Err(parts);
             }
             parts.engine.enable();
@@ -572,43 +581,50 @@ impl<
     /// Enable the installed radio: it enters sleep, and the queue reserves
     /// the slot of the fault that may end the enabled period, so a queue
     /// full of received frames never loses it.
-    fn enable_locked(&self) -> Result<(), ()> {
-        self.with_installed(|radio, hardware, sink| {
+    fn enable_locked(&self) -> PortResult<(), (), RadioFault> {
+        let _entry = self.admission.enter()?;
+        let enabled = self.with_installed(|radio, hardware, sink| {
             radio.enable(hardware, &self.timer, sink).map_err(|_| ())
         })?;
-        self.events.owed(|owed| owed.fault = true);
-        Ok(())
+        if enabled.is_ok() {
+            self.events.owed(|owed| owed.fault = true);
+        }
+        Ok(enabled)
     }
 
     /// Disable the installed radio, ending the operation in flight with its
     /// terminal; a disabled radio stays as it is.
-    fn disable_locked(&self) {
+    fn disable_locked(&self) -> Result<(), Poisoned<RadioFault>> {
+        let _entry = self.admission.enter()?;
         self.with_installed(|radio, hardware, sink| {
             if radio.state() != RadioState::Disabled {
                 let _ = radio.disable(hardware, &self.timer, sink);
             }
-        });
+        })?;
         self.events.owed(|owed| {
             owed.operation = false;
             owed.fault = false;
         });
+        Ok(())
     }
 
     /// Collect the vendor's TX/RX statistics
     /// (`CONFIG_IEEE802154_TXRX_STATISTIC`), from zero, or stop collecting
     /// them.
     pub fn set_txrx_statistics(&self, collect: bool) {
-        self.with_installed(|radio, _, _| radio.engine().set_txrx_statistics(collect));
+        let _ = self.with_installed(|radio, _, _| radio.engine().set_txrx_statistics(collect));
     }
 
-    /// The TX/RX statistics while collected.
+    /// The TX/RX statistics while collected and admission remains open.
     pub fn txrx_statistics(&self) -> Option<Ieee802154TxRxStatistics> {
         self.with_installed(|radio, _, _| radio.engine().txrx_statistics())
+            .ok()
+            .flatten()
     }
 
     /// `esp_ieee802154_txrx_statistic_clear`.
     pub fn clear_txrx_statistics(&self) {
-        self.with_installed(|radio, _, _| radio.engine().clear_txrx_statistics());
+        let _ = self.with_installed(|radio, _, _| radio.engine().clear_txrx_statistics());
     }
 
     /// Replace the engine's software-coexistence priorities.
@@ -616,12 +632,12 @@ impl<
         &self,
         coexistence: oer_espressif_ieee802154_engine::coex::Ieee802154Coexistence,
     ) {
-        self.with_installed(|radio, _, _| radio.engine().set_coexistence(coexistence));
+        let _ = self.with_installed(|radio, _, _| radio.engine().set_coexistence(coexistence));
     }
 
     /// Run `entry` on the radio's hardware under the runtime's lock, for a
     /// diagnostic read such as the MAC power sequence; `None` while no radio
-    /// is installed.
+    /// is installed or emergency quarantine has closed admission.
     pub fn with_hardware<O>(&self, entry: impl FnOnce(&mut H) -> O) -> Option<O> {
         self.with_held(|_, hardware, _| entry(hardware))
     }
@@ -654,12 +670,13 @@ impl<
     }
 
     /// Apply one portable setting to the installed radio.
-    fn apply_setting(&self, setting: RadioSetting<'_>) -> Result<(), SettingError> {
-        self.installed.lock(|installed| {
+    fn apply_setting(&self, setting: RadioSetting<'_>) -> PortResult<(), SettingError, RadioFault> {
+        let _entry = self.admission.enter()?;
+        Ok(self.installed.lock(|installed| {
             let mut installed = installed.borrow_mut();
             let installed = installed.as_mut().expect(INSTALLED);
             apply_setting(&mut installed.radio, &mut installed.parked_ack, setting)
-        })
+        }))
     }
 
     /// Run `entry` on the installed radio and its hardware.
@@ -670,15 +687,16 @@ impl<
             &mut H,
             &mut QueueSink<'_, M, EVENTS>,
         ) -> O,
-    ) -> O {
-        self.installed.lock(|installed| {
+    ) -> Result<O, Poisoned<RadioFault>> {
+        let _entry = self.admission.enter()?;
+        Ok(self.installed.lock(|installed| {
             let mut installed = installed.borrow_mut();
             let installed = installed.as_mut().expect(INSTALLED);
             let mut sink = QueueSink {
                 events: &self.events,
             };
             entry(&mut installed.radio, &mut installed.hardware, &mut sink)
-        })
+        }))
     }
 
     /// Run `entry` on the radio and its hardware while a radio is
@@ -692,6 +710,7 @@ impl<
             &mut QueueSink<'_, M, EVENTS>,
         ) -> O,
     ) -> Option<O> {
+        let _entry = self.admission.enter().ok()?;
         self.installed.lock(|installed| {
             let mut installed = installed.borrow_mut();
             let installed = installed.as_mut()?;
@@ -709,6 +728,9 @@ impl<
     /// The platform interrupt handler (`ieee802154_isr`). Does nothing while
     /// no radio is installed.
     pub fn on_interrupt(&self) {
+        let Ok(_entry) = self.admission.enter() else {
+            return;
+        };
         if let Some(backoff) = self.with_held(|radio, port, sink| {
             radio.isr(port, &self.timer, sink);
             radio.take_delay()
@@ -719,7 +741,11 @@ impl<
 
     /// Admit and start one portable command. An operation reserves its
     /// terminal event's slot first and is refused while no slot is free.
-    fn submit_locked(&self, command: RadioCommand<'_>) -> Result<AcceptedCommand, CommandError> {
+    fn submit_locked(
+        &self,
+        command: RadioCommand<'_>,
+    ) -> PortResult<AcceptedCommand, CommandError, RadioFault> {
+        let _entry = self.admission.enter()?;
         let operation = matches!(
             command,
             RadioCommand::Transmit(_)
@@ -750,20 +776,24 @@ impl<
                 self.events.owed(|owed| owed.operation = false);
             }
             Ok((accepted, radio.take_delay()))
-        });
-        let (accepted, backoff) = submitted?;
+        })?;
+        let (accepted, backoff) = match submitted {
+            Ok(submitted) => submitted,
+            Err(refusal) => return Ok(Err(refusal)),
+        };
         self.start_backoff(backoff);
-        accepted
+        Ok(accepted)
     }
 
     /// End the running operation `target` through its terminal event.
-    fn cancel_locked(&self, target: RequestId) -> Result<(), CancelError> {
+    fn cancel_locked(&self, target: RequestId) -> PortResult<(), CancelError, RadioFault> {
+        let _entry = self.admission.enter()?;
         let (cancelled, backoff) = self.with_installed(|radio, hardware, sink| {
             let cancelled = radio.cancel(hardware, &self.timer, target, sink);
             (cancelled, radio.take_delay())
-        });
+        })?;
         self.start_backoff(backoff);
-        cancelled
+        Ok(cancelled)
     }
 
     /// The radio's runner: a transmission's CSMA-CA backoff or retry delay,
@@ -771,8 +801,22 @@ impl<
     ///
     /// Poll it for as long as the runtime is used, beside the consumer of
     /// the port's events; it never ends. Dropping it keeps the delay for the
-    /// next runner.
+    /// next runner. Each poll holds admission through its mutex accesses and
+    /// wake publications, releasing it before a pending wait. After emergency
+    /// closure it stays pending without accessing the installation; the port's
+    /// independent retirement notification ends the joined driver.
     pub async fn run(&self) -> Infallible {
+        let mut running = core::pin::pin!(self.run_admitted());
+        core::future::poll_fn(|context| {
+            let Ok(_entry) = self.admission.enter() else {
+                return core::task::Poll::Pending;
+            };
+            core::future::Future::poll(running.as_mut(), context)
+        })
+        .await
+    }
+
+    async fn run_admitted(&self) -> Infallible {
         loop {
             let until = self.backoff_until.lock(Cell::get);
             let backoff = async {

@@ -82,6 +82,12 @@ pub type Ieee802154SystemBackend<K> = Ieee802154RuntimeBackend<
 pub struct BoundRoute(Option<BoundEspHalIeee802154InterruptRoute>);
 
 impl oer_espressif_ieee802154_runtime::Ieee802154RouteDetach for BoundRoute {
+    fn emergency_mask(&self) {
+        if let Some(bound) = self.0.as_ref() {
+            bound.emergency_mask();
+        }
+    }
+
     fn detach(&mut self) {
         if let Some(bound) = self.0.take()
             && bound.quiesce().is_err()

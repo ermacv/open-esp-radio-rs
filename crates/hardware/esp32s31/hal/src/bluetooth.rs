@@ -18,6 +18,8 @@
 
 use core::fmt;
 
+pub mod emergency;
+
 use oer_esp32s31_pac::{
     BluetoothDirectionFindingDisabledBaselinePrepared, BluetoothInterruptRegisters,
     BluetoothInterruptSetup as PacBluetoothInterruptSetup, BluetoothModemLpTimerRegisters,

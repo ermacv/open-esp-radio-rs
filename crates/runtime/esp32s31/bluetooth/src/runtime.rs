@@ -123,6 +123,8 @@ pub enum BluetoothRuntimeFault<E> {
     TransitionTimedOut,
     /// The port's owner was abandoned ([`BluetoothRuntime::abandon`]).
     Abandoned,
+    /// Emergency admission refused a hardware operation.
+    Quarantined,
     /// After `Disable`, the outcome queue still owed the end of an admitted
     /// event: its accounting and the radio disagree.
     Unsettled,
@@ -163,6 +165,8 @@ pub struct BluetoothRetained<
     pub radio: Radio<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>,
     /// The hardware.
     pub hardware: H,
+    /// The independent emergency authority, retained with the failed task.
+    pub emergency: H::EmergencyStop,
 }
 
 /// Why a radio was not installed.
@@ -223,16 +227,19 @@ impl<
 > Installed<H, LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>
 {
     /// Restore the BLE PHY ETM route if a test session still holds it.
-    fn restore_phy_route(&mut self) {
+    fn restore_phy_route(
+        &mut self,
+    ) -> Result<(), oer_esp32s31_bluetooth::emergency::EmergencyClosed> {
         if let Some(route) = self.phy_route.take() {
-            self.hardware.restore_phy_etm_route(route);
+            self.hardware.restore_phy_etm_route(route)?;
         }
+        Ok(())
     }
 
     /// Stop driving the radio after a hardware fault.
-    fn fault(&mut self) {
+    fn fault(&mut self) -> Result<(), oer_esp32s31_bluetooth::emergency::EmergencyClosed> {
         self.faulted = true;
-        self.restore_phy_route();
+        self.restore_phy_route()
     }
 }
 
@@ -799,6 +806,7 @@ impl<
             RX_PACKETS,
         >,
         hardware: H,
+        emergency: H::EmergencyStop,
     ) -> Result<
         oer_radio_port::Installed<
             BluetoothBackend<
@@ -832,11 +840,15 @@ impl<
                 RX_PACKETS,
             >,
             H,
+            H::EmergencyStop,
         ),
     > {
-        let driver = self.install_driver(memory, hardware).await?;
+        let driver = match self.install_driver(memory, hardware).await {
+            Ok(driver) => driver,
+            Err((error, memory, hardware)) => return Err((error, memory, hardware, emergency)),
+        };
         Ok(oer_radio_port::Installed::new(
-            BluetoothBackend::new(self),
+            BluetoothBackend::new(self, emergency),
             driver,
         ))
     }
@@ -904,7 +916,12 @@ impl<
         if let Err(error) = hardware.publish_rx_chains(&memory.scanning, &memory.non_scanning) {
             return Err((BluetoothInstallError::RxChains(error), memory, hardware));
         }
-        hardware.publish_device_table(memory.device_table.publication());
+        if hardware
+            .publish_device_table(memory.device_table.publication())
+            .is_err()
+        {
+            return Err((BluetoothInstallError::Abandoned, memory, hardware));
+        }
         let sample = match sample_time(&self.timer, &mut hardware).await {
             Ok(sample) => sample,
             Err(error) => return Err((BluetoothInstallError::Time(error), memory, hardware)),
@@ -1176,15 +1193,15 @@ impl<
         ended
     }
 
-    /// Poison the runtime synchronously and refuse installation until reset.
-    /// This does not prove hardware stopping or interrupt exclusion. A dropped or
+    /// Stop the runtime at once, synchronously: poison it, halt its driver
+    /// at its next pass and refuse any install until a reset. A dropped or
     /// fail-stopped port owner calls it ([`oer_radio_port::PortBackend::abandon`]);
     /// the radio and its hardware stay unreachable, and the composition
     /// keeps the interrupt routes and power owners fail-stop.
     pub fn abandon(&self) {
         self.abandoned.store(true, Ordering::Release);
-        // The port's separate latch wakes its core and driver. No runtime
-        // mutex may be acquired here: an entered ISR could still hold it.
+        // The lifecycle latch wakes the core and its driver. An emergency
+        // publisher never acquires a mutex that an entered ISR could hold.
     }
 
     #[cfg(test)]
@@ -1459,8 +1476,11 @@ impl<
         &mut self,
         fault: BluetoothRuntimeFault<H::StartError>,
     ) -> BluetoothRuntimeFault<H::StartError> {
+        let fault = match self.installed.fault() {
+            Ok(()) => fault,
+            Err(_) => BluetoothRuntimeFault::Quarantined,
+        };
         self.fault = Some(fault);
-        self.installed.fault();
         if let Some((ticket, _)) = self.runtime.request.try_take() {
             let poisoned = self.runtime.poison(fault);
             self.runtime
@@ -1557,18 +1577,26 @@ impl<
                 if let Some((id, _)) = event {
                     runtime.outcomes.withdraw_event(id);
                 }
-                installed.fault();
+                installed
+                    .fault()
+                    .map_err(|_| runtime.poison(BluetoothRuntimeFault::Quarantined))?;
                 return Err(runtime
                     .poisoned()
                     .expect("a radio fault poisons the runtime"));
             }
         }
         if starts_scanner {
-            installed.hardware.publish_scan_start();
+            installed
+                .hardware
+                .publish_scan_start()
+                .map_err(|_| runtime.poison(BluetoothRuntimeFault::Quarantined))?;
         }
         if changes_list {
             let publication = installed.radio.device_table_publication();
-            installed.hardware.publish_device_table(publication);
+            installed
+                .hardware
+                .publish_device_table(publication)
+                .map_err(|_| runtime.poison(BluetoothRuntimeFault::Quarantined))?;
         }
         Ok(Ok(()))
     }
@@ -1611,7 +1639,9 @@ impl<
         if installed.radio.stopped().is_some()
             && let Err(fault) = runtime.resume_installed(installed).await
         {
-            installed.fault();
+            installed
+                .fault()
+                .map_err(|_| runtime.poison(BluetoothRuntimeFault::Quarantined))?;
             return Err(runtime.poison(fault));
         }
         runtime.outcomes.open();
@@ -1627,11 +1657,15 @@ impl<
         }
         let installed = &mut self.installed;
         if let Err(fault) = runtime.withdraw_stopped(installed).await {
-            installed.fault();
+            installed
+                .fault()
+                .map_err(|_| runtime.poison(BluetoothRuntimeFault::Quarantined))?;
             return Err(runtime.poison(fault));
         }
         if !runtime.outcomes.close() {
-            installed.fault();
+            installed
+                .fault()
+                .map_err(|_| runtime.poison(BluetoothRuntimeFault::Quarantined))?;
             return Err(runtime.poison(BluetoothRuntimeFault::Unsettled));
         }
         Ok(())
@@ -1673,7 +1707,9 @@ impl<
                 }
             }
         }
-        installed.restore_phy_route();
+        installed
+            .restore_phy_route()
+            .map_err(|_| BluetoothUninstallError::Fault(BluetoothRuntimeFault::Quarantined))?;
         Ok(())
     }
 
@@ -1695,10 +1731,12 @@ impl<
     )]
     pub fn into_parts(
         self,
+        emergency: H::EmergencyStop,
     ) -> Result<
         (
             Radio<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>,
             H,
+            H::EmergencyStop,
         ),
         BluetoothRetained<
             H,
@@ -1723,12 +1761,13 @@ impl<
             Ok(()) => {
                 self.runtime.outcomes.reset();
                 self.runtime.occupied.store(false, Ordering::Release);
-                Ok((radio, hardware))
+                Ok((radio, hardware, emergency))
             }
             Err(error) => Err(BluetoothRetained {
                 error,
                 radio,
                 hardware,
+                emergency,
             }),
         }
     }
@@ -1911,12 +1950,12 @@ impl<
         };
         // Drain a prior captured observation before transferring the final
         // stopped snapshot. No finished-list bit may be silently ignored.
-        drain_finished_lists(installed, sink);
+        drain_finished_lists(installed, sink).map_err(|_| BluetoothRuntimeFault::Quarantined)?;
         installed
             .hardware
             .capture_stopped_finished_lists(&stopped)
             .map_err(BluetoothRuntimeFault::FinishedLists)?;
-        drain_finished_lists(installed, sink);
+        drain_finished_lists(installed, sink).map_err(|_| BluetoothRuntimeFault::Quarantined)?;
         installed
             .radio
             .enter_stopped(stopped)
@@ -1947,13 +1986,18 @@ impl<
         >,
         sink: &mut impl BluetoothRadioSink,
     ) -> Result<Pass, BluetoothRuntimeFault<H::StartError>> {
-        drain_finished_lists(installed, sink);
-        if let Some(wake) = installed.hardware.take_wake() {
+        drain_finished_lists(installed, sink).map_err(|_| BluetoothRuntimeFault::Quarantined)?;
+        if let Some(wake) = installed
+            .hardware
+            .take_wake()
+            .map_err(|_| BluetoothRuntimeFault::Quarantined)?
+        {
             installed
                 .hardware
                 .capture_finished_lists(wake)
                 .map_err(BluetoothRuntimeFault::FinishedLists)?;
-            drain_finished_lists(installed, sink);
+            drain_finished_lists(installed, sink)
+                .map_err(|_| BluetoothRuntimeFault::Quarantined)?;
         }
         if installed.faulted {
             return Ok(Pass::Idle);
@@ -1967,7 +2011,10 @@ impl<
                 match installed.radio.advance(observation, sink) {
                     Ok(step) => step,
                     Err(fault) => {
-                        installed.hardware.recover(fault);
+                        installed
+                            .hardware
+                            .recover(fault)
+                            .map_err(|_| BluetoothRuntimeFault::Quarantined)?;
                         installed.awaiting = None;
                         return Ok(Pass::Idle);
                     }
@@ -1992,7 +2039,10 @@ impl<
             }
             RadioStep::StopScheduler => Ok(Pass::Stop),
             RadioStep::EnterTest(insertion) => {
-                let route = installed.hardware.disable_phy_etm_route();
+                let route = installed
+                    .hardware
+                    .disable_phy_etm_route()
+                    .map_err(|_| BluetoothRuntimeFault::Quarantined)?;
                 installed.phy_route = Some(route);
                 installed
                     .hardware
@@ -2001,7 +2051,9 @@ impl<
                 Ok(Pass::Continue)
             }
             RadioStep::LeaveTest => {
-                installed.restore_phy_route();
+                installed
+                    .restore_phy_route()
+                    .map_err(|_| BluetoothRuntimeFault::Quarantined)?;
                 Ok(Pass::Continue)
             }
             RadioStep::Transaction(step) => {
@@ -2050,18 +2102,18 @@ fn drain_finished_lists<
         ITEMS,
     >,
     sink: &mut impl BluetoothRadioSink,
-) {
+) -> Result<(), oer_esp32s31_bluetooth::emergency::EmergencyClosed> {
     loop {
-        match installed.hardware.next_finished_list() {
+        match installed.hardware.next_finished_list()? {
             SchedulerFinishedListWorkerStep::Idle | SchedulerFinishedListWorkerStep::Complete => {
-                return;
+                return Ok(());
             }
             SchedulerFinishedListWorkerStep::List { observed, more } => {
                 if observed.index() == BluetoothSchedulerHardwareListIndex::ZERO {
                     installed.radio.complete(sink);
                 }
                 if !more {
-                    return;
+                    return Ok(());
                 }
             }
         }

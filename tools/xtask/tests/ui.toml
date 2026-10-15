@@ -284,3 +284,20 @@ cases = [
     "crates/protocols/ieee802154/tests/ui/completed_constructor.rs",
     "crates/protocols/ieee802154/tests/ui/unsupported_feature.rs",
 ]
+
+[[suite]]
+name = "bluetooth-emergency-ownership"
+packages = ["oer-esp32s31-bluetooth"]
+features = []
+targets = ["esp32s31"]
+cases = [
+    "crates/hardware/esp32s31/driver/bluetooth/tests/ui/emergency_affine.rs",
+    "crates/hardware/esp32s31/driver/bluetooth/tests/ui/emergency_borrow.rs",
+]
+
+[[suite]]
+name = "ieee802154-emergency-ownership"
+packages = ["oer-espressif-ieee802154-runtime", "oer-espressif-ieee802154-engine", "embassy-sync", "oer-time"]
+features = []
+targets = ["host", "esp32s31"]
+cases = ["crates/runtime/espressif/ieee802154/tests/ui/durable_installation.rs"]

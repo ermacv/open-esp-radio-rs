@@ -52,6 +52,7 @@ pub use bluetooth::{
     },
     device_table::BluetoothDeviceTablePublished,
     direction_finding::BluetoothDirectionFindingDisabledBaselinePrepared,
+    emergency::BluetoothEmergencyRegisters,
     interrupt::{
         BluetoothInterruptOutputPrepared, BluetoothNrtInterruptAcknowledged,
         BluetoothPrimaryFaultSources, BluetoothPrimaryInterruptEpoch,

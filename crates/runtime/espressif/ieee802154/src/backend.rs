@@ -202,6 +202,10 @@ where
 pub trait Ieee802154RouteDetach {
     /// Mask the route, so the interrupt entry never runs again.
     fn detach(&mut self);
+    /// Mask the already-bound route without taking the ISR mutex or waiting.
+    /// Retain its claim until chip reset. Called after closing admission and
+    /// before the finite join of entered ISR/task operations.
+    fn emergency_mask(&self);
 }
 
 /// No route to detach, as a backend that never ran a port has.
@@ -209,6 +213,7 @@ pub struct NoRoute;
 
 impl Ieee802154RouteDetach for NoRoute {
     fn detach(&mut self) {}
+    fn emergency_mask(&self) {}
 }
 
 /// The installed runtime as the IEEE 802.15.4 port's backend, with the
@@ -431,11 +436,7 @@ where
 
     /// The radio's fault, once it poisoned the port.
     pub(super) fn poisoned(&self) -> Result<(), Poisoned<RadioFault>> {
-        if self.abandoned.load(core::sync::atomic::Ordering::Acquire) {
-            return Err(Poisoned {
-                cause: RadioFault::StateLost,
-            });
-        }
+        let _entry = self.admission.enter()?;
         match self.fault.lock(Cell::get) {
             Some(cause) => Err(Poisoned { cause }),
             None => Ok(()),
@@ -444,6 +445,9 @@ where
 
     /// Poison the port with `fault`.
     fn poison(&self, fault: RadioFault) {
+        let Ok(_entry) = self.admission.enter() else {
+            return;
+        };
         self.fault.lock(|cell| {
             if cell.get().is_none() {
                 cell.set(Some(fault));
@@ -457,9 +461,8 @@ where
     /// operation in flight), as the vendor's setters do; the owner shape's
     /// types admit only configurations it takes, so a refusal is a fault.
     fn configure(&self, configuration: Configuration) {
-        if self
-            .with_installed(|radio, hardware, _| radio.configure(hardware, configuration))
-            .is_err()
+        if let Ok(Err(_)) =
+            self.with_installed(|radio, hardware, _| radio.configure(hardware, configuration))
         {
             self.poison(RadioFault::StateLost);
         }
@@ -468,7 +471,10 @@ where
     /// One setting of `interface`: its own on a multi-PAN radio, the
     /// radio's on a single-interface one.
     fn configure_interface(&self, interface: Interface, setting: InterfaceSetting) {
-        let multipan = self.with_installed(|radio, _, _| radio.interfaces()) > 1;
+        let Ok(interfaces) = self.with_installed(|radio, _, _| radio.interfaces()) else {
+            return;
+        };
+        let multipan = interfaces > 1;
         let configuration = if multipan {
             Configuration::Interface { interface, setting }
         } else {
@@ -496,7 +502,7 @@ where
     /// Apply one radio setting; the validated values admit only settings
     /// the radio takes, so a refusal is a fault.
     fn setting(&self, setting: RadioSetting<'_>) {
-        if self.apply_setting(setting).is_err() {
+        if let Ok(Err(_)) = self.apply_setting(setting) {
             self.poison(RadioFault::StateLost);
         }
     }
@@ -510,7 +516,10 @@ where
         if held.applied.get() == Some(resting) || held.permits.in_flight().is_some() {
             return;
         }
-        if self.with_installed(|radio, _, _| radio.state()) == RadioState::Disabled {
+        let Ok(state) = self.with_installed(|radio, _, _| radio.state()) else {
+            return;
+        };
+        if state == RadioState::Disabled {
             return;
         }
         let command = match resting {
@@ -522,10 +531,10 @@ where
             Wish::Sleep | Wish::Waiting(_) => RadioCommand::Sleep { id: self.mint_id() },
         };
         match self.submit_locked(command) {
-            Ok(_) => held.applied.set(Some(resting)),
+            Ok(Ok(_)) => held.applied.set(Some(resting)),
             // An operation the radio still runs; its terminal applies it.
-            Err(CommandError::Busy { .. }) => {}
-            Err(_) => self.poison(RadioFault::StateLost),
+            Ok(Err(CommandError::Busy { .. })) | Err(_) => {}
+            Ok(Err(_)) => self.poison(RadioFault::StateLost),
         }
     }
 
@@ -541,7 +550,7 @@ where
         command: RadioCommand<'_>,
     ) -> Result<(), Poisoned<RadioFault>> {
         self.poisoned()?;
-        if self.submit_locked(command).is_err() {
+        if self.submit_locked(command)?.is_err() {
             // The permit and the validated values exclude every refusal:
             // the radio's state and the runtime's disagree.
             self.poison(RadioFault::StateLost);
@@ -608,7 +617,7 @@ where
         ready(
             self.runtime
                 .poisoned()
-                .map(|()| self.runtime.enable_locked().map_err(|_| ())),
+                .and_then(|()| self.runtime.enable_locked()),
         )
     }
 
@@ -625,7 +634,14 @@ where
         let runtime = self.runtime;
         // Disabling ends the operation in flight with its terminal; every
         // queued terminal goes to the sink, its permit back first.
-        runtime.disable_locked();
+        let Ok(_entry) = runtime.admission.enter() else {
+            return ready(Err(Poisoned {
+                cause: RadioFault::StateLost,
+            }));
+        };
+        if let Err(poisoned) = runtime.disable_locked() {
+            return ready(Err(poisoned));
+        }
         while let Some(taken) = runtime.events.take() {
             if let Ok(event) = taken
                 && let Some(port) = take_terminal(runtime, held, event)
@@ -753,10 +769,13 @@ where
     }
 
     fn abandon(&mut self, call: oer_radio_port::Quarantine) -> oer_radio_port::Abandon {
-        self.runtime
-            .abandoned
-            .store(true, core::sync::atomic::Ordering::Release);
-        // No engine, event-queue or route mutex here: the ISR may hold it.
+        let closed = self.runtime.admission.close();
+        if let Some(route) = self.route.as_ref() {
+            route.emergency_mask();
+        }
+        let _cpu_excluded = closed.join(crate::emergency::JOIN_OBSERVATIONS);
+        // CPU exclusion is insufficient: no independent MAC/DMA completion
+        // proof exists. Both join outcomes require permanent static backing.
         oer_radio_port::Abandon::Unconfirmed(call)
     }
 }
@@ -1148,7 +1167,7 @@ where
         ready(
             self.runtime
                 .poisoned()
-                .map(|()| self.runtime.cancel_locked(token.id)),
+                .and_then(|()| self.runtime.cancel_locked(token.id)),
         )
     }
 }
@@ -1209,11 +1228,14 @@ where
     }
 
     fn frame_counter(&self) -> Option<u32> {
-        self.runtime.with_installed(|radio, _, _| {
-            radio
-                .interface_mac_keys(Interface::new(I))
-                .and_then(|keys| keys.as_ref().map(MacKeys::frame_counter))
-        })
+        self.runtime
+            .with_installed(|radio, _, _| {
+                radio
+                    .interface_mac_keys(Interface::new(I))
+                    .and_then(|keys| keys.as_ref().map(MacKeys::frame_counter))
+            })
+            .ok()
+            .flatten()
     }
 
     fn set_pending_mode(&self, _: Has<K, SourceMatch>, mode: AutoPendingMode) {

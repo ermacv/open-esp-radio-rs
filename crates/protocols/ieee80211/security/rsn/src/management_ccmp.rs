@@ -17,7 +17,7 @@
 
 use aes::{
     Aes128,
-    cipher::{BlockEncrypt, KeyInit, generic_array::GenericArray},
+    cipher::{KeyInit, generic_array::GenericArray},
 };
 use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -34,17 +34,13 @@ const AAD_MASKED_FLAGS: u8 = 0x08 | 0x10 | 0x20;
 const MANAGEMENT_NONCE_FLAGS: u8 = 0x10;
 const AAD_LEN: usize = 22;
 const NONCE_LEN: usize = 13;
-/// CCM flags of the first authentication block: Adata, an 8-byte MIC and
-/// a 2-byte length field.
-const B0_FLAGS: u8 = 0x40 | (((MIC_LEN as u8 - 2) / 2) << 3) | 1;
-/// CCM flags of every counter block: a 2-byte counter.
-const COUNTER_FLAGS: u8 = 1;
-
 /// Why a protected management frame did not open.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ManagementCcmpError {
     /// Shorter than a header, CCMP header and MIC.
     Truncated,
+    /// Beyond the two-byte CCM length field.
+    TooLong,
     /// The Protected Frame bit is clear.
     NotProtected,
     /// The CCMP header lacks its Extended IV bit.
@@ -111,39 +107,10 @@ impl ManagementCcmpReceiver {
         let mic_start = frame.len() - MIC_LEN;
         let body_len = mic_start - body_start;
 
-        // Decrypt the body with counter blocks one and up.
-        for (block_index, chunk) in frame[body_start..mic_start].chunks_mut(16).enumerate() {
-            let mut stream = counter_block(&nonce, block_index as u16 + 1);
-            cipher.encrypt_block(&mut stream);
-            for (byte, key) in chunk.iter_mut().zip(stream.iter()) {
-                *byte ^= key;
-            }
-            stream.zeroize();
-        }
-
-        // Authenticate the additional data and the plaintext.
-        let mut mac = GenericArray::from([0_u8; 16]);
-        mac[0] = B0_FLAGS;
-        mac[1..14].copy_from_slice(&nonce);
-        mac[14..16].copy_from_slice(&(body_len as u16).to_be_bytes());
-        cipher.encrypt_block(&mut mac);
-        let mut aad_blocks = [0_u8; 32];
-        aad_blocks[..2].copy_from_slice(&(AAD_LEN as u16).to_be_bytes());
-        aad_blocks[2..2 + AAD_LEN].copy_from_slice(&aad);
-        for block in aad_blocks.chunks(16) {
-            absorb(&cipher, &mut mac, block);
-        }
-        for block in frame[body_start..mic_start].chunks(16) {
-            absorb(&cipher, &mut mac, block);
-        }
-        let mut first = counter_block(&nonce, 0);
-        cipher.encrypt_block(&mut first);
-        let mut expected = [0; MIC_LEN];
-        for (index, byte) in expected.iter_mut().enumerate() {
-            *byte = mac[index] ^ first[index];
-        }
-        first.zeroize();
-        mac.zeroize();
+        u16::try_from(body_len).map_err(|_| ManagementCcmpError::TooLong)?;
+        crate::ccm::crypt(&cipher, &nonce, &mut frame[body_start..mic_start]);
+        let expected =
+            crate::ccm::authenticate(&cipher, &nonce, &aad, &frame[body_start..mic_start]);
         if !bool::from(expected.ct_eq(&frame[mic_start..])) {
             // Restore nothing: the caller drops a frame that failed.
             return Err(ManagementCcmpError::InvalidMic);
@@ -151,25 +118,6 @@ impl ManagementCcmpReceiver {
         self.last_packet_number = Some(packet_number);
         Ok(&frame[body_start..mic_start])
     }
-}
-
-fn counter_block(
-    nonce: &[u8; NONCE_LEN],
-    counter: u16,
-) -> GenericArray<u8, aes::cipher::consts::U16> {
-    let mut block = GenericArray::from([0_u8; 16]);
-    block[0] = COUNTER_FLAGS;
-    block[1..14].copy_from_slice(nonce);
-    block[14..16].copy_from_slice(&counter.to_be_bytes());
-    block
-}
-
-/// One CBC-MAC step over a block padded with zeros.
-fn absorb(cipher: &Aes128, mac: &mut GenericArray<u8, aes::cipher::consts::U16>, block: &[u8]) {
-    for (state, byte) in mac.iter_mut().zip(block.iter()) {
-        *state ^= byte;
-    }
-    cipher.encrypt_block(mac);
 }
 
 #[cfg(test)]

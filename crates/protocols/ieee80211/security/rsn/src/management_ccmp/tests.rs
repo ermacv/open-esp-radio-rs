@@ -66,3 +66,17 @@ fn an_unprotected_or_short_frame_is_refused() {
     );
     assert_eq!(ccmp.open(&mut [0; 39]), Err(ManagementCcmpError::Truncated));
 }
+
+#[test]
+fn an_oversized_body_is_refused_before_transform_or_replay_commit() {
+    let mut ccmp = receiver();
+    let mut oversized = frame();
+    oversized.resize(
+        HEADER_LEN + CCMP_HEADER_LEN + usize::from(u16::MAX) + 1 + MIC_LEN,
+        0xa5,
+    );
+    let before = oversized.clone();
+    assert_eq!(ccmp.open(&mut oversized), Err(ManagementCcmpError::TooLong));
+    assert_eq!(oversized, before);
+    assert!(ccmp.open(&mut frame()).is_ok());
+}

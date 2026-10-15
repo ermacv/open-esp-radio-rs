@@ -364,3 +364,11 @@ reason = "Standalone compiler contract executed by the host/RV32 UI catalog with
 [[uncompiled]]
 path = "crates/protocols/ieee80211/sta/tests/ui/retired_data.rs"
 reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/roles/esp32s31/ieee80211/ap/tests/ui/replay_reinstallation.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/roles/esp32s31/ieee80211/ap/tests/ui/replay_commit_once.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."

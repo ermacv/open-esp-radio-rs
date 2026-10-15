@@ -17,6 +17,12 @@ acquire another radio. The runtime supplies timers, DMA/IRQ progress and
 network handoffs. Publication is not successful transmission: resources are
 released only through the completion or terminal recovery path.
 
+Pairwise RX preparation exclusively borrows the installed PTK's replay frontier.
+Fragment ingestion retains that candidate through validation and consumes it
+before publishing Ethernet data; cancellation leaves the frontier unchanged.
+`ApRxAdmitter` lends the candidate for the synchronous dispatch, so clearing or
+reinstalling the key and committing a candidate twice are compile-time errors.
+
 A-MPDU retry decisions use MAC radio samples from the publication's generation.
 Before servicing an aggregate's ordinary BlockAckReq, the runtime obtains a fresh
 sample and asks the aggregate owner to validate its generation. It passes the same

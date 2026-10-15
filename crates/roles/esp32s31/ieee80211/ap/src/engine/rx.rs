@@ -10,7 +10,7 @@ impl<'storage> ApEngine<'storage> {
     /// The RX dispatcher calls this only after software BlockAck release and
     /// hardware MIC verification. Keeping replay state beside the installed
     /// key makes PTK install, clear and reinstall the only reset edges.
-    pub fn admit_rx_data(&mut self, request: ApRxAdmissionRequest) -> ApRxAdmission {
+    pub fn admit_rx_data(&mut self, request: ApRxAdmissionRequest) -> ApRxAdmission<'_> {
         let peer = request.peer();
         let rx_peer = match self.resolve_rx_peer(peer) {
             Ok(bound) => bound,
@@ -78,40 +78,9 @@ impl<'storage> ApEngine<'storage> {
                     Err(error) => return rejected_rx_security(error),
                 };
                 ApRxAdmission::prepared(ApRxPreparedReplay {
-                    peer,
-                    lane: request.lane(),
-                    ccmp_header: header,
                     owner: duplicate_owner,
                     candidate: ApRxPreparedCandidate::Hardware(candidate),
                 })
-            }
-            ApRxAdmissionOperation::CommitFragment(prepared) => {
-                if self.service.link_protection() != LinkProtection::Ccmp
-                    || prepared.peer != peer
-                    || prepared.lane != request.lane()
-                    || Some(prepared.ccmp_header) != request.ccmp_header()
-                {
-                    return ApRxAdmission::rejected(ApRxError::SecurityModeMismatch);
-                }
-                let Some(_binding) = rx_peer.pairwise else {
-                    return ApRxAdmission::rejected(ApRxError::KeyGenerationMismatch);
-                };
-                if duplicate_owner != prepared.owner {
-                    return ApRxAdmission::rejected(ApRxError::KeyGenerationMismatch);
-                }
-                #[cfg(not(test))]
-                let ApRxPreparedCandidate::Hardware(candidate) = prepared.candidate;
-                #[cfg(test)]
-                let candidate = match prepared.candidate {
-                    ApRxPreparedCandidate::Hardware(candidate) => candidate,
-                    ApRxPreparedCandidate::Model => {
-                        return ApRxAdmission::rejected(ApRxError::KeyGenerationMismatch);
-                    }
-                };
-                match self.security.commit_bound_pairwise_rx(candidate) {
-                    Ok(()) => ApRxAdmission::authorized(duplicate_owner),
-                    Err(error) => rejected_rx_security(error),
-                }
             }
         }
     }
@@ -121,7 +90,7 @@ impl<'storage> ApEngine<'storage> {
     pub fn admit_ordinary_pairwise_rx(
         &mut self,
         request: ApOrdinaryPairwiseRxRequest,
-    ) -> ApRxAdmission {
+    ) -> ApRxAdmission<'static> {
         let rx_peer = match self.resolve_rx_peer(request.peer()) {
             Ok(bound) => bound,
             Err(admission) => return admission,
@@ -154,7 +123,7 @@ impl<'storage> ApEngine<'storage> {
         state: ApPeerPowerState,
         now: oer_time::Instant,
     ) -> (
-        ApRxAdmission,
+        ApRxAdmission<'static>,
         Result<Option<ApPowerSaveAction>, ApEngineError>,
     ) {
         let admission = self.admit_ordinary_pairwise_rx(request);
@@ -176,7 +145,10 @@ impl<'storage> ApEngine<'storage> {
     /// data dispatcher. The common burst revalidates two affine bindings in
     /// O(1); only a peer switch or control-plane revision scans the bounded
     /// portable table.
-    fn resolve_rx_peer(&mut self, peer: [u8; 6]) -> Result<ApRxPeerBinding, ApRxAdmission> {
+    fn resolve_rx_peer(
+        &mut self,
+        peer: [u8; 6],
+    ) -> Result<ApRxPeerBinding, ApRxAdmission<'static>> {
         let status_revision = self.service.status_revision();
         if let Some(binding) = self.rx_peer
             && binding.peer.address() == peer
@@ -223,5 +195,11 @@ impl<'storage> ApEngine<'storage> {
         };
         self.rx_peer = Some(binding);
         Ok(binding)
+    }
+}
+
+impl crate::rx::ApRxAdmitter for &mut ApEngine<'_> {
+    fn admit(&mut self, request: ApRxAdmissionRequest) -> ApRxAdmission<'_> {
+        self.admit_rx_data(request)
     }
 }

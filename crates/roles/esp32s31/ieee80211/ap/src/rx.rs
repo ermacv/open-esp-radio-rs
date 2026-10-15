@@ -127,7 +127,6 @@ pub(crate) enum ApRxAdmissionOperation {
     Ordinary,
     AuthorizeFragment,
     PrepareFragment,
-    CommitFragment(ApRxPreparedReplay),
 }
 
 impl ApRxAdmissionRequest {
@@ -162,15 +161,6 @@ impl ApRxAdmissionRequest {
         }
     }
 
-    fn commit_fragment(prepared: ApRxPreparedReplay) -> Self {
-        Self {
-            peer: prepared.peer,
-            lane: prepared.lane,
-            ccmp_header: Some(prepared.ccmp_header),
-            operation: ApRxAdmissionOperation::CommitFragment(prepared),
-        }
-    }
-
     pub const fn peer(self) -> [u8; 6] {
         self.peer
     }
@@ -188,28 +178,33 @@ impl ApRxAdmissionRequest {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct ApRxPreparedReplay {
-    pub(crate) peer: [u8; 6],
-    pub(crate) lane: CcmpReplayLane,
-    pub(crate) ccmp_header: CcmpHeader,
+#[derive(Debug)]
+pub(crate) struct ApRxPreparedReplay<'a> {
     pub(crate) owner: ApRxDuplicateOwner,
-    pub(crate) candidate: ApRxPreparedCandidate,
+    pub(crate) candidate: ApRxPreparedCandidate<'a>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ApRxPreparedCandidate {
-    Hardware(ApPairwiseRxCandidate),
-    /// Source tests can model the external two-phase callback without forging
-    /// a hardware-key binding. Production engine admission always rejects it.
+#[derive(Debug)]
+pub(crate) enum ApRxPreparedCandidate<'a> {
+    Hardware(ApPairwiseRxCandidate<'a>),
     #[cfg(test)]
-    Model,
+    Model(oer_ieee80211_mac::ccmp::CcmpRxReplayCandidate<'a>),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ApRxAdmissionOutcome {
+impl ApRxPreparedCandidate<'_> {
+    fn commit(self) {
+        match self {
+            Self::Hardware(candidate) => candidate.commit(),
+            #[cfg(test)]
+            Self::Model(candidate) => candidate.commit(),
+        }
+    }
+}
+
+#[derive(Debug)]
+enum ApRxAdmissionOutcome<'a> {
     Authorized(ApRxDuplicateOwner),
-    Prepared(ApRxPreparedReplay),
+    Prepared(ApRxPreparedReplay<'a>),
     Unauthorized,
     Rejected(ApRxError),
     /// Replay detection rejected an ordinary MPDU of this exact owner. The
@@ -264,12 +259,28 @@ impl ApRxDuplicateOwner {
 /// Unforgeable result of consulting the live AP controlled-port and key
 /// owner. Its constructors stay within the chip AP crate so an integration
 /// cannot accidentally authorize WPA2 RX with a Boolean or generation zero.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ApRxAdmission {
-    outcome: ApRxAdmissionOutcome,
+#[derive(Debug)]
+#[must_use]
+pub struct ApRxAdmission<'a> {
+    outcome: ApRxAdmissionOutcome<'a>,
 }
 
-impl ApRxAdmission {
+/// Admission may lend the exact key frontier until fragment ingestion commits
+/// it. The dispatcher cannot consult or replace that key while it is borrowed.
+pub trait ApRxAdmitter {
+    fn admit(&mut self, request: ApRxAdmissionRequest) -> ApRxAdmission<'_>;
+}
+
+impl<F> ApRxAdmitter for F
+where
+    F: FnMut(ApRxAdmissionRequest) -> ApRxAdmission<'static>,
+{
+    fn admit(&mut self, request: ApRxAdmissionRequest) -> ApRxAdmission<'_> {
+        self(request)
+    }
+}
+
+impl<'a> ApRxAdmission<'a> {
     pub(crate) const fn authorized(owner: ApRxDuplicateOwner) -> Self {
         Self {
             outcome: ApRxAdmissionOutcome::Authorized(owner),
@@ -282,7 +293,7 @@ impl ApRxAdmission {
         }
     }
 
-    pub(crate) const fn prepared(prepared: ApRxPreparedReplay) -> Self {
+    pub(crate) const fn prepared(prepared: ApRxPreparedReplay<'a>) -> Self {
         Self {
             outcome: ApRxAdmissionOutcome::Prepared(prepared),
         }
@@ -300,13 +311,21 @@ impl ApRxAdmission {
         }
     }
 
-    pub(crate) const fn authorized_owner(self) -> Option<ApRxDuplicateOwner> {
-        match self.outcome {
-            ApRxAdmissionOutcome::Authorized(owner) => Some(owner),
+    pub(crate) const fn authorized_owner(&self) -> Option<ApRxDuplicateOwner> {
+        match &self.outcome {
+            ApRxAdmissionOutcome::Authorized(owner) => Some(*owner),
             ApRxAdmissionOutcome::Prepared(_)
             | ApRxAdmissionOutcome::Unauthorized
             | ApRxAdmissionOutcome::Rejected(_)
             | ApRxAdmissionOutcome::Replay { .. } => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn replay_rejection(&self) -> Option<(ApRxDuplicateOwner, CcmpReplayError)> {
+        match &self.outcome {
+            ApRxAdmissionOutcome::Replay { owner, error } => Some((*owner, *error)),
+            _ => None,
         }
     }
 }
@@ -479,7 +498,7 @@ impl ApRxDispatcher {
     pub fn dispatch<S, A>(&mut self, segment: RxSegment<'_>, admit: A, sink: &mut S) -> ApRxDispatch
     where
         S: ApRxSink,
-        A: FnMut(ApRxAdmissionRequest) -> ApRxAdmission,
+        A: ApRxAdmitter,
     {
         self.dispatch_inner(segment, None, admit, sink)
     }
@@ -495,7 +514,7 @@ impl ApRxDispatcher {
     ) -> ApRxDispatch
     where
         S: ApRxSink,
-        A: FnMut(ApRxAdmissionRequest) -> ApRxAdmission,
+        A: ApRxAdmitter,
     {
         self.dispatch_inner(segment, Some(now), admit, sink)
     }
@@ -518,7 +537,7 @@ impl ApRxDispatcher {
     ) -> Option<ApRxDispatch>
     where
         S: ApRxSink,
-        A: FnMut(ApOrdinaryPairwiseRxRequest) -> ApRxAdmission,
+        A: FnMut(ApOrdinaryPairwiseRxRequest) -> ApRxAdmission<'static>,
     {
         if self.config.security != LinkProtection::Ccmp || self.fragment_admission_active {
             return None;
@@ -541,7 +560,7 @@ impl ApRxDispatcher {
     ) -> ApRxDispatch
     where
         S: ApRxSink,
-        A: FnMut(ApOrdinaryPairwiseRxRequest) -> ApRxAdmission,
+        A: FnMut(ApOrdinaryPairwiseRxRequest) -> ApRxAdmission<'static>,
     {
         if data.mpdu[4..10] != self.config.access_point {
             return ApRxDispatch::ForeignPeer;
@@ -623,7 +642,7 @@ impl ApRxDispatcher {
     ) -> ApRxDispatch
     where
         S: ApRxSink,
-        A: FnMut(ApRxAdmissionRequest) -> ApRxAdmission,
+        A: ApRxAdmitter,
     {
         let normalized = match view_normalized_rx_frame(&segment, self.config.ingress) {
             Ok(frame) => frame,
@@ -688,7 +707,10 @@ impl ApRxDispatcher {
         let preauthorized = if self.fragment_admission_active
             && let Some(header) = ccmp_header
         {
-            match admit(ApRxAdmissionRequest::authorize_fragment(peer, lane, header)).outcome {
+            match admit
+                .admit(ApRxAdmissionRequest::authorize_fragment(peer, lane, header))
+                .outcome
+            {
                 ApRxAdmissionOutcome::Authorized(owner) => {
                     self.bind_duplicate_owner(peer, owner);
                     let identity = match parse_ccmp_data_identity(
@@ -733,22 +755,24 @@ impl ApRxDispatcher {
         } else {
             None
         };
-        let duplicate_owner =
-            match admit(ApRxAdmissionRequest::new(peer, lane, ccmp_header)).outcome {
-                ApRxAdmissionOutcome::Authorized(owner) => owner,
-                ApRxAdmissionOutcome::Replay { owner, error } => {
-                    return self.replay_rejection(peer, owner, error, retry, sequence_control, tid);
-                }
-                ApRxAdmissionOutcome::Prepared(_) => {
-                    return ApRxDispatch::Rejected(ApRxError::KeyGenerationMismatch);
-                }
-                ApRxAdmissionOutcome::Unauthorized => {
-                    return ApRxDispatch::Unauthorized;
-                }
-                ApRxAdmissionOutcome::Rejected(error) => {
-                    return ApRxDispatch::Rejected(error);
-                }
-            };
+        let duplicate_owner = match admit
+            .admit(ApRxAdmissionRequest::new(peer, lane, ccmp_header))
+            .outcome
+        {
+            ApRxAdmissionOutcome::Authorized(owner) => owner,
+            ApRxAdmissionOutcome::Replay { owner, error } => {
+                return self.replay_rejection(peer, owner, error, retry, sequence_control, tid);
+            }
+            ApRxAdmissionOutcome::Prepared(_) => {
+                return ApRxDispatch::Rejected(ApRxError::KeyGenerationMismatch);
+            }
+            ApRxAdmissionOutcome::Unauthorized => {
+                return ApRxDispatch::Unauthorized;
+            }
+            ApRxAdmissionOutcome::Rejected(error) => {
+                return ApRxDispatch::Rejected(error);
+            }
+        };
         if preauthorized.is_some_and(|owner| owner != duplicate_owner) {
             self.fragments.forget_transmitter(peer);
             return ApRxDispatch::Rejected(ApRxError::KeyGenerationMismatch);
@@ -811,7 +835,7 @@ impl ApRxDispatcher {
     ) -> ApRxDispatch
     where
         S: ApRxSink,
-        A: FnMut(ApRxAdmissionRequest) -> ApRxAdmission,
+        A: ApRxAdmitter,
     {
         let Some(now) = now else {
             return ApRxDispatch::Rejected(ApRxError::Fragment(
@@ -839,7 +863,10 @@ impl ApRxDispatcher {
         let lane = identity
             .tid()
             .map_or(CcmpReplayLane::NonQos, CcmpReplayLane::Tid);
-        let duplicate_owner = match admit(ApRxAdmissionRequest::new(peer, lane, None)).outcome {
+        let duplicate_owner = match admit
+            .admit(ApRxAdmissionRequest::new(peer, lane, None))
+            .outcome
+        {
             ApRxAdmissionOutcome::Authorized(owner) => owner,
             ApRxAdmissionOutcome::Prepared(_) => {
                 return ApRxDispatch::Rejected(ApRxError::KeyGenerationMismatch);
@@ -911,7 +938,7 @@ impl ApRxDispatcher {
     ) -> ApRxDispatch
     where
         S: ApRxSink,
-        A: FnMut(ApRxAdmissionRequest) -> ApRxAdmission,
+        A: ApRxAdmitter,
     {
         let Some(now) = now else {
             return ApRxDispatch::Rejected(ApRxError::Fragment(
@@ -944,12 +971,13 @@ impl ApRxDispatcher {
         let lane = identity
             .tid()
             .map_or(CcmpReplayLane::NonQos, CcmpReplayLane::Tid);
-        let owner = match admit(ApRxAdmissionRequest::authorize_fragment(
-            peer,
-            lane,
-            view.ccmp_header,
-        ))
-        .outcome
+        let owner = match admit
+            .admit(ApRxAdmissionRequest::authorize_fragment(
+                peer,
+                lane,
+                view.ccmp_header,
+            ))
+            .outcome
         {
             ApRxAdmissionOutcome::Authorized(owner) => owner,
             ApRxAdmissionOutcome::Unauthorized => {
@@ -995,12 +1023,13 @@ impl ApRxDispatcher {
                 return ApRxDispatch::Rejected(ApRxError::Fragment(error));
             }
         };
-        let prepared = match admit(ApRxAdmissionRequest::prepare_fragment(
-            peer,
-            lane,
-            view.ccmp_header,
-        ))
-        .outcome
+        let prepared = match admit
+            .admit(ApRxAdmissionRequest::prepare_fragment(
+                peer,
+                lane,
+                view.ccmp_header,
+            ))
+            .outcome
         {
             ApRxAdmissionOutcome::Prepared(prepared) if prepared.owner == owner => prepared,
             ApRxAdmissionOutcome::Prepared(_) => {
@@ -1029,16 +1058,7 @@ impl ApRxDispatcher {
                     return ApRxDispatch::Rejected(ApRxError::Fragment(error));
                 }
             };
-            let commit = match admit(ApRxAdmissionRequest::commit_fragment(prepared)).outcome {
-                ApRxAdmissionOutcome::Authorized(committed) if committed == owner => Ok(()),
-                ApRxAdmissionOutcome::Rejected(error) => Err(error),
-                ApRxAdmissionOutcome::Replay { error, .. } => Err(ApRxError::Replay(error)),
-                _ => Err(ApRxError::KeyGenerationMismatch),
-            };
-            if let Err(error) = commit {
-                self.fragments.discard(identity, epoch);
-                return ApRxDispatch::Rejected(error);
-            }
+            prepared.candidate.commit();
             return match outcome {
                 OpenDataDefragmentation::Buffered { expired, evicted } => {
                     ApRxDispatch::FragmentBuffered {
@@ -1051,14 +1071,7 @@ impl ApRxDispatcher {
         }
 
         let outcome = admission.ingest(|data| {
-            match admit(ApRxAdmissionRequest::commit_fragment(prepared)).outcome {
-                ApRxAdmissionOutcome::Authorized(committed) if committed == owner => {}
-                ApRxAdmissionOutcome::Rejected(error) => return Err(error),
-                ApRxAdmissionOutcome::Replay { error, .. } => {
-                    return Err(ApRxError::Replay(error));
-                }
-                _ => return Err(ApRxError::KeyGenerationMismatch),
-            }
+            prepared.candidate.commit();
             sink.publish(ApRxEvent {
                 frame: data.ethernet_frame(),
                 raw,
@@ -1099,7 +1112,7 @@ impl ApRxDispatcher {
         let mut is_authorized = is_authorized;
         self.dispatch(
             segment,
-            |request| {
+            |request: ApRxAdmissionRequest| {
                 if let Some(owner) = is_authorized(request.peer()) {
                     ApRxAdmission::authorized(owner)
                 } else {

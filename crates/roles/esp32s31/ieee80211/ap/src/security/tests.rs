@@ -173,13 +173,15 @@ fn rx_replay_is_per_tid_and_fenced_across_pairwise_key_reinstall() {
     let first = security
         .prepare_bound_pairwise_rx(first_generation, CcmpReplayLane::NonQos, pn4)
         .unwrap();
-    security.commit_bound_pairwise_rx(first).unwrap();
+    first.commit();
     assert_eq!(
-        security.prepare_bound_pairwise_rx(first_generation, CcmpReplayLane::NonQos, pn4,),
-        Err(ApSecurityError::Replay(CcmpReplayError::Replayed {
+        security
+            .prepare_bound_pairwise_rx(first_generation, CcmpReplayLane::NonQos, pn4)
+            .unwrap_err(),
+        ApSecurityError::Replay(CcmpReplayError::Replayed {
             packet_number: pn4,
             highest: pn4,
-        })),
+        }),
         "a different 802.11 sequence cannot make a reused PN admissible"
     );
 
@@ -200,6 +202,11 @@ fn rx_replay_is_per_tid_and_fenced_across_pairwise_key_reinstall() {
     let prepared_before_clear = security
         .prepare_bound_pairwise_rx(first_generation, CcmpReplayLane::NonQos, pn5)
         .unwrap();
+    drop(prepared_before_clear);
+    let cancelled = security
+        .prepare_bound_pairwise_rx(first_generation, CcmpReplayLane::NonQos, pn5)
+        .expect("cancelling admission leaves its PN available");
+    drop(cancelled);
     security.clear_peer(&mut hardware, peer).unwrap();
     security
         .install_pairwise(&mut hardware, peer, 1, &ptk)
@@ -207,13 +214,10 @@ fn rx_replay_is_per_tid_and_fenced_across_pairwise_key_reinstall() {
     let replacement_generation = security.bind_pairwise(peer, 1).unwrap();
     assert_ne!(replacement_generation, first_generation);
     assert_eq!(
-        security.commit_bound_pairwise_rx(prepared_before_clear),
-        Err(ApSecurityError::WrongPeer),
-        "a candidate from the cleared key cannot advance its replacement"
-    );
-    assert_eq!(
-        security.prepare_bound_pairwise_rx(first_generation, CcmpReplayLane::NonQos, pn5,),
-        Err(ApSecurityError::WrongPeer),
+        security
+            .prepare_bound_pairwise_rx(first_generation, CcmpReplayLane::NonQos, pn5)
+            .unwrap_err(),
+        ApSecurityError::WrongPeer,
     );
     assert_eq!(
         security.commit_bound_pairwise_rx_immediate(first_generation, CcmpReplayLane::Tid(3), pn5,),
@@ -224,7 +228,7 @@ fn rx_replay_is_per_tid_and_fenced_across_pairwise_key_reinstall() {
     let replacement = security
         .prepare_bound_pairwise_rx(replacement_generation, CcmpReplayLane::NonQos, pn1)
         .unwrap();
-    security.commit_bound_pairwise_rx(replacement).unwrap();
+    replacement.commit();
 }
 
 /// Station selection over this access point's advertisement and access

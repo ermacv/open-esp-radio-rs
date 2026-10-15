@@ -103,14 +103,14 @@ impl From<ApWpa2Error> for ApEngineError {
 fn rejected_ordinary_rx_security(
     owner: crate::rx::ApRxDuplicateOwner,
     error: ApSecurityError,
-) -> ApRxAdmission {
+) -> ApRxAdmission<'static> {
     match error {
         ApSecurityError::Replay(error) => ApRxAdmission::replayed(owner, error),
         error => rejected_rx_security(error),
     }
 }
 
-fn rejected_rx_security(error: ApSecurityError) -> ApRxAdmission {
+fn rejected_rx_security(error: ApSecurityError) -> ApRxAdmission<'static> {
     match error {
         ApSecurityError::Replay(error) => ApRxAdmission::rejected(ApRxError::Replay(error)),
         ApSecurityError::SecurityModeMismatch => {

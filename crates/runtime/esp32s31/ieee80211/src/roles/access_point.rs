@@ -47,8 +47,8 @@ use oer_esp32s31_ieee80211_ap::{
     ampdu::{ApAggregateAdmission, ApAmpduError, ApAmpduProgress},
     engine::{ApEngine, ApWpa2Outcome},
     rx::{
-        ApRxAdmission, ApRxAdmissionRequest, ApRxConfig, ApRxDispatch, ApRxDispatcher, ApRxError,
-        ApRxEvent, ApRxSink,
+        ApRxAdmission, ApRxAdmissionRequest, ApRxAdmitter, ApRxConfig, ApRxDispatch,
+        ApRxDispatcher, ApRxError, ApRxEvent, ApRxSink,
     },
     transaction::{ApMac, ApMacError, ApMacParked, ApPeerDisconnectStage, ApTxCompletionAction},
 };

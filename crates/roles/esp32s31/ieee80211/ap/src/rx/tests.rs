@@ -4,6 +4,39 @@ use oer_ieee80211_mac::ccmp::{CcmpPacketNumber, CcmpRxReplayState};
 
 use super::*;
 
+struct ReplayAdmission {
+    owner: ApRxDuplicateOwner,
+    replay: CcmpRxReplayState,
+}
+
+impl ApRxAdmitter for &mut ReplayAdmission {
+    fn admit(&mut self, request: ApRxAdmissionRequest) -> ApRxAdmission<'_> {
+        match request.operation() {
+            ApRxAdmissionOperation::AuthorizeFragment => ApRxAdmission::authorized(self.owner),
+            ApRxAdmissionOperation::PrepareFragment => {
+                let header = request.ccmp_header().expect("protected fragment");
+                match self.replay.prepare(request.lane(), header.packet_number()) {
+                    Ok(candidate) => ApRxAdmission::prepared(ApRxPreparedReplay {
+                        owner: self.owner,
+                        candidate: ApRxPreparedCandidate::Model(candidate),
+                    }),
+                    Err(error) => ApRxAdmission::rejected(ApRxError::Replay(error)),
+                }
+            }
+            ApRxAdmissionOperation::Ordinary => {
+                let header = request.ccmp_header().expect("protected ordinary frame");
+                match self
+                    .replay
+                    .commit_immediate(request.lane(), header.packet_number())
+                {
+                    Ok(()) => ApRxAdmission::authorized(self.owner),
+                    Err(error) => ApRxAdmission::rejected(ApRxError::Replay(error)),
+                }
+            }
+        }
+    }
+}
+
 const AP: [u8; 6] = [2, 0, 0, 0, 0, 1];
 const PEER: [u8; 6] = [2, 0, 0, 0, 0, 2];
 const OTHER_PEER: [u8; 6] = [2, 0, 0, 0, 0, 4];
@@ -468,42 +501,9 @@ fn ap_ccmp_fragments_commit_each_pn_after_exact_bounded_admission() {
     let mut dispatcher = ApRxDispatcher::new(config());
     let mut sink = Sink::default();
     let owner = duplicate_owner(1, 1).with_key_generation(7);
-    let replay = core::cell::RefCell::new(CcmpRxReplayState::default());
-    let pending = core::cell::RefCell::new(None);
-    let mut admit = |request: ApRxAdmissionRequest| match request.operation() {
-        ApRxAdmissionOperation::AuthorizeFragment => ApRxAdmission::authorized(owner),
-        ApRxAdmissionOperation::PrepareFragment => {
-            let header = request.ccmp_header().unwrap();
-            match replay
-                .borrow()
-                .prepare(request.lane(), header.packet_number())
-            {
-                Ok(candidate) => {
-                    pending.replace(Some(candidate));
-                    ApRxAdmission::prepared(ApRxPreparedReplay {
-                        peer: request.peer(),
-                        lane: request.lane(),
-                        ccmp_header: header,
-                        owner,
-                        candidate: ApRxPreparedCandidate::Model,
-                    })
-                }
-                Err(error) => ApRxAdmission::rejected(ApRxError::Replay(error)),
-            }
-        }
-        ApRxAdmissionOperation::CommitFragment(_) => {
-            let candidate = pending
-                .borrow_mut()
-                .take()
-                .expect("one prepared replay candidate");
-            match replay.borrow_mut().commit(candidate) {
-                Ok(()) => ApRxAdmission::authorized(owner),
-                Err(error) => ApRxAdmission::rejected(ApRxError::Replay(error)),
-            }
-        }
-        ApRxAdmissionOperation::Ordinary => {
-            panic!("fragment path cannot request ordinary admission")
-        }
+    let mut admit = ReplayAdmission {
+        owner,
+        replay: CcmpRxReplayState::default(),
     };
 
     assert_eq!(
@@ -566,9 +566,8 @@ fn ap_ccmp_fragments_commit_each_pn_after_exact_bounded_admission() {
         ApRxDispatch::Duplicate
     );
     assert_eq!(sink.ethernet.len(), 1);
-    assert!(pending.borrow().is_none());
     assert_eq!(
-        replay.borrow().highest(CcmpReplayLane::NonQos),
+        admit.replay.highest(CcmpReplayLane::NonQos),
         CcmpPacketNumber::new(4)
     );
 }
@@ -632,51 +631,9 @@ fn protected_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
         &[2],
     );
     let owner = duplicate_owner(1, 1).with_key_generation(7);
-    let replay = core::cell::RefCell::new(CcmpRxReplayState::default());
-    let pending = core::cell::RefCell::new(None);
-    let mut admit = |request: ApRxAdmissionRequest| match request.operation() {
-        ApRxAdmissionOperation::Ordinary => {
-            let header = request.ccmp_header().expect("protected ordinary request");
-            let candidate = {
-                replay
-                    .borrow()
-                    .prepare(request.lane(), header.packet_number())
-            };
-            match candidate.and_then(|candidate| replay.borrow_mut().commit(candidate)) {
-                Ok(()) => ApRxAdmission::authorized(owner),
-                Err(error) => ApRxAdmission::rejected(ApRxError::Replay(error)),
-            }
-        }
-        ApRxAdmissionOperation::AuthorizeFragment => ApRxAdmission::authorized(owner),
-        ApRxAdmissionOperation::PrepareFragment => {
-            let header = request.ccmp_header().expect("protected fragment request");
-            match replay
-                .borrow()
-                .prepare(request.lane(), header.packet_number())
-            {
-                Ok(candidate) => {
-                    pending.replace(Some(candidate));
-                    ApRxAdmission::prepared(ApRxPreparedReplay {
-                        peer: request.peer(),
-                        lane: request.lane(),
-                        ccmp_header: header,
-                        owner,
-                        candidate: ApRxPreparedCandidate::Model,
-                    })
-                }
-                Err(error) => ApRxAdmission::rejected(ApRxError::Replay(error)),
-            }
-        }
-        ApRxAdmissionOperation::CommitFragment(_) => {
-            let candidate = pending
-                .borrow_mut()
-                .take()
-                .expect("one prepared replay candidate");
-            match replay.borrow_mut().commit(candidate) {
-                Ok(()) => ApRxAdmission::authorized(owner),
-                Err(error) => ApRxAdmission::rejected(ApRxError::Replay(error)),
-            }
-        }
+    let mut admit = ReplayAdmission {
+        owner,
+        replay: CcmpRxReplayState::default(),
     };
     let mut dispatcher = ApRxDispatcher::new(config());
     let mut sink = Sink::default();
@@ -705,9 +662,8 @@ fn protected_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
         ApRxDispatch::Duplicate
     );
     assert_eq!(dispatcher.fragments.active_contexts(), 0);
-    assert!(pending.borrow().is_none());
     assert_eq!(
-        replay.borrow().highest(CcmpReplayLane::NonQos),
+        admit.replay.highest(CcmpReplayLane::NonQos),
         CcmpPacketNumber::new(3),
         "duplicate admission must precede replay prepare and commit"
     );
@@ -754,7 +710,7 @@ fn protected_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
     );
     assert_eq!(sink.ethernet.len(), 2);
     assert_eq!(
-        replay.borrow().highest(CcmpReplayLane::NonQos),
+        admit.replay.highest(CcmpReplayLane::NonQos),
         CcmpPacketNumber::new(5)
     );
 }
@@ -963,11 +919,8 @@ fn reused_pairwise_pn_is_rejected_before_publication_even_with_a_new_sequence() 
         let header = request
             .ccmp_header()
             .expect("WPA2 dispatch carries one parsed CCMP header");
-        match replay.prepare(request.lane(), header.packet_number()) {
-            Ok(candidate) => match replay.commit(candidate) {
-                Ok(()) => ApRxAdmission::authorized(duplicate_owner(1, 1)),
-                Err(error) => ApRxAdmission::rejected(ApRxError::Replay(error)),
-            },
+        match replay.commit_immediate(request.lane(), header.packet_number()) {
+            Ok(()) => ApRxAdmission::authorized(duplicate_owner(1, 1)),
             Err(error) => ApRxAdmission::rejected(ApRxError::Replay(error)),
         }
     };

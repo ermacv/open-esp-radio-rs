@@ -169,6 +169,27 @@ fn observe_protected_dispatch(
 /// outcomes to its caller.
 struct AccessPointProtectedFrameDispatch;
 
+struct MeasuredAdmission<'a, A> {
+    admit: &'a mut A,
+    #[cfg(feature = "task-poll-telemetry")]
+    cycles: &'a mut u32,
+}
+
+impl<A: ApRxAdmitter> ApRxAdmitter for &mut MeasuredAdmission<'_, A> {
+    fn admit(&mut self, request: ApRxAdmissionRequest) -> ApRxAdmission<'_> {
+        #[cfg(feature = "task-poll-telemetry")]
+        let started = crate::diagnostics::core0_rx_cycles::cycle_count();
+        let outcome = self.admit.admit(request);
+        #[cfg(feature = "task-poll-telemetry")]
+        {
+            *self.cycles = self.cycles.wrapping_add(
+                crate::diagnostics::core0_rx_cycles::cycle_count().wrapping_sub(started),
+            );
+        }
+        outcome
+    }
+}
+
 impl AccessPointProtectedFrameDispatch {
     #[cfg_attr(
         all(target_arch = "riscv32", not(feature = "task-poll-telemetry")),
@@ -178,7 +199,7 @@ impl AccessPointProtectedFrameDispatch {
     fn dispatch(
         data_rx: &mut ApRxDispatcher,
         ordered: oer_esp32s31_ieee80211_mac::rx::RxSegment<'_>,
-        mut admit: impl FnMut(ApRxAdmissionRequest) -> ApRxAdmission,
+        mut admit: impl ApRxAdmitter,
         peer: Option<[u8; 6]>,
         current_buffer: usize,
         current_is_amsdu: bool,
@@ -214,17 +235,10 @@ impl AccessPointProtectedFrameDispatch {
         };
         #[cfg(feature = "task-poll-telemetry")]
         let mut admission_cycles = 0_u32;
-        let mut measured_admit = |request| {
+        let mut measured_admit = MeasuredAdmission {
+            admit: &mut admit,
             #[cfg(feature = "task-poll-telemetry")]
-            let started = crate::diagnostics::core0_rx_cycles::cycle_count();
-            let outcome = admit(request);
-            #[cfg(feature = "task-poll-telemetry")]
-            {
-                admission_cycles = admission_cycles.wrapping_add(
-                    crate::diagnostics::core0_rx_cycles::cycle_count().wrapping_sub(started),
-                );
-            }
-            outcome
+            cycles: &mut admission_cycles,
         };
         let outcome = if may_publish_in_place && current_can_publish_in_place {
             data_rx.dispatch_at(ordered, now, &mut measured_admit, in_place)
@@ -285,7 +299,7 @@ impl AccessPointProtectedFrameDispatch {
         ordered: oer_esp32s31_ieee80211_mac::rx::RxSegment<'_>,
         mut admit: impl FnMut(
             oer_esp32s31_ieee80211_ap::rx::ApOrdinaryPairwiseRxRequest,
-        ) -> ApRxAdmission,
+        ) -> ApRxAdmission<'static>,
         _peer: [u8; 6],
         #[cfg(any(feature = "diagnostics", test))] now: oer_time::Instant,
         in_place: &mut InPlaceAccessPointRxSink,

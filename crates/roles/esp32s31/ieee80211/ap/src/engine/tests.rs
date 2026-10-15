@@ -498,18 +498,18 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
     .unwrap()
     .with_key_generation(1);
     assert_eq!(
-        engine.admit_rx_data(rx_request),
-        ApRxAdmission::authorized(duplicate_owner)
+        engine.admit_rx_data(rx_request).authorized_owner(),
+        Some(duplicate_owner)
     );
     assert_eq!(
-        engine.admit_rx_data(rx_request),
-        ApRxAdmission::replayed(
+        engine.admit_rx_data(rx_request).replay_rejection(),
+        Some((
             duplicate_owner,
             CcmpReplayError::Replayed {
                 packet_number: rx_pn3,
                 highest: rx_pn3,
             }
-        ),
+        )),
         "an ordinary replay rejection keeps its exact duplicate owner"
     );
     let rx_pn4 = CcmpPacketNumber::new(4).unwrap();
@@ -524,7 +524,7 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
         ApPeerPowerState::Active,
         oer_time::Instant::from_micros(5),
     );
-    assert_eq!(admission, ApRxAdmission::authorized(duplicate_owner));
+    assert_eq!(admission.authorized_owner(), Some(duplicate_owner));
     assert_eq!(activity.unwrap(), Some(ApPowerSaveAction::None));
     assert_eq!(
         engine.service.peer_status(peer).unwrap().deadline,
@@ -750,8 +750,8 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
     assert_eq!(hardware.cleared, [8]);
     assert!(!engine.is_authorized_peer(peer));
     assert_eq!(
-        engine.admit_rx_data(rx_request),
-        ApRxAdmission::unauthorized(),
+        engine.admit_rx_data(rx_request).authorized_owner(),
+        None,
         "reauthentication closes the controlled port before old-PN admission"
     );
     assert_eq!(engine.service.peer_status(peer).unwrap().association_id, 1);

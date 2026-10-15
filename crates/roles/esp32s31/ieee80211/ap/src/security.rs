@@ -69,15 +69,21 @@ impl ApPairwiseBinding {
     }
 }
 
-/// Two-phase replay admission tied to one exact pairwise-key generation.
+/// Two-phase replay admission borrowing one installed pairwise key exclusively.
 ///
-/// The binding is revalidated at commit, so a candidate prepared before a
-/// peer clear or PTK replacement cannot mutate the replacement key's replay
-/// frontier.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ApPairwiseRxCandidate {
-    binding: ApPairwiseBinding,
-    replay: CcmpRxReplayCandidate,
+/// A peer cannot be cleared or its PTK replaced until this candidate is
+/// committed or dropped. Dropping it leaves the replay frontier unchanged.
+#[derive(Debug)]
+#[must_use = "commit before publication, or drop to cancel admission"]
+pub struct ApPairwiseRxCandidate<'a> {
+    replay: CcmpRxReplayCandidate<'a>,
+}
+
+impl ApPairwiseRxCandidate<'_> {
+    /// Advance the borrowed key's replay frontier exactly once.
+    pub fn commit(self) {
+        self.replay.commit();
+    }
 }
 
 pub struct ApSecurityStartFailure<'storage> {
@@ -305,34 +311,21 @@ impl<'storage> ApSecurity<'storage> {
     /// Callers must commit the returned token before publishing any Ethernet
     /// view. The token remains fenced to this exact installed PTK generation.
     pub fn prepare_bound_pairwise_rx(
-        &self,
+        &mut self,
         binding: ApPairwiseBinding,
         lane: CcmpReplayLane,
         packet_number: CcmpPacketNumber,
-    ) -> Result<ApPairwiseRxCandidate, ApSecurityError> {
+    ) -> Result<ApPairwiseRxCandidate<'_>, ApSecurityError> {
         let index = self.validate_pairwise_binding(binding)?;
-        let replay = self.storage().rx_replay[index].prepare(lane, packet_number)?;
-        Ok(ApPairwiseRxCandidate { binding, replay })
-    }
-
-    /// Commit a prepared PN only while its pairwise key generation is still
-    /// current. A clear/reinstall edge invalidates the candidate first.
-    pub fn commit_bound_pairwise_rx(
-        &mut self,
-        candidate: ApPairwiseRxCandidate,
-    ) -> Result<(), ApSecurityError> {
-        let index = self.validate_pairwise_binding(candidate.binding)?;
-        self.storage_mut().rx_replay[index].commit(candidate.replay)?;
-        Ok(())
+        let replay = self.storage_mut().rx_replay[index].prepare(lane, packet_number)?;
+        Ok(ApPairwiseRxCandidate { replay })
     }
 
     /// Admit and commit one ordinary pairwise MPDU in the replay owner's
     /// synchronous transaction.
     ///
-    /// Fragment reassembly keeps the split prepare/commit API above because
-    /// its candidate survives an ownership boundary. Ordinary post-reorder
-    /// delivery has no such boundary, so validating the same binding twice
-    /// only adds work to every AP data frame.
+    /// Fragment reassembly retains a borrowed candidate through ingestion.
+    /// Ordinary post-reorder delivery advances the frontier immediately.
     #[inline(always)]
     pub fn commit_bound_pairwise_rx_immediate(
         &mut self,

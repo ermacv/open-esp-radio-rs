@@ -460,7 +460,7 @@ where
                 AccessPointProtectedFrameDispatch::dispatch(
                     data_rx,
                     ordered,
-                    |request| engine.admit_rx_data(request),
+                    &mut *engine,
                     peer,
                     current_buffer as usize,
                     current_is_amsdu,

@@ -14,7 +14,7 @@ The portable entry is an integration boundary; it cannot add a second IRQ
 registry or change the backing's reclamation proof.
 
 `scope::driver::Driver` is the unbranded installation owner. Its `drive`
-method borrows it exclusively until retirement; that future owns neither
+method borrows it through the core's single affine DriverLoan until retirement; that future owns neither
 Driver nor the backing lease. The executable binding in
 [`scope/tests/lifecycle.rs`](src/scope/tests/lifecycle.rs) uses the real
 shared `Installed`, `run_port`, `PortEnd`, `FailStopped` and `Abandon` types.
@@ -33,19 +33,21 @@ finish against permanent backing even if the driving future and the outer
 container holding the quarantined Driver are destroyed. There is no registered
 address into Driver, its future, Held or the result latch.
 
-The shared `DriverLoan` binding is pending publication. The current lifecycle
-test binding owns Driver under the published trait, awaits its borrowed
-`drive`, then consumes `finish`. Separate regressions reject consuming Driver
-during that borrow and exercise explicit abandon followed by quarantine with
-no Driver destructor. An owned Driver's Drop remains a synchronous cancellation
-safety net; the core's Unconfirmed path must not rely on it. Unlike ordinary
-Released return, the common core's abandonment policy retains even a
-successfully stopped installation's backing until reset.
+The shared binding consumes `DriverLoan<'p, Driver>`, whose dereference gives
+only `&Driver`. It awaits `retire.wait()`, then executor retirement, ends that
+borrow and calls `retire.requested(loan)`. Ordinary uninstall receives the
+retained Driver alongside its completion state and consumes `finish` there.
+`PortEnd::FailStopped` and `Abandoned` carry the physical abandon outcome and
+the core's quarantine receipt. Cancellation closes the same scope admission
+domain before the core quarantines Driver without Drop.
 
-Driver and returned state share one temporary `Quarantined<S>` holder with
-`ManuallyDrop<S>` contents. Its drop releases nothing. The DriverLoan
-integration must remove this declaration and use the shared core's
-`Quarantined<S>` directly, without an alias or an S31 wrapper.
+Driver and returned state use `oer_radio_port::Quarantined<S>` directly.
+There is no local type, alias or extraction method. The standalone scope's
+`ScopeReturnLatch` only delivers its synchronous outcome; it is distinct from
+the common core's abandonment signal. An owned Driver's destructor remains a
+safety net outside core quarantine. The shutdown memo remains until the core
+provides one-shot abandonment; it prevents a later abandon from inspecting
+extracted owners or stopping twice.
 
 Every await in `Driver::drive` preserves a state accepted by retirement,
 abandon and consuming finish. Cancellation only ends the loan: it cannot
@@ -69,7 +71,7 @@ composition: one permanent SRAM backing and its ISR address slot
 
 caller: DriverScope::run future
     ├─ affine pinned lease of that backing
-    ├─ borrowed AbandonLatch, never reachable from registered callbacks
+    ├─ borrowed ScopeReturnLatch, never reachable from registered callbacks
     └─ arbitrary Context, body future and its retained result
 
 common-core binding: Driver owns the same scope lease and latch loan
@@ -219,25 +221,13 @@ the common core frees its own future.
 
 ## Shared lifecycle boundary
 
-The published shared contract gives `phase` and `disable` both `&Held<'id>`
-and `&mut Local<'id>`. Its `enable(&mut B, Call)` has neither; `setup` receives
-Local only. A backend constructed before the fresh `'id` cannot contain a
-branded FIFO endpoint or the sender's stage owner. Consequently the current
-lifecycle witness can exercise Driver ownership and cancellation, but a
-frontend using the two real command FIFOs needs access to these parts at
-enable/setup as well.
-
-The proposed shared change is to pass `&Held<'id>` and `&mut Local<'id>` to
-enable, and add `&Held<'id>` to setup. The common Owner already retains both
-parts; it would lend them in exactly the same way as phase and disable.
-The shared-contract owner implements this boundary; this package does not
-change radio/port. An erased pointer into a movable
-Held value, a backend registry, or a third untyped lifecycle FIFO is not part
-of this form.
-
-| Checks | Code size | RAM and CPU | Signatures | Breakage | Alternatives | Reversal |
-| --- | --- | --- | --- | --- | --- | --- |
-| Existing brand and exclusive Local loan identify the installation and sender stage; no runtime ownership test | Not measured until the shared owner implements the change; remeasure the existing linked lifecycle fixture | Pass existing references; no new allocation or queue. Two RV32 reference arguments for enable, one for setup; effect on concrete futures still requires measurement | `enable(&mut B, Call, &Held<'id>, &mut Local<'id>)`, `setup(&mut B, Call, &Held<'id>, &mut Local<'id>)` | Both shared lifecycle implementations and their test models must adopt the signature; Wi-Fi uses the added loans | Placing branded endpoints in pre-brand B is impossible; indirect registration would weaken the current ownership boundary | Revisit the ownership split if measured cost is excessive, retaining typed FIFO stage and capacity proofs |
+The shared contract lends both `&Held<'id>` and `&mut Local<'id>` to setup,
+enable, phase and disable. Branded queues remain in Held and sender accounting
+in Local; neither is stored in the backend before the installation brand
+exists. `tests/contract_boundary.rs` compiles the previously failing enable
+and setup calls against these real signatures. The lifecycle witness uses the
+actual core entry and loan; its frontend models lifecycle only. The hardware
+binding of these typed queues remains the S31 migration step.
 
 ## Quiescence, poison and priorities
 

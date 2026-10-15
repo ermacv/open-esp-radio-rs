@@ -1,7 +1,7 @@
 #![no_std]
 #![deny(unsafe_op_in_unsafe_fn)]
 use oer_esp32s31_ieee80211_form::scope::{
-    AbandonLatch, DrainBound, DriverCallbacks, DriverEvents, DriverScope, DriverSignals,
+    ScopeReturnLatch, DrainBound, DriverCallbacks, DriverEvents, DriverScope, DriverSignals,
     DriverStep, IrqControl, ScopeLease, ScopeRoute,
 };
 use oer_esp32s31_ieee80211_mac::irq::epoch::{ActiveEpoch, Moderated};
@@ -16,7 +16,7 @@ pub unsafe fn bind<'a>(
     lease: ScopeLease<(), ActiveEpoch<Moderated>, (), ()>,
     interrupts: ActiveEpoch<Moderated>,
     route: ScopeRoute<(), ()>,
-    latch: &'a mut AbandonLatch<(), ActiveEpoch<Moderated>, (), ()>,
+    latch: &'a mut ScopeReturnLatch<(), ActiveEpoch<Moderated>, (), ()>,
 ) -> DriverScope<'a, (), ActiveEpoch<Moderated>, (), ()> {
     #[cfg(ui_reject)]
     return DriverScope::new(

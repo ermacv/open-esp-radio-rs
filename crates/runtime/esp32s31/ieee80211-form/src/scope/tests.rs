@@ -35,7 +35,7 @@ type Platform = Arc<Routing>;
 type Schedule = fn(&Platform, WakePlan);
 type Storage<E = Infallible> = ScopeStorage<Hardware, Interrupts, Platform, E, Schedule>;
 type Lease<E = Infallible> = ScopeLease<Hardware, Interrupts, Platform, E, Schedule>;
-type Latch<E = Infallible> = AbandonLatch<Hardware, Interrupts, Platform, E, Schedule>;
+type Latch<E = Infallible> = ScopeReturnLatch<Hardware, Interrupts, Platform, E, Schedule>;
 type Return<E = Infallible> = ScopeReturn<Hardware, Interrupts, Platform, E, Schedule>;
 fn mask(p: &Platform) {
     p.masked.store(true, Ordering::SeqCst);
@@ -613,7 +613,7 @@ fn unconfirmed_can_free_driver_container_without_drop_or_reclaiming_backing() {
         drop(future);
         drop(context);
         // Model core quarantine, then free the outer allocation without Drop.
-        let quarantine = Box::new(Quarantined::retain(driver::Driver::new(scope)));
+        let quarantine = Box::new(Quarantined::new(driver::Driver::new(scope)));
         drop(quarantine);
         assert!(latch.into_return().is_none(), "Driver::drop must not run");
         assert_eq!(slot.entry.load(Ordering::Acquire), registered);

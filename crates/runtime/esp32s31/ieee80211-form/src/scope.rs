@@ -28,6 +28,7 @@ use oer_esp32s31_ieee80211_mac::irq::{
     },
     epoch::{ActiveEpoch, InactiveEpoch, Moderated},
 };
+use oer_radio_port::Quarantined;
 use oer_time::Instant;
 
 pub mod commands;
@@ -452,21 +453,6 @@ pub struct ReturnedOwners<H, I, P, E, S = fn(&P, WakePlan)> {
     pub interrupts: I,
     pub route: ScopeRoute<P, E, S>,
 }
-/// Temporary stand-in for the shared core's pending `Quarantined<S>`.
-/// The Driver and its returned state use this same holder: dropping it never
-/// drops the contents. The DriverLoan integration removes this declaration
-/// and uses the core type directly, with no alias or compatibility wrapper.
-#[must_use = "abandoned hardware cannot be reused without a physical reset proof"]
-pub struct Quarantined<S> {
-    _retained: ManuallyDrop<S>,
-}
-impl<S> Quarantined<S> {
-    fn retain(state: S) -> Self {
-        Self {
-            _retained: ManuallyDrop::new(state),
-        }
-    }
-}
 #[must_use]
 pub enum DetachedOwners<H> {
     Retired(H),
@@ -506,7 +492,7 @@ pub enum ScopeReturn<
 }
 /// An output slot, outside every registered callback's reachable memory.
 /// None means no return was delivered (for example, the future was forgotten).
-pub struct AbandonLatch<
+pub struct ScopeReturnLatch<
     H: Send + 'static,
     I: InterruptOwner = ActiveEpoch<Moderated>,
     P: Sync + 'static = (),
@@ -516,7 +502,7 @@ pub struct AbandonLatch<
     returned: Option<ScopeReturn<H, I, P, E, S>>,
 }
 impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: WakeScheduler<P>>
-    AbandonLatch<H, I, P, E, S>
+    ScopeReturnLatch<H, I, P, E, S>
 {
     pub const fn new() -> Self {
         Self { returned: None }
@@ -526,7 +512,7 @@ impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: Wak
     }
 }
 impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: WakeScheduler<P>>
-    Default for AbandonLatch<H, I, P, E, S>
+    Default for ScopeReturnLatch<H, I, P, E, S>
 {
     fn default() -> Self {
         Self::new()
@@ -904,7 +890,7 @@ pub struct DriverScope<
     S: WakeScheduler<P> = fn(&P, WakePlan),
 > {
     lease: ManuallyDrop<ScopeLease<H, I, P, E, S>>,
-    latch: &'latch mut AbandonLatch<H, I, P, E, S>,
+    latch: &'latch mut ScopeReturnLatch<H, I, P, E, S>,
     bound: DrainBound,
 }
 impl<
@@ -945,7 +931,7 @@ impl<
         callbacks: DriverCallbacks<H, I>,
         route: ScopeRoute<P, E, S>,
         bound: DrainBound,
-        latch: &'latch mut AbandonLatch<H, I, P, E, S>,
+        latch: &'latch mut ScopeReturnLatch<H, I, P, E, S>,
     ) -> Self {
         let storage = lease.storage();
         storage.shutdown.set(None);
@@ -1122,7 +1108,7 @@ impl<
         let owners = if *irq.retired.get_mut() && !*irq.signals.abandon.get_mut() {
             DetachedOwners::Retired(owners)
         } else {
-            DetachedOwners::Abandoned(Quarantined::retain(owners))
+            DetachedOwners::Abandoned(Quarantined::new(owners))
         };
         // The non-Drop driver projection ends with this function, before the
         // returned lease can be used. IRQ's owned waker is destroyed here.

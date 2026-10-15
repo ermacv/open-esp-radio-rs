@@ -181,7 +181,7 @@ mod image {
     #[unsafe(no_mangle)]
     pub fn scope_main() -> ! {
         core::hint::black_box(&S31_COMMAND_STORAGE_BYTES);
-        let mut latch = AbandonLatch::new();
+        let mut latch = ScopeReturnLatch::new();
         let route = ScopeRoute::new((), &SLOT, mask, acknowledge, enable, Scheduler);
         let radio = RadioRuntimeOwner::claim_for_validation();
         let interrupts = InactiveEpoch::new(validation_mac_interrupt_setup())

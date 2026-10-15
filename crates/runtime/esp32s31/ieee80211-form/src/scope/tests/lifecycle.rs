@@ -7,9 +7,9 @@ use super::*;
 use crate::scope::driver::{Driver, State};
 use core::future::pending;
 use oer_radio_port::{
-    Abandon, Call, ClockError, Detach, Detached, Disabled, DriverExit, EnableResult, Ended,
-    EventsLost, InstallParts, Installed, Mint, Owner, Poisoned, PortBackend, PortBody, PortEnd,
-    PortPhase, PortResult, Quarantine, Retire, Retired, Slot, Slots, run_port,
+    Abandon, Call, ClockError, Detach, Detached, Disabled, DriverExit, DriverLoan, EnableResult,
+    Ended, EventsLost, InstallParts, Installed, Mint, Owner, Poisoned, PortBackend, PortBody,
+    PortEnd, PortPhase, PortResult, Quarantine, Retire, Retired, Slot, Slots, run_port,
 };
 use oer_time::RadioInstant;
 
@@ -21,7 +21,6 @@ struct Held<'id, 'control, 'context> {
     storage: &'control Storage,
     bound: DrainBound,
     context: &'context str,
-    returned_quarantine: Count,
     cancellation: Option<cancellation::Cut>,
 }
 struct Backend<'a, 'context> {
@@ -29,7 +28,6 @@ struct Backend<'a, 'context> {
     bound: DrainBound,
     context: &'context str,
     detached: Count,
-    returned_quarantine: Count,
     deadline: Arc<AtomicBool>,
     cancellation: Option<cancellation::Cut>,
 }
@@ -51,7 +49,8 @@ impl<'a, 'context> PortBackend for Backend<'a, 'context> {
     type Setup<'p, 'id>
         = ()
     where
-        Self: 'p;
+        Self: 'p,
+        'id: 'p;
     type Phase<'p, 'id>
         = Phase
     where
@@ -62,11 +61,19 @@ impl<'a, 'context> PortBackend for Backend<'a, 'context> {
     type Local<'id> = ();
     // No &mut Backend, installation brand or context lifetime in Driver.
     type Driver = S31Driver<'a>;
-    type State = S31State;
+    type State = ();
     type Uninstall = ();
     type Uninstalled = S31State;
 
-    async fn enable(&mut self, _: Call) -> EnableResult<Infallible, Infallible> {
+    async fn enable<'p, 'id>(
+        &'p mut self,
+        _: Call,
+        _: &'p Self::Held<'id>,
+        _: &'p mut (),
+    ) -> EnableResult<Infallible, Infallible>
+    where
+        'id: 'p,
+    {
         Ok(Ok(()))
     }
     async fn disable<'p, 'id>(
@@ -92,14 +99,22 @@ impl<'a, 'context> PortBackend for Backend<'a, 'context> {
                 storage: self.storage,
                 bound: self.bound,
                 context: self.context,
-                returned_quarantine: self.returned_quarantine.clone(),
                 cancellation: self.cancellation.clone(),
             },
             local: (),
             resources: (),
         }
     }
-    fn setup<'p, 'id>(&'p mut self, _: Call, _: &'p mut Self::Local<'id>) -> Self::Setup<'p, 'id> {}
+    fn setup<'p, 'id>(
+        &'p mut self,
+        _: Call,
+        _: &'p Self::Held<'id>,
+        _: &'p mut Self::Local<'id>,
+    ) -> Self::Setup<'p, 'id>
+    where
+        'id: 'p,
+    {
+    }
     fn phase<'p, 'id>(&'p mut self, _: Call, _: &'p Self::Held<'id>, _: &'p mut ()) -> Phase
     where
         'id: 'p,
@@ -107,7 +122,7 @@ impl<'a, 'context> PortBackend for Backend<'a, 'context> {
         Phase
     }
     async fn drive<'p, 'id>(
-        mut driver: Self::Driver,
+        driver: DriverLoan<'p, Self::Driver>,
         held: &'p Self::Held<'id>,
         retire: Retire<'p>,
     ) -> DriverExit<Self::State, Infallible> {
@@ -116,7 +131,7 @@ impl<'a, 'context> PortBackend for Backend<'a, 'context> {
             {
                 // Use the real Retire minted by run_port and the production
                 // Driver future. The wrapper chooses the cancellation cut.
-                let mut waiting = Box::pin(driver.drive(retire));
+                let mut waiting = Box::pin(driver.drive(&retire));
                 poll_fn(|cx| {
                     if cut.cancel.load(Ordering::Acquire) {
                         return Poll::Ready(());
@@ -128,23 +143,18 @@ impl<'a, 'context> PortBackend for Backend<'a, 'context> {
                 .await;
                 drop(waiting);
             }
-            cut.finish(driver, held.storage, held.bound);
-            // No synthetic RetireProof: the cancelled drive consumed its
-            // receiver. The test drops run_port after observing completion.
-            return pending().await;
+            cut.cancelled(held.storage, held.bound);
+        } else {
+            match driver.drive(&retire).await {
+                Ok(()) => (),
+                Err(never) => match never {},
+            }
         }
-        let proof = match driver.drive(retire).await {
-            Ok(proof) => proof,
-            Err(never) => match never {},
-        };
-        let state = driver.finish();
         // Only this caller-side future accesses Held. Every hardware callback
         // already finished or reaches exclusively permanent quarantined memory.
         assert_eq!(held.context, "non-static context");
-        if matches!(&state, State::Quarantined(_)) {
-            held.returned_quarantine.increment();
-        }
-        DriverExit::Retired { state, proof }
+        let proof = retire.requested(driver).await;
+        DriverExit::Retired { state: (), proof }
     }
     fn retire_bound(&self, _: Call) -> impl Future<Output = ()> + use<'a, 'context> {
         let deadline = self.deadline.clone();
@@ -156,20 +166,25 @@ impl<'a, 'context> PortBackend for Backend<'a, 'context> {
             }
         })
     }
-    fn detach<'id>(&mut self, _call: Detach, _: &Self::Held<'id>) {
-        assert!(self.storage.shutdown.get().is_some());
+    fn detach<'id>(&mut self, _call: Detach<'_>, _: &Self::Held<'id>) {
+        self.storage.close_and_stop(self.bound);
         self.detached.increment();
     }
     fn uninstall<'id>(
         self,
-        _: Self::Held<'id>,
+        held: Self::Held<'id>,
         _: (),
-        retired: Retired<'id, S31State>,
+        retired: Retired<'id, (Self::Driver, ())>,
         _: Detached<'id>,
         _: (),
     ) -> S31State {
         assert_eq!(self.detached.get(), 1);
-        retired.into_state()
+        let (driver, ()) = retired.into_state();
+        let state = driver.finish();
+        if let Some(cut) = &held.cancellation {
+            cut.finished(&state, held.storage, held.bound);
+        }
+        state
     }
     fn abandon(&mut self, call: Quarantine) -> Abandon {
         match self.storage.abandon(self.bound) {
@@ -223,7 +238,6 @@ struct Caller {
     fail: Arc<AtomicBool>,
     output: Count,
     detached: Count,
-    returned_quarantine: Count,
     deadline: Arc<AtomicBool>,
     cancellation: Option<cancellation::Cut>,
 }
@@ -249,7 +263,6 @@ fn installed<'a, 'context>(
         bound: scope.bound,
         context,
         detached: caller.detached.clone(),
-        returned_quarantine: caller.returned_quarantine.clone(),
         deadline: caller.deadline.clone(),
         cancellation: caller.cancellation.clone(),
     };
@@ -262,7 +275,7 @@ fn installed<'a, 'context>(
 }
 
 #[test]
-fn installed_driver_retires_by_value_then_detaches_and_returns_lease() {
+fn loan_retires_then_core_detaches_and_consumes_driver_into_released() {
     let (route, slot, platform) = make_route();
     let h = hardware(&platform);
     let stops = h.stops.clone();
@@ -315,9 +328,12 @@ fn fail_stop_before_drive_does_not_reopen_admission_and_quarantines_explicitly()
     caller.end.store(true, Ordering::Release);
     assert!(matches!(
         poll(future.as_mut()),
-        Poll::Ready(PortEnd::FailStopped { output: 7 })
+        Poll::Ready(PortEnd::FailStopped {
+            output: 7,
+            outcome: Abandon::Stopped(_),
+            ..
+        })
     ));
-    assert_eq!(caller.returned_quarantine.get(), 1);
     assert_eq!(
         drops.get(),
         0,
@@ -331,7 +347,7 @@ fn fail_stop_before_drive_does_not_reopen_admission_and_quarantines_explicitly()
 }
 
 #[test]
-fn cancelling_run_port_during_isr_quarantines_before_the_common_guard_runs() {
+fn cancelling_run_port_during_isr_masks_before_core_quarantines_driver() {
     let (route, slot, platform) = make_route();
     let h = hardware(&platform);
     let stops = h.stops.clone();
@@ -354,10 +370,10 @@ fn cancelling_run_port_during_isr_quarantines_before_the_common_guard_runs() {
     assert!(!slot.open.load(Ordering::Acquire));
     assert_eq!(stops.get(), 0);
     assert_eq!(drops.get(), 0);
-    assert!(matches!(
-        latch.into_return(),
-        Some(ScopeReturn::Poisoned(_))
-    ));
+    assert!(
+        latch.into_return().is_none(),
+        "core quarantines Driver without Drop"
+    );
     block.resume.wait();
     actor.join().unwrap();
     assert_eq!(
@@ -393,9 +409,12 @@ fn fail_stop_with_entered_driver_returns_unconfirmed_state_without_stop_or_drop(
     caller.end.store(true, Ordering::Release);
     assert!(matches!(
         poll(future.as_mut()),
-        Poll::Ready(PortEnd::FailStopped { output: 7 })
+        Poll::Ready(PortEnd::FailStopped {
+            output: 7,
+            outcome: Abandon::Unconfirmed(_),
+            ..
+        })
     ));
-    assert_eq!(caller.returned_quarantine.get(), 1);
     drop(future);
     assert!(
         latch.into_return().is_none(),
@@ -430,6 +449,43 @@ fn forgotten_run_port_never_registers_its_borrowed_context_or_output_latch() {
     assert_eq!(drops.get(), 0);
 }
 
+struct AbandonBody;
+impl<'a, 'context> PortBody<Backend<'a, 'context>> for AbandonBody {
+    type Output = ();
+    async fn run<'p, 'id>(
+        self,
+        owner: Owner<'p, 'id, Backend<'a, 'context>, Disabled>,
+        _: (),
+    ) -> Ended<'id, Backend<'a, 'context>, ()> {
+        drop(owner);
+        pending().await
+    }
+}
+
+#[test]
+fn abandoned_port_returns_core_quarantine_without_dropping_driver() {
+    let (route, _, platform) = make_route();
+    let h = hardware(&platform);
+    let (stops, drops) = (h.stops.clone(), h.drops.clone());
+    let caller = Caller::default();
+    let mut latch = Latch::new();
+    let scope = new_scope(lease(), h, Interrupts::default(), route, &mut latch);
+    let (installed, _) = installed(scope, &caller, "non-static context");
+    let mut run = Box::pin(run_port(installed, AbandonBody));
+    let Poll::Ready(PortEnd::Abandoned {
+        outcome: Abandon::Stopped(_),
+        quarantined,
+    }) = poll(run.as_mut())
+    else {
+        panic!("stopped abandonment retains the core-owned driver");
+    };
+    drop(quarantined);
+    drop(run);
+    assert_eq!(stops.get(), 1);
+    assert_eq!(drops.get(), 0);
+    assert!(latch.into_return().is_none());
+}
+
 #[test]
 fn common_retirement_deadline_cancels_a_live_step_into_permanent_quarantine() {
     let (route, slot, platform) = make_route();
@@ -452,16 +508,20 @@ fn common_retirement_deadline_cancels_a_live_step_into_permanent_quarantine() {
     caller.deadline.store(true, Ordering::Release);
     assert!(matches!(
         poll(future.as_mut()),
-        Poll::Ready(PortEnd::FailStopped { output: 7 })
+        Poll::Ready(PortEnd::FailStopped {
+            output: 7,
+            outcome: Abandon::Unconfirmed(_),
+            ..
+        })
     ));
     drop(future);
     assert!(platform.masked.load(Ordering::Acquire));
     assert!(!slot.open.load(Ordering::Acquire));
     assert_eq!((stops.get(), drops.get(), caller.detached.get()), (0, 0, 0));
-    assert!(matches!(
-        latch.into_return(),
-        Some(ScopeReturn::Poisoned(_))
-    ));
+    assert!(
+        latch.into_return().is_none(),
+        "core quarantines Driver without Drop"
+    );
     block.resume.wait();
     actor.join().unwrap();
     assert_eq!(resumed.get(), 1);

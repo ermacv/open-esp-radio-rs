@@ -36,7 +36,7 @@ impl Cut {
         assert_eq!(self.work.buffer_drops.get(), 0);
     }
 
-    pub fn finish(&self, driver: S31Driver<'_>, storage: &Storage, bound: DrainBound) {
+    pub fn cancelled(&self, storage: &Storage, bound: DrainBound) {
         assert_eq!(self.work.descriptors.get(), 2, "cancel keeps DMA ownership");
         assert_eq!(self.work.queued.get(), 2);
         assert_eq!(self.work.buffer_drops.get(), 0);
@@ -58,8 +58,11 @@ impl Cut {
             // handles the initialized, unstarted owner synchronously.
             _ => {}
         }
-        let state = driver.finish();
-        match &state {
+    }
+
+    pub fn finished(&self, state: &S31State, storage: &Storage, bound: DrainBound) {
+        let retired = matches!(self.after, AfterCancel::Retire) && self.polls.get() != 0;
+        match state {
             State::Released(released) => {
                 assert!(retired);
                 assert!(matches!(&released.owners, DetachedOwners::Retired(_)));
@@ -77,7 +80,6 @@ impl Cut {
         // The core may abandon after finish, e.g. when its outer future drops.
         // The cached shutdown reply must not revisit the extracted regions.
         assert!(matches!(storage.abandon(bound), Quiescence::Drained));
-        drop(state);
         self.finished.increment();
     }
 }
@@ -124,10 +126,18 @@ fn cancellation_at_every_drive_await_preserves_retire_abandon_and_finish() {
                 }
                 assert_eq!(cut.polls.get(), polls, "{point:?}, {after:?}");
                 cut.cancel.store(true, Ordering::Release);
-                assert!(poll(run.as_mut()).is_pending());
+                caller.end.store(true, Ordering::Release);
+                let Poll::Ready(PortEnd::Uninstalled {
+                    uninstalled,
+                    output: 7,
+                }) = poll(run.as_mut())
+                else {
+                    panic!("the core hands retained Driver to consuming finish");
+                };
                 assert_eq!(cut.finished.get(), 1, "{point:?}, {after:?}, {polls}");
                 assert_eq!(stops.get(), 1);
                 assert!(platform.masked.load(Ordering::Acquire));
+                drop(uninstalled);
                 drop(run);
                 assert_eq!(stops.get(), 1, "outer cancellation must not stop twice");
                 assert_eq!(

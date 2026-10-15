@@ -1,6 +1,7 @@
 #![no_std]
+use oer_radio_port::Quarantined;
 use core::convert::Infallible;
-use oer_esp32s31_ieee80211_form::scope::{Quarantined, ScopeReturn, WakePlan};
+use oer_esp32s31_ieee80211_form::scope::{ScopeReturn, WakePlan};
 use oer_esp32s31_ieee80211_mac::irq::epoch::{ActiveEpoch, Moderated};
 pub fn quarantine(
     value: Quarantined<ScopeReturn<(), ActiveEpoch<Moderated>, (), Infallible, fn(&(), WakePlan)>>,

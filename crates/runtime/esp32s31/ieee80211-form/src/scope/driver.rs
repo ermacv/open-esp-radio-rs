@@ -7,7 +7,7 @@
 //! core can quarantine Driver without calling Drop after Unconfirmed.
 
 use super::*;
-use oer_radio_port::{Retire, RetireProof};
+use oer_radio_port::Retire;
 
 /// An installation's independent driver, owning only its pinned SRAM lease,
 /// cancellation-output loan and drain bound. No hardware-reachable memory
@@ -71,9 +71,9 @@ impl<
     /// then retire, abandon, or consume finish before reclaiming any owners.
     /// Successful finish drains actors and stops once; timeout retains the
     /// complete backing in reset-only quarantine without calling stop.
-    pub async fn drive(&mut self, retire: Retire<'_>) -> Result<RetireProof, E> {
+    pub async fn drive(&self, retire: &Retire<'_>) -> Result<(), E> {
         self.scope
-            .run_body(retire, async |retire, _access| retire.requested().await)
+            .run_body(retire, async |retire, _access| retire.wait().await)
             .await
     }
 
@@ -96,7 +96,7 @@ impl<
             {
                 State::Released(released)
             }
-            returned => State::Quarantined(Quarantined::retain(returned)),
+            returned => State::Quarantined(Quarantined::new(returned)),
         }
     }
 }
@@ -110,7 +110,7 @@ impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: Wak
         // destructor; its backend has already masked/closed the backing.
         // A real destructor cannot await and uses the same synchronous domain.
         self.scope.abandon();
-        let _retained = Quarantined::retain(self.scope.complete());
+        let _retained = Quarantined::new(self.scope.complete());
         // ManuallyDrop is the explicit quarantine owner, not a destructor
         // side effect of an otherwise releasable driver state.
         // The common core does not grant backing reuse after either abandon

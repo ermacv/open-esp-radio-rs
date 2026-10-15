@@ -281,15 +281,12 @@ pub struct BluetoothParked {
 
 /// Hardware and controller memory after composition teardown, without the
 /// old outcome queue's reuse permission.
-#[allow(
-    dead_code,
-    reason = "these fields retain the stopped owners until extraction or drop"
-)]
+#[must_use = "retain the stopped partition and its controller memory"]
 pub struct BluetoothStoppedHardware {
     partition: BluetoothPartition,
-    coex: CoexAbsent<BluetoothClient>,
-    memory: ControllerMemory,
-    published: &'static Storage,
+    _coex: CoexAbsent<BluetoothClient>,
+    _memory: ControllerMemory,
+    _published: &'static Storage,
 }
 
 impl BluetoothStoppedHardware {
@@ -882,9 +879,9 @@ impl BluetoothSystem {
                 QueueEnd::Quarantined(terminals) => BluetoothStopped::TerminalsQuarantined {
                     parts: BluetoothStoppedHardware {
                         partition: cold.into_partition(),
-                        coex,
-                        memory,
-                        published,
+                        _coex: coex,
+                        _memory: memory,
+                        _published: published,
                     },
                     terminals,
                 },

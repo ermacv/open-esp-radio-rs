@@ -148,6 +148,7 @@ pub struct Ieee802154Parked {
 
 /// Hardware after composition released clocks, PHY membership and common power.
 /// It has no permission to reuse the quarantined runtime queue.
+#[must_use = "retain the stopped partition and its MAC engine"]
 pub struct Ieee802154StoppedHardware {
     /// The stopped partition.
     pub partition: Ieee802154RadioPartition,

@@ -146,6 +146,7 @@ pub enum BluetoothUninstallError<E> {
 /// Affine permission to use one runtime's outcome queue.
 /// Only `BluetoothRuntime::take_queue` creates it, once. Ordinary uninstall
 /// returns it; rejected outcomes retain it permanently with the old queue.
+#[must_use = "retain the exclusive queue claim through install and teardown"]
 pub struct RuntimeQueue {
     claimed: &'static AtomicBool,
 }

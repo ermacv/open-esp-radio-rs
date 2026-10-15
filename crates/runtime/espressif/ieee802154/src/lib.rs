@@ -281,6 +281,7 @@ pub struct Ieee802154RuntimeParts<'storage, H> {
 /// each runtime. Ordinary uninstall returns it with the hardware. A rejected
 /// terminal retains it permanently: stopped hardware alone cannot reinstall
 /// the old queue.
+#[must_use = "retain the exclusive queue claim through install and teardown"]
 pub struct RuntimeQueue {
     claimed: &'static AtomicBool,
 }
@@ -306,6 +307,7 @@ impl<'storage, H> Ieee802154RuntimeParts<'storage, H> {
 /// TX/RX have stopped, `mac_deinit` has restored the disabled PTIs and
 /// `engine.disable` has completed. Composition still owns the modem clocks
 /// and shared PHY membership and releases them through its `System::stop`.
+#[must_use = "return stopped MAC owners to composition for clock and PHY release"]
 pub struct MacStoppedParts<'storage, H> {
     engine: Ieee802154Engine<'storage>,
     hardware: H,

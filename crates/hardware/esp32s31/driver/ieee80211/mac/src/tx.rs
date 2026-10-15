@@ -2008,11 +2008,11 @@ impl HeRate {
     /// table entry, but an untrusted peer can advertise such a short TXOP;
     /// treating the wrap as a large APEP would fail open.
     pub const fn checked_maximum_apep_bytes(self, txop: HeEdcaTxopLimit) -> Option<u32> {
-        if txop.is_default() {
+        let Some(units) = core::num::NonZeroU8::new(txop.units_32_us()) else {
             return Some(self.maximum_default_apep_bytes() as u32);
-        }
+        };
 
-        let signed_bytes = self.nonzero_txop_apep_bytes(txop);
+        let signed_bytes = self.nonzero_txop_apep_bytes(units);
         if signed_bytes <= 0 {
             return None;
         }
@@ -2036,16 +2036,16 @@ impl HeRate {
     /// blob's f32 instruction sequence across every peer-admitted TXOP byte,
     /// all three GI/LTF rows and all ten MCS values.
     const fn vendor_unchecked_maximum_apep_bytes(self, txop: HeEdcaTxopLimit) -> u32 {
-        if txop.is_default() {
+        let Some(units) = core::num::NonZeroU8::new(txop.units_32_us()) else {
             return self.maximum_default_apep_bytes() as u32;
-        }
-        let limit = self.nonzero_txop_apep_bytes(txop) as u32;
+        };
+        let limit = self.nonzero_txop_apep_bytes(units) as u32;
         if self.dcm { limit / 2 } else { limit }
     }
 
-    const fn nonzero_txop_apep_bytes(self, txop: HeEdcaTxopLimit) -> i64 {
-        debug_assert!(!txop.is_default());
-
+    /// A non-default duration is established by the caller's NonZeroU8;
+    /// the default PPDU policy cannot enter this exchange-budget formula.
+    const fn nonzero_txop_apep_bytes(self, txop: core::num::NonZeroU8) -> i64 {
         const DATA_BITS_PER_SYMBOL_RU242: [i32; 10] =
             [117, 234, 351, 468, 702, 936, 1_053, 1_170, 1_404, 1_560];
         let mcs = self.mcs.index() as usize;
@@ -2060,7 +2060,7 @@ impl HeRate {
             | HeMcs::Mcs8
             | HeMcs::Mcs9 => 32,
         };
-        let exchange_budget_us = txop.units_32_us() as i64 * 32 - 36;
+        let exchange_budget_us = txop.get() as i64 * 32 - 36;
         let data_bits_per_symbol = DATA_BITS_PER_SYMBOL_RU242[mcs] as i64;
         match self.guard_interval_and_ltf {
             crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns

@@ -128,7 +128,7 @@ cases = [
 
 [[suite]]
 name = "ftm-owner"
-packages = ["oer-ieee80211-sta", "oer-time"]
+packages = ["oer-ieee80211-sta", "oer-ieee80211-mac", "oer-time"]
 features = []
 targets = ["host", "esp32s31"]
 cases = [
@@ -137,6 +137,8 @@ cases = [
     "crates/protocols/ieee80211/sta/tests/ui/ftm_body_private.rs",
     "crates/protocols/ieee80211/sta/tests/ui/ftm_restart.rs",
     "crates/protocols/ieee80211/sta/tests/ui/ftm_terminal_owner.rs",
+    "crates/protocols/ieee80211/sta/tests/ui/ftm_identity.rs",
+    "crates/protocols/ieee80211/sta/tests/ui/ftm_peer.rs",
 ]
 
 [[suite]]

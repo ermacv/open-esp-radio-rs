@@ -148,6 +148,8 @@ A comeback retains the received-frame count and gets a fresh request schedule
 and response deadline after its wait. A second temporary refusal ends it.
 
 FTM starts by consuming `FtmRequester` into an owned `FtmSession`.
+Its peer is a checked `IndividualAddress`. `FtmOperationId` has private
+fields and is obtained from that session; its getters expose diagnostics.
 `service` transfers that session into the transmission handle until
 `complete` or `reject_hardware_admission` consumes it; a completion takes
 no separate requester argument. The copyable generation numbers are
@@ -164,6 +166,9 @@ an affine handle forfeits that operation; it cannot unlock or complete a
 different one. The S31 source-frontier consumer still rejects hardware
 admission before publication; these ownership contracts establish no FTM
 timestamp-capture or calibrated-distance capability.
+Samples live in one bounded `heapless::Vec`, whose length is the count.
+The terminal takes this vector by value, preserving order through completion,
+failure and cancellation without sparse entries or a separate counter.
 
 Frame parsing/building belongs in `crates/protocols/ieee80211/mac`; ESP32-S31 ordering
 and hardware ownership belong in `crates/roles/esp32s31/ieee80211/sta`; clocks, tasks,

@@ -24,7 +24,10 @@ fn transmission() -> FtmRequestTransmission<3> {
     .unwrap();
     let requester = FtmRequester::<3>::new(config);
     let session = requester
-        .start([1; 6], oer_time::Instant::from_micros(0))
+        .start(
+            oer_ieee80211_mac::address::IndividualAddress::new([2; 6]).unwrap(),
+            oer_time::Instant::from_micros(0),
+        )
         .unwrap();
     let FtmRequesterService::Transmit(transmission) =
         session.service(oer_time::Instant::from_micros(0)).unwrap()

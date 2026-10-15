@@ -10,6 +10,8 @@
 
 use core::num::NonZeroU8;
 
+use heapless::Vec;
+use oer_ieee80211_mac::address::IndividualAddress;
 use oer_ieee80211_mac::ftm::{
     FTM_INITIAL_REQUEST_BODY_LEN, FtmBurstDuration, FtmFormatAndBandwidth, FtmMeasurement,
     FtmRequestParameters, FtmResponseParameters, FtmResponseStatus, FtmTimestampPs, FtmToaError,
@@ -272,28 +274,22 @@ pub enum FtmSessionTermination {
 }
 
 /// Result returned by value so a later session cannot mutate old samples.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FtmSessionResult<const MAX_SAMPLES: usize> {
-    pub peer: [u8; 6],
+    pub peer: IndividualAddress,
     pub session_generation: u32,
     pub negotiated: FtmResponseParameters,
     pub termination: FtmSessionTermination,
-    samples: [Option<FtmRawExchange>; MAX_SAMPLES],
-    sample_count: usize,
+    samples: Vec<FtmRawExchange, MAX_SAMPLES>,
 }
 
 impl<const MAX_SAMPLES: usize> FtmSessionResult<MAX_SAMPLES> {
-    pub const fn sample_count(&self) -> usize {
-        self.sample_count
+    pub fn sample_count(&self) -> usize {
+        self.samples.len()
     }
 
     pub fn sample(&self, index: usize) -> Option<FtmRawExchange> {
-        self.samples
-            .iter()
-            .take(self.sample_count)
-            .nth(index)
-            .copied()
-            .flatten()
+        self.samples.get(index).copied()
     }
 }
 
@@ -355,8 +351,20 @@ pub enum FtmRequesterError {
 /// is the owned transmission, never these copyable numbers.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FtmOperationId {
-    pub peer: [u8; 6],
-    pub session_generation: u32,
+    peer: IndividualAddress,
+    session_generation: u32,
+}
+
+impl FtmOperationId {
+    /// The individual peer validated before starting this request.
+    pub const fn peer(self) -> IndividualAddress {
+        self.peer
+    }
+
+    /// Diagnostic sequence within this requester, not completion authority.
+    pub const fn session_generation(self) -> u32 {
+        self.session_generation
+    }
 }
 
 /// The input that releases a competing application's request.
@@ -492,9 +500,9 @@ impl<const N: usize> FtmRequestTransmission<N> {
     /// Cancel an unpublished transmission, retaining all collected samples.
     /// A backend that accepted publication must first supply its TX terminal.
     pub fn cancel(self) -> FtmTerminal<N> {
-        let partial = self.owner.partial();
+        let (requester, partial) = self.owner.into_parts();
         FtmTerminal {
-            requester: self.owner.requester,
+            requester,
             outcome: FtmOutcome::Cancelled(partial),
         }
     }
@@ -530,16 +538,15 @@ pub enum FtmRequesterService<const N: usize> {
 pub struct FtmPartialResult<const N: usize> {
     pub operation: FtmOperationId,
     pub pending: Option<FtmLocalExchangeTiming>,
-    samples: [Option<FtmRawExchange>; N],
-    sample_count: usize,
+    samples: Vec<FtmRawExchange, N>,
 }
 
 impl<const N: usize> FtmPartialResult<N> {
-    pub const fn sample_count(&self) -> usize {
-        self.sample_count
+    pub fn sample_count(&self) -> usize {
+        self.samples.len()
     }
     pub fn sample(&self, index: usize) -> Option<FtmRawExchange> {
-        self.samples.get(index).copied().flatten()
+        self.samples.get(index).copied()
     }
 }
 
@@ -677,25 +684,24 @@ pub struct FtmRequester<const MAX_SAMPLES: usize> {
 
 struct SessionData<const N: usize> {
     requester: FtmRequester<N>,
-    peer: [u8; 6],
+    peer: IndividualAddress,
     dialog_tokens: TokenSet,
     pending: Option<FtmLocalExchangeTiming>,
     last_measurement: Option<LastMeasurement>,
-    samples: [Option<FtmRawExchange>; N],
-    sample_count: usize,
+    samples: Vec<FtmRawExchange, N>,
 }
 
 impl<const N: usize> SessionData<N> {
-    fn partial(&self) -> FtmPartialResult<N> {
-        FtmPartialResult {
+    fn into_parts(self) -> (FtmRequester<N>, FtmPartialResult<N>) {
+        let partial = FtmPartialResult {
             operation: FtmOperationId {
                 peer: self.peer,
                 session_generation: self.requester.session_generation,
             },
             pending: self.pending,
             samples: self.samples,
-            sample_count: self.sample_count,
-        }
+        };
+        (self.requester, partial)
     }
 }
 
@@ -722,7 +728,11 @@ impl<const N: usize> FtmRequester<N> {
         clippy::result_large_err,
         reason = "validation returns the original requester"
     )]
-    pub fn start(mut self, peer: [u8; 6], now: Instant) -> Result<FtmSession<N>, FtmRefusal<Self>> {
+    pub fn start(
+        mut self,
+        peer: IndividualAddress,
+        now: Instant,
+    ) -> Result<FtmSession<N>, FtmRefusal<Self>> {
         let required_samples = self.config.maximum_deliverable_samples();
         if usize::from(required_samples) > N {
             return Err(FtmRefusal {
@@ -757,8 +767,7 @@ impl<const N: usize> FtmRequester<N> {
                 dialog_tokens: TokenSet::EMPTY,
                 pending: None,
                 last_measurement: None,
-                samples: [None; N],
-                sample_count: 0,
+                samples: Vec::new(),
             },
             phase,
         })
@@ -883,33 +892,27 @@ impl<const N: usize> FtmSession<N> {
     /// Otherwise it returns failure or partial samples and the unmatched local
     /// timing pair, together with the requester for a later session.
     pub fn cancel(self) -> FtmTerminal<N> {
-        let operation = self.operation();
-        let owner = self.owner;
-        let partial = owner.partial();
+        let (requester, partial) = self.owner.into_parts();
         let outcome = match self.phase {
             FtmRequesterPhase::Complete {
                 negotiated,
                 termination,
             } => FtmOutcome::Complete(FtmSessionResult {
-                peer: owner.peer,
-                session_generation: operation.session_generation,
+                peer: partial.operation.peer(),
+                session_generation: partial.operation.session_generation(),
                 negotiated,
                 termination,
-                samples: owner.samples,
-                sample_count: owner.sample_count,
+                samples: partial.samples,
             }),
             FtmRequesterPhase::Failed(reason) => FtmOutcome::Failed { reason, partial },
             _ => FtmOutcome::Cancelled(partial),
         };
-        FtmTerminal {
-            requester: owner.requester,
-            outcome,
-        }
+        FtmTerminal { requester, outcome }
     }
 
     pub fn on_measurement(
         &mut self,
-        peer: [u8; 6],
+        peer: IndividualAddress,
         measurement: FtmMeasurement<'_>,
         local_timing: Option<FtmLocalExchangeTiming>,
         now: Instant,
@@ -1060,7 +1063,7 @@ impl<const N: usize> FtmSession<N> {
                 return self.protocol_error(error);
             }
             return Ok(FtmMeasurementDisposition::Complete {
-                samples: self.owner.sample_count,
+                samples: self.owner.samples.len(),
             });
         }
 
@@ -1087,7 +1090,8 @@ impl<const N: usize> FtmSession<N> {
             let Some(sample) = sample else {
                 return Ok(FtmMeasurementDisposition::Stale);
             };
-            if self.owner.sample_count >= usize::from(negotiated.ftms_per_burst.saturating_sub(1)) {
+            if self.owner.samples.len() >= usize::from(negotiated.ftms_per_burst.saturating_sub(1))
+            {
                 return self.protocol_error(FtmRequesterError::TooManyMeasurements);
             }
             self.push_sample(sample)?;
@@ -1095,7 +1099,7 @@ impl<const N: usize> FtmSession<N> {
                 return self.protocol_error(error);
             }
             return Ok(FtmMeasurementDisposition::Complete {
-                samples: self.owner.sample_count,
+                samples: self.owner.samples.len(),
             });
         }
 
@@ -1106,7 +1110,7 @@ impl<const N: usize> FtmSession<N> {
         let local_timing = self.validate_new_local_timing(measurement, local_timing)?;
         let maximum_samples = usize::from(negotiated.ftms_per_burst.saturating_sub(1));
         let disposition = if let Some(sample) = sample {
-            if self.owner.sample_count.saturating_add(1) >= maximum_samples {
+            if self.owner.samples.len().saturating_add(1) >= maximum_samples {
                 return self.protocol_error(FtmRequesterError::TooManyMeasurements);
             }
             let sample_index = self.push_sample(sample)?;
@@ -1115,7 +1119,7 @@ impl<const N: usize> FtmSession<N> {
                 sample_index,
             }
         } else {
-            if self.owner.sample_count >= maximum_samples {
+            if self.owner.samples.len() >= maximum_samples {
                 return self.protocol_error(FtmRequesterError::TooManyMeasurements);
             }
             FtmMeasurementDisposition::DuplicateSample {
@@ -1284,22 +1288,11 @@ impl<const N: usize> FtmSession<N> {
     }
 
     fn push_sample(&mut self, sample: FtmRawExchange) -> Result<usize, FtmRequesterError> {
-        if self.owner.sample_count >= N {
+        let index = self.owner.samples.len();
+        if self.owner.samples.push(sample).is_err() {
             self.phase = FtmRequesterPhase::Failed(FtmSessionFailure::ProtocolViolation);
             return Err(FtmRequesterError::TooManyMeasurements);
         }
-        let Some((index, slot)) = self
-            .owner
-            .samples
-            .iter_mut()
-            .enumerate()
-            .find(|(_, slot)| slot.is_none())
-        else {
-            self.phase = FtmRequesterPhase::Failed(FtmSessionFailure::ProtocolViolation);
-            return Err(FtmRequesterError::TooManyMeasurements);
-        };
-        *slot = Some(sample);
-        self.owner.sample_count = self.owner.sample_count.saturating_add(1);
         Ok(index)
     }
 

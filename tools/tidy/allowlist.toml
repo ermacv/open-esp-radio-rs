@@ -117,6 +117,14 @@ path = "crates/runtime/ieee80211/tests/ui/execution_projection.rs"
 reason = "cargo xtask check ui rejects owner coercion and extraction through execution views, with a compiling twin on host and RV32"
 
 [[uncompiled]]
+path = "crates/protocols/ieee80211/sta/tests/ui/ftm_identity.rs"
+reason = "cargo xtask check ui rejects reconstruction of an FTM identity, with a compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/sta/tests/ui/ftm_peer.rs"
+reason = "cargo xtask check ui requires a validated individual FTM peer, with a compiling twin on host and RV32"
+
+[[uncompiled]]
 path = "crates/runtime/ieee80211/tests/ui/partial_aggregate.rs"
 reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
 

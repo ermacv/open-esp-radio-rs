@@ -17,8 +17,8 @@ fn equal_numeric_generations_never_route_a_completion_into_another_requester() {
         };
         transmission
     };
-    let first = make([1; 6]);
-    let second = make([2; 6]);
+    let first = make(individual(1));
+    let second = make(individual(2));
     assert_eq!(first.session_generation(), second.session_generation());
     assert_eq!(
         first.transmission_generation(),
@@ -26,12 +26,12 @@ fn equal_numeric_generations_never_route_a_completion_into_another_requester() {
     );
     assert_eq!(first.body(), second.body());
     let (session, _) = first.complete(true, Instant::from_micros(10)).unwrap();
-    assert_eq!(session.operation().peer, [1; 6]);
+    assert_eq!(session.operation().peer(), individual(1));
     let (second_terminal, _) = second.reject_hardware_admission();
     let (_, FtmOutcome::Failed { partial, reason }) = second_terminal.into_parts() else {
         panic!()
     };
-    assert_eq!(partial.operation.peer, [2; 6]);
+    assert_eq!(partial.operation.peer(), individual(2));
     assert_eq!(reason, FtmSessionFailure::HardwareAdmissionRejected);
     assert_eq!(session.next_deadline(), Some(Instant::from_micros(1_010)));
 }
@@ -39,7 +39,7 @@ fn equal_numeric_generations_never_route_a_completion_into_another_requester() {
 #[test]
 fn cancellation_failure_and_timeout_return_samples_and_unmatched_local_timing() {
     for ending in 0..3 {
-        let peer = [7; 6];
+        let peer = individual(7);
         let mut session = start_published(FtmRequester::<3>::new(config(4, 1)), peer);
         let initial = initial_body(1, 4);
         session
@@ -106,22 +106,22 @@ fn cancellation_failure_and_timeout_return_samples_and_unmatched_local_timing() 
             ) => partial,
             _ => panic!("exact cancellation/failure reason must survive"),
         };
-        assert_eq!(partial.operation.peer, peer);
+        assert_eq!(partial.operation.peer(), peer);
         assert_eq!(partial.sample_count(), 1);
         assert_eq!(partial.pending, Some(pending));
         let sample = partial.sample(0).unwrap();
         assert_eq!(sample.dialog_token, 1);
         let next = requester
-            .start([8; 6], Instant::from_micros(20_000))
+            .start(individual(8), Instant::from_micros(20_000))
             .unwrap();
-        assert_eq!(next.operation().session_generation, 2);
+        assert_eq!(next.operation().session_generation(), 2);
         assert_eq!(partial.sample(0), Some(sample));
     }
 }
 
 #[test]
 fn cancel_after_rx_completed_delivers_the_unconsumed_result() {
-    let peer = [9; 6];
+    let peer = individual(9);
     let mut session = start_published(FtmRequester::<1>::new(config(2, 1)), peer);
     let initial = initial_body(1, 2);
     session
@@ -147,7 +147,11 @@ fn cancel_after_rx_completed_delivers_the_unconsumed_result() {
     };
     assert_eq!(result.sample_count(), 1);
     assert_eq!(result.sample(0).unwrap().dialog_token, 1);
-    assert!(requester.start([10; 6], Instant::from_micros(50)).is_ok());
+    assert!(
+        requester
+            .start(individual(10), Instant::from_micros(50))
+            .is_ok()
+    );
 }
 
 fn ps(value: u64) -> FtmTimestampPs {
@@ -254,7 +258,10 @@ fn follow_up_body(
     )
 }
 
-fn start_published<const N: usize>(requester: FtmRequester<N>, peer: [u8; 6]) -> FtmSession<N> {
+fn start_published<const N: usize>(
+    requester: FtmRequester<N>,
+    peer: IndividualAddress,
+) -> FtmSession<N> {
     let session = requester.start(peer, Instant::from_micros(10)).unwrap();
     let FtmRequesterService::Transmit(transmission) =
         session.service(Instant::from_micros(10)).unwrap()
@@ -336,7 +343,7 @@ fn config_rejects_unbounded_or_scheduled_profiles() {
 #[test]
 fn request_retries_transfer_the_only_session_owner() {
     let session = FtmRequester::<2>::new(config(2, 2))
-        .start([1; 6], Instant::from_micros(0))
+        .start(individual(1), Instant::from_micros(0))
         .unwrap();
     let refused = session.refuse_request(71);
     assert_eq!(refused.request, 71);
@@ -376,12 +383,14 @@ fn scheduling_overflow_returns_the_unchanged_requester_or_transmission() {
         error,
         owner: requester,
     } = requester
-        .start([1; 6], Instant::from_micros(u64::MAX))
+        .start(individual(1), Instant::from_micros(u64::MAX))
         .err()
         .unwrap();
     assert_eq!(error, FtmRequesterError::DeadlineOverflow);
-    let session = requester.start([1; 6], Instant::from_micros(0)).unwrap();
-    assert_eq!(session.operation().session_generation, 1);
+    let session = requester
+        .start(individual(1), Instant::from_micros(0))
+        .unwrap();
+    assert_eq!(session.operation().session_generation(), 1);
     let FtmRequesterService::Transmit(transmission) =
         session.service(Instant::from_micros(0)).unwrap()
     else {
@@ -413,10 +422,10 @@ fn scheduling_overflow_returns_the_unchanged_requester_or_transmission() {
     assert_eq!(partial.sample_count(), 0);
     assert_eq!(
         requester
-            .start([2; 6], Instant::from_micros(0))
+            .start(individual(2), Instant::from_micros(0))
             .unwrap()
             .operation()
-            .session_generation,
+            .session_generation(),
         2
     );
 }
@@ -424,7 +433,7 @@ fn scheduling_overflow_returns_the_unchanged_requester_or_transmission() {
 #[test]
 fn a_late_service_returns_the_queued_session_before_minting_a_transmission() {
     let session = FtmRequester::<1>::new(config(2, 2))
-        .start([1; 6], Instant::from_micros(0))
+        .start(individual(1), Instant::from_micros(0))
         .unwrap();
     let operation = session.operation();
     let deadline = session.next_deadline();
@@ -450,7 +459,7 @@ fn a_late_service_returns_the_queued_session_before_minting_a_transmission() {
 
 #[test]
 fn three_ftm_frames_deliver_two_owned_samples_without_claiming_distance() {
-    let peer = [0x22; 6];
+    let peer = individual(0x22);
     let mut requester = start_published(FtmRequester::<2>::new(config(3, 1)), peer);
 
     let initial = initial_body(1, 3);
@@ -511,12 +520,21 @@ fn three_ftm_frames_deliver_two_owned_samples_without_claiming_distance() {
             difference_ps: 300,
         })
     );
-    assert!(_requester.start(peer, Instant::from_micros(60)).is_ok());
+    let next = _requester.start(peer, Instant::from_micros(60)).unwrap();
+    let (_, FtmOutcome::Cancelled(empty)) = next.cancel().into_parts() else {
+        panic!("the next session has no measurement")
+    };
+    assert_eq!(empty.sample_count(), 0);
+    assert!(empty.sample(0).is_none());
+    assert_eq!(result.sample_count(), 2);
+    assert_eq!(result.sample(0).unwrap().dialog_token, 1);
+    assert_eq!(result.sample(1).unwrap().dialog_token, 2);
+    assert!(result.sample(2).is_none());
 }
 
 #[test]
 fn ftm_retransmission_deduplicates_follow_up_but_owns_new_token() {
-    let peer = [3; 6];
+    let peer = individual(3);
     let mut requester = start_published(FtmRequester::<2>::new(config(3, 1)), peer);
     let initial = initial_body(1, 3);
     requester
@@ -563,7 +581,7 @@ fn ftm_retransmission_deduplicates_follow_up_but_owns_new_token() {
 
 #[test]
 fn abandoned_retransmission_token_cannot_be_reused() {
-    let peer = [4; 6];
+    let peer = individual(4);
     let mut requester = start_published(FtmRequester::<3>::new(config(4, 1)), peer);
     let initial = initial_body(1, 4);
     requester
@@ -608,15 +626,17 @@ fn abandoned_retransmission_token_cannot_be_reused() {
 #[test]
 fn capacity_and_hardware_admission_fail_before_publication() {
     let requester = FtmRequester::<1>::new(config(2, 1));
-    let session = requester.start([1; 6], Instant::from_micros(0)).unwrap();
-    assert_eq!(session.operation().session_generation, 1);
+    let session = requester
+        .start(individual(1), Instant::from_micros(0))
+        .unwrap();
+    assert_eq!(session.operation().session_generation(), 1);
     assert!(matches!(
         session.service(Instant::from_micros(0)),
         Ok(FtmRequesterService::Transmit(_))
     ));
     let too_small = FtmRequester::<1>::new(config(3, 1));
     let refusal = too_small
-        .start([1; 6], Instant::from_micros(0))
+        .start(individual(1), Instant::from_micros(0))
         .err()
         .unwrap();
     assert_eq!(
@@ -628,7 +648,7 @@ fn capacity_and_hardware_admission_fail_before_publication() {
     );
     assert_eq!(refusal.owner.config(), config(3, 1));
     let session = FtmRequester::<2>::new(config(3, 1))
-        .start([1; 6], Instant::from_micros(0))
+        .start(individual(1), Instant::from_micros(0))
         .unwrap();
     let FtmRequesterService::Transmit(transmission) =
         session.service(Instant::from_micros(0)).unwrap()
@@ -645,12 +665,16 @@ fn capacity_and_hardware_admission_fail_before_publication() {
     };
     assert_eq!(reason, FtmSessionFailure::HardwareAdmissionRejected);
     assert_eq!(partial.sample_count(), 0);
-    assert!(requester.start([2; 6], Instant::from_micros(0)).is_ok());
+    assert!(
+        requester
+            .start(individual(2), Instant::from_micros(0))
+            .is_ok()
+    );
 }
 
 #[test]
 fn one_ftm_frame_is_a_terminal_initial_with_zero_samples() {
-    let peer = [5; 6];
+    let peer = individual(5);
     let mut requester = start_published(FtmRequester::<0>::new(config(1, 1)), peer);
     let terminal_initial = initial_body(0, 1);
     assert_eq!(
@@ -677,12 +701,12 @@ fn one_ftm_frame_is_a_terminal_initial_with_zero_samples() {
         ),
         Err(FtmRequesterError::TooManyMeasurements)
     );
-    assert_eq!(nonterminal.owner.sample_count, 0);
+    assert_eq!(nonterminal.owner.samples.len(), 0);
 }
 
 #[test]
 fn initial_retransmission_replaces_timing_and_tokens_wrap_consecutively() {
-    let peer = [6; 6];
+    let peer = individual(6);
     let mut requester = start_published(FtmRequester::<2>::new(config(3, 1)), peer);
     let initial = initial_body(254, 3);
     requester
@@ -738,7 +762,7 @@ fn initial_retransmission_replaces_timing_and_tokens_wrap_consecutively() {
 
 #[test]
 fn nonconsecutive_dialog_token_fails_before_sample_mutation() {
-    let peer = [7; 6];
+    let peer = individual(7);
     let mut requester = start_published(FtmRequester::<2>::new(config(3, 1)), peer);
     let initial = initial_body(1, 3);
     requester
@@ -762,13 +786,13 @@ fn nonconsecutive_dialog_token_fails_before_sample_mutation() {
             actual: 3,
         })
     );
-    assert_eq!(requester.owner.sample_count, 0);
+    assert_eq!(requester.owner.samples.len(), 0);
     assert_eq!(failure(requester), FtmSessionFailure::ProtocolViolation);
 }
 
 #[test]
 fn initial_retransmission_must_preserve_the_negotiated_body() {
-    let peer = [8; 6];
+    let peer = individual(8);
     let mut requester = start_published(FtmRequester::<2>::new(config(3, 1)), peer);
     let initial = initial_body(1, 3);
     requester
@@ -790,7 +814,7 @@ fn initial_retransmission_must_preserve_the_negotiated_body() {
         ),
         Err(FtmRequesterError::InitialRetransmissionMismatch)
     );
-    assert_eq!(requester.owner.sample_count, 0);
+    assert_eq!(requester.owner.samples.len(), 0);
     assert_eq!(failure(requester), FtmSessionFailure::ProtocolViolation);
 }
 
@@ -844,4 +868,8 @@ fn local_timing_proves_a_nonzero_token_through_the_bitmap_boundary() {
         assert!(tokens.contains(token));
     }
     assert!(!tokens.contains(0));
+}
+
+fn individual(octet: u8) -> IndividualAddress {
+    IndividualAddress::new([2, octet, octet, octet, octet, octet]).unwrap()
 }

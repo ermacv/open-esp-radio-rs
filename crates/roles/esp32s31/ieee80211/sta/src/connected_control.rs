@@ -556,6 +556,8 @@ pub enum ConnectedControlError {
     IndividualTwtHardware(StationIndividualTwtHardwareError),
     MissingIndividualTwtRequester,
     Ftm(FtmRequesterError),
+    /// FTM action frames require an individual peer address.
+    FtmGroupPeer,
     RxReorderCommand(RxReorderCommandError),
 }
 
@@ -754,10 +756,12 @@ impl ConnectedControlCore {
         now: oer_time::Instant,
     ) -> Result<ConnectedFtmRequestFrontier, ConnectedControlError> {
         let requester = FtmRequester::<CONNECTED_FTM_FRONTIER_SAMPLE_CAPACITY>::new(config);
+        let peer = oer_ieee80211_mac::address::IndividualAddress::new(self.peer)
+            .ok_or(ConnectedControlError::FtmGroupPeer)?;
         let session = requester
-            .start(self.peer, now)
+            .start(peer, now)
             .map_err(|refusal| refusal.error)?;
-        let session_generation = session.operation().session_generation;
+        let session_generation = session.operation().session_generation();
         let FtmRequesterService::Transmit(transmission) =
             session.service(now).map_err(|refusal| refusal.error)?
         else {

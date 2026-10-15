@@ -95,6 +95,12 @@ fn connected_ftm_request_is_consumed_at_hardware_frontier() {
             missing: crate::ftm::StationFtmUnsupportedStage::RuntimePhyOwnerBinding,
         }
     );
+    let mut invalid_peer = core();
+    invalid_peer.peer = [0xff; 6];
+    assert!(matches!(
+        invalid_peer.evaluate_ftm_request_frontier(config, oer_time::Instant::from_micros(50)),
+        Err(ConnectedControlError::FtmGroupPeer)
+    ));
 }
 
 #[test]

@@ -62,6 +62,7 @@ packages. Prefixes below omit `oer-` only to keep the mapping readable.
 | `esp32s31-soc-esp-hal` | `adapters/esp-hal/esp32s31/soc/` |
 | `esp32s31-phy` | `hardware/esp32s31/phy/` |
 | `espressif-ieee802154-engine` | `hardware/espressif/ieee802154/engine/` |
+| `esp32s31-ieee80211-form` | `runtime/esp32s31/ieee80211-form/` |
 | `esp32s31-ieee80211-dma` | `hardware/esp32s31/driver/ieee80211/dma/` |
 | `esp32s31-radio-esp-hal` | `adapters/esp-hal/esp32s31/radio/` |
 | `espressif-executor-embassy` | `adapters/embassy/espressif/executor/` |
@@ -81,6 +82,39 @@ and `adopt`) and returns the slot through `release_adopted` when the packet
 drops. A slot is adopted again only after that release returned, because the
 radio must first claim the slot the release freed. Preserve the proof at the
 smallest operation; a safe state machine in an audited crate remains safe.
+
+Wi-Fi's [S31 execution form](runtime/esp32s31/ieee80211-form/README.md)
+keeps the permanent backing lease, driver and IRQ registration in one
+primitive. The future owns only an affine `Pin<&'static mut ScopeStorage>`
+lease. Context and the result latch are outside every registered callback's
+graph. IRQ callbacks project a separate region containing no driver address;
+a driver step's exclusive borrow cannot alias an ISR borrow. Admission counts
+an entrant before checking the open gate. Detach masks all inputs, closes
+admission and waits within a fixed bound on every core. Successful quiescence
+allows one synchronous stop and returns the lease. Timeout never borrows the
+driver or claims hardware stopped: the backing, DMA and owners remain in
+permanent quarantine, even after the future is dropped. Only reset recovers
+from that outcome. ISR wake tails own their snapshots and wakers; all
+installation borrows end before wake. Composition wakers may only schedule,
+never synchronously poll or detach. No interrupt-priority order is a safety
+premise. The driver's waker carries only the permanent slot address: clone
+and drop do not access an installation, and wake acquires fresh admission
+before reading the current registration. A retained waker after detach cannot
+reach an old backing. The unsafe binding constructor checks routing and step/stop callbacks
+together; a safe route configuration cannot authorize later arbitrary callbacks.
+The same bridge owns its private SPSC command storage: affine mint credits
+bound occupancy, producer Release publishes initialized cells, consumer
+Acquire moves each value once and Release frees the cell before its credit
+returns. The queue's typed endpoints are exclusive; no generic insertion or
+second issuer is public. These branded queues are never registered with an
+external ISR or driver step. The S31 Driver value owns only its permanent
+backing lease and caller-side result loan. Its driving future borrows Driver;
+consuming owner recovery requires that loan to have ended. Explicit abandon
+closes the same admission domain before the core quarantines Driver without
+Drop. Destroying the outer Driver container cannot reclaim the backing or
+invalidate an entered actor's address. A completed shutdown reply remains in
+permanent storage so a subsequent abandon cannot inspect extracted owners or
+stop twice. Owned Driver cancellation uses that same synchronous primitive.
 
 ## PAC dependency authority
 

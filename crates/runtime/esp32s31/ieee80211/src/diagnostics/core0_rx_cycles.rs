@@ -30,8 +30,6 @@ pub struct Core0RxCycleSnapshot {
     pub runner_rx_pre: u32,
     pub runner_rx_driver: u32,
     pub runner_rx_post: u32,
-    pub mac_irq_entries: u32,
-    pub mac_irq_cycles: u32,
     pub control_calls: u32,
     pub control_cycles: u32,
     pub control_idle: u32,
@@ -125,8 +123,6 @@ impl Core0RxCycleSnapshot {
             runner_rx_pre: self.runner_rx_pre.wrapping_sub(earlier.runner_rx_pre),
             runner_rx_driver: self.runner_rx_driver.wrapping_sub(earlier.runner_rx_driver),
             runner_rx_post: self.runner_rx_post.wrapping_sub(earlier.runner_rx_post),
-            mac_irq_entries: self.mac_irq_entries.wrapping_sub(earlier.mac_irq_entries),
-            mac_irq_cycles: self.mac_irq_cycles.wrapping_sub(earlier.mac_irq_cycles),
             control_calls: self.control_calls.wrapping_sub(earlier.control_calls),
             control_cycles: self.control_cycles.wrapping_sub(earlier.control_cycles),
             control_idle: self.control_idle.wrapping_sub(earlier.control_idle),
@@ -326,8 +322,6 @@ pub struct Core0RxCycleCounters {
     runner_rx_pre: AtomicU32,
     runner_rx_driver: AtomicU32,
     runner_rx_post: AtomicU32,
-    mac_irq_entries: AtomicU32,
-    mac_irq_cycles: AtomicU32,
     control_calls: AtomicU32,
     control_cycles: AtomicU32,
     control_idle: AtomicU32,
@@ -422,8 +416,6 @@ impl Core0RxCycleCounters {
             runner_rx_pre: AtomicU32::new(0),
             runner_rx_driver: AtomicU32::new(0),
             runner_rx_post: AtomicU32::new(0),
-            mac_irq_entries: AtomicU32::new(0),
-            mac_irq_cycles: AtomicU32::new(0),
             control_calls: AtomicU32::new(0),
             control_cycles: AtomicU32::new(0),
             control_idle: AtomicU32::new(0),
@@ -546,8 +538,6 @@ impl Core0RxCycleCounters {
             runner_rx_pre: self.runner_rx_pre.load(Ordering::Relaxed),
             runner_rx_driver: self.runner_rx_driver.load(Ordering::Relaxed),
             runner_rx_post: self.runner_rx_post.load(Ordering::Relaxed),
-            mac_irq_entries: self.mac_irq_entries.load(Ordering::Relaxed),
-            mac_irq_cycles: self.mac_irq_cycles.load(Ordering::Relaxed),
             control_calls: self.control_calls.load(Ordering::Relaxed),
             control_cycles: self.control_cycles.load(Ordering::Relaxed),
             control_idle: self.control_idle.load(Ordering::Relaxed),
@@ -678,12 +668,6 @@ impl Core0RxCycleCounters {
             cycle_count().wrapping_sub(telemetry_started),
             Ordering::Relaxed,
         );
-    }
-
-    #[inline(always)]
-    pub fn record_mac_irq(&self, cycles: u32) {
-        self.mac_irq_entries.fetch_add(1, Ordering::Relaxed);
-        self.mac_irq_cycles.fetch_add(cycles, Ordering::Relaxed);
     }
 
     #[inline(always)]

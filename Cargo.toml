@@ -59,6 +59,7 @@ members = [
     "crates/runtime/espressif/ieee802154",
     "crates/adapters/embassy/*/executor",
     "crates/runtime/*/ieee80211",
+    "crates/runtime/esp32s31/ieee80211-form",
     "crates/runtime/*/radio",
     "crates/adapters/esp-hal/*/radio",
     "crates/adapters/esp-hal/*/ieee802154",

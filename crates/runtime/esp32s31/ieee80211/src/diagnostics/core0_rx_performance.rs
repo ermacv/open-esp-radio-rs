@@ -213,7 +213,6 @@ pub(crate) enum Core0TxPhase {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Core0PerformanceSnapshot {
-    pub rx_interrupt_posts: u32,
     pub radio_polls: u32,
     pub radio_cycles: u32,
     pub radio_instructions: u32,
@@ -327,9 +326,6 @@ pub struct Core0PerformanceSnapshot {
 impl Core0PerformanceSnapshot {
     pub fn wrapping_delta_since(self, earlier: Self) -> Self {
         Self {
-            rx_interrupt_posts: self
-                .rx_interrupt_posts
-                .wrapping_sub(earlier.rx_interrupt_posts),
             radio_polls: self.radio_polls.wrapping_sub(earlier.radio_polls),
             radio_cycles: self.radio_cycles.wrapping_sub(earlier.radio_cycles),
             radio_instructions: self
@@ -1348,11 +1344,9 @@ impl Core0PerformanceCounters {
         }
     }
 
-    /// Read task counters together with the IRQ consumer's publication count.
-    /// The IRQ component owns that counter; no ISR calls into this runtime.
-    pub fn snapshot(&self, irq_rx_posts: u32) -> Core0PerformanceSnapshot {
+    /// Read task counters. IRQ diagnostics borrow their own installation.
+    pub fn snapshot(&self) -> Core0PerformanceSnapshot {
         Core0PerformanceSnapshot {
-            rx_interrupt_posts: if COARSE { irq_rx_posts } else { 0 },
             radio_polls: self.radio_polls.load(Ordering::Relaxed),
             radio_cycles: self.radio_cycles.load(Ordering::Relaxed),
             radio_instructions: self.radio_instructions.load(Ordering::Relaxed),

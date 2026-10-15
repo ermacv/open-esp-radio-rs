@@ -123,11 +123,11 @@ pub use diagnostics::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use efuse::EfuseMacError;
-#[cfg(feature = "mac-irq-diagnostics")]
-#[cfg(target_arch = "riscv32")]
-pub use interrupts::MacIrqObservation;
 #[cfg(target_arch = "riscv32")]
 pub use interrupts::{mac_interrupt, power_interrupt};
+#[cfg(feature = "mac-irq-diagnostics")]
+#[cfg(target_arch = "riscv32")]
+use oer_esp32s31_ieee80211_mac::irq::consumer::IrqDiagnostics;
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 #[cfg(target_arch = "riscv32")]
 pub use oer_esp32s31_ieee80211_runtime::datapath::{
@@ -140,11 +140,11 @@ pub use oer_esp32s31_ieee80211_runtime::datapath::{
 pub use oer_esp32s31_ieee80211_runtime::diagnostics::core0_rx_performance::{
     CORE0_PERFORMANCE, Core0PerformanceSample, Core0PerformanceSnapshot,
 };
-/// Read runtime diagnostics and the interrupt owner's wrapping RX count.
+/// Read task counters; IRQ counters belong to the installation's IrqDiagnostics.
 #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
 #[cfg(target_arch = "riscv32")]
 pub fn core0_performance_snapshot() -> Core0PerformanceSnapshot {
-    CORE0_PERFORMANCE.snapshot(interrupts::IRQ_RUNTIME.rx_post_count())
+    CORE0_PERFORMANCE.snapshot()
 }
 
 #[cfg(feature = "diagnostics")]
@@ -346,7 +346,7 @@ pub struct DiagnosticObservers {
         &'static dyn oer_esp32s31_ieee80211_runtime::diagnostics::network::RxNetworkDeliveryObserver,
     >,
     #[cfg(feature = "mac-irq-diagnostics")]
-    pub mac_irq: fn(MacIrqObservation),
+    pub mac_irq: for<'irq> fn(&IrqDiagnostics<'irq>),
     pub station_attempt: fn(StationAttemptObservation),
     pub access_point: fn(AccessPointObservation),
 }

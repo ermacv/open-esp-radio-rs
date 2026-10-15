@@ -6,41 +6,17 @@ pub mod epoch;
 use oer_esp32s31_hal::{
     owner::{MacInterruptRegisters, MacPowerInterruptRegisters},
     types::{
-        MacInterruptEvents, MacInterruptMask, MacInterruptObservation, MacInterruptSnapshot,
+        MacInterruptEvents, MacInterruptObservation, MacInterruptSnapshot,
         MacPowerInterruptObservation, MacPowerInterruptSnapshot,
     },
 };
-
-/// Platform route which lends both interrupt-register capabilities to hard
-/// handlers for one finite connected epoch.
-///
-/// Implementations own CPU routing and stable ISR storage. They must disable
-/// the routes and recover both HAL capabilities before `quiesce` returns. Their
-/// active representation must also be safe to retain indefinitely: a lost
-/// higher-level epoch forgets the installed route rather than dropping ISR
-/// storage which hardware can still reach, and role control then requires
-/// reset before another epoch can be constructed.
-pub trait MacInterruptRoute {
-    type Platform: ?Sized;
-    type Setup;
-    type Error;
-
-    fn activate(
-        &mut self,
-        platform: &Self::Platform,
-        setup: Self::Setup,
-        event_mask: MacInterruptMask,
-    ) -> Result<(), (Self::Error, Self::Setup)>;
-
-    fn quiesce(&mut self, platform: &Self::Platform) -> Result<Self::Setup, Self::Error>;
-}
 
 /// Finite MAC interrupt capability used by the hard ISR.
 ///
 /// Production delegates both operations to generated PAC registers. Its
 /// associated snapshot is opaque and can only be acknowledged once. Tests
 /// model the same ordering with semantic observations and no MMIO identity.
-pub trait MacInterruptStatusSnapshot {
+pub(crate) trait MacInterruptStatusSnapshot {
     fn observation(&self) -> MacInterruptObservation;
 }
 
@@ -56,7 +32,7 @@ impl MacInterruptStatusSnapshot for MacInterruptObservation {
     }
 }
 
-pub trait MacPowerInterruptStatusSnapshot {
+pub(crate) trait MacPowerInterruptStatusSnapshot {
     fn observation(&self) -> MacPowerInterruptObservation;
 }
 
@@ -73,11 +49,11 @@ impl MacPowerInterruptStatusSnapshot for MacPowerInterruptObservation {
 }
 
 // CAPABILITY: wifi-interrupt-epoch-owners
-pub trait MacInterrupt {
+pub(crate) trait MacInterrupt {
     type Snapshot: MacInterruptStatusSnapshot;
 
     fn status(&mut self) -> Self::Snapshot;
-    fn mask_rx_delivery(&mut self) {}
+    fn mask_rx_delivery(&mut self);
     fn acknowledge(&mut self, snapshot: Self::Snapshot);
 }
 
@@ -102,7 +78,7 @@ impl MacInterrupt for MacInterruptRegisters {
 /// The PAC snapshot exposes the reviewed TSF-timer causes as named fields and
 /// groups every still-unknown cause as unhandled. Policy code never receives a
 /// register image or an unqualified hardware bit number.
-pub trait MacPowerInterrupt {
+pub(crate) trait MacPowerInterrupt {
     type Snapshot: MacPowerInterruptStatusSnapshot;
 
     fn status(&mut self) -> Self::Snapshot;
@@ -178,22 +154,6 @@ pub enum IrqDisposition {
     AcknowledgedOnly,
 }
 
-/// Duplicate interrupts coalesce by driver-local event kind, matching the C worker latch.
-pub trait IrqSink {
-    fn post(&self, events: u32);
-    fn record_unhandled_event(&self);
-
-    /// Whether this connected epoch owns task-side RX source moderation.
-    fn moderate_rx_success(&self) -> bool {
-        false
-    }
-}
-
-/// Sink for acknowledged WDEVPWR causes classified by the PAC.
-pub trait PowerIrqSink {
-    fn post_power(&self, observation: MacPowerInterruptObservation);
-}
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PowerIrqSnapshot {
     pub observation: MacPowerInterruptObservation,
@@ -240,65 +200,67 @@ pub const fn event_mask(causes: MacInterruptEvents) -> u32 {
     mask
 }
 
-/// Handles exactly one MAC status snapshot and posts only the four recovered
-/// task-side events. The complete status snapshot is acknowledged before the
-/// task can run, including unsupported bits, matching the pinned common ISR.
-pub fn handle_mac_irq<M: MacInterrupt, S: IrqSink>(
-    interrupt: &mut M,
-    sink: &S,
+/// Acknowledge one complete MAC snapshot, returning its finite publication.
+/// The caller publishes `snapshot.posted_events` after releasing the register
+/// borrow, so an executor waker can never reenter a live MMIO transaction.
+#[inline(always)]
+pub fn handle_mac_irq<M: epoch::RxDelivery>(
+    interrupt: &mut MacInterruptRegisters,
 ) -> (IrqDisposition, IrqSnapshot) {
-    let status_snapshot = interrupt.status();
-    let observation = status_snapshot.observation();
+    acknowledge_mac::<_, M>(interrupt)
+}
+
+#[inline(always)]
+fn acknowledge_mac<I: MacInterrupt, M: epoch::RxDelivery>(
+    interrupt: &mut I,
+) -> (IrqDisposition, IrqSnapshot) {
+    let status = interrupt.status();
+    let observation = status.observation();
     let work_events = observation.work_events();
-    let posted_events = event_mask(work_events);
     let snapshot = IrqSnapshot {
         had_status: !observation.is_empty(),
-        posted_events,
+        posted_events: event_mask(work_events),
         had_auxiliary_event: observation.has_auxiliary_event(),
         had_unhandled_event: observation.has_unhandled_event(),
     };
-
     if observation.is_empty() {
         return (IrqDisposition::Spurious, snapshot);
     }
-
-    if work_events.contains(MacInterruptEvents::RX_SUCCESS) && sink.moderate_rx_success() {
-        // Mask before W1C. A completion racing this edge remains latched and
-        // becomes visible when the bottom half restores RX delivery.
+    if M::MODERATES_RX && work_events.contains(MacInterruptEvents::RX_SUCCESS) {
+        // Mask before W1C; a racing level remains latched until the driver
+        // restores the source after draining the durable RX frontier.
         interrupt.mask_rx_delivery();
     }
-    interrupt.acknowledge(status_snapshot);
-    // Avoid an atomic RMW on every qualified RX interrupt. The two observed
-    // auxiliary bits are acknowledged above but neither they nor a wholly
-    // known work image need to mutate unknown-event telemetry.
-    if observation.has_unhandled_event() {
-        sink.record_unhandled_event();
-    }
-    if work_events.is_empty() {
-        (IrqDisposition::AcknowledgedOnly, snapshot)
+    interrupt.acknowledge(status);
+    let disposition = if work_events.is_empty() {
+        IrqDisposition::AcknowledgedOnly
     } else {
-        sink.post(posted_events);
-        (IrqDisposition::Posted, snapshot)
-    }
+        IrqDisposition::Posted
+    };
+    (disposition, snapshot)
 }
 
-/// Acknowledge one complete masked WDEVPWR snapshot before publishing its causes.
-///
-/// This intentionally stops at the ISR/executor boundary. Decoding beacon
-/// miss, sleep-limit, TSF or other causes requires separate vendor evidence
-/// and is not implied by an otherwise unhandled cause.
-pub fn handle_power_irq<P: MacPowerInterrupt, S: PowerIrqSink>(
-    interrupt: &mut P,
-    sink: &S,
+/// Acknowledge one complete WDEVPWR snapshot before its causes are published.
+#[inline(always)]
+pub fn handle_power_irq(
+    interrupt: &mut MacPowerInterruptRegisters,
 ) -> (PowerIrqDisposition, PowerIrqSnapshot) {
-    let status_snapshot = interrupt.status();
-    let observation = status_snapshot.observation();
+    acknowledge_power(interrupt)
+}
+
+#[inline(always)]
+fn acknowledge_power<P: MacPowerInterrupt>(
+    interrupt: &mut P,
+) -> (PowerIrqDisposition, PowerIrqSnapshot) {
+    let status = interrupt.status();
+    let observation = status.observation();
     let snapshot = PowerIrqSnapshot { observation };
     if observation.is_empty() {
         return (PowerIrqDisposition::Spurious, snapshot);
     }
-
-    interrupt.acknowledge(status_snapshot);
-    sink.post_power(observation);
+    interrupt.acknowledge(status);
     (PowerIrqDisposition::Posted, snapshot)
 }
+
+#[cfg(test)]
+mod tests;

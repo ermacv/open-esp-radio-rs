@@ -2,9 +2,9 @@ use oer_esp32s31_hal::types::MacDelaySlot;
 use std::{cell::RefCell, rc::Rc};
 
 use oer_esp32s31_hal::types::{
-    MacCcmpKeyIdentity, MacHtTxProgram, MacInterface, MacInterruptEvents, MacInterruptMask,
-    MacInterruptObservation, MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionObservation,
-    MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
+    MacCcmpKeyIdentity, MacHtTxProgram, MacInterface, MacInterruptMask, MacKeyInstallOutcome,
+    MacLegacyTxProgram, MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason,
+    MacTxQueueDetached,
 };
 use oer_esp32s31_ieee80211_dma::descriptor::{
     BIT_30, BIT_31, DESCRIPTOR_BYTES, DMA_LOW, Descriptor, LENGTH_SHIFT, descriptor_address_valid,
@@ -26,7 +26,7 @@ use oer_esp32s31_ieee80211_mac::{
         MacTxPowerTable, StaLinkRxPolicyHardware, activate_promiscuous_receive,
         configure_sta_link_receive_policy, initialize_wifi_mac,
     },
-    irq::{IrqDisposition, IrqWork, MacInterrupt, consumer::IrqConsumer, handle_mac_irq},
+    irq::{IrqWork, consumer::IrqStorage},
     rate::schedule::{RateScheduleKind, RateScheduleRef},
     rx::{
         HeBandwidth, HeGuardIntervalAndLtf, HeMuBandwidth, HeMuSignal, HeSuSignal,

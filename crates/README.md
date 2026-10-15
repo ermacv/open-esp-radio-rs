@@ -62,6 +62,7 @@ Cargo package identities are independent of this directory hierarchy.
 | `runtime/ieee80211/` | Portable Wi-Fi execution primitives: monitor handoffs, task shutdown, station network ownership and poll boundaries |
 | `runtime/interrupt-table/` | Each image's static table of peripheral interrupt sources (handler, level, core) with unique tokens that enable and disable them |
 | `runtime/bluetooth/` | Portable service loop joining the in-process HCI transport, the LE Controller core and a radio backend, as the body of the backend's port |
+| [`runtime/esp32s31/ieee80211-form/`](runtime/esp32s31/ieee80211-form/README.md) | S31 Wi-Fi pinned driver/IRQ execution form: installation-owned registers, exclusive IRQ consumers, cancellation/forget custody and linked SRAM proof |
 | `runtime/esp32s31/{ieee80211,bluetooth,ieee802154}/` | Executor-independent radio execution over the `oer-time` ports; Wi-Fi role/datapath owners, the Bluetooth LE radio role driving scheduler list zero and the IEEE 802.15.4 acknowledged-IRQ handoff with cancellation-safe operation/DMA owners |
 | `adapters/embassy-net/owned/` | Owned-packet network adapter over the pinned Embassy/Xarxa forks |
 | `composition/esp32s31/embassy/{ieee80211,bluetooth,ieee802154,radio}/` | Static resources, one-time claims, final bindings and the concrete lifecycle runners; `radio` starts the shared radio system (arbiter, PHY domain) with its periodic PHY tracking and coexistence schedule; Wi-Fi, Bluetooth and IEEE 802.15.4 start and stop as its clients, and Bluetooth adds its HCI Controller over the radio runtime |
@@ -135,8 +136,9 @@ storage and staging pool for one bounded completion/recycle pass. Publication
 accepts the unique frame or returns that same lease on rejection. Embassy
 retains queue endpoints, VIF routing, clocks, observation bindings and the
 stopped/prepared/live composition owners. No chip dependency points back to an
-adapter. Integration `interrupts` owns the ISR bindings and routes both
-handlers and role epochs through the same static interrupt resources. See the
+adapter. Integration `interrupts` owns the ISR bindings. The S31 form routes
+both handlers through one pinned installation; register banks and diagnostics
+belong to that installation, while the sole static slot holds only its address. See the
 [RX ownership contract](runtime/esp32s31/ieee80211/src/datapath/rx/README.md).
 
 ## Register and execution boundaries

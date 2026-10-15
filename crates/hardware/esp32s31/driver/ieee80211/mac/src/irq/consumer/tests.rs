@@ -1,676 +1,308 @@
-use core::cell::Cell;
+extern crate std;
 
-use oer_esp32s31_hal::types::{
-    MacInterruptEvents, MacInterruptObservation, MacPowerInterruptObservation,
-};
-
-use crate::irq::{
-    EVENT_COLLISION, EVENT_RX_SUCCESS, EVENT_TX_COMPLETE, EVENT_TX_TIMEOUT, IrqDisposition,
-    IrqSink, MacInterrupt, MacInterruptRoute, MacPowerInterrupt, PowerIrqDisposition,
-    handle_mac_irq, handle_power_irq,
-};
-
+use super::*;
+use crate::irq::{EVENT_COLLISION, EVENT_TX_COMPLETE, EVENT_TX_TIMEOUT};
+use core::{future::Future, pin::pin, task::Waker};
 use std::{
-    rc::Rc,
-    sync::atomic::{AtomicU32, Ordering},
+    sync::{Arc, atomic::AtomicUsize},
+    task::Wake,
 };
-
-use super::{IrqConsumer, Moderated, PowerIrqConsumer, Unmoderated};
-use crate::irq::epoch::{
-    InterruptEpoch, MacInterruptEpochActivateError, MacInterruptEpochQuiesceError,
-    MacInterruptEpochStateError,
-};
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RouteError {
-    Activation,
-    Quiescence,
-}
-
-struct Route {
-    active: bool,
-}
-
-impl MacInterruptRoute for Route {
-    type Platform = Cell<u8>;
-    type Setup = u8;
-    type Error = RouteError;
-
-    fn activate(
-        &mut self,
-        platform: &Self::Platform,
-        setup: Self::Setup,
-        _event_mask: oer_esp32s31_hal::types::MacInterruptMask,
-    ) -> Result<(), (Self::Error, Self::Setup)> {
-        if platform.get() == 10 {
-            return Err((RouteError::Activation, setup));
-        }
-        self.active = true;
-        platform.set(1);
-        Ok(())
-    }
-
-    fn quiesce(&mut self, platform: &Self::Platform) -> Result<Self::Setup, Self::Error> {
-        if platform.get() == 20 {
-            return Err(RouteError::Quiescence);
-        }
-        assert!(self.active);
-        self.active = false;
-        platform.set(2);
-        Ok(7)
-    }
-}
-
-struct DropObservedRoute {
-    dropped: Rc<Cell<bool>>,
-}
-
-impl Drop for DropObservedRoute {
-    fn drop(&mut self) {
-        self.dropped.set(true);
-    }
-}
-
-impl MacInterruptRoute for DropObservedRoute {
-    type Platform = Cell<u8>;
-    type Setup = u8;
-    type Error = RouteError;
-
-    fn activate(
-        &mut self,
-        platform: &Self::Platform,
-        _setup: Self::Setup,
-        _event_mask: oer_esp32s31_hal::types::MacInterruptMask,
-    ) -> Result<(), (Self::Error, Self::Setup)> {
-        platform.set(1);
-        Ok(())
-    }
-
-    fn quiesce(&mut self, platform: &Self::Platform) -> Result<Self::Setup, Self::Error> {
-        platform.set(2);
-        Ok(7)
-    }
-}
-
-#[test]
-fn maps_one_combined_snapshot_to_bounded_rx_and_tx_wakes() {
-    let runtime = IrqConsumer::new(Unmoderated);
-
-    runtime.publish(EVENT_TX_TIMEOUT | EVENT_COLLISION | EVENT_TX_COMPLETE | EVENT_RX_SUCCESS);
-
-    assert_eq!(runtime.rx_post_count(), 1);
-    assert!(runtime.rx_signaled());
-    assert_eq!(
-        runtime.try_take_tx(),
-        Some(EVENT_TX_TIMEOUT | EVENT_COLLISION | EVENT_TX_COMPLETE)
-    );
-    // Three TX causes coalesce into one wake without losing their bits.
-    assert_eq!(runtime.try_take_tx(), None);
-}
-
-#[test]
-fn repeated_rx_images_coalesce_the_wake_without_losing_irq_evidence() {
-    let runtime = IrqConsumer::new(Unmoderated);
-
-    runtime.publish(EVENT_RX_SUCCESS);
-    runtime.publish(EVENT_RX_SUCCESS);
-
-    assert_eq!(runtime.rx_post_count(), 2);
-    assert!(runtime.rx_signaled());
-    ready(runtime.wait_rx());
-    assert!(!runtime.rx_signaled());
-}
-
-#[test]
-fn staging_capacity_wake_does_not_forge_interrupt_evidence() {
-    let runtime = IrqConsumer::new(Unmoderated);
-
-    runtime.notify_rx_capacity();
-    ready(runtime.wait_rx_capacity());
-
-    assert!(!runtime.rx_signaled());
-    assert_eq!(runtime.rx_post_count(), 0);
-}
-
-#[test]
-fn live_ring_handoff_probe_does_not_forge_interrupt_evidence() {
-    let runtime = IrqConsumer::new(Unmoderated);
-
-    runtime.notify_rx_handoff();
-    assert!(runtime.rx_signaled());
-    ready(runtime.wait_rx());
-
-    assert!(!runtime.rx_signaled());
-    assert_eq!(runtime.rx_post_count(), 0);
-}
-
-#[test]
-fn quiesced_epoch_drain_removes_every_coalesced_wake() {
-    let runtime = IrqConsumer::new(Unmoderated);
-
-    runtime.publish(EVENT_RX_SUCCESS | EVENT_TX_COMPLETE | EVENT_TX_TIMEOUT);
-    runtime.notify_rx_capacity();
-
-    assert_eq!(
-        runtime.drain_pending(),
-        super::IrqDrain {
-            rx: true,
-            rx_capacity: true,
-            tx_events: EVENT_TX_COMPLETE | EVENT_TX_TIMEOUT,
-        }
-    );
-    assert_eq!(runtime.drain_pending(), Default::default());
-    assert!(!runtime.rx_signaled());
-    assert_eq!(runtime.try_take_tx(), None);
-}
-
-#[test]
-fn irq_epoch_recovers_setup_before_draining_every_executor_wake() {
-    let mac = IrqConsumer::new(Unmoderated);
-    let power = PowerIrqConsumer::new();
-    let platform = Cell::new(0);
-    let mut epoch = InterruptEpoch::new(Route { active: false }, 7, &mac, &power);
-
-    assert_eq!(epoch.setup(), Ok(&7));
-    epoch
-        .activate(
-            &platform,
-            oer_esp32s31_hal::types::MacInterruptMask::COLD_RX,
-        )
-        .unwrap();
-    assert!(epoch.is_active());
-    assert_eq!(epoch.setup(), Err(MacInterruptEpochStateError::Active));
-    mac.publish(EVENT_RX_SUCCESS | EVENT_TX_COMPLETE);
-    mac.notify_rx_capacity();
-    let power_observation =
-        MacPowerInterruptObservation::from_semantic_events(true, false, true, false, true, true);
-    power.publish(power_observation);
-
-    let drained = epoch.quiesce(&platform).unwrap();
-    assert_eq!(platform.get(), 2);
-    assert!(drained.mac.rx);
-    assert!(drained.mac.rx_capacity);
-    assert_eq!(drained.mac.tx_events, EVENT_TX_COMPLETE);
-    assert_eq!(drained.power_events, power_observation);
-    assert_eq!(epoch.setup(), Ok(&7));
-    assert_eq!(mac.drain_pending(), Default::default());
-    assert_eq!(
-        power.drain_pending(),
-        MacPowerInterruptObservation::default()
-    );
-}
-
-#[test]
-fn inactive_irq_epoch_returns_the_exact_route_setup_and_consumers() {
-    let mac = IrqConsumer::new(Unmoderated);
-    let power = PowerIrqConsumer::new();
-    let epoch = InterruptEpoch::new(Route { active: false }, 9, &mac, &power);
-
-    let crate::irq::epoch::InactiveIrqParts {
-        route,
-        setup,
-        mac: returned_mac,
-        power: returned_power,
-    } = epoch
-        .try_into_inactive_parts()
-        .unwrap_or_else(|_| panic!("an inactive epoch must be decomposable"));
-
-    assert!(!route.active);
-    assert_eq!(setup, 9);
-    assert!(core::ptr::eq(returned_mac, &mac));
-    assert!(core::ptr::eq(returned_power, &power));
-}
-
-#[test]
-fn active_irq_epoch_cannot_release_its_route_or_setup() {
-    let mac = IrqConsumer::new(Unmoderated);
-    let power = PowerIrqConsumer::new();
-    let platform = Cell::new(0);
-    let mut epoch = InterruptEpoch::new(Route { active: false }, 9, &mac, &power);
-    epoch
-        .activate(
-            &platform,
-            oer_esp32s31_hal::types::MacInterruptMask::COLD_RX,
-        )
-        .unwrap();
-
-    let mut epoch = match epoch.try_into_inactive_parts() {
-        Ok(_) => panic!("an active route must not be extractable"),
-        Err(epoch) => epoch,
-    };
-    assert!(epoch.is_active());
-    assert_eq!(platform.get(), 1);
-
-    epoch.quiesce(&platform).unwrap();
-    let crate::irq::epoch::InactiveIrqParts { route, setup, .. } = epoch
-        .try_into_inactive_parts()
-        .unwrap_or_else(|_| panic!("the quiesced epoch must become extractable"));
-    assert!(!route.active);
-    assert_eq!(setup, 7);
-}
-
-#[test]
-fn irq_epoch_retains_the_exact_frontier_on_each_route_failure() {
-    let mac = IrqConsumer::new(Unmoderated);
-    let power = PowerIrqConsumer::new();
-    let platform = Cell::new(10);
-    let mut epoch = InterruptEpoch::new(Route { active: false }, 7, &mac, &power);
-
-    assert_eq!(
-        epoch.activate(
-            &platform,
-            oer_esp32s31_hal::types::MacInterruptMask::COLD_RX,
-        ),
-        Err(MacInterruptEpochActivateError::Route(
-            RouteError::Activation
-        ))
-    );
-    assert_eq!(epoch.setup(), Ok(&7));
-    platform.set(0);
-    epoch
-        .activate(
-            &platform,
-            oer_esp32s31_hal::types::MacInterruptMask::COLD_RX,
-        )
-        .unwrap();
-    platform.set(20);
-    assert_eq!(
-        epoch.quiesce(&platform),
-        Err(MacInterruptEpochQuiesceError::Route(RouteError::Quiescence))
-    );
-    assert!(epoch.is_active());
-    platform.set(0);
-    epoch.quiesce(&platform).unwrap();
-    assert_eq!(epoch.setup(), Ok(&7));
-    assert_eq!(
-        epoch.quiesce(&platform),
-        Err(MacInterruptEpochQuiesceError::AlreadyQuiesced)
-    );
-}
-
-#[test]
-fn active_irq_epoch_drop_retains_the_installed_route_without_panicking() {
-    let mac = IrqConsumer::new(Unmoderated);
-    let power = PowerIrqConsumer::new();
-    let platform = Cell::new(0);
-    let dropped = Rc::new(Cell::new(false));
-    let mut epoch = InterruptEpoch::new(
-        DropObservedRoute {
-            dropped: dropped.clone(),
-        },
-        7,
-        &mac,
-        &power,
-    );
-    epoch
-        .activate(
-            &platform,
-            oer_esp32s31_hal::types::MacInterruptMask::COLD_RX,
-        )
-        .unwrap();
-
-    drop(epoch);
-
-    assert_eq!(platform.get(), 1);
-    assert!(!dropped.get());
-}
-
-#[test]
-fn retains_unhandled_evidence_through_the_irq_sink_contract() {
-    let runtime = IrqConsumer::new(Unmoderated);
-    IrqSink::record_unhandled_event(&runtime);
-    assert!(runtime.observed_unhandled());
-}
-
-struct Interrupt {
-    status: MacInterruptObservation,
-    rx_masked: Cell<bool>,
-    rx_was_masked_before_ack: Cell<bool>,
-    acknowledged: Cell<bool>,
-}
-
-impl MacInterrupt for Interrupt {
-    type Snapshot = MacInterruptObservation;
-
-    fn status(&mut self) -> Self::Snapshot {
-        self.status
-    }
-
-    fn mask_rx_delivery(&mut self) {
-        self.rx_masked.set(true);
-    }
-
-    fn acknowledge(&mut self, snapshot: Self::Snapshot) {
-        let _snapshot = snapshot;
-        self.rx_was_masked_before_ack.set(self.rx_masked.get());
-        self.acknowledged.set(true);
-    }
-}
-
-#[test]
-fn production_handler_acknowledges_before_publishing_driver_work() {
-    let status = MacInterruptObservation::from_semantic_events(
-        MacInterruptEvents::RX_SUCCESS.union(MacInterruptEvents::TX_COMPLETE),
-        false,
-        false,
-    );
-    let mut interrupt = Interrupt {
-        status,
-        rx_masked: Cell::new(false),
-        rx_was_masked_before_ack: Cell::new(false),
-        acknowledged: Cell::new(false),
-    };
-    let runtime = IrqConsumer::new(Unmoderated);
-
-    let (disposition, snapshot) = handle_mac_irq(&mut interrupt, &runtime);
-
-    assert_eq!(disposition, IrqDisposition::Posted);
-    assert!(snapshot.had_status);
-    assert_eq!(snapshot.posted_events, EVENT_RX_SUCCESS | EVENT_TX_COMPLETE);
-    assert!(interrupt.acknowledged.get());
-    assert!(!interrupt.rx_masked.get());
-    assert!(runtime.rx_signaled());
-    assert_eq!(runtime.try_take_tx(), Some(EVENT_TX_COMPLETE));
-}
-
-#[test]
-fn spurious_status_neither_acknowledges_nor_wakes_the_driver() {
-    let mut interrupt = Interrupt {
-        status: MacInterruptObservation::default(),
-        rx_masked: Cell::new(false),
-        rx_was_masked_before_ack: Cell::new(false),
-        acknowledged: Cell::new(false),
-    };
-    let runtime = IrqConsumer::new(Unmoderated);
-
-    assert_eq!(
-        handle_mac_irq(&mut interrupt, &runtime).0,
-        IrqDisposition::Spurious
-    );
-    assert!(!interrupt.acknowledged.get());
-    assert!(!runtime.rx_signaled());
-    assert_eq!(runtime.try_take_tx(), None);
-}
-
-std::thread_local! {
-    // A callback has no fixture argument. Each host test executes its callback
-    // on its own thread, so parallel moderation fixtures share no counter.
-    static RX_UNMASK_CALLS: Cell<u32> = const { Cell::new(0) };
-}
-
-fn record_rx_unmask() {
-    RX_UNMASK_CALLS.set(RX_UNMASK_CALLS.get() + 1);
-}
-
-#[test]
-fn moderated_rx_masks_before_ack_and_restores_only_on_bottom_half_drain() {
-    RX_UNMASK_CALLS.set(0);
-    let status = MacInterruptObservation::from_semantic_events(
-        MacInterruptEvents::RX_SUCCESS.union(MacInterruptEvents::TX_COMPLETE),
-        false,
-        false,
-    );
-    let mut interrupt = Interrupt {
-        status,
-        rx_masked: Cell::new(false),
-        rx_was_masked_before_ack: Cell::new(false),
-        acknowledged: Cell::new(false),
-    };
-    let runtime = IrqConsumer::new(Moderated::new(record_rx_unmask));
-    runtime.begin_rx_moderation();
-
-    let (disposition, snapshot) = handle_mac_irq(&mut interrupt, &runtime);
-
-    assert_eq!(disposition, IrqDisposition::Posted);
-    assert!(snapshot.had_status);
-    assert_eq!(snapshot.posted_events, EVENT_RX_SUCCESS | EVENT_TX_COMPLETE);
-    assert!(interrupt.rx_masked.get());
-    assert!(interrupt.rx_was_masked_before_ack.get());
-    assert!(interrupt.acknowledged.get());
-    assert_eq!(runtime.try_take_tx(), Some(EVENT_TX_COMPLETE));
-    assert_eq!(RX_UNMASK_CALLS.get(), 0);
-
-    assert!(runtime.unmask_rx_after_drain());
-    assert_eq!(RX_UNMASK_CALLS.get(), 1);
-    runtime.end_rx_moderation();
-    assert!(!runtime.unmask_rx_after_drain());
-    assert_eq!(RX_UNMASK_CALLS.get(), 1);
-}
-
-#[test]
-fn moderated_irq_epoch_owns_activation_failure_and_quiesce_cleanup() {
-    RX_UNMASK_CALLS.set(0);
-    let mac = IrqConsumer::new(Moderated::new(record_rx_unmask));
-    let power = PowerIrqConsumer::new();
-    let platform = Cell::new(10);
-    let mut epoch = InterruptEpoch::new(Route { active: false }, 7, &mac, &power);
-
-    assert_eq!(
-        epoch.activate_rx_moderated(
-            &platform,
-            oer_esp32s31_hal::types::MacInterruptMask::COLD_RX,
-        ),
-        Err(MacInterruptEpochActivateError::Route(
-            RouteError::Activation
-        ))
-    );
-    assert!(!epoch.is_active());
-    assert!(!epoch.is_rx_moderated());
-    assert!(!mac.is_rx_moderation_active());
-
-    platform.set(0);
-    epoch
-        .activate_rx_moderated(
-            &platform,
-            oer_esp32s31_hal::types::MacInterruptMask::COLD_RX,
-        )
-        .unwrap();
-    assert!(epoch.is_active());
-    assert!(epoch.is_rx_moderated());
-    assert!(mac.is_rx_moderation_active());
-
-    epoch.quiesce(&platform).unwrap();
-    assert!(!epoch.is_active());
-    assert!(!epoch.is_rx_moderated());
-    assert!(!mac.is_rx_moderation_active());
-}
-
-struct PowerInterrupt {
-    status: MacPowerInterruptObservation,
-    acknowledged: Cell<bool>,
-}
-
-impl MacPowerInterrupt for PowerInterrupt {
-    type Snapshot = MacPowerInterruptObservation;
-
-    fn status(&mut self) -> Self::Snapshot {
-        self.status
-    }
-
-    fn acknowledge(&mut self, snapshot: Self::Snapshot) {
-        let _snapshot = snapshot;
-        self.acknowledged.set(true);
-    }
-}
-
-#[test]
-fn power_irq_retains_semantic_causes_without_register_images() {
-    let status =
-        MacPowerInterruptObservation::from_semantic_events(false, true, false, true, false, true);
-    let mut interrupt = PowerInterrupt {
-        status,
-        acknowledged: Cell::new(false),
-    };
-    let runtime = PowerIrqConsumer::new();
-
-    let (disposition, snapshot) = handle_power_irq(&mut interrupt, &runtime);
-
-    assert_eq!(disposition, PowerIrqDisposition::Posted);
-    assert_eq!(snapshot.observation, status);
-    assert!(interrupt.acknowledged.get());
-    assert_eq!(runtime.try_take(), Some(status));
-    assert_eq!(runtime.try_take(), None);
-}
-
-#[test]
-fn spurious_power_irq_neither_acknowledges_nor_wakes_the_driver() {
-    let mut interrupt = PowerInterrupt {
-        status: MacPowerInterruptObservation::default(),
-        acknowledged: Cell::new(false),
-    };
-    let runtime = PowerIrqConsumer::new();
-
-    assert_eq!(
-        handle_power_irq(&mut interrupt, &runtime).0,
-        PowerIrqDisposition::Spurious
-    );
-    assert!(!interrupt.acknowledged.get());
-    assert_eq!(runtime.try_take(), None);
-}
-
-fn ready<F: core::future::Future>(future: F) -> F::Output {
-    let mut future = core::pin::pin!(future);
-    match future.as_mut().poll(&mut core::task::Context::from_waker(
-        core::task::Waker::noop(),
-    )) {
-        core::task::Poll::Ready(value) => value,
-        core::task::Poll::Pending => panic!("published IRQ facts must be ready"),
-    }
-}
-
-#[test]
-fn a_captured_batch_orders_rx_first_and_is_not_extended_by_new_interrupts() {
-    let irq = IrqConsumer::default();
-    irq.publish(EVENT_COLLISION | EVENT_TX_TIMEOUT | EVENT_RX_SUCCESS | EVENT_TX_COMPLETE);
-    irq.notify_rx_capacity();
-    let mut batch = irq.take_batch();
-    assert!(batch.rx_capacity_returned());
-    assert_eq!(batch.next(), Some(crate::irq::IrqWork::RxSuccess));
-    std::thread::scope(|scope| {
-        scope
-            .spawn(|| {
-                for _ in 0..512 {
-                    irq.publish(EVENT_RX_SUCCESS);
-                }
-            })
-            .join()
-            .unwrap();
-    });
-    assert_eq!(
-        batch.collect::<std::vec::Vec<_>>(),
-        [
-            crate::irq::IrqWork::TxComplete,
-            crate::irq::IrqWork::TxTimeout,
-            crate::irq::IrqWork::Collision,
-        ]
-    );
-    assert_eq!(
-        irq.take_batch().collect::<std::vec::Vec<_>>(),
-        [crate::irq::IrqWork::RxSuccess]
-    );
-    assert!(irq.take_batch().is_empty());
-    assert_eq!(irq.rx_post_count(), 513);
-}
 
 #[derive(Default)]
-struct WakeCount(AtomicU32);
-impl std::task::Wake for WakeCount {
-    fn wake(self: std::sync::Arc<Self>) {
+struct WakeCount(AtomicUsize);
+impl Wake for WakeCount {
+    fn wake(self: Arc<Self>) {
         self.0.fetch_add(1, Ordering::Relaxed);
     }
-    fn wake_by_ref(self: &std::sync::Arc<Self>) {
+    fn wake_by_ref(self: &Arc<Self>) {
         self.0.fetch_add(1, Ordering::Relaxed);
     }
 }
 
 #[test]
-fn publication_before_poll_or_from_another_thread_after_registration_makes_progress() {
-    use core::{
-        future::Future,
-        task::{Context, Poll, Waker},
-    };
-    let irq = IrqConsumer::default();
-    let wakes = std::sync::Arc::new(WakeCount::default());
-    let waker = Waker::from(wakes.clone());
-    let mut cx = Context::from_waker(&waker);
-    irq.publish(EVENT_TX_COMPLETE);
+fn finite_batch_preserves_rx_before_tx_under_continuous_publication() {
+    let mut storage = IrqStorage::new();
+    let (publisher, mut consumer) = storage.split();
+    publisher.publish(EVENT_KNOWN_MASK);
+    let mut batch = consumer.take_batch();
+    for expected in [
+        IrqWork::RxSuccess,
+        IrqWork::TxComplete,
+        IrqWork::TxTimeout,
+        IrqWork::Collision,
+    ] {
+        publisher.publish(EVENT_RX_SUCCESS);
+        assert_eq!(batch.next(), Some(expected));
+    }
+    assert_eq!(batch.next(), None);
     assert_eq!(
-        ready(irq.wait_batch()).next(),
-        Some(crate::irq::IrqWork::TxComplete)
+        consumer.take_batch().collect::<std::vec::Vec<_>>(),
+        [IrqWork::RxSuccess]
     );
-
-    for count in 1..=32 {
-        let mut wait = core::pin::pin!(irq.wait_batch());
-        assert!(wait.as_mut().poll(&mut cx).is_pending());
-        std::thread::scope(|scope| {
-            scope
-                .spawn(|| irq.publish(EVENT_RX_SUCCESS | EVENT_TX_COMPLETE))
-                .join()
-                .unwrap();
-        });
-        assert!(wakes.0.load(Ordering::Relaxed) >= count);
-        let Poll::Ready(batch) = wait.as_mut().poll(&mut cx) else {
-            panic!("lost IRQ wake");
-        };
-        assert_eq!(
-            batch.collect::<std::vec::Vec<_>>(),
-            [
-                crate::irq::IrqWork::RxSuccess,
-                crate::irq::IrqWork::TxComplete
-            ]
-        );
-    }
 }
 
 #[test]
-fn cancelling_a_wait_does_not_consume_published_facts() {
-    use core::{
-        future::Future,
-        task::{Context, Waker},
-    };
-    let irq = IrqConsumer::default();
+fn cancelled_mac_wait_releases_the_slot_for_the_next_waiter() {
+    let mut storage = IrqStorage::new();
+    let (publisher, mut consumer) = storage.split();
+    let old = Arc::new(WakeCount::default());
+    let current = Arc::new(WakeCount::default());
     {
-        let mut wait = core::pin::pin!(irq.wait_batch());
+        let waker = Waker::from(old.clone());
+        let mut cancelled = pin!(consumer.wait());
         assert!(
-            wait.as_mut()
-                .poll(&mut Context::from_waker(Waker::noop()))
+            cancelled
+                .as_mut()
+                .poll(&mut Context::from_waker(&waker))
                 .is_pending()
         );
-        irq.publish(EVENT_RX_SUCCESS | EVENT_TX_TIMEOUT);
     }
+    let waker = Waker::from(current.clone());
+    let mut next = pin!(consumer.wait());
+    let mut cx = Context::from_waker(&waker);
+    assert!(next.as_mut().poll(&mut cx).is_pending());
+    publisher.publish(EVENT_RX_SUCCESS);
+    assert_eq!(old.0.load(Ordering::Relaxed), 0);
+    assert_eq!(current.0.load(Ordering::Relaxed), 1);
+    let Poll::Ready(batch) = next.as_mut().poll(&mut cx) else {
+        panic!("published")
+    };
+    assert_eq!(batch.collect::<std::vec::Vec<_>>(), [IrqWork::RxSuccess]);
+}
+
+#[test]
+fn cancelled_power_wait_releases_the_slot_for_the_next_waiter() {
+    let mut storage = PowerIrqStorage::new();
+    let (publisher, mut consumer) = storage.split();
+    let old = Arc::new(WakeCount::default());
+    let current = Arc::new(WakeCount::default());
+    {
+        let waker = Waker::from(old.clone());
+        let mut cancelled = pin!(consumer.wait());
+        assert!(
+            cancelled
+                .as_mut()
+                .poll(&mut Context::from_waker(&waker))
+                .is_pending()
+        );
+    }
+    let waker = Waker::from(current.clone());
+    let mut next = pin!(consumer.wait());
+    let mut cx = Context::from_waker(&waker);
+    assert!(next.as_mut().poll(&mut cx).is_pending());
+    publisher.publish(MacPowerInterruptObservation::from_semantic_events(
+        false, false, false, false, true, false,
+    ));
+    assert_eq!(old.0.load(Ordering::Relaxed), 0);
+    assert_eq!(current.0.load(Ordering::Relaxed), 1);
+    let Poll::Ready(observation) = next.as_mut().poll(&mut cx) else {
+        panic!("published")
+    };
+    assert!(observation.sta_tbtt());
+}
+
+#[test]
+fn publication_before_registration_and_after_pending_are_both_durable() {
+    let mut storage = IrqStorage::new();
+    let (publisher, mut consumer) = storage.split();
+    let wakes = Arc::new(WakeCount::default());
+    let waker = Waker::from(wakes.clone());
+    let mut cx = Context::from_waker(&waker);
+    publisher.publish(EVENT_TX_COMPLETE);
+    assert!(consumer.poll_batch(&mut cx).is_ready());
+    assert!(consumer.poll_batch(&mut cx).is_pending());
+    std::thread::scope(|s| {
+        s.spawn(|| publisher.publish(EVENT_TX_TIMEOUT | EVENT_COLLISION));
+    });
+    assert_eq!(wakes.0.load(Ordering::Relaxed), 1);
+    let Poll::Ready(batch) = consumer.poll_batch(&mut cx) else {
+        panic!("published")
+    };
     assert_eq!(
-        ready(irq.wait_batch()).collect::<std::vec::Vec<_>>(),
+        batch.collect::<std::vec::Vec<_>>(),
+        [IrqWork::TxTimeout, IrqWork::Collision]
+    );
+}
+
+#[test]
+fn publication_during_waker_registration_cannot_be_lost() {
+    // Replacing the registered waker drops its last Arc while registration
+    // owns AtomicWaker's slot. The old waker's destructor injects the IRQ.
+    struct PublishOnDrop(&'static IrqStorage);
+    #[allow(
+        clippy::manual_noop_waker,
+        reason = "this waker publishes from Drop during registration, which Waker::noop cannot model"
+    )]
+    impl Wake for PublishOnDrop {
+        fn wake(self: Arc<Self>) {}
+    }
+    impl Drop for PublishOnDrop {
+        fn drop(&mut self) {
+            self.0.post(EVENT_RX_SUCCESS).wake();
+        }
+    }
+    let storage = std::boxed::Box::leak(std::boxed::Box::new(IrqStorage::new()));
+    let (publisher, mut consumer) = storage.split();
+    let old = Waker::from(Arc::new(PublishOnDrop(publisher.storage)));
+    assert!(
+        consumer
+            .poll_batch(&mut Context::from_waker(&old))
+            .is_pending()
+    );
+    drop(old);
+    let next = Waker::from(Arc::new(WakeCount::default()));
+    let Poll::Ready(batch) = consumer.poll_batch(&mut Context::from_waker(&next)) else {
+        panic!("registration raced")
+    };
+    assert_eq!(batch.collect::<std::vec::Vec<_>>(), [IrqWork::RxSuccess]);
+}
+
+#[test]
+fn hardware_counts_exclude_capacity_and_handoff_and_wrap() {
+    let mut storage = IrqStorage::new();
+    storage.rx_posts.store(u32::MAX - 1, Ordering::Relaxed);
+    let (publisher, mut consumer) = storage.split();
+    publisher.notify_rx_capacity();
+    publisher.notify_rx_handoff();
+    assert_eq!(publisher.diagnostics().rx_post_count(), u32::MAX - 1);
+    publisher.publish(EVENT_RX_SUCCESS);
+    assert_eq!(publisher.diagnostics().rx_post_count(), u32::MAX);
+    publisher.publish(EVENT_RX_SUCCESS);
+    assert_eq!(publisher.diagnostics().rx_post_count(), 0);
+    let batch = consumer.take_batch();
+    assert!(batch.rx_capacity_returned());
+    assert_eq!(batch.collect::<std::vec::Vec<_>>(), [IrqWork::RxSuccess]);
+}
+
+#[test]
+fn power_snapshot_coalesces_all_semantic_facts_and_then_clears() {
+    let mut storage = PowerIrqStorage::new();
+    let (publisher, mut consumer) = storage.split();
+    publisher.publish(MacPowerInterruptObservation::from_semantic_events(
+        true, false, true, false, false, true,
+    ));
+    publisher.publish(MacPowerInterruptObservation::from_semantic_events(
+        false, true, false, true, true, false,
+    ));
+    let observation = consumer.take();
+    assert!(
+        observation.tsf_timer_0()
+            && observation.tsf_timer_1()
+            && observation.tsf_timer_2()
+            && observation.tsf_timer_3()
+    );
+    assert!(observation.sta_tbtt() && observation.has_unhandled_event());
+    assert!(consumer.take().is_empty());
+}
+
+#[test]
+fn diagnostics_borrow_their_installation_and_count_unhandled_per_entry() {
+    let mut first = IrqStorage::new();
+    let mut second = IrqStorage::new();
+    let (first, _first_consumer) = first.split();
+    let (second, _second_consumer) = second.split();
+    let first_view = first.diagnostics();
+    let second_view = second.diagnostics();
+    first
+        .publish_snapshot_deferred(IrqSnapshot {
+            had_status: true,
+            posted_events: EVENT_RX_SUCCESS,
+            had_auxiliary_event: true,
+            had_unhandled_event: true,
+        })
+        .wake();
+    first
+        .publish_snapshot_deferred(IrqSnapshot::default())
+        .wake();
+    assert_eq!(
+        first_view.snapshot(),
+        IrqDiagnosticSnapshot {
+            rx_posts: 1,
+            mac_irq_entries: 2,
+            auxiliary_entries: 1,
+            unhandled_entries: 1,
+            empty_entries: 1,
+            rx_epochs: 1,
+            ..IrqDiagnosticSnapshot::default()
+        }
+    );
+    assert_eq!(second_view.snapshot(), IrqDiagnosticSnapshot::default());
+}
+
+#[test]
+fn diagnostic_epochs_count_empty_to_pending_transitions_not_each_tx_fact() {
+    let mut storage = IrqStorage::new();
+    let (publisher, mut consumer) = storage.split();
+    for events in [
+        EVENT_TX_COMPLETE,
+        EVENT_TX_TIMEOUT,
+        EVENT_COLLISION,
+        EVENT_RX_SUCCESS,
+    ] {
+        publisher
+            .publish_snapshot_deferred(IrqSnapshot {
+                had_status: true,
+                posted_events: events,
+                ..IrqSnapshot::default()
+            })
+            .wake();
+    }
+    let snapshot = publisher.diagnostics().snapshot();
+    assert_eq!(snapshot.mac_irq_entries, 4);
+    assert_eq!((snapshot.rx_epochs, snapshot.tx_epochs), (1, 1));
+    assert_eq!(
+        consumer.take_batch().collect::<std::vec::Vec<_>>(),
         [
-            crate::irq::IrqWork::RxSuccess,
-            crate::irq::IrqWork::TxTimeout
+            IrqWork::RxSuccess,
+            IrqWork::TxComplete,
+            IrqWork::TxTimeout,
+            IrqWork::Collision,
         ]
     );
-    assert!(irq.take_batch().is_empty());
+    publisher
+        .publish_snapshot_deferred(IrqSnapshot {
+            had_status: true,
+            posted_events: EVENT_RX_SUCCESS | EVENT_TX_TIMEOUT,
+            ..IrqSnapshot::default()
+        })
+        .wake();
+    let snapshot = publisher.diagnostics().snapshot();
+    assert_eq!((snapshot.rx_epochs, snapshot.tx_epochs), (2, 2));
+}
+
+std::thread_local! { static CYCLES: core::cell::Cell<u32> = const { core::cell::Cell::new(0) }; }
+pub(super) fn cycles() -> u32 {
+    CYCLES.get()
 }
 
 #[test]
-fn rx_publication_counts_wrap_and_exclude_capacity_and_handoff_probes() {
-    let irq = IrqConsumer::default();
-    irq.rx_posts.store(u32::MAX, Ordering::Relaxed);
-    irq.notify_rx_capacity();
-    irq.notify_rx_handoff();
-    assert_eq!(irq.rx_post_count(), u32::MAX);
-    irq.publish(EVENT_RX_SUCCESS);
-    assert_eq!(irq.rx_post_count(), 0);
-}
-
-#[test]
-fn power_facts_coalesce_into_one_complete_snapshot() {
-    let power = PowerIrqConsumer::new();
-    power.publish(MacPowerInterruptObservation::from_semantic_events(
-        true, false, true, false, false, false,
-    ));
-    power.publish(MacPowerInterruptObservation::from_semantic_events(
-        false, true, false, true, true, true,
-    ));
-    assert_eq!(
-        ready(power.wait()),
-        MacPowerInterruptObservation::from_semantic_events(true, true, true, true, true, true)
+fn entry_cycles_stop_before_the_owned_waker_runs() {
+    struct ExpensiveWake;
+    impl Wake for ExpensiveWake {
+        fn wake(self: Arc<Self>) {
+            CYCLES.set(CYCLES.get().wrapping_add(1000));
+        }
+    }
+    CYCLES.set(10);
+    let mut storage = IrqStorage::new();
+    let (publisher, mut consumer) = storage.split();
+    let waker = Waker::from(Arc::new(ExpensiveWake));
+    assert!(
+        consumer
+            .poll_batch(&mut Context::from_waker(&waker))
+            .is_pending()
     );
-    assert_eq!(power.try_take(), None);
+    let measurement = publisher.begin_mac_entry();
+    let wake = publisher.publish_snapshot_deferred(IrqSnapshot {
+        had_status: true,
+        posted_events: EVENT_RX_SUCCESS,
+        ..IrqSnapshot::default()
+    });
+    CYCLES.set(35);
+    let wake = measurement.finish(wake);
+    wake.wake();
+    assert_eq!(CYCLES.get(), 1035);
+    let snapshot = publisher.diagnostics().snapshot();
+    assert_eq!(snapshot.mac_irq_entries, 1);
+    assert_eq!(snapshot.mac_irq_cycles, 25);
 }

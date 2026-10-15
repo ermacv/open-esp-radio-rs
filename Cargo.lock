@@ -2698,14 +2698,35 @@ dependencies = [
 name = "oer-esp32s31-ieee80211-esp-hal"
 version = "0.1.0"
 dependencies = [
- "critical-section",
  "esp-hal",
  "oer-esp32s31-hal",
  "oer-esp32s31-ieee80211",
+ "oer-esp32s31-ieee80211-form",
  "oer-esp32s31-ieee80211-mac",
  "oer-esp32s31-phy",
  "oer-espressif-interrupt-table-esp-hal",
  "oer-interrupt-table",
+]
+
+[[package]]
+name = "oer-esp32s31-ieee80211-form"
+version = "0.1.0"
+dependencies = [
+ "atomic-waker",
+ "critical-section",
+ "oer-chip-profile",
+ "oer-elf",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-ieee80211",
+ "oer-esp32s31-ieee80211-mac",
+ "oer-ieee80211-lower-mac",
+ "oer-ieee80211-mac",
+ "oer-radio-port",
+ "oer-riscv-model",
+ "oer-riscv-program",
+ "oer-riscv-stack",
+ "oer-time",
+ "oer-toolchain",
 ]
 
 [[package]]

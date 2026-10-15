@@ -183,6 +183,7 @@ audited-unsafe = [
     "oer-esp32s31-soc-esp-hal",
     "oer-esp32s31-phy",
     "oer-esp32s31-ieee80211-dma",
+    "oer-esp32s31-ieee80211-form",
     "oer-esp32s31-radio-esp-hal",
     "oer-esp32s31-bluetooth-system",
     "oer-esp32s31-ieee80211-system",
@@ -216,6 +217,7 @@ doctests = [
     { package = "oer-esp32s31-soc-esp-hal", features = "axi-gdma-mem2mem" },
     { package = "oer-esp32s31-ieee80211", features = "" },
     { package = "oer-esp32s31-ieee80211-mac", features = "" },
+    { package = "oer-esp32s31-ieee80211-form", features = "" },
     { package = "oer-esp32s31-bluetooth", features = "" },
 ]
 host-tests = ["examples/esp32s31/access-point"]

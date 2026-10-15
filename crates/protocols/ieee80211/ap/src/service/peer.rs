@@ -4,7 +4,7 @@
 use super::*;
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
-impl<'peers> AccessPointService<'peers> {
+impl<'peers, S: SppScope> AccessPointService<'peers, S> {
     pub fn next_management_sequence(&mut self) -> SequenceNumber {
         let sequence = self.next_management_sequence;
         self.next_management_sequence = sequence.next();
@@ -135,52 +135,51 @@ impl<'peers> AccessPointService<'peers> {
         if self.link_protection() != LinkProtection::Ccmp {
             return Err(ApServiceError::SecurityModeMismatch);
         }
+        if self.checked_peer(peer)?.phase != ApPeerPhase::Authenticated {
+            return Err(ApServiceError::WrongPeerPhase);
+        }
         let policy = self.security_policy();
-        let association_security = if security.malformed_elements || security.legacy_wpa_present {
-            None
-        } else {
-            Self::validated_association_security(policy, security)
-        };
-        let akm = association_security
-            .as_ref()
-            .map(|admitted| admitted.association.akm.akm());
-        let resumed = match (&association_security, policy) {
-            (Some(admitted), ApSecurityPolicy::Wpa3Personal) => {
-                match self.resume_sae_pmk(peer, admitted.element.pmkids())? {
-                    Some(resumed) => Some(resumed),
-                    None => {
-                        return Ok(ApMlmeAction::AssociationResponse {
-                            peer,
-                            status: AP_STATUS_INVALID_PMKID,
-                            association_id: None,
-                        });
-                    }
+        let association_security =
+            match if security.malformed_elements || security.legacy_wpa_present {
+                Err(ApAssociationSecurityError::InvalidElements)
+            } else {
+                Self::validated_association_security(policy, security)
+            } {
+                Ok(admitted) => admitted,
+                Err(_) => {
+                    return Ok(ApMlmeAction::AssociationResponse {
+                        peer,
+                        status: AP_STATUS_INVALID_RSN,
+                        association_id: None,
+                    });
+                }
+            };
+        let akm = association_security.association.akm.akm();
+        let resumed = if policy == ApSecurityPolicy::Wpa3Personal {
+            match self.resume_sae_pmk(peer, association_security.element.pmkids())? {
+                Some(resumed) => Some(resumed),
+                None => {
+                    return Ok(ApMlmeAction::AssociationResponse {
+                        peer,
+                        status: AP_STATUS_INVALID_PMKID,
+                        association_id: None,
+                    });
                 }
             }
-            _ => None,
+        } else {
+            None
         };
-        let association_security_binding = match association_security.as_ref() {
-            Some(admitted) => Some(match &resumed {
-                Some((pmk, _)) => pmk.bind_association_security_ies(admitted.ies.as_bytes()),
-                None => self
-                    .peer_pmk(peer)?
-                    .bind_association_security_ies(admitted.ies.as_bytes()),
-            }),
-            None => None,
-        };
+        let association_security_binding = Some(match &resumed {
+            Some((pmk, _)) => {
+                pmk.bind_association_security_ies(association_security.ies.as_bytes())
+            }
+            None => self
+                .peer_pmk(peer)?
+                .bind_association_security_ies(association_security.ies.as_bytes()),
+        });
         let access_point = self.address;
         let inactive_timeout = self.inactive_timeout.duration();
         let existing = self.checked_peer_mut(peer)?;
-        if existing.phase != ApPeerPhase::Authenticated {
-            return Err(ApServiceError::WrongPeerPhase);
-        }
-        let Some(akm) = akm else {
-            return Ok(ApMlmeAction::AssociationResponse {
-                peer,
-                status: AP_STATUS_INVALID_RSN,
-                association_id: None,
-            });
-        };
         if capabilities.maximum_legacy_rate_500kbps == 0 {
             return Ok(ApMlmeAction::AssociationResponse {
                 peer,

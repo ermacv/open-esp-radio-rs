@@ -23,7 +23,7 @@ fn exercise_probe_completion(status: u8) {
     let mut pairwise = crate::security::ApPairwiseKeyStorage::new();
     let engine = ApEngine::start(
         &mut hardware,
-        AccessPointService::new(
+        AccessPointService::<oer_ieee80211_mac::security::spp::Interface>::new(
             ap,
             Pmk::derive(b"password", b"ap").unwrap(),
             RsnGtk::new(

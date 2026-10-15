@@ -313,6 +313,43 @@ fn disconnect_parser_checks_receiver_bss_geometry_and_protection() {
 }
 
 #[test]
+fn spp_negotiation_follows_both_rsn_capabilities() {
+    use crate::security::{AssociationSecurity, Spp, SppCapability, SppError};
+    for (advertised, expected) in [
+        (SppCapability::NotCapable, Spp::NotNegotiated),
+        (SppCapability::Capable, Spp::Negotiated),
+        (SppCapability::Required, Spp::Negotiated),
+    ] {
+        let record = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], advertised.rsn_bits());
+        let selected = select_association_rsn(&record, StaSecurityPolicy::Wpa2Personal).unwrap();
+        let AssociationSecurity::Rsn(association) = selected.security() else {
+            panic!("personal association");
+        };
+        assert_eq!(association.spp, expected);
+        assert_eq!(
+            u16::from_le_bytes(selected.as_bytes()[20..22].try_into().unwrap()),
+            SppCapability::Capable.rsn_bits()
+        );
+    }
+    let malformed = access_point_with_rsn(
+        &[[0, 0x0f, 0xac, 2]],
+        crate::security::rsn::RSN_CAPABILITY_SPP_AMSDU_REQUIRED,
+    );
+    assert_eq!(
+        select_association_rsn(&malformed, StaSecurityPolicy::Wpa2Personal),
+        Err(StaSecurityError::Spp(SppError::RequiredWithoutCapability))
+    );
+    assert_eq!(
+        SppCapability::NotCapable.negotiate(SppCapability::Required),
+        Err(SppError::PeerRequiresSupport)
+    );
+    assert_eq!(
+        SppCapability::Required.negotiate(SppCapability::NotCapable),
+        Err(SppError::LocalRequiresSupport)
+    );
+}
+
+#[test]
 fn a_wpa2_request_upgrades_to_sae_on_a_capable_transition_access_point() {
     let record = access_point_with_rsn(&[[0, 0x0f, 0xac, 8], [0, 0x0f, 0xac, 2]], 0x80);
     let selected = select_association_rsn(&record, StaSecurityPolicy::Wpa2Personal).unwrap();

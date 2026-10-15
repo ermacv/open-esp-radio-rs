@@ -68,8 +68,8 @@ impl ApTsfHardware for Hardware {
 fn service(
     ap: [u8; 6],
     storage: &mut oer_ieee80211_ap::AccessPointPeerStorage,
-) -> AccessPointService<'_> {
-    AccessPointService::new(
+) -> AccessPointService<'_, oer_ieee80211_mac::security::spp::Interface> {
+    AccessPointService::<oer_ieee80211_mac::security::spp::Interface>::new(
         ap,
         Pmk::derive(b"password", b"ap").unwrap(),
         RsnGtk::new(
@@ -768,7 +768,7 @@ fn open_ht_peer_uses_bounded_qos_amsdu_without_key_or_block_ack_owner() {
     let mut beacon = [0; AP_BEACON_CAPACITY];
     let mut peers = oer_ieee80211_ap::AccessPointPeerStorage::new();
     let mut pairwise = ApPairwiseKeyStorage::new();
-    let mut service = AccessPointService::new_open(
+    let mut service = AccessPointService::<oer_ieee80211_mac::security::spp::Interface>::new_open(
         ap,
         oer_ieee80211_ap::AccessPointClientLimit::new(2).unwrap(),
         oer_ieee80211_ap::AccessPointInactiveTimeout::default(),
@@ -968,7 +968,7 @@ fn a_wpa3_engine_hands_sae_to_the_responder_and_accepts_its_result() {
     let mut beacon = [0; AP_BEACON_CAPACITY];
     let mut peers = oer_ieee80211_ap::AccessPointPeerStorage::new();
     let mut pairwise = ApPairwiseKeyStorage::new();
-    let wpa3 = AccessPointService::new_wpa3(
+    let wpa3 = AccessPointService::<oer_ieee80211_mac::security::spp::Interface>::new_wpa3(
         ap,
         RsnGtk::new(
             oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),

@@ -1258,6 +1258,7 @@ impl<V, F: FnMut(V)> Drop for Retained<V, F> {
 pub struct Esp32s31Caps<const BUFFER_SIZE: usize>;
 
 impl<const BUFFER_SIZE: usize> Ieee80211Capabilities for Esp32s31Caps<BUFFER_SIZE> {
+    type SppScope = oer_ieee80211_mac::security::spp::Interface;
     const CAPS: LowerMacCapabilities = esp32s31_lower_mac_capabilities(BUFFER_SIZE);
 }
 

@@ -4,12 +4,12 @@ use super::*;
 
 use crate::security::{
     AssociationAkm, AssociationSecurity, GroupManagementCipher, Pmkid, RsnAssociation, SaePwe,
+    SppCapability, SppError,
 };
 
 use crate::security::rsn::{
     RSN_AKM_PSK, RSN_AKM_PSK_SHA256, RSN_AKM_SAE, RSN_CAPABILITY_MFPC, RSN_CAPABILITY_MFPR,
-    RSN_CAPABILITY_SPP_AMSDU_CAPABLE, RSN_CIPHER_BIP_CMAC_128, RSN_CIPHER_CCMP, RsnElement,
-    RsnSyntaxError, ieee_suite,
+    RSN_CIPHER_BIP_CMAC_128, RSN_CIPHER_CCMP, RsnElement, RsnSyntaxError, ieee_suite,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -24,6 +24,8 @@ pub enum StaSecurityError {
     /// The access point protects management frames with a group management
     /// cipher other than BIP-CMAC-128.
     UnsupportedGroupManagementCipher,
+    /// The peer's SPP requirement or capability encoding is incompatible.
+    Spp(SppError),
 }
 
 /// The association request's RSN element and RSNXE, and the security they
@@ -125,6 +127,9 @@ fn select_personal_rsn(
     }
     // An advertised PMKID list is ignored.
     let capabilities = rsn.capabilities().unwrap_or(0);
+    let spp = SppCapability::Capable
+        .negotiate(SppCapability::from_rsn(capabilities).map_err(StaSecurityError::Spp)?)
+        .map_err(StaSecurityError::Spp)?;
     let management_protection =
         policy.management_protection().capable() && capabilities & RSN_CAPABILITY_MFPC != 0;
     if !management_protection
@@ -167,11 +172,10 @@ fn select_personal_rsn(
     };
     let akm_type = akm.akm().suite_selector()[3];
 
-    // The open STA owns protected A-MSDU construction and receive
-    // decapsulation, so it retains the vendor SPP A-MSDU-capable contract.
+    // Advertise support and retain the negotiated decision for key installation.
     // SOURCE[HIL_VENDOR_HE20_NDPA_CBF_2026_07_24]: frame 7624 carries RSN
     // Capabilities 0x0400 in the successful HE association request.
-    let mut station_capabilities = RSN_CAPABILITY_SPP_AMSDU_CAPABLE;
+    let mut station_capabilities = SppCapability::Capable.rsn_bits();
     if management_protection {
         station_capabilities |= RSN_CAPABILITY_MFPC;
     }
@@ -181,6 +185,7 @@ fn select_personal_rsn(
     let mut selected = SelectedRsn::OPEN;
     selected.security = AssociationSecurity::Rsn(RsnAssociation {
         akm,
+        spp,
         management: management_protection.then_some(GroupManagementCipher::BipCmac128),
         pmkid: None,
     });

@@ -9,7 +9,7 @@
 
 use super::*;
 
-impl<'peers> AccessPointService<'peers> {
+impl<'peers, S: SppScope> AccessPointService<'peers, S> {
     /// Queue the TID-0 TX Block Ack offer to an authorized HT QoS peer of a
     /// protected BSS with `retry`'s attempts and interval; `false` for a
     /// peer the access point offers no agreement.

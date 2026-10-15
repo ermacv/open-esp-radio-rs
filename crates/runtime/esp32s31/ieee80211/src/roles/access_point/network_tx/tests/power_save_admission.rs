@@ -58,7 +58,7 @@ fn sleeping_peers_and_group_delivery_share_all_admission_credits() {
 
 fn exercise_retention(destination: impl Fn(usize) -> u8) {
     let mut peers = AccessPointPeerStorage::new();
-    let mut service = AccessPointService::new_open(
+    let mut service = AccessPointService::<oer_ieee80211_mac::security::spp::Interface>::new_open(
         [2; 6],
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::default(),

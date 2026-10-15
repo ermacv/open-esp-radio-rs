@@ -135,7 +135,7 @@ fn unschedulable_beacon_reports_preparation_failure_without_publication() {
     // be stamped for publication.
     let engine = ApEngine::start(
         &mut hardware,
-        AccessPointService::new(
+        AccessPointService::<oer_ieee80211_mac::security::spp::Interface>::new(
             ap,
             Pmk::derive(b"password", b"ap").unwrap(),
             RsnGtk::new(
@@ -187,7 +187,7 @@ fn prepared_beacon_becomes_evidence_only_after_terminal_success() {
     let mut pairwise = crate::security::ApPairwiseKeyStorage::new();
     let engine = ApEngine::start(
         &mut hardware,
-        AccessPointService::new(
+        AccessPointService::<oer_ieee80211_mac::security::spp::Interface>::new(
             ap,
             Pmk::derive(b"password", b"ap").unwrap(),
             RsnGtk::new(
@@ -251,7 +251,7 @@ fn mixed_bss_protects_ordinary_data_with_cts_to_self_at_a_dsss_rate() {
     let mut beacon = [0; AP_BEACON_CAPACITY];
     let mut peers = oer_ieee80211_ap::AccessPointPeerStorage::new();
     let mut pairwise = crate::security::ApPairwiseKeyStorage::new();
-    let mut service = AccessPointService::new_open(
+    let mut service = AccessPointService::<oer_ieee80211_mac::security::spp::Interface>::new_open(
         ap,
         oer_ieee80211_ap::AccessPointClientLimit::new(2).unwrap(),
         oer_ieee80211_ap::AccessPointInactiveTimeout::default(),

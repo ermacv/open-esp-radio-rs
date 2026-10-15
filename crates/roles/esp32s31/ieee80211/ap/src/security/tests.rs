@@ -254,11 +254,13 @@ fn station_selection_and_access_point_admission_meet_at_one_association() {
 
     const SAE: AssociationSecurity = AssociationSecurity::Rsn(RsnAssociation {
         akm: AssociationAkm::Sae(SaePwe::HashToElement),
+        spp: oer_ieee80211_mac::security::Spp::NotNegotiated,
         management: Some(GroupManagementCipher::BipCmac128),
         pmkid: None,
     });
     const PSK: AssociationSecurity = AssociationSecurity::Rsn(RsnAssociation {
         akm: AssociationAkm::Psk,
+        spp: oer_ieee80211_mac::security::Spp::NotNegotiated,
         management: None,
         pmkid: None,
     });
@@ -343,10 +345,12 @@ fn station_selection_and_access_point_admission_meet_at_one_association() {
             legacy_wpa_present: false,
             malformed_elements: false,
         };
-        let admitted = admit_association_security(offer, request);
-        assert_eq!(admitted, expected, "{station:?} against {offer:?}");
+        let admitted = admit_association_security::<oer_ieee80211_mac::security::spp::Interface>(
+            offer, request,
+        );
+        assert_eq!(admitted.ok(), expected, "{station:?} against {offer:?}");
         assert_eq!(
-            admitted,
+            admitted.ok(),
             Some(selected.security()),
             "{station:?} against {offer:?}"
         );

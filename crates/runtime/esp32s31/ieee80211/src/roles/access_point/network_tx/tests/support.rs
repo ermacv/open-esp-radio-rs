@@ -72,7 +72,7 @@ pub(super) fn with_authorized_ap_capabilities(
         ssid::WifiSsid,
     };
     let mut peers = AccessPointPeerStorage::new();
-    let mut service = AccessPointService::new_open(
+    let mut service = AccessPointService::<oer_ieee80211_mac::security::spp::Interface>::new_open(
         [2; 6],
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::default(),

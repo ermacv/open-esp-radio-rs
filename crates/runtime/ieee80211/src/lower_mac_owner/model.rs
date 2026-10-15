@@ -187,15 +187,16 @@ pub const MODEL_CAPABILITIES: LowerMacCapabilities = LowerMacCapabilities {
 pub struct ModelCaps;
 
 impl Ieee80211Capabilities for ModelCaps {
+    type SppScope = oer_ieee80211_mac::security::spp::Interface;
     const CAPS: LowerMacCapabilities = MODEL_CAPABILITIES;
 }
 
-/// The model's capabilities without its 5 GHz band: a port of the
-/// ESP32-S31's bands, for host tests of a station whose rate selection
-/// builds only for such a port (#748).
+/// The model's capabilities without its 5 GHz band, for host tests of
+/// station rate selection constrained to a single band (#748).
 pub struct ModelCaps24;
 
 impl Ieee80211Capabilities for ModelCaps24 {
+    type SppScope = oer_ieee80211_mac::security::spp::Interface;
     const CAPS: LowerMacCapabilities = LowerMacCapabilities {
         bands: BandSet::GHZ2_4,
         ..MODEL_CAPABILITIES

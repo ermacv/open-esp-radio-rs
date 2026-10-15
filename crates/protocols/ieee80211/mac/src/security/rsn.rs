@@ -29,6 +29,8 @@ pub const RSN_CAPABILITY_MFPR: u16 = 1 << 6;
 pub const RSN_CAPABILITY_MFPC: u16 = 1 << 7;
 /// RSN Capabilities: signaling-and-payload-protected A-MSDU capable.
 pub const RSN_CAPABILITY_SPP_AMSDU_CAPABLE: u16 = 1 << 10;
+/// SPP A-MSDU Required; valid only together with SPP A-MSDU Capable.
+pub const RSN_CAPABILITY_SPP_AMSDU_REQUIRED: u16 = 1 << 11;
 /// Length of one PMKID.
 pub const RSN_PMKID_LEN: usize = 16;
 

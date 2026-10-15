@@ -25,7 +25,7 @@ fn ap_selection_leaves_more_than_an_arena_of_other_peer_owners_at_the_source() {
     const OTHER_PEER_FRAMES: usize = AP_SOFTWARE_TX_CAPACITY + 1;
     const SOURCE_CAPACITY: usize = OTHER_PEER_FRAMES + 1;
     let mut peers = AccessPointPeerStorage::new();
-    let service = AccessPointService::new_open(
+    let service = AccessPointService::<oer_ieee80211_mac::security::spp::Interface>::new_open(
         [2; 6],
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::default(),

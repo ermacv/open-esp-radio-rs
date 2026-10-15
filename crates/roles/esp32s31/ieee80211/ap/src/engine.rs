@@ -137,7 +137,7 @@ pub struct ApBeaconPublication<'frame> {
 }
 
 pub struct ApEngineStartFailure<'storage> {
-    pub service: AccessPointService<'storage>,
+    pub service: AccessPointService<'storage, oer_ieee80211_mac::security::spp::Interface>,
     pub beacon_storage: &'storage mut [u8; AP_BEACON_CAPACITY],
     pub pairwise_storage: &'storage mut ApPairwiseKeyStorage,
     pub error: ApEngineError,
@@ -246,7 +246,7 @@ struct ApRxPeerBinding {
 }
 
 pub struct ApEngineStop<'storage> {
-    pub service: AccessPointService<'storage>,
+    pub service: AccessPointService<'storage, oer_ieee80211_mac::security::spp::Interface>,
     pub beacon_storage: &'storage mut [u8; AP_BEACON_CAPACITY],
     pub pairwise_storage: &'storage mut ApPairwiseKeyStorage,
     pub security: ApSecurityStopReport,
@@ -410,7 +410,7 @@ pub struct ApEngine<'storage> {
     next_probe_response: oer_time::Instant,
     /// Protection carried by the retained beacon/probe-response template.
     advertised_protection: ApBssProtection,
-    service: AccessPointService<'storage>,
+    service: AccessPointService<'storage, oer_ieee80211_mac::security::spp::Interface>,
     beacon: ApBeacon<'storage>,
     security: ApSecurity<'storage>,
     rx_peer: Option<ApRxPeerBinding>,
@@ -428,7 +428,7 @@ impl<'storage> ApEngine<'storage> {
     #[allow(clippy::result_large_err, clippy::too_many_arguments)]
     pub fn start<H: ApRuntimeHardware>(
         hardware: &mut H,
-        service: AccessPointService<'storage>,
+        service: AccessPointService<'storage, oer_ieee80211_mac::security::spp::Interface>,
         beacon_storage: &'storage mut [u8; AP_BEACON_CAPACITY],
         pairwise_storage: &'storage mut ApPairwiseKeyStorage,
         ssid: &WifiSsid,

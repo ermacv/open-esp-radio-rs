@@ -3,7 +3,7 @@
 
 use super::*;
 
-impl<'peers> AccessPointService<'peers> {
+impl<'peers, S: SppScope> AccessPointService<'peers, S> {
     /// Decide ownership of a newly arrived downlink unicast frame.
     ///
     /// The service never stores the frame itself. A `Buffer` result requires

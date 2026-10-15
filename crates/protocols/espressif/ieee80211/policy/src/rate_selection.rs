@@ -79,6 +79,7 @@ use crate::{
 /// # }
 /// struct DualBand;
 /// impl Ieee80211Capabilities for DualBand {
+///     type SppScope = oer_ieee80211_mac::security::spp::Association;
 ///     const CAPS: LowerMacCapabilities = caps(BandSet::GHZ2_4.union(BandSet::GHZ5));
 /// }
 /// let selection = EspressifRateSelection::<DualBand>::new();
@@ -109,6 +110,7 @@ use crate::{
 /// # }
 /// struct SingleBand;
 /// impl Ieee80211Capabilities for SingleBand {
+///     type SppScope = oer_ieee80211_mac::security::spp::Association;
 ///     const CAPS: LowerMacCapabilities = caps(BandSet::GHZ2_4);
 /// }
 /// let selection = EspressifRateSelection::<SingleBand>::new();
@@ -242,7 +244,7 @@ fn control_plan(
 /// # use oer_ieee80211_lower_mac::*;
 /// # use oer_ieee80211_upper_mac::rate_selection::RateSelection;
 /// # struct Caps;
-/// # impl Ieee80211Capabilities for Caps { const CAPS: LowerMacCapabilities = PORT; }
+/// # impl Ieee80211Capabilities for Caps { type SppScope = oer_ieee80211_mac::security::spp::Association; const CAPS: LowerMacCapabilities = PORT; }
 /// # const PORT: LowerMacCapabilities = LowerMacCapabilities {
 /// #     bands: BandSet::GHZ2_4, widths: WidthSet::MHZ20,
 /// #     rates: RateSupport { dsss_cck: true, ofdm: true,
@@ -270,7 +272,7 @@ fn control_plan(
 /// # use oer_ieee80211_lower_mac::*;
 /// # use oer_ieee80211_upper_mac::rate_selection::RateSelection;
 /// # struct Caps;
-/// # impl Ieee80211Capabilities for Caps { const CAPS: LowerMacCapabilities = PORT; }
+/// # impl Ieee80211Capabilities for Caps { type SppScope = oer_ieee80211_mac::security::spp::Association; const CAPS: LowerMacCapabilities = PORT; }
 /// # const PORT: LowerMacCapabilities = LowerMacCapabilities {
 /// #     bands: BandSet::GHZ2_4, widths: WidthSet::MHZ20,
 /// #     rates: RateSupport { dsss_cck: true, ofdm: true,

@@ -99,8 +99,10 @@ const LEGACY_CAPABILITIES: ApAssociationCapabilities = ApAssociationCapabilities
     qos_supported: false,
 };
 
-fn service(storage: &mut AccessPointPeerStorage) -> AccessPointService<'_> {
-    AccessPointService::new(
+fn service(
+    storage: &mut AccessPointPeerStorage,
+) -> AccessPointService<'_, oer_ieee80211_mac::security::spp::Association> {
+    AccessPointService::<oer_ieee80211_mac::security::spp::Association>::new(
         AP,
         Pmk::derive(b"password", b"test-ap").unwrap(),
         RsnGtk::new(
@@ -199,7 +201,7 @@ fn peer_binding_rejects_a_reused_slot_generation() {
 #[test]
 fn buffered_downlink_identity_cannot_cross_same_address_reassociation() {
     let mut storage = AccessPointPeerStorage::new();
-    let mut service = AccessPointService::new_open(
+    let mut service = AccessPointService::<oer_ieee80211_mac::security::spp::Association>::new_open(
         AP,
         AccessPointClientLimit::new(1).unwrap(),
         AccessPointInactiveTimeout::default(),
@@ -276,7 +278,7 @@ fn buffered_downlink_identity_cannot_cross_same_address_reassociation() {
 #[test]
 fn bound_power_state_matches_general_semantics_and_rejects_slot_reuse() {
     let mut storage = AccessPointPeerStorage::new();
-    let mut service = AccessPointService::new_open(
+    let mut service = AccessPointService::<oer_ieee80211_mac::security::spp::Association>::new_open(
         AP,
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::new(10).unwrap(),
@@ -354,7 +356,7 @@ fn bound_power_state_matches_general_semantics_and_rejects_slot_reuse() {
 #[test]
 fn admitted_data_activity_is_coalesced_but_pm_edges_are_immediate() {
     let mut storage = AccessPointPeerStorage::new();
-    let mut service = AccessPointService::new_open(
+    let mut service = AccessPointService::<oer_ieee80211_mac::security::spp::Association>::new_open(
         AP,
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::new(10).unwrap(),
@@ -485,7 +487,7 @@ fn authenticated_peer_expires_at_the_recovered_fifteen_second_frontier() {
 #[test]
 fn associated_activity_refreshes_the_configured_inactivity_frontier() {
     let mut storage = AccessPointPeerStorage::new();
-    let mut service = AccessPointService::new(
+    let mut service = AccessPointService::<oer_ieee80211_mac::security::spp::Association>::new(
         AP,
         Pmk::derive(b"password", b"test-ap").unwrap(),
         RsnGtk::new(
@@ -1029,7 +1031,7 @@ fn management_sequence_wraps_at_twelve_bits() {
 #[test]
 fn all_fifteen_aids_are_stable_and_reused_after_removal() {
     let mut storage = AccessPointPeerStorage::new();
-    let mut service = AccessPointService::new(
+    let mut service = AccessPointService::<oer_ieee80211_mac::security::spp::Association>::new(
         AP,
         Pmk::derive(b"password", b"test-ap").unwrap(),
         RsnGtk::new(
@@ -1097,7 +1099,10 @@ fn all_fifteen_aids_are_stable_and_reused_after_removal() {
 fn bounded_peer_table_has_an_explicit_memory_ceiling() {
     // The service itself travels through the typed lifecycle, while all
     // fifteen WPA2 state machines remain in caller-owned static storage.
-    assert!(core::mem::size_of::<AccessPointService<'_>>() <= 256);
+    assert!(
+        core::mem::size_of::<AccessPointService<'_, oer_ieee80211_mac::security::spp::Association>>(
+        ) <= 256
+    );
     // Fifteen independently negotiated TX BlockAck sessions and the
     // per-peer HMAC-SHA1-128 Association-security commitments, exact
     // non-reusable RX association epochs, and eight independent QoS
@@ -1307,7 +1312,11 @@ fn addba_response_after_the_negotiation_timeout_is_dropped_as_stale() {
 
 /// Queue one immediate attempt of `peer`'s TX Block Ack offer and take it
 /// at `micros`.
-fn offer(service: &mut AccessPointService<'_>, peer: [u8; 6], micros: u64) -> Option<AddbaRequest> {
+fn offer(
+    service: &mut AccessPointService<'_, oer_ieee80211_mac::security::spp::Association>,
+    peer: [u8; 6],
+    micros: u64,
+) -> Option<AddbaRequest> {
     service
         .queue_tx_block_ack(
             peer,
@@ -1399,7 +1408,7 @@ fn bss_protection_follows_associated_erp_ht_and_preamble_membership() {
     };
 
     let mut storage = AccessPointPeerStorage::new();
-    let mut service = AccessPointService::new_open(
+    let mut service = AccessPointService::<oer_ieee80211_mac::security::spp::Association>::new_open(
         AP,
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::default(),
@@ -1470,7 +1479,7 @@ fn bss_protection_follows_associated_erp_ht_and_preamble_membership() {
 #[test]
 fn a_station_resuming_a_pmksa_is_refused_by_an_access_point_without_a_cache() {
     let mut storage = AccessPointPeerStorage::new();
-    let service = AccessPointService::new(
+    let service = AccessPointService::<oer_ieee80211_mac::security::spp::Association>::new(
         AP,
         Pmk::derive(b"password", b"test-ap").unwrap(),
         RsnGtk::new(
@@ -1497,8 +1506,10 @@ const SAE_STATION_RSN: [u8; 22] = [
 const SAE_PMK: [u8; 32] = [0x3c; 32];
 const SAE_PMKID: [u8; 16] = [0x4d; 16];
 
-fn wpa3_service(storage: &mut AccessPointPeerStorage) -> AccessPointService<'_> {
-    AccessPointService::new_wpa3(
+fn wpa3_service(
+    storage: &mut AccessPointPeerStorage,
+) -> AccessPointService<'_, oer_ieee80211_mac::security::spp::Association> {
+    AccessPointService::<oer_ieee80211_mac::security::spp::Association>::new_wpa3(
         AP,
         RsnGtk::new(
             oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
@@ -1598,20 +1609,22 @@ fn a_wpa3_handshake_uses_the_sae_pmk_and_delivers_the_igtk() {
 fn a_wpa3_association_resumes_only_a_known_pmkid() {
     let mut storage = AccessPointPeerStorage::new();
     let mut service = wpa3_service(&mut storage);
-    let associate = |service: &mut AccessPointService<'_>, rsn: &[u8]| {
-        association_status(
-            service
-                .associate_rsn(
-                    PEER,
-                    association_security(rsn),
-                    ht_capabilities(),
-                    [7; 32],
-                    9,
-                    oer_time::Instant::from_micros(1),
-                )
-                .unwrap(),
-        )
-    };
+    let associate =
+        |service: &mut AccessPointService<'_, oer_ieee80211_mac::security::spp::Association>,
+         rsn: &[u8]| {
+            association_status(
+                service
+                    .associate_rsn(
+                        PEER,
+                        association_security(rsn),
+                        ht_capabilities(),
+                        [7; 32],
+                        9,
+                        oer_time::Instant::from_micros(1),
+                    )
+                    .unwrap(),
+            )
+        };
 
     // Open System authentication without a cached association.
     service.authenticate_open(PEER, oer_time::Instant::from_micros(0));
@@ -1680,7 +1693,7 @@ fn a_wpa3_access_point_refuses_psk_and_stations_without_protection() {
 /// Finish the protocol handshake; the service caller installs the returned
 /// pairwise key before recording authorization.
 fn begin_management_handshake(
-    service: &mut AccessPointService<'_>,
+    service: &mut AccessPointService<'_, oer_ieee80211_mac::security::spp::Association>,
     peer: [u8; 6],
 ) -> (Ptk, RsnTxFrame<512>) {
     let now = oer_time::Instant::from_micros(1);
@@ -1734,7 +1747,10 @@ fn begin_management_handshake(
     (ptk, message3)
 }
 
-fn authorize_management_peer(service: &mut AccessPointService<'_>, peer: [u8; 6]) {
+fn authorize_management_peer(
+    service: &mut AccessPointService<'_, oer_ieee80211_mac::security::spp::Association>,
+    peer: [u8; 6],
+) {
     let (ptk, _) = begin_management_handshake(service, peer);
     let now = oer_time::Instant::from_micros(1);
     let message4 = RsnTxFrame::<512>::message4(oer_ieee80211_mac::security::rsn::Akm::Sae, AP, 10)
@@ -1920,4 +1936,119 @@ fn the_bss_owns_one_monotonic_bip_frontier_and_refuses_invalid_group_frames() {
     assert_eq!(peer, PEER);
     assert!(repeated.retransmission());
     assert_eq!(repeated.as_bytes(), message3.as_bytes());
+}
+
+#[test]
+fn non_spp_ap_explicitly_refuses_required_clients_for_each_scope() {
+    use oer_ieee80211_mac::security::{Spp, SppCapability, SppError, spp};
+    fn check<S: spp::SppScope>() {
+        for (capability, expected) in [
+            (SppCapability::NotCapable, Ok(Spp::NotNegotiated)),
+            (SppCapability::Capable, Ok(Spp::NotNegotiated)),
+            (
+                SppCapability::Required,
+                Err(ApAssociationSecurityError::Spp(
+                    SppError::PeerRequiresSupport,
+                )),
+            ),
+        ] {
+            let mut rsn = WPA2_RSN;
+            rsn[20..22].copy_from_slice(&capability.rsn_bits().to_le_bytes());
+            let observed = admit_association_security::<S>(
+                ApSecurityPolicy::Wpa2Personal,
+                association_security(&rsn),
+            )
+            .map(|selected| match selected {
+                AssociationSecurity::Rsn(selected) => selected.spp,
+                AssociationSecurity::Open => panic!("RSN request must not downgrade"),
+            });
+            assert_eq!(observed, expected);
+        }
+    }
+    check::<spp::Interface>();
+    check::<spp::Association>();
+}
+
+#[test]
+fn interface_scoped_ap_sends_refusal_for_required_spp_without_admitting_peer() {
+    use oer_ieee80211_mac::security::{SppCapability, spp};
+    for capability in [
+        SppCapability::NotCapable,
+        SppCapability::Capable,
+        SppCapability::Required,
+    ] {
+        let mut storage = AccessPointPeerStorage::new();
+        let mut service = AccessPointService::<spp::Interface>::new(
+            AP,
+            Pmk::derive(b"password", b"test-ap").unwrap(),
+            RsnGtk::new(
+                oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
+                true,
+                [0x55; 16],
+            ),
+            AccessPointClientLimit::new(2).unwrap(),
+            AccessPointInactiveTimeout::default(),
+            &mut storage,
+        );
+        let mut rsn = WPA2_RSN;
+        rsn[20..22].copy_from_slice(&capability.rsn_bits().to_le_bytes());
+        assert_eq!(
+            service.associate_rsn(
+                PEER,
+                association_security(&rsn),
+                ht_capabilities(),
+                [7; 32],
+                9,
+                oer_time::Instant::EPOCH,
+            ),
+            Err(ApServiceError::UnknownPeer)
+        );
+        service.authenticate_open(PEER, oer_time::Instant::EPOCH);
+        let action = service
+            .associate_rsn(
+                PEER,
+                association_security(&rsn),
+                ht_capabilities(),
+                [7; 32],
+                9,
+                oer_time::Instant::EPOCH,
+            )
+            .unwrap();
+        if capability == SppCapability::Required {
+            assert_eq!(
+                action,
+                ApMlmeAction::AssociationResponse {
+                    peer: PEER,
+                    status: AP_STATUS_INVALID_RSN,
+                    association_id: None
+                }
+            );
+            assert_eq!(service.associated_count(), 0);
+            assert_eq!(
+                service.peer_status(PEER).unwrap().phase,
+                ApPeerPhase::Authenticated
+            );
+        } else {
+            assert_eq!(
+                action,
+                ApMlmeAction::AssociationResponse {
+                    peer: PEER,
+                    status: AP_STATUS_SUCCESS,
+                    association_id: Some(1)
+                }
+            );
+            assert_eq!(service.associated_count(), 1);
+            assert_eq!(
+                service.associate_rsn(
+                    PEER,
+                    association_security(&rsn),
+                    ht_capabilities(),
+                    [7; 32],
+                    9,
+                    oer_time::Instant::EPOCH,
+                ),
+                Err(ApServiceError::WrongPeerPhase)
+            );
+        }
+    }
 }

@@ -1,6 +1,7 @@
 //! Bounded multi-peer AP MLME and security ownership.
 
 use core::fmt;
+use oer_ieee80211_mac::security::spp::SppScope;
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
 mod block_ack;
@@ -12,7 +13,7 @@ pub use management::{
     ApGroupManagementError, ApManagementAction, ApManagementProtection, ApManagementRejection,
     ApManagementRx, ApManagementRxProtection,
 };
-pub use security::admit_association_security;
+pub use security::{ApAssociationSecurityError, admit_association_security};
 
 // Preserve the existing service-level imports while limits own their definition.
 pub use crate::limits::{
@@ -647,11 +648,18 @@ pub struct AccessPointServiceStatus {
 
 /// Complete portable owner for one AP service epoch.
 ///
+/// `S` is the backend's SPP granularity. Interface-scoped backends require
+/// all clients to use one mode; the current profiles advertise no SPP and
+/// explicitly refuse Required peers. A future SPP profile on that scope
+/// must require Negotiated mode for every client. Association-scoped backends
+/// can select independently. No chip identity participates in this decision.
+///
 /// Dropping this value clears the PMK and GTK through their zeroize-on-drop
 /// implementations. A chip runtime still must clear its typed hardware slots
 /// before it may classify the corresponding physical owner as stopped.
 // CAPABILITY: wifi-interfaces-and-operating-modes-softap
-pub struct AccessPointService<'peers> {
+pub struct AccessPointService<'peers, S: SppScope> {
+    spp_scope: core::marker::PhantomData<S>,
     address: [u8; 6],
     security: AccessPointSecurityMaterial,
     group_management: Option<oer_ieee80211_rsn::bip::BipTransmitter>,
@@ -679,7 +687,7 @@ pub enum AccessPointSecurityMaterial {
     Wpa3Personal { gtk: RsnGtk, igtk: RsnIgtk },
 }
 
-impl<'peers> AccessPointService<'peers> {
+impl<'peers, S: SppScope> AccessPointService<'peers, S> {
     pub fn new(
         address: [u8; 6],
         pmk: Pmk,
@@ -757,6 +765,7 @@ impl<'peers> AccessPointService<'peers> {
             | AccessPointSecurityMaterial::Wpa2Personal { .. } => None,
         };
         Self {
+            spp_scope: core::marker::PhantomData,
             address,
             security,
             group_management,
@@ -1071,7 +1080,7 @@ impl<'peers> AccessPointService<'peers> {
     }
 }
 
-impl Drop for AccessPointService<'_> {
+impl<S: SppScope> Drop for AccessPointService<'_, S> {
     fn drop(&mut self) {
         // Static placement must not retain pairwise protocol/key state into a
         // later AP epoch. Replacing every entry runs the WPA2/PTK destructors.

@@ -64,6 +64,7 @@
 //! # use oer_ieee80211_mac::phy::{HeMcs, HtMcs};
 //! # struct TwoFourOnly;
 //! # impl Ieee80211Capabilities for TwoFourOnly {
+//! #     type SppScope = oer_ieee80211_mac::security::spp::Association;
 //! #     const CAPS: LowerMacCapabilities = LowerMacCapabilities {
 //! #         bands: BandSet::GHZ2_4,
 //! #         widths: WidthSet::MHZ20,
@@ -113,6 +114,7 @@
 //! # use oer_ieee80211_mac::phy::{HeMcs, HtMcs};
 //! # struct TwoFourOnly;
 //! # impl Ieee80211Capabilities for TwoFourOnly {
+//! #     type SppScope = oer_ieee80211_mac::security::spp::Association;
 //! #     const CAPS: LowerMacCapabilities = LowerMacCapabilities {
 //! #         bands: BandSet::GHZ2_4,
 //! #         widths: WidthSet::MHZ20,
@@ -199,6 +201,8 @@ use crate::{
 /// What a lower-MAC backend type supports, the same for every instance: the
 /// brand of its validated values.
 pub trait Ieee80211Capabilities {
+    /// Smallest domain whose association SPP mode can be programmed independently.
+    type SppScope: oer_ieee80211_mac::security::spp::SppScope;
     /// The backend's capabilities.
     const CAPS: LowerMacCapabilities;
 }
@@ -1243,7 +1247,7 @@ pub trait LowerMacSetup {
 }
 
 /// The disabled-only setting of a backend whose interface addresses change
-/// after its install; one whose hardware fixes them (the ESP32-S31 station
+/// after its install; one whose hardware fixes them (a station
 /// address, set by its cold start) does not implement it.
 pub trait AddressSetup: LowerMacSetup {
     /// Set the address of the interface of `role`, in place of the one the

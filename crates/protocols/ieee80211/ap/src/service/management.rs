@@ -88,7 +88,7 @@ pub enum ApGroupManagementError {
     PacketNumbers,
 }
 
-impl AccessPointService<'_> {
+impl<S: SppScope> AccessPointService<'_, S> {
     /// Decide protection without accessing a key slot or transmitting.
     /// Non-robust actions remain plaintext. A closing PMF peer keeps its
     /// pairwise protection until its association and key are removed.

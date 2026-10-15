@@ -5,6 +5,7 @@ use oer_ieee80211_sta::epoch::LinkEpochSource;
 use oer_ieee80211_sta::machine::{StaConfig, StaTokens, Station, StationResources};
 struct Caps;
 impl Ieee80211Capabilities for Caps {
+    type SppScope = oer_ieee80211_mac::security::spp::Association;
     const CAPS: LowerMacCapabilities = LowerMacCapabilities {
         bands: BandSet::GHZ2_4,
         widths: WidthSet::MHZ20,

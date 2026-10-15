@@ -147,6 +147,16 @@ pub struct AmsduSubframe<'a> {
 
 /// Allocation-free iterator over the subframes of one received A-MSDU.
 ///
+/// Construction rejects the entire aggregate when its first destination is
+/// `AA:AA:03:00:00:00`, the RFC 1042 LLC/SNAP prefix. An attacker can otherwise
+/// flip the unauthenticated A-MSDU-present bit of an ordinary QoS MSDU and
+/// reinterpret its LLC header as a subframe destination (CVE-2020-24588).
+/// No subframe is exposed before this check, including on the CCMP-verified
+/// path: integrity evidence alone does not establish negotiated SPP A-MSDU.
+/// This follows the [Linux aggregation-attack mitigation][mitigation].
+///
+/// [mitigation]: https://git.kernel.org/linus/2b8a1fee3488c602aca8bea004a087e60806a5cf
+///
 /// SOURCE: IEEE 802.11 A-MSDU subframe format (DA, SA, big-endian MSDU
 /// length, LLC/SNAP MSDU and four-byte padding). The need for this path was
 /// confirmed by the reviewed source promoted at commit `f233006`, whose
@@ -209,8 +219,12 @@ pub enum DataDecapError {
     Fragmented,
     RoleMismatch,
     AmsduUnsupported,
+    /// The first A-MSDU destination aliases an ordinary LLC/SNAP header.
+    InvalidAmsduDestination,
     InvalidLlcSnap,
-    OutputTooSmall { required: usize },
+    OutputTooSmall {
+        required: usize,
+    },
 }
 
 impl<'a> Iterator for AmsduSubframes<'a> {
@@ -509,8 +523,11 @@ pub fn amsdu_subframes<'a>(
 }
 
 fn aggregate_payload(payload: &[u8]) -> Result<AmsduSubframes<'_>, DataDecapError> {
-    if payload.len() < ETHERNET_HEADER_LEN + LLC_SNAP_HEADER_LEN {
-        return Err(DataDecapError::Truncated);
+    let (first, _) = payload
+        .split_first_chunk::<{ ETHERNET_HEADER_LEN + LLC_SNAP_HEADER_LEN }>()
+        .ok_or(DataDecapError::Truncated)?;
+    if first.first_chunk::<6>() == Some(&RFC1042_LLC_SNAP_PREFIX) {
+        return Err(DataDecapError::InvalidAmsduDestination);
     }
     Ok(AmsduSubframes {
         remaining: payload,

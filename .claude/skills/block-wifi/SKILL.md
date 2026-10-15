@@ -227,6 +227,12 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
 - Portable station RX enters `Station::receive` once. MAC's `DecodedHeader` and `AdmittedData` locate QoS/HT/CCMP, require integrity evidence and commit replay before EAPOL/MSDU dispatch. The old data receive entry point exists only as a test helper; production cannot commit the same PN through a second API. `FrameControl` lives in MAC's `frame` module, shared by RX and lower-MAC header encoding.
   MSDU admission also checks the payload-bearing subtype before replay:
   Null/QoS Null and reserved subtypes cannot carry EAPOL or network data.
+- A-MSDU iteration is created only after rejecting a first destination equal
+  to the RFC 1042 LLC/SNAP prefix (`AA:AA:03:00:00:00`). This shared STA/AP
+  boundary prevents CVE-2020-24588 before any subframe escapes; checking each
+  delivered MSDU later is too late. CCMP integrity alone is not proof that
+  SPP A-MSDU authenticated the outer QoS A-MSDU-present bit. Keep the guard
+  on the hardware-verified path too (`mac/src/data.rs`, `aggregate_payload`).
 - GTK's two-bit wire ID includes zero (IEEE 802.11-2020, 12.7.2 and the pinned ESP-IDF `wpa.c:1064`). Frame addressing distinguishes PTK from GTK; group replay records use `GroupKeyId::select`, separately from the backend's slot pool. S31 STA accepts `GroupKeyId`, including zero, in hardware slot 1. Its AP installation takes `ApGroupKeyId` (1 through 3), validated before hardware. S31 AP's `1 + key_id` layout excludes zero because it would collide with that station slot; do not impose this AP restriction on the portable station.
 - Every GTK mutation consumes the installation's one permission for that
   interface; only its FIFO success terminal returns an ordinary permission.

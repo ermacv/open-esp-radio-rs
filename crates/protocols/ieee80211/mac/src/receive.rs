@@ -180,6 +180,34 @@ mod tests {
         }
     }
     #[test]
+    fn ccmp_integrity_does_not_admit_an_llc_aliased_amsdu() {
+        let mut frame = packet(true, false, true);
+        frame.truncate(26 + crate::ccmp::CCMP_HEADER_LEN);
+        frame[24] |= 0x80;
+        frame.extend_from_slice(&[
+            0xaa, 0xaa, 3, 0, 0, 0, // Ordinary MSDU LLC prefix, forged DA.
+            0x08, 0, 0, 0, 0, 0, // Ordinary EtherType plus attacker data.
+            0, 10, // Subframe length.
+            0xaa, 0xaa, 3, 0, 0, 0, 0x08, 0, 1, 2,
+        ]);
+        frame.extend_from_slice(&[
+            2, 2, 2, 2, 2, 2, // Injected destination.
+            6, 6, 6, 6, 6, 6, // Injected source.
+            0, 10, 0xaa, 0xaa, 3, 0, 0, 0, 0x08, 0x06, 0xde, 0xad,
+        ]);
+        let mut replay =
+            CcmpRxReplayEpoch::new([0; 8], GroupKeyId::new(1).unwrap(), [0; 8]).unwrap();
+        let admitted = admit(&frame, Integrity::DecryptedAndVerified, &mut replay).unwrap();
+        assert!(admitted.protected());
+        assert!(matches!(admitted.msdus(), Err(RxDropReason::Payload)));
+        // The rejected payload cannot be retried with its already admitted PN.
+        assert!(matches!(
+            admit(&frame, Integrity::DecryptedAndVerified, &mut replay),
+            Err(RxDropReason::Replay)
+        ));
+    }
+
+    #[test]
     fn only_payload_bearing_data_subtypes_admit_msdus() {
         for subtype in 0..16 {
             for protected in [false, true] {

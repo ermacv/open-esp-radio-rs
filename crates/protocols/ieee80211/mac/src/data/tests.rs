@@ -260,6 +260,65 @@ fn station_amsdu_iterator_removes_subframe_length_llc_and_padding() {
 }
 
 #[test]
+fn amsdu_bit_flip_cannot_inject_a_second_msdu() {
+    for (role, direction) in [
+        (DataInterfaceRole::Station, IEEE80211_FROM_DS),
+        (DataInterfaceRole::AccessPoint, IEEE80211_TO_DS),
+    ] {
+        for protected in [false, true] {
+            let mut mpdu = [0_u8; 96];
+            mpdu[0] = IEEE80211_QOS_DATA;
+            mpdu[1] = direction | if protected { 0x40 } else { 0 };
+            mpdu[4..10].copy_from_slice(&DESTINATION);
+            mpdu[10..16].copy_from_slice(&BSSID);
+            mpdu[16..22].copy_from_slice(&SOURCE);
+            let offset = IEEE80211_QOS_DATA_HEADER_LEN + if protected { 8 } else { 0 };
+
+            // An ordinary LLC/SNAP MSDU whose attacker-controlled data also
+            // forms two valid A-MSDU subframes. Flipping only the outer QoS
+            // bit must not expose the injected second Ethernet packet.
+            let payload = &mut mpdu[offset..offset + 48];
+            payload[..8].copy_from_slice(&[0xaa, 0xaa, 3, 0, 0, 0, 0x08, 0x00]);
+            payload[12..14].copy_from_slice(&10_u16.to_be_bytes());
+            payload[14..22].copy_from_slice(&[0xaa, 0xaa, 3, 0, 0, 0, 0x08, 0x00]);
+            payload[22..24].copy_from_slice(&[1, 2]);
+            payload[24..30].copy_from_slice(&DESTINATION);
+            payload[30..36].copy_from_slice(&SOURCE);
+            payload[36..38].copy_from_slice(&10_u16.to_be_bytes());
+            payload[38..46].copy_from_slice(&[0xaa, 0xaa, 3, 0, 0, 0, 0x08, 0x06]);
+            payload[46..48].copy_from_slice(&[0xde, 0xad]);
+
+            let mut ordinary = decapsulate_data_frames(role, &mpdu, offset, 48).unwrap();
+            assert!(!ordinary.is_amsdu());
+            assert_eq!(
+                ordinary.next().unwrap().unwrap().payload,
+                &mpdu[offset + 8..offset + 48]
+            );
+            assert!(ordinary.next().is_none());
+
+            mpdu[24] = IEEE80211_QOS_AMSDU_PRESENT;
+            assert!(matches!(
+                decapsulate_data_frames(role, &mpdu, offset, 48),
+                Err(DataDecapError::InvalidAmsduDestination)
+            ));
+            assert!(matches!(
+                amsdu_subframes(role, &mpdu, offset, 48),
+                Err(DataDecapError::InvalidAmsduDestination)
+            ));
+
+            // A real aggregate using the same body remains decodable. The
+            // refusal is specific to the LLC-aliasing destination.
+            mpdu[offset..offset + 6].copy_from_slice(&DESTINATION);
+            let mut genuine = decapsulate_data_frames(role, &mpdu, offset, 48).unwrap();
+            assert!(genuine.is_amsdu());
+            assert_eq!(genuine.next().unwrap().unwrap().payload, [1, 2]);
+            assert_eq!(genuine.next().unwrap().unwrap().payload, [0xde, 0xad]);
+            assert!(genuine.next().is_none());
+        }
+    }
+}
+
+#[test]
 fn decapsulation_rejects_role_mismatch_amsdu_and_non_snap_payload() {
     let mut mpdu = [0_u8; 40];
     mpdu[0] = IEEE80211_QOS_DATA;

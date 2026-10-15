@@ -309,6 +309,11 @@ pub trait PortBackend: Sized {
     /// consumes the loan to construct the exit proof. Access cannot continue
     /// after that handoff. Cancellation tests must cover each suspension point,
     /// then retire/uninstall the retained driver and verify its owners/state.
+    ///
+    /// Agent implementation choice: the loan exposes only `&Driver`.
+    /// Mutable driver progress therefore lives in durable backing under
+    /// the backend's audited interior mutability. Cancellation must release
+    /// only access to that progress, preserving it for retire and abandon.
     fn drive<'p, 'id>(
         driver: DriverLoan<'p, Self::Driver>,
         held: &'p Self::Held<'id>,
@@ -340,9 +345,12 @@ pub trait PortBackend: Sized {
         control: Self::Uninstall,
     ) -> Self::Uninstalled;
 
-    /// Synchronously and idempotently poison the installation and refuse new
+    /// Synchronously poison the installation and refuse new
     /// port work or installation until chip reset. Never wait without a bound,
     /// including acquiring a lock held by an ISR or driver step.
+    /// The core guarantees at most one call per installation, including
+    /// cancellation after fail-stop or during retirement. Backends need no
+    /// memoized outcome or idempotence protocol.
     ///
     /// Return `Stopped` only after closing hardware admission, masking the
     /// installation's IRQ routes, joining entered operations within a finite
@@ -416,6 +424,8 @@ impl Signal {
 ///
 /// Each side has its own registered waiter. Registration precedes the
 /// acquire check, so setting the latch cannot lose either wake.
+/// The first published cause is permanent; cancellation cannot overwrite
+/// an explicit fail-stop with a dropped-owner cause.
 pub struct AbandonLatch {
     core: Signal,
     driver: Signal,
@@ -438,13 +448,23 @@ impl AbandonLatch {
     }
 
     fn set(&self) {
-        self.cause.store(Self::DROPPED, Ordering::Release);
+        let _ = self.cause.compare_exchange(
+            Self::LIVE,
+            Self::DROPPED,
+            Ordering::Release,
+            Ordering::Relaxed,
+        );
         self.core.set();
         self.driver.set();
     }
 
     fn fail_stopped(&self) {
-        self.cause.store(Self::FAIL_STOPPED, Ordering::Release);
+        let _ = self.cause.compare_exchange(
+            Self::LIVE,
+            Self::FAIL_STOPPED,
+            Ordering::Release,
+            Ordering::Relaxed,
+        );
         self.core.set();
         self.driver.set();
     }
@@ -724,6 +744,18 @@ fn retired_state<S, F>(exit: Retirement<ManuallyDrop<DriverExit<S, F>>>) -> Reti
     }
 }
 
+fn abandon_on_cancel<B: PortBackend>(backend: &mut B, latch: &AbandonLatch) {
+    // A fail-stopped body may still hold the backend loan. It already
+    // called abandon synchronously; cancellation must only quarantine.
+    if !latch.is_fail_stopped() {
+        latch.set();
+        let outcome = backend.abandon(Quarantine::new());
+        // Cancellation has no result receiver. Retain its outcome; the
+        // enclosing guards independently quarantine backend and driver.
+        drop(Quarantined::new(outcome));
+    }
+}
+
 async fn install<'id, B: PortBackend, P: PortBody<B>>(
     Installed {
         mut backend,
@@ -746,16 +778,15 @@ async fn install<'id, B: PortBackend, P: PortBody<B>>(
         latch: AbandonLatch::new(),
         retiring: Signal::new(),
     };
-    let mut backend = guard(backend, |mut backend| {
-        install.latch.set();
-        let outcome = backend.abandon(Quarantine::new());
-        // There is no recipient for an outcome during cancellation. Keep
-        // it in permanent quarantine with B. The driver guard quarantines
-        // its owner next; held/local parts and completed state suppress Drop.
-        drop(Quarantined::new((backend, outcome)));
-    });
+    let mut backend = guard(backend, |backend| drop(Quarantined::new(backend)));
     let bound = backend.retire_bound(Call::new());
     let mut bound = pin!(bound);
+    // Consuming this guard after the first abandon leaves only the outer
+    // quarantine guard. No backend state or memo is needed to suppress a
+    // second abandon while asynchronous retirement is still pending.
+    let mut armed = guard(&mut *backend, |backend| {
+        abandon_on_cancel(backend, &install.latch);
+    });
     let end = {
         let mut driver = pin!(async {
             ManuallyDrop::new(
@@ -774,7 +805,7 @@ async fn install<'id, B: PortBackend, P: PortBody<B>>(
         });
         let (outcome, driver) = {
             let mut body =
-                pin!(body.run(Owner::new(&mut *backend, &mut local, &install), resources));
+                pin!(body.run(Owner::new(&mut **armed, &mut local, &install), resources));
             let first = poll_fn(|cx| {
                 if let Poll::Ready(ended) = body.as_mut().poll(cx) {
                     return Poll::Ready(Race::Body(ended));
@@ -835,10 +866,11 @@ async fn install<'id, B: PortBackend, P: PortBody<B>>(
                 Race::Driver(never) => match never {},
             }
         };
-        // The body and its exclusive backend loan have ended. Keep the
-        // cancellation guard armed throughout asynchronous retirement.
+        // The body's exclusive loan ended. Retirement retains the armed
+        // guard only while no abandon has happened yet.
         match outcome {
             BodyOutcome::Abandoned => {
+                let backend = ScopeGuard::into_inner(armed);
                 let outcome = backend.abandon(Quarantine::new());
                 install.retiring.set();
                 let state = retire(driver, bound.as_mut()).await;
@@ -846,6 +878,7 @@ async fn install<'id, B: PortBackend, P: PortBody<B>>(
             }
             BodyOutcome::Returned(Ended { end, output, .. }) => match end {
                 BodyEnd::FailStopped(outcome) => {
+                    let _ = ScopeGuard::into_inner(armed);
                     install.retiring.set();
                     let state = retire(driver, bound.as_mut()).await;
                     InstallEnd::FailStopped {
@@ -858,16 +891,22 @@ async fn install<'id, B: PortBackend, P: PortBody<B>>(
                     let control = ManuallyDrop::new(control);
                     install.retiring.set();
                     match retire(driver, bound.as_mut()).await {
-                        Retirement::Ended(state) => InstallEnd::Uninstall {
-                            state,
-                            control: ManuallyDrop::into_inner(control),
-                            output,
-                        },
-                        Retirement::TimedOut => InstallEnd::FailStopped {
-                            outcome: backend.abandon(Quarantine::new()),
-                            state: Retirement::TimedOut,
-                            output,
-                        },
+                        Retirement::Ended(state) => {
+                            let _ = ScopeGuard::into_inner(armed);
+                            InstallEnd::Uninstall {
+                                state,
+                                control: ManuallyDrop::into_inner(control),
+                                output,
+                            }
+                        }
+                        Retirement::TimedOut => {
+                            let backend = ScopeGuard::into_inner(armed);
+                            InstallEnd::FailStopped {
+                                outcome: backend.abandon(Quarantine::new()),
+                                state: Retirement::TimedOut,
+                                output,
+                            }
+                        }
                     }
                 }
             },

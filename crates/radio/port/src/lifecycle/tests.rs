@@ -26,6 +26,7 @@ enum Mode {
 struct Model {
     mode: Mode,
     stopped: Cell<bool>,
+    abandons: Cell<usize>,
     owner_drops: [Cell<usize>; 3],
     loan_ends: Cell<usize>,
     enabled: Cell<bool>,
@@ -41,6 +42,7 @@ impl Model {
         Self {
             mode,
             stopped: Cell::new(true),
+            abandons: Cell::new(0),
             owner_drops: core::array::from_fn(|_| Cell::new(0)),
             loan_ends: Cell::new(0),
             enabled: Cell::new(false),
@@ -261,6 +263,7 @@ impl<'a> PortBackend for Backend<'a> {
         7
     }
     fn abandon(&mut self, call: crate::Quarantine) -> crate::Abandon {
+        self.0.abandons.set(self.0.abandons.get() + 1);
         self.0.irq_masked.set(true);
         self.0.record("abandon");
         if self.0.stopped.get() {
@@ -471,7 +474,8 @@ fn cancelling_abandon_retirement_keeps_the_synchronous_safety_net() {
     let mut port = Box::pin(run_port(model.installed(), Body::Drop));
     assert!(poll(port.as_mut()).is_pending());
     drop(port);
-    assert_eq!(&*model.log.borrow(), &["abandon", "drive", "abandon"]);
+    assert_eq!(&*model.log.borrow(), &["abandon", "drive"]);
+    assert_eq!(model.abandons.get(), 1);
     assert_eq!(owner_drops(&model), [0; 3]);
 }
 #[test]
@@ -685,20 +689,92 @@ fn fail_stop_masks_irqs_and_retires_while_body_waits_then_detaches_once() {
 }
 
 #[test]
-fn cancellation_during_fail_stopped_body_runs_synchronous_quarantine() {
-    let model = Model::new(Mode::Normal);
+fn fail_stop_then_cancellation_abandons_once_while_body_or_retire_waits() {
+    for mode in [Mode::Normal, Mode::StallRetire, Mode::MissBound] {
+        let model = Model::new(mode);
+        model.stopped.set(false);
+        let returning = Signal::new();
+        let mut port = Box::pin(run_port(model.installed(), StopThenWait(&returning)));
+        assert!(poll(port.as_mut()).is_pending());
+        assert_eq!(model.abandons.get(), 1);
+        drop(port);
+        model.interrupt();
+        assert_eq!(model.irq_state.get(), 0);
+        assert_eq!(owner_drops(&model), [0; 3]);
+        assert_eq!(model.abandons.get(), 1);
+    }
+}
+
+#[test]
+fn cancellation_after_fail_stopped_body_returns_only_quarantines() {
+    let model = Model::new(Mode::StallRetire);
     model.stopped.set(false);
-    let returning = Signal::new();
-    let mut port = Box::pin(run_port(model.installed(), StopThenWait(&returning)));
+    let mut port = Box::pin(run_port(model.installed(), Body::FailStop));
     assert!(poll(port.as_mut()).is_pending());
     drop(port);
-    model.interrupt();
-    assert_eq!(model.irq_state.get(), 0);
+    assert_eq!(model.abandons.get(), 1);
     assert_eq!(owner_drops(&model), [0; 3]);
+}
+
+#[test]
+fn uninstall_timeout_then_cancellation_abandons_once() {
+    let model = Model::new(Mode::MissBound);
+    model.stopped.set(false);
+    let mut port = Box::pin(run_port(model.installed(), Body::Uninstall));
+    let Poll::Ready(end @ PortEnd::FailStopped { .. }) = poll(port.as_mut()) else {
+        panic!("uninstall times out and quarantines in the same poll");
+    };
+    assert_eq!(model.abandons.get(), 1);
+    // There is no suspension between a timeout's abandon and the result.
+    // The executor can drop the returned receipt and completed frame here.
+    drop(end);
+    drop(port);
+    assert_eq!(model.abandons.get(), 1);
+    assert_eq!(owner_drops(&model), [0; 3]);
+}
+
+#[test]
+fn fail_stop_then_cancellation_preserves_the_first_latch_cause() {
+    let model = Model::new(Mode::Normal);
+    let install = Install::<Backend<'_>> {
+        held: ManuallyDrop::new(11),
+        latch: AbandonLatch::new(),
+        retiring: Signal::new(),
+    };
+    let mut local = 3;
+    let mut backend = guard(Backend(&model), |backend| drop(Quarantined::new(backend)));
+    let mut armed = guard(&mut *backend, |backend| {
+        abandon_on_cancel(backend, &install.latch)
+    });
+    let owner = Owner::<_, Disabled>::new(&mut **armed, &mut local, &install);
+    let proof = owner.fail_stop();
+    drop(armed);
+    assert!(install.latch.is_fail_stopped());
     assert_eq!(
-        &*model.log.borrow(),
-        &["abandon", "drive", "retire", "abandon"]
+        install.latch.cause.load(Ordering::Acquire),
+        AbandonLatch::FAIL_STOPPED
     );
+    assert_eq!(model.abandons.get(), 1);
+    drop(proof);
+    drop(backend);
+    assert_eq!(owner_drops(&model), [0; 3]);
+}
+
+#[test]
+fn latch_cause_only_transitions_from_live_and_both_waiters_stay_set() {
+    for fail_stop_first in [true, false] {
+        let latch = AbandonLatch::new();
+        if fail_stop_first {
+            latch.fail_stopped();
+            latch.set();
+        } else {
+            latch.set();
+            latch.fail_stopped();
+        }
+        assert_eq!(latch.is_fail_stopped(), fail_stop_first);
+        assert!(latch.core.is_set());
+        assert!(latch.driver.is_set());
+    }
 }
 
 #[test]

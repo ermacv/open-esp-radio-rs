@@ -85,9 +85,14 @@ has independent core and driver waiters. A dropped owner wakes the core,
 which closes admission, requests retirement and detaches after the driver
 ends; a missed deadline fail-stops. `Owner::fail_stop` calls `abandon`
 synchronously and returns an affine `FailStopped<'id, B>` proof. `abandon`
-idempotently poisons the installation without unbounded waiting. It returns
-`Abandon::Stopped` only with its `HardwareStopped` proof of masked IRQ entries,
-bounded CPU exclusion and device stopping. `Abandon::Unconfirmed(Quarantine)`
+poisons the installation without unbounded waiting. The core guarantees
+at most one call: after abandonment it consumes the armed cancellation guard
+and keeps a guard that only quarantines the owners. While a fail-stopped body
+still holds its loan, cancellation checks the latched cause instead of
+calling the backend again. Backends need no memoized stop outcome. The
+latch preserves its first cause through a `LIVE` compare-exchange.
+`abandon` returns `Abandon::Stopped` only with its `HardwareStopped` proof
+of masked IRQ entries, bounded CPU exclusion and device stopping. `Abandon::Unconfirmed(Quarantine)`
 consumes the authority without claiming those effects; it requires chip reset.
 An overlong driver step or ISR may leave hardware running: every reachable
 allocation stays in permanent quarantine until chip reset. Neither outcome
@@ -139,20 +144,23 @@ disable, retire, detach and cancellation workload in
 [`examples/lifecycle_cost.rs`](examples/lifecycle_cost.rs). With Rust 1.97.1,
 `riscv32imafc-unknown-none-elf`, opt-level 3, one codegen unit, LTO and aborting
 panics, the former two lifecycle implementations measured 2282 bytes of
-`.text`; the shared lifecycle measures 6216 bytes (+3934). This is a small
+`.text`; the shared lifecycle measures 6428 bytes (+4146). This is a small
 lifecycle ELF, not total firmware size or a hardware timing result.
 The prior by-value-driver version measured 5940 bytes and a 416-byte future;
-the complete quarantine/loan revision adds 276 bytes of text and 8 bytes of
-future state. This comparison includes the cancellation guard before the
-first poll and retained outcomes/owners, not only the change in the loan.
+the complete quarantine/loan revision with once-only abandonment adds 488
+bytes of text and 16 bytes of future state. This comparison includes the
+cancellation guard before the first poll and retained outcomes/owners, not
+only the change in the loan. The one-call guard and monotonic cause add 212
+bytes of text and 8 bytes of future state over the 6216/424-byte loan version;
+the fixture has no backend stop memo whose removal could offset this cost.
 
 | Checks | Code size | RAM and CPU | Signatures | Breakage | Alternatives | Reversal |
 | --- | --- | --- | --- | --- | --- | --- |
-| Typestate and opaque affine call/retire/poison/detach proofs are compile-time checks. Hardware refusal, poisoning and bounded waits remain runtime outcomes; lifecycle code has no explicit panic. | Test ELF `.text`: 2282 → 6216 bytes. Backend/body futures remain concrete monomorphizations; retirement and signal machinery add code. | No allocation. The measured RV32 future grows from 184 to 424 bytes per backend (+240). Three atomic waiter slots per installation: retirement, driver abandonment and core abandonment. Wake registration uses atomic synchronization; consuming proof and call tokens are zero-sized. Hot radio operations acquire no new lifecycle lock. | `Installed<B>`, `InstallParts<'id, B>`, static `drive(DriverLoan, held, retire)`, `DriverExit`, `Call`, `Quarantine`/`Abandon`/`HardwareStopped`/`Detach`, `Retired<'id, (Driver, State)>`, `Detached<'id>`, `Quarantined<S>`, `PortEnd<B, Out>`; owner borrows `&mut B`, `Ended<'id, B, Out>` has no borrow lifetime. | Both migrated blocks consume `Installed` and borrow one phase. Wi-Fi adopts the same core after coordinated integration; its current code is unchanged. | Keeping two identical owners duplicates fixes. Moving `B` into its owner loses the core's asynchronous abandonment authority. A receiver-based `drive` needs an empty driver slot. Flag-only retirement loses wakes. | Rework signal/future representation if the added code or installation RAM exceeds the target image budget; preserve proofs, wakes and asynchronous teardown. Re-measure this ELF and the affected firmware before accepting that rework. |
+| Typestate and opaque affine call/retire/poison/detach proofs are compile-time checks. Hardware refusal, poisoning and bounded waits remain runtime outcomes; lifecycle code has no explicit panic. | Test ELF `.text`: 2282 → 6428 bytes. Backend/body futures remain concrete monomorphizations; retirement and signal machinery add code. | No allocation. The measured RV32 future grows from 184 to 432 bytes per backend (+248). Three atomic waiter slots per installation: retirement, driver abandonment and core abandonment. Wake registration uses atomic synchronization; consuming proof and call tokens are zero-sized. Hot radio operations acquire no new lifecycle lock. | `Installed<B>`, `InstallParts<'id, B>`, static `drive(DriverLoan, held, retire)`, `DriverExit`, `Call`, `Quarantine`/`Abandon`/`HardwareStopped`/`Detach`, `Retired<'id, (Driver, State)>`, `Detached<'id>`, `Quarantined<S>`, `PortEnd<B, Out>`; owner borrows `&mut B`, `Ended<'id, B, Out>` has no borrow lifetime. | Both migrated blocks consume `Installed` and borrow one phase. Wi-Fi adopts the same core after coordinated integration; its current code is unchanged. | Keeping two identical owners duplicates fixes. Moving `B` into its owner loses the core's asynchronous abandonment authority. A receiver-based `drive` needs an empty driver slot. Flag-only retirement loses wakes. | Rework signal/future representation if the added code or installation RAM exceeds the target image budget; preserve proofs, wakes and asynchronous teardown. Re-measure this ELF and the affected firmware before accepting that rework. |
 
 Most code is the concrete async state machines: the linked ELF attributes
-2186 bytes to each backend's polling entry, 424 bytes to each body future,
-368 bytes to shared installation drop glue and 516 bytes to the retirement
+2256 bytes to each backend's polling entry, 424 bytes to each body future,
+440 bytes to shared installation drop glue and 516 bytes to the retirement
 poll closure. These sizes include inlined wake handling; they are not an
 ablation attributing a byte count to each guarantee. The extra future RAM
 retains both sides of the body/retirement join, the driver loan and owners,

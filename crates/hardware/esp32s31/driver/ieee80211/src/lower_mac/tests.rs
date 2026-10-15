@@ -28,7 +28,8 @@ use oer_ieee80211_mac::{
 use oer_ieee80211_softmac::{MacRxEvidence, MacRxMetadata};
 
 use oer_memory::{
-    DmaIndexReturn, PinnedDmaTxPool, PinnedDmaTxRadioLease, ReturningStableDmaBacking,
+    DmaIndexReturn, PinnedDmaTxPool, PinnedDmaTxPoolHandle, PinnedDmaTxRadioLease,
+    ReturningStableDmaBacking,
 };
 
 use super::*;
@@ -2526,7 +2527,7 @@ impl DmaIndexReturn for &'static FreeBackings {
 /// Subframe memory from a pinned DMA TX pool, as the station's network TX
 /// path lends it.
 struct Backings {
-    pool: &'static PinnedDmaTxPool<BACKING, 0, 0, BACKINGS>,
+    pool: PinnedDmaTxPoolHandle<BACKING, 0, 0, BACKINGS>,
     free: &'static FreeBackings,
 }
 
@@ -2555,10 +2556,7 @@ fn backings() -> &'static Backings {
     let pool = PinnedDmaTxPool::pin_static(Box::leak(Box::new(PinnedDmaTxPool::new())));
     let free: &'static FreeBackings = Box::leak(Box::default());
     free.0.borrow_mut().extend((0..BACKINGS as u8).rev());
-    Box::leak(Box::new(Backings {
-        pool: Pin::into_ref(pool).get_ref(),
-        free,
-    }))
+    Box::leak(Box::new(Backings { pool, free }))
 }
 
 fn ampdu_owner() -> Esp32s31AmpduOwner<'static, Backing, SUBFRAMES> {

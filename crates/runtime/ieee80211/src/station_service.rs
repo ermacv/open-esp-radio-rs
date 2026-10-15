@@ -85,6 +85,7 @@
 //! fixture parsing and serialization do not belong to the product API.
 
 use core::marker::PhantomData;
+use oer_ieee80211_lower_mac::association::KEY_BANK_CAPACITY;
 use oer_ieee80211_sta::machine::TxRefusal;
 
 use core::future::{Future, poll_fn};
@@ -264,11 +265,15 @@ where
         parts: oer_ieee80211_lower_mac::association::KeyBankParts<
             Self::PairwiseSlot,
             Self::GroupSlot,
-            8,
+            KEY_BANK_CAPACITY,
         >,
     ) -> Result<
         Self::VacantKeyBank,
-        oer_ieee80211_lower_mac::association::KeyBankParts<Self::PairwiseSlot, Self::GroupSlot, 8>,
+        oer_ieee80211_lower_mac::association::KeyBankParts<
+            Self::PairwiseSlot,
+            Self::GroupSlot,
+            KEY_BANK_CAPACITY,
+        >,
     > {
         Ty::StationKeys::collect_key_bank(parts)
     }
@@ -277,7 +282,11 @@ where
     ) -> (
         Self::AssociationStart,
         Self::PairwiseSlot,
-        oer_ieee80211_lower_mac::association::KeyBankParts<Self::PairwiseSlot, Self::GroupSlot, 8>,
+        oer_ieee80211_lower_mac::association::KeyBankParts<
+            Self::PairwiseSlot,
+            Self::GroupSlot,
+            KEY_BANK_CAPACITY,
+        >,
     ) {
         Ty::StationKeys::split_vacant(vacant)
     }
@@ -287,7 +296,11 @@ where
     ) -> (
         Self::AssociationStart,
         Self::PairwiseSlot,
-        oer_ieee80211_lower_mac::association::KeyBankParts<Self::PairwiseSlot, Self::GroupSlot, 8>,
+        oer_ieee80211_lower_mac::association::KeyBankParts<
+            Self::PairwiseSlot,
+            Self::GroupSlot,
+            KEY_BANK_CAPACITY,
+        >,
     ) {
         Ty::StationKeys::split_vacant(Ty::StationKeys::end_association(association, bank))
     }

@@ -110,7 +110,7 @@ struct Tokens<const G: usize = 2>;
 impl<const G: usize> StaTokens for Tokens<G> {
     type AssociationStart = ();
     type Association = oer_ieee80211_mac::security::Spp;
-    type VacantKeyBank = (Slot, heapless::Vec<Slot, 8>);
+    type VacantKeyBank = (Slot, heapless::Vec<Slot, KEY_BANK_CAPACITY>);
     type VacantAssociation = (Slot, [Slot; G]);
     fn begin_association(_: (), spp: Self::Association) -> Self::Association {
         spp
@@ -123,7 +123,7 @@ impl<const G: usize> StaTokens for Tokens<G> {
     ) -> (
         (),
         Slot,
-        oer_ieee80211_lower_mac::association::KeyBankParts<Slot, Slot, 8>,
+        oer_ieee80211_lower_mac::association::KeyBankParts<Slot, Slot, KEY_BANK_CAPACITY>,
     ) {
         (
             (),
@@ -135,10 +135,10 @@ impl<const G: usize> StaTokens for Tokens<G> {
         )
     }
     fn collect_key_bank(
-        parts: oer_ieee80211_lower_mac::association::KeyBankParts<Slot, Slot, 8>,
+        parts: oer_ieee80211_lower_mac::association::KeyBankParts<Slot, Slot, KEY_BANK_CAPACITY>,
     ) -> Result<
         Self::VacantKeyBank,
-        oer_ieee80211_lower_mac::association::KeyBankParts<Slot, Slot, 8>,
+        oer_ieee80211_lower_mac::association::KeyBankParts<Slot, Slot, KEY_BANK_CAPACITY>,
     > {
         if parts.pairwise.len() != 1 || parts.group.len() != G {
             return Err(parts);
@@ -155,7 +155,7 @@ impl<const G: usize> StaTokens for Tokens<G> {
     ) -> (
         (),
         Slot,
-        oer_ieee80211_lower_mac::association::KeyBankParts<Slot, Slot, 8>,
+        oer_ieee80211_lower_mac::association::KeyBankParts<Slot, Slot, KEY_BANK_CAPACITY>,
     ) {
         (
             (),

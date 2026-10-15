@@ -2,6 +2,7 @@
 
 use super::*;
 use core::num::NonZeroU16;
+use oer_ieee80211_lower_mac::association::KEY_BANK_CAPACITY;
 use oer_ieee80211_lower_mac::{
     BandSet, Channel, ChannelWidth, CoexPriority, CoexPrioritySet, HardwareServices,
     Ieee80211Capabilities, LowerMacCapabilities, PhyFormatSet, RateSupport, ReceiveFilter,
@@ -93,7 +94,8 @@ struct Station;
 impl StaTokens for Station {
     type AssociationStart = ();
     type Association = ();
-    type VacantKeyBank = oer_ieee80211_lower_mac::association::KeyBankParts<(), (), 8>;
+    type VacantKeyBank =
+        oer_ieee80211_lower_mac::association::KeyBankParts<(), (), KEY_BANK_CAPACITY>;
     type VacantAssociation = [(); 0];
     fn begin_association(_: (), _: oer_ieee80211_mac::security::Spp) {}
     fn association(key: &()) -> &() {

@@ -17,6 +17,10 @@ use core::marker::PhantomData;
 use oer_ieee80211_mac::security::Spp;
 use oer_radio_port::{Child, PoolBuilder, PoolPath, PoolSet, Root, Slot, Slots};
 
+/// Capacity of each PTK/GTK return collection retained by the portable station.
+/// Backend banks remain generic: this bounds station bookkeeping, not AP slots.
+pub const KEY_BANK_CAPACITY: usize = 8;
+
 struct OwnerKind<R, const P: usize, const G: usize>(PhantomData<R>);
 struct PairwiseKind<R, const P: usize, const G: usize>(PhantomData<R>);
 struct GroupKind<R, const P: usize, const G: usize>(PhantomData<R>);

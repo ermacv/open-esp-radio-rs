@@ -1,4 +1,5 @@
 use oer_ieee80211_arbiter::{AbsencePlace, LeasePlace};
+use oer_ieee80211_lower_mac::association::KEY_BANK_CAPACITY;
 use oer_ieee80211_lower_mac::*;
 use oer_ieee80211_mac::phy::{HeMcs, HtMcs};
 use oer_ieee80211_sta::epoch::LinkEpochSource;
@@ -51,7 +52,8 @@ impl oer_ieee80211_lower_mac::TxBufferClass for Buffer {
 impl<const GROUPS: usize> StaTokens for Tokens<GROUPS> {
     type AssociationStart = ();
     type Association = ();
-    type VacantKeyBank = oer_ieee80211_lower_mac::association::KeyBankParts<(), (), 8>;
+    type VacantKeyBank =
+        oer_ieee80211_lower_mac::association::KeyBankParts<(), (), KEY_BANK_CAPACITY>;
     type VacantAssociation = [(); GROUPS];
     fn begin_association(_: (), _: oer_ieee80211_mac::security::Spp) {}
     fn association(key: &()) -> &() {

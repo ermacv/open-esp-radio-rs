@@ -73,6 +73,7 @@
 //! [follow decision]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6130775558
 
 use core::marker::PhantomData;
+use oer_ieee80211_lower_mac::association::KEY_BANK_CAPACITY;
 use oer_ieee80211_mac::ccmp::GroupKeyId;
 
 use oer_ieee80211_arbiter::{
@@ -200,7 +201,7 @@ pub trait StaTokens {
         Self::AssociationStart,
         Self::PairwiseSlot,
         Self::GroupSlot,
-        8,
+        KEY_BANK_CAPACITY,
     >;
     /// Select SPP once before installing PTK.
     fn begin_association(
@@ -212,11 +213,15 @@ pub trait StaTokens {
         parts: oer_ieee80211_lower_mac::association::KeyBankParts<
             Self::PairwiseSlot,
             Self::GroupSlot,
-            8,
+            KEY_BANK_CAPACITY,
         >,
     ) -> Result<
         Self::VacantKeyBank,
-        oer_ieee80211_lower_mac::association::KeyBankParts<Self::PairwiseSlot, Self::GroupSlot, 8>,
+        oer_ieee80211_lower_mac::association::KeyBankParts<
+            Self::PairwiseSlot,
+            Self::GroupSlot,
+            KEY_BANK_CAPACITY,
+        >,
     >;
     /// End synchronously, then distribute the complete bank for another association.
     fn end_association(
@@ -226,7 +231,7 @@ pub trait StaTokens {
         Self::AssociationStart,
         Self::PairwiseSlot,
         Self::GroupSlot,
-        8,
+        KEY_BANK_CAPACITY,
     >;
     /// The installed PTK retains the association owner until its removal terminal.
     fn association(key: &Self::PairwiseKey) -> &Self::Association;
@@ -1146,8 +1151,11 @@ enum KeyCell<T: StaTokens> {
     /// Backend contract violation: every returned owner remains in custody.
     UnreturnedBank {
         _association: T::Association,
-        _parts:
-            oer_ieee80211_lower_mac::association::KeyBankParts<T::PairwiseSlot, T::GroupSlot, 8>,
+        _parts: oer_ieee80211_lower_mac::association::KeyBankParts<
+            T::PairwiseSlot,
+            T::GroupSlot,
+            KEY_BANK_CAPACITY,
+        >,
     },
 }
 
@@ -1171,8 +1179,8 @@ struct VacantPairwise<T: StaTokens> {
 
 struct Keys<T: StaTokens> {
     pairwise: KeyCell<T>,
-    spare_pairwise: heapless::Vec<T::PairwiseSlot, 8>,
-    spare_group: heapless::Vec<T::GroupSlot, 8>,
+    spare_pairwise: heapless::Vec<T::PairwiseSlot, KEY_BANK_CAPACITY>,
+    spare_group: heapless::Vec<T::GroupSlot, KEY_BANK_CAPACITY>,
     group_slots: GroupSlots<T>,
     group_permission: Option<T::GroupPermission>,
     groups: GroupKeys<T::GroupKey>,
@@ -1191,9 +1199,9 @@ impl<T: StaTokens> Keys<T> {
             const fn check(active: usize, selected: usize, group: usize, pairwise: usize) {
                 if active != selected
                     || active > group
-                    || group > 8
+                    || group > KEY_BANK_CAPACITY
                     || pairwise == 0
-                    || pairwise > 8
+                    || pairwise > KEY_BANK_CAPACITY
                 {
                     panic!("station collections must retain the complete key bank");
                 }

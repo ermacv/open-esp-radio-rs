@@ -14,6 +14,22 @@ where
     E: WifiTxEntropy,
     T: oer_time::Timer,
 {
+    fn publish_eapol<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        transmit: ApEapolTransmit<EAPOL_CAPACITY>,
+        now: oer_time::Instant,
+    ) -> Result<(), AccessPointControlError> {
+        match self.mac.publish_eapol(hardware, transmit, self.state.tx_frame) {
+            Ok(()) => Ok(()),
+            Err((error, unsent)) => {
+                let (_frame, context) = unsent.into_parts();
+                self.mac.engine_mut().observe_wpa2_transmit(context, false, now)?;
+                Err(error.into())
+            }
+        }
+    }
+
     fn rx_batch_record(
         &self,
     ) -> Result<
@@ -95,9 +111,7 @@ where
             .handle_eapol(hardware, plan.source, frame, now)?
         {
             ApWpa2Outcome::Transmit(frame) => {
-                let mac = &mut self.mac;
-                let tx_frame = &mut *self.state.tx_frame;
-                mac.publish_eapol(hardware, plan.source, &frame, tx_frame)?;
+                self.publish_eapol(hardware, frame, now)?;
                 observe_access_point!(self, observation, {
                     observation.control_frames_staged =
                         observation.control_frames_staged.saturating_add(1);
@@ -198,9 +212,7 @@ where
                 #[cfg(feature = "diagnostics")]
                 log::info!("open-radio: AP association TX complete; publish WPA2 M1 peer={peer:02x?}");
                 let message1 = self.mac.engine().begin_wpa2::<EAPOL_CAPACITY>(peer)?;
-                let mac = &mut self.mac;
-                let tx_frame = &mut *self.state.tx_frame;
-                mac.publish_eapol(hardware, peer, &message1, tx_frame)?;
+                self.publish_eapol(hardware, message1, now)?;
                 observe_access_point!(self, observation, {
                     observation.control_frames_staged =
                         observation.control_frames_staged.saturating_add(1);
@@ -490,10 +502,8 @@ where
             .engine_mut()
             .take_due_wpa2_retry::<EAPOL_CAPACITY>(now)?
         {
-            ApWpa2RetryProgress::Transmit { peer, frame } => {
-                let mac = &mut self.mac;
-                let tx_frame = &mut *self.state.tx_frame;
-                mac.publish_eapol(hardware, peer, &frame, tx_frame)?;
+            ApWpa2RetryProgress::Transmit(frame) => {
+                self.publish_eapol(hardware, frame, now)?;
                 observe_access_point!(self, observation, {
                     observation.control_frames_staged =
                         observation.control_frames_staged.saturating_add(1);

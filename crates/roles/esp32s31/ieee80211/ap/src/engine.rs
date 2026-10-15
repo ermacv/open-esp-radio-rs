@@ -45,10 +45,11 @@ use oer_ieee80211_mac::{
 
 use oer_ieee80211_ap::{
     AccessPointService, ApAssociationCapabilities, ApAssociationIdentity, ApBufferedGroupRelease,
-    ApBufferedUnicastRelease, ApDownlinkAdmission, ApDownlinkDisposition, ApMlmeAction,
-    ApPeerBinding, ApPeerClose, ApPeerCloseKind, ApPeerPhase, ApPeerPowerState, ApPeerStatus,
-    ApPowerSaveAction, ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
-    beacon::ApBeacon, pmksa::AP_PMKID_LEN, sae::ApSaeReply,
+    ApBufferedUnicastRelease, ApDownlinkAdmission, ApDownlinkDisposition, ApEapolTransmit,
+    ApEapolTxCompletion, ApEapolTxContext, ApMlmeAction, ApPeerBinding, ApPeerClose,
+    ApPeerCloseKind, ApPeerPhase, ApPeerPowerState, ApPeerStatus, ApPowerSaveAction,
+    ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress, beacon::ApBeacon,
+    pmksa::AP_PMKID_LEN, sae::ApSaeReply,
 };
 
 use oer_ieee80211_rsn::{OwnedEapolFrame, Pmk, frames::RsnTxFrame};
@@ -165,7 +166,7 @@ pub enum ApManagementOutcome {
 
 pub enum ApWpa2Outcome<const N: usize> {
     None,
-    Transmit(RsnTxFrame<N>),
+    Transmit(ApEapolTransmit<N>),
     PeerAuthorized { peer: [u8; 6] },
     DeauthenticatePeer { peer: [u8; 6] },
 }
@@ -715,14 +716,14 @@ impl<'storage> ApEngine<'storage> {
 
     pub fn observe_wpa2_transmit(
         &mut self,
-        peer: [u8; 6],
-        retransmission: bool,
+        context: ApEapolTxContext,
         acknowledged: bool,
         now: oer_time::Instant,
     ) -> Result<(), ApEngineError> {
         if self
             .service
-            .observe_wpa2_transmit(peer, retransmission, acknowledged, now)?
+            .observe_wpa2_transmit(context, acknowledged, now)?
+            == ApEapolTxCompletion::WindowArmed
         {
             #[cfg(any(feature = "diagnostics", test))]
             self.observe(ApEngineObservationEvent::Wpa2ResponseWindow);
@@ -736,7 +737,7 @@ impl<'storage> ApEngine<'storage> {
     ) -> Result<ApWpa2RetryProgress<N>, ApEngineError> {
         let progress = self.service.take_due_wpa2_retry(now)?;
         match progress {
-            ApWpa2RetryProgress::Transmit { .. } => {
+            ApWpa2RetryProgress::Transmit(_) => {
                 #[cfg(any(feature = "diagnostics", test))]
                 self.observe(ApEngineObservationEvent::Wpa2Retransmission);
             }

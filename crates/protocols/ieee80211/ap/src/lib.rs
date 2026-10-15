@@ -9,6 +9,12 @@
 //! slots and Embassy deadlines remain in chip/runtime crates. Replay and key
 //! ownership exist only in RSN epochs. Management protection decisions take
 //! integrity evidence as values; lower-MAC key slots and TX remain outside.
+//!
+//! EAPOL publication returns [`ApEapolTransmit`], which owns its affine
+//! [`ApEapolTxContext`]. The caller retains that context through TX and returns
+//! it on completion, including an unsent publication. Message 2 or Message 4
+//! may arrive before the previous TX terminal; that older context cannot arm
+//! the newer message's retry window or refresh a reassociated peer.
 
 #[cfg(test)]
 extern crate std;
@@ -27,8 +33,9 @@ pub use service::{
     AccessPointInactiveTimeoutError, AccessPointPeerStorage, AccessPointService,
     AccessPointServiceStatus, ApAssociationCapabilities, ApAssociationIdentity,
     ApBufferedGroupRelease, ApBufferedUnicastRelease, ApDownlinkAdmission, ApDownlinkDisposition,
-    ApGroupManagementError, ApManagementAction, ApManagementProtection, ApManagementRejection,
-    ApManagementRx, ApManagementRxProtection, ApMlmeAction, ApPeerBinding, ApPeerClose,
-    ApPeerCloseKind, ApPeerPhase, ApPeerPowerState, ApPeerStatus, ApPowerSaveAction,
-    ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
+    ApEapolTransmit, ApEapolTxCompletion, ApEapolTxContext, ApGroupManagementError,
+    ApManagementAction, ApManagementProtection, ApManagementRejection, ApManagementRx,
+    ApManagementRxProtection, ApMlmeAction, ApPeerBinding, ApPeerClose, ApPeerCloseKind,
+    ApPeerPhase, ApPeerPowerState, ApPeerStatus, ApPowerSaveAction, ApServiceError, ApWpa2Error,
+    ApWpa2Progress, ApWpa2RetryProgress,
 };

@@ -30,8 +30,8 @@ use oer_esp32s31_ieee80211::{
 
 use oer_esp32s31_ieee80211_ap::protocol::{
     AP_MAX_CLIENTS, AccessPointServiceStatus, ApAssociationIdentity, ApBufferedGroupRelease,
-    ApBufferedUnicastRelease, ApDownlinkDisposition, ApPeerClose, ApPeerPhase, ApPeerPowerState,
-    ApPowerSaveAction, ApWpa2RetryProgress,
+    ApBufferedUnicastRelease, ApDownlinkDisposition, ApEapolTransmit, ApPeerClose, ApPeerPhase,
+    ApPeerPowerState, ApPowerSaveAction, ApWpa2RetryProgress,
 };
 
 #[cfg(any(feature = "diagnostics", test))]

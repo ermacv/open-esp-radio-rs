@@ -117,6 +117,13 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   corrupt the new frontier. A new material epoch starts at KeyRSC; keeping
   identical material means keeping the original replay owner.
 
+- AP EAPOL publication retains `ApEapolTxContext` from frame construction to
+  terminal delivery. RX can advance to M3 before the M1 TX terminal, or finish
+  M4 before the M3 terminal. Compare the retained association/message/replay
+  identity before arming a retry: deriving the message from the current RSN
+  phase lets a late terminal arm another exchange. A different peer's table
+  mutation must not invalidate the original peer's association identity.
+
 - Pending key actions and installed GTK records retain `CcmpKey`, whose
   Debug is redacted and whose destructor zeroizes its bytes. Compare through
   borrowed material; a raw `[u8; 16]` in a derived Debug token exposes GTK.

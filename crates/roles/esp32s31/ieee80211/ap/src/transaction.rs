@@ -28,35 +28,33 @@ use oer_esp32s31_ieee80211_mac::tx::{
 
 use oer_ieee80211_mac::{ap::ApPeerDisconnectKind, security::LinkProtection};
 
-use oer_ieee80211_ap::{ApPeerClose, ApPeerPowerState, ApServiceError};
+use oer_ieee80211_ap::{
+    ApEapolTransmit, ApEapolTxContext, ApPeerClose, ApPeerPowerState, ApServiceError,
+};
 
-use oer_ieee80211_rsn::frames::RsnTxFrame;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug)]
 enum PendingPublication {
     Beacon {
         dtim_group_frames: u16,
     },
     Authentication,
     ProbeResponse {
+        #[cfg(any(feature = "diagnostics", test))]
         receiver: [u8; 6],
+        #[cfg(any(feature = "diagnostics", test))]
         sequence_control: u16,
+        #[cfg(any(feature = "diagnostics", test))]
         started_at: oer_time::Instant,
     },
     Association {
         peer: [u8; 6],
         begin_wpa2: bool,
     },
-    Eapol {
-        peer: [u8; 6],
-        retransmission: bool,
-    },
+    Eapol(ApEapolTxContext),
     Data {
         peer: [u8; 6],
     },
-    BlockAckRequest {
-        peer: [u8; 6],
-    },
+    BlockAckRequest,
     RxBlockAckResponse,
     PeerDisconnect {
         close: ApPeerClose,
@@ -78,15 +76,15 @@ pub enum ApPendingPublicationKind {
 }
 
 impl PendingPublication {
-    const fn kind(self) -> ApPendingPublicationKind {
+    const fn kind(&self) -> ApPendingPublicationKind {
         match self {
             Self::Beacon { .. } => ApPendingPublicationKind::Beacon,
             Self::ProbeResponse { .. } => ApPendingPublicationKind::ProbeResponse,
             Self::Authentication => ApPendingPublicationKind::Authentication,
             Self::Association { .. } => ApPendingPublicationKind::Association,
-            Self::Eapol { .. } => ApPendingPublicationKind::Eapol,
+            Self::Eapol(_) => ApPendingPublicationKind::Eapol,
             Self::Data { .. } => ApPendingPublicationKind::Data,
-            Self::BlockAckRequest { .. } => ApPendingPublicationKind::BlockAckRequest,
+            Self::BlockAckRequest => ApPendingPublicationKind::BlockAckRequest,
             Self::RxBlockAckResponse => ApPendingPublicationKind::RxBlockAckResponse,
             Self::PeerDisconnect { .. } => ApPendingPublicationKind::PeerDisconnect,
         }
@@ -395,7 +393,7 @@ where
         ),
         ApMacError,
     > {
-        if let Some(pending) = self.pending {
+        if let Some(pending) = &self.pending {
             return Err(ApMacError::AggregateAdapterUnavailable(pending.kind()));
         }
         self.transmit
@@ -414,7 +412,7 @@ where
     }
 
     pub fn pending_publication_kind(&self) -> Option<ApPendingPublicationKind> {
-        self.pending.map(PendingPublication::kind)
+        self.pending.as_ref().map(PendingPublication::kind)
     }
 
     pub const fn tx_pending(&self) -> bool {
@@ -496,8 +494,11 @@ where
             PendingPublication::Association { peer, begin_wpa2 }
         } else if scratch[0] == 0x50 {
             PendingPublication::ProbeResponse {
+                #[cfg(any(feature = "diagnostics", test))]
                 receiver: peer,
+                #[cfg(any(feature = "diagnostics", test))]
                 sequence_control: u16::from_le_bytes([scratch[22], scratch[23]]),
+                #[cfg(any(feature = "diagnostics", test))]
                 started_at: now,
             }
         } else if scratch[0] == 0xb0 {
@@ -511,21 +512,28 @@ where
     pub fn publish_eapol<H, const N: usize>(
         &mut self,
         hardware: &mut H,
-        peer: [u8; 6],
-        frame: &RsnTxFrame<N>,
+        transmit: ApEapolTransmit<N>,
         scratch: &mut [u8],
-    ) -> Result<(), ApMacError>
+    ) -> Result<(), (ApMacError, ApEapolTransmit<N>)>
     where
         H: TxHardware,
     {
-        self.require_idle()?;
-        let len = self.engine.encode_eapol(peer, frame, scratch)?;
-        self.transmit
-            .start_encoded(hardware, ApTxClass::Eapol, &scratch[..len])?;
-        self.pending = Some(PendingPublication::Eapol {
-            peer,
-            retransmission: frame.retransmission(),
-        });
+        if let Err(error) = self.require_idle() {
+            return Err((error, transmit));
+        }
+        let frame = transmit.frame();
+        let len = match self.engine.encode_eapol(*frame.peer(), frame, scratch) {
+            Ok(len) => len,
+            Err(error) => return Err((error.into(), transmit)),
+        };
+        if let Err(error) = self
+            .transmit
+            .start_encoded(hardware, ApTxClass::Eapol, &scratch[..len])
+        {
+            return Err((error.into(), transmit));
+        }
+        let (_frame, context) = transmit.into_parts();
+        self.pending = Some(PendingPublication::Eapol(context));
         Ok(())
     }
 
@@ -562,7 +570,7 @@ where
         };
         self.transmit
             .start_encoded(hardware, ApTxClass::Management, &scratch[..length])?;
-        self.pending = Some(PendingPublication::BlockAckRequest { peer });
+        self.pending = Some(PendingPublication::BlockAckRequest);
         Ok(true)
     }
 
@@ -938,12 +946,8 @@ where
                             acknowledged: false,
                         }
                     }
-                    PendingPublication::Eapol {
-                        peer,
-                        retransmission,
-                    } => {
-                        self.engine
-                            .observe_wpa2_transmit(peer, retransmission, false, now)?;
+                    PendingPublication::Eapol(context) => {
+                        self.engine.observe_wpa2_transmit(context, false, now)?;
                         ApTxCompletionAction::PublicationFailed
                     }
                     _ => ApTxCompletionAction::PublicationFailed,
@@ -997,10 +1001,7 @@ where
                     ApTxCompletionAction::None
                 }
             }
-            PendingPublication::Eapol {
-                peer,
-                retransmission,
-            } => {
+            PendingPublication::Eapol(context) => {
                 #[cfg(any(feature = "diagnostics", test))]
                 {
                     self.observer.observation.eapol_frames_transmitted = self
@@ -1009,8 +1010,7 @@ where
                         .eapol_frames_transmitted
                         .saturating_add(1);
                 }
-                self.engine
-                    .observe_wpa2_transmit(peer, retransmission, true, now)?;
+                self.engine.observe_wpa2_transmit(context, true, now)?;
                 ApTxCompletionAction::None
             }
             PendingPublication::Data { peer } => {
@@ -1027,7 +1027,7 @@ where
                 }
                 ApTxCompletionAction::None
             }
-            PendingPublication::BlockAckRequest { .. } => ApTxCompletionAction::None,
+            PendingPublication::BlockAckRequest => ApTxCompletionAction::None,
             PendingPublication::RxBlockAckResponse => {
                 #[cfg(any(feature = "diagnostics", test))]
                 {
@@ -1068,7 +1068,7 @@ where
     }
 
     fn require_idle(&self) -> Result<(), ApMacError> {
-        if let Some(pending) = self.pending {
+        if let Some(pending) = &self.pending {
             Err(ApMacError::PublicationActive(pending.kind()))
         } else {
             Ok(())

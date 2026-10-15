@@ -1,6 +1,8 @@
 const TEST_HT_CAPABILITIES: oer_ieee80211_mac::ht::HtLocalCapabilities =
     oer_ieee80211_mac::ht::HtLocalCapabilities::new(0x100c, 0x03, 0xff, 0x01);
 
+mod transmit;
+
 use super::*;
 use oer_ieee80211_mac::{
     channel::WifiChannel,
@@ -636,31 +638,28 @@ fn complete_four_way_handshake_retains_ptk_until_hardware_authorization() {
             oer_time::Instant::from_micros(1),
         )
         .unwrap();
-    let message1 = service.begin_wpa2_frame::<512>(PEER).unwrap();
+    let (message1, message1_context) = service.begin_wpa2_frame::<512>(PEER).unwrap().into_parts();
     assert_eq!(
         message1.key_frame().message(),
         EapolKeyMessage::PairwiseMessage1
     );
     assert!(!message1.retransmission());
     service
-        .observe_wpa2_transmit(PEER, false, true, oer_time::Instant::from_micros(10))
+        .observe_wpa2_transmit(message1_context, true, oer_time::Instant::from_micros(10))
         .unwrap();
     assert_eq!(
         service.next_wpa2_retry_deadline(),
         Some(oer_time::Instant::from_micros(1_000_010))
     );
-    let ApWpa2RetryProgress::Transmit {
-        peer: retried_peer,
-        frame: retried_message1,
-    } = service
+    let ApWpa2RetryProgress::Transmit(retried_message1) = service
         .take_due_wpa2_retry::<512>(oer_time::Instant::from_micros(1_000_010))
         .unwrap()
     else {
         panic!("Message 1 response timeout must retransmit")
     };
-    assert_eq!(retried_peer, PEER);
-    assert!(retried_message1.retransmission());
-    assert_eq!(retried_message1.as_bytes(), message1.as_bytes());
+    assert_eq!(*retried_message1.frame().peer(), PEER);
+    assert!(retried_message1.frame().retransmission());
+    assert_eq!(retried_message1.frame().as_bytes(), message1.as_bytes());
 
     let ptk = Pmk::derive(b"password", b"test-ap").unwrap().derive_ptk(
         oer_ieee80211_mac::security::rsn::Akm::Psk,
@@ -687,6 +686,7 @@ fn complete_four_way_handshake_retains_ptk_until_hardware_authorization() {
     let ApWpa2Progress::Transmit(message3) = service.on_eapol(PEER, message2).unwrap() else {
         panic!("message 2 must produce message 3");
     };
+    let (message3, message3_context) = message3.into_parts();
     assert_eq!(
         message3.key_frame().message(),
         EapolKeyMessage::PairwiseMessage3
@@ -705,24 +705,25 @@ fn complete_four_way_handshake_retains_ptk_until_hardware_authorization() {
     );
     assert_eq!(service.next_wpa2_retry_deadline(), None);
     service
-        .observe_wpa2_transmit(PEER, false, true, oer_time::Instant::from_micros(2_000_000))
+        .observe_wpa2_transmit(
+            message3_context,
+            true,
+            oer_time::Instant::from_micros(2_000_000),
+        )
         .unwrap();
     assert_eq!(
         service.next_wpa2_retry_deadline(),
         Some(oer_time::Instant::from_micros(2_100_000))
     );
-    let ApWpa2RetryProgress::Transmit {
-        peer: retried_peer,
-        frame: retried_message3,
-    } = service
+    let ApWpa2RetryProgress::Transmit(retried_message3) = service
         .take_due_wpa2_retry::<512>(oer_time::Instant::from_micros(2_100_000))
         .unwrap()
     else {
         panic!("Message 3 response timeout must retransmit")
     };
-    assert_eq!(retried_peer, PEER);
-    assert!(retried_message3.retransmission());
-    assert_eq!(retried_message3.as_bytes(), message3.as_bytes());
+    assert_eq!(*retried_message3.frame().peer(), PEER);
+    assert!(retried_message3.frame().retransmission());
+    assert_eq!(retried_message3.frame().as_bytes(), message3.as_bytes());
     assert!(matches!(
         parse_gtk_key_data(plaintext.as_bytes(), &SUPPLICANT_RSN, &[], false),
         Err(RsnFrameError::RsnIeMismatch)
@@ -956,9 +957,9 @@ fn exhausted_pairwise_update_count_closes_the_peer() {
             oer_time::Instant::from_micros(1),
         )
         .unwrap();
-    service.begin_wpa2_frame::<512>(PEER).unwrap();
+    let (_message1, context) = service.begin_wpa2_frame::<512>(PEER).unwrap().into_parts();
     service
-        .observe_wpa2_transmit(PEER, false, true, oer_time::Instant::from_micros(0))
+        .observe_wpa2_transmit(context, true, oer_time::Instant::from_micros(0))
         .unwrap();
 
     for deadline in [1_000_000, 2_000_000, 3_000_000] {
@@ -966,7 +967,7 @@ fn exhausted_pairwise_update_count_closes_the_peer() {
             service
                 .take_due_wpa2_retry::<512>(oer_time::Instant::from_micros(deadline))
                 .unwrap(),
-            ApWpa2RetryProgress::Transmit { peer: PEER, .. }
+            ApWpa2RetryProgress::Transmit(frame) if *frame.frame().peer() == PEER
         ));
     }
     assert!(matches!(
@@ -1565,7 +1566,11 @@ fn a_wpa3_handshake_uses_the_sae_pmk_and_delivers_the_igtk() {
         )
         .unwrap();
     assert_eq!(association_status(action), AP_STATUS_SUCCESS);
-    service.begin_wpa2_frame::<512>(PEER).unwrap();
+    let message1 = service.begin_wpa2_frame::<512>(PEER).unwrap();
+    let (_frame, context) = message1.into_parts();
+    service
+        .observe_wpa2_transmit(context, true, oer_time::Instant::from_micros(2))
+        .unwrap();
 
     let ptk = Pmk::from_bytes(SAE_PMK).derive_ptk(
         oer_ieee80211_mac::security::rsn::Akm::Sae,
@@ -1592,6 +1597,7 @@ fn a_wpa3_handshake_uses_the_sae_pmk_and_delivers_the_igtk() {
     let ApWpa2Progress::Transmit(message3) = service.on_eapol(PEER, message2).unwrap() else {
         panic!("message 2 must produce message 3");
     };
+    let (message3, message3_context) = message3.into_parts();
     assert!(message3.key_frame().verify_mic(&ptk));
     let plaintext = software_aes128_key_unwrap(ptk.kek(), message3.key_frame().key_data())
         .expect("AP wrapped its Message 3 key data");
@@ -1603,6 +1609,9 @@ fn a_wpa3_handshake_uses_the_sae_pmk_and_delivers_the_igtk() {
     )
     .unwrap();
     assert_eq!(keys.igtk.unwrap().key(), &[0x66; 16]);
+    service
+        .observe_wpa2_transmit(message3_context, true, oer_time::Instant::from_micros(3))
+        .unwrap();
 }
 
 #[test]
@@ -1695,7 +1704,7 @@ fn a_wpa3_access_point_refuses_psk_and_stations_without_protection() {
 fn begin_management_handshake(
     service: &mut AccessPointService<'_, oer_ieee80211_mac::security::spp::Association>,
     peer: [u8; 6],
-) -> (Ptk, RsnTxFrame<512>) {
+) -> (Ptk, ApEapolTransmit<512>) {
     let now = oer_time::Instant::from_micros(1);
     service
         .authenticate_sae(peer, Pmk::from_bytes(SAE_PMK), SAE_PMKID, now)
@@ -1900,6 +1909,7 @@ fn the_bss_owns_one_monotonic_bip_frontier_and_refuses_invalid_group_frames() {
     assert_eq!(&first[len + 4..len + 10], &[1, 0, 0, 0, 0, 0]);
     assert_eq!(&second[len + 4..len + 10], &[2, 0, 0, 0, 0, 0]);
     let (ptk, message3) = begin_management_handshake(&mut service, PEER);
+    let (message3, message3_context) = message3.into_parts();
     let plaintext = software_aes128_key_unwrap(ptk.kek(), message3.key_frame().key_data()).unwrap();
     let keys = parse_gtk_key_data(
         plaintext.as_bytes(),
@@ -1916,7 +1926,7 @@ fn the_bss_owns_one_monotonic_bip_frontier_and_refuses_invalid_group_frames() {
         Err(oer_ieee80211_rsn::bip::BipError::Replay)
     );
     service
-        .observe_wpa2_transmit(PEER, false, true, oer_time::Instant::from_micros(10))
+        .observe_wpa2_transmit(message3_context, true, oer_time::Instant::from_micros(10))
         .unwrap();
     // Group TX can advance while Message 4 is missing; a retransmitted M3
     // must retain its original authenticated bytes, including the IPN.
@@ -1924,18 +1934,15 @@ fn the_bss_owns_one_monotonic_bip_frontier_and_refuses_invalid_group_frames() {
     let protected = service.protect_group_management(&mut third, len).unwrap();
     assert_eq!(new_peer.verify(&third[..protected]), Ok(()));
     assert_eq!(service.igtk().unwrap().packet_number(), [3, 0, 0, 0, 0, 0]);
-    let ApWpa2RetryProgress::Transmit {
-        peer,
-        frame: repeated,
-    } = service
+    let ApWpa2RetryProgress::Transmit(repeated) = service
         .take_due_wpa2_retry::<512>(service.next_wpa2_retry_deadline().unwrap())
         .unwrap()
     else {
         panic!("Message 3 response timeout must retransmit");
     };
-    assert_eq!(peer, PEER);
-    assert!(repeated.retransmission());
-    assert_eq!(repeated.as_bytes(), message3.as_bytes());
+    assert_eq!(*repeated.frame().peer(), PEER);
+    assert!(repeated.frame().retransmission());
+    assert_eq!(repeated.frame().as_bytes(), message3.as_bytes());
 }
 
 #[test]

@@ -14,6 +14,8 @@ pub use management::{
     ApManagementRx, ApManagementRxProtection,
 };
 pub use security::{ApAssociationSecurityError, admit_association_security};
+mod transmit;
+pub use transmit::{ApEapolTransmit, ApEapolTxCompletion, ApEapolTxContext};
 
 // Preserve the existing service-level imports while limits own their definition.
 pub use crate::limits::{
@@ -398,14 +400,14 @@ impl From<SoftwareAesKeyWrapError> for ApWpa2Error {
 
 pub enum ApWpa2Progress<const N: usize> {
     None,
-    Transmit(RsnTxFrame<N>),
+    Transmit(ApEapolTransmit<N>),
     AuthorizePeer,
     DeauthenticatePeer,
 }
 
 pub enum ApWpa2RetryProgress<const N: usize> {
     None,
-    Transmit { peer: [u8; 6], frame: RsnTxFrame<N> },
+    Transmit(ApEapolTransmit<N>),
     Close(ApPeerClose),
 }
 

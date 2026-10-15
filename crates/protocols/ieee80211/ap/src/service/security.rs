@@ -134,7 +134,7 @@ impl<'peers, S: SppScope> AccessPointService<'peers, S> {
     pub fn begin_wpa2_frame<const N: usize>(
         &self,
         peer: [u8; 6],
-    ) -> Result<RsnTxFrame<N>, ApWpa2Error> {
+    ) -> Result<ApEapolTransmit<N>, ApWpa2Error> {
         if self.link_protection() != LinkProtection::Ccmp {
             return Err(ApServiceError::SecurityModeMismatch.into());
         }
@@ -146,30 +146,50 @@ impl<'peers, S: SppScope> AccessPointService<'peers, S> {
         let RsnApAction::Transmit(transmit) = state.message1(false)? else {
             return Err(ApWpa2Error::UnexpectedAction);
         };
-        Ok(build_ap_action_frame(state, transmit, [0; 8], &[])?)
+        self.bind_eapol(
+            build_ap_action_frame(state, transmit, [0; 8], &[])?,
+            transmit,
+        )
     }
 
     /// Bind a terminal EAPOL-Key TX completion to the generic finite retry
-    /// owner. A new handshake message replaces the previous response window;
-    /// completion of a retransmission keeps the alarm already advanced by the
-    /// timer edge that produced it.
+    /// owner. The context identifies the association, message and replay
+    /// counter actually published. RX may have advanced to M3 or completed the
+    /// handshake before an older TX returns; that terminal returns resources
+    /// without changing the current response window. A new handshake message
+    /// replaces the previous response window; completion of a retransmission
+    /// keeps the alarm already advanced by the timer edge that produced it.
     pub fn observe_wpa2_transmit(
         &mut self,
-        peer: [u8; 6],
-        retransmission: bool,
+        context: ApEapolTxContext,
         acknowledged: bool,
         now: oer_time::Instant,
-    ) -> Result<bool, ApWpa2Error> {
+    ) -> Result<ApEapolTxCompletion, ApWpa2Error> {
         let inactive_timeout = self.inactive_timeout.duration();
-        let transmit = self
-            .checked_peer(peer)?
+        let ApEapolTxContext {
+            association,
+            transmit,
+        } = context;
+        let Some(existing) = self.bound_association_mut(association) else {
+            return Ok(ApEapolTxCompletion::Superseded);
+        };
+        if existing.phase != ApPeerPhase::Securing {
+            return Ok(ApEapolTxCompletion::Superseded);
+        }
+        let state = existing
             .wpa2
             .as_ref()
-            .ok_or(ApServiceError::WrongPeerPhase)?
-            .retry_transmit()?;
-        let existing = self.checked_peer_mut(peer)?;
+            .ok_or(ApServiceError::WrongPeerPhase)?;
+        if state.phase() == RsnApPhase::Authorized || state.phase() == RsnApPhase::Failed {
+            return Ok(ApEapolTxCompletion::Superseded);
+        }
+        let current = state.retry_transmit()?;
+        if current.message != transmit.message || current.replay_counter != transmit.replay_counter
+        {
+            return Ok(ApEapolTxCompletion::Superseded);
+        }
         let stage_changed = existing.wpa2_retry.pending_message() != Some(transmit.message);
-        let armed = stage_changed || !retransmission;
+        let armed = stage_changed || !transmit.retransmission;
         if armed {
             existing.wpa2_retry.cancel();
             let mut alarm = existing.wpa2_retry.arm(transmit, now)?;
@@ -181,13 +201,17 @@ impl<'peers, S: SppScope> AccessPointService<'peers, S> {
                 alarm = existing
                     .wpa2_retry
                     .defer_first_after_ack(now)?
-                    .expect("freshly armed WPA2 retry has a first window");
+                    .ok_or(ApWpa2Error::UnexpectedAction)?;
             }
             existing.wpa2_retry_alarm = Some(alarm);
         }
         existing.last_activity = now;
         existing.deadline = now.saturating_add(inactive_timeout);
-        Ok(armed)
+        Ok(if armed {
+            ApEapolTxCompletion::WindowArmed
+        } else {
+            ApEapolTxCompletion::WindowRetained
+        })
     }
 
     pub fn next_wpa2_retry_deadline(&self) -> Option<oer_time::Instant> {
@@ -233,7 +257,7 @@ impl<'peers, S: SppScope> AccessPointService<'peers, S> {
                             .wpa2
                             .as_ref()
                             .ok_or(ApServiceError::WrongPeerPhase)?;
-                        build_ap_action_frame(state, frame, [0; 8], &[])?
+                        self.bind_eapol(build_ap_action_frame(state, frame, [0; 8], &[])?, frame)?
                     }
                     oer_ieee80211_rsn::state::RsnTxMessage::PairwiseMessage3 => {
                         let ApWpa2Progress::Transmit(frame) =
@@ -245,10 +269,7 @@ impl<'peers, S: SppScope> AccessPointService<'peers, S> {
                     }
                     _ => return Err(ApWpa2Error::UnexpectedAction),
                 };
-                Ok(ApWpa2RetryProgress::Transmit {
-                    peer: peer_address,
-                    frame,
-                })
+                Ok(ApWpa2RetryProgress::Transmit(frame))
             }
             RsnRetryAction::Exhausted => {
                 let peer = self.checked_peer_mut(peer_address)?;
@@ -426,7 +447,9 @@ impl<'peers, S: SppScope> AccessPointService<'peers, S> {
         // fresh schedule only after its own terminal TX completion.
         existing.wpa2_retry.cancel();
         existing.wpa2_retry_alarm = None;
-        Ok(ApWpa2Progress::Transmit(response))
+        Ok(ApWpa2Progress::Transmit(
+            self.bind_eapol(response, transmit)?,
+        ))
     }
 
     fn build_pending_transmit<const N: usize>(
@@ -447,7 +470,9 @@ impl<'peers, S: SppScope> AccessPointService<'peers, S> {
         let wrapped = software_aes128_key_wrap(ptk.kek(), plain.as_bytes())?;
         let response =
             build_ap_action_frame(state, transmit, [0; 8], wrapped.as_bytes())?.authenticate(ptk);
-        Ok(ApWpa2Progress::Transmit(response))
+        Ok(ApWpa2Progress::Transmit(
+            self.bind_eapol(response, transmit)?,
+        ))
     }
 
     pub fn pending_ptk(&self, peer: [u8; 6]) -> Result<&Ptk, ApServiceError> {

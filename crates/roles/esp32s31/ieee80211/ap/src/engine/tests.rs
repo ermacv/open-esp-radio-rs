@@ -433,7 +433,10 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
             ..
         }
     ));
-    engine.begin_wpa2::<512>(peer).unwrap();
+    let (_message1, context) = engine.begin_wpa2::<512>(peer).unwrap().into_parts();
+    engine
+        .observe_wpa2_transmit(context, true, oer_time::Instant::from_micros(2))
+        .unwrap();
 
     let ptk = Pmk::derive(b"password", b"ap").unwrap().derive_ptk(
         oer_ieee80211_mac::security::rsn::Akm::Psk,
@@ -470,9 +473,9 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
     };
     let mut message3_mpdu = [0; 768];
     let message3_len = engine
-        .encode_eapol(peer, &message3, &mut message3_mpdu)
+        .encode_eapol(peer, message3.frame(), &mut message3_mpdu)
         .unwrap();
-    assert!(message3_len > message3.as_bytes().len());
+    assert!(message3_len > message3.frame().as_bytes().len());
     assert_eq!(&message3_mpdu[4..10], &peer);
     assert_eq!(&message3_mpdu[10..16], &ap);
     assert_eq!(&message3_mpdu[22..24], &[0, 0]);

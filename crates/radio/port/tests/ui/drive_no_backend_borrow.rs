@@ -21,7 +21,7 @@ impl PortBackend for Backend {
     type Domain = ();
     type Fault = ();
     type Refusal = ();
-    type Setup<'a, 'id> = ();
+    type Setup<'a, 'id> = () where Self: 'a, 'id: 'a;
     type Phase<'a, 'id>
         = Phase
     where
@@ -33,7 +33,12 @@ impl PortBackend for Backend {
     type State = ();
     type Uninstall = ();
     type Uninstalled = ();
-    fn enable(&mut self, _: Call) -> impl Future<Output = EnableResult<(), ()>> {
+    fn enable<'a, 'id>(&'a mut self, _: Call,
+        _: &'a Self::Held<'id>,
+        _: &'a mut Self::Local<'id>,) -> impl Future<Output = EnableResult<(), ()>>
+    where
+        'id: 'a,
+    {
         ready(Ok(Ok(())))
     }
     fn disable<'a, 'id>(
@@ -59,7 +64,10 @@ impl PortBackend for Backend {
             resources: (),
         }
     }
-    fn setup<'a, 'id>(&'a mut self, _: Call, _: &'a mut Self::Local<'id>) -> Self::Setup<'a, 'id> {}
+    fn setup<'a, 'id>(&'a mut self, _: Call, _: &'a Self::Held<'id>, _: &'a mut Self::Local<'id>) -> Self::Setup<'a, 'id>
+    where
+        'id: 'a,
+    {}
     fn phase<'a, 'id>(
         &'a mut self,
         _: Call,
@@ -77,35 +85,30 @@ impl PortBackend for Backend {
         _: &'p Self::Held<'id>,
         retire: Retire<'p>,
     ) -> impl Future<Output = DriverExit<(), ()>> + use<'p, 'id> {
-        async move {
-            DriverExit::Retired {
-                state: (),
-                proof: retire.requested().await,
-            }
-        }
+        pending()
     }
     #[cfg(not(ui_reject))]
     fn drive<'p, 'id>(
-        _: Self::Driver,
+        driver: oer_radio_port::DriverLoan<'p, Self::Driver>,
         _: &'p Self::Held<'id>,
         retire: Retire<'p>,
     ) -> impl Future<Output = DriverExit<(), ()>> + use<'p, 'id> {
         async move {
             DriverExit::Retired {
                 state: (),
-                proof: retire.requested().await,
+                proof: retire.requested(driver).await,
             }
         }
     }
     fn retire_bound(&self, _: Call) -> impl Future<Output = ()> + use<> {
         pending()
     }
-    fn detach<'id>(&mut self, _: oer_radio_port::Detach, _: &Self::Held<'id>) {}
+    fn detach<'id>(&mut self, _: oer_radio_port::Detach<'_>, _: &Self::Held<'id>) {}
     fn uninstall<'id>(
         self,
         _: Self::Held<'id>,
         _: Self::Local<'id>,
-        _: Retired<'id, ()>,
+        _: Retired<'id, (Self::Driver, ())>,
         _: Detached<'id>,
         _: (),
     ) {

@@ -68,6 +68,10 @@ struct State {
     device_tables: Vec<LeDeviceTablePublication>,
     /// Controller-time latch requests.
     time_requests: usize,
+    /// Cancellation probes: keep the time latch or its drain pending.
+    time_waiting: bool,
+    time_drain_waiting: bool,
+    time_busy: bool,
 }
 
 /// The model's owner of a disabled BLE PHY ETM route.
@@ -95,7 +99,12 @@ impl BluetoothRadioHardware for Model {
     }
 
     fn request_time(&mut self) -> Result<ControllerTimeRequest, ControllerTimeRequestError> {
-        self.0.borrow_mut().time_requests += 1;
+        let mut state = self.0.borrow_mut();
+        state.time_requests += 1;
+        if state.time_busy {
+            state.time_busy = false;
+            return Err(ControllerTimeRequestError::Busy);
+        }
         Ok(ControllerTimeRequest::for_validation(1))
     }
 
@@ -103,14 +112,22 @@ impl BluetoothRadioHardware for Model {
         &mut self,
         request: ControllerTimeRequest,
     ) -> Result<ControllerTimeEventStep, ControllerTimeEventError> {
+        let state = self.0.borrow();
+        if state.time_waiting {
+            return Ok(ControllerTimeEventStep::Waiting);
+        }
         Ok(ControllerTimeEventStep::Sample {
             request,
-            sample: ControllerTimeSample::for_validation(self.0.borrow().time),
+            sample: ControllerTimeSample::for_validation(state.time),
         })
     }
 
     fn drain_time(&mut self) -> Result<ControllerTimeEventStep, ControllerTimeEventError> {
-        Ok(ControllerTimeEventStep::Idle)
+        Ok(if self.0.borrow().time_drain_waiting {
+            ControllerTimeEventStep::Waiting
+        } else {
+            ControllerTimeEventStep::Idle
+        })
     }
 
     fn publish_rx_chains<const SCANNING: usize, const NON_SCANNING: usize>(
@@ -517,7 +534,7 @@ impl Fixture {
         ),
         crate::BluetoothUninstallError<()>,
     > {
-        let mut driver = self.driver.take().expect("a radio is installed");
+        let driver = self.driver.take().expect("a radio is installed");
         let _stopped = driver.run(|| true, core::future::ready(())).await;
         driver.into_parts().map_err(|retained| retained.error)
     }
@@ -1626,8 +1643,10 @@ fn abandonment_is_unconfirmed_and_does_not_enter_runtime_fault_storage() {
             ));
             assert!(matches!(
                 (fail_stop, end),
-                (true, oer_radio_port::PortEnd::FailStopped { output: 17 })
-                    | (false, oer_radio_port::PortEnd::Abandoned)
+                (
+                    true,
+                    oer_radio_port::PortEnd::FailStopped { output: 17, .. }
+                ) | (false, oer_radio_port::PortEnd::Abandoned { .. })
             ));
             assert_eq!(
                 block_on(runtime.read_now()),
@@ -1640,5 +1659,113 @@ fn abandonment_is_unconfirmed_and_does_not_enter_runtime_fault_storage() {
             block_on(runtime.install(model_memory(), model.clone())),
             Err((crate::BluetoothInstallError::Abandoned, _, _))
         ));
+    }
+}
+
+/// Poll counts include cancellation before entry and after each pending poll.
+/// Hardware waits cover time sampling/draining, resume, stop and retirement;
+/// the ready cases cover the command-yield and idle timer branches as well.
+#[test]
+fn cancelling_driver_at_each_wait_keeps_owners_for_retire_and_uninstall() {
+    #[derive(Clone, Copy, Debug)]
+    enum At {
+        Idle,
+        ClockSample,
+        PreviousClockDrain,
+        EnableSample,
+        DisableStop,
+        DisableSample,
+        RetireStop,
+        RetireDrain,
+    }
+    for at in [
+        At::Idle,
+        At::ClockSample,
+        At::PreviousClockDrain,
+        At::EnableSample,
+        At::DisableStop,
+        At::DisableSample,
+        At::RetireStop,
+        At::RetireDrain,
+    ] {
+        for polls in 0..=4 {
+            let model = Model::default();
+            let runtime = installed_disabled(&model);
+            if matches!(at, At::EnableSample) {
+                disable(&runtime); // resume now needs a fresh clock sample
+            }
+            if matches!(at, At::DisableStop | At::DisableSample) {
+                enable(&runtime);
+                block_on(runtime.submit_request(test_receive(7)))
+                    .unwrap()
+                    .unwrap();
+                settle(&runtime);
+            }
+            let mut sink = |_| {};
+            let mut command = Box::pin(async {
+                match at {
+                    At::ClockSample => {
+                        let _ = runtime.runtime.read_now().await;
+                    }
+                    At::EnableSample => {
+                        let _ = runtime.runtime.enable().await;
+                    }
+                    At::DisableStop | At::DisableSample => {
+                        let _ = runtime.runtime.disable(&mut sink).await;
+                    }
+                    _ => core::future::pending::<()>().await,
+                }
+            });
+            assert!(embassy_futures::poll_once(command.as_mut()).is_pending());
+            {
+                let mut state = model.0.borrow_mut();
+                state.time_waiting =
+                    matches!(at, At::ClockSample | At::EnableSample | At::DisableSample);
+                state.time_busy = matches!(at, At::PreviousClockDrain);
+                state.time_drain_waiting = matches!(at, At::PreviousClockDrain | At::RetireDrain);
+                state.stop_never_settles = matches!(at, At::DisableStop | At::RetireStop);
+            }
+            let retiring = matches!(at, At::RetireStop | At::RetireDrain);
+            {
+                let mut driver = runtime.lend();
+                let mut drive = Box::pin(driver.get().run(|| retiring, core::future::pending()));
+                for _ in 0..polls {
+                    assert!(
+                        embassy_futures::poll_once(drive.as_mut()).is_pending(),
+                        "{at:?}"
+                    );
+                    if let Some(deadline) = clock().next_deadline() {
+                        clock().advance_to(deadline);
+                    }
+                }
+                drop(drive); // releases only the private cell's loan
+            }
+            drop(command);
+            {
+                let mut state = model.0.borrow_mut();
+                state.time_waiting = false;
+                state.time_drain_waiting = false;
+                state.time_busy = false;
+                state.stop_never_settles = false;
+            }
+            // Finish any admitted work after cancellation, then retire the
+            // very same owner. No reconstruction of hardware or memory.
+            if !retiring {
+                disable(&runtime);
+            }
+            let (radio, returned) = block_on(runtime.take()).unwrap();
+            assert!(Rc::ptr_eq(&returned.0, &model.0), "{at:?}, poll {polls}");
+            assert!(!model.0.borrow().running);
+            assert_eq!(routes(&model).0, routes(&model).1);
+            assert!(
+                block_on(runtime.install(
+                    radio.into_memory(
+                        &oer_esp32s31_hal::bluetooth::BluetoothControllerReset::for_validation()
+                    ),
+                    returned
+                ))
+                .is_ok()
+            );
+        }
     }
 }

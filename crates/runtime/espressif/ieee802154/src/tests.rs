@@ -13,6 +13,8 @@ use core::{
     task::{Context, Poll, Waker},
 };
 
+use crate::Uninstalled;
+
 use embassy_futures::{block_on, yield_now};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use oer_esp32s31_hal::coex::{CoexEventId, CoexPti, CoexPtiTable};
@@ -203,7 +205,10 @@ where
     K: Ieee802154RuntimeCaps,
 {
     match block_on(run_port(backend.installed(), Body(body))) {
-        oer_radio_port::PortEnd::Uninstalled { uninstalled, .. } => uninstalled,
+        oer_radio_port::PortEnd::Uninstalled {
+            uninstalled: Uninstalled::Reusable(parts),
+            ..
+        } => parts,
         _ => panic!("the body uninstalls"),
     }
 }
@@ -1175,8 +1180,10 @@ fn abandonment_never_enters_the_lock_held_by_an_isr() {
             let end = block_on(run_port(backend.installed(), body));
             assert!(matches!(
                 (fail_stop, end),
-                (true, oer_radio_port::PortEnd::FailStopped { output: () })
-                    | (false, oer_radio_port::PortEnd::Abandoned)
+                (
+                    true,
+                    oer_radio_port::PortEnd::FailStopped { output: (), .. }
+                ) | (false, oer_radio_port::PortEnd::Abandoned { .. })
             ));
             assert!(entered_isr.is_some(), "unconfirmed backing stays installed");
             assert_eq!(
@@ -1215,4 +1222,111 @@ fn cancellation_quarantines_without_entering_the_isr_lock() {
             })
         );
     });
+}
+
+#[test]
+fn poisoned_uninstall_keeps_backing_without_taking_the_isr_lock() {
+    let runtime = runtime::<4>();
+    let backend = install::<Single, 4>(runtime, parts());
+    runtime.installed.lock(|installed| {
+        let entered_isr = installed.borrow_mut();
+        runtime
+            .abandoned
+            .store(true, core::sync::atomic::Ordering::Release);
+        let Uninstalled::Quarantined(receipt) = backend.uninstall_unused() else {
+            panic!("poisoned backing must never become reusable");
+        };
+        drop(receipt);
+        assert!(entered_isr.is_some());
+        assert!(
+            runtime
+                .abandoned
+                .load(core::sync::atomic::Ordering::Acquire)
+        );
+    });
+    assert!(
+        runtime
+            .install::<Single>(parts(), FixedRandom, Ieee802154PibDefaults::default())
+            .is_err()
+    );
+}
+
+/// The runner owns neither the delay nor the transmission. Cancel at every
+/// kind of suspension (idle, backoff and retry), before and after polling;
+/// disabling and uninstalling must still return the admitted operation.
+#[test]
+fn cancelling_driver_at_each_delay_wait_preserves_retire_and_uninstall() {
+    for polls in 0..=4 {
+        for retry in [false, true] {
+            let (runtime, parts, terminals) = enabled::<4>(async |phase| {
+                let runtime = phase.runtime;
+                let mut idle = Box::pin(runtime.run());
+                for _ in 0..polls {
+                    assert!(poll_once(idle.as_mut()).is_pending());
+                }
+                drop(idle);
+
+                let mut frame = MAC;
+                let mode = if retry {
+                    frame[0] |= 0x20;
+                    TxMode::Direct
+                } else {
+                    TxMode::CsmaCa { max_backoffs: 3 }
+                };
+                let permit = ready(phase.client.operation(phase.seat));
+                let _work = phase
+                    .client
+                    .transmit(permit, transmission(&frame, mode, u8::from(retry)))
+                    .unwrap();
+                if retry {
+                    runtime.model_interrupt(None, &[Ieee802154Event::TxDone]);
+                    runtime.with_model(|hardware| {
+                        hardware.tx_abort = Ieee802154TxAbortReasonObservation::Named(
+                            Ieee802154TxAbortReason::RxAckTimeout,
+                        );
+                    });
+                    runtime.model_interrupt(None, &[Ieee802154Event::TxAbort]);
+                }
+                let deadline = runtime.backoff_until.lock(core::cell::Cell::get);
+                assert!(deadline.is_some());
+                let mut delayed = Box::pin(runtime.run());
+                for _ in 0..polls {
+                    assert!(poll_once(delayed.as_mut()).is_pending());
+                }
+                let before_cancel = runtime.backoff_until.lock(core::cell::Cell::get);
+                drop(delayed);
+                // A zero-delay retry may already have progressed in its
+                // first poll; cancellation preserves exactly that progress.
+                assert_eq!(
+                    runtime.backoff_until.lock(core::cell::Cell::get),
+                    before_cancel
+                );
+                if !retry {
+                    assert_eq!(before_cancel, deadline);
+                }
+                // Cancelling the delay must neither forget nor duplicate the
+                // work. Resume once, then cancel again in the following idle.
+                runtime.timer.advance(Duration::from_millis(50)).unwrap();
+                let mut resumed = Box::pin(runtime.run());
+                assert!(poll_once(resumed.as_mut()).is_pending());
+                drop(resumed);
+                assert_eq!(runtime.backoff_until.lock(core::cell::Cell::get), None);
+                assert_eq!(
+                    runtime.with_model(|hardware| hardware.command),
+                    Some(if retry {
+                        Ieee802154LlCommand::TxStart
+                    } else {
+                        Ieee802154LlCommand::CcaTxStart
+                    }),
+                );
+                // Leave work in flight: disable must return its terminal.
+            });
+            assert_eq!(terminals.len(), 1);
+            let backend = install::<Single, 4>(runtime, parts);
+            assert!(matches!(
+                backend.uninstall_unused(),
+                Uninstalled::Reusable(_)
+            ));
+        }
+    }
 }

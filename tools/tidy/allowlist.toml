@@ -669,3 +669,53 @@ reason = "cargo xtask check ui checks the affine emergency authority and its com
 [[uncompiled]]
 path = "crates/radio/port/tests/ui/hardware_stopped_requires_quarantine.rs"
 reason = "cargo xtask check ui checks the affine emergency authority and its compiling twin"
+
+# Shared quarantine ownership and disabled-setup loan diagnostics.
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/setup_transition.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/quarantined_private.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/quarantined_affine.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/driver_loan_extract.rs"
+reason = "cargo xtask check ui checks the single affine driver loan and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/driver_loan_replace.rs"
+reason = "cargo xtask check ui checks the single affine driver loan and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/driver_loan_constructor.rs"
+reason = "cargo xtask check ui checks the single affine driver loan and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/espressif/ieee802154/tests/ui/durable_installation.rs"
+reason = "cargo xtask check ui checks durable installation storage and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/driver_after_retire.rs"
+reason = "cargo xtask check ui checks the consumed driver handoff and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/driver_after_fail_stop.rs"
+reason = "cargo xtask check ui checks the consumed driver handoff and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/faulted_requires_driver_handoff.rs"
+reason = "cargo xtask check ui checks the consumed driver handoff and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/published_poison_affine.rs"
+reason = "cargo xtask check ui checks the affine loan/publication and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/driver_loan_escape.rs"
+reason = "cargo xtask check ui checks the affine loan/publication and its compiling twin on host and RV32"

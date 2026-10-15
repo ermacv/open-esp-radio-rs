@@ -36,7 +36,7 @@ use oer_esp32s31_bluetooth_radio::{
 use oer_esp32s31_hal::bluetooth::{
     BluetoothSchedulerHardwareListIndex, BluetoothSchedulerStop, BluetoothSchedulerStopStep,
 };
-use oer_radio_port::{EnableResult, PoisonProof, PoisonState};
+use oer_radio_port::{EnableResult, PoisonState, PublishedPoison};
 use oer_time::{Duration, Timer};
 
 use crate::port::BluetoothBackend;
@@ -695,6 +695,40 @@ pub struct BluetoothDriver<
     const ITEMS: usize,
     const EVENTS: usize,
 > {
+    state: RefCell<
+        DriverState<
+            'r,
+            M,
+            H,
+            T,
+            C,
+            LEGACY,
+            CONNECTABLE,
+            SCANNERS,
+            CONNECTIONS,
+            SCAN_PACKETS,
+            RX_PACKETS,
+            ITEMS,
+            EVENTS,
+        >,
+    >,
+}
+
+struct DriverState<
+    'r,
+    M: RawMutex,
+    H: BluetoothRadioHardware,
+    T,
+    C: BluetoothRadioConfig,
+    const LEGACY: usize,
+    const CONNECTABLE: usize,
+    const SCANNERS: usize,
+    const CONNECTIONS: usize,
+    const SCAN_PACKETS: usize,
+    const RX_PACKETS: usize,
+    const ITEMS: usize,
+    const EVENTS: usize,
+> {
     runtime: &'r BluetoothRuntime<
         M,
         H,
@@ -929,16 +963,18 @@ impl<
         self.now_answered.lock(|answered| answered.set((0, None)));
         self.work.signal(());
         Ok(BluetoothDriver {
-            runtime: self,
-            installed: Installed {
-                radio,
-                hardware,
-                awaiting: None,
-                phy_route: None,
-                faulted: false,
-            },
-            fault: None,
-            retired: None,
+            state: RefCell::new(DriverState {
+                runtime: self,
+                installed: Installed {
+                    radio,
+                    hardware,
+                    awaiting: None,
+                    phy_route: None,
+                    faulted: false,
+                },
+                fault: None,
+                retired: None,
+            }),
         })
     }
 
@@ -1250,7 +1286,7 @@ impl<
     fn publish_fault(
         &self,
         fault: BluetoothRuntimeFault<H::StartError>,
-    ) -> (Poisoned<BluetoothFault<H::StartError>>, PoisonProof) {
+    ) -> (Poisoned<BluetoothFault<H::StartError>>, PublishedPoison) {
         let published = self
             .fault
             .lock(|cause| cause.borrow_mut().publish(BluetoothFault::Runner(fault)));
@@ -1315,6 +1351,96 @@ impl<
     const EVENTS: usize,
 >
     BluetoothDriver<
+        '_,
+        M,
+        H,
+        T,
+        C,
+        LEGACY,
+        CONNECTABLE,
+        SCANNERS,
+        CONNECTIONS,
+        SCAN_PACKETS,
+        RX_PACKETS,
+        ITEMS,
+        EVENTS,
+    >
+{
+    /// Run through the sole installation loan. The private mutable state
+    /// stays here across cancellation; no hardware owner enters the future.
+    #[allow(
+        clippy::await_holding_refcell_ref,
+        reason = "the affine driver loan is the sole accessor; no task or ISR reaches this private cell"
+    )]
+    pub(crate) async fn run(
+        &self,
+        retiring: impl Fn() -> bool,
+        retirement: impl Future<Output = ()>,
+    ) -> Result<(), BluetoothRuntimeFault<H::StartError>> {
+        self.state.borrow_mut().run(retiring, retirement).await
+    }
+
+    pub(crate) fn publish_fault(
+        &self,
+        fault: BluetoothRuntimeFault<H::StartError>,
+    ) -> (Poisoned<BluetoothFault<H::StartError>>, PublishedPoison) {
+        self.state.borrow().publish_fault(fault)
+    }
+
+    /// Return the radio and hardware after the core returns this driver
+    /// through its retirement proof. A fault retains the owners with why.
+    #[allow(
+        clippy::type_complexity,
+        clippy::result_large_err,
+        reason = "the role capacities remain visible in the returned owners"
+    )]
+    pub fn into_parts(
+        self,
+    ) -> Result<
+        (
+            Radio<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>,
+            H,
+        ),
+        BluetoothRetained<
+            H,
+            LEGACY,
+            CONNECTABLE,
+            SCANNERS,
+            CONNECTIONS,
+            SCAN_PACKETS,
+            RX_PACKETS,
+            ITEMS,
+        >,
+    > {
+        self.state.into_inner().into_parts()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_radio<R>(
+        &mut self,
+        entry: impl FnOnce(
+            &mut Radio<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>,
+        ) -> R,
+    ) -> R {
+        self.state.get_mut().with_radio(entry)
+    }
+}
+
+impl<
+    M: RawMutex,
+    H: BluetoothRadioHardware,
+    T: Timer,
+    C: BluetoothRadioConfig,
+    const LEGACY: usize,
+    const CONNECTABLE: usize,
+    const SCANNERS: usize,
+    const CONNECTIONS: usize,
+    const SCAN_PACKETS: usize,
+    const RX_PACKETS: usize,
+    const ITEMS: usize,
+    const EVENTS: usize,
+>
+    DriverState<
         '_,
         M,
         H,
@@ -1449,7 +1575,7 @@ impl<
     pub(crate) fn publish_fault(
         &self,
         fault: BluetoothRuntimeFault<H::StartError>,
-    ) -> (Poisoned<BluetoothFault<H::StartError>>, PoisonProof) {
+    ) -> (Poisoned<BluetoothFault<H::StartError>>, PublishedPoison) {
         self.runtime.publish_fault(fault)
     }
 

@@ -1,14 +1,20 @@
 //! One installation, one body and one independently owned driver.
 //!
 //! `Installed` moves its backend and driver into `run_port` once. The static
-//! `drive` signature consumes the driver and its retire receiver; its future
-//! has no borrow of the backend. The backend remains in `run_port`, lent by
+//! `drive` signature consumes a closed affine `DriverLoan` and its retire
+//! receiver; its future borrows the driver without borrowing the backend.
+//! Both owners remain in `run_port`. The backend is lent by
 //! `&mut` to the body's owner. Consuming transitions transfer that same loan.
 //!
 //! The driver has no installation lifetime. All branded queues (`Slot<'id>`,
 //! in-flight owners and their terminal capacity) live in `Held<'id>`; `drive`
 //! receives a shared borrow. `Local<'id>` belongs only to the body. The phase
 //! and setup are invariant loans, and cannot outlive an owner transition.
+//! Hardware-reachable backing has static storage and never resides inline
+//! in the movable driver or its future. Cancelling the drive future ends
+//! only its loan. Quarantine retains the backend, driver and completion
+//! state without running any of their destructors, even if its receipt is
+//! dropped; only ordinary uninstall receives reusable owners.
 //!
 //! A driver returns either a retirement proof obtained after the core's
 //! request, or a poison proof obtained by publishing a fault. A faulted
@@ -27,6 +33,7 @@ use core::{
     fmt::Debug,
     future::{Future, poll_fn},
     marker::PhantomData,
+    mem::ManuallyDrop,
     ops::{Deref, DerefMut},
     pin::{Pin, pin},
     sync::atomic::{AtomicBool, AtomicU8, Ordering},
@@ -102,13 +109,69 @@ pub enum Abandon {
     Unconfirmed(Quarantine),
 }
 
+/// Owners permanently withheld from reuse until the chip is reset.
+///
+/// There is no accessor or extraction operation. Dropping this value does
+/// not drop `S`, free its backing allocations or run hardware teardown.
+/// This is a quarantine receipt, not permission to recover the owners.
+/// Hardware-reachable storage must already have a durable address and
+/// lifetime: this wrapper cannot extend a borrow or preserve inline memory
+/// after its containing allocation ends.
+#[must_use = "quarantined owners require a chip reset before reuse"]
+pub struct Quarantined<S> {
+    _retained: ManuallyDrop<S>,
+}
+
+impl<S> Quarantined<S> {
+    /// Permanently retain owners without invoking their destructors.
+    pub const fn new(state: S) -> Self {
+        Self {
+            _retained: ManuallyDrop::new(state),
+        }
+    }
+}
+
 /// Authority for final detachment, after retirement or quarantine.
 #[must_use = "consume this authority in the single detach call"]
-pub enum Detach {
+pub enum Detach<'q> {
     /// The driver ended and the core is performing an ordinary uninstall.
     Retired(Call),
     /// Quarantine already ran; its outcome states which effects were proved.
-    Quarantined(Abandon),
+    Quarantined {
+        /// The core's single detachment authority.
+        call: Call,
+        /// The outcome retained for the composition after this call.
+        outcome: &'q Abandon,
+    },
+}
+
+/// The core's single affine loan of its independently owned driver.
+///
+/// Only `run_port` constructs this value. Consuming it starts `drive` once;
+/// dropping that future ends the loan without dropping the driver. Shared
+/// access exposes the driver's operations without an extraction operation or
+/// mutable reference that could replace the whole driver. Retirement consumes
+/// this loan through `Retire::requested`; a fault consumes it through
+/// `fail_stop`. Neither completion proof leaves access to the driver behind.
+#[must_use = "consume this loan in the installation's single drive call"]
+pub struct DriverLoan<'p, D> {
+    driver: &'p mut D,
+}
+
+impl<D> DriverLoan<'_, D> {
+    /// End driver access after publishing poison. The publication and this
+    /// consumed loan together prove a faulted exit; neither alone suffices.
+    pub fn fail_stop(self, published: PublishedPoison) -> PoisonProof {
+        let PublishedPoison { private: () } = published;
+        PoisonProof { private: () }
+    }
+}
+
+impl<D> Deref for DriverLoan<'_, D> {
+    type Target = D;
+    fn deref(&self) -> &D {
+        self.driver
+    }
 }
 
 /// An installed backend and its independent, unbranded driver.
@@ -155,7 +218,8 @@ pub trait PortBackend: Sized {
     /// Settings available while disabled.
     type Setup<'a, 'id>
     where
-        Self: 'a;
+        Self: 'a,
+        'id: 'a;
     /// One phase under the owner's exclusive loan.
     type Phase<'a, 'id>: PortPhase<Event = Self::Event<'id>, Fault = Self::Fault>
     where
@@ -167,20 +231,27 @@ pub trait PortBackend: Sized {
     type Held<'id>;
     /// State owned only by the body's side of the installation.
     type Local<'id>;
-    /// The driver moved into `drive`. It has no installation brand.
+    /// The driver retained by the core and lent to `drive` once. It has no
+    /// installation brand. All hardware-reachable backing resides in static
+    /// storage, never inline in this movable owner or its drive future.
     type Driver;
-    /// State returned by the driver, including retained hardware owners.
+    /// Unbranded completion state returned beside the retained driver.
     type State;
     /// The composition's uninstall control.
     type Uninstall;
     /// Hardware owners, or typed retained owners, returned by uninstall.
     type Uninstalled;
 
-    /// Enable within the backend's documented bound.
-    fn enable(
-        &mut self,
+    /// Enable within the backend's documented bound, borrowing this
+    /// installation's shared state and its exclusive body-local accounting.
+    fn enable<'a, 'id>(
+        &'a mut self,
         call: Call,
-    ) -> impl Future<Output = EnableResult<Self::Refusal, Self::Fault>> + '_;
+        held: &'a Self::Held<'id>,
+        local: &'a mut Self::Local<'id>,
+    ) -> impl Future<Output = EnableResult<Self::Refusal, Self::Fault>> + 'a
+    where
+        'id: 'a;
 
     /// End admitted work within the backend's bound and deliver every
     /// remaining terminal to `sink`, returning all permits before success.
@@ -203,12 +274,15 @@ pub trait PortBackend: Sized {
     /// Consume the one mint and distribute its complete layout.
     fn resources<'id>(&mut self, mint: Mint<'id, Self::Pools>) -> InstallParts<'id, Self>;
 
-    /// Lend disabled-only settings.
+    /// Lend disabled-only settings, including shared installation state.
     fn setup<'a, 'id>(
         &'a mut self,
         call: Call,
+        held: &'a Self::Held<'id>,
         local: &'a mut Self::Local<'id>,
-    ) -> Self::Setup<'a, 'id>;
+    ) -> Self::Setup<'a, 'id>
+    where
+        'id: 'a;
 
     /// Lend the running phase, whose operations borrow their phase.
     fn phase<'a, 'id>(
@@ -222,13 +296,21 @@ pub trait PortBackend: Sized {
 
     /// Drive the installation until retirement or published poisoning.
     ///
-    /// This static signature moves the driver and retire receiver once and
-    /// borrows only the held part and signals, not the backend. The driver
-    /// has no `'id`: branded queues and in-flight owners reside in `held`.
-    /// Every step must be cancel-safe; a cancelled core future cannot await
-    /// cleanup and synchronously closes admission through `abandon`.
+    /// This static signature consumes the single affine driver loan and
+    /// retire receiver. The future cannot borrow the backend or take or
+    /// replace the driver. The driver has no `'id`: branded queues and
+    /// in-flight owners reside in `held`. At every `await`, the driver must
+    /// be in a state that retirement and `abandon` can handle. Every step
+    /// must be cancel-safe:
+    /// progress and hardware owners remain in the driver or durable backing,
+    /// never in future-local owned storage that cancellation could destroy.
+    /// Cancelling the core synchronously poisons through `abandon`. Once
+    /// cleanup finishes, `Retire::requested` or `DriverLoan::fail_stop`
+    /// consumes the loan to construct the exit proof. Access cannot continue
+    /// after that handoff. Cancellation tests must cover each suspension point,
+    /// then retire/uninstall the retained driver and verify its owners/state.
     fn drive<'p, 'id>(
-        driver: Self::Driver,
+        driver: DriverLoan<'p, Self::Driver>,
         held: &'p Self::Held<'id>,
         retire: Retire<'p>,
     ) -> impl Future<Output = DriverExit<Self::State, Self::Fault>> + use<'p, 'id, Self>;
@@ -246,14 +328,14 @@ pub trait PortBackend: Sized {
     /// `abandon` has already poisoned the installation. A quarantined detach
     /// must not wait without a bound or release hardware-reachable backing.
     /// Only `Stopped` proves masking and hardware stopping.
-    fn detach<'id>(&mut self, call: Detach, held: &Self::Held<'id>);
+    fn detach<'id>(&mut self, call: Detach<'_>, held: &Self::Held<'id>);
 
     /// Consume an installation whose driver ended and entries are detached.
     fn uninstall<'id>(
         self,
         held: Self::Held<'id>,
         local: Self::Local<'id>,
-        retired: Retired<'id, Self::State>,
+        retired: Retired<'id, (Self::Driver, Self::State)>,
         detached: Detached<'id>,
         control: Self::Uninstall,
     ) -> Self::Uninstalled;
@@ -343,28 +425,32 @@ pub struct AbandonLatch {
 }
 
 impl AbandonLatch {
+    const LIVE: u8 = 0;
+    const DROPPED: u8 = 1;
+    const FAIL_STOPPED: u8 = 2;
+
     const fn new() -> Self {
         Self {
             core: Signal::new(),
             driver: Signal::new(),
-            cause: AtomicU8::new(0),
+            cause: AtomicU8::new(Self::LIVE),
         }
     }
 
     fn set(&self) {
-        self.cause.store(1, Ordering::Release);
+        self.cause.store(Self::DROPPED, Ordering::Release);
         self.core.set();
         self.driver.set();
     }
 
     fn fail_stopped(&self) {
-        self.cause.store(2, Ordering::Release);
+        self.cause.store(Self::FAIL_STOPPED, Ordering::Release);
         self.core.set();
         self.driver.set();
     }
 
     fn is_fail_stopped(&self) -> bool {
-        self.cause.load(Ordering::Acquire) == 2
+        self.cause.load(Ordering::Acquire) == Self::FAIL_STOPPED
     }
 
     /// Whether admission must remain closed for this installation.
@@ -397,19 +483,25 @@ impl<'p> Retire<'p> {
         poll_fn(|cx| self.request.poll(cx))
     }
 
-    /// Consume the receiver and prove the core requested retirement.
-    pub async fn requested(self) -> RetireProof {
-        self.wait().await;
-        RetireProof { private: () }
+    /// Consume the receiver and driver access, then prove the core requested
+    /// retirement. Driver cleanup precedes this handoff; `wait` lets cleanup
+    /// observe the request without yet returning the loan.
+    pub fn requested<D>(self, driver: DriverLoan<'p, D>) -> impl Future<Output = RetireProof> {
+        // End access when the handoff is called, before its future is polled.
+        let DriverLoan { driver: _ } = driver;
+        async move {
+            self.wait().await;
+            RetireProof { private: () }
+        }
     }
 
     /// A driver with no work returns its state after the retirement request.
     /// This keeps protocol models synchronous: the lifecycle core owns the
     /// wait and constructs the same affine proof as `requested`.
-    pub async fn retired<S, F>(self, state: S) -> DriverExit<S, F> {
+    pub async fn retired<D, S, F>(self, driver: DriverLoan<'p, D>, state: S) -> DriverExit<S, F> {
         DriverExit::Retired {
             state,
-            proof: self.requested().await,
+            proof: self.requested(driver).await,
         }
     }
 
@@ -430,9 +522,16 @@ pub struct RetireProof {
     private: (),
 }
 
-/// Proof that a port's poison storage published its cause.
+/// Proof of published poison and consumed driver access, issued only by
+/// `DriverLoan::fail_stop` after publication.
 #[must_use = "return the poison proof with a faulted driver"]
 pub struct PoisonProof {
+    private: (),
+}
+
+/// A port's published fault, awaiting the driver's affine handoff.
+#[must_use = "consume publication with the driver loan when returning a fault"]
+pub struct PublishedPoison {
     private: (),
 }
 
@@ -456,14 +555,15 @@ impl<C: Copy> PoisonState<C> {
     }
 
     /// Publish the first cause, returning the stored cause and its affine
-    /// proof. Later publishers retain that same first cause.
-    pub fn publish(&mut self, cause: C) -> (Poisoned<C>, PoisonProof) {
+    /// publication. `DriverLoan::fail_stop` consumes it and the loan to issue
+    /// the exit proof. Later publishers retain that same first cause.
+    pub fn publish(&mut self, cause: C) -> (Poisoned<C>, PublishedPoison) {
         let poisoned = match self.health {
             Health::Healthy => Poisoned { cause },
             Health::Poisoned(poisoned) => poisoned,
         };
         self.health = Health::Poisoned(poisoned);
-        (poisoned, PoisonProof { private: () })
+        (poisoned, PublishedPoison { private: () })
     }
 
     /// Read the cause after draining all events preceding publication.
@@ -497,7 +597,7 @@ pub enum DriverExit<S, F> {
         state: S,
         /// The published fault.
         cause: F,
-        /// Publication precedes this exit by construction.
+        /// Publication and consumption of driver access precede this exit.
         poisoned: PoisonProof,
     },
 }
@@ -523,7 +623,7 @@ pub struct Detached<'id> {
 }
 
 struct Install<'id, B: PortBackend> {
-    held: B::Held<'id>,
+    held: ManuallyDrop<B::Held<'id>>,
     latch: AbandonLatch,
     retiring: Signal,
 }
@@ -537,11 +637,22 @@ struct Install<'id, B: PortBackend> {
 /// Retirement and its timer then
 /// progress while the body awaits its result; only final detachment and
 /// result delivery depend on that body returning.
-pub async fn run_port<B: PortBackend, P: PortBody<B>>(
+pub fn run_port<B: PortBackend, P: PortBody<B>>(
     installed: Installed<B>,
     body: P,
-) -> PortEnd<B, P::Output> {
-    branded(async move |mint| install(installed, body, mint).await).await
+) -> impl Future<Output = PortEnd<B, P::Output>> {
+    // Construct the safety net before returning the future: cancellation
+    // before its first poll must also poison and retain the installation.
+    let installed = guard(installed, |mut installed| {
+        let outcome = installed.backend.abandon(Quarantine::new());
+        // Cancellation has no result receiver. Retain the outcome together
+        // with all owners, applying the same no-Drop quarantine rule.
+        drop(Quarantined::new((installed, outcome)));
+    });
+    async move {
+        let installed = ScopeGuard::into_inner(installed);
+        branded(async move |mint| install(installed, body, mint).await).await
+    }
 }
 
 enum Race<E, S> {
@@ -563,13 +674,54 @@ enum DriverState<D, S> {
     Ended(S),
     Bounded(Retirement<S>),
 }
-enum Retirement<S> {
+/// Driver completion retained with a quarantined installation.
+pub enum Retirement<S> {
+    /// The driver returned this state within the retirement bound.
     Ended(S),
+    /// The bound expired; cancellation ended only the driver's loan.
     TimedOut,
 }
 enum Joined<E, S> {
     Body(E),
     Retired(S),
+}
+
+enum InstallEnd<U, Out, S> {
+    Uninstall {
+        state: S,
+        control: U,
+        output: Out,
+    },
+    FailStopped {
+        outcome: Abandon,
+        state: Retirement<S>,
+        output: Out,
+    },
+    Abandoned {
+        outcome: Abandon,
+        state: Retirement<S>,
+    },
+}
+
+fn driver_state<S, F>(exit: ManuallyDrop<DriverExit<S, F>>) -> S {
+    match ManuallyDrop::into_inner(exit) {
+        DriverExit::Retired {
+            state,
+            proof: RetireProof { private: () },
+        }
+        | DriverExit::Faulted {
+            state,
+            cause: _,
+            poisoned: PoisonProof { private: () },
+        } => state,
+    }
+}
+
+fn retired_state<S, F>(exit: Retirement<ManuallyDrop<DriverExit<S, F>>>) -> Retirement<S> {
+    match exit {
+        Retirement::Ended(exit) => Retirement::Ended(driver_state(exit)),
+        Retirement::TimedOut => Retirement::TimedOut,
+    }
 }
 
 async fn install<'id, B: PortBackend, P: PortBody<B>>(
@@ -580,31 +732,46 @@ async fn install<'id, B: PortBackend, P: PortBody<B>>(
     body: P,
     mint: Mint<'id, B::Pools>,
 ) -> PortEnd<B, P::Output> {
+    // Declared before the backend guard, so cancellation first poisons the
+    // backend and then transfers this retained driver into quarantine.
+    let mut driver_owner = guard(driver, |driver| drop(Quarantined::new(driver)));
     let InstallParts {
         held,
-        mut local,
+        local,
         resources,
     } = backend.resources(mint);
+    let mut local = ManuallyDrop::new(local);
     let install = Install {
-        held,
+        held: ManuallyDrop::new(held),
         latch: AbandonLatch::new(),
         retiring: Signal::new(),
     };
     let mut backend = guard(backend, |mut backend| {
         install.latch.set();
-        let _outcome = backend.abandon(Quarantine::new());
+        let outcome = backend.abandon(Quarantine::new());
+        // There is no recipient for an outcome during cancellation. Keep
+        // it in permanent quarantine with B. The driver guard quarantines
+        // its owner next; held/local parts and completed state suppress Drop.
+        drop(Quarantined::new((backend, outcome)));
     });
     let bound = backend.retire_bound(Call::new());
     let mut bound = pin!(bound);
-    let (state, control, output) = {
-        let mut driver = pin!(B::drive(
-            driver,
-            &install.held,
-            Retire {
-                request: &install.retiring,
-                latch: &install.latch,
-            }
-        ));
+    let end = {
+        let mut driver = pin!(async {
+            ManuallyDrop::new(
+                B::drive(
+                    DriverLoan {
+                        driver: &mut *driver_owner,
+                    },
+                    &install.held,
+                    Retire {
+                        request: &install.retiring,
+                        latch: &install.latch,
+                    },
+                )
+                .await,
+            )
+        });
         let (outcome, driver) = {
             let mut body =
                 pin!(body.run(Owner::new(&mut *backend, &mut local, &install), resources));
@@ -624,8 +791,8 @@ async fn install<'id, B: PortBackend, P: PortBody<B>>(
             .await;
             let (race, driver): (Race<_, core::convert::Infallible>, _) = match first {
                 Race::Driver(exit) => {
-                    // A fault publishes poison before returning its owners.
-                    // Keep them while the body drains earlier terminals.
+                    // The returned state stays in ManuallyDrop while the
+                    // body drains results, including cancellation here.
                     let race = poll_fn(|cx| {
                         if let Poll::Ready(ended) = body.as_mut().poll(cx) {
                             return Poll::Ready(Race::Body(ended));
@@ -652,8 +819,6 @@ async fn install<'id, B: PortBackend, P: PortBody<B>>(
                 Race::FailStopped => {
                     install.retiring.set();
                     let mut retirement = pin!(retire(driver, bound.as_mut()));
-                    // Poll both, retaining the one that finishes first. No
-                    // completed future is polled twice.
                     let first = poll_fn(|cx| {
                         if let Poll::Ready(ended) = body.as_mut().poll(cx) {
                             return Poll::Ready(Joined::Body(ended));
@@ -667,63 +832,111 @@ async fn install<'id, B: PortBackend, P: PortBody<B>>(
                     };
                     (BodyOutcome::Returned(ended), DriverState::Bounded(exit))
                 }
-                // This race has no driver poll; its type is uninhabited.
                 Race::Driver(never) => match never {},
             }
         };
-        // The body's future and its exclusive backend loan have ended.
+        // The body and its exclusive backend loan have ended. Keep the
+        // cancellation guard armed throughout asynchronous retirement.
         match outcome {
             BodyOutcome::Abandoned => {
-                let mut backend = ScopeGuard::into_inner(backend);
                 let outcome = backend.abandon(Quarantine::new());
                 install.retiring.set();
-                if let Retirement::Ended(_) = retire(driver, bound.as_mut()).await {
-                    backend.detach(Detach::Quarantined(outcome), &install.held);
-                }
-                return PortEnd::Abandoned;
+                let state = retire(driver, bound.as_mut()).await;
+                InstallEnd::Abandoned { outcome, state }
             }
             BodyOutcome::Returned(Ended { end, output, .. }) => match end {
                 BodyEnd::FailStopped(outcome) => {
                     install.retiring.set();
-                    let exit = retire(driver, bound.as_mut()).await;
-                    let mut backend = ScopeGuard::into_inner(backend);
-                    if let Retirement::Ended(_) = exit {
-                        backend.detach(Detach::Quarantined(outcome), &install.held);
+                    let state = retire(driver, bound.as_mut()).await;
+                    InstallEnd::FailStopped {
+                        outcome,
+                        state,
+                        output,
                     }
-                    return PortEnd::FailStopped { output };
                 }
                 BodyEnd::Uninstall(control) => {
+                    let control = ManuallyDrop::new(control);
                     install.retiring.set();
-                    let Retirement::Ended(exit) = retire(driver, bound.as_mut()).await else {
-                        // The guard performs the synchronous fail-stop.
-                        return PortEnd::FailStopped { output };
-                    };
-                    (exit, control, output)
+                    match retire(driver, bound.as_mut()).await {
+                        Retirement::Ended(state) => InstallEnd::Uninstall {
+                            state,
+                            control: ManuallyDrop::into_inner(control),
+                            output,
+                        },
+                        Retirement::TimedOut => InstallEnd::FailStopped {
+                            outcome: backend.abandon(Quarantine::new()),
+                            state: Retirement::TimedOut,
+                            output,
+                        },
+                    }
                 }
             },
         }
     };
-    let state = match state {
-        DriverExit::Retired {
+    // Dropping the pinned drive future ended its loan. It never owned the
+    // driver; moving these handles cannot move their static DMA backing.
+    let driver = ScopeGuard::into_inner(driver_owner);
+    match end {
+        InstallEnd::Uninstall {
             state,
-            proof: RetireProof { private: () },
-        } => state,
-        DriverExit::Faulted {
+            control,
+            output,
+        } => {
+            let retired = Retired {
+                state: (driver, driver_state(state)),
+                brand: PhantomData,
+            };
+            backend.detach(Detach::Retired(Call::new()), &install.held);
+            let backend = ScopeGuard::into_inner(backend);
+            let detached = Detached { brand: PhantomData };
+            PortEnd::Uninstalled {
+                uninstalled: backend.uninstall(
+                    ManuallyDrop::into_inner(install.held),
+                    ManuallyDrop::into_inner(local),
+                    retired,
+                    detached,
+                    control,
+                ),
+                output,
+            }
+        }
+        InstallEnd::FailStopped {
+            outcome,
             state,
-            cause: _,
-            poisoned: PoisonProof { private: () },
-        } => state,
-    };
-    let retired = Retired {
-        state,
-        brand: PhantomData,
-    };
-    let mut backend = ScopeGuard::into_inner(backend);
-    backend.detach(Detach::Retired(Call::new()), &install.held);
-    let detached = Detached { brand: PhantomData };
-    PortEnd::Uninstalled {
-        uninstalled: backend.uninstall(install.held, local, retired, detached, control),
-        output,
+            output,
+        } => {
+            if let Retirement::Ended(_) = &state {
+                backend.detach(
+                    Detach::Quarantined {
+                        call: Call::new(),
+                        outcome: &outcome,
+                    },
+                    &install.held,
+                );
+            }
+            let backend = ScopeGuard::into_inner(backend);
+            PortEnd::FailStopped {
+                outcome,
+                quarantined: Quarantined::new((backend, driver, retired_state(state))),
+                output,
+            }
+        }
+        InstallEnd::Abandoned { outcome, state } => {
+            if let Retirement::Ended(_) = &state {
+                backend.detach(
+                    Detach::Quarantined {
+                        call: Call::new(),
+                        outcome: &outcome,
+                    },
+                    &install.held,
+                );
+            }
+            let backend = ScopeGuard::into_inner(backend);
+            PortEnd::Abandoned {
+                outcome,
+                quarantined: Quarantined::new((backend, driver, retired_state(state))),
+            }
+        }
     }
 }
 
@@ -761,11 +974,20 @@ pub enum PortEnd<B: PortBackend, Out> {
     },
     /// The port was quarantined explicitly or missed its retirement bound.
     FailStopped {
+        /// What the synchronous quarantine proved about hardware stopping.
+        outcome: Abandon,
+        /// Permanently retained backend, driver and completion state.
+        quarantined: Quarantined<(B, B::Driver, Retirement<B::State>)>,
         /// The body's result; no hardware ownership escapes quarantine.
         output: Out,
     },
     /// The owner was dropped; the core ended the installation itself.
-    Abandoned,
+    Abandoned {
+        /// What the synchronous quarantine proved about hardware stopping.
+        outcome: Abandon,
+        /// Permanently retained backend, driver and completion state.
+        quarantined: Quarantined<(B, B::Driver, Retirement<B::State>)>,
+    },
 }
 
 /// Proof that this installation has already been synchronously quarantined.
@@ -901,7 +1123,10 @@ impl<'p, 'id, B: PortBackend, S> Owner<'p, 'id, B, S> {
 impl<'p, 'id, B: PortBackend> Owner<'p, 'id, B, Disabled> {
     /// Borrow settings for this disabled installation.
     pub fn setup(&mut self) -> Lent<'_, B::Setup<'_, 'id>> {
-        Lent::new(self.backend.setup(Call::new(), self.local))
+        Lent::new(
+            self.backend
+                .setup(Call::new(), &self.install.held, self.local),
+        )
     }
 
     /// Consume the disabled owner, returning the enabled owner or its
@@ -914,7 +1139,7 @@ impl<'p, 'id, B: PortBackend> Owner<'p, 'id, B, Disabled> {
             sentry,
             ..
         } = self;
-        match backend.enable(Call::new()).await {
+        match backend.enable(Call::new(), &install.held, local).await {
             Ok(Ok(())) => Ok(Owner {
                 backend,
                 local,

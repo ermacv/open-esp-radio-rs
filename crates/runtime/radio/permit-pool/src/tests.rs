@@ -70,7 +70,10 @@ impl<const N: usize, const S: usize> PortBackend for Probe<N, S> {
     type Domain = Domain;
     type Fault = Fault;
     type Refusal = ();
-    type Setup<'a, 'id> = ();
+    type Setup<'a, 'id>
+        = ()
+    where
+        'id: 'a;
 
     type Pools = oer_radio_port::Permits<Kind, N, S>;
     type Resources<'id> = Tokens<'id, N, S>;
@@ -79,7 +82,15 @@ impl<const N: usize, const S: usize> PortBackend for Probe<N, S> {
     type Uninstall = ();
     type Uninstalled = ();
 
-    fn enable(&mut self, _: Call) -> impl Future<Output = EnableResult<(), Fault>> + '_ {
+    fn enable<'a, 'id>(
+        &'a mut self,
+        _: Call,
+        _: &'a Self::Held<'id>,
+        _: &'a mut Self::Local<'id>,
+    ) -> impl Future<Output = EnableResult<(), Fault>> + 'a
+    where
+        'id: 'a,
+    {
         ready(Ok(Ok(())))
     }
 
@@ -116,7 +127,16 @@ impl<const N: usize, const S: usize> PortBackend for Probe<N, S> {
         }
     }
 
-    fn setup<'a, 'id>(&'a mut self, _: Call, _: &'a mut Self::Local<'id>) -> Self::Setup<'a, 'id> {}
+    fn setup<'a, 'id>(
+        &'a mut self,
+        _: Call,
+        _: &'a Self::Held<'id>,
+        _: &'a mut Self::Local<'id>,
+    ) -> Self::Setup<'a, 'id>
+    where
+        'id: 'a,
+    {
+    }
 
     fn phase<'a, 'id>(
         &'a mut self,
@@ -135,13 +155,13 @@ impl<const N: usize, const S: usize> PortBackend for Probe<N, S> {
     }
 
     async fn drive<'p, 'id>(
-        _: Self::Driver,
+        driver: oer_radio_port::DriverLoan<'p, Self::Driver>,
         _: &'p Self::Held<'id>,
         retire: Retire<'p>,
     ) -> DriverExit<Self::State, Self::Fault> {
         DriverExit::Retired {
             state: (),
-            proof: retire.requested().await,
+            proof: retire.requested(driver).await,
         }
     }
 
@@ -149,13 +169,13 @@ impl<const N: usize, const S: usize> PortBackend for Probe<N, S> {
         pending()
     }
 
-    fn detach<'id>(&mut self, _: oer_radio_port::Detach, (): &()) {}
+    fn detach<'id>(&mut self, _: oer_radio_port::Detach<'_>, (): &()) {}
 
     fn uninstall<'id>(
         self,
         _: Self::Held<'id>,
         _: Self::Local<'id>,
-        _: Retired<'id, Self::State>,
+        _: Retired<'id, (Self::Driver, Self::State)>,
         _: Detached<'id>,
         _: Self::Uninstall,
     ) {

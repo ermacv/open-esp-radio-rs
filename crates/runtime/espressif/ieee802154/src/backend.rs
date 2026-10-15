@@ -62,7 +62,7 @@ use oer_radio_port::{
 };
 use oer_time::Timer;
 
-use crate::{Ieee802154RadioEvent, Ieee802154Runtime, Ieee802154RuntimeParts};
+use crate::{Ieee802154RadioEvent, Ieee802154Runtime, Ieee802154RuntimeParts, Uninstalled};
 
 /// The most interfaces a runtime serves: the engine's multi-PAN contexts.
 pub const RUNTIME_INTERFACES: usize = 4;
@@ -283,8 +283,18 @@ where
     /// Take the engine and the hardware back from a backend that never ran
     /// a port, as a bring-up failure after the install does, with its route
     /// not yet detached.
-    pub fn uninstall_unused(self) -> (Ieee802154RuntimeParts<'storage, H>, Option<D>) {
-        (self.runtime.uninstall(), self.route)
+    pub fn uninstall_unused(
+        self,
+    ) -> Uninstalled<(Ieee802154RuntimeParts<'storage, H>, Option<D>), Self> {
+        match self.runtime.uninstall() {
+            Uninstalled::Reusable(parts) => Uninstalled::Reusable((parts, self.route)),
+            Uninstalled::Quarantined(receipt) => {
+                // The runtime still owns the hardware. Retain the backend's
+                // route too, without invoking its destructor.
+                drop(receipt);
+                Uninstalled::Quarantined(oer_radio_port::Quarantined::new(self))
+            }
+        }
     }
 }
 
@@ -587,7 +597,8 @@ where
     type Setup<'a, 'id>
         = RuntimeSetup<'a, 'id, Rt<'storage, M, H, T, R, EVENTS>, K>
     where
-        Self: 'a;
+        Self: 'a,
+        'id: 'a;
 
     type Pools = (
         K::Interfaces,
@@ -602,9 +613,18 @@ where
     type Held<'id> = RuntimeHeld<'id>;
     type State = ();
     type Uninstall = ();
-    type Uninstalled = Ieee802154RuntimeParts<'storage, H>;
+    type Uninstalled =
+        Uninstalled<Ieee802154RuntimeParts<'storage, H>, &'r Rt<'storage, M, H, T, R, EVENTS>>;
 
-    fn enable(&mut self, _: Call) -> impl Future<Output = EnableResult<(), RadioFault>> + '_ {
+    fn enable<'a, 'id>(
+        &'a mut self,
+        _: Call,
+        _: &'a Self::Held<'id>,
+        _: &'a mut Self::Local<'id>,
+    ) -> impl Future<Output = EnableResult<(), RadioFault>> + 'a
+    where
+        'id: 'a,
+    {
         ready(
             self.runtime
                 .poisoned()
@@ -674,7 +694,15 @@ where
         }
     }
 
-    fn setup<'a, 'id>(&'a mut self, _: Call, _: &'a mut Self::Local<'id>) -> Self::Setup<'a, 'id> {
+    fn setup<'a, 'id>(
+        &'a mut self,
+        _: Call,
+        _: &'a Self::Held<'id>,
+        _: &'a mut Self::Local<'id>,
+    ) -> Self::Setup<'a, 'id>
+    where
+        'id: 'a,
+    {
         RuntimeSetup {
             runtime: self.runtime,
             brand: PhantomData,
@@ -710,15 +738,18 @@ where
 
     /// The CSMA-CA backoff and the retry delays, until the port retires.
     async fn drive<'p, 'id>(
-        driver: Self::Driver,
+        driver: oer_radio_port::DriverLoan<'p, Self::Driver>,
         _: &'p Self::Held<'id>,
         retire: Retire<'p>,
     ) -> DriverExit<Self::State, Self::Fault> {
-        let proof = match select(retire.requested(), driver.run()).await {
-            embassy_futures::select::Either::First(proof) => proof,
+        match select(retire.wait(), driver.run()).await {
+            embassy_futures::select::Either::First(()) => (),
             embassy_futures::select::Either::Second(never) => match never {},
         };
-        DriverExit::Retired { state: (), proof }
+        DriverExit::Retired {
+            state: (),
+            proof: retire.requested(driver).await,
+        }
     }
 
     /// The driver retires at its next poll.
@@ -731,10 +762,14 @@ where
 
     /// Mask the MAC interrupt's route, so the interrupt entry never runs
     /// again before the uninstall takes the engine.
-    fn detach<'id>(&mut self, call: oer_radio_port::Detach, _: &RuntimeHeld<'id>) {
+    fn detach<'id>(&mut self, call: oer_radio_port::Detach<'_>, _: &RuntimeHeld<'id>) {
         // The current route's detach takes the ISR lock. An unconfirmed
         // installation retains its route and backing until chip reset.
-        if let oer_radio_port::Detach::Retired(_) = call
+        if !self
+            .runtime
+            .abandoned
+            .load(core::sync::atomic::Ordering::Acquire)
+            && let oer_radio_port::Detach::Retired(_) = call
             && let Some(route) = self.route.as_mut()
         {
             route.detach();
@@ -745,11 +780,15 @@ where
         self,
         _: Self::Held<'id>,
         _: Self::Local<'id>,
-        _: Retired<'id, Self::State>,
+        _: Retired<'id, (Self::Driver, Self::State)>,
         _: Detached<'id>,
         _: Self::Uninstall,
-    ) -> Ieee802154RuntimeParts<'storage, H> {
-        self.runtime.uninstall()
+    ) -> Self::Uninstalled {
+        let uninstalled = self.runtime.uninstall();
+        if matches!(uninstalled, Uninstalled::Quarantined(_)) {
+            drop(oer_radio_port::Quarantined::new(self.route));
+        }
+        uninstalled
     }
 
     fn abandon(&mut self, call: oer_radio_port::Quarantine) -> oer_radio_port::Abandon {

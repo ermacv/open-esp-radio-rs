@@ -1,7 +1,7 @@
 #![no_std]
 use oer_radio_port::{PortBackend, Retire};
-pub fn drive<'p, 'id, B: PortBackend>(
-    driver: B::Driver,
+pub fn drive<'p, 'id, B: PortBackend<Driver = ()>>(
+    driver: oer_radio_port::DriverLoan<'p, B::Driver>,
     held: &'p B::Held<'id>,
     first: Retire<'p>,
     second: Retire<'p>,

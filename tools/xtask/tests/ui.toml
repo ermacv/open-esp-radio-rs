@@ -298,3 +298,29 @@ cases = [
     "crates/protocols/ieee802154/tests/ui/completed_constructor.rs",
     "crates/protocols/ieee802154/tests/ui/unsupported_feature.rs",
 ]
+
+[[suite]]
+name = "port-quarantine-and-setup"
+packages = ["oer-radio-port"]
+features = []
+targets = ["host", "esp32s31"]
+cases = [
+    "crates/radio/port/tests/ui/setup_transition.rs",
+    "crates/radio/port/tests/ui/quarantined_private.rs",
+    "crates/radio/port/tests/ui/quarantined_affine.rs",
+    "crates/radio/port/tests/ui/driver_loan_extract.rs",
+    "crates/radio/port/tests/ui/driver_loan_replace.rs",
+    "crates/radio/port/tests/ui/driver_loan_constructor.rs",
+    "crates/radio/port/tests/ui/driver_after_retire.rs",
+    "crates/radio/port/tests/ui/driver_after_fail_stop.rs",
+    "crates/radio/port/tests/ui/faulted_requires_driver_handoff.rs",
+    "crates/radio/port/tests/ui/published_poison_affine.rs",
+    "crates/radio/port/tests/ui/driver_loan_escape.rs",
+]
+
+[[suite]]
+name = "ieee802154-durable-installation"
+packages = ["oer-espressif-ieee802154-runtime", "oer-espressif-ieee802154-engine", "embassy-sync", "oer-time"]
+features = []
+targets = ["host", "esp32s31"]
+cases = ["crates/runtime/espressif/ieee802154/tests/ui/durable_installation.rs"]

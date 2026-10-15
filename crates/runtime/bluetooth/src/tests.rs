@@ -294,7 +294,8 @@ impl<'m> PortBackend for ModelBackend<'m> {
     type Setup<'a, 'id>
         = ()
     where
-        Self: 'a;
+        Self: 'a,
+        'id: 'a;
 
     type Pools = ();
     type Resources<'id> = ();
@@ -303,10 +304,15 @@ impl<'m> PortBackend for ModelBackend<'m> {
     type Uninstall = ();
     type Uninstalled = ();
 
-    fn enable(
-        &mut self,
+    fn enable<'a, 'id>(
+        &'a mut self,
         _: Call,
-    ) -> impl Future<Output = EnableResult<core::convert::Infallible, ModelFault>> + '_ {
+        _: &'a Self::Held<'id>,
+        _: &'a mut Self::Local<'id>,
+    ) -> impl Future<Output = EnableResult<core::convert::Infallible, ModelFault>> + 'a
+    where
+        'id: 'a,
+    {
         let radio = self.0;
         core::future::ready(radio.check().map(|()| {
             radio.lifecycle.borrow_mut().push("enable");
@@ -369,7 +375,16 @@ impl<'m> PortBackend for ModelBackend<'m> {
         }
     }
 
-    fn setup<'a, 'id>(&'a mut self, _: Call, _: &'a mut Self::Local<'id>) -> Self::Setup<'a, 'id> {}
+    fn setup<'a, 'id>(
+        &'a mut self,
+        _: Call,
+        _: &'a Self::Held<'id>,
+        _: &'a mut Self::Local<'id>,
+    ) -> Self::Setup<'a, 'id>
+    where
+        'id: 'a,
+    {
+    }
 
     fn phase<'a, 'id>(
         &'a mut self,
@@ -389,13 +404,13 @@ impl<'m> PortBackend for ModelBackend<'m> {
 
     /// The model serves everything in its calls: nothing to drive.
     async fn drive<'p, 'id>(
-        _: Self::Driver,
+        driver: oer_radio_port::DriverLoan<'p, Self::Driver>,
         _: &'p Self::Held<'id>,
         retire: Retire<'p>,
     ) -> DriverExit<Self::State, Self::Fault> {
         DriverExit::Retired {
             state: (),
-            proof: retire.requested().await,
+            proof: retire.requested(driver).await,
         }
     }
 
@@ -403,7 +418,7 @@ impl<'m> PortBackend for ModelBackend<'m> {
         core::future::pending()
     }
 
-    fn detach<'id>(&mut self, _: oer_radio_port::Detach, (): &()) {
+    fn detach<'id>(&mut self, _: oer_radio_port::Detach<'_>, (): &()) {
         self.0.lifecycle.borrow_mut().push("detach");
     }
 
@@ -411,7 +426,7 @@ impl<'m> PortBackend for ModelBackend<'m> {
         self,
         _: Self::Held<'id>,
         _: Self::Local<'id>,
-        _: Retired<'id, Self::State>,
+        _: Retired<'id, (Self::Driver, Self::State)>,
         _: Detached<'id>,
         _: Self::Uninstall,
     ) {

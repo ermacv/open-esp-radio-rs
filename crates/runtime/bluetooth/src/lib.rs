@@ -160,8 +160,12 @@ where
     match end {
         PortEnd::FailStopped {
             output: Served::Stopped(exit),
+            outcome,
+            quarantined,
         } => PortEnd::FailStopped {
             output: Served::Unretired(exit),
+            outcome,
+            quarantined,
         },
         end => end,
     }

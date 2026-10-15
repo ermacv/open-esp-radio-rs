@@ -9,7 +9,7 @@ contract now lives here. Wi-Fi keeps its own lifecycle until integration.
 
 | Value | Meaning |
 | --- | --- |
-| `Installed`, `InstallParts`, `PortBackend`, `PortBody`, `Owner`, `Ended`, `DriverExit`, `Retired`, `Detached` | One installed backend and independent driver, a borrowing typestate owner, and affine proofs of driver completion and detachment |
+| `Installed`, `InstallParts`, `PortBackend`, `PortBody`, `Owner`, `Ended`, `DriverLoan`, `DriverExit`, `Retired`, `Detached`, `Quarantined` | One installed backend and independent driver, a borrowing typestate owner, and affine proofs of driver completion and detachment |
 | `branded`, `Mint`, `PoolSet`, `PoolPath`, `PermitSupply`, `Slots`, `Permits`, `Slot`, `Permit`, `PermitPool`, `Seat`, `Line` | Capacity as branded tokens. `branded` runs an install with the `Mint` of a fresh brand `'id`, generic over it, so nothing branded leaves the install or reaches another; `Mint::into_pools(self)` consumes its authority and issues the complete layout declared by the backend's `Pools` associated type. `Slots<K, N>` supplies synchronous slots; `Permits<K, N, S>` supplies awaited permits, their line and caller seats. Custom layouts consume one `PoolBuilder<'id, Path>` to expand their components. Each tuple derives a sealed `Child<Path, INDEX>` for each member; every slot, permit, seat and line retains that identity, including repeated kinds in nested layouts. A FIFO consumes the indivisible `PermitSupply` once, so subsets cannot form interchangeable FIFOs. Neither authority can issue a second set; no token is `Clone`, `Copy` or `Default` |
 | `PortResult`, `Poisoned` | Every port call returns `Result<Result<T, Refusal>, Poisoned<Fault>>`. The inner `Err` is a typed refusal (nothing changed); the outer one is only a poisoned backend, carrying the backend's cause, which portable code passes on without interpreting it. `next_event` returns it after every earlier event and again at every later call |
 | `EventsLost` | Events were dropped. Reported once, in place of the first dropped event; events before it precede the gap and events after it follow it. A backend reserves at admission the slot of every terminal event and of data its protocol promises to deliver (acknowledged Bluetooth LE connection data), so the gap holds only data the protocol does not promise (received frames, advertising reports) and the consumer continues |
@@ -48,14 +48,22 @@ cancellation, empty layouts and all 256 indices.
 
 `Installed::new(backend, driver)` is the sole constructor. `run_port` consumes
 it, keeps `backend` by value, and lends `&mut B` to `Owner<'p, 'id, B, State>`.
-The driver is moved to static `PortBackend::drive` once; its signature has no
-backend receiver to borrow. It has no installation lifetime: branded queues,
+The core keeps the driver by value beside the backend. Static
+`PortBackend::drive` consumes its single affine `DriverLoan`; that loan
+exposes shared driver operations, with no extraction or whole-driver
+replacement. Retirement consumes that loan through `Retire::requested`;
+`DriverLoan::fail_stop` consumes the loan and `PublishedPoison` to issue the
+fault exit proof. Both handoffs end driver access by type. Its signature
+has no backend receiver to borrow. The driver
+has no installation lifetime: branded queues,
 `Slot<'id>` and in-flight ownership belong in `Held<'id>`. The named
 `InstallParts<'id, B>` separates held queues, body-local accounting and the
 resources delivered to the body. The single mint still consumes the whole
 capacity layout once.
 
-Enable and disable are consuming, bounded transitions. A running phase is
+Enable and disable are consuming, bounded transitions. Both `enable` and
+`setup` receive `&Held<'id>` and `&mut Local<'id>`, as do phase and disable;
+setup's loan ends before enable can consume its owner. A running phase is
 one invariant `Lent`; its borrowed `PhaseParts` can serve disjoint work in
 the same task. Terminal capacity is reserved when work is admitted, and
 disable hands all remaining terminals to its sink before success. The backend
@@ -64,10 +72,13 @@ before the owner loan and cannot borrow the backend (`use<Self>`); it starts
 on its first poll after retirement is requested.
 
 A driver returns `DriverExit::Retired` with a proof obtained by consuming
-`Retire` after its request, or `DriverExit::Faulted` with a proof obtained by
-publishing the port's `PoisonState`. The core retains a faulted driver's owners
+`Retire` and the driver loan after its request, or `DriverExit::Faulted`
+with a proof obtained by publishing the port's `PoisonState` and consuming
+the loan with that publication. The core retains a faulted driver's owners
 while the body drains earlier events and requests uninstall. Uninstall takes
-`Retired` and `Detached` of the same brand. There is no untyped early exit.
+`Retired<'id, (Driver, State)>` and `Detached` of the same brand. The ended
+drive future releases only its loan; ordinary uninstall receives the driver
+by value with its completion state. There is no untyped early exit.
 
 Retirement and abandonment register and wake their waiters. The abandon latch
 has independent core and driver waiters. A dropped owner wakes the core,
@@ -83,17 +94,42 @@ allocation stays in permanent quarantine until chip reset. Neither outcome
 authorizes DMA backing reuse. `FailStopped::outcome` exposes this distinction
 without consuming the body's affine proof.
 The core retires independently while the body waits; only final `detach`
-(consuming that outcome) and result delivery wait for the body.
-Cancellation of `run_port` repeats synchronous quarantine as a safety net.
-Forgetting an owner cannot construct `Ended`; its backend remains in the core. Hardware-reachable memory must
-remain owned, static storage even when a future is forgotten.
+and result delivery wait for the body. Detach consumes its own affine call
+authority and borrows the outcome, which remains available to the caller.
+Cancellation of `run_port`, including before its first poll, applies the
+same synchronous quarantine rule. There is no result receiver during
+cancellation, so the core explicitly retains the outcome with the owners.
+
+`Quarantined<S>` holds its state in `ManuallyDrop` and has no accessor or
+extraction operation. Dropping a receipt runs no owner destructor, frees no
+backing and touches no hardware. Both abnormal `PortEnd` variants retain
+the backend, driver and `Retirement<State>`; a timed-out drive future ends
+only its loan, while the driver remains owned by the core. A completed
+faulted driver's state is likewise retained if the body is cancelled while
+draining. Branded held/local values cannot leave the installation and are
+retained without Drop on these paths. Only ordinary uninstall extracts them.
+
+Forgetting an owner cannot construct `Ended`. Hardware-reachable memory must
+have static storage outside the movable driver and its future. Neither a
+loan nor `ManuallyDrop` extends a borrow or preserves inline storage after
+its containing allocation ends. Backends must leave progress and hardware
+owners in their driver or that durable backing at every `await`, in a
+state that retire and abandon can handle. Cancellation tests poll the BLE
+clock, stop, transition and retirement waits and the 802.15.4 idle/backoff/
+retry waits, drop the drive future, then finish retirement and uninstall
+with the same owners. Drop counters cover unconfirmed exits and receipt
+destruction; forgetting the complete future preserves its durable backing.
+No allocator or unsafe code is needed by this core.
 
 The body chooses `PortBody::Output` before its generic `run` introduces `'id`;
 that output cannot contain the installation's brand. It returns
 `Ended::uninstall(owner, control, output)` or
 `Ended::fail_stopped(proof, output)`. `run_port` returns `PortEnd::Uninstalled`
-with owners and output, `FailStopped` with output, or `Abandoned` when the
-owner was dropped and the core ended the installation without a body result.
+with owners and output. `FailStopped` carries output, `Abandon` and
+`Quarantined`; `Abandoned` carries the latter two when a dropped owner made
+the core end the installation without a body result. The composition can
+inspect `Stopped` versus `Unconfirmed`; quarantine permits no backing reuse,
+and an unconfirmed stop requires chip reset.
 BLE's service returns `Served` through this output instead of a side channel.
 
 ## Cost and Wi-Fi integration
@@ -103,22 +139,48 @@ disable, retire, detach and cancellation workload in
 [`examples/lifecycle_cost.rs`](examples/lifecycle_cost.rs). With Rust 1.97.1,
 `riscv32imafc-unknown-none-elf`, opt-level 3, one codegen unit, LTO and aborting
 panics, the former two lifecycle implementations measured 2282 bytes of
-`.text`; the shared lifecycle measures 5940 bytes (+3658). This is a small
+`.text`; the shared lifecycle measures 6216 bytes (+3934). This is a small
 lifecycle ELF, not total firmware size or a hardware timing result.
+The prior by-value-driver version measured 5940 bytes and a 416-byte future;
+the complete quarantine/loan revision adds 276 bytes of text and 8 bytes of
+future state. This comparison includes the cancellation guard before the
+first poll and retained outcomes/owners, not only the change in the loan.
 
 | Checks | Code size | RAM and CPU | Signatures | Breakage | Alternatives | Reversal |
 | --- | --- | --- | --- | --- | --- | --- |
-| Typestate and opaque affine call/retire/poison/detach proofs are compile-time checks. Hardware refusal, poisoning and bounded waits remain runtime outcomes; lifecycle code has no explicit panic. | Test ELF `.text`: 2282 → 5940 bytes. Backend/body futures remain concrete monomorphizations; retirement and signal machinery add code. | No allocation. The measured RV32 future grows from 184 to 416 bytes per backend (+232). Three atomic waiter slots per installation: retirement, driver abandonment and core abandonment. Wake registration uses atomic synchronization; consuming proof and call tokens are zero-sized. Hot radio operations acquire no new lifecycle lock. | `Installed<B>`, `InstallParts<'id, B>`, static consuming `drive`, `DriverExit`, `Call`, `Quarantine`/`Abandon`/`HardwareStopped`/`Detach`, `Retired<'id, State>`, `Detached<'id>`, `PortEnd<B, Out>`; owner borrows `&mut B`, `Ended<'id, B, Out>` has no borrow lifetime. | Both migrated blocks consume `Installed` and borrow one phase. Wi-Fi adopts the same core after coordinated integration; its current code is unchanged. | Keeping two identical owners duplicates fixes. Moving `B` into its owner loses the core's asynchronous abandonment authority. A receiver-based `drive` needs an empty driver slot. Flag-only retirement loses wakes. | Rework signal/future representation if the added code or installation RAM exceeds the target image budget; preserve proofs, wakes and asynchronous teardown. Re-measure this ELF and the affected firmware before accepting that rework. |
+| Typestate and opaque affine call/retire/poison/detach proofs are compile-time checks. Hardware refusal, poisoning and bounded waits remain runtime outcomes; lifecycle code has no explicit panic. | Test ELF `.text`: 2282 → 6216 bytes. Backend/body futures remain concrete monomorphizations; retirement and signal machinery add code. | No allocation. The measured RV32 future grows from 184 to 424 bytes per backend (+240). Three atomic waiter slots per installation: retirement, driver abandonment and core abandonment. Wake registration uses atomic synchronization; consuming proof and call tokens are zero-sized. Hot radio operations acquire no new lifecycle lock. | `Installed<B>`, `InstallParts<'id, B>`, static `drive(DriverLoan, held, retire)`, `DriverExit`, `Call`, `Quarantine`/`Abandon`/`HardwareStopped`/`Detach`, `Retired<'id, (Driver, State)>`, `Detached<'id>`, `Quarantined<S>`, `PortEnd<B, Out>`; owner borrows `&mut B`, `Ended<'id, B, Out>` has no borrow lifetime. | Both migrated blocks consume `Installed` and borrow one phase. Wi-Fi adopts the same core after coordinated integration; its current code is unchanged. | Keeping two identical owners duplicates fixes. Moving `B` into its owner loses the core's asynchronous abandonment authority. A receiver-based `drive` needs an empty driver slot. Flag-only retirement loses wakes. | Rework signal/future representation if the added code or installation RAM exceeds the target image budget; preserve proofs, wakes and asynchronous teardown. Re-measure this ELF and the affected firmware before accepting that rework. |
+
+Most code is the concrete async state machines: the linked ELF attributes
+2186 bytes to each backend's polling entry, 424 bytes to each body future,
+368 bytes to shared installation drop glue and 516 bytes to the retirement
+poll closure. These sizes include inlined wake handling; they are not an
+ablation attributing a byte count to each guarantee. The extra future RAM
+retains both sides of the body/retirement join, the driver loan and owners,
+the deadline, and the three independently wakeable receivers. The call and
+proof tokens themselves are zero-sized.
+
+A candidate reduction is factoring backend-independent signal and join
+code out of the two monomorphizations. It needs another ELF measurement:
+LTO already shares some glue, and out-of-line calls can increase code or
+execution cost. There is no established cheap saving to claim here. Removing
+an abandon receiver would lose one of two independent wakes; discarding
+join state would lose returned ownership or delay retirement behind the
+body. Neither is an acceptable size reduction.
 
 Wi-Fi's migration updates the installation factory to return
 `Installed::new(backend, driver)`, moves its driver out of the backend, and
-implements static `drive` returning the two proved exits. Its branded queues
+implements static `drive(DriverLoan, held, retire)` returning the two proved
+exits. Driver operations work through the closed shared view; the future
+holds no hardware owners. Retire consumes the loan; a fault first publishes
+poison and consumes both publication and loan in `DriverLoan::fail_stop`. Uninstall receives the retained driver with its
+completion state in `Retired`. Hardware-reachable backing stays static,
+outside the movable driver. Its branded queues
 stay in `Held<'id>`; `resources` returns `InstallParts` instead of a tuple.
-Backend calls take the core's affine `Call`; uninstall consumes `Retired` and
-`Detached`. `retire_bound` returns a future without a backend borrow.
+Backend calls take the core's affine `Call`; `enable` and `setup` also take
+held/local installation loans. Uninstall consumes `Retired` and `Detached`. `retire_bound` returns a future without a backend borrow.
 `abandon` immediately quarantines and returns a proved `Stopped` or an
-`Unconfirmed` outcome; final `detach` follows the body's return and consumes
-that outcome. Unconfirmed hardware requires chip reset and permanent backing
+`Unconfirmed` outcome; final `detach` follows the body's return and borrows
+that outcome through its own single-use call authority. Unconfirmed hardware requires chip reset and permanent backing
 quarantine, not a runtime assertion that it stopped. `fail_stop`
 returns `FailStopped`, which `Ended::fail_stopped(proof, output)` consumes.
 `run_port` returns `PortEnd`; `StationService` supplies its result as

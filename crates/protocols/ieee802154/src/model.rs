@@ -1196,7 +1196,8 @@ impl PortBackend for OwnedModel {
     type Setup<'a, 'id>
         = ModelSetup<'a, 'id>
     where
-        Self: 'a;
+        Self: 'a,
+        'id: 'a;
 
     type Pools = (
         crate::owner::InterfacePool<ModelCaps, 0, MODEL_PENDING_SLOTS>,
@@ -1209,10 +1210,15 @@ impl PortBackend for OwnedModel {
     type Uninstall = ();
     type Uninstalled = ModelHandle;
 
-    fn enable(
-        &mut self,
+    fn enable<'a, 'id>(
+        &'a mut self,
         _: Call,
-    ) -> impl Future<Output = EnableResult<ModelRefusal, ModelFault>> + '_ {
+        _: &'a Self::Held<'id>,
+        _: &'a mut Self::Local<'id>,
+    ) -> impl Future<Output = EnableResult<ModelRefusal, ModelFault>> + 'a
+    where
+        'id: 'a,
+    {
         let mut state = self.shared.borrow_mut();
         ready(match state.poisoned {
             Some(cause) => Err(Poisoned { cause }),
@@ -1299,7 +1305,15 @@ impl PortBackend for OwnedModel {
         }
     }
 
-    fn setup<'a, 'id>(&'a mut self, _: Call, _: &'a mut Self::Local<'id>) -> Self::Setup<'a, 'id> {
+    fn setup<'a, 'id>(
+        &'a mut self,
+        _: Call,
+        _: &'a Self::Held<'id>,
+        _: &'a mut Self::Local<'id>,
+    ) -> Self::Setup<'a, 'id>
+    where
+        'id: 'a,
+    {
         ModelSetup {
             shared: &self.shared,
             brand: PhantomData,
@@ -1332,11 +1346,11 @@ impl PortBackend for OwnedModel {
 
     /// The model has nothing to drive: it waits for its retirement.
     fn drive<'p, 'id>(
-        _: Self::Driver,
+        driver: oer_radio_port::DriverLoan<'p, Self::Driver>,
         _: &'p Self::Held<'id>,
         retire: Retire<'p>,
     ) -> impl Future<Output = DriverExit<Self::State, Self::Fault>> + use<'p, 'id> {
-        retire.retired(())
+        retire.retired(driver, ())
     }
 
     /// The model's driver retires at once, so its bound never passes.
@@ -1345,13 +1359,13 @@ impl PortBackend for OwnedModel {
     }
 
     /// The model has no interrupt entries.
-    fn detach<'id>(&mut self, _: oer_radio_port::Detach, _: &Self::Held<'id>) {}
+    fn detach<'id>(&mut self, _: oer_radio_port::Detach<'_>, _: &Self::Held<'id>) {}
 
     fn uninstall<'id>(
         self,
         _: Self::Held<'id>,
         _: Self::Local<'id>,
-        _: Retired<'id, Self::State>,
+        _: Retired<'id, (Self::Driver, Self::State)>,
         _: Detached<'id>,
         _: Self::Uninstall,
     ) -> ModelHandle {

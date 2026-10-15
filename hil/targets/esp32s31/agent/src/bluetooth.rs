@@ -252,8 +252,8 @@ fn stop_failure_reason(
     use oer_esp32s31_bluetooth_system::{ServeExit, Served};
     let served = match ended {
         oer_radio_port::PortEnd::Uninstalled { output, .. }
-        | oer_radio_port::PortEnd::FailStopped { output } => output,
-        oer_radio_port::PortEnd::Abandoned => {
+        | oer_radio_port::PortEnd::FailStopped { output, .. } => output,
+        oer_radio_port::PortEnd::Abandoned { .. } => {
             return c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-hci-service\r\n";
         }
     };

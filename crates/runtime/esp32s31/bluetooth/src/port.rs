@@ -28,11 +28,11 @@ use crate::{
 /// [`BluetoothRuntime::install`] pairs it with the independent driver `D`
 /// ([`BluetoothDriver`]) in `Installed`. Both are consumed by `run_port`
 /// once, so backend requests always have their installed driver. It is neither `Copy` nor
-/// `Clone` and has no public constructor. [`PortBackend::drive`] moves the
-/// driver, which owns the radio and its hardware, into the future
-/// `run_port` joins with the body; the backend's calls are then requests to
-/// it, and the interrupt entry only wakes it. The uninstall takes the
-/// retired driver's radio and hardware out by value.
+/// `Clone` and has no public constructor. [`PortBackend::drive`] consumes
+/// the core's affine driver loan; the future borrows the radio and hardware
+/// held in the driver's private state. The backend's calls are requests to
+/// it, and the interrupt entry only wakes it. Uninstall receives the driver
+/// by value through `Retired`; quarantine retains it without Drop.
 #[must_use = "an installed radio leaves only through its owner's uninstall or fail-stop"]
 pub struct BluetoothBackend<'r, R, D> {
     runtime: &'r R,
@@ -173,14 +173,15 @@ impl<
         Self: 'a,
         'id: 'a;
     type Local<'id> = ();
-    type Driver = Self::State;
+    type State = ();
     type Domain = LeRadio;
     type Fault = BluetoothFault<H::StartError>;
     type Refusal = Infallible;
     type Setup<'a, 'id>
         = ()
     where
-        Self: 'a;
+        Self: 'a,
+        'id: 'a;
 
     type Pools = ();
     type Resources<'id> = ();
@@ -188,7 +189,7 @@ impl<
     /// both reach.
     type Held<'id> = ();
     /// The driver, which owns the radio and its hardware.
-    type State = BluetoothDriver<
+    type Driver = BluetoothDriver<
         'r,
         M,
         H,
@@ -223,10 +224,15 @@ impl<
         >,
     >;
 
-    fn enable(
-        &mut self,
+    fn enable<'a, 'id>(
+        &'a mut self,
         _: Call,
-    ) -> impl Future<Output = EnableResult<Infallible, Self::Fault>> + '_ {
+        _: &'a Self::Held<'id>,
+        _: &'a mut Self::Local<'id>,
+    ) -> impl Future<Output = EnableResult<Infallible, Self::Fault>> + 'a
+    where
+        'id: 'a,
+    {
         self.runtime.enable()
     }
 
@@ -259,7 +265,16 @@ impl<
         }
     }
 
-    fn setup<'a, 'id>(&'a mut self, _: Call, _: &'a mut Self::Local<'id>) -> Self::Setup<'a, 'id> {}
+    fn setup<'a, 'id>(
+        &'a mut self,
+        _: Call,
+        _: &'a Self::Held<'id>,
+        _: &'a mut Self::Local<'id>,
+    ) -> Self::Setup<'a, 'id>
+    where
+        'id: 'a,
+    {
+    }
 
     #[allow(clippy::type_complexity, reason = "the phase's three parts")]
     fn phase<'a, 'id>(
@@ -289,11 +304,10 @@ impl<
     /// request in flight and restores the BLE PHY route, or it returns
     /// early on a fault, which poisoned the port first.
     async fn drive<'p, 'id>(
-        driver: Self::Driver,
+        driver: oer_radio_port::DriverLoan<'p, Self::Driver>,
         _: &'p Self::Held<'id>,
         retire: Retire<'p>,
     ) -> DriverExit<Self::State, Self::Fault> {
-        let mut driver = driver;
         let result = embassy_futures::select::select(
             retire.latch().abandoned(),
             driver.run(|| retire.is_requested(), retire.wait()),
@@ -302,15 +316,15 @@ impl<
         match result {
             embassy_futures::select::Either::First(())
             | embassy_futures::select::Either::Second(Ok(())) => DriverExit::Retired {
-                state: driver,
-                proof: retire.requested().await,
+                state: (),
+                proof: retire.requested(driver).await,
             },
             embassy_futures::select::Either::Second(Err(fault)) => {
                 let (cause, poisoned) = driver.publish_fault(fault);
                 DriverExit::Faulted {
-                    state: driver,
+                    state: (),
                     cause: cause.cause,
-                    poisoned,
+                    poisoned: driver.fail_stop(poisoned),
                 }
             }
         }
@@ -345,17 +359,17 @@ impl<
     /// The Bluetooth interrupt entry reaches only the runtime's wake
     /// signal, never the install's state: nothing to detach. The
     /// composition removes the CPU routes after the uninstall.
-    fn detach<'id>(&mut self, _: oer_radio_port::Detach, (): &()) {}
+    fn detach<'id>(&mut self, _: oer_radio_port::Detach<'_>, (): &()) {}
 
     fn uninstall<'id>(
         self,
         _: Self::Held<'id>,
         _: Self::Local<'id>,
-        retired: Retired<'id, Self::State>,
+        retired: Retired<'id, (Self::Driver, Self::State)>,
         _: Detached<'id>,
         _: Self::Uninstall,
     ) -> Self::Uninstalled {
-        retired.into_state().into_parts()
+        retired.into_state().0.into_parts()
     }
 
     fn abandon(&mut self, call: oer_radio_port::Quarantine) -> oer_radio_port::Abandon {

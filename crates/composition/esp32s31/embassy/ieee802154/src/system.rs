@@ -37,7 +37,7 @@ use oer_espressif_ieee802154_engine::{
 };
 use oer_espressif_ieee802154_runtime::{
     Ieee802154Random, Ieee802154Runtime, Ieee802154RuntimeBackend, Ieee802154RuntimeCaps,
-    Ieee802154RuntimeParts,
+    Ieee802154RuntimeParts, Uninstalled,
 };
 use oer_time_embassy::EmbassyClock;
 
@@ -97,8 +97,11 @@ impl oer_espressif_ieee802154_runtime::Ieee802154RouteDetach for BoundRoute {
 pub type Ieee802154SystemRssi =
     oer_espressif_ieee802154_runtime::RuntimeRssi<'static, Ieee802154SystemRuntime>;
 
-/// The engine and the MAC owners an ended port returns, for [`Ieee802154System::stop`].
-pub type Ieee802154SystemParts = Ieee802154RuntimeParts<'static, Ieee802154MacOwners>;
+/// Reusable MAC owners or a permanent quarantine receipt, for [`Ieee802154System::stop`].
+pub type Ieee802154SystemParts = Uninstalled<
+    Ieee802154RuntimeParts<'static, Ieee802154MacOwners>,
+    &'static Ieee802154SystemRuntime,
+>;
 
 /// The radio's random words from the hardware generator.
 pub struct HardwareRandom;
@@ -212,15 +215,16 @@ pub enum Ieee802154StartError {
     Route(EspHalIeee802154InterruptRouteError),
     /// The engine's DMA frames lie outside the memory the MAC DMA reaches.
     BuffersNotDmaVisible,
+    /// The runtime retained a poisoned installation; the chip must be reset.
+    Quarantined,
 }
 
 /// Owners retained after a failure that may have left hardware in an
 /// unknown state. They are never returned; the chip must be reset.
 #[must_use = "a fail-stop owner keeps the radio until the chip resets"]
 pub struct Ieee802154FailStop {
-    _owner: FailStopOwner,
-    _power: CommonPower<Ieee802154Client>,
-    _coex: CoexAbsent<Ieee802154Client>,
+    _retained:
+        oer_radio_port::Quarantined<(FailStopOwner, CommonPower<Ieee802154Client>, Ieee802154Coex)>,
 }
 
 /// IEEE 802.15.4's part in coexistence with Wi-Fi, which it takes on
@@ -240,6 +244,7 @@ enum FailStopOwner {
     Clocked(Ieee802154Clocked),
     Joined(Ieee802154Clocked, Ieee802154PhyMembership),
     Installed(RegisteredIeee802154Operational, Ieee802154Engine<'static>),
+    Quarantined(RegisteredIeee802154OperationalRoute),
 }
 
 /// Failed bring-up.
@@ -255,6 +260,8 @@ pub struct Ieee802154StartFailure {
 /// Why teardown stopped.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Ieee802154StopError {
+    /// Hardware and backing remain in quarantine; the chip must be reset.
+    Quarantined,
     /// The MAC foundation did not read back after the operational epoch.
     Foundation(Ieee802154ReadbackError<Ieee802154FoundationCheckpoint>),
     /// IEEE 802.15.4 could not leave the shared PHY domain or BTBB.
@@ -318,9 +325,11 @@ fn fail_stop(
     Ieee802154StartFailure {
         error,
         owner: Err(Ieee802154FailStop {
-            _owner: owner,
-            _power: power,
-            _coex: coex,
+            _retained: oer_radio_port::Quarantined::new((
+                owner,
+                power,
+                Ieee802154Coex::Absent(coex),
+            )),
         }),
     }
 }
@@ -586,7 +595,20 @@ pub async fn start<K: Ieee802154RuntimeCaps, P, C: PlatformClockProvider>(
             backend.with_route(BoundRoute(Some(bound))).installed(),
         )),
         Err(error) => {
-            let (parts, _) = backend.uninstall_unused();
+            let (parts, _) = match backend.uninstall_unused() {
+                Uninstalled::Reusable(parts) => parts,
+                Uninstalled::Quarantined(receipt) => {
+                    // The static runtime retains all MAC backing. Dropping
+                    // its receipt cannot free it or touch hardware.
+                    drop(receipt);
+                    return Err(fail_stop(
+                        Ieee802154StartError::Quarantined,
+                        FailStopOwner::Quarantined(route),
+                        power,
+                        coex,
+                    ));
+                }
+            };
             let (mut task, interrupts) = parts.hardware.into_parts();
             let interrupts = interrupts.deactivate(&mut task);
             Err(fail_stop(
@@ -801,6 +823,24 @@ impl Ieee802154System {
             power,
             coex,
         } = self;
+        let parts = match parts {
+            Uninstalled::Reusable(parts) => parts,
+            Uninstalled::Quarantined(receipt) => {
+                // Keep power, coexistence and route owners intact. The
+                // runtime remains installed; this path does no hardware work.
+                drop(receipt);
+                return Err(Ieee802154StopFailure {
+                    error: Ieee802154StopError::Quarantined,
+                    owner: Err(Ieee802154FailStop {
+                        _retained: oer_radio_port::Quarantined::new((
+                            FailStopOwner::Quarantined(route),
+                            power,
+                            coex,
+                        )),
+                    }),
+                });
+            }
+        };
         // Coexistence ends before the client leaves the PHY and power.
         let coex = match leave_coexistence(coex, radio).await {
             Ok(absent) => absent,
@@ -814,7 +854,7 @@ impl Ieee802154System {
                             power,
                             coex: Ieee802154Coex::Coexisting(proof),
                         },
-                        parts,
+                        Uninstalled::Reusable(parts),
                     )),
                 });
             }
@@ -920,9 +960,11 @@ fn stop_fail_stop(
     Ieee802154StopFailure {
         error,
         owner: Err(Ieee802154FailStop {
-            _owner: owner,
-            _power: power,
-            _coex: coex,
+            _retained: oer_radio_port::Quarantined::new((
+                owner,
+                power,
+                Ieee802154Coex::Absent(coex),
+            )),
         }),
     }
 }

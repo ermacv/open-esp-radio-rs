@@ -58,7 +58,8 @@ macro_rules! port {
                 type Setup<'a, 'id>
                     = ()
                 where
-                    Self: 'a;
+                    Self: 'a,
+                    'id: 'a;
                 type Phase<'a, 'id>
                     = PhaseParts<Events, (), ()>
                 where
@@ -69,7 +70,15 @@ macro_rules! port {
                 type State = ();
                 type Uninstall = ();
                 type Uninstalled = ();
-                async fn enable(&mut self, _: Call) -> EnableResult<(), u32> {
+                async fn enable<'a, 'id>(
+                    &'a mut self,
+                    _: Call,
+                    _: &'a Self::Held<'id>,
+                    _: &'a mut Self::Local<'id>,
+                ) -> EnableResult<(), u32>
+                where
+                    'id: 'a,
+                {
                     self.0.step(1);
                     core::future::poll_fn(|_| self.0.poll(1)).await;
                     Ok(Ok(()))
@@ -106,8 +115,12 @@ macro_rules! port {
                 fn setup<'a, 'id>(
                     &'a mut self,
                     _: Call,
+                    _: &'a Self::Held<'id>,
                     _: &'a mut Self::Local<'id>,
-                ) -> Self::Setup<'a, 'id> {
+                ) -> Self::Setup<'a, 'id>
+                where
+                    'id: 'a,
+                {
                 }
                 fn phase<'a, 'id>(
                     &'a mut self,
@@ -125,31 +138,36 @@ macro_rules! port {
                     }
                 }
                 async fn drive<'p, 'id>(
-                    probe: Self::Driver,
+                    probe: oer_radio_port::DriverLoan<'p, Self::Driver>,
                     _: &'p Self::Held<'id>,
                     retire: Retire<'p>,
                 ) -> DriverExit<(), u32> {
-                    let mut request = pin!(retire.requested());
-                    let proof = core::future::poll_fn(|cx| {
-                        probe.step(4);
-                        request.as_mut().poll(cx)
-                    })
-                    .await;
-                    DriverExit::Retired { state: (), proof }
+                    {
+                        let mut request = pin!(retire.wait());
+                        core::future::poll_fn(|cx| {
+                            probe.step(4);
+                            request.as_mut().poll(cx)
+                        })
+                        .await;
+                    }
+                    DriverExit::Retired {
+                        state: (),
+                        proof: retire.requested(probe).await,
+                    }
                 }
 
                 fn retire_bound(&self, _: Call) -> impl Future<Output = ()> + use<'r> {
                     let probe = self.0;
                     core::future::poll_fn(move |_| probe.poll(4))
                 }
-                fn detach<'id>(&mut self, _: oer_radio_port::Detach, _: &Self::Held<'id>) {
+                fn detach<'id>(&mut self, _: oer_radio_port::Detach<'_>, _: &Self::Held<'id>) {
                     self.0.step(8);
                 }
                 fn uninstall<'id>(
                     self,
                     _: Self::Held<'id>,
                     _: Self::Local<'id>,
-                    _: Retired<'id, ()>,
+                    _: Retired<'id, (Self::Driver, ())>,
                     _: Detached<'id>,
                     _: (),
                 ) {

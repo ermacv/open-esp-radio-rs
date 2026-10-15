@@ -39,8 +39,9 @@
 //! Abandonment publishes permanent logical poisoning atomically. It never
 //! enters the mutex that contains the ISR and returns `Unconfirmed`: neither
 //! hardware stopping nor IRQ exclusion is proved. The installation and its
-//! backing remain quarantined until chip reset; ordinary uninstall retains
-//! its existing hardware sequence.
+//! backing remain quarantined until chip reset. `Uninstalled::Reusable`
+//! returns ordinary teardown's owners; `Uninstalled::Quarantined` retains
+//! the poisoned runtime without taking its lock or touching hardware.
 
 #[cfg(test)]
 extern crate std;
@@ -251,6 +252,16 @@ pub struct Ieee802154RuntimeParts<'storage, H> {
     pub engine: Ieee802154Engine<'storage>,
     /// Register access.
     pub hardware: H,
+}
+
+/// Whether teardown returned reusable owners or retained a poisoned install.
+#[must_use = "reuse only returned parts; quarantine requires a chip reset"]
+pub enum Uninstalled<P, S> {
+    /// Ordinary teardown completed and returned its owners.
+    Reusable(P),
+    /// The installation remains poisoned until chip reset. Destroying this
+    /// receipt neither releases its backing nor performs hardware teardown.
+    Quarantined(oer_radio_port::Quarantined<S>),
 }
 
 struct Installed<'storage, H, R> {
@@ -524,7 +535,9 @@ impl<
     ///
     /// Returns the installed radio as the port's backend, with the
     /// capabilities marker `K` its composition names; the composition hands
-    /// it to `run_port`, whose end returns the engine and the hardware.
+    /// it to `run_port`, whose end returns reusable owners or quarantine.
+    /// Both the runtime and DMA backing have static storage so cancellation
+    /// and forgotten owners cannot release hardware-reachable memory.
     ///
     /// # Errors
     ///
@@ -535,14 +548,17 @@ impl<
         reason = "the no-alloc runtime returns the unconsumed owners by value"
     )]
     pub fn install<K>(
-        &self,
+        &'static self,
         mut parts: Ieee802154RuntimeParts<'storage, H>,
         random: R,
         defaults: Ieee802154PibDefaults,
     ) -> Result<
-        Ieee802154RuntimeBackend<'_, 'storage, K, M, H, T, R, EVENTS>,
+        Ieee802154RuntimeBackend<'static, 'storage, K, M, H, T, R, EVENTS>,
         Ieee802154RuntimeParts<'storage, H>,
-    > {
+    >
+    where
+        'storage: 'static,
+    {
         if self.abandoned.load(Ordering::Acquire) {
             return Err(parts);
         }
@@ -631,7 +647,12 @@ impl<
     /// the disabled foundation image, and disable and return the engine and
     /// hardware. The port's stream ends here: its undelivered events and
     /// the terminals it owed are discarded, so the next port starts empty.
-    fn uninstall(&self) -> Ieee802154RuntimeParts<'storage, H> {
+    fn uninstall(&self) -> Uninstalled<Ieee802154RuntimeParts<'storage, H>, &Self> {
+        if self.abandoned.load(Ordering::Acquire) {
+            // An ISR may still own the engine's lock. Leave both engine and
+            // hardware installed; no quarantine path may take that lock.
+            return Uninstalled::Quarantined(oer_radio_port::Quarantined::new(self));
+        }
         let parts = self.installed.lock(|installed| {
             let Installed {
                 mut radio,
@@ -650,7 +671,7 @@ impl<
         });
         self.events.clear();
         self.backoff_until.lock(|backoff| backoff.set(None));
-        parts
+        Uninstalled::Reusable(parts)
     }
 
     /// Apply one portable setting to the installed radio.

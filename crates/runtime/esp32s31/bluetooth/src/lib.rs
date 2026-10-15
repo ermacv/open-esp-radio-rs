@@ -10,8 +10,10 @@
 //! and its hardware by value ([`BluetoothDriver`]). [`BluetoothRuntime`] is
 //! the part the backend, the driver and the platform share: the outcome
 //! queue, the request exchange, the poison and the wakes, behind signals,
-//! atomics and short synchronous sections; nothing holds a lock across an
-//! await.
+//! atomics and short synchronous sections. Shared runtime locks end before
+//! awaits. The driver's sole affine loan holds its private `RefCell` borrow
+//! across drive; no other task or ISR can reach that cell. Cancellation ends
+//! this borrow and leaves all radio and hardware owners in the core's driver.
 //!
 //! - [`BluetoothRuntime::install`] publishes the global receive chains, takes
 //!   the first controller-time sample and returns the backend with the

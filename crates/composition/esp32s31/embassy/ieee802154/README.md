@@ -215,3 +215,12 @@ closes RF after the last client, and `start` wakes it, as
 
 Modem retention and light sleep are not composed: closing RF keeps the MAC
 and baseband powered. On-air behaviour is qualified only by HIL runs.
+
+`Ieee802154SystemParts` distinguishes `Uninstalled::Reusable` from
+`Uninstalled::Quarantined`. Only reusable parts enter ordinary teardown.
+A quarantined runtime keeps its static engine and DMA backing installed;
+`stop` returns the explicit `Quarantined` error while preserving the route,
+power and coexistence owners in the shared core's `Quarantined<S>`. Destroying
+that result touches no hardware and releases no ownership. A chip reset is
+required. This path never acquires the runtime's ISR mutex or the shared
+radio lease.

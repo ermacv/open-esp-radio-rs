@@ -220,7 +220,8 @@ impl PortBackend for NoRadio {
     type Setup<'a, 'id>
         = ()
     where
-        Self: 'a;
+        Self: 'a,
+        'id: 'a;
 
     type Pools = ();
     type Resources<'id> = ();
@@ -229,10 +230,15 @@ impl PortBackend for NoRadio {
     type Uninstall = ();
     type Uninstalled = ();
 
-    fn enable(
-        &mut self,
+    fn enable<'a, 'id>(
+        &'a mut self,
         _: Call,
-    ) -> impl Future<Output = EnableResult<Infallible, Infallible>> + '_ {
+        _: &'a Self::Held<'id>,
+        _: &'a mut Self::Local<'id>,
+    ) -> impl Future<Output = EnableResult<Infallible, Infallible>> + 'a
+    where
+        'id: 'a,
+    {
         ready(Ok(Ok(())))
     }
 
@@ -265,7 +271,16 @@ impl PortBackend for NoRadio {
         }
     }
 
-    fn setup<'a, 'id>(&'a mut self, _: Call, _: &'a mut Self::Local<'id>) -> Self::Setup<'a, 'id> {}
+    fn setup<'a, 'id>(
+        &'a mut self,
+        _: Call,
+        _: &'a Self::Held<'id>,
+        _: &'a mut Self::Local<'id>,
+    ) -> Self::Setup<'a, 'id>
+    where
+        'id: 'a,
+    {
+    }
 
     #[allow(clippy::type_complexity, reason = "the phase's three parts")]
     fn phase<'a, 'id>(
@@ -286,24 +301,24 @@ impl PortBackend for NoRadio {
 
     /// No hardware work; wait for the retirement request and return its proof.
     fn drive<'p, 'id>(
-        _: Self::Driver,
+        driver: oer_radio_port::DriverLoan<'p, Self::Driver>,
         _: &'p Self::Held<'id>,
         retire: Retire<'p>,
     ) -> impl Future<Output = DriverExit<Self::State, Self::Fault>> + use<'p, 'id> {
-        retire.retired(())
+        retire.retired(driver, ())
     }
 
     fn retire_bound(&self, _: Call) -> impl Future<Output = ()> + use<> {
         pending()
     }
 
-    fn detach<'id>(&mut self, _: oer_radio_port::Detach, (): &()) {}
+    fn detach<'id>(&mut self, _: oer_radio_port::Detach<'_>, (): &()) {}
 
     fn uninstall<'id>(
         self,
         _: Self::Held<'id>,
         _: Self::Local<'id>,
-        _: Retired<'id, Self::State>,
+        _: Retired<'id, (Self::Driver, Self::State)>,
         _: Detached<'id>,
         _: Self::Uninstall,
     ) {

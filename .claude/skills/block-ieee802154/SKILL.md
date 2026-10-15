@@ -82,3 +82,16 @@ It publishes permanent logical poisoning atomically and never takes the mutex
 that contains `radio.isr`. Quarantined detach retains the bound route; ordinary
 uninstall still detaches it. Hardware exclusion and stopping are not proved,
 so the installation and its backing require chip reset before reuse.
+
+Installation requires a static runtime and backing. `Uninstalled::Reusable`
+returns ordinary teardown's parts; `Uninstalled::Quarantined` uses the
+shared `oer-radio-port::Quarantined` receipt. It leaves the poisoned engine
+installed without acquiring the ISR mutex, and composition stop reports
+that chip reset is required without touching clocks, PHY or coexistence.
+The core retains its independent driver through an affine `DriverLoan`;
+`enable` and `setup` receive the same held/local installation loans as phase.
+
+The driver observes `Retire::wait` while driving the runtime, then consumes
+its loan through `Retire::requested`. Its idle, backoff and retry waits
+retain progress in static runtime backing; cancellation tests subsequently
+disable and uninstall the same installation.

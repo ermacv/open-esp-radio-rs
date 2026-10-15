@@ -25,7 +25,11 @@ enum Mode {
 }
 struct Model {
     mode: Mode,
+    stopped: Cell<bool>,
+    owner_drops: [Cell<usize>; 3],
+    loan_ends: Cell<usize>,
     enabled: Cell<bool>,
+    configured: Cell<usize>,
     poison: RefCell<PoisonState<Fault>>,
     log: RefCell<Vec<&'static str>>,
     event: Cell<bool>,
@@ -36,7 +40,11 @@ impl Model {
     fn new(mode: Mode) -> Self {
         Self {
             mode,
+            stopped: Cell::new(true),
+            owner_drops: core::array::from_fn(|_| Cell::new(0)),
+            loan_ends: Cell::new(0),
             enabled: Cell::new(false),
+            configured: Cell::new(0),
             poison: RefCell::new(PoisonState::new()),
             log: RefCell::new(Vec::new()),
             event: Cell::new(false),
@@ -58,7 +66,33 @@ impl Model {
 }
 struct Backend<'a>(&'a Model);
 struct Driver<'a>(&'a Model);
+struct Completion<'a>(&'a Model);
+impl Drop for Backend<'_> {
+    fn drop(&mut self) {
+        self.0.owner_drops[0].set(self.0.owner_drops[0].get() + 1);
+    }
+}
+impl Drop for Driver<'_> {
+    fn drop(&mut self) {
+        self.0.owner_drops[1].set(self.0.owner_drops[1].get() + 1);
+    }
+}
+impl Drop for Completion<'_> {
+    fn drop(&mut self) {
+        self.0.owner_drops[2].set(self.0.owner_drops[2].get() + 1);
+    }
+}
+struct DriverCall<'a>(&'a Model);
+impl Drop for DriverCall<'_> {
+    fn drop(&mut self) {
+        self.0.loan_ends.set(self.0.loan_ends.get() + 1);
+    }
+}
 struct Phase<'a>(&'a Model);
+struct Setup<'p> {
+    held: &'p usize,
+    local: &'p mut usize,
+}
 impl PortPhase for Phase<'_> {
     type Event = ();
     type Fault = Fault;
@@ -84,22 +118,31 @@ impl<'a> PortBackend for Backend<'a> {
     type Fault = Fault;
     type Refusal = ();
     type Setup<'p, 'id>
-        = ()
+        = Setup<'p>
     where
-        Self: 'p;
+        Self: 'p,
+        'id: 'p;
     type Phase<'p, 'id>
         = Phase<'p>
     where
         Self: 'p,
         'id: 'p;
     type Resources<'id> = ();
-    type Held<'id> = ();
-    type Local<'id> = ();
+    type Held<'id> = usize;
+    type Local<'id> = usize;
     type Driver = Driver<'a>;
-    type State = usize;
+    type State = Completion<'a>;
     type Uninstall = ();
     type Uninstalled = usize;
-    async fn enable(&mut self, _: Call) -> EnableResult<(), Fault> {
+    async fn enable<'p, 'id>(
+        &'p mut self,
+        _: Call,
+        held: &'p Self::Held<'id>,
+        local: &'p mut Self::Local<'id>,
+    ) -> EnableResult<(), Fault>
+    where
+        'id: 'p,
+    {
         if matches!(self.0.mode, Mode::StallEnable) {
             pending::<()>().await;
         }
@@ -116,6 +159,7 @@ impl<'a> PortBackend for Backend<'a> {
         if let Some(poisoned) = self.0.poison.borrow().get() {
             return Err(poisoned);
         }
+        self.0.configured.set(*held + *local);
         self.0.record("enable");
         self.0.enabled.set(true);
         Ok(Ok(()))
@@ -123,8 +167,8 @@ impl<'a> PortBackend for Backend<'a> {
     async fn disable<'p, 'id>(
         &'p mut self,
         _: Call,
-        _: &'p (),
-        _: &'p mut (),
+        _: &'p usize,
+        _: &'p mut usize,
         _: &'p mut dyn FnMut(()),
     ) -> Result<(), Poisoned<Fault>>
     where
@@ -140,41 +184,55 @@ impl<'a> PortBackend for Backend<'a> {
     fn resources<'id>(&mut self, mint: Mint<'id, ()>) -> InstallParts<'id, Self> {
         mint.into_pools();
         InstallParts {
-            held: (),
-            local: (),
+            held: 11,
+            local: 3,
             resources: (),
         }
     }
-    fn setup<'p, 'id>(&'p mut self, _: Call, _: &'p mut Self::Local<'id>) -> Self::Setup<'p, 'id> {}
-    fn phase<'p, 'id>(&'p mut self, _: Call, _: &'p (), _: &'p mut ()) -> Phase<'p>
+    fn setup<'p, 'id>(
+        &'p mut self,
+        _: Call,
+        held: &'p Self::Held<'id>,
+        local: &'p mut Self::Local<'id>,
+    ) -> Self::Setup<'p, 'id>
+    where
+        'id: 'p,
+    {
+        Setup { held, local }
+    }
+    fn phase<'p, 'id>(&'p mut self, _: Call, _: &'p usize, _: &'p mut usize) -> Phase<'p>
     where
         'id: 'p,
     {
         Phase(self.0)
     }
     async fn drive<'p, 'id>(
-        driver: Driver<'a>,
-        _: &'p (),
+        driver: DriverLoan<'p, Driver<'a>>,
+        _: &'p usize,
         retire: Retire<'p>,
-    ) -> DriverExit<usize, Fault> {
+    ) -> DriverExit<Self::State, Fault> {
         let model = driver.0;
+        let _call = DriverCall(model);
         model.record("drive");
         if matches!(model.mode, Mode::FaultBeforeEnable | Mode::FaultAfterEnable) {
             let (cause, poisoned) = model.poison.borrow_mut().publish(Fault::Hardware);
             model.event.set(true);
             model.record("poison");
             return DriverExit::Faulted {
-                state: 7,
+                state: Completion(model),
                 cause: cause.cause,
-                poisoned,
+                poisoned: driver.fail_stop(poisoned),
             };
         }
         if matches!(model.mode, Mode::MissBound | Mode::StallRetire) {
             pending::<()>().await;
         }
-        let proof = retire.requested().await;
+        let proof = retire.requested(driver).await;
         model.record("retire");
-        DriverExit::Retired { state: 7, proof }
+        DriverExit::Retired {
+            state: Completion(model),
+            proof,
+        }
     }
 
     fn retire_bound(&self, _: Call) -> impl Future<Output = ()> + use<'a> {
@@ -185,29 +243,37 @@ impl<'a> PortBackend for Backend<'a> {
             }
         }
     }
-    fn detach<'id>(&mut self, _: crate::Detach, _: &()) {
+    fn detach<'id>(&mut self, _: crate::Detach<'_>, _: &usize) {
         self.0.record("detach");
     }
     fn uninstall<'id>(
         self,
-        _: (),
-        _: (),
-        retired: Retired<'id, usize>,
+        _: usize,
+        _: usize,
+        retired: Retired<'id, (Self::Driver, Self::State)>,
         _: Detached<'id>,
         _: (),
     ) -> usize {
         self.0.record("uninstall");
-        retired.into_state()
+        let (driver, state) = retired.into_state();
+        assert!(core::ptr::eq(driver.0, self.0));
+        assert!(core::ptr::eq(state.0, self.0));
+        7
     }
     fn abandon(&mut self, call: crate::Quarantine) -> crate::Abandon {
         self.0.irq_masked.set(true);
         self.0.record("abandon");
-        crate::Abandon::Stopped(call.stopped())
+        if self.0.stopped.get() {
+            crate::Abandon::Stopped(call.stopped())
+        } else {
+            crate::Abandon::Unconfirmed(call)
+        }
     }
 }
 
 enum Body {
     Uninstall,
+    FailStop,
     Phase,
     Drop,
     Forget,
@@ -224,6 +290,7 @@ impl<'a> PortBody<Backend<'a>> for Body {
     ) -> Ended<'id, Backend<'a>, ()> {
         match self {
             Self::Uninstall => crate::Ended::uninstall(owner, (), ()),
+            Self::FailStop => crate::Ended::fail_stopped(owner.fail_stop(), ()),
             Self::Drop => {
                 drop(owner);
                 pending().await
@@ -273,6 +340,139 @@ fn finish<F: Future>(future: F) -> F::Output {
         }
     }
     panic!("model did not finish");
+}
+
+struct Configure;
+impl<'m> PortBody<Backend<'m>> for Configure {
+    type Output = ();
+    async fn run<'p, 'id>(
+        self,
+        mut owner: Owner<'p, 'id, Backend<'m>, Disabled>,
+        _: (),
+    ) -> Ended<'id, Backend<'m>, ()> {
+        {
+            let mut setup = owner.setup();
+            *setup.local = *setup.held * 2;
+        }
+        let enabled = owner.enable().await.ok().expect("enable");
+        let disabled = enabled.disable(&mut |_| {}).await.ok().expect("disable");
+        Ended::uninstall(disabled, (), ())
+    }
+}
+
+#[test]
+fn enable_observes_the_installation_state_borrowed_by_setup() {
+    let model = Model::new(Mode::Normal);
+    assert!(matches!(
+        finish(run_port(model.installed(), Configure)),
+        PortEnd::Uninstalled { .. }
+    ));
+    assert_eq!(model.configured.get(), 33);
+}
+
+#[test]
+fn dropping_quarantine_neither_frees_backing_nor_touches_hardware() {
+    struct Backing<'a>(&'a Cell<usize>);
+    impl Drop for Backing<'_> {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+    struct Hardware<'a> {
+        _backing: Box<Backing<'a>>,
+        writes: &'a Cell<usize>,
+    }
+    impl Drop for Hardware<'_> {
+        fn drop(&mut self) {
+            self.writes.set(self.writes.get() + 1);
+        }
+    }
+    let freed = Cell::new(0);
+    let writes = Cell::new(0);
+    let owner = || Hardware {
+        _backing: Box::new(Backing(&freed)),
+        writes: &writes,
+    };
+    drop(Quarantined::new(owner()));
+    assert_eq!((freed.get(), writes.get()), (0, 0));
+    drop(owner());
+    assert_eq!((freed.get(), writes.get()), (1, 1));
+}
+
+fn owner_drops(model: &Model) -> [usize; 3] {
+    core::array::from_fn(|i| model.owner_drops[i].get())
+}
+
+#[test]
+fn both_abnormal_ends_report_the_stop_outcome_and_retain_every_owner() {
+    for stopped in [true, false] {
+        for mode in [Mode::Normal, Mode::MissBound] {
+            for fail_stop in [true, false] {
+                let model = Model::new(mode);
+                model.stopped.set(stopped);
+                let body = if fail_stop {
+                    Body::FailStop
+                } else {
+                    Body::Drop
+                };
+                let end = finish(run_port(model.installed(), body));
+                let outcome = match &end {
+                    PortEnd::FailStopped { outcome, .. } if fail_stop => outcome,
+                    PortEnd::Abandoned { outcome, .. } if !fail_stop => outcome,
+                    _ => panic!("wrong end"),
+                };
+                assert_eq!(matches!(outcome, Abandon::Stopped(_)), stopped);
+                assert_eq!(owner_drops(&model), [0; 3]);
+                assert_eq!(model.loan_ends.get(), 1);
+                drop(end);
+                assert_eq!(owner_drops(&model), [0; 3]);
+            }
+        }
+    }
+}
+
+#[test]
+fn ordinary_uninstall_returns_the_driver_and_its_completion_state() {
+    let model = Model::new(Mode::Normal);
+    assert!(matches!(
+        finish(run_port(model.installed(), Body::Uninstall)),
+        PortEnd::Uninstalled { uninstalled: 7, .. }
+    ));
+    assert_eq!(owner_drops(&model), [1; 3]);
+}
+
+#[test]
+fn cancelling_before_first_poll_poisoned_and_retained_the_installation() {
+    let model = Model::new(Mode::Normal);
+    model.stopped.set(false);
+    drop(run_port(model.installed(), Body::Foreign));
+    assert_eq!(&*model.log.borrow(), &["abandon"]);
+    assert_eq!(owner_drops(&model), [0; 3]);
+}
+
+#[test]
+fn cancellation_retains_running_and_already_faulted_driver_owners() {
+    for mode in [Mode::Normal, Mode::FaultBeforeEnable] {
+        let model = Model::new(mode);
+        model.stopped.set(false);
+        let mut port = Box::pin(run_port(model.installed(), Body::Foreign));
+        assert!(poll(port.as_mut()).is_pending());
+        drop(port);
+        assert_eq!(model.loan_ends.get(), 1);
+        assert_eq!(owner_drops(&model), [0; 3]);
+        assert_eq!(model.log.borrow().last(), Some(&"abandon"));
+    }
+}
+
+#[test]
+fn cancelling_abandon_retirement_keeps_the_synchronous_safety_net() {
+    let model = Model::new(Mode::StallRetire);
+    model.stopped.set(false);
+    let mut port = Box::pin(run_port(model.installed(), Body::Drop));
+    assert!(poll(port.as_mut()).is_pending());
+    drop(port);
+    assert_eq!(&*model.log.borrow(), &["abandon", "drive", "abandon"]);
+    assert_eq!(owner_drops(&model), [0; 3]);
 }
 #[test]
 fn uninstall_retires_detaches_and_returns_owners_in_order() {
@@ -332,7 +532,7 @@ fn missed_retire_bound_fail_stops_without_detach_or_uninstall() {
     let m = Model::new(Mode::MissBound);
     assert!(matches!(
         finish(run_port(m.installed(), Body::Uninstall)),
-        PortEnd::FailStopped { output: () }
+        PortEnd::FailStopped { output: (), .. }
     ));
     assert_eq!(&*m.log.borrow(), &["drive", "abandon"]);
 }
@@ -342,7 +542,7 @@ fn dropped_owner_and_cancelled_transition_retire_asynchronously() {
         let m = Model::new(Mode::Normal);
         assert!(matches!(
             finish(run_port(m.installed(), body)),
-            PortEnd::Abandoned
+            PortEnd::Abandoned { .. }
         ));
         assert_eq!(&*m.log.borrow(), &["abandon", "drive", "retire", "detach"]);
     }
@@ -376,12 +576,15 @@ fn retire_request_wakes_the_registered_driver_without_a_poll() {
     let latch = AbandonLatch::new();
     let wakes = Arc::new(Wakes(AtomicUsize::new(0)));
     let waker = wakes.clone().into();
+    let mut driver = ();
     let mut future = pin!(
         Retire {
             request: &request,
             latch: &latch
         }
-        .requested()
+        .requested(DriverLoan {
+            driver: &mut driver
+        })
     );
     assert!(
         future
@@ -461,7 +664,8 @@ fn fail_stop_masks_irqs_and_retires_while_body_waits_then_detaches_once() {
     assert!(matches!(
         poll(port.as_mut()),
         Poll::Ready(PortEnd::FailStopped {
-            output: "body result"
+            output: "body result",
+            ..
         })
     ));
     assert_eq!(
@@ -483,12 +687,14 @@ fn fail_stop_masks_irqs_and_retires_while_body_waits_then_detaches_once() {
 #[test]
 fn cancellation_during_fail_stopped_body_runs_synchronous_quarantine() {
     let model = Model::new(Mode::Normal);
+    model.stopped.set(false);
     let returning = Signal::new();
     let mut port = Box::pin(run_port(model.installed(), StopThenWait(&returning)));
     assert!(poll(port.as_mut()).is_pending());
     drop(port);
     model.interrupt();
     assert_eq!(model.irq_state.get(), 0);
+    assert_eq!(owner_drops(&model), [0; 3]);
     assert_eq!(
         &*model.log.borrow(),
         &["abandon", "drive", "retire", "abandon"]
@@ -506,7 +712,8 @@ fn retire_timeout_does_not_wait_for_the_fail_stopped_body() {
     assert!(matches!(
         poll(port.as_mut()),
         Poll::Ready(PortEnd::FailStopped {
-            output: "body result"
+            output: "body result",
+            ..
         })
     ));
     assert_eq!(&*model.log.borrow(), &["abandon", "drive"]);
@@ -514,9 +721,19 @@ fn retire_timeout_does_not_wait_for_the_fail_stopped_body() {
 
 #[test]
 fn forgetting_the_whole_port_cannot_return_owners_or_run_drop_cleanup() {
-    let model = Model::new(Mode::Normal);
+    // Hardware backing remains durable even if the executor leaks the frame.
+    let model = Box::leak(Box::new(Model::new(Mode::Normal)));
+    model.stopped.set(false);
     let mut port = Box::pin(run_port(model.installed(), Body::Foreign));
     assert!(poll(port.as_mut()).is_pending());
     core::mem::forget(port);
     assert_eq!(&*model.log.borrow(), &["drive"]);
+    assert_eq!(owner_drops(model), [0; 3]);
+    assert_eq!(model.loan_ends.get(), 0);
+    model.interrupt();
+    assert_eq!(
+        model.irq_state.get(),
+        1,
+        "backing still exists for hardware"
+    );
 }

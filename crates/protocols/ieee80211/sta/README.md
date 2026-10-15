@@ -320,8 +320,9 @@ M3 and protected GM1 authenticate before entering the exchange. Each kind has
 one affine deferred-frame owner (`PendingM3`, `PendingGroupM1`); a newer valid
 counter replaces its predecessor. Invalid MICs and counters no greater than
 the processed or same-kind deferred frontier are counted protocol drops, not
-lifecycle refusals. Pairwise work precedes group work at the current M4/GM2
-TX terminal, whatever its delivery outcome. An exact completed M3 still
+lifecycle refusals. M3 and GM1 share one replay frontier; deferred frames
+run in ascending counter order at successive M4/GM2 TX terminals, whatever
+their delivery outcomes. An exact completed M3 still
 coalesces a cached M4 without reinstalling PTK. Every M4 mirrors the received
 M3's MAC protection; an open M3 produces an open M4 even with an installed PTK.
 

@@ -139,6 +139,9 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   The pinned `wpa.c` M4 builder handles EAPOL flags/MIC, not the 802.11
   Protected bit. Do not confuse EAPOL Secure with MAC protection. Group M1
   requires protected, integrity-verified and replay-admitted RX.
+  Deferred M3 and GM1 share the EAPOL-Key replay frontier: process the
+  smaller counter first when both cells are occupied. Prioritizing M3 by
+  kind advances that frontier past a valid older GM1 and drops it.
 
 - GTK records survive M4/GM2 delivery. Only eviction or Leave removes them.
   Evict the oldest non-current installation when all physical slots are

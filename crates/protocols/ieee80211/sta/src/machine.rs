@@ -1448,8 +1448,7 @@ struct ConnectedRsn {
     rekey: Rekey,
     message4: DuplicateMessage4,
     deferred: DeferredEapol,
-    /// Ordinary peer-input drops, including deferred frames overtaken by a
-    /// higher-priority authenticated replay frontier.
+    /// Ordinary peer-input drops, including invalid MICs and stale counters.
     dropped: crate::Counter,
     /// The replay check of the association's keys, which the data machine
     /// borrows through the link.
@@ -1539,9 +1538,9 @@ impl ConnectedRsn {
         (self.advance_deferred(), result.map_err(Into::into))
     }
 
-    /// Consume at most one verified successor into installation work. Invalid
-    /// key data and a counter overtaken by pairwise priority are protocol drops.
-    /// They never turn the connected association into a local failure.
+    /// Consume the smallest verified replay counter into installation work.
+    /// M3 and GM1 advance the same frontier; their kind grants no priority.
+    /// Invalid key data remains a counted protocol drop, not a local failure.
     fn advance_deferred(mut self) -> Self {
         if !matches!(self.rekey, Rekey::None)
             || matches!(self.message4, DuplicateMessage4::AwaitSent)
@@ -1558,6 +1557,14 @@ impl ConnectedRsn {
                     request,
                     protection,
                 }) => (request, protection, DeferredEapol::Empty),
+                DeferredEapol::Both {
+                    message3,
+                    group: PendingGroupM1 { request },
+                } if request.replay_counter() < message3.replay_counter() => (
+                    request,
+                    EapolProtection::Pairwise,
+                    DeferredEapol::Message3(message3),
+                ),
                 DeferredEapol::Both {
                     message3:
                         PendingM3 {

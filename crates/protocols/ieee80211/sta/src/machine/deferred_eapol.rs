@@ -6,7 +6,9 @@
 //! immediately. Our D4 connection boundary is `Ended(Delivered)` of M4, so an
 //! authenticated successor waits at most for the current M4/GM2 TX terminal.
 //! Each kind has one affine owner; a newer authenticated frame replaces it.
-//! Pairwise work wins when both kinds await that terminal.
+//! M3 and GM1 share the vendor's `sm->rx_replay_counter`. When both kinds
+//! await a terminal, the smaller counter is processed first. Advancing that
+//! common frontier past a valid older frame would incorrectly discard it.
 //!
 //! In Connected there is no station rekey timer. The vendor's
 //! [`group exchange`] processes GM1 immediately, its [`TX callback`] only

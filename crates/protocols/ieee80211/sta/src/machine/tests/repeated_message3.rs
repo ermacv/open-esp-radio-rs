@@ -106,32 +106,40 @@ fn deferred_gm1_responds_only_to_the_latest_counter_after_the_current_gm2_termin
 }
 
 #[test]
-fn deferred_pairwise_precedes_group_work_after_one_current_tx() {
-    for outcome in exchange_terminals() {
-        installed(|mint| {
-            let (mut world, ptk) = wpa2_connected::<2>(mint);
-            world.hold_transmissions = true;
-            world.receive_verified(at(50), &group_message1(&ptk, 3, 2));
-            let before = world.frames.len();
-            // The later group counter may arrive first; the distinct pairwise
-            // cell still gets priority at the current GM2 terminal.
-            world.receive_verified(at(51), &group_message1(&ptk, 5, 2));
-            world.receive(at(51), &retry_message3(&ptk, 4, 0x99));
-            assert_eq!(world.frames.len(), before);
-            world.outcomes.push_back((outcome, true));
-            world.end_transmissions(at(52));
-            world.run(at(52));
-            assert_eq!(response_counters(&world, before), [4]);
-            world.end_transmissions(at(53));
-            world.run(at(53));
-            assert_eq!(response_counters(&world, before), [4, 5]);
-            world.hold_transmissions = false;
-            world.run(at(54));
-            assert!(world.station.is_connected());
-            assert!(world.station.poll_deadline().is_none());
-            assert_eq!(world.station.tickets.len(), 2);
-            assert_eq!(world.station.buffers.len(), 2);
-        });
+fn deferred_kinds_follow_the_shared_replay_order_without_dropping_either_frame() {
+    for group_first in [true, false] {
+        for outcome in exchange_terminals() {
+            installed(|mint| {
+                let (mut world, ptk) = wpa2_connected::<2>(mint);
+                world.hold_transmissions = true;
+                world.receive_verified(at(50), &group_message1(&ptk, 3, 2));
+                let before = world.frames.len();
+                if group_first {
+                    world.receive_verified(at(51), &group_message1(&ptk, 4, 2));
+                    world.receive(at(51), &retry_message3(&ptk, 5, 0x99));
+                } else {
+                    world.receive(at(51), &retry_message3(&ptk, 4, 0x99));
+                    world.receive_verified(at(51), &group_message1(&ptk, 5, 2));
+                }
+                assert_eq!(world.frames.len(), before);
+                assert_eq!(security_drops(&world), 0);
+                world.outcomes.push_back((outcome, true));
+                world.end_transmissions(at(52));
+                world.run(at(52));
+                assert_eq!(response_counters(&world, before), [4]);
+                world.outcomes.push_back((outcome, true));
+                world.end_transmissions(at(53));
+                world.run(at(53));
+                assert_eq!(response_counters(&world, before), [4, 5]);
+                assert_eq!(security_drops(&world), 0);
+                world.hold_transmissions = false;
+                world.run(at(54));
+                assert!(world.station.is_connected());
+                assert!(world.station.poll_deadline().is_none());
+                assert_eq!(world.station.tickets.len(), 2);
+                assert_eq!(world.station.buffers.len(), 2);
+            });
+        }
     }
 }
 

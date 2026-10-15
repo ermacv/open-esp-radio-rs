@@ -58,6 +58,12 @@ mod image {
     #[unsafe(link_section = ".rwtext.open_radio_irq")]
     fn drop_waker(_: *const ()) {}
 
+    // A synthetic clock for this link-only fixture. The production S31
+    // composition must bind its independent monotonic clock and measured bound.
+    static CLOCK: AtomicU32 = AtomicU32::new(0);
+    fn now(_: &()) -> Instant {
+        Instant::from_micros(u64::from(CLOCK.fetch_add(1, Ordering::Relaxed)))
+    }
     fn mask(_: &()) {}
     fn acknowledge(_: &()) {}
     fn enable(_: &()) -> Result<(), Infallible> {
@@ -82,6 +88,7 @@ mod image {
 
     struct Caps;
     impl Ieee80211Capabilities for Caps {
+        type SppScope = oer_ieee80211_mac::security::spp::Interface;
         const CAPS: LowerMacCapabilities =
             oer_esp32s31_ieee80211::lower_mac::esp32s31_lower_mac_capabilities(2048);
     }
@@ -128,10 +135,10 @@ mod image {
         radio: &mut RadioRuntimeOwner,
         _: &mut IrqControl<'_>,
         events: DriverEvents,
-        signals: &DriverSignals,
+        signals: DriverStatus,
     ) -> DriverStep {
         core::hint::black_box((radio, events.mac.count(), events.power));
-        if signals.retirement_requested() {
+        if signals == DriverStatus::RetireRequested {
             DriverStep::Retired
         } else {
             DriverStep::Wake(WakePlan::until(
@@ -182,7 +189,7 @@ mod image {
     pub fn scope_main() -> ! {
         core::hint::black_box(&S31_COMMAND_STORAGE_BYTES);
         let mut latch = ScopeReturnLatch::new();
-        let route = ScopeRoute::new((), &SLOT, mask, acknowledge, enable, Scheduler);
+        let route = ScopeRoute::new((), &SLOT, mask, acknowledge, enable, Scheduler, now);
         let radio = RadioRuntimeOwner::claim_for_validation();
         let interrupts = InactiveEpoch::new(validation_mac_interrupt_setup())
             .activate_rx_moderated(MacInterruptMask::COLD_RX);
@@ -200,7 +207,7 @@ mod image {
                 interrupts,
                 DriverCallbacks::new(step, stop),
                 route,
-                DrainBound::checks::<4>(),
+                DrainBound::from_maxima::<100, 20, 30>(),
                 &mut latch,
             )
         };

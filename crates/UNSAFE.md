@@ -90,7 +90,7 @@ lease. Context and the result latch are outside every registered callback's
 graph. IRQ callbacks project a separate region containing no driver address;
 a driver step's exclusive borrow cannot alias an ISR borrow. Admission counts
 an entrant before checking the open gate. Detach masks all inputs, closes
-admission and waits within a fixed bound on every core. Successful quiescence
+admission and waits within a measured time bound on every core. Successful quiescence
 allows one synchronous stop and returns the lease. Timeout never borrows the
 driver or claims hardware stopped: the backing, DMA and owners remain in
 permanent quarantine, even after the future is dropped. Only reset recovers
@@ -117,9 +117,12 @@ backing lease and caller-side result loan. Its driving future borrows Driver;
 consuming owner recovery requires that loan to have ended. Explicit abandon
 closes the same admission domain before the core quarantines Driver without
 Drop. Destroying the outer Driver container cannot reclaim the backing or
-invalidate an entered actor's address. A completed shutdown reply remains in
-permanent storage so a subsequent abandon cannot inspect extracted owners or
-stop twice. Owned Driver cancellation uses that same synchronous primitive.
+invalidate an entered actor's address. The core invokes backend abandonment at
+most once. Standalone caller access
+owns its scope and consumes it on abandon, moving the result into the caller's
+latch before returning a terminal receipt with no shutdown right. There is no
+memoized outcome in backing. Normal detach closes entry; consuming finish
+joins actors and stops once. Owned Driver cancellation uses the same primitive.
 
 ## PAC dependency authority
 

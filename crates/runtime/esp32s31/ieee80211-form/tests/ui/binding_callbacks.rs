@@ -1,12 +1,12 @@
 #![no_std]
 #![deny(unsafe_op_in_unsafe_fn)]
 use oer_esp32s31_ieee80211_form::scope::{
-    ScopeReturnLatch, DrainBound, DriverCallbacks, DriverEvents, DriverScope, DriverSignals,
+    ScopeReturnLatch, DrainBound, DriverCallbacks, DriverEvents, DriverScope, DriverStatus,
     DriverStep, IrqControl, ScopeLease, ScopeRoute,
 };
 use oer_esp32s31_ieee80211_mac::irq::epoch::{ActiveEpoch, Moderated};
 
-fn step(_: &mut (), _: &mut IrqControl<'_>, _: DriverEvents, _: &DriverSignals) -> DriverStep {
+fn step(_: &mut (), _: &mut IrqControl<'_>, _: DriverEvents, _: DriverStatus) -> DriverStep {
     DriverStep::Retired
 }
 fn stop(_: &mut (), _: &mut IrqControl<'_>) {}
@@ -25,7 +25,7 @@ pub unsafe fn bind<'a>(
         interrupts,
         DriverCallbacks::new(step, stop),
         route,
-        DrainBound::checks::<4>(),
+        DrainBound::from_maxima::<100, 20, 30>(),
         latch,
     ); // ui-error: E0133
     #[cfg(not(ui_reject))]
@@ -38,7 +38,7 @@ pub unsafe fn bind<'a>(
             interrupts,
             DriverCallbacks::new(step, stop),
             route,
-            DrainBound::checks::<4>(),
+            DrainBound::from_maxima::<100, 20, 30>(),
             latch,
         )
     }

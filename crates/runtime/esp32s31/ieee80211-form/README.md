@@ -45,17 +45,22 @@ Driver and returned state use `oer_radio_port::Quarantined<S>` directly.
 There is no local type, alias or extraction method. The standalone scope's
 `ScopeReturnLatch` only delivers its synchronous outcome; it is distinct from
 the common core's abandonment signal. An owned Driver's destructor remains a
-safety net outside core quarantine. The shutdown memo remains until the core
-provides one-shot abandonment; it prevents a later abandon from inspecting
-extracted owners or stopping twice.
+safety net outside core quarantine. The core calls backend abandon at most
+once per installation; there is no shutdown memo in backing. Normal detach
+masks and closes the entry without extracting memory; consuming finish then
+joins actors and stops once. A quarantined detach only repeats mask/close,
+never stop or owner recovery.
 
 Every await in `Driver::drive` preserves a state accepted by retirement,
 abandon and consuming finish. Cancellation only ends the loan: it cannot
 take a descriptor, queue or hardware owner out of backing. The two suspension
 points wait for the core's retirement request and the executor's retirement
 completion. A parameterized host test uses the real Retire from run_port,
-cancels before polling and after 1–3 polls at each await, then exercises finish,
-retirement and abandon separately. Its bounded DMA ownership model verifies
+cancels before polling and after 1–3 polls at each await, then exercises finish
+with ordinary, retirement and abandoned-state handling. Eight further cases
+cancel the whole run_port at those same cuts: physical abandon stops exactly
+once, and core quarantine returns no lease or driver owner. The bounded DMA
+ownership model verifies
 that each published address retains its exact queued buffer, successful
 teardown clears every descriptor and queue, and each buffer returns once.
 
@@ -105,8 +110,8 @@ queued buffer owners remain unchanged, no lease returns, and body, hardware,
 IRQ and buffer drop counters all stay zero.
 
 The body runs on the caller's executor. Scheduling only pends a separate
-driver step. A normal body return requests retirement and retains the result
-until the driver accounts for its accepted work. Detachment masks MAC, POWER
+driver step. The body moves its result into consuming `ScopeAccess::retire`, which requests
+retirement and retains that result until the driver accounts for its work. Detachment masks MAC, POWER
 and driver-SWI, closes admission, waits for entered actors, and calls the
 synchronous `stop(&mut Driver)` exactly once **only after successful drain**.
 The successful output contains a returned lease and either retired owners or
@@ -116,13 +121,38 @@ epoch once; there is no `AlreadyQuiesced` state or refusal.
 
 Explicit fail-stop consumes `ScopeAccess` and completes that synchronous
 mask/close/wait path before returning to a possibly still-pending body. Its
-reply is retained for the later destructor, so `stop` is not called twice.
-Cancellation of the entire run future uses the same path from `DriverScope`.
+active scope owner is consumed into `ScopeAbandoned`; the outcome has already
+moved into the result latch. A body pending after that transition owns no
+lease or shutdown guard, so cancellation cannot stop again. Cancellation
+while access is active uses the same path from `DriverScope`. There is no
+`Cell<Option<Quiescence>>`, replacement flag or cached shutdown outcome.
 An empty latch means no output was delivered, for example because an owning
 future was forgotten; it does not claim successful release or poisoning.
 Context needs no `'static` bound and is unreachable by the registration.
 Forgetting a borrowed `Pin<&mut Future>` leaves the future's own destructor
 responsible for cancellation. No lifetime is extended or transmuted.
+
+## Production S31 integration requirements
+
+The form must integrate together with the S31 runtime/composition replacement.
+The existing runtime still names removed generic IRQ consumers, delivery-policy
+imports and epoch transitions. Its STA dependency currently fails first, so a
+Cargo check does not expose those additional source incompatibilities. The
+composition's handlers already enter the adapter's `INSTALLATION` slot, but
+production does not yet open that registration. A closed entry returns an
+empty snapshot without servicing hardware; the intermediate Wi-Fi image is
+not functional. The replacement must construct and run the owned Driver with
+that exact slot and permanent backing, migrate every IRQ caller and borrow
+its installation's diagnostics. No compatibility storage may reopen the old
+path. HIL snapshot consumers also migrate in that same step.
+
+The pinned TX pool still exposes claims on public `new()`/`Default` values.
+Its existing runtime DMA guard currently rejects an unpinned pool by panic;
+this is not a type proof. S31 must restrict `claim_network`/`claim_radio` to
+the affine pinned handle returned by `pin_static`, and add a negative UI
+case with a compiling twin. The old runtime stores `&Pool` after accepting
+`Pin<&mut Pool>` in `datapath/sram_tx.rs`, so its callers migrate together.
+Existing guard/state/length panics in `pinned_tx` predate this form.
 
 ## DMA custody and clock release
 
@@ -248,8 +278,13 @@ Each ISR or driver entrant increments the shared counter **before** checking
 admission. Closing the gate and observing the counter use sequentially
 consistent atomics: an entrant not seen by the zero observation must see the
 closed gate and cannot project the registration. Detach masks all hardware
-routes synchronously, closes admission and performs a fixed positive number
-of observations. It acknowledges driver-SWI without taking the IRQ-bank lock,
+routes synchronously, closes admission and observes elapsed monotonic time.
+`DrainBound::from_maxima<STEP_US, IRQ_US, MARGIN_US>()` sums the maximum finite
+step, complete IRQ path and positive scheduling/clock-resolution margin. The
+route implements `Clock` through the composition's callback; that source must
+continue advancing with these IRQ inputs masked, on every participating core,
+and its read cannot wait for them. Spin count and CPU frequency do not define
+the deadline. It acknowledges driver-SWI without taking the IRQ-bank lock,
 so a stuck actor holding that lock cannot block the timeout path itself.
 
 Successful drain excludes every prior actor on every bound core. Only then
@@ -271,8 +306,13 @@ therefore indicates a hang or defect, not ordinary backpressure. Known causes
 to investigate are a non-returning MMIO/device operation, a step or scheduler
 violating its finite-work contract, a stopped core, and an IRQ-bank critical
 section whose owner never exits. A caller preempting an actor can also exhaust
-a deliberately short observation bound; this conservatively poisons the
-installation without making that priority order unsafe.
+the time budget if it prevents that actor from ever resuming; quarantine
+preserves safety for that order too. The production S31 step must measure and
+bound step/IRQ duration and scheduling latency, including cross-core locks,
+and choose a margin before enabling an image. No production values are
+supplied by this prototype. Virtual-clock tests cancel during an entered step
+on another core and get Drained at three observation rates; every successful
+path stops exactly once. Deadline expiry calls no stop and retains backing.
 
 Recommended priorities for latency are hardware ISR above driver-SWI above
 caller. This is a performance recommendation, **not a safety condition**.
@@ -322,8 +362,11 @@ The driver's AtomicWaker points only to the permanent ScopeSlot, never to
 Driver, Held or a future. A wake enters the slot's admission domain and pends
 the current scheduler; after close it cannot inspect an old registration.
 Both MAC/power IRQs and software capacity publications use this same path.
+The lifecycle is one monotonic atomic enum: Running → RetireRequested →
+Retired, with an absorbing Abandoned transition from any state. A step gets
+one enum snapshot; retirement completion cannot overwrite abandonment.
 Each dispatch registers before its Acquire snapshots. After arming a Wait
-plan it checks remaining facts and retire/abandon again, making new work Ready
+plan it checks remaining facts and the lifecycle snapshot again, making new work Ready
 for the next finite step. A scheduler must not clear an already pending SWI
 when arming Wait; the executor acknowledges the SWI before dispatch instead.
 Tests inject publication inside the wait-arm boundary and retain a cloned
@@ -422,7 +465,7 @@ scatter/gather implementation or the complete lower-MAC backend.
 
 | Checks | Code size | RAM and CPU | Signatures | Breakage | Alternatives | Reversal |
 | --- | --- | --- | --- | --- | --- | --- |
-| Affine lease, IRQ consumers, epoch and FIFO credits at compile time; finite atomic admission drain and IRQ-bank transactions at run time | 5398 B executable sections; 5662 B with diagnostics; one monomorphization per scheduler binding | Fixed permanent backing 124 B per installation, 156 B with diagnostics; 12 B ISR slot; total writable statics 141 / 173 B; command stores 528 B; fixture caller frame 800 B in both variants, separate 4096 B stack; backing size is independent of the body's future size | `ScopeStorage`, `ScopeLease`, `DriverScope`, `Released` / `Poisoned`, borrowed `IrqDiagnostics`; no `Context: 'static` | Consumers must own their IRQ handle; global snapshots lose IRQ fields; poison cannot yield hardware or a lease | Inline future storage cannot survive a timeout followed by free; priority ordering cannot prove cross-core quiescence | Reject bindings whose linked graph leaves SRAM, whose callbacks remain unresolved, or whose fixed backing and stack exceed composition's measured budget |
+| Affine lease, IRQ consumers, epoch and FIFO credits at compile time; finite atomic admission drain and IRQ-bank transactions at run time | 4748 B executable sections; 5018 B with diagnostics; one monomorphization per scheduler binding | Fixed permanent backing 124 B per installation, 156 B with diagnostics; 12 B ISR slot; total writable statics 145 / 177 B; command stores 1088 B; fixture caller frame 3136 B in both variants, separate 4096 B stack; backing size is independent of the body's future size | `ScopeStorage`, `ScopeLease`, `DriverScope`, `Released` / `Poisoned`, borrowed `IrqDiagnostics`; no `Context: 'static` | Consumers must own their IRQ handle; global snapshots lose IRQ fields; poison cannot yield hardware or a lease | Inline future storage cannot survive a timeout followed by free; priority ordering cannot prove cross-core quiescence | Reject bindings whose linked graph leaves SRAM, whose callbacks remain unresolved, or whose fixed backing and stack exceed composition's measured budget |
 
 Run `cargo test -p oer-esp32s31-ieee80211-form` and `cargo xtask check ui`.
 Generated ELF files and closure reports remain under ignored

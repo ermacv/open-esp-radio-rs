@@ -72,9 +72,10 @@ impl<
     /// Successful finish drains actors and stops once; timeout retains the
     /// complete backing in reset-only quarantine without calling stop.
     pub async fn drive(&self, retire: &Retire<'_>) -> Result<(), E> {
-        self.scope
-            .run_body(retire, async |retire, _access| retire.wait().await)
-            .await
+        self.scope.start()?;
+        retire.wait().await;
+        self.scope.retire().await;
+        Ok(())
     }
 
     /// Consume the driver after the lifecycle core ends its unique driving
@@ -109,8 +110,8 @@ impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: Wak
         // The core's Unconfirmed branch retains Driver without invoking this
         // destructor; its backend has already masked/closed the backing.
         // A real destructor cannot await and uses the same synchronous domain.
-        self.scope.abandon();
-        let _retained = Quarantined::new(self.scope.complete());
+        let quiescence = self.scope.lease.storage().abandon(self.scope.bound);
+        let _retained = Quarantined::new(self.scope.complete_after(quiescence));
         // ManuallyDrop is the explicit quarantine owner, not a destructor
         // side effect of an otherwise releasable driver state.
         // The common core does not grant backing reuse after either abandon

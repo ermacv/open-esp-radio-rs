@@ -10,7 +10,7 @@ enum AwaitPoint {
 enum AfterCancel {
     Finish,
     Retire,
-    Abandon,
+    AbandonRequested,
 }
 
 #[derive(Clone)]
@@ -27,7 +27,7 @@ impl Cut {
     pub fn polled(&self, storage: &Storage) {
         self.polls.increment();
         assert_eq!(
-            storage.irq().signals.retirement_requested(),
+            storage.irq().lifecycle.snapshot() == DriverStatus::RetireRequested,
             matches!(self.point, AwaitPoint::ExecutorRetirement),
             "the poll must reach the selected await"
         );
@@ -36,23 +36,26 @@ impl Cut {
         assert_eq!(self.work.buffer_drops.get(), 0);
     }
 
-    pub fn cancelled(&self, storage: &Storage, bound: DrainBound) {
+    pub fn cancelled(&self, storage: &Storage) {
         assert_eq!(self.work.descriptors.get(), 2, "cancel keeps DMA ownership");
         assert_eq!(self.work.queued.get(), 2);
         assert_eq!(self.work.buffer_drops.get(), 0);
         let retired = matches!(self.after, AfterCancel::Retire) && self.polls.get() != 0;
         match self.after {
             AfterCancel::Retire if retired => {
-                // Same retirement signal and bounded step as run_body uses.
+                // Same retirement signal and bounded step as Driver::drive uses.
                 // No owner is held by the cancelled future; the step accepts
                 // the intact backing and accounts for every descriptor.
-                storage.irq().signals.retire.store(true, Ordering::Release);
+                storage.irq().lifecycle.request_retire();
                 dispatch(self.slot);
-                assert!(storage.irq().retired.load(Ordering::Acquire));
+                assert_eq!(storage.irq().lifecycle.snapshot(), DriverStatus::Retired);
                 assert_eq!(self.work.descriptors.get(), 0);
             }
-            AfterCancel::Abandon => {
-                assert!(matches!(storage.abandon(bound), Quiescence::Drained));
+            AfterCancel::AbandonRequested => {
+                // Leave the complete state abandoned before consuming finish.
+                // The real backend's once-only physical abandon is exercised
+                // by the fail-stop / cancel tests alongside this matrix.
+                storage.irq().lifecycle.abandon();
             }
             // Before first poll there is no registration to retire. finish
             // handles the initialized, unstarted owner synchronously.
@@ -60,7 +63,7 @@ impl Cut {
         }
     }
 
-    pub fn finished(&self, state: &S31State, storage: &Storage, bound: DrainBound) {
+    pub fn finished(&self, state: &S31State) {
         let retired = matches!(self.after, AfterCancel::Retire) && self.polls.get() != 0;
         match state {
             State::Released(released) => {
@@ -69,7 +72,6 @@ impl Cut {
             }
             State::Quarantined(_) => {
                 assert!(!retired);
-                assert!(matches!(storage.shutdown.get(), Some(Quiescence::Drained)));
             }
         }
         assert!(!self.slot.open.load(Ordering::Acquire));
@@ -77,9 +79,6 @@ impl Cut {
         assert_eq!(self.work.descriptors.get(), 0, "no live descriptor remains");
         assert_eq!(self.work.queued.get(), 0, "no queued DMA owner remains");
         assert_eq!(self.work.buffer_drops.get(), 2, "each buffer returned once");
-        // The core may abandon after finish, e.g. when its outer future drops.
-        // The cached shutdown reply must not revisit the extracted regions.
-        assert!(matches!(storage.abandon(bound), Quiescence::Drained));
         self.finished.increment();
     }
 }
@@ -91,7 +90,7 @@ fn cancellation_at_every_drive_await_preserves_retire_abandon_and_finish() {
             for after in [
                 AfterCancel::Finish,
                 AfterCancel::Retire,
-                AfterCancel::Abandon,
+                AfterCancel::AbandonRequested,
             ] {
                 let (route, slot, platform) = make_route();
                 let mut hardware = hardware(&platform);
@@ -146,6 +145,67 @@ fn cancellation_at_every_drive_await_preserves_retire_abandon_and_finish() {
                 );
                 assert!(latch.into_return().is_none(), "finish recovered explicitly");
             }
+        }
+    }
+}
+
+#[test]
+fn whole_run_cancellation_at_every_drive_await_abandons_once() {
+    for point in [AwaitPoint::CoreRequest, AwaitPoint::ExecutorRetirement] {
+        for polls in 0..=3 {
+            let (route, slot, platform) = make_route();
+            let mut hardware = hardware(&platform);
+            let (work, audit) = work::DmaQueue::populated();
+            hardware.work = work;
+            let stops = hardware.stops.clone();
+            let drops = hardware.drops.clone();
+            let cut = Cut {
+                point,
+                after: AfterCancel::Finish,
+                slot,
+                cancel: Arc::default(),
+                polls: Count::default(),
+                finished: Count::default(),
+                work: audit.clone(),
+            };
+            let caller = Caller {
+                cancellation: Some(cut.clone()),
+                ..Caller::default()
+            };
+            caller.end.store(
+                matches!(point, AwaitPoint::ExecutorRetirement),
+                Ordering::Release,
+            );
+            let context = std::string::String::from("non-static context");
+            let mut latch = Latch::new();
+            let scope = new_scope(lease(), hardware, Interrupts::default(), route, &mut latch);
+            let (installed, body) = installed(scope, &caller, &context);
+            let mut run = Box::pin(run_port(installed, body));
+            for _ in 0..polls {
+                assert!(poll(run.as_mut()).is_pending());
+            }
+            assert_eq!(cut.polls.get(), polls, "{point:?}");
+            assert_eq!(audit.descriptors.get(), 2);
+            assert_eq!(audit.queued.get(), 2);
+            assert_eq!(audit.buffer_drops.get(), 0);
+            // The core ends the driving loan, invokes physical abandon once,
+            // and quarantines Driver. Before first poll, owned Driver's Drop
+            // provides that same physical safety path without entering core.
+            drop(run);
+            assert_eq!(stops.get(), 1, "{point:?}, {polls}");
+            assert_eq!(cut.finished.get(), 0, "core abandon never consumes finish");
+            assert!(platform.masked.load(Ordering::Acquire));
+            assert!(!slot.open.load(Ordering::Acquire));
+            assert!(slot.entry.load(Ordering::Acquire).is_null());
+            assert_eq!(audit.descriptors.get(), 0);
+            assert_eq!(audit.queued.get(), 0);
+            assert_eq!(audit.buffer_drops.get(), 2);
+            assert_eq!(drops.get(), 0, "quarantine does not destroy Driver owners");
+            assert!(!matches!(
+                latch.into_return(),
+                Some(ScopeReturn::Released(_))
+            ));
+            assert_eq!(stops.get(), 1, "discarding the receipt cannot stop twice");
         }
     }
 }

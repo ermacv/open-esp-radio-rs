@@ -19,7 +19,6 @@ enum HeldKind {}
 struct Held<'id, 'control, 'context> {
     _place: Slot<'id, HeldKind>,
     storage: &'control Storage,
-    bound: DrainBound,
     context: &'context str,
     cancellation: Option<cancellation::Cut>,
 }
@@ -97,7 +96,6 @@ impl<'a, 'context> PortBackend for Backend<'a, 'context> {
             held: Held {
                 _place: place,
                 storage: self.storage,
-                bound: self.bound,
                 context: self.context,
                 cancellation: self.cancellation.clone(),
             },
@@ -143,7 +141,7 @@ impl<'a, 'context> PortBackend for Backend<'a, 'context> {
                 .await;
                 drop(waiting);
             }
-            cut.cancelled(held.storage, held.bound);
+            cut.cancelled(held.storage);
         } else {
             match driver.drive(&retire).await {
                 Ok(()) => (),
@@ -167,7 +165,7 @@ impl<'a, 'context> PortBackend for Backend<'a, 'context> {
         })
     }
     fn detach<'id>(&mut self, _call: Detach<'_>, _: &Self::Held<'id>) {
-        self.storage.close_and_stop(self.bound);
+        self.storage.detach_entry();
         self.detached.increment();
     }
     fn uninstall<'id>(
@@ -182,7 +180,7 @@ impl<'a, 'context> PortBackend for Backend<'a, 'context> {
         let (driver, ()) = retired.into_state();
         let state = driver.finish();
         if let Some(cut) = &held.cancellation {
-            cut.finished(&state, held.storage, held.bound);
+            cut.finished(&state);
         }
         state
     }

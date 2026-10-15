@@ -8,7 +8,7 @@ use super::*;
 use core::{cell::RefCell, convert::Infallible, future::Future, task::Context};
 use std::{
     boxed::Box,
-    sync::{Arc, Barrier},
+    sync::{Arc, Barrier, Mutex},
     task::Wake,
     thread,
 };
@@ -30,6 +30,8 @@ struct Routing {
     pends: Count,
     acks: Count,
     last_ready: AtomicBool,
+    clock: Mutex<oer_time_virtual::VirtualClock>,
+    sample_elapsed_us: AtomicUsize,
 }
 type Platform = Arc<Routing>;
 type Schedule = fn(&Platform, WakePlan);
@@ -37,6 +39,17 @@ type Storage<E = Infallible> = ScopeStorage<Hardware, Interrupts, Platform, E, S
 type Lease<E = Infallible> = ScopeLease<Hardware, Interrupts, Platform, E, Schedule>;
 type Latch<E = Infallible> = ScopeReturnLatch<Hardware, Interrupts, Platform, E, Schedule>;
 type Return<E = Infallible> = ScopeReturn<Hardware, Interrupts, Platform, E, Schedule>;
+fn now(p: &Platform) -> Instant {
+    // A virtual hardware clock: tests choose elapsed time between reads,
+    // independently of the number or cost of spin instructions.
+    let clock = p.clock.lock().unwrap();
+    clock
+        .advance(Duration::from_micros(
+            p.sample_elapsed_us.load(Ordering::Relaxed) as u64,
+        ))
+        .unwrap();
+    clock.now()
+}
 fn mask(p: &Platform) {
     p.masked.store(true, Ordering::SeqCst);
 }
@@ -65,6 +78,7 @@ fn make_route() -> (
 ) {
     let slot = Box::leak(Box::new(ScopeSlot::new()));
     let platform = Arc::new(Routing::default());
+    platform.sample_elapsed_us.store(1, Ordering::Relaxed);
     (
         ScopeRoute::new(
             platform.clone(),
@@ -73,6 +87,7 @@ fn make_route() -> (
             acknowledge,
             enable,
             schedule as Schedule,
+            now,
         ),
         slot,
         platform,
@@ -146,7 +161,7 @@ fn step(
     h: &mut Hardware,
     _: &mut IrqControl<Interrupts>,
     events: DriverEvents,
-    signals: &DriverSignals,
+    signals: DriverStatus,
 ) -> DriverStep {
     assert_eq!(h.stops.get(), 0);
     h.work.assert_owned();
@@ -163,7 +178,7 @@ fn step(
     if let Some(slot) = h.irq_during_step {
         assert!(slot.mac_interrupt().had_status);
     }
-    if signals.retirement_requested() {
+    if signals == DriverStatus::RetireRequested {
         h.work.drain();
         DriverStep::Retired
     } else {
@@ -256,7 +271,7 @@ fn new_scope<'a, E: 'static>(
             irq,
             DriverCallbacks::new(step, stop),
             route,
-            DrainBound::checks::<4>(),
+            DrainBound::from_maxima::<100, 20, 30>(),
             latch,
         )
     }
@@ -288,9 +303,9 @@ fn completion_keeps_result_until_separate_retirement_and_stops_once() {
     let mut latch = Latch::new();
     let mut context = 5;
     let scope = new_scope(lease(), h, Interrupts::default(), route, &mut latch);
-    let mut future = Box::pin(scope.run(&mut context, async |context, _| {
+    let mut future = Box::pin(scope.run(&mut context, async |context, access| {
         *context += 1;
-        *context
+        access.retire(*context).await
     }));
     assert!(poll(future.as_mut()).is_pending());
     assert_eq!(steps.get(), 0);
@@ -448,7 +463,11 @@ fn cancellation_after_retirement_keeps_owners_and_drops_the_result() {
     let result_drops = Count::default();
     let mut latch = Latch::new();
     let scope = new_scope(lease(), h, Interrupts::default(), route, &mut latch);
-    let mut future = Box::pin(scope.run(Output(result_drops.clone()), async |output, _| output));
+    let mut future = Box::pin(
+        scope.run(Output(result_drops.clone()), async |output, access| {
+            access.retire(output).await
+        }),
+    );
     assert!(poll(future.as_mut()).is_pending());
     dispatch(slot);
     assert_eq!(result_drops.get(), 0);
@@ -474,6 +493,7 @@ fn wrong_core_does_not_start_body_and_detaches_both_entries() {
         acknowledge,
         wrong_core,
         schedule as Schedule,
+        now,
     );
     let h = hardware(&platform);
     let stops = h.stops.clone();
@@ -595,18 +615,18 @@ fn unconfirmed_can_free_driver_container_without_drop_or_reclaiming_backing() {
         let mut latch = Latch::new();
         let scope = new_scope(lease(), h, irq, route, &mut latch);
         // The same borrowed wait as Driver::drive; the core explicitly abandons.
-        let mut future = Box::pin(scope.run_body(&context, async |context, _| {
-            assert_eq!(context, "caller-owned context");
+        let mut future = Box::pin(async {
+            scope.start().unwrap();
+            assert_eq!(&context, "caller-owned context");
             core::future::pending::<()>().await;
-        }));
+        });
         assert!(poll(future.as_mut()).is_pending());
         let registered = slot.entry.load(Ordering::Acquire);
         let worker = thread::spawn(move || actor(slot, which));
         block.entered.wait();
-        scope.abandon();
         assert!(matches!(
-            scope.lease.storage().shutdown.get(),
-            Some(Quiescence::TimedOut)
+            scope.lease.storage().abandon(scope.bound),
+            Quiescence::TimedOut
         ));
         assert!(platform.masked.load(Ordering::Acquire));
         assert!(!slot.open.load(Ordering::Acquire));
@@ -633,39 +653,106 @@ fn unconfirmed_can_free_driver_container_without_drop_or_reclaiming_backing() {
     }
 }
 
-#[test]
-fn bounded_wait_that_drains_another_core_stops_once_and_returns_the_lease() {
-    for which in [Actor::Driver, Actor::Mac, Actor::Power] {
-        let (route, slot, platform) = make_route();
-        let block = Block::new();
-        let mut h = hardware(&platform);
-        let stops = h.stops.clone();
-        let mut irq = Interrupts::default();
-        let detached = irq.detached.clone();
-        match which {
-            Actor::Driver => h.block = Some(block.clone()),
-            _ => irq.block = Some(block.clone()),
-        }
-        let mut latch = Latch::new();
-        let scope = new_scope(lease(), h, irq, route, &mut latch);
-        let mut future = Box::pin(scope.run((), async |(), _| core::future::pending::<()>().await));
-        assert!(poll(future.as_mut()).is_pending());
-        let worker = thread::spawn(move || actor(slot, which));
-        block.entered.wait();
-        WAIT_BOUNDARY.with(|hook| {
-            *hook.borrow_mut() = Some(Box::new(move || {
+// Resume an actor at a chosen virtual instant, after any number of polls.
+// Each hook owns the join handle until it either re-arms or joins it.
+fn resume_at(platform: Platform, block: Arc<Block>, worker: thread::JoinHandle<()>, at: Instant) {
+    WAIT_BOUNDARY.with(|hook| {
+        *hook.borrow_mut() = Some(Box::new(move || {
+            let time = platform.clock.lock().unwrap().now();
+            if time < at {
+                resume_at(platform, block, worker, at);
+            } else {
                 block.resume.wait();
                 worker.join().unwrap();
-            }))
-        });
-        drop(future);
-        assert_eq!(stops.get(), 1);
-        assert_eq!(detached.get(), 1);
-        assert!(slot.entry.load(Ordering::Acquire).is_null());
-        assert!(matches!(
-            latch.into_return(),
-            Some(ScopeReturn::Released(_))
-        ));
+            }
+        }));
+    });
+}
+
+#[test]
+fn cancellation_drains_another_cores_bounded_step_independently_of_spin_speed() {
+    // The same 100 us step/IRQ ends after different numbers of observations.
+    // The old four-observation bound would poison these ordinary cancellations.
+    for elapsed_per_read in [1, 7, 25] {
+        for which in [Actor::Driver, Actor::Mac, Actor::Power] {
+            let (route, slot, platform) = make_route();
+            platform
+                .sample_elapsed_us
+                .store(elapsed_per_read, Ordering::Relaxed);
+            let block = Block::new();
+            let mut h = hardware(&platform);
+            let stops = h.stops.clone();
+            let mut irq = Interrupts::default();
+            let detached = irq.detached.clone();
+            match which {
+                Actor::Driver => h.block = Some(block.clone()),
+                _ => irq.block = Some(block.clone()),
+            }
+            let mut latch = Latch::new();
+            let scope = new_scope(lease(), h, irq, route, &mut latch);
+            let bound = scope.bound.duration();
+            let mut future =
+                Box::pin(scope.run((), async |(), _| core::future::pending::<()>().await));
+            assert!(poll(future.as_mut()).is_pending());
+            let worker = thread::spawn(move || actor(slot, which));
+            block.entered.wait();
+            resume_at(
+                platform.clone(),
+                block,
+                worker,
+                Instant::from_micros(if matches!(which, Actor::Driver) {
+                    100
+                } else {
+                    20
+                }),
+            );
+            drop(future);
+            assert!(platform.clock.lock().unwrap().now().as_micros() <= bound.as_micros());
+            assert_eq!(stops.get(), 1);
+            assert_eq!(detached.get(), 1);
+            assert!(slot.entry.load(Ordering::Acquire).is_null());
+            assert!(matches!(
+                latch.into_return(),
+                Some(ScopeReturn::Released(_))
+            ));
+        }
+    }
+}
+
+#[test]
+fn lifecycle_is_monotonic_and_abandonment_cannot_be_overwritten_by_completion() {
+    let state = DriverLifecycle::new();
+    assert_eq!(state.snapshot(), DriverStatus::Running);
+    state.retired();
+    assert_eq!(
+        state.snapshot(),
+        DriverStatus::Running,
+        "completion requires a retirement request"
+    );
+    state.request_retire();
+    assert_eq!(state.snapshot(), DriverStatus::RetireRequested);
+    state.retired();
+    assert_eq!(state.snapshot(), DriverStatus::Retired);
+    state.request_retire();
+    assert_eq!(state.snapshot(), DriverStatus::Retired);
+    // Both completion/abandon orders, plus abandonment directly from Running.
+    for before in 0..3 {
+        let state = Arc::new(DriverLifecycle::new());
+        if before >= 1 {
+            state.request_retire();
+        }
+        if before >= 2 {
+            state.retired();
+        }
+        state.abandon();
+        let other_core = state.clone();
+        thread::spawn(move || {
+            other_core.request_retire();
+            other_core.retired();
+        })
+        .join()
+        .unwrap();
+        assert_eq!(state.snapshot(), DriverStatus::Abandoned);
     }
 }
 
@@ -750,7 +837,7 @@ fn a_released_lease_can_be_installed_again_with_clean_facts() {
         route,
         &mut latch,
     );
-    let mut future = Box::pin(scope.run((), async |(), _| ()));
+    let mut future = Box::pin(scope.run((), async |(), access| access.retire(()).await));
     assert!(poll(future.as_mut()).is_pending());
     assert!(slot.mac_interrupt().had_status);
     dispatch(slot);
@@ -772,7 +859,7 @@ fn a_released_lease_can_be_installed_again_with_clean_facts() {
         owners.route,
         &mut latch,
     );
-    let mut future = Box::pin(scope.run((), async |(), _| ()));
+    let mut future = Box::pin(scope.run((), async |(), access| access.retire(()).await));
     assert!(poll(future.as_mut()).is_pending());
     dispatch(slot);
     assert_eq!(

@@ -7,13 +7,13 @@
 
 use atomic_waker::AtomicWaker;
 use core::{
-    cell::{Cell, UnsafeCell},
+    cell::UnsafeCell,
     future::poll_fn,
     marker::PhantomPinned,
     mem::{ManuallyDrop, MaybeUninit},
     pin::Pin,
     ptr,
-    sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering},
+    sync::atomic::{AtomicBool, AtomicPtr, AtomicU8, AtomicUsize, Ordering},
     task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
 };
 use oer_esp32s31_hal::{
@@ -29,7 +29,7 @@ use oer_esp32s31_ieee80211_mac::irq::{
     epoch::{ActiveEpoch, InactiveEpoch, Moderated},
 };
 use oer_radio_port::Quarantined;
-use oer_time::Instant;
+use oer_time::{Clock, Duration, Instant};
 
 pub mod commands;
 pub mod driver;
@@ -90,16 +90,47 @@ pub struct DriverEvents {
     pub power: MacPowerInterruptObservation,
 }
 
-pub struct DriverSignals {
-    retire: AtomicBool,
-    abandon: AtomicBool,
+/// One monotonic snapshot at entry to a finite driver step. A later request
+/// belongs to the next step; the final wake check observes it independently.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum DriverStatus {
+    Running,
+    RetireRequested,
+    Retired,
+    Abandoned,
 }
-impl DriverSignals {
-    pub fn retirement_requested(&self) -> bool {
-        self.retire.load(Ordering::Acquire)
+
+struct DriverLifecycle(AtomicU8);
+impl DriverLifecycle {
+    const fn new() -> Self {
+        Self(AtomicU8::new(DriverStatus::Running as u8))
     }
-    pub fn abandonment_requested(&self) -> bool {
-        self.abandon.load(Ordering::Acquire)
+    fn snapshot(&self) -> DriverStatus {
+        match self.0.load(Ordering::Acquire) {
+            0 => DriverStatus::Running,
+            1 => DriverStatus::RetireRequested,
+            2 => DriverStatus::Retired,
+            // Only the private transitions below write this atomic.
+            _ => DriverStatus::Abandoned,
+        }
+    }
+    fn request_retire(&self) {
+        self.0
+            .fetch_max(DriverStatus::RetireRequested as u8, Ordering::AcqRel);
+    }
+    fn retired(&self) {
+        // An abandonment concurrent with completion remains terminal.
+        let _previous = self.0.compare_exchange(
+            DriverStatus::RetireRequested as u8,
+            DriverStatus::Retired as u8,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+    }
+    fn abandon(&self) {
+        self.0
+            .store(DriverStatus::Abandoned as u8, Ordering::Release);
     }
 }
 
@@ -162,17 +193,20 @@ impl ScopeSlot {
         clippy::disallowed_methods,
         reason = "synchronous cancellation has a finite observation bound and cannot yield to an executor"
     )]
-    fn close(&self, bound: DrainBound) -> Quiescence {
+    fn close(&self, bound: DrainBound, clock: &impl Clock) -> Quiescence {
         self.open.store(false, Ordering::SeqCst);
-        for _ in 0..bound.checks {
+        let start = clock.now();
+        loop {
             if self.entered.load(Ordering::SeqCst) == 0 {
                 return Quiescence::Drained;
+            }
+            if clock.now().saturating_duration_since(start) >= bound.duration() {
+                return Quiescence::TimedOut;
             }
             #[cfg(test)]
             tests::wait_boundary();
             core::hint::spin_loop();
         }
-        Quiescence::TimedOut
     }
 
     #[allow(
@@ -352,25 +386,38 @@ impl Drop for Entered<'_> {
     }
 }
 
-#[derive(Clone, Copy)]
 enum Quiescence {
     Drained,
     TimedOut,
 }
 
-/// A finite number of admission-count observations during synchronous detach.
-/// The composition chooses the bound; exhausting it permanently quarantines
-/// the backing rather than assuming that an actor must have finished.
-#[derive(Clone, Copy)]
+/// Time allowed for entered actors to leave after synchronous masking.
+/// Construct it from the worst finite driver step, the complete IRQ path
+/// (including nested handlers / cross-core serialization), and scheduling /
+/// clock-resolution margin, all in microseconds. This is independent of CPU
+/// spin throughput. Production maxima must be measured and bounded by S31's
+/// composition; the prototype supplies no production timing constants.
+#[derive(Clone, Copy, Debug)]
 pub struct DrainBound {
-    checks: usize,
+    duration: Duration,
 }
 impl DrainBound {
-    pub const fn checks<const N: usize>() -> Self {
+    pub const fn from_maxima<const STEP_US: u64, const IRQ_US: u64, const MARGIN_US: u64>() -> Self
+    {
         const {
-            assert!(N > 0, "quiescence needs a positive observation bound");
+            assert!(
+                STEP_US > 0 && IRQ_US > 0 && MARGIN_US > 0,
+                "step, IRQ and margin bounds must be positive"
+            );
+            assert!(STEP_US <= u64::MAX - IRQ_US);
+            assert!(STEP_US + IRQ_US <= u64::MAX - MARGIN_US);
         }
-        Self { checks: N }
+        Self {
+            duration: Duration::from_micros(STEP_US + IRQ_US + MARGIN_US),
+        }
+    }
+    pub const fn duration(self) -> Duration {
+        self.duration
     }
 }
 
@@ -406,6 +453,7 @@ pub struct ScopeRoute<P, E, S = fn(&P, WakePlan)> {
     acknowledge: fn(&P),
     enable: fn(&P) -> Result<(), E>,
     schedule: S,
+    now: fn(&P) -> Instant,
 }
 impl<P, E, S> ScopeRoute<P, E, S> {
     pub const fn new(
@@ -415,6 +463,7 @@ impl<P, E, S> ScopeRoute<P, E, S> {
         acknowledge: fn(&P),
         enable: fn(&P) -> Result<(), E>,
         schedule: S,
+        now: fn(&P) -> Instant,
     ) -> Self {
         Self {
             platform,
@@ -423,6 +472,7 @@ impl<P, E, S> ScopeRoute<P, E, S> {
             acknowledge,
             enable,
             schedule,
+            now,
         }
     }
     pub fn into_platform(self) -> P {
@@ -430,20 +480,52 @@ impl<P, E, S> ScopeRoute<P, E, S> {
     }
 }
 
-/// Caller access cannot escape its body. The publisher shares only atomic
-/// memory owned by the installation's backing, never memory inside Driver.
-pub struct ScopeAccess<'scope> {
-    irq: &'scope IrqPublisher<'scope>,
-    abandon: &'scope dyn Fn(),
-}
-impl ScopeAccess<'_> {
-    pub fn irq(&self) -> &IrqPublisher<'_> {
-        self.irq
+impl<P, E, S> Clock for ScopeRoute<P, E, S> {
+    fn now(&self) -> Instant {
+        (self.now)(&self.platform)
     }
-    /// Synchronously mask/close, wait within the configured bound, and stop
-    /// a drained driver. A timeout permanently quarantines the installation.
-    pub fn abandon(self) {
-        (self.abandon)();
+}
+
+/// Active caller-side scope owner. IRQ publication borrows this owner; it
+/// cannot escape its lifetime. Retirement and abandonment consume the owner,
+/// so a body pending after abandon holds no second shutdown obligation.
+pub struct ScopeAccess<
+    'latch,
+    H: Send + 'static = RadioRuntimeOwner,
+    I: InterruptOwner = ActiveEpoch<Moderated>,
+    P: Sync + 'static = (),
+    E: 'static = core::convert::Infallible,
+    S: WakeScheduler<P> = fn(&P, WakePlan),
+> {
+    scope: DriverScope<'latch, H, I, P, E, S>,
+}
+/// Completed consuming abandonment. It owns no driver, lease or stop right;
+/// the outcome has already moved to the composition's ScopeReturnLatch.
+pub struct ScopeAbandoned {
+    _private: (),
+}
+impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: WakeScheduler<P>>
+    ScopeAccess<'_, H, I, P, E, S>
+{
+    pub fn irq(&self) -> &IrqPublisher<'_> {
+        &self.scope.irq().mac
+    }
+    /// Synchronously mask, close, drain and stop once or permanently quarantine.
+    /// The active owner is consumed before returning this terminal receipt.
+    pub fn abandon(self) -> ScopeAbandoned {
+        let mut scope = ManuallyDrop::new(self.scope);
+        let quiescence = scope.lease.storage().abandon(scope.bound);
+        let returned = scope.complete_after(quiescence);
+        scope.latch.returned = Some(returned);
+        ScopeAbandoned { _private: () }
+    }
+    /// Keep the result until the executor finishes retirement, then detach.
+    /// Cancelling this await still owns the complete active scope; its Drop
+    /// performs the same bounded physical drain exactly once.
+    pub async fn retire<R>(self, result: R) -> R {
+        self.scope.retire().await;
+        drop(self);
+        result
     }
 }
 
@@ -535,8 +617,6 @@ pub struct ScopeStorage<
     irq: BackingCell<IrqRegion<I, P, E, S>>,
     driver: BackingCell<DriverRegion<H, I, P, E, S>>,
     header: BackingCell<Header>,
-    // Caller-side synchronous shutdown reply, never addressed by an ISR.
-    shutdown: Cell<Option<Quiescence>>,
     _pin: PhantomPinned,
 }
 type BackingCell<T> = UnsafeCell<MaybeUninit<T>>;
@@ -550,7 +630,6 @@ impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: Wak
             irq: UnsafeCell::new(MaybeUninit::uninit()),
             driver: UnsafeCell::new(MaybeUninit::uninit()),
             header: UnsafeCell::new(MaybeUninit::uninit()),
-            shutdown: Cell::new(None),
             _pin: PhantomPinned,
         }
     }
@@ -564,24 +643,30 @@ impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: Wak
         unsafe { (*self.irq.get()).assume_init_ref() }
     }
 
-    fn close_and_stop(&self, bound: DrainBound) -> Quiescence {
-        if let Some(outcome) = self.shutdown.get() {
-            return outcome;
-        }
+    fn detach_entry(&self) {
         let irq = self.irq();
         (irq.route.mask)(&irq.route.platform);
-        let quiescence = irq.route.slot.close(bound);
+        irq.route.slot.open.store(false, Ordering::SeqCst);
+        (irq.route.acknowledge)(&irq.route.platform);
+        // Keep the address while a previously entered actor may still use it.
+        // Ordinary finish joins before extraction; core quarantine never
+        // extracts. Closed entry rejects all later ISR/driver projections.
+    }
+
+    fn close_and_stop(&self, bound: DrainBound) -> Quiescence {
+        self.detach_entry();
+        let irq = self.irq();
+        let quiescence = irq.route.slot.close(bound, &*irq.route);
         (irq.route.acknowledge)(&irq.route.platform);
         if matches!(quiescence, Quiescence::TimedOut) {
-            self.shutdown.set(Some(Quiescence::TimedOut));
             return Quiescence::TimedOut;
         }
         irq.route
             .slot
             .entry
             .store(ptr::null_mut(), Ordering::Release);
-        if !irq.retired.load(Ordering::Acquire) {
-            irq.signals.abandon.store(true, Ordering::Release);
+        if irq.lifecycle.snapshot() != DriverStatus::Retired {
+            irq.lifecycle.abandon();
         }
         #[allow(
             unsafe_code,
@@ -594,18 +679,14 @@ impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: Wak
             owner: &irq.interrupts,
         };
         (driver.callbacks.stop)(&mut driver.hardware, &mut control);
-        self.shutdown.set(Some(Quiescence::Drained));
         Quiescence::Drained
     }
 
     fn abandon(&self, bound: DrainBound) -> Quiescence {
-        // Cancellation can drop Driver before the core's backend guard. Its
-        // completed reply is outside the extracted regions and stays valid.
-        if let Some(outcome) = self.shutdown.get() {
-            return outcome;
-        }
+        // The core grants one abandon call and then quarantines Driver
+        // without Drop. This path never extracts the initialized regions.
         let irq = self.irq();
-        irq.signals.abandon.store(true, Ordering::Release);
+        irq.lifecycle.abandon();
         irq.route
             .schedule
             .schedule(&irq.route.platform, WakePlan::Ready);
@@ -742,8 +823,7 @@ struct IrqRegion<I: InterruptOwner, P: Sync + 'static, E: 'static, S: WakeSchedu
     mac: IrqPublisher<'static>,
     power: PowerIrqPublisher<'static>,
     route: ManuallyDrop<ScopeRoute<P, E, S>>,
-    signals: DriverSignals,
-    retired: AtomicBool,
+    lifecycle: DriverLifecycle,
     completion: AtomicWaker,
 }
 struct DriverRegion<
@@ -762,12 +842,12 @@ struct DriverRegion<
 
 /// The bounded hardware operations bound by the installation's safety proof.
 pub struct DriverCallbacks<H, I: InterruptOwner> {
-    step: fn(&mut H, &mut IrqControl<'_, I>, DriverEvents, &DriverSignals) -> DriverStep,
+    step: fn(&mut H, &mut IrqControl<'_, I>, DriverEvents, DriverStatus) -> DriverStep,
     stop: fn(&mut H, &mut IrqControl<'_, I>),
 }
 impl<H, I: InterruptOwner> DriverCallbacks<H, I> {
     pub const fn new(
-        step: fn(&mut H, &mut IrqControl<'_, I>, DriverEvents, &DriverSignals) -> DriverStep,
+        step: fn(&mut H, &mut IrqControl<'_, I>, DriverEvents, DriverStatus) -> DriverStep,
         stop: fn(&mut H, &mut IrqControl<'_, I>),
     ) -> Self {
         Self { step, stop }
@@ -792,7 +872,8 @@ unsafe fn invoke<
     let driver = unsafe { &mut *context.cast::<DriverRegion<H, I, P, E, S>>() };
     // SAFETY: the admission count retains this separate shared IRQ region.
     let irq = unsafe { &*driver.irq };
-    if irq.retired.load(Ordering::Acquire) || irq.signals.abandonment_requested() {
+    let status = irq.lifecycle.snapshot();
+    if matches!(status, DriverStatus::Retired | DriverStatus::Abandoned) {
         return None;
     }
     // The permanent slot waker covers software and hardware publications.
@@ -812,7 +893,7 @@ unsafe fn invoke<
     let mut control = IrqControl {
         owner: &irq.interrupts,
     };
-    match (driver.callbacks.step)(&mut driver.hardware, &mut control, events, &irq.signals) {
+    match (driver.callbacks.step)(&mut driver.hardware, &mut control, events, status) {
         DriverStep::Wake(plan) => {
             irq.route.schedule.schedule(&irq.route.platform, plan);
             // Arm before checking. A fact published before the Acquire is
@@ -820,8 +901,7 @@ unsafe fn invoke<
             // The captured batch stays finite: this work belongs to next step.
             if driver.mac.has_pending()
                 || driver.power.has_pending()
-                || irq.signals.retirement_requested()
-                || irq.signals.abandonment_requested()
+                || irq.lifecycle.snapshot() != DriverStatus::Running
             {
                 irq.route
                     .schedule
@@ -830,7 +910,7 @@ unsafe fn invoke<
             None
         }
         DriverStep::Retired => {
-            irq.retired.store(true, Ordering::Release);
+            irq.lifecycle.retired();
             irq.completion.take()
         }
     }
@@ -910,10 +990,16 @@ impl<
     /// cores; acknowledge clears the SWI. The separate driver executor is
     /// exclusive, including across cores. IRQ-bank operations are serialized
     /// by the platform's cross-core critical-section implementation.
+    /// The route's Clock reads a monotonic source that continues advancing
+    /// while MAC/POWER and driver-SWI are masked, on every participating core.
+    /// Its read is bounded and does not wait for one of those actors. The
+    /// bound includes worst-case step/IRQ time and a scheduling/resolution
+    /// margin; no CPU-frequency-dependent spin count is a time bound.
     /// Step/stop and routing callbacks are bounded and do not unwind,
     /// synchronously poll, reenter driver dispatch or destroy the scope.
-    /// IRQ preemption is permitted. Step reports Retired only after accounting
-    /// for all accepted work; stop stops hardware/DMA before returning and
+    /// IRQ preemption is permitted. Step reports Retired only after observing
+    /// RetireRequested and accounting for all accepted work; stop stops
+    /// hardware/DMA before returning and
     /// runs once after quiescence.
     /// It is never invoked on timeout. Schedulers
     /// and composition wakers (including clone/drop) ONLY pend execution: they
@@ -934,7 +1020,6 @@ impl<
         latch: &'latch mut ScopeReturnLatch<H, I, P, E, S>,
     ) -> Self {
         let storage = lease.storage();
-        storage.shutdown.set(None);
         // SAFETY: an unused/Released lease has no live handoff borrower. A new
         // installation begins with its own empty facts, diagnostics and wakers.
         unsafe {
@@ -954,11 +1039,7 @@ impl<
                 mac,
                 power,
                 route: ManuallyDrop::new(route),
-                signals: DriverSignals {
-                    retire: AtomicBool::new(false),
-                    abandon: AtomicBool::new(false),
-                },
-                retired: AtomicBool::new(false),
+                lifecycle: DriverLifecycle::new(),
                 completion: AtomicWaker::new(),
             })
         };
@@ -996,15 +1077,11 @@ impl<
         unsafe { (*self.lease.storage().irq.get()).assume_init_ref() }
     }
 
-    async fn run_body<C, R>(
-        &self,
-        context: C,
-        body: impl for<'scope> AsyncFnOnce(C, ScopeAccess<'scope>) -> R,
-    ) -> Result<R, E> {
+    fn start(&self) -> Result<(), E> {
         let irq = self.irq();
         // run_port polls its body before drive. fail_stop may therefore have
         // closed this installation before the driver's first poll.
-        if !irq.signals.abandonment_requested() {
+        if irq.lifecycle.snapshot() != DriverStatus::Abandoned {
             (irq.route.mask)(&irq.route.platform);
             (irq.route.acknowledge)(&irq.route.platform);
             let header = self.lease.storage().header.get().cast::<Header>();
@@ -1015,53 +1092,46 @@ impl<
                 .schedule
                 .schedule(&irq.route.platform, WakePlan::Ready);
         }
-        let abandon = || self.abandon();
-        let result = body(
-            context,
-            ScopeAccess {
-                irq: &irq.mac,
-                abandon: &abandon,
-            },
-        )
-        .await;
-        if irq.signals.abandonment_requested() {
-            return Ok(result);
+        Ok(())
+    }
+
+    async fn retire(&self) {
+        let irq = self.irq();
+        if irq.lifecycle.snapshot() == DriverStatus::Abandoned {
+            return;
         }
-        irq.signals.retire.store(true, Ordering::Release);
+        irq.lifecycle.request_retire();
         irq.route
             .schedule
             .schedule(&irq.route.platform, WakePlan::Ready);
         poll_fn(|cx| {
             irq.completion.register(cx.waker());
-            if irq.retired.load(Ordering::Acquire) {
+            if matches!(
+                irq.lifecycle.snapshot(),
+                DriverStatus::Retired | DriverStatus::Abandoned
+            ) {
                 Poll::Ready(())
             } else {
                 Poll::Pending
             }
         })
         .await;
-        Ok(result)
-    }
-
-    fn abandon(&self) {
-        self.lease.storage().abandon(self.bound);
     }
 
     fn close_and_stop(&self) -> Quiescence {
         self.lease.storage().close_and_stop(self.bound)
     }
 
-    /// Run a body, publishing the returned lease or quarantine into its latch.
+    /// Transfer the active scope to its caller body. The body consumes its
+    /// access through retire or abandon; dropping active access cancels it.
+    /// After consuming abandon, pending body work owns no shutdown guard.
     pub async fn run<C, R>(
         self,
         context: C,
-        body: impl for<'scope> AsyncFnOnce(C, ScopeAccess<'scope>) -> R,
+        body: impl for<'scope> AsyncFnOnce(C, ScopeAccess<'scope, H, I, P, E, S>) -> R,
     ) -> Result<R, E> {
-        let result = self.run_body(context, body).await;
-        let mut scope = ManuallyDrop::new(self);
-        let returned = scope.complete();
-        scope.latch.returned = Some(returned);
-        result
+        self.start()?;
+        Ok(body(context, ScopeAccess { scope: self }).await)
     }
 
     /// Consume the scope through ordinary explicit teardown. No outcome relies
@@ -1072,6 +1142,10 @@ impl<
 
     fn complete(&mut self) -> ScopeReturn<H, I, P, E, S> {
         let quiescence = self.close_and_stop();
+        self.complete_after(quiescence)
+    }
+
+    fn complete_after(&mut self, quiescence: Quiescence) -> ScopeReturn<H, I, P, E, S> {
         if matches!(quiescence, Quiescence::TimedOut) {
             // Do not inspect, move or drop anything an admitted actor can use.
             // Losing this affine lease leaves its static backing quarantined.
@@ -1105,7 +1179,7 @@ impl<
                 route: ManuallyDrop::take(&mut irq.route),
             }
         };
-        let owners = if *irq.retired.get_mut() && !*irq.signals.abandon.get_mut() {
+        let owners = if irq.lifecycle.snapshot() == DriverStatus::Retired {
             DetachedOwners::Retired(owners)
         } else {
             DetachedOwners::Abandoned(Quarantined::new(owners))

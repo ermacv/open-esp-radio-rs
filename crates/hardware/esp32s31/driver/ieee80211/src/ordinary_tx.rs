@@ -30,6 +30,7 @@ use oer_esp32s31_ieee80211_mac::{
         TxPhyRate, TxSlot, TxSlotState,
     },
 };
+use oer_ieee80211_mac::frame::FrameControl;
 use oer_ieee80211_softmac::{MacTxPlan, MacTxQueueState, MacTxResult, MacTxStatus};
 
 use crate::tx::{WifiTxProgress, WifiTxWake};
@@ -220,6 +221,24 @@ pub enum OrdinaryTxError {
     /// A BlockAckReq was planned at a non-legacy rate; only the legacy
     /// publication program solicits a BlockAck for a single frame.
     BlockAckRequestRate,
+    /// A retry needs a complete, supported management/data Frame Control field.
+    InvalidRetryHeader,
+}
+
+/// Mark a retry before publication, preserving every other MPDU byte.
+/// The encoded MPDU length bounds the field, independently of slot capacity.
+pub(crate) fn mark_retry(buffer: &mut [u8], frame_length: usize) -> Result<(), OrdinaryTxError> {
+    let frame = buffer
+        .get_mut(TX_METADATA_SIZE..)
+        .and_then(|frame| frame.get_mut(..frame_length))
+        .ok_or(OrdinaryTxError::BufferSizeOverflow)?;
+    let control = frame
+        .first_chunk_mut::<2>()
+        .ok_or(OrdinaryTxError::InvalidRetryHeader)?;
+    let checked = FrameControl::new(u16::from_le_bytes(*control))
+        .ok_or(OrdinaryTxError::InvalidRetryHeader)?;
+    *control = checked.with_retry(true).get().to_le_bytes();
+    Ok(())
 }
 
 impl From<TxError> for OrdinaryTxError {
@@ -1335,7 +1354,7 @@ where
                     TxStatus::Success | TxStatus::TimedOut => {}
                 }
                 if set_retry_bit {
-                    self.mark_retry_bit()?;
+                    mark_retry(self.slot.as_mut().buffer_mut()?, active.frame_length)?;
                 }
                 self.publish_attempt(hardware, &mut active)?;
                 self.active = Some(active);
@@ -1407,11 +1426,6 @@ where
                 Ok(WifiTxProgress::Complete)
             }
         }
-    }
-
-    fn mark_retry_bit(&mut self) -> Result<(), OrdinaryTxError> {
-        self.slot.as_mut().buffer_mut()?[TX_METADATA_SIZE + 1] |= 0x08;
-        Ok(())
     }
 
     fn publish_attempt<H: TxHardware>(

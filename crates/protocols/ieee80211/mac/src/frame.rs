@@ -35,6 +35,14 @@ impl FrameControl {
     pub const fn with_protected(self, protected: bool) -> Self {
         Self((self.0 & !(1 << 14)) | if protected { 1 << 14 } else { 0 })
     }
+    /// Select Retry without changing the frame's kind, protection or direction.
+    pub const fn with_retry(self, retry: bool) -> Self {
+        Self((self.0 & !(1 << 11)) | if retry { 1 << 11 } else { 0 })
+    }
+    /// This MPDU repeats an earlier transmission.
+    pub const fn retry(self) -> bool {
+        self.0 & (1 << 11) != 0
+    }
     /// A data frame.
     pub const fn is_data(self) -> bool {
         (self.0 >> 2) & 3 == Self::DATA

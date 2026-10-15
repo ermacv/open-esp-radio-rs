@@ -1004,11 +1004,12 @@ where
             retry,
         } = values;
         debug_assert_eq!(self.state, PortState::Enabled, "a phase submits");
-        if retry
-            && let Ok(buffer) = slot.as_mut().buffer_mut()
-            && let Some(control) = buffer.get_mut(TX_METADATA_SIZE + 1)
-        {
-            *control |= 0x08;
+        if retry {
+            let marked = slot.as_mut().buffer_mut().map_err(OrdinaryTxError::from)
+                .and_then(|buffer| crate::ordinary_tx::mark_retry(buffer, len));
+            if let Err(error) = marked {
+                return Err(SubmitFault { fault: LowerMacFault::Tx(error), slot });
+            }
         }
         let common = self.plan_common(
             access_category,

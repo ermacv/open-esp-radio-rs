@@ -854,19 +854,30 @@ fn completion_faults_return_the_existing_backend_fault_without_a_tx_terminal() {
 
 #[test]
 fn a_transmission_the_plan_sends_again_carries_the_retry_bit() {
-    let mut hardware = Hardware::default();
-    let mut core = enabled(&mut hardware);
-    let mut request = values(&data_frame(BSSID), false);
-    request.retry = true;
-    submit(&mut core, &mut hardware, request).unwrap();
-    hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(0, 0));
-    let mut events = Events::default();
-    core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
-        .unwrap();
-    assert_eq!(
-        events.slots[0].as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE + 1],
-        0x09
-    );
+    {
+        use oer_ieee80211_mac::frame::FrameControl;
+
+        let mut hardware = Hardware::default();
+        let mut core = enabled(&mut hardware);
+        let mut frame = data_frame(BSSID).to_vec();
+        frame[2..4].copy_from_slice(&87_u16.to_le_bytes());
+        frame[22..24].copy_from_slice(&0x1370_u16.to_le_bytes());
+        frame.extend_from_slice(b"the original numbered MPDU");
+        let mut request = values(&frame, false);
+        request.retry = true;
+        submit(&mut core, &mut hardware, request).unwrap();
+        hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(0, 0));
+        let mut events = Events::default();
+        core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+            .unwrap();
+        let returned = events.slots[0].as_mut().buffer_mut().unwrap();
+        let returned = &returned[TX_METADATA_SIZE..TX_METADATA_SIZE + frame.len()];
+        let control =
+            FrameControl::new(u16::from_le_bytes(returned[..2].try_into().unwrap())).unwrap();
+        assert!(control.retry());
+        assert_eq!(control.with_retry(false).get().to_le_bytes(), frame[..2]);
+        assert_eq!(returned[2..], frame[2..]);
+    }
 }
 
 #[test]
@@ -2443,5 +2454,34 @@ fn the_backoff_is_drawn_from_the_category_s_contention_window() {
     // The vendor defaults: best effort's CWmin is 15 slots.
     for _ in 0..16 {
         assert!(core.draw_backoff(WmmAccessCategory::BestEffort) <= 15);
+    }
+}
+
+#[test]
+fn an_invalid_retry_header_returns_its_slot_without_publishing_or_rewriting() {
+    for frame in [
+        &[][..],
+        &[0x88][..],
+        &[0x89, 0x01][..], // Unsupported protocol version.
+        &[0x84, 0][..],    // A control frame is not a data/management retry.
+        &[0x0c, 0][..],    // Unsupported frame kind.
+    ] {
+        {
+            let mut hardware = Hardware::default();
+            let mut core = enabled(&mut hardware);
+            let mut request = values(frame, false);
+            let original = request.slot.as_mut().buffer_mut().unwrap().to_vec();
+            request.retry = true;
+            let Err(mut refused) = core.submit_checked(&mut hardware, request) else {
+                panic!("an invalid retry header must be refused before publication");
+            };
+            assert_eq!(
+                refused.fault,
+                LowerMacFault::Tx(OrdinaryTxError::InvalidRetryHeader)
+            );
+            assert_eq!(hardware.publications(), 0);
+            assert_eq!(refused.slot.as_mut().buffer_mut().unwrap()[..], original);
+            assert!(core.queues.iter().all(Option::is_none));
+        }
     }
 }

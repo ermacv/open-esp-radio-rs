@@ -54,8 +54,9 @@ pub type SourceLine = (PathBuf, u32);
 
 /// A reviewed decision on executed lines no compared observation depends on.
 /// Each place is a file below the chip's hardware scope (or a path of a shared
-/// hardware tree from the repository root) and a line's trimmed text, so the
-/// decision survives unrelated line shifts.
+/// hardware tree from the repository root) and trimmed source text ending at
+/// that line. A multiline anchor includes the preceding context, distinguishing
+/// identical dispatch lines in different functions without a line-number pin.
 #[derive(Clone, Copy, Debug)]
 pub struct Decision {
     pub reason: &'static str,
@@ -205,6 +206,24 @@ impl Sources {
             .ok_or_else(|| invalid(format!("{}:{line} is outside its file", file.display())))
     }
 
+    fn matches(&mut self, root: &Path, line: &SourceLine, anchor: &str) -> Result<bool> {
+        // Load the file and retain the same out-of-file diagnostic as a
+        // single-line anchor. Matching context never reviews its earlier lines.
+        self.text(root, line)?;
+        let expected: Vec<_> = anchor.lines().map(str::trim).collect();
+        let end = line.1 as usize;
+        let Some(start) = end
+            .checked_sub(expected.len())
+            .filter(|_| !expected.is_empty())
+        else {
+            return Ok(false);
+        };
+        Ok(self.files[&line.0][start..end]
+            .iter()
+            .map(String::as_str)
+            .eq(expected))
+    }
+
     /// Split `unobserved` into (reviewed, untriaged) under `decisions`.
     pub fn classify(
         &mut self,
@@ -216,11 +235,14 @@ impl Sources {
         let mut reviewed = BTreeSet::new();
         let mut untriaged = BTreeSet::new();
         for line in unobserved {
-            let text = self.text(root, line)?;
-            if places
-                .iter()
-                .any(|(path, (_, source))| line.0 == *path && text == *source)
-            {
+            let mut matched = false;
+            for (path, (_, source)) in &places {
+                if line.0 == *path && self.matches(root, line, source)? {
+                    matched = true;
+                    break;
+                }
+            }
+            if matched {
                 reviewed.insert(line.clone());
             } else {
                 untriaged.insert(line.clone());
@@ -239,9 +261,8 @@ impl Sources {
         let places = places(decisions);
         let mut matched = BTreeSet::new();
         for line in unobserved {
-            let text = self.text(root, line)?;
             for (path, place) in &places {
-                if line.0 == *path && text == place.1 {
+                if line.0 == *path && self.matches(root, line, place.1)? {
                     matched.insert(*place);
                 }
             }
@@ -298,6 +319,36 @@ mod tests {
             .unwrap();
         assert_eq!(reviewed, BTreeSet::from([line(2)]));
         assert_eq!(untriaged, BTreeSet::from([line(3)]));
+    }
+
+    #[test]
+    fn context_distinguishes_identical_lines_and_does_not_review_the_context() {
+        let root = root();
+        std::fs::write(root.path().join(FILE),
+            "fn first() {\n    match detail {\n    }\n}\n\nfn second() {\n    match detail {\n    }\n}\n",
+        ).unwrap();
+        let decisions = &[Decision {
+            reason: "only the second dispatch is covered by this stop goal",
+            places: &[(PLACE, "fn second() {\nmatch detail {")],
+        }];
+        let mut sources = Sources::default();
+        let unobserved = BTreeSet::from([line(2), line(6), line(7)]);
+        let (reviewed, untriaged) = sources
+            .classify(root.path(), decisions, &unobserved)
+            .unwrap();
+        assert_eq!(reviewed, BTreeSet::from([line(7)]));
+        assert_eq!(untriaged, BTreeSet::from([line(2), line(6)]));
+        sources.check(root.path(), decisions, &unobserved).unwrap();
+        assert!(
+            sources
+                .check(root.path(), decisions, &BTreeSet::from([line(2)]))
+                .is_err()
+        );
+        assert!(
+            sources
+                .check(root.path(), decisions, &BTreeSet::from([line(6)]))
+                .is_err()
+        );
     }
 
     #[test]

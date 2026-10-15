@@ -6,8 +6,11 @@ pub const DECISIONS: &[Decision] = &[
     Decision {
         reason: "ordinary status-four transmit-error classification (dispatcher argument zero), \
             compared through the stop goal: \
-            each dispatch case completes only at its reviewed retry leaf, which dependence on \
-            compared effects does not record",
+            queues 0/4 and details 0..6/0xc0 each complete only at the independently selected \
+            CTS-timeout, ACK-timeout, collision or security-key leaf. A wrong leaf fails the \
+            dispatch goal even though dependence on compared register effects does not record \
+            that control-flow observation. The context anchor covers only tx_error's dispatch, \
+            not rts_error's identical match line or unexecuted detail/selector combinations",
         places: &[
             (
                 "driver/ieee80211/mac/src/tx/completion.rs",
@@ -16,6 +19,12 @@ pub const DECISIONS: &[Decision] = &[
             (
                 "driver/ieee80211/mac/src/tx/completion.rs",
                 "1 | 3..=5 => Ok(Observed(TxStatus::Collision)),",
+            ),
+            (
+                "driver/ieee80211/mac/src/tx/completion.rs",
+                "const fn tx_error(detail: u8) -> Result<CompletionObservation, CompletionFault> {\n\
+                use CompletionObservation::Observed;\n\
+                match detail {",
             ),
         ],
     },

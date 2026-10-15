@@ -10,6 +10,12 @@ The harness holds the chip-neutral parts of vendor verification:
 | `oer-vendor-scenario-report` | `report/` | Reviewer reports: untriaged locations, function view, closure gateways, unclaimed compared pairs and the `xref`, `show`, `fields` and `prints` inspection of pinned vendor code |
 | `oer-vendor-scenario-cli` | `cli/` | The one scenario command line, `vendor-scenarios <chip> <command>`, which each chip's entry package `oer-<chip>-vendor-scenarios-cli` (`verification/<chip>/scenarios/cli`) runs: the chip installs its verdict library (never a dependent of this report package), the command is one of its scenarios or a reviewer command; `cargo verification scenario <chip>` builds and runs it |
 
+Observation decisions name the file and trimmed source text ending at the
+reviewed line. Include preceding lines when an identical statement occurs in
+different functions; only the final line is reviewed. `Sources::check` rejects
+an anchor whose line is now observed or unexecuted, including when only an
+identical statement in another context remains unobserved.
+
 The probe compiler is a host build tool; it owns no production behavior and
 does not depend on Blobray's executor. The
 [ESP32-S31](../esp32s31/probes/README.md) and

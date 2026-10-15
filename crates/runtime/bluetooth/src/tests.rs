@@ -20,7 +20,6 @@ use oer_bluetooth_hci_transport::{
     InProcessHciHostTransport, LeControllerHciEndpoints, LeControllerHciResources,
 };
 
-use oer_bluetooth_port::{EnableResult, Lent, PhaseParts, PortBackend, RadioPortEvents, Retire};
 use oer_bluetooth_radio::{
     CancelError, ClockError, ClockInfo, ConnectionAllowances, EventId, EventResult, EventsLost,
     LeCapabilities, LeInstant, LePhys, LeRadio, LeRadioBackend, LeRadioCapabilities,
@@ -28,6 +27,10 @@ use oer_bluetooth_radio::{
     RadioDuration, RadioOutcome, RadioRequest, RadioTiming, RequestError,
 };
 use oer_radio_port::Mint;
+use oer_radio_port::{
+    Call, Detached, DriverExit, EnableResult, InstallParts, Installed, PhaseParts, PortBackend,
+    PortPhase, Retire, Retired,
+};
 
 use oer_time::Duration;
 use oer_time_virtual::VirtualClock;
@@ -36,6 +39,16 @@ use crate::{Exhaustion, ServeExit, Served, serve};
 
 type Resources = LeControllerHciResources<NoopRawMutex, 4, 4, 258>;
 type Host<'c> = InProcessHciHostTransport<'c, NoopRawMutex, 4, 4, 258>;
+
+fn returned<B: PortBackend<Uninstalled = ()>, Out>(end: oer_radio_port::PortEnd<B, Out>) -> Out {
+    match end {
+        oer_radio_port::PortEnd::Uninstalled {
+            uninstalled: (),
+            output,
+        } => output,
+        _ => panic!("the body must uninstall its retained owners"),
+    }
+}
 
 fn config() -> LeControllerBootstrapConfig {
     LeControllerBootstrapConfig::new(
@@ -148,8 +161,8 @@ impl ModelRadio {
         }
     }
 
-    fn backend(&self) -> ModelBackend<'_> {
-        ModelBackend(self)
+    fn backend(&self) -> Installed<ModelBackend<'_>> {
+        Installed::new(ModelBackend(self), ())
     }
 
     fn poison(&self) {
@@ -243,7 +256,7 @@ struct ModelBackend<'m>(&'m ModelRadio);
 /// One part of a phase of the model radio.
 struct ModelPart<'m>(&'m ModelRadio);
 
-impl RadioPortEvents for ModelPart<'_> {
+impl PortPhase for ModelPart<'_> {
     type Event = ModelEvent;
     type Fault = ModelFault;
 
@@ -266,7 +279,15 @@ impl RadioPortEvents for ModelPart<'_> {
 }
 
 impl<'m> PortBackend for ModelBackend<'m> {
-    type Event = ModelEvent;
+    type Event<'id> = ModelEvent;
+    type Terminal<'id> = ModelEvent;
+    type Phase<'a, 'id>
+        = PhaseParts<ModelPart<'m>, ModelPart<'m>, ModelPart<'m>>
+    where
+        Self: 'a,
+        'id: 'a;
+    type Local<'id> = ();
+    type Driver = ();
     type Domain = LeRadio;
     type Fault = ModelFault;
     type Refusal = core::convert::Infallible;
@@ -274,21 +295,7 @@ impl<'m> PortBackend for ModelBackend<'m> {
         = ()
     where
         Self: 'a;
-    type Events<'a, 'id>
-        = ModelPart<'m>
-    where
-        Self: 'a,
-        'id: 'a;
-    type Control<'a, 'id>
-        = ModelPart<'m>
-    where
-        Self: 'a,
-        'id: 'a;
-    type Clients<'a, 'id>
-        = ModelPart<'m>
-    where
-        Self: 'a,
-        'id: 'a;
+
     type Pools = ();
     type Resources<'id> = ();
     type Held<'id> = ();
@@ -298,6 +305,7 @@ impl<'m> PortBackend for ModelBackend<'m> {
 
     fn enable(
         &mut self,
+        _: Call,
     ) -> impl Future<Output = EnableResult<core::convert::Infallible, ModelFault>> + '_ {
         let radio = self.0;
         core::future::ready(radio.check().map(|()| {
@@ -309,7 +317,9 @@ impl<'m> PortBackend for ModelBackend<'m> {
     /// Every admitted event ends, after the events the phase left.
     fn disable<'a, 'id>(
         &'a mut self,
+        _: Call,
         _: &'a Self::Held<'id>,
+        _: &'a mut Self::Local<'id>,
         sink: &'a mut dyn FnMut(ModelEvent),
     ) -> impl Future<Output = Result<(), Poisoned<ModelFault>>> + 'a
     where
@@ -343,56 +353,75 @@ impl<'m> PortBackend for ModelBackend<'m> {
         }
     }
 
-    fn now(&self) -> impl Future<Output = PortResult<LeInstant, ClockError, ModelFault>> + '_ {
+    fn now(
+        &self,
+        _: Call,
+    ) -> impl Future<Output = PortResult<LeInstant, ClockError, ModelFault>> + '_ {
         core::future::ready(self.0.clock())
     }
 
-    fn resources<'id>(&mut self, mint: Mint<'id, Self::Pools>) -> ((), ()) {
+    fn resources<'id>(&mut self, mint: Mint<'id, Self::Pools>) -> InstallParts<'id, Self> {
         mint.into_pools();
-        ((), ())
+        InstallParts {
+            held: (),
+            local: (),
+            resources: (),
+        }
     }
 
-    fn setup<'a, 'id>(&'a mut self) -> Lent<'a, Self::Setup<'a, 'id>> {
-        Lent::new(())
-    }
+    fn setup<'a, 'id>(&'a mut self, _: Call, _: &'a mut Self::Local<'id>) -> Self::Setup<'a, 'id> {}
 
-    fn split<'a, 'id>(
+    fn phase<'a, 'id>(
         &'a mut self,
+        _: Call,
         _: &'a Self::Held<'id>,
-    ) -> PhaseParts<'a, Self::Events<'a, 'id>, Self::Control<'a, 'id>, Self::Clients<'a, 'id>>
+        _: &'a mut Self::Local<'id>,
+    ) -> Self::Phase<'a, 'id>
     where
         'id: 'a,
     {
         PhaseParts {
-            events: Lent::new(ModelPart(self.0)),
-            control: Lent::new(ModelPart(self.0)),
-            clients: Lent::new(ModelPart(self.0)),
+            events: ModelPart(self.0),
+            control: ModelPart(self.0),
+            clients: ModelPart(self.0),
         }
     }
 
     /// The model serves everything in its calls: nothing to drive.
-    fn drive<'p, 'id>(
-        &mut self,
+    async fn drive<'p, 'id>(
+        _: Self::Driver,
         _: &'p Self::Held<'id>,
-        _: Retire<'p>,
-    ) -> impl Future<Output = ()> + use<'p, 'id, 'm> {
-        core::future::ready(())
+        retire: Retire<'p>,
+    ) -> DriverExit<Self::State, Self::Fault> {
+        DriverExit::Retired {
+            state: (),
+            proof: retire.requested().await,
+        }
     }
 
-    fn retire_bound(&self) -> impl Future<Output = ()> + '_ {
+    fn retire_bound(&self, _: Call) -> impl Future<Output = ()> + use<'m> {
         core::future::pending()
     }
 
-    fn detach<'id>(&mut self, (): &()) {
+    fn detach<'id>(&mut self, _: oer_radio_port::Detach, (): &()) {
         self.0.lifecycle.borrow_mut().push("detach");
     }
 
-    fn uninstall<'id>(self, (): (), (): (), (): ()) {
+    fn uninstall<'id>(
+        self,
+        _: Self::Held<'id>,
+        _: Self::Local<'id>,
+        _: Retired<'id, Self::State>,
+        _: Detached<'id>,
+        _: Self::Uninstall,
+    ) {
         self.0.lifecycle.borrow_mut().push("uninstall");
     }
 
-    fn abandon(&mut self) {
+    fn abandon(&mut self, call: oer_radio_port::Quarantine) -> oer_radio_port::Abandon {
         self.0.lifecycle.borrow_mut().push("abandon");
+
+        oer_radio_port::Abandon::Stopped(call.stopped())
     }
 }
 
@@ -415,6 +444,32 @@ impl LeCapabilities for ModelCaps {
 }
 
 impl<'m> LeRadioBackend for ModelBackend<'m> {
+    type Outcome = ModelEvent;
+    type Events<'a, 'id>
+        = ModelPart<'m>
+    where
+        Self: 'a,
+        'id: 'a;
+    type Control<'a, 'id>
+        = ModelPart<'m>
+    where
+        Self: 'a,
+        'id: 'a;
+    type Clients<'a, 'id>
+        = ModelPart<'m>
+    where
+        Self: 'a,
+        'id: 'a;
+    fn parts<'b, 'a, 'id>(
+        phase: &'b mut Self::Phase<'a, 'id>,
+    ) -> &'b mut PhaseParts<Self::Events<'a, 'id>, Self::Control<'a, 'id>, Self::Clients<'a, 'id>>
+    where
+        Self: 'a,
+        'id: 'a,
+    {
+        phase
+    }
+
     type Caps = ModelCaps;
 
     const CLOCK: ClockInfo<LeRadio> = ClockInfo::MONOTONIC_MICROS;
@@ -483,8 +538,15 @@ fn serves_bootstrap_and_ends_when_the_transport_closes() {
     let LeControllerHciEndpoints { host, controller } = resources.split();
     let mut core = LeController::<'_, NoCapabilities, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
-    let ((exit, uninstalled), ()) = block_on(join(
-        serve(NoRadio, (), &controller, &mut core, &clock, pending()),
+    let (end, ()) = block_on(join(
+        serve(
+            Installed::new(NoRadio, ()),
+            (),
+            &controller,
+            &mut core,
+            &clock,
+            pending(),
+        ),
         async {
             host.write(&Reset::new()).await.unwrap();
             assert_eq!(status(&host).await, 0x00);
@@ -494,10 +556,7 @@ fn serves_bootstrap_and_ends_when_the_transport_closes() {
             controller.close();
         },
     ));
-    assert_eq!(
-        (exit, uninstalled),
-        (Served::Stopped(ServeExit::Closed), Some(()))
-    );
+    assert_eq!(returned(end), Served::Stopped(ServeExit::Closed));
 }
 
 #[test]
@@ -506,8 +565,15 @@ fn a_radio_without_hardware_fails_advertising_enable() {
     let LeControllerHciEndpoints { host, controller } = resources.split();
     let mut core = LeController::<'_, NoCapabilities, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
-    let ((exit, uninstalled), ()) = block_on(join(
-        serve(NoRadio, (), &controller, &mut core, &clock, pending()),
+    let (end, ()) = block_on(join(
+        serve(
+            Installed::new(NoRadio, ()),
+            (),
+            &controller,
+            &mut core,
+            &clock,
+            pending(),
+        ),
         async {
             host.write(&Reset::new()).await.unwrap();
             status(&host).await;
@@ -521,10 +587,7 @@ fn a_radio_without_hardware_fails_advertising_enable() {
             controller.close();
         },
     ));
-    assert_eq!(
-        (exit, uninstalled),
-        (Served::Stopped(ServeExit::Closed), Some(()))
-    );
+    assert_eq!(returned(end), Served::Stopped(ServeExit::Closed));
 }
 
 #[test]
@@ -534,7 +597,7 @@ fn advertising_events_follow_their_outcomes() {
     let mut core = LeController::<'_, ModelCaps, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
     let radio = ModelRadio::new();
-    let ((exit, uninstalled), ()) = block_on(join(
+    let (end, ()) = block_on(join(
         serve(
             radio.backend(),
             (),
@@ -572,10 +635,7 @@ fn advertising_events_follow_their_outcomes() {
             controller.close();
         },
     ));
-    assert_eq!(
-        (exit, uninstalled),
-        (Served::Stopped(ServeExit::Closed), Some(()))
-    );
+    assert_eq!(returned(end), Served::Stopped(ServeExit::Closed));
 }
 
 #[test]
@@ -585,7 +645,7 @@ fn refused_requests_are_retried_after_a_delay() {
     let mut core = LeController::<'_, ModelCaps, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
     let radio = ModelRadio::new();
-    let ((exit, uninstalled), ()) = block_on(join(
+    let (end, ()) = block_on(join(
         serve(
             radio.backend(),
             (),
@@ -618,14 +678,11 @@ fn refused_requests_are_retried_after_a_delay() {
             controller.close();
         },
     ));
-    assert_eq!(
-        (exit, uninstalled),
-        (Served::Stopped(ServeExit::Closed), Some(()))
-    );
+    assert_eq!(returned(end), Served::Stopped(ServeExit::Closed));
 }
 
 #[test]
-fn a_port_poisoned_before_enable_is_fail_stopped_with_its_cause() {
+fn a_port_poisoned_before_enable_uninstalls_with_its_cause() {
     let mut resources = resources();
     let LeControllerHciEndpoints { controller, .. } = resources.split();
     let mut core = LeController::<'_, ModelCaps, 12, 1>::new(controller_config(), None);
@@ -633,27 +690,27 @@ fn a_port_poisoned_before_enable_is_fail_stopped_with_its_cause() {
     let radio = ModelRadio::new();
     radio.poison();
     assert_eq!(
-        block_on(serve(
+        returned(block_on(serve(
             radio.backend(),
             (),
             &controller,
             &mut core,
             &clock,
             pending()
-        )),
-        (Served::Poisoned(ModelFault), None)
+        ))),
+        Served::Poisoned(ModelFault)
     );
-    assert_eq!(*radio.lifecycle.borrow(), ["abandon"]);
+    assert_eq!(*radio.lifecycle.borrow(), ["detach", "uninstall"]);
 }
 
 #[test]
-fn a_port_poisoned_while_serving_is_fail_stopped_without_a_disable() {
+fn a_port_poisoned_while_serving_drains_before_returning_owners() {
     let mut resources = resources();
     let LeControllerHciEndpoints { host, controller } = resources.split();
     let mut core = LeController::<'_, ModelCaps, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
     let radio = ModelRadio::new();
-    let ((exit, uninstalled), ()) = block_on(join(
+    let (end, ()) = block_on(join(
         serve(
             radio.backend(),
             (),
@@ -664,12 +721,15 @@ fn a_port_poisoned_while_serving_is_fail_stopped_without_a_disable() {
         ),
         async {
             advertise(&host, &radio).await;
+            let first = radio.advertised()[0];
+            radio.outcomes.send(Ok(ModelEvent(first))).await;
             radio.poison();
         },
     ));
-    assert_eq!((exit, uninstalled), (Served::Poisoned(ModelFault), None));
-    assert_eq!(*radio.lifecycle.borrow(), ["enable", "abandon"]);
+    assert_eq!(returned(end), Served::Poisoned(ModelFault));
+    assert_eq!(*radio.lifecycle.borrow(), ["enable", "detach", "uninstall"]);
     assert!(radio.handed.borrow().is_empty());
+    assert_eq!(radio.taken.borrow().len(), 1);
 }
 
 #[test]
@@ -678,8 +738,15 @@ fn host_data_without_a_connection_does_not_block_commands() {
     let LeControllerHciEndpoints { host, controller } = resources.split();
     let mut core = LeController::<'_, NoCapabilities, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
-    let ((exit, uninstalled), ()) = block_on(join(
-        serve(NoRadio, (), &controller, &mut core, &clock, pending()),
+    let (end, ()) = block_on(join(
+        serve(
+            Installed::new(NoRadio, ()),
+            (),
+            &controller,
+            &mut core,
+            &clock,
+            pending(),
+        ),
         async {
             host.write(&Reset::new()).await.unwrap();
             assert_eq!(status(&host).await, 0x00);
@@ -697,10 +764,7 @@ fn host_data_without_a_connection_does_not_block_commands() {
             controller.close();
         },
     ));
-    assert_eq!(
-        (exit, uninstalled),
-        (Served::Stopped(ServeExit::Closed), Some(()))
-    );
+    assert_eq!(returned(end), Served::Stopped(ServeExit::Closed));
 }
 
 #[test]
@@ -714,7 +778,7 @@ fn advertising_enable_and_disable_report_the_active_roles() {
         advertising: true,
         ..RadioActivity::IDLE
     };
-    let ((exit, uninstalled), ()) = block_on(join(
+    let (end, ()) = block_on(join(
         serve(
             radio.backend(),
             (),
@@ -750,10 +814,7 @@ fn advertising_enable_and_disable_report_the_active_roles() {
             controller.close();
         },
     ));
-    assert_eq!(
-        (exit, uninstalled),
-        (Served::Stopped(ServeExit::Closed), Some(()))
-    );
+    assert_eq!(returned(end), Served::Stopped(ServeExit::Closed));
 }
 
 #[test]
@@ -763,7 +824,7 @@ fn required_epoch_exhaustion_exits_with_context_and_retains_the_core() {
     let mut core = LeController::<'_, ModelCaps, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
     let radio = ModelRadio::new();
-    let ((exit, uninstalled), ()) = block_on(join(
+    let (end, ()) = block_on(join(
         serve(
             radio.backend(),
             (),
@@ -787,10 +848,10 @@ fn required_epoch_exhaustion_exits_with_context_and_retains_the_core() {
                 .await;
         },
     ));
+    let exit = returned(end);
     let Served::Stopped(ServeExit::EpochExhausted(Exhaustion::Planning(error))) = exit else {
         panic!("required planning must end service: {exit:?}")
     };
-    assert_eq!(uninstalled, Some(()));
     assert_eq!(
         error.role,
         oer_bluetooth_controller::PlanningRole::Advertising
@@ -826,7 +887,7 @@ fn a_requested_stop_ends_every_admitted_event_once_before_returning() {
     let clock: VirtualClock = VirtualClock::new();
     let radio = ModelRadio::new();
     let stop = Signal::<NoopRawMutex, ()>::new();
-    let ((exit, uninstalled), ()) = block_on(join(
+    let (end, ()) = block_on(join(
         serve(
             radio.backend(),
             (),
@@ -840,10 +901,7 @@ fn a_requested_stop_ends_every_admitted_event_once_before_returning() {
             stop.signal(());
         },
     ));
-    assert_eq!(
-        (exit, uninstalled),
-        (Served::Stopped(ServeExit::Stopped), Some(()))
-    );
+    assert_eq!(returned(end), Served::Stopped(ServeExit::Stopped));
     let first = radio.advertised()[0];
     // The disable hands the admitted event's end to the core, once.
     assert!(radio.taken.borrow().is_empty());
@@ -864,7 +922,7 @@ fn an_exhausted_clock_stops_the_service_and_accounts_the_admitted_event() {
     let mut core = LeController::<'_, ModelCaps, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
     let radio = ModelRadio::new();
-    let ((exit, uninstalled), ()) = block_on(join(
+    let (end, ()) = block_on(join(
         serve(
             radio.backend(),
             (),
@@ -881,11 +939,8 @@ fn an_exhausted_clock_stops_the_service_and_accounts_the_admitted_event() {
         },
     ));
     assert_eq!(
-        (exit, uninstalled),
-        (
-            Served::Stopped(ServeExit::EpochExhausted(Exhaustion::Clock)),
-            Some(())
-        )
+        returned(end),
+        Served::Stopped(ServeExit::EpochExhausted(Exhaustion::Clock))
     );
     assert_eq!(radio.advertised().len(), 1);
     assert_eq!(
@@ -901,7 +956,7 @@ fn an_exhausted_admission_stops_without_a_retry() {
     let mut core = LeController::<'_, ModelCaps, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
     let radio = ModelRadio::new();
-    let ((exit, uninstalled), ()) = block_on(join(
+    let (end, ()) = block_on(join(
         serve(
             radio.backend(),
             (),
@@ -918,11 +973,8 @@ fn an_exhausted_admission_stops_without_a_retry() {
         },
     ));
     assert_eq!(
-        (exit, uninstalled),
-        (
-            Served::Stopped(ServeExit::EpochExhausted(Exhaustion::Clock)),
-            Some(())
-        )
+        returned(end),
+        Served::Stopped(ServeExit::EpochExhausted(Exhaustion::Clock))
     );
     // The configuration, the first event and the one refused submission.
     assert_eq!(*radio.submitted.borrow(), 3);
@@ -936,7 +988,7 @@ fn a_disable_that_poisons_keeps_why_the_service_stopped() {
     let clock: VirtualClock = VirtualClock::new();
     let radio = ModelRadio::new();
     radio.poison_disable.set(true);
-    let ((exit, uninstalled), ()) = block_on(join(
+    let (end, ()) = block_on(join(
         serve(
             radio.backend(),
             (),
@@ -953,16 +1005,13 @@ fn a_disable_that_poisons_keeps_why_the_service_stopped() {
         },
     ));
     assert_eq!(
-        (exit, uninstalled),
-        (
-            Served::DisableFailed {
-                exit: ServeExit::EpochExhausted(Exhaustion::Clock),
-                cause: ModelFault,
-            },
-            None
-        )
+        returned(end),
+        Served::DisableFailed {
+            exit: ServeExit::EpochExhausted(Exhaustion::Clock),
+            cause: ModelFault,
+        }
     );
-    assert_eq!(*radio.lifecycle.borrow(), ["enable", "abandon"]);
+    assert_eq!(*radio.lifecycle.borrow(), ["enable", "detach", "uninstall"]);
 }
 
 #[test]
@@ -972,14 +1021,14 @@ fn a_port_that_admits_nothing_stops_at_once() {
     let mut core = LeController::<'_, NoCapabilities, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
     assert_eq!(
-        block_on(serve(
-            NoRadio,
+        returned(block_on(serve(
+            Installed::new(NoRadio, ()),
             (),
             &controller,
             &mut core,
             &clock,
             core::future::ready(())
-        )),
-        (Served::Stopped(ServeExit::Stopped), Some(()))
+        ))),
+        Served::Stopped(ServeExit::Stopped)
     );
 }

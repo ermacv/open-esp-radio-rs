@@ -6,7 +6,10 @@ use core::{
     task::{Context, Poll, Waker},
 };
 
-use oer_ieee802154_port::{Ended, Owner, PortBody, RadioPortEvents, run_port};
+use oer_radio_port::{
+    Call, Detached, DriverExit, Ended, InstallParts, Installed, Owner, PortBody, PortPhase,
+    Retired, run_port,
+};
 use oer_radio_port::{EventsLost, Poisoned};
 
 use super::*;
@@ -50,7 +53,10 @@ fn transmission<'f>(frame: &'f [u8]) -> SupportedTransmit<'f, ModelCaps> {
 fn run<B: PortBody<OwnedModel>>(body: B) -> ModelHandle {
     let (model, handle) = OwnedModel::new();
     HANDLE.with(|slot| *slot.borrow_mut() = Some(handle.clone()));
-    let uninstalled = ready(run_port(model, body)).unwrap_or_else(|| panic!("the body uninstalls"));
+    let oer_radio_port::PortEnd::Uninstalled { uninstalled, .. } = ready(run_port(model, body))
+    else {
+        panic!("the body uninstalls")
+    };
     assert!(!uninstalled.abandoned());
     handle
 }
@@ -59,18 +65,21 @@ fn run<B: PortBody<OwnedModel>>(body: B) -> ModelHandle {
 fn the_operation_permit_comes_back_before_its_terminal_is_handed_out() {
     struct Body;
     impl PortBody<OwnedModel> for Body {
+        type Output = ();
+
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
             resources: ModelResources<'id>,
-        ) -> Ended<'id, OwnedModel> {
+        ) -> Ended<'id, OwnedModel, ()> {
             let [mut seat0, mut seat1] = resources.operation;
             let zero = owner.setup().configure(resources.interface0.interface);
             let one = owner.setup().configure(resources.interface1.interface);
             let mut owner = owner.enable().await.unwrap_or_else(|_| panic!("enabled"));
             let handle = {
-                let parts = owner.split();
-                let mut events = parts.events;
+                let mut phase = owner.phase();
+                let parts = &mut *phase;
+                let events = &mut parts.events;
                 let first = parts.clients.client(&zero);
                 let second = parts.clients.client(&one);
                 let permit = ready(first.operation(&mut seat0));
@@ -110,7 +119,7 @@ fn the_operation_permit_comes_back_before_its_terminal_is_handed_out() {
                 .disable(&mut |_| panic!("nothing is left"))
                 .await
                 .unwrap_or_else(|_| panic!("not poisoned"));
-            owner.uninstall(())
+            oer_radio_port::Ended::uninstall(owner, (), ())
         }
     }
     run(Body);
@@ -134,17 +143,20 @@ fn parts_handle() -> ModelHandle {
 fn takers_of_the_operation_are_served_in_arrival_order_across_interfaces() {
     struct Body;
     impl PortBody<OwnedModel> for Body {
+        type Output = ();
+
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
             resources: ModelResources<'id>,
-        ) -> Ended<'id, OwnedModel> {
+        ) -> Ended<'id, OwnedModel, ()> {
             let [mut seat0, mut seat1] = resources.operation;
             let zero = owner.setup().configure(resources.interface0.interface);
             let one = owner.setup().configure(resources.interface1.interface);
             let mut owner = owner.enable().await.unwrap_or_else(|_| panic!("enabled"));
             {
-                let parts = owner.split();
+                let mut phase = owner.phase();
+                let parts = &mut *phase;
                 let first = parts.clients.client(&zero);
                 let second = parts.clients.client(&one);
                 let held = ready(first.operation(&mut seat0));
@@ -171,7 +183,7 @@ fn takers_of_the_operation_are_served_in_arrival_order_across_interfaces() {
                 .disable(&mut |_| panic!("nothing is left"))
                 .await
                 .unwrap_or_else(|_| panic!("not poisoned"));
-            owner.uninstall(())
+            oer_radio_port::Ended::uninstall(owner, (), ())
         }
     }
     run(Body);
@@ -181,16 +193,19 @@ fn takers_of_the_operation_are_served_in_arrival_order_across_interfaces() {
 fn disable_hands_leftover_terminals_to_the_sink_and_takes_their_permits_back() {
     struct Body;
     impl PortBody<OwnedModel> for Body {
+        type Output = ();
+
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
             resources: ModelResources<'id>,
-        ) -> Ended<'id, OwnedModel> {
+        ) -> Ended<'id, OwnedModel, ()> {
             let [mut seat0, _] = resources.operation;
             let zero = owner.setup().configure(resources.interface0.interface);
             let mut owner = owner.enable().await.unwrap_or_else(|_| panic!("enabled"));
             let id = {
-                let parts = owner.split();
+                let mut phase = owner.phase();
+                let parts = &mut *phase;
                 let client = parts.clients.client(&zero);
                 let permit = ready(client.operation(&mut seat0));
                 let scan = SupportedEnergyScan::new(channel(20), 128)
@@ -213,7 +228,8 @@ fn disable_hands_leftover_terminals_to_the_sink_and_takes_their_permits_back() {
             // The next phase admits an operation at once.
             let mut owner = owner.enable().await.unwrap_or_else(|_| panic!("enabled"));
             {
-                let parts = owner.split();
+                let mut phase = owner.phase();
+                let parts = &mut *phase;
                 let client = parts.clients.client(&zero);
                 assert!(poll_once(pin!(client.operation(&mut seat0))).is_ready());
             }
@@ -221,7 +237,7 @@ fn disable_hands_leftover_terminals_to_the_sink_and_takes_their_permits_back() {
                 .disable(&mut |_| {})
                 .await
                 .unwrap_or_else(|_| panic!("not poisoned"));
-            owner.uninstall(())
+            oer_radio_port::Ended::uninstall(owner, (), ())
         }
     }
     run(Body);
@@ -231,16 +247,19 @@ fn disable_hands_leftover_terminals_to_the_sink_and_takes_their_permits_back() {
 fn the_radio_receives_while_any_interface_asks_on_one_shared_channel() {
     struct Body;
     impl PortBody<OwnedModel> for Body {
+        type Output = ();
+
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
             resources: ModelResources<'id>,
-        ) -> Ended<'id, OwnedModel> {
+        ) -> Ended<'id, OwnedModel, ()> {
             let zero = owner.setup().configure(resources.interface0.interface);
             let one = owner.setup().configure(resources.interface1.interface);
             let mut owner = owner.enable().await.unwrap_or_else(|_| panic!("enabled"));
             {
-                let parts = owner.split();
+                let mut phase = owner.phase();
+                let parts = &mut *phase;
                 let first = parts.clients.client(&zero);
                 let second = parts.clients.client(&one);
                 let handle = parts_handle();
@@ -265,7 +284,7 @@ fn the_radio_receives_while_any_interface_asks_on_one_shared_channel() {
                 .disable(&mut |_| {})
                 .await
                 .unwrap_or_else(|_| panic!("not poisoned"));
-            owner.uninstall(())
+            oer_radio_port::Ended::uninstall(owner, (), ())
         }
     }
     run(Body);
@@ -275,16 +294,19 @@ fn the_radio_receives_while_any_interface_asks_on_one_shared_channel() {
 fn a_window_is_a_wish_that_owes_no_event() {
     struct Body;
     impl PortBody<OwnedModel> for Body {
+        type Output = ();
+
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
             resources: ModelResources<'id>,
-        ) -> Ended<'id, OwnedModel> {
+        ) -> Ended<'id, OwnedModel, ()> {
             let zero = owner.setup().configure(resources.interface0.interface);
             let mut owner = owner.enable().await.unwrap_or_else(|_| panic!("enabled"));
             {
-                let parts = owner.split();
-                let mut events = parts.events;
+                let mut phase = owner.phase();
+                let parts = &mut *phase;
+                let events = &mut parts.events;
                 let client = parts.clients.client(&zero);
                 let handle = parts_handle();
                 let window = || {
@@ -321,7 +343,7 @@ fn a_window_is_a_wish_that_owes_no_event() {
                 .disable(&mut |_| panic!("no window owes a terminal"))
                 .await
                 .unwrap_or_else(|_| panic!("not poisoned"));
-            owner.uninstall(())
+            oer_radio_port::Ended::uninstall(owner, (), ())
         }
     }
     run(Body);
@@ -331,17 +353,20 @@ fn a_window_is_a_wish_that_owes_no_event() {
 fn a_cancel_ends_the_operation_once() {
     struct Body;
     impl PortBody<OwnedModel> for Body {
+        type Output = ();
+
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
             resources: ModelResources<'id>,
-        ) -> Ended<'id, OwnedModel> {
+        ) -> Ended<'id, OwnedModel, ()> {
             let [_, mut seat1] = resources.operation;
             let one = owner.setup().configure(resources.interface1.interface);
             let mut owner = owner.enable().await.unwrap_or_else(|_| panic!("enabled"));
             {
-                let parts = owner.split();
-                let mut events = parts.events;
+                let mut phase = owner.phase();
+                let parts = &mut *phase;
+                let events = &mut parts.events;
                 let client = parts.clients.client(&one);
                 let permit = ready(client.operation(&mut seat1));
                 let cca =
@@ -369,7 +394,7 @@ fn a_cancel_ends_the_operation_once() {
                 .disable(&mut |_| {})
                 .await
                 .unwrap_or_else(|_| panic!("not poisoned"));
-            owner.uninstall(())
+            oer_radio_port::Ended::uninstall(owner, (), ())
         }
     }
     run(Body);
@@ -379,17 +404,20 @@ fn a_cancel_ends_the_operation_once() {
 fn a_radio_fault_ends_admitted_work_first_then_poisons() {
     struct Body;
     impl PortBody<OwnedModel> for Body {
+        type Output = ();
+
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
             resources: ModelResources<'id>,
-        ) -> Ended<'id, OwnedModel> {
+        ) -> Ended<'id, OwnedModel, ()> {
             let [mut seat0, _] = resources.operation;
             let zero = owner.setup().configure(resources.interface0.interface);
             let mut owner = owner.enable().await.unwrap_or_else(|_| panic!("enabled"));
             {
-                let parts = owner.split();
-                let mut events = parts.events;
+                let mut phase = owner.phase();
+                let parts = &mut *phase;
+                let events = &mut parts.events;
                 let client = parts.clients.client(&zero);
                 ready(client.receive(channel(15))).unwrap_or_else(|_| panic!("not poisoned"));
                 let permit = ready(client.operation(&mut seat0));
@@ -423,7 +451,7 @@ fn a_radio_fault_ends_admitted_work_first_then_poisons() {
             }
             match owner.disable(&mut |_| {}).await {
                 Ok(_) => panic!("a poisoned backend does not disable"),
-                Err(poisoned) => poisoned.uninstall(()),
+                Err(poisoned) => oer_radio_port::Ended::uninstall(poisoned, (), ()),
             }
         }
     }
@@ -434,17 +462,20 @@ fn a_radio_fault_ends_admitted_work_first_then_poisons() {
 fn a_reception_overflow_is_reported_once_and_loses_no_terminal() {
     struct Body;
     impl PortBody<OwnedModel> for Body {
+        type Output = ();
+
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
             resources: ModelResources<'id>,
-        ) -> Ended<'id, OwnedModel> {
+        ) -> Ended<'id, OwnedModel, ()> {
             let [mut seat0, _] = resources.operation;
             let zero = owner.setup().configure(resources.interface0.interface);
             let mut owner = owner.enable().await.unwrap_or_else(|_| panic!("enabled"));
             {
-                let parts = owner.split();
-                let mut events = parts.events;
+                let mut phase = owner.phase();
+                let parts = &mut *phase;
+                let events = &mut parts.events;
                 let client = parts.clients.client(&zero);
                 let handle = parts_handle();
                 ready(client.receive(channel(11))).unwrap_or_else(|_| panic!("not poisoned"));
@@ -506,7 +537,7 @@ fn a_reception_overflow_is_reported_once_and_loses_no_terminal() {
                 .unwrap_or_else(|_| panic!("not poisoned"));
             assert_eq!(ended.len(), 1);
             assert!(ended[0].is_some());
-            owner.uninstall(())
+            oer_radio_port::Ended::uninstall(owner, (), ())
         }
     }
     run(Body);
@@ -516,11 +547,13 @@ fn a_reception_overflow_is_reported_once_and_loses_no_terminal() {
 fn pending_entries_hold_their_interface_slots_across_phases() {
     struct Body;
     impl PortBody<OwnedModel> for Body {
+        type Output = ();
+
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
             resources: ModelResources<'id>,
-        ) -> Ended<'id, OwnedModel> {
+        ) -> Ended<'id, OwnedModel, ()> {
             let ModelResources {
                 interface0,
                 interface1,
@@ -533,7 +566,8 @@ fn pending_entries_hold_their_interface_slots_across_phases() {
             let [short, _] = interface1.short;
             let [extended, _] = interface0.extended;
             let (short, extended) = {
-                let parts = owner.split();
+                let mut phase = owner.phase();
+                let parts = &mut *phase;
                 let first = parts.clients.client(&zero);
                 let second = parts.clients.client(&one);
                 second.set_pending_mode(has, AutoPendingMode::Enhanced);
@@ -559,7 +593,8 @@ fn pending_entries_hold_their_interface_slots_across_phases() {
                 .await
                 .unwrap_or_else(|_| panic!("enabled"));
             {
-                let parts = owner.split();
+                let mut phase = owner.phase();
+                let parts = &mut *phase;
                 let second = parts.clients.client(&one);
                 let first = parts.clients.client(&zero);
                 let _slot = second.remove_pending_short(short);
@@ -574,7 +609,7 @@ fn pending_entries_hold_their_interface_slots_across_phases() {
                 .disable(&mut |_| {})
                 .await
                 .unwrap_or_else(|_| panic!("not poisoned"));
-            owner.uninstall(())
+            oer_radio_port::Ended::uninstall(owner, (), ())
         }
     }
     run(Body);
@@ -584,11 +619,13 @@ fn pending_entries_hold_their_interface_slots_across_phases() {
 fn settings_reach_the_radio_while_disabled_and_while_enabled() {
     struct Body;
     impl PortBody<OwnedModel> for Body {
+        type Output = ();
+
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
             resources: ModelResources<'id>,
-        ) -> Ended<'id, OwnedModel> {
+        ) -> Ended<'id, OwnedModel, ()> {
             {
                 let mut setup = owner.setup();
                 setup.set_transmit_power(
@@ -603,7 +640,8 @@ fn settings_reach_the_radio_while_disabled_and_while_enabled() {
             assert!(handle.radio().promiscuous);
             let mut owner = owner.enable().await.unwrap_or_else(|_| panic!("enabled"));
             {
-                let mut parts = owner.split();
+                let mut phase = owner.phase();
+                let parts = &mut *phase;
                 parts.control.set_cca_threshold(
                     SupportedCcaThreshold::new(-60).unwrap_or_else(|_| panic!("within range")),
                 );
@@ -628,7 +666,7 @@ fn settings_reach_the_radio_while_disabled_and_while_enabled() {
                 .unwrap_or_else(|_| panic!("not poisoned"));
             let _slot = owner.setup().remove(zero);
             assert!(!handle.interface(Interface::new(0)).configured);
-            owner.uninstall(())
+            oer_radio_port::Ended::uninstall(owner, (), ())
         }
     }
     run(Body);
@@ -638,15 +676,17 @@ fn settings_reach_the_radio_while_disabled_and_while_enabled() {
 fn a_refused_enable_returns_the_disabled_owner() {
     struct Body;
     impl PortBody<OwnedModel> for Body {
+        type Output = ();
+
         async fn run<'p, 'id>(
             self,
-            owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
+            owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
             _: ModelResources<'id>,
-        ) -> Ended<'id, OwnedModel> {
+        ) -> Ended<'id, OwnedModel, ()> {
             parts_handle().refuse_enable(true);
             match owner.enable().await {
-                Err(oer_ieee802154_port::Failed::Refused(owner, ModelRefusal)) => {
-                    owner.uninstall(())
+                Err(oer_radio_port::Failed::Refused(owner, ModelRefusal)) => {
+                    oer_radio_port::Ended::uninstall(owner, (), ())
                 }
                 _ => panic!("the radio refused"),
             }
@@ -725,7 +765,7 @@ struct PoolProbe;
 
 struct NoEvents;
 
-impl RadioPortEvents for NoEvents {
+impl PortPhase for NoEvents {
     type Event = ();
     type Fault = ModelFault;
 
@@ -737,23 +777,20 @@ impl RadioPortEvents for NoEvents {
 }
 
 impl PortBackend for PoolProbe {
-    type Event = ();
+    type Event<'id> = ();
+    type Terminal<'id> = ();
+    type Phase<'a, 'id>
+        = PhaseParts<NoEvents, (), ()>
+    where
+        Self: 'a,
+        'id: 'a;
+    type Local<'id> = ();
+    type Driver = ();
     type Domain = Ieee802154Radio;
     type Fault = ModelFault;
     type Refusal = ModelRefusal;
     type Setup<'a, 'id> = ();
-    type Events<'a, 'id>
-        = NoEvents
-    where
-        'id: 'a;
-    type Control<'a, 'id>
-        = ()
-    where
-        'id: 'a;
-    type Clients<'a, 'id>
-        = ()
-    where
-        'id: 'a;
+
     type Pools = oer_radio_port::Permits<crate::owner::Operation, 1, 3>;
     type Resources<'id> = (
         ModelPermitPool<'id, crate::owner::Operation>,
@@ -766,14 +803,16 @@ impl PortBackend for PoolProbe {
 
     fn enable(
         &mut self,
-    ) -> impl Future<Output = oer_ieee802154_port::EnableResult<ModelRefusal, ModelFault>> + '_
-    {
+        _: Call,
+    ) -> impl Future<Output = oer_radio_port::EnableResult<ModelRefusal, ModelFault>> + '_ {
         core::future::ready(Ok(Ok(())))
     }
 
     fn disable<'a, 'id>(
         &'a mut self,
+        _: Call,
         _: &'a (),
+        _: &'a mut Self::Local<'id>,
         _: &'a mut dyn FnMut(()),
     ) -> impl Future<Output = Result<(), Poisoned<ModelFault>>> + 'a
     where
@@ -784,91 +823,105 @@ impl PortBackend for PoolProbe {
 
     fn now(
         &self,
+        _: Call,
     ) -> impl Future<
         Output = oer_radio_port::PortResult<
             Ieee802154Instant,
-            oer_ieee802154_port::ClockError,
+            oer_radio_port::ClockError,
             ModelFault,
         >,
     > + '_ {
         core::future::ready(Ok(Ok(Ieee802154Instant::from_micros(0))))
     }
 
-    fn resources<'id>(
-        &mut self,
-        mint: Mint<'id, Self::Pools>,
-    ) -> (
-        (),
-        (
-            ModelPermitPool<'id, crate::owner::Operation>,
-            [oer_radio_port::Seat<'id, crate::owner::Operation>; 3],
-        ),
-    ) {
+    fn resources<'id>(&mut self, mint: Mint<'id, Self::Pools>) -> InstallParts<'id, Self> {
         let oer_radio_port::PermitTokens { supply, seats, .. } = mint.into_pools();
-        ((), (ModelPermitPool::new(supply), seats))
+        InstallParts {
+            held: (),
+            local: (),
+            resources: (ModelPermitPool::new(supply), seats),
+        }
     }
 
-    fn setup<'a, 'id>(&'a mut self) -> Lent<'a, Self::Setup<'a, 'id>> {
-        Lent::new(())
-    }
+    fn setup<'a, 'id>(&'a mut self, _: Call, _: &'a mut Self::Local<'id>) -> Self::Setup<'a, 'id> {}
 
-    fn split<'a, 'id>(&'a mut self, _: &'a ()) -> PhaseParts<'a, NoEvents, (), ()>
+    fn phase<'a, 'id>(
+        &'a mut self,
+        _: Call,
+        _: &'a (),
+        _: &'a mut Self::Local<'id>,
+    ) -> Self::Phase<'a, 'id>
     where
         'id: 'a,
     {
         PhaseParts {
-            events: Lent::new(NoEvents),
-            control: Lent::new(()),
-            clients: Lent::new(()),
+            events: NoEvents,
+            control: (),
+            clients: (),
         }
     }
 
-    fn drive<'p, 'id>(
-        &mut self,
+    async fn drive<'p, 'id>(
+        _: Self::Driver,
         _: &'p Self::Held<'id>,
-        retire: oer_ieee802154_port::Retire<'p>,
-    ) -> impl Future<Output = ()> + use<'p, 'id> {
-        core::future::poll_fn(move |_| {
-            if retire.is_requested() {
-                Poll::Ready(())
-            } else {
-                Poll::Pending
-            }
-        })
+        retire: Retire<'p>,
+    ) -> DriverExit<Self::State, Self::Fault> {
+        DriverExit::Retired {
+            state: (),
+            proof: retire.requested().await,
+        }
     }
 
-    fn retire_bound(&self) -> impl Future<Output = ()> + '_ {
+    fn retire_bound(&self, _: Call) -> impl Future<Output = ()> + use<> {
         core::future::pending()
     }
 
-    fn detach<'id>(&mut self, _: &Self::Held<'id>) {}
+    fn detach<'id>(&mut self, _: oer_radio_port::Detach, _: &Self::Held<'id>) {}
 
-    fn uninstall<'id>(self, _: Self::Held<'id>, (): (), (): ()) {}
+    fn uninstall<'id>(
+        self,
+        _: Self::Held<'id>,
+        _: Self::Local<'id>,
+        _: Retired<'id, Self::State>,
+        _: Detached<'id>,
+        _: Self::Uninstall,
+    ) {
+    }
 
-    fn abandon(&mut self) {}
+    fn abandon(&mut self, call: oer_radio_port::Quarantine) -> oer_radio_port::Abandon {
+        oer_radio_port::Abandon::Stopped(call.stopped())
+    }
 }
 
 #[test]
 fn the_operation_pool_serves_takers_in_arrival_order() {
     struct Body;
     impl PortBody<PoolProbe> for Body {
+        type Output = ();
+
         async fn run<'p, 'id>(
             self,
-            owner: Owner<'p, 'id, PoolProbe, oer_ieee802154_port::Disabled>,
+            owner: Owner<'p, 'id, PoolProbe, oer_radio_port::Disabled>,
             (pool, mut seats): (
                 ModelPermitPool<'id, crate::owner::Operation>,
                 [oer_radio_port::Seat<'id, crate::owner::Operation>; 3],
             ),
-        ) -> Ended<'id, PoolProbe> {
+        ) -> Ended<'id, PoolProbe, ()> {
             oer_radio_port::conformance::permits_serve_takers_in_arrival_order(
                 &pool,
                 &mut seats,
                 [],
             );
-            owner.uninstall(())
+            oer_radio_port::Ended::uninstall(owner, (), ())
         }
     }
-    assert_eq!(ready(run_port(PoolProbe, Body)), Some(()));
+    assert!(matches!(
+        ready(run_port(Installed::new(PoolProbe, ()), Body)),
+        oer_radio_port::PortEnd::Uninstalled {
+            uninstalled: (),
+            output: ()
+        }
+    ));
 }
 
 /// A waker that counts its wakes.
@@ -884,16 +937,19 @@ impl Wake for Counter {
 fn a_change_of_wish_wakes_waiting_receives_and_a_window_preempts() {
     struct Body;
     impl PortBody<OwnedModel> for Body {
+        type Output = ();
+
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
             resources: ModelResources<'id>,
-        ) -> Ended<'id, OwnedModel> {
+        ) -> Ended<'id, OwnedModel, ()> {
             let zero = owner.setup().configure(resources.interface0.interface);
             let one = owner.setup().configure(resources.interface1.interface);
             let mut owner = owner.enable().await.unwrap_or_else(|_| panic!("enabled"));
             {
-                let parts = owner.split();
+                let mut phase = owner.phase();
+                let parts = &mut *phase;
                 let first = parts.clients.client(&zero);
                 let second = parts.clients.client(&one);
                 let counter = Arc::new(Counter(AtomicUsize::new(0)));
@@ -929,7 +985,7 @@ fn a_change_of_wish_wakes_waiting_receives_and_a_window_preempts() {
                 .disable(&mut |_| {})
                 .await
                 .unwrap_or_else(|_| panic!("not poisoned"));
-            owner.uninstall(())
+            oer_radio_port::Ended::uninstall(owner, (), ())
         }
     }
     run(Body);
@@ -939,16 +995,19 @@ fn a_change_of_wish_wakes_waiting_receives_and_a_window_preempts() {
 fn interfaces_moving_to_one_channel_admit_each_other() {
     struct Body;
     impl PortBody<OwnedModel> for Body {
+        type Output = ();
+
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
             resources: ModelResources<'id>,
-        ) -> Ended<'id, OwnedModel> {
+        ) -> Ended<'id, OwnedModel, ()> {
             let zero = owner.setup().configure(resources.interface0.interface);
             let one = owner.setup().configure(resources.interface1.interface);
             let mut owner = owner.enable().await.unwrap_or_else(|_| panic!("enabled"));
             {
-                let parts = owner.split();
+                let mut phase = owner.phase();
+                let parts = &mut *phase;
                 let first = parts.clients.client(&zero);
                 let second = parts.clients.client(&one);
                 ready(first.receive(channel(11))).unwrap_or_else(|_| panic!("not poisoned"));
@@ -966,7 +1025,7 @@ fn interfaces_moving_to_one_channel_admit_each_other() {
                 .disable(&mut |_| {})
                 .await
                 .unwrap_or_else(|_| panic!("not poisoned"));
-            owner.uninstall(())
+            oer_radio_port::Ended::uninstall(owner, (), ())
         }
     }
     run(Body);
@@ -976,16 +1035,19 @@ fn interfaces_moving_to_one_channel_admit_each_other() {
 fn removing_an_interface_keeps_its_pending_entries() {
     struct Body;
     impl PortBody<OwnedModel> for Body {
+        type Output = ();
+
         async fn run<'p, 'id>(
             self,
-            mut owner: Owner<'p, 'id, OwnedModel, oer_ieee802154_port::Disabled>,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
             resources: ModelResources<'id>,
-        ) -> Ended<'id, OwnedModel> {
+        ) -> Ended<'id, OwnedModel, ()> {
             let zero = owner.setup().configure(resources.interface0.interface);
             let [slot, _] = resources.interface0.short;
             let mut owner = owner.enable().await.unwrap_or_else(|_| panic!("enabled"));
             let entry = {
-                let parts = owner.split();
+                let mut phase = owner.phase();
+                let parts = &mut *phase;
                 parts.clients.client(&zero).add_pending_short(slot, [7, 7])
             };
             let mut owner = owner
@@ -1003,7 +1065,8 @@ fn removing_an_interface_keeps_its_pending_entries() {
             let zero = owner.setup().configure(interface);
             let mut owner = owner.enable().await.unwrap_or_else(|_| panic!("enabled"));
             {
-                let parts = owner.split();
+                let mut phase = owner.phase();
+                let parts = &mut *phase;
                 let _slot = parts.clients.client(&zero).remove_pending_short(entry);
             }
             assert_eq!(handle.interface(Interface::new(0)).pending_short[0], None);
@@ -1011,8 +1074,44 @@ fn removing_an_interface_keeps_its_pending_entries() {
                 .disable(&mut |_| {})
                 .await
                 .unwrap_or_else(|_| panic!("not poisoned"));
-            owner.uninstall(())
+            oer_radio_port::Ended::uninstall(owner, (), ())
         }
     }
     run(Body);
+}
+
+#[test]
+fn work_permit_moves_into_admission_and_only_its_terminal_releases_it() {
+    use crate::owner::{Operation, OperationPermits};
+    use oer_radio_port::{Permits, branded};
+    ready(branded::<Permits<Operation, 1, 2>, _>(async |mint| {
+        let (permits, [mut first, mut second]) =
+            OperationPermits::new(mint.into_pools(), |supply, _| ModelPermitPool::new(supply));
+        let token = ready(permits.pool().take(&mut first));
+        drop(permits.guard(token));
+        let token = ready(permits.pool().take(&mut second));
+        let id = RequestId::new(41);
+        permits.admit(Interface::new(1), id, permits.guard(token));
+        {
+            let mut waiting = core::pin::pin!(permits.pool().take(&mut first));
+            assert!(
+                waiting
+                    .as_mut()
+                    .poll(&mut Context::from_waker(Waker::noop()))
+                    .is_pending()
+            );
+        }
+        let mismatch = match permits.complete(RequestId::new(42)) {
+            Err(mismatch) => mismatch,
+            Ok(_) => panic!("another terminal cannot release the held operation"),
+        };
+        assert_eq!(mismatch.held, Some((Interface::new(1), id)));
+        assert_eq!(permits.in_flight(), mismatch.held);
+        let completed = permits.complete(id).expect("matching terminal");
+        assert_eq!(completed.id(), id);
+        assert_eq!(completed.interface(), Interface::new(1));
+        assert!(permits.complete(id).is_err());
+        let token = ready(permits.pool().take(&mut first));
+        drop(permits.guard(token));
+    }));
 }

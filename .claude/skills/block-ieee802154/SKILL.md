@@ -21,7 +21,7 @@ Layers and edges: [layer dependencies](../../../docs/architecture.md#layer-depen
 
 ## Port
 
-The port is the owner shape of `crates/protocols/ieee802154/src/owner.rs` over the lifecycle package `oer-ieee802154-port` (`crates/protocols/ieee802154/port`). Optional operations are `Ieee802154Capabilities` behind a capabilities marker (`Ieee802154Caps`); every value a call takes is validated by type. The backend is `Ieee802154RuntimeBackend` (`crates/runtime/espressif/ieee802154/src/backend.rs`), which `Ieee802154Runtime::install` returns: the composition (`start`) hands it out with its bound MAC route, the application runs it under `run_port`, and the port's end masks the route (`detach`) and returns the engine and MAC owners to `Ieee802154System::stop`. The engine stays in the runtime's blocking mutex shared with the MAC interrupt, an interim the owner allowed until #668. The role advertises `IEEE802154_RADIO_CAPABILITIES`.
+The port is the owner shape of `crates/protocols/ieee802154/src/owner.rs` over the lifecycle package `oer-radio-port` (`crates/radio/port`). Optional operations are `Ieee802154Capabilities` behind a capabilities marker (`Ieee802154Caps`); every value a call takes is validated by type. The backend is `Ieee802154RuntimeBackend` (`crates/runtime/espressif/ieee802154/src/backend.rs`), which `Ieee802154Runtime::install` returns: the composition (`start`) packages it and its independent runtime driver in `Installed` after binding the MAC route, the application runs it under `run_port`, and the port's end masks the route (`detach`) and returns the engine and MAC owners to `Ieee802154System::stop`. The engine stays in the runtime's blocking mutex shared with the MAC interrupt, an interim the owner allowed until #668. The role advertises `IEEE802154_RADIO_CAPABILITIES`.
   - interface `I` is a type parameter of its slots, its configured token and its client (owner decision on #603);
   - the one operation permit sits in the backend's held part and comes back before its terminal is handed out; a client takes it with its interface's seat (`Seat<'id, Operation>`, one per interface client from `Permits<Operation, 1, S>`, passed to `WorkPermits::new`), so the line has a place for every interface and serves them in arrival order (#581);
   - receive and sleep are per-interface wishes; the radio receives their union on one shared channel;
@@ -65,3 +65,20 @@ The port is the owner shape of `crates/protocols/ieee802154/src/owner.rs` over t
 Skills: `protocol-change`, `driver-or-hardware-change`, `hil-run`, `vendor-evidence`, `qualification-entry` (catalog `qualification/catalog/esp32s31/ieee802154.toml`, program `qualification/targets/esp32s31/ieee802154.toml`), `push-and-ci`.
 
 Package detail: the READMEs of the [composition](../../../crates/composition/esp32s31/embassy/ieee802154/README.md), [engine](../../../crates/hardware/espressif/ieee802154/engine/README.md), [OpenThread adapter](../../../crates/adapters/openthread/ieee802154/README.md), [Thread example](../../../examples/esp32s31/thread/README.md), [vendor host stand](../../../verification/esp32s31/host/ieee802154/README.md) and the [capability page](../../../crates/hardware/esp32s31/driver/ieee802154/FEATURES.md); the protocol, role, runtime and adapter document themselves in their crate-root rustdoc. Vendor behavior: `docs/vendor/esp32s31/ieee802154-*.md`.
+
+The shared lifecycle borrows `B` in its owner and consumes an independent,
+unbranded driver once. The operation permit and every branded in-flight
+owner live in `Held<'id>`. Phase parts are disjoint borrows of `owner.phase()`;
+none is moved out of its loan. A dropped operation permit returns itself to
+its source pool; submission transfers the actual token, with no empty guard.
+
+`Ieee802154PortEvent` contains only owned RX frames and operation terminals.
+Each terminal carries its interface, recovered from the matching affine
+`Completed` proof; a foreign request ID retains the in-flight permit and
+poisons the port. Lifecycle and faults never masquerade as port events.
+
+The shared lifecycle's current runtime abandon path returns `Unconfirmed`.
+It publishes permanent logical poisoning atomically and never takes the mutex
+that contains `radio.isr`. Quarantined detach retains the bound route; ordinary
+uninstall still detaches it. Hardware exclusion and stopping are not proved,
+so the installation and its backing require chip reset before reuse.

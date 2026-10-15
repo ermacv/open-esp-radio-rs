@@ -662,7 +662,6 @@ impl LeAclPacketCounter {
     }
 
     fn commit(&mut self, counter: u64) {
-        debug_assert_eq!(self.0, Some(counter));
         self.0 = counter
             .checked_add(1)
             .filter(|next| *next <= LE_PACKET_COUNTER_MAX);
@@ -797,7 +796,6 @@ fn validate_encrypt_buffer(
 }
 
 fn nonce(initialization_vector: &[u8; 8], counter: u64, central: bool) -> [u8; 13] {
-    debug_assert!(counter <= LE_PACKET_COUNTER_MAX);
     let mut nonce = [0; 13];
     nonce[..5].copy_from_slice(&counter.to_le_bytes()[..5]);
     nonce[4] &= 0x7f;

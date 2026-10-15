@@ -22,7 +22,6 @@ oer-ieee802154-trace = { path = "../../../hardware/ieee802154/trace" }
 oer-trace = { path = "../../../trace" }
 oer-espressif-ieee802154-radio = { path = "../../../roles/espressif/ieee802154/radio" }
 oer-ieee802154 = { path = "../../../protocols/ieee802154" }
-oer-ieee802154-port = { path = "../../../protocols/ieee802154/port" }
 oer-radio-permit-pool = { path = "../../radio/permit-pool" }
 oer-radio-port = { path = "../../../radio/port" }
 oer-time = { path = "../../../time" }

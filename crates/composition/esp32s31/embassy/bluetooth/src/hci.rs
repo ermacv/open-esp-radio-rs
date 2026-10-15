@@ -25,10 +25,7 @@ use oer_esp32s31_soc_esp_hal::entropy::Entropy;
 use oer_time_embassy::EmbassyClock;
 use static_cell::StaticCell;
 
-use crate::system::{
-    BluetoothSystemBackend, BluetoothSystemCapabilities, BluetoothSystemFault,
-    BluetoothSystemUninstalled,
-};
+use crate::system::{BluetoothSystemBackend, BluetoothSystemCapabilities, BluetoothSystemFault};
 
 /// Host-to-Controller packet slots; they also bound the Host's ACL credits.
 pub const HOST_TO_CONTROLLER: usize = 4;
@@ -123,7 +120,7 @@ impl BluetoothHciService {
     /// it; the radio's driver runs inside the port, joined with the service.
     /// Returns how the service ended ([`Served`]) and what the uninstall
     /// returned, for [`BluetoothSystem::stop`](crate::BluetoothSystem::stop),
-    /// or `None` when the port was poisoned and fail-stopped. Poll the
+    /// through `PortEnd`, including fail-stop and abandonment. Poll the
     /// client's tasks ([`BluetoothSystem::run`](crate::BluetoothSystem::run))
     /// beside it.
     ///
@@ -132,12 +129,9 @@ impl BluetoothHciService {
     /// core serve again, after the Host epoch was retired.
     pub async fn run(
         &mut self,
-        backend: BluetoothSystemBackend,
+        backend: oer_radio_port::Installed<BluetoothSystemBackend>,
         stop: impl Future<Output = ()>,
-    ) -> (
-        Served<BluetoothSystemFault>,
-        Option<BluetoothSystemUninstalled>,
-    ) {
+    ) -> oer_radio_port::PortEnd<BluetoothSystemBackend, Served<BluetoothSystemFault>> {
         serve(backend, (), &self.transport, self.core, &EmbassyClock, stop).await
     }
 

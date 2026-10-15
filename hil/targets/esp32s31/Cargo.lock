@@ -1687,18 +1687,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-bluetooth-port"
-version = "0.1.0"
-dependencies = [
- "oer-radio-port",
- "oer-time",
-]
-
-[[package]]
 name = "oer-bluetooth-radio"
 version = "0.1.0"
 dependencies = [
- "oer-bluetooth-port",
  "oer-radio-coex",
  "oer-radio-port",
  "oer-time",
@@ -1713,7 +1704,6 @@ dependencies = [
  "oer-bluetooth-controller",
  "oer-bluetooth-hci",
  "oer-bluetooth-hci-transport",
- "oer-bluetooth-port",
  "oer-bluetooth-radio",
  "oer-radio-port",
  "oer-time",
@@ -1776,7 +1766,6 @@ version = "0.1.0"
 dependencies = [
  "embassy-futures",
  "embassy-sync 0.8.0",
- "oer-bluetooth-port",
  "oer-bluetooth-radio",
  "oer-bluetooth-trace",
  "oer-esp32s31-bluetooth",
@@ -1798,7 +1787,6 @@ dependencies = [
  "oer-bluetooth-controller",
  "oer-bluetooth-hci",
  "oer-bluetooth-hci-transport",
- "oer-bluetooth-port",
  "oer-bluetooth-radio",
  "oer-bluetooth-runtime",
  "oer-esp32s31-bluetooth",
@@ -1811,6 +1799,7 @@ dependencies = [
  "oer-esp32s31-radio-esp-hal",
  "oer-esp32s31-radio-runtime",
  "oer-esp32s31-soc-esp-hal",
+ "oer-radio-port",
  "oer-time-embassy",
  "static_cell",
 ]
@@ -1889,7 +1878,6 @@ dependencies = [
  "oer-ieee80211-softmac",
  "oer-ieee802154",
  "oer-ieee802154-openthread",
- "oer-ieee802154-port",
  "oer-memory",
  "oer-network-interface",
  "oer-radio-port",
@@ -2106,7 +2094,6 @@ dependencies = [
  "oer-espressif-ieee802154-engine",
  "oer-espressif-ieee802154-runtime",
  "oer-ieee802154",
- "oer-ieee802154-port",
  "oer-memory",
  "oer-radio-port",
  "oer-time-embassy",
@@ -2282,7 +2269,6 @@ dependencies = [
  "oer-espressif-ieee802154-engine",
  "oer-espressif-ieee802154-radio",
  "oer-ieee802154",
- "oer-ieee802154-port",
  "oer-ieee802154-trace",
  "oer-radio-permit-pool",
  "oer-radio-port",
@@ -2532,9 +2518,9 @@ dependencies = [
 name = "oer-ieee802154"
 version = "0.1.0"
 dependencies = [
- "oer-ieee802154-port",
  "oer-radio-port",
  "oer-time",
+ "scopeguard",
 ]
 
 [[package]]
@@ -2551,14 +2537,6 @@ dependencies = [
 [[package]]
 name = "oer-ieee802154-pac"
 version = "0.1.0"
-
-[[package]]
-name = "oer-ieee802154-port"
-version = "0.1.0"
-dependencies = [
- "oer-radio-port",
- "oer-time",
-]
 
 [[package]]
 name = "oer-ieee802154-trace"
@@ -2623,7 +2601,9 @@ dependencies = [
 name = "oer-radio-port"
 version = "0.1.0"
 dependencies = [
+ "atomic-waker",
  "oer-time",
+ "scopeguard",
 ]
 
 [[package]]

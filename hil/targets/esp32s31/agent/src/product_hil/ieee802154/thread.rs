@@ -29,7 +29,7 @@ use oer_ieee802154::owner::{Ieee802154Clients, Ieee802154Setup, RecentRssi};
 use oer_ieee802154_openthread::{
     MonotonicRadioClock, OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, PendingSlots, PortRssi,
 };
-use oer_ieee802154_port::{Disabled, Ended, Owner, PortBackend, PortBody, run_port};
+use oer_radio_port::{Disabled, Ended, Owner, PortBackend, PortBody, run_port};
 use oer_time_embassy::EmbassyClock;
 use openthread::{
     DeviceRole, OpenThread, OtResources, OtUdpResources, SimpleRamSettings, UdpSocket,
@@ -252,11 +252,13 @@ struct ThreadBody<'b> {
 }
 
 impl PortBody<Backend> for ThreadBody<'_> {
+    type Output = ();
+
     async fn run<'p, 'id>(
         self,
         mut owner: Owner<'p, 'id, Backend, Disabled>,
         resources: <Backend as PortBackend>::Resources<'id>,
-    ) -> Ended<'id, Backend> {
+    ) -> Ended<'id, Backend, ()> {
         let started = |result| oer_hil_protocol::ieee802154::ThreadStarted(result);
         let interface = resources.interfaces;
         let zero = owner.setup().configure(interface.interface);
@@ -271,7 +273,7 @@ impl PortBody<Backend> for ThreadBody<'_> {
                     started(Ieee802154SessionResult::StartFailed),
                 )
                 .await;
-                return failed.fail_stop();
+                return oer_radio_port::Ended::fail_stopped(failed.fail_stop(), ());
             }
         };
         {
@@ -294,9 +296,10 @@ impl PortBody<Backend> for ThreadBody<'_> {
                         started(Ieee802154SessionResult::Done),
                     )
                     .await;
-                    let parts = owner.split();
-                    let mut events = parts.events;
-                    let mut control = parts.control;
+                    let mut phase = owner.phase();
+                    let parts = &mut *phase;
+                    let events = &mut parts.events;
+                    let control = &mut parts.control;
                     let client = parts.clients.client(&zero);
                     let radio: OpenThreadRadio<'_, '_, _, _, _, RX_QUEUE, _> = OpenThreadRadio::new(
                         &mut *events,
@@ -330,8 +333,8 @@ impl PortBody<Backend> for ThreadBody<'_> {
         // client stops; the disable hands every leftover terminal to the
         // sink.
         match owner.disable(&mut |_| {}).await {
-            Ok(owner) => owner.uninstall(()),
-            Err(poisoned) => poisoned.uninstall(()),
+            Ok(owner) => oer_radio_port::Ended::uninstall(owner, (), ()),
+            Err(poisoned) => oer_radio_port::Ended::uninstall(poisoned, (), ()),
         }
     }
 }
@@ -386,7 +389,10 @@ pub(in crate::product_hil) async fn run_thread(
         ended
     };
     let ((), ended) = core::pin::pin!(join(tracking, session)).await;
-    let Some(parts) = ended else {
+    let oer_radio_port::PortEnd::Uninstalled {
+        uninstalled: parts, ..
+    } = ended
+    else {
         // The port was poisoned and fail-stopped: the client cannot stop.
         if let Some(stop_request) = stop_request {
             publish_event_reliably(

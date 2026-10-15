@@ -1,6 +1,6 @@
 //! Backend-to-caller observations, completion categories and receive metadata.
 
-use oer_ieee802154_port::LifecycleEvent;
+use oer_radio_port::LifecycleEvent;
 
 use super::{Ieee802154Instant, RequestId, channel::Channel, interface::Interface};
 use crate::mac::frame::FrameView;

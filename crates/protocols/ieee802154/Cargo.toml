@@ -13,14 +13,13 @@ description = "Allocation-free hardware-independent IEEE 802.15.4 radio contract
 model = []
 
 [dependencies]
-oer-ieee802154-port = { path = "port" }
+scopeguard = { version = "1.2.0", default-features = false }
 oer-radio-port = { path = "../../radio/port" }
 oer-time = { path = "../../time" }
 
 [dev-dependencies]
 # The crate's own tests run the shared pool rules on the model.
 oer-radio-port = { path = "../../radio/port", features = ["test-support"] }
-oer-ieee802154-port = { path = "port", features = ["test-support"] }
 
 [lints]
 workspace = true

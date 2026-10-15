@@ -6,7 +6,7 @@
 //!
 //! The radio is a port backend ([`BluetoothBackend`], an
 //! [`oer_bluetooth_radio::LeRadioBackend`]) run under the shared port owner
-//! ([`oer_bluetooth_port::run_port`]), with a driver that owns the radio role
+//! ([`oer_radio_port::run_port`]), with a driver that owns the radio role
 //! and its hardware by value ([`BluetoothDriver`]). [`BluetoothRuntime`] is
 //! the part the backend, the driver and the platform share: the outcome
 //! queue, the request exchange, the poison and the wakes, behind signals,
@@ -15,7 +15,7 @@
 //!
 //! - [`BluetoothRuntime::install`] publishes the global receive chains, takes
 //!   the first controller-time sample and returns the backend with the
-//!   driver inside, so no call is refused as not installed.
+//!   independent driver in `Installed`, so no call is refused as not installed.
 //! - The driver, which `run_port` joins with the port's body, drives the
 //!   scheduler: it reports finished events, inserts admitted events, starts
 //!   the idle scheduler, carries list transactions through their hardware

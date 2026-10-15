@@ -33,7 +33,7 @@ impl RequestId {
     }
 }
 
-impl oer_ieee802154_port::Correlation for RequestId {
+impl oer_radio_port::Correlation for RequestId {
     fn from_raw(raw: u32) -> Self {
         Self(raw)
     }

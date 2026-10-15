@@ -20,8 +20,9 @@
 //!    interrupt owners and binds the three CPU routes to one dispatcher;
 //! 6. installs the radio role in the runtime.
 //!
-//! It returns the running client and the port's backend
-//! ([`BluetoothSystemBackend`]) for the body that runs the port.
+//! It returns the running client and an `Installed<BluetoothSystemBackend>`
+//! pairing the backend with its independently owned driver. The HCI service
+//! returns `PortEnd` with its `Served` output and the uninstalled owners.
 //!
 //! The dispatcher services source 124, 127 and 133 and forwards the scheduler
 //! and source-127 worker wakes. The radio's driver runs inside its port,

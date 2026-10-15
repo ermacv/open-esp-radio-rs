@@ -5,8 +5,9 @@ use core::{
     future::{Future, pending, ready},
 };
 
-use oer_bluetooth_port::{
-    ClockError, EnableResult, Lent, PhaseParts, PortBackend, RadioPortEvents, Retire,
+use oer_radio_port::{
+    Call, ClockError, Detached, DriverExit, EnableResult, InstallParts, PhaseParts, PortBackend,
+    PortPhase, Retire, Retired,
 };
 use oer_radio_port::{ClockInfo, EventsLost, Mint, Poisoned, PortResult};
 
@@ -14,17 +15,17 @@ use crate::{
     EventId, LeCapabilities, LeInstant, LeRadio, NoCapabilities, RadioActivity, RadioOutcome,
     RadioRequest, RequestError,
 };
-use oer_bluetooth_port::CancelError;
+use oer_radio_port::CancelError;
 
 /// A Bluetooth LE radio backend, as a Controller service body drives it
-/// through its port owner ([`oer_bluetooth_port::Owner`]).
+/// through its port owner ([`oer_radio_port::Owner`]).
 ///
 /// The lifecycle is the owner's: its disabled owner enables the port, an
 /// enabled one lends one running phase of three parts and disables the port
 /// within the backend's bound, handing every admitted event's end to the
 /// body. An LE radio has no channel to retune, so nothing refuses `Enable`
 /// ([`PortBackend::Refusal`] is [`Infallible`]). A phase's parts are the one event consumer
-/// ([`PortBackend::Events`]), the control that publishes the active roles
+/// ([`PortBackend::Phase`]), the control that publishes the active roles
 /// to a coexistence arbiter ([`Self::activity`]) and the client of the
 /// Controller core ([`Self::submit`], [`Self::cancel`], [`Self::client_now`]),
 /// which exists only while the port is enabled: no request is refused as
@@ -45,7 +46,7 @@ use oer_bluetooth_port::CancelError;
 ///
 /// The phase's one consumer takes the events; the backend's scheduler work
 /// runs in its driver ([`PortBackend::drive`]), which
-/// [`run_port`](oer_bluetooth_port::run_port) joins with the body. The backend reserves the slots of an
+/// [`run_port`](oer_radio_port::run_port) joins with the body. The backend reserves the slots of an
 /// admitted event's end ([`RadioOutcome::EventEnded`], with the
 /// [`RadioOutcome::TransmitAcknowledged`] or [`RadioOutcome::TestReport`]
 /// before it) and of the data PDUs a connection event receives (the Link
@@ -98,7 +99,39 @@ use oer_bluetooth_port::CancelError;
 ///     let _ = NoRadio::cancel(client, EventId::new(2)).await;
 /// }
 /// ```
-pub trait LeRadioBackend: PortBackend<Domain = LeRadio, Refusal = Infallible> {
+pub trait LeRadioBackend:
+    for<'id> PortBackend<
+        Domain = LeRadio,
+        Refusal = Infallible,
+        Event<'id> = Self::Outcome,
+        Terminal<'id> = Self::Outcome,
+    >
+{
+    /// The block's owned outcome, used by phase and disable alike.
+    type Outcome;
+    /// The phase's event consumer.
+    type Events<'a, 'id>: PortPhase<Event = Self::Outcome, Fault = Self::Fault>
+    where
+        Self: 'a,
+        'id: 'a;
+    /// The phase's active-role control.
+    type Control<'a, 'id>
+    where
+        Self: 'a,
+        'id: 'a;
+    /// The Controller's single request client.
+    type Clients<'a, 'id>
+    where
+        Self: 'a,
+        'id: 'a;
+    /// Borrow disjoint parts from the phase's exclusive loan.
+    fn parts<'b, 'a, 'id>(
+        phase: &'b mut Self::Phase<'a, 'id>,
+    ) -> &'b mut PhaseParts<Self::Events<'a, 'id>, Self::Control<'a, 'id>, Self::Clients<'a, 'id>>
+    where
+        Self: 'a,
+        'id: 'a;
+
     /// What the backend serves, known when the image is built.
     type Caps: LeCapabilities;
 
@@ -107,7 +140,7 @@ pub trait LeRadioBackend: PortBackend<Domain = LeRadio, Refusal = Infallible> {
     const CLOCK: ClockInfo<LeRadio>;
 
     /// The portable view of an owned event.
-    fn view(event: &Self::Event) -> RadioOutcome<'_>;
+    fn view(event: &Self::Outcome) -> RadioOutcome<'_>;
 
     /// The radio clock, read through the phase's client.
     fn client_now<'c, 'a: 'c, 'id>(
@@ -160,7 +193,7 @@ pub struct NoRadio;
 #[derive(Debug)]
 pub struct NoRadioPart(());
 
-impl RadioPortEvents for NoRadioPart {
+impl PortPhase for NoRadioPart {
     type Event = Infallible;
     type Fault = Infallible;
 
@@ -172,7 +205,15 @@ impl RadioPortEvents for NoRadioPart {
 }
 
 impl PortBackend for NoRadio {
-    type Event = Infallible;
+    type Event<'id> = Infallible;
+    type Terminal<'id> = Infallible;
+    type Phase<'a, 'id>
+        = PhaseParts<NoRadioPart, NoRadioPart, NoRadioPart>
+    where
+        Self: 'a,
+        'id: 'a;
+    type Local<'id> = ();
+    type Driver = ();
     type Domain = LeRadio;
     type Fault = Infallible;
     type Refusal = Infallible;
@@ -180,6 +221,101 @@ impl PortBackend for NoRadio {
         = ()
     where
         Self: 'a;
+
+    type Pools = ();
+    type Resources<'id> = ();
+    type Held<'id> = ();
+    type State = ();
+    type Uninstall = ();
+    type Uninstalled = ();
+
+    fn enable(
+        &mut self,
+        _: Call,
+    ) -> impl Future<Output = EnableResult<Infallible, Infallible>> + '_ {
+        ready(Ok(Ok(())))
+    }
+
+    fn disable<'a, 'id>(
+        &'a mut self,
+        _: Call,
+        _: &'a Self::Held<'id>,
+        _: &'a mut Self::Local<'id>,
+        _: &'a mut dyn FnMut(Infallible),
+    ) -> impl Future<Output = Result<(), Poisoned<Infallible>>> + 'a
+    where
+        'id: 'a,
+    {
+        ready(Ok(()))
+    }
+
+    fn now(
+        &self,
+        _: Call,
+    ) -> impl Future<Output = PortResult<LeInstant, ClockError, Infallible>> + '_ {
+        ready(Ok(Ok(LeInstant::from_micros(0))))
+    }
+
+    fn resources<'id>(&mut self, mint: Mint<'id, Self::Pools>) -> InstallParts<'id, Self> {
+        mint.into_pools();
+        InstallParts {
+            held: (),
+            local: (),
+            resources: (),
+        }
+    }
+
+    fn setup<'a, 'id>(&'a mut self, _: Call, _: &'a mut Self::Local<'id>) -> Self::Setup<'a, 'id> {}
+
+    #[allow(clippy::type_complexity, reason = "the phase's three parts")]
+    fn phase<'a, 'id>(
+        &'a mut self,
+        _: Call,
+        _: &'a Self::Held<'id>,
+        _: &'a mut Self::Local<'id>,
+    ) -> Self::Phase<'a, 'id>
+    where
+        'id: 'a,
+    {
+        PhaseParts {
+            events: NoRadioPart(()),
+            control: NoRadioPart(()),
+            clients: NoRadioPart(()),
+        }
+    }
+
+    /// No hardware work; wait for the retirement request and return its proof.
+    fn drive<'p, 'id>(
+        _: Self::Driver,
+        _: &'p Self::Held<'id>,
+        retire: Retire<'p>,
+    ) -> impl Future<Output = DriverExit<Self::State, Self::Fault>> + use<'p, 'id> {
+        retire.retired(())
+    }
+
+    fn retire_bound(&self, _: Call) -> impl Future<Output = ()> + use<> {
+        pending()
+    }
+
+    fn detach<'id>(&mut self, _: oer_radio_port::Detach, (): &()) {}
+
+    fn uninstall<'id>(
+        self,
+        _: Self::Held<'id>,
+        _: Self::Local<'id>,
+        _: Retired<'id, Self::State>,
+        _: Detached<'id>,
+        _: Self::Uninstall,
+    ) {
+    }
+
+    fn abandon(&mut self, call: oer_radio_port::Quarantine) -> oer_radio_port::Abandon {
+        oer_radio_port::Abandon::Stopped(call.stopped())
+    }
+}
+
+impl LeRadioBackend for NoRadio {
+    type Outcome = Infallible;
     type Events<'a, 'id>
         = NoRadioPart
     where
@@ -195,77 +331,16 @@ impl PortBackend for NoRadio {
     where
         Self: 'a,
         'id: 'a;
-    type Pools = ();
-    type Resources<'id> = ();
-    type Held<'id> = ();
-    type State = ();
-    type Uninstall = ();
-    type Uninstalled = ();
-
-    fn enable(&mut self) -> impl Future<Output = EnableResult<Infallible, Infallible>> + '_ {
-        ready(Ok(Ok(())))
-    }
-
-    fn disable<'a, 'id>(
-        &'a mut self,
-        _: &'a Self::Held<'id>,
-        _: &'a mut dyn FnMut(Infallible),
-    ) -> impl Future<Output = Result<(), Poisoned<Infallible>>> + 'a
+    fn parts<'b, 'a, 'id>(
+        phase: &'b mut Self::Phase<'a, 'id>,
+    ) -> &'b mut PhaseParts<Self::Events<'a, 'id>, Self::Control<'a, 'id>, Self::Clients<'a, 'id>>
     where
+        Self: 'a,
         'id: 'a,
     {
-        ready(Ok(()))
+        phase
     }
 
-    fn now(&self) -> impl Future<Output = PortResult<LeInstant, ClockError, Infallible>> + '_ {
-        ready(Ok(Ok(LeInstant::from_micros(0))))
-    }
-
-    fn resources<'id>(&mut self, mint: Mint<'id, Self::Pools>) -> ((), ()) {
-        mint.into_pools();
-        ((), ())
-    }
-
-    fn setup<'a, 'id>(&'a mut self) -> Lent<'a, Self::Setup<'a, 'id>> {
-        Lent::new(())
-    }
-
-    #[allow(clippy::type_complexity, reason = "the phase's three parts")]
-    fn split<'a, 'id>(
-        &'a mut self,
-        _: &'a Self::Held<'id>,
-    ) -> PhaseParts<'a, Self::Events<'a, 'id>, Self::Control<'a, 'id>, Self::Clients<'a, 'id>>
-    where
-        'id: 'a,
-    {
-        PhaseParts {
-            events: Lent::new(NoRadioPart(())),
-            control: Lent::new(NoRadioPart(())),
-            clients: Lent::new(NoRadioPart(())),
-        }
-    }
-
-    /// Nothing to drive: it returns at once.
-    fn drive<'p, 'id>(
-        &mut self,
-        _: &'p Self::Held<'id>,
-        _: Retire<'p>,
-    ) -> impl Future<Output = ()> + use<'p, 'id> {
-        ready(())
-    }
-
-    fn retire_bound(&self) -> impl Future<Output = ()> + '_ {
-        pending()
-    }
-
-    fn detach<'id>(&mut self, (): &()) {}
-
-    fn uninstall<'id>(self, (): (), (): (), (): ()) {}
-
-    fn abandon(&mut self) {}
-}
-
-impl LeRadioBackend for NoRadio {
     type Caps = NoCapabilities;
 
     const CLOCK: ClockInfo<LeRadio> = ClockInfo {

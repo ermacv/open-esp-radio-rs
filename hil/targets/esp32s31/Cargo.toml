@@ -54,7 +54,6 @@ openthread = { git = "https://github.com/ermacv/openthread", rev = "5173f96654a2
 tinyrlibc = { version = "0.5", default-features = false, features = ["utoa", "strtoul"] }
 oer-esp32s31-radio-runtime = { path = "../../../crates/runtime/esp32s31/radio" }
 oer-ieee802154 = { path = "../../../crates/protocols/ieee802154" }
-oer-ieee802154-port = { path = "../../../crates/protocols/ieee802154/port" }
 oer-radio-port = { path = "../../../crates/radio/port" }
 oer-espressif-executor-embassy = { path = "../../../crates/adapters/embassy/espressif/executor", features = ["esp32s31"] }
 oer-espressif-interrupt-table-esp-hal = { path = "../../../crates/adapters/esp-hal/espressif/interrupt-table", features = ["esp32s31"] }

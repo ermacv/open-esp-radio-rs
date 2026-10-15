@@ -3,6 +3,12 @@
 version = 4
 
 [[package]]
+name = "atomic-waker"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1020,22 +1026,14 @@ dependencies = [
 name = "oer-ieee802154"
 version = "0.1.0"
 dependencies = [
- "oer-ieee802154-port",
  "oer-radio-port",
  "oer-time",
+ "scopeguard",
 ]
 
 [[package]]
 name = "oer-ieee802154-pac"
 version = "0.1.0"
-
-[[package]]
-name = "oer-ieee802154-port"
-version = "0.1.0"
-dependencies = [
- "oer-radio-port",
- "oer-time",
-]
 
 [[package]]
 name = "oer-ieee802154-trace"
@@ -1060,7 +1058,9 @@ version = "0.1.0"
 name = "oer-radio-port"
 version = "0.1.0"
 dependencies = [
+ "atomic-waker",
  "oer-time",
+ "scopeguard",
 ]
 
 [[package]]
@@ -1213,6 +1213,12 @@ name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
+
+[[package]]
+name = "scopeguard"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "serde"

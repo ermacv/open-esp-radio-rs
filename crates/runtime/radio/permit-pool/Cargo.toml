@@ -12,7 +12,6 @@ readme = "README.md"
 oer-radio-port = { path = "../../../radio/port" }
 
 [dev-dependencies]
-oer-ieee802154-port = { path = "../../../protocols/ieee802154/port", features = ["test-support"] }
 # The crate's own tests run the shared pool rule.
 oer-radio-port = { path = "../../../radio/port", features = ["test-support"] }
 oer-time = { path = "../../../time" }

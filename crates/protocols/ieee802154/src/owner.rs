@@ -1,6 +1,6 @@
 //! The IEEE 802.15.4 radio port on the shared owner shape of
-//! `oer-radio-port` ([`Owner`](oer_ieee802154_port::Owner),
-//! [`PortBody`](oer_ieee802154_port::PortBody)).
+//! `oer-radio-port` ([`Owner`](oer_radio_port::Owner),
+//! [`PortBody`](oer_radio_port::PortBody)).
 //!
 //! Every refusal of the former command port that a caller's own state
 //! explains is a type here ([ownership and refusals]); what the world
@@ -25,7 +25,7 @@
 //! [`EventsLost`](oer_radio_port::EventsLost) (only received frames), a
 //! clock that could not be read, an operation's status on the air, and a
 //! cancel that finds the work already ended
-//! ([`CancelError::NotRunning`](oer_ieee802154_port::CancelError::NotRunning)).
+//! ([`CancelError::NotRunning`](oer_radio_port::CancelError::NotRunning)).
 //!
 //! # Interfaces
 //!
@@ -66,7 +66,7 @@
 //! ```compile_fail,E0451
 //! # use oer_ieee802154::owner::{OperationPermit, WorkPermit};
 //! fn forge<'q, 'id>() -> OperationPermit<'q, 'id> {
-//!     WorkPermit { permit: None, permits: todo!() }
+//!     WorkPermit { held: todo!() }
 //! }
 //! ```
 //!
@@ -74,8 +74,8 @@
 //!
 //! ```
 //! # use oer_ieee802154::owner::OperationPermit;
-//! fn held(permit: &OperationPermit<'_, '_>) -> bool {
-//!     permit.is_held()
+//! fn held<'q, 'id>(permit: &'q OperationPermit<'q, 'id>) -> &'q OperationPermit<'q, 'id> {
+//!     permit
 //! }
 //! ```
 //!
@@ -209,10 +209,10 @@
 
 use core::{cell::RefCell, future::Future, marker::PhantomData};
 
-use oer_ieee802154_port::{PortBackend, RadioPortClient, RadioPortEvents, RadioWork, Work};
 use oer_radio_port::{
     Child, Line, Permit, PermitPool, PermitSupply, Poisoned, PoolPath, Root, Seat, Slot,
 };
+use oer_radio_port::{PortBackend, PortPhase, RadioPortClient, RadioWork, Work};
 
 use crate::{
     AppliedSecurity, CcaMode, Channel, CslReceiver, EnhancedAckGeneration, FrameCounterUpdate,
@@ -280,15 +280,16 @@ impl<K: Ieee802154Caps, F: Feature> Has<K, F> {
 
     /// The witness, checked when the image is built.
     ///
-    /// # Panics
-    ///
-    /// At compile time in a constant, and at run time otherwise, when `K`
-    /// does not state `F`.
+    /// The inline constant rejects an unsupported feature during code
+    /// generation, even when called outside a constant expression.
     pub const fn from_const() -> Self {
-        match Self::new() {
-            Some(has) => has,
-            None => panic!("the backend does not state this feature"),
+        const {
+            assert!(
+                K::CAPS.operations.contains(F::REQUIRED),
+                "the backend does not state this feature"
+            );
         }
+        Self { brand: PhantomData }
     }
 }
 
@@ -620,27 +621,53 @@ trait Release<'id, K, Path: PoolPath> {
 /// A permit of kind `K` that admitted work holds until its terminal, which
 /// only [`WorkPermits::guard`] makes. Dropped before a submission, it goes
 /// back to its pool; a submission moves it into the backend.
+#[must_use = "submit the permit, or drop it to return its capacity"]
+#[allow(
+    clippy::type_complexity,
+    reason = "the affine permit and its return function are held by the same guard"
+)]
 pub struct WorkPermit<'q, 'id, K, Path: PoolPath = Root> {
-    permit: Option<Permit<'id, K, Path>>,
+    held: scopeguard::ScopeGuard<HeldPermit<'q, 'id, K, Path>, fn(HeldPermit<'q, 'id, K, Path>)>,
+}
+
+struct HeldPermit<'q, 'id, K, Path: PoolPath> {
+    permit: Permit<'id, K, Path>,
     permits: &'q dyn Release<'id, K, Path>,
+}
+
+fn release_held<K, Path: PoolPath>(held: HeldPermit<'_, '_, K, Path>) {
+    held.permits.release(held.permit);
 }
 
 /// The radio's one operation permit.
 pub type OperationPermit<'q, 'id, Path = Root> = WorkPermit<'q, 'id, Operation, Path>;
 
-impl<K, Path: PoolPath> WorkPermit<'_, '_, K, Path> {
-    /// Whether the permit is still held, as it is until a submission.
-    pub const fn is_held(&self) -> bool {
-        self.permit.is_some()
+/// The terminal whose matching permit has been returned to its pool.
+#[must_use = "hand the completed operation's terminal to its consumer"]
+pub struct Completed {
+    interface: Interface,
+    id: RequestId,
+}
+
+impl Completed {
+    /// The interface whose operation ended.
+    pub const fn interface(&self) -> Interface {
+        self.interface
+    }
+    /// The completed operation's correlation identity.
+    pub const fn id(&self) -> RequestId {
+        self.id
     }
 }
 
-impl<K, Path: PoolPath> Drop for WorkPermit<'_, '_, K, Path> {
-    fn drop(&mut self) {
-        if let Some(permit) = self.permit.take() {
-            self.permits.release(permit);
-        }
-    }
+/// A terminal did not name the held operation. Its permit stays retained;
+/// the backend must publish poisoning instead of fabricating a completion.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CompletionMismatch {
+    /// The terminal received from the driver.
+    pub received: RequestId,
+    /// The operation still held, if any.
+    pub held: Option<(Interface, RequestId)>,
 }
 
 /// The work in flight: whose it is and its permit.
@@ -698,22 +725,20 @@ impl<'id, K, Path: PoolPath, P: PermitPool<'id, K, Path>> WorkPermits<'id, K, P,
     /// permit of kind `K` at `Path`, so every permit of this path is that one.
     pub fn guard(&self, permit: Permit<'id, K, Path>) -> WorkPermit<'_, 'id, K, Path> {
         WorkPermit {
-            permit: Some(permit),
-            permits: self,
+            held: scopeguard::guard(
+                HeldPermit {
+                    permit,
+                    permits: self,
+                },
+                release_held,
+            ),
         }
     }
 
     /// Keep the permit of the admitted work `id` of `interface` until its
     /// terminal; a backend's submission calls it.
-    pub fn admit(
-        &self,
-        interface: Interface,
-        id: RequestId,
-        mut permit: WorkPermit<'_, 'id, K, Path>,
-    ) {
-        let Some(permit) = permit.permit.take() else {
-            unreachable!("a permit holds its token until a submission or its drop");
-        };
+    pub fn admit(&self, interface: Interface, id: RequestId, permit: WorkPermit<'_, 'id, K, Path>) {
+        let HeldPermit { permit, .. } = scopeguard::ScopeGuard::into_inner(permit.held);
         // The pool holds one permit, so the entry is free while it was out.
         *self.in_flight.borrow_mut() = Some(InFlight {
             interface,
@@ -722,20 +747,22 @@ impl<'id, K, Path: PoolPath, P: PermitPool<'id, K, Path>> WorkPermits<'id, K, P,
         });
     }
 
-    /// Give back the permit of the work `id` of `interface`, whose terminal
-    /// the backend took; it calls it before it hands the event out. Whether
-    /// that work was in flight.
-    pub fn complete(&self, interface: Interface, id: RequestId) -> bool {
-        let ended = self
-            .in_flight
-            .borrow_mut()
-            .take_if(|held| held.interface == interface && held.id == id);
-        match ended {
+    /// Return the permit of the terminal `id` and its affine completion.
+    /// A mismatch leaves the admitted operation and its capacity intact.
+    pub fn complete(&self, id: RequestId) -> Result<Completed, CompletionMismatch> {
+        let mut in_flight = self.in_flight.borrow_mut();
+        match in_flight.take_if(|held| held.id == id) {
             Some(held) => {
                 self.pool.release(held.permit);
-                true
+                Ok(Completed {
+                    interface: held.interface,
+                    id: held.id,
+                })
             }
-            None => false,
+            None => Err(CompletionMismatch {
+                received: id,
+                held: in_flight.as_ref().map(|held| (held.interface, held.id)),
+            }),
         }
     }
 
@@ -1097,7 +1124,7 @@ impl PhaseEvent<'_> {
 /// frames and the terminals of admitted work, read through the portable
 /// view. A terminal's operation permit is back in its pool before the
 /// event is handed out.
-pub trait Ieee802154Events: RadioPortEvents {
+pub trait Ieee802154Events: PortPhase {
     /// The portable view of an owned event.
     fn view(event: &Self::Event) -> PhaseEvent<'_>;
 }

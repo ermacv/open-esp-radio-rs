@@ -35,6 +35,12 @@
 //! Shared-PHY tracking runs with the MAC receiving, as ESP-IDF's
 //! `phy_common.c` does: the runtime never pauses for it, and an operation
 //! that loses RF ends with its ordinary terminal event.
+//!
+//! Abandonment publishes permanent logical poisoning atomically. It never
+//! enters the mutex that contains the ISR and returns `Unconfirmed`: neither
+//! hardware stopping nor IRQ exclusion is proved. The installation and its
+//! backing remain quarantined until chip reset; ordinary uninstall retains
+//! its existing hardware sequence.
 
 #[cfg(test)]
 extern crate std;
@@ -45,6 +51,7 @@ mod trace;
 use core::{
     cell::{Cell, RefCell},
     convert::Infallible,
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use embassy_futures::select::{Either, select};
@@ -442,6 +449,8 @@ pub struct Ieee802154Runtime<'storage, M: RawMutex, H, T, R, const EVENTS: usize
     next_id: Mutex<M, Cell<u32>>,
     /// The radio fault that poisoned the port.
     fault: Mutex<M, Cell<Option<RadioFault>>>,
+    /// Permanent logical poisoning; emergency entry never takes the ISR lock.
+    abandoned: AtomicBool,
 }
 
 impl<
@@ -482,6 +491,7 @@ impl<
             backoff_started: Signal::new(),
             next_id: Mutex::new(Cell::new(1)),
             fault: Mutex::new(Cell::new(None)),
+            abandoned: AtomicBool::new(false),
         }
     }
 
@@ -533,13 +543,16 @@ impl<
         Ieee802154RuntimeBackend<'_, 'storage, K, M, H, T, R, EVENTS>,
         Ieee802154RuntimeParts<'storage, H>,
     > {
+        if self.abandoned.load(Ordering::Acquire) {
+            return Err(parts);
+        }
         #[allow(
             clippy::result_large_err,
             reason = "the no-alloc runtime returns the unconsumed owners by value"
         )]
         let install = |installed: &RefCell<Option<Installed<'storage, H, R>>>| {
             let mut installed = installed.borrow_mut();
-            if installed.is_some() {
+            if self.abandoned.load(Ordering::Acquire) || installed.is_some() {
                 return Err(parts);
             }
             parts.engine.enable();

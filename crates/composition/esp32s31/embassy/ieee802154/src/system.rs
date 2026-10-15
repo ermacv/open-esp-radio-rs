@@ -395,7 +395,13 @@ pub async fn start<K: Ieee802154RuntimeCaps, P, C: PlatformClockProvider>(
     radio: &RadioSystem<P, C, EmbassyClock>,
     parked: Ieee802154Parked,
     defaults: Ieee802154PibDefaults,
-) -> Result<(Ieee802154System, Ieee802154SystemBackend<K>), Ieee802154StartFailure> {
+) -> Result<
+    (
+        Ieee802154System,
+        oer_radio_port::Installed<Ieee802154SystemBackend<K>>,
+    ),
+    Ieee802154StartFailure,
+> {
     // Frames the MAC DMA cannot reach leave the radio silent on air; refuse
     // before any hardware changes.
     if !parked
@@ -577,7 +583,7 @@ pub async fn start<K: Ieee802154RuntimeCaps, P, C: PlatformClockProvider>(
                 power,
                 coex: Ieee802154Coex::Absent(coex),
             },
-            backend.with_route(BoundRoute(Some(bound))),
+            backend.with_route(BoundRoute(Some(bound))).installed(),
         )),
         Err(error) => {
             let (parts, _) = backend.uninstall_unused();

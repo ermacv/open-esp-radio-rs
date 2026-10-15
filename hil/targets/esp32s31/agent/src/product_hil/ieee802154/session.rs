@@ -32,7 +32,7 @@ use oer_ieee802154::{
     Channel,
     owner::{Ieee802154Client, Ieee802154Clients, Ieee802154Setup},
 };
-use oer_ieee802154_port::{Disabled, Ended, Owner, PortBackend, PortBody, run_port};
+use oer_radio_port::{Disabled, Ended, Owner, PortBackend, PortBody, run_port};
 
 use super::client::{Backend, Client};
 use crate::console::publish_event_reliably;
@@ -64,11 +64,13 @@ struct SessionBody<'b> {
 }
 
 impl PortBody<Backend> for SessionBody<'_> {
+    type Output = ();
+
     async fn run<'p, 'id>(
         self,
         mut owner: Owner<'p, 'id, Backend, Disabled>,
         resources: <Backend as PortBackend>::Resources<'id>,
-    ) -> Ended<'id, Backend> {
+    ) -> Ended<'id, Backend, ()> {
         let interface = resources.interfaces;
         let zero = owner.setup().configure(interface.interface);
         let [mut seat, ..] = resources.operation;
@@ -78,13 +80,14 @@ impl PortBody<Backend> for SessionBody<'_> {
             Ok(owner) => owner,
             Err(failed) => {
                 open(self.opening, Ieee802154SessionResult::StartFailed).await;
-                return failed.fail_stop();
+                return oer_radio_port::Ended::fail_stopped(failed.fail_stop(), ());
             }
         };
         {
-            let parts = owner.split();
-            let mut events = parts.events;
-            let mut control = parts.control;
+            let mut phase = owner.phase();
+            let parts = &mut *phase;
+            let events = &mut parts.events;
+            let control = &mut parts.control;
             let client = parts.clients.client(&zero);
             let mut session = Session {
                 events: &mut *events,
@@ -125,8 +128,8 @@ impl PortBody<Backend> for SessionBody<'_> {
             *self.served = Some(served);
         }
         match owner.disable(&mut |_| {}).await {
-            Ok(owner) => owner.uninstall(()),
-            Err(poisoned) => poisoned.uninstall(()),
+            Ok(owner) => oer_radio_port::Ended::uninstall(owner, (), ()),
+            Err(poisoned) => oer_radio_port::Ended::uninstall(poisoned, (), ()),
         }
     }
 }
@@ -232,7 +235,10 @@ pub(in crate::product_hil) async fn run_session(
                 ));
                 ended.await
             };
-            let Some(parts) = ended else {
+            let oer_radio_port::PortEnd::Uninstalled {
+                uninstalled: parts, ..
+            } = ended
+            else {
                 // The port was poisoned and fail-stopped: the image ends
                 // without its client.
                 schedule_stop.signal(());

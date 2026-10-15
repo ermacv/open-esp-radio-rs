@@ -474,9 +474,9 @@ Its transitions take the owner by value and are bounded by contract: each
 ends within its bound or as poisoned, and an unbounded wait (an arbiter's
 lease) is a separate cancel-safe step before it. A transition that ends
 work hands every leftover terminal to a sink it takes and completes only
-when every permit is back. Capacity is permits: a submission moves its
-permit into the backend in BLE and IEEE 802.15.4; the held pool takes it
-back before delivery. Wi-Fi returns its ticket and admission token in the
+when every permit is back. IEEE 802.15.4 submission moves its capacity
+permit into the backend; the held pool takes it back before terminal delivery. BLE reserves outcome
+capacity before admission. Wi-Fi returns its ticket and admission token in the
 terminal instead. Both forms reserve terminal capacity; only unsolicited
 reception may lose events. BLE and IEEE 802.15.4 retain the body joined with
 the backend's driver, its runner, in one task
@@ -499,17 +499,22 @@ A retune stays a bounded step of `enable`. The owner's uninstall only asks:
 `run_port` retires the driver within the backend's bound (a missed bound is
 a fail-stop), detaches the interrupt entries synchronously, then takes the
 backend apart with the held part and the driver's state by value, returning
-the hardware owners by value. A `Drop` of an owner is a
-safety net, as `PlatformClockGuard`'s: it stops the hardware and halts the driver synchronously,
-refuses a new install until a reset and asserts in debug builds; it is
-never the shutdown. On the Wi-Fi port, whose driver is the core's one
-owner in its own executor, the owner has no `Drop`: a dropped owner sets
-an atomic abandon latch at once, the driver publishes nothing more, and
-`run_port` abandons the backend at the end of that poll of the body and
-returns `None`
-([refinement](https://github.com/ermacv/open-esp-radio-rs/issues/581#issuecomment-6133179528));
-Bluetooth LE and IEEE 802.15.4 keep the owner's `Drop`. Everything the hardware touches is `'static` and owned
-by the resource, so no abandoned owner is a memory-safety issue. Composition
+the hardware owners by value. In the shared BLE/IEEE 802.15.4 core, a
+dropped owner latches abandonment and wakes the core and driver. The core
+cancels the body, synchronously poisons the installation, then retires the
+driver within its bound. `abandon` returns either `Stopped`, with proof of
+masked IRQ entries, bounded CPU exclusion and hardware stopping, or
+`Unconfirmed`, requiring permanent quarantine until chip reset. No path may
+wait without a bound on an ISR lock. The current BLE and IEEE 802.15.4
+backends return `Unconfirmed`; they do not prove hardware stopping.
+Explicit `fail_stop` invokes `abandon` immediately and returns an affine proof. Retirement progresses while the
+body waits; final detach follows the body's return. Cancellation of the
+whole `run_port` future repeats synchronous quarantine. No owner transition
+or abandonment requires a panic. Wi-Fi retains its separate lifecycle until
+integration; its abandoned installation returns `None`
+([refinement](https://github.com/ermacv/open-esp-radio-rs/issues/581#issuecomment-6133179528)).
+Everything the hardware touches is `'static` and owned by the resource, so
+forgetting a future cannot release hardware-reachable storage. Composition
 crates disallow `core::future::pending` in their own `clippy.toml`, so a
 body does not end by pending forever.
 
@@ -578,13 +583,21 @@ A radio port is the contract between the protocol logic of one radio
 protocol and the backend that executes it: a chip, a family driver or a host
 model. Everything above a port is written once for every backend; everything
 below it is the backend's. Every port runs on the owner shape, whose
-lifecycle each block owns in its own contract package: a backend runs under
-`run_port`, which joins it with its driver and lends the body an `Owner`
-whose transitions and phase parts make every caller rule a type.
+lifecycle Bluetooth LE and IEEE 802.15.4 share in `oer-radio-port`:
+`run_port` consumes an `Installed` backend and its independent driver, and
+lends the body an `Owner` whose transitions and phase make caller rules
+expressible as types. Wi-Fi keeps its lifecycle package until its migration.
+A driver has no installation brand; branded queues and in-flight owners
+live in `Held<'id>`. A driver returns retirement or published poisoning with
+an affine proof. The core retains its state while a faulted body drains
+earlier events and returns its uninstall request. `PortBody::Output` is
+chosen outside the fresh installation brand; branded owners cannot escape
+through it. `PortEnd` returns uninstalled owners and output, fail-stopped
+output, or abandonment without a body result.
 [`LeRadioBackend`](../crates/protocols/bluetooth/le/radio/src/port.rs)
-is the Bluetooth LE backend, over `oer-bluetooth-port`; the
+is the Bluetooth LE backend, over `oer-radio-port`; the
 [owner shape](../crates/protocols/ieee802154/src/owner.rs) of the
-IEEE 802.15.4 port, over `oer-ieee802154-port`, is what the Espressif
+IEEE 802.15.4 port, over `oer-radio-port`, is what the Espressif
 runtime's backend implements and the OpenThread adapter consumes; and the
 [lower-MAC port](../crates/protocols/ieee80211/lower-mac/README.md) is the
 Wi-Fi one, over `oer-ieee80211-port`, carrying the portable `Channel` and

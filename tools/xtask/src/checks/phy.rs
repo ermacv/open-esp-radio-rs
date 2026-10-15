@@ -43,7 +43,6 @@ const PHY_PACKAGES: &[&str] = &[
     // the port lifecycle contract the protocol's owner shape extends; plain
     // portable types over `oer-radio-port` and `oer-time`, no vendor code.
     "oer-ieee802154",
-    "oer-ieee802154-port",
     // The chip-neutral IEEE 802.15.4 MAC engine the HAL's radio owners drive,
     // and the portable trace events it records.
     "oer-espressif-ieee802154-engine",

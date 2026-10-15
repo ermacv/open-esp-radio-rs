@@ -11,6 +11,12 @@
 //! vacant cells as `None`; [`scan::ScanRecord::new`] requires the actual BSSID,
 //! channel and RSSI, and [`scan::ScanTable::records`] iterates present records.
 //!
+//! Management and A-MSDU construction retain immutable frame parts through
+//! capacity admission and writing. Those same parts determine the output
+//! length; no independent final-offset assertion protects the layout.
+//! In-place station encapsulation borrows prefix and payload separately so
+//! writing a new prefix cannot overwrite the retained Ethernet payload.
+//!
 //! The parser contract of [the strict-lint milestone](https://github.com/ermacv/open-esp-radio-rs/issues/751)
 //! requires field boundaries established with `split_first_chunk` and
 //! retained as fixed-size arrays through subsequent processing. This is
@@ -27,6 +33,7 @@ pub mod channel;
 pub mod channel_switch;
 pub mod classification;
 pub mod data;
+mod encoding;
 pub mod extensions;
 pub mod qos;
 

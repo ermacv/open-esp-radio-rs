@@ -58,50 +58,31 @@ impl ProbeRequest<'_> {
             .len()
             .min(SUPPORTED_RATES_ELEMENT_CAPACITY);
         let extended_rates_len = self.supported_rates.len() - first_rates_len;
-        let required = MANAGEMENT_HEADER_LEN
-            + 2
-            + self.ssid.len()
-            + 2
-            + first_rates_len
-            + usize::from(extended_rates_len != 0) * (2 + extended_rates_len);
-        if output.len() < required {
-            return Err(ProbeRequestError::OutputTooSmall { required });
-        }
-
-        let frame = &mut output[..required];
-        frame.fill(0);
-        frame[0..2].copy_from_slice(&PROBE_REQUEST_FRAME_CONTROL.to_le_bytes());
-        frame[4..10].copy_from_slice(&self.destination);
-        frame[10..16].copy_from_slice(&self.source);
-        frame[16..22].copy_from_slice(&self.bssid);
-        frame[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
-
-        let mut offset = MANAGEMENT_HEADER_LEN;
-        frame[offset] = SSID_ELEMENT_ID;
-        frame[offset + 1] = self.ssid.len() as u8;
-        offset += 2;
-        frame[offset..offset + self.ssid.len()].copy_from_slice(self.ssid);
-        offset += self.ssid.len();
-
-        frame[offset] = SUPPORTED_RATES_ELEMENT_ID;
-        frame[offset + 1] = first_rates_len as u8;
-        offset += 2;
-        frame[offset..offset + first_rates_len]
-            .copy_from_slice(&self.supported_rates[..first_rates_len]);
-        offset += first_rates_len;
-
-        if extended_rates_len != 0 {
-            frame[offset] = EXTENDED_SUPPORTED_RATES_ELEMENT_ID;
-            frame[offset + 1] = extended_rates_len as u8;
-            offset += 2;
-            frame[offset..offset + extended_rates_len]
-                .copy_from_slice(&self.supported_rates[first_rates_len..]);
-            offset += extended_rates_len;
-        }
-
-        debug_assert_eq!(offset, required);
-        // The length written, which the layout makes `required`.
-        Ok(offset)
+        let mut header = [0; MANAGEMENT_HEADER_LEN];
+        header[0..2].copy_from_slice(&PROBE_REQUEST_FRAME_CONTROL.to_le_bytes());
+        header[4..10].copy_from_slice(&self.destination);
+        header[10..16].copy_from_slice(&self.source);
+        header[16..22].copy_from_slice(&self.bssid);
+        header[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
+        let extended_header = [
+            EXTENDED_SUPPORTED_RATES_ELEMENT_ID,
+            extended_rates_len as u8,
+        ];
+        crate::encoding::FrameParts([
+            header.as_slice(),
+            &[SSID_ELEMENT_ID, self.ssid.len() as u8],
+            self.ssid,
+            &[SUPPORTED_RATES_ELEMENT_ID, first_rates_len as u8],
+            &self.supported_rates[..first_rates_len],
+            if extended_rates_len == 0 {
+                &[]
+            } else {
+                &extended_header
+            },
+            &self.supported_rates[first_rates_len..],
+        ])
+        .write(output)
+        .map_err(|required| ProbeRequestError::OutputTooSmall { required })
     }
 }
 

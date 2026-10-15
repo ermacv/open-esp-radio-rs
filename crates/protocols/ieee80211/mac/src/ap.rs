@@ -10,7 +10,7 @@ use crate::{
     block_ack::{BlockAckAction, parse_block_ack_action},
     ccmp::CCMP_HEADER_LEN,
     channel::{Band, Channel},
-    data::{DataInterfaceRole, ETHERNET_HEADER_LEN, LLC_SNAP_HEADER_LEN, plan_data_encapsulation},
+    data::{DataInterfaceRole, ETHERNET_HEADER_LEN, plan_data_encapsulation},
     ht::{
         HT_CAPABILITY_IE_LEN, HT_OPERATION_IE_LEN, HtPeerCapabilities, ht_capability_ie_for_peer,
         ht_operation_ie, ht_peer_capabilities,
@@ -61,7 +61,6 @@ pub enum ApDataFrameError {
     OutputTooSmall { required: usize },
 }
 
-const AMSDU_SUBFRAME_HEADER_LEN: usize = 14;
 /// Baseline HT Max A-MSDU Length selected while HT Capabilities bit 11 is
 /// clear. Every AP frame codec below is fenced to the advertised class.
 pub const AP_AMSDU_BASELINE_MAX_LEN: usize = 3_839;
@@ -286,61 +285,25 @@ pub fn ap_amsdu_frame_length(
     ethernet_frames: &[&[u8]],
     protected: bool,
 ) -> Result<usize, ApDataFrameError> {
-    if ethernet_frames.is_empty() {
-        return Err(ApDataFrameError::NoAmsduFrames);
-    }
-    let mut amsdu_length = 0_usize;
-    for (index, ethernet) in ethernet_frames.iter().copied().enumerate() {
-        if ethernet.len() < ETHERNET_HEADER_LEN {
-            return Err(ApDataFrameError::EthernetFrameTooShort);
-        }
-        let msdu_length = LLC_SNAP_HEADER_LEN
-            .checked_add(ethernet.len() - ETHERNET_HEADER_LEN)
-            .ok_or(ApDataFrameError::AmsduTooLong {
-                length: usize::MAX,
-                maximum: AP_AMSDU_BASELINE_MAX_LEN,
-            })?;
-        if msdu_length > usize::from(u16::MAX) {
-            return Err(ApDataFrameError::AmsduTooLong {
-                length: msdu_length,
-                maximum: AP_AMSDU_BASELINE_MAX_LEN,
-            });
-        }
-        let subframe_length = AMSDU_SUBFRAME_HEADER_LEN.checked_add(msdu_length).ok_or(
-            ApDataFrameError::AmsduTooLong {
-                length: usize::MAX,
-                maximum: AP_AMSDU_BASELINE_MAX_LEN,
-            },
-        )?;
-        amsdu_length =
-            amsdu_length
-                .checked_add(subframe_length)
-                .ok_or(ApDataFrameError::AmsduTooLong {
-                    length: usize::MAX,
-                    maximum: AP_AMSDU_BASELINE_MAX_LEN,
-                })?;
-        if index + 1 != ethernet_frames.len() {
-            amsdu_length = amsdu_length
-                .checked_add((4 - (subframe_length & 3)) & 3)
-                .ok_or(ApDataFrameError::AmsduTooLong {
-                    length: usize::MAX,
-                    maximum: AP_AMSDU_BASELINE_MAX_LEN,
-                })?;
-        }
-    }
-    if amsdu_length > AP_AMSDU_BASELINE_MAX_LEN {
-        return Err(ApDataFrameError::AmsduTooLong {
-            length: amsdu_length,
+    let body = crate::encoding::AmsduBody::checked(ethernet_frames, AP_AMSDU_BASELINE_MAX_LEN)
+        .map_err(amsdu_error)?;
+    let length = body
+        .length()
+        .map_err(|length| amsdu_error(crate::encoding::AmsduError::TooLong(length)))?;
+    Ok(crate::data::IEEE80211_QOS_DATA_HEADER_LEN
+        + if protected { CCMP_HEADER_LEN } else { 0 }
+        + length)
+}
+
+fn amsdu_error(error: crate::encoding::AmsduError) -> ApDataFrameError {
+    match error {
+        crate::encoding::AmsduError::Empty => ApDataFrameError::NoAmsduFrames,
+        crate::encoding::AmsduError::ShortEthernet => ApDataFrameError::EthernetFrameTooShort,
+        crate::encoding::AmsduError::TooLong(length) => ApDataFrameError::AmsduTooLong {
+            length,
             maximum: AP_AMSDU_BASELINE_MAX_LEN,
-        });
+        },
     }
-    crate::data::IEEE80211_QOS_DATA_HEADER_LEN
-        .checked_add(if protected { CCMP_HEADER_LEN } else { 0 })
-        .and_then(|length| length.checked_add(amsdu_length))
-        .ok_or(ApDataFrameError::AmsduTooLong {
-            length: usize::MAX,
-            maximum: AP_AMSDU_BASELINE_MAX_LEN,
-        })
 }
 
 impl ApAmsduFrame<'_> {
@@ -369,10 +332,9 @@ impl ApAmsduFrame<'_> {
                 return Err(ApDataFrameError::InvalidPeer);
             }
         }
-        let required = ap_amsdu_frame_length(self.ethernet_frames, self.ccmp_header.is_some())?;
-        if output.len() < required {
-            return Err(ApDataFrameError::OutputTooSmall { required });
-        }
+        let body =
+            crate::encoding::AmsduBody::checked(self.ethernet_frames, AP_AMSDU_BASELINE_MAX_LEN)
+                .map_err(amsdu_error)?;
 
         let Some(&first_header) = first.first_chunk::<ETHERNET_HEADER_LEN>() else {
             return Err(ApDataFrameError::EthernetFrameTooShort);
@@ -397,37 +359,16 @@ impl ApAmsduFrame<'_> {
         }
         plan.header[24] |= 0x80;
 
-        let frame = &mut output[..required];
-        frame[..crate::data::IEEE80211_QOS_DATA_HEADER_LEN]
-            .copy_from_slice(&plan.header[..crate::data::IEEE80211_QOS_DATA_HEADER_LEN]);
-        frame[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
-        let mut offset = crate::data::IEEE80211_QOS_DATA_HEADER_LEN;
-        if let Some(ccmp_header) = self.ccmp_header {
-            frame[offset..offset + CCMP_HEADER_LEN].copy_from_slice(&ccmp_header);
-            offset += CCMP_HEADER_LEN;
-        }
-        for (index, ethernet) in self.ethernet_frames.iter().copied().enumerate() {
-            let payload = &ethernet[ETHERNET_HEADER_LEN..];
-            let msdu_length = LLC_SNAP_HEADER_LEN + payload.len();
-            frame[offset..offset + 12].copy_from_slice(&ethernet[..12]);
-            frame[offset + 12..offset + 14].copy_from_slice(&(msdu_length as u16).to_be_bytes());
-            offset += AMSDU_SUBFRAME_HEADER_LEN;
-            frame[offset..offset + 6].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0]);
-            frame[offset + 6..offset + 8].copy_from_slice(&ethernet[12..14]);
-            offset += LLC_SNAP_HEADER_LEN;
-            frame[offset..offset + payload.len()].copy_from_slice(payload);
-            offset += payload.len();
-            if index + 1 != self.ethernet_frames.len() {
-                let subframe_length =
-                    AMSDU_SUBFRAME_HEADER_LEN + LLC_SNAP_HEADER_LEN + payload.len();
-                let padding = (4 - (subframe_length & 3)) & 3;
-                frame[offset..offset + padding].fill(0);
-                offset += padding;
-            }
-        }
-        debug_assert_eq!(offset, required);
-        // The length written, which the layout makes `required`.
-        Ok(offset)
+        let mut header = plan.header;
+        header[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
+        crate::encoding::FrameParts([
+            header.as_slice(),
+            self.ccmp_header
+                .as_ref()
+                .map_or(&[], |header| header.as_slice()),
+        ])
+        .write_amsdu(body, output)
+        .map_err(|required| ApDataFrameError::OutputTooSmall { required })
     }
 }
 

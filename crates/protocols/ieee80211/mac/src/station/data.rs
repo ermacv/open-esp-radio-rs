@@ -253,29 +253,23 @@ impl StaProtectedEthernetFrame {
                 available: ethernet_offset,
             },
         )?;
-        let frame_length = ethernet_length + headroom;
-        let frame_end =
-            frame_offset
-                .checked_add(frame_length)
-                .ok_or(StationFrameError::OutputTooSmall {
-                    required: usize::MAX,
-                })?;
-        debug_assert_eq!(frame_end, ethernet_end);
-        debug_assert_eq!(
-            frame_offset + prefix_len,
-            ethernet_offset + ETHERNET_HEADER_LEN
-        );
-
-        let frame = &mut storage[frame_offset..frame_end];
-        frame[..header_len].copy_from_slice(&plan.header[..header_len]);
-        frame[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
-        let ccmp_end = dma_header_len + CCMP_HEADER_LEN;
-        frame[dma_header_len..ccmp_end].copy_from_slice(&self.ccmp_header);
-        frame[ccmp_end..prefix_len].copy_from_slice(&plan.llc_snap);
-
+        // The prefix borrow ends at the original payload boundary. Encoding
+        // cannot reach payload bytes, and the returned frame keeps the input
+        // Ethernet end instead of reconstructing it from a second length.
+        let payload_start = ethernet_offset + ETHERNET_HEADER_LEN;
+        let (before_payload, _) = storage.split_at_mut(payload_start);
+        let prefix = &mut before_payload[frame_offset..];
+        plan.header[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
+        crate::encoding::FrameParts([
+            &plan.header[..header_len],
+            &self.ccmp_header,
+            &plan.llc_snap,
+        ])
+        .write(prefix)
+        .map_err(|required| StationFrameError::OutputTooSmall { required })?;
         Ok(EncodedStaFrame {
             offset: frame_offset,
-            length: frame_length,
+            length: ethernet_end - frame_offset,
         })
     }
 
@@ -357,54 +351,51 @@ impl StaProtectedEthernetFrame {
         plan.header[1] |= 0x40;
         plan.header[24] |= 0x80;
 
-        let header_len = usize::from(plan.header_len);
-        debug_assert_eq!(header_len, crate::data::IEEE80211_QOS_DATA_HEADER_LEN);
-        let first_subframe = frame_offset + header_len + CCMP_HEADER_LEN;
+        // A station A-MSDU always owns the complete fixed-size QoS header.
+        let mut header = plan.header;
+        header[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
+        let first_prefix_length =
+            header.len() + CCMP_HEADER_LEN + AMSDU_SUBFRAME_HEADER_LEN + LLC_SNAP_HEADER_LEN;
         let first_payload_length = ethernet_length - ETHERNET_HEADER_LEN;
-        let first_payload_destination =
-            first_subframe + AMSDU_SUBFRAME_HEADER_LEN + LLC_SNAP_HEADER_LEN;
         storage.copy_within(
             ethernet_offset + ETHERNET_HEADER_LEN..ethernet_end,
-            first_payload_destination,
+            frame_offset + first_prefix_length,
         );
 
-        storage[frame_offset..frame_offset + header_len]
-            .copy_from_slice(&plan.header[..header_len]);
-        storage[frame_offset + 22..frame_offset + 24]
-            .copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
-        let ccmp_offset = frame_offset + header_len;
-        storage[ccmp_offset..ccmp_offset + CCMP_HEADER_LEN].copy_from_slice(&self.ccmp_header);
-
+        // Disjoint slices retain the moved first payload while the two
+        // fragment plans write only its prefix and the following subframe.
+        let frame = &mut storage[frame_offset..frame_end];
+        let (first_prefix, body) = frame.split_at_mut(first_prefix_length);
+        let (_, following) = body.split_at_mut(first_payload_length);
         let first_msdu_length = LLC_SNAP_HEADER_LEN + first_payload_length;
-        storage[first_subframe..first_subframe + 12].copy_from_slice(&first_header[..12]);
-        storage[first_subframe + 12..first_subframe + 14]
-            .copy_from_slice(&(first_msdu_length as u16).to_be_bytes());
-        let first_llc = first_subframe + AMSDU_SUBFRAME_HEADER_LEN;
-        storage[first_llc..first_llc + 6].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0]);
-        storage[first_llc + 6..first_llc + 8].copy_from_slice(&first_header[12..14]);
-
-        let first_subframe_length =
-            AMSDU_SUBFRAME_HEADER_LEN + LLC_SNAP_HEADER_LEN + first_payload_length;
+        let first_written = crate::encoding::FrameParts([
+            header.as_slice(),
+            &self.ccmp_header,
+            &first_header[..12],
+            &(first_msdu_length as u16).to_be_bytes(),
+            &crate::data::RFC1042_LLC_SNAP_PREFIX,
+            &first_header[12..14],
+        ])
+        .write(first_prefix)
+        .map_err(|required| StationFrameError::OutputTooSmall { required })?;
+        let first_subframe_length = AMSDU_SUBFRAME_HEADER_LEN + first_msdu_length;
+        let padding = [0; 3];
         let first_padding = (4 - (first_subframe_length & 3)) & 3;
-        let second_subframe = first_subframe + first_subframe_length + first_padding;
-        storage[second_subframe - first_padding..second_subframe].fill(0);
-
         let second_payload = &second_ethernet[ETHERNET_HEADER_LEN..];
         let second_msdu_length = LLC_SNAP_HEADER_LEN + second_payload.len();
-        storage[second_subframe..second_subframe + 12].copy_from_slice(&second_ethernet[..12]);
-        storage[second_subframe + 12..second_subframe + 14]
-            .copy_from_slice(&(second_msdu_length as u16).to_be_bytes());
-        let second_llc = second_subframe + AMSDU_SUBFRAME_HEADER_LEN;
-        storage[second_llc..second_llc + 6].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0]);
-        storage[second_llc + 6..second_llc + 8].copy_from_slice(&second_ethernet[12..14]);
-        let second_payload_offset = second_llc + LLC_SNAP_HEADER_LEN;
-        storage[second_payload_offset..second_payload_offset + second_payload.len()]
-            .copy_from_slice(second_payload);
-        debug_assert_eq!(second_payload_offset + second_payload.len(), frame_end);
-
+        let following_written = crate::encoding::FrameParts([
+            &padding[..first_padding],
+            &second_ethernet[..12],
+            &(second_msdu_length as u16).to_be_bytes(),
+            &crate::data::RFC1042_LLC_SNAP_PREFIX,
+            &second_ethernet[12..14],
+            second_payload,
+        ])
+        .write(following)
+        .map_err(|required| StationFrameError::OutputTooSmall { required })?;
         Ok(EncodedStaFrame {
             offset: frame_offset,
-            length: required,
+            length: first_written + first_payload_length + following_written,
         })
     }
 }

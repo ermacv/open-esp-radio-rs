@@ -836,44 +836,50 @@ fn protected_amsdu_pair_encodes_in_first_ethernet_allocation() {
     let second = [
         0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 8, 9, 10, 11, 12, 13, 0x88, 0xb5, 4, 5, 6,
     ];
-    let ethernet_frames: [&[u8]; 2] = [&first, &second];
-    let metadata = StaProtectedEthernetFrame {
-        bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
-        sequence_number: seq(0x123),
-        user_priority: 7,
-        peer_qos: true,
-        ccmp_header: [3, 0, 0, 0x20, 0, 0, 0, 0],
-    };
-    let mut expected = [0_u8; 96];
-    let expected_length = StaProtectedAmsduFrame {
-        source: [2, 3, 4, 5, 6, 7],
-        bssid: metadata.bssid,
-        sequence_number: metadata.sequence_number,
-        user_priority: metadata.user_priority,
-        ccmp_header: metadata.ccmp_header,
-        ethernet_frames: &ethernet_frames,
+    for first_length in ETHERNET_HEADER_LEN..=first.len() {
+        for second_length in ETHERNET_HEADER_LEN..=second.len() {
+            let first = &first[..first_length];
+            let second = &second[..second_length];
+            let ethernet_frames: [&[u8]; 2] = [first, second];
+            let metadata = StaProtectedEthernetFrame {
+                bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
+                sequence_number: seq(0x123),
+                user_priority: 7,
+                peer_qos: true,
+                ccmp_header: [3, 0, 0, 0x20, 0, 0, 0, 0],
+            };
+            let mut expected = [0_u8; 96];
+            let expected_length = StaProtectedAmsduFrame {
+                source: [2, 3, 4, 5, 6, 7],
+                bssid: metadata.bssid,
+                sequence_number: metadata.sequence_number,
+                user_priority: metadata.user_priority,
+                ccmp_header: metadata.ccmp_header,
+                ethernet_frames: &ethernet_frames,
+            }
+            .encode(&mut expected)
+            .unwrap();
+
+            const ETHERNET_OFFSET: usize = STA_PROTECTED_QOS_ETHERNET_HEADROOM;
+            let mut storage = [0xa5_u8; 128];
+            storage[ETHERNET_OFFSET..ETHERNET_OFFSET + first.len()].copy_from_slice(first);
+            let encoded = metadata
+                .encode_amsdu_pair_in_place(&mut storage, ETHERNET_OFFSET, first.len(), second)
+                .unwrap();
+
+            assert_eq!(encoded.offset, 0);
+            assert_eq!(encoded.length, expected_length);
+            assert_eq!(
+                &storage[..encoded.length],
+                &expected[..expected_length],
+                "in-place and owned encoders must emit identical MPDUs"
+            );
+            assert!(
+                storage[encoded.length..].iter().all(|byte| *byte == 0xa5),
+                "capacity beyond the encoded MPDU remains untouched"
+            );
+        }
     }
-    .encode(&mut expected)
-    .unwrap();
-
-    const ETHERNET_OFFSET: usize = STA_PROTECTED_QOS_ETHERNET_HEADROOM;
-    let mut storage = [0xa5_u8; 128];
-    storage[ETHERNET_OFFSET..ETHERNET_OFFSET + first.len()].copy_from_slice(&first);
-    let encoded = metadata
-        .encode_amsdu_pair_in_place(&mut storage, ETHERNET_OFFSET, first.len(), &second)
-        .unwrap();
-
-    assert_eq!(encoded.offset, 0);
-    assert_eq!(encoded.length, expected_length);
-    assert_eq!(
-        &storage[..encoded.length],
-        &expected[..expected_length],
-        "in-place and owned encoders must emit identical MPDUs"
-    );
-    assert!(
-        storage[encoded.length..].iter().all(|byte| *byte == 0xa5),
-        "capacity beyond the encoded MPDU remains untouched"
-    );
 }
 
 #[test]

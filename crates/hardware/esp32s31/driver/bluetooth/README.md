@@ -117,3 +117,12 @@ This observation does not establish that controller emergency shutdown
 reaches it, that DMA writes ended, or that neighboring radios remain usable.
 SOURCE(esp32s31): libcoexist[coexist_core.o]::coex_core_release;
 libcoexist[coexist_hw.o]::coex_hw_timer_disable.
+
+The compiled `open_ble_emergency_stop` comparison uses the pinned SDK's
+real scheduler broker table and its stop subscriber. Its selected cases cover
+idle, busy, delayed command readiness, an unstable initial diagnostic pair,
+and becoming idle before command readiness, over four register fill images.
+Register order and values compare exactly, apart from explicit production
+device fences and the one diagnostic-selector republication when the initial
+pair disagrees. These code observations do not establish hardware completion;
+active TX/RX quarantine and neighboring radios still require HIL evidence.

@@ -145,9 +145,10 @@ mod tests {
         // The recipes are shard sources: every firmware project.
         assert_eq!(
             crate::artifacts::firmware_projects(&root).unwrap(),
-            [Path::new(
-                "verification/esp32s31/hil-vendor/phy-tracking-reference"
-            )]
+            [
+                Path::new("verification/esp32s31/hil-vendor/phy-tracking-reference"),
+                Path::new("verification/esp32s31/hil-vendor/ble-scan-reference"),
+            ]
         );
     }
 

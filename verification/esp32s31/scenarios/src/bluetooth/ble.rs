@@ -14,6 +14,8 @@ use crate::mac::{
 };
 use blobray_domain::ReadRun;
 
+mod emergency;
+
 /// Session inputs of the second to fourth suite archives.
 const BTDM_COMMON_INPUT: u64 = 4;
 const BTBB_INPUT: u64 = 5;
@@ -545,6 +547,7 @@ pub const LEAVES: &[Leaf] = &[
         ),
         BTDM_COMMON_INPUT,
     ),
+    emergency::LEAF,
     // The scheduler execution modify (`r_btdm_sched_execution_modify`) and
     // execution lock (`r_btdm_sched_execution_lock`), compared through their
     // diagnostic samples.
@@ -809,6 +812,7 @@ pub const BLUETOOTH: Suite = Suite {
         "libbtbb",
         "libesp-hw-support",
         "libhal",
+        "libbt-sdk",
     ],
     leaves: LEAVES,
     id: crate::mac::CONTRACT_ID,
@@ -817,16 +821,12 @@ pub const BLUETOOTH: Suite = Suite {
     roots: &[],
     prepare: None,
     claims: &[],
-    // ESP-IDF linker-script broker tables, which the interrupt, the scheduler
-    // and its stop reach only after their compared prefixes; the peripheral bases and ROM
+    // The captured SDK bt archive supplies the broker tables. Peripheral bases and ROM
     // aliases the linker scripts provide and the firmware's writable-IRAM
     // error, log and I2C functions, which only modem clock driver paths the
     // compared cases never take reference; and the writable-IRAM FreeRTOS
     // port, which the modem clock leaves answer as quiet calls.
     absent: &[
-        "_nrtIsr_linear_broker_flash",
-        "_btdm_sched_linear_broker_flash",
-        "_btdm_sched_linear_broker_ram",
         "MODEM_SYSCON",
         "MODEM_LPCON",
         "LP_CLKRST",
@@ -843,6 +843,21 @@ pub const BLUETOOTH: Suite = Suite {
         "xPortInIsrContext",
         "xPortEnterCriticalTimeout",
         "vPortExitCriticalMultiCore",
+        // SDK broker-table linkage also retains OS/time wrappers. None is
+        // entered by these register transactions; reaching one is a gap.
+        "RTC_TIMER",
+        "esp_rom_get_cpu_ticks_per_us",
+        "uxQueueMessagesWaitingFromISR",
+        // Other SDK broker selectors retain queue and allocation wrappers.
+        // The compared stop selector never enters them. Declare them absent,
+        // not quiet: an unexpected call must make comparison incomplete.
+        "heap_caps_malloc",
+        "xQueueReceiveFromISR",
+        "vPortYieldFromISR",
+        "xQueueReceive",
+        "xQueueGenericSendFromISR",
+        "xQueueGenericSend",
+        "uxQueueMessagesWaiting",
     ],
 };
 

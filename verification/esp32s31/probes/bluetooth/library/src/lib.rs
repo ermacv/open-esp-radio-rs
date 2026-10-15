@@ -76,6 +76,14 @@ oer_probe_macros::probe! {
 }
 
 oer_probe_macros::probe! {
+    /// Complete bounded emergency scheduler transaction. The scenario observes
+    /// MMIO for confirmed paths; the result never grants DMA reuse authority.
+    pub fn open_ble_emergency_stop() {
+        let _outcome = oer_esp32s31_bluetooth::validation::emergency_stop();
+    }
+}
+
+oer_probe_macros::probe! {
     /// Compiled production entry for the complete 49-operation BTDM controller
     /// HAL-init body under its exact standalone caller-derived profile.
     pub fn open_btdm_hal_init_trace_r_sym_bt_a_gdrujd2_mu_az_wyh75ba_r() {

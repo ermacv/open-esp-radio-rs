@@ -523,3 +523,15 @@ id = "esp-idf/components/soc/esp32s31/register/soc/reg_base.h"
 source = "esp-idf"
 path = "components/soc/esp32s31/register/soc/reg_base.h"
 sha256 = "24a0c98ca63b042ed32d42c5566b979d412e04ec7b1b9d305bb7addc12577f9d"
+
+# The existing BLE reference firmware captures ESP-IDF's actual broker tables,
+# including the stop subscriber reached by the complete scheduler-stop path.
+[[source]]
+id = "ble-scan-vendor-reference"
+kind = "firmware"
+image = "ble-scan-vendor-reference"
+
+[[artifact]]
+id = "libbt-sdk"
+source = "ble-scan-vendor-reference"
+path = "target/vendor-firmware/esp32s31/ble-scan-reference/build/esp-idf/bt/libbt.a"

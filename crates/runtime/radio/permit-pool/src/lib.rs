@@ -310,11 +310,11 @@ impl<'id, K, const PERMITS: usize, const SEATS: usize, Pool: PoolPath, Waiters: 
 
     fn release(&self, permit: Permit<'id, K, Pool>) {
         let mut free = self.free.borrow_mut();
-        let slot = free
-            .iter_mut()
-            .find(|slot| slot.is_none())
-            .unwrap_or_else(|| unreachable!("a pool takes back only the permits it held"));
-        *slot = Some(permit);
+        // The indivisible supply numbers its permits below PERMITS. The
+        // installation brand and component path admit only that supply;
+        // this affine permit's place is empty until its owner returns it.
+        let index = usize::from(permit.index());
+        free[index] = Some(permit);
         drop(free);
         self.wake_leader();
     }

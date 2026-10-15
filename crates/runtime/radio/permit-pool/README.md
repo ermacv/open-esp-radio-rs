@@ -20,6 +20,10 @@ any terminal, so it cannot be built.
   place, and its seat stays with it.
 - A released permit wakes the leader. A served taker that leaves a permit free
   wakes the next leader.
+- Each permit returns to its own numbered place. The indivisible supply and
+  its sealed component path prove both the index bound and that no other
+  outstanding permit occupies that place; returning capacity needs no search
+  for an empty slot.
 - The line has a place for every seat, so it is never full and arrival order
   holds for every taker. A `Line` is a copyable receipt: several pools whose
   takers are the same seats (one per transmit queue) each take it. Their permit paths stay distinct while the shared waiter path identifies those seats. A

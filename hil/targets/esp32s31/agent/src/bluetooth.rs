@@ -190,14 +190,14 @@ async fn tracking(radio: &'static Radio) {
 async fn client(
     radio: &'static Radio,
     mut system: BluetoothSystem,
-    backend: BluetoothSystemBackend,
+    backend: oer_radio_port::Installed<BluetoothSystemBackend>,
     mut service: BluetoothHciService,
 ) {
     use core::pin::pin;
     use embassy_futures::select::{Either, select};
     use oer_esp32s31_bluetooth_system::Served;
 
-    let (runner_faulted, (served, uninstalled)) = {
+    let (runner_faulted, ended) = {
         let mut runner = pin!(system.run(radio));
         let mut serving = pin!(service.run(backend, core::future::pending()));
         match select(runner.as_mut(), serving.as_mut()).await {
@@ -208,8 +208,12 @@ async fn client(
     if runner_faulted {
         super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-runner-fault\r\n");
     }
-    let (Served::Stopped(exit), Some(uninstalled)) = (served, uninstalled) else {
-        super::fail(stop_failure_reason(&served));
+    let (exit, uninstalled) = match ended {
+        oer_radio_port::PortEnd::Uninstalled {
+            output: Served::Stopped(exit),
+            uninstalled,
+        } => (exit, uninstalled),
+        failed => super::fail(stop_failure_reason(&failed)),
     };
     // No restart follows: the Host epoch closes for good.
     service.close();
@@ -240,11 +244,19 @@ fn exit_reason(exit: oer_esp32s31_bluetooth_system::ServeExit) -> &'static core:
 /// keeps every owner as it is.
 #[cfg(any(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
 fn stop_failure_reason(
-    served: &oer_esp32s31_bluetooth_system::Served<
-        oer_esp32s31_bluetooth_system::BluetoothSystemFault,
+    ended: &oer_radio_port::PortEnd<
+        oer_esp32s31_bluetooth_system::BluetoothSystemBackend,
+        oer_esp32s31_bluetooth_system::Served<oer_esp32s31_bluetooth_system::BluetoothSystemFault>,
     >,
 ) -> &'static core::ffi::CStr {
     use oer_esp32s31_bluetooth_system::{ServeExit, Served};
+    let served = match ended {
+        oer_radio_port::PortEnd::Uninstalled { output, .. }
+        | oer_radio_port::PortEnd::FailStopped { output } => output,
+        oer_radio_port::PortEnd::Abandoned => {
+            return c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-hci-service\r\n";
+        }
+    };
     match served {
         Served::DisableFailed {
             exit: ServeExit::EpochExhausted(_),

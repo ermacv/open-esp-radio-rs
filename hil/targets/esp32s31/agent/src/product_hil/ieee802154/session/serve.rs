@@ -17,7 +17,7 @@ use oer_hil_protocol::{
     ieee802154::Ieee802154SessionResult,
 };
 use oer_ieee802154::owner::{Ieee802154Client, RadioSettings, RecentRssi};
-use oer_ieee802154_port::RadioPortEvents;
+use oer_radio_port::PortPhase;
 
 use super::super::client::Client;
 use crate::console::{
@@ -49,7 +49,7 @@ async fn serve<'id, E, S, C, Rs>(
     restartable: bool,
 ) -> Served
 where
-    E: RadioPortEvents<Event = Ieee802154PortEvent>,
+    E: PortPhase<Event = Ieee802154PortEvent>,
     S: RadioSettings<Caps = Esp32s31Ieee802154>,
     C: Ieee802154Client<'id, 0, Caps = Esp32s31Ieee802154>,
     Rs: RecentRssi,
@@ -209,7 +209,7 @@ pub(super) async fn serve_session<'id, E, S, C, Rs>(
     counts: &Cell<Ieee802154SessionMaintenanceCounts>,
 ) -> Served
 where
-    E: RadioPortEvents<Event = Ieee802154PortEvent>,
+    E: PortPhase<Event = Ieee802154PortEvent>,
     S: RadioSettings<Caps = Esp32s31Ieee802154>,
     C: Ieee802154Client<'id, 0, Caps = Esp32s31Ieee802154>,
     Rs: RecentRssi,
@@ -239,7 +239,7 @@ async fn serve_commands<'id, E, S, C, Rs>(
     counts: &Cell<Ieee802154SessionMaintenanceCounts>,
 ) -> Served
 where
-    E: RadioPortEvents<Event = Ieee802154PortEvent>,
+    E: PortPhase<Event = Ieee802154PortEvent>,
     S: RadioSettings<Caps = Esp32s31Ieee802154>,
     C: Ieee802154Client<'id, 0, Caps = Esp32s31Ieee802154>,
     Rs: RecentRssi,

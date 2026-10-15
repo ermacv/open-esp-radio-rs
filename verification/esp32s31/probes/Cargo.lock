@@ -1017,18 +1017,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-bluetooth-port"
-version = "0.1.0"
-dependencies = [
- "oer-radio-port",
- "oer-time",
-]
-
-[[package]]
 name = "oer-bluetooth-radio"
 version = "0.1.0"
 dependencies = [
- "oer-bluetooth-port",
  "oer-radio-coex",
  "oer-radio-port",
  "oer-time",
@@ -1405,22 +1396,14 @@ dependencies = [
 name = "oer-ieee802154"
 version = "0.1.0"
 dependencies = [
- "oer-ieee802154-port",
  "oer-radio-port",
  "oer-time",
+ "scopeguard",
 ]
 
 [[package]]
 name = "oer-ieee802154-pac"
 version = "0.1.0"
-
-[[package]]
-name = "oer-ieee802154-port"
-version = "0.1.0"
-dependencies = [
- "oer-radio-port",
- "oer-time",
-]
 
 [[package]]
 name = "oer-ieee802154-trace"
@@ -1483,7 +1466,9 @@ version = "0.1.0"
 name = "oer-radio-port"
 version = "0.1.0"
 dependencies = [
+ "atomic-waker",
  "oer-time",
+ "scopeguard",
 ]
 
 [[package]]

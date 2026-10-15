@@ -8,7 +8,7 @@ repository.workspace = true
 description = "ESP32-S31 Bluetooth LE composition: static memory, powered epoch, interrupts, radio runtime and HCI Controller"
 
 [dependencies]
-oer-bluetooth-port = { path = "../../../../protocols/bluetooth/le/port" }
+oer-radio-port = { path = "../../../../radio/port" }
 oer-bluetooth-radio = { path = "../../../../protocols/bluetooth/le/radio" }
 oer-time-embassy = { path = "../../../../adapters/embassy/time" }
 

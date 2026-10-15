@@ -5,9 +5,7 @@ use embassy_time::{Duration, with_timeout};
 use heapless::Vec;
 use oer_esp32s31_ieee802154_system::Esp32s31Ieee802154;
 use oer_espressif_ieee802154_engine::engine::PENDING_TABLE_SIZE;
-use oer_espressif_ieee802154_runtime::{
-    Ieee802154OwnedFrame, Ieee802154PortEvent, Ieee802154RadioEvent,
-};
+use oer_espressif_ieee802154_runtime::{Ieee802154OwnedFrame, Ieee802154PortEvent};
 use oer_hil_protocol::{
     ieee802154::IEEE802154_SESSION_RECORDED_FRAMES, ieee802154::Ieee802154AirCcaOutcome,
     ieee802154::Ieee802154AirEnergyOutcome, ieee802154::Ieee802154AirTxOutcome,
@@ -28,7 +26,7 @@ use oer_ieee802154::{
         SupportedEnergyScan, SupportedTransmit, Transmission,
     },
 };
-use oer_ieee802154_port::RadioPortEvents;
+use oer_radio_port::PortPhase;
 use oer_radio_port::{Seat, Slot};
 
 use super::super::client::tx_outcome;
@@ -95,7 +93,7 @@ where
 
 impl<'id, E, S, C, Rs> Session<'_, 'id, E, S, C, Rs>
 where
-    E: RadioPortEvents<Event = Ieee802154PortEvent>,
+    E: PortPhase<Event = Ieee802154PortEvent>,
     S: RadioSettings<Caps = Esp32s31Ieee802154>,
     C: Ieee802154Client<'id, 0, Caps = Esp32s31Ieee802154>,
     Rs: RecentRssi,
@@ -129,9 +127,9 @@ where
     }
 
     /// The port's next event.
-    pub(super) async fn taken(&mut self) -> Result<Ieee802154RadioEvent, EventsLost> {
+    pub(super) async fn taken(&mut self) -> Result<Ieee802154PortEvent, EventsLost> {
         match self.events.next_event().await {
-            Ok(Ok(event)) => Ok(event.event),
+            Ok(Ok(event)) => Ok(event),
             // A poisoned port reports nothing more; the session sees a gap.
             Ok(Err(EventsLost)) | Err(_) => Err(EventsLost),
         }
@@ -140,10 +138,10 @@ where
     /// Take one runtime event; received frames are recorded.
     pub(super) fn observe(
         &mut self,
-        event: Result<Ieee802154RadioEvent, EventsLost>,
-    ) -> Option<Ieee802154RadioEvent> {
+        event: Result<Ieee802154PortEvent, EventsLost>,
+    ) -> Option<Ieee802154PortEvent> {
         match event {
-            Ok(Ieee802154RadioEvent::Received(frame)) => {
+            Ok(Ieee802154PortEvent::Received(frame)) => {
                 self.received.record(&frame);
                 None
             }
@@ -196,7 +194,7 @@ where
             };
             match self.observe(event) {
                 None => continue,
-                Some(Ieee802154RadioEvent::TransmitDone {
+                Some(Ieee802154PortEvent::TransmitDone {
                     id: done,
                     status,
                     acknowledgement,
@@ -227,7 +225,7 @@ where
         &mut self,
         id: RequestId,
         timeout: Duration,
-    ) -> Result<Ieee802154RadioEvent, Ieee802154SessionResult> {
+    ) -> Result<Ieee802154PortEvent, Ieee802154SessionResult> {
         loop {
             let Ok(event) = with_timeout(timeout, self.taken()).await else {
                 return Err(Ieee802154SessionResult::EventTimeout);
@@ -266,7 +264,7 @@ where
         let scan_timeout =
             Duration::from_micros(u64::from(request.energy_scan_micros)) + ASSESS_TIMEOUT;
         assessment.energy = match self.terminal_of(id, scan_timeout).await {
-            Ok(Ieee802154RadioEvent::EnergyScanDone { energy_dbm, .. }) => {
+            Ok(Ieee802154PortEvent::EnergyScanDone { energy_dbm, .. }) => {
                 Ieee802154AirEnergyOutcome::Energy(energy_dbm)
             }
             Ok(_) => Ieee802154AirEnergyOutcome::Failed,
@@ -285,10 +283,10 @@ where
             return assessment;
         };
         assessment.cca = match self.terminal_of(id, ASSESS_TIMEOUT).await {
-            Ok(Ieee802154RadioEvent::ClearChannelAssessmentDone { idle: true, .. }) => {
+            Ok(Ieee802154PortEvent::ClearChannelAssessmentDone { idle: true, .. }) => {
                 Ieee802154AirCcaOutcome::Clear
             }
-            Ok(Ieee802154RadioEvent::ClearChannelAssessmentDone { idle: false, .. }) => {
+            Ok(Ieee802154PortEvent::ClearChannelAssessmentDone { idle: false, .. }) => {
                 Ieee802154AirCcaOutcome::Busy
             }
             Ok(_) => Ieee802154AirCcaOutcome::Failed,
@@ -346,13 +344,13 @@ where
 }
 
 /// The identity of the operation `event` ends.
-fn terminal_id(event: &Ieee802154RadioEvent) -> Option<RequestId> {
+fn terminal_id(event: &Ieee802154PortEvent) -> Option<RequestId> {
     match *event {
-        Ieee802154RadioEvent::TransmitDone { id, .. }
-        | Ieee802154RadioEvent::EnergyScanDone { id, .. }
-        | Ieee802154RadioEvent::EnergyScanFailed { id }
-        | Ieee802154RadioEvent::ClearChannelAssessmentDone { id, .. }
-        | Ieee802154RadioEvent::ClearChannelAssessmentFailed { id } => Some(id),
+        Ieee802154PortEvent::TransmitDone { id, .. }
+        | Ieee802154PortEvent::EnergyScanDone { id, .. }
+        | Ieee802154PortEvent::EnergyScanFailed { id, .. }
+        | Ieee802154PortEvent::ClearChannelAssessmentDone { id, .. }
+        | Ieee802154PortEvent::ClearChannelAssessmentFailed { id, .. } => Some(id),
         _ => None,
     }
 }

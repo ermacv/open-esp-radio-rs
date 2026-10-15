@@ -2,7 +2,7 @@
 //! for host tests of the shape and of the code that drives it.
 //!
 //! [`OwnedModel::new`] returns the backend, which a test hands to
-//! [`run_port`](oer_ieee802154_port::run_port), and a [`ModelHandle`] that plays
+//! [`run_port`](oer_radio_port::run_port), and a [`ModelHandle`] that plays
 //! the air and the world: it ends operations and receive windows, delivers
 //! received frames, refuses the next enable or poisons the backend. Its held
 //! part of the install keeps the operation permit in a [`ModelPermitPool`],
@@ -43,9 +43,9 @@ use core::{
     task::{Poll, Waker},
 };
 
-use oer_ieee802154_port::{
-    CancelError, ClockError, EnableResult, Lent, PhaseParts, PortBackend, RadioPortClient,
-    RadioPortEvents, RadioWork, Retire, Work,
+use oer_radio_port::{
+    Call, CancelError, ClockError, Detached, DriverExit, EnableResult, InstallParts, Installed,
+    PhaseParts, PortBackend, PortPhase, RadioPortClient, RadioWork, Retire, Retired, Work,
 };
 use oer_radio_port::{
     Child, EventsLost, Mint, Permit, PermitPool, PermitSupply, Poisoned, PoolPath, PortResult,
@@ -501,12 +501,15 @@ pub struct OwnedModel {
 
 impl OwnedModel {
     /// A disabled, unconfigured backend and its world.
-    pub fn new() -> (Self, ModelHandle) {
+    pub fn new() -> (Installed<Self>, ModelHandle) {
         let shared = Shared::default();
         (
-            Self {
-                shared: shared.clone(),
-            },
+            Installed::new(
+                Self {
+                    shared: shared.clone(),
+                },
+                (),
+            ),
             ModelHandle(shared),
         )
     }
@@ -772,7 +775,7 @@ pub struct ModelEvents<'a, 'id> {
     held: &'a ModelHeld<'id>,
 }
 
-impl RadioPortEvents for ModelEvents<'_, '_> {
+impl PortPhase for ModelEvents<'_, '_> {
     type Event = ModelEvent;
     type Fault = ModelFault;
 
@@ -791,9 +794,12 @@ impl RadioPortEvents for ModelEvents<'_, '_> {
                     _ => {}
                 }
                 drop(state);
-                if let Some((interface, id)) = event.ends() {
+                if let Some((_interface, id)) = event.ends() {
                     // The permit goes back before the terminal is handed out.
-                    self.held.permits.complete(interface, id);
+                    if let Err(_mismatch) = self.held.permits.complete(id) {
+                        self.shared.borrow_mut().poisoned = Some(ModelFault);
+                        return Poll::Ready(Err(Poisoned { cause: ModelFault }));
+                    }
                 }
                 return Poll::Ready(Ok(Ok(event)));
             }
@@ -1175,7 +1181,15 @@ impl<'c, 'id, const I: u8> Ieee802154Client<'id, I> for ModelClient<'c, 'id, I> 
 }
 
 impl PortBackend for OwnedModel {
-    type Event = ModelEvent;
+    type Event<'id> = ModelEvent;
+    type Terminal<'id> = ModelEvent;
+    type Phase<'a, 'id>
+        = PhaseParts<ModelEvents<'a, 'id>, ModelControl<'a>, ModelClients<'a, 'id>>
+    where
+        Self: 'a,
+        'id: 'a;
+    type Local<'id> = ();
+    type Driver = ();
     type Domain = Ieee802154Radio;
     type Fault = ModelFault;
     type Refusal = ModelRefusal;
@@ -1183,21 +1197,7 @@ impl PortBackend for OwnedModel {
         = ModelSetup<'a, 'id>
     where
         Self: 'a;
-    type Events<'a, 'id>
-        = ModelEvents<'a, 'id>
-    where
-        Self: 'a,
-        'id: 'a;
-    type Control<'a, 'id>
-        = ModelControl<'a>
-    where
-        Self: 'a,
-        'id: 'a;
-    type Clients<'a, 'id>
-        = ModelClients<'a, 'id>
-    where
-        Self: 'a,
-        'id: 'a;
+
     type Pools = (
         crate::owner::InterfacePool<ModelCaps, 0, MODEL_PENDING_SLOTS>,
         crate::owner::InterfacePool<ModelCaps, 1, MODEL_PENDING_SLOTS>,
@@ -1209,7 +1209,10 @@ impl PortBackend for OwnedModel {
     type Uninstall = ();
     type Uninstalled = ModelHandle;
 
-    fn enable(&mut self) -> impl Future<Output = EnableResult<ModelRefusal, ModelFault>> + '_ {
+    fn enable(
+        &mut self,
+        _: Call,
+    ) -> impl Future<Output = EnableResult<ModelRefusal, ModelFault>> + '_ {
         let mut state = self.shared.borrow_mut();
         ready(match state.poisoned {
             Some(cause) => Err(Poisoned { cause }),
@@ -1223,7 +1226,9 @@ impl PortBackend for OwnedModel {
 
     fn disable<'a, 'id>(
         &'a mut self,
+        _: Call,
         held: &'a ModelHeld<'id>,
+        _: &'a mut Self::Local<'id>,
         sink: &'a mut dyn FnMut(ModelEvent),
     ) -> impl Future<Output = Result<(), Poisoned<ModelFault>>> + 'a
     where
@@ -1245,9 +1250,14 @@ impl PortBackend for OwnedModel {
             // Only the work's terminals go to the sink; received frames and
             // a loss marker are dropped with the phase.
             for event in leftover {
-                if let Some((interface, id)) = event.ends() {
-                    held.permits.complete(interface, id);
-                    sink(event);
+                if let Some((_interface, id)) = event.ends() {
+                    match held.permits.complete(id) {
+                        Ok(_completed) => sink(event),
+                        Err(_mismatch) => {
+                            self.shared.borrow_mut().poisoned = Some(ModelFault);
+                            return ready(Err(Poisoned { cause: ModelFault }));
+                        }
+                    }
                 }
             }
             match poisoned {
@@ -1260,6 +1270,7 @@ impl PortBackend for OwnedModel {
 
     fn now(
         &self,
+        _: Call,
     ) -> impl Future<Output = PortResult<Ieee802154Instant, ClockError, ModelFault>> + '_ {
         let state = self.shared.borrow();
         ready(match state.poisoned {
@@ -1268,10 +1279,7 @@ impl PortBackend for OwnedModel {
         })
     }
 
-    fn resources<'id>(
-        &mut self,
-        mint: Mint<'id, Self::Pools>,
-    ) -> (ModelHeld<'id>, ModelResources<'id>) {
+    fn resources<'id>(&mut self, mint: Mint<'id, Self::Pools>) -> InstallParts<'id, Self> {
         let (interface0, interface1, work) = mint.into_pools();
         // The model's line grows on the heap, so it holds a place for every
         // seat without the line's size.
@@ -1284,67 +1292,76 @@ impl PortBackend for OwnedModel {
             interface1,
             rssi: ModelRssi(self.shared.clone()),
         };
-        (held, resources)
+        InstallParts {
+            held,
+            local: (),
+            resources,
+        }
     }
 
-    fn setup<'a, 'id>(&'a mut self) -> Lent<'a, ModelSetup<'a, 'id>> {
-        Lent::new(ModelSetup {
+    fn setup<'a, 'id>(&'a mut self, _: Call, _: &'a mut Self::Local<'id>) -> Self::Setup<'a, 'id> {
+        ModelSetup {
             shared: &self.shared,
             brand: PhantomData,
-        })
+        }
     }
 
-    fn split<'a, 'id>(
+    fn phase<'a, 'id>(
         &'a mut self,
+        _: Call,
         held: &'a ModelHeld<'id>,
-    ) -> PhaseParts<'a, ModelEvents<'a, 'id>, ModelControl<'a>, ModelClients<'a, 'id>>
+        _: &'a mut Self::Local<'id>,
+    ) -> Self::Phase<'a, 'id>
     where
         'id: 'a,
     {
         PhaseParts {
-            events: Lent::new(ModelEvents {
+            events: ModelEvents {
                 shared: &self.shared,
                 held,
-            }),
-            control: Lent::new(ModelControl {
+            },
+            control: ModelControl {
                 shared: &self.shared,
-            }),
-            clients: Lent::new(ModelClients {
+            },
+            clients: ModelClients {
                 shared: &self.shared,
                 held,
-            }),
+            },
         }
     }
 
     /// The model has nothing to drive: it waits for its retirement.
     fn drive<'p, 'id>(
-        &mut self,
+        _: Self::Driver,
         _: &'p Self::Held<'id>,
         retire: Retire<'p>,
-    ) -> impl Future<Output = ()> + use<'p, 'id> {
-        poll_fn(move |_| {
-            if retire.is_requested() {
-                Poll::Ready(())
-            } else {
-                Poll::Pending
-            }
-        })
+    ) -> impl Future<Output = DriverExit<Self::State, Self::Fault>> + use<'p, 'id> {
+        retire.retired(())
     }
 
     /// The model's driver retires at once, so its bound never passes.
-    fn retire_bound(&self) -> impl Future<Output = ()> + '_ {
+    fn retire_bound(&self, _: Call) -> impl Future<Output = ()> + use<> {
         core::future::pending()
     }
 
     /// The model has no interrupt entries.
-    fn detach<'id>(&mut self, _: &Self::Held<'id>) {}
+    fn detach<'id>(&mut self, _: oer_radio_port::Detach, _: &Self::Held<'id>) {}
 
-    fn uninstall<'id>(self, _: Self::Held<'id>, (): (), (): ()) -> ModelHandle {
+    fn uninstall<'id>(
+        self,
+        _: Self::Held<'id>,
+        _: Self::Local<'id>,
+        _: Retired<'id, Self::State>,
+        _: Detached<'id>,
+        _: Self::Uninstall,
+    ) -> ModelHandle {
         ModelHandle(self.shared)
     }
 
-    fn abandon(&mut self) {
+    fn abandon(&mut self, call: oer_radio_port::Quarantine) -> oer_radio_port::Abandon {
         self.shared.borrow_mut().abandoned = true;
+
+        oer_radio_port::Abandon::Stopped(call.stopped())
     }
 }
 

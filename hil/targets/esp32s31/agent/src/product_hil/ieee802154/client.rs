@@ -55,7 +55,7 @@ impl Client {
     pub(super) async fn start(
         &mut self,
         parked: Ieee802154Parked,
-    ) -> Option<(Ieee802154System, Backend)> {
+    ) -> Option<(Ieee802154System, oer_radio_port::Installed<Backend>)> {
         let started = pin!(start::<Esp32s31Ieee802154, _, _>(
             self.radio,
             parked,

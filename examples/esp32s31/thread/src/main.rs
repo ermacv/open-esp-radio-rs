@@ -30,7 +30,7 @@ use oer::systems::esp32s31::embassy::ieee802154::{
         frames::{RoleCoexPriority, role_txrx_priority},
     },
     owner::{Ieee802154Clients, Ieee802154Setup},
-    port::{Disabled, Ended, Owner, PortBackend, PortBody, run_port},
+    port::{Disabled, Ended, Installed, Owner, PortBackend, PortBody, run_port},
     start,
 };
 use oer::systems::esp32s31::embassy::radio::{self as shared_radio, RadioStart, SharedRadio};
@@ -254,11 +254,13 @@ struct ThreadBody {
 }
 
 impl PortBody<Backend> for ThreadBody {
+    type Output = ();
+
     async fn run<'p, 'id>(
         self,
         mut owner: Owner<'p, 'id, Backend, Disabled>,
         resources: <Backend as PortBackend>::Resources<'id>,
-    ) -> Ended<'id, Backend> {
+    ) -> Ended<'id, Backend, ()> {
         let interface = resources.interfaces;
         let zero = owner.setup().configure(interface.interface);
         let [seat, ..] = resources.operation;
@@ -266,12 +268,13 @@ impl PortBody<Backend> for ThreadBody {
             Ok(owner) => owner,
             Err(failed) => {
                 error!("the IEEE 802.15.4 radio did not enable");
-                return failed.fail_stop();
+                return Ended::fail_stopped(failed.fail_stop(), ());
             }
         };
-        let parts = owner.split();
-        let mut events = parts.events;
-        let mut control = parts.control;
+        let mut phase = owner.phase();
+        let parts = &mut *phase;
+        let events = &mut parts.events;
+        let control = &mut parts.control;
         let client = parts.clients.client(&zero);
         let radio: OpenThreadRadio<'_, '_, _, _, _, RX_QUEUE, _> = OpenThreadRadio::new(
             &mut *events,
@@ -289,7 +292,7 @@ impl PortBody<Backend> for ThreadBody {
 }
 
 #[embassy_executor::task]
-async fn openthread_task(ot: OpenThread<'static>, backend: Backend) {
+async fn openthread_task(ot: OpenThread<'static>, backend: Installed<Backend>) {
     let _ = pin!(run_port(backend, ThreadBody { ot })).await;
     error!("the IEEE 802.15.4 port ended");
 }

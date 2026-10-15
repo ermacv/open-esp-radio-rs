@@ -1,7 +1,7 @@
 //! The single finite owner that admits commands and validates backend events.
 //! Validation errors and admission results describe this owner without retaining frames.
 
-use oer_ieee802154_port::CancelError;
+use oer_radio_port::CancelError;
 
 use super::{
     RequestId,

@@ -36,8 +36,8 @@ use oer_ieee802154::{
         RadioSettings, RecentRssi, SupportedHeaderIes, SupportedTransmit, Transmission,
     },
 };
-use oer_ieee802154_port::{
-    CancelError, Disabled, Ended, Owner, PortBody, RadioPortClient, RadioPortEvents, run_port,
+use oer_radio_port::{
+    CancelError, Disabled, Ended, Owner, PortBody, PortPhase, RadioPortClient, run_port,
 };
 use oer_radio_port::{Child, Root};
 use oer_radio_port::{EventsLost, Poisoned, Seat};
@@ -178,13 +178,15 @@ where
     F: for<'p, 'id> AsyncFnOnce(
         Owner<'p, 'id, Backend<K, EVENTS>, Disabled>,
         Resources<'id, K, EVENTS>,
-    ) -> Ended<'id, Backend<K, EVENTS>>,
+    ) -> Ended<'id, Backend<K, EVENTS>, ()>,
 {
+    type Output = ();
+
     fn run<'p, 'id>(
         self,
         owner: Owner<'p, 'id, Backend<K, EVENTS>, Disabled>,
         resources: Resources<'id, K, EVENTS>,
-    ) -> impl Future<Output = Ended<'id, Backend<K, EVENTS>>> {
+    ) -> impl Future<Output = Ended<'id, Backend<K, EVENTS>, ()>> {
         (self.0)(owner, resources)
     }
 }
@@ -195,12 +197,15 @@ fn run<K, const EVENTS: usize>(
     body: impl for<'p, 'id> AsyncFnOnce(
         Owner<'p, 'id, Backend<K, EVENTS>, Disabled>,
         Resources<'id, K, EVENTS>,
-    ) -> Ended<'id, Backend<K, EVENTS>>,
+    ) -> Ended<'id, Backend<K, EVENTS>, ()>,
 ) -> Parts
 where
     K: Ieee802154RuntimeCaps,
 {
-    block_on(run_port(backend, Body(body))).expect("the body uninstalls")
+    match block_on(run_port(backend.installed(), Body(body))) {
+        oer_radio_port::PortEnd::Uninstalled { uninstalled, .. } => uninstalled,
+        _ => panic!("the body uninstalls"),
+    }
 }
 
 /// One running phase of a single-interface port, as [`enabled`] lends it.
@@ -239,7 +244,8 @@ fn enabled_with<const EVENTS: usize>(
             let configured = owner.setup().configure(interfaces.interface);
             let mut owner = enabled_owner(owner.enable().await);
             {
-                let mut phase = owner.split();
+                let mut phase_loan = owner.phase();
+                let phase = &mut *phase_loan;
                 let client = phase.clients.client(&configured);
                 scenario(Phase {
                     runtime,
@@ -251,7 +257,7 @@ fn enabled_with<const EVENTS: usize>(
                 .await;
             }
             let owner = disabled_owner(owner.disable(&mut |event| leftovers.push(event)).await);
-            owner.uninstall(())
+            oer_radio_port::Ended::uninstall(owner, (), ())
         },
     );
     (runtime, parts, leftovers)
@@ -260,13 +266,13 @@ fn enabled_with<const EVENTS: usize>(
 /// The enabled owner; a failed enable fail-stops the port and panics.
 fn enabled_owner<'p, 'id, K: Ieee802154RuntimeCaps, const EVENTS: usize>(
     enabled: Result<
-        Owner<'p, 'id, Backend<K, EVENTS>, oer_ieee802154_port::Enabled>,
-        oer_ieee802154_port::Failed<'p, 'id, Backend<K, EVENTS>>,
+        Owner<'p, 'id, Backend<K, EVENTS>, oer_radio_port::Enabled>,
+        oer_radio_port::Failed<'p, 'id, Backend<K, EVENTS>>,
     >,
-) -> Owner<'p, 'id, Backend<K, EVENTS>, oer_ieee802154_port::Enabled> {
+) -> Owner<'p, 'id, Backend<K, EVENTS>, oer_radio_port::Enabled> {
     match enabled {
         Ok(owner) => owner,
-        Err(oer_ieee802154_port::Failed::Poisoned(poisoned)) => {
+        Err(oer_radio_port::Failed::Poisoned(poisoned)) => {
             let cause = poisoned.cause();
             let _ = poisoned.fail_stop();
             panic!("the enable found the port poisoned: {cause:?}");
@@ -282,7 +288,7 @@ fn enabled_owner<'p, 'id, K: Ieee802154RuntimeCaps, const EVENTS: usize>(
 fn disabled_owner<'p, 'id, K: Ieee802154RuntimeCaps, const EVENTS: usize>(
     disabled: Result<
         Owner<'p, 'id, Backend<K, EVENTS>, Disabled>,
-        oer_ieee802154_port::PoisonedOwner<'p, 'id, Backend<K, EVENTS>>,
+        oer_radio_port::PoisonedOwner<'p, 'id, Backend<K, EVENTS>>,
     >,
 ) -> Owner<'p, 'id, Backend<K, EVENTS>, Disabled> {
     match disabled {
@@ -334,19 +340,17 @@ fn transmission(frame: &[u8], mode: TxMode, retries: u8) -> SupportedTransmit<'_
 }
 
 fn received(event: &Ieee802154PortEvent) -> bool {
-    event.interface.is_none() && matches!(event.event, Ieee802154RadioEvent::Received(_))
+    matches!(event, Ieee802154PortEvent::Received(_))
 }
 
 /// A transmission's terminal for interface 0.
 fn transmit_done(id: oer_ieee802154::RequestId, status: TxStatus) -> Ieee802154PortEvent {
-    Ieee802154PortEvent {
-        interface: Some(Interface::PRIMARY),
-        event: Ieee802154RadioEvent::TransmitDone {
-            id,
-            status,
-            acknowledgement: None,
-            security: None,
-        },
+    Ieee802154PortEvent::TransmitDone {
+        interface: Interface::PRIMARY,
+        id,
+        status,
+        acknowledgement: None,
+        security: None,
     }
 }
 
@@ -367,7 +371,7 @@ fn a_radio_is_installed_once_and_sleeps_once_enabled() {
         assert_eq!(state(runtime), RadioState::Resting(RestingState::Sleeping));
         let owner = disabled_owner(owner.disable(&mut |_| panic!("nothing ran")).await);
         assert_eq!(state(runtime), RadioState::Disabled);
-        owner.uninstall(())
+        oer_radio_port::Ended::uninstall(owner, (), ())
     });
     // The uninstalled runtime installs again.
     let _ = install::<Single, 4>(runtime, parts());
@@ -379,11 +383,7 @@ fn a_received_frame_arrives_as_an_owned_portable_event() {
         ready(phase.client.receive(channel(15))).unwrap();
         let runtime = phase.runtime;
         runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
-        let Ok(Ieee802154PortEvent {
-            interface: None,
-            event: Ieee802154RadioEvent::Received(frame),
-        }) = next(phase.events)
-        else {
+        let Ok(Ieee802154PortEvent::Received(frame)) = next(phase.events) else {
             panic!("a frame was received");
         };
         assert_eq!(frame.frame.as_bytes(), MAC);
@@ -472,7 +472,8 @@ fn a_fault_reaches_a_queue_full_of_frames_and_poisons_the_port() {
             let configured = owner.setup().configure(resources.interfaces.interface);
             let mut owner = enabled_owner(owner.enable().await);
             {
-                let mut phase = owner.split();
+                let mut phase_loan = owner.phase();
+                let phase = &mut *phase_loan;
                 let client = phase.clients.client(&configured);
                 ready(client.receive(channel(11))).unwrap();
                 for _ in 0..3 {
@@ -506,7 +507,7 @@ fn a_fault_reaches_a_queue_full_of_frames_and_poisons_the_port() {
                 }
             };
             assert_eq!(poisoned.cause(), RadioFault::InvalidEventSequence);
-            poisoned.uninstall(())
+            oer_radio_port::Ended::uninstall(poisoned, (), ())
         },
     );
 }
@@ -543,7 +544,8 @@ fn disable_ends_the_operation_in_flight_and_enable_admits_again() {
             let configured = owner.setup().configure(interfaces.interface);
             let mut owner = enabled_owner(owner.enable().await);
             let id = {
-                let phase = owner.split();
+                let mut phase_loan = owner.phase();
+                let phase = &mut *phase_loan;
                 let client = phase.clients.client(&configured);
                 let permit = ready(client.operation(&mut operation[0]));
                 client
@@ -557,7 +559,8 @@ fn disable_ends_the_operation_in_flight_and_enable_admits_again() {
             assert_eq!(state(runtime), RadioState::Disabled);
             let mut owner = enabled_owner(owner.enable().await);
             {
-                let phase = owner.split();
+                let mut phase_loan = owner.phase();
+                let phase = &mut *phase_loan;
                 let client = phase.clients.client(&configured);
                 let permit = ready(client.operation(&mut operation[0]));
                 let _work = client
@@ -565,7 +568,7 @@ fn disable_ends_the_operation_in_flight_and_enable_admits_again() {
                     .unwrap();
             }
             let owner = disabled_owner(owner.disable(&mut |_| {}).await);
-            owner.uninstall(())
+            oer_radio_port::Ended::uninstall(owner, (), ())
         },
     );
 }
@@ -662,10 +665,7 @@ fn an_installed_enhanced_ack_generator_answers_2015_frames() {
         runtime.model_interrupt(None, &[Ieee802154Event::AckTxDone]);
         assert!(matches!(
             next(phase.events),
-            Ok(Ieee802154PortEvent {
-                event: Ieee802154RadioEvent::Received(frame),
-                ..
-            }) if frame.frame.as_bytes() == mac
+            Ok(Ieee802154PortEvent::Received(frame)) if frame.frame.as_bytes() == mac
         ));
     });
 }
@@ -846,7 +846,8 @@ fn interface_keys_belong_to_their_interface() {
             }));
             let mut owner = enabled_owner(owner.enable().await);
             {
-                let phase = owner.split();
+                let mut phase_loan = owner.phase();
+                let phase = &mut *phase_loan;
                 let first = phase.clients.client(&zero);
                 let second = phase.clients.client(&one);
                 second.set_mac_keys(1, [1; 16], [2; 16], [3; 16]);
@@ -869,7 +870,7 @@ fn interface_keys_belong_to_their_interface() {
             let mut owner = disabled_owner(owner.disable(&mut |_| {}).await);
             let _ = owner.setup().remove(one);
             let _ = owner.setup().remove(zero);
-            owner.uninstall(())
+            oer_radio_port::Ended::uninstall(owner, (), ())
         },
     );
 }
@@ -1077,4 +1078,141 @@ fn a_fault_beyond_the_reserved_one_never_overruns_the_queue() {
     assert_eq!(queue.take(), Some(Ok(fault())));
     assert_eq!(queue.take(), Some(Err(EventsLost)));
     assert_eq!(queue.take(), None);
+}
+
+#[test]
+fn a_foreign_terminal_poisons_without_releasing_the_admitted_permit() {
+    let runtime = runtime::<8>();
+    run(
+        install::<Single, 8>(runtime, parts()),
+        async |mut owner, resources| {
+            let RuntimeResources {
+                interfaces,
+                mut operation,
+                ..
+            } = resources;
+            let configured = owner.setup().configure(interfaces.interface);
+            let mut owner = enabled_owner(owner.enable().await);
+            {
+                let mut phase_loan = owner.phase();
+                let phase = &mut *phase_loan;
+                let client = phase.clients.client(&configured);
+                let permit = client.operation(&mut operation[0]).await;
+                let _token = client
+                    .transmit(permit, transmission(&MAC, TxMode::Direct, 0))
+                    .unwrap();
+                assert!(runtime.events.push(Ieee802154RadioEvent::EnergyScanDone {
+                    id: oer_ieee802154::RequestId::new(u32::MAX),
+                    energy_dbm: -30,
+                }));
+                assert!(matches!(
+                    ready(phase.events.next_event()),
+                    Err(Poisoned {
+                        cause: RadioFault::StateLost
+                    })
+                ));
+                let mut waiting = pin!(client.operation(&mut operation[0]));
+                assert!(
+                    poll_once(waiting.as_mut()).is_pending(),
+                    "a foreign terminal must not release the held permit"
+                );
+            }
+            match owner.disable(&mut |_| {}).await {
+                Ok(_) => panic!("the malformed terminal poisoned the port"),
+                Err(poisoned) => oer_radio_port::Ended::uninstall(poisoned, (), ()),
+            }
+        },
+    );
+}
+
+enum AbandonBody {
+    FailStop,
+    Drop,
+    Wait,
+}
+impl PortBody<Backend<Single, 4>> for AbandonBody {
+    type Output = ();
+    async fn run<'p, 'id>(
+        self,
+        owner: Owner<'p, 'id, Backend<Single, 4>, Disabled>,
+        _: Resources<'id, Single, 4>,
+    ) -> Ended<'id, Backend<Single, 4>, ()> {
+        match self {
+            Self::FailStop => {
+                let proof = owner.fail_stop();
+                assert!(matches!(
+                    proof.outcome(),
+                    oer_radio_port::Abandon::Unconfirmed(_)
+                ));
+                Ended::fail_stopped(proof, ())
+            }
+            Self::Drop => {
+                drop(owner);
+                core::future::pending().await
+            }
+            Self::Wait => {
+                core::future::pending::<()>().await;
+                Ended::uninstall(owner, (), ())
+            }
+        }
+    }
+}
+
+#[test]
+fn abandonment_never_enters_the_lock_held_by_an_isr() {
+    for fail_stop in [false, true] {
+        let runtime = runtime::<4>();
+        let backend = install::<Single, 4>(runtime, parts());
+        runtime.installed.lock(|installed| {
+            // An entered ISR owns this mutable state. Emergency poisoning,
+            // retirement and quarantined detach must not enter it again.
+            let entered_isr = installed.borrow_mut();
+            let body = if fail_stop {
+                AbandonBody::FailStop
+            } else {
+                AbandonBody::Drop
+            };
+            let end = block_on(run_port(backend.installed(), body));
+            assert!(matches!(
+                (fail_stop, end),
+                (true, oer_radio_port::PortEnd::FailStopped { output: () })
+                    | (false, oer_radio_port::PortEnd::Abandoned)
+            ));
+            assert!(entered_isr.is_some(), "unconfirmed backing stays installed");
+            assert_eq!(
+                runtime.poisoned(),
+                Err(Poisoned {
+                    cause: RadioFault::StateLost
+                })
+            );
+            assert!(
+                runtime
+                    .install::<Single>(parts(), FixedRandom, Ieee802154PibDefaults::default())
+                    .is_err()
+            );
+        });
+    }
+}
+
+#[test]
+fn cancellation_quarantines_without_entering_the_isr_lock() {
+    let runtime = runtime::<4>();
+    let backend = install::<Single, 4>(runtime, parts());
+    let mut port = Box::pin(run_port(backend.installed(), AbandonBody::Wait));
+    assert!(
+        port.as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    runtime.installed.lock(|installed| {
+        let entered_isr = installed.borrow_mut();
+        drop(port);
+        assert!(entered_isr.is_some());
+        assert_eq!(
+            runtime.poisoned(),
+            Err(Poisoned {
+                cause: RadioFault::StateLost
+            })
+        );
+    });
 }

@@ -23,9 +23,9 @@ the [runtime](../../../../runtime/espressif/ieee802154/src/lib.rs) and the
    the adapter once at boot (`install_interrupt_route` with an
    `Ieee802154InterruptSource` from its token).
 
-`start` returns the running client and the radio's port backend, which the
-application runs under `run_port`. The port's end masks the MAC route and
-returns the engine and MAC owners. `Ieee802154System::stop` takes those
+`start` returns the running client and `Installed<Ieee802154SystemBackend<K>>`,
+which pairs the backend with its independent driver for `run_port`. The
+port's end masks the MAC route and returns the engine and MAC owners. `Ieee802154System::stop` takes those
 parts, proves the foundation again, leaves the domain and BTBB (the radio
 system closes RF after the last PHY client), releases the clocks and
 leaves common power. It returns the partition and engine for a later start.
@@ -62,7 +62,8 @@ is at `ieee802154::openthread`; the
 The runtime is a process singleton. `start` returns the client's port
 backend (`Ieee802154SystemBackend<K>`, with the capabilities marker
 `Esp32s31Ieee802154` or `Esp32s31Ieee802154Multipan`), which the
-application runs under `run_port`; the port's end masks the MAC route and
+application runs under `run_port` as an `Installed` pair; its `PortEnd` carries
+the returned hardware and body output. The port's end masks the MAC route and
 returns the engine and MAC owners (`Ieee802154SystemParts`) to
 `Ieee802154System::stop`. Its
 `Ieee802154Capabilities` carry the figures ESP-IDF reports to an upper

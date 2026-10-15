@@ -143,7 +143,7 @@ pub type BluetoothSystemRuntime = BluetoothRuntime<
 
 type Hardware = LiveBluetoothHardware<'static, Storage>;
 
-/// The driver of the running client's radio, inside its backend.
+/// The independent driver paired with the running client's port backend.
 pub type BluetoothSystemDriver = BluetoothDriver<
     'static,
     CriticalSectionRawMutex,
@@ -598,7 +598,7 @@ impl BluetoothSystem {
     /// service fails, publish the active roles to the coexistence schedule
     /// of `radio` and follow whether another radio shares the antenna, so
     /// the events carry the vendor's coexistence priorities. The radio's
-    /// own driver runs inside its port ([`oer_bluetooth_port::run_port`]); this
+    /// own driver runs inside its port ([`oer_radio_port::run_port`]); this
     /// reaches it only through the runtime's signals and atomics.
     ///
     /// Poll it beside the body that runs the port. Every fault it returns
@@ -970,7 +970,13 @@ pub async fn start<P, C: PlatformClockProvider>(
     radio: &RadioSystem<P, C, EmbassyClock>,
     parked: BluetoothParked,
     public_address: BluetoothPublicDeviceAddress,
-) -> Result<(BluetoothSystem, BluetoothSystemBackend), BluetoothStartFailure> {
+) -> Result<
+    (
+        BluetoothSystem,
+        oer_radio_port::Installed<BluetoothSystemBackend>,
+    ),
+    BluetoothStartFailure,
+> {
     let BluetoothParked {
         partition,
         coex,
@@ -1157,7 +1163,13 @@ async fn publish_and_install(
     published: Option<&'static Storage>,
     power: CommonPower<BluetoothClient>,
     coexisting: Coexisting<BluetoothClient>,
-) -> Result<(BluetoothSystem, BluetoothSystemBackend), BluetoothStartFailure> {
+) -> Result<
+    (
+        BluetoothSystem,
+        oer_radio_port::Installed<BluetoothSystemBackend>,
+    ),
+    BluetoothStartFailure,
+> {
     let BlePhyRuntime {
         endpoints,
         output,

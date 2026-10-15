@@ -13,7 +13,7 @@ use embassy_futures::select::{Either, select};
 use embassy_time::{Duration, Timer, with_timeout};
 use oer_esp32s31_ieee802154_system::Esp32s31Ieee802154;
 use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
-use oer_espressif_ieee802154_runtime::{Ieee802154PortEvent, Ieee802154RadioEvent};
+use oer_espressif_ieee802154_runtime::Ieee802154PortEvent;
 use oer_hil_protocol::{
     ieee802154::Ieee802154AirCcaOutcome, ieee802154::Ieee802154AirCheckEvidence,
     ieee802154::Ieee802154AirCheckRequest, ieee802154::Ieee802154AirCheckStop,
@@ -28,8 +28,8 @@ use oer_ieee802154::{
         Transmission,
     },
 };
-use oer_ieee802154_port::{Disabled, Ended, Owner, PortBody, RadioPortEvents, run_port};
 use oer_radio_port::Seat;
+use oer_radio_port::{Disabled, Ended, Owner, PortBody, PortPhase, run_port};
 
 use super::client::{Backend, Client, now_micros, tx_outcome};
 
@@ -81,7 +81,10 @@ pub(in crate::product_hil) async fn run_air_check(
             ));
             ended.await
         };
-        let Some(parts) = ended else {
+        let oer_radio_port::PortEnd::Uninstalled {
+            uninstalled: parts, ..
+        } = ended
+        else {
             evidence.stop = Ieee802154AirCheckStop::StopFailed;
             return evidence;
         };
@@ -113,24 +116,27 @@ struct CycleBody<'c> {
 }
 
 impl PortBody<Backend> for CycleBody<'_> {
+    type Output = ();
+
     async fn run<'p, 'id>(
         self,
         mut owner: Owner<'p, 'id, Backend, Disabled>,
-        resources: <Backend as oer_ieee802154_port::PortBackend>::Resources<'id>,
-    ) -> Ended<'id, Backend> {
+        resources: <Backend as oer_radio_port::PortBackend>::Resources<'id>,
+    ) -> Ended<'id, Backend, ()> {
         let zero = owner.setup().configure(resources.interfaces.interface);
         let [mut seat, ..] = resources.operation;
         let mut owner = match owner.enable().await {
             Ok(owner) => owner,
             Err(failed) => {
                 *self.outcome = Err(Stop(Ieee802154AirCheckStop::CommandRejected));
-                return failed.fail_stop();
+                return oer_radio_port::Ended::fail_stopped(failed.fail_stop(), ());
             }
         };
         *self.outcome = {
-            let parts = owner.split();
-            let mut events = parts.events;
-            let mut control = parts.control;
+            let mut phase = owner.phase();
+            let parts = &mut *phase;
+            let events = &mut parts.events;
+            let control = &mut parts.control;
             let client = parts.clients.client(&zero);
             run_cycle(
                 &mut *events,
@@ -144,8 +150,8 @@ impl PortBody<Backend> for CycleBody<'_> {
             .await
         };
         match owner.disable(&mut |_| {}).await {
-            Ok(owner) => owner.uninstall(()),
-            Err(poisoned) => poisoned.uninstall(()),
+            Ok(owner) => oer_radio_port::Ended::uninstall(owner, (), ()),
+            Err(poisoned) => oer_radio_port::Ended::uninstall(poisoned, (), ()),
         }
     }
 }
@@ -160,7 +166,7 @@ async fn run_cycle<'id, E, S, C>(
     cycle: &mut Ieee802154AirCycle,
 ) -> Result<(), Stop>
 where
-    E: RadioPortEvents<Event = Ieee802154PortEvent>,
+    E: PortPhase<Event = Ieee802154PortEvent>,
     S: RadioSettings<Caps = Esp32s31Ieee802154>,
     C: Ieee802154Client<'id, 0, Caps = Esp32s31Ieee802154>,
 {
@@ -172,10 +178,10 @@ where
     let permit = client.operation(seat).await;
     client.energy_scan(permit, scan).map_err(rejected)?.id();
     cycle.energy = match next_event(events).await? {
-        Ieee802154RadioEvent::EnergyScanDone { energy_dbm, .. } => {
+        Ieee802154PortEvent::EnergyScanDone { energy_dbm, .. } => {
             Ieee802154AirEnergyOutcome::Energy(energy_dbm)
         }
-        Ieee802154RadioEvent::EnergyScanFailed { .. } => Ieee802154AirEnergyOutcome::Failed,
+        Ieee802154PortEvent::EnergyScanFailed { .. } => Ieee802154AirEnergyOutcome::Failed,
         _ => return Err(Stop(Ieee802154AirCheckStop::UnexpectedEvent)),
     };
 
@@ -186,15 +192,13 @@ where
         .map_err(rejected)?
         .id();
     cycle.cca = match next_event(events).await? {
-        Ieee802154RadioEvent::ClearChannelAssessmentDone { idle: true, .. } => {
+        Ieee802154PortEvent::ClearChannelAssessmentDone { idle: true, .. } => {
             Ieee802154AirCcaOutcome::Clear
         }
-        Ieee802154RadioEvent::ClearChannelAssessmentDone { idle: false, .. } => {
+        Ieee802154PortEvent::ClearChannelAssessmentDone { idle: false, .. } => {
             Ieee802154AirCcaOutcome::Busy
         }
-        Ieee802154RadioEvent::ClearChannelAssessmentFailed { .. } => {
-            Ieee802154AirCcaOutcome::Failed
-        }
+        Ieee802154PortEvent::ClearChannelAssessmentFailed { .. } => Ieee802154AirCcaOutcome::Failed,
         _ => return Err(Stop(Ieee802154AirCheckStop::UnexpectedEvent)),
     };
 
@@ -243,7 +247,7 @@ where
     loop {
         match select(window.as_mut(), taken(events)).await {
             Either::First(()) => break,
-            Either::Second(Ok(Ieee802154RadioEvent::Received(frame))) => {
+            Either::Second(Ok(Ieee802154PortEvent::Received(frame))) => {
                 cycle.received_frames = cycle.received_frames.saturating_add(1);
                 let rssi = frame.metadata.rssi_dbm;
                 cycle.strongest_rssi_dbm = Some(match cycle.strongest_rssi_dbm {
@@ -262,7 +266,7 @@ where
     client.sleep();
     loop {
         match with_timeout(Duration::from_millis(1), taken(events)).await {
-            Ok(Ok(Ieee802154RadioEvent::Received(_))) => {}
+            Ok(Ok(Ieee802154PortEvent::Received(_))) => {}
             Ok(Ok(_)) => return Err(Stop(Ieee802154AirCheckStop::UnexpectedEvent)),
             Ok(Err(stop)) => return Err(stop),
             Err(_) => break,
@@ -303,7 +307,7 @@ where
             Either::Second(Either::First(Err(_))) => {
                 return Err(Stop(Ieee802154AirCheckStop::CommandRejected));
             }
-            Either::Second(Either::Second(Ok(Ieee802154RadioEvent::Received(frame)))) => {
+            Either::Second(Either::Second(Ok(Ieee802154PortEvent::Received(frame)))) => {
                 window.received_frames = window.received_frames.saturating_add(1);
                 if window.first_frame_at_micros.is_none() {
                     window.first_frame_at_micros =
@@ -319,20 +323,20 @@ where
 }
 
 /// The port's next event: a lost frame or a poisoned port stops the cycle.
-async fn taken<E>(events: &mut E) -> Result<Ieee802154RadioEvent, Stop>
+async fn taken<E>(events: &mut E) -> Result<Ieee802154PortEvent, Stop>
 where
-    E: RadioPortEvents<Event = Ieee802154PortEvent>,
+    E: PortPhase<Event = Ieee802154PortEvent>,
 {
     match events.next_event().await {
-        Ok(Ok(event)) => Ok(event.event),
+        Ok(Ok(event)) => Ok(event),
         Ok(Err(EventsLost)) => Err(Stop(Ieee802154AirCheckStop::EventsLost)),
         Err(_) => Err(Stop(Ieee802154AirCheckStop::CommandRejected)),
     }
 }
 
-async fn next_event<E>(events: &mut E) -> Result<Ieee802154RadioEvent, Stop>
+async fn next_event<E>(events: &mut E) -> Result<Ieee802154PortEvent, Stop>
 where
-    E: RadioPortEvents<Event = Ieee802154PortEvent>,
+    E: PortPhase<Event = Ieee802154PortEvent>,
 {
     match with_timeout(EVENT_TIMEOUT, taken(events)).await {
         Ok(event) => event,
@@ -345,9 +349,9 @@ async fn transmitted<E>(
     requested_at_micros: u64,
 ) -> Result<Ieee802154AirTransmit, Stop>
 where
-    E: RadioPortEvents<Event = Ieee802154PortEvent>,
+    E: PortPhase<Event = Ieee802154PortEvent>,
 {
-    let Ieee802154RadioEvent::TransmitDone { status, .. } = next_event(events).await? else {
+    let Ieee802154PortEvent::TransmitDone { status, .. } = next_event(events).await? else {
         return Err(Stop(Ieee802154AirCheckStop::UnexpectedEvent));
     };
     Ok(Ieee802154AirTransmit {

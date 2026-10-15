@@ -44,8 +44,9 @@
 //! backend's uninstalled hardware and a core that accounted every event,
 //! ready for the Host epoch's retirement. A backend poisoned while serving
 //! ([`Served::Poisoned`]) or while disabling ([`Served::DisableFailed`]) is
-//! fail-stopped instead: no hardware comes back, and the caller keeps its
-//! other owners as they are.
+//! drained and uninstalled with its cause. The driver retains its hardware
+//! owners until that uninstall. Only a missed retirement bound fail-stops
+//! the port; `PortEnd` distinguishes that result from abandonment.
 
 #[cfg(test)]
 extern crate std;
@@ -57,11 +58,12 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use oer_bluetooth_controller::{EpochExhausted, LeController, RadioWork};
 use oer_bluetooth_hci::HostToControllerFrame;
 use oer_bluetooth_hci_transport::{HciChannelError, InProcessHciControllerTransport};
-use oer_bluetooth_port::{
-    Disabled, Ended, Failed, Owner, PhaseParts, PortBackend, PortBody, RadioPortEvents, run_port,
-};
 use oer_bluetooth_radio::{
     ClockError, EventsLost, LeRadioBackend, Poisoned, RadioActivity, RequestError,
+};
+use oer_radio_port::{
+    Disabled, Ended, Failed, Installed, Owner, PhaseParts, PortBackend, PortBody, PortEnd,
+    PortPhase, run_port,
 };
 use oer_time::{Duration, Instant, Timer};
 
@@ -100,7 +102,7 @@ pub enum Served<F> {
     Stopped(ServeExit),
     /// The service stopped serving for `exit`, and the port's `disable`
     /// found or left the backend poisoned: admitted events may be
-    /// unaccounted, and the backend is fail-stopped.
+    /// unaccounted. Uninstall returns the backend's retained owners.
     DisableFailed {
         /// Why the service stopped serving.
         exit: ServeExit,
@@ -108,7 +110,7 @@ pub enum Served<F> {
         cause: F,
     },
     /// The backend was poisoned before the service stopped serving; it is
-    /// fail-stopped.
+    /// drained and uninstalled with its retained owners.
     Poisoned(F),
     /// The service stopped serving for this exit and disabled and
     /// uninstalled the port, but the backend's driver missed its retire
@@ -121,8 +123,9 @@ pub enum Served<F> {
 /// service, then disable the port and uninstall the backend with
 /// `uninstall`. Retries after a refusal wait on `timer`.
 ///
-/// Returns how the service ended, with the backend's uninstalled hardware,
-/// or `None` after a fail-stop.
+/// Returns `PortEnd` with `Served` as the body's output. A faulted driver
+/// lets the body drain preceding results and uninstall its retained owners.
+/// Abandonment has no body output; a missed retirement bound fail-stops.
 pub async fn serve<
     B,
     M,
@@ -132,19 +135,18 @@ pub async fn serve<
     const OUTPUT: usize,
     const CONNECTIONS: usize,
 >(
-    backend: B,
+    backend: Installed<B>,
     uninstall: B::Uninstall,
     transport: &InProcessHciControllerTransport<'_, M, H2C, C2H, PACKET>,
     core: &mut LeController<'_, B::Caps, OUTPUT, CONNECTIONS>,
     timer: &impl Timer,
     stop: impl Future<Output = ()>,
-) -> (Served<B::Fault>, Option<B::Uninstalled>)
+) -> PortEnd<B, Served<B::Fault>>
 where
     B: LeRadioBackend,
     M: RawMutex,
 {
-    let mut served = None;
-    let uninstalled = run_port(
+    let end = run_port(
         backend,
         Serve {
             uninstall,
@@ -152,17 +154,17 @@ where
             core,
             timer,
             stop,
-            served: &mut served,
         },
     )
     .await;
-    let served = match (served.expect("the body records how it ended"), &uninstalled) {
-        // The body uninstalled the port, but its driver did not retire in
-        // time.
-        (Served::Stopped(exit), None) => Served::Unretired(exit),
-        (served, _) => served,
-    };
-    (served, uninstalled)
+    match end {
+        PortEnd::FailStopped {
+            output: Served::Stopped(exit),
+        } => PortEnd::FailStopped {
+            output: Served::Unretired(exit),
+        },
+        end => end,
+    }
 }
 
 /// The service as the port's body.
@@ -187,7 +189,6 @@ struct Serve<
     core: &'s mut LeController<'c, B::Caps, OUTPUT, CONNECTIONS>,
     timer: &'s T,
     stop: S,
-    served: &'s mut Option<Served<B::Fault>>,
 }
 
 impl<
@@ -207,66 +208,70 @@ where
     T: Timer,
     S: Future<Output = ()>,
 {
+    type Output = Served<B::Fault>;
+
     async fn run<'p, 'id>(
         self,
         owner: Owner<'p, 'id, B, Disabled>,
-        // The port-lifetime resources carry nothing the body uses yet.
         _: B::Resources<'id>,
-    ) -> Ended<'id, B> {
+    ) -> Ended<'id, B, Self::Output> {
         let Self {
             uninstall,
             transport,
             core,
             timer,
             stop,
-            served,
         } = self;
         let mut owner = match owner.enable().await {
             Ok(enabled) => enabled,
             Err(Failed::Refused(_, refusal)) => match refusal {},
             Err(Failed::Poisoned(poisoned)) => {
-                *served = Some(Served::Poisoned(poisoned.cause()));
-                return poisoned.fail_stop();
+                let output = Served::Poisoned(poisoned.cause());
+                return Ended::uninstall(poisoned, uninstall, output);
             }
         };
         let exit = {
+            let mut phase = owner.phase();
             let PhaseParts {
-                mut events,
+                events,
                 control,
-                mut clients,
-            } = owner.split();
+                clients,
+            } = B::parts(&mut *phase);
             serve_until::<B, _, _, H2C, C2H, PACKET, OUTPUT, CONNECTIONS>(
-                transport,
-                core,
-                &mut *events,
-                &control,
-                &mut clients,
-                timer,
-                stop,
+                transport, core, events, control, clients, timer, stop,
             )
             .await
         };
-        let exit = match exit {
-            Ok(exit) => exit,
-            Err(poisoned) => {
-                *served = Some(Served::Poisoned(poisoned.cause));
-                return owner.fail_stop();
+        if exit.is_err() {
+            // A clock or command can expose poison before the event stream.
+            // Drain all earlier terminals before giving retained owners back.
+            let mut phase = owner.phase();
+            let PhaseParts { events, .. } = B::parts(&mut *phase);
+            loop {
+                match events.next_event().await {
+                    Ok(Ok(event)) => core.outcome(B::view(&event)),
+                    Ok(Err(EventsLost)) => {}
+                    Err(_) => break,
+                }
             }
-        };
-        match owner
+        }
+        let disabled = owner
             .disable(&mut |event| core.outcome(B::view(&event)))
-            .await
-        {
-            Ok(disabled) => {
-                *served = Some(Served::Stopped(exit));
-                disabled.uninstall(uninstall)
-            }
-            Err(poisoned) => {
-                *served = Some(Served::DisableFailed {
+            .await;
+        match (exit, disabled) {
+            (Ok(exit), Ok(owner)) => Ended::uninstall(owner, uninstall, Served::Stopped(exit)),
+            (Ok(exit), Err(poisoned)) => {
+                let output = Served::DisableFailed {
                     exit,
                     cause: poisoned.cause(),
-                });
-                poisoned.fail_stop()
+                };
+                Ended::uninstall(poisoned, uninstall, output)
+            }
+            (Err(poison), Ok(owner)) => {
+                Ended::uninstall(owner, uninstall, Served::Poisoned(poison.cause))
+            }
+            (Err(poison), Err(owner)) => {
+                Ended::uninstall(owner, uninstall, Served::Poisoned(poison.cause))
             }
         }
     }

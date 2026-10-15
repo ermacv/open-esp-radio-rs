@@ -67,6 +67,7 @@ bluetooth-radio = [
     "oer-hil-protocol?/bluetooth",
     "dep:oer-bluetooth-controller",
     "dep:oer-bluetooth-hci",
+    "dep:oer-radio-port",
     "dep:oer-esp32s31-bluetooth-system",
     "dep:oer-esp32s31-hal",
     "dep:oer-esp32s31-phy",
@@ -141,6 +142,7 @@ wifi-ble-coex = [
     "dep:oer-esp32s31-hal",
     "dep:oer-bluetooth-controller",
     "dep:oer-bluetooth-hci",
+    "dep:oer-radio-port",
     "dep:oer-esp32s31-bluetooth-system",
     "dep:oer-esp32s31-radio-esp-hal",
     "dep:oer-bluetooth-gatt-trouble",
@@ -286,7 +288,6 @@ ieee802154-radio = [
     "dep:oer-esp32s31-ieee802154-system",
     "dep:oer-esp32s31-radio-runtime",
     "dep:oer-ieee802154",
-    "dep:oer-ieee802154-port",
     "dep:oer-radio-port",
 ]
 # Record the IEEE 802.15.4 engine and runtime trace points and the MAC power
@@ -344,7 +345,6 @@ openthread = { workspace = true, optional = true }
 tinyrlibc = { workspace = true, optional = true }
 oer-esp32s31-radio-runtime = { workspace = true, optional = true }
 oer-ieee802154 = { workspace = true, optional = true }
-oer-ieee802154-port = { workspace = true, optional = true }
 oer-radio-port = { workspace = true, optional = true }
 oer-esp32s31-soc-esp-hal.workspace = true
 # Recording is on in every image; only freeze triggers record unless a

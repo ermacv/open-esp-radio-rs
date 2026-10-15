@@ -15,7 +15,7 @@ use crate::{
 #[repr(transparent)]
 pub struct EventId(u32);
 
-impl oer_bluetooth_port::Correlation for EventId {
+impl oer_radio_port::Correlation for EventId {
     fn from_raw(raw: u32) -> Self {
         Self(raw)
     }

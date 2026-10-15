@@ -257,3 +257,44 @@ cases = [
     "crates/runtime/ieee80211/tests/ui/association_mixed_keys.rs",
     "crates/runtime/ieee80211/tests/ui/association_required.rs",
 ]
+
+[[suite]]
+name = "shared-port-lifecycle"
+packages = ["oer-radio-port", "oer-time"]
+features = []
+targets = ["host", "esp32s31"]
+cases = [
+    "crates/radio/port/tests/ui/owner_twice.rs",
+    "crates/radio/port/tests/ui/backend_call_authority.rs",
+    "crates/radio/port/tests/ui/after_detach.rs",
+    "crates/radio/port/tests/ui/foreign_detached.rs",
+    "crates/radio/port/tests/ui/retire_twice.rs",
+    "crates/radio/port/tests/ui/drive_twice.rs",
+    "crates/radio/port/tests/ui/installed_twice.rs",
+    "crates/radio/port/tests/ui/retired_requires_request.rs",
+    "crates/radio/port/tests/ui/faulted_requires_publication.rs",
+    "crates/radio/port/tests/ui/retire_proof_affine.rs",
+    "crates/radio/port/tests/ui/poison_proof_affine.rs",
+    "crates/radio/port/tests/ui/phase_transition.rs",
+    "crates/radio/port/tests/ui/drive_no_backend_borrow.rs",
+    "crates/radio/port/tests/ui/output_brand.rs",
+    "crates/radio/port/tests/ui/fail_stopped_requires_proof.rs",
+    "crates/radio/port/tests/ui/fail_stopped_affine.rs",
+    "crates/radio/port/tests/ui/foreign_fail_stopped.rs",
+    "crates/radio/port/tests/ui/quarantine_twice.rs",
+    "crates/radio/port/tests/ui/enabled_uninstall.rs",
+    "crates/radio/port/tests/ui/hardware_stopped_affine.rs",
+    "crates/radio/port/tests/ui/hardware_stopped_requires_quarantine.rs",
+]
+
+[[suite]]
+name = "ieee802154-ownership"
+packages = ["oer-ieee802154", "oer-radio-port"]
+features = []
+targets = ["host", "esp32s31"]
+cases = [
+    "crates/protocols/ieee802154/tests/ui/work_permit_twice.rs",
+    "crates/protocols/ieee802154/tests/ui/completed_affine.rs",
+    "crates/protocols/ieee802154/tests/ui/completed_constructor.rs",
+    "crates/protocols/ieee802154/tests/ui/unsupported_feature.rs",
+]

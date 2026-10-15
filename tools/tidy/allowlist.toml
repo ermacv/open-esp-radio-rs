@@ -568,3 +568,104 @@ reason = "Affine association and complete-bank contract, checked with its compil
 [[uncompiled]]
 path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/association_slot_once.rs"
 reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+# Shared port lifecycle diagnostics and their compiling twins.
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/owner_twice.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/backend_call_authority.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/after_detach.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/foreign_detached.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/retire_twice.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/drive_twice.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/installed_twice.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/retired_requires_request.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/faulted_requires_publication.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/retire_proof_affine.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/poison_proof_affine.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/phase_transition.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/drive_no_backend_borrow.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/output_brand.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/fail_stopped_requires_proof.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/fail_stopped_affine.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/foreign_fail_stopped.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/quarantine_twice.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/enabled_uninstall.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee802154/tests/ui/work_permit_twice.rs"
+reason = "cargo xtask check ui checks the affine permit and completion on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee802154/tests/ui/completed_affine.rs"
+reason = "cargo xtask check ui checks the affine permit and completion on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee802154/tests/ui/completed_constructor.rs"
+reason = "cargo xtask check ui checks the affine permit and completion on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee802154/tests/ui/unsupported_feature.rs"
+reason = "cargo xtask check ui rejects unsupported capability witnesses on host and RV32"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/hardware_stopped_affine.rs"
+reason = "cargo xtask check ui checks the affine emergency authority and its compiling twin"
+
+[[uncompiled]]
+path = "crates/radio/port/tests/ui/hardware_stopped_requires_quarantine.rs"
+reason = "cargo xtask check ui checks the affine emergency authority and its compiling twin"

@@ -32,7 +32,7 @@ pub use maintenance::Ieee802154PhyMaintenance;
 // the IEEE 802.15.4 port's traits, so an application drives the port
 // through this crate (or the `oer` facade) alone.
 pub use oer_ieee802154::owner;
-pub use oer_ieee802154_port as port;
+pub use oer_radio_port as port;
 
 // Inputs of `start` and `Ieee802154Parked::new`, and the shared radio the
 // client joins, so an application can construct it through this crate (or

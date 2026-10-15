@@ -1,6 +1,6 @@
 //! The runtime on the IEEE 802.15.4 owner shape ([`oer_ieee802154::owner`]):
 //! [`Ieee802154RuntimeBackend`] is the `PortBackend` a composition hands to
-//! [`run_port`](oer_ieee802154_port::run_port).
+//! [`run_port`](oer_radio_port::run_port).
 //!
 //! The engine stays in the runtime's blocking mutex, shared with the MAC
 //! interrupt entry: an interim critical section the owner allowed until
@@ -52,11 +52,11 @@ use oer_ieee802154::{
         SupportedHeaderIes, SupportedPower, SupportedScheduledReceive, SupportedTransmit,
     },
 };
-use oer_ieee802154_port::{
-    CancelError, ClockError, EnableResult, Lent, PhaseParts, PortBackend, RadioPortClient,
-    RadioPortEvents, RadioWork, Retire, Work,
-};
 use oer_radio_permit_pool::FifoPermitPool;
+use oer_radio_port::{
+    Call, CancelError, ClockError, Detached, DriverExit, EnableResult, InstallParts, Installed,
+    PhaseParts, PortBackend, PortPhase, RadioPortClient, RadioWork, Retire, Retired, Work,
+};
 use oer_radio_port::{
     Child, EventsLost, Mint, PermitPool, Poisoned, PoolPath, PortResult, Root, Seat, Slot,
 };
@@ -257,6 +257,15 @@ impl<'r, 'storage, K, M: RawMutex, H, T, R, const EVENTS: usize>
 impl<'r, 'storage, K, M: RawMutex, H, T, R, const EVENTS: usize, D>
     Ieee802154RuntimeBackend<'r, 'storage, K, M, H, T, R, EVENTS, D>
 {
+    /// Move the backend and its unbranded runtime driver into one install.
+    pub fn installed(self) -> Installed<Self>
+    where
+        Self: PortBackend<Driver = &'r Ieee802154Runtime<'storage, M, H, T, R, EVENTS>>,
+    {
+        let driver = self.runtime;
+        Installed::new(self, driver)
+    }
+
     /// The runtime it serves.
     pub const fn runtime(&self) -> &'r Ieee802154Runtime<'storage, M, H, T, R, EVENTS> {
         self.runtime
@@ -279,14 +288,60 @@ where
     }
 }
 
-/// The port's owned event: the runtime's event and, for a terminal, the
-/// interface whose operation it ends.
+/// An owned receive frame or an admitted operation's terminal.
+///
+/// Every terminal names its interface. Lifecycle completions and faults
+/// stay inside the runtime; faults are reported through `Poisoned` after
+/// preceding events have drained.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Ieee802154PortEvent {
-    /// Whose operation the event ends; `None` for a received frame.
-    pub interface: Option<Interface>,
-    /// The event.
-    pub event: Ieee802154RadioEvent,
+pub enum Ieee802154PortEvent {
+    /// A frame was received in receive mode.
+    Received(crate::Ieee802154OwnedFrame),
+    /// Terminal transmit completion.
+    TransmitDone {
+        /// The interface whose admitted operation completed.
+        interface: Interface,
+        /// The request.
+        id: RequestId,
+        /// Completion category.
+        status: oer_ieee802154::TxStatus,
+        /// The received acknowledgement.
+        acknowledgement: Option<crate::Ieee802154OwnedFrame>,
+        /// The security header fields the radio wrote into the frame.
+        security: Option<oer_ieee802154::AppliedSecurity>,
+    },
+    /// Terminal energy scan completion.
+    EnergyScanDone {
+        /// The interface whose admitted operation completed.
+        interface: Interface,
+        /// The request.
+        id: RequestId,
+        /// Measured channel energy in dBm.
+        energy_dbm: i8,
+    },
+    /// The energy scan was aborted.
+    EnergyScanFailed {
+        /// The interface whose admitted operation completed.
+        interface: Interface,
+        /// The request.
+        id: RequestId,
+    },
+    /// Terminal standalone CCA completion.
+    ClearChannelAssessmentDone {
+        /// The interface whose admitted operation completed.
+        interface: Interface,
+        /// The request.
+        id: RequestId,
+        /// The channel was idle.
+        idle: bool,
+    },
+    /// The standalone CCA was aborted.
+    ClearChannelAssessmentFailed {
+        /// The interface whose admitted operation completed.
+        interface: Interface,
+        /// The request.
+        id: RequestId,
+    },
 }
 
 /// A configured interface `I` of the runtime.
@@ -375,7 +430,12 @@ where
     }
 
     /// The radio's fault, once it poisoned the port.
-    fn poisoned(&self) -> Result<(), Poisoned<RadioFault>> {
+    pub(super) fn poisoned(&self) -> Result<(), Poisoned<RadioFault>> {
+        if self.abandoned.load(core::sync::atomic::Ordering::Acquire) {
+            return Err(Poisoned {
+                cause: RadioFault::StateLost,
+            });
+        }
         match self.fault.lock(Cell::get) {
             Some(cause) => Err(Poisoned { cause }),
             None => Ok(()),
@@ -507,7 +567,19 @@ where
     T: Timer,
     R: Ieee802154Random,
 {
-    type Event = Ieee802154PortEvent;
+    type Event<'id> = Ieee802154PortEvent;
+    type Terminal<'id> = Ieee802154PortEvent;
+    type Phase<'a, 'id>
+        = PhaseParts<
+        RuntimeEvents<'a, 'id, Rt<'storage, M, H, T, R, EVENTS>>,
+        RuntimeControl<'a, Rt<'storage, M, H, T, R, EVENTS>, K>,
+        RuntimeClients<'a, 'id, Rt<'storage, M, H, T, R, EVENTS>, K>,
+    >
+    where
+        Self: 'a,
+        'id: 'a;
+    type Local<'id> = ();
+    type Driver = &'r Rt<'storage, M, H, T, R, EVENTS>;
     type Domain = oer_ieee802154::Ieee802154Radio;
     type Fault = RadioFault;
     /// The radio was not in a state to enable.
@@ -516,21 +588,7 @@ where
         = RuntimeSetup<'a, 'id, Rt<'storage, M, H, T, R, EVENTS>, K>
     where
         Self: 'a;
-    type Events<'a, 'id>
-        = RuntimeEvents<'a, 'id, Rt<'storage, M, H, T, R, EVENTS>>
-    where
-        Self: 'a,
-        'id: 'a;
-    type Control<'a, 'id>
-        = RuntimeControl<'a, Rt<'storage, M, H, T, R, EVENTS>, K>
-    where
-        Self: 'a,
-        'id: 'a;
-    type Clients<'a, 'id>
-        = RuntimeClients<'a, 'id, Rt<'storage, M, H, T, R, EVENTS>, K>
-    where
-        Self: 'a,
-        'id: 'a;
+
     type Pools = (
         K::Interfaces,
         oer_radio_port::Permits<Operation, 1, RUNTIME_INTERFACES>,
@@ -546,7 +604,7 @@ where
     type Uninstall = ();
     type Uninstalled = Ieee802154RuntimeParts<'storage, H>;
 
-    fn enable(&mut self) -> impl Future<Output = EnableResult<(), RadioFault>> + '_ {
+    fn enable(&mut self, _: Call) -> impl Future<Output = EnableResult<(), RadioFault>> + '_ {
         ready(
             self.runtime
                 .poisoned()
@@ -556,7 +614,9 @@ where
 
     fn disable<'a, 'id>(
         &'a mut self,
+        _: Call,
         held: &'a RuntimeHeld<'id>,
+        _: &'a mut Self::Local<'id>,
         sink: &'a mut dyn FnMut(Ieee802154PortEvent),
     ) -> impl Future<Output = Result<(), Poisoned<RadioFault>>> + 'a
     where
@@ -581,6 +641,7 @@ where
 
     fn now(
         &self,
+        _: Call,
     ) -> impl Future<Output = PortResult<Ieee802154Instant, ClockError, RadioFault>> + '_ {
         ready(self.runtime.poisoned().map(|()| {
             Ok(Ieee802154Instant::from_micros(
@@ -589,10 +650,7 @@ where
         }))
     }
 
-    fn resources<'id>(
-        &mut self,
-        mint: Mint<'id, Self::Pools>,
-    ) -> (RuntimeHeld<'id>, Self::Resources<'id>) {
+    fn resources<'id>(&mut self, mint: Mint<'id, Self::Pools>) -> InstallParts<'id, Self> {
         let (interfaces, work) = mint.into_pools();
         let (permits, operation) = OperationPermits::new(work, FifoPermitPool::new);
         let held = RuntimeHeld {
@@ -609,81 +667,97 @@ where
                 runtime: self.runtime,
             },
         };
-        (held, resources)
+        InstallParts {
+            held,
+            local: (),
+            resources,
+        }
     }
 
-    fn setup<'a, 'id>(&'a mut self) -> Lent<'a, Self::Setup<'a, 'id>> {
-        Lent::new(RuntimeSetup {
+    fn setup<'a, 'id>(&'a mut self, _: Call, _: &'a mut Self::Local<'id>) -> Self::Setup<'a, 'id> {
+        RuntimeSetup {
             runtime: self.runtime,
             brand: PhantomData,
             caps: PhantomData,
-        })
+        }
     }
 
-    fn split<'a, 'id>(
+    fn phase<'a, 'id>(
         &'a mut self,
+        _: Call,
         held: &'a RuntimeHeld<'id>,
-    ) -> PhaseParts<'a, Self::Events<'a, 'id>, Self::Control<'a, 'id>, Self::Clients<'a, 'id>>
+        _: &'a mut Self::Local<'id>,
+    ) -> Self::Phase<'a, 'id>
     where
         'id: 'a,
     {
         PhaseParts {
-            events: Lent::new(RuntimeEvents {
+            events: RuntimeEvents {
                 runtime: self.runtime,
                 held,
-            }),
-            control: Lent::new(RuntimeControl {
+            },
+            control: RuntimeControl {
                 runtime: self.runtime,
                 caps: PhantomData,
-            }),
-            clients: Lent::new(RuntimeClients {
+            },
+            clients: RuntimeClients {
                 runtime: self.runtime,
                 held,
                 caps: PhantomData,
-            }),
+            },
         }
     }
 
     /// The CSMA-CA backoff and the retry delays, until the port retires.
-    fn drive<'p, 'id>(
-        &mut self,
+    async fn drive<'p, 'id>(
+        driver: Self::Driver,
         _: &'p Self::Held<'id>,
         retire: Retire<'p>,
-    ) -> impl Future<Output = ()> + use<'p, 'id, 'r, 'storage, K, M, H, T, R, EVENTS, D> {
-        let runtime = self.runtime;
-        async move {
-            select(runtime.run(), retire.requested()).await;
-        }
+    ) -> DriverExit<Self::State, Self::Fault> {
+        let proof = match select(retire.requested(), driver.run()).await {
+            embassy_futures::select::Either::First(proof) => proof,
+            embassy_futures::select::Either::Second(never) => match never {},
+        };
+        DriverExit::Retired { state: (), proof }
     }
 
     /// The driver retires at its next poll.
-    fn retire_bound(&self) -> impl Future<Output = ()> + '_ {
+    fn retire_bound(
+        &self,
+        _: Call,
+    ) -> impl Future<Output = ()> + use<'r, 'storage, K, M, H, T, R, EVENTS, D> {
         core::future::pending()
     }
 
     /// Mask the MAC interrupt's route, so the interrupt entry never runs
     /// again before the uninstall takes the engine.
-    fn detach<'id>(&mut self, _: &RuntimeHeld<'id>) {
-        if let Some(route) = self.route.as_mut() {
+    fn detach<'id>(&mut self, call: oer_radio_port::Detach, _: &RuntimeHeld<'id>) {
+        // The current route's detach takes the ISR lock. An unconfirmed
+        // installation retains its route and backing until chip reset.
+        if let oer_radio_port::Detach::Retired(_) = call
+            && let Some(route) = self.route.as_mut()
+        {
             route.detach();
         }
     }
 
     fn uninstall<'id>(
         self,
-        _: RuntimeHeld<'id>,
-        (): (),
-        (): (),
+        _: Self::Held<'id>,
+        _: Self::Local<'id>,
+        _: Retired<'id, Self::State>,
+        _: Detached<'id>,
+        _: Self::Uninstall,
     ) -> Ieee802154RuntimeParts<'storage, H> {
         self.runtime.uninstall()
     }
 
-    fn abandon(&mut self) {
-        self.runtime.poison(RadioFault::StateLost);
-        self.runtime.disable_locked();
-        if let Some(route) = self.route.as_mut() {
-            route.detach();
-        }
+    fn abandon(&mut self, call: oer_radio_port::Quarantine) -> oer_radio_port::Abandon {
+        self.runtime
+            .abandoned
+            .store(true, core::sync::atomic::Ordering::Release);
+        // No engine, event-queue or route mutex here: the ISR may hold it.
+        oer_radio_port::Abandon::Unconfirmed(call)
     }
 }
 
@@ -715,22 +789,59 @@ where
     T: Timer,
     R: Ieee802154Random,
 {
-    let ended = match &event {
-        Ieee802154RadioEvent::Received(_) => {
-            return Some(Ieee802154PortEvent {
-                interface: None,
-                event,
-            });
+    let complete = |id| match held.permits.complete(id) {
+        Ok(completed) => Some(completed.interface()),
+        Err(_) => {
+            // A terminal must return the exact admitted owner. Keep a
+            // mismatched owner retained and publish the broken sequence.
+            runtime.poison(RadioFault::StateLost);
+            None
         }
-        Ieee802154RadioEvent::TransmitDone { id, .. }
-        | Ieee802154RadioEvent::EnergyScanDone { id, .. }
-        | Ieee802154RadioEvent::EnergyScanFailed { id }
-        | Ieee802154RadioEvent::ClearChannelAssessmentDone { id, .. }
-        | Ieee802154RadioEvent::ClearChannelAssessmentFailed { id } => *id,
+    };
+    let port = match event {
+        Ieee802154RadioEvent::Received(frame) => {
+            return Some(Ieee802154PortEvent::Received(frame));
+        }
+        Ieee802154RadioEvent::TransmitDone {
+            id,
+            status,
+            acknowledgement,
+            security,
+        } => Ieee802154PortEvent::TransmitDone {
+            interface: complete(id)?,
+            id,
+            status,
+            acknowledgement,
+            security,
+        },
+        Ieee802154RadioEvent::EnergyScanDone { id, energy_dbm } => {
+            Ieee802154PortEvent::EnergyScanDone {
+                interface: complete(id)?,
+                id,
+                energy_dbm,
+            }
+        }
+        Ieee802154RadioEvent::EnergyScanFailed { id } => Ieee802154PortEvent::EnergyScanFailed {
+            interface: complete(id)?,
+            id,
+        },
+        Ieee802154RadioEvent::ClearChannelAssessmentDone { id, idle } => {
+            Ieee802154PortEvent::ClearChannelAssessmentDone {
+                interface: complete(id)?,
+                id,
+                idle,
+            }
+        }
+        Ieee802154RadioEvent::ClearChannelAssessmentFailed { id } => {
+            Ieee802154PortEvent::ClearChannelAssessmentFailed {
+                interface: complete(id)?,
+                id,
+            }
+        }
         Ieee802154RadioEvent::ScheduledReceiveDone { id } => {
             let mut ended = false;
             for wish in held.wishes.borrow_mut().iter_mut() {
-                if matches!(*wish, Wish::Window(window) if window.id == *id) {
+                if matches!(*wish, Wish::Window(window) if window.id == id) {
                     *wish = Wish::Sleep;
                     ended = true;
                 }
@@ -743,40 +854,38 @@ where
             return None;
         }
         Ieee802154RadioEvent::Fault { id, fault } => {
-            runtime.poison(*fault);
-            let id = (*id)?;
+            runtime.poison(fault);
+            let id = id?;
             let kind = held.kind.get()?;
-            let interface = held.permits.in_flight().map(|(interface, _)| interface);
-            if let Some(interface) = interface {
-                held.permits.complete(interface, id);
-            }
+            let interface = complete(id)?;
+            held.kind.set(None);
             held.wake_all();
-            let event = match kind {
-                OperationKind::Transmit => Ieee802154RadioEvent::TransmitDone {
+            return Some(match kind {
+                OperationKind::Transmit => Ieee802154PortEvent::TransmitDone {
+                    interface,
                     id,
                     status: oer_ieee802154::TxStatus::HardwareFailure,
                     acknowledgement: None,
                     security: None,
                 },
-                OperationKind::EnergyScan => Ieee802154RadioEvent::EnergyScanFailed { id },
-                OperationKind::Cca => Ieee802154RadioEvent::ClearChannelAssessmentFailed { id },
-            };
-            return Some(Ieee802154PortEvent { interface, event });
+                OperationKind::EnergyScan => {
+                    Ieee802154PortEvent::EnergyScanFailed { interface, id }
+                }
+                OperationKind::Cca => {
+                    Ieee802154PortEvent::ClearChannelAssessmentFailed { interface, id }
+                }
+            });
         }
         Ieee802154RadioEvent::Lifecycle(_) => return None,
     };
-    let interface = held.permits.in_flight().map(|(interface, _)| interface);
-    if let Some(interface) = interface {
-        held.permits.complete(interface, ended);
-    }
     held.kind.set(None);
     // A wish made while the operation ran takes effect now.
     held.applied.set(None);
     runtime.rest(held);
-    Some(Ieee802154PortEvent { interface, event })
+    Some(port)
 }
 
-impl<M, H, T, R, const EVENTS: usize> RadioPortEvents
+impl<M, H, T, R, const EVENTS: usize> PortPhase
     for RuntimeEvents<'_, '_, Rt<'_, M, H, T, R, EVENTS>>
 where
     M: RawMutex,
@@ -818,16 +927,16 @@ where
     R: Ieee802154Random,
 {
     fn view(event: &Ieee802154PortEvent) -> PhaseEvent<'_> {
-        let interface = event.interface.unwrap_or(Interface::PRIMARY);
-        match &event.event {
-            Ieee802154RadioEvent::Received(frame) => PhaseEvent::Received(frame.received()),
-            Ieee802154RadioEvent::TransmitDone {
+        match event {
+            Ieee802154PortEvent::Received(frame) => PhaseEvent::Received(frame.received()),
+            Ieee802154PortEvent::TransmitDone {
+                interface,
                 id,
                 status,
                 acknowledgement,
                 security,
             } => PhaseEvent::TransmitDone {
-                interface,
+                interface: *interface,
                 id: *id,
                 status: *status,
                 acknowledgement: acknowledgement
@@ -835,30 +944,35 @@ where
                     .map(crate::Ieee802154OwnedFrame::received),
                 security: *security,
             },
-            Ieee802154RadioEvent::EnergyScanDone { id, energy_dbm } => PhaseEvent::EnergyScanDone {
+            Ieee802154PortEvent::EnergyScanDone {
                 interface,
+                id,
+                energy_dbm,
+            } => PhaseEvent::EnergyScanDone {
+                interface: *interface,
                 id: *id,
                 energy_dbm: *energy_dbm,
             },
-            Ieee802154RadioEvent::EnergyScanFailed { id } => {
-                PhaseEvent::EnergyScanFailed { interface, id: *id }
-            }
-            Ieee802154RadioEvent::ClearChannelAssessmentDone { id, idle } => {
-                PhaseEvent::ClearChannelAssessmentDone {
-                    interface,
+            Ieee802154PortEvent::EnergyScanFailed { interface, id } => {
+                PhaseEvent::EnergyScanFailed {
+                    interface: *interface,
                     id: *id,
-                    idle: *idle,
                 }
             }
-            Ieee802154RadioEvent::ClearChannelAssessmentFailed { id } => {
-                PhaseEvent::ClearChannelAssessmentFailed { interface, id: *id }
-            }
-            // The port hands out neither a window's end, a fault nor a
-            // lifecycle terminal ([`take_terminal`]).
-            Ieee802154RadioEvent::ScheduledReceiveDone { .. }
-            | Ieee802154RadioEvent::Fault { .. }
-            | Ieee802154RadioEvent::Lifecycle(_) => {
-                unreachable!("the port hands out frames and operation terminals only")
+            Ieee802154PortEvent::ClearChannelAssessmentDone {
+                interface,
+                id,
+                idle,
+            } => PhaseEvent::ClearChannelAssessmentDone {
+                interface: *interface,
+                id: *id,
+                idle: *idle,
+            },
+            Ieee802154PortEvent::ClearChannelAssessmentFailed { interface, id } => {
+                PhaseEvent::ClearChannelAssessmentFailed {
+                    interface: *interface,
+                    id: *id,
+                }
             }
         }
     }

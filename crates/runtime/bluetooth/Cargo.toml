@@ -8,7 +8,6 @@ repository.workspace = true
 description = "Executor-independent service loop between an in-process HCI transport, the LE Controller core and a radio port"
 
 [dependencies]
-oer-bluetooth-port = { path = "../../protocols/bluetooth/le/port" }
 embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
 oer-bluetooth-controller = { path = "../../protocols/bluetooth/le/controller" }

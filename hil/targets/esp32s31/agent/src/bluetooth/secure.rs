@@ -34,8 +34,7 @@ use oer_bluetooth_hci::{
 };
 use oer_esp32s31_bluetooth_system::{
     BluetoothHci, BluetoothHciService, BluetoothHostTransport, BluetoothSystem,
-    BluetoothSystemBackend, BluetoothSystemFault, BluetoothSystemUninstalled, ServeExit, Served,
-    start,
+    BluetoothSystemBackend, BluetoothSystemFault, ServeExit, Served, start,
 };
 use oer_hil_agent::bluetooth_gatt::secure::{
     reset_gate::{self, GatedController},
@@ -61,12 +60,8 @@ type Gated = GatedController<'static, Controller>;
 type Resources = HostResources<DefaultPacketPool, 1, 3>;
 type HostExit = epoch::Exit<Gated, store::InjectedBondLoadFailure>;
 
-/// How the service ended, with the radio its port's uninstall left, or
-/// `None` after a fail-stop.
-type ServiceEnd = (
-    Served<BluetoothSystemFault>,
-    Option<BluetoothSystemUninstalled>,
-);
+/// The port's final outcome and the service's unbranded result.
+type ServiceEnd = oer_radio_port::PortEnd<BluetoothSystemBackend, Served<BluetoothSystemFault>>;
 
 /// How one Host epoch ended.
 enum EpochEnd {
@@ -144,7 +139,7 @@ pub(super) async fn run(
     spawner: embassy_executor::Spawner,
     radio: &'static Radio,
     system: BluetoothSystem,
-    backend: BluetoothSystemBackend,
+    backend: oer_radio_port::Installed<BluetoothSystemBackend>,
     hci: BluetoothHci,
     public_address: BluetoothPublicDeviceAddress,
     usb: crate::transport::Usb,
@@ -169,7 +164,7 @@ async fn requests(state: &'static State) {
 async fn lifecycle(
     radio: &'static Radio,
     mut system: BluetoothSystem,
-    mut backend: BluetoothSystemBackend,
+    mut backend: oer_radio_port::Installed<BluetoothSystemBackend>,
     hci: BluetoothHci,
     public_address: BluetoothPublicDeviceAddress,
     state: &'static State,
@@ -203,13 +198,26 @@ async fn lifecycle(
             epoch.as_mut().await
         };
         let (exit, uninstalled) = match end {
-            EpochEnd::Host(exit, (Served::Stopped(ServeExit::Stopped), Some(uninstalled))) => {
-                (exit, uninstalled)
-            }
+            EpochEnd::Host(
+                exit,
+                oer_radio_port::PortEnd::Uninstalled {
+                    output: Served::Stopped(ServeExit::Stopped),
+                    uninstalled,
+                },
+            ) => (exit, uninstalled),
             // The service ended on its own, even when the Host ended at the
             // same time: no restart follows.
-            EpochEnd::Host(_, (Served::Stopped(served), Some(uninstalled)))
-            | EpochEnd::Service((Served::Stopped(served), Some(uninstalled))) => {
+            EpochEnd::Host(
+                _,
+                oer_radio_port::PortEnd::Uninstalled {
+                    output: Served::Stopped(served),
+                    uninstalled,
+                },
+            )
+            | EpochEnd::Service(oer_radio_port::PortEnd::Uninstalled {
+                output: Served::Stopped(served),
+                uninstalled,
+            }) => {
                 state.stopped();
                 service.close();
                 let stopped = {
@@ -222,7 +230,7 @@ async fn lifecycle(
                 crate::fail(super::exit_reason(served))
             }
             // The report diverges with every owner alive.
-            EpochEnd::Host(_, (failed, _)) | EpochEnd::Service((failed, _)) => {
+            EpochEnd::Host(_, failed) | EpochEnd::Service(failed) => {
                 state.stopped();
                 crate::fail(super::stop_failure_reason(&failed))
             }
@@ -278,7 +286,7 @@ async fn lifecycle(
 async fn run_epoch(
     radio: &'static Radio,
     system: &mut BluetoothSystem,
-    backend: BluetoothSystemBackend,
+    backend: oer_radio_port::Installed<BluetoothSystemBackend>,
     service: &mut BluetoothHciService,
     transport: BluetoothHostTransport,
     resources: &mut Resources,

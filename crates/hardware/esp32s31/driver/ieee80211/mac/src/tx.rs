@@ -402,6 +402,13 @@ pub struct TxCookie(pub u32);
 /// NoEffect and CompletionFault cannot construct this value.
 ///
 /// ```compile_fail,E0451
+/// # #![cfg_attr(target_arch = "riscv32", no_std)]
+/// # #![cfg_attr(target_arch = "riscv32", no_main)]
+/// # #[cfg(target_arch = "riscv32")]
+/// # #[panic_handler]
+/// # fn panic(_: &core::panic::PanicInfo) -> ! {
+/// #     loop {}
+/// # }
 /// # use oer_esp32s31_ieee80211_mac::tx::{TxCompletion, TxCookie};
 /// # use oer_esp32s31_hal::types::MacTxCompletionObservation;
 /// # use oer_ieee80211_lower_mac::TxStatus;
@@ -3212,24 +3219,38 @@ impl LegacyTxConfig {
 /// cannot manufacture a DMA address or final queue-start capability.
 #[cfg_attr(
     not(feature = "test-support"),
-    doc = r"
+    doc = r#"
 Production builds cannot synthesize a DMA owner, on either host or chip:
 
 ```compile_fail,E0599
+# #![cfg_attr(target_arch = "riscv32", no_std)]
+# #![cfg_attr(target_arch = "riscv32", no_main)]
+# #[cfg(target_arch = "riscv32")]
+# #[panic_handler]
+# fn panic(_: &core::panic::PanicInfo) -> ! {
+#     loop {}
+# }
 use oer_esp32s31_ieee80211_mac::tx::TxSlot;
 let slot = TxSlot::<512>::new_model();
 ```
 
 The production constructor consumes a pinned DMA allocation:
 
-```
+```no_run
+# #![cfg_attr(target_arch = "riscv32", no_std)]
+# #![cfg_attr(target_arch = "riscv32", no_main)]
+# #[cfg(target_arch = "riscv32")]
+# #[panic_handler]
+# fn panic(_: &core::panic::PanicInfo) -> ! {
+#     loop {}
+# }
 use oer_esp32s31_ieee80211_dma::tx_storage::PinnedTxDmaStorage;
 use oer_esp32s31_ieee80211_mac::tx::TxSlot;
 fn slot(dma: PinnedTxDmaStorage<512>) -> TxSlot<512> {
     TxSlot::from_dma(dma)
 }
 ```
-"
+"#
 )]
 pub struct TxSlot<const BUFFER_SIZE: usize> {
     dma: PinnedTxDmaStorage<BUFFER_SIZE>,

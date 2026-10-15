@@ -8,6 +8,51 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
 use super::*;
 
+#[test]
+fn retired_epoch_does_not_leave_a_stop_for_its_successor() {
+    for consume_stop in [false, true] {
+        for repeat_stop in [false, true] {
+            let resources = ConnectedTaskControlResources::<NoopRawMutex, u32>::new();
+            let (mut old, first) = resources.split().unwrap();
+            old.request_stop();
+            if consume_stop {
+                block_on(first.wait_for_stop());
+            }
+            first.complete(11);
+            block_on(old.wait_stopped());
+            if repeat_stop {
+                block_on(stop_connected_task_group(&mut old));
+            }
+            assert_eq!(old.try_finish().ok().unwrap(), 11);
+
+            let (mut current, second) = resources.split().unwrap();
+            assert!(poll_once(second.wait_for_stop()).is_pending());
+            current.request_stop();
+            assert!(poll_once(second.wait_for_stop()).is_ready());
+            second.complete(22);
+            block_on(current.wait_stopped());
+            assert_eq!(current.try_finish().ok().unwrap(), 22);
+        }
+    }
+}
+
+#[test]
+fn completion_without_a_stop_and_repeated_observation_retire_cleanly() {
+    let resources = ConnectedTaskControlResources::<NoopRawMutex, u32>::new();
+    let (mut old, first) = resources.split().unwrap();
+    first.complete(11);
+    block_on(old.wait_stopped());
+    for _ in 0..2 {
+        block_on(stop_connected_task_group(&mut old));
+    }
+    assert_eq!(old.try_finish().ok().unwrap(), 11);
+    let (mut next, second) = resources.split().unwrap();
+    assert!(poll_once(second.wait_for_stop()).is_pending());
+    second.complete(22);
+    block_on(next.wait_stopped());
+    assert_eq!(next.try_finish().ok().unwrap(), 22);
+}
+
 struct ReadyTaskGroup {
     stop_requests: usize,
     owner: Option<u32>,

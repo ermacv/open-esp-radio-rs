@@ -136,7 +136,9 @@ pub enum ConnectedTaskControlError {
 /// Reusable signal storage for one sequential executor task.
 ///
 /// Only a completed task endpoint followed by consumption of its returned
-/// owner restores `Idle`. There is deliberately no safe reset operation.
+/// owner restores `Idle`. Retirement clears that epoch's stop signal before
+/// publishing `Idle`, including stops issued after the endpoint completed.
+/// There is deliberately no safe reset operation.
 pub struct ConnectedTaskControlResources<M: RawMutex, S> {
     stop: Signal<M, ()>,
     stopped: Signal<M, S>,
@@ -268,6 +270,7 @@ impl<M: RawMutex, S> ConnectedTaskGroup for ConnectedTaskController<'_, M, S> {
         // The endpoint has been consumed and its destructor disarmed.
         // This controller is consumed too; observation alone kept it active.
         self.completed = true;
+        self.resources.stop.reset();
         self.resources.state.store(IDLE, Ordering::Release);
         Ok(stopped)
     }

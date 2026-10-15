@@ -1,5 +1,5 @@
 //! The ESP32-S31 Wi-Fi backend on the owner shape of the lower-MAC port
-//! (`oer_ieee80211_lower_mac::owner`, `oer-ieee80211-port`), with the
+//! (`oer_ieee80211_lower_mac::owner`, `oer-radio-port`), with the
 //! product event model (#563).
 //!
 //! [`Esp32s31LowerMac`] is the runtime a composition places in a `static`:
@@ -10,7 +10,7 @@
 //! core with its register owner, its retune, the RX pipeline, the
 //! interrupt runtimes and the install's channel and access-point address,
 //! and returns the [`Esp32s31Backend`], which the composition hands to
-//! [`run_port`](oer_ieee80211_port::run_port) with the port's body.
+//! [`run_port`](oer_radio_port::run_port) with the port's body.
 //!
 //! The interrupts only post: the MAC and power interrupt handlers publish
 //! into [`IrqConsumer`] and [`PowerIrqConsumer`], and the
@@ -83,14 +83,14 @@ use oer_ieee80211_lower_mac::{
     VifTsf,
 };
 use oer_ieee80211_mac::address::IndividualAddress;
-use oer_ieee80211_port::{
-    EnableResult, Lent, PhaseParts, PortBackend, RadioPortClient, RadioPortEvents, RadioWork,
-    Retire, Work,
-};
 use oer_ieee80211_runtime::lower_mac_owner::{
     BufferPermit, QueuePermit, TxBufferKind, TxPermits, TxQueueKind,
 };
 use oer_radio_permit_pool::FifoPermitPool;
+use oer_radio_port::{
+    EnableResult, Lent, PhaseParts, PortBackend, RadioPortClient, RadioPortEvents, RadioWork,
+    Retire, Work,
+};
 use oer_radio_port::{Mint, Permit, PermitPool, Seat, Slot};
 use oer_time::Duration;
 
@@ -1366,7 +1366,7 @@ pub struct Esp32s31Resources<'id> {
 }
 
 /// The ESP32-S31 backend of one install; only
-/// [`run_port`](oer_ieee80211_port::run_port) holds it.
+/// [`run_port`](oer_radio_port::run_port) holds it.
 pub struct Esp32s31Backend<
     'r,
     'slot,

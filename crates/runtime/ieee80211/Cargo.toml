@@ -16,7 +16,6 @@ test-support = ["dep:oer-ieee80211-rsn", "oer-ieee80211-sta/test-support"]
 [dependencies]
 atomic-waker = "1.1.2"
 heapless = "0.9.3"
-oer-ieee80211-port = { path = "../../protocols/ieee80211/port" }
 embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
 oer-memory = { path = "../../memory" }

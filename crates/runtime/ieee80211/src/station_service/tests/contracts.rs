@@ -9,11 +9,12 @@ enum ContractCase {
 struct ContractBody(ContractCase);
 
 impl PortBody<ModelBackend<ModelCaps24, ServiceContexts>> for ContractBody {
+    type Output = ();
     async fn run<'p, 'id>(
         self,
         owner: Owner<'p, 'id, ModelBackend<ModelCaps24, ServiceContexts>, Disabled>,
         resources: ModelResources<'id>,
-    ) -> Ended<'id, ModelBackend<ModelCaps24, ServiceContexts>> {
+    ) -> Ended<'id, ModelBackend<ModelCaps24, ServiceContexts>, ()> {
         let ModelResources {
             connection_epoch,
             station_commands,
@@ -205,8 +206,8 @@ impl PortBody<ModelBackend<ModelCaps24, ServiceContexts>> for ContractBody {
                 assert!(later.pop().is_none());
             }
             return match owner {
-                Ok(owner) => owner.uninstall(()),
-                Err(owner) => owner.uninstall(()),
+                Ok(owner) => owner.uninstall((), ()),
+                Err(owner) => Ended::uninstall(owner, (), ()),
             };
         }
         for (terminal, expected) in [
@@ -262,7 +263,7 @@ impl PortBody<ModelBackend<ModelCaps24, ServiceContexts>> for ContractBody {
             );
         }
         assert_eq!(service.state.station.lost_tokens(), 0);
-        owner.uninstall(())
+        Ended::uninstall(owner, (), ())
     }
 }
 
@@ -275,7 +276,10 @@ fn unsolicited_tsf_and_access_point_terminals_retain_their_real_permissions() {
             IndividualAddress::new(ACCESS_POINT_ADDRESS).unwrap(),
         ],
     );
-    assert!(block_on(run_port(backend, ContractBody(ContractCase::Unsolicited))).is_some());
+    assert!(matches!(
+        block_on(run_port(backend, ContractBody(ContractCase::Unsolicited))),
+        oer_radio_port::PortEnd::Uninstalled { .. }
+    ));
 }
 
 #[test]
@@ -288,16 +292,16 @@ fn disable_quarantines_the_first_rejected_owner_and_every_later_terminal() {
                 IndividualAddress::new(ACCESS_POINT_ADDRESS).unwrap(),
             ],
         );
-        assert!(
+        assert!(matches!(
             block_on(run_port(
                 backend,
                 ContractBody(ContractCase::Disable {
                     prior,
                     overflow: false
                 })
-            ))
-            .is_some()
-        );
+            )),
+            oer_radio_port::PortEnd::Uninstalled { .. }
+        ));
     }
 }
 
@@ -310,14 +314,14 @@ fn full_custody_returns_the_next_terminal_to_poisoned_port_teardown() {
             IndividualAddress::new(ACCESS_POINT_ADDRESS).unwrap(),
         ],
     );
-    assert!(
+    assert!(matches!(
         block_on(run_port(
             backend,
             ContractBody(ContractCase::Disable {
                 prior: false,
                 overflow: true
             })
-        ))
-        .is_some()
-    );
+        )),
+        oer_radio_port::PortEnd::Uninstalled { .. }
+    ));
 }

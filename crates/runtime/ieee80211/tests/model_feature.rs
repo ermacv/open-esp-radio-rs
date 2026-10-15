@@ -47,11 +47,11 @@ use oer_ieee80211_mac::{
     phy::{LegacyRate, PhyRate},
     qos::WmmAccessCategory,
 };
-use oer_ieee80211_port::{Disabled, Ended, Owner, PortBody, PortPhase, run_port};
 use oer_ieee80211_runtime::lower_mac_owner::model::{
     MODEL_RX_EVENTS, ModelAir, ModelAnyBuffer, ModelBackend, ModelLarge, ModelResources,
     ModelRxMeta, ModelSmall, ModelTypes,
 };
+use oer_radio_port::{Disabled, Ended, Owner, PortBody, PortPhase, run_port};
 
 const STATION: [u8; 6] = [2, 0, 0, 0, 0, 1];
 const PEER: [u8; 6] = [2, 0, 0, 0, 0, 2];
@@ -59,7 +59,7 @@ const PEER: [u8; 6] = [2, 0, 0, 0, 0, 2];
 #[path = "model_feature/response.rs"]
 mod response;
 
-fn backend() -> (ModelBackend, Rc<ModelAir>) {
+fn backend() -> (oer_radio_port::Installed<ModelBackend>, Rc<ModelAir>) {
     ModelBackend::new(
         Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap(),
         [
@@ -87,11 +87,12 @@ fn run<F: Future>(future: F) -> F::Output {
 struct Receive(Rc<ModelAir>);
 
 impl PortBody<ModelBackend> for Receive {
+    type Output = ();
     async fn run<'id>(
         self,
         owner: Owner<'_, 'id, ModelBackend, Disabled>,
         _: ModelResources<'id>,
-    ) -> Ended<'id, ModelBackend> {
+    ) -> Ended<'id, ModelBackend, ()> {
         let Ok(mut enabled) = owner.enable().await else {
             panic!("enable")
         };
@@ -131,24 +132,28 @@ impl PortBody<ModelBackend> for Receive {
         else {
             panic!("recycled RX must not poison the model");
         };
-        disabled.uninstall(())
+        Ended::uninstall(disabled, (), ())
     }
 }
 
 #[test]
 fn continuous_receive_has_the_same_capacity_and_recycling_in_feature_builds() {
     let (backend, air) = backend();
-    run(run_port(backend, Receive(air))).unwrap();
+    assert!(matches!(
+        run(run_port(backend, Receive(air))),
+        oer_radio_port::PortEnd::Uninstalled { .. }
+    ));
 }
 
 struct ReceiveLoss(Rc<ModelAir>);
 
 impl PortBody<ModelBackend> for ReceiveLoss {
+    type Output = ();
     async fn run<'id>(
         self,
         owner: Owner<'_, 'id, ModelBackend, Disabled>,
         resources: ModelResources<'id>,
-    ) -> Ended<'id, ModelBackend> {
+    ) -> Ended<'id, ModelBackend, ()> {
         use embassy_futures::yield_now;
         use oer_ieee80211_lower_mac::{StationPhase, StationReceive};
         use oer_ieee80211_runtime::lower_mac_owner::model::MODEL_EVENTS;
@@ -207,24 +212,28 @@ impl PortBody<ModelBackend> for ReceiveLoss {
             .await
             .ok()
             .unwrap();
-        owner.uninstall(())
+        Ended::uninstall(owner, (), ())
     }
 }
 
 #[test]
 fn receive_overflow_is_reported_before_continuous_rx_without_reordering_terminals() {
     let (backend, air) = backend();
-    run(run_port(backend, ReceiveLoss(air))).unwrap();
+    assert!(matches!(
+        run(run_port(backend, ReceiveLoss(air))),
+        oer_radio_port::PortEnd::Uninstalled { .. }
+    ));
 }
 
 struct Owners;
 
 impl PortBody<ModelBackend> for Owners {
+    type Output = ();
     async fn run<'id>(
         self,
         owner: Owner<'_, 'id, ModelBackend, Disabled>,
         mut resources: ModelResources<'id>,
-    ) -> Ended<'id, ModelBackend> {
+    ) -> Ended<'id, ModelBackend, ()> {
         let Ok(mut enabled) = owner.enable().await else {
             panic!("enable")
         };
@@ -317,12 +326,15 @@ impl PortBody<ModelBackend> for Owners {
         else {
             panic!("disable")
         };
-        disabled.uninstall(())
+        Ended::uninstall(disabled, (), ())
     }
 }
 
 #[test]
 fn feature_builds_keep_each_accepted_ticket_with_its_original_buffer() {
     let (backend, _) = backend();
-    run(run_port(backend, Owners)).unwrap();
+    assert!(matches!(
+        run(run_port(backend, Owners)),
+        oer_radio_port::PortEnd::Uninstalled { .. }
+    ));
 }

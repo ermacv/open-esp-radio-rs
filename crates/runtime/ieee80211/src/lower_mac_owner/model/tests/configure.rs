@@ -48,11 +48,12 @@ fn record<'id, R: InterfaceRole, Path: oer_radio_port::PoolPath>(
     permission.with_context(witness)
 }
 impl PortBody<ConfigurationBackend> for ConfigureAcrossDisable {
+    type Output = ();
     async fn run<'id>(
         self,
         owner: Owner<'_, 'id, ConfigurationBackend, Disabled>,
         resources: ModelResources<'id>,
-    ) -> Ended<'id, ConfigurationBackend> {
+    ) -> Ended<'id, ConfigurationBackend, ()> {
         let mut enabled = owner.enable().await.ok().unwrap();
         let station_context = Witness {
             allocation: Box::new(1),
@@ -149,12 +150,15 @@ impl PortBody<ConfigurationBackend> for ConfigureAcrossDisable {
         );
         drop((station, access_point));
         assert_eq!(self.drops.get(), 2);
-        enabled
-            .disable(&mut |_| panic!("all permissions returned"))
-            .await
-            .ok()
-            .unwrap()
-            .uninstall(())
+        Ended::uninstall(
+            enabled
+                .disable(&mut |_| panic!("all permissions returned"))
+                .await
+                .ok()
+                .unwrap(),
+            (),
+            (),
+        )
     }
 }
 #[test]
@@ -168,7 +172,7 @@ fn configure_conformance_preserves_fifo_context_ownership_and_reuse_across_disab
                     IndividualAddress::new(ACCESS_POINT).unwrap(),
                 ],
             );
-            block_on(run_port(
+            let _port_end = block_on(run_port(
                 backend,
                 ConfigureAcrossDisable {
                     drain,
@@ -182,11 +186,12 @@ fn configure_conformance_preserves_fifo_context_ownership_and_reuse_across_disab
 
 struct ReceiveAcrossDisable;
 impl PortBody<ModelBackend> for ReceiveAcrossDisable {
+    type Output = ();
     async fn run<'id>(
         self,
         owner: Owner<'_, 'id, ModelBackend, Disabled>,
         _resources: ModelResources<'id>,
-    ) -> Ended<'id, ModelBackend> {
+    ) -> Ended<'id, ModelBackend, ()> {
         let Ok(mut enabled) = owner.enable().await else {
             panic!()
         };
@@ -260,14 +265,14 @@ impl PortBody<ModelBackend> for ReceiveAcrossDisable {
         else {
             panic!()
         };
-        disabled.uninstall(())
+        Ended::uninstall(disabled, (), ())
     }
 }
 
 #[test]
 fn disable_preserves_borrowed_rx_capacity_and_unobserved_loss() {
     let (backend, _) = backend();
-    block_on(run_port(backend, ReceiveAcrossDisable));
+    let _port_end = block_on(run_port(backend, ReceiveAcrossDisable));
 }
 
 #[derive(Clone, Copy)]
@@ -400,7 +405,7 @@ impl Work for ConfigureBarrier {
 fn configure_waits_for_own_publication_preserves_ac_order_and_holds_later_fifo_commands() {
     for release in [Release::Ack, Release::Retry, Release::Watchdog] {
         for ap_first in [false, true] {
-            block_on(run_port(
+            let _port_end = block_on(run_port(
                 backend().0,
                 Body(ConfigureBarrier { release, ap_first }),
             ));

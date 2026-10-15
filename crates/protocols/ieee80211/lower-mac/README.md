@@ -8,7 +8,7 @@ values and never waits on it.
 
 ## The phase
 
-The port's lifecycle is `oer-ieee80211-port`'s: a backend implements
+The port's lifecycle is `oer-radio-port`'s: a backend implements
 `LowerMacBackend`, a `PortBackend` whose disabled-only settings are
 `LowerMacSetup` (the channel, as a `SupportedChannel`; a backend whose
 addresses change also implements `AddressSetup`). An enabled port lends one
@@ -298,8 +298,11 @@ vendor stack are the family package `oer-espressif-ieee80211-policy`.
 The host model in `oer-ieee80211-runtime` implements the phase with
 composition-selected context types. It returns queued operations on gate
 close and normal disable, including queues held by the model air. On
-fail-stop, no terminal is invented: backend-owned resources end with the
-install. Hardware backends provide the same resource and terminal contract.
+an ordinary fault it returns admitted terminals before `EventEnd::Drained`;
+the service verifies every outstanding identity. `EventEnd::Quarantined`
+instead ends through fail-stop without another disable/drain. Undelivered
+owners stay in permanent quarantine even after its receipt is dropped.
+Hardware backends provide the same resource and terminal contract.
 
 `LowerMacEvent::Terminal(LowerMacTerminal)` carries TX, key, configuration,
 gate and requested clock completions in the normal FIFO. Disable returns

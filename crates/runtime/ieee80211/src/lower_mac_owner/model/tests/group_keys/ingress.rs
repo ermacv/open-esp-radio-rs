@@ -284,7 +284,7 @@ fn ingress_at_a_delivery_wake_cannot_cross_a_group_key_terminal() {
                 ended,
                 "boundary did not finish within a finite driver budget"
             );
-            assert!(!air.poisoned.get());
+            assert!(!air.failed());
         }
     }
 }

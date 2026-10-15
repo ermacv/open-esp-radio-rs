@@ -11,7 +11,7 @@ use oer_ieee80211_lower_mac::{
 use oer_ieee80211_mac::ccmp::GroupKeyId;
 use oer_ieee80211_mac::frame::FrameControl;
 use oer_ieee80211_mac::{phy::LegacyRate, qos::WmmAccessCategory};
-use oer_ieee80211_port::{Disabled, Ended, Owner, PortBody, run_port};
+use oer_radio_port::{Disabled, Ended, Owner, PortBody, run_port};
 
 const STATION: [u8; 6] = [2, 0, 0, 0, 0, 1];
 const ACCESS_POINT: [u8; 6] = [2, 0, 0, 0, 0, 2];
@@ -37,7 +37,7 @@ fn queue_accounting_fault_retains_every_owner_until_teardown() {
     assert_eq!(drops.get(), 2);
 }
 
-fn backend() -> (ModelBackend, Rc<ModelAir>) {
+fn backend() -> (oer_radio_port::Installed<ModelBackend>, Rc<ModelAir>) {
     ModelBackend::new(
         Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap(),
         [
@@ -49,16 +49,17 @@ fn backend() -> (ModelBackend, Rc<ModelAir>) {
 
 #[test]
 fn each_installation_and_retuned_phase_checks_its_own_channel() {
-    use oer_ieee80211_port::Enabled;
+    use oer_radio_port::Enabled;
 
     struct Channels;
     struct Second<'s, 'p, 'outer>(&'s mut Owner<'p, 'outer, ModelBackend, Enabled>);
     impl PortBody<ModelBackend> for Second<'_, '_, '_> {
+        type Output = ();
         async fn run<'p, 'id>(
             self,
             owner: Owner<'p, 'id, ModelBackend, Disabled>,
             _resources: ModelResources<'id>,
-        ) -> Ended<'id, ModelBackend> {
+        ) -> Ended<'id, ModelBackend, ()> {
             let mut target = owner.enable().await.ok().unwrap();
             {
                 let source = self.0.phase();
@@ -71,15 +72,16 @@ fn each_installation_and_retuned_phase_checks_its_own_channel() {
                     .unwrap();
                 assert!(destination.no_ack(ofdm).is_ok());
             }
-            target.fail_stop()
+            Ended::fail_stopped(target.fail_stop(), ())
         }
     }
     impl PortBody<ModelBackend> for Channels {
+        type Output = ();
         async fn run<'p, 'id>(
             self,
             owner: Owner<'p, 'id, ModelBackend, Disabled>,
             _resources: ModelResources<'id>,
-        ) -> Ended<'id, ModelBackend> {
+        ) -> Ended<'id, ModelBackend, ()> {
             let mut source = owner.enable().await.ok().unwrap();
             let (target, _) = ModelBackend::new(
                 Channel::ghz5(36, ChannelWidth::Mhz20).unwrap(),
@@ -88,7 +90,10 @@ fn each_installation_and_retuned_phase_checks_its_own_channel() {
                     IndividualAddress::new(ACCESS_POINT).unwrap(),
                 ],
             );
-            assert!(run_port(target, Second(&mut source)).await.is_none());
+            assert!(matches!(
+                run_port(target, Second(&mut source)).await,
+                oer_radio_port::PortEnd::FailStopped { .. }
+            ));
             let mut source = source
                 .disable(&mut |_| core::ops::ControlFlow::Continue(()))
                 .await
@@ -116,10 +121,13 @@ fn each_installation_and_retuned_phase_checks_its_own_channel() {
                     core::mem::size_of::<PhyRate>()
                 );
             }
-            source.fail_stop()
+            Ended::fail_stopped(source.fail_stop(), ())
         }
     }
-    assert!(block_on(run_port(backend().0, Channels)).is_none());
+    assert!(matches!(
+        block_on(run_port(backend().0, Channels)),
+        oer_radio_port::PortEnd::FailStopped { .. }
+    ));
 }
 
 /// Poll `future` with a waker that does nothing until it is ready: the
@@ -389,7 +397,7 @@ impl Work for Numbering {
 #[test]
 fn a_retransmitted_mpdu_keeps_its_packet_number_and_a_renewed_buffer_takes_a_new_one() {
     let (backend, air) = backend();
-    block_on(run_port(backend, Body(Numbering { protected: true })));
+    let _port_end = block_on(run_port(backend, Body(Numbering { protected: true })));
     let numbers: Vec<_> = air.sent().iter().map(|frame| frame.packet_number).collect();
     assert_eq!(numbers, [Some(1), Some(1), Some(2)]);
 }
@@ -397,7 +405,7 @@ fn a_retransmitted_mpdu_keeps_its_packet_number_and_a_renewed_buffer_takes_a_new
 #[test]
 fn an_open_sent_mpdu_retransmits_without_rebuilding_its_sn_or_payload() {
     let (backend, air) = backend();
-    block_on(run_port(backend, Body(Numbering { protected: false })));
+    let _port_end = block_on(run_port(backend, Body(Numbering { protected: false })));
     let frames = air.sent();
     assert_eq!(frames.len(), 3);
     assert_eq!(frames[0].packet_number, None);
@@ -482,11 +490,12 @@ trait Work {
 struct Body<W>(W);
 
 impl<W: Work> PortBody<ModelBackend> for Body<W> {
+    type Output = ();
     async fn run<'id>(
         self,
         owner: Owner<'_, 'id, ModelBackend, Disabled>,
         resources: ModelResources<'id>,
-    ) -> Ended<'id, ModelBackend> {
+    ) -> Ended<'id, ModelBackend, ()> {
         let Ok(mut enabled) = owner.enable().await else {
             panic!("the model enables");
         };
@@ -498,8 +507,8 @@ impl<W: Work> PortBody<ModelBackend> for Body<W> {
             .disable(&mut |_| core::ops::ControlFlow::Continue(()))
             .await
         {
-            Ok(disabled) => disabled.uninstall(()),
-            Err(poisoned) => poisoned.fail_stop(),
+            Ok(disabled) => Ended::uninstall(disabled, (), ()),
+            Err(poisoned) => Ended::fail_stopped(poisoned.fail_stop(), ()),
         }
     }
 }
@@ -544,7 +553,7 @@ impl Work for KeyThenAttempt {
 #[test]
 fn an_attempt_naming_a_key_goes_after_the_keys_install() {
     let (backend, air) = backend();
-    block_on(run_port(backend, Body(KeyThenAttempt)));
+    let _port_end = block_on(run_port(backend, Body(KeyThenAttempt)));
     let sent = air.sent();
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0].key, Some((0, true)));
@@ -631,27 +640,27 @@ impl Work for GroupReplacement<'_> {
 #[test]
 fn group_replacement_returns_the_same_slot_between_old_and_new_rx() {
     let (backend, air) = backend();
-    block_on(run_port(
+    let _port_end = block_on(run_port(
         backend,
         Body(GroupReplacement {
             air: &air,
             reject: false,
         }),
     ));
-    assert!(!air.poisoned.get());
+    assert!(!air.failed());
 }
 
 #[test]
 fn a_rejected_group_replacement_poisons_without_a_success_terminal() {
     let (backend, air) = backend();
-    block_on(run_port(
+    let _port_end = block_on(run_port(
         backend,
         Body(GroupReplacement {
             air: &air,
             reject: true,
         }),
     ));
-    assert!(air.poisoned.get());
+    assert!(air.failed());
 }
 
 /// Install a key, submit an attempt that names it and remove the key, all
@@ -710,7 +719,7 @@ impl Work for KeyAttemptRemoval {
 #[test]
 fn an_attempt_between_a_keys_install_and_removal_goes_under_the_key() {
     let (backend, air) = backend();
-    block_on(run_port(backend, Body(KeyAttemptRemoval)));
+    let _port_end = block_on(run_port(backend, Body(KeyAttemptRemoval)));
     let sent = air.sent();
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0].key, Some((0, true)));
@@ -902,7 +911,7 @@ impl Work for MaxWork<'_> {
 fn as_much_work_as_the_tickets_allow_loses_no_completion_unread() {
     let (backend, air) = backend();
     let stream = RefCell::new(Stream::default());
-    block_on(run_port(
+    let _port_end = block_on(run_port(
         backend,
         Body(MaxWork {
             air: &air,
@@ -917,7 +926,7 @@ fn as_much_work_as_the_tickets_allow_loses_no_completion_unread() {
 fn as_much_work_as_allowed_while_every_setting_changes_loses_no_command() {
     let (backend, air) = backend();
     let stream = RefCell::new(Stream::default());
-    block_on(run_port(
+    let _port_end = block_on(run_port(
         backend,
         Body(MaxWork {
             air: &air,
@@ -1020,7 +1029,7 @@ impl Work for AbortHeld<'_> {
 fn an_attempt_the_closing_gate_aborts_comes_back_fresh_without_a_transmission() {
     let (backend, air) = backend();
     let seen = RefCell::new(Aborted::default());
-    block_on(run_port(
+    let _port_end = block_on(run_port(
         backend,
         Body(AbortHeld {
             air: &air,
@@ -1093,7 +1102,7 @@ impl Work for CancelTheEvent<'_> {
 fn a_cancelled_next_event_loses_no_event() {
     let (backend, air) = backend();
     let received = RefCell::new(Vec::new());
-    block_on(run_port(
+    let _port_end = block_on(run_port(
         backend,
         Body(CancelTheEvent {
             air: &air,
@@ -1306,7 +1315,7 @@ impl Work for AggregateRetransmission<'_> {
 fn a_lost_subframe_goes_again_with_its_packet_number_beside_new_ones_numbered_anew() {
     let (backend, air) = backend();
     let report = Cell::new(None);
-    block_on(run_port(
+    let _port_end = block_on(run_port(
         backend,
         Body(AggregateRetransmission {
             air: &air,
@@ -1407,7 +1416,7 @@ impl Work for TerminalOutcomes<'_> {
 fn a_timeout_is_final_and_does_not_stop_or_withdraw_the_queue_tail() {
     let (backend, air) = backend();
     let outcomes = RefCell::default();
-    block_on(run_port(
+    let _port_end = block_on(run_port(
         backend,
         Body(TerminalOutcomes {
             air: &air,
@@ -1445,7 +1454,7 @@ fn a_timeout_is_final_and_does_not_stop_or_withdraw_the_queue_tail() {
 fn collisions_retry_the_head_then_end_at_contention_limit_without_air_transmissions() {
     let (backend, air) = backend();
     let outcomes = RefCell::default();
-    block_on(run_port(
+    let _port_end = block_on(run_port(
         backend,
         Body(TerminalOutcomes {
             air: &air,
@@ -1566,7 +1575,7 @@ impl Work for LongRetryPlan<'_> {
 #[test]
 fn ended_preserves_the_full_retry_budget_and_last_transmitted_rate() {
     let (backend, air) = backend();
-    block_on(run_port(backend, Body(LongRetryPlan(&air))));
+    let _port_end = block_on(run_port(backend, Body(LongRetryPlan(&air))));
     let sent = air.sent();
     assert_eq!(sent.len(), 1020);
     assert_eq!(sent[0].plaintext[1] & 8, 0);
@@ -1663,7 +1672,7 @@ impl Work for LastRateBeforeCollision<'_> {
 #[test]
 fn a_collision_does_not_overwrite_the_count_or_rate_of_the_last_mpdu_on_air() {
     let (backend, air) = backend();
-    block_on(run_port(backend, Body(LastRateBeforeCollision(&air))));
+    let _port_end = block_on(run_port(backend, Body(LastRateBeforeCollision(&air))));
     assert_eq!(air.sent().len(), 2);
 }
 
@@ -1730,7 +1739,7 @@ impl Work for ReceiveAgreementState<'_> {
 #[test]
 fn receive_agreements_apply_latest_state_without_consuming_command_capacity() {
     let (backend, air) = backend();
-    block_on(run_port(backend, Body(ReceiveAgreementState(&air))));
+    let _port_end = block_on(run_port(backend, Body(ReceiveAgreementState(&air))));
 }
 
 mod publication;
@@ -1743,3 +1752,4 @@ mod block_ack;
 mod group_keys;
 
 mod association;
+mod event_end;

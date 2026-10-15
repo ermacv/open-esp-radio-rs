@@ -245,7 +245,7 @@ impl Work for DuringPublication {
 #[test]
 fn gate_waits_one_publication_and_returns_sent_for_retry_with_original_numbers() {
     let (backend, _) = backend();
-    block_on(run_port(
+    let _port_end = block_on(run_port(
         backend,
         Body(DuringPublication(Barrier::GateRetry, None)),
     ));
@@ -253,7 +253,7 @@ fn gate_waits_one_publication_and_returns_sent_for_retry_with_original_numbers()
 #[test]
 fn ack_wins_while_gate_closes_and_barrier_follows_the_result() {
     let (backend, _) = backend();
-    block_on(run_port(
+    let _port_end = block_on(run_port(
         backend,
         Body(DuringPublication(Barrier::GateAck, None)),
     ));
@@ -261,7 +261,7 @@ fn ack_wins_while_gate_closes_and_barrier_follows_the_result() {
 #[test]
 fn missing_result_ends_at_publication_bound_without_finishing_the_plan() {
     let (backend, _) = backend();
-    block_on(run_port(
+    let _port_end = block_on(run_port(
         backend,
         Body(DuringPublication(Barrier::GateTimeout, None)),
     ));
@@ -269,7 +269,7 @@ fn missing_result_ends_at_publication_bound_without_finishing_the_plan() {
 #[test]
 fn key_removal_waits_for_the_publication_then_returns_sent_without_retry() {
     let (backend, _) = backend();
-    block_on(run_port(
+    let _port_end = block_on(run_port(
         backend,
         Body(DuringPublication(Barrier::RemoveKey, None)),
     ));
@@ -286,7 +286,7 @@ impl conformance::BarrierHarness for ModelBarrierHarness {
         };
         let (backend, _) = backend();
         let recorded = Rc::new(RefCell::new(None));
-        run_port(
+        let _port_end = run_port(
             backend,
             Body(DuringPublication(barrier, Some(recorded.clone()))),
         )

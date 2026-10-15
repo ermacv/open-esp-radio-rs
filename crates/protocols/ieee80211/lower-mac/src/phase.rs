@@ -188,18 +188,22 @@
 //! }
 //! ```
 //!
-//! # Poisoned
+//! # Event stream end
 //!
-//! A poisoned backend ends the phase: `next_event` returns
-//! [`Poisoned`], and the tokens the port holds
-//! are not given back. The body ends the station whole and leaves through
-//! the poisoned owner; every token ends with the install.
+//! A command's [`Poisoned`] result closes admission; earlier terminals may
+//! still be waiting. `next_event` ends with [`oer_radio_port::EventEnd`]:
+//! `Drained` promises every admitted terminal was returned, while `Quarantined`
+//! retains undelivered owners in the common lifecycle's permanent quarantine.
+//! The body checks its outstanding identities before accepting `Drained`.
+//! On `Quarantined` it fail-stops immediately, without disable or another
+//! drain. Subsequent event calls, including through a new phase loan, return
+//! the same end and cause. Dropping a quarantine receipt releases no owners.
 //!
 //! [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6128926225
 //! [owner decisions on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129037560
 
 use oer_ieee80211_mac::ccmp::GroupKeyId;
-use oer_ieee80211_port::PortPhase;
+use oer_radio_port::PortPhase;
 use oer_radio_port::{Poisoned, PoolPath, Root, Slot};
 
 use crate::{

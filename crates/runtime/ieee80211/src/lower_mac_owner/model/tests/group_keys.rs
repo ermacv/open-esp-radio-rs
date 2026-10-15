@@ -266,8 +266,9 @@ impl contract::Harness for Harness<'_> {
             trace: &trace,
             clock: self.0,
         };
-        progress::run_timed(run_port(backend, Body(boundary)), &air, self.0, None).await;
-        assert!(!air.poisoned.get());
+        let _port_end =
+            progress::run_timed(run_port(backend, Body(boundary)), &air, self.0, None).await;
+        assert!(!air.failed());
         trace.into_inner().unwrap()
     }
     async fn exercise_progress(&mut self, case: contract::ProgressCase) -> contract::ProgressTrace {
@@ -372,11 +373,12 @@ struct Interrupted<'a> {
     applied: bool,
 }
 impl PortBody<ModelBackend> for Interrupted<'_> {
+    type Output = ();
     async fn run<'id>(
         self,
         owner: Owner<'_, 'id, ModelBackend, Disabled>,
         resources: ModelResources<'id>,
-    ) -> Ended<'id, ModelBackend> {
+    ) -> Ended<'id, ModelBackend, ()> {
         let station_association = ModelKeys::<Station>::begin_association(
             resources.station_association,
             oer_ieee80211_mac::security::Spp::NotNegotiated,
@@ -447,7 +449,7 @@ impl PortBody<ModelBackend> for Interrupted<'_> {
             let Err(poisoned) = disabled else {
                 panic!("hardware uncertainty cannot return an ordinary owner")
             };
-            poisoned.fail_stop()
+            Ended::fail_stopped(poisoned.fail_stop(), ())
         } else {
             let Ok(disabled) = disabled else {
                 panic!("disable completes the admitted mutation")
@@ -455,7 +457,7 @@ impl PortBody<ModelBackend> for Interrupted<'_> {
             assert_eq!(terminals.len(), 1);
             assert_eq!(terminal_slot(&terminals[0]), Some(expected_slot));
             drop(terminals);
-            disabled.uninstall(())
+            Ended::uninstall(disabled, (), ())
         }
     }
 }
@@ -469,7 +471,7 @@ fn fault_and_disable_keep_each_gtk_mutations_owner_and_permission() {
         ] {
             for applied in [false, true] {
                 let (backend, air) = backend();
-                block_on(run_port(
+                let _port_end = block_on(run_port(
                     backend,
                     Interrupted {
                         air: &air,
@@ -551,8 +553,8 @@ fn a_stalled_group_command_has_a_deadline_wake_and_retains_resources_on_expiry()
         wakes.0.load(Ordering::SeqCst) > before,
         "expiry wakes the registered driver"
     );
-    block_on(running);
-    assert!(air.poisoned.get());
+    let _port_end = block_on(running);
+    assert!(air.failed());
 }
 
 struct IndependentIds<'a>(&'a ModelAir);
@@ -636,8 +638,8 @@ impl Work for IndependentIds<'_> {
 #[test]
 fn selection_and_removal_leave_other_wire_key_ids_active() {
     let (backend, air) = backend();
-    block_on(run_port(backend, Body(IndependentIds(&air))));
-    assert!(!air.poisoned.get());
+    let _port_end = block_on(run_port(backend, Body(IndependentIds(&air))));
+    assert!(!air.failed());
 }
 
 #[derive(Clone, Copy)]
@@ -653,11 +655,12 @@ struct Teardown<'a> {
     end: EndInstallation,
 }
 impl PortBody<ModelBackend> for Teardown<'_> {
+    type Output = ();
     async fn run<'id>(
         self,
         owner: Owner<'_, 'id, ModelBackend, Disabled>,
         resources: ModelResources<'id>,
-    ) -> Ended<'id, ModelBackend> {
+    ) -> Ended<'id, ModelBackend, ()> {
         let station_association = ModelKeys::<Station>::begin_association(
             resources.station_association,
             oer_ieee80211_mac::security::Spp::NotNegotiated,
@@ -691,12 +694,15 @@ impl PortBody<ModelBackend> for Teardown<'_> {
             }
         }
         match self.end {
-            EndInstallation::Uninstall => owner
-                .disable(&mut |_| core::ops::ControlFlow::Continue(()))
-                .await
-                .ok()
-                .unwrap()
-                .uninstall(()),
+            EndInstallation::Uninstall => Ended::uninstall(
+                owner
+                    .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+                    .await
+                    .ok()
+                    .unwrap(),
+                (),
+                (),
+            ),
             EndInstallation::PoisonedUninstall => {
                 let Err(poisoned) = owner
                     .disable(&mut |_| core::ops::ControlFlow::Continue(()))
@@ -704,9 +710,9 @@ impl PortBody<ModelBackend> for Teardown<'_> {
                 else {
                     panic!("expected poison")
                 };
-                poisoned.uninstall(())
+                Ended::uninstall(poisoned, (), ())
             }
-            EndInstallation::Abandon => owner.fail_stop(),
+            EndInstallation::Abandon => Ended::fail_stopped(owner.fail_stop(), ()),
         }
     }
 }
@@ -724,7 +730,7 @@ fn teardown_ends_delayed_group_ingress_and_material_despite_external_identities(
         ] {
             let (backend, air) = backend();
             let identity = RefCell::new(None);
-            block_on(run_port(
+            let _port_end = block_on(run_port(
                 backend,
                 Teardown {
                     air: &air,
@@ -758,11 +764,12 @@ fn teardown_ends_delayed_group_ingress_and_material_despite_external_identities(
 
 struct ReenableGroup<'a>(&'a ModelAir);
 impl PortBody<ModelBackend> for ReenableGroup<'_> {
+    type Output = ();
     async fn run<'id>(
         self,
         owner: Owner<'_, 'id, ModelBackend, Disabled>,
         resources: ModelResources<'id>,
-    ) -> Ended<'id, ModelBackend> {
+    ) -> Ended<'id, ModelBackend, ()> {
         let station_association = ModelKeys::<Station>::begin_association(
             resources.station_association,
             oer_ieee80211_mac::security::Spp::NotNegotiated,
@@ -810,19 +817,22 @@ impl PortBody<ModelBackend> for ReenableGroup<'_> {
             let _permission = removed(&mut phase).await;
             assert!(self.0.key_installations.borrow().is_empty());
         }
-        owner
-            .disable(&mut |_| core::ops::ControlFlow::Continue(()))
-            .await
-            .ok()
-            .unwrap()
-            .uninstall(())
+        Ended::uninstall(
+            owner
+                .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+                .await
+                .ok()
+                .unwrap(),
+            (),
+            (),
+        )
     }
 }
 #[test]
 fn disable_and_reenable_preserve_the_same_group_installation_and_counter() {
     let (backend, air) = backend();
-    block_on(run_port(backend, ReenableGroup(&air)));
-    assert!(!air.poisoned.get());
+    let _port_end = block_on(run_port(backend, ReenableGroup(&air)));
+    assert!(!air.failed());
 }
 
 struct Admission<'a>(&'a ModelAir);
@@ -888,6 +898,6 @@ impl Work for Admission<'_> {
 #[test]
 fn pending_installation_owns_vacant_resources_without_an_installed_identity() {
     let (backend, air) = backend();
-    block_on(run_port(backend, Body(Admission(&air))));
-    assert!(!air.poisoned.get());
+    let _port_end = block_on(run_port(backend, Body(Admission(&air))));
+    assert!(!air.failed());
 }

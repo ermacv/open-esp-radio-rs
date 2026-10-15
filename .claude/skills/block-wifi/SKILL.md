@@ -20,13 +20,22 @@ Layers and edges: [layer dependencies](../../../docs/architecture.md#layer-depen
 
 ## Port
 
-The port is on the owner shape: `LowerMacBackend` and its parts in `crates/protocols/ieee80211/lower-mac/src/owner.rs`, its lifecycle (`run_port`, `Owner`, `PortBackend`) in `oer-ieee80211-port` (`crates/protocols/ieee80211/port`). The S31 backend is `Esp32s31Backend` over the static runtime `Esp32s31LowerMac` (`crates/runtime/esp32s31/ieee80211/src/lower_mac.rs`); it has no A-MPDU, beacon-timing or monitor operation yet, and the product datapath still drives the hardware directly (`DatapathRunner`) until #709 step 2 moves it onto the port. The portable port services (upper-mac service, ap, sta-ap, the sta port station) were deleted in #709 step 1; git history keeps them for the rebuild on the portable stack. The station is the portable sans-IO `oer_ieee80211_sta::machine` beside the channel arbiter (`oer-ieee80211-arbiter`); the S31 roles' orchestration (station, AP, monitor, ESP-NOW, STA+AP) was removed and returns on the port in #563's step 2 (tag `s31-station-old-path` keeps the old path).
+The port is on the owner shape: `LowerMacBackend` and its parts in `crates/protocols/ieee80211/lower-mac/src/owner.rs`, its lifecycle (`run_port`, `Owner`, `PortBackend`) in the shared `oer-radio-port` (`crates/radio/port`). The S31 backend is `Esp32s31Backend` over the static runtime `Esp32s31LowerMac` (`crates/runtime/esp32s31/ieee80211/src/lower_mac.rs`); it has no A-MPDU, beacon-timing or monitor operation yet, and the product datapath still drives the hardware directly (`DatapathRunner`) until #709 step 2 moves it onto the port. The portable port services (upper-mac service, ap, sta-ap, the sta port station) were deleted in #709 step 1; git history keeps them for the rebuild on the portable stack. The station is the portable sans-IO `oer_ieee80211_sta::machine` beside the channel arbiter (`oer-ieee80211-arbiter`); the S31 roles' orchestration (station, AP, monitor, ESP-NOW, STA+AP) was removed and returns on the port in #563's step 2 (tag `s31-station-old-path` keeps the old path).
 
 ## Shared contracts (change only with their owners)
 
 `crates/radio/port` (`RadioPort`, `PortResult`, `Poisoned`, `ClockInfo`, `ClockRelation`, `RelationSample`, `Generation`), `crates/time` (`Instant`, `RadioInstant`), `crates/radio/coex`, the shared radio system `crates/runtime/esp32s31/radio` and `crates/composition/esp32s31/embassy/radio`, the HAL split `crates/hardware/esp32s31/hal/src/root.rs`, PAC and `registers/`.
 
 ## Traps
+
+- Wi-Fi uses the common lifecycle directly: construct `Installed`, return
+  `PortBody::Output` through `Ended`, and inspect `PortEnd` including its
+  quarantine outcome. The model's branded work stays in `Held`; its one
+  `DriverLoan` is consumed only on retirement or published poison.
+  `EventEnd::Drained` requires every expected terminal identity to be back;
+  a missing ticket/command permission is a contract violation. Quarantined
+  ends immediately through fail-stop, without a second disable/drain. The
+  model retains poisoned owners even after the quarantine receipt drops.
 
 - S31 RX positions retain `RingIndex<COUNT>` from address validation through
   descriptor traversal and append. Extract `get()` only at an array or

@@ -35,7 +35,7 @@
 //!
 //! The port is the contract between portable Wi-Fi MAC logic and the
 //! backend that puts frames on the air, whether a chip, a family driver or
-//! a host model, on the owner shape of `oer-ieee80211-port`: a
+//! a host model, on the owner shape of `oer-radio-port`: a
 //! [`LowerMacBackend`] runs under its owner and lends a [`LowerMacPhase`]
 //! with one event stream and role-specific interface phases. Disabled-only
 //! settings are a [`LowerMacSetup`]. One submitted operation owns its context,
@@ -112,7 +112,7 @@ pub use extensions::{
     TbttEvent, TsfArithmeticError, TsfGeneration, TsfProjectionError, TsfRelation, TsfSample,
     TsfSetKind, TsfTimingError, TsfVifMismatch, VifTsf,
 };
-pub use oer_ieee80211_port::ClockError;
+pub use oer_radio_port::ClockError;
 pub use oer_radio_port::{
     ClockInfo, ClockRelation, EventsLost, Generation, GenerationSource, Poisoned, PortResult,
     Projected, ProjectionError, RelationRate,

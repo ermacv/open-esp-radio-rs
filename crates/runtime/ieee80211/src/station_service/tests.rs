@@ -22,10 +22,10 @@ use oer_ieee80211_mac::{
     security::rsn::Akm,
     station::{AssociationCapabilities, association::PhyMode},
 };
-use oer_ieee80211_port::{Ended, PortBody, run_port};
 use oer_ieee80211_rsn::{Pmk, PtkContext, frames::RsnTxFrame};
 use oer_ieee80211_sta::machine::{StaConfig, StaSecurity, StationResources};
 use oer_ieee80211_upper_mac::rate_control::RateControl;
+use oer_radio_port::{Ended, PortBody, run_port};
 use oer_time::Duration;
 use oer_time_virtual::VirtualClock;
 use std::boxed::Box;
@@ -330,6 +330,14 @@ fn block_on<F: Future>(future: F) -> F::Output {
 }
 
 /// The world the test plays: the air, the clock, the application's ends.
+#[derive(Clone, Copy)]
+enum ExpectedStreamEnd {
+    Drained,
+    SubmissionFailed,
+    FalseDrained,
+    Quarantined,
+}
+
 struct World<'b> {
     air: Rc<ModelAir>,
     clock: VirtualClock,
@@ -337,8 +345,10 @@ struct World<'b> {
     outputs: RefCell<Vec<ServiceOutput<ModelCaps24>>>,
     completions: RefCell<Vec<FrameRates>>,
     refuse_rate: Cell<bool>,
+    fail_submission: Cell<bool>,
     counters: Cell<Option<ServiceCounters>>,
     expect_queued_command_on_poison: Cell<bool>,
+    expected_stream_end: Cell<Option<ExpectedStreamEnd>>,
     drop_stopped_service: Cell<bool>,
     restart_stopped_service: Cell<Option<bool>>,
     /// The network stack's end of the transmit queue.
@@ -353,6 +363,8 @@ struct RecordingRates<'a> {
     inner: EspressifRateSelection<ModelCaps24>,
     completions: &'a RefCell<Vec<FrameRates>>,
     refuse_rate: &'a Cell<bool>,
+    fail_submission: &'a Cell<bool>,
+    air: &'a ModelAir,
 }
 
 impl RateSelection<ModelRxMeta> for RecordingRates<'_> {
@@ -363,6 +375,11 @@ impl RateSelection<ModelRxMeta> for RecordingRates<'_> {
     ) -> Option<oer_ieee80211_lower_mac::RetryPlan<R>> {
         if self.refuse_rate.replace(false) {
             return None;
+        }
+        // Inject the fault between preparation and transfer, while earlier
+        // attempts still await their terminals. The submission retains owners.
+        if self.fail_submission.replace(false) {
+            self.air.fail_after_terminals();
         }
         <EspressifRateSelection<ModelCaps24> as RateSelection<ModelRxMeta>>::plan(
             &self.inner,
@@ -571,11 +588,12 @@ impl<'w, 'b, S, const GROUPS: usize> PortBody<ModelBackend<ModelCaps24, ServiceC
 where
     S: FnOnce(&'w World<'b>) -> Script<'w>,
 {
+    type Output = ();
     async fn run<'p, 'id>(
         self,
         owner: Owner<'p, 'id, ModelBackend<ModelCaps24, ServiceContexts>, Disabled>,
         resources: ModelResources<'id>,
-    ) -> Ended<'id, ModelBackend<ModelCaps24, ServiceContexts>> {
+    ) -> Ended<'id, ModelBackend<ModelCaps24, ServiceContexts>, ()> {
         {
             let ModelResources {
                 connection_epoch,
@@ -645,6 +663,8 @@ where
                     inner: EspressifRateSelection::<ModelCaps24>::new(),
                     completions: &self.world.completions,
                     refuse_rate: &self.world.refuse_rate,
+                    fail_submission: &self.world.fail_submission,
+                    air: &self.world.air,
                 },
                 terminal_access,
             );
@@ -710,8 +730,64 @@ where
                 end,
                 retired: mut service,
             } = completed;
+            match world.expected_stream_end.get() {
+                Some(
+                    expected @ (ExpectedStreamEnd::Drained | ExpectedStreamEnd::SubmissionFailed),
+                ) => {
+                    assert!(matches!(
+                        &end,
+                        ServiceEnd::Poisoned {
+                            fault: ServiceFault::Backend(_) | ServiceFault::Submission(_),
+                            ..
+                        }
+                    ));
+                    assert_eq!(
+                        matches!(
+                            &end,
+                            ServiceEnd::Poisoned {
+                                fault: ServiceFault::Submission(_),
+                                ..
+                            }
+                        ),
+                        matches!(expected, ExpectedStreamEnd::SubmissionFailed)
+                    );
+                    assert!(service._pending.admissions.first().is_none());
+                    assert_eq!(
+                        service.data.available(WmmAccessCategory::BestEffort),
+                        u32::from(MODEL_TX_QUEUE_DEPTH.get())
+                    );
+                    assert_eq!(world.air.disable_calls(), 1);
+                }
+                Some(ExpectedStreamEnd::FalseDrained) => {
+                    let ServiceEnd::Quarantined {
+                        fault: ServiceFault::DrainedWithOutstanding { missing, .. },
+                        ..
+                    } = &end
+                    else {
+                        panic!("an unreturned TX ticket contradicts Drained")
+                    };
+                    assert!(matches!(missing, PendingTerminal::Transmit(_)));
+                    assert_eq!(service._pending.admissions.first(), Some(*missing));
+                    assert_eq!(world.air.disable_calls(), 0);
+                }
+                Some(ExpectedStreamEnd::Quarantined) => {
+                    assert!(matches!(
+                        &end,
+                        ServiceEnd::Quarantined {
+                            fault: ServiceFault::Backend(_),
+                            ..
+                        }
+                    ));
+                    assert!(matches!(
+                        service._pending.admissions.first(),
+                        Some(PendingTerminal::Transmit(_))
+                    ));
+                    assert_eq!(world.air.disable_calls(), 0);
+                }
+                None => {}
+            }
             if world.expect_queued_command_on_poison.get() {
-                assert!(matches!(&end, ServiceEnd::Poisoned { .. }));
+                assert!(matches!(&end, ServiceEnd::Quarantined { .. }));
                 assert!(
                     matches!(
                         io.commands.try_receive(),
@@ -781,13 +857,14 @@ where
                     else {
                         panic!("the next epoch must also disable");
                     };
-                    owner.uninstall(())
+                    Ended::uninstall(owner, (), ())
                 }
-                ServiceEnd::Stopped(owner) => owner.uninstall(()),
-                ServiceEnd::Failed { owner, .. } => owner.uninstall(()),
+                ServiceEnd::Stopped(owner) => Ended::uninstall(owner, (), ()),
+                ServiceEnd::Failed { owner, .. } => owner.uninstall((), ()),
+                ServiceEnd::Quarantined { proof, .. } => Ended::fail_stopped(proof, ()),
                 ServiceEnd::Poisoned {
                     owner: poisoned, ..
-                } => poisoned.uninstall(()),
+                } => Ended::uninstall(poisoned, (), ()),
             }
         }
     }
@@ -845,8 +922,10 @@ where
         outputs: RefCell::new(Vec::new()),
         completions: RefCell::new(Vec::new()),
         refuse_rate: Cell::new(false),
+        fail_submission: Cell::new(false),
         counters: Cell::new(None),
         expect_queued_command_on_poison: Cell::new(false),
+        expected_stream_end: Cell::new(None),
         drop_stopped_service: Cell::new(false),
         restart_stopped_service: Cell::new(None),
         stack: RefCell::new(stack),
@@ -864,7 +943,18 @@ where
             refuse_initial_enable,
         },
     ));
-    assert!(uninstalled.is_some(), "the port ends through its uninstall");
+    match uninstalled {
+        oer_radio_port::PortEnd::Uninstalled { .. } => {}
+        oer_radio_port::PortEnd::FailStopped { outcome, .. } => {
+            assert!(matches!(outcome, oer_radio_port::Abandon::Stopped(_)));
+            assert_eq!(
+                world.air.disable_calls(),
+                0,
+                "quarantined stream never disables again"
+            );
+        }
+        oer_radio_port::PortEnd::Abandoned { .. } => panic!("service must return its output"),
+    }
     world.counters.get().expect("service returned its counters")
 }
 
@@ -931,6 +1021,68 @@ fn port_failure_during_scan_returns_one_connect_terminal_and_one_lifecycle_notic
             );
         })
     });
+}
+
+#[test]
+fn event_end_checks_outstanding_tx_and_quarantines_without_disable() {
+    use oer_ieee80211_sta::machine::StaDisconnectReason;
+    for end in [
+        ExpectedStreamEnd::Drained,
+        ExpectedStreamEnd::SubmissionFailed,
+        ExpectedStreamEnd::FalseDrained,
+        ExpectedStreamEnd::Quarantined,
+    ] {
+        run(StaSecurity::Open, |world| {
+            Box::pin(async move {
+                let mut seen = 0;
+                world.associate(&mut seen, false).await;
+                world
+                    .notice(StaNotice::Connected {
+                        bssid: oer_ieee80211_mac::address::Bssid::new(
+                            IndividualAddress::new(BSSID).unwrap(),
+                        )
+                        .unwrap(),
+                        channel: 6,
+                    })
+                    .await;
+                world
+                    .air
+                    .hold_completion(WmmAccessCategory::BestEffort, true);
+                world.send_msdu([2, 0, 0, 0, 0, 7]);
+                world.sent(&mut seen, DATA).await;
+                world.expected_stream_end.set(Some(end));
+                match end {
+                    ExpectedStreamEnd::Drained => {
+                        world.air.fail_after_terminals();
+                        world
+                            .air
+                            .hold_completion(WmmAccessCategory::BestEffort, false);
+                    }
+                    ExpectedStreamEnd::SubmissionFailed => {
+                        world.fail_submission.set(true);
+                        world.send_msdu([2, 0, 0, 0, 0, 8]);
+                        for _ in 0..20 {
+                            yield_now().await;
+                        }
+                        assert!(
+                            !world.fail_submission.get(),
+                            "the second attempt reached admission"
+                        );
+                        world
+                            .air
+                            .hold_completion(WmmAccessCategory::BestEffort, false);
+                    }
+                    ExpectedStreamEnd::FalseDrained => world.air.falsely_claim_drained(),
+                    ExpectedStreamEnd::Quarantined => world.air.poison(),
+                }
+                world
+                    .notice(StaNotice::Disconnected(StaDisconnectReason::Arbiter(
+                        oer_ieee80211_arbiter::LeaveReason::PortFailed,
+                    )))
+                    .await;
+            })
+        });
+    }
 }
 
 #[test]

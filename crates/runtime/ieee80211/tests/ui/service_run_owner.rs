@@ -1,5 +1,5 @@
 #![no_std]
-use oer_ieee80211_port::{Disabled, Owner};
+use oer_radio_port::{Disabled, Owner};
 use oer_ieee80211_runtime::station_service::{PortRxMeta, ServiceIo, StationPort, StationService};
 use oer_ieee80211_upper_mac::rate_selection::RateSelection;
 use oer_time::Timer;

@@ -281,10 +281,11 @@ pub struct Returned {
 pub struct Trace {
     /// Actual returns in observation order.
     pub returned: Vec<Returned>,
-    /// Context destructors run, including fail-stop-owned contexts.
+    /// Context destructors run. Quarantine retains unreturned contexts even
+    /// after its receipt has been dropped.
     pub contexts_dropped: usize,
-    /// Destructors observed after disable, before uninstall/fail-stop destroys
-    /// the installation. Poison must still own every unreturned context here.
+    /// Destructors observed after disable, before final result delivery.
+    /// Poison must still own every unreturned context here.
     pub before_teardown_dropped: usize,
     /// Publications observed by the backend fixture.
     pub publications: usize,
@@ -333,7 +334,12 @@ pub async fn check(harness: &mut impl Harness) -> Result<(), (Scenario, Violatio
 }
 
 fn verify(scenario: Scenario, trace: Trace) -> Result<(), Violation> {
-    if trace.contexts_dropped != OPERATIONS.len() {
+    let expected_drops = if scenario == Scenario::Poison {
+        2
+    } else {
+        OPERATIONS.len()
+    };
+    if trace.contexts_dropped != expected_drops {
         return Err(Violation::Lifetime);
     }
     let returned_before_teardown = if scenario == Scenario::Poison { 2 } else { 4 };

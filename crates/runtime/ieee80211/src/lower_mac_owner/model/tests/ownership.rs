@@ -105,11 +105,12 @@ fn returned<'id>(
 }
 
 impl PortBody<Backend> for Operations {
+    type Output = ();
     async fn run<'id>(
         self,
         owner: Owner<'_, 'id, Backend, Disabled>,
         resources: ModelResources<'id>,
-    ) -> Ended<'id, Backend> {
+    ) -> Ended<'id, Backend, ()> {
         let mut terminal_access = resources.terminal_access;
         let Ok(mut owner) = owner.enable().await else {
             panic!("model enables")
@@ -266,11 +267,11 @@ impl PortBody<Backend> for Operations {
         match owner.disable(&mut sink).await {
             Ok(owner) => {
                 self.before_teardown.set(self.dropped.get());
-                owner.uninstall(())
+                Ended::uninstall(owner, (), ())
             }
             Err(poisoned) => {
                 self.before_teardown.set(self.dropped.get());
-                poisoned.fail_stop()
+                Ended::fail_stopped(poisoned.fail_stop(), ())
             }
         }
     }
@@ -289,7 +290,7 @@ impl Harness for ModelHarness {
         let dropped = Rc::new(Cell::new(0));
         let before_teardown = Rc::new(Cell::new(usize::MAX));
         let seen = Rc::new(RefCell::new(Vec::new()));
-        run_port(
+        let _port_end = run_port(
             backend,
             Operations {
                 air: air.clone(),
@@ -344,11 +345,12 @@ struct AggregateOwners {
 }
 
 impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
+    type Output = ();
     async fn run<'id>(
         self,
         owner: Owner<'_, 'id, ModelBackend<ModelCaps, AggregateContext>, Disabled>,
         resources: ModelResources<'id>,
-    ) -> Ended<'id, ModelBackend<ModelCaps, AggregateContext>> {
+    ) -> Ended<'id, ModelBackend<ModelCaps, AggregateContext>, ()> {
         let mut terminal_access = resources.terminal_access;
         use oer_ieee80211_lower_mac::{AggregateAttempt, AmpduPhase, MpduStartSpacing, Tid};
         let Ok(mut owner) = owner.enable().await else {
@@ -505,7 +507,7 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
         let Ok(owner) = owner.disable(&mut sink).await else {
             panic!("the model disables")
         };
-        owner.uninstall(())
+        Ended::uninstall(owner, (), ())
     }
 }
 
@@ -524,7 +526,7 @@ fn aggregate_terminal_returns_its_context_and_each_subframes_resources_on_air_or
             ],
         );
         let dropped = Rc::new(Cell::new(0));
-        block_on(run_port(
+        let _port_end = block_on(run_port(
             backend,
             AggregateOwners {
                 air,
@@ -556,11 +558,12 @@ struct PublicationFault {
     dropped: Rc<Cell<usize>>,
 }
 impl PortBody<ModelBackend<ModelCaps, FaultContext>> for PublicationFault {
+    type Output = ();
     async fn run<'p, 'id>(
         self,
         owner: Owner<'p, 'id, ModelBackend<ModelCaps, FaultContext>, Disabled>,
         resources: ModelResources<'id>,
-    ) -> Ended<'id, ModelBackend<ModelCaps, FaultContext>> {
+    ) -> Ended<'id, ModelBackend<ModelCaps, FaultContext>, ()> {
         let station_association = ModelKeys::<Station>::begin_association(
             resources.station_association,
             oer_ieee80211_mac::security::Spp::NotNegotiated,
@@ -718,7 +721,7 @@ impl PortBody<ModelBackend<ModelCaps, FaultContext>> for PublicationFault {
             assert_eq!(mpdu.body.as_ref().unwrap().0.as_ptr(), first_body);
             assert_eq!(mpdu.body.as_ref().unwrap().0, [0x7a; 4]);
         }
-        owner.fail_stop()
+        Ended::fail_stopped(owner.fail_stop(), ())
     }
 }
 
@@ -739,7 +742,7 @@ fn publication_fault_keeps_the_complete_single_or_aggregate_until_teardown() {
                 IndividualAddress::new(ACCESS_POINT).unwrap(),
             ],
         );
-        assert!(
+        assert!(matches!(
             block_on(run_port(
                 backend,
                 PublicationFault {
@@ -748,9 +751,13 @@ fn publication_fault_keeps_the_complete_single_or_aggregate_until_teardown() {
                     poisoned_before_submit,
                     dropped: dropped.clone()
                 }
-            ))
-            .is_none()
+            )),
+            oer_radio_port::PortEnd::FailStopped { .. }
+        ));
+        assert_eq!(
+            dropped.get(),
+            0,
+            "dropping the quarantine receipt retains the publication owner"
         );
-        assert_eq!(dropped.get(), 1);
     }
 }

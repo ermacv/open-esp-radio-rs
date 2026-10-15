@@ -4,7 +4,7 @@
 //!
 //! [`ModelBackend::new`] takes the install's channel and interface
 //! addresses and returns the backend, which a test hands to
-//! [`run_port`](oer_ieee80211_port::run_port), and the [`ModelAir`] it
+//! [`run_port`](oer_radio_port::run_port), and the [`ModelAir`] it
 //! plays on: the air answers each transmission, delivers received frames
 //! and records what the hardware saw. Receive Block Ack agreements are
 //! per-slot desired state: updates coalesce before the driver applies them,
@@ -129,7 +129,10 @@ use oer_ieee80211_mac::ccmp::GroupKeyId;
 use oer_ieee80211_rsn::keys::CcmpKey;
 
 use oer_ieee80211_mac::phy::{HeMcs, HtMcs, PhyRate};
-use oer_ieee80211_port::{ClockError, EnableResult, PortBackend, PortPhase, Retire};
+use oer_radio_port::{
+    Abandon, Call, ClockError, Detach, Detached, DriverExit, DriverLoan, EnableResult, EventEnd,
+    InstallParts, Installed, PoisonState, PortBackend, PortPhase, Quarantine, Retire, Retired,
+};
 use oer_radio_port::{EventsLost, Mint, Poisoned, PortResult, Slot};
 use oer_time::RadioInstant;
 
@@ -903,7 +906,7 @@ fn ccmp_header(number: u64, key_id: u8) -> [u8; 8] {
 ///
 /// ```compile_fail,E0597
 /// use oer_ieee80211_lower_mac::PhaseTypes;
-/// use oer_ieee80211_port::{Disabled, Ended, Owner, PortBody};
+/// use oer_radio_port::{Disabled, Ended, Owner, PortBody};
 /// use oer_ieee80211_runtime::lower_mac_owner::model::{
 ///     ModelBackend, ModelCaps, ModelContext, ModelResources, ModelTypes,
 /// };
@@ -913,12 +916,13 @@ fn ccmp_header(number: u64, key_id: u8) -> [u8; 8] {
 /// type Backend = ModelBackend<ModelCaps, Contexts>;
 /// struct Body;
 /// impl PortBody<Backend> for Body {
+///     type Output = ();
 ///     async fn run<'id>(self, owner: Owner<'_, 'id, Backend, Disabled>,
-///         _: ModelResources<'id>) -> Ended<'id, Backend> {
+///         _: ModelResources<'id>) -> Ended<'id, Backend, ()> {
 ///         let machine = Machine;
 ///         let context: <ModelTypes<Contexts> as PhaseTypes<'id>>::Context = &machine;
 ///         core::hint::black_box(context);
-///         owner.uninstall(())
+///         Ended::uninstall(owner, (), ())
 ///     }
 /// }
 /// ```
@@ -930,7 +934,7 @@ fn ccmp_header(number: u64, key_id: u8) -> [u8; 8] {
 /// ```
 /// use std::rc::Rc;
 /// use oer_ieee80211_lower_mac::PhaseTypes;
-/// use oer_ieee80211_port::{Disabled, Ended, Owner, PortBody};
+/// use oer_radio_port::{Disabled, Ended, Owner, PortBody};
 /// use oer_ieee80211_sta::epoch::LinkEpoch;
 /// use oer_ieee80211_runtime::lower_mac_owner::model::{
 ///     ModelBackend, ModelCaps, ModelContext, ModelResources, ModelTypes,
@@ -941,12 +945,13 @@ fn ccmp_header(number: u64, key_id: u8) -> [u8; 8] {
 /// type Backend = ModelBackend<ModelCaps, Contexts>;
 /// struct Body;
 /// impl PortBody<Backend> for Body {
+///     type Output = ();
 ///     async fn run<'id>(self, owner: Owner<'_, 'id, Backend, Disabled>,
-///         _: ModelResources<'id>) -> Ended<'id, Backend> {
+///         _: ModelResources<'id>) -> Ended<'id, Backend, ()> {
 ///         let context: <ModelTypes<Contexts> as PhaseTypes<'id>>::Context =
 ///             Context { epoch: None, owner: Rc::new(()) };
 ///         core::hint::black_box(context);
-///         owner.uninstall(())
+///         Ended::uninstall(owner, (), ())
 ///     }
 /// }
 /// ```
@@ -1357,6 +1362,14 @@ struct CapturedGroupRx {
     stage: GroupRxStage,
 }
 
+#[derive(Clone, Copy, Default)]
+enum ModelStream {
+    #[default]
+    Running,
+    Draining,
+    Ended(EventEnd<ModelFault>),
+}
+
 /// The air and the world of a model: shared by the backend's driver and
 /// the test.
 #[derive(Default)]
@@ -1377,7 +1390,8 @@ pub struct ModelAir {
     crypto_operations: RefCell<Vec<ModelCryptoOperation>>,
     group_rx: RefCell<VecDeque<CapturedGroupRx>>,
     group_writes: Cell<usize>,
-    poisoned: Cell<bool>,
+    stream: Cell<ModelStream>,
+    disables: Cell<u32>,
     driver: RefCell<Option<Waker>>,
     /// The driver's passes.
     passes: Cell<u32>,
@@ -1685,8 +1699,44 @@ impl ModelAir {
 
     /// Poison the backend.
     pub fn poison(&self) {
-        self.poisoned.set(true);
+        if !matches!(self.stream.get(), ModelStream::Ended(_)) {
+            self.stream.set(ModelStream::Ended(EventEnd::Quarantined {
+                cause: ModelFault,
+            }));
+        }
         self.wake_driver();
+    }
+
+    /// An ordinary fault closes admission and returns every admitted owner
+    /// before the event stream reports Drained. This differs from `poison`,
+    /// which models an accounting/publication uncertainty and retains owners.
+    pub fn fail_after_terminals(&self) {
+        if matches!(self.stream.get(), ModelStream::Running) {
+            self.stream.set(ModelStream::Draining);
+            self.wake_driver();
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn falsely_claim_drained(&self) {
+        // Fault injection retains real queued owners, but lies about their
+        // return. The service must reject this claim and fail-stop.
+        self.stream
+            .set(ModelStream::Ended(EventEnd::Drained { cause: ModelFault }));
+        self.wake_driver();
+    }
+
+    fn failed(&self) -> bool {
+        matches!(self.stream.get(), ModelStream::Ended(_))
+    }
+
+    fn admission_closed(&self) -> bool {
+        !matches!(self.stream.get(), ModelStream::Running)
+    }
+
+    /// Number of actual disable calls; fail-stop is a different transition.
+    pub fn disable_calls(&self) -> u32 {
+        self.disables.get()
     }
 
     /// The driver's passes so far.
@@ -1971,6 +2021,7 @@ struct Settings {
 /// draining events does not acknowledge that separate loss indication.
 pub struct ModelHeld<'id, X: ModelContext = ()> {
     air: Rc<ModelAir>,
+    poison_state: RefCell<PoisonState<ModelFault>>,
     driver_state: RefCell<Driver<'id, X>>,
     commands: Bounded<Command<'id, X>>,
     /// The received buffers the body gives back, at most one per buffer.
@@ -2030,7 +2081,7 @@ pub struct ModelLocal<'id> {
     brand: PhantomData<fn(&'id ()) -> &'id ()>,
 }
 
-/// The model's backend; only [`run_port`](oer_ieee80211_port::run_port)
+/// The model's backend; only [`run_port`](oer_radio_port::run_port)
 /// holds it.
 pub struct ModelBackend<C = ModelCaps, X: ModelContext = ()> {
     air: Rc<ModelAir>,
@@ -2039,18 +2090,24 @@ pub struct ModelBackend<C = ModelCaps, X: ModelContext = ()> {
     caps: PhantomData<fn() -> (C, X)>,
 }
 
-impl<C, X: ModelContext> ModelBackend<C, X> {
+impl<C: Ieee80211Capabilities, X: ModelContext> ModelBackend<C, X> {
     /// A backend tuned to `channel` with the station's and the access
     /// point's addresses, and the air it plays on.
-    pub fn new(channel: Channel, addresses: [IndividualAddress; 2]) -> (Self, Rc<ModelAir>) {
+    pub fn new(
+        channel: Channel,
+        addresses: [IndividualAddress; 2],
+    ) -> (Installed<Self>, Rc<ModelAir>) {
         let air = Rc::new(ModelAir::default());
         (
-            Self {
-                air: air.clone(),
-                channel,
-                addresses,
-                caps: PhantomData,
-            },
+            Installed::new(
+                Self {
+                    air: air.clone(),
+                    channel,
+                    addresses,
+                    caps: PhantomData,
+                },
+                (),
+            ),
             air,
         )
     }
@@ -2079,7 +2136,8 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
     type Setup<'a, 'id>
         = ModelSetup<'a, C>
     where
-        Self: 'a;
+        Self: 'a,
+        'id: 'a;
     type Phase<'a, 'id>
         = ModelPhase<'a, 'id, C, X>
     where
@@ -2104,13 +2162,19 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
     type Resources<'id> = ModelResources<'id>;
     type Held<'id> = ModelHeld<'id, X>;
     type Local<'id> = ModelLocal<'id>;
+    type Driver = ();
     type State = ();
     type Uninstall = ();
     type Uninstalled = Rc<ModelAir>;
 
-    fn enable(&mut self) -> impl Future<Output = EnableResult<(), ModelFault>> + '_ {
+    fn enable<'a, 'id: 'a>(
+        &'a mut self,
+        _call: Call,
+        _held: &'a Self::Held<'id>,
+        _local: &'a mut Self::Local<'id>,
+    ) -> impl Future<Output = EnableResult<(), ModelFault>> + 'a {
         let air = &self.air;
-        core::future::ready(if air.poisoned.get() {
+        core::future::ready(if air.admission_closed() {
             Err(Poisoned { cause: ModelFault })
         } else if air.refuse_enable.replace(false) {
             Ok(Err(()))
@@ -2121,6 +2185,7 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
 
     fn disable<'a, 'id>(
         &'a mut self,
+        _call: Call,
         held: &'a ModelHeld<'id, X>,
         _: &'a mut ModelLocal<'id>,
         sink: &'a mut dyn FnMut(
@@ -2131,12 +2196,15 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
     where
         'id: 'a,
     {
+        self.air
+            .disables
+            .set(self.air.disables.get().saturating_add(1));
         // The driver ends every admitted command. The terminal sink cannot
         // receive unsolicited RX; this backend recycles those owners below.
         held.draining.set(true);
         held.air.wake_driver();
         poll_fn(move |cx| {
-            if held.air.poisoned.get() {
+            if held.air.failed() {
                 return Poll::Ready(Err(Poisoned { cause: ModelFault }));
             }
             if held.draining.get() || !held.commands.is_empty() || !held.recycled.is_empty() {
@@ -2177,15 +2245,13 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
 
     fn now(
         &self,
+        _call: Call,
     ) -> impl Future<Output = PortResult<RadioInstant<Ieee80211Radio>, ClockError, ModelFault>> + '_
     {
         core::future::ready(Ok(Err(ClockError::Unavailable)))
     }
 
-    fn resources<'id>(
-        &mut self,
-        mint: Mint<'id, Self::Pools>,
-    ) -> (ModelHeld<'id, X>, ModelLocal<'id>, ModelResources<'id>) {
+    fn resources<'id>(&mut self, mint: Mint<'id, Self::Pools>) -> InstallParts<'id, Self> {
         let (
             (gate, gate_issuer, arbiter_authority),
             (tickets, terminal_access),
@@ -2204,6 +2270,7 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
         let (access_point_pairwise, access_point_group) = access_point_bank.into_parts();
         let held = ModelHeld {
             air: self.air.clone(),
+            poison_state: RefCell::default(),
             driver_state: RefCell::new(Driver {
                 queues: core::array::from_fn(|_| TxQueue {
                     waiting: VecDeque::new(),
@@ -2258,10 +2325,19 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
             gate,
             arbiter_authority,
         };
-        (held, ModelLocal::default(), resources)
+        InstallParts {
+            held,
+            local: ModelLocal::default(),
+            resources,
+        }
     }
 
-    fn setup<'a, 'id>(&'a mut self, _: &'a mut Self::Local<'id>) -> Self::Setup<'a, 'id> {
+    fn setup<'a, 'id: 'a>(
+        &'a mut self,
+        _call: Call,
+        _held: &'a Self::Held<'id>,
+        _: &'a mut Self::Local<'id>,
+    ) -> Self::Setup<'a, 'id> {
         ModelSetup {
             channel: &mut self.channel,
             caps: PhantomData,
@@ -2270,6 +2346,7 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
 
     fn phase<'a, 'id>(
         &'a mut self,
+        _call: Call,
         held: &'a ModelHeld<'id, X>,
         _: &'a mut ModelLocal<'id>,
     ) -> ModelPhase<'a, 'id, C, X>
@@ -2282,46 +2359,78 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
         }
     }
 
-    fn drive<'p, 'id>(
-        &mut self,
+    async fn drive<'p, 'id>(
+        driver: DriverLoan<'p, Self::Driver>,
         held: &'p Self::Held<'id>,
         retire: Retire<'p>,
-    ) -> impl Future<Output = ()> + use<'p, 'id, C, X> {
-        poll_fn(move |cx| {
+    ) -> DriverExit<(), ModelFault> {
+        poll_fn(|cx| {
             held.air.passes.set(held.air.passes.get().saturating_add(1));
-            // A driver that sees the abandon latch publishes nothing and
-            // stops.
-            if held.air.poisoned.get() || retire.is_requested() || retire.is_abandoned() {
+            if held.air.failed() || retire.is_requested() || retire.is_abandoned() {
                 return Poll::Ready(());
             }
+            if matches!(held.air.stream.get(), ModelStream::Draining) {
+                held.draining.set(true);
+            }
             held.driver_state.borrow_mut().serve(held);
-            if held.air.poisoned.get() {
+            if held.air.failed() {
                 return Poll::Ready(());
             }
             *held.air.driver.borrow_mut() = Some(cx.waker().clone());
-            Poll::Pending
+            // Retirement has its own wake, independent of air traffic.
+            let wait = retire.wait();
+            let mut wait = core::pin::pin!(wait);
+            wait.as_mut().poll(cx)
         })
+        .await;
+        if held.air.failed() {
+            held.wake_body();
+            let (cause, published) = held.poison_state.borrow_mut().publish(ModelFault);
+            DriverExit::Faulted {
+                state: (),
+                cause: cause.cause,
+                poisoned: driver.fail_stop(published),
+            }
+        } else {
+            retire.retired(driver, ()).await
+        }
     }
 
-    fn retire_bound(&self) -> impl Future<Output = ()> + '_ {
+    fn retire_bound(&self, _call: Call) -> impl Future<Output = ()> + use<C, X> {
+        // A model step never awaits hardware. Retirement's registered wake
+        // ends it in the core's next poll.
         core::future::pending()
     }
 
-    fn detach<'id>(&mut self, _: &ModelHeld<'id, X>) {}
+    fn detach<'id>(&mut self, _call: Detach<'_>, _: &ModelHeld<'id, X>) {}
 
     fn uninstall<'id>(
         self,
-        _: ModelHeld<'id, X>,
-        _: ModelLocal<'id>,
-        (): (),
+        held: ModelHeld<'id, X>,
+        local: ModelLocal<'id>,
+        retired: Retired<'id, ((), ())>,
+        detached: Detached<'id>,
         (): (),
     ) -> Rc<ModelAir> {
+        let ((), ()) = retired.into_state();
+        // Only Quarantined retains undelivered owners. Drained has returned
+        // them all and may release its now-empty queues during uninstall.
+        if matches!(
+            held.air.stream.get(),
+            ModelStream::Ended(EventEnd::Quarantined { .. })
+        ) {
+            let _quarantined = oer_radio_port::Quarantined::new((held, local, detached));
+        }
         self.air.end_installation();
         self.air
     }
 
-    fn abandon(&mut self) {
+    fn abandon(&mut self, call: Quarantine) -> Abandon {
+        // One host thread owns every step; no ISR or device can outlive it.
+        // Held queues remain in the core's quarantine even after this stop.
+        self.air.poison();
         self.air.end_installation();
+        Abandon::Stopped(call.stopped())
     }
 }
 
@@ -2367,7 +2476,7 @@ impl<'id, X: ModelContext> Driver<'id, X> {
     /// queues, then the air.
     fn serve(&mut self, held: &ModelHeld<'id, X>) {
         loop {
-            if held.air.poisoned.get() {
+            if held.air.failed() {
                 return;
             }
             // The settings come before the next command.
@@ -2467,7 +2576,7 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                         break;
                     }
                     self.group_change(held, admitted_at, change);
-                    if held.air.poisoned.get() {
+                    if held.air.failed() {
                         return;
                     }
                 }
@@ -2501,11 +2610,11 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                 state => state,
             };
         }
-        if held.air.poisoned.get() {
+        if held.air.failed() {
             return;
         }
         self.finish_removals(held);
-        if held.air.poisoned.get() {
+        if held.air.failed() {
             return;
         }
         if idle
@@ -2515,7 +2624,9 @@ impl<'id, X: ModelContext> Driver<'id, X> {
         {
             held.wake_body();
         }
-        self.receive(held);
+        if matches!(held.air.stream.get(), ModelStream::Running) {
+            self.receive(held);
+        }
     }
 
     fn activate_group(&mut self, held: &ModelHeld<'id, X>, identity: &KeyIdentity, write: bool) {
@@ -2690,7 +2801,7 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                         publication.result
                     };
                     queue.air = publication.work.complete(held, &self.keys, result, cause);
-                    if held.air.poisoned.get() {
+                    if held.air.failed() {
                         return;
                     }
                     continue;
@@ -2707,7 +2818,7 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                     break;
                 } else {
                     queue.air = start_work(held, &self.keys, work);
-                    if held.air.poisoned.get() {
+                    if held.air.failed() {
                         return;
                     }
                 }
@@ -2728,7 +2839,7 @@ impl<'id, X: ModelContext> Driver<'id, X> {
             });
             let uncertain = removal.group_admitted_at.is_some()
                 && held.air.group_failure.get() == Some(GroupFaultStage::After);
-            if overdue || uncertain || held.air.poisoned.get() {
+            if overdue || uncertain || held.air.failed() {
                 pending.push(removal);
                 held.poison();
             } else if Rc::strong_count(&removal.key.0.preparations) == 1 {
@@ -3136,18 +3247,41 @@ impl<'id, C, X: ModelContext> PortPhase for ModelPhase<'_, 'id, C, X> {
 
     fn next_event(
         &mut self,
-    ) -> impl Future<Output = PortResult<Self::Event, EventsLost, ModelFault>> + '_ {
+    ) -> impl Future<Output = Result<Result<Self::Event, EventsLost>, EventEnd<ModelFault>>> + '_
+    {
         let held = self.held;
         // Cancel-safe: the event stays queued until a poll takes it.
         poll_fn(move |cx| {
-            if held.air.poisoned.get() {
-                return Poll::Ready(Err(Poisoned { cause: ModelFault }));
+            if let ModelStream::Ended(end) = held.air.stream.get() {
+                return Poll::Ready(Err(end));
             }
             if let Some(event) = held.take_event() {
                 return Poll::Ready(Ok(Ok(event)));
             }
             if held.lost.replace(false) {
                 return Poll::Ready(Ok(Err(EventsLost)));
+            }
+            if matches!(held.air.stream.get(), ModelStream::Draining) {
+                let driver = held.driver_state.borrow();
+                let returned = driver
+                    .queues
+                    .iter()
+                    .all(|queue| queue.air.is_none() && queue.waiting.is_empty())
+                    && driver.removing.is_empty()
+                    && !matches!(driver.gate, DriverGate::Closing(_));
+                if returned
+                    && !held.draining.get()
+                    && held.commands.is_empty()
+                    && held.recycled.is_empty()
+                {
+                    let end = EventEnd::Drained { cause: ModelFault };
+                    held.air.stream.set(ModelStream::Ended(end));
+                    held.air.wake_driver();
+                    return Poll::Ready(Err(end));
+                }
+                *held.body.borrow_mut() = Some(cx.waker().clone());
+                held.air.wake_driver();
+                return Poll::Pending;
             }
             if let Some((bytes, meta)) = held.air.rx_stream.borrow().as_ref()
                 && held.rx_out.get() < MODEL_RX_EVENTS
@@ -3536,7 +3670,7 @@ where
             plan,
             key,
         })));
-        if self.held.air.poisoned.get() {
+        if self.held.air.admission_closed() {
             Err(Poisoned { cause: ModelFault })
         } else {
             Ok(())
@@ -3954,7 +4088,7 @@ where
             rate,
             key,
         }));
-        if self.held.air.poisoned.get() {
+        if self.held.air.admission_closed() {
             Err(Poisoned { cause: ModelFault })
         } else {
             Ok(())

@@ -583,10 +583,10 @@ A radio port is the contract between the protocol logic of one radio
 protocol and the backend that executes it: a chip, a family driver or a host
 model. Everything above a port is written once for every backend; everything
 below it is the backend's. Every port runs on the owner shape, whose
-lifecycle Bluetooth LE and IEEE 802.15.4 share in `oer-radio-port`:
+lifecycle all three radio blocks share in `oer-radio-port`:
 `run_port` consumes an `Installed` backend and its independent driver, and
 lends the body an `Owner` whose transitions and phase make caller rules
-expressible as types. Wi-Fi keeps its lifecycle package until its migration.
+expressible as types. The Wi-Fi model and portable consumers use this same lifecycle.
 A driver has no installation brand; branded queues and in-flight owners
 live in `Held<'id>`. A driver returns retirement or published poisoning with
 an affine proof. The core retains its state while a faulted body drains
@@ -600,7 +600,7 @@ is the Bluetooth LE backend, over `oer-radio-port`; the
 IEEE 802.15.4 port, over `oer-radio-port`, is what the Espressif
 runtime's backend implements and the OpenThread adapter consumes; and the
 [lower-MAC port](../crates/protocols/ieee80211/lower-mac/README.md) is the
-Wi-Fi one, over `oer-ieee80211-port`, carrying the portable `Channel` and
+Wi-Fi one, over `oer-radio-port`, carrying the portable `Channel` and
 `PhyRate` values of `oer-ieee80211-mac`. The vocabulary they share (the
 brand and capacity tokens, the refusals, the poisoned outer error, the loss
 marker and the clock relation) is the contract package

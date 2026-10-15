@@ -190,7 +190,7 @@ fn every_result_is_consumed_by_exactly_one_single_or_aggregate_attempt() {
             AirAnswer::HardwareTimeout,
         ] {
             let (backend, _) = backend();
-            block_on(run_port(backend, Body(Results { form, result })));
+            let _port_end = block_on(run_port(backend, Body(Results { form, result })));
         }
     }
 }
@@ -198,7 +198,7 @@ fn every_result_is_consumed_by_exactly_one_single_or_aggregate_attempt() {
 #[test]
 fn aggregate_honors_timeout_injection() {
     let (backend, _) = backend();
-    block_on(run_port(
+    let _port_end = block_on(run_port(
         backend,
         Body(Results {
             form: Form::Aggregate,
@@ -210,7 +210,7 @@ fn aggregate_honors_timeout_injection() {
 #[test]
 fn an_empty_block_ack_is_consumed_before_the_following_single() {
     let (backend, _) = backend();
-    block_on(run_port(
+    let _port_end = block_on(run_port(
         backend,
         Body(Results {
             form: Form::Aggregate,
@@ -304,5 +304,5 @@ impl Work for WrongAnswer {
 #[test]
 fn wrong_answer_shape_retains_the_operation_before_publication() {
     let (backend, _) = backend();
-    block_on(run_port(backend, Body(WrongAnswer)));
+    let _port_end = block_on(run_port(backend, Body(WrongAnswer)));
 }

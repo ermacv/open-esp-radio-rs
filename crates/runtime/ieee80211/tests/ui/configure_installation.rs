@@ -4,11 +4,11 @@ use oer_ieee80211_lower_mac::{
     StationReceive,
 };
 use oer_ieee80211_mac::address::IndividualAddress;
-use oer_ieee80211_port::{Disabled, Ended, Owner, PortBody, run_port};
+use oer_radio_port::{Disabled, Ended, Owner, PortBody, run_port};
 use oer_ieee80211_runtime::lower_mac_owner::model::{ModelBackend, ModelPool, ModelResources};
 use oer_radio_port::Child;
 
-fn backend() -> ModelBackend {
+fn backend() -> oer_radio_port::Installed<ModelBackend> {
     ModelBackend::new(
         Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap(),
         [
@@ -20,22 +20,24 @@ fn backend() -> ModelBackend {
 }
 pub struct Outer;
 impl PortBody<ModelBackend> for Outer {
+    type Output = ();
     async fn run<'p, 'id>(
         self,
         owner: Owner<'p, 'id, ModelBackend, Disabled>,
         resources: ModelResources<'id>,
-    ) -> Ended<'id, ModelBackend> {
+    ) -> Ended<'id, ModelBackend, ()> {
         let _ended = run_port(backend(), Inner(resources.station_commands.configure)).await;
-        owner.uninstall(())
+        Ended::uninstall(owner, (), ())
     }
 }
 struct Inner<'outer>(ConfigurePermission<'outer, Station, Child<ModelPool<9>, 1>>);
 impl PortBody<ModelBackend> for Inner<'_> {
+    type Output = ();
     async fn run<'p, 'id>(
         self,
         owner: Owner<'p, 'id, ModelBackend, Disabled>,
         resources: ModelResources<'id>,
-    ) -> Ended<'id, ModelBackend> {
+    ) -> Ended<'id, ModelBackend, ()> {
         let mut owner = owner.enable().await.ok().unwrap();
         #[cfg(ui_reject)]
         owner
@@ -47,6 +49,6 @@ impl PortBody<ModelBackend> for Inner<'_> {
             .phase()
             .station()
             .configure(resources.station_commands.configure, StationReceive::Off);
-        owner.fail_stop() // ui-error: null lifetime may not live long enough // ui-error: null lifetime may not live long enough
+        Ended::fail_stopped(owner.fail_stop(), ()) // ui-error: null lifetime may not live long enough // ui-error: null lifetime may not live long enough
     }
 }

@@ -55,7 +55,7 @@ cases = [
 
 [[suite]]
 name = "rate-installation"
-packages = ["oer-ieee80211-lower-mac", "oer-ieee80211-mac", "oer-ieee80211-port", "oer-ieee80211-runtime"]
+packages = ["oer-ieee80211-lower-mac", "oer-ieee80211-mac", "oer-radio-port", "oer-ieee80211-runtime"]
 features = ["oer-ieee80211-runtime/test-support"]
 targets = ["host", "esp32s31"]
 cases = [
@@ -174,18 +174,18 @@ cases = [
 
 [[suite]]
 name = "port-lifecycle-privacy"
-packages = ["oer-ieee80211-port"]
+packages = ["oer-radio-port"]
 features = []
 targets = ["host", "esp32s31"]
 cases = [
-    "crates/protocols/ieee80211/port/tests/ui/owner_constructor.rs",
-    "crates/protocols/ieee80211/port/tests/ui/ended_constructor.rs",
-    "crates/protocols/ieee80211/port/tests/ui/backend_field.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/lifecycle_owner_constructor.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/lifecycle_ended_constructor.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/lifecycle_backend_field.rs",
 ]
 
 [[suite]]
 name = "service-finalization"
-packages = ["oer-ieee80211-arbiter", "oer-ieee80211-runtime", "oer-ieee80211-sta", "oer-ieee80211-port", "oer-ieee80211-lower-mac", "oer-ieee80211-upper-mac", "oer-time"]
+packages = ["oer-ieee80211-arbiter", "oer-ieee80211-runtime", "oer-ieee80211-sta", "oer-radio-port", "oer-ieee80211-lower-mac", "oer-ieee80211-upper-mac", "oer-time"]
 features = []
 targets = ["host", "esp32s31"]
 cases = [
@@ -231,7 +231,7 @@ cases = [
 
 [[suite]]
 name = "interface-command-permissions"
-packages = ["oer-radio-port", "oer-ieee80211-lower-mac", "oer-ieee80211-mac", "oer-ieee80211-port", "oer-ieee80211-runtime"]
+packages = ["oer-radio-port", "oer-ieee80211-lower-mac", "oer-ieee80211-mac", "oer-ieee80211-runtime"]
 features = ["oer-ieee80211-runtime/test-support"]
 targets = ["host", "esp32s31"]
 cases = [

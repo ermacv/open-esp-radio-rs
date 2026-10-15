@@ -149,7 +149,7 @@ fn bitmap_matches_acknowledged_sequence_set_across_wrap_and_reordering() {
         (&[40, 103, 41, 43][..], 0b1100),
     ] {
         let (backend, _) = backend();
-        block_on(run_port(
+        let _port_end = block_on(run_port(
             backend,
             Body(Window {
                 sequences,
@@ -170,7 +170,7 @@ fn aggregate_does_not_alias_blockack_bit63() {
         (&[40, 43][..], 43),
     ] {
         let (backend, _) = backend();
-        block_on(run_port(
+        let _port_end = block_on(run_port(
             backend,
             Body(Window {
                 sequences: start,
@@ -285,6 +285,6 @@ impl Work for RefusedSent {
 fn a_duplicate_or_out_of_window_sent_subframe_returns_its_owner_and_body() {
     for head in [40, 41] {
         let (backend, _) = backend();
-        block_on(run_port(backend, Body(RefusedSent(head))));
+        let _port_end = block_on(run_port(backend, Body(RefusedSent(head))));
     }
 }

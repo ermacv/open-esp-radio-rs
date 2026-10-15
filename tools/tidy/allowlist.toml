@@ -5,15 +5,15 @@
 # Rust files rustc compiles directly by path, outside every crate root.
 
 [[uncompiled]]
-path = "crates/protocols/ieee80211/port/tests/ui/owner_constructor.rs"
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/lifecycle_owner_constructor.rs"
 reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
 
 [[uncompiled]]
-path = "crates/protocols/ieee80211/port/tests/ui/ended_constructor.rs"
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/lifecycle_ended_constructor.rs"
 reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
 
 [[uncompiled]]
-path = "crates/protocols/ieee80211/port/tests/ui/backend_field.rs"
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/lifecycle_backend_field.rs"
 reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
 
 [[uncompiled]]

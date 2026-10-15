@@ -190,7 +190,7 @@ impl Exercise<'_> {
             },
             events,
             retained,
-            poisoned: self.air.poisoned.get(),
+            poisoned: self.air.failed(),
             deadline_woke: self.probe.deadline_woke.get(),
             published: publication.map(|(tx, _)| tx),
             blocked_while_published: publication.is_some_and(|(_, blocked)| blocked),
@@ -198,11 +198,12 @@ impl Exercise<'_> {
     }
 }
 impl PortBody<ModelBackend> for Exercise<'_> {
+    type Output = ();
     async fn run<'id>(
         self,
         owner: Owner<'_, 'id, ModelBackend, Disabled>,
         mut resources: ModelResources<'id>,
-    ) -> Ended<'id, ModelBackend> {
+    ) -> Ended<'id, ModelBackend, ()> {
         if self.case == ProgressCase::PublishedRemoval {
             return self.published_removal(owner, resources).await;
         }
@@ -287,11 +288,11 @@ impl PortBody<ModelBackend> for Exercise<'_> {
         {
             Ok(disabled) => {
                 self.record(owned, events, Vec::new(), None);
-                disabled.uninstall(())
+                Ended::uninstall(disabled, (), ())
             }
             Err(poisoned) => {
                 assert!(events.is_empty());
-                poisoned.uninstall(())
+                Ended::uninstall(poisoned, (), ())
             }
         }
     }
@@ -302,7 +303,7 @@ impl Exercise<'_> {
         self,
         owner: Owner<'_, 'id, ModelBackend, Disabled>,
         mut resources: ModelResources<'id>,
-    ) -> Ended<'id, ModelBackend> {
+    ) -> Ended<'id, ModelBackend, ()> {
         let access_point_association = ModelKeys::<AccessPoint>::begin_association(
             resources.access_point_association,
             oer_ieee80211_mac::security::Spp::NotNegotiated,
@@ -416,12 +417,15 @@ impl Exercise<'_> {
             }
             self.record(owners, events, Vec::new(), Some((published, blocked)));
         }
-        owner
-            .disable(&mut |_| panic!("all terminals already returned"))
-            .await
-            .ok()
-            .unwrap()
-            .uninstall(())
+        Ended::uninstall(
+            owner
+                .disable(&mut |_| panic!("all terminals already returned"))
+                .await
+                .ok()
+                .unwrap(),
+            (),
+            (),
+        )
     }
 }
 
@@ -429,7 +433,7 @@ pub(super) async fn exercise(case: ProgressCase, clock: &VirtualClock) -> Progre
     let (backend, air) = backend();
     let trace = RefCell::new(None);
     let probe = Probe::default();
-    run_timed(
+    let _port_end = run_timed(
         run_port(
             backend,
             Exercise {

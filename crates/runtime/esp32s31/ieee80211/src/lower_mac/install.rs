@@ -4,7 +4,7 @@
 //! produced: it publishes the MAC register owner in the radio's arena, wraps
 //! it in [`CooperativeRadioHardware`] and installs the lower-MAC core over
 //! it, returning the backend the composition runs its port body over
-//! ([`run_port`](oer_ieee80211_port::run_port)). The port then owns the MAC
+//! ([`run_port`](oer_radio_port::run_port)). The port then owns the MAC
 //! for as long as the radio runs: no role materializes or returns the
 //! hardware in between. [`uninstall_esp32s31_wifi_port`] reverses it at
 //! radio stop, with the core and registers `run_port` returned: it reclaims

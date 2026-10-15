@@ -214,11 +214,12 @@ impl Case {
 }
 
 impl PortBody<ModelBackend> for Case {
+    type Output = ();
     async fn run<'id>(
         self,
         owner: Owner<'_, 'id, ModelBackend, Disabled>,
         mut resources: ModelResources<'id>,
-    ) -> Ended<'id, ModelBackend> {
+    ) -> Ended<'id, ModelBackend, ()> {
         let mut owner = owner.enable().await.ok().unwrap();
         if let Some(answer) = self.answer {
             self.air.answer(answer);
@@ -328,7 +329,7 @@ impl PortBody<ModelBackend> for Case {
             }
         }
         if matches!(self.expected, Expected::Rejected) {
-            return owner.fail_stop();
+            return Ended::fail_stopped(owner.fail_stop(), ());
         }
         let mut sink = |event| {
             seen += usize::from(self.check(
@@ -341,7 +342,7 @@ impl PortBody<ModelBackend> for Case {
         let owner = owner.disable(&mut sink).await.ok().unwrap();
         assert_eq!(seen, 1);
         assert_eq!(self.air.sent().len(), 1);
-        owner.uninstall(())
+        Ended::uninstall(owner, (), ())
     }
 }
 
@@ -357,7 +358,10 @@ fn exercise(frame: Frame, answer: Option<AirAnswer>, expected: Expected, barrier
             barrier,
         },
     ));
-    assert_eq!(result.is_none(), matches!(expected, Expected::Rejected));
+    assert_eq!(
+        matches!(result, oer_radio_port::PortEnd::FailStopped { .. }),
+        matches!(expected, Expected::Rejected)
+    );
 }
 
 #[test]

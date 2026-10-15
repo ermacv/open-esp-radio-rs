@@ -3,16 +3,17 @@ use oer_ieee80211_lower_mac::{
     Channel, ChannelWidth, LowerMacPhase, LowerMacSetup, PhyRate, SupportedChannel,
 };
 use oer_ieee80211_mac::phy::LegacyRate;
-use oer_ieee80211_port::{Disabled, Ended, Owner, PortBody};
+use oer_radio_port::{Disabled, Ended, Owner, PortBody};
 use oer_ieee80211_runtime::lower_mac_owner::model::{ModelBackend, ModelResources};
 
 pub struct Retune;
 impl PortBody<ModelBackend> for Retune {
+    type Output = ();
     async fn run<'p, 'id>(
         self,
         owner: Owner<'p, 'id, ModelBackend, Disabled>,
         _resources: ModelResources<'id>,
-    ) -> Ended<'id, ModelBackend> {
+    ) -> Ended<'id, ModelBackend, ()> {
         let mut owner = owner.enable().await.ok().unwrap();
         #[cfg(ui_reject)]
         let old = owner
@@ -41,6 +42,6 @@ impl PortBody<ModelBackend> for Retune {
                 assert!(phase.no_ack(rate).is_ok());
             }
         }
-        owner.fail_stop()
+        Ended::fail_stopped(owner.fail_stop(), ())
     }
 }

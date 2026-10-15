@@ -32,7 +32,6 @@ oer-ieee80211-datapath = { path = "../../../protocols/ieee80211/datapath" }
 oer-espressif-ieee80211-policy = { path = "../../../protocols/espressif/ieee80211/policy" }
 oer-ieee80211-rsn = { path = "../../../protocols/ieee80211/security/rsn" }
 oer-ieee80211-runtime = { path = "../../ieee80211" }
-oer-ieee80211-port = { path = "../../../protocols/ieee80211/port" }
 oer-radio-port = { path = "../../../radio/port" }
 oer-radio-permit-pool = { path = "../../radio/permit-pool" }
 log = { version = "0.4", optional = true }

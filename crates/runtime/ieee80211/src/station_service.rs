@@ -41,6 +41,13 @@
 //! The loop owns the working arbiter separately from Station/Data so a failed
 //! return can consume it. Finalization accepts only `RetiredArbiter`; no active
 //! arbiter or placeholder state remains in the retired service.
+//! A command failure closes admission but still drains earlier terminals.
+//! `EventEnd::Drained` is checked against the identities of every admitted
+//! ticket and control permission; a missing return is a contract violation.
+//! `EventEnd::Quarantined` goes directly to fail-stop, without another disable
+//! or event wait. The common lifecycle retains the backend's owners even when
+//! the `PortEnd` quarantine receipt is dropped. These transitions follow the
+//! [portable-stack decision](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6197741379).
 //!
 //! The tokens the machines hold are the port's: tickets and buffers of two
 //! classes, the small one for the station's frames and the large one for
@@ -103,7 +110,6 @@ use oer_ieee80211_lower_mac::{
     TxBufferPool, TxCompleted, TxMpdu, TxOutcome, TxPower, TxProtection, TxSource,
 };
 use oer_ieee80211_mac::qos::{WmmAccessCategory, WmmUserPriority};
-use oer_ieee80211_port::{Disabled, Enabled, Failed, Owner, PoisonedOwner, PortBackend};
 use oer_ieee80211_sta::{
     data::{
         self, DataInput, DataProtection, DataRefusal, DataReturn, DataTxContext, Msdu, StaData,
@@ -117,6 +123,9 @@ use oer_ieee80211_sta::{
 };
 use oer_ieee80211_upper_mac::rate_selection::{FrameRates, RateSelection};
 use oer_radio_port::Slot;
+use oer_radio_port::{
+    Disabled, Enabled, Ended, EventEnd, FailStopped, Failed, Owner, PoisonedOwner, PortBackend,
+};
 use oer_time::{Instant, Timer};
 
 /// A backend the station's service drives: its phase, settings and events
@@ -404,6 +413,10 @@ impl<K: Ieee80211Capabilities> Levels<K> {
     };
 }
 
+mod admissions;
+use admissions::Admissions;
+pub use admissions::{ControlTerminal, PendingTerminal};
+
 mod custody;
 use custody::{ContractFault, StepFailure};
 pub use custody::{
@@ -485,6 +498,8 @@ pub enum ReturnedTx {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BackendContractViolation {
     UnexpectedAggregate,
+    UnexpectedTerminal(PendingTerminal),
+    TerminalAfterEventEnd,
     UnexpectedAccessPointTerminal,
     UnexpectedTsfSample,
     GroupTerminalWithoutRequest,
@@ -501,6 +516,10 @@ pub enum ServiceFault<B: PortBackend> {
     Backend(B::Fault),
     Submission(B::Fault),
     Contract(BackendContractViolation),
+    DrainedWithOutstanding {
+        cause: B::Fault,
+        missing: PendingTerminal,
+    },
 }
 
 /// The service's ends to the application and the network stack.
@@ -570,6 +589,13 @@ pub enum ServiceEnd<'p, 'id, B: StationPort<'id>> {
         fault: ServiceFault<B>,
         custody: TerminalCustody<'id, B>,
     },
+    /// Stream quarantine or a false drained claim ends admission without
+    /// another disable. The proof carries the core's stopped/unconfirmed outcome.
+    Quarantined {
+        proof: FailStopped<'id, B>,
+        fault: ServiceFault<B>,
+        custody: TerminalCustody<'id, B>,
+    },
     /// The original failure and the poisoned backend's disable outcome.
     Poisoned {
         owner: PoisonedOwner<'p, 'id, B>,
@@ -587,8 +613,8 @@ pub struct FailedInstallation<'p, 'id, B: PortBackend> {
 
 impl<'id, B: PortBackend> FailedInstallation<'_, 'id, B> {
     /// Retire the old installation normally, preserving Disabled's stop proof.
-    pub fn uninstall(self, control: B::Uninstall) -> oer_ieee80211_port::Ended<'id, B> {
-        self.owner.uninstall(control)
+    pub fn uninstall<Out>(self, control: B::Uninstall, output: Out) -> Ended<'id, B, Out> {
+        Ended::uninstall(self.owner, control, output)
     }
 }
 
@@ -668,7 +694,10 @@ impl<'p, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const G
             mut owner,
             mut retired,
         } = self;
-        if retired._pending.retune.is_some() || retired._pending.group.is_some() {
+        if retired._pending.admissions.first().is_some()
+            || retired._pending.retune.is_some()
+            || retired._pending.group.is_some()
+        {
             return Err(RestartFailed {
                 reason: RestartFailure::PendingTerminal,
                 owner: FailedInstallation { owner },
@@ -736,14 +765,12 @@ impl<'p, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const G
     }
 
     /// Retire the disabled installation and retain its resource bank.
-    pub fn uninstall(
+    pub fn uninstall<Out>(
         self,
         control: B::Uninstall,
-    ) -> (
-        oer_ieee80211_port::Ended<'id, B>,
-        RetiredService<'id, B, S, GROUPS>,
-    ) {
-        (self.owner.uninstall(control), self.retired)
+        output: Out,
+    ) -> (Ended<'id, B, Out>, RetiredService<'id, B, S, GROUPS>) {
+        (Ended::uninstall(self.owner, control, output), self.retired)
     }
 }
 
@@ -795,6 +822,7 @@ struct ServiceState<'id, B: StationPort<'id>, S, const GROUPS: usize = 2> {
 }
 
 struct PendingActions<'id, B: StationPort<'id>> {
+    admissions: Admissions,
     /// A retune whose disable/enable failed remains owned until retirement.
     retune: Option<
         oer_ieee80211_arbiter::PendingRetune<'id, B::Caps, <B::Types as PhaseTypes<'id>>::GatePath>,
@@ -867,6 +895,7 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUP
                 terminal_access,
                 counters: ServiceCounters::default(),
                 pending: PendingActions {
+                    admissions: Admissions::default(),
                     retune: None,
                     group: None,
                 },
@@ -891,7 +920,9 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUP
         let (end, mut arbiter) = state.run_loop(arbiter, owner, io, timer).await;
         let reason = match &end {
             ServiceEnd::Stopped(_) => oer_ieee80211_sta::machine::StaDisconnectReason::Requested,
-            ServiceEnd::Failed { .. } | ServiceEnd::Poisoned { .. } => {
+            ServiceEnd::Failed { .. }
+            | ServiceEnd::Poisoned { .. }
+            | ServiceEnd::Quarantined { .. } => {
                 oer_ieee80211_sta::machine::StaDisconnectReason::Arbiter(
                     oer_ieee80211_arbiter::LeaveReason::PortFailed,
                 )
@@ -978,9 +1009,9 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUP
                     let end = end_disabled(owner, custody);
                     let arbiter_end = match &end {
                         ServiceEnd::Stopped(_) => ArbiterEnd::Stopped,
-                        ServiceEnd::Failed { .. } | ServiceEnd::Poisoned { .. } => {
-                            ArbiterEnd::PortFailed
-                        }
+                        ServiceEnd::Failed { .. }
+                        | ServiceEnd::Poisoned { .. }
+                        | ServiceEnd::Quarantined { .. } => ArbiterEnd::PortFailed,
                     };
                     return (end, arbiter.finish(arbiter_end));
                 }
@@ -988,6 +1019,64 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUP
                     let (fault, custody) = failure.into_custody();
                     let (owner, custody) = self.disable(&mut arbiter, owner, timer, custody).await;
                     let end = match owner {
+                        Ok(owner) => ServiceEnd::Failed {
+                            owner: FailedInstallation { owner },
+                            fault,
+                            custody,
+                        },
+                        Err(owner) => ServiceEnd::Poisoned {
+                            owner,
+                            fault,
+                            custody,
+                        },
+                    };
+                    return (end, arbiter.finish(ArbiterEnd::PortFailed));
+                }
+                Served::StreamEnd {
+                    end,
+                    fault,
+                    mut custody,
+                } => {
+                    let cause = match end {
+                        EventEnd::Drained { cause } | EventEnd::Quarantined { cause } => cause,
+                    };
+                    if matches!(end, EventEnd::Quarantined { .. }) {
+                        return (
+                            ServiceEnd::Quarantined {
+                                proof: owner.fail_stop(),
+                                fault,
+                                custody,
+                            },
+                            arbiter.finish(ArbiterEnd::PortFailed),
+                        );
+                    }
+                    if let Some(missing) = self.pending.admissions.first() {
+                        return (
+                            ServiceEnd::Quarantined {
+                                proof: owner.fail_stop(),
+                                fault: ServiceFault::DrainedWithOutstanding { cause, missing },
+                                custody,
+                            },
+                            arbiter.finish(ArbiterEnd::PortFailed),
+                        );
+                    }
+                    // Drained promises there can be no further terminal.
+                    // A violating disable return stays sealed, never reaching a machine.
+                    let mut sink = |terminal| match &mut custody {
+                        TerminalCustody::Clear => {
+                            custody = ContractFault::sealed(
+                                BackendContractViolation::TerminalAfterEventEnd,
+                                terminal,
+                            )
+                            .into();
+                            core::ops::ControlFlow::Continue(())
+                        }
+                        TerminalCustody::Quarantined(bank) => match bank.retain(terminal) {
+                            Ok(()) => core::ops::ControlFlow::Continue(()),
+                            Err(terminal) => core::ops::ControlFlow::Break(terminal),
+                        },
+                    };
+                    let end = match owner.disable(&mut sink).await {
                         Ok(owner) => ServiceEnd::Failed {
                             owner: FailedInstallation { owner },
                             fault,
@@ -1171,6 +1260,11 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUP
             match self.step(arbiter, timer.now(), phase, io) {
                 Next::Wait => {}
                 Next::Retune(pending) => return Served::Retune(pending),
+                Next::Failed(StepFailure::Port(
+                    fault @ (ServiceFault::Backend(_) | ServiceFault::Submission(_)),
+                )) => {
+                    return self.drain_port_error(arbiter, phase, timer, fault).await;
+                }
                 Next::Failed(fault) => return Served::Failed(fault),
             }
             let deadline = [arbiter.poll_deadline(), self.station.poll_deadline()]
@@ -1218,8 +1312,15 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUP
                 },
                 Some(Ok(Err(_))) => self.counters.events_lost.increment(),
                 None => {}
-                Some(Err(poisoned)) => {
-                    return Served::Failed(ServiceFault::Backend(poisoned.cause).into());
+                Some(Err(end)) => {
+                    let cause = match end {
+                        EventEnd::Drained { cause } | EventEnd::Quarantined { cause } => cause,
+                    };
+                    return Served::StreamEnd {
+                        end,
+                        fault: ServiceFault::Backend(cause),
+                        custody: TerminalCustody::Clear,
+                    };
                 }
             }
             if tick {
@@ -1247,6 +1348,46 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUP
                 batch = 0;
                 yield_now().await;
             }
+        }
+    }
+
+    /// A command poison closes admission, but earlier terminals still own
+    /// their places. Consume them until the backend names its final end.
+    async fn drain_port_error<'p, P>(
+        &mut self,
+        arbiter: &mut PortArbiter<'id, B>,
+        phase: &mut P,
+        timer: &impl Timer,
+        fault: ServiceFault<B>,
+    ) -> Served<'id, B>
+    where
+        'id: 'p,
+        P: LowerMacPhase<'p, 'id, Caps = B::Caps, Types = B::Types>,
+    {
+        loop {
+            for _ in 0..MAX_INPUT_STEPS_PER_BATCH {
+                match phase.next_event().await {
+                    Ok(Ok(LowerMacEvent::Terminal(terminal))) => {
+                        if let Err(violation) = self.terminal(arbiter, timer.now(), terminal) {
+                            return Served::Failed(violation.into());
+                        }
+                    }
+                    Ok(Ok(LowerMacEvent::Received { frame, .. })) => {
+                        phase.recycle(frame);
+                        self.counters.rx_frames_dropped.increment();
+                    }
+                    Ok(Ok(LowerMacEvent::Tbtt(_))) => {}
+                    Ok(Err(_)) => self.counters.events_lost.increment(),
+                    Err(end) => {
+                        return Served::StreamEnd {
+                            end,
+                            fault,
+                            custody: TerminalCustody::Clear,
+                        };
+                    }
+                }
+            }
+            yield_now().await;
         }
     }
 
@@ -1311,7 +1452,12 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUP
                     ArbiterAction::AccessPoint(command) => {
                         (io.output)(ServiceOutput::AccessPoint(command));
                     }
-                    ArbiterAction::CloseGate { gate, reserve: () } => phase.close_gate(gate),
+                    ArbiterAction::CloseGate { gate, reserve: () } => {
+                        self.pending
+                            .admissions
+                            .insert(PendingTerminal::Control(ControlTerminal::GateClosed));
+                        phase.close_gate(gate);
+                    }
                     ArbiterAction::Retune(pending) => return Next::Retune(pending),
                     ArbiterAction::OpenGate(closed) => {
                         let open = phase.open_gate(closed);
@@ -1405,6 +1551,9 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUP
                             reason,
                         }),
                         Ok(source) => {
+                            self.pending
+                                .admissions
+                                .insert(PendingTerminal::Transmit(ticket.index()));
                             let submitted = phase.station().submit(
                                 (oer_ieee80211_lower_mac::Attempt {
                                     context: TxContext::Data(context),
@@ -1548,6 +1697,25 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUP
         now: Instant,
         terminal: LowerMacTerminal<'id, B::Types>,
     ) -> Result<(), ContractFault<'id, B>> {
+        let control = match &terminal {
+            LowerMacTerminal::GateClosed(_) => Some(ControlTerminal::GateClosed),
+            LowerMacTerminal::Configured(oer_ieee80211_lower_mac::Configured::Station(_)) => {
+                Some(ControlTerminal::Configure)
+            }
+            LowerMacTerminal::KeyRemoved(Removed::Station(RemovedKey::Pairwise { .. })) => {
+                Some(ControlTerminal::PairwiseRemoval)
+            }
+            _ => None,
+        };
+        if let Some(control) = control {
+            let operation = PendingTerminal::Control(control);
+            if !self.pending.admissions.remove(operation) {
+                return Err(ContractFault::sealed(
+                    BackendContractViolation::UnexpectedTerminal(operation),
+                    terminal,
+                ));
+            }
+        }
         match terminal {
             LowerMacTerminal::TxCompleted(TxCompleted::Single(terminal)) => {
                 let oer_ieee80211_lower_mac::TerminalParts {
@@ -1557,6 +1725,23 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUP
                     outcome,
                 } = terminal.into_parts(&mut self.terminal_access);
                 let (buffer, body) = payload.into_parts();
+                if !self
+                    .pending
+                    .admissions
+                    .remove(PendingTerminal::Transmit(ticket.index()))
+                {
+                    return Err(ContractFault {
+                        reason: BackendContractViolation::UnexpectedTerminal(
+                            PendingTerminal::Transmit(ticket.index()),
+                        ),
+                        terminal: RejectedTerminal::Transmit(UnroutedTx {
+                            context,
+                            ticket,
+                            buffer: B::tx_buffer(buffer),
+                            outcome: ReturnedTx::Completed(outcome),
+                        }),
+                    });
+                }
                 if let Some(body) = body {
                     match body {}
                 }
@@ -1691,6 +1876,9 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUP
                 ));
             }
         };
+        self.pending
+            .admissions
+            .remove(PendingTerminal::Control(ControlTerminal::GroupChange));
         self.station.input(now, input);
         Ok(())
     }
@@ -1845,6 +2033,7 @@ where
 fn submit_station<'p, 'id: 'p, B, P, S, const GROUPS: usize>(
     phase: &mut P,
     rates: &S,
+    admissions: &mut Admissions,
     key: Option<&<<B::Types as PhaseTypes<'id>>::StationKeys as KeyTypes<'id>>::PairwiseKey>,
     transmit: StaTransmit<'id, PortStaTokens<'id, B::Types, B::Small, GROUPS>, B::Caps>,
 ) -> Result<Follow<'id, B, GROUPS>, ServiceFault<B>>
@@ -1914,6 +2103,7 @@ where
         StaFrameClass::Normal => Levels::<B::Caps>::NORMAL,
     };
     let mut station = phase.station();
+    admissions.insert(PendingTerminal::Transmit(ticket.index()));
     match station.submit(
         (oer_ieee80211_lower_mac::Attempt {
             context: TxContext::Station(context),
@@ -1980,6 +2170,9 @@ where
             return Ok(Follow::Nothing);
         }
         StaAction::Configure(receive, pending) => {
+            pending_actions
+                .admissions
+                .insert(PendingTerminal::Control(ControlTerminal::Configure));
             phase.station().configure(pending, receive);
             return Ok(Follow::Nothing);
         }
@@ -2015,6 +2208,9 @@ where
                 slot: identity,
                 action: PendingGroupAction::Install(pending),
             });
+            pending_actions
+                .admissions
+                .insert(PendingTerminal::Control(ControlTerminal::GroupChange));
             phase.station().install_group_key(
                 association,
                 permission,
@@ -2025,6 +2221,9 @@ where
             return Ok(Follow::Nothing);
         }
         StaAction::RemovePairwiseKey(key) => {
+            pending_actions
+                .admissions
+                .insert(PendingTerminal::Control(ControlTerminal::PairwiseRemoval));
             phase
                 .station()
                 .remove_pairwise_key(key.association, key.key);
@@ -2042,6 +2241,9 @@ where
                 slot,
                 action: PendingGroupAction::Replace(pending),
             });
+            pending_actions
+                .admissions
+                .insert(PendingTerminal::Control(ControlTerminal::GroupChange));
             phase.station().replace_group_key(
                 permission,
                 installed,
@@ -2060,6 +2262,9 @@ where
                 slot,
                 action: PendingGroupAction::Select(pending),
             });
+            pending_actions
+                .admissions
+                .insert(PendingTerminal::Control(ControlTerminal::GroupChange));
             phase.station().select_group_key(permission, installed);
             return Ok(Follow::Nothing);
         }
@@ -2073,14 +2278,29 @@ where
                 slot,
                 action: PendingGroupAction::Remove(pending),
             });
+            pending_actions
+                .admissions
+                .insert(PendingTerminal::Control(ControlTerminal::GroupChange));
             phase.station().remove_group_key(permission, key);
             return Ok(Follow::Nothing);
         }
         StaAction::Transmit(transmit) => {
-            return submit_station::<B, P, S, GROUPS>(phase, rates, None, transmit);
+            return submit_station::<B, P, S, GROUPS>(
+                phase,
+                rates,
+                &mut pending_actions.admissions,
+                None,
+                transmit,
+            );
         }
         StaAction::TransmitProtected { transmit, key } => {
-            return submit_station::<B, P, S, GROUPS>(phase, rates, Some(&key.key), transmit);
+            return submit_station::<B, P, S, GROUPS>(
+                phase,
+                rates,
+                &mut pending_actions.admissions,
+                Some(&key.key),
+                transmit,
+            );
         }
         StaAction::ContractViolation(reason) => {
             return Err(ServiceFault::Contract(
@@ -2112,6 +2332,11 @@ enum Served<'id, B: StationPort<'id>> {
         oer_ieee80211_arbiter::PendingRetune<'id, B::Caps, <B::Types as PhaseTypes<'id>>::GatePath>,
     ),
     Failed(StepFailure<'id, B>),
+    StreamEnd {
+        end: EventEnd<B::Fault>,
+        fault: ServiceFault<B>,
+        custody: TerminalCustody<'id, B>,
+    },
 }
 
 #[cfg(test)]

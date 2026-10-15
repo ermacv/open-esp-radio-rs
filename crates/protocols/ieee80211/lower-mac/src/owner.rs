@@ -1,5 +1,5 @@
-//! The lower-MAC port on the owner shape of `oer-ieee80211-port`
-//! ([`Owner`](oer_ieee80211_port::Owner), [`PortBody`](oer_ieee80211_port::PortBody)):
+//! The lower-MAC port on the owner shape of `oer-radio-port`
+//! ([`Owner`](oer_radio_port::Owner), [`PortBody`](oer_radio_port::PortBody)):
 //! its validated values and its disabled-only settings. The running phase
 //! and its tokens are [`phase`](crate::phase)'s.
 //!
@@ -191,7 +191,7 @@ use oer_ieee80211_mac::address::IndividualAddress;
 use oer_ieee80211_mac::frame::FrameControl;
 
 use oer_ieee80211_mac::{extensions::wmm::WmmParameterSet, sequence::SequenceNumber};
-use oer_ieee80211_port::PortBackend;
+use oer_radio_port::PortBackend;
 
 use crate::{
     Backoff, Channel, CoexPriority, LowerMacCapabilities, MacAddress, PhyRate, ReceiveFilter,

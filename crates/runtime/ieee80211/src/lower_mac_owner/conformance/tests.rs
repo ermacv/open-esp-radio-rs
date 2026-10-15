@@ -63,3 +63,39 @@ fn changed_ticket_identity_is_an_owner_violation() {
         Err(Violation::Owners)
     );
 }
+
+fn poisoned_trace() -> Trace {
+    Trace {
+        returned: OPERATIONS
+            .into_iter()
+            .filter(|operation| operation.category != WmmAccessCategory::BestEffort)
+            .map(|operation| {
+                let resources = Resources {
+                    ticket: operation.id,
+                    buffer: operation.id,
+                    class: operation.class,
+                    body: usize::from(operation.id),
+                };
+                Returned {
+                    operation,
+                    expected: resources,
+                    actual: resources,
+                    end: End::Completed,
+                }
+            })
+            .collect(),
+        contexts_dropped: 2,
+        before_teardown_dropped: 2,
+        publications: 2,
+    }
+}
+
+#[test]
+fn poison_verification_rejects_destruction_of_an_unreturned_owner() {
+    assert_eq!(verify(Scenario::Poison, poisoned_trace()), Ok(()));
+    for dropped in [0, 1, 3, 4] {
+        let mut trace = poisoned_trace();
+        trace.contexts_dropped = dropped;
+        assert_eq!(verify(Scenario::Poison, trace), Err(Violation::Lifetime));
+    }
+}

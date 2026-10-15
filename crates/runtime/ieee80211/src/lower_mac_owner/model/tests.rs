@@ -358,7 +358,8 @@ fn closing_the_gate_waits_for_the_published_attempt_and_its_guard_reopens_it() {
     assert!(now_ready(run_port(backend, GateWaits { world: &world })).is_some());
 }
 
-/// A body that installs keys from the station's slots and frees one.
+/// A body that installs keys from the station's slots and frees one,
+/// with separate Block Ack agreements for both roles from shared slots.
 struct KeySlots<'t> {
     world: &'t ModelHandle,
 }
@@ -371,7 +372,10 @@ impl PortBody<OwnedModel> for KeySlots<'_> {
     ) -> Ended<'id, OwnedModel> {
         let [pairwise_slot, _] = resources.station_pairwise_keys;
         let [group_slot, _] = resources.station_group_keys;
-        let [first, second] = resources.station_block_acks;
+        let [first, second, access_point_slot, _] = resources.block_acks;
+        let first_index = first.index();
+        let second_index = second.index();
+        let access_point_index = access_point_slot.index();
         owner.setup().set_channel(SIX);
         let Ok(mut enabled) = owner.enable().await else {
             panic!("the model enables");
@@ -402,20 +406,41 @@ impl PortBody<OwnedModel> for KeySlots<'_> {
                 .unwrap()
             };
             assert!(station.add_block_ack(first, agreement()).is_none());
+            let access_point = &clients.access_point;
+            assert!(
+                access_point
+                    .add_block_ack(access_point_slot, agreement())
+                    .is_none()
+            );
             let replaced = station
                 .add_block_ack(second, agreement())
                 .expect("the pair's earlier agreement comes back");
-            assert!(
-                station
-                    .remove_block_ack(peer, Tid::new(0).unwrap())
-                    .is_some()
-            );
+            assert_eq!(replaced.index(), first_index);
+            let removed = station
+                .remove_block_ack(peer, Tid::new(0).unwrap())
+                .expect("the station's replacement agreement comes back");
+            assert_eq!(removed.index(), second_index);
             assert!(
                 station
                     .remove_block_ack(peer, Tid::new(0).unwrap())
                     .is_none()
             );
-            drop(replaced);
+            // The same peer and TID in the AP table survive station removal.
+            let removed = access_point
+                .remove_block_ack(peer, Tid::new(0).unwrap())
+                .expect("the AP agreement is independent of the station's");
+            assert_eq!(removed.index(), access_point_index);
+            // A slot returned by the station can serve the AP next.
+            assert!(access_point.add_block_ack(replaced, agreement()).is_none());
+            let removed = access_point
+                .remove_block_ack(peer, Tid::new(0).unwrap())
+                .expect("the shared slot comes back from the AP");
+            assert_eq!(removed.index(), first_index);
+            assert!(
+                access_point
+                    .remove_block_ack(peer, Tid::new(0).unwrap())
+                    .is_none()
+            );
             pairwise
         };
         // A channel move ends the phase; the key outlives it.

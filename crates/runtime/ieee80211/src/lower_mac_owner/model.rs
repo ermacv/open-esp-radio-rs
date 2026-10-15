@@ -171,17 +171,17 @@ pub const OWNED_MODEL_TX_QUEUES: usize = MODEL_CAPABILITIES.tx_queues as usize;
 /// Ack agreements in the held part of the install.
 pub trait ModelRole: InterfaceRole + Sized {
     #[doc(hidden)]
-    fn block_acks<'a, 'id>(held: &'a ModelHeld<'id>) -> &'a BlockAckTable<'id, Self>;
+    fn block_acks<'a, 'id>(held: &'a ModelHeld<'id>) -> &'a BlockAckTable<'id>;
 }
 
 impl ModelRole for Station {
-    fn block_acks<'a, 'id>(held: &'a ModelHeld<'id>) -> &'a BlockAckTable<'id, Self> {
+    fn block_acks<'a, 'id>(held: &'a ModelHeld<'id>) -> &'a BlockAckTable<'id> {
         &held.station_block_acks
     }
 }
 
 impl ModelRole for AccessPoint {
-    fn block_acks<'a, 'id>(held: &'a ModelHeld<'id>) -> &'a BlockAckTable<'id, Self> {
+    fn block_acks<'a, 'id>(held: &'a ModelHeld<'id>) -> &'a BlockAckTable<'id> {
         &held.access_point_block_acks
     }
 }
@@ -194,8 +194,9 @@ pub struct ModelGroupKeys<R>(PhantomData<fn() -> R>);
 pub struct ModelBlockAcks;
 
 /// A role's receive Block Ack agreements: one per peer and TID, each with
-/// its slot.
-pub type BlockAckTable<'id, R> = RefCell<Vec<(IndividualAddress, Tid, Slot<'id, ModelBlockAcks>)>>;
+/// its slot from the shared bank pool. [`ModelRole`] selects the role's
+/// separate table in [`ModelHeld`]; the slot kind is common to both roles.
+pub type BlockAckTable<'id> = RefCell<Vec<(IndividualAddress, Tid, Slot<'id, ModelBlockAcks>)>>;
 
 /// Which installed key an attempt uses: its role, whether it is pairwise,
 /// and its slot.
@@ -378,8 +379,8 @@ pub type ModelTxPermits<'id> = TxPermits<
 /// role's receive Block Ack agreements.
 pub struct ModelHeld<'id> {
     pub tx: ModelTxPermits<'id>,
-    station_block_acks: BlockAckTable<'id, Station>,
-    access_point_block_acks: BlockAckTable<'id, AccessPoint>,
+    station_block_acks: BlockAckTable<'id>,
+    access_point_block_acks: BlockAckTable<'id>,
 }
 
 /// The transmit seats of one interface of the model.

@@ -55,12 +55,15 @@ capabilities marker `K: Ieee80211Capabilities` checks (`SupportedPower`,
 `SupportedBackoff`, `SupportedCoex`). A submission moves them into the backend and returns its `Work`; the
 backend gives them back when it takes the attempt's terminal, before it
 hands the event out, so no caller holds them and a dropped handle or event
-loses none. The body receives each role's pairwise key, group key and
-Block Ack slots once; a key holds a slot of its client's own kind and gives
-it back when removed, once no attempt in flight uses it: a station's key is
+loses none. The body receives each role's pairwise and group key slots
+and the shared Block Ack slots once; a key holds a slot of its client's own
+kind and gives it back when removed, once no attempt in flight uses it: a station's key is
 not an access point's, nor a group key a pairwise one. A client keeps one
 Block Ack agreement per peer and TID; a new one for the pair replaces the
-old and gives its slot back. A client's type is its role
+old and gives its slot back. The in-memory model keeps separate
+agreement tables for station and access point while their slots come from
+one shared bank pool: the same peer and TID in one role does not replace
+the other role's agreement. A client's type is its role
 (`StationClient`, `AccessPointClient`): only the station has an HE BSS
 color, and each role states its receive rules with its own type
 (`StationReceive`, `SupportedFilter` of the role), applied once its frames

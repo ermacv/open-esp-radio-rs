@@ -141,13 +141,19 @@ fn full_setup_and_phase_keep_fifo_whole_non_send_owners_and_three_dma_fragments(
         tx.sample_tsf(Sampling::Station(r.station.tsf));
         tx.sample_tsf(Sampling::AccessPoint(r.access_point.tsf));
         for permission in r.installs {
-            tx.install_pairwise(permission, Ccmp128Key([0xa5; 16]));
+            tx.install_pairwise(
+                permission,
+                Ccmp128Key::new(&zeroize::Zeroizing::new([0xa5; 16])),
+            );
         }
         for permission in r.removes {
             tx.remove_pairwise(permission);
         }
         for permission in r.groups {
-            tx.mutate_group(permission, Ccmp128Key([0x5a; 16]));
+            tx.mutate_group(
+                permission,
+                Ccmp128Key::new(&zeroize::Zeroizing::new([0x5a; 16])),
+            );
         }
         let tx = tx.disable();
         assert_eq!(drops.get(), 0);
@@ -216,40 +222,170 @@ fn full_setup_and_phase_keep_fifo_whole_non_send_owners_and_three_dma_fragments(
 }
 
 #[test]
-fn permanent_key_cell_is_zero_before_the_reply_becomes_visible() {
-    ready(branded::<CommandPools<2, 2>, _>(async |mint| {
-        let r = mint.into_pools();
-        let (mut held, mut executor) =
-            Store::bind(r.bridge, Box::leak(Box::new(ExecutionStorage::new())));
-        let records = held.phase_lane.records;
-        let (setup, mut replies) = held.split(r.issuer, r.enable, r.disable);
-        let mut tx = setup.enable();
-        executor.step(&mut Hardware::default());
-        let _enable = applied(replies.setup().await);
-        for (n, permission) in r.installs.into_iter().enumerate() {
-            let secret = [0x31 + n as u8; 16];
-            tx.install_pairwise(permission, Ccmp128Key(secret));
-            let mut name = executor.phase.receive.try_receive().unwrap();
-            // Pause inside the step, between execution and reply publication.
-            records.with_mut(&mut name, |record| {
-                assert_eq!(record.key, secret);
-                let mut hw = Hardware::default();
-                record.execute(&mut hw);
-                assert_eq!(hw.keys, [secret]);
-                assert_eq!(record.key, [0; 16]);
-            });
-            pending(replies.phase());
-            executor.phase.reply.send(name);
-            let Applied {
-                command: PhaseCommand::InstallPairwise { key, .. },
-                ..
-            } = applied(replies.phase().await)
-            else {
-                panic!("key")
-            };
-            assert_eq!(key.0, [0; 16]);
-        }
-    }));
+fn permanent_key_cell_is_zero_before_the_reply_becomes_visible() -> Result<(), &'static str> {
+    for withdraw in [false, true] {
+        ready(branded::<CommandPools<2, 2>, _>(async |mint| {
+            let r = mint.into_pools();
+            let (mut held, mut executor) =
+                Store::bind(r.bridge, Box::leak(Box::new(ExecutionStorage::new())));
+            let records = held.phase_lane.records;
+            let (setup, mut replies) = held.split(r.issuer, r.enable, r.disable);
+            let mut tx = setup.enable();
+            executor.step(&mut Hardware::default());
+            let _enable = replies.setup().await;
+            let secret = zeroize::Zeroizing::new([0x31; 16]);
+            for permission in r.installs {
+                tx.install_pairwise(permission, Ccmp128Key::new(&secret));
+            }
+            for permission in r.groups {
+                tx.mutate_group(permission, Ccmp128Key::new(&secret));
+            }
+            for expected in [
+                Operation::InstallPairwise(0),
+                Operation::InstallPairwise(1),
+                Operation::MutateGroup(0),
+                Operation::MutateGroup(1),
+            ] {
+                let mut name = executor
+                    .phase
+                    .receive
+                    .try_receive()
+                    .map_err(|_| "missing key request")?;
+                // Inspect the permanent cell after apply/withdraw, before its
+                // name can enter the reply queue or its owner can be dropped.
+                records.with_mut(&mut name, |record| {
+                    if record.operation != expected || record.key.as_bytes() != &*secret {
+                        return Err("projection lost the key or its place");
+                    }
+                    let mut hw = Hardware::default();
+                    if withdraw {
+                        record.withdraw();
+                        if !hw.operations.is_empty() || record.completion != Completion::Withdrawn {
+                            return Err("withdrawal manufactured execution");
+                        }
+                    } else {
+                        record.execute(&mut hw);
+                        if hw.operations != [expected] || hw.keys != [*secret] {
+                            return Err("apply did not borrow the original material");
+                        }
+                    }
+                    if record.key.as_bytes() != &[0; 16] {
+                        return Err("permanent key cell was not erased before reply");
+                    }
+                    Ok(())
+                })?;
+                if replies
+                    .phase
+                    .poll(&mut Context::from_waker(Waker::noop()))
+                    .is_ready()
+                {
+                    return Err("reply escaped before publication");
+                }
+                executor.phase.reply.send(name);
+                let command = match replies.phase().await {
+                    Reply::Applied(reply) if !withdraw => reply.into_parts().0,
+                    Reply::Withdrawn(command) if withdraw => command,
+                    _ => return Err("applied and withdrawn replies were confused"),
+                };
+                let (operation, key) = match command {
+                    PhaseCommand::InstallPairwise { permission, key } => (
+                        Operation::InstallPairwise(usize::from(permission.index())),
+                        key,
+                    ),
+                    PhaseCommand::MutateGroup { permission, key } => {
+                        (Operation::MutateGroup(usize::from(permission.index())), key)
+                    }
+                    _ => return Err("reply lost the key command"),
+                };
+                if operation != expected || key.as_bytes() != &[0; 16] {
+                    return Err("Held did not return its original permission and erased key");
+                }
+            }
+            Ok(())
+        }))?;
+    }
+    Ok(())
+}
+
+#[test]
+fn key_withdrawal_keeps_the_applied_prefix_and_erases_unexecuted_keys() -> Result<(), &'static str>
+{
+    let expected = [
+        Operation::InstallPairwise(0),
+        Operation::InstallPairwise(1),
+        Operation::MutateGroup(0),
+        Operation::MutateGroup(1),
+    ];
+    for completed in 0..=expected.len() {
+        ready(branded::<CommandPools<2, 2>, _>(async |mint| {
+            let r = mint.into_pools();
+            let (mut held, mut executor) =
+                Store::bind(r.bridge, Box::leak(Box::new(ExecutionStorage::new())));
+            let (setup, mut replies) = held.split(r.issuer, r.enable, r.disable);
+            let mut tx = setup.enable();
+            executor.step(&mut Hardware::default());
+            let _enable = replies.setup().await;
+            let secret = zeroize::Zeroizing::new([0x72; 16]);
+            for permission in r.installs {
+                tx.install_pairwise(permission, Ccmp128Key::new(&secret));
+            }
+            for permission in r.groups {
+                tx.mutate_group(permission, Ccmp128Key::new(&secret));
+            }
+            let mut hardware = Hardware::default();
+            for operation in &expected[..completed] {
+                if executor.step(&mut hardware) != Some(*operation) {
+                    return Err("executor changed key FIFO order");
+                }
+            }
+            // Cancel the wait with both an applied prefix and a pending suffix.
+            // Owners stay in Held; finish withdraws only the pending suffix.
+            drop(Box::pin(replies.phase()));
+            drop(tx);
+            executor.withdraw_pending();
+            for (n, expected) in expected.into_iter().enumerate() {
+                let command = match replies.phase().await {
+                    Reply::Applied(reply) if n < completed => {
+                        let (command, observation) = reply.into_parts();
+                        if observation != Observation(n as u64 + 1) {
+                            return Err("applied key lost its actual observation");
+                        }
+                        command
+                    }
+                    Reply::Withdrawn(command) if n >= completed => command,
+                    _ => return Err("withdrawal changed the applied/withdrawn frontier"),
+                };
+                let (operation, key) = match command {
+                    PhaseCommand::InstallPairwise { permission, key } => (
+                        Operation::InstallPairwise(usize::from(permission.index())),
+                        key,
+                    ),
+                    PhaseCommand::MutateGroup { permission, key } => {
+                        (Operation::MutateGroup(usize::from(permission.index())), key)
+                    }
+                    _ => return Err("key reply returned a different owner"),
+                };
+                if operation != expected || key.as_bytes() != &[0; 16] {
+                    return Err("key reply lost its permission or retained material");
+                }
+            }
+            if hardware.operations != expected[..completed]
+                || hardware.keys.len() != completed
+                || hardware.keys.iter().any(|key| key != &*secret)
+            {
+                return Err("withdrawal programmed an unexecuted key");
+            }
+            if replies
+                .phase
+                .poll(&mut Context::from_waker(Waker::noop()))
+                .is_ready()
+            {
+                return Err("finish duplicated a key reply");
+            }
+            Ok(())
+        }))?;
+    }
+    Ok(())
 }
 
 #[test]

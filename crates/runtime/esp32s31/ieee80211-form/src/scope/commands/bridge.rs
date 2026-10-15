@@ -11,6 +11,11 @@
 //! Unconfirmed shutdown must move Held into `oer_radio_port::Quarantined`.
 //! Forgetting Held cannot free the permanent records; names have no pointer
 //! back to it. Composition wakers may schedule, never synchronously detach.
+//!
+//! Key commands and execution records use the same zeroizing `Ccmp128Key`.
+//! Projection borrows material to initialize the record owner and erases the
+//! Held owner before publication. Apply borrows the permanent owner; apply
+//! and withdrawal both erase it in place before publishing their typed reply.
 
 use super::*;
 use oer_ieee80211_lower_mac::{ExecutionPayload, ReceiveFilter};
@@ -107,36 +112,37 @@ pub trait ModelHardware {
 }
 struct Record {
     operation: Operation,
-    key: [u8; 16],
+    key: Ccmp128Key,
     completion: Completion,
 }
 impl Record {
     fn plain(operation: Operation) -> Self {
         Self {
             operation,
-            key: [0; 16],
+            key: Ccmp128Key::new(&[0; 16]),
             completion: Completion::Withdrawn,
         }
     }
     fn secret(operation: Operation, key: &mut Ccmp128Key) -> Self {
         let record = Self {
-            key: key.0,
-            ..Self::plain(operation)
+            operation,
+            key: Ccmp128Key::new(key.as_bytes()),
+            completion: Completion::Withdrawn,
         };
         // The original command retains its permission, not a second secret.
-        key.0.zeroize();
+        key.zeroize();
         record
     }
     fn execute(&mut self, hardware: &mut impl ModelHardware) {
-        self.completion = Completion::Applied(hardware.apply(self.operation, &self.key));
+        let observation = hardware.apply(self.operation, self.key.as_bytes());
         // Erase the actual permanent cell, before its name enters the reply
         // queue. Moving the key to a temporary and erasing that is insufficient.
         self.key.zeroize();
+        self.completion = Completion::Applied(observation);
     }
-}
-impl Drop for Record {
-    fn drop(&mut self) {
+    fn withdraw(&mut self) {
         self.key.zeroize();
+        self.completion = Completion::Withdrawn;
     }
 }
 
@@ -259,10 +265,7 @@ impl<const N: usize> ExecutorLane<N> {
             let Ok(mut name) = self.receive.try_receive() else {
                 break;
             };
-            self.records.with_mut(&mut name, |record| {
-                record.key.zeroize();
-                record.completion = Completion::Withdrawn;
-            });
+            self.records.with_mut(&mut name, Record::withdraw);
             self.reply.send(name);
         }
         self.reply_wake.wake();

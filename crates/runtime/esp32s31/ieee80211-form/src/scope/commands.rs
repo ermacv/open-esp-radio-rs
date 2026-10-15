@@ -12,11 +12,12 @@ use core::{
 };
 use oer_esp32s31_ieee80211::lower_mac::{CorePools, CoreResources, TxAdmission};
 use oer_ieee80211_lower_mac::{
-    AccessPoint, Ccmp128Key, Channel, ConfigurePermission, Configured, GateClosed, GateIssuer,
-    GateOpen, GatePool, Ieee80211Capabilities, InFlight, InterfaceCommandPool,
-    InterfacePermissions, LowerMacTerminal, PhaseTypes, SampledTsfPermission, Station,
-    StationReceive, SupportedFilter, TerminalAccess, TransmitPool, TsfPermission, TsfSample,
+    AccessPoint, Channel, ConfigurePermission, Configured, GateClosed, GateIssuer, GateOpen,
+    GatePool, Ieee80211Capabilities, InFlight, InterfaceCommandPool, InterfacePermissions,
+    LowerMacTerminal, PhaseTypes, SampledTsfPermission, Station, StationReceive, SupportedFilter,
+    TerminalAccess, TransmitPool, TsfPermission, TsfSample,
 };
+use oer_ieee80211_mac::ccmp::Ccmp128Key;
 use oer_memory::{
     AffineIndexedSpscQueue, AffineIndexedSpscReceiver, AffineIndexedSpscSender, UniqueQueueIndex,
 };
@@ -238,11 +239,14 @@ pub enum PhaseCommand<'id, Caps: Ieee80211Capabilities, SC, AC, C, M> {
     Configure(Configuration<'id, Caps, SC, AC>),
     SampleTsf(Sampling<'id>),
     Submit(Submission<'id, C, M>),
+    /// Own the common key until projection; a direct bridge reply returns
+    /// this permission with erased material, including after withdrawal.
     InstallPairwise {
         permission: Slot<'id, InstallKeyKind, Child<Root, 3>>,
         key: Ccmp128Key,
     },
     RemovePairwise(Slot<'id, RemoveKeyKind, Child<Root, 4>>),
+    /// The same material ownership and erasure rules as InstallPairwise.
     MutateGroup {
         permission: Slot<'id, GroupMutationKind, Child<Root, 5>>,
         key: Ccmp128Key,

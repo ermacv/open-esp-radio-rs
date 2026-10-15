@@ -75,13 +75,13 @@ fn full_fifo_retains_whole_in_flight_context_and_multiple_bodies_until_terminal(
         tx.sample_tsf(Sampling::Station(r.station.tsf));
         tx.sample_tsf(Sampling::AccessPoint(r.access_point.tsf));
         for slot in r.installs {
-            tx.install_pairwise(slot, Ccmp128Key([1; 16]));
+            tx.install_pairwise(slot, Ccmp128Key::new(&zeroize::Zeroizing::new([1; 16])));
         }
         for slot in r.removes {
             tx.remove_pairwise(slot);
         }
         for slot in r.groups {
-            tx.mutate_group(slot, Ccmp128Key([2; 16]));
+            tx.mutate_group(slot, Ccmp128Key::new(&zeroize::Zeroizing::new([2; 16])));
         }
         let tx = tx.disable();
         // All 15 distinct admissions coexist before the consumer advances.
@@ -163,13 +163,19 @@ fn every_minted_non_tx_credit_and_disable_fit_at_once_in_fifo_order() {
         tx.sample_tsf(Sampling::Station(r.station.tsf));
         tx.sample_tsf(Sampling::AccessPoint(r.access_point.tsf));
         for permission in r.installs {
-            tx.install_pairwise(permission, Ccmp128Key([1; 16]));
+            tx.install_pairwise(
+                permission,
+                Ccmp128Key::new(&zeroize::Zeroizing::new([1; 16])),
+            );
         }
         for permission in r.removes {
             tx.remove_pairwise(permission);
         }
         for permission in r.groups {
-            tx.mutate_group(permission, Ccmp128Key([2; 16]));
+            tx.mutate_group(
+                permission,
+                Ccmp128Key::new(&zeroize::Zeroizing::new([2; 16])),
+            );
         }
         let tx = tx.disable();
         let mut order = Vec::new();
@@ -485,7 +491,7 @@ fn command_index_bijection<const T: usize, const K: usize>() {
         for permission in r.installs {
             phase.push(PhaseCommand::InstallPairwise {
                 permission,
-                key: Ccmp128Key([1; 16]),
+                key: Ccmp128Key::new(&zeroize::Zeroizing::new([1; 16])),
             });
         }
         for permission in r.removes {
@@ -494,7 +500,7 @@ fn command_index_bijection<const T: usize, const K: usize>() {
         for permission in r.groups {
             phase.push(PhaseCommand::MutateGroup {
                 permission,
-                key: Ccmp128Key([2; 16]),
+                key: Ccmp128Key::new(&zeroize::Zeroizing::new([2; 16])),
             });
         }
         // These are real owners from Mint, including the first and last

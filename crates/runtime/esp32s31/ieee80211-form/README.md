@@ -314,10 +314,24 @@ the command before reading desired state. The model tests that ordering on
 another thread. The actual triple-buffer settings/BA binding still belongs
 to the shared-loop integration.
 
-After programming a key, the finite step calls `Zeroize` on the key bytes
-**in the permanent record, before publishing its reply**. The Held command's
-copy is erased during projection. A test pauses between programming and
-reply publication and inspects the actual record, rather than a moved copy.
+Key commands and permanent records both own the common
+`oer_ieee80211_mac::ccmp::Ccmp128Key`. Admission moves the key into the command
+in Held. Projection initializes the record's key through
+`Ccmp128Key::new(key.as_bytes())`, borrowing the Held owner, then zeroizes that
+owner before publishing the request. No owned byte array crosses this
+boundary. The executor borrows the record's `as_bytes()` only for programming.
+Immediately afterwards it calls `Zeroize` **on that owner in the permanent
+record, before publishing its reply**. Withdrawal erases the same cell
+without programming hardware and returns `Withdrawn`, never `Applied`.
+The original permission returns from Held with its key already erased; a
+retry must supply new material. Normal key destruction also zeroizes storage;
+quarantine deliberately retains unprocessed records until reset. This does
+not promise erasure of compiler temporaries created by moves.
+
+The key regressions pause before reply publication and inspect the actual
+record for both PTK and GTK, on both apply and withdrawal paths. They also
+cancel a reply wait at every applied/pending key frontier and check that
+withdrawal preserves the applied prefix and returns every original permission.
 
 Every await in the bridge is a reply wait holding only a mutable endpoint
 loan. Cancellation leaves the operation in Held and the execution record in

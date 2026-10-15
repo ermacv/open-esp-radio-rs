@@ -540,6 +540,10 @@ pub struct Esp32s31LowerMac<
     U: LowerMacRxUnit,
     O = Infallible,
 > {
+    #[expect(
+        clippy::type_complexity,
+        reason = "the mutex retains the installed core's concrete hardware owner types"
+    )]
     installed: Mutex<M, RefCell<Option<Installed<'slot, P, E, T, H, BUFFER_SIZE, TX_BUFFERS>>>>,
     retune: Mutex<M, RefCell<Option<R>>>,
     deferred: Mutex<M, Cell<Deferred>>,
@@ -555,6 +559,10 @@ pub struct Esp32s31LowerMac<
     timer: T,
     /// The bodies of admitted attempts until their completion events carry
     /// them.
+    #[expect(
+        clippy::type_complexity,
+        reason = "bounded attempt storage pairs each admitted transmit ID with its owned body"
+    )]
     bodies: Mutex<M, RefCell<[Option<(TxId, O)>; COMPLETION_CAPACITY]>>,
     next_id: Mutex<M, Cell<u32>>,
 }

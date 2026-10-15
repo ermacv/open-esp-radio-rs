@@ -182,56 +182,47 @@ impl ConnectedWpa2Security {
         tx: &mut X,
         frame: ConnectedSecurityFrame,
     ) -> DatapathControlProgress<ConnectedDisconnectReason> {
-        match frame {
-            ConnectedSecurityFrame::Protected(frame) => {
-                self.process_group_message1(hardware, tx, frame)
-            }
-            ConnectedSecurityFrame::Unprotected(frame) => {
-                self.process_duplicate_message3(hardware, tx, frame)
-            }
-        }
-    }
-
-    fn process_duplicate_message3<H: ConnectedControlHardware, X: ConnectedControlTx>(
-        &mut self,
-        hardware: &mut H,
-        tx: &mut X,
-        frame: oer_ieee80211_rsn::OwnedEapolFrame,
-    ) -> DatapathControlProgress<ConnectedDisconnectReason> {
-        self.duplicate_message3 = self.duplicate_message3.saturating_add(1);
-        let response = match self.supplicant.on_duplicate_message3(frame) {
-            Ok(response) => response,
-            Err(error) => {
-                // A connected peer or nearby attacker may inject malformed or
-                // stale plaintext EAPOL. It has no authority to tear down the
-                // installed association; only an exact authenticated duplicate
-                // M3 is actionable.
-                self.ignored_duplicate_message3 = self.ignored_duplicate_message3.saturating_add(1);
-                self.last_ignored_duplicate_message3 = Some(error);
-                return DatapathControlProgress::More;
-            }
+        use oer_ieee80211_mac::security::LinkProtection;
+        let (frame, protection) = match frame {
+            ConnectedSecurityFrame::Protected(frame) => (frame, LinkProtection::Ccmp),
+            ConnectedSecurityFrame::Unprotected(frame) => (frame, LinkProtection::Open),
         };
-        self.retransmitted = self.retransmitted.saturating_add(1);
-        match tx.start_protected_eapol(hardware, response.as_bytes()) {
-            Ok(progress) => {
-                self.tx_in_flight = true;
-                progress
-            }
-            Err(error) => self.fail(ConnectedWpa2SecurityFailure::TxStart(error)),
-        }
+        self.process_key_message(hardware, tx, frame, protection)
     }
 
-    fn process_group_message1<H: ConnectedControlHardware, X: ConnectedControlTx>(
+    fn process_key_message<H: ConnectedControlHardware, X: ConnectedControlTx>(
         &mut self,
         hardware: &mut H,
         tx: &mut X,
         frame: oer_ieee80211_rsn::OwnedEapolFrame,
+        protection: oer_ieee80211_mac::security::LinkProtection,
     ) -> DatapathControlProgress<ConnectedDisconnectReason> {
-        self.group_message1 = self.group_message1.saturating_add(1);
-        let action = match self.supplicant.on_group_message1(frame) {
-            Ok(action) => action,
-            Err(error) => {
-                return self.fail(ConnectedWpa2SecurityFailure::Protocol(error));
+        let action = match frame.key_frame().message() {
+            oer_ieee80211_rsn::EapolKeyMessage::PairwiseMessage3 => {
+                self.duplicate_message3 = self.duplicate_message3.saturating_add(1);
+                match self.supplicant.on_message3(frame) {
+                    Ok(action) => action,
+                    Err(error) => {
+                        self.ignored_duplicate_message3 =
+                            self.ignored_duplicate_message3.saturating_add(1);
+                        self.last_ignored_duplicate_message3 = Some(error);
+                        return DatapathControlProgress::More;
+                    }
+                }
+            }
+            oer_ieee80211_rsn::EapolKeyMessage::GroupMessage1
+                if protection == oer_ieee80211_mac::security::LinkProtection::Ccmp =>
+            {
+                self.group_message1 = self.group_message1.saturating_add(1);
+                match self.supplicant.on_group_message1(frame) {
+                    Ok(action) => action,
+                    Err(error) => return self.fail(ConnectedWpa2SecurityFailure::Protocol(error)),
+                }
+            }
+            _ => {
+                return self.fail(ConnectedWpa2SecurityFailure::Protocol(
+                    RsnConnectedSupplicantError::UnsupportedMessage,
+                ));
             }
         };
         let response = match action {
@@ -366,7 +357,7 @@ impl ConnectedWpa2Security {
                 }
             }
         };
-        match tx.start_protected_eapol(hardware, response.as_bytes()) {
+        match tx.start_eapol(hardware, response.as_bytes(), protection) {
             Ok(progress) => {
                 self.tx_in_flight = true;
                 progress

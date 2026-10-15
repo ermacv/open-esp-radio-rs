@@ -54,3 +54,9 @@ robust-management protection still dispatches through the separate PMF path.
 `crates/runtime/esp32s31/ieee80211` supplies concrete timers, DMA/TX
 owners, IRQ wakeups and task/network composition. HIL may observe those public
 boundaries but must not implement a second driver path.
+
+Connected security uses `RsnConnectedSupplicant::on_message3` for exact and
+newer authenticated repeats. Its M4 keeps the incoming MAC protection;
+`start_eapol` takes that protection explicitly, so an open M3 with installed
+PTK gets an open response without consuming a CCMP PN. Protected group M1
+still gets a protected group M2.

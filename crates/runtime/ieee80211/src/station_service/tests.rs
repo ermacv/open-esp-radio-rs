@@ -34,6 +34,8 @@ use std::rc::Rc;
 use std::vec::Vec;
 
 use super::*;
+
+mod contracts;
 use crate::lower_mac_owner::model::{
     AirFrame, MODEL_RX_EVENTS, MODEL_TX_QUEUE_DEPTH, ModelAir, ModelAnyBuffer, ModelBackend,
     ModelCaps24, ModelLarge, ModelPhase, ModelResources, ModelRxMeta, ModelSetup, ModelSmall,
@@ -55,12 +57,15 @@ const RSN: [u8; 22] = [
 struct ServiceContexts;
 
 impl crate::lower_mac_owner::model::ModelContext for ServiceContexts {
+    type Body = core::convert::Infallible;
     type Context<'id> =
         TxContext<'id, ModelCaps24, ModelLarge, crate::lower_mac_owner::model::ModelPool<4>>;
 }
 
 impl<'id> StationPort<'id> for ModelBackend<ModelCaps24, ServiceContexts> {
     type Types = ModelTypes<ServiceContexts>;
+    type TerminalStorage<T> =
+        Box<heapless::Deque<T, { crate::lower_mac_owner::model::MODEL_EVENTS - MODEL_RX_EVENTS }>>;
     type Small = ModelSmall;
     type Large = ModelLarge;
 
@@ -83,19 +88,30 @@ impl<'id> StationPort<'id> for ModelBackend<ModelCaps24, ServiceContexts> {
         event
     }
 
-    fn terminal(
-        terminal: LowerMacTerminal<'id, ModelTypes<ServiceContexts>>,
-    ) -> LowerMacTerminal<'id, ModelTypes<ServiceContexts>> {
-        terminal
-    }
-
-    fn tx_buffer(buffer: ModelAnyBuffer<'id>) -> StationTxBuffer<'id, Self> {
+    fn tx_buffer(
+        buffer: ModelAnyBuffer<'id, core::convert::Infallible>,
+    ) -> StationTxBuffer<'id, Self> {
         match buffer {
             ModelAnyBuffer::Small(buffer) => StationTxBuffer::Small(ReturnedMpdu::Fresh(buffer)),
             ModelAnyBuffer::SmallSent(buffer) => StationTxBuffer::Small(ReturnedMpdu::Sent(buffer)),
             ModelAnyBuffer::Large(buffer) => StationTxBuffer::Large(ReturnedMpdu::Fresh(buffer)),
             ModelAnyBuffer::LargeSent(buffer) => StationTxBuffer::Large(ReturnedMpdu::Sent(buffer)),
         }
+    }
+}
+
+// Host composition: the fixed bank is allocated once, like model MPDU memory.
+// Boxing changes placement, never its capacity or overflow behavior.
+impl<T, const N: usize> TerminalStorage<T> for Box<heapless::Deque<T, N>> {
+    const CAPACITY: usize = N;
+    fn empty() -> Self {
+        Box::new(heapless::Deque::new())
+    }
+    fn try_push(&mut self, terminal: T) -> Result<(), T> {
+        self.push_back(terminal)
+    }
+    fn pop(&mut self) -> Option<T> {
+        self.pop_front()
     }
 }
 
@@ -116,26 +132,30 @@ fn channel6() -> Channel {
     Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap()
 }
 
-fn config(security: StaSecurity) -> StaConfig<ModelCaps24> {
+type TestConfig = (StaConfig<ModelCaps24>, StaSecurity);
+
+fn config(security: StaSecurity) -> TestConfig {
     let channels =
         heapless::Vec::from_slice(&[SupportedChannel::new(channel6()).unwrap()]).unwrap();
-    StaConfig {
-        address: oer_ieee80211_mac::address::OwnAddress::new(
-            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
-        ),
-        ssid: heapless::Vec::from_slice(SSID).unwrap(),
-        channels,
-        dwell: Duration::from_millis(10),
-        skipped_absences: 3,
-        access_point_margin_db: 6,
-        supported_rates: [0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24],
-        association: &CAPABILITIES,
-        listen_interval: oer_ieee80211_sta::request::StationListenInterval::new(10).unwrap(),
-        phy: PhyMode::Legacy,
+    (
+        StaConfig {
+            address: oer_ieee80211_mac::address::OwnAddress::new(
+                oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+            ),
+            ssid: heapless::Vec::from_slice(SSID).unwrap(),
+            channels,
+            dwell: Duration::from_millis(10),
+            skipped_absences: 3,
+            access_point_margin_db: 6,
+            supported_rates: [0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24],
+            association: &CAPABILITIES,
+            listen_interval: oer_ieee80211_sta::request::StationListenInterval::new(10).unwrap(),
+            phy: PhyMode::Legacy,
+            nonce,
+            he_packet_padding: |_| oer_ieee80211_upper_mac::HePacketPadding::None,
+        },
         security,
-        nonce,
-        he_packet_padding: |_| oer_ieee80211_upper_mac::HePacketPadding::None,
-    }
+    )
 }
 
 /// A beacon of the network on channel 6, protected or not.
@@ -305,6 +325,7 @@ struct World<'b> {
     counters: Cell<Option<ServiceCounters>>,
     expect_queued_command_on_poison: Cell<bool>,
     drop_stopped_service: Cell<bool>,
+    restart_stopped_service: Cell<Option<bool>>,
     /// The network stack's end of the transmit queue.
     stack: RefCell<MsduSender<'b, TxMsdu, 2>>,
     /// The network stack's end of the receive queue.
@@ -522,7 +543,7 @@ struct Body<'w, 'b, S, const GROUPS: usize> {
     commands: MsduReceiver<'b, ServiceCommand<ModelCaps24>, 4>,
     transmit: MsduReceiver<'b, TxMsdu, 2>,
     receive: MsduSender<'b, EthernetFrame, 2>,
-    config: StaConfig<ModelCaps24>,
+    config: TestConfig,
     script: S,
     refuse_initial_enable: bool,
 }
@@ -572,27 +593,30 @@ where
                     arbiter_authority,
                     gate,
                 );
-            let mut station = Station::new(
-                self.config,
-                StationResources {
-                    epochs: oer_ieee80211_sta::epoch::LinkEpochSource::new(connection_epoch),
-                    tickets: station_tickets,
-                    buffers: small,
-                    place,
-                    absence_place: absence,
-                    pairwise,
-                    groups,
-                    group_permission: station_group_permission,
-                },
-            )
-            .unwrap_or_else(|_| panic!("protected fixture has group slots"));
+            let (config, security) = self.config;
+            let resources = StationResources {
+                epochs: oer_ieee80211_sta::epoch::LinkEpochSource::new(connection_epoch),
+                tickets: station_tickets,
+                buffers: small,
+                place,
+                absence_place: absence,
+                pairwise,
+                groups,
+                group_permission: station_group_permission,
+            };
+            let mut station = match security {
+                StaSecurity::Open => Station::new_open(config, resources),
+                StaSecurity::Wpa2Personal { password, pmk } => {
+                    Station::new_personal(config, password, pmk, resources)
+                }
+            };
             if self.refuse_initial_enable {
                 station
                     .command(Instant::EPOCH, StaRequest::new(901, StaCommand::Connect))
                     .unwrap();
                 self.world.air.refuse_enable();
             }
-            let service = StationService::<_, _>::new(
+            let service = StationService::<_, _, GROUPS>::new(
                 station,
                 StaData::new(data_tickets, large, MODEL_TX_QUEUE_DEPTH),
                 arbiter,
@@ -617,12 +641,56 @@ where
                 world.command(ServiceCommand::Stop).await;
             })
             .await;
+            let completed = if let Some(protected) = world.restart_stopped_service.get() {
+                let stopped = completed.into_stopped().ok().expect("ordinary Stop");
+                let RestartedService {
+                    owner,
+                    service,
+                    deferred_eapol,
+                    notice,
+                } = stopped
+                    .restart(channel)
+                    .ok()
+                    .expect("complete resource bank");
+                assert!(matches!(
+                    deferred_eapol,
+                    oer_ieee80211_sta::machine::DeferredEapol::Empty
+                ));
+                assert!(notice.is_none());
+                world.outputs.borrow_mut().clear();
+                let (completed, ()) = join(service.run(owner, &mut io, &world.clock), async {
+                    let mut seen = world.air.sent().len();
+                    world.associate(&mut seen, protected).await;
+                    if protected {
+                        world.handshake(&mut seen).await;
+                    } else {
+                        world
+                            .notice(StaNotice::Connected {
+                                bssid: oer_ieee80211_mac::address::Bssid::new(
+                                    IndividualAddress::new(BSSID).unwrap(),
+                                )
+                                .unwrap(),
+                                channel: 6,
+                            })
+                            .await;
+                    }
+                    world.send_msdu(ACCESS_POINT_ADDRESS);
+                    let data = world.sent(&mut seen, DATA).await;
+                    assert_eq!(data.frame[4..10], BSSID);
+                    assert_eq!(data.key.is_some(), protected);
+                    world.command(ServiceCommand::Stop).await;
+                })
+                .await;
+                completed
+            } else {
+                completed
+            };
             let ServiceCompleted {
                 end,
                 retired: mut service,
             } = completed;
             if world.expect_queued_command_on_poison.get() {
-                assert!(matches!(&end, ServiceEnd::Poisoned(_)));
+                assert!(matches!(&end, ServiceEnd::Poisoned { .. }));
                 assert!(
                     matches!(
                         io.commands.try_receive(),
@@ -638,7 +706,7 @@ where
             world.counters.set(Some(service.counters));
             assert_eq!(service.station.lost_tokens(), 0);
             assert_eq!(service.data.counters().lost_tokens, 0);
-            if matches!(&end, ServiceEnd::Stopped(_) | ServiceEnd::Failed(_)) {
+            if matches!(&end, ServiceEnd::Stopped(_) | ServiceEnd::Failed { .. }) {
                 assert_eq!(
                     service.station.frame_credits(),
                     (4, 4),
@@ -659,8 +727,15 @@ where
                 }
             }
             if self.refuse_initial_enable {
+                assert!(matches!(
+                    &end,
+                    ServiceEnd::Failed {
+                        fault: ServiceFault::EnableRefused(()),
+                        ..
+                    }
+                ));
                 assert!(
-                    matches!(&end, ServiceEnd::Failed(_)),
+                    matches!(&end, ServiceEnd::Failed { .. }),
                     "refusal preserves a Disabled backend"
                 );
                 assert!(
@@ -679,14 +754,19 @@ where
                     let Ok(owner) = owner.enable().await else {
                         panic!("dropping a stopped service must leave its disabled owner usable");
                     };
-                    let Ok(owner) = owner.disable(&mut |_| {}).await else {
+                    let Ok(owner) = owner
+                        .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+                        .await
+                    else {
                         panic!("the next epoch must also disable");
                     };
                     owner.uninstall(())
                 }
                 ServiceEnd::Stopped(owner) => owner.uninstall(()),
-                ServiceEnd::Failed(owner) => owner.uninstall(()),
-                ServiceEnd::Poisoned(poisoned) => poisoned.uninstall(()),
+                ServiceEnd::Failed { owner, .. } => owner.uninstall(()),
+                ServiceEnd::Poisoned {
+                    owner: poisoned, ..
+                } => poisoned.uninstall(()),
             }
         }
     }
@@ -702,17 +782,14 @@ where
 }
 
 /// Run the service on a 2.4 GHz model with `config`.
-fn run_with<S>(config: StaConfig<ModelCaps24>, script: S) -> ServiceCounters
+fn run_with<S>(config: TestConfig, script: S) -> ServiceCounters
 where
     S: for<'w, 'b> FnOnce(&'w World<'b>) -> Script<'w>,
 {
     run_with_groups::<S, 2>(config, script)
 }
 
-fn run_with_groups<S, const GROUPS: usize>(
-    config: StaConfig<ModelCaps24>,
-    script: S,
-) -> ServiceCounters
+fn run_with_groups<S, const GROUPS: usize>(config: TestConfig, script: S) -> ServiceCounters
 where
     S: for<'w, 'b> FnOnce(&'w World<'b>) -> Script<'w>,
 {
@@ -720,7 +797,7 @@ where
 }
 
 fn run_case<S, const GROUPS: usize>(
-    config: StaConfig<ModelCaps24>,
+    config: TestConfig,
     script: S,
     refuse_initial_enable: bool,
 ) -> ServiceCounters
@@ -750,6 +827,7 @@ where
         counters: Cell::new(None),
         expect_queued_command_on_poison: Cell::new(false),
         drop_stopped_service: Cell::new(false),
+        restart_stopped_service: Cell::new(None),
         stack: RefCell::new(stack),
         delivered: RefCell::new(delivered),
     };
@@ -1256,6 +1334,7 @@ fn data_takes_all_its_tokens_and_eapol_null_and_deauthentication_still_go() {
         pmk: Pmk::from_bytes(PMK),
     });
     config
+        .0
         .channels
         .push(SupportedChannel::new(Channel::ghz2_4(1, ChannelWidth::Mhz20).unwrap()).unwrap())
         .unwrap();
@@ -1342,6 +1421,7 @@ fn a_passed_station_deadline_ticks_the_station() {
 fn a_disconnection_during_an_absence_leaves_no_old_frame_to_go_after_the_reconnection() {
     let mut config = config(StaSecurity::Open);
     config
+        .0
         .channels
         .push(SupportedChannel::new(Channel::ghz2_4(1, ChannelWidth::Mhz20).unwrap()).unwrap())
         .unwrap();
@@ -1432,6 +1512,7 @@ fn beside_an_access_point_msdus_survive_an_absence() {
     use oer_time::Clock as _;
     let mut config = config(StaSecurity::Open);
     config
+        .0
         .channels
         .push(SupportedChannel::new(Channel::ghz2_4(1, ChannelWidth::Mhz20).unwrap()).unwrap())
         .unwrap();
@@ -1835,7 +1916,9 @@ fn protected_qos_ht_group_message_rekeys_once_after_integrity_and_replay_admissi
                 }
                 assert!(world.outputs.borrow().iter().any(|output| matches!(
                     output,
-                    ServiceOutput::RxFrameRefused(RxDropReason::Integrity)
+                    ServiceOutput::RxFrameDropped(oer_ieee80211_sta::machine::StaRxError::Frame(
+                        RxDropReason::Integrity
+                    ))
                 )));
                 world.air.receive(&protected, decrypted());
                 let reply = world.sent(&mut seen, DATA).await;
@@ -1850,12 +1933,14 @@ fn protected_qos_ht_group_message_rekeys_once_after_integrity_and_replay_admissi
                 assert_eq!(world.air.sent().len(), after);
                 assert!(world.outputs.borrow().iter().any(|output| matches!(
                     output,
-                    ServiceOutput::RxFrameRefused(RxDropReason::Replay)
+                    ServiceOutput::RxFrameDropped(oer_ieee80211_sta::machine::StaRxError::Frame(
+                        RxDropReason::Replay
+                    ))
                 )));
             })
         },
     );
-    assert_eq!(counters.rx_frames_rejected.get(), 2);
+    assert_eq!(counters.rx_frames_dropped.get(), 2);
 }
 
 #[test]
@@ -2117,4 +2202,38 @@ fn stopped_service_returns_drained_rx_before_the_disabled_owner() {
             }
         })
     });
+}
+
+#[test]
+fn stopped_service_reconnects_and_sends_data_on_the_same_installation() {
+    for protected in [false, true] {
+        let security = if protected {
+            StaSecurity::Wpa2Personal {
+                password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
+                pmk: Pmk::from_bytes(PMK),
+            }
+        } else {
+            StaSecurity::Open
+        };
+        run(security, |world| {
+            Box::pin(async move {
+                let mut seen = 0;
+                world.associate(&mut seen, protected).await;
+                if protected {
+                    world.handshake(&mut seen).await;
+                } else {
+                    world
+                        .notice(StaNotice::Connected {
+                            bssid: oer_ieee80211_mac::address::Bssid::new(
+                                IndividualAddress::new(BSSID).unwrap(),
+                            )
+                            .unwrap(),
+                            channel: 6,
+                        })
+                        .await;
+                }
+                world.restart_stopped_service.set(Some(protected));
+            })
+        });
+    }
 }

@@ -23,15 +23,13 @@ fn process(
     supplicant: &mut RsnStaSupplicant,
     frame: crate::OwnedEapolFrame<512>,
     pmk: &Pmk,
-) -> Result<RsnStaSupplicantAction<512>, RsnStaProcessError<SoftwareAesKeyUnwrapError>> {
+) -> Result<RsnStaReady<512>, RsnStaProcessError<SoftwareAesKeyUnwrapError>> {
     match supplicant.on_frame(frame, pmk)? {
         RsnStaSupplicantAction::UnwrapKeyData(request) => {
             let unwrapped = software_aes128_key_unwrap(request.kek(), request.wrapped_key_data());
-            supplicant
-                .complete_key_data_unwrap(request, unwrapped)
-                .map(RsnStaSupplicantAction::InstallKeys)
+            supplicant.complete_key_data_unwrap(request, unwrapped)
         }
-        action => Ok(action),
+        RsnStaSupplicantAction::Ready(action) => Ok(action),
     }
 }
 
@@ -108,11 +106,10 @@ fn connected(ptk: Ptk) -> RsnConnectedSupplicant {
         authenticator: AP,
         key_confirmation,
         key_encryption,
+        authenticator_security_ies: OwnedAssociationSecurityIes::try_copy_bytes(&RSN).unwrap(),
         completed_message3,
         replay_counter: 2,
         completed_group_message1: None,
-        pending: None,
-        next_ticket: 1,
         management_protection: false,
     }
 }
@@ -142,7 +139,10 @@ fn completed_connected() -> (RsnConnectedSupplicant, crate::OwnedEapolFrame<512>
     let expected_ptk = pmk.derive_ptk(crate::Akm::Psk, context());
     let mut supplicant = RsnStaSupplicant::try_new(LOCAL, AP, SNONCE, &RSN, &RSN, &[]).unwrap();
     let message1 = RsnTxFrame::<512>::message1(crate::Akm::Psk, LOCAL, 1, ANONCE).unwrap();
-    process(&mut supplicant, owned(&message1), &pmk).unwrap();
+    assert!(matches!(
+        process(&mut supplicant, owned(&message1), &pmk).unwrap(),
+        RsnStaReady::Transmit(_)
+    ));
     let rsn = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
     let gtk = RsnGtk::new(
         oer_ieee80211_mac::ccmp::GroupKeyId::new(2).unwrap(),
@@ -152,12 +152,11 @@ fn completed_connected() -> (RsnConnectedSupplicant, crate::OwnedEapolFrame<512>
     let plain = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     let message3 = encrypted_message3(&expected_ptk, [7, 6, 5, 4, 3, 2, 1, 0], plain.as_bytes());
     let duplicate = message3.clone();
-    let RsnStaSupplicantAction::InstallKeys(request) =
-        process(&mut supplicant, message3, &pmk).unwrap()
+    let RsnStaReady::InstallKeys(request) = process(&mut supplicant, message3, &pmk).unwrap()
     else {
         panic!("Message 3 must produce one key transaction")
     };
-    let RsnStaSupplicantAction::Transmit(_) = supplicant
+    let RsnStaReady::Transmit(_) = supplicant
         .complete_key_install::<512>(request, true)
         .unwrap()
     else {
@@ -184,8 +183,7 @@ fn resolves_m1_through_typed_install_and_authenticated_m4() {
     let mut supplicant = RsnStaSupplicant::try_new(LOCAL, AP, SNONCE, &RSN, &RSN, &[]).unwrap();
 
     let message1 = RsnTxFrame::<512>::message1(crate::Akm::Psk, LOCAL, 1, ANONCE).unwrap();
-    let RsnStaSupplicantAction::Transmit(message2) =
-        process(&mut supplicant, owned(&message1), &pmk).unwrap()
+    let RsnStaReady::Transmit(message2) = process(&mut supplicant, owned(&message1), &pmk).unwrap()
     else {
         panic!("Message 1 must produce Message 2")
     };
@@ -201,8 +199,7 @@ fn resolves_m1_through_typed_install_and_authenticated_m4() {
     let plain = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     let rsc = [7, 6, 5, 4, 3, 2, 1, 0];
     let message3 = encrypted_message3(&expected_ptk, rsc, plain.as_bytes());
-    let RsnStaSupplicantAction::InstallKeys(request) =
-        process(&mut supplicant, message3, &pmk).unwrap()
+    let RsnStaReady::InstallKeys(request) = process(&mut supplicant, message3, &pmk).unwrap()
     else {
         panic!("Message 3 must produce one key transaction")
     };
@@ -224,7 +221,7 @@ fn resolves_m1_through_typed_install_and_authenticated_m4() {
     assert_eq!(request.group().receive_sequence(), &rsc);
     assert_eq!(request.group().key().as_bytes(), &[0x5a; 16]);
 
-    let RsnStaSupplicantAction::Transmit(message4) = supplicant
+    let RsnStaReady::Transmit(message4) = supplicant
         .complete_key_install::<512>(request, true)
         .unwrap()
     else {
@@ -241,7 +238,10 @@ fn invalid_message3_mic_is_ignored_and_valid_retry_can_install() {
     let expected_ptk = pmk.derive_ptk(crate::Akm::Psk, context());
     let mut supplicant = RsnStaSupplicant::try_new(LOCAL, AP, SNONCE, &RSN, &RSN, &[]).unwrap();
     let message1 = RsnTxFrame::<512>::message1(crate::Akm::Psk, LOCAL, 1, ANONCE).unwrap();
-    process(&mut supplicant, owned(&message1), &pmk).unwrap();
+    assert!(matches!(
+        process(&mut supplicant, owned(&message1), &pmk).unwrap(),
+        RsnStaReady::Transmit(_)
+    ));
     let rsn = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
     let gtk = RsnGtk::new(
         oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
@@ -265,8 +265,7 @@ fn invalid_message3_mic_is_ignored_and_valid_retry_can_install() {
     assert_eq!(supplicant.phase(), RsnStaPhase::AwaitingMessage3);
 
     let valid_retry = encrypted_message3(&expected_ptk, [0; 8], plain.as_bytes());
-    let RsnStaSupplicantAction::InstallKeys(request) =
-        process(&mut supplicant, valid_retry, &pmk).unwrap()
+    let RsnStaReady::InstallKeys(request) = process(&mut supplicant, valid_retry, &pmk).unwrap()
     else {
         panic!("valid M3 retry must retain the original join")
     };
@@ -278,7 +277,9 @@ fn invalid_message3_mic_is_ignored_and_valid_retry_can_install() {
 fn connected_exact_duplicate_message3_retransmits_authenticated_m4() {
     let (mut connected, duplicate, ptk) = completed_connected();
 
-    let message4 = connected.on_duplicate_message3(duplicate).unwrap();
+    let RsnConnectedAction::Retransmit(message4) = connected.on_message3(duplicate).unwrap() else {
+        panic!("exact repeat produces M4")
+    };
 
     assert_eq!(
         message4.key_frame().message(),
@@ -300,7 +301,7 @@ fn connected_duplicate_message3_rejects_changed_protocol_fields() {
     )
     .unwrap();
     assert!(matches!(
-        connected.on_duplicate_message3(wrong_interface),
+        connected.on_message3(wrong_interface),
         Err(RsnConnectedSupplicantError::WrongInterface)
     ));
     let wrong_peer = crate::OwnedEapolFrame::<512>::try_copy(
@@ -310,7 +311,7 @@ fn connected_duplicate_message3_rejects_changed_protocol_fields() {
     )
     .unwrap();
     assert!(matches!(
-        connected.on_duplicate_message3(wrong_peer),
+        connected.on_message3(wrong_peer),
         Err(RsnConnectedSupplicantError::WrongPeer)
     ));
 
@@ -318,7 +319,7 @@ fn connected_duplicate_message3_rejects_changed_protocol_fields() {
         bytes[0] ^= 1;
     });
     assert!(matches!(
-        connected.on_duplicate_message3(wrong_protocol),
+        connected.on_message3(wrong_protocol),
         Err(RsnConnectedSupplicantError::ProtocolVersionMismatch)
     ));
 
@@ -327,7 +328,7 @@ fn connected_duplicate_message3_rejects_changed_protocol_fields() {
         bytes[5..7].copy_from_slice(&((key_info & !0x0007) | 1).to_be_bytes());
     });
     assert!(matches!(
-        connected.on_duplicate_message3(wrong_descriptor),
+        connected.on_message3(wrong_descriptor),
         Err(RsnConnectedSupplicantError::UnsupportedDescriptorVersion)
     ));
 
@@ -336,23 +337,23 @@ fn connected_duplicate_message3_rejects_changed_protocol_fields() {
         bytes[5..7].copy_from_slice(&key_info.to_be_bytes());
     });
     assert!(matches!(
-        connected.on_duplicate_message3(wrong_flags),
+        connected.on_message3(wrong_flags),
         Err(RsnConnectedSupplicantError::UnsupportedMessage)
     ));
 
     let wrong_replay = resign_eapol_key_variant(&duplicate, &ptk, true, |bytes| {
-        bytes[9..17].copy_from_slice(&3_u64.to_be_bytes());
+        bytes[9..17].copy_from_slice(&1_u64.to_be_bytes());
     });
     assert!(matches!(
-        connected.on_duplicate_message3(wrong_replay),
-        Err(RsnConnectedSupplicantError::ReplayCounterMismatch)
+        connected.on_message3(wrong_replay),
+        Err(RsnConnectedSupplicantError::StaleReplayCounter)
     ));
 
     let wrong_anonce = resign_eapol_key_variant(&duplicate, &ptk, true, |bytes| {
         bytes[17] ^= 1;
     });
     assert!(matches!(
-        connected.on_duplicate_message3(wrong_anonce),
+        connected.on_message3(wrong_anonce),
         Err(RsnConnectedSupplicantError::AuthenticatorNonceMismatch)
     ));
 }
@@ -365,7 +366,7 @@ fn connected_duplicate_message3_rejects_bad_mic_and_changed_commitment() {
         bytes[81] ^= 1;
     });
     assert!(matches!(
-        connected.on_duplicate_message3(bad_mic),
+        connected.on_message3(bad_mic),
         Err(RsnConnectedSupplicantError::InvalidMic)
     ));
 
@@ -373,7 +374,7 @@ fn connected_duplicate_message3_rejects_bad_mic_and_changed_commitment() {
         bytes[65] ^= 1;
     });
     assert!(matches!(
-        connected.on_duplicate_message3(changed_rsc),
+        connected.on_message3(changed_rsc),
         Err(RsnConnectedSupplicantError::RetainedMessage3Mismatch)
     ));
 
@@ -381,9 +382,41 @@ fn connected_duplicate_message3_rejects_bad_mic_and_changed_commitment() {
         bytes[99] ^= 1;
     });
     assert!(matches!(
-        connected.on_duplicate_message3(changed_key_data),
+        connected.on_message3(changed_key_data),
         Err(RsnConnectedSupplicantError::RetainedMessage3Mismatch)
     ));
+}
+
+#[test]
+fn a_newer_completed_group_request_cannot_be_rolled_back_by_an_older_owner() {
+    let pmk = Pmk::derive(b"password", b"ssid").unwrap();
+    let ptk = pmk.derive_ptk(crate::Akm::Psk, context());
+    let mut connected = connected(pmk.derive_ptk(crate::Akm::Psk, context()));
+    let frame = |counter| {
+        RsnTxFrame::<512>::group_message1(crate::Akm::Psk, LOCAL, counter, [9; 8], &[0x55; 24])
+            .unwrap()
+            .authenticate(&ptk)
+    };
+    let unwrap = GroupKeyUnwrap {
+        plain: group_kde(1, 0x6a),
+    };
+    let GroupStep::Install(older) =
+        group_message1(&mut connected, owned(&frame(3)), &unwrap).unwrap()
+    else {
+        panic!()
+    };
+    let GroupStep::Install(newer) =
+        group_message1(&mut connected, owned(&frame(4)), &unwrap).unwrap()
+    else {
+        panic!()
+    };
+    let response = connected.complete_group_key_install(newer, true).unwrap();
+    assert_eq!(response.key_frame().replay_counter(), 4);
+    assert!(matches!(
+        connected.complete_group_key_install(older, true),
+        Err(RsnConnectedSupplicantError::StaleCompletion)
+    ));
+    assert_eq!(connected.replay_counter(), 4);
 }
 
 #[test]
@@ -613,7 +646,10 @@ fn awaiting_encrypted_message3() -> (RsnStaSupplicant, crate::OwnedEapolFrame<51
     let ptk = pmk.derive_ptk(crate::Akm::Psk, context());
     let mut supplicant = RsnStaSupplicant::try_new(LOCAL, AP, SNONCE, &RSN, &RSN, &[]).unwrap();
     let message1 = RsnTxFrame::<512>::message1(crate::Akm::Psk, LOCAL, 1, ANONCE).unwrap();
-    supplicant.on_frame::<512>(owned(&message1), &pmk).unwrap();
+    assert!(matches!(
+        supplicant.on_frame::<512>(owned(&message1), &pmk).unwrap(),
+        RsnStaSupplicantAction::Ready(RsnStaReady::Transmit(_))
+    ));
     let rsn = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
     let gtk = RsnGtk::new(
         oer_ieee80211_mac::ccmp::GroupKeyId::new(2).unwrap(),
@@ -640,9 +676,12 @@ fn message3_key_data_request_carries_the_ptk_kek_and_completes_into_install() {
     assert_eq!(request.replay_counter(), 2);
 
     let unwrapped = software_aes128_key_unwrap(request.kek(), request.wrapped_key_data());
-    let install = supplicant
+    let RsnStaReady::InstallKeys(install) = supplicant
         .complete_key_data_unwrap(request, unwrapped)
-        .unwrap();
+        .unwrap()
+    else {
+        panic!("initial key installation")
+    };
     assert_eq!(install.replay_counter(), 2);
     assert!(install.encrypted_key_data());
     assert_eq!(install.group().key().as_bytes(), &[0x5a; 16]);
@@ -665,7 +704,38 @@ fn failed_message3_key_data_unwrap_fails_the_handshake_with_the_backend_error() 
 }
 
 #[test]
-fn group_key_data_request_keeps_the_supplicant_busy_until_completed() {
+fn completed_handshake_repeated_m3_only_grants_group_installation() {
+    let (mut supplicant, message3, pmk, ptk) = awaiting_encrypted_message3();
+    let retry = resign_eapol_key_variant(&message3, &ptk, true, |bytes| {
+        bytes[9..17].copy_from_slice(&3_u64.to_be_bytes());
+    });
+    let RsnStaReady::InstallKeys(initial) = process(&mut supplicant, message3, &pmk).unwrap()
+    else {
+        panic!("initial installation")
+    };
+    let RsnStaReady::Transmit(_) = supplicant
+        .complete_key_install::<512>(initial, true)
+        .unwrap()
+    else {
+        panic!("initial M4")
+    };
+    let RsnStaReady::RetryInstall(group) = process(&mut supplicant, retry, &pmk).unwrap() else {
+        panic!("completed M3 must never grant another pairwise installation")
+    };
+    assert_eq!(group.replay_counter(), 3);
+    assert_eq!(group.group().key().as_bytes(), &[0x5a; 16]);
+    let RsnStaReady::Transmit(message4) = supplicant
+        .complete_retry_install::<512>(group, true)
+        .unwrap()
+    else {
+        panic!("retry M4")
+    };
+    assert_eq!(message4.key_frame().replay_counter(), 3);
+    assert!(message4.key_frame().verify_mic(&ptk));
+}
+
+#[test]
+fn group_key_data_request_owns_verified_bytes_without_blocking_new_authentication() {
     let pmk = Pmk::derive(b"password", b"ssid").unwrap();
     let ptk = pmk.derive_ptk(crate::Akm::Psk, context());
     let frame = RsnTxFrame::<512>::group_message1(crate::Akm::Psk, LOCAL, 3, [9; 8], &[0x55; 24])
@@ -680,10 +750,16 @@ fn group_key_data_request_keeps_the_supplicant_busy_until_completed() {
     assert_eq!(request.kek(), ptk.kek());
     assert_eq!(request.wrapped_key_data(), &[0x55; 24]);
     assert_eq!(request.replay_counter(), 3);
-    assert!(matches!(
-        connected.on_group_message1(owned(&frame)),
-        Err(RsnConnectedSupplicantError::Busy)
-    ));
+    let newer = RsnTxFrame::<512>::group_message1(crate::Akm::Psk, LOCAL, 4, [9; 8], &[0x66; 24])
+        .unwrap()
+        .authenticate(&ptk);
+    let RsnConnectedAction::UnwrapGroupKeyData(newer_request) =
+        connected.on_group_message1(owned(&newer)).unwrap()
+    else {
+        panic!("a newer frame must authenticate while the old request is owned")
+    };
+    assert_eq!(newer_request.replay_counter(), 4);
+    assert_eq!(newer_request.wrapped_key_data(), &[0x66; 24]);
 
     let install = connected
         .complete_group_key_data_unwrap(

@@ -408,18 +408,64 @@ pub struct StaData<'id, D: StaDataTokens, K, const CAP: usize = 8> {
 /// Terminal data bank. Queued work has returned its frame credits; it has no
 /// admission, input or transmission methods and cannot begin another link.
 pub struct RetiredData<'id, D: StaDataTokens, K, const CAP: usize = 8> {
-    data: StaData<'id, D, K, CAP>,
+    tickets: Pool<D::Ticket>,
+    buffers: Pool<D::Buffer>,
+    owed: [Fifo<DataTransmit<'id, D, K, ()>, CAP>; 8],
+    admission: Admissions,
+    next_order: u32,
+    overflows: Counter,
+    left_behind: Counter,
+    preparation_refused: Counter,
+    indeterminate: Counter,
+    contention_limited: Counter,
 }
 
 impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const CAP: usize>
     RetiredData<'id, D, K, CAP>
 {
     pub fn counters(&self) -> DataCounters {
-        self.data.counters()
+        DataCounters {
+            preparation_refused: self.preparation_refused.get(),
+            indeterminate: self.indeterminate.get(),
+            contention_limited: self.contention_limited.get(),
+            overflows: self.overflows.get(),
+            lost_tokens: self.tickets.lost().combined(self.buffers.lost()).get(),
+            left_behind: self.left_behind.get(),
+        }
     }
 
     pub fn available(&self, category: WmmAccessCategory) -> u32 {
-        self.data.available(category)
+        self.admission.available(category).count_ones()
+    }
+
+    /// Move the same credits, ordering frontier and admission permissions into
+    /// another run on this installation. No pool or permission is minted.
+    pub fn restart(self) -> StaData<'id, D, K, CAP> {
+        let Self {
+            tickets,
+            buffers,
+            owed,
+            admission,
+            next_order,
+            overflows,
+            left_behind,
+            preparation_refused,
+            indeterminate,
+            contention_limited,
+        } = self;
+        StaData {
+            tickets,
+            buffers,
+            owed,
+            admission,
+            next_order,
+            overflows,
+            left_behind,
+            preparation_refused,
+            indeterminate,
+            contention_limited,
+            link: None,
+        }
     }
 }
 
@@ -430,7 +476,31 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
     /// submitted terminals. Returned owners remain in the terminal resource bank.
     pub fn finish(mut self) -> RetiredData<'id, D, K, CAP> {
         self.leave();
-        RetiredData { data: self }
+        let Self {
+            tickets,
+            buffers,
+            owed,
+            admission,
+            next_order,
+            overflows,
+            left_behind,
+            preparation_refused,
+            indeterminate,
+            contention_limited,
+            link: _,
+        } = self;
+        RetiredData {
+            tickets,
+            buffers,
+            owed,
+            admission,
+            next_order,
+            overflows,
+            left_behind,
+            preparation_refused,
+            indeterminate,
+            contention_limited,
+        }
     }
 
     /// The machine with the tickets and buffers the composition granted it,

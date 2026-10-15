@@ -1,8 +1,7 @@
 A station needs at least one ticket and small buffer, checked at compile
 time; eight remains the maximum per pool. Open mode accepts zero group-key
-slots. Protected mode without a group slot is rejected by `Station::new`
-before launch, returning `MissingGroupSlot` with the original configuration
-and every resource.
+slots. The resources must match `StaTokens::GROUP_SLOTS`. The personal constructor
+also checks at compile time that this capacity is nonzero.
 
 No ticket:
 
@@ -44,8 +43,7 @@ core::hint::black_box(constructor);
 }
 ```
 
-Open-mode composition may supply no group slots (protected mode uses the
-returned construction error):
+Open-mode composition may supply no group slots:
 
 ```
 # include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/resources.rs"));

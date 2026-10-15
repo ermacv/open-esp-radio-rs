@@ -25,14 +25,23 @@ the exact absence refusal, cancelled-absence limit or link-ending reason.
 The correlation value is caller data and confers no resource authority.
 
 After the port's terminal failure, `Station::finish` consumes the protocol
-machine into `RetiredStation`. This path retains its owners and emits only the
+machine into `RetiredStation`, with separate epoch, key, frame, channel and
+command resource fields instead of a runnable station. This path retains its
+owners and emits only the
 original request terminals and one lifecycle notice; it cannot issue Configure,
 key removal or TX effects to the failed port. The arbiter's returned places
 enter this bank directly, without advancing scan/join transitions. `StaData::finish`
-returns queued frames to its own terminal bank. Neither bank can reconnect or
-be used as the machines of another service. Healthy disable returns every frame
+returns queued frames to its own terminal bank. A complete station bank can
+consume itself through `restart`, preserving its epoch source and all minted
+resources. The resulting station reclaims old keys and receive configuration
+before accepting commands; the data bank preserves admission permits and its
+ordering frontier. Deferred EAPOL owners return separately for the old association.
+Only the service's ordinary Stop continuation supplies the reusable disabled
+port owner needed to run these banks again. Healthy disable returns every frame
 and key owner before these banks or the installation are destroyed; poisoned
 work still owned by the backend remains in that installation's retirement custody.
+The `test-support` feature exposes the retired station's resource counts for
+composition tests; those diagnostic methods are absent from product builds.
 
 Operation deadlines use checked monotonic arithmetic. Authentication,
 Association and handshake overflow end Connect with `DeadlineOverflow`.
@@ -213,10 +222,11 @@ crate's checked `IndividualAddress`, so a request cannot swap the local
 transmitter and BSS identities. The test access point admits a request only
 after checking its subtype and all three header addresses.
 
-`Station::new` requires one to eight tickets and small buffers at compile
-time. Open mode accepts zero group slots; protected mode without a slot
-returns `MissingGroupSlot` with the original configuration and resources
-before the station can run. Authentication and Association reserve an owned
+`Station::new_open` and `Station::new_personal` require one to eight tickets
+and small buffers at compile time. Resources must match the backend token
+type's `StaTokens::GROUP_SLOTS`. Open mode accepts zero group slots; the
+personal constructor requires at least one in a `const` check and takes the
+SAE password and PSK PMK separately from the common configuration. Authentication and Association reserve an owned
 ticket/buffer credit before beginning a request or consuming its sequence
 number. Authentication's retry owner becomes an active exchange only after
 that reservation. A beacon, Probe Response or Authentication Response while
@@ -297,18 +307,29 @@ step. No queued context borrows the station or data machine.
 `DecodedHeader` and `AdmittedData`. The header owns the MAC/QoS/HT boundary;
 CCMP admission requires integrity evidence and commits replay once before
 EtherType dispatch. The service delivers non-EAPOL MSDUs from this same
-admission, counts `RxDropReason` refusals and reports `RxFrameRefused`.
+admission, counts checked protocol drops and reports `RxFrameDropped`.
 Malformed A-MSDU subframes retain their error instead of disappearing from
 an iterator.
 
-Connected EAPOL distinguishes an unprotected exact repeat of the completed
-M3 from a protected Group M1. The supplicant authenticates the completed-M3
-commitment before queuing M4; this path cannot reinstall keys or reset replay.
-One owned response coalesces repeats while waiting for credit or its terminal.
-After the current control TX ends, it precedes the next group response; GTK
-installation and retirement retain their own pending owners. M4 uses the
-installed pairwise key. Its terminal releases the response stage, so a later
-peer retry can request another response without an unbounded local retry loop.
+M3 and protected GM1 authenticate before entering the exchange. Each kind has
+one affine deferred-frame owner (`PendingM3`, `PendingGroupM1`); a newer valid
+counter replaces its predecessor. Invalid MICs and counters no greater than
+the processed or same-kind deferred frontier are counted protocol drops, not
+lifecycle refusals. Pairwise work precedes group work at the current M4/GM2
+TX terminal, whatever its delivery outcome. An exact completed M3 still
+coalesces a cached M4 without reinstalling PTK. Every M4 mirrors the received
+M3's MAC protection; an open M3 produces an open M4 even with an installed PTK.
+
+The installed-key phase before connection uses the same group-only exchange,
+under the original D4 M1/M3 deadline. Only a delivered M4 opens application
+data. Replacing a deferred frame never extends that deadline. Connected has
+no rekey or repeated-M3 timeout: the port guarantees a finite TX terminal,
+including watchdog Indeterminate. The AP ends an unsuccessful exchange by
+deauthentication. Disabled enters Leave and returns both deferred owners in
+`RetiredStation::deferred_eapol`, together with the key and frame resources;
+no cleanup operations are sent to a disabled port. The rustdoc of
+[`deferred_eapol`](src/machine/deferred_eapol.rs) links the pinned vendor replay,
+group-exchange and TX-callback paths and its empty auth-timeout cancellation.
 
 Station alone issues `LinkEpoch`, before starting Connect. Its non-cloneable
 `LinkEpochSource` consumes the install's unique `Slot<ConnectionEpochKind>`
@@ -332,8 +353,9 @@ Preparation refusal is `StaInput::Unsent { reason, .. }`, distinct from
 `TxDone`. Refusing M2/M4 ends the handshake through key removal and the
 normal leave path; an unsubmitted M4 cannot establish a connection. A
 required join frame refused at preparation ends that join. Connected PM
-frames retain the existing unsuccessful-send policy; refusing a group-key
-response ends the handshake rather than retiring its keys as if it sent.
+frames retain the existing unsuccessful-send policy. An unsubmitted connected
+group response releases its stage and permits the deferred successor without
+a local disconnect.
 An admitted M4 establishes Connected only on `Ended(Delivered)`. Other
 radio outcomes return their ticket and buffer and wait for another M3 under
 the original handshake deadline; Disabled starts Leave. There is no automatic
@@ -374,13 +396,30 @@ transitions. The pairwise cell is Free, Installing, Installed or Removing.
 Group slots are fungible credits from the composition's declared pool;
 installed owners occupy private reserved records in installation order. A
 pending install owns a vacant record; returning it cannot overflow a pool
-of retiring keys. With a free physical slot the new GTK installs first and
-all superseded keys retire after the delivered M4 or Group Message 2.
-Each removal terminal supplies the permission for the next removal; retirement
-ends only when no non-current owner remains. Leave continues that same chain
-through the current key as well. A full pool uses
-`replace_group_key`, evicting the oldest non-current installation;
-only a one-slot backend replaces its sole current key for a new ID.
+of retiring keys. With a free physical slot the new GTK installs there;
+previous installations and their replay frontiers remain until eviction or
+Leave. A full pool uses `replace_group_key`, evicting the oldest non-current
+installation. The same algorithm applies to every capacity: if the only
+installed key is current, replacement consumes it atomically. Selecting
+retained material preserves its installation age and replay frontier.
+Leave removes all installed owners, with each terminal returning the
+permission for the next removal.
+
+A correctly authenticated repeated M3, including a larger replay counter,
+retains PTK. Its GTK follows that same material/slot policy. `RsnStaRetryInstall`
+contains only group work, so a completed handshake cannot grant another PTK
+installation. M4 retains the MAC protection of the M3 it answers, including
+an open M3 after PTK installation and a protected repeat after a failed M4.
+The service reports authenticated-key refusals through `StaRxError::Security`.
+
+The requested ESP-IDF revision
+[`7b9cc1ac`, `wpa_supplicant_send_4_of_4`](https://github.com/espressif/esp-idf/blob/7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe/components/wpa_supplicant/src/rsn_supp/wpa.c#L1316)
+copies the request's replay counter, constructs the EAPOL MIC and passes the
+response to `wpa_eapol_key_send`; that function hands an Ethernet payload to
+`wpa_sm_ether_send`. Those functions do not select the 802.11 Protected bit.
+The MAC protection rule here therefore follows the
+owner's P0.4 requirement for #563, rather than an inferred meaning of EAPOL's Secure bit. The same vendor file's
+`wpa_supplicant_install_ptk` at line 834 guards against repeated PTK installs.
 
 Key actions and pending/installed GTK records keep material in RSN's
 `CcmpKey` owner. Its Debug is redacted and its destructor zeroizes the

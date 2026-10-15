@@ -795,40 +795,64 @@ where
             .map_err(Into::into)
     }
 
-    /// Publish a protected EAPOL packet through the connected ordinary-TX
-    /// owner. Group-key responses share this transaction with management and
-    /// network traffic, so they cannot bypass DMA ownership or IRQ ordering.
-    pub fn start_protected_eapol<H: TxHardware>(
+    /// Publish EAPOL with the protection of the request it answers. An open
+    /// M3 remains open at M4 even while the association owns a pairwise key.
+    pub fn start_eapol<H: TxHardware>(
         &mut self,
         hardware: &mut H,
         payload: &[u8],
+        protection: LinkProtection,
     ) -> Result<WifiTxProgress, SingleMpduTxError> {
         if self.ordinary.active() {
             return Err(SingleMpduTxError::Busy);
         }
-        let ConnectedTxSecurity::Wpa2Personal(key) = &mut self.security else {
-            return Err(SingleMpduTxError::SecurityModeMismatch);
-        };
-        let sequence_number = self
-            .sequences
-            .take_data(self.config.peer_qos.then_some(0))
-            .expect("selected EAPOL sequence-number owner exists");
-        let ccmp_header = key.next_tx_ccmp_header()?;
-        let frame_length = {
-            let buffer = self.ordinary.buffer_mut()?;
-            StaProtectedDataFrame {
-                source: self.config.station_address,
-                bssid: self.config.bssid,
-                destination: self.config.bssid.get(),
-                sequence_number,
-                user_priority: 7,
-                peer_qos: self.config.peer_qos,
-                ccmp_header,
-                ether_type: 0x888e,
-                payload,
+        let (frame_length, hardware_mic_length, hardware_key_selector) = match protection {
+            LinkProtection::Open => {
+                let sequence_number = self.sequences.take_non_qos();
+                let buffer = self.ordinary.buffer_mut()?;
+                let output = buffer
+                    .get_mut(TX_METADATA_SIZE..)
+                    .ok_or(SingleMpduTxError::BufferSizeOverflow)?;
+                let length = StaDataFrame {
+                    source: self.config.station_address,
+                    bssid: self.config.bssid,
+                    destination: self.config.bssid.get(),
+                    sequence_number,
+                    ether_type: 0x888e,
+                    payload,
+                }
+                .encode(output)
+                .map_err(SingleMpduTxError::Encode)?;
+                (length, 0, 0)
             }
-            .encode(&mut buffer[TX_METADATA_SIZE..])
-            .map_err(SingleMpduTxError::Encode)?
+            LinkProtection::Ccmp => {
+                let ConnectedTxSecurity::Wpa2Personal(key) = &mut self.security else {
+                    return Err(SingleMpduTxError::SecurityModeMismatch);
+                };
+                let sequence_number = self
+                    .sequences
+                    .take_data(self.config.peer_qos.then_some(7))
+                    .ok_or(SingleMpduTxError::InvalidTid(7))?;
+                let ccmp_header = key.next_tx_ccmp_header()?;
+                let buffer = self.ordinary.buffer_mut()?;
+                let output = buffer
+                    .get_mut(TX_METADATA_SIZE..)
+                    .ok_or(SingleMpduTxError::BufferSizeOverflow)?;
+                let length = StaProtectedDataFrame {
+                    source: self.config.station_address,
+                    bssid: self.config.bssid,
+                    destination: self.config.bssid.get(),
+                    sequence_number,
+                    user_priority: 7,
+                    peer_qos: self.config.peer_qos,
+                    ccmp_header,
+                    ether_type: 0x888e,
+                    payload,
+                }
+                .encode(output)
+                .map_err(SingleMpduTxError::Encode)?;
+                (length, TX_CCMP_MIC_SIZE, key.hardware_index())
+            }
         };
         let (exchange, retry_rate_policy) = Self::control_exchange(&self.config);
         self.ordinary
@@ -838,8 +862,8 @@ where
                     frame_length,
                     descriptor_capacity: None,
                     exchange,
-                    hardware_mic_length: TX_CCMP_MIC_SIZE,
-                    hardware_key_selector: key.hardware_index(),
+                    hardware_mic_length,
+                    hardware_key_selector,
                     interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: LegacyTxQueue::Voice.vendor_data_scheduler_priority(),
                     packet_priority: LegacyTxQueue::Voice.vendor_data_packet_priority(),

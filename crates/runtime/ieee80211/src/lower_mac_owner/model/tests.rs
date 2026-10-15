@@ -89,7 +89,11 @@ fn each_installation_and_retuned_phase_checks_its_own_channel() {
                 ],
             );
             assert!(run_port(target, Second(&mut source)).await.is_none());
-            let mut source = source.disable(&mut |_| {}).await.ok().unwrap();
+            let mut source = source
+                .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+                .await
+                .ok()
+                .unwrap();
             source.setup().set_channel(
                 SupportedChannel::new(Channel::ghz5(36, ChannelWidth::Mhz20).unwrap()).unwrap(),
             );
@@ -235,7 +239,7 @@ fn submit<'p, 'id: 'p, C: ModelClass>(
     );
 }
 
-fn push_subframe<'k, 'p, 'id: 'k + 'p, X: ModelContext, S: AggregateState>(
+fn push_subframe<'k, 'p, 'id: 'k + 'p, X: ModelContext<Body = ModelBody>, S: AggregateState>(
     aggregate: ModelAggregate<'k, 'p, 'id, Station, ModelCaps, X, S>,
     buffer: ModelBuffer<'id, ModelSmall>,
     frame: SizedFrame<AckHeader, ModelCaps>,
@@ -256,7 +260,7 @@ fn push_subframe<'k, 'p, 'id: 'k + 'p, X: ModelContext, S: AggregateState>(
     .ok()
     .unwrap()
 }
-fn push_retry<'k, 'p, 'id: 'k + 'p, X: ModelContext, S: AggregateState>(
+fn push_retry<'k, 'p, 'id: 'k + 'p, X: ModelContext<Body = ModelBody>, S: AggregateState>(
     aggregate: ModelAggregate<'k, 'p, 'id, Station, ModelCaps, X, S>,
     mpdu: ModelSent<'id, ModelSmall>,
 ) -> ModelAggregate<'k, 'p, 'id, Station, ModelCaps, X, NonEmptyAggregate> {
@@ -484,7 +488,10 @@ impl<W: Work> PortBody<ModelBackend> for Body<W> {
             let mut phase = enabled.phase();
             self.0.work(&mut phase, resources).await;
         }
-        match enabled.disable(&mut |_| {}).await {
+        match enabled
+            .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+            .await
+        {
             Ok(disabled) => disabled.uninstall(()),
             Err(poisoned) => poisoned.fail_stop(),
         }

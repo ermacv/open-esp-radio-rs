@@ -35,7 +35,8 @@ fn awaiting_message3(pmk: &Pmk) -> (RsnStaSupplicant, OwnedEapolFrame<512>) {
     );
     let mut supplicant = RsnStaSupplicant::try_new(LOCAL, AP, SNONCE, &RSN, &RSN, &[]).unwrap();
     let message1 = RsnTxFrame::<512>::message1(Akm::Psk, LOCAL, 1, ANONCE).unwrap();
-    let RsnStaSupplicantAction::Transmit(_) = supplicant.on_frame(owned(&message1), pmk).unwrap()
+    let RsnStaSupplicantAction::Ready(RsnStaReady::Transmit(_)) =
+        supplicant.on_frame(owned(&message1), pmk).unwrap()
     else {
         panic!("Message 1 must produce Message 2")
     };
@@ -78,7 +79,7 @@ fn awaited_unwrap_turns_message3_into_one_key_install() {
         &pmk,
         &mut RsnSoftwareAes::new(),
     ));
-    let Ok(RsnStaSupplicantAction::InstallKeys(request)) = action else {
+    let Ok(RsnStaReady::InstallKeys(request)) = action else {
         panic!("an encrypted Message 3 must resolve to its key install")
     };
     assert_eq!(request.replay_counter(), 2);

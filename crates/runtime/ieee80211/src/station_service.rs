@@ -15,17 +15,32 @@
 //! Station requests retain the application's correlation through either a
 //! synchronous `CommandRefused` or their reserved `CommandCompleted` output;
 //! link notices describe lifecycle independently of application requests.
-//! `event` returns a typed contract error directly; no sticky failure flag
-//! changes later event handling. A disable carries its delivery result with
-//! the disabled owner. `run` consumes its service and returns `ServiceCompleted`:
+//! `event` returns a typed contract error with the rejected owners. After the
+//! first violation, disable retains later terminals sealed in `TerminalCustody`;
+//! none enters Station, Data, Arbiter or rate selection. Its fixed capacity is
+//! checked against the backend's terminal capacity at service construction.
+//! A full bank returns the next terminal to the port, which retains it and all
+//! remaining owners for poisoned teardown. `run` consumes its service and returns `ServiceCompleted`:
 //! the port's terminal state and separate `RetiredService` resource banks.
 //! On Stop, failure or poisoned disable, Station/Data finalize without issuing
 //! Configure, key or transmit effects. Accepted requests return once before the
 //! lifecycle notice. Unconsumed requests remain in their application queue.
 //! `FailedInstallation` retains the Disabled stop proof and permits normal
 //! uninstall only; recovery constructs a new service in a new installation.
-//! Its failure does not itself require hardware reset. `Stopped` still returns
-//! the ordinary Disabled owner, independent of the retired banks' lifetime.
+//! Its failure does not itself require hardware reset. Failed and Poisoned
+//! results retain `ServiceFault`: the enable refusal, backend/submission cause,
+//! or precise contract violation. The poisoned owner also retains the disable
+//! cause. Stop finishes the arbiter with `ArbiterEnd::Stopped`, preserving that
+//! cause in every cancelled lease and retaining its restart bank.
+//! `ServiceCompleted::into_stopped` grants `StoppedService` only after ordinary
+//! Stop. Its consuming `restart` reuses the same pools, epoch source, lease
+//! identity frontier, gate and data admission permissions. Startup reclaims
+//! old keys and receive settings before taking queued application commands.
+//! Deferred EAPOL frames return separately with that bank: they belong to the
+//! old association. Failed or poisoned runs have no restart continuation.
+//! The loop owns the working arbiter separately from Station/Data so a failed
+//! return can consume it. Finalization accepts only `RetiredArbiter`; no active
+//! arbiter or placeholder state remains in the retired service.
 //!
 //! The tokens the machines hold are the port's: tickets and buffers of two
 //! classes, the small one for the station's frames and the large one for
@@ -48,7 +63,8 @@
 //! and Data gets `Refused`. Neither path fabricates a completion or updates
 //! rate statistics, and the service continues. A `Sent` return retains its
 //! external body until its machine retires the MPDU; service never renews
-//! a completion merely to route it.
+//! a completion merely to route it. `StationPort::Types` fixes `TxBody` to
+//! `Infallible`, so a returned external body is uninhabited at this boundary.
 //! GTK actions move the unique mutation permission into the port. Their
 //! private pending token stays here until the matching FIFO slot terminal;
 //! admission never fabricates installation success. RX continues through the
@@ -75,7 +91,8 @@ use core::future::{Future, poll_fn};
 use core::task::Poll;
 use embassy_futures::yield_now;
 use oer_ieee80211_arbiter::{
-    AccessPointCommand, AccessPointFact, Arbiter, ArbiterAction, ArbiterNotice,
+    AccessPointCommand, AccessPointFact, Arbiter, ArbiterAction, ArbiterEnd, ArbiterNotice,
+    NoReservation, RetiredArbiter, RetuneRefused,
 };
 use oer_ieee80211_lower_mac::{
     Ccmp128Key, ClassFrame, CoexPriority, Ieee80211Capabilities, InstalledGroup, InterfacePhase,
@@ -104,10 +121,14 @@ use oer_time::{Instant, Timer};
 /// A backend the station's service drives: its phase, settings and events
 /// as the lower-MAC contract's, and the two buffer classes the service
 /// splits between the station and data.
-pub trait StationPort<'id>: LowerMacBackend {
+pub trait StationPort<'id>:
+    LowerMacBackend<Terminal<'id> = LowerMacTerminal<'id, Self::Types>>
+{
     /// The types its phase's events carry.
     type Types: PhaseTypes<
             'id,
+            Fault = Self::Fault,
+            TxBody = core::convert::Infallible,
             Context = TxContext<
                 'id,
                 Self::Caps,
@@ -116,6 +137,8 @@ pub trait StationPort<'id>: LowerMacBackend {
             >,
         > + TxBufferPool<'id, Self::Small>
         + TxBufferPool<'id, Self::Large>;
+    /// Fixed terminal custody from the backend's capacity layout.
+    type TerminalStorage<T>: TerminalStorage<T>;
     /// The buffer class of the station's frames.
     type Small: TxBufferClass;
     /// The buffer class of data.
@@ -133,9 +156,6 @@ pub trait StationPort<'id>: LowerMacBackend {
 
     /// One event of the port, as the contract's.
     fn event(event: Self::Event<'id>) -> LowerMacEvent<'id, Self::Types>;
-
-    /// A terminal returned by disable; unsolicited RX is excluded by type.
-    fn terminal(event: Self::Terminal<'id>) -> LowerMacTerminal<'id, Self::Types>;
 
     /// Recover the exhaustive resource type of this composition. Every
     /// returned buffer belongs to one of these two pools; no unknown-class
@@ -172,8 +192,8 @@ const MAX_INPUT_STEPS_PER_BATCH: u8 = 8;
 /// What the service dropped or could not send, counted.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ServiceCounters {
-    /// Frames or subframes refused by checked RX admission.
-    pub rx_frames_rejected: oer_ieee80211_sta::Counter,
+    /// Frames or subframes dropped by checked RX admission.
+    pub rx_frames_dropped: oer_ieee80211_sta::Counter,
     /// Indications of lost port events; EventsLost carries no frame count.
     pub events_lost: oer_ieee80211_sta::Counter,
     /// RX payloads larger than the network's checked Ethernet contract.
@@ -192,13 +212,14 @@ type Marker<'id, A, B> = PhantomData<fn(&'id ()) -> (A, B)>;
 
 /// The station's tokens on a port of the phase types `Ty`, its frames in
 /// buffers of the class `S`.
-pub struct PortStaTokens<'id, Ty, S>(Marker<'id, Ty, S>);
+pub struct PortStaTokens<'id, Ty, S, const GROUPS: usize = 2>(Marker<'id, Ty, S>);
 
-impl<'id, Ty, S> StaTokens for PortStaTokens<'id, Ty, S>
+impl<'id, Ty, S, const GROUPS: usize> StaTokens for PortStaTokens<'id, Ty, S, GROUPS>
 where
-    Ty: PhaseTypes<'id> + TxBufferPool<'id, S>,
+    Ty: PhaseTypes<'id, TxBody = core::convert::Infallible> + TxBufferPool<'id, S>,
     S: TxBufferClass,
 {
+    const GROUP_SLOTS: usize = GROUPS;
     type Small = S;
     type EpochPath = Ty::EpochPath;
     type GatePath = Ty::GatePath;
@@ -208,7 +229,9 @@ where
 
     fn renew(mpdu: Self::Sent) -> Self::SmallBuffer {
         let (memory, body) = <Ty as TxBufferPool<'id, S>>::renew(mpdu);
-        drop(body);
+        if let Some(body) = body {
+            match body {}
+        }
         memory
     }
     type PairwiseSlot = <Ty::StationKeys as KeyTypes<'id>>::PairwiseSlot;
@@ -225,7 +248,7 @@ pub struct PortDataTokens<'id, Ty, L>(Marker<'id, Ty, L>);
 
 impl<'id, Ty, L> StaDataTokens for PortDataTokens<'id, Ty, L>
 where
-    Ty: PhaseTypes<'id> + TxBufferPool<'id, L>,
+    Ty: PhaseTypes<'id, TxBody = core::convert::Infallible> + TxBufferPool<'id, L>,
     L: TxBufferClass,
 {
     type Class = L;
@@ -236,7 +259,9 @@ where
 
     fn renew(mpdu: Self::Sent) -> Self::Buffer {
         let (memory, body) = <Ty as TxBufferPool<'id, L>>::renew(mpdu);
-        drop(body);
+        if let Some(body) = body {
+            match body {}
+        }
         memory
     }
 }
@@ -245,9 +270,9 @@ where
 pub type PortRxMeta<'id, B> = <<B as StationPort<'id>>::Types as PhaseTypes<'id>>::RxMeta;
 
 /// The station of the service on the port `B`.
-pub type PortStation<'id, B> = Station<
+pub type PortStation<'id, B, const GROUPS: usize = 2> = Station<
     'id,
-    PortStaTokens<'id, <B as StationPort<'id>>::Types, <B as StationPort<'id>>::Small>,
+    PortStaTokens<'id, <B as StationPort<'id>>::Types, <B as StationPort<'id>>::Small, GROUPS>,
     <B as LowerMacBackend>::Caps,
 >;
 
@@ -308,6 +333,12 @@ impl<K: Ieee80211Capabilities> Levels<K> {
     };
 }
 
+mod custody;
+use custody::{ContractFault, StepFailure};
+pub use custody::{
+    QuarantinedTerminals, RejectedTerminal, TerminalCustody, TerminalStorage, UnroutedTx,
+};
+
 mod ethernet;
 mod msdu_queue;
 pub use ethernet::{EthernetFrame, FrameTooLong, MAX_ETHERNET_PAYLOAD_LEN};
@@ -340,8 +371,8 @@ pub enum ServiceCommand<K> {
     reason = "a refusal returns the original owned packet without allocation"
 )]
 pub enum ServiceOutput<K> {
-    /// A checked RX refusal, before network delivery.
-    RxFrameRefused(oer_ieee80211_mac::receive::RxDropReason),
+    /// An ordinary protocol RX drop, before network delivery.
+    RxFrameDropped(oer_ieee80211_sta::machine::StaRxError),
     /// The original network operation refused before data admission.
     MsduRefused { packet: TxMsdu, reason: DataRefusal },
     /// A received MSDU cannot fit the checked Ethernet contract.
@@ -374,14 +405,32 @@ pub enum TxOperation {
 }
 
 #[derive(Clone, Copy)]
-enum ReturnedTx {
+pub enum ReturnedTx {
     Completed(TxOutcome),
     Refused(TxRefusal),
 }
 
 /// A backend returned owners that cannot belong to the submitted operation.
-#[derive(Debug)]
-struct BackendContractViolation;
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BackendContractViolation {
+    UnexpectedAggregate,
+    UnexpectedAccessPointTerminal,
+    UnexpectedTsfSample,
+    UnexpectedConfiguration,
+    GroupTerminalWithoutRequest,
+    GroupSlotMismatch,
+    GroupTerminalKindMismatch,
+    TxContextBufferMismatch,
+}
+
+/// The original failure that ended this service. A poisoned disabled owner
+/// additionally retains the backend's disable failure through `cause()`.
+pub enum ServiceFault<B: PortBackend> {
+    EnableRefused(B::Refusal),
+    Backend(B::Fault),
+    Submission(B::Fault),
+    Contract(BackendContractViolation),
+}
 
 /// The service's ends to the application and the network stack.
 ///
@@ -439,15 +488,23 @@ pub struct ServiceIo<
 }
 
 /// How the service ended.
-pub enum ServiceEnd<'p, 'id, B: PortBackend> {
+pub enum ServiceEnd<'p, 'id, B: StationPort<'id>> {
     /// Stopped on the application's command: the port is disabled.
     Stopped(Owner<'p, 'id, B, Disabled>),
     /// The port failed (it refused to come back to a channel, or a phase
     /// reported it poisoned and its disable still ended): it is disabled,
     /// and the arbiter stopped the station.
-    Failed(FailedInstallation<'p, 'id, B>),
-    /// The port is poisoned.
-    Poisoned(PoisonedOwner<'p, 'id, B>),
+    Failed {
+        owner: FailedInstallation<'p, 'id, B>,
+        fault: ServiceFault<B>,
+        custody: TerminalCustody<'id, B>,
+    },
+    /// The original failure and the poisoned backend's disable outcome.
+    Poisoned {
+        owner: PoisonedOwner<'p, 'id, B>,
+        fault: ServiceFault<B>,
+        custody: TerminalCustody<'id, B>,
+    },
 }
 
 /// A service failure with a stopped backend. Its only continuation is normal
@@ -466,24 +523,178 @@ impl<'id, B: PortBackend> FailedInstallation<'_, 'id, B> {
 
 /// A completed run and all resource banks it owned. Neither machine in the
 /// returned banks has a run/admission interface.
-pub struct ServiceCompleted<'p, 'id, B: StationPort<'id>, S> {
+pub struct ServiceCompleted<'p, 'id, B: StationPort<'id>, S, const GROUPS: usize = 2> {
     pub end: ServiceEnd<'p, 'id, B>,
-    pub retired: RetiredService<'id, B, S>,
+    pub retired: RetiredService<'id, B, S, GROUPS>,
 }
 
-/// The completed service's owners and diagnostics. It cannot run again or
-/// expose its old arbiter/epoch authority to a replacement service.
-pub struct RetiredService<'id, B: StationPort<'id>, S> {
+/// Only a normal Stop grants this continuation on the existing installation.
+pub struct StoppedService<'p, 'id, B: StationPort<'id>, S, const GROUPS: usize = 2> {
+    owner: Owner<'p, 'id, B, Disabled>,
+    retired: RetiredService<'id, B, S, GROUPS>,
+}
+
+/// The same port owner and resources, ready for a new service run. Deferred
+/// EAPOL owners belong to the old association and return separately.
+pub struct RestartedService<'p, 'id, B: StationPort<'id>, S, const GROUPS: usize = 2> {
+    pub owner: Owner<'p, 'id, B, Disabled>,
+    pub service: StationService<'id, B, S, GROUPS>,
+    pub deferred_eapol: oer_ieee80211_sta::machine::DeferredEapol,
+    pub notice: Option<oer_ieee80211_sta::machine::StaNotice>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RestartFailure {
+    PendingTerminal,
+    MissingGateTerminal,
+    MissingStationPlaces,
+    FailedArbiter,
+}
+
+/// An incomplete stop cannot mint replacement resources or enable a new run.
+/// Normal uninstall remains possible, with every original owner retained.
+pub struct RestartFailed<'p, 'id, B: StationPort<'id>, S, const GROUPS: usize = 2> {
+    pub reason: RestartFailure,
+    pub owner: FailedInstallation<'p, 'id, B>,
+    pub retired: RetiredService<'id, B, S, GROUPS>,
+}
+
+impl<'p, 'id, B: StationPort<'id>, S, const GROUPS: usize> ServiceCompleted<'p, 'id, B, S, GROUPS> {
+    /// Extract the reusable continuation only from the ordinary Stop outcome.
+    #[expect(
+        clippy::result_large_err,
+        reason = "a failed completion returns all resource banks without allocation"
+    )]
+    pub fn into_stopped(self) -> Result<StoppedService<'p, 'id, B, S, GROUPS>, Self> {
+        match self.end {
+            ServiceEnd::Stopped(owner) => Ok(StoppedService {
+                owner,
+                retired: self.retired,
+            }),
+            end => Err(Self {
+                end,
+                retired: self.retired,
+            }),
+        }
+    }
+}
+
+impl<'p, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUPS: usize>
+    StoppedService<'p, 'id, B, S, GROUPS>
+{
+    /// Resume on the selected channel without minting pools, epochs, leases,
+    /// gate authority or admission permissions. Startup reclaims old keys and
+    /// receive configuration before taking queued application commands.
+    #[expect(
+        clippy::result_large_err,
+        reason = "a broken stop returns the complete affine bank without allocation"
+    )]
+    pub fn restart(
+        self,
+        channel: oer_ieee80211_lower_mac::SupportedChannel<B::Caps>,
+    ) -> Result<RestartedService<'p, 'id, B, S, GROUPS>, RestartFailed<'p, 'id, B, S, GROUPS>> {
+        let Self {
+            mut owner,
+            mut retired,
+        } = self;
+        if retired._pending.retune.is_some()
+            || retired._pending.configuring.is_some()
+            || retired._pending.group.is_some()
+        {
+            return Err(RestartFailed {
+                reason: RestartFailure::PendingTerminal,
+                owner: FailedInstallation { owner },
+                retired,
+            });
+        }
+        let arbiter = match retired._arbiter {
+            RetiredArbiter::Stopped(stopped) => match stopped.restart(channel) {
+                Ok(arbiter) => arbiter,
+                Err(missing) => {
+                    retired._arbiter = RetiredArbiter::Stopped(missing.bank);
+                    return Err(RestartFailed {
+                        reason: RestartFailure::MissingGateTerminal,
+                        owner: FailedInstallation { owner },
+                        retired,
+                    });
+                }
+            },
+            failed => {
+                retired._arbiter = failed;
+                return Err(RestartFailed {
+                    reason: RestartFailure::FailedArbiter,
+                    owner: FailedInstallation { owner },
+                    retired,
+                });
+            }
+        };
+        let restarted = match retired.station.restart() {
+            Ok(station) => station,
+            Err(station) => {
+                retired.station = station;
+                retired._arbiter = arbiter.finish(ArbiterEnd::PortFailed);
+                return Err(RestartFailed {
+                    reason: RestartFailure::MissingStationPlaces,
+                    owner: FailedInstallation { owner },
+                    retired,
+                });
+            }
+        };
+        let RetiredService {
+            data,
+            counters,
+            rates,
+            _pending: pending,
+            _terminal_access: terminal_access,
+            ..
+        } = retired;
+        {
+            let mut setup = owner.setup();
+            B::tune(&mut setup, channel);
+        }
+        Ok(RestartedService {
+            owner,
+            service: StationService {
+                arbiter,
+                state: ServiceState {
+                    station: restarted.station,
+                    data: data.restart(),
+                    counters,
+                    rates,
+                    pending,
+                    terminal_access,
+                },
+            },
+            deferred_eapol: restarted.deferred_eapol,
+            notice: restarted.notice,
+        })
+    }
+
+    /// Retire the disabled installation and retain its resource bank.
+    pub fn uninstall(
+        self,
+        control: B::Uninstall,
+    ) -> (
+        oer_ieee80211_port::Ended<'id, B>,
+        RetiredService<'id, B, S, GROUPS>,
+    ) {
+        (self.owner.uninstall(control), self.retired)
+    }
+}
+
+/// The completed service's owners and diagnostics. Only `StoppedService`
+/// combines this bank with the matching reusable disabled port owner.
+pub struct RetiredService<'id, B: StationPort<'id>, S, const GROUPS: usize = 2> {
     pub station: oer_ieee80211_sta::machine::RetiredStation<
         'id,
-        PortStaTokens<'id, B::Types, B::Small>,
+        PortStaTokens<'id, B::Types, B::Small, GROUPS>,
         B::Caps,
     >,
     pub data:
         oer_ieee80211_sta::data::RetiredData<'id, PortDataTokens<'id, B::Types, B::Large>, B::Caps>,
     pub counters: ServiceCounters,
     pub rates: S,
-    _arbiter: PortArbiter<'id, B>,
+    _arbiter: RetiredArbiter<'id, B::Caps, NoReservation, <B::Types as PhaseTypes<'id>>::GatePath>,
     _pending: PendingActions<'id, B>,
     _terminal_access: oer_ieee80211_lower_mac::TerminalAccess<
         'id,
@@ -494,17 +705,20 @@ pub struct RetiredService<'id, B: StationPort<'id>, S> {
 
 /// The station's service: its machines and the rate selection of its frames.
 /// Disable returns only command terminals; the backend recycles unsolicited RX.
-pub struct StationService<'id, B: StationPort<'id>, S> {
+pub struct StationService<'id, B: StationPort<'id>, S, const GROUPS: usize = 2> {
+    arbiter: PortArbiter<'id, B>,
+    state: ServiceState<'id, B, S, GROUPS>,
+}
+
+struct ServiceState<'id, B: StationPort<'id>, S, const GROUPS: usize = 2> {
     /// The station.
-    pub station: PortStation<'id, B>,
+    station: PortStation<'id, B, GROUPS>,
     /// Its data machine.
-    pub data: PortData<'id, B>,
-    /// The arbiter of the port.
-    pub arbiter: PortArbiter<'id, B>,
+    data: PortData<'id, B>,
     /// The rates of the station's frames and data.
-    pub rates: S,
+    rates: S,
     /// What the service dropped or could not send.
-    pub counters: ServiceCounters,
+    counters: ServiceCounters,
     terminal_access: oer_ieee80211_lower_mac::TerminalAccess<
         'id,
         <B::Types as PhaseTypes<'id>>::TicketKind,
@@ -540,20 +754,24 @@ enum PendingGroupAction<'id, Path: oer_radio_port::PoolPath> {
 }
 
 /// What a step left the loop to do.
-enum Next<'id, K, Path: oer_radio_port::PoolPath> {
+enum Next<'id, B: StationPort<'id>> {
     /// Wait for the next input.
     Wait,
     /// Move the port to the channel.
-    Retune(oer_ieee80211_arbiter::PendingRetune<'id, K, Path>),
+    Retune(
+        oer_ieee80211_arbiter::PendingRetune<'id, B::Caps, <B::Types as PhaseTypes<'id>>::GatePath>,
+    ),
     /// The port is poisoned.
-    Poisoned,
+    Failed(StepFailure<'id, B>),
 }
 
-impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationService<'id, B, S> {
+impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUPS: usize>
+    StationService<'id, B, S, GROUPS>
+{
     /// The service of the machines the composition built, its frames at
     /// the rates `rates` selects.
     pub fn new(
-        station: PortStation<'id, B>,
+        station: PortStation<'id, B, GROUPS>,
         data: PortData<'id, B>,
         arbiter: PortArbiter<'id, B>,
         rates: S,
@@ -568,18 +786,30 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
             let _connection = Levels::<B::Caps>::CONNECTION;
             let _normal = Levels::<B::Caps>::NORMAL;
             let _power = Levels::<B::Caps>::POWER;
+            #[cfg_attr(not(test), expect(clippy::panic, reason = "evaluated at build"))]
+            const fn check(storage: usize, terminals: usize) {
+                if storage < terminals {
+                    panic!("the service retains the backend's complete terminal capacity");
+                }
+            }
+            check(
+                B::TerminalStorage::<LowerMacTerminal<'id, B::Types>>::CAPACITY,
+                B::Types::TERMINAL_CAPACITY,
+            );
         };
         Self {
-            station,
-            data,
             arbiter,
-            rates,
-            terminal_access,
-            counters: ServiceCounters::default(),
-            pending: PendingActions {
-                retune: None,
-                configuring: None,
-                group: None,
+            state: ServiceState {
+                station,
+                data,
+                rates,
+                terminal_access,
+                counters: ServiceCounters::default(),
+                pending: PendingActions {
+                    retune: None,
+                    configuring: None,
+                    group: None,
+                },
             },
         }
     }
@@ -592,34 +822,33 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
         const RX_DEPTH: usize,
         const COMMAND_DEPTH: usize,
     >(
-        mut self,
+        self,
         owner: Owner<'p, 'id, B, Disabled>,
         io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
         timer: &impl Timer,
-    ) -> ServiceCompleted<'p, 'id, B, S> {
-        let end = self.run_loop(owner, io, timer).await;
+    ) -> ServiceCompleted<'p, 'id, B, S, GROUPS> {
+        let Self { arbiter, mut state } = self;
+        let (end, mut arbiter) = state.run_loop(arbiter, owner, io, timer).await;
         let reason = match &end {
             ServiceEnd::Stopped(_) => oer_ieee80211_sta::machine::StaDisconnectReason::Requested,
-            ServiceEnd::Failed(_) | ServiceEnd::Poisoned(_) => {
+            ServiceEnd::Failed { .. } | ServiceEnd::Poisoned { .. } => {
                 oer_ieee80211_sta::machine::StaDisconnectReason::Arbiter(
                     oer_ieee80211_arbiter::LeaveReason::PortFailed,
                 )
             }
         };
-        let Self {
+        let ServiceState {
             station,
             data,
-            mut arbiter,
             mut rates,
             counters,
             pending,
             terminal_access,
-        } = self;
+        } = state;
         let mut station = station.finish(reason);
         let data = data.finish();
         rates.disconnected();
-        arbiter.port_failed();
-        while let Some(notice) = arbiter.poll_notice(timer.now()) {
+        while let Some(notice) = arbiter.poll_notice() {
             match notice {
                 ArbiterNotice::Station(notice) => station.return_arbiter_notice(notice),
                 ArbiterNotice::AccessPoint(command) => {
@@ -650,7 +879,11 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
             },
         }
     }
+}
 
+impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUPS: usize>
+    ServiceState<'id, B, S, GROUPS>
+{
     async fn run_loop<
         'p,
         const TX_DEPTH: usize,
@@ -658,49 +891,72 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
         const COMMAND_DEPTH: usize,
     >(
         &mut self,
+        arbiter: PortArbiter<'id, B>,
         owner: Owner<'p, 'id, B, Disabled>,
         io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
         timer: &impl Timer,
-    ) -> ServiceEnd<'p, 'id, B> {
-        let mut owner = match self.enable(owner, None, io, timer).await {
-            Ok(owner) => owner,
-            Err(end) => return end,
+    ) -> (
+        ServiceEnd<'p, 'id, B>,
+        RetiredArbiter<'id, B::Caps, NoReservation, <B::Types as PhaseTypes<'id>>::GatePath>,
+    ) {
+        let (mut arbiter, mut owner) = match self.enable(arbiter, owner, None, io, timer).await {
+            Ok(running) => running,
+            Err(ended) => return ended,
         };
         loop {
             let next = {
                 let mut lent = owner.phase();
                 let phase = B::lend(&mut lent);
-                self.serve(phase, io, timer).await
+                self.serve(&mut arbiter, phase, io, timer).await
             };
             match next {
                 Served::Stop => {
-                    return match self.disable(owner, timer).await {
-                        Ok((owner, Ok(()))) => ServiceEnd::Stopped(owner),
-                        Ok((owner, Err(_))) => ServiceEnd::Failed(FailedInstallation { owner }),
-                        Err(poisoned) => ServiceEnd::Poisoned(poisoned),
+                    let (owner, custody) = self
+                        .disable(&mut arbiter, owner, timer, TerminalCustody::Clear)
+                        .await;
+                    let end = end_disabled(owner, custody);
+                    let arbiter_end = match &end {
+                        ServiceEnd::Stopped(_) => ArbiterEnd::Stopped,
+                        ServiceEnd::Failed { .. } | ServiceEnd::Poisoned { .. } => {
+                            ArbiterEnd::PortFailed
+                        }
                     };
+                    return (end, arbiter.finish(arbiter_end));
                 }
-                Served::Poisoned => {
-                    return match self.disable(owner, timer).await {
-                        Ok((owner, _)) => ServiceEnd::Failed(FailedInstallation { owner }),
-                        Err(poisoned) => ServiceEnd::Poisoned(poisoned),
+                Served::Failed(failure) => {
+                    let (fault, custody) = failure.into_custody();
+                    let (owner, custody) = self.disable(&mut arbiter, owner, timer, custody).await;
+                    let end = match owner {
+                        Ok(owner) => ServiceEnd::Failed {
+                            owner: FailedInstallation { owner },
+                            fault,
+                            custody,
+                        },
+                        Err(owner) => ServiceEnd::Poisoned {
+                            owner,
+                            fault,
+                            custody,
+                        },
                     };
+                    return (end, arbiter.finish(ArbiterEnd::PortFailed));
                 }
                 Served::Retune(pending) => {
-                    let disabled = match self.disable(owner, timer).await {
-                        Ok((owner, Ok(()))) => owner,
-                        Ok((owner, Err(_))) => {
+                    let (disabled, custody) = self
+                        .disable(&mut arbiter, owner, timer, TerminalCustody::Clear)
+                        .await;
+                    let disabled = match end_disabled(disabled, custody) {
+                        ServiceEnd::Stopped(owner) => owner,
+                        end => {
                             self.pending.retune = Some(pending);
-                            return ServiceEnd::Failed(FailedInstallation { owner });
-                        }
-                        Err(poisoned) => {
-                            self.pending.retune = Some(pending);
-                            return ServiceEnd::Poisoned(poisoned);
+                            return (end, arbiter.finish(ArbiterEnd::PortFailed));
                         }
                     };
-                    owner = match self.enable(disabled, Some(pending), io, timer).await {
-                        Ok(owner) => owner,
-                        Err(end) => return end,
+                    (arbiter, owner) = match self
+                        .enable(arbiter, disabled, Some(pending), io, timer)
+                        .await
+                    {
+                        Ok(running) => running,
+                        Err(ended) => return ended,
                     };
                 }
             }
@@ -716,6 +972,7 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
         const COMMAND_DEPTH: usize,
     >(
         &mut self,
+        mut arbiter: PortArbiter<'id, B>,
         mut owner: Owner<'p, 'id, B, Disabled>,
         mut pending: Option<
             oer_ieee80211_arbiter::PendingRetune<
@@ -726,7 +983,13 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
         >,
         io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
         timer: &impl Timer,
-    ) -> Result<Owner<'p, 'id, B, Enabled>, ServiceEnd<'p, 'id, B>> {
+    ) -> Result<
+        (PortArbiter<'id, B>, Owner<'p, 'id, B, Enabled>),
+        (
+            ServiceEnd<'p, 'id, B>,
+            RetiredArbiter<'id, B::Caps, NoReservation, <B::Types as PhaseTypes<'id>>::GatePath>,
+        ),
+    > {
         loop {
             if let Some(pending) = pending.as_ref() {
                 let mut setup = owner.setup();
@@ -735,55 +998,90 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
             match owner.enable().await {
                 Ok(enabled) => {
                     if let Some(pending) = pending {
-                        self.arbiter.retuned(pending);
+                        arbiter.retuned(pending);
                     }
-                    return Ok(enabled);
+                    return Ok((arbiter, enabled));
                 }
-                Err(Failed::Refused(disabled, _)) => {
+                Err(Failed::Refused(disabled, reason)) => {
                     owner = disabled;
                     let Some(requested) = pending.take() else {
                         // Initial enable has no retune action to answer.
-                        return Err(ServiceEnd::Failed(FailedInstallation { owner }));
+                        return Err((
+                            ServiceEnd::Failed {
+                                owner: FailedInstallation { owner },
+                                fault: ServiceFault::EnableRefused(reason),
+                                custody: TerminalCustody::Clear,
+                            },
+                            arbiter.finish(ArbiterEnd::PortFailed),
+                        ));
                     };
-                    pending = self.arbiter.retune_refused(requested);
-                    if pending.is_none() {
-                        return Err(ServiceEnd::Failed(FailedInstallation { owner }));
+                    match arbiter.retune_refused(requested) {
+                        RetuneRefused::Return {
+                            arbiter: returning,
+                            pending: next,
+                        } => {
+                            arbiter = returning;
+                            pending = Some(next);
+                        }
+                        RetuneRefused::Failed(failed) => {
+                            return Err((
+                                ServiceEnd::Failed {
+                                    owner: FailedInstallation { owner },
+                                    fault: ServiceFault::EnableRefused(reason),
+                                    custody: TerminalCustody::Clear,
+                                },
+                                RetiredArbiter::PortFailed(failed),
+                            ));
+                        }
                     }
                     let now = timer.now();
                     // A disabled port receives only notices. The return retune
                     // came directly with its affine token, without polling
                     // actions that could consume a gate.
-                    self.deliver_arbiter_notices(now, io);
+                    self.deliver_arbiter_notices(&mut arbiter, now, io);
                 }
                 Err(Failed::Poisoned(poisoned)) => {
                     self.pending.retune = pending.take();
-                    return Err(ServiceEnd::Poisoned(poisoned));
+                    return Err((
+                        ServiceEnd::Poisoned {
+                            fault: ServiceFault::Backend(poisoned.cause()),
+                            custody: TerminalCustody::Clear,
+                            owner: poisoned,
+                        },
+                        arbiter.finish(ArbiterEnd::PortFailed),
+                    ));
                 }
             }
         }
     }
 
-    /// Disable the port: only command terminals reach the service.
+    /// Disable routes terminals only up to the first contract violation.
+    /// The first rejected owner and every later sealed terminal are retained.
+    /// A full bank returns the next owner to the port for poisoned teardown.
     async fn disable<'p>(
         &mut self,
+        arbiter: &mut PortArbiter<'id, B>,
         owner: Owner<'p, 'id, B, Enabled>,
         timer: &impl Timer,
-    ) -> Result<
-        (
-            Owner<'p, 'id, B, Disabled>,
-            Result<(), BackendContractViolation>,
-        ),
-        PoisonedOwner<'p, 'id, B>,
-    > {
-        let mut delivery = Ok(());
-        let mut sink = |event: B::Terminal<'id>| {
-            let now = timer.now();
-            if let Err(error) = self.terminal(now, B::terminal(event)) {
-                delivery = Err(error);
+        mut custody: TerminalCustody<'id, B>,
+    ) -> (
+        Result<Owner<'p, 'id, B, Disabled>, PoisonedOwner<'p, 'id, B>>,
+        TerminalCustody<'id, B>,
+    ) {
+        let mut sink = |terminal| match &mut custody {
+            TerminalCustody::Clear => {
+                if let Err(fault) = self.terminal(arbiter, timer.now(), terminal) {
+                    custody = fault.into();
+                }
+                core::ops::ControlFlow::Continue(())
             }
+            TerminalCustody::Quarantined(bank) => match bank.retain(terminal) {
+                Ok(()) => core::ops::ControlFlow::Continue(()),
+                Err(terminal) => core::ops::ControlFlow::Break(terminal),
+            },
         };
-        let disabled = owner.disable(&mut sink).await?;
-        Ok((disabled, delivery))
+        let ended = owner.disable(&mut sink).await;
+        (ended, custody)
     }
 
     /// Serve the running phase until the port must move, stop or failed.
@@ -795,10 +1093,11 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
         const COMMAND_DEPTH: usize,
     >(
         &mut self,
+        arbiter: &mut PortArbiter<'id, B>,
         phase: &mut P,
         io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
         timer: &impl Timer,
-    ) -> Served<'id, B::Caps, <B::Types as PhaseTypes<'id>>::GatePath>
+    ) -> Served<'id, B>
     where
         'id: 'p,
         P: LowerMacPhase<'p, 'id, Caps = B::Caps, Types = B::Types>,
@@ -808,16 +1107,17 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
         // cooperative yield lets the driver and application progress.
         let mut batch = 0_u8;
         loop {
-            match self.step(timer.now(), phase, io) {
+            match self.step(arbiter, timer.now(), phase, io) {
                 Next::Wait => {}
                 Next::Retune(pending) => return Served::Retune(pending),
-                Next::Poisoned => return Served::Poisoned,
+                Next::Failed(fault) => return Served::Failed(fault),
             }
-            let deadline = [self.arbiter.poll_deadline(), self.station.poll_deadline()]
+            let deadline = [arbiter.poll_deadline(), self.station.poll_deadline()]
                 .into_iter()
                 .flatten()
                 .min();
             let sending = self.data.accepts() && self.station.link().is_some();
+            let accepting_commands = !self.station.is_reclaiming();
             let (event, command_ready, tick, transmit) = {
                 let event = phase.next_event();
                 let command = io.commands.ready();
@@ -837,7 +1137,7 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
                         Poll::Ready(event) => Some(event),
                         Poll::Pending => None,
                     };
-                    let command_ready = command.as_mut().poll(cx).is_ready();
+                    let command_ready = accepting_commands && command.as_mut().poll(cx).is_ready();
                     let tick = alarm.as_mut().poll(cx).is_ready();
                     let transmit = sending && transmit_ready.as_mut().poll(cx).is_ready();
                     if event.is_some() || command_ready || tick || transmit {
@@ -850,17 +1150,15 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
             };
             let now = timer.now();
             match event {
-                Some(Ok(Ok(event))) => match self.event(now, event, io) {
+                Some(Ok(Ok(event))) => match self.event(arbiter, now, event, io) {
                     Ok(Some(buffer)) => phase.recycle(buffer),
                     Ok(None) => {}
-                    Err(_) => {
-                        return Served::Poisoned;
-                    }
+                    Err(fault) => return Served::Failed(fault.into()),
                 },
                 Some(Ok(Err(_))) => self.counters.events_lost.increment(),
                 None => {}
-                Some(Err(_)) => {
-                    return Served::Poisoned;
+                Some(Err(poisoned)) => {
+                    return Served::Failed(ServiceFault::Backend(poisoned.cause).into());
                 }
             }
             if tick {
@@ -875,8 +1173,8 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
                             (io.output)(ServiceOutput::CommandRefused(refused));
                         }
                     }
-                    ServiceCommand::AccessPoint(fact) => self.arbiter.access_point(now, fact),
-                    ServiceCommand::WantAccessPoint => self.arbiter.want_access_point(),
+                    ServiceCommand::AccessPoint(fact) => arbiter.access_point(now, fact),
+                    ServiceCommand::WantAccessPoint => arbiter.want_access_point(),
                     ServiceCommand::Stop => return Served::Stop,
                 }
             }
@@ -932,17 +1230,18 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
     /// Carry out every action the machines owe at `now`.
     fn step<'p, P, const TX_DEPTH: usize, const RX_DEPTH: usize, const COMMAND_DEPTH: usize>(
         &mut self,
+        arbiter: &mut PortArbiter<'id, B>,
         now: Instant,
         phase: &mut P,
         io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
-    ) -> Next<'id, B::Caps, <B::Types as PhaseTypes<'id>>::GatePath>
+    ) -> Next<'id, B>
     where
         'id: 'p,
         P: LowerMacPhase<'p, 'id, Caps = B::Caps, Types = B::Types>,
     {
         loop {
             let mut progress = false;
-            while let Some(action) = self.arbiter.poll_action(now) {
+            while let Some(action) = arbiter.poll_action(now) {
                 progress = true;
                 match action {
                     ArbiterAction::Station(notice) => {
@@ -955,7 +1254,7 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
                     ArbiterAction::Retune(pending) => return Next::Retune(pending),
                     ArbiterAction::OpenGate(closed) => {
                         let open = phase.open_gate(closed);
-                        self.arbiter.gate_opened(open);
+                        arbiter.gate_opened(open);
                     }
                 }
             }
@@ -965,14 +1264,15 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
                     now,
                     phase,
                     io,
-                    &mut self.arbiter,
+                    arbiter,
                     &self.rates,
                     &mut self.pending,
                     action,
                 )
-                .and_then(|follow| self.follow(now, follow, io).map_err(|_| ()));
-                if submitted.is_err() {
-                    return Next::Poisoned;
+                .map_err(StepFailure::from)
+                .and_then(|follow| self.follow(now, follow, io).map_err(StepFailure::from));
+                if let Err(fault) = submitted {
+                    return Next::Failed(fault);
                 }
             }
             // Data goes only while the link is up: otherwise its MPDUs wait
@@ -1058,20 +1358,18 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
                             );
                             match submitted {
                                 Ok(()) => Ok(Follow::Nothing),
-                                Err(_) => Err(()),
+                                Err(poisoned) => Err(ServiceFault::Submission(poisoned.cause)),
                             }
                         }
                     }
                 };
                 match submitted {
                     Ok(follow) => {
-                        if self.follow(now, follow, io).is_err() {
-                            return Next::Poisoned;
+                        if let Err(reason) = self.follow(now, follow, io) {
+                            return Next::Failed(reason.into());
                         }
                     }
-                    Err(()) => {
-                        return Next::Poisoned;
-                    }
+                    Err(fault) => return Next::Failed(fault.into()),
                 }
             }
             if !progress {
@@ -1085,9 +1383,9 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
     fn follow<const TX_DEPTH: usize, const RX_DEPTH: usize, const COMMAND_DEPTH: usize>(
         &mut self,
         now: Instant,
-        follow: Follow<'id, B>,
+        follow: Follow<'id, B, GROUPS>,
         io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
-    ) -> Result<(), BackendContractViolation> {
+    ) -> Result<(), ContractFault<'id, B>> {
         match follow {
             Follow::Nothing => {}
             Follow::Input(input) => self.station.input(now, input),
@@ -1124,10 +1422,11 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
         const COMMAND_DEPTH: usize,
     >(
         &mut self,
+        arbiter: &mut PortArbiter<'id, B>,
         now: Instant,
         io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
     ) {
-        while let Some(notice) = self.arbiter.poll_notice(now) {
+        while let Some(notice) = arbiter.poll_notice(now) {
             match notice {
                 ArbiterNotice::Station(notice) => {
                     self.station.input(now, StaInput::Arbiter(notice))
@@ -1143,10 +1442,11 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
     /// for its recycle.
     fn event<const TX_DEPTH: usize, const RX_DEPTH: usize, const COMMAND_DEPTH: usize>(
         &mut self,
+        arbiter: &mut PortArbiter<'id, B>,
         now: Instant,
         event: LowerMacEvent<'id, B::Types>,
         io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
-    ) -> Result<Option<<B::Types as PhaseTypes<'id>>::RxBuffer>, BackendContractViolation> {
+    ) -> Result<Option<<B::Types as PhaseTypes<'id>>::RxBuffer>, ContractFault<'id, B>> {
         match event {
             LowerMacEvent::Received { frame, meta } => {
                 let bytes = frame.bytes();
@@ -1168,14 +1468,14 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
                         },
                     );
                 if let Err(reason) = result {
-                    self.counters.rx_frames_rejected.increment();
-                    (io.output)(ServiceOutput::RxFrameRefused(reason));
+                    self.counters.rx_frames_dropped.increment();
+                    (io.output)(ServiceOutput::RxFrameDropped(reason));
                 }
                 Ok(Some(frame))
             }
             LowerMacEvent::Tbtt(_) => Ok(None),
             LowerMacEvent::Terminal(terminal) => {
-                self.terminal(now, terminal)?;
+                self.terminal(arbiter, now, terminal)?;
                 Ok(None)
             }
         }
@@ -1183,130 +1483,152 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
 
     fn terminal(
         &mut self,
+        arbiter: &mut PortArbiter<'id, B>,
         now: Instant,
         terminal: LowerMacTerminal<'id, B::Types>,
-    ) -> Result<(), BackendContractViolation> {
+    ) -> Result<(), ContractFault<'id, B>> {
         match terminal {
             LowerMacTerminal::TxCompleted(TxCompleted::Single(terminal)) => {
                 let oer_ieee80211_lower_mac::TerminalParts {
                     context,
                     ticket,
                     payload,
-                    outcome: completion,
+                    outcome,
                 } = terminal.into_parts(&mut self.terminal_access);
                 let (buffer, body) = payload.into_parts();
-                self.returned(
-                    now,
-                    context,
-                    ticket,
-                    buffer,
-                    ReturnedTx::Completed(completion),
-                )?;
-                // This service submits no external bodies. Sent MPDUs own theirs.
-                drop(body);
-            }
-            LowerMacTerminal::TxCompleted(TxCompleted::Aggregate(_)) => {
-                // A backend terminal must have the same cardinality as submit.
-                return Err(BackendContractViolation);
-            }
-
-            LowerMacTerminal::GateClosed(closed) => {
-                self.arbiter.gate_closed(closed);
-            }
-            LowerMacTerminal::Configured(VifRole::Station) => {
-                if let Some(pending) = self.pending.configuring.take() {
-                    self.station.input(now, StaInput::Configured(pending));
+                if let Some(body) = body {
+                    match body {}
                 }
+                self.returned(now, context, ticket, buffer, ReturnedTx::Completed(outcome))?;
+            }
+            terminal @ LowerMacTerminal::TxCompleted(TxCompleted::Aggregate(_)) => {
+                return Err(ContractFault::sealed(
+                    BackendContractViolation::UnexpectedAggregate,
+                    terminal,
+                ));
+            }
+            LowerMacTerminal::GateClosed(closed) => arbiter.gate_closed(closed),
+            terminal @ LowerMacTerminal::Configured(VifRole::Station) => {
+                let Some(pending) = self.pending.configuring.take() else {
+                    return Err(ContractFault::sealed(
+                        BackendContractViolation::UnexpectedConfiguration,
+                        terminal,
+                    ));
+                };
+                self.station.input(now, StaInput::Configured(pending));
             }
             LowerMacTerminal::KeyRemoved(Removed::Station(RemovedKey::Pairwise(slot))) => {
                 self.station.input(now, StaInput::PairwiseKeyRemoved(slot));
             }
-            LowerMacTerminal::KeyRemoved(Removed::Station(RemovedKey::Group {
+            terminal @ (LowerMacTerminal::KeyRemoved(Removed::Station(RemovedKey::Group {
+                ..
+            }))
+            | LowerMacTerminal::GroupKeyInstalled(InstalledGroup::Station { .. })
+            | LowerMacTerminal::GroupKeyReplaced { .. }
+            | LowerMacTerminal::GroupKeySelected { .. }) => self.group_terminal(now, terminal)?,
+            terminal @ (LowerMacTerminal::Configured(VifRole::AccessPoint)
+            | LowerMacTerminal::KeyRemoved(Removed::AccessPoint(_))
+            | LowerMacTerminal::GroupKeyInstalled(InstalledGroup::AccessPoint {
+                ..
+            })) => {
+                return Err(ContractFault::sealed(
+                    BackendContractViolation::UnexpectedAccessPointTerminal,
+                    terminal,
+                ));
+            }
+            terminal @ LowerMacTerminal::TsfSampled(_) => {
+                return Err(ContractFault::sealed(
+                    BackendContractViolation::UnexpectedTsfSample,
+                    terminal,
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn group_terminal(
+        &mut self,
+        now: Instant,
+        terminal: LowerMacTerminal<'id, B::Types>,
+    ) -> Result<(), ContractFault<'id, B>> {
+        let Some(pending) = self.pending.group.take() else {
+            return Err(ContractFault::sealed(
+                BackendContractViolation::GroupTerminalWithoutRequest,
+                terminal,
+            ));
+        };
+        let identity = match &terminal {
+            LowerMacTerminal::KeyRemoved(Removed::Station(RemovedKey::Group { slot, .. })) => {
+                <B::Types as PhaseTypes<'id>>::StationKeys::vacant_group_slot_identity(slot)
+            }
+            LowerMacTerminal::GroupKeyInstalled(InstalledGroup::Station { key, .. })
+            | LowerMacTerminal::GroupKeyReplaced { key, .. }
+            | LowerMacTerminal::GroupKeySelected { key, .. } => {
+                <B::Types as PhaseTypes<'id>>::StationKeys::group_slot_identity(key)
+            }
+            _ => {
+                self.pending.group = Some(pending);
+                return Err(ContractFault::sealed(
+                    BackendContractViolation::GroupTerminalKindMismatch,
+                    terminal,
+                ));
+            }
+        };
+        if pending.slot != identity {
+            self.pending.group = Some(pending);
+            return Err(ContractFault::sealed(
+                BackendContractViolation::GroupSlotMismatch,
+                terminal,
+            ));
+        }
+        let input = match (pending.action, terminal) {
+            (
+                PendingGroupAction::Remove(pending),
+                LowerMacTerminal::KeyRemoved(Removed::Station(RemovedKey::Group {
+                    slot,
+                    permission,
+                })),
+            ) => StaInput::GroupKeyRemoved {
+                pending,
                 slot,
                 permission,
-            })) => {
-                let pending = self.pending.group.take().ok_or(BackendContractViolation)?;
-                if pending.slot
-                    != <B::Types as PhaseTypes<'id>>::StationKeys::vacant_group_slot_identity(&slot)
-                {
-                    return Err(BackendContractViolation);
-                }
-                let PendingGroupAction::Remove(pending) = pending.action else {
-                    return Err(BackendContractViolation);
-                };
-                self.station.input(
-                    now,
-                    StaInput::GroupKeyRemoved {
-                        pending,
-                        slot,
-                        permission,
-                    },
-                );
+            },
+            (
+                PendingGroupAction::Install(pending),
+                LowerMacTerminal::GroupKeyInstalled(InstalledGroup::Station { key, permission }),
+            ) => StaInput::GroupKeyInstalled {
+                pending,
+                key,
+                permission,
+            },
+            (
+                PendingGroupAction::Replace(pending),
+                LowerMacTerminal::GroupKeyReplaced { key, permission },
+            ) => StaInput::GroupKeyReplaced {
+                pending,
+                key,
+                permission,
+            },
+            (
+                PendingGroupAction::Select(pending),
+                LowerMacTerminal::GroupKeySelected { key, permission },
+            ) => StaInput::GroupKeySelected {
+                pending,
+                key,
+                permission,
+            },
+            (action, terminal) => {
+                self.pending.group = Some(PendingGroup {
+                    slot: pending.slot,
+                    action,
+                });
+                return Err(ContractFault::sealed(
+                    BackendContractViolation::GroupTerminalKindMismatch,
+                    terminal,
+                ));
             }
-            LowerMacTerminal::GroupKeyInstalled(InstalledGroup::Station { key, permission }) => {
-                let pending = self.pending.group.take().ok_or(BackendContractViolation)?;
-                if pending.slot
-                    != <B::Types as PhaseTypes<'id>>::StationKeys::group_slot_identity(&key)
-                {
-                    return Err(BackendContractViolation);
-                }
-                let PendingGroupAction::Install(pending) = pending.action else {
-                    return Err(BackendContractViolation);
-                };
-                self.station.input(
-                    now,
-                    StaInput::GroupKeyInstalled {
-                        pending,
-                        key,
-                        permission,
-                    },
-                );
-            }
-            LowerMacTerminal::GroupKeyReplaced { key, permission } => {
-                let pending = self.pending.group.take().ok_or(BackendContractViolation)?;
-                if pending.slot
-                    != <B::Types as PhaseTypes<'id>>::StationKeys::group_slot_identity(&key)
-                {
-                    return Err(BackendContractViolation);
-                }
-                let PendingGroupAction::Replace(pending) = pending.action else {
-                    return Err(BackendContractViolation);
-                };
-                self.station.input(
-                    now,
-                    StaInput::GroupKeyReplaced {
-                        pending,
-                        key,
-                        permission,
-                    },
-                );
-            }
-            LowerMacTerminal::GroupKeySelected { key, permission } => {
-                let pending = self.pending.group.take().ok_or(BackendContractViolation)?;
-                if pending.slot
-                    != <B::Types as PhaseTypes<'id>>::StationKeys::group_slot_identity(&key)
-                {
-                    return Err(BackendContractViolation);
-                }
-                let PendingGroupAction::Select(pending) = pending.action else {
-                    return Err(BackendContractViolation);
-                };
-                self.station.input(
-                    now,
-                    StaInput::GroupKeySelected {
-                        pending,
-                        key,
-                        permission,
-                    },
-                );
-            }
-            // No access point runs in this service; the station follows no
-            // TBTT or TSF sample yet.
-            LowerMacTerminal::Configured(VifRole::AccessPoint)
-            | LowerMacTerminal::KeyRemoved(Removed::AccessPoint(_))
-            | LowerMacTerminal::GroupKeyInstalled(InstalledGroup::AccessPoint { .. })
-            | LowerMacTerminal::TsfSampled(_) => (),
-        }
+        };
+        self.station.input(now, input);
         Ok(())
     }
 
@@ -1325,7 +1647,7 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
         >,
         buffer: <B::Types as PhaseTypes<'id>>::AnyTxBuffer,
         end: ReturnedTx,
-    ) -> Result<(), BackendContractViolation> {
+    ) -> Result<(), ContractFault<'id, B>> {
         match (context, B::tx_buffer(buffer)) {
             (TxContext::Station(context), StationTxBuffer::Small(buffer)) => {
                 if self.station.is_current(&context)
@@ -1380,23 +1702,33 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
                 self.data.returned(input);
                 Ok(())
             }
-            (TxContext::Station(_), StationTxBuffer::Large(_))
-            | (TxContext::Data(_), StationTxBuffer::Small(_)) => Err(BackendContractViolation),
+            (context @ TxContext::Station(_), buffer @ StationTxBuffer::Large(_))
+            | (context @ TxContext::Data(_), buffer @ StationTxBuffer::Small(_)) => {
+                Err(ContractFault {
+                    reason: BackendContractViolation::TxContextBufferMismatch,
+                    terminal: RejectedTerminal::Transmit(UnroutedTx {
+                        context,
+                        ticket,
+                        buffer,
+                        outcome: end,
+                    }),
+                })
+            }
         }
     }
 }
 
 /// What follows a station's action.
-enum Follow<'id, B: StationPort<'id>> {
+enum Follow<'id, B: StationPort<'id>, const GROUPS: usize> {
     Nothing,
     /// An arbiter's answer or a key, back to the station.
-    Input(StaInput<'id, PortStaTokens<'id, B::Types, B::Small>, B::Caps>),
+    Input(StaInput<'id, PortStaTokens<'id, B::Types, B::Small, GROUPS>, B::Caps>),
     /// The station associated: the rates start from its peer.
     Associated(Peer<PortRxMeta<'id, B>>),
     /// A frame of the station did not go.
     Refused {
         context: TxContext<'id, B::Caps, B::Large, <B::Types as PhaseTypes<'id>>::EpochPath>,
-        ticket: <PortStaTokens<'id, B::Types, B::Small> as StaTokens>::Ticket,
+        ticket: <PortStaTokens<'id, B::Types, B::Small, GROUPS> as StaTokens>::Ticket,
         buffer: <B::Types as PhaseTypes<'id>>::AnyTxBuffer,
         reason: TxRefusal,
     },
@@ -1432,7 +1764,9 @@ where
     prepared.map_err(|(reason, operation)| {
         let buffer = match operation {
             TxSource::Fresh { buffer, body, .. } => {
-                drop(body);
+                if let Some(body) = body {
+                    match body {}
+                }
                 <B::Types as TxBufferPool<'id, C>>::erase(buffer)
             }
             TxSource::Retransmission { mpdu, .. } => {
@@ -1445,12 +1779,12 @@ where
 
 /// Submit a station frame with its phase rate and optional pairwise key.
 /// Preparation refusal returns the operation to the station without admission.
-fn submit_station<'p, 'id: 'p, B, P, S>(
+fn submit_station<'p, 'id: 'p, B, P, S, const GROUPS: usize>(
     phase: &mut P,
     rates: &S,
     key: Option<&<<B::Types as PhaseTypes<'id>>::StationKeys as KeyTypes<'id>>::PairwiseKey>,
-    transmit: StaTransmit<'id, PortStaTokens<'id, B::Types, B::Small>, B::Caps>,
-) -> Result<Follow<'id, B>, ()>
+    transmit: StaTransmit<'id, PortStaTokens<'id, B::Types, B::Small, GROUPS>, B::Caps>,
+) -> Result<Follow<'id, B, GROUPS>, ServiceFault<B>>
 where
     B: StationPort<'id>,
     P: LowerMacPhase<'p, 'id, Caps = B::Caps, Types = B::Types>,
@@ -1530,7 +1864,7 @@ where
         .admit(),
     ) {
         Ok(()) => Ok(Follow::Nothing),
-        Err(_) => Err(()),
+        Err(poisoned) => Err(ServiceFault::Submission(poisoned.cause)),
     }
 }
 
@@ -1545,6 +1879,7 @@ fn station_action<
     const TX_DEPTH: usize,
     const RX_DEPTH: usize,
     const COMMAND_DEPTH: usize,
+    const GROUPS: usize,
 >(
     now: Instant,
     phase: &mut P,
@@ -1552,8 +1887,8 @@ fn station_action<
     arbiter: &mut PortArbiter<'id, B>,
     rates: &S,
     pending_actions: &mut PendingActions<'id, B>,
-    action: StaAction<'_, 'id, PortStaTokens<'id, B::Types, B::Small>, B::Caps>,
-) -> Result<Follow<'id, B>, ()>
+    action: StaAction<'_, 'id, PortStaTokens<'id, B::Types, B::Small, GROUPS>, B::Caps>,
+) -> Result<Follow<'id, B, GROUPS>, ServiceFault<B>>
 where
     B: StationPort<'id>,
     P: LowerMacPhase<'p, 'id, Caps = B::Caps, Types = B::Types>,
@@ -1669,10 +2004,10 @@ where
             return Ok(Follow::Nothing);
         }
         StaAction::Transmit(transmit) => {
-            return submit_station::<B, P, S>(phase, rates, None, transmit);
+            return submit_station::<B, P, S, GROUPS>(phase, rates, None, transmit);
         }
         StaAction::TransmitProtected { transmit, key } => {
-            return submit_station::<B, P, S>(phase, rates, Some(key), transmit);
+            return submit_station::<B, P, S, GROUPS>(phase, rates, Some(key), transmit);
         }
         StaAction::Notify(notice) => {
             (io.output)(ServiceOutput::Notice(notice));
@@ -1693,11 +2028,38 @@ where
 }
 
 /// What serving a phase ended with.
-enum Served<'id, K, Path: oer_radio_port::PoolPath> {
+enum Served<'id, B: StationPort<'id>> {
     Stop,
-    Retune(oer_ieee80211_arbiter::PendingRetune<'id, K, Path>),
-    Poisoned,
+    Retune(
+        oer_ieee80211_arbiter::PendingRetune<'id, B::Caps, <B::Types as PhaseTypes<'id>>::GatePath>,
+    ),
+    Failed(StepFailure<'id, B>),
 }
 
 #[cfg(test)]
 mod tests;
+
+/// Preserve the first contract violation even when the disable also fails.
+fn end_disabled<'p, 'id, B: StationPort<'id>>(
+    owner: Result<Owner<'p, 'id, B, Disabled>, PoisonedOwner<'p, 'id, B>>,
+    custody: TerminalCustody<'id, B>,
+) -> ServiceEnd<'p, 'id, B> {
+    match (owner, custody) {
+        (Ok(owner), TerminalCustody::Clear) => ServiceEnd::Stopped(owner),
+        (Ok(owner), TerminalCustody::Quarantined(bank)) => ServiceEnd::Failed {
+            owner: FailedInstallation { owner },
+            fault: ServiceFault::Contract(bank.violation()),
+            custody: TerminalCustody::Quarantined(bank),
+        },
+        (Err(owner), TerminalCustody::Clear) => ServiceEnd::Poisoned {
+            fault: ServiceFault::Backend(owner.cause()),
+            owner,
+            custody: TerminalCustody::Clear,
+        },
+        (Err(owner), TerminalCustody::Quarantined(bank)) => ServiceEnd::Poisoned {
+            owner,
+            fault: ServiceFault::Contract(bank.violation()),
+            custody: TerminalCustody::Quarantined(bank),
+        },
+    }
+}

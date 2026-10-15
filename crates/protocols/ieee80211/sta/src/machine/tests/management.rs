@@ -65,7 +65,7 @@ fn associated<'id>(mint: Mint<'id, ArbiterPool>) -> (World<'id>, Ptk, Vec<u8>) {
     rsn[20] |= 0x80;
     let mut beacon = wpa2_beacon();
     beacon[55..].copy_from_slice(&rsn);
-    let (world, ptk) = wpa2_associated_by(mint, 2, &beacon);
+    let (world, ptk) = wpa2_associated_by::<2>(mint, &beacon);
     let plain = key_data(Some(&rsn), 0x99, 0x77);
     let wrapped = oer_ieee80211_rsn::aes::software_aes128_key_wrap(ptk.kek(), &plain).unwrap();
     let m3 = RsnTxFrame::<512>::message3(Akm::Psk, LOCAL, 2, ANONCE, [0; 8], wrapped.as_bytes())

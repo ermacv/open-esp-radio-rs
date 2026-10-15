@@ -45,6 +45,9 @@ cases = [
     "crates/protocols/ieee80211/arbiter/tests/ui/sibling_retune.rs",
     "crates/protocols/ieee80211/arbiter/tests/ui/sibling_lease.rs",
     "crates/protocols/ieee80211/arbiter/tests/ui/repeat_retune.rs",
+    "crates/protocols/ieee80211/arbiter/tests/ui/failed_arbiter_owner.rs",
+    "crates/protocols/ieee80211/arbiter/tests/ui/failed_arbiter_inputs.rs",
+    "crates/protocols/ieee80211/arbiter/tests/ui/refused_arbiter_owner.rs",
     "crates/protocols/ieee80211/arbiter/tests/ui/repeated_construction.rs",
     "crates/protocols/ieee80211/arbiter/tests/ui/foreign_place.rs",
     "crates/protocols/ieee80211/arbiter/tests/ui/sibling_absence.rs",
@@ -104,13 +107,22 @@ cases = [
 ]
 
 [[suite]]
+name = "station-capacity"
+packages = ["oer-ieee80211-mac", "oer-ieee80211-sta", "oer-ieee80211-rsn", "oer-ieee80211-lower-mac", "oer-ieee80211-arbiter", "oer-radio-port"]
+features = []
+targets = ["host", "esp32s31"]
+cases = ["crates/protocols/ieee80211/sta/tests/ui/protected_group_capacity.rs"]
+
+[[suite]]
 name = "authentication-owner"
-packages = ["oer-ieee80211-mac", "oer-ieee80211-sta", "oer-time"]
+packages = ["oer-ieee80211-mac", "oer-ieee80211-sta", "oer-ieee80211-rsn", "oer-time"]
 features = []
 targets = ["host", "esp32s31"]
 cases = [
     "crates/protocols/ieee80211/sta/tests/ui/authentication_attempt.rs",
     "crates/protocols/ieee80211/sta/tests/ui/sae_terminal_owner.rs",
+    "crates/protocols/ieee80211/sta/tests/ui/repeated_m3_group_only.rs",
+    "crates/protocols/ieee80211/sta/tests/ui/deferred_eapol_owner.rs",
 ]
 
 [[suite]]
@@ -176,6 +188,10 @@ targets = ["host", "esp32s31"]
 cases = [
     "crates/runtime/ieee80211/tests/ui/service_run_owner.rs",
     "crates/runtime/ieee80211/tests/ui/failed_service_installation.rs",
+    "crates/runtime/ieee80211/tests/ui/stopped_service_owner.rs",
+    "crates/runtime/ieee80211/tests/ui/terminal_custody_owner.rs",
+    "crates/runtime/ieee80211/tests/ui/station_external_body.rs",
+    "crates/protocols/ieee80211/sta/tests/ui/retired_station_diagnostics.rs",
     "crates/protocols/ieee80211/sta/tests/ui/retired_station.rs",
     "crates/protocols/ieee80211/sta/tests/ui/retired_data.rs",
 ]

@@ -1,0 +1,307 @@
+use super::*;
+
+enum ContractCase {
+    Unsolicited,
+    Disable { prior: bool, overflow: bool },
+}
+
+struct ContractBody(ContractCase);
+
+impl PortBody<ModelBackend<ModelCaps24, ServiceContexts>> for ContractBody {
+    async fn run<'p, 'id>(
+        self,
+        owner: Owner<'p, 'id, ModelBackend<ModelCaps24, ServiceContexts>, Disabled>,
+        resources: ModelResources<'id>,
+    ) -> Ended<'id, ModelBackend<ModelCaps24, ServiceContexts>> {
+        let ModelResources {
+            connection_epoch,
+            terminal_access,
+            tickets,
+            small,
+            large,
+            station_pairwise,
+            station_group,
+            station_group_permission,
+            access_point_pairwise,
+            access_point_group,
+            access_point_group_permission,
+            gate,
+            arbiter_authority,
+            ..
+        } = resources;
+        let (arbiter, place, absence) = PortArbiter::<ModelBackend<ModelCaps24, ServiceContexts>>::new(
+            ArbiterPolicy::DEFAULT.checked(<ModelBackend<ModelCaps24, ServiceContexts> as LowerMacBackend>::PUBLICATION_BOUND).unwrap(),
+            SupportedChannel::new(channel6()).unwrap(), arbiter_authority, gate,
+        );
+        let mut tickets = tickets.into_iter();
+        let station_tickets: [_; 4] = core::array::from_fn(|_| tickets.next().unwrap());
+        let data_tickets: [_; 4] = core::array::from_fn(|_| tickets.next().unwrap());
+        let [pairwise, _] = station_pairwise;
+        let [group, _] = station_group;
+        let station = Station::new_open(
+            config(StaSecurity::Open).0,
+            StationResources {
+                epochs: oer_ieee80211_sta::epoch::LinkEpochSource::new(connection_epoch),
+                tickets: station_tickets,
+                buffers: <[_; 4]>::try_from(small).ok().unwrap(),
+                place,
+                absence_place: absence,
+                pairwise,
+                groups: [group],
+                group_permission: station_group_permission,
+            },
+        );
+        let mut service = StationService::<ModelBackend<ModelCaps24, ServiceContexts>, _, 1>::new(
+            station,
+            StaData::new(
+                data_tickets,
+                <[_; 4]>::try_from(large).ok().unwrap(),
+                MODEL_TX_QUEUE_DEPTH,
+            ),
+            arbiter,
+            EspressifRateSelection::<ModelCaps24>::new(),
+            terminal_access,
+        );
+        let [ap_pairwise, _] = access_point_pairwise;
+        let [ap_group, _] = access_point_group;
+        if let ContractCase::Disable { prior, overflow } = self.0 {
+            let mut owner = owner.enable().await.ok().unwrap();
+            let bank = service
+                .state
+                .station
+                .finish(oer_ieee80211_sta::machine::StaDisconnectReason::Requested);
+            service.state.station = bank.restart().ok().unwrap().station;
+            let Some(StaAction::Configure(receive, pending)) =
+                service.state.station.poll_action(Instant::EPOCH)
+            else {
+                panic!("the restart reclaims receive configuration")
+            };
+            service.state.pending.configuring = Some(pending);
+            let first = LowerMacTerminal::KeyRemoved(Removed::AccessPoint(RemovedKey::Pairwise(
+                ap_pairwise,
+            )));
+            let custody = if prior {
+                service
+                    .state
+                    .terminal(&mut service.arbiter, Instant::EPOCH, first)
+                    .err()
+                    .unwrap()
+                    .into()
+            } else {
+                owner.phase().inject_terminal(first);
+                TerminalCustody::Clear
+            };
+            {
+                let mut phase = owner.phase();
+                if overflow {
+                    for _ in 0..crate::lower_mac_owner::model::MODEL_EVENTS - MODEL_RX_EVENTS {
+                        phase.inject_terminal(LowerMacTerminal::Configured(VifRole::Station));
+                    }
+                }
+                phase.inject_terminal(LowerMacTerminal::KeyRemoved(Removed::AccessPoint(
+                    RemovedKey::Group {
+                        slot: ap_group,
+                        permission: access_point_group_permission,
+                    },
+                )));
+                phase.station().configure(receive);
+            }
+            let (ended, custody) = service
+                .state
+                .disable(
+                    &mut service.arbiter,
+                    owner,
+                    &VirtualClock::<1>::new(),
+                    custody,
+                )
+                .await;
+            assert!(
+                service.state.pending.configuring.is_some(),
+                "no terminal after the violation may advance a machine"
+            );
+            assert!(service.state.station.is_reclaiming());
+            let end = end_disabled(ended, custody);
+            let (owner, custody) = match end {
+                ServiceEnd::Failed {
+                    owner,
+                    fault: ServiceFault::Contract(reason),
+                    custody,
+                } if !overflow => {
+                    assert_eq!(
+                        reason,
+                        BackendContractViolation::UnexpectedAccessPointTerminal
+                    );
+                    (Ok(owner), custody)
+                }
+                ServiceEnd::Poisoned {
+                    owner,
+                    fault: ServiceFault::Contract(reason),
+                    custody,
+                } if overflow => {
+                    assert_eq!(
+                        reason,
+                        BackendContractViolation::UnexpectedAccessPointTerminal
+                    );
+                    (Err(owner), custody)
+                }
+                _ => panic!("the first violation and its complete bank must be returned"),
+            };
+            let TerminalCustody::Quarantined(bank) = custody else {
+                panic!()
+            };
+            let (reason, first, mut later) = bank.into_parts();
+            assert_eq!(
+                reason,
+                BackendContractViolation::UnexpectedAccessPointTerminal
+            );
+            let RejectedTerminal::Sealed(LowerMacTerminal::KeyRemoved(Removed::AccessPoint(
+                RemovedKey::Pairwise(slot),
+            ))) = first
+            else {
+                panic!("the first owner was discarded")
+            };
+            assert_eq!(slot.index(), 0);
+            if overflow {
+                let mut count = 0;
+                while let Some(terminal) = later.pop() {
+                    assert!(matches!(
+                        terminal,
+                        LowerMacTerminal::Configured(VifRole::Station)
+                    ));
+                    count += 1;
+                }
+                assert_eq!(
+                    count,
+                    crate::lower_mac_owner::model::MODEL_EVENTS - MODEL_RX_EVENTS
+                );
+            } else {
+                let Some(LowerMacTerminal::KeyRemoved(Removed::AccessPoint(RemovedKey::Group {
+                    slot,
+                    permission,
+                }))) = later.pop()
+                else {
+                    panic!("later key owners were discarded")
+                };
+                assert_eq!(slot.index(), 0);
+                assert_eq!(permission.index(), 0);
+                assert!(matches!(
+                    later.pop(),
+                    Some(LowerMacTerminal::Configured(VifRole::Station))
+                ));
+                assert!(later.pop().is_none());
+            }
+            return match owner {
+                Ok(owner) => owner.uninstall(()),
+                Err(owner) => owner.uninstall(()),
+            };
+        }
+        for (terminal, expected) in [
+            (
+                LowerMacTerminal::TsfSampled(oer_ieee80211_lower_mac::TsfSample {
+                    tsf: oer_ieee80211_lower_mac::VifTsf::new(
+                        VifRole::Station,
+                        oer_ieee80211_mac::tsf::TsfInstant::from_micros(0),
+                    ),
+                    local: oer_ieee80211_lower_mac::Ieee80211Stamp {
+                        at: oer_ieee80211_lower_mac::Ieee80211Instant::from_micros(0),
+                        generation: oer_radio_port::GenerationSource::new(1).current(),
+                    },
+                    uncertainty: oer_ieee80211_lower_mac::Ieee80211Duration::from_micros(0),
+                    generation: oer_ieee80211_lower_mac::TsfRelation::new(
+                        1,
+                        oer_ieee80211_mac::tsf::TsfDuration::from_micros(0),
+                    )
+                    .generation(),
+                }),
+                BackendContractViolation::UnexpectedTsfSample,
+            ),
+            (
+                LowerMacTerminal::Configured(VifRole::Station),
+                BackendContractViolation::UnexpectedConfiguration,
+            ),
+            (
+                LowerMacTerminal::Configured(VifRole::AccessPoint),
+                BackendContractViolation::UnexpectedAccessPointTerminal,
+            ),
+            (
+                LowerMacTerminal::KeyRemoved(Removed::AccessPoint(RemovedKey::Pairwise(
+                    ap_pairwise,
+                ))),
+                BackendContractViolation::UnexpectedAccessPointTerminal,
+            ),
+            (
+                LowerMacTerminal::KeyRemoved(Removed::AccessPoint(RemovedKey::Group {
+                    slot: ap_group,
+                    permission: access_point_group_permission,
+                })),
+                BackendContractViolation::UnexpectedAccessPointTerminal,
+            ),
+        ] {
+            assert_eq!(
+                service
+                    .state
+                    .terminal(&mut service.arbiter, Instant::EPOCH, terminal)
+                    .map_err(|fault| fault.reason),
+                Err(expected)
+            );
+        }
+        assert_eq!(service.state.station.lost_tokens(), 0);
+        owner.uninstall(())
+    }
+}
+
+#[test]
+fn unsolicited_configuration_and_access_point_terminals_are_contract_faults() {
+    let (backend, _) = ModelBackend::<ModelCaps24, ServiceContexts>::new(
+        channel6(),
+        [
+            IndividualAddress::new(LOCAL).unwrap(),
+            IndividualAddress::new(ACCESS_POINT_ADDRESS).unwrap(),
+        ],
+    );
+    assert!(block_on(run_port(backend, ContractBody(ContractCase::Unsolicited))).is_some());
+}
+
+#[test]
+fn disable_quarantines_the_first_rejected_owner_and_every_later_terminal() {
+    for prior in [false, true] {
+        let (backend, _) = ModelBackend::<ModelCaps24, ServiceContexts>::new(
+            channel6(),
+            [
+                IndividualAddress::new(LOCAL).unwrap(),
+                IndividualAddress::new(ACCESS_POINT_ADDRESS).unwrap(),
+            ],
+        );
+        assert!(
+            block_on(run_port(
+                backend,
+                ContractBody(ContractCase::Disable {
+                    prior,
+                    overflow: false
+                })
+            ))
+            .is_some()
+        );
+    }
+}
+
+#[test]
+fn full_custody_returns_the_next_terminal_to_poisoned_port_teardown() {
+    let (backend, _) = ModelBackend::<ModelCaps24, ServiceContexts>::new(
+        channel6(),
+        [
+            IndividualAddress::new(LOCAL).unwrap(),
+            IndividualAddress::new(ACCESS_POINT_ADDRESS).unwrap(),
+        ],
+    );
+    assert!(
+        block_on(run_port(
+            backend,
+            ContractBody(ContractCase::Disable {
+                prior: false,
+                overflow: true
+            })
+        ))
+        .is_some()
+    );
+}

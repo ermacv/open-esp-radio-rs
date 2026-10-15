@@ -90,6 +90,7 @@ impl StaDataTokens for Data {
 struct Station;
 
 impl StaTokens for Station {
+    const GROUP_SLOTS: usize = 0;
     type GatePath = oer_radio_port::Root;
     type EpochPath = oer_radio_port::Root;
     type Small = Buffer;
@@ -172,6 +173,47 @@ fn transmit(data: &mut StaData<'static, Data, Caps>) -> DataTransmit<'static, Da
         Some(transmit) => transmit,
         None => panic!("an attempt is owed"),
     }
+}
+
+#[test]
+fn stopped_data_bank_reuses_credits_permissions_and_the_order_frontier() {
+    let mut data = machine();
+    let mut replay = epoch();
+    let mut link = qos_link(&(), &mut replay);
+    for _ in 0..2 {
+        data.input(DataInput {
+            msdu: msdu(6),
+            link: &mut link,
+        })
+        .unwrap();
+    }
+    let next_order = data.next_order;
+    let outstanding = transmit(&mut data);
+    assert_eq!(data.available(WmmAccessCategory::Voice), 1);
+    let bank = data.finish();
+    assert_eq!(bank.available(WmmAccessCategory::Voice), 1);
+    assert_eq!(bank.counters().left_behind, 1);
+    let mut data = bank.restart();
+    assert_eq!(data.next_order, next_order);
+    assert_eq!(data.available(WmmAccessCategory::Voice), 1);
+    assert_eq!(data.tickets.len(), 1);
+    data.returned(DataReturn::TxDone {
+        context: outstanding.context,
+        ticket: outstanding.ticket,
+        buffer: outstanding.buffer,
+        completion: ended(TxEndStatus::Delivered, 1),
+    });
+    assert_eq!(data.available(WmmAccessCategory::Voice), 2);
+    assert_eq!(data.tickets.len(), 2);
+    assert_eq!(data.buffers.len(), 2);
+    data.input(DataInput {
+        msdu: msdu(6),
+        link: &mut link,
+    })
+    .unwrap();
+    let transmit = transmit(&mut data);
+    assert_eq!(transmit.context.order, next_order);
+    assert_eq!(data.counters().lost_tokens, 0);
 }
 
 #[test]

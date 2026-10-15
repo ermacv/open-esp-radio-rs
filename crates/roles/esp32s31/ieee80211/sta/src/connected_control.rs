@@ -402,10 +402,11 @@ pub trait ConnectedControlTx: oer_time::Clock {
         power_management: StaPowerManagement,
     ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, SingleMpduTxError>;
 
-    fn start_protected_eapol<H: TxHardware>(
+    fn start_eapol<H: TxHardware>(
         &mut self,
         hardware: &mut H,
         payload: &[u8],
+        protection: oer_ieee80211_mac::security::LinkProtection,
     ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, SingleMpduTxError>;
 
     /// Publish the negotiated TX BlockAck agreement for one TID.
@@ -494,12 +495,13 @@ where
             .map(|_| DatapathControlProgress::TxPending)
     }
 
-    fn start_protected_eapol<H: TxHardware>(
+    fn start_eapol<H: TxHardware>(
         &mut self,
         hardware: &mut H,
         payload: &[u8],
+        protection: oer_ieee80211_mac::security::LinkProtection,
     ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, SingleMpduTxError> {
-        SingleMpduTx::start_protected_eapol(self, hardware, payload)
+        SingleMpduTx::start_eapol(self, hardware, payload, protection)
             .map(|_| DatapathControlProgress::TxPending)
     }
 

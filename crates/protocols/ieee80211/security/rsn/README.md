@@ -44,6 +44,18 @@ The portable station can retain a completed key installation while waiting for
 M4 delivery. `RsnStaSupplicant` authenticates a repeated M3 before advancing its
 counter. The station retains the installed PTK and processes only changed GTK
 material from a newer M3; an exact repeat produces M4 without an install.
+`RsnStaReady::RetryInstall` carries `RsnStaRetryInstall`, which has no pairwise
+field. `RsnConnectedSupplicant::on_message3` authenticates exact and newer
+repeats with the retained PTK and produces only M4 or a group unwrap request.
+The request binds the authenticated M3, including its full ANonce; its GTK/IGTK
+completion cannot install PTK. Unwrap completion yields `RsnStaReady`, a type
+without another KEK request, so callers exhaustively handle all remaining work.
+A connected unwrap request owns its authenticated frame and a zeroizing KEK
+copy. It has no busy latch or wrapping ticket: validation of a successor can
+proceed while the station holds the current TX. Unwrap and install completions
+check the committed replay frontier, so an overtaken request cannot roll it
+back. The station owns the bounded deferred-frame policy and TX ordering.
+
 
 `BipTransmitter` refuses a frame when its 48-bit IPN space is exhausted, or
 when the output has no room for the MMIE; refusal consumes no IPN and leaves

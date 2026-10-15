@@ -273,7 +273,8 @@ impl PortBody<ModelBackend> for Exercise<'_> {
                 events.push(terminal(
                     LowerMacEvent::Terminal(event),
                     &mut resources.terminal_access,
-                ))
+                ));
+                core::ops::ControlFlow::Continue(())
             })
             .await
         {

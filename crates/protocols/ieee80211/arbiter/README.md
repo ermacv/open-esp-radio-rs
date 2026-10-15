@@ -108,11 +108,22 @@ skips the cancelled outgoing retune. Every terminal, including
 refusal and late cancellation, returns its place and releases the command.
 Releasing a lease during Closing is also a pre-start cancellation; it
 reopens the gate without an outbound retune or `LeaseStarted` notice.
-A refused lease move returns the next `PendingRetune` directly and enters
-`Retuning` before handing it out. `None` means the port stopped. Without an
+A refused lease move consumes the arbiter. `RetuneRefused::Return` gives
+back the working arbiter and the home `PendingRetune`, already in `Retuning`.
+A refused return or shared move yields `RetuneRefused::Failed`. Without an
 enabled phase, consumers poll `ArbiterNotice` through `poll_notice`; that
 exhaustive type contains only station/AP notices and cannot take a gate or
-retune token. `port_failed` covers both enable refusal and poisoning.
+retune token. `finish(self, ArbiterEnd)` consumes planning and coordinator
+authority. `PortFailed` returns `FailedArbiter`, which only drains its outbox
+and retains late gate/retune returns. `Stopped` cancels leases with `Stopped`
+and returns a distinct `StoppedArbiter` bank. Its `restart(channel)` preserves
+the policy, gate and monotonic lease sequence without minting another place.
+An unreturned gate terminal yields `MissingGateTerminal` with the whole bank;
+a closed gate is reopened through the new coordinator's first cycle. It has no request, ready, retuned or coordinator input methods;
+draining requires no clock and cannot issue another AP Start. Failure cancels
+each still-held admission place once, withdraws a queued AP start/announcement
+and preserves already owed terminals. Failure recovery needs a new installation and its unique `ArbiterAuthority`;
+a normal Stop reuses its returned bank.
 
 The station chooses search channels and requests their leases. The arbiter
 places those absences around the access point's beacons and spaces dense

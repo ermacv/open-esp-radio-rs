@@ -422,7 +422,10 @@ impl PortBody<ModelBackend> for Interrupted<'_> {
         }
         let mut terminals = Vec::new();
         let disabled = owner
-            .disable(&mut |event| terminals.push(LowerMacEvent::Terminal(event)))
+            .disable(&mut |event| {
+                terminals.push(LowerMacEvent::Terminal(event));
+                core::ops::ControlFlow::Continue(())
+            })
             .await;
         if self.fault.is_some() {
             assert!(terminals.is_empty());
@@ -651,11 +654,17 @@ impl PortBody<ModelBackend> for Teardown<'_> {
             }
         }
         match self.end {
-            EndInstallation::Uninstall => {
-                owner.disable(&mut |_| {}).await.ok().unwrap().uninstall(())
-            }
+            EndInstallation::Uninstall => owner
+                .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+                .await
+                .ok()
+                .unwrap()
+                .uninstall(()),
             EndInstallation::PoisonedUninstall => {
-                let Err(poisoned) = owner.disable(&mut |_| {}).await else {
+                let Err(poisoned) = owner
+                    .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+                    .await
+                else {
                     panic!("expected poison")
                 };
                 poisoned.uninstall(())
@@ -731,7 +740,11 @@ impl PortBody<ModelBackend> for ReenableGroup<'_> {
         };
         key.identity.0.last.set(41);
         let before = snapshot(&key);
-        let disabled = owner.disable(&mut |_| {}).await.ok().unwrap();
+        let disabled = owner
+            .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+            .await
+            .ok()
+            .unwrap();
         assert_eq!(self.0.group_installations.borrow().len(), 1);
         let mut owner = disabled.enable().await.ok().unwrap();
         assert_eq!(snapshot(&key), before);
@@ -754,7 +767,12 @@ impl PortBody<ModelBackend> for ReenableGroup<'_> {
             let _permission = removed(&mut phase).await;
             assert!(self.0.group_installations.borrow().is_empty());
         }
-        owner.disable(&mut |_| {}).await.ok().unwrap().uninstall(())
+        owner
+            .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+            .await
+            .ok()
+            .unwrap()
+            .uninstall(())
     }
 }
 #[test]

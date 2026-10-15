@@ -353,8 +353,6 @@ pub enum AbsenceRefusal {
     NotConnected,
     /// The primary lease ends before this absence can start.
     PrimaryEnds { at: Instant },
-    /// The port failed.
-    PortFailed,
 }
 
 /// The arbiter's answer to a request.
@@ -389,13 +387,13 @@ pub enum Refusal {
         /// When the access point may follow again.
         retry_at: Instant,
     },
-    /// The port failed.
-    PortFailed,
 }
 
 /// Why the station must leave its network.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LeaveReason {
+    /// The application stopped the service normally.
+    Stopped,
     /// The upstream moved where the access point may not follow, and the
     /// policy keeps the access point.
     Unservable,
@@ -407,6 +405,8 @@ pub enum LeaveReason {
 /// Why a lease ended without its own end.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CancelReason {
+    /// The application stopped the service normally.
+    Stopped,
     /// The station was not ready at the lease's start.
     NotReady,
     /// The station gave it back before its start.
@@ -781,8 +781,6 @@ enum Port<K> {
     On(SupportedChannel<K>),
     /// Moving to `to`.
     Retuning,
-    /// Failed: the arbiter stopped the station and the access point.
-    Failed,
 }
 
 /// How a lease ends.
@@ -1030,6 +1028,152 @@ pub enum ArbiterNotice<'id, K, Path: PoolPath = Root> {
     AccessPoint(AccessPointCommand<K>),
 }
 
+/// Why the working arbiter is being consumed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ArbiterEnd {
+    Stopped,
+    PortFailed,
+}
+
+/// Resource returns shared by both terminal outcomes; no planning authority.
+struct ArbiterReturns<'id, K, Path: PoolPath> {
+    gate: Gate<'id, Path>,
+    outbox: Outbox<'id, K, Path>,
+}
+
+/// Terminal failure: only owed notices and late owners can drain.
+/// There is no coordinator, admission or restart authority.
+#[must_use = "drain terminal notices and retain returned resources"]
+pub struct FailedArbiter<'id, K, Path: PoolPath = Root> {
+    returns: ArbiterReturns<'id, K, Path>,
+}
+
+impl<'id, K, Path: PoolPath> FailedArbiter<'id, K, Path> {
+    pub fn poll_notice(&mut self) -> Option<ArbiterNotice<'id, K, Path>> {
+        self.returns.outbox.take()
+    }
+
+    pub fn return_closed_gate(&mut self, closed: GateClosed<'id, Path>) {
+        self.returns.gate = Gate::Closed(closed);
+    }
+
+    pub fn retune_ended(&mut self, pending: PendingRetune<'id, K, Path>) {
+        end_retune(pending);
+    }
+}
+
+/// A normal stop retains policy, its gate and the unspent identity sequence.
+/// It contains no old coordinator, lease schedule or protocol transition.
+#[must_use = "retain the stopped arbiter bank for restart or retirement"]
+pub struct StoppedArbiter<'id, K, R: ReservationMode = NoReservation, Path: PoolPath = Root> {
+    returns: ArbiterReturns<'id, K, Path>,
+    policy: CheckedArbiterPolicy<R>,
+    next_id: Option<u64>,
+}
+
+/// A backend did not return the gate operation before declaring itself
+/// disabled. The bank stays owned here; no replacement authority is minted.
+#[must_use = "retain the incomplete stopped bank"]
+pub struct MissingGateTerminal<'id, K, R: ReservationMode, Path: PoolPath> {
+    pub bank: StoppedArbiter<'id, K, R, Path>,
+}
+
+impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath>
+    StoppedArbiter<'id, K, R, Path>
+{
+    /// Build a fresh coordinator on the channel selected by the disabled
+    /// backend. Preserve the gate, any undrained resource returns, policy and
+    /// monotonic lease identities from this installation.
+    #[expect(
+        clippy::result_large_err,
+        reason = "a missing gate terminal returns the complete affine bank without allocation"
+    )]
+    pub fn restart(
+        self,
+        channel: SupportedChannel<K>,
+    ) -> Result<Arbiter<'id, K, R, Path>, MissingGateTerminal<'id, K, R, Path>> {
+        if matches!(self.returns.gate, Gate::Closing | Gate::Opening) {
+            return Err(MissingGateTerminal { bank: self });
+        }
+        let cycle = matches!(self.returns.gate, Gate::Closed(_)).then(|| Cycle {
+            to: channel,
+            reserve: R::none(),
+            purpose: CyclePurpose::Return { to: channel },
+        });
+        let CheckedArbiterPolicy {
+            policy,
+            publication_bound,
+            mode: _,
+        } = self.policy;
+        Ok(Arbiter {
+            policy,
+            publication_bound,
+            coordinator: ChannelCoordinator::new(policy.follow),
+            gate: self.returns.gate,
+            port: Port::On(channel),
+            pair: Pair::Alone,
+            home: channel,
+            primary: None,
+            absence: None,
+            following: false,
+            cycle,
+            next_id: self.next_id,
+            outbox: self.returns.outbox,
+        })
+    }
+}
+
+/// The terminal bank distinguishes reusable Stop from terminal failure.
+#[must_use = "drain notices and retain the returned bank"]
+pub enum RetiredArbiter<'id, K, R: ReservationMode = NoReservation, Path: PoolPath = Root> {
+    Stopped(StoppedArbiter<'id, K, R, Path>),
+    PortFailed(FailedArbiter<'id, K, Path>),
+}
+
+impl<'id, K, R: ReservationMode, Path: PoolPath> RetiredArbiter<'id, K, R, Path> {
+    fn returns(&mut self) -> &mut ArbiterReturns<'id, K, Path> {
+        match self {
+            Self::Stopped(stopped) => &mut stopped.returns,
+            Self::PortFailed(failed) => &mut failed.returns,
+        }
+    }
+
+    pub fn poll_notice(&mut self) -> Option<ArbiterNotice<'id, K, Path>> {
+        self.returns().outbox.take()
+    }
+
+    pub fn return_closed_gate(&mut self, closed: GateClosed<'id, Path>) {
+        self.returns().gate = Gate::Closed(closed);
+    }
+
+    pub fn retune_ended(&mut self, pending: PendingRetune<'id, K, Path>) {
+        end_retune(pending);
+    }
+}
+
+fn end_retune<K, Path: PoolPath>(pending: PendingRetune<'_, K, Path>) {
+    let PendingRetune {
+        brand: _,
+        to: _,
+        purpose: _,
+    } = pending;
+}
+
+/// The owned continuation of a refused retune. Only an outbound lease move
+/// can return home; a failed return or shared move ends the working arbiter.
+#[must_use = "complete the return move or drain the terminal arbiter"]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "the owned transition retains the arbiter inline without requiring an allocator"
+)]
+pub enum RetuneRefused<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath = Root> {
+    Return {
+        arbiter: Arbiter<'id, K, R, Path>,
+        pending: PendingRetune<'id, K, Path>,
+    },
+    Failed(FailedArbiter<'id, K, Path>),
+}
+
 /// The arbiter.
 pub struct Arbiter<
     'id,
@@ -1190,9 +1334,6 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
         request: ChannelRequest<K>,
         place: LeasePlace<'id, Path>,
     ) -> Answer<'id, K, Path> {
-        if matches!(self.port, Port::Failed) {
-            return Answer::Refused(Refusal::PortFailed, place);
-        }
         let Some(id) = self.available_id() else {
             return Answer::Refused(Refusal::IdentityExhausted, place);
         };
@@ -1324,9 +1465,6 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
         home: &Lease<'id, K, Path>,
         place: AbsencePlace<'id, Path>,
     ) -> AbsenceAnswer<'id, K, Path> {
-        if matches!(self.port, Port::Failed) {
-            return AbsenceAnswer::Refused(AbsenceRefusal::PortFailed, place);
-        }
         let connected = self.primary.as_ref().is_some_and(|(granted, _)| {
             granted.id == home.id && granted.step == LeaseStep::Running
         });
@@ -1699,12 +1837,12 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
     pub fn gate_opened(&mut self, open: GateOpen<'id, Path>) {
         self.gate = Gate::Open(open);
         if let Some(cycle) = self.cycle.take() {
-            self.finish(cycle);
+            self.finish_cycle(cycle);
         }
     }
 
     /// What a cycle was for, once the gate opened again.
-    fn finish(&mut self, cycle: Cycle<K, R::Reserve>) {
+    fn finish_cycle(&mut self, cycle: Cycle<K, R::Reserve>) {
         // The return/move is complete and the gate is open. Only this
         // boundary can release an AP restart retained by the coordinator.
         let actions = self.coordinator.port_moved(cycle.to);
@@ -1776,11 +1914,10 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
     /// The requested retune was refused: a move onto a lease's channel
     /// cancels that lease and returns home; a refused return or shared move
     /// stops the station and the access point.
-    #[must_use = "the next retune owns the return move; None means the port stopped"]
     pub fn retune_refused(
-        &mut self,
+        mut self,
         pending: PendingRetune<'id, K, Path>,
-    ) -> Option<PendingRetune<'id, K, Path>> {
+    ) -> RetuneRefused<'id, K, R, Path> {
         match pending.purpose {
             CyclePurpose::LeaseStart(which) => {
                 self.cancel(which, CancelReason::Refused);
@@ -1790,32 +1927,63 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
                     reserve: R::none(),
                     purpose: CyclePurpose::Return { to: self.home },
                 });
-                Some(PendingRetune {
+                let pending = PendingRetune {
                     brand: PhantomData,
                     to: self.home,
                     purpose: CyclePurpose::Return { to: self.home },
-                })
+                };
+                RetuneRefused::Return {
+                    arbiter: self,
+                    pending,
+                }
             }
             CyclePurpose::LeaseEnd(_) | CyclePurpose::Move { .. } | CyclePurpose::Return { .. } => {
-                self.fail();
-                None
+                RetuneRefused::Failed(self.finish_failed())
             }
         }
     }
 
-    /// The port cannot run, through either refusal or poisoning: stop roles.
-    pub fn port_failed(&mut self) {
-        self.fail();
+    /// Consume all planning authority and return a terminal resource bank.
+    /// Stop and failure preserve distinct causes for every accepted lease.
+    pub fn finish(mut self, end: ArbiterEnd) -> RetiredArbiter<'id, K, R, Path> {
+        self.terminate(end);
+        let returns = ArbiterReturns {
+            gate: self.gate,
+            outbox: self.outbox,
+        };
+        match end {
+            ArbiterEnd::Stopped => RetiredArbiter::Stopped(StoppedArbiter {
+                returns,
+                policy: CheckedArbiterPolicy {
+                    policy: self.policy,
+                    publication_bound: self.publication_bound,
+                    mode: PhantomData,
+                },
+                next_id: self.next_id,
+            }),
+            ArbiterEnd::PortFailed => RetiredArbiter::PortFailed(FailedArbiter { returns }),
+        }
     }
 
-    fn fail(&mut self) {
-        self.port = Port::Failed;
-        self.cycle = None;
-        self.pair = Pair::Alone;
-        self.cancel(Which::Absence, CancelReason::PortFailed);
-        self.cancel(Which::Primary, CancelReason::PortFailed);
-        self.outbox.leave(LeaveReason::PortFailed);
+    fn terminate(&mut self, end: ArbiterEnd) {
+        let (cancel, leave) = match end {
+            ArbiterEnd::Stopped => (CancelReason::Stopped, LeaveReason::Stopped),
+            ArbiterEnd::PortFailed => (CancelReason::PortFailed, LeaveReason::PortFailed),
+        };
+        self.cancel(Which::Absence, cancel);
+        self.cancel(Which::Primary, cancel);
+        self.outbox.leave(leave);
         self.outbox.stop();
+    }
+
+    fn finish_failed(mut self) -> FailedArbiter<'id, K, Path> {
+        self.terminate(ArbiterEnd::PortFailed);
+        FailedArbiter {
+            returns: ArbiterReturns {
+                gate: self.gate,
+                outbox: self.outbox,
+            },
+        }
     }
 
     /// The cycle that starts or ends the lease at `now`, if it is due.
@@ -1876,7 +2044,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
 
     /// Start the next gate's cycle due at `now`, if none runs.
     fn plan(&mut self, now: Instant) {
-        if self.cycle.is_some() || matches!(self.port, Port::Failed) {
+        if self.cycle.is_some() {
             return;
         }
         // A lost upstream past the loss policy: the access point stops and
@@ -1997,7 +2165,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
                             purpose: cycle.purpose,
                         }))
                     }
-                    Port::Retuning | Port::Failed => {
+                    Port::Retuning => {
                         self.gate = Gate::Closed(closed);
                         None
                     }
@@ -2048,7 +2216,7 @@ impl<'id, K: Ieee80211Capabilities, R: ReservationMode, Path: PoolPath> Arbiter<
     /// input.
     #[must_use = "arm the timer for the returned deadline"]
     pub fn poll_deadline(&self) -> Option<Instant> {
-        if self.cycle.is_some() || matches!(self.port, Port::Failed) {
+        if self.cycle.is_some() {
             return None;
         }
         let retune = sum(self.publication_bound, self.policy.retune);

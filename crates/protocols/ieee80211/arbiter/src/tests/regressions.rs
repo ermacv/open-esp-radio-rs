@@ -1,6 +1,95 @@
 use super::*;
 
 #[test]
+fn failure_withdraws_a_pending_access_point_start() {
+    installed(|mint| {
+        let (mut arbiter, _, _) = alone::<NoReservation>(mint);
+        arbiter.want_access_point();
+        arbiter.upstream(at(0), UpstreamFact::Connected(channel(6)));
+        let mut failed = failed(arbiter);
+        assert_eq!(
+            failed_notices(&mut failed),
+            [
+                Seen::AccessPoint(AccessPointCommand::Stop),
+                Seen::Station(StationNotice::Leave(LeaveReason::PortFailed)),
+            ]
+        );
+        assert!(failed.poll_notice().is_none());
+    });
+}
+
+#[test]
+fn failure_drains_each_lease_once_at_every_gate_stage() {
+    // Waiting, Closing (the backend holds the gate), Closed, Retuning,
+    // and Running. Both the primary and absence stay owned until failure.
+    for stage in 0..5 {
+        installed(|mint| {
+            let (mut arbiter, home, place, mut port) = connected(mint);
+            let away = absence(arbiter.request_absence(at(0), scan(6, 10), &home, place));
+            arbiter.ready(away.id());
+            let now = away.from();
+            let mut late_gate = None;
+            let mut late_retune = None;
+            if stage > 0 {
+                let Some(ArbiterAction::CloseGate { gate, .. }) = arbiter.poll_action(now) else {
+                    panic!("begin the absence gate cycle")
+                };
+                if stage == 1 {
+                    late_gate = Some(gate);
+                } else {
+                    arbiter.gate_closed(port.issuer.close(gate));
+                }
+            }
+            if stage > 2 {
+                let Some(ArbiterAction::Retune(pending)) = arbiter.poll_action(now) else {
+                    panic!("begin the absence retune")
+                };
+                if stage == 3 {
+                    late_retune = Some(pending);
+                } else {
+                    arbiter.retuned(pending);
+                    assert_eq!(
+                        run(&mut arbiter, &mut port, now),
+                        [
+                            Seen::OpenGate,
+                            Seen::Station(StationNotice::AbsenceStarted(away.id())),
+                        ]
+                    );
+                }
+            }
+            let mut failed = failed(arbiter);
+            assert_eq!(
+                failed_notices(&mut failed),
+                [
+                    Seen::AccessPoint(AccessPointCommand::Stop),
+                    Seen::Station(StationNotice::AbsenceCancelled(
+                        CancelReason::PortFailed,
+                        absence_place()
+                    )),
+                    Seen::Station(StationNotice::LeaseCancelled(
+                        CancelReason::PortFailed,
+                        self::place()
+                    )),
+                    Seen::Station(StationNotice::Leave(LeaveReason::PortFailed)),
+                ],
+                "stage {stage}"
+            );
+            if let Some(gate) = late_gate {
+                failed.return_closed_gate(port.issuer.close(gate));
+            }
+            if let Some(pending) = late_retune {
+                failed.retune_ended(pending);
+            }
+            assert!(
+                failed.poll_notice().is_none(),
+                "late owners cannot begin another lifecycle"
+            );
+            assert!(failed.poll_notice().is_none(), "terminals are emitted once");
+        });
+    }
+}
+
+#[test]
 fn policy_checks_the_actual_publication_budget_before_consuming_authority() {
     let budget = Duration::from_millis(3);
     let minimum = Duration::from_millis(15); // 2 * (publication 3 + retune 2) + listen 5
@@ -219,8 +308,12 @@ fn fallback_restart_waits_for_the_completed_return_cycle() {
                     };
                     assert_eq!(pending.channel(), channel(1));
                     if refuse {
-                        assert!(arbiter.retune_refused(pending).is_none());
-                        let events = run(&mut arbiter, &mut port, at(30_020));
+                        let RetuneRefused::Failed(mut failed) = arbiter.retune_refused(pending)
+                        else {
+                            panic!("a refused fallback return must be terminal")
+                        };
+                        let events = failed_notices(&mut failed);
+                        assert!(failed.poll_notice().is_none());
                         assert!(!events.iter().any(|event| matches!(
                             event,
                             Seen::AccessPoint(AccessPointCommand::Start(_))
@@ -239,4 +332,98 @@ fn fallback_restart_waits_for_the_completed_return_cycle() {
             });
         }
     }
+}
+
+#[test]
+fn an_application_stop_does_not_report_port_failure() {
+    installed(|mint| {
+        let (mut arbiter, home, place, _) = connected(mint);
+        let _away = absence(arbiter.request_absence(at(0), scan(6, 10), &home, place));
+        let mut stopped = arbiter.finish(ArbiterEnd::Stopped);
+        let notices: Vec<_> = core::iter::from_fn(|| stopped.poll_notice()).collect();
+        assert!(
+            notices.iter().all(|notice| !matches!(
+                notice,
+                ArbiterNotice::Station(
+                    StationNotice::LeaseCancelled(CancelReason::PortFailed, _)
+                        | StationNotice::AbsenceCancelled(CancelReason::PortFailed, _)
+                        | StationNotice::Leave(LeaveReason::PortFailed)
+                )
+            )),
+            "Stop must retain its own terminal cause: {notices:?}"
+        );
+        assert_eq!(notices.len(), 4);
+    });
+}
+
+#[test]
+fn stopped_bank_reuses_places_and_gate_without_reusing_lease_identity() {
+    for closed in [false, true] {
+        installed(|mint| {
+            let (mut arbiter, place, mut port) = alone::<NoReservation>(mint);
+            let first = lease(arbiter.request(at(0), scan(6, 10), place));
+            arbiter.ready(first.id());
+            if closed {
+                let Some(ArbiterAction::CloseGate { gate, .. }) = arbiter.poll_action(at(0)) else {
+                    panic!()
+                };
+                arbiter.gate_closed(port.issuer.close(gate));
+            }
+            let mut retired = arbiter.finish(ArbiterEnd::Stopped);
+            let mut returned = None;
+            while let Some(notice) = retired.poll_notice() {
+                if let ArbiterNotice::Station(StationNotice::LeaseCancelled(
+                    CancelReason::Stopped,
+                    place,
+                )) = notice
+                {
+                    assert!(returned.replace(place).is_none());
+                }
+            }
+            let RetiredArbiter::Stopped(bank) = retired else {
+                panic!("Stop is reusable")
+            };
+            let mut arbiter = bank
+                .restart(channel(1))
+                .unwrap_or_else(|_| panic!("the gate terminal was returned"));
+            let reopened = run(&mut arbiter, &mut port, at(1));
+            assert_eq!(
+                reopened
+                    .iter()
+                    .filter(|event| matches!(event, Seen::OpenGate))
+                    .count(),
+                usize::from(closed)
+            );
+            let second = lease(arbiter.request(at(2), scan(6, 10), returned.unwrap()));
+            assert_ne!(
+                second.id(),
+                first.id(),
+                "an installation must never reuse an old lease ID"
+            );
+        });
+    }
+}
+
+#[test]
+fn stop_retains_a_missing_gate_terminal_instead_of_minting_authority() {
+    installed(|mint| {
+        let (mut arbiter, place, mut port) = alone::<NoReservation>(mint);
+        let first = lease(arbiter.request(at(0), scan(6, 10), place));
+        arbiter.ready(first.id());
+        let Some(ArbiterAction::CloseGate { gate, .. }) = arbiter.poll_action(at(0)) else {
+            panic!()
+        };
+        let RetiredArbiter::Stopped(bank) = arbiter.finish(ArbiterEnd::Stopped) else {
+            panic!()
+        };
+        let Err(MissingGateTerminal { bank }) = bank.restart(channel(1)) else {
+            panic!("a pending gate has no restart proof")
+        };
+        let mut retired = RetiredArbiter::Stopped(bank);
+        retired.return_closed_gate(port.issuer.close(gate));
+        let RetiredArbiter::Stopped(bank) = retired else {
+            panic!()
+        };
+        assert!(bank.restart(channel(1)).is_ok());
+    });
 }

@@ -220,7 +220,9 @@ pub const MODEL_BLOCK_ACK_SLOTS: usize = 2;
 pub const MODEL_COMMANDS: usize = MODEL_TICKETS + 2 * (2 * MODEL_KEY_SLOTS) + 2 + 2;
 /// Reserved terminals: tickets, pairwise removals, the two GTK permissions,
 /// gate closing, two configuration confirmations and the bounded RX owners.
-pub const MODEL_EVENTS: usize = MODEL_TICKETS + 2 * MODEL_KEY_SLOTS + 2 + 1 + 2 + MODEL_RX_EVENTS;
+pub const MODEL_TERMINALS: usize = MODEL_TICKETS + 2 * MODEL_KEY_SLOTS + 2 + 1 + 2;
+/// The event queue additionally reserves the bounded RX owners.
+pub const MODEL_EVENTS: usize = MODEL_TERMINALS + MODEL_RX_EVENTS;
 
 /// A queue of the contract's capacity: an overflow is a broken promise and
 /// poisons the install while retaining every owner.
@@ -462,41 +464,41 @@ impl<C: ModelClass> core::fmt::Debug for ModelBuffer<'_, C> {
 /// A returned published MPDU (open or protected). Its checked layout, installed-key identity,
 /// and external body remain inseparable from the immutable buffer.
 #[derive(Debug)]
-pub struct ModelSent<'id, C: ModelClass> {
+pub struct ModelSent<'id, C: ModelClass, D = ModelBody> {
     role: VifRole,
     buffer: ModelBuffer<'id, C>,
     layout: MpduLayout,
     response: ResponsePolicy,
     key: Option<KeyIdentity>,
-    body: Option<ModelBody>,
+    body: Option<D>,
     packet_number: Option<u64>,
 }
 
-impl<'id, C: ModelClass> ModelSent<'id, C> {
+impl<'id, C: ModelClass, D> ModelSent<'id, C, D> {
     /// The original PN for a protected MPDU, otherwise `None`; a caller supplies no unchecked header offset.
     pub const fn packet_number(&self) -> Option<u64> {
         self.packet_number
     }
     /// The retained external body, available read-only until renewal.
-    pub fn body(&self) -> Option<&ModelBody> {
+    pub fn body(&self) -> Option<&D> {
         self.body.as_ref()
     }
 }
 
 /// A transmit buffer of either class, fresh or published.
 #[derive(Debug)]
-pub enum ModelAnyBuffer<'id> {
+pub enum ModelAnyBuffer<'id, D = ModelBody> {
     /// Fresh small memory.
     Small(ModelBuffer<'id, ModelSmall>),
     /// Fresh large memory.
     Large(ModelBuffer<'id, ModelLarge>),
     /// The original small published MPDU, including its body.
-    SmallSent(ModelSent<'id, ModelSmall>),
+    SmallSent(ModelSent<'id, ModelSmall, D>),
     /// The original large published MPDU, including its body.
-    LargeSent(ModelSent<'id, ModelLarge>),
+    LargeSent(ModelSent<'id, ModelLarge, D>),
 }
 
-impl ModelAnyBuffer<'_> {
+impl<D> ModelAnyBuffer<'_, D> {
     fn sequence(&self) -> SequenceNumber {
         match self {
             Self::Small(buffer) => buffer.memory.sequence(),
@@ -651,13 +653,13 @@ impl Drop for PreparedKey {
 }
 
 /// One closed MPDU, retaining its memory, external body and publication state.
-pub struct ModelMpdu<'id> {
-    buffer: ModelAnyBuffer<'id>,
+pub struct ModelMpdu<'id, D = ModelBody> {
+    buffer: ModelAnyBuffer<'id, D>,
     layout: MpduLayout,
     response: ResponsePolicy,
     // Fresh memory keeps its body here, including during publication. Only
     // consuming the terminal moves both into the returned Sent owner.
-    body: Option<ModelBody>,
+    body: Option<D>,
     published: Option<PublishedMpdu>,
 }
 
@@ -668,19 +670,19 @@ struct PublishedMpdu {
 }
 
 /// Execution access cannot replace or take the MPDU owner.
-pub struct ModelMpduExecution<'a, 'id> {
-    mpdu: &'a mut ModelMpdu<'id>,
+pub struct ModelMpduExecution<'a, 'id, D = ModelBody> {
+    mpdu: &'a mut ModelMpdu<'id, D>,
 }
-impl<'id> ExecutionPayload for ModelMpdu<'id> {
+impl<'id, D> ExecutionPayload for ModelMpdu<'id, D> {
     type Execution<'a>
-        = ModelMpduExecution<'a, 'id>
+        = ModelMpduExecution<'a, 'id, D>
     where
         Self: 'a;
     fn execution(&mut self) -> Self::Execution<'_> {
         ModelMpduExecution { mpdu: self }
     }
 }
-impl ModelMpduExecution<'_, '_> {
+impl<D> ModelMpduExecution<'_, '_, D> {
     fn publish(&mut self, role: VifRole, key: Option<&KeyIdentity>) -> Result<(), ModelFault> {
         let mpdu = &mut *self.mpdu;
         mpdu.preflight(key.is_some())?;
@@ -716,9 +718,9 @@ impl ModelMpduExecution<'_, '_> {
         self.mpdu.buffer.retry();
     }
 }
-impl<'id> TxMpdu for ModelMpdu<'id> {
-    type Buffer = ModelAnyBuffer<'id>;
-    type Body = ModelBody;
+impl<'id, D> TxMpdu for ModelMpdu<'id, D> {
+    type Buffer = ModelAnyBuffer<'id, D>;
+    type Body = D;
     fn into_parts(self) -> (Self::Buffer, Option<Self::Body>) {
         let Self {
             buffer,
@@ -770,7 +772,7 @@ impl<'id> TxMpdu for ModelMpdu<'id> {
         }
     }
 }
-impl<'id> ModelMpdu<'id> {
+impl<'id, D> ModelMpdu<'id, D> {
     /// Validate all fallible geometry before any PN or publication state changes.
     /// Only a fresh protected MPDU consumes a new PN; Sent retries retain theirs.
     fn preflight(&self, protected: bool) -> Result<usize, ModelFault> {
@@ -797,7 +799,7 @@ impl<'id> ModelMpdu<'id> {
     }
 
     fn from_sent(
-        mut buffer: ModelAnyBuffer<'id>,
+        mut buffer: ModelAnyBuffer<'id, D>,
         layout: MpduLayout,
         response: ResponsePolicy,
     ) -> Self {
@@ -865,7 +867,7 @@ fn ccmp_header(number: u64, key_id: u8) -> [u8; 8] {
 /// };
 /// struct Machine;
 /// struct Contexts;
-/// impl ModelContext for Contexts { type Context<'id> = &'id Machine; }
+/// impl ModelContext for Contexts { type Body = core::convert::Infallible; type Context<'id> = &'id Machine; }
 /// type Backend = ModelBackend<ModelCaps, Contexts>;
 /// struct Body;
 /// impl PortBody<Backend> for Body {
@@ -893,7 +895,7 @@ fn ccmp_header(number: u64, key_id: u8) -> [u8; 8] {
 /// };
 /// struct Context<'id> { epoch: Option<LinkEpoch<'id>>, owner: Rc<()> }
 /// struct Contexts;
-/// impl ModelContext for Contexts { type Context<'id> = Context<'id>; }
+/// impl ModelContext for Contexts { type Body = core::convert::Infallible; type Context<'id> = Context<'id>; }
 /// type Backend = ModelBackend<ModelCaps, Contexts>;
 /// struct Body;
 /// impl PortBody<Backend> for Body {
@@ -907,11 +909,14 @@ fn ccmp_header(number: u64, key_id: u8) -> [u8; 8] {
 /// }
 /// ```
 pub trait ModelContext {
+    /// External body owners selected by the composition; `Infallible` excludes them.
+    type Body: TxBody + core::fmt::Debug;
     /// One operation's opaque context in the install `'id`.
     type Context<'id>: 'id;
 }
 
 impl ModelContext for () {
+    type Body = ModelBody;
     type Context<'id> = ();
 }
 
@@ -919,6 +924,7 @@ impl ModelContext for () {
 pub struct ModelTypes<X: ModelContext = ()>(PhantomData<fn() -> X>);
 
 impl<'id, X: ModelContext> PhaseTypes<'id> for ModelTypes<X> {
+    const TERMINAL_CAPACITY: usize = MODEL_TERMINALS;
     type EpochPath = ModelPool<4>;
     type GatePath = ModelPool<0>;
     type TicketPath = ModelPool<1>;
@@ -934,11 +940,11 @@ impl<'id, X: ModelContext> PhaseTypes<'id> for ModelTypes<X> {
         K: Ieee80211Capabilities,
         S: AggregateState,
         'id: 'k;
-    type TxBody = ModelBody;
+    type TxBody = X::Body;
     type TicketKind = ModelTickets;
-    type AnyTxBuffer = ModelAnyBuffer<'id>;
-    type TxMpdu = ModelMpdu<'id>;
-    type TxAggregate = ModelSubframes<'id>;
+    type AnyTxBuffer = ModelAnyBuffer<'id, X::Body>;
+    type TxMpdu = ModelMpdu<'id, X::Body>;
+    type TxAggregate = ModelSubframes<'id, X::Body>;
     type RxBuffer = ModelRxBuffer;
     type RxMeta = ModelRxMeta;
     type StationKeys = ModelKeys<'id, Station>;
@@ -974,7 +980,7 @@ impl<'id, R: ModelRole + 'id> KeyTypes<'id> for ModelKeys<'id, R> {
 
 impl<'id, X: ModelContext, C: ModelClass> TxBufferPool<'id, C> for ModelTypes<X> {
     type Buffer = ModelBuffer<'id, C>;
-    type Sent = ModelSent<'id, C>;
+    type Sent = ModelSent<'id, C, X::Body>;
 
     fn prepare<'k, 'p, R: RoleKeys<'id, Self>, K: Ieee80211Capabilities>(
         source: CheckedPoolSource<'k, 'p, 'id, Self, C, K, R>,
@@ -997,24 +1003,28 @@ impl<'id, X: ModelContext, C: ModelClass> TxBufferPool<'id, C> for ModelTypes<X>
         push_model(operation)
     }
 
-    fn erase(buffer: Self::Buffer) -> ModelAnyBuffer<'id> {
+    fn erase(buffer: Self::Buffer) -> ModelAnyBuffer<'id, X::Body> {
         C::erase(buffer)
     }
 
     /// Return a published MPDU through the terminal buffer enum.
-    fn erase_sent(buffer: Self::Sent) -> ModelAnyBuffer<'id> {
+    fn erase_sent(buffer: Self::Sent) -> ModelAnyBuffer<'id, X::Body> {
         C::erase_sent(buffer)
     }
 
-    fn class(buffer: ModelAnyBuffer<'id>) -> Result<Self::Buffer, ModelAnyBuffer<'id>> {
+    fn class(
+        buffer: ModelAnyBuffer<'id, X::Body>,
+    ) -> Result<Self::Buffer, ModelAnyBuffer<'id, X::Body>> {
         C::class(buffer)
     }
 
-    fn sent(buffer: ModelAnyBuffer<'id>) -> Result<Self::Sent, ModelAnyBuffer<'id>> {
+    fn sent(
+        buffer: ModelAnyBuffer<'id, X::Body>,
+    ) -> Result<Self::Sent, ModelAnyBuffer<'id, X::Body>> {
         C::sent(buffer)
     }
 
-    fn renew(mpdu: Self::Sent) -> (Self::Buffer, Option<ModelBody>) {
+    fn renew(mpdu: Self::Sent) -> (Self::Buffer, Option<X::Body>) {
         (mpdu.buffer, mpdu.body)
     }
 }
@@ -1561,15 +1571,15 @@ impl<X: ModelContext> Work<'_, X> {
 }
 
 /// One subframe of an aggregate, in its buffer.
-struct Subframe<'id> {
-    mpdu: ModelMpdu<'id>,
+struct Subframe<'id, D> {
+    mpdu: ModelMpdu<'id, D>,
     /// Checked at admission against the first subframe's BA window.
     acknowledgement_bit: u64,
 }
 
 /// Complete aggregate storage; each subframe retains its own MPDU/body.
-pub struct ModelSubframes<'id>(Vec<Subframe<'id>>);
-impl ModelSubframes<'_> {
+pub struct ModelSubframes<'id, D = ModelBody>(Vec<Subframe<'id, D>>);
+impl<D> ModelSubframes<'_, D> {
     /// Number of complete subframes returned by a terminal or cancellation.
     pub fn len(&self) -> usize {
         self.0.len()
@@ -1580,33 +1590,33 @@ impl ModelSubframes<'_> {
     }
 }
 /// Owning iteration is available after terminal consumption or cancellation.
-pub struct ModelSubframeIter<'id>(alloc::vec::IntoIter<Subframe<'id>>);
-impl ModelSubframeIter<'_> {
+pub struct ModelSubframeIter<'id, D = ModelBody>(alloc::vec::IntoIter<Subframe<'id, D>>);
+impl<D> ModelSubframeIter<'_, D> {
     /// Whether cancellation or terminal iteration has any MPDUs left.
     pub fn is_empty(&self) -> bool {
         self.0.as_slice().is_empty()
     }
 }
-impl<'id> Iterator for ModelSubframeIter<'id> {
-    type Item = ModelMpdu<'id>;
+impl<'id, D> Iterator for ModelSubframeIter<'id, D> {
+    type Item = ModelMpdu<'id, D>;
     fn next(&mut self) -> Option<Self::Item> {
         self.0.next().map(|subframe| subframe.mpdu)
     }
 }
-impl<'id> IntoIterator for ModelSubframes<'id> {
-    type Item = ModelMpdu<'id>;
-    type IntoIter = ModelSubframeIter<'id>;
+impl<'id, D> IntoIterator for ModelSubframes<'id, D> {
+    type Item = ModelMpdu<'id, D>;
+    type IntoIter = ModelSubframeIter<'id, D>;
     fn into_iter(self) -> Self::IntoIter {
         ModelSubframeIter(self.0.into_iter())
     }
 }
 /// Execution lends subframe storage without exposing replaceable owners.
-pub struct ModelSubframesExecution<'a, 'id> {
-    subframes: &'a mut [Subframe<'id>],
+pub struct ModelSubframesExecution<'a, 'id, D = ModelBody> {
+    subframes: &'a mut [Subframe<'id, D>],
 }
-impl<'id> ExecutionPayload for ModelSubframes<'id> {
+impl<'id, D> ExecutionPayload for ModelSubframes<'id, D> {
     type Execution<'a>
-        = ModelSubframesExecution<'a, 'id>
+        = ModelSubframesExecution<'a, 'id, D>
     where
         Self: 'a;
     fn execution(&mut self) -> Self::Execution<'_> {
@@ -1615,7 +1625,7 @@ impl<'id> ExecutionPayload for ModelSubframes<'id> {
         }
     }
 }
-impl ModelSubframesExecution<'_, '_> {
+impl<D> ModelSubframesExecution<'_, '_, D> {
     fn publish(
         &mut self,
         role: VifRole,
@@ -1647,7 +1657,7 @@ type ModelInFlight<'id, X, M> =
 
 /// An A-MPDU attempt prepared for its queue.
 struct PreparedAggregate<'id, X: ModelContext> {
-    operation: ModelInFlight<'id, X, ModelSubframes<'id>>,
+    operation: ModelInFlight<'id, X, ModelSubframes<'id, X::Body>>,
     role: VifRole,
     start_sequence: SequenceNumber,
     queue: oer_ieee80211_mac::qos::WmmAccessCategory,
@@ -1657,7 +1667,7 @@ struct PreparedAggregate<'id, X: ModelContext> {
 
 /// An attempt prepared for its queue.
 struct Prepared<'id, X: ModelContext> {
-    operation: ModelInFlight<'id, X, ModelMpdu<'id>>,
+    operation: ModelInFlight<'id, X, ModelMpdu<'id, X::Body>>,
     role: VifRole,
     queue: oer_ieee80211_mac::qos::WmmAccessCategory,
     plan: oer_ieee80211_lower_mac::RetryPlan<PhyRate>,
@@ -1861,7 +1871,10 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
         &'a mut self,
         held: &'a ModelHeld<'id, X>,
         _: &'a mut ModelLocal<'id>,
-        sink: &'a mut dyn FnMut(LowerMacTerminal<'id, ModelTypes<X>>),
+        sink: &'a mut dyn FnMut(
+            LowerMacTerminal<'id, ModelTypes<X>>,
+        )
+            -> core::ops::ControlFlow<LowerMacTerminal<'id, ModelTypes<X>>>,
     ) -> impl Future<Output = Result<(), Poisoned<ModelFault>>> + 'a
     where
         'id: 'a,
@@ -1881,7 +1894,16 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
             }
             while let Some(event) = held.take_event() {
                 match event {
-                    LowerMacEvent::Terminal(terminal) => sink(terminal),
+                    LowerMacEvent::Terminal(terminal) => {
+                        if let core::ops::ControlFlow::Break(terminal) = sink(terminal) {
+                            held.events
+                                .items
+                                .borrow_mut()
+                                .push_front(LowerMacEvent::Terminal(terminal));
+                            held.poison();
+                            return Poll::Ready(Err(Poisoned { cause: ModelFault }));
+                        }
+                    }
                     LowerMacEvent::Received { mut frame, .. } => {
                         frame.recycled = true;
                         held.rx_out.set(held.rx_out.get().saturating_sub(1));
@@ -2808,6 +2830,15 @@ pub struct ModelPhase<'a, 'id, C = ModelCaps, X: ModelContext = ()> {
     held: &'a ModelHeld<'id, X>,
 }
 
+#[cfg(test)]
+impl<'id, C, X: ModelContext> ModelPhase<'_, 'id, C, X> {
+    /// Deliberately violate the backend contract while retaining actual minted
+    /// owners. Only in-crate contract regressions can inject such a terminal.
+    pub(crate) fn inject_terminal(&mut self, terminal: LowerMacTerminal<'id, ModelTypes<X>>) {
+        self.held.post(LowerMacEvent::Terminal(terminal));
+    }
+}
+
 impl<'id, C, X: ModelContext> PortPhase for ModelPhase<'_, 'id, C, X> {
     type Event = LowerMacEvent<'id, ModelTypes<X>>;
     type Fault = ModelFault;
@@ -2980,17 +3011,17 @@ type PhaseProof<'p, T> = PhantomData<fn(&'p ()) -> (&'p (), T)>;
 type TypeProof<T> = PhantomData<fn() -> T>;
 type ModelSource<'k, 'p, 'id, C, K, R, X> = TxSource<
     ModelBuffer<'id, C>,
-    ModelSent<'id, C>,
+    ModelSent<'id, C, <X as ModelContext>::Body>,
     oer_ieee80211_lower_mac::ClassFrame<'p, 'id, C, K>,
-    ModelBody,
+    <X as ModelContext>::Body,
     <R as RoleKeys<'id, ModelTypes<X>>>::TxKey<'k>,
     RetransmissionPlan<'p, 'id, K>,
 >;
 type ModelCheckedSource<'k, 'p, 'id, C, K, R, X> = CheckedTxSource<
     ModelBuffer<'id, C>,
-    ModelSent<'id, C>,
+    ModelSent<'id, C, <X as ModelContext>::Body>,
     oer_ieee80211_lower_mac::ClassFrame<'p, 'id, C, K>,
-    ModelBody,
+    <X as ModelContext>::Body,
     <R as RoleKeys<'id, ModelTypes<X>>>::TxKey<'k>,
     RetransmissionPlan<'p, 'id, K>,
 >;
@@ -3003,7 +3034,7 @@ type ModelPreparation<'k, 'p, 'id, R, K, X, C> = Result<
 /// Dropping or submitting it ends that borrow; a queued operation owns only
 /// the backend identity, never a reference to a portable machine.
 pub struct ModelPrepared<'k, 'p, 'id, R, K, X: ModelContext = ()> {
-    mpdu: ModelMpdu<'id>,
+    mpdu: ModelMpdu<'id, X::Body>,
     plan: oer_ieee80211_lower_mac::RetryPlan<PhyRate>,
     key: Option<PreparedKey>,
     key_borrow: PhantomData<&'k ()>,
@@ -3017,7 +3048,7 @@ pub struct ModelTxExecution {
 impl<'id, R, K, X: ModelContext> PreparedTx<'id> for ModelPrepared<'_, '_, 'id, R, K, X> {
     type Types = ModelTypes<X>;
     type Execution = ModelTxExecution;
-    fn into_admission(self) -> (ModelMpdu<'id>, Self::Execution) {
+    fn into_admission(self) -> (ModelMpdu<'id, X::Body>, Self::Execution) {
         (
             self.mpdu,
             ModelTxExecution {
@@ -3026,56 +3057,51 @@ impl<'id, R, K, X: ModelContext> PreparedTx<'id> for ModelPrepared<'_, '_, 'id, 
             },
         )
     }
-    fn into_parts(self) -> (ModelAnyBuffer<'id>, Option<ModelBody>) {
+    fn into_parts(self) -> (ModelAnyBuffer<'id, X::Body>, Option<X::Body>) {
         self.mpdu.into_parts()
     }
 }
 
-#[cfg_attr(
-    target_pointer_width = "64",
-    expect(
-        clippy::result_large_err,
-        reason = "class refusal returns the original affine MPDU by value"
-    )
-)]
-// The return crosses Clippy's size threshold on 64-bit targets only.
-// Pointer width changes the lint expectation, never the model or its API.
 /// A model buffer class and its unique pool within the installation layout.
 pub trait ModelClass: TxBufferClass + Sized {
     /// Nominal component of the backing memory slots.
     type Path: oer_radio_port::PoolPath;
     /// Return fresh memory through the terminal's exhaustive buffer enum.
-    fn erase<'id>(buffer: ModelBuffer<'id, Self>) -> ModelAnyBuffer<'id>;
+    fn erase<'id, D>(buffer: ModelBuffer<'id, Self>) -> ModelAnyBuffer<'id, D>;
     /// Return a published MPDU through the terminal buffer enum.
-    fn erase_sent<'id>(mpdu: ModelSent<'id, Self>) -> ModelAnyBuffer<'id>;
+    fn erase_sent<'id, D>(mpdu: ModelSent<'id, Self, D>) -> ModelAnyBuffer<'id, D>;
     /// Recover fresh memory of this class, or preserve the other owner.
-    fn class<'id>(
-        buffer: ModelAnyBuffer<'id>,
-    ) -> Result<ModelBuffer<'id, Self>, ModelAnyBuffer<'id>>;
+    fn class<'id, D>(
+        buffer: ModelAnyBuffer<'id, D>,
+    ) -> Result<ModelBuffer<'id, Self>, ModelAnyBuffer<'id, D>>;
     /// Recover a published MPDU of this class, or preserve the other owner.
-    fn sent<'id>(buffer: ModelAnyBuffer<'id>) -> Result<ModelSent<'id, Self>, ModelAnyBuffer<'id>>;
+    fn sent<'id, D>(
+        buffer: ModelAnyBuffer<'id, D>,
+    ) -> Result<ModelSent<'id, Self, D>, ModelAnyBuffer<'id, D>>;
 }
 
 impl ModelClass for ModelSmall {
     type Path = ModelPool<2>;
-    fn erase<'id>(buffer: ModelBuffer<'id, Self>) -> ModelAnyBuffer<'id> {
+    fn erase<'id, D>(buffer: ModelBuffer<'id, Self>) -> ModelAnyBuffer<'id, D> {
         ModelAnyBuffer::Small(buffer)
     }
     /// Return a published MPDU through the terminal buffer enum.
-    fn erase_sent<'id>(mpdu: ModelSent<'id, Self>) -> ModelAnyBuffer<'id> {
+    fn erase_sent<'id, D>(mpdu: ModelSent<'id, Self, D>) -> ModelAnyBuffer<'id, D> {
         ModelAnyBuffer::SmallSent(mpdu)
     }
     /// Recover fresh memory of this class, or preserve the other owner.
-    fn class<'id>(
-        buffer: ModelAnyBuffer<'id>,
-    ) -> Result<ModelBuffer<'id, Self>, ModelAnyBuffer<'id>> {
+    fn class<'id, D>(
+        buffer: ModelAnyBuffer<'id, D>,
+    ) -> Result<ModelBuffer<'id, Self>, ModelAnyBuffer<'id, D>> {
         match buffer {
             ModelAnyBuffer::Small(buffer) => Ok(buffer),
             buffer => Err(buffer),
         }
     }
     /// Recover a published MPDU of this class, or preserve the other owner.
-    fn sent<'id>(buffer: ModelAnyBuffer<'id>) -> Result<ModelSent<'id, Self>, ModelAnyBuffer<'id>> {
+    fn sent<'id, D>(
+        buffer: ModelAnyBuffer<'id, D>,
+    ) -> Result<ModelSent<'id, Self, D>, ModelAnyBuffer<'id, D>> {
         match buffer {
             ModelAnyBuffer::SmallSent(buffer) => Ok(buffer),
             buffer => Err(buffer),
@@ -3084,24 +3110,26 @@ impl ModelClass for ModelSmall {
 }
 impl ModelClass for ModelLarge {
     type Path = ModelPool<3>;
-    fn erase<'id>(buffer: ModelBuffer<'id, Self>) -> ModelAnyBuffer<'id> {
+    fn erase<'id, D>(buffer: ModelBuffer<'id, Self>) -> ModelAnyBuffer<'id, D> {
         ModelAnyBuffer::Large(buffer)
     }
     /// Return a published MPDU through the terminal buffer enum.
-    fn erase_sent<'id>(mpdu: ModelSent<'id, Self>) -> ModelAnyBuffer<'id> {
+    fn erase_sent<'id, D>(mpdu: ModelSent<'id, Self, D>) -> ModelAnyBuffer<'id, D> {
         ModelAnyBuffer::LargeSent(mpdu)
     }
     /// Recover fresh memory of this class, or preserve the other owner.
-    fn class<'id>(
-        buffer: ModelAnyBuffer<'id>,
-    ) -> Result<ModelBuffer<'id, Self>, ModelAnyBuffer<'id>> {
+    fn class<'id, D>(
+        buffer: ModelAnyBuffer<'id, D>,
+    ) -> Result<ModelBuffer<'id, Self>, ModelAnyBuffer<'id, D>> {
         match buffer {
             ModelAnyBuffer::Large(buffer) => Ok(buffer),
             buffer => Err(buffer),
         }
     }
     /// Recover a published MPDU of this class, or preserve the other owner.
-    fn sent<'id>(buffer: ModelAnyBuffer<'id>) -> Result<ModelSent<'id, Self>, ModelAnyBuffer<'id>> {
+    fn sent<'id, D>(
+        buffer: ModelAnyBuffer<'id, D>,
+    ) -> Result<ModelSent<'id, Self, D>, ModelAnyBuffer<'id, D>> {
         match buffer {
             ModelAnyBuffer::LargeSent(buffer) => Ok(buffer),
             buffer => Err(buffer),
@@ -3359,7 +3387,7 @@ pub struct ModelAggregate<
     X: ModelContext = (),
     S: AggregateState = EmptyAggregate,
 > {
-    subframes: Vec<Subframe<'id>>,
+    subframes: Vec<Subframe<'id, X::Body>>,
     first: S::Head<SequenceNumber>,
     receiver: IndividualAddress,
     tid: Tid,
@@ -3393,7 +3421,7 @@ impl<'id, R, K, X: ModelContext, S: AggregateState> PhaseAggregate<'id>
     type Types = ModelTypes<X>;
     type State = S;
     type Execution = ModelAggregateExecution;
-    fn into_admission(self) -> (ModelSubframes<'id>, Self::Execution)
+    fn into_admission(self) -> (ModelSubframes<'id, X::Body>, Self::Execution)
     where
         S: oer_ieee80211_lower_mac::NonEmptyState,
     {
@@ -3407,7 +3435,7 @@ impl<'id, R, K, X: ModelContext, S: AggregateState> PhaseAggregate<'id>
             },
         )
     }
-    type Cancelled = ModelSubframeIter<'id>;
+    type Cancelled = ModelSubframeIter<'id, X::Body>;
     fn receiver(&self) -> IndividualAddress {
         self.receiver
     }
@@ -3427,18 +3455,21 @@ impl<'id, R, K, X: ModelContext, S: AggregateState> PhaseAggregate<'id>
         ModelSubframeIter(self.subframes.into_iter())
     }
 }
-type ModelSubframe<'id, C, K> =
-    SubframeSource<ModelBuffer<'id, C>, ModelSent<'id, C>, ClassSubframe<C, K>, ModelBody>;
+type ModelSubframe<'id, C, K, D> =
+    SubframeSource<ModelBuffer<'id, C>, ModelSent<'id, C, D>, ClassSubframe<C, K>, D>;
 type ModelCheckedAggregate<'k, 'p, 'id, R, K, X, S, C> = CheckedAggregate<
     ModelAggregate<'k, 'p, 'id, R, K, X, S>,
     ModelBuffer<'id, C>,
-    ModelSent<'id, C>,
+    ModelSent<'id, C, <X as ModelContext>::Body>,
     ClassSubframe<C, K>,
-    ModelBody,
+    <X as ModelContext>::Body,
 >;
 type ModelAggregatePush<'k, 'p, 'id, R, K, X, S, C> = Result<
     ModelAggregate<'k, 'p, 'id, R, K, X, NonEmptyAggregate>,
-    AggregateRefused<ModelAggregate<'k, 'p, 'id, R, K, X, S>, ModelSubframe<'id, C, K>>,
+    AggregateRefused<
+        ModelAggregate<'k, 'p, 'id, R, K, X, S>,
+        ModelSubframe<'id, C, K, <X as ModelContext>::Body>,
+    >,
 >;
 
 #[cfg_attr(

@@ -25,6 +25,7 @@ impl PortBody<ModelBackend> for ConfigureAcrossDisable {
                 if matches!(event, LowerMacTerminal::Configured(VifRole::Station)) {
                     configured += 1;
                 }
+                core::ops::ControlFlow::Continue(())
             })
             .await
         else {
@@ -67,6 +68,7 @@ impl PortBody<ModelBackend> for ConfigureAcrossDisable {
                 if matches!(event, LowerMacTerminal::Configured(_)) {
                     extra += 1;
                 }
+                core::ops::ControlFlow::Continue(())
             })
             .await
         else {

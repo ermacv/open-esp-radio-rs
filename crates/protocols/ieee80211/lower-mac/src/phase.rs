@@ -557,6 +557,10 @@ pub type InterfaceKeys<'p, 'id, I> = <<I as InterfacePhase<'p, 'id>>::Role as Ro
 
 /// The types of one backend's phase that its events carry.
 pub trait PhaseTypes<'id>: Sized {
+    /// Maximum unconsumed command terminals of the installation's pools.
+    /// Includes TX tickets, pairwise removals, GTK permissions, gate and
+    /// configuration/TSF requests; excludes unsolicited RX and TBTT events.
+    const TERMINAL_CAPACITY: usize;
     /// Component owning the station connection epoch source.
     type EpochPath: PoolPath;
     /// Nominal authority of this backend's gate component.

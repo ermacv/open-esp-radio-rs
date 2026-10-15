@@ -136,6 +136,18 @@ reason = "cargo xtask check ui checks the contract diagnostic and its compiling 
 path = "crates/protocols/ieee80211/sta/tests/ui/sae_terminal_owner.rs"
 reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
 
+[[uncompiled]]
+path = "crates/protocols/ieee80211/sta/tests/ui/repeated_m3_group_only.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/sta/tests/ui/deferred_eapol_owner.rs"
+reason = "cargo xtask check ui checks both affine owner diagnostics and their compiling twins on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/sta/tests/ui/protected_group_capacity.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
 # Dependencies a package declares only to select features of a crate its
 # dependency graph already uses, and so never names.
 
@@ -310,6 +322,18 @@ path = "crates/protocols/ieee80211/arbiter/tests/ui/repeat_retune.rs"
 reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
 
 [[uncompiled]]
+path = "crates/protocols/ieee80211/arbiter/tests/ui/failed_arbiter_owner.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/arbiter/tests/ui/failed_arbiter_inputs.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/arbiter/tests/ui/refused_arbiter_owner.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
 path = "crates/protocols/ieee80211/arbiter/tests/ui/repeated_construction.rs"
 reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
 
@@ -375,4 +399,20 @@ reason = "Standalone compiler contract executed by the host/RV32 UI catalog with
 
 [[uncompiled]]
 path = "crates/roles/esp32s31/ieee80211/ap/tests/ui/replay_commit_once.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/runtime/ieee80211/tests/ui/stopped_service_owner.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/runtime/ieee80211/tests/ui/terminal_custody_owner.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/runtime/ieee80211/tests/ui/station_external_body.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/sta/tests/ui/retired_station_diagnostics.rs"
 reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."

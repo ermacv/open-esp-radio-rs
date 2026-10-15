@@ -41,6 +41,11 @@ impl<X> Pool<X> {
         self.items.iter().flatten().count()
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &X> {
+        self.items.iter().flatten()
+    }
+
     pub(crate) fn is_empty(&self) -> bool {
         self.items.iter().all(Option::is_none)
     }

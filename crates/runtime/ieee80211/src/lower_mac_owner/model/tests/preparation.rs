@@ -469,7 +469,7 @@ impl Work for AggregateBoundaries {
         let memory = buffer.memory.as_ptr();
         let body = ModelBody(alloc::vec![0x99; 16]);
         let body_pointer = body.0.as_ptr();
-        let source: ModelSubframe<ModelSmall, ModelCaps> = SubframeSource::Fresh {
+        let source: ModelSubframe<ModelSmall, ModelCaps, ModelBody> = SubframeSource::Fresh {
             buffer,
             frame: ClassSubframe::<ModelSmall, _>::new(subframe_frame(0))
                 .ok()

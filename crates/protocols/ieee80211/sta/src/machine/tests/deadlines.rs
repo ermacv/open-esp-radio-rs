@@ -165,14 +165,14 @@ fn late_authentication_terminal_overflow_finishes_connect_once_with_all_credits(
 fn handshake_deadline_overflow_finishes_connect_without_sending_eapol() {
     for message1 in [false, true] {
         installed(|mint| {
-            let mut world = World::with_group_slots(
+            let mut world = World::with_groups(
                 mint,
                 3,
                 StaSecurity::Wpa2Personal {
                     password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
                     pmk: Pmk::from_bytes(PMK),
                 },
-                2,
+                [Slot(1), Slot(2)],
             );
             world
                 .station

@@ -6,16 +6,16 @@ use oer_ieee80211_rsn::{
     frames::RsnTxFrame,
     supplicant::{
         RsnConnectedAction, RsnConnectedProcessError, RsnConnectedSupplicant,
-        RsnGroupKeyInstallRequest, RsnStaProcessError, RsnStaSupplicant, RsnStaSupplicantAction,
+        RsnGroupKeyInstallRequest, RsnStaProcessError, RsnStaReady, RsnStaSupplicant,
+        RsnStaSupplicantAction,
     },
 };
 
 /// Consume one peer EAPOL-Key frame and resolve a requested key-data unwrap
 /// through `unwrap`.
 ///
-/// The result never carries [`RsnStaSupplicantAction::UnwrapKeyData`]: an
-/// encrypted Message 3 is unwrapped here and completed into
-/// [`RsnStaSupplicantAction::InstallKeys`], and an unwrap failure is
+/// The resolved [`RsnStaReady`] type cannot carry an unfinished unwrap.
+/// An encrypted Message 3 yields initial or group-only install work, and an unwrap failure is
 /// [`RsnStaProcessError::KeyUnwrap`] after the supplicant has rejected the key
 /// data.
 pub async fn process_frame<const N: usize, U: AsyncRsnKeyUnwrap>(
@@ -23,17 +23,15 @@ pub async fn process_frame<const N: usize, U: AsyncRsnKeyUnwrap>(
     frame: OwnedEapolFrame<N>,
     pmk: &Pmk,
     unwrap: &mut U,
-) -> Result<RsnStaSupplicantAction<N>, RsnStaProcessError<U::Error>> {
+) -> Result<RsnStaReady<N>, RsnStaProcessError<U::Error>> {
     match supplicant.on_frame(frame, pmk)? {
         RsnStaSupplicantAction::UnwrapKeyData(request) => {
             let unwrapped = unwrap
                 .unwrap_key_data(request.kek(), request.wrapped_key_data())
                 .await;
-            supplicant
-                .complete_key_data_unwrap(request, unwrapped)
-                .map(RsnStaSupplicantAction::InstallKeys)
+            supplicant.complete_key_data_unwrap(request, unwrapped)
         }
-        action => Ok(action),
+        RsnStaSupplicantAction::Ready(action) => Ok(action),
     }
 }
 

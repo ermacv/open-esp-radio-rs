@@ -330,7 +330,7 @@
 //! # use oer_ieee80211_port::{Enabled, Owner, PortBackend};
 //! async fn keep_the_phase<'id, B: PortBackend>(mut owner: Owner<'_, 'id, B, Enabled>) {
 //!     let phase = owner.phase();
-//!     let _ = owner.disable(&mut |_| {}).await;
+//!     let _ = owner.disable(&mut |_| core::ops::ControlFlow::Continue(())).await;
 //!     drop(phase);
 //! }
 //! ```
@@ -432,7 +432,7 @@
 //!             let phase = enabled.phase();
 //!             drop(phase);
 //!         }
-//!         match enabled.disable(&mut |_| {}).await {
+//!         match enabled.disable(&mut |_| core::ops::ControlFlow::Continue(())).await {
 //!             Ok(disabled) => disabled.fail_stop(),
 //!             Err(poisoned) => poisoned.fail_stop(),
 //!         }
@@ -559,11 +559,14 @@ pub trait PortBackend: Sized {
     /// Disable the enabled port of the install `'id` within the backend's
     /// bound: end every admitted work, hand its terminal event with what it
     /// returns to `sink`, and return when every permit is back in `held`.
+    /// A rejected terminal returns by value. Stop delivery, retain that
+    /// terminal and every remaining owner in the installation, and return
+    /// `Poisoned`. A bounded consumer can never force a resource drop.
     fn disable<'a, 'id>(
         &'a mut self,
         held: &'a Self::Held<'id>,
         local: &'a mut Self::Local<'id>,
-        sink: &'a mut dyn FnMut(Self::Terminal<'id>),
+        sink: &'a mut dyn FnMut(Self::Terminal<'id>) -> core::ops::ControlFlow<Self::Terminal<'id>>,
     ) -> impl Future<Output = Result<(), Poisoned<Self::Fault>>> + 'a
     where
         'id: 'a;
@@ -1082,13 +1085,15 @@ impl<'p, 'id, B: PortBackend> Owner<'p, 'id, B, Enabled> {
     /// Disable the port within the backend's bound: every leftover terminal
     /// of a phase's work, with what it returns, goes to `sink`, and the port
     /// is disabled once every permit is back.
+    /// If the sink returns a terminal, the backend retains it and all later
+    /// owners for teardown and returns a poisoned owner.
     ///
     /// # Errors
     ///
     /// A poisoned backend.
     pub async fn disable(
         self,
-        sink: &mut dyn FnMut(B::Terminal<'id>),
+        sink: &mut dyn FnMut(B::Terminal<'id>) -> core::ops::ControlFlow<B::Terminal<'id>>,
     ) -> Result<Owner<'p, 'id, B, Disabled>, PoisonedOwner<'p, 'id, B>> {
         // The future holds the owner's sentry across the wait, as
         // `enable`'s does.

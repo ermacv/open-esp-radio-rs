@@ -114,7 +114,7 @@ impl<'m> PortBackend for Backend<'m> {
         &'a mut self,
         held: &'a Self::Held<'id>,
         _: &'a mut u32,
-        sink: &'a mut dyn FnMut(u32),
+        sink: &'a mut dyn FnMut(u32) -> core::ops::ControlFlow<u32>,
     ) -> impl Future<Output = Result<(), Poisoned<()>>> + 'a
     where
         'id: 'a,
@@ -151,8 +151,14 @@ impl<'m> PortBackend for Backend<'m> {
                 for slot in slots {
                     end(model, slot);
                 }
-                while let Some(event) = model.events.borrow_mut().pop_front() {
-                    sink(event);
+                loop {
+                    let event = model.events.borrow_mut().pop_front();
+                    let Some(event) = event else { break };
+                    if let core::ops::ControlFlow::Break(event) = sink(event) {
+                        model.events.borrow_mut().push_front(event);
+                        model.poisoned.set(true);
+                        return Err(Poisoned { cause: () });
+                    }
                 }
                 Ok(())
             }
@@ -290,7 +296,10 @@ impl<'m> PortBody<Backend<'m>> for OnePhase<'_> {
         // hands its terminal to the sink.
         let leftovers = self.leftovers;
         match enabled
-            .disable(&mut |event| leftovers.borrow_mut().push(event))
+            .disable(&mut |event| {
+                leftovers.borrow_mut().push(event);
+                core::ops::ControlFlow::Continue(())
+            })
             .await
         {
             Ok(disabled) => disabled.uninstall(()),
@@ -334,7 +343,10 @@ impl<'m> PortBody<Backend<'m>> for TwoPhases {
                 panic!("the model enables");
             };
             let _ = enabled.phase();
-            owner = match enabled.disable(&mut |_| {}).await {
+            owner = match enabled
+                .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+                .await
+            {
                 Ok(disabled) => disabled,
                 Err(poisoned) => return poisoned.fail_stop(),
             };
@@ -354,6 +366,50 @@ fn the_backends_held_part_of_the_install_reaches_every_phase_and_disable() {
     assert_eq!(model.lent.get(), 2);
 }
 
+struct RejectFirstTerminal;
+
+impl<'m> PortBody<Backend<'m>> for RejectFirstTerminal {
+    async fn run<'id>(
+        self,
+        owner: Owner<'_, 'id, Backend<'m>, Disabled>,
+        _: [Slot<'id, ModelCaps>; 2],
+    ) -> Ended<'id, Backend<'m>> {
+        let mut owner = owner.enable().await.ok().unwrap();
+        {
+            let mut phase = owner.phase();
+            phase.admit(0);
+            phase.admit(0);
+        }
+        let mut offered = 0;
+        let owner = owner
+            .disable(&mut |terminal| {
+                offered += 1;
+                core::ops::ControlFlow::Break(terminal)
+            })
+            .await
+            .err()
+            .expect("a full sink poisons delivery");
+        assert_eq!(offered, 1, "no later terminal enters the full sink");
+        owner.uninstall(())
+    }
+}
+
+#[test]
+fn a_rejected_disable_terminal_and_its_successors_remain_owned_until_uninstall() {
+    let model = Model::default();
+    assert!(now_ready(run_port(Backend(&model), RejectFirstTerminal)).is_some());
+    assert_eq!(
+        model
+            .events
+            .borrow()
+            .iter()
+            .copied()
+            .collect::<std::vec::Vec<_>>(),
+        [0, 1]
+    );
+    assert!(model.poisoned.get());
+}
+
 /// A body that enables once and reports the refusal it met.
 struct EnableOnce<'t> {
     refusal: &'t core::cell::Cell<Option<&'static str>>,
@@ -366,7 +422,10 @@ impl<'m> PortBody<Backend<'m>> for EnableOnce<'_> {
         _: [Slot<'id, ModelCaps>; 2],
     ) -> Ended<'id, Backend<'m>> {
         match owner.enable().await {
-            Ok(enabled) => match enabled.disable(&mut |_| {}).await {
+            Ok(enabled) => match enabled
+                .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+                .await
+            {
                 Ok(disabled) => disabled.uninstall(()),
                 Err(poisoned) => poisoned.fail_stop(),
             },
@@ -438,7 +497,7 @@ impl<'m> PortBody<Backend<'m>> for DropTheDisable {
             panic!("the model enables");
         };
         {
-            let mut sink = |_| {};
+            let mut sink = |_| core::ops::ControlFlow::Continue(());
             let mut disabling = core::pin::pin!(enabled.disable(&mut sink));
             let first = disabling
                 .as_mut()
@@ -477,7 +536,10 @@ impl<'m> PortBody<Backend<'m>> for PoisonBetween<'_> {
         };
         // The world poisons the backend while the port runs.
         self.0.poisoned.set(true);
-        let Err(poisoned) = enabled.disable(&mut |_| {}).await else {
+        let Err(poisoned) = enabled
+            .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+            .await
+        else {
             panic!("a poisoned model fails its disable");
         };
         poisoned.cause();

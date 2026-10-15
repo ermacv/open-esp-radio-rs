@@ -7,6 +7,11 @@ license.workspace = true
 repository.workspace = true
 description = "Executor- and chip-independent Wi-Fi station MLME and policy"
 
+[features]
+default = []
+# Resource accounting visible to host compositions that test retirement.
+test-support = []
+
 [dependencies]
 heapless = "0.9.3"
 oer-trace = { path = "../../../trace" }
@@ -25,3 +30,4 @@ workspace = true
 [package.metadata.open-radio]
 layer = "protocol"
 platform = "portable"
+test-feature-sets = ["test-support"]

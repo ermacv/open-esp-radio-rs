@@ -12,6 +12,7 @@ struct Context<'id> {
 }
 struct Contexts;
 impl ModelContext for Contexts {
+    type Body = ModelBody;
     type Context<'id> = Context<'id>;
 }
 impl Drop for Context<'_> {
@@ -257,7 +258,8 @@ impl PortBody<Backend> for Operations {
                 LowerMacEvent::Terminal(event),
                 &self.seen,
                 &mut terminal_access,
-            )
+            );
+            core::ops::ControlFlow::Continue(())
         };
         match owner.disable(&mut sink).await {
             Ok(owner) => {
@@ -320,6 +322,7 @@ struct AggregateContext {
 }
 
 impl ModelContext for AggregateContext {
+    type Body = ModelBody;
     type Context<'id> = Self;
 }
 
@@ -487,7 +490,8 @@ impl PortBody<ModelBackend<ModelCaps, AggregateContext>> for AggregateOwners {
             assert!(
                 !matches!(event, LowerMacTerminal::TxCompleted(_)),
                 "each attempt has one terminal"
-            )
+            );
+            core::ops::ControlFlow::Continue(())
         };
         let Ok(owner) = owner.disable(&mut sink).await else {
             panic!("the model disables")
@@ -526,6 +530,7 @@ fn aggregate_terminal_returns_its_context_and_each_subframes_resources_on_air_or
 
 struct FaultContext(Rc<Cell<usize>>);
 impl ModelContext for FaultContext {
+    type Body = ModelBody;
     type Context<'id> = Self;
 }
 impl Drop for FaultContext {

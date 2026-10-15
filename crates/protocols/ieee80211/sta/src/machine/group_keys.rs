@@ -44,15 +44,14 @@ mod tests {
         keys.restore(selected, true);
         let selected = keys.take_matching(id, &[2; 16]).unwrap();
         keys.restore(selected, true);
-        let old = keys.replace(false).unwrap();
+        let old = keys.replace().unwrap();
         assert_eq!(old.key, 0);
         assert_eq!(keys.current_id(), Some(id));
         keys.release(old.place);
         let next = keys.take_retiring().unwrap();
         assert_eq!(next.key, 1);
         keys.release(next.place);
-        assert!(keys.replace(false).is_none());
-        let single = keys.replace(true).unwrap();
+        let single = keys.replace().unwrap();
         assert_eq!(single.key, 2);
         keys.install(single, true);
         let last = keys.take_any().unwrap();
@@ -131,8 +130,14 @@ pub(super) struct GroupKeys<Key> {
 }
 
 impl<Key> GroupKeys<Key> {
+    #[cfg(test)]
     pub(super) fn len(&self) -> usize {
         self.entries.iter().flatten().count()
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(super) fn owners(&self) -> impl Iterator<Item = &Key> {
+        self.entries.iter().flatten().map(|entry| &entry.key)
     }
 
     pub(super) fn new() -> Self {
@@ -236,10 +241,6 @@ impl<Key> GroupKeys<Key> {
             .any(|entry| entry.key_id == id && entry.material.as_bytes() == material)
     }
 
-    pub(super) fn has_retiring(&self) -> bool {
-        self.oldest_retiring().is_some()
-    }
-
     fn oldest_retiring(&self) -> Option<Index> {
         self.order
             .iter()
@@ -265,12 +266,11 @@ impl<Key> GroupKeys<Key> {
         Some(entry)
     }
 
-    /// Replace the oldest non-current record. A backend with only one
-    /// physical slot replaces its sole current installation atomically.
-    pub(super) fn replace(&mut self, single_slot: bool) -> Option<Installed<Key>> {
-        let index = self
-            .oldest_retiring()
-            .or_else(|| single_slot.then_some(self.current).flatten())?;
+    /// When no vacant slot remains, replace the oldest non-current record,
+    /// or the current one when it is the only installed owner. Selection
+    /// leaves the installation's age unchanged.
+    pub(super) fn replace(&mut self) -> Option<Installed<Key>> {
+        let index = self.oldest_retiring().or(self.current)?;
         index.select_mut(&mut self.entries).take()
     }
 }

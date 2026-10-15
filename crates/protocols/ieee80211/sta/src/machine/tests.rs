@@ -18,6 +18,8 @@ use oer_ieee80211_mac::phy::{HeMcs, HtMcs, LegacyRate, PhyRate};
 use oer_radio_port::{Mint, branded};
 use std::vec::Vec;
 
+mod repeated_message3;
+mod restart;
 mod sae;
 
 fn installed<R>(body: impl for<'id> FnOnce(Mint<'id, ArbiterPool>) -> R) -> R {
@@ -93,9 +95,10 @@ struct Slot(u8);
 #[derive(Debug, Eq, PartialEq)]
 struct Key<S = Slot>(S);
 
-struct Tokens;
+struct Tokens<const G: usize = 2>;
 
-impl StaTokens for Tokens {
+impl<const G: usize> StaTokens for Tokens<G> {
+    const GROUP_SLOTS: usize = G;
     type GatePath = oer_radio_port::Root;
     type EpochPath = oer_radio_port::Root;
     type Small = Buffer;
@@ -217,22 +220,24 @@ enum Seen {
 }
 
 /// The loop the thin service runs, with the test as the port.
-struct World<'id> {
-    station: Station<'id, Tokens, Caps>,
+struct World<'id, const G: usize = 2> {
+    station: Station<'id, Tokens<G>, Caps>,
     arbiter: Arbiter<'id, Caps, NoReservation>,
     gate_issuer: GateIssuer<'id>,
     seen: Vec<Seen>,
     completed: Vec<StaCommandTerminal>,
     /// The transmissions in flight, which the port ends in order.
     submitted: Vec<(StaTxContext<'id>, Ticket, Buffer)>,
+    /// Let RX run while the current TX still owns its terminal resources.
+    hold_transmissions: bool,
     /// The receive configurations the port has yet to confirm.
     configuring: Option<PendingConfiguration<'id>>,
     /// The configurations wait for the test's confirmation.
     hold_configured: bool,
     hold_key_installs: bool,
-    pending_installs: Vec<StaInput<'id, Tokens, Caps>>,
+    pending_installs: Vec<StaInput<'id, Tokens<G>, Caps>>,
     hold_group_removals: bool,
-    pending_removals: Vec<StaInput<'id, Tokens, Caps>>,
+    pending_removals: Vec<StaInput<'id, Tokens<G>, Caps>>,
     /// The outcomes of the next transmissions; delivered once none is
     /// queued.
     outcomes: std::collections::VecDeque<(TxOutcome, bool)>,
@@ -260,19 +265,7 @@ impl<'id> World<'id> {
         skipped_absences: u8,
         security: StaSecurity,
     ) -> Self {
-        Self::with_group_slots(mint, skipped_absences, security, 2)
-    }
-
-    fn with_group_slots(
-        mint: Mint<'id, ArbiterPool>,
-        skipped_absences: u8,
-        security: StaSecurity,
-        group_slots: u8,
-    ) -> Self {
-        match group_slots {
-            1 => Self::with_groups(mint, skipped_absences, security, [Slot(1)]),
-            _ => Self::with_groups(mint, skipped_absences, security, [Slot(1), Slot(2)]),
-        }
+        Self::with_groups(mint, skipped_absences, security, [Slot(1), Slot(2)])
     }
 
     fn with_groups<const G: usize>(
@@ -280,7 +273,7 @@ impl<'id> World<'id> {
         skipped_absences: u8,
         security: StaSecurity,
         group_slots: [Slot; G],
-    ) -> Self {
+    ) -> World<'id, G> {
         Self::with_pools::<2, G>(mint, skipped_absences, security, group_slots)
     }
 
@@ -289,7 +282,26 @@ impl<'id> World<'id> {
         skipped_absences: u8,
         security: StaSecurity,
         group_slots: [Slot; G],
-    ) -> Self {
+    ) -> World<'id, G> {
+        Self::with_builder::<TX, G>(mint, skipped_absences, group_slots, |config, resources| {
+            match security {
+                StaSecurity::Open => Station::new_open(config, resources),
+                StaSecurity::Wpa2Personal { password, pmk } => {
+                    Station::new_personal(config, password, pmk, resources)
+                }
+            }
+        })
+    }
+
+    fn with_builder<const TX: usize, const G: usize>(
+        mint: Mint<'id, ArbiterPool>,
+        skipped_absences: u8,
+        group_slots: [Slot; G],
+        build: impl FnOnce(
+            StaConfig<Caps>,
+            StationResources<'id, Tokens<G>, TX, TX, G>,
+        ) -> Station<'id, Tokens<G>, Caps>,
+    ) -> World<'id, G> {
         let channels = heapless::Vec::from_slice(&[channel(1), channel(6)]).unwrap();
         let (gate, gate_issuer, authority) = mint.into_pools();
         let (arbiter, place, absence) = Arbiter::new(
@@ -298,39 +310,34 @@ impl<'id> World<'id> {
             authority,
             gate,
         );
-        let station = Station::new(
-            StaConfig {
-                address: oer_ieee80211_mac::address::OwnAddress::new(
-                    oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
-                ),
-                ssid: heapless::Vec::from_slice(SSID).unwrap(),
-                channels,
-                dwell: Duration::from_millis(10),
-                skipped_absences,
-                access_point_margin_db: 6,
-                supported_rates: [0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24],
-                association: &CAPABILITIES,
-                listen_interval: StationListenInterval::new(10).unwrap(),
-                phy: PhyMode::Legacy,
-                security,
-                nonce,
-                he_packet_padding: |_| oer_ieee80211_upper_mac::HePacketPadding::None,
-            },
-            StationResources {
-                epochs: LinkEpochSource::for_test(0),
-                tickets: core::array::from_fn::<_, TX, _>(|index| {
-                    Ticket(u8::try_from(index).unwrap())
-                }),
-                buffers: core::array::from_fn::<_, TX, _>(|_| Buffer([0; 512], 512)),
-                place,
-                absence_place: absence,
-                pairwise: Slot(0),
-                groups: group_slots,
-                group_permission: GroupPermission,
-            },
-        )
-        .unwrap_or_else(|_| panic!("protected fixture has group slots"));
-        Self {
+        let config = StaConfig {
+            address: oer_ieee80211_mac::address::OwnAddress::new(
+                oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
+            ),
+            ssid: heapless::Vec::from_slice(SSID).unwrap(),
+            channels,
+            dwell: Duration::from_millis(10),
+            skipped_absences,
+            access_point_margin_db: 6,
+            supported_rates: [0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24],
+            association: &CAPABILITIES,
+            listen_interval: StationListenInterval::new(10).unwrap(),
+            phy: PhyMode::Legacy,
+            nonce,
+            he_packet_padding: |_| oer_ieee80211_upper_mac::HePacketPadding::None,
+        };
+        let resources = StationResources {
+            epochs: LinkEpochSource::for_test(0),
+            tickets: core::array::from_fn::<_, TX, _>(|index| Ticket(u8::try_from(index).unwrap())),
+            buffers: core::array::from_fn::<_, TX, _>(|_| Buffer([0; 512], 512)),
+            place,
+            absence_place: absence,
+            pairwise: Slot(0),
+            groups: group_slots,
+            group_permission: GroupPermission,
+        };
+        let station = build(config, resources);
+        World {
             station,
             arbiter,
             gate_issuer,
@@ -344,6 +351,7 @@ impl<'id> World<'id> {
             hold_group_removals: false,
             pending_removals: Vec::new(),
             outcomes: std::collections::VecDeque::new(),
+            hold_transmissions: false,
             deauthentications: Vec::new(),
             eapol: Vec::new(),
             frames: Vec::new(),
@@ -352,7 +360,9 @@ impl<'id> World<'id> {
             rssi: i8::MIN,
         }
     }
+}
 
+impl<'id, const G: usize> World<'id, G> {
     /// Run the loop at `now` until neither machine owes an action; the
     /// port confirms configurations and ends transmissions at once.
     fn run(&mut self, now: Instant) {
@@ -522,7 +532,7 @@ impl<'id> World<'id> {
                 self.station.input(now, StaInput::Configured(pending));
                 acted = true;
             }
-            if !self.submitted.is_empty() {
+            if !self.hold_transmissions && !self.submitted.is_empty() {
                 self.end_transmissions(now);
                 acted = true;
             }
@@ -532,7 +542,7 @@ impl<'id> World<'id> {
         }
     }
 
-    fn installed(&mut self, now: Instant, input: StaInput<'id, Tokens, Caps>) {
+    fn installed(&mut self, now: Instant, input: StaInput<'id, Tokens<G>, Caps>) {
         if self.hold_key_installs {
             self.pending_installs.push(input);
         } else {
@@ -577,7 +587,7 @@ impl<'id> World<'id> {
 
     /// One frame the station sent: the world records it and holds its
     /// tokens.
-    fn transmitted(&mut self, mut transmit: StaTransmit<'id, Tokens, Caps>, keyed: bool) {
+    fn transmitted(&mut self, mut transmit: StaTransmit<'id, Tokens<G>, Caps>, keyed: bool) {
         let frame = transmit.buffer.bytes_mut();
         // A Null's PM bit tells its power state apart.
         let subtype = u16::from_le_bytes([frame[0], frame[1]]) & 0x10fc;
@@ -781,7 +791,7 @@ fn refused_background_absence_returns_the_original_request_and_exact_reason() {
         AbsenceRefusal::ScheduleExhausted,
         AbsenceRefusal::NotConnected,
         AbsenceRefusal::PrimaryEnds { at: at(99) },
-        AbsenceRefusal::PortFailed,
+        AbsenceRefusal::IdentityExhausted,
     ] {
         installed(|mint| {
             let mut world = connected_world(mint);
@@ -1166,7 +1176,7 @@ fn refused_lease_exchange_releases_the_original_lease_and_resources() {
     });
 }
 
-fn connect_open_world(mut world: World<'_>) -> World<'_> {
+fn connect_open_world<const G: usize>(mut world: World<'_, G>) -> World<'_, G> {
     world
         .station
         .command(at(0), StaRequest::new(1, StaCommand::Connect))
@@ -1677,30 +1687,28 @@ fn a_station_joins_a_wpa2_network_through_the_four_way_handshake() {
 
 /// A WPA2 world whose station holds `group_slots` group key slots, up to
 /// Message 3 at 33 ms; the PTK of its handshake.
-fn wpa2_associated<'id>(
+fn wpa2_associated<'id, const G: usize>(
     mint: Mint<'id, ArbiterPool>,
-    group_slots: u8,
-) -> (World<'id>, oer_ieee80211_rsn::Ptk) {
-    wpa2_associated_by(mint, group_slots, &wpa2_beacon())
+) -> (World<'id, G>, oer_ieee80211_rsn::Ptk) {
+    wpa2_associated_by::<G>(mint, &wpa2_beacon())
 }
 
 /// [`wpa2_associated`] with the access point's `beacon`.
-fn wpa2_associated_by<'id>(
+fn wpa2_associated_by<'id, const G: usize>(
     mint: Mint<'id, ArbiterPool>,
-    group_slots: u8,
     beacon: &[u8],
-) -> (World<'id>, oer_ieee80211_rsn::Ptk) {
+) -> (World<'id, G>, oer_ieee80211_rsn::Ptk) {
     use oer_ieee80211_mac::security::rsn::Akm;
     use oer_ieee80211_rsn::{PtkContext, frames::RsnTxFrame};
 
-    let mut world = World::with_group_slots(
+    let mut world = World::with_groups(
         mint,
         3,
         StaSecurity::Wpa2Personal {
             password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
             pmk: Pmk::from_bytes(PMK),
         },
-        group_slots,
+        core::array::from_fn::<_, G, _>(|i| Slot(u8::try_from(i + 1).unwrap())),
     );
     world
         .station
@@ -1728,23 +1736,21 @@ fn wpa2_associated_by<'id>(
 }
 
 /// The world of [`wpa2_associated`], connected with group key 1.
-fn wpa2_connected<'id>(
+fn wpa2_connected<'id, const G: usize>(
     mint: Mint<'id, ArbiterPool>,
-    group_slots: u8,
-) -> (World<'id>, oer_ieee80211_rsn::Ptk) {
-    wpa2_connected_by(mint, group_slots, &wpa2_beacon())
+) -> (World<'id, G>, oer_ieee80211_rsn::Ptk) {
+    wpa2_connected_by::<G>(mint, &wpa2_beacon())
 }
 
 /// [`wpa2_connected`] with the access point's `beacon`.
-fn wpa2_connected_by<'id>(
+fn wpa2_connected_by<'id, const G: usize>(
     mint: Mint<'id, ArbiterPool>,
-    group_slots: u8,
     beacon: &[u8],
-) -> (World<'id>, oer_ieee80211_rsn::Ptk) {
+) -> (World<'id, G>, oer_ieee80211_rsn::Ptk) {
     use oer_ieee80211_mac::security::rsn::Akm;
     use oer_ieee80211_rsn::frames::RsnTxFrame;
 
-    let (mut world, ptk) = wpa2_associated_by(mint, group_slots, beacon);
+    let (mut world, ptk) = wpa2_associated_by::<G>(mint, beacon);
     let mut plain = std::vec::Vec::new();
     plain.extend_from_slice(&RSN);
     plain.extend_from_slice(&[0xdd, 22, 0x00, 0x0f, 0xac, 0x01, 0x01, 0x00]);
@@ -1767,7 +1773,7 @@ fn m4_refused_before_admission_never_completes_the_handshake() {
         use oer_ieee80211_mac::security::rsn::Akm;
         use oer_ieee80211_rsn::frames::RsnTxFrame;
 
-        let (mut world, ptk) = wpa2_associated(mint, 2);
+        let (mut world, ptk) = wpa2_associated::<2>(mint);
         let mut plain = Vec::new();
         plain.extend_from_slice(&RSN);
         plain.extend_from_slice(&[0xdd, 22, 0x00, 0x0f, 0xac, 0x01, 0x01, 0x00]);
@@ -1814,7 +1820,7 @@ fn a_wpa2_gtk_kde_with_id_zero_uses_a_group_slot() {
         use oer_ieee80211_mac::security::rsn::Akm;
         use oer_ieee80211_rsn::frames::RsnTxFrame;
 
-        let (mut world, ptk) = wpa2_associated(mint, 1);
+        let (mut world, ptk) = wpa2_associated::<1>(mint);
         let mut plain = Vec::from(RSN);
         // GTK KDE from Wireshark wpa2-psk-mfp frame 8, with KeyID
         // changed from 1 to 0 (IEEE 802.11-2020, 12.7.2). The unmodified
@@ -1871,9 +1877,9 @@ fn group_message1(ptk: &oer_ieee80211_rsn::Ptk, replay: u64, key_id: u8) -> std:
 }
 
 #[test]
-fn a_new_group_key_goes_in_beside_the_old_one_which_is_removed_after_group_message_2() {
+fn a_new_group_key_retains_the_old_installation_after_group_message_2() {
     installed(|mint| {
-        let (mut world, ptk) = wpa2_connected(mint, 2);
+        let (mut world, ptk) = wpa2_connected::<2>(mint);
         world.receive_verified(at(50), &group_message1(&ptk, 3, 2));
         assert_eq!(
             world.take(),
@@ -1883,17 +1889,24 @@ fn a_new_group_key_goes_in_beside_the_old_one_which_is_removed_after_group_messa
                     subtype: 0x0008,
                     on: 6
                 },
-                Seen::RemoveKey,
             ]
         );
         assert!(world.station.is_connected());
+        assert!(
+            world
+                .station
+                .keys
+                .groups
+                .same_material(GroupKeyId::new(1).unwrap(), &[0x99; 16])
+        );
+        assert_eq!(world.station.keys.group_slots.free.len(), 0);
     });
 }
 
 #[test]
 fn the_station_says_it_associated_before_the_handshakes_first_message() {
     installed(|mint| {
-        let (world, _) = wpa2_connected(mint, 2);
+        let (world, _) = wpa2_connected::<2>(mint);
         // After the Association Request, before Message 2.
         let (sent, peer) = world.associated.expect("the station associated");
         let subtype = |frame: &Vec<u8>| u16::from_le_bytes([frame[0], frame[1]]) & 0x00fc;
@@ -1906,7 +1919,7 @@ fn the_station_says_it_associated_before_the_handshakes_first_message() {
 #[test]
 fn the_handshakes_eapol_goes_unprotected_and_group_message_2_under_the_pairwise_key() {
     installed(|mint| {
-        let (mut world, ptk) = wpa2_connected(mint, 2);
+        let (mut world, ptk) = wpa2_connected::<2>(mint);
         // Messages 2 and 4 of the four-way handshake: no key, no Protected bit.
         assert_eq!(world.eapol, [(false, false), (false, false)]);
         world.receive_verified(at(50), &group_message1(&ptk, 3, 2));
@@ -1944,7 +1957,7 @@ fn eapol_and_data_on_tid_7_share_one_counter_and_tid_0_runs_on_across_a_rekey() 
         // A QoS BSS: the beacon advertises WMM.
         let mut beacon = wpa2_beacon().to_vec();
         beacon.extend_from_slice(&[0xdd, 7, 0x00, 0x50, 0xf2, 0x02, 0x00, 0x01, 0x00]);
-        let (mut world, ptk) = wpa2_connected_by(mint, 2, &beacon);
+        let (mut world, ptk) = wpa2_connected_by::<2>(mint, &beacon);
         let mut data = StaData::<Tokens, Caps>::new(
             [Ticket(10)],
             [Buffer([0; 512], 512)],
@@ -2010,7 +2023,7 @@ fn eapol_and_data_on_tid_7_share_one_counter_and_tid_0_runs_on_across_a_rekey() 
 #[test]
 fn a_single_group_slot_is_replaced_without_a_separate_removal() {
     installed(|mint| {
-        let (mut world, ptk) = wpa2_connected(mint, 1);
+        let (mut world, ptk) = wpa2_connected::<1>(mint);
         world.receive_verified(at(50), &group_message1(&ptk, 3, 2));
         assert_eq!(
             world.take(),
@@ -2036,7 +2049,7 @@ fn a_single_group_slot_is_replaced_without_a_separate_removal() {
 #[test]
 fn identical_gtk_material_keeps_its_installation_and_replay_frontier() {
     installed(|mint| {
-        let (mut world, ptk) = wpa2_connected(mint, 2);
+        let (mut world, ptk) = wpa2_connected::<2>(mint);
         world.receive_verified(at(50), &group_message1(&ptk, 3, 2));
         let mut link = world.station.link().unwrap();
         let LinkProtection::Ccmp { replay, .. } = &mut link.protection else {
@@ -2072,14 +2085,14 @@ fn identical_gtk_material_keeps_its_installation_and_replay_frontier() {
                 )
                 .is_err()
         );
-        assert_eq!(world.station.keys.group_slots.free.len(), 1);
+        assert_eq!(world.station.keys.group_slots.free.len(), 0);
     });
 }
 
 #[test]
 fn old_rx_between_replacement_and_its_terminal_cannot_advance_the_successor_epoch() {
     installed(|mint| {
-        let (mut world, ptk) = wpa2_connected(mint, 1);
+        let (mut world, ptk) = wpa2_connected::<1>(mint);
         world.hold_key_installs = true;
         world.receive_verified(at(50), &group_message1(&ptk, 3, 1));
         assert_eq!(world.pending_installs.len(), 1);
@@ -2131,7 +2144,7 @@ fn old_rx_between_replacement_and_its_terminal_cannot_advance_the_successor_epoc
 #[test]
 fn a_handshake_that_times_out_deauthenticates_with_its_reason() {
     installed(|mint| {
-        let (mut world, _) = wpa2_associated(mint, 2);
+        let (mut world, _) = wpa2_associated::<2>(mint);
         // No Message 3: the handshake's deadline passes.
         world.advance();
         assert_eq!(world.deauthentications, [REASON_HANDSHAKE_TIMEOUT]);
@@ -2147,7 +2160,7 @@ fn a_message_3_whose_key_data_does_not_unwrap_deauthenticates() {
         use oer_ieee80211_mac::security::rsn::Akm;
         use oer_ieee80211_rsn::frames::RsnTxFrame;
 
-        let (mut world, ptk) = wpa2_associated(mint, 2);
+        let (mut world, ptk) = wpa2_associated::<2>(mint);
         let message3 = RsnTxFrame::<512>::message3(Akm::Psk, LOCAL, 2, ANONCE, [0; 8], &[0x55; 24])
             .unwrap()
             .authenticate(&ptk);
@@ -2159,7 +2172,7 @@ fn a_message_3_whose_key_data_does_not_unwrap_deauthenticates() {
 #[test]
 fn the_access_points_deauthentication_is_not_answered_with_one() {
     installed(|mint| {
-        let (mut world, _) = wpa2_connected(mint, 2);
+        let (mut world, _) = wpa2_connected::<2>(mint);
         let mut deauthentication = [0_u8; 26];
         deauthentication[0..2].copy_from_slice(&0x00c0_u16.to_le_bytes());
         deauthentication[4..10].copy_from_slice(&LOCAL);
@@ -2186,9 +2199,9 @@ fn disconnects_to_other_receivers_never_end_handshake_or_connection() {
         for subtype in [0xa0, 0xc0] {
             installed(|mint| {
                 let (mut world, _) = if connected {
-                    wpa2_connected(mint, 2)
+                    wpa2_connected::<2>(mint)
                 } else {
-                    wpa2_associated(mint, 2)
+                    wpa2_associated::<2>(mint)
                 };
                 world.take();
                 let mut base = [0; 26];
@@ -2232,9 +2245,9 @@ fn local_or_broadcast_disconnect_from_selected_bss_ends_the_link() {
             for subtype in [0xa0, 0xc0] {
                 installed(|mint| {
                     let (mut world, _) = if connected {
-                        wpa2_connected(mint, 2)
+                        wpa2_connected::<2>(mint)
                     } else {
-                        wpa2_associated(mint, 2)
+                        wpa2_associated::<2>(mint)
                     };
                     world.take();
                     let mut frame = [0; 26];
@@ -2258,7 +2271,7 @@ fn local_or_broadcast_disconnect_from_selected_bss_ends_the_link() {
 #[test]
 fn leaving_on_request_deauthenticates_as_leaving() {
     installed(|mint| {
-        let (mut world, _) = wpa2_connected(mint, 2);
+        let (mut world, _) = wpa2_connected::<2>(mint);
         world
             .station
             .command(at(50), StaRequest::new(2, StaCommand::Disconnect))
@@ -2339,7 +2352,7 @@ fn stale_handshake_installations_are_removed_in_the_order_they_return() {
 
     for reverse in [false, true] {
         installed(|mint| {
-            let (mut world, ptk) = wpa2_associated(mint, 2);
+            let (mut world, ptk) = wpa2_associated::<2>(mint);
             let mut plain = Vec::new();
             plain.extend_from_slice(&RSN);
             plain.extend_from_slice(&[0xdd, 22, 0x00, 0x0f, 0xac, 0x01, 0x01, 0x00]);
@@ -2408,7 +2421,7 @@ fn stale_handshake_installations_are_removed_in_the_order_they_return() {
 #[test]
 fn a_rekey_installed_after_disconnect_is_removed_without_group_message_2() {
     installed(|mint| {
-        let (mut world, ptk) = wpa2_connected(mint, 2);
+        let (mut world, ptk) = wpa2_connected::<2>(mint);
         world.hold_key_installs = true;
         let eapol = world.eapol.len();
         world.receive_verified(at(50), &group_message1(&ptk, 3, 2));
@@ -2439,7 +2452,7 @@ fn a_rekey_installed_after_disconnect_is_removed_without_group_message_2() {
 #[test]
 fn a_replacement_terminal_after_disconnect_returns_its_slot_through_removal() {
     installed(|mint| {
-        let (mut world, ptk) = wpa2_connected(mint, 1);
+        let (mut world, ptk) = wpa2_connected::<1>(mint);
         world.hold_key_installs = true;
         world.receive_verified(at(50), &group_message1(&ptk, 3, 2));
         assert_eq!(world.pending_installs.len(), 1);
@@ -2598,7 +2611,7 @@ fn leave_without_lease_reports_before_waiting() {
 fn deauthentication_waits_for_the_ticket_and_buffer_of_an_accepted_transmission() {
     installed(|mint| {
         let mut world =
-            connect_open_world(World::with_pools::<1, 0>(mint, 3, StaSecurity::Open, []));
+            connect_open_world(World::with_builder::<1, 0>(mint, 3, [], Station::new_open));
         let mut pending = Vec::new();
         for _ in 0..1 {
             pending.push(
@@ -3114,7 +3127,7 @@ fn every_control_encoder_reserves_credit_before_consuming_its_sequence() {
                                 .unwrap(),
                                 None,
                                 &[],
-                                Sending::GroupResponse,
+                                TxPurpose::Connected(Sending::GroupResponse),
                             )
                             .ok(),
                         3 => station
@@ -3126,7 +3139,7 @@ fn every_control_encoder_reserves_credit_before_consuming_its_sequence() {
                                 .unwrap(),
                                 Some(qos),
                                 &[],
-                                Sending::GroupResponse,
+                                TxPurpose::Connected(Sending::GroupResponse),
                             )
                             .ok(),
                         4 => station.encode_probe(TxPurpose::Probe).ok(),
@@ -3265,7 +3278,7 @@ fn a_lease_terminal_during_leave_preserves_deauthentication_and_configuration() 
     for protected in [false, true] {
         installed(|mint| {
             let mut world = if protected {
-                wpa2_connected(mint, 2).0
+                wpa2_connected::<2>(mint).0
             } else {
                 connected_world(mint)
             };
@@ -3339,7 +3352,7 @@ fn retry_message3(ptk: &oer_ieee80211_rsn::Ptk, counter: u64, material: u8) -> V
 fn connected_duplicate_m3_answers_without_reinstalling_or_resetting_replay() {
     use oer_ieee80211_mac::ccmp::{CcmpHeader, CcmpPacketNumber, CcmpRxProtection};
     installed(|mint| {
-        let (mut world, ptk) = wpa2_connected(mint, 2);
+        let (mut world, ptk) = wpa2_connected::<2>(mint);
         let header = CcmpHeader::new(
             CcmpPacketNumber::new(900).unwrap(),
             GroupKeyId::new(1).unwrap().key_id(),
@@ -3355,7 +3368,7 @@ fn connected_duplicate_m3_answers_without_reinstalling_or_resetting_replay() {
         world.receive(at(50), &retry_message3(&ptk, 2, 0x99));
         assert!(world.station.is_connected());
         assert_eq!(world.frames.len(), before + 1);
-        assert_eq!(world.eapol.last(), Some(&(true, true)));
+        assert_eq!(world.eapol.last(), Some(&(false, false)));
         assert!(!world.take().iter().any(|event| matches!(
             event,
             Seen::InstallPairwise(_)
@@ -3378,7 +3391,7 @@ fn connected_duplicate_m3_answers_without_reinstalling_or_resetting_replay() {
 #[test]
 fn duplicate_m3_waits_for_credit_and_coalesces_across_group_key_installation() {
     installed(|mint| {
-        let (mut world, ptk) = wpa2_connected(mint, 2);
+        let (mut world, ptk) = wpa2_connected::<2>(mint);
         world.hold_key_installs = true;
         world.receive_verified(at(50), &group_message1(&ptk, 3, 2));
         let first = world.station.tickets.take().unwrap();
@@ -3392,15 +3405,14 @@ fn duplicate_m3_waits_for_credit_and_coalesces_across_group_key_installation() {
             .station
             .input(at(52), world.pending_installs.pop().unwrap());
         world.station.tickets.put(first);
-        let Some(StaAction::TransmitProtected { transmit, .. }) = world.station.poll_action(at(52))
-        else {
+        let Some(StaAction::Transmit(transmit)) = world.station.poll_action(at(52)) else {
             panic!()
         };
         assert_eq!(
             transmit.context.purpose,
             TxPurpose::Connected(Sending::DuplicateMessage4)
         );
-        world.transmitted(transmit, true);
+        world.transmitted(transmit, false);
         // The same authenticated request while its response is in flight
         // cannot displace the group response or grow a queue.
         world
@@ -3430,7 +3442,7 @@ fn duplicate_m3_waits_for_credit_and_coalesces_across_group_key_installation() {
 #[test]
 fn duplicate_m3_survives_an_in_flight_group_response() {
     installed(|mint| {
-        let (mut world, ptk) = wpa2_connected(mint, 2);
+        let (mut world, ptk) = wpa2_connected::<2>(mint);
         world.hold_key_installs = true;
         world.receive_verified(at(50), &group_message1(&ptk, 3, 2));
         world
@@ -3452,15 +3464,14 @@ fn duplicate_m3_survives_an_in_flight_group_response() {
             .unwrap();
         assert!(world.station.poll_action(at(51)).is_none());
         world.end_transmissions(at(52));
-        let Some(StaAction::TransmitProtected { transmit, .. }) = world.station.poll_action(at(52))
-        else {
+        let Some(StaAction::Transmit(transmit)) = world.station.poll_action(at(52)) else {
             panic!()
         };
         assert_eq!(
             transmit.context.purpose,
             TxPurpose::Connected(Sending::DuplicateMessage4)
         );
-        world.transmitted(transmit, true);
+        world.transmitted(transmit, false);
         world.run(at(52));
         assert_eq!(world.frames.len(), before + 1);
         assert!(world.station.is_connected());
@@ -3470,21 +3481,35 @@ fn duplicate_m3_survives_an_in_flight_group_response() {
 #[test]
 fn connected_eapol_rejects_changed_m3_and_unprotected_group_message1() {
     installed(|mint| {
-        let (mut world, ptk) = wpa2_connected(mint, 2);
+        let (mut world, ptk) = wpa2_connected::<2>(mint);
         let before = world.frames.len();
         let mut forged = retry_message3(&ptk, 2, 0x99);
         *forged.last_mut().unwrap() ^= 1;
         let mut unprotected_group = group_message1(&ptk, 3, 2);
         unprotected_group[1] &= !0x40;
         unprotected_group.drain(24..32);
-        for frame in [
-            forged,
-            retry_message3(&ptk, 1, 0x99),
-            retry_message3(&ptk, 2, 0x55),
-            retry_message3(&ptk, 3, 0x99),
-            unprotected_group,
+        for (frame, reason) in [
+            (forged, RsnConnectedSupplicantError::InvalidMic),
+            (
+                retry_message3(&ptk, 1, 0x99),
+                RsnConnectedSupplicantError::StaleReplayCounter,
+            ),
+            (
+                retry_message3(&ptk, 2, 0x55),
+                RsnConnectedSupplicantError::RetainedMessage3Mismatch,
+            ),
+            (
+                unprotected_group,
+                RsnConnectedSupplicantError::UnsupportedMessage,
+            ),
         ] {
-            world.receive(at(50), &frame);
+            assert_eq!(
+                world.station.receive(at(50), &frame, meta(), |_| {}),
+                Err(StaRxError::Security(RsnConnectedProcessError::Supplicant(
+                    reason
+                )))
+            );
+            world.run(at(50));
             assert!(world.station.is_connected());
             assert!(world.take().is_empty());
         }
@@ -3508,7 +3533,7 @@ fn only_delivered_m4_connects_and_other_terminals_keep_the_original_deadline() {
         (TxOutcome::Withdrawn(WithdrawCause::Disabled), false),
     ] {
         installed(|mint| {
-            let (mut world, ptk) = wpa2_associated(mint, 2);
+            let (mut world, ptk) = wpa2_associated::<2>(mint);
             let deadline = world.station.poll_deadline().unwrap();
             world.outcomes.push_back((outcome, published));
             world.receive(at(33), &retry_message3(&ptk, 2, 0x99));
@@ -3526,7 +3551,17 @@ fn only_delivered_m4_connects_and_other_terminals_keep_the_original_deadline() {
                     .any(|s| matches!(s, Seen::Notify(StaNotice::Connected { .. })))
             );
             if outcome == TxOutcome::Withdrawn(WithdrawCause::Disabled) {
-                assert!(world.station.keys.clear());
+                assert!(matches!(
+                    world.station.state,
+                    State::Leave(Leave {
+                        step: LeaveStep::Disabled,
+                        ..
+                    })
+                ));
+                assert!(world.station.poll_action(at(34)).is_none());
+                let bank = world.station.finish(StaDisconnectReason::Requested);
+                assert_eq!(bank.frame_credits(), (2, 2));
+                assert_eq!(bank.key_owners(), (1, 2, true));
                 return;
             }
             assert_eq!(world.station.poll_deadline(), Some(deadline));
@@ -3589,9 +3624,9 @@ fn only_delivered_m4_connects_and_other_terminals_keep_the_original_deadline() {
 
 #[test]
 fn a_repeated_m3_can_replace_group_material_without_reinstalling_the_ptk() {
-    for slots in [1, 2] {
+    fn exercise<const G: usize>() {
         installed(|mint| {
-            let (mut world, ptk) = wpa2_associated(mint, slots);
+            let (mut world, ptk) = wpa2_associated::<G>(mint);
             world
                 .outcomes
                 .push_back((ended(TxEndStatus::AckTimeout), true));
@@ -3609,7 +3644,7 @@ fn a_repeated_m3_can_replace_group_material_without_reinstalling_the_ptk() {
             assert!(world.station.is_connected());
             let seen = world.take();
             assert!(!seen.iter().any(|s| matches!(s, Seen::InstallPairwise(_))));
-            if slots == 1 {
+            if G == 1 {
                 assert_eq!(
                     seen.iter()
                         .filter(|s| matches!(s, Seen::ReplaceGroup(1)))
@@ -3618,15 +3653,15 @@ fn a_repeated_m3_can_replace_group_material_without_reinstalling_the_ptk() {
                 );
                 assert!(!seen.contains(&Seen::RemoveKey));
             } else {
-                let install = seen
-                    .iter()
-                    .position(|s| matches!(s, Seen::InstallGroup(1)))
-                    .unwrap();
-                let remove = seen
-                    .iter()
-                    .position(|s| matches!(s, Seen::RemoveKey))
-                    .unwrap();
-                assert!(install < remove);
+                assert!(seen.iter().any(|s| matches!(s, Seen::InstallGroup(1))));
+                assert!(!seen.contains(&Seen::RemoveKey));
+                assert!(
+                    world
+                        .station
+                        .keys
+                        .groups
+                        .same_material(GroupKeyId::new(1).unwrap(), &[0x99; 16])
+                );
             }
             world
                 .station
@@ -3638,61 +3673,8 @@ fn a_repeated_m3_can_replace_group_material_without_reinstalling_the_ptk() {
             assert_eq!(world.station.buffers.len(), 2);
         });
     }
-}
-
-#[test]
-fn protected_construction_without_group_slots_returns_resources_for_open_mode() {
-    installed(|mint| {
-        let mut world = World::with_groups(mint, 3, StaSecurity::Open, []);
-        let Station {
-            mut config,
-            epochs,
-            mut tickets,
-            mut buffers,
-            place,
-            absence_place,
-            ..
-        } = world.station;
-        config.security = StaSecurity::Wpa2Personal {
-            password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
-            pmk: Pmk::from_bytes([0; 32]),
-        };
-        let resources = StationResources {
-            epochs,
-            tickets: [tickets.take().unwrap(), tickets.take().unwrap()],
-            buffers: [buffers.take().unwrap(), buffers.take().unwrap()],
-            place: place.unwrap(),
-            absence_place: absence_place.unwrap(),
-            pairwise: Slot(0),
-            groups: [],
-            group_permission: GroupPermission,
-        };
-        let Err(MissingGroupSlot {
-            mut config,
-            resources,
-        }) = Station::new(config, resources)
-        else {
-            panic!("protected mode needs a GTK slot before launch");
-        };
-        assert_eq!(resources.tickets.len(), 2);
-        assert_eq!(resources.buffers.len(), 2);
-        config.security = StaSecurity::Open;
-        world.station = Station::new(config, resources)
-            .unwrap_or_else(|_| panic!("open mode needs no GTK slot"));
-        world
-            .station
-            .command(at(0), StaRequest::new(1, StaCommand::Connect))
-            .unwrap();
-        world.run(at(0));
-        world.advance();
-        world.receive(at(13), &beacon());
-        world.advance();
-        world.answer_authentication(at(30), 0);
-        world.receive(at(31), &open_association_response());
-        assert!(world.station.is_connected());
-        assert_eq!(world.station.tickets.len(), 2);
-        assert_eq!(world.station.buffers.len(), 2);
-    });
+    exercise::<1>();
+    exercise::<2>();
 }
 
 #[test]
@@ -3737,7 +3719,7 @@ fn probe_encoding_failure_returns_credit_and_missing_epoch_reports_link_change()
 #[test]
 fn pending_group_material_is_redacted_and_moves_into_the_installed_record() {
     installed(|_mint| {
-        let mut keys = Keys::<Tokens>::new(Slot(0), [Slot(1)], GroupPermission);
+        let mut keys = Keys::<Tokens<1>>::new(Slot(0), [Slot(1)], GroupPermission);
         let mut epochs = LinkEpochSource::for_test(0);
         let id = GroupKeyId::new(1).unwrap();
         let material = CcmpKey::new([173; 16]);
@@ -3768,7 +3750,7 @@ fn pending_group_material_is_redacted_and_moves_into_the_installed_record() {
 fn repeated_m3_selects_retained_material_and_restores_each_live_replay_frontier() {
     use oer_ieee80211_mac::ccmp::{CcmpHeader, CcmpPacketNumber, CcmpRxProtection};
     installed(|mint| {
-        let (mut world, ptk) = wpa2_associated(mint, 2);
+        let (mut world, ptk) = wpa2_associated::<2>(mint);
         let id = GroupKeyId::new(1).unwrap();
         let header = |pn| CcmpHeader::new(CcmpPacketNumber::new(pn).unwrap(), id.key_id());
         let lanes = core::iter::once(None)
@@ -3839,7 +3821,7 @@ fn repeated_m3_selects_retained_material_and_restores_each_live_replay_frontier(
         world.run(at(37));
         assert!(world.station.is_connected());
         assert!(world.station.keys.groups.current_material(id, &[0x99; 16]));
-        assert!(!world.station.keys.groups.same_material(id, &[0x55; 16]));
+        assert!(world.station.keys.groups.same_material(id, &[0x55; 16]));
         for &tid in &lanes {
             let replay = active_replay(&mut world.station.state).unwrap();
             assert!(
@@ -3873,13 +3855,17 @@ fn take_group_removal<'id>(
     };
     world.transmitted(transmit, true);
     world.end_transmissions(now);
-    let Some(StaAction::RemoveGroupKey {
+    assert!(
+        world.station.poll_action(now).is_none(),
+        "GM2 retains old installations"
+    );
+    let Some(Owed::RemoveGroup {
         pending,
         key: Key(slot),
         permission,
-    }) = world.station.poll_action(now)
+    }) = world.station.group_removal(true)
     else {
-        panic!("the successful group response owes the superseded key's removal");
+        panic!("the ledger lends a non-current installation for explicit removal");
     };
     (pending, slot, permission)
 }
@@ -3887,12 +3873,12 @@ fn take_group_removal<'id>(
 #[test]
 fn each_removal_preserves_its_stations_current_replay() {
     installed(|mint_a| {
-        let (mut a, ptk_a) = wpa2_connected(mint_a, 2);
+        let (mut a, ptk_a) = wpa2_connected::<2>(mint_a);
         // A first completed one rekey: its next removal owns a different
         // private record place and wire KeyID from B's first removal.
         a.receive_verified(at(50), &group_message1(&ptk_a, 3, 2));
         installed(|mint_b| {
-            let (mut b, ptk_b) = wpa2_connected(mint_b, 2);
+            let (mut b, ptk_b) = wpa2_connected::<2>(mint_b);
             let (pending_a, slot_a, permission_a) =
                 take_group_removal(&mut a, &ptk_a, 4, 3, at(51));
             let (pending_b, slot_b, permission_b) =
@@ -3940,10 +3926,10 @@ fn each_removal_preserves_its_stations_current_replay() {
 #[test]
 fn returned_removal_places_are_reused_without_losing_installed_slots() {
     installed(|mint_a| {
-        let (mut a, ptk_a) = wpa2_connected(mint_a, 2);
+        let (mut a, ptk_a) = wpa2_connected::<2>(mint_a);
         a.receive_verified(at(50), &group_message1(&ptk_a, 3, 2));
         installed(|mint_b| {
-            let (mut b, ptk_b) = wpa2_connected(mint_b, 2);
+            let (mut b, ptk_b) = wpa2_connected::<2>(mint_b);
             let (pending_a, slot_a, permission_a) =
                 take_group_removal(&mut a, &ptk_a, 4, 3, at(51));
             let (pending_b, slot_b, permission_b) =
@@ -3984,7 +3970,7 @@ fn returned_removal_places_are_reused_without_losing_installed_slots() {
 #[test]
 fn a_removal_issued_before_leave_returns_its_record_and_permission_after_leave() {
     installed(|mint| {
-        let (mut world, ptk) = wpa2_connected(mint, 2);
+        let (mut world, ptk) = wpa2_connected::<2>(mint);
         let (pending, slot, permission) = take_group_removal(&mut world, &ptk, 3, 2, at(51));
         world
             .station
@@ -4007,7 +3993,7 @@ fn a_removal_issued_before_leave_returns_its_record_and_permission_after_leave()
 }
 
 #[test]
-fn delivered_m4_retires_every_superseded_owner_and_leave_finishes_the_chain() {
+fn delivered_m4_retains_all_installed_groups_until_leave() {
     fn exercise<const G: usize>(leave: bool) {
         use oer_ieee80211_mac::security::rsn::Akm;
         use oer_ieee80211_rsn::{PtkContext, frames::RsnTxFrame};
@@ -4060,32 +4046,26 @@ fn delivered_m4_retires_every_superseded_owner_and_leave_finishes_the_chain() {
                 );
                 assert_eq!(world.station.is_connected(), index + 1 == G);
             }
-            assert_eq!(world.pending_removals.len(), 1);
-            assert!(world.station.keys.group_permission.is_none());
+            assert!(world.pending_removals.is_empty());
+            assert!(world.station.keys.group_permission.is_some());
             assert_eq!(world.station.keys.group_slots.free.len(), 0);
+            assert_eq!(world.station.keys.groups.len(), G);
             if leave {
                 world
                     .station
                     .command(at(34), StaRequest::new(2, StaCommand::Disconnect))
                     .unwrap();
                 world.run(at(34));
-                assert!(matches!(world.station.state, State::Leave(_)));
-            }
-            let expected = if leave { G } else { G - 1 };
-            for completed in 1..=expected {
-                assert_eq!(
-                    world.pending_removals.len(),
-                    1,
-                    "the prior terminal supplies the sole permission"
-                );
-                let terminal = world.pending_removals.pop().unwrap();
-                world.station.input(at(35), terminal);
-                world.run(at(35));
-                assert_eq!(world.station.keys.group_slots.free.len(), completed);
+                for completed in 1..=G {
+                    assert_eq!(world.pending_removals.len(), 1);
+                    let terminal = world.pending_removals.pop().unwrap();
+                    world.station.input(at(35), terminal);
+                    world.run(at(35));
+                    assert_eq!(world.station.keys.group_slots.free.len(), completed);
+                }
             }
             assert!(world.pending_removals.is_empty());
             assert!(world.station.keys.group_permission.is_some());
-            assert!(!world.station.keys.has_retiring());
             if leave {
                 assert!(world.station.keys.clear());
                 assert!(matches!(world.station.state, State::Idle));
@@ -4237,7 +4217,7 @@ fn review_negotiated_pmf_rejects_unprotected_deauthentication() {
         advertised_rsn[20] |= 0x80;
         let mut advertised_beacon = wpa2_beacon();
         advertised_beacon[55..].copy_from_slice(&advertised_rsn);
-        let (mut world, ptk) = wpa2_associated_by(mint, 2, &advertised_beacon);
+        let (mut world, ptk) = wpa2_associated_by::<2>(mint, &advertised_beacon);
         match &world.station.state {
             State::Handshake(handshake) => assert!(handshake.supplicant.management_protection()),
             _ => panic!("expected handshake"),

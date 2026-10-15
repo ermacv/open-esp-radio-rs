@@ -336,6 +336,7 @@ impl PortBody<ModelBackend> for Case {
                 ticket_index,
                 &mut resources.terminal_access,
             ));
+            core::ops::ControlFlow::Continue(())
         };
         let owner = owner.disable(&mut sink).await.ok().unwrap();
         assert_eq!(seen, 1);

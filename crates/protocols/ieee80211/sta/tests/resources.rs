@@ -43,11 +43,12 @@ impl TxBufferMemory for Buffer {
         &mut []
     }
 }
-struct Tokens;
+struct Tokens<const GROUPS: usize>;
 impl oer_ieee80211_lower_mac::TxBufferClass for Buffer {
     const CAPACITY: usize = 256;
 }
-impl StaTokens for Tokens {
+impl<const GROUPS: usize> StaTokens for Tokens<GROUPS> {
+    const GROUP_SLOTS: usize = GROUPS;
     type GatePath = oer_radio_port::Root;
     type EpochPath = oer_radio_port::Root;
     type Small = Buffer;
@@ -69,8 +70,8 @@ fn construct<'id, const T: usize, const B: usize, const G: usize>(
     config: StaConfig<Caps>,
     place: LeasePlace<'id>,
     absence: AbsencePlace<'id>,
-) -> Station<'id, Tokens, Caps> {
-    Station::new(
+) -> Station<'id, Tokens<G>, Caps> {
+    Station::new_open(
         config,
         StationResources {
             epochs,
@@ -83,7 +84,6 @@ fn construct<'id, const T: usize, const B: usize, const G: usize>(
             group_permission: (),
         },
     )
-    .unwrap_or_else(|_| panic!("protected fixture has group slots"))
 }
 
 #[test]

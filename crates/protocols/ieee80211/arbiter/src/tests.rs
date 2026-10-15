@@ -77,9 +77,8 @@ enum Seen<'id, Reserve> {
     OpenGate,
 }
 
-/// The port the test plays: whether it refuses the next retune.
+/// The gate issuer of the port the test plays.
 struct Port<'id> {
-    refuse: bool,
     issuer: GateIssuer<'id>,
 }
 
@@ -101,22 +100,7 @@ fn run<'id, R: ReservationMode>(
             }
             ArbiterAction::Retune(pending) => {
                 seen.push(Seen::Retune(pending.channel().channel().number()));
-                if core::mem::take(&mut port.refuse) {
-                    if let Some(returning) = arbiter.retune_refused(pending) {
-                        while let Some(notice) = arbiter.poll_notice(now) {
-                            match notice {
-                                ArbiterNotice::Station(notice) => seen.push(Seen::Station(notice)),
-                                ArbiterNotice::AccessPoint(command) => {
-                                    seen.push(Seen::AccessPoint(command))
-                                }
-                            }
-                        }
-                        seen.push(Seen::Retune(returning.channel().channel().number()));
-                        arbiter.retuned(returning);
-                    }
-                } else {
-                    arbiter.retuned(pending);
-                }
+                arbiter.retuned(pending);
             }
             ArbiterAction::OpenGate(closed) => {
                 arbiter.gate_opened(port.issuer.open(closed));
@@ -125,6 +109,49 @@ fn run<'id, R: ReservationMode>(
         }
     }
     seen
+}
+
+/// Refuse the next retune through the consuming API, retaining its successor.
+fn refuse_next<'id>(
+    mut arbiter: TestArbiter<'id>,
+    port: &mut Port<'id>,
+    now: Instant,
+) -> (RetuneRefused<'id, Caps, NoReservation>, Vec<Seen<'id, ()>>) {
+    let mut seen = Vec::new();
+    loop {
+        match arbiter.poll_action(now).expect("a retune is due") {
+            ArbiterAction::Station(notice) => seen.push(Seen::Station(notice)),
+            ArbiterAction::AccessPoint(command) => seen.push(Seen::AccessPoint(command)),
+            ArbiterAction::CloseGate { gate, reserve } => {
+                arbiter.gate_closed(port.issuer.close(gate));
+                seen.push(Seen::CloseGate(reserve));
+            }
+            ArbiterAction::Retune(pending) => {
+                seen.push(Seen::Retune(pending.channel().channel().number()));
+                return (arbiter.retune_refused(pending), seen);
+            }
+            ArbiterAction::OpenGate(closed) => {
+                arbiter.gate_opened(port.issuer.open(closed));
+                seen.push(Seen::OpenGate);
+            }
+        }
+    }
+}
+
+fn failed<'id>(arbiter: TestArbiter<'id>) -> FailedArbiter<'id, Caps> {
+    match arbiter.finish(ArbiterEnd::PortFailed) {
+        RetiredArbiter::PortFailed(failed) => failed,
+        RetiredArbiter::Stopped(_) => panic!("failure has no restart authority"),
+    }
+}
+
+fn failed_notices<'id>(failed: &mut FailedArbiter<'id, Caps>) -> Vec<Seen<'id, ()>> {
+    core::iter::from_fn(|| failed.poll_notice())
+        .map(|notice| match notice {
+            ArbiterNotice::Station(notice) => Seen::Station(notice),
+            ArbiterNotice::AccessPoint(command) => Seen::AccessPoint(command),
+        })
+        .collect()
 }
 
 fn alone<'id, R: ReservationMode>(
@@ -137,14 +164,7 @@ fn alone<'id, R: ReservationMode>(
         authority,
         gate,
     );
-    (
-        arbiter,
-        place,
-        Port {
-            refuse: false,
-            issuer,
-        },
-    )
+    (arbiter, place, Port { issuer })
 }
 
 fn running(arbiter: &mut TestArbiter<'_, impl ReservationMode>) {
@@ -272,10 +292,7 @@ fn an_explicitly_nonreserving_arbiter_can_use_a_longer_absence() {
             authority,
             gate,
         );
-        let mut port = Port {
-            issuer,
-            refuse: false,
-        };
+        let mut port = Port { issuer };
         running(&mut arbiter);
         let lease = lease(arbiter.request(at(0), scan(6, 100), place));
         assert_eq!(lease.until(), Some(at(92)));
@@ -390,10 +407,26 @@ fn an_access_point_that_stops_during_an_absence_cancels_it_and_the_port_returns(
 fn a_refused_move_cancels_the_lease_and_the_port_returns() {
     installed(|mint| {
         let (mut arbiter, place, mut port) = beside_access_point::<NoReservation>(mint);
-        port.refuse = true;
         let lease = lease(arbiter.request(at(0), scan(6, 10), place));
+        let (outcome, mut seen) = refuse_next(arbiter, &mut port, at(52));
+        let RetuneRefused::Return {
+            mut arbiter,
+            pending,
+        } = outcome
+        else {
+            panic!("an outbound refusal must return home")
+        };
+        while let Some(notice) = arbiter.poll_notice(at(52)) {
+            match notice {
+                ArbiterNotice::Station(notice) => seen.push(Seen::Station(notice)),
+                ArbiterNotice::AccessPoint(command) => seen.push(Seen::AccessPoint(command)),
+            }
+        }
+        seen.push(Seen::Retune(pending.channel().channel().number()));
+        arbiter.retuned(pending);
+        seen.extend(run(&mut arbiter, &mut port, at(52)));
         assert_eq!(
-            run(&mut arbiter, &mut port, at(52)),
+            seen,
             [
                 Seen::CloseGate(()),
                 Seen::Retune(6),
@@ -422,9 +455,13 @@ fn refusal_returns_the_home_retune_without_taking_another_gate_action() {
         let Some(ArbiterAction::Retune(outbound)) = arbiter.poll_action(at(52)) else {
             panic!("outbound retune");
         };
-        let returning = arbiter
-            .retune_refused(outbound)
-            .expect("the return token is delivered directly");
+        let RetuneRefused::Return {
+            mut arbiter,
+            pending: returning,
+        } = arbiter.retune_refused(outbound)
+        else {
+            panic!("the return token is delivered directly")
+        };
         assert_eq!(returning.channel(), channel(1));
         assert!(matches!(arbiter.port, super::Port::Retuning));
         assert!(matches!(
@@ -468,8 +505,12 @@ fn a_failed_return_or_a_poisoned_port_stops_the_station_and_the_access_point() {
         let (mut arbiter, place, mut port) = beside_access_point::<NoReservation>(mint);
         let returning = lease(arbiter.request(at(0), scan(6, 10), place));
         run(&mut arbiter, &mut port, at(52));
-        port.refuse = true;
-        let seen = run(&mut arbiter, &mut port, at(64));
+        let (outcome, mut seen) = refuse_next(arbiter, &mut port, at(64));
+        let RetuneRefused::Failed(mut failed) = outcome else {
+            panic!("return must fail")
+        };
+        seen.extend(failed_notices(&mut failed));
+        assert!(failed.poll_notice().is_none());
         assert!(seen.contains(&Seen::Station(StationNotice::LeaseCancelled(
             CancelReason::PortFailed,
             self::place()
@@ -481,19 +522,15 @@ fn a_failed_return_or_a_poisoned_port_stops_the_station_and_the_access_point() {
         let _ = returning;
     });
     installed(|mint| {
-        let (mut arbiter, place, mut port) = beside_access_point::<NoReservation>(mint);
+        let (mut arbiter, place, _port) = beside_access_point::<NoReservation>(mint);
         let poisoned = lease(arbiter.request(at(0), scan(6, 10), place));
-        arbiter.port_failed();
-        let seen = run(&mut arbiter, &mut port, at(0));
+        let mut failed = failed(arbiter);
+        let seen = failed_notices(&mut failed);
         assert!(seen.contains(&Seen::Station(StationNotice::Leave(
             LeaveReason::PortFailed
         ))));
         assert!(seen.contains(&Seen::AccessPoint(AccessPointCommand::Stop)));
-        // A failed port answers every request with a leave and the place.
-        assert!(matches!(
-            arbiter.request(at(1), scan(6, 10), self::place()),
-            Answer::Refused(Refusal::PortFailed, _)
-        ));
+        assert!(failed.poll_notice().is_none());
         let _ = poisoned;
     });
 }
@@ -745,10 +782,7 @@ fn an_unrepresentable_follow_holdoff_refuses_without_a_move_or_lost_place() {
             authority,
             gate,
         );
-        let mut port = Port {
-            refuse: false,
-            issuer,
-        };
+        let mut port = Port { issuer };
         running(&mut arbiter);
         let mut place = failed_follow(&mut arbiter, &mut port, place, 6, at(1), at(550));
         let last_follow = arbiter.coordinator.last_follow_for_test();
@@ -936,10 +970,7 @@ fn connected_with_policy<'id>(
     Port<'id>,
 ) {
     let (gate, issuer, authority) = mint.into_pools();
-    let mut port = Port {
-        refuse: false,
-        issuer,
-    };
+    let mut port = Port { issuer };
     let (mut arbiter, place, absence) = Arbiter::new(
         policy.checked(Duration::ZERO).unwrap(),
         channel(1),
@@ -1160,10 +1191,7 @@ fn returning_the_unique_place_proves_the_lease_ended_and_admits_the_next_lease()
 fn an_absence_reserves_one_publication_for_each_gate_and_the_return_starts_early() {
     installed(|mint| {
         let (gate, issuer, authority) = mint.into_pools();
-        let mut port = Port {
-            refuse: false,
-            issuer,
-        };
+        let mut port = Port { issuer };
         let publication = Duration::from_millis(3);
         let (mut arbiter, place, absence_place) = Arbiter::<Caps>::new(
             ArbiterPolicy::DEFAULT.checked(publication).unwrap(),
@@ -1394,7 +1422,7 @@ fn a_retuned_absence_does_not_charge_its_outbound_move_twice() {
 
 #[test]
 fn a_cancelled_starting_absence_delivers_its_pending_leave_and_both_places() {
-    for refuse in [false, true] {
+    for before_deadline in [false, true] {
         installed(|mint| {
             let mut policy = ArbiterPolicy::DEFAULT;
             policy.follow.unservable = coordinator::ApUnservable::LeaveUpstream;
@@ -1415,8 +1443,7 @@ fn a_cancelled_starting_absence_delivers_its_pending_leave_and_both_places() {
                 },
             );
             arbiter.gate_closed(port.issuer.close(gate));
-            port.refuse = refuse;
-            let now = if refuse {
+            let now = if before_deadline {
                 at(53)
             } else {
                 away.until().unwrap()

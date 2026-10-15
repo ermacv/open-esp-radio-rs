@@ -468,6 +468,52 @@ fn dscp_selects_the_matching_hardware_queue_qos_tid_and_sequence_space() {
 }
 
 #[test]
+fn eapol_response_keeps_request_protection_and_uses_its_encoded_sequence_space() {
+    use oer_ieee80211_mac::frame::DecodedHeader;
+
+    for protection in [LinkProtection::Open, LinkProtection::Ccmp] {
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
+        let mut hardware = Hardware {
+            prepare: true,
+            ..Hardware::default()
+        };
+        let mut tx = make_tx(slot.as_mut(), &mut hardware);
+        assert_eq!(
+            tx.start_eapol(&mut hardware, b"eapol response", protection),
+            Ok(WifiTxProgress::Pending)
+        );
+        hardware.completion = Some(completion(0));
+        assert_eq!(
+            tx.service(
+                &mut hardware,
+                WifiTxWake::Interrupt {
+                    events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
+                },
+            ),
+            Ok(WifiTxProgress::Complete)
+        );
+        let protected = matches!(protection, LinkProtection::Ccmp);
+        let bytes = tx.ordinary.slot.as_mut().buffer_mut().unwrap();
+        let header = DecodedHeader::decode(&bytes[TX_METADATA_SIZE..]).unwrap();
+        assert_eq!(header.control().protected(), protected);
+        assert_eq!(header.control().is_qos_data(), protected);
+        assert_eq!(header.sequence_control() >> 4, 7);
+        assert_eq!(
+            tx.sequences.peek_non_qos(),
+            SequenceNumber::new(if protected { 7 } else { 8 }).unwrap()
+        );
+        assert_eq!(
+            tx.sequences.peek_qos(7),
+            Some(SequenceNumber::new(if protected { 8 } else { 7 }).unwrap())
+        );
+        assert_eq!(
+            tx.sequences.peek_qos(0),
+            Some(SequenceNumber::new(7).unwrap())
+        );
+    }
+}
+
+#[test]
 fn idle_connected_owner_returns_descriptor_key_and_sequences_for_teardown() {
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model().unwrap());
     let mut hardware = Hardware::default();

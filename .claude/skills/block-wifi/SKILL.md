@@ -28,6 +28,15 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
 
 ## Traps
 
+- A stopped station service restarts only by consuming `StoppedService` with
+  its matching disabled port owner. Reuse its returned banks: reminting loses
+  epoch, lease and data-order frontiers. Startup reclaims old keys and receive
+  settings before dequeuing application commands. After a terminal violates
+  the contract, `TerminalCustody` retains that return and all later terminals
+  without feeding machines; a full sink returns the next owner to poisoned
+  port teardown. Station TX bodies are `Infallible`, including in the model
+  composition.
+
 - Keep each package's `clippy.toml` as a regular source file. HIL source
   snapshots retain lint configuration and reject build-input symlinks; a
   symlink to a shared configuration prevents image capture before compilation.
@@ -100,17 +109,24 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   the service; `FailedInstallation` is Disabled and can uninstall normally,
   but cannot enable. Recovery needs new service and installation authority.
 
-- `machine::Station` has Open and prederived WPA2-PMK inputs only. Shared
-  selection may choose SAE even under the WPA2 policy; reject that result
-  with `SaeUnsupported` before Join, never rerun selection with PSK or send
-  Open Authentication. Full SAE/PMKSA belongs to #563 step 2 alongside its
-  credentials/randomness/secret owners; keep shared SAE and existing users.
+- `Station::new_open` and `new_personal` separate construction. The backend
+  token type carries `GROUP_SLOTS`; resources must match it, and personal mode
+  requires a nonzero capacity at compile time. Personal credentials carry SAE
+  password and PSK PMK. Join follows shared AKM selection and uses owned SAE
+  commit/confirm or the matching PMKSA cache entry; never silently force PSK.
 
-- Connected plaintext EAPOL may recover only the exact authenticated completed
-  M3, through `on_duplicate_message3`. Its owned M4 stage coalesces repeats
-  until TX ends and precedes the next group response after a busy control TX.
-  It never installs keys or resets replay. Group M1 requires the protected RX
-  path, including integrity and replay admission; both replies use the PTK.
+- Connected M3 authenticates both exact and larger replay counters through
+  `on_message3`. PTK stays installed; only GTK/IGTK work is returned. In the
+  initial supplicant, `RsnStaRetryInstall` cannot name a pairwise install.
+  M4 keeps its M3's MAC protection through credit waits and key completion.
+  The pinned `wpa.c` M4 builder handles EAPOL flags/MIC, not the 802.11
+  Protected bit. Do not confuse EAPOL Secure with MAC protection. Group M1
+  requires protected, integrity-verified and replay-admitted RX.
+
+- GTK records survive M4/GM2 delivery. Only eviction or Leave removes them.
+  Evict the oldest non-current installation when all physical slots are
+  occupied; use that same algorithm at capacity one. Selecting retained
+  material preserves both its installation age and every replay lane.
 
 - Management disconnect admission is shared by all portable join/link stages:
   `parse_sta_disconnect` takes OwnAddress/Bssid and accepts our unicast or
@@ -198,6 +214,12 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   `LowerMacEvent::Terminal` is the same terminal in the enabled FIFO. The
   backend recycles unsolicited RX during disable and keeps EventsLost for
   re-enable; it never resets the accounting of RX already lent to the body.
+- Arbiter failure consumes its working owner. A refused outbound retune
+  returns that owner with a home retune; a refused return yields only
+  `FailedArbiter`. Keep the working arbiter outside the service's Station/Data
+  state while enabling, so failure needs neither a fake replacement nor an
+  optional live owner. Late gate/retune returns only drain; recovery requires
+  a new installation's construction authority.
 
 The MSDU/command SPSC sender's readiness returns a `SendPermit`. Keep the
 permit through publication: its exclusive sender borrow is the capacity

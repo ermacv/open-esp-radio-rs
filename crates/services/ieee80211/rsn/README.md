@@ -4,6 +4,9 @@
 [`oer-ieee80211-rsn`](../../../protocols/ieee80211/security/rsn/README.md).
 That crate returns typed requests and never waits; this crate owns the futures
 that wait on its ports and on the `oer-time` `Timer`, for any executor.
+`process_frame` returns `RsnStaReady` only after completing any requested
+unwrap. Its completed-handshake retry carries group keys only; the initial
+handshake runner returns before that stage and accepts only the first install.
 
 | Module | Driver |
 | --- | --- |

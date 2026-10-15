@@ -531,8 +531,12 @@ impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
 )]
 // SAFETY: the only public initialization of the private nonzero slot guards is
 // `pin_static`, which consumes &'static mut pool storage and pins it. Claiming
-// a slot checks that guard before issuing a lease; an uninitialized local pool
-// cannot issue one. Its allocation therefore outlives even a shortened 'pool
+// a slot currently calls the runtime assert_dma_boundary guard, which panics
+// for a local pool made through public new()/Default before issuing a lease.
+// This exclusion is a runtime guard, not a type proof; until the S31 runtime
+// migration, claim_network/claim_radio remain available on those local pools.
+// That step must restrict claims to the affine handle returned by pin_static.
+// A successfully claimed allocation therefore outlives even a shortened 'pool
 // borrow. Forgetting this non-Clone lease leaves the slot in SLOT_RADIO: neither
 // the pool nor another lease can reclaim it, and its backing remains allocated.
 unsafe impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>

@@ -492,3 +492,23 @@ reason = "cargo xtask check ui checks the contract diagnostic and its compiling 
 [[uncompiled]]
 path = "crates/protocols/ieee80211/sta/tests/ui/retired_outputs.rs"
 reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/disabled_submit.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/enabled_retune.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/core_enable_once.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/gate_barrier.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/configuration_barrier.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"

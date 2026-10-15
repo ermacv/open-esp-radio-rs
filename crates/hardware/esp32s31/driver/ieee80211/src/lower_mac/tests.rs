@@ -407,17 +407,20 @@ fn entropy() -> u32 {
     0x1234_5678
 }
 
+mod driver;
+use driver::{TestDriver, TestStart};
+
 type DeviceCore<'core> = LowerMacCore<'core, 'static, Power, fn() -> u32, Timer, 512>;
 
 /// The test driver recycles a queue only when the actual terminal returns it.
 struct Core<'core> {
-    inner: DeviceCore<'core>,
+    inner: TestDriver<'core>,
     free: [Option<FreeQueue<'core>>; LOWER_MAC_TX_QUEUES],
     tickets: [Option<TxTicket<'core>>; 4],
 }
 
 impl<'core> core::ops::Deref for Core<'core> {
-    type Target = DeviceCore<'core>;
+    type Target = TestDriver<'core>;
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
@@ -567,7 +570,7 @@ impl<'core> Core<'core> {
 
     fn from_parts(parts: CoreParts<'core>) -> Self {
         Self {
-            inner: DeviceCore::from_parts(parts.inner),
+            inner: TestDriver::new(DeviceCore::from_parts(parts.inner)),
             free: parts.free,
             tickets: parts.tickets,
         }
@@ -682,7 +685,7 @@ fn core(resources: CoreResources<'_>) -> Core<'_> {
     Core {
         free: resources.queues.map(Some),
         tickets: resources.tickets.map(Some),
-        inner: LowerMacCore::new(
+        inner: TestDriver::new(LowerMacCore::new(
             resources.authority,
             OrdinaryTxOwner::new(WifiTxResources {
                 slot: slot(),
@@ -698,7 +701,7 @@ fn core(resources: CoreResources<'_>) -> Core<'_> {
                 tsf_epoch: 1,
             },
             &RadioNine,
-        ),
+        )),
     }
 }
 
@@ -724,7 +727,7 @@ fn access_point() -> CoreVif {
 fn enabled<'core>(hardware: &mut Hardware, resources: CoreResources<'core>) -> Core<'core> {
     let mut core = core(resources);
     core.configure_checked_vif(hardware, station()).unwrap();
-    assert_eq!(core.enable_checked(), LifecycleStart::Enabled);
+    assert_eq!(core.enable_checked(), TestStart::Enabled);
     core
 }
 
@@ -1423,7 +1426,7 @@ fn a_channel_change_retunes_at_enable() {
         let mut events = Events::default();
 
         core.set_checked_channel(channel(11));
-        assert_eq!(core.enable_checked(), LifecycleStart::Retune(channel(11)));
+        assert_eq!(core.enable_checked(), TestStart::Retune(channel(11)));
         assert!(core.finish_retune(true));
         assert_eq!(
             core.channel(),
@@ -1433,7 +1436,7 @@ fn a_channel_change_retunes_at_enable() {
         core.disable_checked(&mut hardware, &mut events);
         assert_eq!(events.disabled, 1);
         // The radio is already on channel 11: no retune.
-        assert_eq!(core.enable_checked(), LifecycleStart::Enabled);
+        assert_eq!(core.enable_checked(), TestStart::Enabled);
     });
 }
 
@@ -1442,11 +1445,11 @@ fn a_failed_retune_fails_enable_recoverably_and_leaves_the_port_disabled() {
     installed(|pools| {
         let mut core = core(pools);
         core.set_checked_channel(channel(1));
-        assert_eq!(core.enable_checked(), LifecycleStart::Retune(channel(1)));
+        assert_eq!(core.enable_checked(), TestStart::Retune(channel(1)));
         assert!(!core.finish_retune(false));
-        assert_eq!(core.state, PortState::Disabled);
+        assert!(core.idle_disabled());
         // The channel stays configured: the next Enable retunes again.
-        assert_eq!(core.enable_checked(), LifecycleStart::Retune(channel(1)));
+        assert_eq!(core.enable_checked(), TestStart::Retune(channel(1)));
     });
 }
 
@@ -1598,7 +1601,7 @@ fn received_frames_are_narrowed_to_the_requested_rules() {
             },
         )
         .unwrap();
-        assert_eq!(core.enable_checked(), LifecycleStart::Enabled);
+        assert_eq!(core.enable_checked(), TestStart::Enabled);
         let (bytes, received) = core.received(&hardware, &normalized(&unicast)).unwrap();
         // The frame carries the PHY's noise-floor estimate and its signal over
         // it.
@@ -2286,7 +2289,7 @@ fn only_a_disabled_idle_core_comes_apart() {
         assert_eq!(parts.inner.config.channel, channel(6));
         // The rebuilt core is disabled, as at a radio start.
         let mut rebuilt = Core::from_parts(parts);
-        assert_eq!(rebuilt.enable_checked(), LifecycleStart::Enabled);
+        assert_eq!(rebuilt.enable_checked(), TestStart::Enabled);
     });
 }
 
@@ -2315,7 +2318,7 @@ fn a_core_handed_a_radio_on_another_channel_retunes_at_enable() {
         // The radio start left the PHY on channel 11; the core is configured
         // for channel 6.
         assert!(core.radio_tuned_to(channel(11)));
-        assert_eq!(core.enable_checked(), LifecycleStart::Retune(channel(6)));
+        assert_eq!(core.enable_checked(), TestStart::Retune(channel(6)));
         // An enabling core records nothing.
         assert!(!core.radio_tuned_to(channel(1)));
     });
@@ -2828,7 +2831,7 @@ fn a_failed_gate_open_returns_every_unpublished_owner_then_drains_the_prefix() {
                 std::vec![PublicationEnd::Withdrawn; 4 - fail_at]
             );
             assert_eq!(events.queues, categories[fail_at..]);
-            assert_eq!(events.disabled, usize::from(fail_at == 0));
+            assert_eq!(events.disabled, 0);
             assert!(
                 failure
                     .core
@@ -2848,7 +2851,7 @@ fn a_failed_gate_open_returns_every_unpublished_owner_then_drains_the_prefix() {
             failure
                 .service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
                 .unwrap();
-            assert_eq!(events.disabled, 1);
+            assert_eq!(events.disabled, 0);
             assert_eq!(events.returned.len(), LOWER_MAC_TX_QUEUES);
             for category in categories {
                 assert_eq!(
@@ -2860,7 +2863,8 @@ fn a_failed_gate_open_returns_every_unpublished_owner_then_drains_the_prefix() {
                     1
                 );
             }
-            assert!(failure.finish().is_ok());
+            assert!(failure.finish(&mut events).is_ok());
+            assert_eq!(events.disabled, 1);
         });
     }
 }
@@ -3250,7 +3254,7 @@ fn failed_gate_open_returns_key_uses_of_every_held_attempt() {
             assert_eq!(events.order, ["tx", "tx", "tx", "tx", "key"]);
             assert_eq!(events.returned_tickets.len(), 4);
             assert_eq!(hardware.cleared_keys, [4]);
-            assert!(failed.finish().is_ok());
+            assert!(failed.finish(&mut events).is_ok());
         });
     }
 }
@@ -3449,4 +3453,103 @@ fn maximum_ticket_pool_keeps_key_removal_until_all_256_rights_return() {
             .poll(&mut Context::from_waker(Waker::noop())),
         Poll::Ready(())
     ));
+}
+
+#[test]
+fn configuration_owns_the_bank_until_its_roles_last_terminal() {
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut fixture = enabled(&mut hardware, pools);
+        submit(
+            &mut fixture,
+            &mut hardware,
+            values_on(WmmAccessCategory::BestEffort),
+        )
+        .unwrap();
+        let core = fixture.inner.take_enabled();
+        let mut events = Events::default();
+        // An idle AP policy does not wait for the station's publication.
+        let command = core.configure(access_point()).ok().unwrap();
+        let ConfigurationProgress::Configured(core) = command.advance(&mut hardware, &mut events)
+        else {
+            panic!("the AP has no publication");
+        };
+        let command = core
+            .configure(CoreVif {
+                receive: ReceiveFilter::NONE,
+                ..station()
+            })
+            .ok()
+            .unwrap();
+        let ConfigurationProgress::Waiting(mut command) =
+            command.advance(&mut hardware, &mut events)
+        else {
+            panic!("the station's old frame still owns its policy");
+        };
+        assert!(events.completions.is_empty());
+        assert!(command.next_deadline().is_some());
+        hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(0, 0));
+        command
+            .service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+            .unwrap();
+        let ConfigurationProgress::Configured(core) = command.advance(&mut hardware, &mut events)
+        else {
+            panic!("the final station terminal releases its configuration");
+        };
+        assert_eq!(events.returned.len(), 1);
+        assert_eq!(core.vifs[0].unwrap().receive, ReceiveFilter::NONE);
+        assert_eq!(core.vifs[1], Some(access_point()));
+    });
+}
+
+#[test]
+fn closed_gate_survives_disable_retune_and_enable_without_publishing() {
+    installed(|pools| {
+        let mut hardware = Hardware::default();
+        let mut fixture = enabled(&mut hardware, pools);
+        submit(
+            &mut fixture,
+            &mut hardware,
+            values_on(WmmAccessCategory::BestEffort),
+        )
+        .unwrap();
+        let closing = fixture.inner.take_enabled().hold_new_attempts();
+        let GateClosure::Closing(mut closing) = closing.close_gate(&mut hardware) else {
+            panic!("a published frame prevents the barrier");
+        };
+        let mut events = Events::default();
+        hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(0, 0));
+        closing
+            .service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
+            .unwrap();
+        let GateClosure::Closed(closed) = closing.close_gate(&mut hardware) else {
+            panic!("drained")
+        };
+        let mut disabled = closed
+            .disable_checked(&mut hardware, &mut events)
+            .finish(&mut events)
+            .ok()
+            .unwrap();
+        assert_eq!(events.disabled, 1);
+        disabled.set_checked_channel(channel(11));
+        let LifecycleStart::Retune(retuning) = disabled.enable_checked() else {
+            panic!("new channel")
+        };
+        let mut closed = retuning.finish_retune(true).ok().unwrap();
+        let queue = events.returned.pop().unwrap();
+        let ticket = events.returned_tickets.pop().unwrap();
+        closed
+            .submit_checked(
+                &mut hardware,
+                queue,
+                TxAdmission::Open(ticket),
+                values_on(WmmAccessCategory::BestEffort).values,
+            )
+            .ok()
+            .unwrap();
+        assert_eq!(hardware.publications(), 1);
+        let core = closed.open_gate(&mut hardware, &mut events).ok().unwrap();
+        assert_eq!(hardware.publications(), 2);
+        assert!(core.next_deadline().is_some());
+    });
 }

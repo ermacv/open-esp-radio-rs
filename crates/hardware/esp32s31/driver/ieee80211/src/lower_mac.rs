@@ -30,6 +30,26 @@
 //! when there are no rights, or immediately after the last TX terminal.
 //! Poisoned retains rights and DMA owners and never reports `KeyRemoved`.
 //!
+//! # Lifecycle and command barriers
+//!
+//! Construction returns [`DisabledCore`]. Enable consumes it, either returning
+//! [`EnabledCore`] or retaining the whole bank in [`RetuningCore`]. Disable
+//! consumes the enabled owner; [`DisablingCore::finish`] returns the disabled
+//! owner and emits its one terminal only after all publications ended. A
+//! poisoned bank retains its owners. Channel changes and dismantling exist
+//! only on the disabled type. The gate type survives disable and retune.
+//!
+//! Closing first transfers the enabled bank to [`ClosingGate`], whose new
+//! attempts stay held. Only a drained published prefix constructs [`ClosedGate`]
+//! and blocks hardware queues. Opening consumes this evidence; publication
+//! failure returns every held owner and retains the published prefix.
+//!
+//! Receive configuration consumes either the disabled or enabled bank into
+//! [`Configuring`]. That owner withdraws its role's held frames and waits for
+//! that role's published frames, then returns the original lifecycle owner.
+//! No later FIFO command can publish through a configuration barrier. The
+//! other interface's outstanding frames keep their own completion path.
+//!
 //! # Transmit buffers
 //!
 //! A transmit buffer is a whole ordinary TX slot ([`TxSlot`]): the pinned
@@ -154,6 +174,13 @@ use oer_ieee80211_softmac::MacTxPlan;
 pub mod ampdu;
 mod resources;
 pub use resources::{CoreAuthority, CorePools, CoreResources, FreeQueue, TxTicket};
+mod lifecycle;
+pub use lifecycle::{
+    ClosedGate, ClosingGate, ConfigurationProgress, ConfigureRefused, Configuring, CoreGate,
+    DisabledCore, DisablingCore, EnabledCore, GateClosure, GateOpenFailed, LifecycleStart,
+    OpenGate, RetuningCore,
+};
+
 mod keys;
 pub use keys::{
     KeyAdmissionError, KeyAdmissionRefused, KeyHandle, KeyRemoved, KeyUse, QuarantinedAdmission,
@@ -489,15 +516,6 @@ pub enum PublicationEnd {
     Withdrawn,
 }
 
-/// What an `Enable` needs from the runtime.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LifecycleStart {
-    /// The port is enabled.
-    Enabled,
-    /// Retune to the channel, then call [`LowerMacCore::finish_retune`].
-    Retune(WifiChannel),
-}
-
 /// One interface's configuration: its role, address, BSSID and the frames
 /// it receives.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -636,7 +654,7 @@ pub struct LowerMacConfig {
 }
 
 /// The owners a disabled, idle [`LowerMacCore`] is built from, which
-/// [`LowerMacCore::dismantle`] returns.
+/// [`DisabledCore::dismantle`] returns.
 pub struct LowerMacCoreParts<
     'core,
     'slot,
@@ -652,15 +670,6 @@ pub struct LowerMacCoreParts<
     config: LowerMacConfig,
     coex: &'slot dyn RadioCoexPriorities,
     keys: KeyBank<'core, Path, TICKETS>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PortState {
-    Disabled,
-    Enabling,
-    Enabled,
-    Disabling,
-    Poisoned(LowerMacFault),
 }
 
 enum KeyToken {
@@ -809,7 +818,7 @@ pub struct LowerMacCore<
     authority: CoreAuthority<'core, Path, TICKETS>,
     tx: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
     config: LowerMacConfig,
-    state: PortState,
+    fault: Option<LowerMacFault>,
     /// The configured channel; the radio is tuned to it unless a retune is
     /// pending.
     channel: WifiChannel,
@@ -817,7 +826,6 @@ pub struct LowerMacCore<
     vifs: [Option<CoreVif>; LOWER_MAC_VIFS as usize],
     keys: KeyBank<'core, Path, TICKETS>,
     rx_block_acks: [Option<RxBlockAckEntry>; RX_BLOCK_ACK_BANKS],
-    gate_open: bool,
     monitor: bool,
     tbtt: Option<StationTbtt>,
     /// The owner of the station TSF writes and its relation.
@@ -847,18 +855,17 @@ where
         tx: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
         config: LowerMacConfig,
         coex: &'slot dyn RadioCoexPriorities,
-    ) -> Self {
-        Self {
+    ) -> DisabledCore<Self> {
+        DisabledCore::new(Self {
             authority,
             tx,
             config,
-            state: PortState::Disabled,
+            fault: None,
             channel: config.channel,
             tuned: config.channel,
             vifs: [None; LOWER_MAC_VIFS as usize],
             keys: KeyBank::new(),
             rx_block_acks: [None; RX_BLOCK_ACK_BANKS],
-            gate_open: true,
             monitor: false,
             tbtt: None,
             station_tsf: StationTsf::new(config.tsf_epoch),
@@ -867,14 +874,14 @@ where
             ),
             queues: [const { None }; LOWER_MAC_TX_QUEUES],
             coex,
-        }
+        })
     }
 
     /// A disabled core over the owners a dismantled core returned: the
     /// state of the core they came from is gone, as at a radio start.
     pub fn from_parts(
         parts: LowerMacCoreParts<'core, 'slot, P, E, T, BUFFER_SIZE, Path, TICKETS>,
-    ) -> Self {
+    ) -> DisabledCore<Self> {
         let LowerMacCoreParts {
             authority,
             tx,
@@ -887,51 +894,10 @@ where
         core
     }
 
-    /// Take the core apart into the owners it was built from, for a later
-    /// core over the same storage: a radio stop and start, or a port
-    /// reinstall. Only a disabled core with no attempt admitted comes
-    /// apart; another is returned unchanged.
-    #[allow(
-        clippy::result_large_err,
-        reason = "the no-alloc driver returns the unconsumed core by value"
-    )]
-    pub fn dismantle(
-        self,
-    ) -> Result<LowerMacCoreParts<'core, 'slot, P, E, T, BUFFER_SIZE, Path, TICKETS>, Self> {
-        if !self.idle_disabled() {
-            return Err(self);
-        }
-        Ok(LowerMacCoreParts {
-            authority: self.authority,
-            tx: self.tx,
-            config: self.config,
-            coex: self.coex,
-            keys: self.keys,
-        })
-    }
-
     /// The channel the radio is tuned to: the configured one unless an
     /// `Enable` still awaits its retune.
     pub const fn tuned_channel(&self) -> WifiChannel {
         self.tuned
-    }
-
-    /// Whether the core is disabled with no attempt admitted: what a
-    /// radio stop, [`Self::dismantle`] and [`Self::radio_tuned_to`] need.
-    pub fn idle_disabled(&self) -> bool {
-        self.state == PortState::Disabled && self.attempts().next().is_none()
-    }
-
-    /// Record that the radio is tuned to `channel`, as the radio start that
-    /// hands the core its hardware reports it: the next `Enable` retunes
-    /// when the configured channel differs. `false`, and nothing recorded,
-    /// unless the core is disabled and idle.
-    pub fn radio_tuned_to(&mut self, channel: WifiChannel) -> bool {
-        if !self.idle_disabled() {
-            return false;
-        }
-        self.tuned = channel;
-        true
     }
 
     /// The channel received frames are reported on.
@@ -981,10 +947,6 @@ where
     fn queue_busy(&self, access_category: WmmAccessCategory) -> bool {
         let queue = LegacyTxQueue::from_access_category(access_category);
         self.queues[usize::from(queue.hardware_index())].is_some()
-    }
-
-    const fn receiving(&self) -> bool {
-        matches!(self.state, PortState::Enabled)
     }
 
     fn attempts(&self) -> impl Iterator<Item = &Attempt<'core, 'slot, BUFFER_SIZE, Path>> {
@@ -1052,12 +1014,13 @@ where
     ///
     /// A fault of the transmit owner, with the slot.
     #[allow(clippy::result_large_err, reason = "the slot goes back by value")]
-    pub fn submit_checked<H: LowerMacHardware>(
+    fn submit_checked<H: LowerMacHardware>(
         &mut self,
         hardware: &mut H,
         queue: FreeQueue<'core, Path>,
         admission: TxAdmission<'core, Path>,
         values: MpduValues<'slot, BUFFER_SIZE>,
+        publish: bool,
     ) -> Result<(), SubmitFault<'core, 'slot, BUFFER_SIZE, Path>> {
         let MpduValues {
             role,
@@ -1072,7 +1035,7 @@ where
             coex,
             retry,
         } = values;
-        if let PortState::Poisoned(fault) = self.state {
+        if let Some(fault) = self.fault {
             return Err(SubmitFault {
                 queue,
                 admission,
@@ -1081,7 +1044,6 @@ where
             });
         }
         let access_category = queue.category();
-        debug_assert_eq!(self.state, PortState::Enabled, "a phase submits");
         if retry {
             let marked = slot
                 .as_mut()
@@ -1139,7 +1101,7 @@ where
         );
         let planned = self.plan_mpdu(common, len, access_category, coex, no_ack);
         let index = usize::from(planned.queue.hardware_index());
-        let work = if self.gate_open {
+        let work = if publish {
             match self
                 .tx
                 .start_queued_single_attempt(hardware, slot, planned.plan, planned.single)
@@ -1306,7 +1268,7 @@ where
         ampdu::Esp32s31AmpduOwner<'slot, B, SLOTS>,
         ampdu::AmpduFault<'core, 'slot, B, SLOTS, Path>,
     > {
-        if matches!(self.state, PortState::Poisoned(_)) {
+        if self.fault.is_some() {
             return Err(ampdu::AmpduFault::retain_completed(completed));
         }
         let ampdu::CompletedAmpdu {
@@ -1492,7 +1454,7 @@ where
         wake: WifiTxWake,
         sink: &mut K,
     ) -> Result<(), LowerMacFault> {
-        if let PortState::Poisoned(fault) = self.state {
+        if let Some(fault) = self.fault {
             return Err(fault);
         }
         let mut wake = wake;
@@ -1560,7 +1522,7 @@ where
                             work: Work::Quarantined { _owner: quarantine },
                         });
                         let fault = LowerMacFault::Tx(error);
-                        self.state = PortState::Poisoned(fault);
+                        self.fault = Some(fault);
                         return Err(fault);
                     }
                 }
@@ -1572,7 +1534,6 @@ where
                 events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_TIMEOUT,
             };
         }
-        self.settle(sink);
         Ok(())
     }
 
@@ -1601,14 +1562,6 @@ where
         }
     }
 
-    /// Finish a disable that waited for the attempts.
-    fn settle<K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>>(&mut self, sink: &mut K) {
-        if self.state == PortState::Disabling && self.attempts().next().is_none() {
-            self.state = PortState::Disabled;
-            sink.disabled();
-        }
-    }
-
     /// The owned view of one received MPDU, or `None` while the port does
     /// not receive or no receive rule admits it. The hardware policies pass
     /// a superset of the requested rules; this narrows it to them.
@@ -1616,13 +1569,13 @@ where
     /// The receive prefix carries no noise floor; the frame's is the PHY's
     /// noise-floor estimate when it is received, the value the S31 station
     /// reads for its rate control (`StaNoiseFloorHardware`).
-    pub fn received<'frame, H: StaNoiseFloorHardware>(
+    fn received<'frame, H: StaNoiseFloorHardware>(
         &self,
         hardware: &H,
         frame: &NormalizedRxFrame<'frame>,
     ) -> Option<(&'frame [u8], Esp32s31RxMeta)> {
         let admitted = self.monitor || self.vifs.iter().flatten().any(|vif| vif.admits(frame.mpdu));
-        (self.receiving() && admitted).then(|| {
+        (self.fault.is_none() && admitted).then(|| {
             let noise_floor_dbm = hardware.read_noise_floor_dbm();
             let mut common = portable::rx_meta(frame.metadata, self.channel());
             common.noise_floor_dbm = RxEvidence::HardwareObserved(noise_floor_dbm);
@@ -1635,55 +1588,6 @@ where
                 },
             )
         })
-    }
-
-    /// Enable a disabled port: at once on the tuned channel, or after the
-    /// retune [`LifecycleStart::Retune`] asks for.
-    pub fn enable_checked(&mut self) -> LifecycleStart {
-        debug_assert_eq!(self.state, PortState::Disabled, "a disabled port enables");
-        if self.channel == self.tuned {
-            self.state = PortState::Enabled;
-            LifecycleStart::Enabled
-        } else {
-            self.state = PortState::Enabling;
-            LifecycleStart::Retune(self.channel)
-        }
-    }
-
-    /// Complete an `Enable` after the runtime retuned the radio: `true`
-    /// once enabled. A refused retune leaves the port disabled on the
-    /// channel it was tuned to.
-    pub fn finish_retune(&mut self, retuned: bool) -> bool {
-        if self.state != PortState::Enabling {
-            return false;
-        }
-        if !retuned {
-            self.state = PortState::Disabled;
-            return false;
-        }
-        self.tuned = self.channel;
-        self.state = PortState::Enabled;
-        true
-    }
-
-    /// Disable an enabled port: every held attempt ends as aborted at once,
-    /// the published ones with their own completions, then
-    /// [`LowerMacSink::disabled`] follows.
-    pub fn disable_checked<H: CcmpKeyHardware, K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>>(
-        &mut self,
-        hardware: &mut H,
-        sink: &mut K,
-    ) -> Result<(), LowerMacFault> {
-        if let PortState::Poisoned(fault) = self.state {
-            return Err(fault);
-        }
-        debug_assert_eq!(self.state, PortState::Enabled, "an enabled port disables");
-        self.state = PortState::Disabling;
-        for index in 0..LOWER_MAC_TX_QUEUES {
-            self.abort_held(hardware, index, sink);
-        }
-        self.settle(sink);
-        Ok(())
     }
 
     /// End a queue's held attempt as [`PublicationEnd::Withdrawn`]: it
@@ -1720,7 +1624,6 @@ where
     }
 
     /// Return every held attempt without publishing it.
-    #[cfg(test)]
     fn withdraw_held_attempts<
         H: CcmpKeyHardware,
         K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>,
@@ -1772,38 +1675,12 @@ where
     }
 
     /// Tune the next `Enable` to `channel`, on a disabled port.
-    pub fn set_checked_channel(&mut self, channel: WifiChannel) {
-        debug_assert_eq!(self.state, PortState::Disabled, "a disabled port retunes");
+    fn set_checked_channel(&mut self, channel: WifiChannel) {
         if self.channel != channel {
             self.break_tsf_relation(VifRole::Station);
             self.break_tsf_relation(VifRole::AccessPoint);
         }
         self.channel = channel;
-    }
-
-    /// Configure an interface whose configuration a caller's types
-    /// guarantee: no attempt of its role in flight, no monitor reception
-    /// while it receives anything, its receive rules within the role's
-    /// limits, a station's address the cold start's
-    /// ([`Self::station_address`]) and a BSSID whenever it receives
-    /// anything but other BSSs' management, an access point's address
-    /// individual and its BSSID none or its address.
-    ///
-    /// # Errors
-    ///
-    /// A configuration the receive policies cannot take: nothing changed.
-    pub fn configure_checked_vif<H: LowerMacHardware>(
-        &mut self,
-        hardware: &mut H,
-        config: CoreVif,
-    ) -> Result<(), UnsupportedVif> {
-        debug_assert!(
-            !self.attempts().any(|attempt| attempt.role == config.role),
-            "an interface's frames in flight are waited for"
-        );
-        let policy = receive_policy(&self.config, &config)?;
-        self.apply_vif(hardware, config, policy);
-        Ok(())
     }
 
     /// The station address the cold start published.
@@ -1893,7 +1770,7 @@ where
     }
 
     fn vacant_key(&self, scope: CheckedKeyScope) -> Result<usize, LowerMacFault> {
-        if let PortState::Poisoned(fault) = self.state {
+        if let Some(fault) = self.fault {
             return Err(fault);
         }
         if self
@@ -1921,7 +1798,7 @@ where
         key: &KeyHandle<'core, Path>,
         ticket: TxTicket<'core, Path>,
     ) -> Result<KeyUse<'core, Path>, KeyAdmissionRefused<'core, Path>> {
-        if matches!(self.state, PortState::Poisoned(_)) {
+        if self.fault.is_some() {
             return Err(KeyAdmissionRefused {
                 ticket,
                 reason: KeyAdmissionError::Poisoned,
@@ -1954,7 +1831,7 @@ where
         index: usize,
         sink: &mut K,
     ) {
-        if matches!(self.state, PortState::Poisoned(_)) || !self.keys.uses[index].is_empty() {
+        if self.fault.is_some() || !self.keys.uses[index].is_empty() {
             return;
         }
         if let Some(key) = self.keys.removals[index].take() {
@@ -1979,7 +1856,7 @@ where
         admission: TxAdmission<'core, Path>,
         sink: &mut K,
     ) -> Result<TxTicket<'core, Path>, QuarantinedAdmission<'core, Path>> {
-        if matches!(self.state, PortState::Poisoned(_)) {
+        if self.fault.is_some() {
             return Err(QuarantinedAdmission {
                 _admission: admission,
             });
@@ -2063,99 +1940,9 @@ where
             .position(|entry| *entry == Some(RxBlockAckEntry { role, peer, tid }))
     }
 
-    /// Stop publishing at once: every attempt admitted from now on is held
-    /// in its slot, as behind a closed gate, while the published ones
-    /// finish on the air. The first step of closing the gate under
-    /// traffic; [`Self::block_held_queues`] is the second.
-    pub fn hold_new_attempts(&mut self) {
-        self.gate_open = false;
-    }
-
-    /// Whether no attempt is published: every admitted one is held.
+    /// Whether every queue is empty or retains only an unpublished attempt.
     pub fn published_idle(&self) -> bool {
         !self.attempts().any(|attempt| !attempt.work.held())
-    }
-
-    /// Block every ordinary queue once [`Self::hold_new_attempts`] held the
-    /// new attempts and no attempt is published
-    /// ([`Self::published_idle`]): the gate is closed.
-    pub fn block_held_queues<H: LowerMacHardware>(&mut self, hardware: &mut H) {
-        debug_assert!(!self.gate_open, "new attempts are held first");
-        debug_assert!(self.published_idle(), "no attempt is published");
-        hardware.set_power_save_tx_block(true);
-    }
-
-    /// Consume the closed-gate core and publish its held attempts.
-    ///
-    /// On the first publication fault, every unpublished attempt returns
-    /// through `sink` as `Withdrawn`, including the refused publication.
-    /// The failure owns a draining core: already published attempts keep
-    /// their slots until their own terminals, and no new submit is possible.
-    #[allow(
-        clippy::result_large_err,
-        reason = "the failure retains the complete draining core"
-    )]
-    pub fn open_gate<H: LowerMacHardware, K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>>(
-        mut self,
-        hardware: &mut H,
-        sink: &mut K,
-    ) -> Result<Self, GateOpenFailed<Self>> {
-        if let PortState::Poisoned(fault) = self.state {
-            return Err(GateOpenFailed { fault, core: self });
-        }
-        hardware.set_power_save_tx_block(false);
-        for index in 0..LOWER_MAC_TX_QUEUES {
-            let Some(attempt) = self.queues[index].take() else {
-                continue;
-            };
-            let Attempt {
-                queue,
-                role,
-                admission,
-                rate,
-                work,
-            } = attempt;
-            let work = match work {
-                Work::Held { slot, plan, single } => {
-                    match self
-                        .tx
-                        .start_queued_single_attempt(hardware, slot, plan, single)
-                    {
-                        Ok(queued) => Work::Published(queued),
-                        Err(QueuedSingleAttemptRefused { error, slot }) => {
-                            self.finish_attempt(
-                                hardware,
-                                queue,
-                                admission,
-                                slot,
-                                PublicationEnd::Withdrawn,
-                                rate,
-                                sink,
-                            );
-                            self.state = PortState::Disabling;
-                            for index in 0..LOWER_MAC_TX_QUEUES {
-                                self.abort_held(hardware, index, sink);
-                            }
-                            self.settle(sink);
-                            return Err(GateOpenFailed {
-                                fault: LowerMacFault::Tx(error),
-                                core: self,
-                            });
-                        }
-                    }
-                }
-                published @ (Work::Published(_) | Work::Quarantined { .. }) => published,
-            };
-            self.queues[index] = Some(Attempt {
-                queue,
-                role,
-                admission,
-                rate,
-                work,
-            });
-        }
-        self.gate_open = true;
-        Ok(self)
     }
 
     /// The station's TSF and the generation of its relation, for a
@@ -2313,62 +2100,6 @@ pub struct SubmitFault<'core, 'slot, const BUFFER_SIZE: usize, Path: PoolPath = 
     pub admission: TxAdmission<'core, Path>,
 }
 
-/// A failed gate transition owns the core while its published prefix drains.
-/// Only terminals can advance it; neither reopening nor submission is exposed.
-#[must_use = "drain the published attempts and retain the failed core's resources"]
-pub struct GateOpenFailed<C> {
-    pub fault: LowerMacFault,
-    core: C,
-}
-
-impl<
-    'core,
-    'slot,
-    P: WifiTxPowerProfile,
-    E: WifiTxEntropy,
-    T: oer_time::Timer,
-    const BUFFER_SIZE: usize,
-    Path: PoolPath,
-    const TICKETS: usize,
-> GateOpenFailed<LowerMacCore<'core, 'slot, P, E, T, BUFFER_SIZE, Path, TICKETS>>
-{
-    /// The next deadline of the attempts published before opening failed.
-    pub fn next_deadline(&self) -> Option<oer_time::Instant> {
-        self.core.next_deadline()
-    }
-
-    /// Drain only the already published attempts, preserving their own outcomes.
-    pub fn service<
-        H: HtAmpduHardware + CcmpKeyHardware,
-        K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>,
-    >(
-        &mut self,
-        hardware: &mut H,
-        wake: WifiTxWake,
-        sink: &mut K,
-    ) -> Result<(), LowerMacFault> {
-        self.core.service(hardware, wake, sink)
-    }
-
-    /// Recover the core's construction resources once the last terminal ended
-    /// disable. Before then the complete failed owner returns unchanged.
-    #[allow(
-        clippy::result_large_err,
-        reason = "retain every resource until the published prefix ends"
-    )]
-    pub fn finish(
-        self,
-    ) -> Result<LowerMacCoreParts<'core, 'slot, P, E, T, BUFFER_SIZE, Path, TICKETS>, Self> {
-        match self.core.dismantle() {
-            Ok(parts) => Ok(parts),
-            Err(core) => Err(Self {
-                fault: self.fault,
-                core,
-            }),
-        }
-    }
-}
-
 /// An interface configuration the receive policies cannot take.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct UnsupportedVif;
@@ -2439,7 +2170,7 @@ impl CheckedKeyScope {
 /// backoff and coexistence level within the capabilities, the length at
 /// least the header through Address 1 and at most the capabilities'
 /// `max_mpdu_length`, and `no_ack` only of an individual frame at a rate
-/// that sends one without an ACK ([`LowerMacCore::submit_checked`]).
+/// that sends one without an ACK ([`EnabledCore::submit_checked`]).
 pub struct MpduValues<'slot, const BUFFER_SIZE: usize> {
     role: VifRole,
     /// The slot holding the MPDU after the TX metadata word.
@@ -2633,7 +2364,7 @@ enum ReceivePolicy {
 }
 
 /// Map a receive filter onto the smallest S31 receive policy that passes a
-/// superset of it; [`LowerMacCore::received`] narrows the superset.
+/// superset of it; [`EnabledCore::received`] narrows the superset.
 fn receive_policy(config: &LowerMacConfig, vif: &CoreVif) -> Result<ReceivePolicy, UnsupportedVif> {
     let limits = esp32s31_lower_mac_capabilities(0).receive_filters(vif.role);
     if !limits.contains(vif.receive) {

@@ -41,6 +41,13 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   Host model DMA bus addresses can alias between slots; ownership tests
   must compare the pinned Rust owners, not just their model bus addresses.
 
+- S31 `LowerMacCore::new` returns `DisabledCore`. Lifecycle and gate
+  transitions consume their owners: only `EnabledCore` submits, only
+  `DisabledCore` retunes/dismantles, and `DisablingCore::finish` emits the
+  single disabled terminal. Keep the gate type across disable/retune; a
+  closed gate must not silently reopen on enable. `Configuring` owns the
+  FIFO barrier until its role's publications end, without delaying for the
+  other interface's frames. `GateOpenFailed` retains the published prefix.
 - `CorePools<N>` issues the core authority and exactly `N` TX tickets.
   Both open and protected attempts consume a ticket. `KeyHandle` is affine;
   removal consumes it and `KeyUse` retains each already admitted use until

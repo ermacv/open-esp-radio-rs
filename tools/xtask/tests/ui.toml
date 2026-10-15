@@ -203,13 +203,18 @@ cases = [
 
 [[suite]]
 name = "s31-core-owner"
-packages = ["oer-esp32s31-ieee80211", "oer-esp32s31-ieee80211-dma", "oer-esp32s31-hal", "oer-ieee80211-lower-mac", "oer-radio-port", "oer-time"]
+packages = ["oer-esp32s31-ieee80211", "oer-esp32s31-ieee80211-dma", "oer-esp32s31-hal", "oer-ieee80211-lower-mac", "oer-ieee80211-mac", "oer-radio-port", "oer-time"]
 features = []
 targets = ["host", "esp32s31"]
 cases = [
     "crates/hardware/esp32s31/driver/ieee80211/tests/ui/cold_inputs.rs",
     "crates/hardware/esp32s31/driver/ieee80211/tests/ui/bss_color.rs",
     "crates/hardware/esp32s31/driver/ieee80211/tests/ui/ring_index.rs",
+    "crates/hardware/esp32s31/driver/ieee80211/tests/ui/disabled_submit.rs",
+    "crates/hardware/esp32s31/driver/ieee80211/tests/ui/enabled_retune.rs",
+    "crates/hardware/esp32s31/driver/ieee80211/tests/ui/core_enable_once.rs",
+    "crates/hardware/esp32s31/driver/ieee80211/tests/ui/gate_barrier.rs",
+    "crates/hardware/esp32s31/driver/ieee80211/tests/ui/configuration_barrier.rs",
     "crates/hardware/esp32s31/driver/ieee80211/tests/ui/queue_owner.rs",
     "crates/hardware/esp32s31/driver/ieee80211/tests/ui/foreign_queue.rs",
     "crates/hardware/esp32s31/driver/ieee80211/tests/ui/sibling_queue.rs",

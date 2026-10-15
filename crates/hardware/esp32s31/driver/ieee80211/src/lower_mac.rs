@@ -1734,10 +1734,9 @@ where
         }
     }
 
-    /// The station's HE BSS color, at most 63.
-    pub fn set_checked_he_bss_color(&mut self, color: u8) {
-        debug_assert!(color <= 63, "a BSS color is at most 63");
-        self.tx.policy_mut().install_he_bss_color(color);
+    /// Retain the phase's six-bit color proof through the core boundary.
+    pub fn set_checked_he_bss_color(&mut self, color: oer_ieee80211_lower_mac::BssColor) {
+        self.tx.policy_mut().install_he_bss_color(color.get());
     }
 
     /// The beacon receive priority.

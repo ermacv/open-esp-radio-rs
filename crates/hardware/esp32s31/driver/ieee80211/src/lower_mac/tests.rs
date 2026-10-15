@@ -2201,7 +2201,7 @@ fn the_station_s_he_bss_color_is_installed() {
     installed(|pools| {
         let mut hardware = Hardware::default();
         let mut core = enabled(&mut hardware, pools);
-        core.set_checked_he_bss_color(63);
+        core.set_checked_he_bss_color(oer_ieee80211_lower_mac::BssColor::new(63).unwrap());
         assert_eq!(core.tx.policy().he_bss_color(), 63);
     });
 }
@@ -2627,7 +2627,7 @@ fn he_aggregates_publish_an_he_program_with_the_station_bss_color() {
                 .formats
                 .contains_rate(he_rate())
         );
-        core.set_checked_he_bss_color(0x2a);
+        core.set_checked_he_bss_color(oer_ieee80211_lower_mac::BssColor::new(0x2a).unwrap());
 
         let mut buffer = aggregate_of(source, 3, 26);
         let plan = core

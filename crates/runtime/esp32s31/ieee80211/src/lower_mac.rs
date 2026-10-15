@@ -2563,7 +2563,7 @@ where
 
     fn set_bss_color(&self, color: BssColor) {
         let _ = self.runtime.with_phase(|core, _, _, _| {
-            core.set_checked_he_bss_color(color.get());
+            core.set_checked_he_bss_color(color);
             Ok(())
         });
     }

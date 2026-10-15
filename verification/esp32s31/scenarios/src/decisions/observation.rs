@@ -4,6 +4,18 @@ use crate::observation::Decision;
 /// Reviewed unobserved lines.
 pub const DECISIONS: &[Decision] = &[
     Decision {
+        reason: "the CCMP association boundary orders the interface's SPP mode before \
+            subsequent key publication with one additional device fence; the hal_crypto_enable \
+            contract compares every register read and write for both interfaces, both SPP \
+            modes and every fill, and requires exactly one production fence",
+        places: &[(
+            "pac/src/wifi/mac/crypto.rs",
+            "matches!(mode, MacSppMode::Authenticated),\n\
+            );\n\
+            device_fence();",
+        )],
+    },
+    Decision {
         reason: "ordinary status-four transmit-error classification (dispatcher argument zero), \
             compared through the stop goal: \
             queues 0/4 and details 0..6/0xc0 each complete only at the independently selected \

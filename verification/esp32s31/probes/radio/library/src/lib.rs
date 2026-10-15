@@ -1754,6 +1754,25 @@ oer_probe_macros::probe! {
 }
 
 oer_probe_macros::probe! {
+    /// The scenario domain is STA/AP, CCMP, management policy enabled, SPP 0/1.
+    /// Execute the production association transaction before any key install.
+    pub fn open_libpp_crypto_trace_hal_crypto_enable(interface: u32, _algorithm: u32, _management: u32, spp: u32) {
+        let interface = match interface {
+            0 => oer_esp32s31_hal::types::MacInterface::Station,
+            1 => oer_esp32s31_hal::types::MacInterface::AccessPoint,
+            _ => return,
+        };
+        let spp = match spp {
+            0 => oer_esp32s31_hal::types::MacSppMode::Unauthenticated,
+            1 => oer_esp32s31_hal::types::MacSppMode::Authenticated,
+            _ => return,
+        };
+        let mut owner = RadioRuntimeOwner::claim_for_validation();
+        owner.wifi_mac_hal().configure_ccmp_association(interface, spp);
+    }
+}
+
+oer_probe_macros::probe! {
     pub fn open_libpp_interface_trace_hal_mac_set_addr(interface: u32, address: &[u8; 6]) =>
         oer_esp32s31_hal::validation::hal_mac_set_addr(interface, address);
 }

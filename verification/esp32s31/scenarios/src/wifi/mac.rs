@@ -1124,6 +1124,23 @@ const BLOCK_ACK_BYTES: u32 = 12;
 
 /// Every compared leaf.
 pub const LEAVES: &[Leaf] = &[
+    // The association boundary orders its interface mode before subsequent
+    // key publication. Compare every vendor register effect and require the
+    // one additional production device fence.
+    ordered(
+        leaf(
+            "hal_crypto_enable",
+            "open_libpp_crypto_trace_hal_crypto_enable",
+            &[
+                ("interface", Domain::Words(&[0, 1])),
+                ("_algorithm", Domain::Words(&[3])),
+                ("_management", Domain::Words(&[1])),
+                ("spp", Domain::Words(&[0, 1])),
+            ],
+            false,
+        ),
+        1,
+    ),
     leaf(
         "hal_disable_softap_tsf",
         "open_libpp_ap_tsf_trace_hal_disable_softap_tsf",

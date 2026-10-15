@@ -131,6 +131,10 @@ pub(super) struct GroupKeys<Key> {
 }
 
 impl<Key> GroupKeys<Key> {
+    pub(super) fn len(&self) -> usize {
+        self.entries.iter().flatten().count()
+    }
+
     pub(super) fn new() -> Self {
         Self {
             entries: [const { None }; 8],

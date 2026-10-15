@@ -524,6 +524,7 @@ struct Body<'w, 'b, S, const GROUPS: usize> {
     receive: MsduSender<'b, EthernetFrame, 2>,
     config: StaConfig<ModelCaps24>,
     script: S,
+    refuse_initial_enable: bool,
 }
 
 /// A test's script: the access point and the application, on the world.
@@ -571,7 +572,7 @@ where
                     arbiter_authority,
                     gate,
                 );
-            let station = Station::new(
+            let mut station = Station::new(
                 self.config,
                 StationResources {
                     epochs: oer_ieee80211_sta::epoch::LinkEpochSource::new(connection_epoch),
@@ -585,7 +586,13 @@ where
                 },
             )
             .unwrap_or_else(|_| panic!("protected fixture has group slots"));
-            let mut service = StationService::<_, _>::new(
+            if self.refuse_initial_enable {
+                station
+                    .command(Instant::EPOCH, StaRequest::new(901, StaCommand::Connect))
+                    .unwrap();
+                self.world.air.refuse_enable();
+            }
+            let service = StationService::<_, _>::new(
                 station,
                 StaData::new(data_tickets, large, MODEL_TX_QUEUE_DEPTH),
                 arbiter,
@@ -605,11 +612,15 @@ where
                 output: &mut output,
             };
             let script = self.script;
-            let (end, ()) = join(service.run(owner, &mut io, &world.clock), async move {
+            let (completed, ()) = join(service.run(owner, &mut io, &world.clock), async move {
                 script(world).await;
                 world.command(ServiceCommand::Stop).await;
             })
             .await;
+            let ServiceCompleted {
+                end,
+                retired: mut service,
+            } = completed;
             if world.expect_queued_command_on_poison.get() {
                 assert!(matches!(&end, ServiceEnd::Poisoned(_)));
                 assert!(
@@ -627,7 +638,18 @@ where
             world.counters.set(Some(service.counters));
             assert_eq!(service.station.lost_tokens(), 0);
             assert_eq!(service.data.counters().lost_tokens, 0);
-            if matches!(&end, ServiceEnd::Stopped(_)) {
+            if matches!(&end, ServiceEnd::Stopped(_) | ServiceEnd::Failed(_)) {
+                assert_eq!(
+                    service.station.frame_credits(),
+                    (4, 4),
+                    "all station frame owners return before teardown"
+                );
+                assert_eq!(
+                    service.station.key_owners(),
+                    (1, GROUPS, true),
+                    "all key owners return before teardown"
+                );
+                assert!(service._pending.configuring.is_none() && service._pending.group.is_none());
                 for category in WmmAccessCategory::ALL {
                     assert_eq!(
                         service.data.available(category),
@@ -635,6 +657,21 @@ where
                         "disable returns every attempt"
                     );
                 }
+            }
+            if self.refuse_initial_enable {
+                assert!(
+                    matches!(&end, ServiceEnd::Failed(_)),
+                    "refusal preserves a Disabled backend"
+                );
+                assert!(
+                    service.station.poll_output().is_none(),
+                    "all request terminals were delivered once"
+                );
+                assert_eq!(world.outputs.borrow().iter().filter(|output| matches!(output,
+                    ServiceOutput::CommandCompleted(terminal) if terminal.request.correlation() == 901
+                    && terminal.outcome == oer_ieee80211_sta::machine::StaCommandOutcome::ConnectFailed(
+                        oer_ieee80211_sta::machine::StaDisconnectReason::Arbiter(oer_ieee80211_arbiter::LeaveReason::PortFailed))
+                )).count(), 1);
             }
             match end {
                 ServiceEnd::Stopped(owner) if world.drop_stopped_service.get() => {
@@ -647,7 +684,8 @@ where
                     };
                     owner.uninstall(())
                 }
-                ServiceEnd::Stopped(owner) | ServiceEnd::Failed(owner) => owner.uninstall(()),
+                ServiceEnd::Stopped(owner) => owner.uninstall(()),
+                ServiceEnd::Failed(owner) => owner.uninstall(()),
                 ServiceEnd::Poisoned(poisoned) => poisoned.uninstall(()),
             }
         }
@@ -674,6 +712,17 @@ where
 fn run_with_groups<S, const GROUPS: usize>(
     config: StaConfig<ModelCaps24>,
     script: S,
+) -> ServiceCounters
+where
+    S: for<'w, 'b> FnOnce(&'w World<'b>) -> Script<'w>,
+{
+    run_case::<S, GROUPS>(config, script, false)
+}
+
+fn run_case<S, const GROUPS: usize>(
+    config: StaConfig<ModelCaps24>,
+    script: S,
+    refuse_initial_enable: bool,
 ) -> ServiceCounters
 where
     S: for<'w, 'b> FnOnce(&'w World<'b>) -> Script<'w>,
@@ -713,6 +762,7 @@ where
             receive,
             config,
             script,
+            refuse_initial_enable,
         },
     ));
     assert!(uninstalled.is_some(), "the port ends through its uninstall");
@@ -721,6 +771,113 @@ where
 
 fn dsss1() -> PhyRate {
     PhyRate::Legacy(LegacyRate::Dsss1M)
+}
+
+#[test]
+fn refused_initial_enable_finishes_the_accepted_connect_and_uninstalls_without_reset() {
+    run_case::<_, 2>(
+        config(StaSecurity::Open),
+        |world| {
+            Box::pin(async move {
+                world
+                    .notice(StaNotice::Disconnected(
+                        oer_ieee80211_sta::machine::StaDisconnectReason::Arbiter(
+                            oer_ieee80211_arbiter::LeaveReason::PortFailed,
+                        ),
+                    ))
+                    .await;
+                assert!(world.air.sent().is_empty());
+            })
+        },
+        true,
+    );
+}
+
+#[test]
+fn port_failure_during_scan_returns_one_connect_terminal_and_one_lifecycle_notice() {
+    use oer_ieee80211_sta::machine::{StaCommandOutcome, StaDisconnectReason};
+    run(StaSecurity::Open, |world| {
+        Box::pin(async move {
+            let mut seen = 0;
+            world
+                .command(ServiceCommand::Station(StaRequest::new(
+                    777,
+                    StaCommand::Connect,
+                )))
+                .await;
+            world.sent(&mut seen, PROBE_REQUEST).await;
+            world.air.poison();
+            let reason =
+                StaDisconnectReason::Arbiter(oer_ieee80211_arbiter::LeaveReason::PortFailed);
+            world.notice(StaNotice::Disconnected(reason)).await;
+            let outputs = world.outputs.borrow();
+            assert_eq!(
+                outputs
+                    .iter()
+                    .filter(|output| matches!(output,
+            ServiceOutput::CommandCompleted(terminal) if terminal.request.correlation() == 777
+                && terminal.outcome == StaCommandOutcome::ConnectFailed(reason)))
+                    .count(),
+                1
+            );
+            assert_eq!(
+                outputs
+                    .iter()
+                    .filter(|output| matches!(
+                        output,
+                        ServiceOutput::Notice(StaNotice::Disconnected(_))
+                    ))
+                    .count(),
+                1
+            );
+        })
+    });
+}
+
+#[test]
+fn poisoned_disable_after_stop_finishes_the_connected_lifecycle() {
+    use oer_ieee80211_sta::machine::StaDisconnectReason;
+    run(StaSecurity::Open, |world| {
+        Box::pin(async move {
+            let mut seen = 0;
+            world.associate(&mut seen, false).await;
+            world
+                .notice(StaNotice::Connected {
+                    bssid: oer_ieee80211_mac::address::Bssid::new(
+                        IndividualAddress::new(BSSID).unwrap(),
+                    )
+                    .unwrap(),
+                    channel: 6,
+                })
+                .await;
+            world
+                .air
+                .hold_completion(WmmAccessCategory::BestEffort, true);
+            world.send_msdu([2, 0, 0, 0, 0, 7]);
+            world.sent(&mut seen, DATA).await;
+            world.command(ServiceCommand::Stop).await;
+            for _ in 0..4 {
+                yield_now().await;
+            }
+            world.air.poison();
+            let reason =
+                StaDisconnectReason::Arbiter(oer_ieee80211_arbiter::LeaveReason::PortFailed);
+            world.notice(StaNotice::Disconnected(reason)).await;
+            let outputs = world.outputs.borrow();
+            assert_eq!(
+                outputs
+                    .iter()
+                    .filter(|output| matches!(
+                        output,
+                        ServiceOutput::Notice(StaNotice::Disconnected(_))
+                    ))
+                    .count(),
+                1
+            );
+            assert_eq!(outputs.iter().filter(|output| matches!(output,
+            ServiceOutput::CommandCompleted(terminal) if terminal.request.command() == StaCommand::Connect)).count(), 1);
+        })
+    });
 }
 
 #[test]
@@ -1727,6 +1884,66 @@ fn message4_waits_for_the_actual_group_installation_terminal() {
             })
         },
     );
+}
+
+#[test]
+fn stop_or_fault_with_an_accepted_group_install_keeps_owners_and_sends_no_message4() {
+    use oer_ieee80211_sta::machine::{StaCommandOutcome, StaDisconnectReason};
+    for poisoned in [false, true] {
+        run(
+            StaSecurity::Wpa2Personal {
+                pmk: Pmk::from_bytes(PMK),
+            },
+            |world| {
+                Box::pin(async move {
+                    let mut seen = 0;
+                    world.associate(&mut seen, true).await;
+                    let ptk = world.start_handshake(&mut seen).await;
+                    let before = world.air.sent().len();
+                    world.air.hold_group_commands(true);
+                    world.air.receive(&message3(&ptk), meta());
+                    for _ in 0..20 {
+                        yield_now().await;
+                    }
+                    assert_eq!(world.air.group_writes(), 0);
+                    assert_eq!(world.air.sent().len(), before);
+                    let reason = if poisoned {
+                        world.air.poison();
+                        StaDisconnectReason::Arbiter(oer_ieee80211_arbiter::LeaveReason::PortFailed)
+                    } else {
+                        world.command(ServiceCommand::Stop).await;
+                        StaDisconnectReason::Requested
+                    };
+                    world.notice(StaNotice::Disconnected(reason)).await;
+                    assert_eq!(
+                        world.air.sent().len(),
+                        before,
+                        "finalization must not send a queued M4 or deauthentication"
+                    );
+                    let outputs = world.outputs.borrow();
+                    assert_eq!(
+                        outputs
+                            .iter()
+                            .filter(|output| matches!(output,
+                ServiceOutput::CommandCompleted(terminal) if terminal.request.correlation() == 1
+                    && terminal.outcome == StaCommandOutcome::ConnectFailed(reason)))
+                            .count(),
+                        1
+                    );
+                    assert_eq!(
+                        outputs
+                            .iter()
+                            .filter(|output| matches!(
+                                output,
+                                ServiceOutput::Notice(StaNotice::Disconnected(_))
+                            ))
+                            .count(),
+                        1
+                    );
+                })
+            },
+        );
+    }
 }
 
 #[test]

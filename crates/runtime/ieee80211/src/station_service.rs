@@ -17,7 +17,15 @@
 //! link notices describe lifecycle independently of application requests.
 //! `event` returns a typed contract error directly; no sticky failure flag
 //! changes later event handling. A disable carries its delivery result with
-//! the disabled owner, preserving the existing fail-stop boundary.
+//! the disabled owner. `run` consumes its service and returns `ServiceCompleted`:
+//! the port's terminal state and separate `RetiredService` resource banks.
+//! On Stop, failure or poisoned disable, Station/Data finalize without issuing
+//! Configure, key or transmit effects. Accepted requests return once before the
+//! lifecycle notice. Unconsumed requests remain in their application queue.
+//! `FailedInstallation` retains the Disabled stop proof and permits normal
+//! uninstall only; recovery constructs a new service in a new installation.
+//! Its failure does not itself require hardware reset. `Stopped` still returns
+//! the ordinary Disabled owner, independent of the retired banks' lifetime.
 //!
 //! The tokens the machines hold are the port's: tickets and buffers of two
 //! classes, the small one for the station's frames and the large one for
@@ -437,9 +445,51 @@ pub enum ServiceEnd<'p, 'id, B: PortBackend> {
     /// The port failed (it refused to come back to a channel, or a phase
     /// reported it poisoned and its disable still ended): it is disabled,
     /// and the arbiter stopped the station.
-    Failed(Owner<'p, 'id, B, Disabled>),
+    Failed(FailedInstallation<'p, 'id, B>),
     /// The port is poisoned.
     Poisoned(PoisonedOwner<'p, 'id, B>),
+}
+
+/// A service failure with a stopped backend. Its only continuation is normal
+/// uninstall; starting another service requires a new installation. This is
+/// not a poisoned owner and does not require an otherwise unnecessary reset.
+pub struct FailedInstallation<'p, 'id, B: PortBackend> {
+    owner: Owner<'p, 'id, B, Disabled>,
+}
+
+impl<'id, B: PortBackend> FailedInstallation<'_, 'id, B> {
+    /// Retire the old installation normally, preserving Disabled's stop proof.
+    pub fn uninstall(self, control: B::Uninstall) -> oer_ieee80211_port::Ended<'id, B> {
+        self.owner.uninstall(control)
+    }
+}
+
+/// A completed run and all resource banks it owned. Neither machine in the
+/// returned banks has a run/admission interface.
+pub struct ServiceCompleted<'p, 'id, B: StationPort<'id>, S> {
+    pub end: ServiceEnd<'p, 'id, B>,
+    pub retired: RetiredService<'id, B, S>,
+}
+
+/// The completed service's owners and diagnostics. It cannot run again or
+/// expose its old arbiter/epoch authority to a replacement service.
+pub struct RetiredService<'id, B: StationPort<'id>, S> {
+    pub station: oer_ieee80211_sta::machine::RetiredStation<
+        'id,
+        PortStaTokens<'id, B::Types, B::Small>,
+        B::Caps,
+    >,
+    pub data:
+        oer_ieee80211_sta::data::RetiredData<'id, PortDataTokens<'id, B::Types, B::Large>, B::Caps>,
+    pub counters: ServiceCounters,
+    pub rates: S,
+    _arbiter: PortArbiter<'id, B>,
+    _pending: PendingActions<'id, B>,
+    _terminal_access: oer_ieee80211_lower_mac::TerminalAccess<
+        'id,
+        <B::Types as PhaseTypes<'id>>::TicketKind,
+        <B::Types as PhaseTypes<'id>>::TicketPath,
+    >,
 }
 
 /// The station's service: its machines and the rate selection of its frames.
@@ -464,6 +514,10 @@ pub struct StationService<'id, B: StationPort<'id>, S> {
 }
 
 struct PendingActions<'id, B: StationPort<'id>> {
+    /// A retune whose disable/enable failed remains owned until retirement.
+    retune: Option<
+        oer_ieee80211_arbiter::PendingRetune<'id, B::Caps, <B::Types as PhaseTypes<'id>>::GatePath>,
+    >,
     configuring: Option<
         oer_ieee80211_sta::machine::PendingConfiguration<
             'id,
@@ -523,15 +577,81 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
             terminal_access,
             counters: ServiceCounters::default(),
             pending: PendingActions {
+                retune: None,
                 configuring: None,
                 group: None,
             },
         }
     }
 
-    /// Run the service on the disabled port until the application stops it
-    /// or the port fails.
+    /// Consume the service and run until Stop or port failure. Completion
+    /// returns terminal resource banks, never another runnable service.
     pub async fn run<
+        'p,
+        const TX_DEPTH: usize,
+        const RX_DEPTH: usize,
+        const COMMAND_DEPTH: usize,
+    >(
+        mut self,
+        owner: Owner<'p, 'id, B, Disabled>,
+        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
+        timer: &impl Timer,
+    ) -> ServiceCompleted<'p, 'id, B, S> {
+        let end = self.run_loop(owner, io, timer).await;
+        let reason = match &end {
+            ServiceEnd::Stopped(_) => oer_ieee80211_sta::machine::StaDisconnectReason::Requested,
+            ServiceEnd::Failed(_) | ServiceEnd::Poisoned(_) => {
+                oer_ieee80211_sta::machine::StaDisconnectReason::Arbiter(
+                    oer_ieee80211_arbiter::LeaveReason::PortFailed,
+                )
+            }
+        };
+        let Self {
+            station,
+            data,
+            mut arbiter,
+            mut rates,
+            counters,
+            pending,
+            terminal_access,
+        } = self;
+        let mut station = station.finish(reason);
+        let data = data.finish();
+        rates.disconnected();
+        arbiter.port_failed();
+        while let Some(notice) = arbiter.poll_notice(timer.now()) {
+            match notice {
+                ArbiterNotice::Station(notice) => station.return_arbiter_notice(notice),
+                ArbiterNotice::AccessPoint(command) => {
+                    (io.output)(ServiceOutput::AccessPoint(command))
+                }
+            }
+        }
+        while let Some(output) = station.poll_output() {
+            match output {
+                oer_ieee80211_sta::machine::StaFinalOutput::CommandCompleted(terminal) => {
+                    (io.output)(ServiceOutput::CommandCompleted(terminal))
+                }
+                oer_ieee80211_sta::machine::StaFinalOutput::Notify(notice) => {
+                    (io.output)(ServiceOutput::Notice(notice))
+                }
+            }
+        }
+        ServiceCompleted {
+            end,
+            retired: RetiredService {
+                station,
+                data,
+                rates,
+                counters,
+                _arbiter: arbiter,
+                _pending: pending,
+                _terminal_access: terminal_access,
+            },
+        }
+    }
+
+    async fn run_loop<
         'p,
         const TX_DEPTH: usize,
         const RX_DEPTH: usize,
@@ -554,24 +674,27 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
             };
             match next {
                 Served::Stop => {
-                    return match self.disable(owner, io, timer).await {
+                    return match self.disable(owner, timer).await {
                         Ok((owner, Ok(()))) => ServiceEnd::Stopped(owner),
-                        Ok((owner, Err(_))) => ServiceEnd::Failed(owner),
+                        Ok((owner, Err(_))) => ServiceEnd::Failed(FailedInstallation { owner }),
                         Err(poisoned) => ServiceEnd::Poisoned(poisoned),
                     };
                 }
                 Served::Poisoned => {
-                    return match self.disable(owner, io, timer).await {
-                        Ok((owner, _)) => ServiceEnd::Failed(owner),
+                    return match self.disable(owner, timer).await {
+                        Ok((owner, _)) => ServiceEnd::Failed(FailedInstallation { owner }),
                         Err(poisoned) => ServiceEnd::Poisoned(poisoned),
                     };
                 }
                 Served::Retune(pending) => {
-                    let disabled = match self.disable(owner, io, timer).await {
+                    let disabled = match self.disable(owner, timer).await {
                         Ok((owner, Ok(()))) => owner,
-                        Ok((owner, Err(_))) => return ServiceEnd::Failed(owner),
+                        Ok((owner, Err(_))) => {
+                            self.pending.retune = Some(pending);
+                            return ServiceEnd::Failed(FailedInstallation { owner });
+                        }
                         Err(poisoned) => {
-                            self.fail_stop(timer.now(), io);
+                            self.pending.retune = Some(pending);
                             return ServiceEnd::Poisoned(poisoned);
                         }
                     };
@@ -620,22 +743,20 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
                     owner = disabled;
                     let Some(requested) = pending.take() else {
                         // Initial enable has no retune action to answer.
-                        self.fail_stop(timer.now(), io);
-                        return Err(ServiceEnd::Failed(owner));
+                        return Err(ServiceEnd::Failed(FailedInstallation { owner }));
                     };
                     pending = self.arbiter.retune_refused(requested);
+                    if pending.is_none() {
+                        return Err(ServiceEnd::Failed(FailedInstallation { owner }));
+                    }
                     let now = timer.now();
                     // A disabled port receives only notices. The return retune
                     // came directly with its affine token, without polling
                     // actions that could consume a gate.
                     self.deliver_arbiter_notices(now, io);
-                    if pending.is_none() {
-                        self.settle(now, io);
-                        return Err(ServiceEnd::Failed(owner));
-                    }
                 }
                 Err(Failed::Poisoned(poisoned)) => {
-                    self.fail_stop(timer.now(), io);
+                    self.pending.retune = pending.take();
                     return Err(ServiceEnd::Poisoned(poisoned));
                 }
             }
@@ -643,15 +764,9 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
     }
 
     /// Disable the port: only command terminals reach the service.
-    async fn disable<
-        'p,
-        const TX_DEPTH: usize,
-        const RX_DEPTH: usize,
-        const COMMAND_DEPTH: usize,
-    >(
+    async fn disable<'p>(
         &mut self,
         owner: Owner<'p, 'id, B, Enabled>,
-        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
         timer: &impl Timer,
     ) -> Result<
         (
@@ -663,20 +778,11 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
         let mut delivery = Ok(());
         let mut sink = |event: B::Terminal<'id>| {
             let now = timer.now();
-            if delivery.is_err() {
-                // Fail-stop has consumed an invalid terminal. Later owners are
-                // retired with this disable; they cannot re-enter the machines.
-                drop(event);
-                return;
-            }
             if let Err(error) = self.terminal(now, B::terminal(event)) {
                 delivery = Err(error);
             }
         };
         let disabled = owner.disable(&mut sink).await?;
-        if delivery.is_err() {
-            self.fail_stop(timer.now(), io);
-        }
         Ok((disabled, delivery))
     }
 
@@ -748,14 +854,12 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
                     Ok(Some(buffer)) => phase.recycle(buffer),
                     Ok(None) => {}
                     Err(_) => {
-                        self.fail_stop(now, io);
                         return Served::Poisoned;
                     }
                 },
                 Some(Ok(Err(_))) => self.counters.events_lost.increment(),
                 None => {}
                 Some(Err(_)) => {
-                    self.fail_stop(now, io);
                     return Served::Poisoned;
                 }
             }
@@ -868,7 +972,6 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
                 )
                 .and_then(|follow| self.follow(now, follow, io).map_err(|_| ()));
                 if submitted.is_err() {
-                    self.fail_stop(now, io);
                     return Next::Poisoned;
                 }
             }
@@ -963,12 +1066,10 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
                 match submitted {
                     Ok(follow) => {
                         if self.follow(now, follow, io).is_err() {
-                            self.fail_stop(now, io);
                             return Next::Poisoned;
                         }
                     }
                     Err(()) => {
-                        self.fail_stop(now, io);
                         return Next::Poisoned;
                     }
                 }
@@ -1017,17 +1118,6 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
         Ok(())
     }
 
-    /// Report service termination without converting a recoverable enable
-    /// refusal into hardware poisoning. The caller retains its typed owner.
-    fn fail_stop<const TX_DEPTH: usize, const RX_DEPTH: usize, const COMMAND_DEPTH: usize>(
-        &mut self,
-        now: Instant,
-        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
-    ) {
-        self.arbiter.port_failed();
-        self.settle(now, io);
-    }
-
     fn deliver_arbiter_notices<
         const TX_DEPTH: usize,
         const RX_DEPTH: usize,
@@ -1045,32 +1135,6 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>> StationServ
                 ArbiterNotice::AccessPoint(command) => {
                     (io.output)(ServiceOutput::AccessPoint(command))
                 }
-            }
-        }
-    }
-
-    /// Carry out the actions that need no phase once the port failed: the
-    /// arbiter's notices reach the station, the station's notices the
-    /// application.
-    fn settle<const TX_DEPTH: usize, const RX_DEPTH: usize, const COMMAND_DEPTH: usize>(
-        &mut self,
-        now: Instant,
-        io: &mut ServiceIo<'_, B::Caps, TX_DEPTH, RX_DEPTH, COMMAND_DEPTH>,
-    ) {
-        self.deliver_arbiter_notices(now, io);
-        while let Some(action) = self.station.poll_action(now) {
-            match action {
-                StaAction::CommandCompleted(terminal) => {
-                    (io.output)(ServiceOutput::CommandCompleted(terminal))
-                }
-                StaAction::Notify(notice) => {
-                    (io.output)(ServiceOutput::Notice(notice));
-                    if let StaNotice::Disconnected(_) = notice {
-                        self.rates.disconnected();
-                        self.data.leave();
-                    }
-                }
-                _ => {}
             }
         }
     }

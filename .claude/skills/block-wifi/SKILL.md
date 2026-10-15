@@ -93,6 +93,13 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   SA Query's final timeout is checked before it starts; later retries outside
   that window are absent, while the final timeout remains a wake source.
 
+- A terminal port failure cannot drain ordinary `Station::poll_action` and
+  discard non-notice actions: doing so consumes Configure/key owners and waits
+  for replies the failed port cannot produce. Finish Station/Data into their
+  terminal banks after disable's resource returns. `StationService::run` consumes
+  the service; `FailedInstallation` is Disabled and can uninstall normally,
+  but cannot enable. Recovery needs new service and installation authority.
+
 - `machine::Station` has Open and prederived WPA2-PMK inputs only. Shared
   selection may choose SAE even under the WPA2 policy; reject that result
   with `SaeUnsupported` before Join, never rerun selection with PSK or send

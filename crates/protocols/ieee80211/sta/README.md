@@ -24,6 +24,16 @@ from request completion. A scan result retains partial observations and names
 the exact absence refusal, cancelled-absence limit or link-ending reason.
 The correlation value is caller data and confers no resource authority.
 
+After the port's terminal failure, `Station::finish` consumes the protocol
+machine into `RetiredStation`. This path retains its owners and emits only the
+original request terminals and one lifecycle notice; it cannot issue Configure,
+key removal or TX effects to the failed port. The arbiter's returned places
+enter this bank directly, without advancing scan/join transitions. `StaData::finish`
+returns queued frames to its own terminal bank. Neither bank can reconnect or
+be used as the machines of another service. Healthy disable returns every frame
+and key owner before these banks or the installation are destroyed; poisoned
+work still owned by the backend remains in that installation's retirement custody.
+
 Operation deadlines use checked monotonic arithmetic. Authentication,
 Association and handshake overflow end Connect with `DeadlineOverflow`.
 A background dwell overflow ends only its original scan request with

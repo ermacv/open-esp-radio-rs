@@ -154,3 +154,15 @@ cases = [
     "crates/protocols/ieee80211/port/tests/ui/ended_constructor.rs",
     "crates/protocols/ieee80211/port/tests/ui/backend_field.rs",
 ]
+
+[[suite]]
+name = "service-finalization"
+packages = ["oer-ieee80211-runtime", "oer-ieee80211-sta", "oer-ieee80211-port", "oer-ieee80211-lower-mac", "oer-ieee80211-upper-mac", "oer-time"]
+features = []
+targets = ["host", "esp32s31"]
+cases = [
+    "crates/runtime/ieee80211/tests/ui/service_run_owner.rs",
+    "crates/runtime/ieee80211/tests/ui/failed_service_installation.rs",
+    "crates/protocols/ieee80211/sta/tests/ui/retired_station.rs",
+    "crates/protocols/ieee80211/sta/tests/ui/retired_data.rs",
+]

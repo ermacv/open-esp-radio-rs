@@ -405,9 +405,34 @@ pub struct StaData<'id, D: StaDataTokens, K, const CAP: usize = 8> {
     contention_limited: Counter,
 }
 
+/// Terminal data bank. Queued work has returned its frame credits; it has no
+/// admission, input or transmission methods and cannot begin another link.
+pub struct RetiredData<'id, D: StaDataTokens, K, const CAP: usize = 8> {
+    data: StaData<'id, D, K, CAP>,
+}
+
+impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const CAP: usize>
+    RetiredData<'id, D, K, CAP>
+{
+    pub fn counters(&self) -> DataCounters {
+        self.data.counters()
+    }
+
+    pub fn available(&self, category: WmmAccessCategory) -> u32 {
+        self.data.available(category)
+    }
+}
+
 impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, const CAP: usize>
     StaData<'id, D, K, CAP>
 {
+    /// End admission and reclaim queued frames after the backend returned its
+    /// submitted terminals. Returned owners remain in the terminal resource bank.
+    pub fn finish(mut self) -> RetiredData<'id, D, K, CAP> {
+        self.leave();
+        RetiredData { data: self }
+    }
+
     /// The machine with the tickets and buffers the composition granted it,
     /// at most eight of a kind and no more tickets than its queues hold,
     /// checked at compile time.

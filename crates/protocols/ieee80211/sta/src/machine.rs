@@ -731,6 +731,78 @@ pub struct Station<'id, T: StaTokens, K: Ieee80211Capabilities> {
     epochs: LinkEpochSource<'id, T::EpochPath>,
 }
 
+/// Resource bank of a terminal station. It cannot accept commands, receive
+/// frames or issue protocol effects. Every remaining owner stays in this bank
+/// until its caller retires it with the installation.
+pub struct RetiredStation<'id, T: StaTokens, K: Ieee80211Capabilities> {
+    station: Station<'id, T, K>,
+    notice: Option<StaNotice>,
+}
+
+/// Terminal-only output; finalization never requests a port operation.
+pub enum StaFinalOutput {
+    CommandCompleted(StaCommandTerminal),
+    Notify(StaNotice),
+}
+
+impl<'id, T: StaTokens, K: Ieee80211Capabilities> RetiredStation<'id, T, K> {
+    /// Drain original accepted requests before the one lifecycle notice.
+    pub fn poll_output(&mut self) -> Option<StaFinalOutput> {
+        self.station
+            .commands
+            .poll()
+            .map(StaFinalOutput::CommandCompleted)
+            .or_else(|| self.notice.take().map(StaFinalOutput::Notify))
+    }
+
+    /// Return the arbiter's terminal places without running protocol transitions.
+    pub fn return_arbiter_notice(&mut self, notice: StationNotice<'id, K, T::GatePath>) {
+        match notice {
+            StationNotice::LeaseEnded(place) | StationNotice::LeaseCancelled(_, place) => {
+                self.station.lease = Held::None;
+                self.station.place = Some(place);
+            }
+            StationNotice::AbsenceEnded(place) | StationNotice::AbsenceCancelled(_, place) => {
+                self.station.absence = None;
+                self.station.absence_place = Some(place);
+            }
+            StationNotice::LeaseStarted(_)
+            | StationNotice::AbsenceStarted(_)
+            | StationNotice::Moved(_)
+            | StationNotice::Leave(_) => {}
+        }
+    }
+
+    /// Free frame credits retained before the installation is torn down.
+    pub fn frame_credits(&self) -> (usize, usize) {
+        (self.station.tickets.len(), self.station.buffers.len())
+    }
+
+    /// Pairwise owners, group owners (vacant or installed), and the group's
+    /// mutation permission retained before installation teardown. Poisoned
+    /// work may still own missing resources in the backend's retirement bank.
+    pub fn key_owners(&self) -> (usize, usize, bool) {
+        let keys = &self.station.keys;
+        (
+            usize::from(matches!(
+                keys.pairwise,
+                KeyCell::Free(_) | KeyCell::Installed(_)
+            )),
+            // Both counts are bounded by eight; the sum is exact.
+            keys.group_slots
+                .free
+                .len()
+                .saturating_add(keys.groups.len()),
+            keys.group_permission.is_some(),
+        )
+    }
+
+    /// Unexpected extra tokens observed before retirement.
+    pub fn lost_tokens(&self) -> u32 {
+        self.station.lost_tokens()
+    }
+}
+
 /// The station's lease.
 enum Held<'id, K, Path: PoolPath> {
     /// None: the station holds its place.
@@ -1504,6 +1576,40 @@ pub struct MissingGroupSlot<
 }
 
 impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
+    /// End this machine after the backend's disable/poison terminal. The caller
+    /// first returns every backend terminal it received. Unlike ordinary Leave,
+    /// this path owes no configuration, key removal or transmission to a port
+    /// which can no longer execute it. Pending owners remain with the bank or
+    /// the installation that must now be retired.
+    pub fn finish(mut self, reason: StaDisconnectReason) -> RetiredStation<'id, T, K> {
+        self.complete_commands();
+        let notice = match self.state {
+            State::Idle => None,
+            State::Report(existing) => Some(StaNotice::Disconnected(existing)),
+            _ => Some(StaNotice::Disconnected(reason)),
+        };
+        self.commands.complete(
+            StaCommand::Connect,
+            StaCommandOutcome::ConnectFailed(reason),
+        );
+        self.commands.complete(
+            StaCommand::BackgroundScan,
+            StaCommandOutcome::BackgroundScan {
+                interrupted: Some(BackgroundScanEnd::LinkEnded(reason)),
+            },
+        );
+        self.commands.complete(
+            StaCommand::Disconnect,
+            StaCommandOutcome::Disconnected(reason),
+        );
+        self.state = State::Idle;
+        self.epoch = None;
+        RetiredStation {
+            station: self,
+            notice,
+        }
+    }
+
     /// An idle station of `config`, with the tickets, small buffers and key
     /// slots the composition granted it and the arbiter's places. It holds
     /// at most eight tokens of a kind, checked at compile time:

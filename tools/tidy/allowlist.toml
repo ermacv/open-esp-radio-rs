@@ -348,3 +348,19 @@ reason = "Standalone compiler contract executed by the host/RV32 UI catalog with
 [[uncompiled]]
 path = "crates/protocols/ieee80211/sta/tests/ui/ftm_terminal_owner.rs"
 reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/runtime/ieee80211/tests/ui/service_run_owner.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/runtime/ieee80211/tests/ui/failed_service_installation.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/sta/tests/ui/retired_station.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/sta/tests/ui/retired_data.rs"
+reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."

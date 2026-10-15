@@ -54,7 +54,6 @@ enum Opening {
 /// host's commands until it stops the session or restarts the radio.
 struct SessionBody<'b> {
     config: Ieee802154SessionConfig,
-    storage: &'static mut oer_esp32s31_ieee802154_system::Ieee802154SystemRuntime,
     channel: Channel,
     opening: Opening,
     system: &'b mut Ieee802154System,
@@ -162,11 +161,14 @@ async fn open(opening: Opening, result: Ieee802154SessionResult) {
 }
 
 /// Run one peer session until the host stops it. The image is terminal.
+/// The first claim consumes `storage`; restarts reuse the returned parked
+/// runtime and its queue permission without borrowing mutable storage again.
 pub(in crate::product_hil) async fn run_session(
     spawner: embassy_executor::Spawner,
     platform: EspHalRadioPlatform,
     request_id: u32,
     config: Ieee802154SessionConfig,
+    storage: &'static mut oer_esp32s31_ieee802154_system::Ieee802154SystemRuntime,
 ) {
     let Some(channel) = Channel::new(config.channel).ok() else {
         publish_event_reliably(

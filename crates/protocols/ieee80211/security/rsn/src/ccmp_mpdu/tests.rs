@@ -112,21 +112,39 @@ fn oversized_data_is_refused_before_encryption_or_decryption() {
 }
 
 #[test]
-fn management_frames_share_ccm_but_keep_their_own_aad_and_nonce_flags() {
-    use oer_ieee80211_mac::ccmp::{CcmpHeader, CcmpKeyId, CcmpPacketNumber};
+fn management_wire_vector_matches_the_replay_receiver_in_both_spp_modes() {
+    use super::test_vector::{MANAGEMENT_BODY, management_wire};
     for spp in [false, true] {
-        let mut frame = std::vec![0; 24];
-        frame[..2].copy_from_slice(&0x40d0_u16.to_le_bytes());
-        frame[4..10].copy_from_slice(&[2, 0, 0, 0, 0, 1]);
-        frame[10..16].copy_from_slice(&[2, 0, 0, 0, 0, 2]);
-        frame[16..22].copy_from_slice(&[2, 0, 0, 0, 0, 2]);
-        frame.extend_from_slice(
-            &CcmpHeader::new(CcmpPacketNumber::new(1).unwrap(), CcmpKeyId::PAIRWISE).encode(),
-        );
-        frame.extend_from_slice(&[8, 0, 0x42, 0x23]);
-        frame.extend_from_slice(&[0; 8]);
-        mode(spp).seal(&key(), &mut frame).unwrap();
+        let wire = management_wire();
+        let mut mpdu = wire.clone();
+        assert_eq!(mode(spp).open(&key(), &mut mpdu).unwrap(), MANAGEMENT_BODY);
+        mode(spp).seal(&key(), &mut mpdu).unwrap();
+        assert_eq!(mpdu, wire);
         let mut receiver = crate::management_ccmp::ManagementCcmpReceiver::new(key());
-        assert_eq!(receiver.open(&mut frame).unwrap(), [8, 0, 0x42, 0x23]);
+        assert_eq!(receiver.open(&mut mpdu).unwrap(), MANAGEMENT_BODY);
+    }
+}
+
+#[test]
+fn four_address_wire_vectors_cover_the_28_and_30_byte_aad_shapes() {
+    // Independent Python AESCCM peer; the second header also authenticates SPP.
+    for wire in [
+        "084300000200000000010200000000020200000000033512020000000004a100002000000000b731f5f199cc26451980818eb200fff7278afcf1",
+        "8843000002000000000102000000000202000000000335120200000000048500a1000020000000001d0e452091e0afde86d6fb239d749532ae86ceb2",
+    ] {
+        let wire = bytes(wire);
+        let mut opened = wire.clone();
+        assert_eq!(
+            mode(true).open(&key(), &mut opened).unwrap(),
+            b"four-address"
+        );
+        mode(true).seal(&key(), &mut opened).unwrap();
+        assert_eq!(opened, wire);
+        let mut changed = wire.clone();
+        changed[29] ^= 1; // Last address-4 byte lies in the second AAD block.
+        assert_eq!(
+            mode(true).open(&key(), &mut changed),
+            Err(CcmpMpduError::InvalidMic)
+        );
     }
 }

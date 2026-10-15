@@ -55,7 +55,7 @@ impl CcmpAssociation {
         mic.copy_from_slice(&ccm::authenticate(
             &cipher,
             &blocks.nonce,
-            &blocks.aad[..blocks.aad_len],
+            &blocks.aad,
             body,
         ));
         ccm::crypt(&cipher, &blocks.nonce, body);
@@ -70,8 +70,7 @@ impl CcmpAssociation {
         let (body, mic) = body_and_mic.split_at_mut(blocks.body_len);
         let cipher = Aes128::new(GenericArray::from_slice(key));
         ccm::crypt(&cipher, &blocks.nonce, body);
-        let mut expected =
-            ccm::authenticate(&cipher, &blocks.nonce, &blocks.aad[..blocks.aad_len], body);
+        let mut expected = ccm::authenticate(&cipher, &blocks.nonce, &blocks.aad, body);
         let valid = bool::from(expected.ct_eq(mic));
         expected.zeroize();
         if !valid {
@@ -97,45 +96,13 @@ impl CcmpAssociation {
             .checked_sub(MIC_LEN)
             .ok_or(CcmpMpduError::Truncated)?;
         u16::try_from(body_len).map_err(|_| CcmpMpduError::TooLong)?;
-        let mut aad = [0; 30];
-        // Mutable FC subtype bits 4..6 and Retry/PM/MoreData are not authenticated.
-        let masked = if control.is_data() { 0x3870 } else { 0x3800 };
-        let mut fc = control.get() & !masked;
-        if control.is_qos_data() {
-            fc &= !0x8000;
-        }
-        aad[..2].copy_from_slice(&fc.to_le_bytes());
-        aad[2..8].copy_from_slice(&header.receiver());
-        aad[8..14].copy_from_slice(&header.transmitter());
-        aad[14..20].copy_from_slice(&header.address3());
-        aad[20] = (header.sequence_control() & 15) as u8;
-        let mut aad_len = 22;
-        if let Some(address4) = header.address4() {
-            aad[22..28].copy_from_slice(&address4);
-            aad_len = 28;
-        }
-        let flags = if let Some(qos) = header.qos() {
-            let mask = match self.spp {
-                Spp::Negotiated => 0x8f,
-                Spp::NotNegotiated => 0x0f,
-            };
-            let flags = (qos as u8) & mask;
-            aad[aad_len] = flags;
-            aad_len += 2;
-            flags
-        } else if control.is_data() {
-            0
-        } else {
-            // Management frames retain subtype in AAD and set the nonce flag.
-            0x10
-        };
+        let (aad, flags) = Aad::from_header(&header, self.spp);
         let mut nonce = [0; NONCE_LEN];
         nonce[0] = flags;
         nonce[1..7].copy_from_slice(&header.transmitter());
         nonce[7..].copy_from_slice(&ccmp.packet_number().value().to_be_bytes()[2..]);
         Ok(Blocks {
             aad,
-            aad_len,
             nonce,
             body_len,
             body_start: frame.len() - protected.len(),
@@ -143,9 +110,77 @@ impl CcmpAssociation {
     }
 }
 
+/// Only checked MAC-header builders can create CCM additional data. The closed
+/// wire shapes make AAD beyond the two CCM blocks (30 bytes) unrepresentable.
+pub(crate) struct Aad(AadBytes);
+
+enum AadBytes {
+    ThreeAddress([u8; 22]),
+    ThreeAddressQos([u8; 24]),
+    FourAddress([u8; 28]),
+    FourAddressQos([u8; 30]),
+}
+
+impl Aad {
+    fn from_header(header: &DecodedHeader<'_>, spp: Spp) -> (Self, u8) {
+        let control = header.control();
+        let mut base = [0; 22];
+        // Mutable subtype bits are masked only for data, never management.
+        let masked = if control.is_data() { 0x3870 } else { 0x3800 };
+        let mut fc = control.get() & !masked;
+        if control.is_qos_data() {
+            fc &= !0x8000;
+        }
+        base[..2].copy_from_slice(&fc.to_le_bytes());
+        base[2..8].copy_from_slice(&header.receiver());
+        base[8..14].copy_from_slice(&header.transmitter());
+        base[14..20].copy_from_slice(&header.address3());
+        base[20] = (header.sequence_control() & 15) as u8;
+        let qos = header.qos().map(|qos| {
+            (qos as u8)
+                & match spp {
+                    Spp::Negotiated => 0x8f,
+                    Spp::NotNegotiated => 0x0f,
+                }
+        });
+        let flags = qos.unwrap_or(if control.is_data() { 0 } else { 0x10 });
+        let bytes = match (header.address4(), qos) {
+            (None, None) => AadBytes::ThreeAddress(base),
+            (None, Some(qos)) => {
+                let mut bytes = [0; 24];
+                bytes[..22].copy_from_slice(&base);
+                bytes[22] = qos;
+                AadBytes::ThreeAddressQos(bytes)
+            }
+            (Some(address), None) => {
+                let mut bytes = [0; 28];
+                bytes[..22].copy_from_slice(&base);
+                bytes[22..].copy_from_slice(&address);
+                AadBytes::FourAddress(bytes)
+            }
+            (Some(address), Some(qos)) => {
+                let mut bytes = [0; 30];
+                bytes[..22].copy_from_slice(&base);
+                bytes[22..28].copy_from_slice(&address);
+                bytes[28] = qos;
+                AadBytes::FourAddressQos(bytes)
+            }
+        };
+        (Self(bytes), flags)
+    }
+
+    pub(crate) fn bytes(&self) -> &[u8] {
+        match &self.0 {
+            AadBytes::ThreeAddress(bytes) => bytes,
+            AadBytes::ThreeAddressQos(bytes) => bytes,
+            AadBytes::FourAddress(bytes) => bytes,
+            AadBytes::FourAddressQos(bytes) => bytes,
+        }
+    }
+}
+
 struct Blocks {
-    aad: [u8; 30],
-    aad_len: usize,
+    aad: Aad,
     nonce: [u8; NONCE_LEN],
     body_start: usize,
     body_len: usize,
@@ -153,3 +188,6 @@ struct Blocks {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+pub(crate) mod test_vector;

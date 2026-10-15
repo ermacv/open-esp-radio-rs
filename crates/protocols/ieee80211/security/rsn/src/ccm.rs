@@ -1,4 +1,5 @@
 //! Shared CCMP-128 CCM transform (8-byte MIC, 13-byte nonce, two-byte length).
+use crate::ccmp_mpdu::Aad;
 use aes::{
     Aes128,
     cipher::{BlockEncrypt, generic_array::GenericArray},
@@ -23,7 +24,7 @@ pub(crate) fn crypt(cipher: &Aes128, nonce: &[u8; NONCE_LEN], body: &mut [u8]) {
 pub(crate) fn authenticate(
     cipher: &Aes128,
     nonce: &[u8; NONCE_LEN],
-    aad: &[u8],
+    aad: &Aad,
     body: &[u8],
 ) -> [u8; MIC_LEN] {
     let mut mac = GenericArray::from([0_u8; 16]);
@@ -31,6 +32,7 @@ pub(crate) fn authenticate(
     mac[1..14].copy_from_slice(nonce);
     mac[14..16].copy_from_slice(&(body.len() as u16).to_be_bytes());
     cipher.encrypt_block(&mut mac);
+    let aad = aad.bytes();
     let mut block = [0; 16];
     block[..2].copy_from_slice(&(aad.len() as u16).to_be_bytes());
     let mut rest = aad.iter().copied();
@@ -38,7 +40,7 @@ pub(crate) fn authenticate(
         *byte = rest.next().unwrap_or(0);
     }
     absorb(cipher, &mut mac, &block);
-    // All supported CCMP headers have at most 30 AAD bytes.
+    // Aad admits only 22/24/28/30-byte MAC-header shapes; this consumes all of it.
     for byte in &mut block {
         *byte = rest.next().unwrap_or(0);
     }

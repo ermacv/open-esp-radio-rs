@@ -15,28 +15,23 @@
 //! `libnet80211.a[ieee80211_sta.o]::sta_recv_mgmt` and
 //! `libnet80211.a[ieee80211_crypto_ccmp.o]::ieee80211_ccmp_decrypt`.
 
-use aes::{
-    Aes128,
-    cipher::{KeyInit, generic_array::GenericArray},
+use crate::ccm::MIC_LEN;
+use crate::ccmp_mpdu::{CcmpAssociation, CcmpMpduError};
+use oer_ieee80211_mac::{
+    ccmp::{CCMP_HEADER_LEN, CcmpHeader, CcmpHeaderError},
+    frame::DecodedHeader,
+    security::Spp,
 };
-use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 const HEADER_LEN: usize = 24;
-const CCMP_HEADER_LEN: usize = 8;
-const MIC_LEN: usize = 8;
-const PROTECTED: u8 = 0x40;
-const EXT_IV: u8 = 0x20;
-/// Frame Control flags CCMP leaves out of its additional authentication
-/// data: Retry, Power Management and More Data.
-const AAD_MASKED_FLAGS: u8 = 0x08 | 0x10 | 0x20;
-/// Nonce flags of a management frame: priority zero, Management set.
-const MANAGEMENT_NONCE_FLAGS: u8 = 0x10;
-const AAD_LEN: usize = 22;
-const NONCE_LEN: usize = 13;
 /// Why a protected management frame did not open.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ManagementCcmpError {
+    /// The MAC header is malformed or does not describe management traffic.
+    MalformedHeader,
+    /// The CCMP header has reserved bits or bytes set.
+    InvalidCcmpHeader,
     /// Shorter than a header, CCMP header and MIC.
     Truncated,
     /// Beyond the two-byte CCM length field.
@@ -68,20 +63,32 @@ impl ManagementCcmpReceiver {
 
     /// Decrypt one received protected management frame in place and return
     /// its plaintext body. A frame that does not verify leaves the replay
-    /// state unchanged.
+    /// state unchanged. MIC failure erases tentative plaintext through the
+    /// shared `CcmpAssociation` transform; this wrapper only owns replay.
     pub fn open<'a>(&mut self, frame: &'a mut [u8]) -> Result<&'a [u8], ManagementCcmpError> {
         if frame.len() < HEADER_LEN + CCMP_HEADER_LEN + MIC_LEN {
             return Err(ManagementCcmpError::Truncated);
         }
-        if frame[1] & PROTECTED == 0 {
+        let header = DecodedHeader::decode(frame).ok_or(ManagementCcmpError::MalformedHeader)?;
+        if header.control().is_data() {
+            return Err(ManagementCcmpError::MalformedHeader);
+        }
+        if !header.control().protected() {
             return Err(ManagementCcmpError::NotProtected);
         }
-        let ccmp = &frame[HEADER_LEN..HEADER_LEN + CCMP_HEADER_LEN];
-        if ccmp[3] & EXT_IV == 0 {
-            return Err(ManagementCcmpError::MissingExtendedIv);
-        }
-        let packet_number =
-            u64::from_le_bytes([ccmp[0], ccmp[1], ccmp[4], ccmp[5], ccmp[6], ccmp[7], 0, 0]);
+        let ccmp = header
+            .body()
+            .first_chunk::<CCMP_HEADER_LEN>()
+            .ok_or(ManagementCcmpError::Truncated)?;
+        let packet_number = CcmpHeader::parse(*ccmp)
+            .map_err(|error| match error {
+                CcmpHeaderError::ExtIvMissing => ManagementCcmpError::MissingExtendedIv,
+                CcmpHeaderError::ReservedOctet | CcmpHeaderError::ReservedKeyBits => {
+                    ManagementCcmpError::InvalidCcmpHeader
+                }
+            })?
+            .packet_number()
+            .value();
         if self
             .last_packet_number
             .is_some_and(|last| packet_number <= last)
@@ -89,34 +96,26 @@ impl ManagementCcmpReceiver {
             return Err(ManagementCcmpError::Replay);
         }
 
-        let mut aad = [0; AAD_LEN];
-        aad[0] = frame[0];
-        aad[1] = (frame[1] & !AAD_MASKED_FLAGS) | PROTECTED;
-        aad[2..20].copy_from_slice(&frame[4..22]);
-        // The sequence number is masked; the fragment number stays.
-        aad[20] = frame[22] & 0x0f;
-        let mut nonce = [0; NONCE_LEN];
-        nonce[0] = MANAGEMENT_NONCE_FLAGS;
-        nonce[1..7].copy_from_slice(&frame[10..16]);
-        for (index, byte) in nonce[7..].iter_mut().enumerate() {
-            *byte = (packet_number >> (8 * (5 - index))) as u8;
-        }
-
-        let cipher = Aes128::new(GenericArray::from_slice(&self.temporal_key));
-        let body_start = HEADER_LEN + CCMP_HEADER_LEN;
-        let mic_start = frame.len() - MIC_LEN;
-        let body_len = mic_start - body_start;
-
-        u16::try_from(body_len).map_err(|_| ManagementCcmpError::TooLong)?;
-        crate::ccm::crypt(&cipher, &nonce, &mut frame[body_start..mic_start]);
-        let expected =
-            crate::ccm::authenticate(&cipher, &nonce, &aad, &frame[body_start..mic_start]);
-        if !bool::from(expected.ct_eq(&frame[mic_start..])) {
-            // Restore nothing: the caller drops a frame that failed.
-            return Err(ManagementCcmpError::InvalidMic);
-        }
+        // SPP only affects QoS data; management uses the same transform in
+        // either association mode. The receiver owns its separate PN frontier.
+        let body = CcmpAssociation::new(Spp::NotNegotiated)
+            .open(&self.temporal_key, frame)
+            .map_err(ManagementCcmpError::from)?;
         self.last_packet_number = Some(packet_number);
-        Ok(&frame[body_start..mic_start])
+        Ok(body)
+    }
+}
+
+impl From<CcmpMpduError> for ManagementCcmpError {
+    fn from(error: CcmpMpduError) -> Self {
+        match error {
+            CcmpMpduError::MalformedHeader => Self::MalformedHeader,
+            CcmpMpduError::NotProtected => Self::NotProtected,
+            CcmpMpduError::InvalidCcmpHeader => Self::InvalidCcmpHeader,
+            CcmpMpduError::Truncated => Self::Truncated,
+            CcmpMpduError::TooLong => Self::TooLong,
+            CcmpMpduError::InvalidMic => Self::InvalidMic,
+        }
     }
 }
 

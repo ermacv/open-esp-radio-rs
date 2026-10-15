@@ -42,6 +42,11 @@ management nonce flag, independently of SPP. The model applies this transform
 to transmitted wire bytes and verifies incoming encrypted fixtures; a failed
 MIC erases the tentative plaintext before returning the error. Packet-number
 allocation and replay admission remain with their separate installed owners.
+`ManagementCcmpReceiver` adds its management PN frontier around that same
+transform, so a rejected MIC erases the tentative body on the station's PMF
+path too. The CCM authenticator accepts only the closed `Aad` type built from
+a decoded MAC header: its four layouts occupy 22, 24, 28 or 30 bytes. It
+cannot accept an arbitrary slice whose suffix would escape authentication.
 
 GTK KDE parsing retains `GroupKeyId` in `RsnGtk` and `RsnKeyKind::Group`;
 IDs outside the two-bit wire domain never reach a key installation. The

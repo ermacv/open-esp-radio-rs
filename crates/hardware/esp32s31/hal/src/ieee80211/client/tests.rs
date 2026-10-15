@@ -35,3 +35,33 @@ fn the_runtime_channel_capability_borrows_the_lease() {
     drop(channel);
     let _mac = runtime.wifi_mac_hal();
 }
+
+#[test]
+fn clock_release_consumes_the_obligation_only_on_success() {
+    let (_radio, partitions) = RadioHardware::for_validation().into_concurrent(());
+    let clocked = super::WifiClocked::for_validation(WifiCold::from_partition(partitions.wifi));
+    let released = match clocked.finish_clock_release(Ok(())) {
+        Ok(released) => released,
+        Err(_) => panic!("successful release"),
+    };
+    let _powered = released.into_powered();
+}
+
+#[test]
+fn every_physical_clock_failure_retains_stopped_custody_and_exact_obligation() {
+    for reason in [
+        super::ModemClockError::AlreadyEnabled,
+        super::ModemClockError::NotEnabled,
+        super::ModemClockError::Rejected,
+        super::ModemClockError::Poisoned,
+    ] {
+        let (_radio, partitions) = RadioHardware::for_validation().into_concurrent(());
+        let clocked = super::WifiClocked::for_validation(WifiCold::from_partition(partitions.wifi));
+        let (stopped, poison) = match clocked.finish_clock_release(Err(reason)) {
+            Err(owners) => owners,
+            Ok(_) => panic!("failure must not discharge the obligation"),
+        };
+        let _registers = stopped._registers;
+        let _obligation = poison._obligation;
+    }
+}

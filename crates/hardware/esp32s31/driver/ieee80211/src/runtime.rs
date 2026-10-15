@@ -3,13 +3,12 @@
 use crate::mac_start::{WifiMacReady, WifiMacStartReport};
 
 use oer_esp32s31_hal::{
-    ieee80211::client::{WifiClocked, WifiClocksOn, WifiPowered},
+    ieee80211::client::{
+        ClockPoisoned, StoppedInstallation, WifiClocked, WifiClocksOn, WifiPowered,
+    },
     owner::{MacInterruptSetup, RadioRuntimeOwner},
     root::WifiPartition,
-    shared_radio::{
-        CoexAbsent, CommonPower, CommonRadioPowerError, ModemClockError, SharedRadioLease,
-        WifiClient,
-    },
+    shared_radio::{CoexAbsent, CommonPower, CommonRadioPowerError, SharedRadioLease, WifiClient},
     types::MacInterruptEnableState,
 };
 
@@ -163,7 +162,7 @@ pub enum WifiReleaseError {
     /// The shared PHY domain rejected the Wi-Fi client's release.
     Phy(ConcurrentPhyError),
     /// The initialized status or the Wi-Fi clocks could not change.
-    Clocks(ModemClockError),
+    Clocks,
     /// Leaving common radio power failed a read-back checkpoint.
     Power(CommonRadioPowerError),
 }
@@ -173,8 +172,12 @@ pub enum WifiReleaseError {
 pub enum WifiReleaseFrontier<W> {
     /// Nothing changed; the stopped client is unchanged.
     Stopped(WifiStopped<W, ()>),
-    /// Wi-Fi left the PHY domain; its clocks are still on.
-    Clocked { clocked: WifiClocked, platform: W },
+    /// Wi-Fi left the PHY domain; a failed clock release retains its obligation.
+    ClockPoisoned {
+        stopped: StoppedInstallation,
+        obligation: ClockPoisoned,
+        platform: W,
+    },
     /// The Wi-Fi clocks are off; common power is still held.
     Powered { powered: WifiPowered, platform: W },
 }
@@ -286,7 +289,7 @@ impl<W> WifiStopped<W, ()> {
                 });
             }
         };
-        let mut clocked = WifiClocked::from_running(registers, interrupt_setup, clocks_on);
+        let clocked = WifiClocked::from_running(registers, interrupt_setup, clocks_on);
         let last_phy_client = match phy {
             // Modem sleep already left the PHY client set and cleared the
             // Wi-Fi receive path; only its token ends.
@@ -322,21 +325,15 @@ impl<W> WifiStopped<W, ()> {
                 }
             }
         };
-        if let Err(error) = clocked.set_initialized(lease, false) {
-            return Err(WifiReleaseFailure {
-                power,
-                error: WifiReleaseError::Clocks(error),
-                frontier: WifiReleaseFrontier::Clocked { clocked, platform },
-            });
-        }
-        let powered = match clocked.disable_clocks(lease) {
-            Ok(powered) => powered,
-            Err(failure) => {
+        let powered = match clocked.release_clocks(lease) {
+            Ok(released) => released.into_powered(),
+            Err((stopped, obligation)) => {
                 return Err(WifiReleaseFailure {
                     power,
-                    error: WifiReleaseError::Clocks(failure.error()),
-                    frontier: WifiReleaseFrontier::Clocked {
-                        clocked: failure.into_owner(),
+                    error: WifiReleaseError::Clocks,
+                    frontier: WifiReleaseFrontier::ClockPoisoned {
+                        stopped,
+                        obligation,
                         platform,
                     },
                 });

@@ -356,28 +356,76 @@ impl WifiClocked {
         }
     }
 
-    /// Disable the Wi-Fi module clocks. While Wi-Fi is marked initialized
-    /// the planner keeps the Wi-Fi dependencies' hardware enabled, as the
-    /// vendor does.
+    /// End this stopped installation's clock obligation exactly once.
     ///
-    /// # Errors
-    ///
-    /// The planner rejected the release before any access, or a platform
-    /// request failed and poisoned the modem clocks.
-    pub fn disable_clocks<T>(
-        self,
+    /// The caller has recovered both the task owner and inactive IRQ setup
+    /// into this value. A failed physical release returns stopped custody and
+    /// an unreleased, poisoned obligation; neither can restart or retry it.
+    /// The shared modem planner's recovery policy remains the separate #757
+    /// work. Its internal refusal is never exposed as a retryable Wi-Fi state.
+    #[allow(
+        clippy::result_large_err,
+        reason = "failure must retain both stopped registers and the clock obligation"
+    )]
+    pub fn release_clocks<T>(
+        mut self,
         lease: &mut SharedRadioLease<'_, T>,
-    ) -> Result<WifiPowered, WifiTransitionFailure<Self, ModemClockError>> {
-        match lease.disable_modem_clocks(&self.registers.mac) {
+    ) -> Result<ClockReleased, (StoppedInstallation, ClockPoisoned)> {
+        let release = self
+            .set_initialized(lease, false)
+            .and_then(|()| lease.disable_modem_clocks(&self.registers.mac));
+        self.finish_clock_release(release)
+    }
+
+    fn finish_clock_release(
+        self,
+        release: Result<(), ModemClockError>,
+    ) -> Result<ClockReleased, (StoppedInstallation, ClockPoisoned)> {
+        match release {
             Ok(()) => {
                 let WifiClocksOn { _private: () } = self.clocks;
-                Ok(WifiPowered {
-                    registers: self.registers,
+                Ok(ClockReleased {
+                    powered: WifiPowered {
+                        registers: self.registers,
+                    },
                 })
             }
-            Err(error) => Err(WifiTransitionFailure { owner: self, error }),
+            Err(_physical_failure) => Err((
+                StoppedInstallation {
+                    _registers: self.registers,
+                    _station_wake: self.station_wake,
+                },
+                ClockPoisoned {
+                    _obligation: self.clocks,
+                },
+            )),
         }
     }
+}
+
+/// Successful consumption of one Wi-Fi module-clock obligation.
+#[must_use = "the powered owner must still leave common power"]
+pub struct ClockReleased {
+    powered: WifiPowered,
+}
+impl ClockReleased {
+    pub fn into_powered(self) -> WifiPowered {
+        self.powered
+    }
+}
+
+/// Register custody retained after a failed release; it cannot become running.
+#[must_use = "stopped custody remains installed until reset"]
+pub struct StoppedInstallation {
+    _registers: WifiClientRegisters,
+    _station_wake: StationWakeState,
+}
+
+/// The exact unresolved obligation, retained by value after physical failure.
+/// It has no release/retry method and cannot manufacture a fresh ClocksOn.
+#[must_use = "poison does not discharge the clock obligation"]
+pub struct ClockPoisoned {
+    _obligation: WifiClocksOn,
 }
 
 #[cfg(test)]

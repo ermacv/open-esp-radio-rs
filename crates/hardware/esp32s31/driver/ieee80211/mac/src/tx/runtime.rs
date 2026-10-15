@@ -398,6 +398,13 @@ pub enum OrdinaryRetryDecision {
     },
 }
 
+/// A collision never transmitted the MPDU and cannot request its Retry bit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OrdinaryCollisionDecision {
+    Complete,
+    Retry,
+}
+
 /// Vendor short/long classification used by the separate retry counters:
 /// the portable retry state's frame class.
 pub use oer_ieee80211_upper_mac::FrameClass as OrdinaryFrameClass;
@@ -576,8 +583,14 @@ impl OrdinaryMpduRetryState {
     }
 
     /// Apply one detached ordinary-queue collision.
-    pub fn observe_collision(&mut self, policy: &mut WifiTxRuntimePolicy) -> OrdinaryRetryDecision {
-        self.observe_completion(policy, TxStatus::Collision)
+    pub fn observe_collision(
+        &mut self,
+        policy: &mut WifiTxRuntimePolicy,
+    ) -> OrdinaryCollisionDecision {
+        match self.observe_completion(policy, TxStatus::Collision) {
+            OrdinaryRetryDecision::Complete => OrdinaryCollisionDecision::Complete,
+            OrdinaryRetryDecision::Retry { .. } => OrdinaryCollisionDecision::Retry,
+        }
     }
 
     /// End ownership after a non-retryable executor or hardware error.

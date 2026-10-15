@@ -20,9 +20,9 @@ use oer_esp32s31_ieee80211_mac::{
     tx::ampdu::HtBlockAckObservation,
     tx::protection::{ProtectedPpdu, TxProtection, TxProtectionDecision, TxPsdu, TxReceiver},
     tx::runtime::{
-        OrdinaryFrameClass, OrdinaryMpduRetryState, OrdinaryRetryCounters, OrdinaryRetryDecision,
-        OrdinaryRetryError, OrdinaryRetryRatePolicy, VENDOR_RTS_THRESHOLD_BYTES,
-        WifiTxRuntimePolicy,
+        OrdinaryCollisionDecision, OrdinaryFrameClass, OrdinaryMpduRetryState,
+        OrdinaryRetryCounters, OrdinaryRetryDecision, OrdinaryRetryError, OrdinaryRetryRatePolicy,
+        VENDOR_RTS_THRESHOLD_BYTES, WifiTxRuntimePolicy,
     },
     tx::{
         CompletionObservation, HeSmpduTxConfig, HtTxConfig, LegacyTxConfig, LegacyTxQueue,
@@ -1418,19 +1418,18 @@ where
 
         let decision = if active.single_attempt.is_some() {
             active.retry.abort(&mut self.policy);
-            OrdinaryRetryDecision::Complete
+            OrdinaryCollisionDecision::Complete
         } else {
             active.retry.observe_collision(&mut self.policy)
         };
         match decision {
-            OrdinaryRetryDecision::Retry { set_retry_bit } => {
-                debug_assert!(!set_retry_bit);
+            OrdinaryCollisionDecision::Retry => {
                 active.retries.collisions = active.retries.collisions.saturating_add(1);
                 self.publish_attempt(hardware, &mut active)?;
                 self.active = Some(active);
                 Ok(WifiTxProgress::Pending)
             }
-            OrdinaryRetryDecision::Complete => {
+            OrdinaryCollisionDecision::Complete => {
                 let report = OrdinaryTxReport {
                     status: MacTxStatus {
                         result: MacTxResult::CollisionLimit,

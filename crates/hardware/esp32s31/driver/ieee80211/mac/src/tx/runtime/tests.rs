@@ -249,9 +249,7 @@ fn ordinary_retry_limit_collision_and_abort_restore_the_minimum_cw() {
     .unwrap();
     assert_eq!(
         retry.observe_collision(&mut policy),
-        OrdinaryRetryDecision::Retry {
-            set_retry_bit: false
-        }
+        OrdinaryCollisionDecision::Retry
     );
     assert_eq!(retry.publications(), 2);
     assert_eq!(retry.counters().long, 1);

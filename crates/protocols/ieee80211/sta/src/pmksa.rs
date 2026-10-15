@@ -1,10 +1,9 @@
-//! Prototype of the station's PMKSA cache, compiled only for unit tests.
+//! The station's private PMKSA cache, retained across connections.
 //!
 //! An SAE authentication yields a PMK and its PMKID. This cache retains both
-//! per access point for a future station consumer to resume an association
-//! with the same access point and SSID. That consumer must select Open System
-//! authentication and name the cached PMKID in its RSN element; it is not
-//! connected to this prototype yet. The cache holds at most ten entries; adding to a
+//! per access point. Join resumes an SAE association with the same access
+//! point and SSID using Open System authentication and the cached PMKID in
+//! its RSN element. The cache holds at most ten entries; adding to a
 //! full cache replaces the oldest, and an entry does not expire, as the
 //! vendor supplicant's `dot11RSNAConfigPMKLifetime` is `INT32_MAX`. Only SAE
 //! associations are cached: the vendor caches no PSK association
@@ -16,7 +15,7 @@
 //! `pmksa_cache_add`) and `src/rsn_supp/wpa.c` (`wpa_set_bss`, which uses an
 //! entry only for the same BSSID, SSID and AKM and flushes it otherwise).
 
-use oer_ieee80211_mac::management::MAX_SSID_LEN;
+use oer_ieee80211_mac::{address::Bssid, management::MAX_SSID_LEN};
 use oer_ieee80211_rsn::Pmk;
 
 /// Entries the vendor's PMKSA cache holds.
@@ -26,22 +25,26 @@ pub const STA_PMKID_LEN: usize = 16;
 
 /// One cached SAE security association.
 pub struct StaPmksa {
-    bssid: [u8; 6],
+    bssid: Bssid,
     ssid: heapless::Vec<u8, MAX_SSID_LEN>,
     pmk: Pmk,
     pmkid: [u8; STA_PMKID_LEN],
 }
 
 impl StaPmksa {
-    /// The association an SAE authentication with `bssid` of `ssid`
-    /// derived; `None` when the SSID is longer than an SSID can be.
-    pub fn new(bssid: [u8; 6], ssid: &[u8], pmk: Pmk, pmkid: [u8; STA_PMKID_LEN]) -> Option<Self> {
-        Some(Self {
+    /// Retain an authenticated SAE association with its checked SSID.
+    pub fn new(
+        bssid: Bssid,
+        ssid: heapless::Vec<u8, MAX_SSID_LEN>,
+        pmk: Pmk,
+        pmkid: [u8; STA_PMKID_LEN],
+    ) -> Self {
+        Self {
             bssid,
-            ssid: heapless::Vec::from_slice(ssid).ok()?,
+            ssid,
             pmk,
             pmkid,
-        })
+        }
     }
 
     /// The SAE-derived pairwise master key borrowed for this association.
@@ -61,7 +64,7 @@ impl StaPmksa {
 
 /// The station's cached SAE security associations, oldest first.
 ///
-/// The composition owns this cache by value and retains it across station
+/// The station owns this cache by value and retains it across station
 /// connections. Access requires a short exclusive borrow; no shared mutex
 /// owner or implicit synchronization sits in the protocol crate.
 pub struct StaPmksaCache {
@@ -79,7 +82,7 @@ impl StaPmksaCache {
     /// The association to resume with `bssid` of `ssid`. An entry of the
     /// same access point under another SSID is flushed, as the vendor
     /// flushes a cached SAE association whose SSID changed.
-    pub fn resume(&mut self, bssid: [u8; 6], ssid: &[u8]) -> Option<&StaPmksa> {
+    pub fn resume(&mut self, bssid: Bssid, ssid: &[u8]) -> Option<&StaPmksa> {
         let mut remaining = self.entries.iter_mut();
         let slot =
             remaining.find(|slot| slot.as_ref().is_some_and(|entry| entry.bssid == bssid))?;
@@ -106,7 +109,7 @@ impl StaPmksaCache {
     }
 
     /// Forget the association with `bssid`, keeping the others in order.
-    pub fn remove(&mut self, bssid: [u8; 6]) {
+    pub fn remove(&mut self, bssid: Bssid) {
         let mut remaining = self.entries.iter_mut();
         if let Some(slot) =
             remaining.find(|slot| slot.as_ref().is_some_and(|entry| entry.bssid == bssid))

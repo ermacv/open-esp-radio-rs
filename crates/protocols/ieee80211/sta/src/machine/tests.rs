@@ -18,6 +18,8 @@ use oer_ieee80211_mac::phy::{HeMcs, HtMcs, LegacyRate, PhyRate};
 use oer_radio_port::{Mint, branded};
 use std::vec::Vec;
 
+mod sae;
+
 fn installed<R>(body: impl for<'id> FnOnce(Mint<'id, ArbiterPool>) -> R) -> R {
     let future = core::pin::pin!(branded(async |mint| body(mint)));
     let mut cx = core::task::Context::from_waker(core::task::Waker::noop());
@@ -594,7 +596,11 @@ impl<'id> World<'id> {
         if eapol {
             self.eapol.push((protected, keyed));
         }
-        self.frames.push(frame.to_vec());
+        let length = match &transmit.frame {
+            StaFrame::Individual(frame) => frame.frame().len().get(),
+            StaFrame::Group(frame) => frame.frame().len().get(),
+        };
+        self.frames.push(frame[..length].to_vec());
         let connection = matches!(subtype, 0x00b0 | 0x0000) || eapol;
         assert_eq!(
             transmit.class,
@@ -1576,6 +1582,7 @@ fn a_station_joins_a_wpa2_network_through_the_four_way_handshake() {
             mint,
             3,
             StaSecurity::Wpa2Personal {
+                password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
                 pmk: Pmk::from_bytes(PMK),
             },
         );
@@ -1690,6 +1697,7 @@ fn wpa2_associated_by<'id>(
         mint,
         3,
         StaSecurity::Wpa2Personal {
+            password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
             pmk: Pmk::from_bytes(PMK),
         },
         group_slots,
@@ -2690,6 +2698,7 @@ fn associated_is_the_first_action_after_the_association_response() {
         installed(|mint| {
             let security = if protected {
                 StaSecurity::Wpa2Personal {
+                    password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
                     pmk: Pmk::from_bytes(PMK),
                 }
             } else {
@@ -2786,7 +2795,7 @@ fn irrelevant_management_while_authentication_waits_for_credit_preserves_join() 
             assert!(matches!(
                 world.station.state,
                 State::Join(Join {
-                    step: JoinStep::Authenticate(Authenticate::NeedCredit(_)),
+                    step: JoinStep::Authenticate(Authenticate::NeedCredit(_, _)),
                     ..
                 })
             ));
@@ -2832,6 +2841,7 @@ fn association_waits_for_credit_without_consuming_a_request_and_still_expires() 
                     at(100),
                 )
                 .unwrap(),
+                AssociationKey::Open,
             ),
         };
         world.station.state = State::Join(join());
@@ -2904,6 +2914,7 @@ fn handshake_deadline_covers_every_message_key_and_tx_wait() {
                 mint,
                 3,
                 StaSecurity::Wpa2Personal {
+                    password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
                     pmk: Pmk::from_bytes(PMK),
                 },
             );
@@ -3643,6 +3654,7 @@ fn protected_construction_without_group_slots_returns_resources_for_open_mode() 
             ..
         } = world.station;
         config.security = StaSecurity::Wpa2Personal {
+            password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
             pmk: Pmk::from_bytes([0; 32]),
         };
         let resources = StationResources {
@@ -4004,6 +4016,7 @@ fn delivered_m4_retires_every_superseded_owner_and_leave_finishes_the_chain() {
                 mint,
                 3,
                 StaSecurity::Wpa2Personal {
+                    password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
                     pmk: Pmk::from_bytes(PMK),
                 },
                 core::array::from_fn::<_, G, _>(|i| Slot(u8::try_from(i + 1).unwrap())),
@@ -4173,7 +4186,7 @@ fn previous_auth_terminal_cannot_finish_new_attempt() {
                     assert!(matches!(
                         &world.station.state,
                         State::Join(Join {
-                            step: JoinStep::Associate(_),
+                            step: JoinStep::Associate(_, _),
                             ..
                         })
                     ));
@@ -4205,114 +4218,11 @@ fn previous_auth_terminal_cannot_finish_new_attempt() {
                 assert!(matches!(
                     &world.station.state,
                     State::Join(Join {
-                        step: JoinStep::Associate(_),
+                        step: JoinStep::Associate(_, _),
                         ..
                     })
                 ));
                 assert!(world.completed.is_empty());
-            });
-        }
-    }
-}
-
-#[test]
-fn selected_sae_finishes_connect_without_join_or_fallback_and_returns_resources() {
-    use oer_ieee80211_mac::security::{
-        AssociationAkm, AssociationSecurity, RsnAssociation, SaePwe,
-    };
-
-    for transition in [false, true] {
-        for h2e in [false, true] {
-            installed(|mint| {
-                let mut advertised = wpa2_beacon().to_vec();
-                advertised[55 + 19] = 8; // SAE, retaining CCMP and the scan geometry.
-                advertised[55 + 20] |= 0x80; // MFPC.
-                if transition {
-                    advertised[55 + 1] += 4;
-                    advertised[55 + 14] = 2;
-                    advertised.splice(55 + 20..55 + 20, [0, 0x0f, 0xac, 2]);
-                }
-                if h2e {
-                    advertised.extend_from_slice(&[244, 1, 0x20]);
-                }
-                let mut world = World::with_security(
-                    mint,
-                    3,
-                    StaSecurity::Wpa2Personal {
-                        pmk: Pmk::from_bytes(PMK),
-                    },
-                );
-                // The same pools must serve a second Connect after the refusal.
-                for (request_id, start) in [(91, 0), (92, 100)] {
-                    world
-                        .station
-                        .command(at(start), StaRequest::new(request_id, StaCommand::Connect))
-                        .unwrap();
-                    world.run(at(start));
-                    world.advance();
-                    world.receive(at(start + 13), &advertised);
-                    let selected = select_association_rsn(
-                        world.station.scan.records().next().unwrap(),
-                        StaSecurityPolicy::Wpa2Personal,
-                    )
-                    .unwrap();
-                    assert!(
-                        matches!(selected.security(), AssociationSecurity::Rsn(RsnAssociation {
-                        akm: AssociationAkm::Sae(method), ..
-                    }) if method == if h2e { SaePwe::HashToElement } else { SaePwe::HuntingAndPecking })
-                    );
-                    // A weaker PSK-only BSS must not become an automatic fallback.
-                    let mut psk = wpa2_beacon();
-                    psk[10] ^= 0x04;
-                    psk[16] ^= 0x04;
-                    world.rssi = -80;
-                    world.receive(at(start + 14), &psk);
-                    world.rssi = i8::MIN;
-                    world.advance();
-                    assert_eq!(
-                        world.completed.last(),
-                        Some(&StaCommandTerminal {
-                            request: StaRequest::new(request_id, StaCommand::Connect),
-                            outcome: StaCommandOutcome::ConnectFailed(
-                                StaDisconnectReason::SaeUnsupported
-                            ),
-                        })
-                    );
-                    assert!(matches!(world.station.state, State::Idle));
-                    assert!(world.station.link().is_none());
-                    assert!(world.station.place.is_some());
-                    assert!(world.station.absence_place.is_some());
-                    assert!(world.station.configuration.is_some());
-                    assert!(world.station.keys.clear());
-                    assert!(world.station.keys.group_permission.is_some());
-                    assert_eq!(world.station.tickets.len(), 2);
-                    assert_eq!(world.station.buffers.len(), 2);
-                    assert!(world.submitted.is_empty());
-                    assert!(world.configuring.is_none());
-                    assert!(world.pending_installs.is_empty());
-                    assert!(world.pending_removals.is_empty());
-                    assert!(world.station.poll_action(at(start + 40)).is_none());
-                }
-                assert_eq!(world.completed.len(), 2);
-                assert_eq!(
-                    world
-                        .seen
-                        .iter()
-                        .filter(|event| matches!(
-                            event,
-                            Seen::Notify(StaNotice::Disconnected(
-                                StaDisconnectReason::SaeUnsupported
-                            ))
-                        ))
-                        .count(),
-                    2
-                );
-                // Inspect the frames the wire peer would receive, not just action names.
-                assert_eq!(world.frames.len(), 4);
-                assert!(world.frames.iter().all(|frame| frame[0] & 0xfc == 0x40));
-                assert!(!world.seen.contains(&Seen::Configure("bss")));
-                assert!(world.associated.is_none());
-                assert!(world.eapol.is_empty());
             });
         }
     }

@@ -169,6 +169,7 @@ fn handshake_deadline_overflow_finishes_connect_without_sending_eapol() {
                 mint,
                 3,
                 StaSecurity::Wpa2Personal {
+                    password: oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
                     pmk: Pmk::from_bytes(PMK),
                 },
                 2,

@@ -105,10 +105,13 @@ cases = [
 
 [[suite]]
 name = "authentication-owner"
-packages = ["oer-ieee80211-mac", "oer-ieee80211-sta"]
+packages = ["oer-ieee80211-mac", "oer-ieee80211-sta", "oer-time"]
 features = []
 targets = ["host", "esp32s31"]
-cases = ["crates/protocols/ieee80211/sta/tests/ui/authentication_attempt.rs"]
+cases = [
+    "crates/protocols/ieee80211/sta/tests/ui/authentication_attempt.rs",
+    "crates/protocols/ieee80211/sta/tests/ui/sae_terminal_owner.rs",
+]
 
 [[suite]]
 name = "ftm-owner"

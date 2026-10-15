@@ -40,185 +40,157 @@ fn access_point_commit(access_point: &SaeCommit) -> Vec<u8> {
     from_access_point(1, 0, &body)
 }
 
+fn start(now: Instant) -> (StaSaeAuthentication, StaSaeTransmission) {
+    StaSaeAuthentication::new(
+        OwnAddress::new(oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap()),
+        Bssid::new(oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap()).unwrap(),
+        commit(LOCAL, BSSID, 0x20),
+        SaePwe::HuntingAndPecking,
+        now,
+    )
+    .unwrap()
+}
+
 #[test]
 fn a_full_exchange_yields_the_access_point_pmk() {
     let access_point = commit(BSSID, LOCAL, 0x40);
-    let mut station = StaSaeAuthentication::new(
-        oer_ieee80211_mac::address::OwnAddress::new(
-            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
-        ),
-        oer_ieee80211_mac::address::Bssid::new(
-            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-        )
-        .unwrap(),
-        commit(LOCAL, BSSID, 0x20),
-        SaePwe::HuntingAndPecking,
-    );
-    let sent = station.commit().unwrap();
+    let (station, sent) = start(Instant::EPOCH);
     assert_eq!((sent.transaction, sent.status_code), (1, 0));
     let station_values = SaeCommitValues::parse(sent.body(), false).unwrap();
-
-    let StaSaeEvent::Transmit(confirm) = station.observe_management_frame(
-        &access_point_commit(&access_point),
-        oer_time::Instant::EPOCH,
-    ) else {
-        panic!("the station confirms after the peer commit");
+    let StaSaeEvent::Transmit {
+        authentication: station,
+        transmission: confirm,
+    } = station.observe_management_frame(&access_point_commit(&access_point), Instant::EPOCH)
+    else {
+        panic!("station confirms after peer commit");
     };
     assert_eq!((confirm.transaction, confirm.status_code), (2, 0));
-    let access_point_keys = access_point.process(station_values).unwrap();
-    assert_eq!(access_point_keys.verify_peer_confirm(confirm.body()), Ok(1));
-
-    let reply = from_access_point(2, 0, &access_point_keys.own_confirm(1));
-    assert_eq!(
-        station.observe_management_frame(&reply, oer_time::Instant::EPOCH),
-        StaSaeEvent::Authenticated(StaSaePmk {
-            pmk: access_point_keys.pmk,
-            pmkid: access_point_keys.pmkid,
-        })
+    let peer = access_point.process(station_values).unwrap();
+    assert_eq!(peer.verify_peer_confirm(confirm.body()), Ok(1));
+    let StaSaeEvent::Authenticated(keys) = station.observe_management_frame(
+        &from_access_point(2, 0, &peer.own_confirm(1)),
+        Instant::EPOCH,
+    ) else {
+        panic!("authenticated");
+    };
+    assert_eq!(keys.pmkid, peer.pmkid);
+    assert!(
+        keys.pmk
+            .bind_association_security_ies(b"sae")
+            .matches(&Pmk::from_bytes(peer.pmk), b"sae")
     );
 }
 
 #[test]
 fn an_anti_clogging_refusal_repeats_the_commit_with_the_token() {
-    let mut station = StaSaeAuthentication::new(
-        oer_ieee80211_mac::address::OwnAddress::new(
-            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
-        ),
-        oer_ieee80211_mac::address::Bssid::new(
-            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-        )
-        .unwrap(),
-        commit(LOCAL, BSSID, 0x20),
-        SaePwe::HuntingAndPecking,
-    );
-    let first = station.commit().unwrap();
-    let StaSaeEvent::Transmit(again) = station.observe_management_frame(
-        &from_access_point(1, 76, &[19, 0, 7, 8, 9]),
-        oer_time::Instant::EPOCH,
-    ) else {
-        panic!("the station repeats its commit");
+    let (station, first) = start(Instant::EPOCH);
+    let deadline = station.next_deadline();
+    let StaSaeEvent::Transmit {
+        authentication,
+        transmission: again,
+    } = station
+        .observe_management_frame(&from_access_point(1, 76, &[19, 0, 7, 8, 9]), Instant::EPOCH)
+    else {
+        panic!("station repeats its commit");
     };
     assert_eq!(&again.body()[2..5], &[7, 8, 9]);
     assert_eq!(&again.body()[5..], &first.body()[2..]);
+    assert_eq!(
+        authentication.next_deadline(),
+        deadline,
+        "repeated tokens cannot extend the bound"
+    );
 }
 
 #[test]
 fn the_timer_is_four_seconds_then_two_after_the_confirm() {
-    use oer_time::{Duration, Instant};
-
-    let mut station = StaSaeAuthentication::new(
-        oer_ieee80211_mac::address::OwnAddress::new(
-            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
-        ),
-        oer_ieee80211_mac::address::Bssid::new(
-            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-        )
-        .unwrap(),
-        commit(LOCAL, BSSID, 0x20),
-        SaePwe::HuntingAndPecking,
-    );
-    assert_eq!(station.next_deadline(), None);
-    let committed = Instant::from_micros(1_000);
-    station.start(committed);
-    let commit_deadline = committed.checked_add(STA_SAE_COMMIT_TIMEOUT).unwrap();
-    assert_eq!(station.next_deadline(), Some(commit_deadline));
-    let before = |deadline: Instant| deadline.checked_sub(Duration::from_micros(1)).unwrap();
-    assert_eq!(
-        station.on_deadline(before(commit_deadline)),
-        StaSaeEvent::Irrelevant
-    );
-    // The peer commit, just before the deadline, rearms the timer for the
-    // confirm exchange.
-    let confirmed = before(commit_deadline);
+    let now = Instant::from_micros(1000);
+    let (station, _) = start(now);
+    let deadline = now.checked_add(STA_SAE_COMMIT_TIMEOUT).unwrap();
+    assert_eq!(station.next_deadline(), deadline);
+    let confirmed = deadline.checked_sub(Duration::from_micros(1)).unwrap();
+    let StaSaeEvent::Irrelevant(station) = station.on_deadline(confirmed) else {
+        panic!("not due")
+    };
     let access_point = commit(BSSID, LOCAL, 0x40);
-    assert!(matches!(
-        station.observe_management_frame(&access_point_commit(&access_point), confirmed),
-        StaSaeEvent::Transmit(_)
-    ));
+    let StaSaeEvent::Transmit {
+        authentication: station,
+        ..
+    } = station.observe_management_frame(&access_point_commit(&access_point), confirmed)
+    else {
+        panic!("confirm")
+    };
     let confirm_deadline = confirmed.checked_add(STA_SAE_CONFIRM_TIMEOUT).unwrap();
-    assert_eq!(station.next_deadline(), Some(confirm_deadline));
-    assert_eq!(
-        station.on_deadline(commit_deadline),
-        StaSaeEvent::Irrelevant
-    );
-    assert_eq!(
+    assert_eq!(station.next_deadline(), confirm_deadline);
+    let StaSaeEvent::Irrelevant(station) = station.on_deadline(deadline) else {
+        panic!("not due")
+    };
+    assert!(matches!(
         station.on_deadline(confirm_deadline),
         StaSaeEvent::Failed(StaSaeFailure::Timeout)
-    );
-    assert_eq!(station.next_deadline(), None);
+    ));
     assert_eq!(STA_SAE_COMMIT_TIMEOUT, Duration::from_secs(4));
     assert_eq!(STA_SAE_CONFIRM_TIMEOUT, Duration::from_secs(2));
 }
 
 #[test]
 fn a_wrong_password_or_a_refusal_fails() {
-    let mut station = StaSaeAuthentication::new(
-        oer_ieee80211_mac::address::OwnAddress::new(
-            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
-        ),
-        oer_ieee80211_mac::address::Bssid::new(
-            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-        )
-        .unwrap(),
-        commit(LOCAL, BSSID, 0x20),
-        SaePwe::HuntingAndPecking,
-    );
+    let (station, sent) = start(Instant::EPOCH);
     let impostor = SaeCommit::new(
         SaePasswordElement::hunting_and_pecking(b"wrong", BSSID, LOCAL).unwrap(),
         [0x40; 32],
         [0x41; 32],
     )
     .unwrap();
-    let sent = SaeCommitValues::parse(station.commit().unwrap().body(), false).unwrap();
+    let values = SaeCommitValues::parse(sent.body(), false).unwrap();
+    let StaSaeEvent::Transmit {
+        authentication: station,
+        ..
+    } = station.observe_management_frame(&access_point_commit(&impostor), Instant::EPOCH)
+    else {
+        panic!("confirm")
+    };
+    let peer = impostor.process(values).unwrap();
     assert!(matches!(
-        station.observe_management_frame(&access_point_commit(&impostor), oer_time::Instant::EPOCH),
-        StaSaeEvent::Transmit(_)
-    ));
-    let impostor_keys = impostor.process(sent).unwrap();
-    assert_eq!(
         station.observe_management_frame(
-            &from_access_point(2, 0, &impostor_keys.own_confirm(1)),
-            oer_time::Instant::EPOCH
+            &from_access_point(2, 0, &peer.own_confirm(1)),
+            Instant::EPOCH
         ),
         StaSaeEvent::Failed(StaSaeFailure::Protocol(SaeError::ConfirmMismatch))
-    );
+    ));
+    let (station, _) = start(Instant::EPOCH);
+    assert!(matches!(
+        station.observe_management_frame(&from_access_point(1, 77, &[20, 0]), Instant::EPOCH),
+        StaSaeEvent::Failed(StaSaeFailure::Rejected { status_code: 77 })
+    ));
+    let (station, _) = start(Instant::EPOCH);
+    assert!(matches!(
+        station.observe_management_frame(&from_access_point(1, 126, &[]), Instant::EPOCH),
+        StaSaeEvent::Failed(StaSaeFailure::Protocol(SaeError::Malformed))
+    ));
+}
 
-    let mut refused = StaSaeAuthentication::new(
-        oer_ieee80211_mac::address::OwnAddress::new(
-            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
-        ),
-        oer_ieee80211_mac::address::Bssid::new(
-            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-        )
-        .unwrap(),
+#[test]
+fn deadline_overflow_refuses_before_issuing_a_commit() {
+    let result = StaSaeAuthentication::new(
+        OwnAddress::new(oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap()),
+        Bssid::new(oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap()).unwrap(),
         commit(LOCAL, BSSID, 0x20),
         SaePwe::HuntingAndPecking,
+        Instant::from_micros(u64::MAX),
     );
-    assert_eq!(
-        refused.observe_management_frame(
-            &from_access_point(1, 77, &[20, 0]),
-            oer_time::Instant::EPOCH
+    assert!(matches!(result, Err(StaSaeFailure::DeadlineOverflow)));
+}
+
+#[test]
+fn confirmation_deadline_overflow_keeps_no_live_exchange() {
+    let (station, _) = start(Instant::from_micros(u64::MAX - 4_000_000));
+    let peer = commit(BSSID, LOCAL, 0x40);
+    assert!(matches!(
+        station.observe_management_frame(
+            &access_point_commit(&peer),
+            Instant::from_micros(u64::MAX - 1_000_000)
         ),
-        StaSaeEvent::Failed(StaSaeFailure::Rejected { status_code: 77 })
-    );
-    // An H2E station refuses a hunting-and-pecking commit.
-    let mut h2e = StaSaeAuthentication::new(
-        oer_ieee80211_mac::address::OwnAddress::new(
-            oer_ieee80211_mac::address::IndividualAddress::new(LOCAL).unwrap(),
-        ),
-        oer_ieee80211_mac::address::Bssid::new(
-            oer_ieee80211_mac::address::IndividualAddress::new(BSSID).unwrap(),
-        )
-        .unwrap(),
-        commit(LOCAL, BSSID, 0x20),
-        SaePwe::HashToElement,
-    );
-    assert_eq!(h2e.commit().unwrap().status_code, 126);
-    assert_eq!(
-        h2e.observe_management_frame(
-            &access_point_commit(&commit(BSSID, LOCAL, 0x40)),
-            oer_time::Instant::EPOCH
-        ),
-        StaSaeEvent::Failed(StaSaeFailure::Protocol(SaeError::Malformed))
-    );
+        StaSaeEvent::Failed(StaSaeFailure::DeadlineOverflow)
+    ));
 }

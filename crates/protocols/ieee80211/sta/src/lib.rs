@@ -39,13 +39,9 @@
 //! ([`station`]). It never waits: a thin service loop over the port, the
 //! channel arbiter and time drives it.
 //!
-//! The SAE PMKSA cache remains a unit-tested prototype until the station's
-//! SAE path owns it. Production callers cannot construct an unused cache:
-//!
-//! ```compile_fail,E0432
-//! use oer_ieee80211_sta::pmksa::StaPmksaCache;
-//! let cache = StaPmksaCache::new();
-//! ```
+//! The station owns its SAE exchange and PMKSA cache. Personal credentials
+//! carry both an SAE password and a prederived PSK PMK; network selection
+//! prefers a qualified SAE offer, including WPA2/WPA3 transition networks.
 
 #[cfg(test)]
 extern crate std;
@@ -58,7 +54,6 @@ pub mod join;
 pub mod link_monitor;
 pub mod machine;
 pub mod modem_sleep;
-#[cfg(test)]
 mod pmksa;
 mod pool;
 pub mod power_save;

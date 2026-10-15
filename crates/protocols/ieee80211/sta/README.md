@@ -2,7 +2,7 @@
 
 This crate contains the station, independent of a chip, executor and network
 stack. It is sans-IO: `machine` is one state machine for the whole lifecycle
-(scan, join, WPA2 four-way handshake, connected, background scan, group
+(scan, SAE or Open System join, RSN four-way handshake, connected, background scan, group
 rekey, leave) that takes the port's events, the channel arbiter's answers and
 notices, commands and time as values and leaves the port's and the arbiter's
 actions as values. A thin service loop over the lower-MAC port feeds it
@@ -44,18 +44,28 @@ If cleanup fails or a deadline required by the connection itself cannot be
 represented (including SA Query), the link ends with the concrete failure
 reason. An overflowing deadline is never replaced by `now` or a wrapped time.
 
-The new `machine::Station` accepts Open or a prederived WPA2 PMK. Network
-selection still prefers SAE when advertised, including a transition BSS
-offering both SAE and PSK. A selected SAE BSS ends Connect with
-`ConnectFailed(SaeUnsupported)` before entering Join or sending Authentication
-or Association. It releases the scan lease and returns its frame credits and
-key resources; it does not retry PSK or another candidate automatically.
-The shared SAE selection/exchange code and its existing consumers retain
-their behavior. Full WPA3-SAE and PMKSA integration remains required in #563
-step 2, with credentials, randomness, secret ownership and exchange completion
-introduced together with their consumer. That replacement must be complete
-before the old WPA3 implementation is removed. This refusal does not provide
-WPA3 support or resolve the separate PMF integration requirement.
+`machine::Station` accepts Open or personal credentials carrying both a
+zeroizing SAE password and a prederived PSK PMK. Selection prefers qualified
+SAE, including a transition BSS offering both SAE and PSK. Join performs the
+selected hunting-and-pecking or hash-to-element exchange; two calls to the
+composition's fresh-randomness provider create its commit. Successful peer
+confirmation moves the negotiated PMK through association into the four-way
+handshake. The provisioned PMK is used only for a PSK offer.
+
+SAE observations consume the exchange and return it only while it continues.
+Commit and confirm have checked absolute deadlines, including time waiting
+for a TX credit. An anti-clogging token repeats the same commit without
+extending its deadline. RX may advance before the outgoing frame's TX
+terminal; that terminal returns resources and cannot restart an earlier
+exchange. Timeout, peer refusal and invalid confirmation retain their concrete
+failure causes. Pending transmissions retain their bytes until credit returns.
+
+The station retains up to ten SAE PMKSAs by BSSID and SSID. A repeat connection
+uses Open System authentication, names the cached PMKID in its association
+request and proves the cached PMK in the handshake. A PSK association uses
+neither that PMK nor that PMKID. Host wire peers validate SAE-only, transition,
+PSK-only and cached connections, including the transmitted M2 MIC. They do
+not establish S31 HIL evidence.
 
 The local transmitter is `OwnAddress`; a scan record validates its individual
 BSS address as `Bssid` before it can enter Join. Authentication, Association,
@@ -109,8 +119,7 @@ Module map:
 - `sa_query`: the SA Query procedure of an association under management
   frame protection;
 - `link_monitor`: beacon-loss decisions;
-- `pmksa`: a unit-tested prototype of an owned SAE PMKSA cache. It is outside
-  the production API until the station's SAE path consumes it;
+- `pmksa`: the private SAE PMKSA cache owned by the station across connections;
 - `ftm`, `twt`: bounded requester state and deadlines; their presence does not
   establish a chip timestamp or wake-schedule implementation. FTM local
   exchange timing carries a `NonZeroU8` dialog token from validation through

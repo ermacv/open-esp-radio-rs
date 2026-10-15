@@ -5,6 +5,8 @@
 //! stops before publishing an RX descriptor base: ownership of the DMA ring
 //! remains with the DMA ring `publish_cold_ring` operation.
 
+use oer_esp32s31_hal::types::MacDelaySlot;
+
 pub use crate::{
     cold::{
         antenna::MacColdAntennaHardware,
@@ -20,7 +22,7 @@ pub use crate::{
         last_rx_buffer::MacColdLastRxBufferHardware,
         rx_buffer::MacColdRxBufferHardware,
         rx_policy::MacColdRxPolicyHardware,
-        txrx::{MacColdTxRxHardware, MacDelaySlot},
+        txrx::MacColdTxRxHardware,
     },
     interface_address::MacInterfaceAddressHardware,
 };

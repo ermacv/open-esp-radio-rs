@@ -212,8 +212,8 @@ impl<'registers> WifiMacColdHal<'registers> {
     pub fn initialize_hal_tail(
         &mut self,
         event_mask: crate::types::MacInterruptMask,
-        slow_clock_calibration: u32,
-    ) -> bool {
+        slow_clock_calibration: crate::types::MacRtcCalibration,
+    ) {
         let (mac, _, interrupts) = self.registers.parts();
         mac.initialize_mac_hal_tail(interrupts, event_mask, slow_clock_calibration)
     }
@@ -255,7 +255,7 @@ impl<'registers> WifiMacColdHal<'registers> {
         self.mac().initialize_mac_txrx_prefix();
     }
 
-    pub fn initialize_txrx_callbacks(&mut self, delay_slot: u8) -> bool {
+    pub fn initialize_txrx_callbacks(&mut self, delay_slot: crate::types::MacDelaySlot) {
         self.mac().initialize_mac_txrx_callbacks(delay_slot)
     }
 

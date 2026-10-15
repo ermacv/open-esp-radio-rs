@@ -474,6 +474,10 @@ path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/receive_key.rs"
 reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
 
 [[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/cold_inputs.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
 path = "crates/protocols/ieee80211/sta/tests/ui/restart_places.rs"
 reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
 

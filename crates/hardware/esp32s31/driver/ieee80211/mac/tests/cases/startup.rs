@@ -9,6 +9,14 @@ fn mac_delay_slot_reproduces_vendor_modulo_eleven() {
 }
 
 #[test]
+fn unavailable_calibration_preserves_provenance_even_when_the_field_is_zero() {
+    let unavailable = MacSlowClockCalibration::Unavailable;
+    let measured_zero = MacSlowClockCalibration::from_osi_value(0);
+    assert_ne!(unavailable, measured_zero);
+    assert_eq!(unavailable.register_value(), measured_zero.register_value());
+}
+
+#[test]
 fn cold_mac_init_orders_semantic_hardware_transactions() {
     let clock_trace = Rc::new(RefCell::new(Vec::new()));
     let mut platform = MockPlatform::default();

@@ -44,6 +44,12 @@ struct Hardware {
 }
 
 impl CcmpKeyHardware for Hardware {
+    fn configure_ccmp_association(
+        &mut self,
+        _interface: oer_esp32s31_hal::types::MacInterface,
+        _mode: oer_esp32s31_hal::types::MacSppMode,
+    ) {
+    }
     fn install_sta_ccmp_entry(
         &mut self,
         _index: u8,

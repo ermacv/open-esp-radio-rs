@@ -221,6 +221,7 @@ cases = [
     "crates/hardware/esp32s31/driver/ieee80211/tests/ui/mpdu_values.rs",
     "crates/hardware/esp32s31/driver/ieee80211/tests/ui/failed_gate.rs",
     "crates/hardware/esp32s31/driver/ieee80211/tests/ui/key_removed.rs",
+    "crates/hardware/esp32s31/driver/ieee80211/tests/ui/association_slot_once.rs",
     "crates/hardware/esp32s31/driver/ieee80211/tests/ui/receive_key.rs",
     "crates/hardware/esp32s31/driver/ieee80211/tests/ui/key_use_clone.rs",
     "crates/hardware/esp32s31/driver/ieee80211/tests/ui/key_use_required.rs",

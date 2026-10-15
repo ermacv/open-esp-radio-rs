@@ -1,4 +1,10 @@
 //! Typed ownership of one AP GTK and the bounded pairwise CCMP slot table.
+//!
+//! All clients use NotNegotiated because this AP does not advertise SPP.
+//! Advertising SPP requires every client to use Negotiated: S31 stores the
+//! mode in one interface control, so mixed clients cannot coexist here.
+//! SOURCE(esp32s31): `libpp[hal_crypto.o]::hal_crypto_enable` selects one
+//! interface control and writes SPP at +0x2e..+0x34 (wifi-lib af55a0ca).
 
 use oer_esp32s31_ieee80211_mac::crypto::{
     AP_PAIRWISE_SLOT_COUNT, ApGroupCcmpSlot, ApGroupKeyId, ApPairwiseCcmpSlot,
@@ -155,6 +161,12 @@ impl<'storage> ApSecurity<'storage> {
                 storage,
             });
         };
+        // The AP profile advertises no SPP. One interface field governs every
+        // client; initialize it before GTK/PTK publication and keep it fixed.
+        hardware.configure_ccmp_association(
+            oer_esp32s31_hal::types::MacInterface::AccessPoint,
+            oer_esp32s31_hal::types::MacSppMode::Unauthenticated,
+        );
         let group = match install_ap_group_ccmp(hardware, key_id, gtk.key()) {
             Ok(group) => group,
             Err(error) => {

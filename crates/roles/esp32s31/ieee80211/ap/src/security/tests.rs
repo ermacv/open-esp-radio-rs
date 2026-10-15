@@ -9,10 +9,23 @@ use super::*;
 #[derive(Default)]
 struct Hardware {
     installs: std::vec::Vec<u8>,
+    associations: std::vec::Vec<(
+        oer_esp32s31_hal::types::MacInterface,
+        oer_esp32s31_hal::types::MacSppMode,
+        usize,
+    )>,
     clears: std::vec::Vec<u8>,
 }
 
 impl CcmpKeyHardware for Hardware {
+    fn configure_ccmp_association(
+        &mut self,
+        interface: oer_esp32s31_hal::types::MacInterface,
+        mode: oer_esp32s31_hal::types::MacSppMode,
+    ) {
+        self.associations
+            .push((interface, mode, self.installs.len()));
+    }
     fn install_sta_ccmp_entry(
         &mut self,
         index: u8,
@@ -51,6 +64,15 @@ fn teardown_clears_pairwise_before_group_and_cannot_alias_a_second_peer() {
         .install_pairwise(&mut hardware, [3; 6], 1, &ptk)
         .unwrap();
     let binding = security.bind_pairwise([3; 6], 1).unwrap();
+    assert_eq!(
+        hardware.associations,
+        [(
+            oer_esp32s31_hal::types::MacInterface::AccessPoint,
+            oer_esp32s31_hal::types::MacSppMode::Unauthenticated,
+            0
+        )],
+        "one AP mode is applied before any group or peer key"
+    );
     assert_eq!(binding.hardware_index(), 8);
     assert_eq!(
         security

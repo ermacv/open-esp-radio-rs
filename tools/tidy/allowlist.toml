@@ -564,3 +564,7 @@ reason = "Affine association and complete-bank contract, checked with its compil
 [[uncompiled]]
 path = "crates/runtime/ieee80211/tests/ui/association_required.rs"
 reason = "Affine association and complete-bank contract, checked with its compiling twin on host and RV32 by cargo xtask check ui."
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/association_slot_once.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"

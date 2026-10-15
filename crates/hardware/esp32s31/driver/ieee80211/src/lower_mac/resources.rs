@@ -16,6 +16,8 @@ pub struct CoreResources<'core, Path: PoolPath = Root, const TICKETS: usize = 4>
     pub authority: CoreAuthority<'core, Path, TICKETS>,
     /// One admission credit for each TX ticket in the backend layout.
     pub tickets: [TxTicket<'core, Path>; TICKETS],
+    pub station_association: super::association::VacantStationAssociation<'core, Path>,
+    pub access_point_association: super::association::VacantAccessPointAssociation<'core, Path>,
     pub queues: [FreeQueue<'core, Path>; 4],
 }
 
@@ -50,14 +52,29 @@ impl<const TICKETS: usize> PoolSet for CorePools<TICKETS> {
             assert!(TICKETS <= 256, "ticket indices fit the pool index");
             let () = super::keys::KeyUseCount::<TICKETS>::WIDTH_CHECK;
         }
-        let (places, tickets) =
-            builder.into_pools::<(Slots<CorePlace, 5>, Slots<TicketPlace, TICKETS>)>();
+        let (places, tickets, station_association, access_point_association) = builder
+            .into_pools::<(
+                Slots<CorePlace, 5>,
+                Slots<TicketPlace, TICKETS>,
+                oer_ieee80211_lower_mac::association::AssociationPool<
+                    oer_ieee80211_lower_mac::Station,
+                    1,
+                    1,
+                >,
+                oer_ieee80211_lower_mac::association::AssociationPool<
+                    oer_ieee80211_lower_mac::AccessPoint,
+                    15,
+                    3,
+                >,
+            )>();
         let [authority, voice, video, best_effort, background] = places;
         let place = |slot, queue| FreeQueue {
             _place: slot,
             queue,
         };
         CoreResources {
+            station_association,
+            access_point_association,
             authority: CoreAuthority { _place: authority },
             tickets: tickets.map(|place| TxTicket { place }),
             queues: [

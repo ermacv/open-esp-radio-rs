@@ -4781,6 +4781,12 @@ code = "97aea622fac41fc200a1d1b011448e49bde08963b2dc6406837227bb94f487a2"
 [[function]]
 artifact = "libpp"
 member = "wdev.o"
+symbol = "wDev_remove_KeyEntry"
+code = "9c4285ebd44f9f5738b1a5057562152e69fb0ad86f98c62f179c4f3ef5f81487"
+
+[[function]]
+artifact = "libpp"
+member = "wdev.o"
 symbol = "wdevProcessRxSucDataAll"
 code = "d8efee1e8731a5e5f4a5dfdfe8fd02a3494c3a898038712d12b2d2030fbe9606"
 

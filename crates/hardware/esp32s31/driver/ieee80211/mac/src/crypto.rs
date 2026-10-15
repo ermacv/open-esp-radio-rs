@@ -57,6 +57,12 @@ impl CcmpTxPacketNumber {
 
 /// Finite hardware authority for the two open STA CCMP slots.
 pub trait CcmpKeyHardware {
+    /// Apply the immutable interface association decision before key publication.
+    fn configure_ccmp_association(
+        &mut self,
+        interface: oer_esp32s31_hal::types::MacInterface,
+        mode: oer_esp32s31_hal::types::MacSppMode,
+    );
     fn install_sta_ccmp_entry(
         &mut self,
         index: u8,
@@ -80,6 +86,13 @@ pub trait CcmpKeyHardware {
 }
 
 impl CcmpKeyHardware for WifiMacHal<'_> {
+    fn configure_ccmp_association(
+        &mut self,
+        interface: oer_esp32s31_hal::types::MacInterface,
+        mode: oer_esp32s31_hal::types::MacSppMode,
+    ) {
+        WifiMacHal::configure_ccmp_association(self, interface, mode);
+    }
     fn install_sta_ccmp_entry(
         &mut self,
         index: u8,
@@ -108,6 +121,14 @@ impl CcmpKeyHardware for WifiMacHal<'_> {
 }
 
 impl CcmpKeyHardware for RadioRuntimeOwner {
+    fn configure_ccmp_association(
+        &mut self,
+        interface: oer_esp32s31_hal::types::MacInterface,
+        mode: oer_esp32s31_hal::types::MacSppMode,
+    ) {
+        self.wifi_mac_hal()
+            .configure_ccmp_association(interface, mode);
+    }
     fn install_sta_ccmp_entry(
         &mut self,
         index: u8,

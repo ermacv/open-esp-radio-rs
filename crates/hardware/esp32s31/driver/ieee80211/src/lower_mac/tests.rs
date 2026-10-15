@@ -54,6 +54,15 @@ enum StationPolicy {
 const BE: usize = 2;
 
 /// Register owner model with the four ordinary queues' latched state.
+#[derive(Debug, PartialEq)]
+enum CryptoOperation {
+    Association(
+        oer_esp32s31_hal::types::MacInterface,
+        oer_esp32s31_hal::types::MacSppMode,
+    ),
+    Install(u8),
+    Remove(u8),
+}
 #[derive(Default)]
 struct Hardware {
     legacy: Vec<(u8, MacLegacyTxProgram)>,
@@ -66,6 +75,7 @@ struct Hardware {
     /// The MAC-wide CCA a timeout abort forces until its detach.
     cca_forced: bool,
     installed_keys: Vec<(u8, MacCcmpKeyIdentity)>,
+    crypto_order: Vec<CryptoOperation>,
     cleared_keys: Vec<u8>,
     rx_block_acks: Vec<S31RxBlockAckAgreement>,
     cleared_rx_block_acks: Vec<u8>,
@@ -190,6 +200,14 @@ impl HtAmpduHardware for Hardware {
 }
 
 impl CcmpKeyHardware for Hardware {
+    fn configure_ccmp_association(
+        &mut self,
+        interface: oer_esp32s31_hal::types::MacInterface,
+        mode: oer_esp32s31_hal::types::MacSppMode,
+    ) {
+        self.crypto_order
+            .push(CryptoOperation::Association(interface, mode));
+    }
     fn install_sta_ccmp_entry(
         &mut self,
         index: u8,
@@ -199,12 +217,14 @@ impl CcmpKeyHardware for Hardware {
         if self.installed_keys.iter().any(|(slot, _)| *slot == index) {
             return MacKeyInstallOutcome::Occupied;
         }
+        self.crypto_order.push(CryptoOperation::Install(index));
         self.installed_keys.push((index, identity));
         MacKeyInstallOutcome::Installed
     }
 
     fn clear_ccmp_entry(&mut self, index: u8) {
         self.installed_keys.retain(|(slot, _)| *slot != index);
+        self.crypto_order.push(CryptoOperation::Remove(index));
         self.cleared_keys.push(index);
     }
 }
@@ -412,8 +432,77 @@ use driver::{TestDriver, TestStart};
 
 type DeviceCore<'core> = LowerMacCore<'core, 'static, Power, fn() -> u32, Timer, 512>;
 
+struct TestAssociations<'id> {
+    station: association::StationAssociation<'id>,
+    access_point: association::AccessPointAssociation<'id>,
+    sta_pairwise: Option<association::StationPairwiseSlot<'id>>,
+    sta_group: Option<association::StationGroupSlot<'id>>,
+    ap_pairwise: [Option<association::AccessPointPairwiseSlot<'id>>; 15],
+    ap_group: [Option<association::AccessPointGroupSlot<'id>>; 3],
+}
+impl<'id> TestAssociations<'id> {
+    fn new(
+        station: association::VacantStationAssociation<'id>,
+        access_point: association::VacantAccessPointAssociation<'id>,
+    ) -> Self {
+        let (start, bank) = station.into_parts();
+        let ([pairwise], [group]) = bank.into_parts();
+        let (ap_start, ap_bank) = access_point.into_parts();
+        let (ap_pairwise, ap_group) = ap_bank.into_parts();
+        Self {
+            station: start.begin(oer_ieee80211_mac::security::Spp::NotNegotiated),
+            access_point: ap_start.begin(oer_ieee80211_mac::security::Spp::NotNegotiated),
+            sta_pairwise: Some(pairwise),
+            sta_group: Some(group),
+            ap_pairwise: ap_pairwise.map(Some),
+            ap_group: ap_group.map(Some),
+        }
+    }
+    fn take(&mut self, scope: TransmitKeyScope) -> association::TransmitKeyInstallation<'_, 'id> {
+        use association::TransmitKeyInstallation as Install;
+        match scope {
+            TransmitKeyScope::StationPairwise { peer } => Install::StationPairwise {
+                association: &self.station,
+                slot: self.sta_pairwise.take().unwrap(),
+                peer,
+            },
+            TransmitKeyScope::AccessPointPairwise {
+                peer,
+                association_id,
+            } => Install::AccessPointPairwise {
+                association: &self.access_point,
+                slot: self.ap_pairwise[usize::from(association_id - 1)]
+                    .take()
+                    .unwrap(),
+                peer,
+            },
+            TransmitKeyScope::AccessPointGroup { key_id } => Install::AccessPointGroup {
+                association: &self.access_point,
+                slot: self.ap_group[usize::from(key_id.get() - 1)].take().unwrap(),
+                key_id,
+            },
+        }
+    }
+    fn put(&mut self, slot: association::VacantKeySlot<'id>) {
+        use association::VacantKeySlot as Slot;
+        match slot {
+            Slot::StationPairwise(slot) => assert!(self.sta_pairwise.replace(slot).is_none()),
+            Slot::StationGroup(slot) => assert!(self.sta_group.replace(slot).is_none()),
+            Slot::AccessPointPairwise(slot) => {
+                let index = slot.index() as usize;
+                assert!(self.ap_pairwise[index].replace(slot).is_none());
+            }
+            Slot::AccessPointGroup(slot) => {
+                let index = slot.index() as usize;
+                assert!(self.ap_group[index].replace(slot).is_none());
+            }
+        }
+    }
+}
+
 /// The test driver recycles a queue only when the actual terminal returns it.
 struct Core<'core> {
+    associations: TestAssociations<'core>,
     inner: TestDriver<'core>,
     free: [Option<FreeQueue<'core>>; LOWER_MAC_TX_QUEUES],
     tickets: [Option<TxTicket<'core>>; 4],
@@ -432,12 +521,52 @@ impl core::ops::DerefMut for Core<'_> {
 }
 
 struct CoreParts<'core> {
+    associations: TestAssociations<'core>,
     inner: LowerMacCoreParts<'core, 'static, Power, fn() -> u32, Timer, 512>,
     free: [Option<FreeQueue<'core>>; LOWER_MAC_TX_QUEUES],
     tickets: [Option<TxTicket<'core>>; 4],
 }
 
 impl<'core> Core<'core> {
+    fn install_key(
+        &mut self,
+        hardware: &mut Hardware,
+        scope: TransmitKeyScope,
+        material: &[u8; 16],
+    ) -> Result<KeyHandle<'core>, LowerMacFault> {
+        match self
+            .inner
+            .install_checked_key(hardware, self.associations.take(scope), material)
+        {
+            Ok(key) => Ok(key),
+            Err(refused) => {
+                self.associations.put(refused.slot);
+                Err(refused.fault)
+            }
+        }
+    }
+    fn install_receive_key(
+        &mut self,
+        hardware: &mut Hardware,
+        id: oer_ieee80211_mac::ccmp::GroupKeyId,
+        material: &[u8; 16],
+    ) -> Result<ReceiveKeyHandle<'core>, LowerMacFault> {
+        let slot = self.associations.sta_group.take().unwrap();
+        match self.inner.install_station_group_key(
+            hardware,
+            &self.associations.station,
+            slot,
+            id,
+            material,
+        ) {
+            Ok(key) => Ok(key),
+            Err(refused) => {
+                self.associations.put(refused.slot);
+                Err(refused.fault)
+            }
+        }
+    }
+
     fn reclaim(&mut self, events: &mut Events<'core>) {
         for ticket in events.returned_tickets.drain(..) {
             let index = ticket.index();
@@ -542,6 +671,7 @@ impl<'core> Core<'core> {
         match self.inner.open_gate(hardware, &mut events) {
             Ok(inner) => Ok(Self {
                 inner,
+                associations: self.associations,
                 free: self.free,
                 tickets: self.tickets,
             }),
@@ -557,11 +687,13 @@ impl<'core> Core<'core> {
         match self.inner.dismantle() {
             Ok(inner) => Ok(CoreParts {
                 inner,
+                associations: self.associations,
                 free: self.free,
                 tickets: self.tickets,
             }),
             Err(inner) => Err(Self {
                 inner,
+                associations: self.associations,
                 free: self.free,
                 tickets: self.tickets,
             }),
@@ -571,6 +703,7 @@ impl<'core> Core<'core> {
     fn from_parts(parts: CoreParts<'core>) -> Self {
         Self {
             inner: TestDriver::new(DeviceCore::from_parts(parts.inner)),
+            associations: parts.associations,
             free: parts.free,
             tickets: parts.tickets,
         }
@@ -683,6 +816,10 @@ fn slot() -> Pin<&'static mut TxSlot<512>> {
 
 fn core(resources: CoreResources<'_>) -> Core<'_> {
     Core {
+        associations: TestAssociations::new(
+            resources.station_association,
+            resources.access_point_association,
+        ),
         free: resources.queues.map(Some),
         tickets: resources.tickets.map(Some),
         inner: TestDriver::new(LowerMacCore::new(
@@ -1674,7 +1811,7 @@ fn keys_install_into_their_role_slots_and_protect_attempts() {
         static KEY: [u8; 16] = [0x5a; 16];
 
         let pairwise = core
-            .install_checked_key(
+            .install_key(
                 &mut hardware,
                 TransmitKeyScope::StationPairwise { peer: BSSID },
                 &KEY,
@@ -1682,7 +1819,7 @@ fn keys_install_into_their_role_slots_and_protect_attempts() {
             .unwrap();
         assert_eq!(hardware.installed_keys[0].0, 4);
         let _ap_key = core
-            .install_checked_key(
+            .install_key(
                 &mut hardware,
                 TransmitKeyScope::AccessPointPairwise {
                     peer: PEER,
@@ -1717,14 +1854,14 @@ fn a_fresh_protected_mpdu_is_numbered_and_receive_only_group_removal_has_its_fif
         let mut core = enabled(&mut hardware, pools);
         static KEY: [u8; 16] = [0x5a; 16];
         let mut pairwise = core
-            .install_checked_key(
+            .install_key(
                 &mut hardware,
                 TransmitKeyScope::StationPairwise { peer: BSSID },
                 &KEY,
             )
             .unwrap();
         let group = core
-            .install_station_group_key(
+            .install_receive_key(
                 &mut hardware,
                 oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
                 &KEY,
@@ -1755,7 +1892,7 @@ fn numbering_refuses_an_unavailable_buffer_without_allocating_a_packet_number() 
         let mut core = enabled(&mut hardware, pools);
         static KEY: [u8; 16] = [0x5a; 16];
         let mut key = core
-            .install_checked_key(
+            .install_key(
                 &mut hardware,
                 TransmitKeyScope::StationPairwise { peer: BSSID },
                 &KEY,
@@ -1786,7 +1923,7 @@ fn numbering_checks_header_space_and_offset_overflow_before_allocating_a_packet_
         let mut core = enabled(&mut hardware, pools);
         static KEY: [u8; 16] = [0x5a; 16];
         let mut key = core
-            .install_checked_key(
+            .install_key(
                 &mut hardware,
                 TransmitKeyScope::StationPairwise { peer: BSSID },
                 &KEY,
@@ -2887,9 +3024,7 @@ fn key_removal_waits_for_both_parallel_attempts_and_follows_the_last_terminal() 
                 let mut core = enabled(&mut hardware, pools);
                 core.configure_checked_vif(&mut hardware, access_point())
                     .unwrap();
-                let key = core
-                    .install_checked_key(&mut hardware, scope, &[0x59; 16])
-                    .unwrap();
+                let key = core.install_key(&mut hardware, scope, &[0x59; 16]).unwrap();
                 let selector = key.token.hardware_index();
                 let index = key.index;
                 for category in [WmmAccessCategory::Video, WmmAccessCategory::BestEffort] {
@@ -2905,11 +3040,8 @@ fn key_removal_waits_for_both_parallel_attempts_and_follows_the_last_terminal() 
                 core.remove_checked_key(&mut hardware, key, &mut events);
                 assert!(events.removed.is_empty());
                 assert!(hardware.cleared_keys.is_empty());
-                // A second installation cannot overwrite the still-programmed material.
-                assert!(matches!(
-                    core.install_checked_key(&mut hardware, scope, &[0x28; 16]),
-                    Err(LowerMacFault::Key(CryptoKeyError::Occupied))
-                ));
+                // The installation consumed the only affine slot. A second
+                // installation is a UI error, even while removal is pending.
                 assert_eq!(hardware.installed_keys.len(), 1);
                 hardware.completion[1] = Some(MacTxCompletionObservation::new_model(0, 0));
                 core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
@@ -2940,16 +3072,14 @@ fn key_removal_without_uses_completes_at_the_remove_command() {
         let mut hardware = Hardware::default();
         let mut core = enabled(&mut hardware, pools);
         let scope = TransmitKeyScope::StationPairwise { peer: BSSID };
-        let key = core
-            .install_checked_key(&mut hardware, scope, &[0x71; 16])
-            .unwrap();
+        let key = core.install_key(&mut hardware, scope, &[0x71; 16]).unwrap();
         let mut events = Events::default();
         core.remove_checked_key(&mut hardware, key, &mut events);
         assert_eq!(events.order, ["key"]);
         assert_eq!(hardware.cleared_keys, [4]);
-        let key = core
-            .install_checked_key(&mut hardware, scope, &[0x72; 16])
-            .unwrap();
+        core.associations
+            .put(events.removed.pop().unwrap().into_slot());
+        let key = core.install_key(&mut hardware, scope, &[0x72; 16]).unwrap();
         core.remove_checked_key(&mut hardware, key, &mut events);
         assert_eq!(events.order, ["key", "key"]);
         assert_eq!(hardware.cleared_keys, [4, 4]);
@@ -2962,7 +3092,7 @@ fn held_withdrawal_and_indeterminate_timeout_return_their_key_rights() {
         let mut hardware = Hardware::default();
         let mut core = enabled(&mut hardware, pools);
         let key = core
-            .install_checked_key(
+            .install_key(
                 &mut hardware,
                 TransmitKeyScope::StationPairwise { peer: BSSID },
                 &[0x51; 16],
@@ -3007,7 +3137,7 @@ fn poisoned_attempts_retain_key_rights_and_never_report_key_removed() {
         let mut hardware = Hardware::default();
         let mut core = enabled(&mut hardware, pools);
         let key = core
-            .install_checked_key(
+            .install_key(
                 &mut hardware,
                 TransmitKeyScope::StationPairwise { peer: BSSID },
                 &[0x51; 16],
@@ -3057,7 +3187,7 @@ fn refused_publication_returns_the_key_right_until_its_owner_releases_it() {
         let mut hardware = Hardware::default();
         let mut core = enabled(&mut hardware, pools);
         let key = core
-            .install_checked_key(
+            .install_key(
                 &mut hardware,
                 TransmitKeyScope::StationPairwise { peer: BSSID },
                 &[0x51; 16],
@@ -3090,7 +3220,7 @@ fn key_bank_survives_a_disabled_core_round_trip() {
         let mut hardware = Hardware::default();
         let mut core = enabled(&mut hardware, pools);
         let key = core
-            .install_checked_key(
+            .install_key(
                 &mut hardware,
                 TransmitKeyScope::StationPairwise { peer: BSSID },
                 &[0x51; 16],
@@ -3127,7 +3257,7 @@ fn key_right_is_retained_by_an_aggregate_through_completion_or_quarantine() {
             let mut hardware = Hardware::default();
             let mut core = enabled(&mut hardware, pools);
             let key = core
-                .install_checked_key(
+                .install_key(
                     &mut hardware,
                     TransmitKeyScope::StationPairwise { peer: BSSID },
                     &[0x51; 16],
@@ -3214,7 +3344,7 @@ fn failed_gate_open_returns_key_uses_of_every_held_attempt() {
             let mut hardware = Hardware::default();
             let mut core = enabled(&mut hardware, pools);
             let key = core
-                .install_checked_key(
+                .install_key(
                     &mut hardware,
                     TransmitKeyScope::StationPairwise { peer: BSSID },
                     &[0x39; 16],
@@ -3265,7 +3395,7 @@ fn an_unpublished_right_returned_after_poison_stays_in_custody() {
         let mut hardware = Hardware::default();
         let mut core = enabled(&mut hardware, pools);
         let key = core
-            .install_checked_key(
+            .install_key(
                 &mut hardware,
                 TransmitKeyScope::StationPairwise { peer: BSSID },
                 &[0x39; 16],
@@ -3419,11 +3549,18 @@ fn maximum_ticket_pool_keeps_key_removal_until_all_256_rights_return() {
             },
             &RadioNine,
         );
+        let (start, bank) = resources.station_association.into_parts();
+        let association = start.begin(oer_ieee80211_mac::security::Spp::NotNegotiated);
+        let ([slot], [_group]) = bank.into_parts();
         let mut hardware = Hardware::default();
         let key = core
             .install_checked_key(
                 &mut hardware,
-                TransmitKeyScope::StationPairwise { peer: BSSID },
+                association::TransmitKeyInstallation::StationPairwise {
+                    association: &association,
+                    slot,
+                    peer: BSSID,
+                },
                 &[0x6b; 16],
             )
             .unwrap();
@@ -3551,5 +3688,115 @@ fn closed_gate_survives_disable_retune_and_enable_without_publishing() {
         let core = closed.open_gate(&mut hardware, &mut events).ok().unwrap();
         assert_eq!(hardware.publications(), 2);
         assert!(core.next_deadline().is_some());
+    });
+}
+
+#[test]
+fn spp_changes_only_after_the_complete_bank_and_end_has_no_hardware_effect() {
+    use association::{TransmitKeyInstallation, VacantKeySlot};
+    use oer_esp32s31_hal::types::{MacInterface, MacSppMode};
+    use oer_ieee80211_lower_mac::association::{VacantKeyBank, end_association};
+    use oer_ieee80211_mac::security::Spp;
+    installed(|resources| {
+        let Core {
+            mut inner,
+            associations,
+            tickets,
+            ..
+        } = core(resources);
+        let TestAssociations {
+            station,
+            sta_pairwise,
+            sta_group,
+            ..
+        } = associations;
+        let bank = VacantKeyBank::new([sta_pairwise.unwrap()], [sta_group.unwrap()]);
+        let (start, bank) = end_association(station, bank).into_parts();
+        let association = start.begin(Spp::Negotiated);
+        let ([pairwise], [group]) = bank.into_parts();
+        let mut hardware = Hardware::default();
+        let key = inner
+            .install_checked_key(
+                &mut hardware,
+                TransmitKeyInstallation::StationPairwise {
+                    association: &association,
+                    slot: pairwise,
+                    peer: BSSID,
+                },
+                &[1; 16],
+            )
+            .unwrap();
+        let group = inner
+            .install_station_group_key(
+                &mut hardware,
+                &association,
+                group,
+                oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
+                &[2; 16],
+            )
+            .unwrap();
+        assert_eq!(
+            hardware.crypto_order,
+            [
+                CryptoOperation::Association(MacInterface::Station, MacSppMode::Authenticated),
+                CryptoOperation::Install(4),
+                CryptoOperation::Association(MacInterface::Station, MacSppMode::Authenticated),
+                CryptoOperation::Install(1),
+            ]
+        );
+        let [first, second, _, _] = tickets;
+        let first = inner.admit_key(&key, first.unwrap()).ok().unwrap();
+        let second = inner.admit_key(&key, second.unwrap()).ok().unwrap();
+        let mut events = Events::default();
+        inner.remove_checked_key(&mut hardware, group, &mut events);
+        let VacantKeySlot::StationGroup(group) = events.removed.pop().unwrap().into_slot() else {
+            panic!("GTK slot");
+        };
+        inner.remove_checked_key(&mut hardware, key, &mut events);
+        assert!(events.removed.is_empty());
+        let _ticket = inner
+            .return_admission(&mut hardware, TxAdmission::Protected(first), &mut events)
+            .ok()
+            .unwrap();
+        assert!(
+            events.removed.is_empty(),
+            "the full bank does not exist while a use is retained"
+        );
+        let _ticket = inner
+            .return_admission(&mut hardware, TxAdmission::Protected(second), &mut events)
+            .ok()
+            .unwrap();
+        let VacantKeySlot::StationPairwise(pairwise) = events.removed.pop().unwrap().into_slot()
+        else {
+            panic!("PTK slot");
+        };
+        let before = hardware.crypto_order.len();
+        let vacant = end_association(association, VacantKeyBank::new([pairwise], [group]));
+        assert_eq!(
+            hardware.crypto_order.len(),
+            before,
+            "no SPP reset or extra key clearing at association end"
+        );
+        let (start, bank) = vacant.into_parts();
+        let next = start.begin(Spp::NotNegotiated);
+        let ([pairwise], [_group]) = bank.into_parts();
+        let _key = inner
+            .install_checked_key(
+                &mut hardware,
+                TransmitKeyInstallation::StationPairwise {
+                    association: &next,
+                    slot: pairwise,
+                    peer: BSSID,
+                },
+                &[3; 16],
+            )
+            .unwrap();
+        assert_eq!(
+            &hardware.crypto_order[before..],
+            [
+                CryptoOperation::Association(MacInterface::Station, MacSppMode::Unauthenticated),
+                CryptoOperation::Install(4)
+            ]
+        );
     });
 }

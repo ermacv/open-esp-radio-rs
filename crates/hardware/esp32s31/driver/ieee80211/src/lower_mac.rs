@@ -172,6 +172,7 @@ use oer_ieee80211_mac::{
 use oer_ieee80211_softmac::MacTxPlan;
 
 pub mod ampdu;
+pub mod association;
 mod resources;
 pub use resources::{CoreAuthority, CorePools, CoreResources, FreeQueue, TxTicket};
 mod lifecycle;
@@ -1720,10 +1721,23 @@ where
     pub fn install_checked_key<H: LowerMacHardware>(
         &mut self,
         hardware: &mut H,
-        scope: TransmitKeyScope,
+        installation: association::TransmitKeyInstallation<'_, 'core, Path>,
         temporal_key: &[u8; CCMP_128_KEY_BYTES],
-    ) -> Result<KeyHandle<'core, Path>, LowerMacFault> {
-        let free = self.vacant_key(scope.into())?;
+    ) -> Result<KeyHandle<'core, Path>, association::KeyInstallRefused<'core, Path>> {
+        let (spp, scope, slot) = installation.into_parts();
+        let free = match self.vacant_key(scope.into()) {
+            Ok(index) => index,
+            Err(fault) => return Err(association::KeyInstallRefused { fault, slot }),
+        };
+        hardware.configure_ccmp_association(
+            match scope {
+                TransmitKeyScope::StationPairwise { .. } => {
+                    oer_esp32s31_hal::types::MacInterface::Station
+                }
+                _ => oer_esp32s31_hal::types::MacInterface::AccessPoint,
+            },
+            spp_mode(spp),
+        );
         let token = match scope {
             TransmitKeyScope::StationPairwise { peer } => {
                 install_sta_pairwise_ccmp(hardware, peer, temporal_key)
@@ -1737,10 +1751,19 @@ where
             TransmitKeyScope::AccessPointGroup { key_id } => {
                 install_ap_group_ccmp(hardware, key_id, temporal_key).map(TransmitKeyToken::ApGroup)
             }
-        }
-        .map_err(LowerMacFault::Key)?;
+        };
+        let token = match token {
+            Ok(token) => token,
+            Err(error) => {
+                return Err(association::KeyInstallRefused {
+                    fault: LowerMacFault::Key(error),
+                    slot,
+                });
+            }
+        };
         self.keys.installed[free] = Some(scope.into());
         Ok(KeyHandle {
+            slot,
             index: free,
             token,
             scope,
@@ -1753,15 +1776,33 @@ where
     pub fn install_station_group_key<H: LowerMacHardware>(
         &mut self,
         hardware: &mut H,
+        association: &association::StationAssociation<'core, Path>,
+        slot: association::StationGroupSlot<'core, Path>,
         key_id: oer_ieee80211_mac::ccmp::GroupKeyId,
         temporal_key: &[u8; CCMP_128_KEY_BYTES],
-    ) -> Result<ReceiveKeyHandle<'core, Path>, LowerMacFault> {
+    ) -> Result<ReceiveKeyHandle<'core, Path>, association::KeyInstallRefused<'core, Path>> {
         let scope = CheckedKeyScope::StationGroup { key_id };
-        let index = self.vacant_key(scope)?;
-        let token =
-            install_sta_group_ccmp(hardware, key_id, temporal_key).map_err(LowerMacFault::Key)?;
+        let slot = association::VacantKeySlot::StationGroup(slot);
+        let index = match self.vacant_key(scope) {
+            Ok(index) => index,
+            Err(fault) => return Err(association::KeyInstallRefused { fault, slot }),
+        };
+        hardware.configure_ccmp_association(
+            oer_esp32s31_hal::types::MacInterface::Station,
+            spp_mode(association.spp()),
+        );
+        let token = match install_sta_group_ccmp(hardware, key_id, temporal_key) {
+            Ok(token) => token,
+            Err(error) => {
+                return Err(association::KeyInstallRefused {
+                    fault: LowerMacFault::Key(error),
+                    slot,
+                });
+            }
+        };
         self.keys.installed[index] = Some(scope);
         Ok(ReceiveKeyHandle {
+            slot,
             index,
             token,
             key_id,
@@ -1838,6 +1879,7 @@ where
             key.token.clear(hardware);
             self.keys.installed[index] = None;
             sink.key_removed(KeyRemoved {
+                slot: key.slot,
                 scope: key.scope,
                 brand: key.brand,
             });
@@ -2432,3 +2474,14 @@ fn block_ack(report: crate::ordinary_tx::OrdinaryTxReport) -> Option<BlockAckRep
 
 #[cfg(test)]
 mod tests;
+
+fn spp_mode(spp: oer_ieee80211_mac::security::Spp) -> oer_esp32s31_hal::types::MacSppMode {
+    match spp {
+        oer_ieee80211_mac::security::Spp::Negotiated => {
+            oer_esp32s31_hal::types::MacSppMode::Authenticated
+        }
+        oer_ieee80211_mac::security::Spp::NotNegotiated => {
+            oer_esp32s31_hal::types::MacSppMode::Unauthenticated
+        }
+    }
+}

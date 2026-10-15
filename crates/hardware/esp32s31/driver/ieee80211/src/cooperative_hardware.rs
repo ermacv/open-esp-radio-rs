@@ -150,6 +150,14 @@ impl<'arena> CooperativeRadioHardware<'arena> {
 }
 
 impl CcmpKeyHardware for CooperativeRadioHardware<'_> {
+    fn configure_ccmp_association(
+        &mut self,
+        interface: oer_esp32s31_hal::types::MacInterface,
+        mode: oer_esp32s31_hal::types::MacSppMode,
+    ) {
+        self.wifi_mac_hal()
+            .configure_ccmp_association(interface, mode);
+    }
     fn install_sta_ccmp_entry(
         &mut self,
         index: u8,

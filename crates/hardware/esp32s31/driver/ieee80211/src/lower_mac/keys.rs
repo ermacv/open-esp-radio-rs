@@ -15,6 +15,7 @@ type Installation<'core, Path> = PhantomData<fn(&'core (), Path) -> (&'core (), 
 /// independent `KeyUse` values and may finish on different EDCA queues.
 #[must_use = "remove the installed key through its core"]
 pub struct KeyHandle<'core, Path: PoolPath = Root> {
+    pub(super) slot: super::association::VacantKeySlot<'core, Path>,
     pub(super) index: usize,
     pub(super) token: TransmitKeyToken,
     pub(super) scope: TransmitKeyScope,
@@ -74,6 +75,7 @@ impl TransmitKeyToken {
 /// Neither `admit_key` nor `number` accepts this owner.
 #[must_use = "remove the receive key through its core"]
 pub struct ReceiveKeyHandle<'core, Path: PoolPath = Root> {
+    pub(super) slot: super::association::VacantKeySlot<'core, Path>,
     pub(super) index: usize,
     pub(super) token: StaGroupCcmpSlot,
     pub(super) key_id: oer_ieee80211_mac::ccmp::GroupKeyId,
@@ -84,6 +86,7 @@ pub struct ReceiveKeyHandle<'core, Path: PoolPath = Root> {
 /// Converting either handle into this owner permanently ends new TX admission.
 #[must_use = "submit the consumed key to removal"]
 pub struct RemovingKey<'core, Path: PoolPath = Root> {
+    pub(super) slot: super::association::VacantKeySlot<'core, Path>,
     pub(super) index: usize,
     pub(super) token: KeyToken,
     pub(super) scope: CheckedKeyScope,
@@ -93,6 +96,7 @@ pub struct RemovingKey<'core, Path: PoolPath = Root> {
 impl<'core, Path: PoolPath> From<KeyHandle<'core, Path>> for RemovingKey<'core, Path> {
     fn from(key: KeyHandle<'core, Path>) -> Self {
         Self {
+            slot: key.slot,
             index: key.index,
             token: match key.token {
                 TransmitKeyToken::StaPairwise(slot) => KeyToken::StaPairwise(slot),
@@ -108,6 +112,7 @@ impl<'core, Path: PoolPath> From<KeyHandle<'core, Path>> for RemovingKey<'core, 
 impl<'core, Path: PoolPath> From<ReceiveKeyHandle<'core, Path>> for RemovingKey<'core, Path> {
     fn from(key: ReceiveKeyHandle<'core, Path>) -> Self {
         Self {
+            slot: key.slot,
             index: key.index,
             token: KeyToken::StaGroup(key.token),
             scope: CheckedKeyScope::StationGroup { key_id: key.key_id },
@@ -222,11 +227,17 @@ impl<Path: PoolPath> TxAdmission<'_, Path> {
 /// after the last TX terminal. There is no polling step to discover completion.
 #[must_use = "complete the corresponding portable key-removal request"]
 pub struct KeyRemoved<'core, Path: PoolPath = Root> {
+    pub(super) slot: super::association::VacantKeySlot<'core, Path>,
     pub(super) scope: CheckedKeyScope,
     pub(super) brand: Installation<'core, Path>,
 }
 
-impl<Path: PoolPath> KeyRemoved<'_, Path> {
+impl<'core, Path: PoolPath> KeyRemoved<'core, Path> {
+    /// Recover the slot only after hardware removal and every admitted TX use.
+    pub fn into_slot(self) -> super::association::VacantKeySlot<'core, Path> {
+        self.slot
+    }
+
     /// The installation's key which has now left the hardware.
     pub const fn scope(&self) -> CheckedKeyScope {
         self.scope

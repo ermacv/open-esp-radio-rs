@@ -332,15 +332,23 @@ fn key_withdrawal_keeps_the_applied_prefix_and_erases_unexecuted_keys() -> Resul
             for permission in r.groups {
                 tx.mutate_group(permission, Ccmp128Key::new(&secret));
             }
+            let mut wait = Box::pin(replies.phase());
+            if !matches!(
+                wait.as_mut().poll(&mut Context::from_waker(Waker::noop())),
+                Poll::Pending
+            ) {
+                return Err("key reply was ready before command execution");
+            }
             let mut hardware = Hardware::default();
             for operation in &expected[..completed] {
                 if executor.step(&mut hardware) != Some(*operation) {
                     return Err("executor changed key FIFO order");
                 }
             }
-            // Cancel the wait with both an applied prefix and a pending suffix.
+            // Cancel the started wait without polling again: a nonempty
+            // applied prefix has published replies that it has not received.
             // Owners stay in Held; finish withdraws only the pending suffix.
-            drop(Box::pin(replies.phase()));
+            drop(wait);
             drop(tx);
             executor.withdraw_pending();
             for (n, expected) in expected.into_iter().enumerate() {

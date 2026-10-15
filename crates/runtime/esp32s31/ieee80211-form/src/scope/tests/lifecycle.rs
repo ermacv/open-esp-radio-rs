@@ -6,10 +6,11 @@ mod cancellation;
 use super::*;
 use crate::scope::driver::{Driver, State};
 use core::future::pending;
+use core::ops::ControlFlow;
 use oer_radio_port::{
     Abandon, Call, ClockError, Detach, Detached, Disabled, DriverExit, DriverLoan, EnableResult,
-    Ended, EventsLost, InstallParts, Installed, Mint, Owner, Poisoned, PortBackend, PortBody,
-    PortEnd, PortPhase, PortResult, Quarantine, Retire, Retired, Slot, Slots, run_port,
+    Ended, EventEnd, EventsLost, InstallParts, Installed, Mint, Owner, Poisoned, PortBackend,
+    PortBody, PortEnd, PortPhase, PortResult, Quarantine, Retire, Retired, Slot, Slots, run_port,
 };
 use oer_time::RadioInstant;
 
@@ -34,7 +35,7 @@ struct Phase;
 impl PortPhase for Phase {
     type Event = Infallible;
     type Fault = Infallible;
-    async fn next_event(&mut self) -> PortResult<Infallible, EventsLost, Infallible> {
+    async fn next_event(&mut self) -> Result<Result<Infallible, EventsLost>, EventEnd<Infallible>> {
         pending().await
     }
 }
@@ -80,7 +81,7 @@ impl<'a, 'context> PortBackend for Backend<'a, 'context> {
         _: Call,
         _: &'p Self::Held<'id>,
         _: &'p mut (),
-        _: &'p mut dyn FnMut(Infallible),
+        _: &'p mut dyn FnMut(Infallible) -> ControlFlow<Infallible>,
     ) -> Result<(), Poisoned<Infallible>>
     where
         'id: 'p,

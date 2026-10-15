@@ -19,6 +19,9 @@ Driver nor the backing lease. The executable binding in
 [`scope/tests/lifecycle.rs`](src/scope/tests/lifecycle.rs) uses the real
 shared `Installed`, `run_port`, `PortEnd`, `FailStopped` and `Abandon` types.
 Its frontend models lifecycle only; it does not migrate the old S31 runtime.
+The fixture accepts the core's `ControlFlow<Terminal>` disable sink and
+`EventEnd` event-stream result. It admits no radio work, so terminal retention
+and event-stream draining belong to the S31 backend's conformance tests.
 The independent linked hardware fixture retains `RadioRuntimeOwner` by value.
 The tests retain a non-static context and an affine installation slot in
 `Held<'id>`, and never register an address into Held with either executor.
@@ -449,7 +452,7 @@ constraining the eventual memory shape.
 ## Linked placement and cost
 
 `tests/placement.rs` links the actual HAL, MAC and scope code in
-`examples/scope_placement.rs`. This fixture is never flashed or used as HIL
+[scope_placement.rs](examples/scope_placement.rs). This fixture is never flashed or used as HIL
 evidence. SRAM and cached ranges come from `platform/esp32s31/chip.toml`;
 `tests/placement.x` states the production linker section provenance. Header,
 driver and shared IRQ memory live in the permanent backing section. The entry

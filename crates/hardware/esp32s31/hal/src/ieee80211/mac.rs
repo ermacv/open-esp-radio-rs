@@ -749,6 +749,12 @@ impl<'registers> WifiMacHal<'registers> {
         self.pac_mut().station_tsf()
     }
 
+    /// Snapshot the AP timer through the same exclusive owner as STA TSF.
+    /// The complete select/read/release transaction ends before returning.
+    pub fn access_point_tsf(&mut self) -> u64 {
+        self.pac_mut().access_point_tsf()
+    }
+
     /// Replace the station TSF, as the vendor does from an access point's
     /// timestamp. Outside the HAL only the unique register owner writes it
     /// ([`PublishedRadioOwner::set_station_tsf`](crate::ieee80211::arena::PublishedRadioOwner::set_station_tsf)).

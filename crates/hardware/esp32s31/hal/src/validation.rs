@@ -24,7 +24,7 @@ fn owner() -> RadioRuntimeOwner {
 
 #[inline(always)]
 pub fn hal_get_sta_tsf(low: Option<&mut u32>, high: Option<&mut u32>) {
-    owner().pac().validation_station_tsf(low, high);
+    owner().pac_mut().validation_station_tsf(low, high);
 }
 
 #[inline(always)]

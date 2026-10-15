@@ -11,6 +11,8 @@
 
 /// GTK installation, replacement and selection RX boundaries.
 pub mod group_keys;
+/// Configuration permissions and opaque contexts through FIFO and disable.
+pub mod interface_commands;
 
 use alloc::vec::Vec;
 use oer_ieee80211_lower_mac::{IndeterminateCause, TxEndStatus, TxOutcome, WithdrawCause};

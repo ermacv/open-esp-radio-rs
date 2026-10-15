@@ -93,6 +93,7 @@ impl StaTokens for Station {
     const GROUP_SLOTS: usize = 0;
     type GatePath = oer_radio_port::Root;
     type EpochPath = oer_radio_port::Root;
+    type ConfigurationPath = oer_radio_port::Root;
     type Small = Buffer;
     type Ticket = u8;
     type SmallBuffer = Buffer;

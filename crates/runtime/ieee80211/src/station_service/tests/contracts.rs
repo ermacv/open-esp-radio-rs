@@ -1,4 +1,5 @@
 use super::*;
+use oer_ieee80211_lower_mac::{Configured, SampledTsfPermission, VifRole};
 
 enum ContractCase {
     Unsolicited,
@@ -15,6 +16,8 @@ impl PortBody<ModelBackend<ModelCaps24, ServiceContexts>> for ContractBody {
     ) -> Ended<'id, ModelBackend<ModelCaps24, ServiceContexts>> {
         let ModelResources {
             connection_epoch,
+            station_commands,
+            access_point_commands,
             terminal_access,
             tickets,
             small,
@@ -41,6 +44,7 @@ impl PortBody<ModelBackend<ModelCaps24, ServiceContexts>> for ContractBody {
         let station = Station::new_open(
             config(StaSecurity::Open).0,
             StationResources {
+                configure: station_commands.configure,
                 epochs: oer_ieee80211_sta::epoch::LinkEpochSource::new(connection_epoch),
                 tickets: station_tickets,
                 buffers: <[_; 4]>::try_from(small).ok().unwrap(),
@@ -86,10 +90,12 @@ impl PortBody<ModelBackend<ModelCaps24, ServiceContexts>> for ContractBody {
             else {
                 panic!("the restart reclaims receive configuration")
             };
-            service.state.pending.configuring = Some(pending);
             let first = LowerMacTerminal::KeyRemoved(Removed::AccessPoint(RemovedKey::Pairwise(
                 ap_pairwise,
             )));
+            if overflow {
+                CUSTODY_LIMIT.set(Some(1));
+            }
             let custody = if prior {
                 service
                     .state
@@ -103,18 +109,13 @@ impl PortBody<ModelBackend<ModelCaps24, ServiceContexts>> for ContractBody {
             };
             {
                 let mut phase = owner.phase();
-                if overflow {
-                    for _ in 0..crate::lower_mac_owner::model::MODEL_EVENTS - MODEL_RX_EVENTS {
-                        phase.inject_terminal(LowerMacTerminal::Configured(VifRole::Station));
-                    }
-                }
                 phase.inject_terminal(LowerMacTerminal::KeyRemoved(Removed::AccessPoint(
                     RemovedKey::Group {
                         slot: ap_group,
                         permission: access_point_group_permission,
                     },
                 )));
-                phase.station().configure(receive);
+                phase.station().configure(pending, receive);
             }
             let (ended, custody) = service
                 .state
@@ -125,10 +126,7 @@ impl PortBody<ModelBackend<ModelCaps24, ServiceContexts>> for ContractBody {
                     custody,
                 )
                 .await;
-            assert!(
-                service.state.pending.configuring.is_some(),
-                "no terminal after the violation may advance a machine"
-            );
+            CUSTODY_LIMIT.set(None);
             assert!(service.state.station.is_reclaiming());
             let end = end_disabled(ended, custody);
             let (owner, custody) = match end {
@@ -172,18 +170,13 @@ impl PortBody<ModelBackend<ModelCaps24, ServiceContexts>> for ContractBody {
             };
             assert_eq!(slot.index(), 0);
             if overflow {
-                let mut count = 0;
-                while let Some(terminal) = later.pop() {
-                    assert!(matches!(
-                        terminal,
-                        LowerMacTerminal::Configured(VifRole::Station)
-                    ));
-                    count += 1;
-                }
-                assert_eq!(
-                    count,
-                    crate::lower_mac_owner::model::MODEL_EVENTS - MODEL_RX_EVENTS
-                );
+                assert!(matches!(
+                    later.pop(),
+                    Some(LowerMacTerminal::KeyRemoved(Removed::AccessPoint(
+                        RemovedKey::Group { .. }
+                    )))
+                ));
+                assert!(later.pop().is_none());
             } else {
                 let Some(LowerMacTerminal::KeyRemoved(Removed::AccessPoint(RemovedKey::Group {
                     slot,
@@ -196,7 +189,7 @@ impl PortBody<ModelBackend<ModelCaps24, ServiceContexts>> for ContractBody {
                 assert_eq!(permission.index(), 0);
                 assert!(matches!(
                     later.pop(),
-                    Some(LowerMacTerminal::Configured(VifRole::Station))
+                    Some(LowerMacTerminal::Configured(Configured::Station(_)))
                 ));
                 assert!(later.pop().is_none());
             }
@@ -207,30 +200,31 @@ impl PortBody<ModelBackend<ModelCaps24, ServiceContexts>> for ContractBody {
         }
         for (terminal, expected) in [
             (
-                LowerMacTerminal::TsfSampled(oer_ieee80211_lower_mac::TsfSample {
-                    tsf: oer_ieee80211_lower_mac::VifTsf::new(
-                        VifRole::Station,
-                        oer_ieee80211_mac::tsf::TsfInstant::from_micros(0),
-                    ),
-                    local: oer_ieee80211_lower_mac::Ieee80211Stamp {
-                        at: oer_ieee80211_lower_mac::Ieee80211Instant::from_micros(0),
-                        generation: oer_radio_port::GenerationSource::new(1).current(),
+                LowerMacTerminal::TsfSampled {
+                    permission: SampledTsfPermission::Station(station_commands.tsf),
+                    sample: oer_ieee80211_lower_mac::TsfSample {
+                        tsf: oer_ieee80211_lower_mac::VifTsf::new(
+                            VifRole::Station,
+                            oer_ieee80211_mac::tsf::TsfInstant::from_micros(0),
+                        ),
+                        local: oer_ieee80211_lower_mac::Ieee80211Stamp {
+                            at: oer_ieee80211_lower_mac::Ieee80211Instant::from_micros(0),
+                            generation: oer_radio_port::GenerationSource::new(1).current(),
+                        },
+                        uncertainty: oer_ieee80211_lower_mac::Ieee80211Duration::from_micros(0),
+                        generation: oer_ieee80211_lower_mac::TsfRelation::new(
+                            1,
+                            oer_ieee80211_mac::tsf::TsfDuration::from_micros(0),
+                        )
+                        .generation(),
                     },
-                    uncertainty: oer_ieee80211_lower_mac::Ieee80211Duration::from_micros(0),
-                    generation: oer_ieee80211_lower_mac::TsfRelation::new(
-                        1,
-                        oer_ieee80211_mac::tsf::TsfDuration::from_micros(0),
-                    )
-                    .generation(),
-                }),
+                },
                 BackendContractViolation::UnexpectedTsfSample,
             ),
             (
-                LowerMacTerminal::Configured(VifRole::Station),
-                BackendContractViolation::UnexpectedConfiguration,
-            ),
-            (
-                LowerMacTerminal::Configured(VifRole::AccessPoint),
+                LowerMacTerminal::Configured(Configured::AccessPoint(
+                    access_point_commands.configure,
+                )),
                 BackendContractViolation::UnexpectedAccessPointTerminal,
             ),
             (
@@ -261,7 +255,7 @@ impl PortBody<ModelBackend<ModelCaps24, ServiceContexts>> for ContractBody {
 }
 
 #[test]
-fn unsolicited_configuration_and_access_point_terminals_are_contract_faults() {
+fn unsolicited_tsf_and_access_point_terminals_retain_their_real_permissions() {
     let (backend, _) = ModelBackend::<ModelCaps24, ServiceContexts>::new(
         channel6(),
         [

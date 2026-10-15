@@ -1,6 +1,5 @@
 //! Full negotiated PMF exchanges with independent AESCCM/CMAC wire vectors.
 use super::*;
-use oer_ieee80211_arbiter::ArbiterPool;
 use oer_ieee80211_mac::security::rsn::Akm;
 use oer_ieee80211_rsn::{Ptk, frames::RsnTxFrame};
 
@@ -60,7 +59,7 @@ fn key_data(rsn: Option<&[u8]>, gtk: u8, igtk: u8) -> Vec<u8> {
     plain
 }
 
-fn associated<'id>(mint: Mint<'id, ArbiterPool>) -> (World<'id>, Ptk, Vec<u8>) {
+fn associated<'id>(mint: Mint<'id, TestPools>) -> (World<'id>, Ptk, Vec<u8>) {
     let mut rsn = RSN;
     rsn[20] |= 0x80;
     let mut beacon = wpa2_beacon();
@@ -74,7 +73,7 @@ fn associated<'id>(mint: Mint<'id, ArbiterPool>) -> (World<'id>, Ptk, Vec<u8>) {
     (world, ptk, eapol_frame(m3.as_bytes()))
 }
 
-fn connected<'id>(mint: Mint<'id, ArbiterPool>) -> (World<'id>, Ptk, Vec<u8>) {
+fn connected<'id>(mint: Mint<'id, TestPools>) -> (World<'id>, Ptk, Vec<u8>) {
     let (mut world, ptk, m3) = associated(mint);
     world.receive(at(33), &m3);
     assert!(world.station.is_connected());

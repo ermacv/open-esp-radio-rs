@@ -150,7 +150,7 @@ impl PortBody<ModelBackend> for ReceiveLoss {
         resources: ModelResources<'id>,
     ) -> Ended<'id, ModelBackend> {
         use embassy_futures::yield_now;
-        use oer_ieee80211_lower_mac::{StationPhase, StationReceive, VifRole};
+        use oer_ieee80211_lower_mac::{StationPhase, StationReceive};
         use oer_ieee80211_runtime::lower_mac_owner::model::MODEL_EVENTS;
         use oer_radio_port::EventsLost;
 
@@ -162,7 +162,9 @@ impl PortBody<ModelBackend> for ReceiveLoss {
             for _ in 0..MODEL_RX_EVENTS + 1 {
                 self.0.receive(&[1], meta);
             }
-            phase.station().configure(StationReceive::Off);
+            phase
+                .station()
+                .configure(resources.station_commands.configure, StationReceive::Off);
             phase.close_gate(resources.gate);
             yield_now().await;
             self.0.receive_continuously(&[2], meta);
@@ -179,9 +181,9 @@ impl PortBody<ModelBackend> for ReceiveLoss {
                         }
                         phase.recycle(frame);
                     }
-                    Ok(LowerMacEvent::Terminal(LowerMacTerminal::Configured(VifRole::Station))) => {
-                        terminals.push(1)
-                    }
+                    Ok(LowerMacEvent::Terminal(LowerMacTerminal::Configured(
+                        oer_ieee80211_lower_mac::Configured::Station(_),
+                    ))) => terminals.push(1),
                     Ok(LowerMacEvent::Terminal(LowerMacTerminal::GateClosed(_))) => {
                         terminals.push(2)
                     }

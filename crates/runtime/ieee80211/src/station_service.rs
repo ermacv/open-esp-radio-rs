@@ -99,7 +99,7 @@ use oer_ieee80211_lower_mac::{
     KeyTypes, LowerMacBackend, LowerMacEvent, LowerMacPhase, LowerMacTerminal, PhaseTypes,
     PoolMpdu, PoolSource, Protection, Removed, RemovedKey, RetransmissionPlan, ReturnedMpdu,
     RxBuffer, StationPhase, SupportedChannel, SupportedCoex, SupportedPower, TxBufferClass,
-    TxBufferPool, TxCompleted, TxMpdu, TxOutcome, TxPower, TxProtection, TxSource, VifRole,
+    TxBufferPool, TxCompleted, TxMpdu, TxOutcome, TxPower, TxProtection, TxSource,
 };
 use oer_ieee80211_mac::qos::{WmmAccessCategory, WmmUserPriority};
 use oer_ieee80211_port::{Disabled, Enabled, Failed, Owner, PoisonedOwner, PortBackend};
@@ -127,6 +127,10 @@ pub trait StationPort<'id>:
     /// The types its phase's events carry.
     type Types: PhaseTypes<
             'id,
+            StationConfigureContext = oer_ieee80211_sta::machine::StaConfigurationContext<
+                'id,
+                <Self::Types as PhaseTypes<'id>>::EpochPath,
+            >,
             Fault = Self::Fault,
             TxBody = core::convert::Infallible,
             Context = TxContext<
@@ -222,6 +226,7 @@ where
     const GROUP_SLOTS: usize = GROUPS;
     type Small = S;
     type EpochPath = Ty::EpochPath;
+    type ConfigurationPath = Ty::StationCommandPath;
     type GatePath = Ty::GatePath;
     type Ticket = Slot<'id, Ty::TicketKind, Ty::TicketPath>;
     type SmallBuffer = <Ty as TxBufferPool<'id, S>>::Buffer;
@@ -416,7 +421,6 @@ pub enum BackendContractViolation {
     UnexpectedAggregate,
     UnexpectedAccessPointTerminal,
     UnexpectedTsfSample,
-    UnexpectedConfiguration,
     GroupTerminalWithoutRequest,
     GroupSlotMismatch,
     GroupTerminalKindMismatch,
@@ -597,10 +601,7 @@ impl<'p, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const G
             mut owner,
             mut retired,
         } = self;
-        if retired._pending.retune.is_some()
-            || retired._pending.configuring.is_some()
-            || retired._pending.group.is_some()
-        {
+        if retired._pending.retune.is_some() || retired._pending.group.is_some() {
             return Err(RestartFailed {
                 reason: RestartFailure::PendingTerminal,
                 owner: FailedInstallation { owner },
@@ -731,12 +732,6 @@ struct PendingActions<'id, B: StationPort<'id>> {
     retune: Option<
         oer_ieee80211_arbiter::PendingRetune<'id, B::Caps, <B::Types as PhaseTypes<'id>>::GatePath>,
     >,
-    configuring: Option<
-        oer_ieee80211_sta::machine::PendingConfiguration<
-            'id,
-            <B::Types as PhaseTypes<'id>>::EpochPath,
-        >,
-    >,
     group: Option<PendingGroup<'id, B>>,
 }
 
@@ -806,7 +801,6 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUP
                 counters: ServiceCounters::default(),
                 pending: PendingActions {
                     retune: None,
-                    configuring: None,
                     group: None,
                 },
             },
@@ -1508,14 +1502,10 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUP
                 ));
             }
             LowerMacTerminal::GateClosed(closed) => arbiter.gate_closed(closed),
-            terminal @ LowerMacTerminal::Configured(VifRole::Station) => {
-                let Some(pending) = self.pending.configuring.take() else {
-                    return Err(ContractFault::sealed(
-                        BackendContractViolation::UnexpectedConfiguration,
-                        terminal,
-                    ));
-                };
-                self.station.input(now, StaInput::Configured(pending));
+            LowerMacTerminal::Configured(oer_ieee80211_lower_mac::Configured::Station(
+                permission,
+            )) => {
+                self.station.input(now, StaInput::Configured(permission));
             }
             LowerMacTerminal::KeyRemoved(Removed::Station(RemovedKey::Pairwise(slot))) => {
                 self.station.input(now, StaInput::PairwiseKeyRemoved(slot));
@@ -1526,7 +1516,9 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUP
             | LowerMacTerminal::GroupKeyInstalled(InstalledGroup::Station { .. })
             | LowerMacTerminal::GroupKeyReplaced { .. }
             | LowerMacTerminal::GroupKeySelected { .. }) => self.group_terminal(now, terminal)?,
-            terminal @ (LowerMacTerminal::Configured(VifRole::AccessPoint)
+            terminal @ (LowerMacTerminal::Configured(
+                oer_ieee80211_lower_mac::Configured::AccessPoint(_),
+            )
             | LowerMacTerminal::KeyRemoved(Removed::AccessPoint(_))
             | LowerMacTerminal::GroupKeyInstalled(InstalledGroup::AccessPoint {
                 ..
@@ -1536,7 +1528,7 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUP
                     terminal,
                 ));
             }
-            terminal @ LowerMacTerminal::TsfSampled(_) => {
+            terminal @ LowerMacTerminal::TsfSampled { .. } => {
                 return Err(ContractFault::sealed(
                     BackendContractViolation::UnexpectedTsfSample,
                     terminal,
@@ -1917,8 +1909,7 @@ where
             return Ok(Follow::Nothing);
         }
         StaAction::Configure(receive, pending) => {
-            pending_actions.configuring = Some(pending);
-            phase.station().configure(receive);
+            phase.station().configure(pending, receive);
             return Ok(Follow::Nothing);
         }
         StaAction::InstallPairwiseKey {

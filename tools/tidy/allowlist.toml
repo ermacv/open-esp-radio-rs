@@ -512,3 +512,35 @@ reason = "cargo xtask check ui checks the contract diagnostic and its compiling 
 [[uncompiled]]
 path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/configuration_barrier.rs"
 reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/configure_once.rs"
+reason = "Compile-pass and compile-fail affine interface command contract, registered in tools/xtask/tests/ui.toml."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/configure_returned.rs"
+reason = "Compile-pass and compile-fail affine interface command contract, registered in tools/xtask/tests/ui.toml."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/configure_role.rs"
+reason = "Compile-pass and compile-fail affine interface command contract, registered in tools/xtask/tests/ui.toml."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/configure_path.rs"
+reason = "Compile-pass and compile-fail affine interface command contract, registered in tools/xtask/tests/ui.toml."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/command_clone.rs"
+reason = "Compile-pass and compile-fail affine interface command contract, registered in tools/xtask/tests/ui.toml."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/sample_tsf_once.rs"
+reason = "Compile-pass and compile-fail affine interface command contract, registered in tools/xtask/tests/ui.toml."
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/sample_tsf_role.rs"
+reason = "Compile-pass and compile-fail affine interface command contract, registered in tools/xtask/tests/ui.toml."
+
+[[uncompiled]]
+path = "crates/runtime/ieee80211/tests/ui/configure_installation.rs"
+reason = "Compile-pass and compile-fail affine interface command contract, registered in tools/xtask/tests/ui.toml."

@@ -51,6 +51,7 @@ impl<const GROUPS: usize> StaTokens for Tokens<GROUPS> {
     const GROUP_SLOTS: usize = GROUPS;
     type GatePath = oer_radio_port::Root;
     type EpochPath = oer_radio_port::Root;
+    type ConfigurationPath = oer_radio_port::Root;
     type Small = Buffer;
     type Ticket = u8;
     type SmallBuffer = Buffer;
@@ -70,10 +71,12 @@ fn construct<'id, const T: usize, const B: usize, const G: usize>(
     config: StaConfig<Caps>,
     place: LeasePlace<'id>,
     absence: AbsencePlace<'id>,
+    configure: oer_ieee80211_lower_mac::ConfigurePermission<'id, oer_ieee80211_lower_mac::Station>,
 ) -> Station<'id, Tokens<G>, Caps> {
     Station::new_open(
         config,
         StationResources {
+            configure,
             epochs,
             tickets: [0; T],
             buffers: [const { Buffer }; B],
@@ -88,6 +91,6 @@ fn construct<'id, const T: usize, const B: usize, const G: usize>(
 
 #[test]
 fn minimum_pools_are_well_formed() {
-    let constructor: fn(_, _, _, _) -> _ = construct::<1, 1, 1>;
+    let constructor: fn(_, _, _, _, _) -> _ = construct::<1, 1, 1>;
     core::hint::black_box(constructor);
 }

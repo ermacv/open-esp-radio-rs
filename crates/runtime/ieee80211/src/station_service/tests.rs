@@ -57,6 +57,11 @@ const RSN: [u8; 22] = [
 struct ServiceContexts;
 
 impl crate::lower_mac_owner::model::ModelContext for ServiceContexts {
+    type StationConfigureContext<'id> = oer_ieee80211_sta::machine::StaConfigurationContext<
+        'id,
+        crate::lower_mac_owner::model::ModelPool<4>,
+    >;
+    type AccessPointConfigureContext<'id> = ();
     type Body = core::convert::Infallible;
     type Context<'id> =
         TxContext<'id, ModelCaps24, ModelLarge, crate::lower_mac_owner::model::ModelPool<4>>;
@@ -64,8 +69,7 @@ impl crate::lower_mac_owner::model::ModelContext for ServiceContexts {
 
 impl<'id> StationPort<'id> for ModelBackend<ModelCaps24, ServiceContexts> {
     type Types = ModelTypes<ServiceContexts>;
-    type TerminalStorage<T> =
-        Box<heapless::Deque<T, { crate::lower_mac_owner::model::MODEL_EVENTS - MODEL_RX_EVENTS }>>;
+    type TerminalStorage<T> = TestTerminalStorage<T>;
     type Small = ModelSmall;
     type Large = ModelLarge;
 
@@ -100,18 +104,30 @@ impl<'id> StationPort<'id> for ModelBackend<ModelCaps24, ServiceContexts> {
     }
 }
 
-// Host composition: the fixed bank is allocated once, like model MPDU memory.
-// Boxing changes placement, never its capacity or overflow behavior.
-impl<T, const N: usize> TerminalStorage<T> for Box<heapless::Deque<T, N>> {
-    const CAPACITY: usize = N;
+// Fault injection violates the storage contract, never manufactures terminal
+// owners. Each test runs on its own thread; normal storage uses its full bound.
+std::thread_local! { static CUSTODY_LIMIT: Cell<Option<usize>> = const { Cell::new(None) }; }
+struct TestTerminalStorage<T> {
+    values: Box<heapless::Deque<T, { crate::lower_mac_owner::model::MODEL_TERMINALS }>>,
+    limit: usize,
+}
+impl<T> TerminalStorage<T> for TestTerminalStorage<T> {
+    const CAPACITY: usize = crate::lower_mac_owner::model::MODEL_TERMINALS;
     fn empty() -> Self {
-        Box::new(heapless::Deque::new())
+        Self {
+            values: Box::new(heapless::Deque::new()),
+            limit: CUSTODY_LIMIT.get().unwrap_or(Self::CAPACITY),
+        }
     }
     fn try_push(&mut self, terminal: T) -> Result<(), T> {
-        self.push_back(terminal)
+        if self.values.len() == self.limit {
+            Err(terminal)
+        } else {
+            self.values.push_back(terminal)
+        }
     }
     fn pop(&mut self) -> Option<T> {
-        self.pop_front()
+        self.values.pop_front()
     }
 }
 
@@ -564,6 +580,7 @@ where
         {
             let ModelResources {
                 connection_epoch,
+                station_commands,
                 terminal_access,
                 tickets,
                 small,
@@ -595,6 +612,7 @@ where
                 );
             let (config, security) = self.config;
             let resources = StationResources {
+                configure: station_commands.configure,
                 epochs: oer_ieee80211_sta::epoch::LinkEpochSource::new(connection_epoch),
                 tickets: station_tickets,
                 buffers: small,
@@ -717,7 +735,7 @@ where
                     (1, GROUPS, true),
                     "all key owners return before teardown"
                 );
-                assert!(service._pending.configuring.is_none() && service._pending.group.is_none());
+                assert!(service._pending.group.is_none());
                 for category in WmmAccessCategory::ALL {
                     assert_eq!(
                         service.data.available(category),

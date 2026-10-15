@@ -155,13 +155,27 @@ back; its operations are synchronous and never wait:
   removed by value. Its slot holds desired state: repeated add/replace/remove
   writes coalesce to the latest value before the driver's next command.
   They occupy no command slots. The command bound is tickets + twice the
-  pairwise slots + one GTK permission per interface + two gate commands;
-  the terminal bound is tickets + pairwise slots + GTK permissions + gate
-  closing + coalesced configuration confirmations + RX buffers.
-- **Settings.** An interface's receive rules, EDCA, the BSS color, a TBTT
-  plan and monitor reception take effect before the next submission; the
-  latest value of each wins. A receive configuration and a gate's closing
-  end in events (`Configured`, `GateClosed`).
+  pairwise slots + one GTK permission per interface + configure permissions
+  + TSF permissions + two gate commands. The terminal bound is tickets +
+  pairwise slots + GTK permissions + gate closing + configure permissions
+  + TSF permissions; the event queue additionally reserves RX buffers.
+  `PhaseTypes` exposes these bounds. `InterfaceCommandPool` derives both of
+  its contributions from the same constants used to mint its slots.
+- **Interface commands.** `Mint` gives each interface one affine
+  `ConfigurePermission` and one `TsfPermission`, branded by installation,
+  role and pool path. `configure(permission, receive)` enters the FIFO;
+  `Configured` returns the same permission with its opaque context.
+  The station's connection epoch travels in that context, so the service
+  does not match a role against a separate pending-request table. A second
+  configure is impossible until the first terminal returns. Configuration
+  withdraws held attempts of its interface and waits for its published
+  attempts; another interface's publication does not block it.
+  `sample_tsf(permission)` likewise returns its permission in `TsfSampled`.
+  Sampling belongs to the interface whose clock `BeaconTimingPhase` reads.
+  Disable drains these command terminals with their owners.
+- **Settings.** EDCA, BSS color, a TBTT plan, monitor reception and Block Ack
+  desired state take effect before the next submission; the latest value
+  of each wins. They consume no FIFO command credit.
 - **Gate evidence.** The install includes one `GatePool` in its declared pool set.
   Its private `GatePlace` starts inside `GateOpen`
   and retains one `GateIssuer` in the backend. Closing moves that place to

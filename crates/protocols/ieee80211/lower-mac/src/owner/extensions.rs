@@ -467,7 +467,14 @@ pub trait BeaconTimingPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id> {
     /// Ask for a paired reading of the interface's TSF and the port's radio
     /// clock, which [`LowerMacTerminal::TsfSampled`](crate::LowerMacTerminal::TsfSampled)
     /// answers.
-    fn sample_tsf(&mut self);
+    fn sample_tsf(
+        &mut self,
+        permission: crate::TsfPermission<
+            'id,
+            Self::Role,
+            <Self::Role as crate::RoleKeys<'id, Self::Types>>::CommandPath,
+        >,
+    );
 
     /// Set the interface's TSF to `at`.
     fn set_tsf(&mut self, at: TsfInstant);

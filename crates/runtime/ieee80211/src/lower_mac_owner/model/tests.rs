@@ -790,14 +790,22 @@ impl Work for MaxWork<'_> {
             self.air.answer(AirAnswer::NoResponse);
         }
         let settings = self.settings;
+        let mut configure = Some((
+            resources.station_commands.configure,
+            resources.access_point_commands.configure,
+        ));
         submit_all(phase, tickets, small, large, |phase| {
             if settings {
-                // Every setting changes between the submissions, unread.
-                phase.station().configure(StationReceive::Off);
+                // One configuration per interface; tokenless BSS color can
+                // change between every submission without consuming FIFO cells.
+                if let Some((station, access_point)) = configure.take() {
+                    phase.station().configure(station, StationReceive::Off);
+                    phase.access_point().configure(
+                        access_point,
+                        SupportedFilter::new(ReceiveFilter::BSS_MEMBER).unwrap(),
+                    );
+                }
                 phase.station().set_bss_color(BssColor::new(5).unwrap());
-                phase
-                    .access_point()
-                    .configure(SupportedFilter::new(ReceiveFilter::BSS_MEMBER).unwrap());
             }
         });
         if settings {
@@ -881,7 +889,7 @@ fn as_much_work_as_allowed_while_every_setting_changes_loses_no_command() {
     assert_eq!(stream.borrow().completions, MODEL_TICKETS);
     assert_eq!(
         air.commands(),
-        (MODEL_TICKETS + 2 * MODEL_KEY_SLOTS + 2 + 1) as u32
+        (MODEL_TICKETS + 2 * MODEL_KEY_SLOTS + 2 + 1 + 2) as u32
     );
     assert!(air.settings() >= 3);
 }

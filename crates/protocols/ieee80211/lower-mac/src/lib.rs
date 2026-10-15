@@ -131,6 +131,11 @@ pub use owner::{
     InterfaceProtection, MAX_RESERVATION_MICROS, MonitorPhase, MpduStartSpacing, NonEmptyAggregate,
     NonEmptyState, PhaseAggregate, PoolSubframe, SubframeSource, TbttPlan,
 };
+mod interface_commands;
+pub use interface_commands::{
+    ConfigurePermission, Configured, InterfaceCommandPool, InterfacePermissions,
+    SampledTsfPermission, TsfPermission,
+};
 pub use phase::{
     AccessPointPhase, AdmittedAttempt, AggregateCompleted, Attempt, AttemptKey, CheckedPoolSource,
     ClassFrame, ClassSizedFrame, GateClosed, GateIssuer, GateOpen, GatePool, InstalledGroup,

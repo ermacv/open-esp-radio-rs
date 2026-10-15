@@ -18,11 +18,18 @@ use oer_ieee80211_mac::phy::{HeMcs, HtMcs, LegacyRate, PhyRate};
 use oer_radio_port::{Mint, branded};
 use std::vec::Vec;
 
+type TestPools = (
+    ArbiterPool,
+    oer_ieee80211_lower_mac::InterfaceCommandPool<StationRole>,
+);
+type TestGatePath = oer_radio_port::Child<Root, 0>;
+type TestConfigurationPath = oer_radio_port::Child<Root, 1>;
+
 mod repeated_message3;
 mod restart;
 mod sae;
 
-fn installed<R>(body: impl for<'id> FnOnce(Mint<'id, ArbiterPool>) -> R) -> R {
+fn installed<R>(body: impl for<'id> FnOnce(Mint<'id, TestPools>) -> R) -> R {
     let future = core::pin::pin!(branded(async |mint| body(mint)));
     let mut cx = core::task::Context::from_waker(core::task::Waker::noop());
     match core::future::Future::poll(future, &mut cx) {
@@ -99,8 +106,9 @@ struct Tokens<const G: usize = 2>;
 
 impl<const G: usize> StaTokens for Tokens<G> {
     const GROUP_SLOTS: usize = G;
-    type GatePath = oer_radio_port::Root;
+    type GatePath = TestGatePath;
     type EpochPath = oer_radio_port::Root;
+    type ConfigurationPath = TestConfigurationPath;
     type Small = Buffer;
     type Ticket = Ticket;
     type SmallBuffer = Buffer;
@@ -222,8 +230,8 @@ enum Seen {
 /// The loop the thin service runs, with the test as the port.
 struct World<'id, const G: usize = 2> {
     station: Station<'id, Tokens<G>, Caps>,
-    arbiter: Arbiter<'id, Caps, NoReservation>,
-    gate_issuer: GateIssuer<'id>,
+    arbiter: Arbiter<'id, Caps, NoReservation, TestGatePath>,
+    gate_issuer: GateIssuer<'id, TestGatePath>,
     seen: Vec<Seen>,
     completed: Vec<StaCommandTerminal>,
     /// The transmissions in flight, which the port ends in order.
@@ -231,7 +239,9 @@ struct World<'id, const G: usize = 2> {
     /// Let RX run while the current TX still owns its terminal resources.
     hold_transmissions: bool,
     /// The receive configurations the port has yet to confirm.
-    configuring: Option<PendingConfiguration<'id>>,
+    configuring: Option<
+        ConfigurePermission<'id, StationRole, TestConfigurationPath, StaConfigurationContext<'id>>,
+    >,
     /// The configurations wait for the test's confirmation.
     hold_configured: bool,
     hold_key_installs: bool,
@@ -256,12 +266,12 @@ struct World<'id, const G: usize = 2> {
 }
 
 impl<'id> World<'id> {
-    fn new(mint: Mint<'id, ArbiterPool>, skipped_absences: u8) -> Self {
+    fn new(mint: Mint<'id, TestPools>, skipped_absences: u8) -> Self {
         Self::with_security(mint, skipped_absences, StaSecurity::Open)
     }
 
     fn with_security(
-        mint: Mint<'id, ArbiterPool>,
+        mint: Mint<'id, TestPools>,
         skipped_absences: u8,
         security: StaSecurity,
     ) -> Self {
@@ -269,7 +279,7 @@ impl<'id> World<'id> {
     }
 
     fn with_groups<const G: usize>(
-        mint: Mint<'id, ArbiterPool>,
+        mint: Mint<'id, TestPools>,
         skipped_absences: u8,
         security: StaSecurity,
         group_slots: [Slot; G],
@@ -278,7 +288,7 @@ impl<'id> World<'id> {
     }
 
     fn with_pools<const TX: usize, const G: usize>(
-        mint: Mint<'id, ArbiterPool>,
+        mint: Mint<'id, TestPools>,
         skipped_absences: u8,
         security: StaSecurity,
         group_slots: [Slot; G],
@@ -294,7 +304,7 @@ impl<'id> World<'id> {
     }
 
     fn with_builder<const TX: usize, const G: usize>(
-        mint: Mint<'id, ArbiterPool>,
+        mint: Mint<'id, TestPools>,
         skipped_absences: u8,
         group_slots: [Slot; G],
         build: impl FnOnce(
@@ -303,7 +313,7 @@ impl<'id> World<'id> {
         ) -> Station<'id, Tokens<G>, Caps>,
     ) -> World<'id, G> {
         let channels = heapless::Vec::from_slice(&[channel(1), channel(6)]).unwrap();
-        let (gate, gate_issuer, authority) = mint.into_pools();
+        let ((gate, gate_issuer, authority), permissions) = mint.into_pools();
         let (arbiter, place, absence) = Arbiter::new(
             ArbiterPolicy::DEFAULT.checked(Duration::ZERO).unwrap(),
             channel(1),
@@ -327,6 +337,7 @@ impl<'id> World<'id> {
             he_packet_padding: |_| oer_ieee80211_upper_mac::HePacketPadding::None,
         };
         let resources = StationResources {
+            configure: permissions.configure,
             epochs: LinkEpochSource::for_test(0),
             tickets: core::array::from_fn::<_, TX, _>(|index| Ticket(u8::try_from(index).unwrap())),
             buffers: core::array::from_fn::<_, TX, _>(|_| Buffer([0; 512], 512)),
@@ -1136,7 +1147,7 @@ const NULL_POWER_SAVE: u16 = 0x1048;
 
 /// A world whose station is connected to the open network on channel 6,
 /// alone on the port.
-fn connected_world<'id>(mint: Mint<'id, ArbiterPool>) -> World<'id> {
+fn connected_world<'id>(mint: Mint<'id, TestPools>) -> World<'id> {
     let world = World::new(mint, 3);
     connect_open_world(world)
 }
@@ -1688,14 +1699,14 @@ fn a_station_joins_a_wpa2_network_through_the_four_way_handshake() {
 /// A WPA2 world whose station holds `group_slots` group key slots, up to
 /// Message 3 at 33 ms; the PTK of its handshake.
 fn wpa2_associated<'id, const G: usize>(
-    mint: Mint<'id, ArbiterPool>,
+    mint: Mint<'id, TestPools>,
 ) -> (World<'id, G>, oer_ieee80211_rsn::Ptk) {
     wpa2_associated_by::<G>(mint, &wpa2_beacon())
 }
 
 /// [`wpa2_associated`] with the access point's `beacon`.
 fn wpa2_associated_by<'id, const G: usize>(
-    mint: Mint<'id, ArbiterPool>,
+    mint: Mint<'id, TestPools>,
     beacon: &[u8],
 ) -> (World<'id, G>, oer_ieee80211_rsn::Ptk) {
     use oer_ieee80211_mac::security::rsn::Akm;
@@ -1737,14 +1748,14 @@ fn wpa2_associated_by<'id, const G: usize>(
 
 /// The world of [`wpa2_associated`], connected with group key 1.
 fn wpa2_connected<'id, const G: usize>(
-    mint: Mint<'id, ArbiterPool>,
+    mint: Mint<'id, TestPools>,
 ) -> (World<'id, G>, oer_ieee80211_rsn::Ptk) {
     wpa2_connected_by::<G>(mint, &wpa2_beacon())
 }
 
 /// [`wpa2_connected`] with the access point's `beacon`.
 fn wpa2_connected_by<'id, const G: usize>(
-    mint: Mint<'id, ArbiterPool>,
+    mint: Mint<'id, TestPools>,
     beacon: &[u8],
 ) -> (World<'id, G>, oer_ieee80211_rsn::Ptk) {
     use oer_ieee80211_mac::security::rsn::Akm;
@@ -2292,7 +2303,7 @@ fn beacon_from(bssid: [u8; 6], number: u8) -> [u8; 55] {
 /// The network on channel 1, where the access point beside the station
 /// runs, at `beside` dBm and on channel 6 at -56 dBm: the channel the join
 /// goes to, and whether the access point announces a move.
-fn joined_beside<'id>(mint: Mint<'id, ArbiterPool>, beside: i8) -> (u8, bool) {
+fn joined_beside<'id>(mint: Mint<'id, TestPools>, beside: i8) -> (u8, bool) {
     let mut world = World::new(mint, 3);
     access_point_on_1(&mut world);
     world

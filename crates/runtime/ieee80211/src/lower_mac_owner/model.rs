@@ -122,16 +122,17 @@ use oer_time::RadioInstant;
 use oer_ieee80211_lower_mac::{
     AccessPoint, AccessPointPhase, BandSet, BssColor, Ccmp128Key, Channel, CheckedAggregate,
     CheckedPoolSource, CheckedSubframe, CheckedTxSource, CoexPriority, CoexPrioritySet,
-    ConnectionEpochKind, ExecutionPayload, FreshSource, FreshSubframe, GateClosed, GateIssuer,
-    GateOpen, HardwareServices, Ieee80211Capabilities, Ieee80211Radio, InFlight,
-    IndeterminateCause, InterfacePhase, KeyTypes, LinkMetric, LowerMacBackend,
-    LowerMacCapabilities, LowerMacEvent, LowerMacPhase, LowerMacSetup, LowerMacTerminal, MpduKind,
-    MpduLayout, PhaseRate, PhaseTypes, PhyFormatSet, PreparationError, PreparationRefused,
-    PreparedTx, RateSupport, ReceiveFilter, Removed, RemovedKey, RetransmissionPlan, RoleKeys,
-    RxBuffer, RxEvidence, RxMeta, RxMetadata, SignalMetadata, Station, StationPhase,
-    StationReceive, SupportedBlockAck, SupportedChannel, SupportedEdca, SupportedFilter, TxAck,
-    TxBody, TxBufferClass, TxBufferMemory, TxBufferPool, TxCompleted, TxEndStatus, TxFrame, TxMpdu,
-    TxOutcome, TxProtection, TxSource, VifRole, WidthSet, WithdrawCause,
+    ConfigurePermission, Configured, ConnectionEpochKind, ExecutionPayload, FreshSource,
+    FreshSubframe, GateClosed, GateIssuer, GateOpen, HardwareServices, Ieee80211Capabilities,
+    Ieee80211Radio, InFlight, IndeterminateCause, InterfaceCommandPool, InterfacePermissions,
+    InterfacePhase, KeyTypes, LinkMetric, LowerMacBackend, LowerMacCapabilities, LowerMacEvent,
+    LowerMacPhase, LowerMacSetup, LowerMacTerminal, MpduKind, MpduLayout, PhaseRate, PhaseTypes,
+    PhyFormatSet, PreparationError, PreparationRefused, PreparedTx, RateSupport, ReceiveFilter,
+    Removed, RemovedKey, RetransmissionPlan, RoleKeys, RxBuffer, RxEvidence, RxMeta, RxMetadata,
+    SignalMetadata, Station, StationPhase, StationReceive, SupportedBlockAck, SupportedChannel,
+    SupportedEdca, SupportedFilter, TxAck, TxBody, TxBufferClass, TxBufferMemory, TxBufferPool,
+    TxCompleted, TxEndStatus, TxFrame, TxMpdu, TxOutcome, TxProtection, TxSource, VifRole,
+    WidthSet, WithdrawCause,
 };
 use oer_ieee80211_lower_mac::{
     AggregateRefused, AggregateState, AmpduCapabilities, AmpduPhase, AmpduRate, BlockAckReport,
@@ -216,11 +217,22 @@ pub const MODEL_BLOCK_ACK_SLOTS: usize = 2;
 
 /// FIFO commands: each ticket, install/remove for every pairwise slot,
 /// one GTK mutation per interface permission, and close/open of the gate.
-/// Receive agreements and configurations are coalesced settings.
-pub const MODEL_COMMANDS: usize = MODEL_TICKETS + 2 * (2 * MODEL_KEY_SLOTS) + 2 + 2;
+/// Configure and TSF each reserve their own FIFO cell and terminal.
+/// Receive agreements remain coalesced settings.
+pub const MODEL_COMMANDS: usize = MODEL_TICKETS
+    + 2 * (2 * MODEL_KEY_SLOTS)
+    + 2
+    + 2
+    + InterfaceCommandPool::<Station>::COMMAND_CAPACITY
+    + InterfaceCommandPool::<AccessPoint>::COMMAND_CAPACITY;
 /// Reserved terminals: tickets, pairwise removals, the two GTK permissions,
 /// gate closing, two configuration confirmations and the bounded RX owners.
-pub const MODEL_TERMINALS: usize = MODEL_TICKETS + 2 * MODEL_KEY_SLOTS + 2 + 1 + 2;
+pub const MODEL_TERMINALS: usize = MODEL_TICKETS
+    + 2 * MODEL_KEY_SLOTS
+    + 2
+    + 1
+    + InterfaceCommandPool::<Station>::TERMINAL_CAPACITY
+    + InterfaceCommandPool::<AccessPoint>::TERMINAL_CAPACITY;
 /// The event queue additionally reserves the bounded RX owners.
 pub const MODEL_EVENTS: usize = MODEL_TERMINALS + MODEL_RX_EVENTS;
 
@@ -318,7 +330,7 @@ impl ModelRole for Station {
 impl ModelRole for AccessPoint {
     type PairwisePath = ModelPool<7>;
     type GroupPath = ModelPool<8>;
-    type GroupPermissionPath = ModelPool<11>;
+    type GroupPermissionPath = oer_radio_port::Child<ModelPool<11>, 0>;
 }
 
 /// The kind of the pairwise key slots of the role `R`.
@@ -867,7 +879,7 @@ fn ccmp_header(number: u64, key_id: u8) -> [u8; 8] {
 /// };
 /// struct Machine;
 /// struct Contexts;
-/// impl ModelContext for Contexts { type Body = core::convert::Infallible; type Context<'id> = &'id Machine; }
+/// impl ModelContext for Contexts { type Body = core::convert::Infallible; type Context<'id> = &'id Machine; type StationConfigureContext<'id> = (); type AccessPointConfigureContext<'id> = (); }
 /// type Backend = ModelBackend<ModelCaps, Contexts>;
 /// struct Body;
 /// impl PortBody<Backend> for Body {
@@ -895,7 +907,7 @@ fn ccmp_header(number: u64, key_id: u8) -> [u8; 8] {
 /// };
 /// struct Context<'id> { epoch: Option<LinkEpoch<'id>>, owner: Rc<()> }
 /// struct Contexts;
-/// impl ModelContext for Contexts { type Body = core::convert::Infallible; type Context<'id> = Context<'id>; }
+/// impl ModelContext for Contexts { type Body = core::convert::Infallible; type Context<'id> = Context<'id>; type StationConfigureContext<'id> = (); type AccessPointConfigureContext<'id> = (); }
 /// type Backend = ModelBackend<ModelCaps, Contexts>;
 /// struct Body;
 /// impl PortBody<Backend> for Body {
@@ -913,17 +925,28 @@ pub trait ModelContext {
     type Body: TxBody + core::fmt::Debug;
     /// One operation's opaque context in the install `'id`.
     type Context<'id>: 'id;
+    /// Opaque context returned with the configuration permission.
+    type StationConfigureContext<'id>: 'id;
+    /// Opaque context returned with an AP configuration permission.
+    type AccessPointConfigureContext<'id>: 'id;
 }
 
 impl ModelContext for () {
     type Body = ModelBody;
     type Context<'id> = ();
+    type StationConfigureContext<'id> = ();
+    type AccessPointConfigureContext<'id> = ();
 }
 
 /// The types the model's events carry.
 pub struct ModelTypes<X: ModelContext = ()>(PhantomData<fn() -> X>);
 
 impl<'id, X: ModelContext> PhaseTypes<'id> for ModelTypes<X> {
+    const COMMAND_CAPACITY: usize = MODEL_COMMANDS;
+    type StationCommandPath = oer_radio_port::Child<ModelPool<11>, 1>;
+    type AccessPointCommandPath = oer_radio_port::Child<ModelPool<11>, 2>;
+    type StationConfigureContext = X::StationConfigureContext<'id>;
+    type AccessPointConfigureContext = X::AccessPointConfigureContext<'id>;
     const TERMINAL_CAPACITY: usize = MODEL_TERMINALS;
     type EpochPath = ModelPool<4>;
     type GatePath = ModelPool<0>;
@@ -1118,6 +1141,12 @@ pub struct ModelFault;
 
 /// The tokens the install gives the body once.
 pub struct ModelResources<'id> {
+    /// Station command admission from its own installation component.
+    pub station_commands:
+        InterfacePermissions<'id, Station, oer_radio_port::Child<ModelPool<11>, 1>>,
+    /// Access-point command admission from its own installation component.
+    pub access_point_commands:
+        InterfacePermissions<'id, AccessPoint, oer_radio_port::Child<ModelPool<11>, 2>>,
     /// The install's single epoch-source slot; Station constructs its source.
     pub connection_epoch: Slot<'id, ConnectionEpochKind, ModelPool<4>>,
     /// The transmit tickets.
@@ -1140,7 +1169,8 @@ pub struct ModelResources<'id> {
     /// The station's sole GTK mutation permission.
     pub station_group_permission: Slot<'id, ModelGroupPermission<Station>, ModelPool<10>>,
     /// The access point's sole GTK mutation permission.
-    pub access_point_group_permission: Slot<'id, ModelGroupPermission<AccessPoint>, ModelPool<11>>,
+    pub access_point_group_permission:
+        Slot<'id, ModelGroupPermission<AccessPoint>, oer_radio_port::Child<ModelPool<11>, 0>>,
     /// The receive Block Ack slots both roles share.
     pub block_acks: [Slot<'id, ModelBlockAcks, ModelPool<9>>; MODEL_BLOCK_ACK_SLOTS],
     /// The sole authority to construct this installation's arbiter.
@@ -1490,6 +1520,7 @@ struct AnswerShapeMismatch;
 /// The host model boxes its larger single-operation owner so small commands
 /// do not reserve that space; the box moves opaque context without cloning.
 enum Command<'id, X: ModelContext> {
+    Configure(Configured<'id, ModelTypes<X>>),
     Submit(Box<Prepared<'id, X>>),
     SubmitAmpdu(PreparedAggregate<'id, X>),
     InstallKey {
@@ -1561,6 +1592,12 @@ enum Work<'id, X: ModelContext> {
 }
 
 impl<X: ModelContext> Work<'_, X> {
+    fn role(&self) -> VifRole {
+        match self {
+            Self::Single(prepared) => prepared.role,
+            Self::Aggregate(prepared) => prepared.role,
+        }
+    }
     fn key(&self) -> Option<&KeyIdentity> {
         match self {
             Self::Single(prepared) => prepared.key.as_ref(),
@@ -1678,8 +1715,6 @@ struct Prepared<'id, X: ModelContext> {
 /// command; the latest value of each kind wins.
 #[derive(Default)]
 struct Settings {
-    station: bool,
-    access_point: bool,
     other: bool,
     /// Minted slots bound the keys to MODEL_BLOCK_ACK_SLOTS. Repeated writes
     /// replace a slot's pending value instead of occupying command capacity.
@@ -1703,8 +1738,6 @@ pub struct ModelHeld<'id, X: ModelContext = ()> {
     failed_group_terminal: Bounded<LowerMacEvent<'id, ModelTypes<X>>>,
     /// The receive buffers out with the body, queued or held.
     rx_out: Cell<usize>,
-    /// A confirmation of each interface's settings waits in `events`.
-    configured: Cell<[bool; 2]>,
     /// Received frames dropped since the stream last said so.
     lost: Cell<bool>,
     body: RefCell<Option<Waker>>,
@@ -1730,35 +1763,8 @@ impl<'id, X: ModelContext> ModelHeld<'id, X> {
         self.wake_body();
     }
 
-    /// Confirm `role`'s settings, once while a confirmation waits.
-    fn configured(&self, role: VifRole) {
-        let mut waiting = self.configured.get();
-        let [station, access_point] = &mut waiting;
-        let slot = match role {
-            VifRole::Station => station,
-            VifRole::AccessPoint => access_point,
-        };
-        if !*slot {
-            *slot = true;
-            self.configured.set(waiting);
-            self.post(LowerMacEvent::Terminal(LowerMacTerminal::Configured(role)));
-        }
-    }
-
-    /// Release coalescing admission with the individual event, including when
-    /// disable drains it. A later configuration can then produce a new event.
     fn take_event(&self) -> Option<LowerMacEvent<'id, ModelTypes<X>>> {
-        let event = self.events.pop()?;
-        if let LowerMacEvent::Terminal(LowerMacTerminal::Configured(role)) = event {
-            let mut waiting = self.configured.get();
-            let [station, access_point] = &mut waiting;
-            *match role {
-                VifRole::Station => station,
-                VifRole::AccessPoint => access_point,
-            } = false;
-            self.configured.set(waiting);
-        }
-        Some(event)
+        self.events.pop()
     }
 
     fn wake_body(&self) {
@@ -1847,7 +1853,11 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
         oer_radio_port::Slots<ModelGroupKeys<AccessPoint>, MODEL_KEY_SLOTS>,
         oer_radio_port::Slots<ModelBlockAcks, MODEL_BLOCK_ACK_SLOTS>,
         oer_radio_port::Slots<ModelGroupPermission<Station>, 1>,
-        oer_radio_port::Slots<ModelGroupPermission<AccessPoint>, 1>,
+        (
+            oer_radio_port::Slots<ModelGroupPermission<AccessPoint>, 1>,
+            InterfaceCommandPool<Station>,
+            InterfaceCommandPool<AccessPoint>,
+        ),
     );
     type Resources<'id> = ModelResources<'id>;
     type Held<'id> = ModelHeld<'id, X>;
@@ -1946,7 +1956,7 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
             access_point_group,
             block_acks,
             [station_group_permission],
-            [access_point_group_permission],
+            ([access_point_group_permission], station_commands, access_point_commands),
         ) = mint.into_pools();
         let held = ModelHeld {
             air: self.air.clone(),
@@ -1967,13 +1977,14 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
             failed_group: Bounded::new(2, "failed GTK command"),
             failed_group_terminal: Bounded::new(2, "uncertain GTK terminal"),
             rx_out: Cell::new(0),
-            configured: Cell::new([false; 2]),
             lost: Cell::new(false),
             body: RefCell::default(),
             gate_issuer: RefCell::new(gate_issuer),
             draining: Cell::new(false),
         };
         let resources = ModelResources {
+            station_commands,
+            access_point_commands,
             connection_epoch: epoch_slot,
             tickets: tickets.into_iter().collect(),
             terminal_access,
@@ -2126,18 +2137,6 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                     }
                 }
             }
-            if settings.station {
-                held.air
-                    .settings
-                    .set(held.air.settings.get().saturating_add(1));
-                held.configured(VifRole::Station);
-            }
-            if settings.access_point {
-                held.air
-                    .settings
-                    .set(held.air.settings.get().saturating_add(1));
-                held.configured(VifRole::AccessPoint);
-            }
             while let Some(mut buffer) = held.recycled.pop() {
                 buffer.recycled = true;
                 held.rx_out.set(held.rx_out.get().saturating_sub(1));
@@ -2155,6 +2154,31 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                 .commands
                 .set(held.air.commands.get().saturating_add(1));
             match command {
+                Command::Configure(permission) => {
+                    let role = permission.role();
+                    // Preserve each AC's terminal order. Its published head
+                    // completes before queued owners are withdrawn; a retry of
+                    // the old interface configuration cannot pass this barrier.
+                    self.publish_before(held, |candidate| candidate == role);
+                    if self.queues.iter().any(|queue| {
+                        queue
+                            .air
+                            .as_ref()
+                            .is_some_and(|publication| publication.work.role() == role)
+                    }) {
+                        held.commands
+                            .items
+                            .borrow_mut()
+                            .push_front(Command::Configure(permission));
+                        break;
+                    }
+                    held.air
+                        .settings
+                        .set(held.air.settings.get().saturating_add(1));
+                    held.post(LowerMacEvent::Terminal(LowerMacTerminal::Configured(
+                        permission,
+                    )));
+                }
                 Command::Submit(prepared) => {
                     let queue = prepared.queue;
                     queue
@@ -2382,6 +2406,10 @@ impl<'id, X: ModelContext> Driver<'id, X> {
     /// Keep each published head until its result; barriers stop the next
     /// publication, not just admission of new plans.
     fn publish(&mut self, held: &ModelHeld<'id, X>) {
+        self.publish_before(held, |_| false);
+    }
+
+    fn publish_before(&mut self, held: &ModelHeld<'id, X>, reconfigure: impl Fn(VifRole) -> bool) {
         for ((queue, busy), result_held) in self
             .queues
             .iter_mut()
@@ -2400,7 +2428,11 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                         break;
                     }
                     let cause =
-                        withdrawal(held, &self.gate, publication.work.key(), &self.removing);
+                        withdrawal(held, &self.gate, publication.work.key(), &self.removing)
+                            .or_else(|| {
+                                reconfigure(publication.work.role())
+                                    .then_some(WithdrawCause::GateClosed)
+                            });
                     let result = if result_held {
                         AirAnswer::HardwareTimeout
                     } else {
@@ -2415,7 +2447,9 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                 let Some(work) = queue.waiting.pop_front() else {
                     break;
                 };
-                if let Some(cause) = withdrawal(held, &self.gate, work.key(), &self.removing) {
+                if let Some(cause) = withdrawal(held, &self.gate, work.key(), &self.removing)
+                    .or_else(|| reconfigure(work.role()).then_some(WithdrawCause::GateClosed))
+                {
                     withdrawn(held, work, cause);
                 } else if busy {
                     queue.waiting.push_front(work);
@@ -2547,6 +2581,12 @@ fn withdrawal<'id, X: ModelContext>(
     }
 }
 impl<'id, X: ModelContext> Published<'id, X> {
+    fn role(&self) -> VifRole {
+        match self {
+            Self::Single(plan) => plan.prepared.role,
+            Self::Aggregate { prepared, .. } => prepared.role,
+        }
+    }
     fn key(&self) -> Option<&KeyIdentity> {
         match self {
             Self::Single(plan) => plan.prepared.key.as_ref(),
@@ -3694,9 +3734,18 @@ impl<'p, 'v, 'id: 'p, C: Ieee80211Capabilities, X: ModelContext> StationPhase<'p
         });
     }
 
-    fn configure(&mut self, _: StationReceive<C>) {
-        self.held.settings.borrow_mut().station = true;
-        self.held.air.wake_driver();
+    fn configure(
+        &mut self,
+        permission: ConfigurePermission<
+            'id,
+            Station,
+            oer_radio_port::Child<ModelPool<11>, 1>,
+            X::StationConfigureContext<'id>,
+        >,
+        _: StationReceive<C>,
+    ) {
+        self.held
+            .command(Command::Configure(Configured::Station(permission)));
     }
 
     fn set_bss_color(&mut self, _: BssColor) {
@@ -3708,9 +3757,18 @@ impl<'p, 'v, 'id: 'p, C: Ieee80211Capabilities, X: ModelContext> StationPhase<'p
 impl<'p, 'v, 'id: 'p, C: Ieee80211Capabilities, X: ModelContext> AccessPointPhase<'p, 'id>
     for ModelInterface<'p, 'v, 'id, AccessPoint, C, X>
 {
-    fn configure(&mut self, _: SupportedFilter<C, AccessPoint>) {
-        self.held.settings.borrow_mut().access_point = true;
-        self.held.air.wake_driver();
+    fn configure(
+        &mut self,
+        permission: ConfigurePermission<
+            'id,
+            AccessPoint,
+            oer_radio_port::Child<ModelPool<11>, 2>,
+            X::AccessPointConfigureContext<'id>,
+        >,
+        _: SupportedFilter<C, AccessPoint>,
+    ) {
+        self.held
+            .command(Command::Configure(Configured::AccessPoint(permission)));
     }
 }
 

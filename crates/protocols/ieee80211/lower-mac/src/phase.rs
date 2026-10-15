@@ -17,6 +17,8 @@
 //! | a transmit buffer of a class ([`TxBufferClass`]), its memory ([`TxBufferMemory`]) | [`InterfacePhase::submit`], together with its [`ClassFrame`] | [`LowerMacTerminal::TxCompleted`], every buffer of the attempt |
 //! | a key slot of a role's kind | [`InterfacePhase::install_pairwise_key`], [`InterfacePhase::install_group_key`] (the installed key holds it) | [`LowerMacTerminal::KeyRemoved`], after a removal |
 //! | one GTK mutation permission per interface ([`KeyTypes::GroupPermission`]) | install/replace/select/remove GTK | the corresponding FIFO success terminal; uncertainty keeps it for teardown |
+//! | one configure permission per interface ([`crate::ConfigurePermission`]) | `configure(permission, receive)` | [`LowerMacTerminal::Configured`], with the same permission and opaque context |
+//! | one TSF permission per interface ([`crate::TsfPermission`]) | `sample_tsf(permission)` | [`LowerMacTerminal::TsfSampled`], with the same permission |
 //! | a Block Ack slot | [`InterfacePhase::add_block_ack`] (the agreement holds it) | [`InterfacePhase::remove_block_ack`] |
 //! | the open gate ([`GateOpen`]) | [`LowerMacPhase::close_gate`] | [`LowerMacPhase::open_gate`], which takes the closed gate ([`GateClosed`]) that [`LowerMacTerminal::GateClosed`] gave |
 //! | a received frame's buffer | [`LowerMacEvent::Received`] | [`LowerMacPhase::recycle`] |
@@ -35,9 +37,11 @@
 //! with a reserve for its management frames, is the composition's
 //! choice: the tokens are values it hands out.
 //!
-//! A setting that takes no token (an interface's receive configuration,
-//! EDCA, the BSS color, a TBTT plan, monitor reception) takes effect
-//! before the next submission; the latest value of a kind wins.
+//! Settings without a terminal (EDCA, BSS color, TBTT plan, monitor and
+//! Block Ack desired state) take effect before the next submission; the latest
+//! value of a kind wins. Receive configuration and TSF sampling each consume
+//! their interface's unique permission and occupy a FIFO command until their
+//! terminal returns that same permission; neither can replace a prior request.
 //!
 //! An operation that waits for the air or for the attempts in flight (a
 //! gate's closing, an interface's receive configuration, a key's removal)
@@ -57,7 +61,9 @@
 //! mutation permission, and two commands for the gate. Pairwise install and
 //! removal, or gate closing and opening, may wait together; a GTK permission
 //! returns only at its terminal. Thus the command capacity is
-//! `tickets + 2 × pairwise slots + GTK permissions + 2`. Block Ack is per-slot desired state;
+//! `tickets + 2 × pairwise slots + GTK permissions + configure permissions + TSF permissions + 2`.
+//! There is one configure and one TSF permission per
+//! interface, minted by `InterfaceCommandPool`. Block Ack is per-slot desired state;
 //! repeated writes coalesce and never enter the command queue.
 //!
 //! [owner decision]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6130970169
@@ -197,7 +203,7 @@ use oer_ieee80211_port::PortPhase;
 use oer_radio_port::{Poisoned, PoolPath, Root, Slot};
 
 use crate::{
-    Channel, PhyRate, Protection, TbttEvent, VifRole,
+    Channel, PhyRate, Protection, TbttEvent,
     owner::{
         AccessPoint, BssColor, Ccmp128Key, Ieee80211Capabilities, InterfaceRole, PhaseRate,
         Station, StationReceive, SupportedBlockAck, SupportedCoex, SupportedEdca, SupportedFilter,
@@ -344,11 +350,16 @@ pub enum LowerMacTerminal<'id, P: PhaseTypes<'id>> {
     /// The paired TSF reading a
     /// [`BeaconTimingPhase::sample_tsf`](crate::BeaconTimingPhase::sample_tsf)
     /// asked for.
-    TsfSampled(crate::TsfSample),
+    TsfSampled {
+        /// The paired hardware and radio clock reading.
+        sample: crate::TsfSample,
+        /// The request's original interface admission.
+        permission: crate::SampledTsfPermission<'id, P>,
+    },
     /// The transmit gate closed: no attempt is published.
     GateClosed(GateClosed<'id, P::GatePath>),
     /// An interface's receive configuration took effect.
-    Configured(VifRole),
+    Configured(crate::Configured<'id, P>),
     /// A removed key's slot, of its role and kind, once no attempt in
     /// flight uses the key.
     KeyRemoved(Removed<'id, P>),
@@ -473,7 +484,13 @@ pub enum Removed<'id, P: PhaseTypes<'id>> {
 }
 
 /// The keys of a role in the phase types `P`.
-pub trait RoleKeys<'id, P: PhaseTypes<'id>>: InterfaceRole {
+pub trait RoleKeys<'id, P: PhaseTypes<'id>>: InterfaceRole + Sized {
+    /// Installation component of this role's FIFO command permissions.
+    type CommandPath: PoolPath;
+    /// Preserve the request's interface when returning its sampling permission.
+    fn sampled(
+        permission: crate::TsfPermission<'id, Self, Self::CommandPath>,
+    ) -> crate::SampledTsfPermission<'id, P>;
     /// The role's keys.
     type Keys: KeyTypes<'id, Identity = P::KeyIdentity>;
     /// Keys this role may use for TX. Station has only a pairwise key.
@@ -495,6 +512,12 @@ pub trait RoleKeys<'id, P: PhaseTypes<'id>>: InterfaceRole {
 }
 
 impl<'id, P: PhaseTypes<'id>> RoleKeys<'id, P> for Station {
+    type CommandPath = P::StationCommandPath;
+    fn sampled(
+        permission: crate::TsfPermission<'id, Self, Self::CommandPath>,
+    ) -> crate::SampledTsfPermission<'id, P> {
+        crate::SampledTsfPermission::Station(permission)
+    }
     type Keys = P::StationKeys;
     type TxKey<'k>
         = &'k <P::StationKeys as KeyTypes<'id>>::PairwiseKey
@@ -519,6 +542,12 @@ impl<'id, P: PhaseTypes<'id>> RoleKeys<'id, P> for Station {
 }
 
 impl<'id, P: PhaseTypes<'id>> RoleKeys<'id, P> for AccessPoint {
+    type CommandPath = P::AccessPointCommandPath;
+    fn sampled(
+        permission: crate::TsfPermission<'id, Self, Self::CommandPath>,
+    ) -> crate::SampledTsfPermission<'id, P> {
+        crate::SampledTsfPermission::AccessPoint(permission)
+    }
     type Keys = P::AccessPointKeys;
     type TxKey<'k>
         = AttemptKey<
@@ -557,6 +586,16 @@ pub type InterfaceKeys<'p, 'id, I> = <<I as InterfacePhase<'p, 'id>>::Role as Ro
 
 /// The types of one backend's phase that its events carry.
 pub trait PhaseTypes<'id>: Sized {
+    /// Maximum queued commands, derived in const evaluation from the mint's pools.
+    const COMMAND_CAPACITY: usize;
+    /// Pool component owning the station's configure and TSF permissions.
+    type StationCommandPath: PoolPath;
+    /// Pool component owning the access point's configure and TSF permissions.
+    type AccessPointCommandPath: PoolPath;
+    /// Opaque composition context moved with configuration and returned unchanged.
+    type StationConfigureContext: 'id;
+    /// Opaque context of an access-point configuration request.
+    type AccessPointConfigureContext: 'id;
     /// Maximum unconsumed command terminals of the installation's pools.
     /// Includes TX tickets, pairwise removals, GTK permissions, gate and
     /// configuration/TSF requests; excludes unsolicited RX and TBTT events.
@@ -1109,8 +1148,19 @@ pub trait StationPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id, Role = Station> {
 
     /// Set what the station receives once none of its frames is in flight:
     /// a frame the closed gate holds ends as aborted at once, a published
-    /// one is waited for, and [`LowerMacTerminal::Configured`] follows.
-    fn configure(&mut self, receive: StationReceive<Self::Caps>);
+    /// one is waited for, and [`LowerMacTerminal::Configured`] returns the same
+    /// permission and context. The install mints one permission per interface;
+    /// another request cannot exist before its terminal returns that owner.
+    fn configure(
+        &mut self,
+        permission: crate::ConfigurePermission<
+            'id,
+            Station,
+            <Self::Types as PhaseTypes<'id>>::StationCommandPath,
+            <Self::Types as PhaseTypes<'id>>::StationConfigureContext,
+        >,
+        receive: StationReceive<Self::Caps>,
+    );
 
     /// The BSS color of the station's HE BSS.
     fn set_bss_color(&mut self, color: BssColor);
@@ -1121,7 +1171,16 @@ pub trait StationPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id, Role = Station> {
 pub trait AccessPointPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id, Role = AccessPoint> {
     /// Set the access point's receive rules, as
     /// [`StationPhase::configure`].
-    fn configure(&mut self, receive: SupportedFilter<Self::Caps, AccessPoint>);
+    fn configure(
+        &mut self,
+        permission: crate::ConfigurePermission<
+            'id,
+            AccessPoint,
+            <Self::Types as PhaseTypes<'id>>::AccessPointCommandPath,
+            <Self::Types as PhaseTypes<'id>>::AccessPointConfigureContext,
+        >,
+        receive: SupportedFilter<Self::Caps, AccessPoint>,
+    );
 }
 
 /// A class of transmit buffers: memory of one size, which the composition

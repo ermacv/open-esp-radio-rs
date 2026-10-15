@@ -115,6 +115,7 @@ use crate::join::sae::{StaSaeAuthentication, StaSaeEvent, StaSaeFailure, StaSaeT
 use crate::pmksa::{StaPmksa, StaPmksaCache};
 use crate::pool::Pool;
 use crate::request::StationListenInterval;
+use oer_ieee80211_lower_mac::ConfigurePermission;
 use oer_radio_port::{PoolPath, Root};
 mod commands;
 mod deferred_eapol;
@@ -160,6 +161,8 @@ pub trait StaTokens {
     type GatePath: PoolPath;
     /// Component owning this station's connection epoch source.
     type EpochPath: PoolPath;
+    /// Installation component owning this interface's command permissions.
+    type ConfigurationPath: PoolPath;
     /// The checked size class of management frames.
     type Small: oer_ieee80211_lower_mac::TxBufferClass;
     /// A transmit ticket: a place in flight and a place for its terminal.
@@ -248,7 +251,14 @@ pub enum StaInput<'id, T: StaTokens, K> {
     /// A notice of the arbiter.
     Arbiter(StationNotice<'id, K, T::GatePath>),
     /// The receive configuration the station set took effect.
-    Configured(PendingConfiguration<'id, T::EpochPath>),
+    Configured(
+        ConfigurePermission<
+            'id,
+            StationRole,
+            T::ConfigurationPath,
+            StaConfigurationContext<'id, T::EpochPath>,
+        >,
+    ),
     /// The pairwise key the station asked to install, installed.
     PairwiseKeyInstalled {
         /// The original installation action.
@@ -339,7 +349,15 @@ pub enum StaAction<'a, 'id, T: StaTokens, K> {
     Upstream(UpstreamFact<K>),
     /// Set what the station's interface receives ([`StaInput::Configured`]
     /// follows).
-    Configure(StationReceive<K>, PendingConfiguration<'id, T::EpochPath>),
+    Configure(
+        StationReceive<K>,
+        ConfigurePermission<
+            'id,
+            StationRole,
+            T::ConfigurationPath,
+            StaConfigurationContext<'id, T::EpochPath>,
+        >,
+    ),
     /// Install a pairwise key ([`StaInput::PairwiseKeyInstalled`]).
     InstallPairwiseKey {
         /// The response must return this token.
@@ -741,7 +759,7 @@ pub struct Station<'id, T: StaTokens, K: Ieee80211Capabilities> {
     security: StaSecurity,
     state: State<T, K>,
     keys: Keys<T>,
-    configuration: Option<ConfigurationPlace>,
+    configuration: Option<ConfigurePermission<'id, StationRole, T::ConfigurationPath>>,
     tickets: Pool<T::Ticket>,
     buffers: Pool<T::SmallBuffer>,
     /// The station's place for a lease, while it holds none.
@@ -772,7 +790,7 @@ pub struct RetiredStation<'id, T: StaTokens, K: Ieee80211Capabilities> {
     security: StaSecurity,
     epochs: LinkEpochSource<'id, T::EpochPath>,
     keys: Keys<T>,
-    configuration: Option<ConfigurationPlace>,
+    configuration: Option<ConfigurePermission<'id, StationRole, T::ConfigurationPath>>,
     tickets: Pool<T::Ticket>,
     buffers: Pool<T::SmallBuffer>,
     commands: Commands,
@@ -1027,9 +1045,10 @@ pub struct PendingGroupRemoval<'id, Path: PoolPath = Root> {
     installation: core::marker::PhantomData<fn(&'id Path) -> &'id Path>,
 }
 
-/// A receive-configuration response must return this action token. Station
-/// grants only one at a time; returning an old epoch releases its permission
-/// without completing a transition of the current connection.
+/// Opaque connection context carried inside the installation's sole configure
+/// permission. Its terminal returns the context with that same permission;
+/// an old epoch releases admission without completing a transition of the
+/// current connection. No service-side request table correlates this response.
 ///
 /// ```compile_fail,E0308
 /// use oer_ieee80211_sta::machine::{StaInput, StaTokens};
@@ -1038,14 +1057,9 @@ pub struct PendingGroupRemoval<'id, Path: PoolPath = Root> {
 /// }
 /// ```
 #[derive(Debug)]
-#[must_use = "return this token with the receive configuration result"]
-pub struct PendingConfiguration<'id, Path: PoolPath = Root> {
-    place: ConfigurationPlace,
+pub struct StaConfigurationContext<'id, Path: PoolPath = Root> {
     epoch: Option<LinkEpoch<'id, Path>>,
 }
-
-#[derive(Debug)]
-struct ConfigurationPlace;
 
 /// The state of a key cell, independent of the protocol's current state.
 enum KeyCell<Key, Slot> {
@@ -1795,7 +1809,15 @@ enum Owed<'id, T: StaTokens, K> {
     /// The primary lease to give back.
     Release(Lease<'id, K, T::GatePath>),
     Upstream(UpstreamFact<K>),
-    Configure(StationReceive<K>, PendingConfiguration<'id, T::EpochPath>),
+    Configure(
+        StationReceive<K>,
+        ConfigurePermission<
+            'id,
+            StationRole,
+            T::ConfigurationPath,
+            StaConfigurationContext<'id, T::EpochPath>,
+        >,
+    ),
     Transmit(StaTransmit<'id, T, K>),
     /// Under the pairwise key of the connected link.
     TransmitProtected(StaTransmit<'id, T, K>),
@@ -1832,6 +1854,8 @@ pub struct StationResources<
 > {
     /// The installation's only station epoch source.
     pub epochs: LinkEpochSource<'id, T::EpochPath>,
+    /// The interface's only receive-configuration permission, minted by the port.
+    pub configure: ConfigurePermission<'id, StationRole, T::ConfigurationPath>,
     /// Ticket credits, each reserving a terminal.
     pub tickets: [T::Ticket; TICKETS],
     /// Fresh small allocations for protocol frames.
@@ -1978,6 +2002,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         }
         let StationResources {
             epochs,
+            configure,
             tickets,
             buffers,
             place,
@@ -1991,7 +2016,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             security,
             state: State::Idle,
             keys: Keys::new(pairwise, groups, group_permission),
-            configuration: Some(ConfigurationPlace),
+            configuration: Some(configure),
             tickets: Pool::new(tickets),
             buffers: Pool::new(buffers),
             place: Some(place),
@@ -2225,8 +2250,9 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                 }
             }
             StaInput::Tick => Done::Tick,
-            StaInput::Configured(pending) => {
-                self.configuration = Some(pending.place);
+            StaInput::Configured(permission) => {
+                let (permission, pending) = permission.into_parts();
+                self.configuration = Some(permission);
                 if pending.epoch != self.current_epoch() {
                     return;
                 }
@@ -3643,7 +3669,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         };
         Some(Owed::Configure(
             receive,
-            PendingConfiguration { place, epoch },
+            place.with_context(StaConfigurationContext { epoch }),
         ))
     }
 

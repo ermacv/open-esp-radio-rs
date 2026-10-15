@@ -227,3 +227,19 @@ cases = [
     "crates/hardware/esp32s31/driver/ieee80211/tests/ui/key_use_once.rs",
     "crates/hardware/esp32s31/driver/ieee80211/tests/ui/key_use_foreign.rs",
 ]
+
+[[suite]]
+name = "interface-command-permissions"
+packages = ["oer-radio-port", "oer-ieee80211-lower-mac", "oer-ieee80211-mac", "oer-ieee80211-port", "oer-ieee80211-runtime"]
+features = ["oer-ieee80211-runtime/test-support"]
+targets = ["host", "esp32s31"]
+cases = [
+    "crates/protocols/ieee80211/lower-mac/tests/ui/configure_once.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/configure_returned.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/configure_role.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/configure_path.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/command_clone.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/sample_tsf_once.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/sample_tsf_role.rs",
+    "crates/runtime/ieee80211/tests/ui/configure_installation.rs",
+]

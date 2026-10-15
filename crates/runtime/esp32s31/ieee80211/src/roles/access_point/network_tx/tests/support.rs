@@ -82,7 +82,7 @@ pub(super) fn with_authorized_ap_capabilities(
         [2; 6],
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::default(),
-        &mut peers,
+        peers.lend(),
     );
     let ht_ie = oer_ieee80211_mac::ht::ht_capability_ie(
         oer_esp32s31_ieee80211_ap::profile::HT_CAPABILITIES,

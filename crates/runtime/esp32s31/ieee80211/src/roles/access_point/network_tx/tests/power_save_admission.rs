@@ -62,7 +62,7 @@ fn exercise_retention(destination: impl Fn(usize) -> u8) {
         [2; 6],
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::default(),
-        &mut peers,
+        peers.lend(),
     );
     for peer in [[4; 6], [6; 6]] {
         service.authenticate_open(peer, oer_time::Instant::from_micros(0));

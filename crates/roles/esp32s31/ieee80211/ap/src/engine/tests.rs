@@ -85,7 +85,7 @@ fn service(
         ),
         oer_ieee80211_ap::AccessPointClientLimit::new(2).unwrap(),
         oer_ieee80211_ap::AccessPointInactiveTimeout::default(),
-        storage,
+        storage.lend(),
     )
 }
 
@@ -781,7 +781,7 @@ fn open_ht_peer_uses_bounded_qos_amsdu_without_key_or_block_ack_owner() {
         ap,
         oer_ieee80211_ap::AccessPointClientLimit::new(2).unwrap(),
         oer_ieee80211_ap::AccessPointInactiveTimeout::default(),
-        &mut peers,
+        peers.lend(),
     );
     service.authenticate_open(peer, oer_time::Instant::from_micros(1));
     let ht_ie = oer_ieee80211_mac::ht::ht_capability_ie(
@@ -987,7 +987,7 @@ fn a_wpa3_engine_hands_sae_to_the_responder_and_accepts_its_result() {
         oer_ieee80211_rsn::frames::RsnIgtk::new(4, [0; 6], [0x66; 16]).unwrap(),
         oer_ieee80211_ap::AccessPointClientLimit::new(2).unwrap(),
         oer_ieee80211_ap::AccessPointInactiveTimeout::default(),
-        &mut peers,
+        peers.lend(),
     );
     let mut engine = ApEngine::start(
         &mut hardware,

@@ -1,6 +1,7 @@
 const TEST_HT_CAPABILITIES: oer_ieee80211_mac::ht::HtLocalCapabilities =
     oer_ieee80211_mac::ht::HtLocalCapabilities::new(0x100c, 0x03, 0xff, 0x01);
 
+mod storage;
 mod transmit;
 
 use super::*;
@@ -114,7 +115,7 @@ fn service(
         ),
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::default(),
-        storage,
+        storage.lend(),
     )
 }
 
@@ -207,7 +208,7 @@ fn buffered_downlink_identity_cannot_cross_same_address_reassociation() {
         AP,
         AccessPointClientLimit::new(1).unwrap(),
         AccessPointInactiveTimeout::default(),
-        &mut storage,
+        storage.lend(),
     );
     let open_security = ApAssociationSecurityObservation {
         privacy: false,
@@ -284,7 +285,7 @@ fn bound_power_state_matches_general_semantics_and_rejects_slot_reuse() {
         AP,
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::new(10).unwrap(),
-        &mut storage,
+        storage.lend(),
     );
     service.authenticate_open(PEER, oer_time::Instant::from_micros(0));
     service
@@ -362,7 +363,7 @@ fn admitted_data_activity_is_coalesced_but_pm_edges_are_immediate() {
         AP,
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::new(10).unwrap(),
-        &mut storage,
+        storage.lend(),
     );
     service.authenticate_open(PEER, oer_time::Instant::from_micros(0));
     service
@@ -499,7 +500,7 @@ fn associated_activity_refreshes_the_configured_inactivity_frontier() {
         ),
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::new(10).unwrap(),
-        &mut storage,
+        storage.lend(),
     );
     service.authenticate_open(PEER, oer_time::Instant::from_micros(0));
     service
@@ -1042,7 +1043,7 @@ fn all_fifteen_aids_are_stable_and_reused_after_removal() {
         ),
         AccessPointClientLimit::new(15).unwrap(),
         AccessPointInactiveTimeout::default(),
-        &mut storage,
+        storage.lend(),
     );
     for suffix in 1..=15_u8 {
         let peer = [0x02, 0, 0, 0, 1, suffix];
@@ -1413,7 +1414,7 @@ fn bss_protection_follows_associated_erp_ht_and_preamble_membership() {
         AP,
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::default(),
-        &mut storage,
+        storage.lend(),
     );
     let open = ApAssociationSecurityObservation {
         privacy: false,
@@ -1490,7 +1491,7 @@ fn a_station_resuming_a_pmksa_is_refused_by_an_access_point_without_a_cache() {
         ),
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::new(10).unwrap(),
-        &mut storage,
+        storage.lend(),
     );
     assert!(service.matches_association_security(association_security(&WPA2_RSN)));
     let mut resuming = [0_u8; 40];
@@ -1520,7 +1521,7 @@ fn wpa3_service(
         RsnIgtk::new(4, [0; 6], [0x66; 16]).unwrap(),
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::default(),
-        storage,
+        storage.lend(),
     )
 }
 
@@ -1995,7 +1996,7 @@ fn interface_scoped_ap_sends_refusal_for_required_spp_without_admitting_peer() {
             ),
             AccessPointClientLimit::new(2).unwrap(),
             AccessPointInactiveTimeout::default(),
-            &mut storage,
+            storage.lend(),
         );
         let mut rsn = WPA2_RSN;
         rsn[20..22].copy_from_slice(&capability.rsn_bits().to_le_bytes());

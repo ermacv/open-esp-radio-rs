@@ -151,7 +151,7 @@ fn unschedulable_beacon_reports_preparation_failure_without_publication() {
             ),
             oer_ieee80211_ap::AccessPointClientLimit::new(2).unwrap(),
             oer_ieee80211_ap::AccessPointInactiveTimeout::default(),
-            &mut peers,
+            peers.lend(),
         ),
         &mut beacon,
         &mut pairwise,
@@ -203,7 +203,7 @@ fn prepared_beacon_becomes_evidence_only_after_terminal_success() {
             ),
             oer_ieee80211_ap::AccessPointClientLimit::new(2).unwrap(),
             oer_ieee80211_ap::AccessPointInactiveTimeout::default(),
-            &mut peers,
+            peers.lend(),
         ),
         &mut beacon,
         &mut pairwise,
@@ -261,7 +261,7 @@ fn mixed_bss_protects_ordinary_data_with_cts_to_self_at_a_dsss_rate() {
         ap,
         oer_ieee80211_ap::AccessPointClientLimit::new(2).unwrap(),
         oer_ieee80211_ap::AccessPointInactiveTimeout::default(),
-        &mut peers,
+        peers.lend(),
     );
     let open = ApAssociationSecurityObservation {
         privacy: false,

@@ -117,6 +117,10 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   corrupt the new frontier. A new material epoch starts at KeyRSC; keeping
   identical material means keeping the original replay owner.
 
+- AP peer storage is lent as `AccessPointPeers`, which moves into the service
+  and back into its retirement bank without an empty placeholder. Its drop
+  clears peer secrets and the PMKSA cache; the identity generation frontier
+  remains in the caller-placed table and survives a restart.
 - A beacon publication retains `ApBeaconTxContext`, including the exact DTIM
   group prefix from preparation. Only confirmed publication releases that
   prefix. Later queue arrivals and a later TIM phase cannot enlarge it;

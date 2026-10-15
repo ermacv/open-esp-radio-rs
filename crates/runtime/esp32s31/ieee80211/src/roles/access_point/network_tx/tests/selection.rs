@@ -29,7 +29,7 @@ fn ap_selection_leaves_more_than_an_arena_of_other_peer_owners_at_the_source() {
         [2; 6],
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::default(),
-        &mut peers,
+        peers.lend(),
     );
     let mut beacon = [0; AP_BEACON_CAPACITY];
     let mut keys = ApPairwiseKeyStorage::new();

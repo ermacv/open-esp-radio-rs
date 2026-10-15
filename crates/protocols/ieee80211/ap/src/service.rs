@@ -478,6 +478,71 @@ impl AccessPointPeerStorage {
             pmksa: ApPmksaCache::new(),
         }
     }
+
+    /// Lend this complete table to one AP lifecycle. The affine owner clears
+    /// retained peer secrets when returned or dropped; it can move directly
+    /// from a retired service into the next service.
+    ///
+    /// ```compile_fail,E0499
+    /// use oer_ieee80211_ap::AccessPointPeerStorage;
+    /// fn twice(storage: &mut AccessPointPeerStorage) {
+    ///     let first = storage.lend();
+    ///     let second = storage.lend();
+    ///     drop(first);
+    /// }
+    /// ```
+    ///
+    /// ```
+    /// use oer_ieee80211_ap::AccessPointPeerStorage;
+    /// fn sequential(storage: &mut AccessPointPeerStorage) {
+    ///     let first = storage.lend();
+    ///     drop(first);
+    ///     let second = storage.lend();
+    ///     drop(second);
+    /// }
+    /// ```
+    pub fn lend(&mut self) -> AccessPointPeers<'_> {
+        AccessPointPeers { storage: self }
+    }
+
+    fn clear(&mut self) {
+        self.peers.fill_with(|| None);
+        self.message3_management_ipns.fill([0; 6]);
+        self.management_replay
+            .iter_mut()
+            .for_each(|replay| *replay = management::ApManagementReplay::inactive());
+        self.pmksa = ApPmksaCache::new();
+    }
+}
+
+/// Exclusive ownership of a caller-placed AP peer table. It has no empty
+/// state and never copies the large table onto an executor stack.
+///
+/// The service returns this owner by value after clearing secrets. Dropping
+/// an active service clears them through the same guard; hardware key removal
+/// remains the runtime's separate obligation.
+///
+/// ```compile_fail,E0382
+/// use oer_ieee80211_ap::AccessPointPeers;
+/// fn duplicate(peers: AccessPointPeers<'_>) {
+///     let first = peers;
+///     let second = peers;
+/// }
+/// ```
+///
+/// ```
+/// use oer_ieee80211_ap::AccessPointPeers;
+/// fn transfer(peers: AccessPointPeers<'_>) -> AccessPointPeers<'_> { peers }
+/// ```
+#[must_use = "retain the table owner for the service or its restart bank"]
+pub struct AccessPointPeers<'peers> {
+    storage: &'peers mut AccessPointPeerStorage,
+}
+
+impl Drop for AccessPointPeers<'_> {
+    fn drop(&mut self) {
+        self.storage.clear();
+    }
 }
 
 impl Default for AccessPointPeerStorage {
@@ -665,7 +730,7 @@ pub struct AccessPointService<'peers, S: SppScope> {
     address: [u8; 6],
     security: AccessPointSecurityMaterial,
     group_management: Option<oer_ieee80211_rsn::bip::BipTransmitter>,
-    peer_storage: Option<&'peers mut AccessPointPeerStorage>,
+    peer_storage: AccessPointPeers<'peers>,
     client_limit: AccessPointClientLimit,
     inactive_timeout: AccessPointInactiveTimeout,
     next_management_sequence: SequenceNumber,
@@ -696,7 +761,7 @@ impl<'peers, S: SppScope> AccessPointService<'peers, S> {
         gtk: RsnGtk,
         client_limit: AccessPointClientLimit,
         inactive_timeout: AccessPointInactiveTimeout,
-        peer_storage: &'peers mut AccessPointPeerStorage,
+        peer_storage: AccessPointPeers<'peers>,
     ) -> Self {
         Self::with_security(
             address,
@@ -715,7 +780,7 @@ impl<'peers, S: SppScope> AccessPointService<'peers, S> {
         igtk: RsnIgtk,
         client_limit: AccessPointClientLimit,
         inactive_timeout: AccessPointInactiveTimeout,
-        peer_storage: &'peers mut AccessPointPeerStorage,
+        peer_storage: AccessPointPeers<'peers>,
     ) -> Self {
         Self::with_security(
             address,
@@ -730,7 +795,7 @@ impl<'peers, S: SppScope> AccessPointService<'peers, S> {
         address: [u8; 6],
         client_limit: AccessPointClientLimit,
         inactive_timeout: AccessPointInactiveTimeout,
-        peer_storage: &'peers mut AccessPointPeerStorage,
+        peer_storage: AccessPointPeers<'peers>,
     ) -> Self {
         Self::with_security(
             address,
@@ -746,16 +811,11 @@ impl<'peers, S: SppScope> AccessPointService<'peers, S> {
         security: AccessPointSecurityMaterial,
         client_limit: AccessPointClientLimit,
         inactive_timeout: AccessPointInactiveTimeout,
-        peer_storage: &'peers mut AccessPointPeerStorage,
+        peer_storage: AccessPointPeers<'peers>,
     ) -> Self {
-        peer_storage.peers.fill_with(|| None);
-        peer_storage.message3_management_ipns.fill([0; 6]);
-        peer_storage
-            .management_replay
-            .iter_mut()
-            .for_each(|replay| *replay = management::ApManagementReplay::inactive());
-        peer_storage.pmksa = ApPmksaCache::new();
-        peer_storage.generation = peer_storage
+        peer_storage.storage.clear();
+        peer_storage.storage.generation = peer_storage
+            .storage
             .generation
             .checked_add(1)
             .expect("AP peer generation space is not reusable");
@@ -771,7 +831,7 @@ impl<'peers, S: SppScope> AccessPointService<'peers, S> {
             address,
             security,
             group_management,
-            peer_storage: Some(peer_storage),
+            peer_storage,
             client_limit,
             inactive_timeout,
             next_management_sequence: SequenceNumber::ZERO,
@@ -1058,37 +1118,21 @@ impl<'peers, S: SppScope> AccessPointService<'peers, S> {
         self.storage().peers.iter().flatten().count() as u8
     }
 
-    /// End the service epoch, clear every per-peer secret and return the
-    /// caller-owned table for a later AP materialization.
-    pub fn into_peer_storage(mut self) -> &'peers mut AccessPointPeerStorage {
-        let storage = self
-            .peer_storage
-            .take()
-            .expect("an active AP service owns peer storage");
-        storage.peers.fill_with(|| None);
-        storage
+    /// End the service epoch, clear per-peer and PMKSA secrets and return
+    /// the complete table owner for a later AP materialization. The identity
+    /// generation frontier stays with the table across this transition.
+    pub fn into_peer_storage(self) -> AccessPointPeers<'peers> {
+        let peers = self.peer_storage;
+        peers.storage.clear();
+        peers
     }
 
     fn storage(&self) -> &AccessPointPeerStorage {
-        self.peer_storage
-            .as_deref()
-            .expect("an active AP service owns peer storage")
+        self.peer_storage.storage
     }
 
     fn storage_mut(&mut self) -> &mut AccessPointPeerStorage {
-        self.peer_storage
-            .as_deref_mut()
-            .expect("an active AP service owns peer storage")
-    }
-}
-
-impl<S: SppScope> Drop for AccessPointService<'_, S> {
-    fn drop(&mut self) {
-        // Static placement must not retain pairwise protocol/key state into a
-        // later AP epoch. Replacing every entry runs the WPA2/PTK destructors.
-        if let Some(storage) = self.peer_storage.as_deref_mut() {
-            storage.peers.fill_with(|| None);
-        }
+        self.peer_storage.storage
     }
 }
 

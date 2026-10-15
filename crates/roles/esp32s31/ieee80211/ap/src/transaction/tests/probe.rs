@@ -33,7 +33,7 @@ fn exercise_probe_completion(status: u8) {
             ),
             oer_ieee80211_ap::AccessPointClientLimit::new(2).unwrap(),
             oer_ieee80211_ap::AccessPointInactiveTimeout::default(),
-            &mut peers,
+            peers.lend(),
         ),
         &mut beacon,
         &mut pairwise,

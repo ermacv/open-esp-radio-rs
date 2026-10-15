@@ -1,5 +1,9 @@
 #![no_std]
 #![forbid(unsafe_code)]
+#![allow(
+    clippy::type_complexity,
+    reason = "the lower-MAC mutex fields retain the hardware owners' types and the bounded attempt bodies"
+)]
 
 //! Embassy-specific composition for the ESP32-S31 Wi-Fi backend.
 //!

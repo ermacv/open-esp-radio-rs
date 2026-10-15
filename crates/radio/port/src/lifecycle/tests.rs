@@ -112,13 +112,15 @@ struct Setup<'p> {
 impl PortPhase for Phase<'_> {
     type Event = ();
     type Fault = Fault;
-    async fn next_event(&mut self) -> PortResult<(), EventsLost, Fault> {
+    async fn next_event(&mut self) -> Result<Result<(), EventsLost>, EventEnd<Fault>> {
         poll_fn(|_| {
             if self.0.event.replace(false) {
                 self.0.record("event");
                 Poll::Ready(Ok(Ok(())))
             } else if let Some(poisoned) = self.0.poison.borrow().get() {
-                Poll::Ready(Err(poisoned))
+                Poll::Ready(Err(EventEnd::Drained {
+                    cause: poisoned.cause,
+                }))
             } else {
                 Poll::Pending
             }

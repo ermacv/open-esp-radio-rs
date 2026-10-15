@@ -44,9 +44,10 @@
 //! backend's uninstalled hardware and a core that accounted every event,
 //! ready for the Host epoch's retirement. A backend poisoned while serving
 //! ([`Served::Poisoned`]) or while disabling ([`Served::DisableFailed`]) is
-//! drained and uninstalled with its cause. The driver retains its hardware
-//! owners until that uninstall. Only a missed retirement bound fail-stops
-//! the port; `PortEnd` distinguishes that result from abandonment.
+//! drained and uninstalled with its cause when the stream ends `Drained`.
+//! A `Quarantined` stream instead fail-stops at once, without disable or
+//! further draining; `PortEnd` retains its owners and the stop outcome.
+//! A missed retirement bound also fail-stops the port.
 
 #[cfg(test)]
 extern crate std;
@@ -62,8 +63,8 @@ use oer_bluetooth_radio::{
     ClockError, EventsLost, LeRadioBackend, Poisoned, RadioActivity, RequestError,
 };
 use oer_radio_port::{
-    Disabled, Ended, Failed, Installed, Owner, PhaseParts, PortBackend, PortBody, PortEnd,
-    PortPhase, run_port,
+    Disabled, Ended, EventEnd, Failed, Installed, Owner, PhaseParts, PortBackend, PortBody,
+    PortEnd, PortPhase, run_port,
 };
 use oer_time::{Duration, Instant, Timer};
 
@@ -110,7 +111,8 @@ pub enum Served<F> {
         cause: F,
     },
     /// The backend was poisoned before the service stopped serving; it is
-    /// drained and uninstalled with its retained owners.
+    /// drained and uninstalled, or fail-stopped when its event stream reports
+    /// quarantine. The enclosing `PortEnd` retains the corresponding owners.
     Poisoned(F),
     /// The service stopped serving for this exit and disabled and
     /// uninstalled the port, but the backend's driver missed its retire
@@ -124,7 +126,8 @@ pub enum Served<F> {
 /// `uninstall`. Retries after a refusal wait on `timer`.
 ///
 /// Returns `PortEnd` with `Served` as the body's output. A faulted driver
-/// lets the body drain preceding results and uninstall its retained owners.
+/// lets the body drain terminals and uninstall its retained owners. A
+/// quarantined stream instead fail-stops without further backend calls.
 /// Abandonment has no body output; a missed retirement bound fail-stops.
 pub async fn serve<
     B,
@@ -246,19 +249,37 @@ where
             )
             .await
         };
-        if exit.is_err() {
-            // A clock or command can expose poison before the event stream.
-            // Drain all earlier terminals before giving retained owners back.
-            let mut phase = owner.phase();
-            let PhaseParts { events, .. } = B::parts(&mut *phase);
-            loop {
-                match events.next_event().await {
-                    Ok(Ok(event)) => core.outcome(B::view(&event)),
-                    Ok(Err(EventsLost)) => {}
-                    Err(_) => break,
+        let exit = match exit {
+            Ok(exit) => Ok(exit),
+            Err(fault) => {
+                let end = match fault {
+                    ServeFault::Events(end) => end,
+                    ServeFault::Port(poisoned) => {
+                        // Commands can expose poison before its terminals.
+                        let mut phase = owner.phase();
+                        let PhaseParts { events, .. } = B::parts(&mut *phase);
+                        loop {
+                            match events.next_event().await {
+                                Ok(Ok(event)) => core.outcome(B::view(&event)),
+                                Ok(Err(EventsLost)) => {}
+                                Err(EventEnd::Drained { .. }) => {
+                                    break EventEnd::Drained {
+                                        cause: poisoned.cause,
+                                    };
+                                }
+                                Err(end @ EventEnd::Quarantined { .. }) => break end,
+                            }
+                        }
+                    }
+                };
+                match end {
+                    EventEnd::Drained { cause } => Err(cause),
+                    EventEnd::Quarantined { cause } => {
+                        return Ended::fail_stopped(owner.fail_stop(), Served::Poisoned(cause));
+                    }
                 }
             }
-        }
+        };
         let disabled = owner
             .disable(&mut |event| {
                 core.outcome(B::view(&event));
@@ -274,13 +295,22 @@ where
                 };
                 Ended::uninstall(poisoned, uninstall, output)
             }
-            (Err(poison), Ok(owner)) => {
-                Ended::uninstall(owner, uninstall, Served::Poisoned(poison.cause))
-            }
-            (Err(poison), Err(owner)) => {
-                Ended::uninstall(owner, uninstall, Served::Poisoned(poison.cause))
-            }
+            (Err(cause), Ok(owner)) => Ended::uninstall(owner, uninstall, Served::Poisoned(cause)),
+            (Err(cause), Err(owner)) => Ended::uninstall(owner, uninstall, Served::Poisoned(cause)),
         }
+    }
+}
+
+/// Commands expose poison before draining; the event consumer tells the
+/// body whether draining finished or ownership must remain quarantined.
+enum ServeFault<C> {
+    Port(Poisoned<C>),
+    Events(EventEnd<C>),
+}
+
+impl<C> From<Poisoned<C>> for ServeFault<C> {
+    fn from(poisoned: Poisoned<C>) -> Self {
+        Self::Port(poisoned)
     }
 }
 
@@ -309,7 +339,7 @@ async fn serve_until<
     clients: &mut B::Clients<'a, 'id>,
     timer: &T,
     stop: impl Future<Output = ()>,
-) -> Result<ServeExit, Poisoned<B::Fault>>
+) -> Result<ServeExit, ServeFault<B::Fault>>
 where
     B: LeRadioBackend + 'a,
     M: RawMutex,
@@ -346,7 +376,7 @@ where
                     return Ok(ServeExit::EpochExhausted(Exhaustion::Clock));
                 }
                 Ok(Err(error)) => return Ok(ServeExit::Clock(error)),
-                Err(poisoned) => return Err(poisoned),
+                Err(poisoned) => return Err(poisoned.into()),
             };
             let work = match core.next_request(now) {
                 Ok(work) => work,
@@ -358,7 +388,7 @@ where
                 Some(RadioWork::Submit(request)) => {
                     let result = match B::submit(&mut *clients, request).await {
                         Ok(result) => result,
-                        Err(poisoned) => return Err(poisoned),
+                        Err(poisoned) => return Err(poisoned.into()),
                     };
                     core.request_done(result);
                     match result {
@@ -373,7 +403,7 @@ where
                 Some(RadioWork::Cancel(id)) => {
                     let result = match B::cancel(&mut *clients, id).await {
                         Ok(result) => result,
-                        Err(poisoned) => return Err(poisoned),
+                        Err(poisoned) => return Err(poisoned.into()),
                     };
                     core.cancel_done(result);
                     continue;
@@ -444,7 +474,7 @@ where
             // Advertising and scan reports are gone; every event's end and
             // the connection's data still follow.
             Either4::First(Ok(Err(EventsLost))) => {}
-            Either4::First(Err(poisoned)) => return Err(poisoned),
+            Either4::First(Err(end)) => return Err(ServeFault::Events(end)),
             Either4::Second(()) | Either4::Third(()) => {}
             Either4::Fourth(Either::First(())) => return Ok(ServeExit::Stopped),
             Either4::Fourth(Either::Second(())) => retry_at = None,

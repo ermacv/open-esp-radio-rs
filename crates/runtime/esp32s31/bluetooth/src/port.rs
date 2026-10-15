@@ -49,8 +49,9 @@ impl<'r, R, D> BluetoothBackend<'r, R, D> {
 }
 
 /// The event consumer of one running phase.
-pub struct BluetoothEvents<'a, R> {
+pub struct BluetoothEvents<'a, R, F> {
     runtime: &'a R,
+    end: &'a mut Option<oer_radio_port::EventEnd<F>>,
 }
 
 /// The control of one running phase: it publishes the Controller's active
@@ -133,6 +134,7 @@ impl<
                 ITEMS,
                 EVENTS,
             >,
+            BluetoothFault<H::StartError>,
         >,
         BluetoothPhaseControl<
             'a,
@@ -172,7 +174,7 @@ impl<
     where
         Self: 'a,
         'id: 'a;
-    type Local<'id> = ();
+    type Local<'id> = Option<oer_radio_port::EventEnd<Self::Fault>>;
     type State = ();
     type Domain = LeRadio;
     type Fault = BluetoothFault<H::StartError>;
@@ -260,7 +262,7 @@ impl<
         mint.into_pools();
         InstallParts {
             held: (),
-            local: (),
+            local: None,
             resources: (),
         }
     }
@@ -281,7 +283,7 @@ impl<
         &'a mut self,
         _: Call,
         (): &'a (),
-        _: &'a mut Self::Local<'id>,
+        end: &'a mut Self::Local<'id>,
     ) -> Self::Phase<'a, 'id>
     where
         'id: 'a,
@@ -289,6 +291,7 @@ impl<
         PhaseParts {
             events: BluetoothEvents {
                 runtime: self.runtime,
+                end,
             },
             control: BluetoothPhaseControl {
                 runtime: self.runtime,
@@ -444,6 +447,7 @@ impl<
             ITEMS,
             EVENTS,
         >,
+        BluetoothFault<H::StartError>,
     >
     where
         Self: 'a,
@@ -599,14 +603,22 @@ impl<
             ITEMS,
             EVENTS,
         >,
+        BluetoothFault<H::StartError>,
     >
 {
     type Event = BluetoothOutcome;
     type Fault = BluetoothFault<H::StartError>;
 
-    fn next_event(
+    async fn next_event(
         &mut self,
-    ) -> impl Future<Output = PortResult<BluetoothOutcome, EventsLost, Self::Fault>> + '_ {
-        self.runtime.wait_event()
+    ) -> Result<Result<BluetoothOutcome, EventsLost>, oer_radio_port::EventEnd<Self::Fault>> {
+        if let Some(end) = *self.end {
+            return Err(end);
+        }
+        let event = self.runtime.wait_event().await;
+        if let Err(end) = event {
+            *self.end = Some(end);
+        }
+        event
     }
 }

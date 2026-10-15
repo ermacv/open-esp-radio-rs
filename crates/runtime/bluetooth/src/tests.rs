@@ -2,7 +2,7 @@ use core::cell::{Cell, RefCell};
 use std::vec::Vec;
 
 use core::future::{Future, pending};
-use embassy_futures::select::{Either, select};
+use embassy_futures::select::select;
 use embassy_futures::{block_on, join::join};
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel, signal::Signal};
 use oer_bluetooth_controller::{LeController, LeControllerConfig};
@@ -28,8 +28,8 @@ use oer_bluetooth_radio::{
 };
 use oer_radio_port::Mint;
 use oer_radio_port::{
-    Call, Detached, DriverExit, EnableResult, InstallParts, Installed, PhaseParts, PortBackend,
-    PortPhase, Retire, Retired,
+    Call, Detached, DriverExit, EnableResult, EventEnd, InstallParts, Installed, PhaseParts,
+    PortBackend, PortPhase, Retire, Retired,
 };
 
 use oer_time::Duration;
@@ -131,6 +131,8 @@ struct ModelRadio {
     exhausted: Cell<bool>,
     /// Every call reports the backend poisoned.
     poisoned: Cell<bool>,
+    /// An emergency end keeps the queue and admitted owners untouched.
+    quarantined: Cell<bool>,
     /// Raised when the backend becomes poisoned.
     poisoning: Signal<NoopRawMutex, ()>,
     /// `disable` poisons the backend.
@@ -153,6 +155,7 @@ impl ModelRadio {
             lifecycle: RefCell::new(Vec::new()),
             exhausted: Cell::new(false),
             poisoned: Cell::new(false),
+            quarantined: Cell::new(false),
             poisoning: Signal::new(),
             poison_disable: Cell::new(false),
             refuse: RefCell::new(None),
@@ -260,12 +263,21 @@ impl PortPhase for ModelPart<'_> {
     type Event = ModelEvent;
     type Fault = ModelFault;
 
-    async fn next_event(&mut self) -> PortResult<ModelEvent, EventsLost, ModelFault> {
+    async fn next_event(
+        &mut self,
+    ) -> Result<Result<ModelEvent, EventsLost>, oer_radio_port::EventEnd<ModelFault>> {
         let radio = self.0;
-        radio.check()?;
-        let event = match select(radio.outcomes.receive(), radio.poisoning.wait()).await {
-            Either::First(event) => event,
-            Either::Second(()) => return Err(POISONED),
+        let event = loop {
+            if radio.quarantined.get() {
+                return Err(EventEnd::Quarantined { cause: ModelFault });
+            }
+            if let Ok(event) = radio.outcomes.try_receive() {
+                break event;
+            }
+            if radio.poisoned.get() {
+                return Err(EventEnd::Drained { cause: ModelFault });
+            }
+            select(radio.outcomes.ready_to_receive(), radio.poisoning.wait()).await;
         };
         if let Ok(event) = event {
             radio
@@ -442,8 +454,11 @@ impl<'m> PortBackend for ModelBackend<'m> {
 
     fn abandon(&mut self, call: oer_radio_port::Quarantine) -> oer_radio_port::Abandon {
         self.0.lifecycle.borrow_mut().push("abandon");
-
-        oer_radio_port::Abandon::Stopped(call.stopped())
+        if self.0.quarantined.get() {
+            oer_radio_port::Abandon::Unconfirmed(call)
+        } else {
+            oer_radio_port::Abandon::Stopped(call.stopped())
+        }
     }
 }
 
@@ -752,6 +767,73 @@ fn a_port_poisoned_while_serving_drains_before_returning_owners() {
     assert_eq!(*radio.lifecycle.borrow(), ["enable", "detach", "uninstall"]);
     assert!(radio.handed.borrow().is_empty());
     assert_eq!(radio.taken.borrow().len(), 1);
+    assert!(radio.admitted.borrow().is_empty());
+}
+
+#[test]
+fn a_quarantined_stream_keeps_outstanding_work_and_skips_disable() {
+    let mut resources = resources();
+    let LeControllerHciEndpoints { host, controller } = resources.split();
+    let mut core = LeController::<'_, ModelCaps, 12, 1>::new(controller_config(), None);
+    let clock: VirtualClock = VirtualClock::new();
+    let radio = ModelRadio::new();
+    let (end, ()) = block_on(join(
+        serve(
+            radio.backend(),
+            (),
+            &controller,
+            &mut core,
+            &clock,
+            pending(),
+        ),
+        async {
+            advertise(&host, &radio).await;
+            let first = radio.advertised()[0];
+            radio.outcomes.send(Ok(ModelEvent(first))).await;
+            radio.quarantined.set(true);
+            radio.poison();
+        },
+    ));
+    assert!(matches!(
+        end,
+        oer_radio_port::PortEnd::FailStopped {
+            output: Served::Poisoned(ModelFault),
+            outcome: oer_radio_port::Abandon::Unconfirmed(_),
+            ..
+        }
+    ));
+    assert_eq!(*radio.lifecycle.borrow(), ["enable", "abandon", "detach"]);
+    assert_eq!(
+        radio.admitted.borrow().len(),
+        1,
+        "outstanding work stays quarantined"
+    );
+    assert!(radio.taken.borrow().is_empty());
+    assert!(radio.handed.borrow().is_empty());
+    assert_eq!(
+        radio.outcomes.len(),
+        1,
+        "the terminal remains with its owner"
+    );
+}
+
+#[test]
+fn a_body_detects_a_missing_terminal_at_drained_but_not_at_quarantined() {
+    for quarantined in [false, true] {
+        let radio = ModelRadio::new();
+        // Deliberately broken model: an admitted event has no terminal.
+        radio.admitted.borrow_mut().push(EventId::new(17));
+        radio.quarantined.set(quarantined);
+        radio.poison();
+        let mut events = ModelPart(&radio);
+        let end = block_on(events.next_event()).unwrap_err();
+        let missing_terminal = match end {
+            EventEnd::Drained { .. } => !radio.admitted.borrow().is_empty(),
+            EventEnd::Quarantined { .. } => false,
+        };
+        assert_eq!(missing_terminal, !quarantined);
+        assert_eq!(block_on(events.next_event()), Err(end));
+    }
 }
 
 #[test]

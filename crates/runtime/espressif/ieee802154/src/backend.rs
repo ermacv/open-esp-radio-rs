@@ -381,6 +381,7 @@ pub struct RuntimeControl<'a, Rt, K> {
 pub struct RuntimeEvents<'a, 'id, Rt> {
     runtime: &'a Rt,
     held: &'a RuntimeHeld<'id>,
+    end: &'a mut Option<oer_radio_port::EventEnd<RadioFault>>,
 }
 
 /// The runtime's clients: one per configured interface.
@@ -430,6 +431,17 @@ where
     T: Timer,
     R: Ieee802154Random,
 {
+    /// Keep the foreign event and the real admitted owner. This is an
+    /// accounting failure, not a hardware-stop outcome: only `abandon`
+    /// decides whether stopping the installation can be confirmed.
+    fn retain_foreign(&self, event: Ieee802154RadioEvent) {
+        self.events.owed(|owed| {
+            // The sole consumer just took this event, leaving `held` free.
+            owed.held = Some(crate::HeldEvent::AccountingViolation(event));
+        });
+        self.poison(RadioFault::AccountingViolation);
+    }
+
     /// A request identifier of the runtime's own.
     fn mint_id(&self) -> RequestId {
         self.next_id.lock(|next| {
@@ -588,7 +600,7 @@ where
     where
         Self: 'a,
         'id: 'a;
-    type Local<'id> = ();
+    type Local<'id> = Option<oer_radio_port::EventEnd<RadioFault>>;
     type Driver = &'r Rt<'storage, M, H, T, R, EVENTS>;
     type Domain = oer_ieee802154::Ieee802154Radio;
     type Fault = RadioFault;
@@ -647,10 +659,17 @@ where
         // queued terminal goes to the sink, its permit back first.
         runtime.disable_locked();
         while let Some(taken) = runtime.events.take() {
-            if let Ok(event) = taken
-                && let Some(port) = take_terminal(runtime, held, event)
-                && let core::ops::ControlFlow::Break(terminal) = sink(port)
-            {
+            let Ok(event) = taken else { continue };
+            let port = match take_terminal(runtime, held, event) {
+                Ok(Some(port)) => port,
+                Ok(None) => continue,
+                Err(foreign) => {
+                    runtime.retain_foreign(foreign);
+                    held.wake_all();
+                    return ready(runtime.poisoned());
+                }
+            };
+            if let core::ops::ControlFlow::Break(terminal) = sink(port) {
                 // `take` emptied this slot; there is no second consumer
                 // during disable. Remaining entries stay in their queue.
                 runtime.events.owed(|owed| {
@@ -697,7 +716,7 @@ where
         };
         InstallParts {
             held,
-            local: (),
+            local: None,
             resources,
         }
     }
@@ -722,7 +741,7 @@ where
         &'a mut self,
         _: Call,
         held: &'a RuntimeHeld<'id>,
-        _: &'a mut Self::Local<'id>,
+        end: &'a mut Self::Local<'id>,
     ) -> Self::Phase<'a, 'id>
     where
         'id: 'a,
@@ -731,6 +750,7 @@ where
             events: RuntimeEvents {
                 runtime: self.runtime,
                 held,
+                end,
             },
             control: RuntimeControl {
                 runtime: self.runtime,
@@ -826,66 +846,85 @@ where
 /// Take one queued runtime event for the port: give a terminal's permit
 /// back and name its interface; mark an ended window; poison on a fault,
 /// handing out the failed terminal of the operation it ended. `None` for
-/// what the port does not hand out.
+/// what the port does not hand out. An accounting violation returns the
+/// event intact, without releasing the real operation's permit.
+#[allow(
+    clippy::result_large_err,
+    reason = "a foreign event keeps its owned frame without allocation"
+)]
 fn take_terminal<M, H, T, R, const EVENTS: usize>(
     runtime: &Rt<'_, M, H, T, R, EVENTS>,
     held: &RuntimeHeld<'_>,
     event: Ieee802154RadioEvent,
-) -> Option<Ieee802154PortEvent>
+) -> Result<Option<Ieee802154PortEvent>, Ieee802154RadioEvent>
 where
     M: RawMutex,
     H: Ieee802154LowLevel,
     T: Timer,
     R: Ieee802154Random,
 {
-    let complete = |id| match held.permits.complete(id) {
-        Ok(completed) => Some(completed.interface()),
-        Err(_) => {
-            // A terminal must return the exact admitted owner. Keep a
-            // mismatched owner retained and publish the broken sequence.
-            runtime.poison(RadioFault::StateLost);
-            None
-        }
+    let complete = |id| {
+        held.permits
+            .complete(id)
+            .map(|completed| completed.interface())
     };
     let port = match event {
         Ieee802154RadioEvent::Received(frame) => {
-            return Some(Ieee802154PortEvent::Received(frame));
+            return Ok(Some(Ieee802154PortEvent::Received(frame)));
         }
         Ieee802154RadioEvent::TransmitDone {
             id,
             status,
             acknowledgement,
             security,
-        } => Ieee802154PortEvent::TransmitDone {
-            interface: complete(id)?,
-            id,
-            status,
-            acknowledgement,
-            security,
-        },
+        } => {
+            let Ok(interface) = complete(id) else {
+                return Err(Ieee802154RadioEvent::TransmitDone {
+                    id,
+                    status,
+                    acknowledgement,
+                    security,
+                });
+            };
+            Ieee802154PortEvent::TransmitDone {
+                interface,
+                id,
+                status,
+                acknowledgement,
+                security,
+            }
+        }
         Ieee802154RadioEvent::EnergyScanDone { id, energy_dbm } => {
+            let Ok(interface) = complete(id) else {
+                return Err(Ieee802154RadioEvent::EnergyScanDone { id, energy_dbm });
+            };
             Ieee802154PortEvent::EnergyScanDone {
-                interface: complete(id)?,
+                interface,
                 id,
                 energy_dbm,
             }
         }
-        Ieee802154RadioEvent::EnergyScanFailed { id } => Ieee802154PortEvent::EnergyScanFailed {
-            interface: complete(id)?,
-            id,
-        },
+        Ieee802154RadioEvent::EnergyScanFailed { id } => {
+            let Ok(interface) = complete(id) else {
+                return Err(Ieee802154RadioEvent::EnergyScanFailed { id });
+            };
+            Ieee802154PortEvent::EnergyScanFailed { interface, id }
+        }
         Ieee802154RadioEvent::ClearChannelAssessmentDone { id, idle } => {
+            let Ok(interface) = complete(id) else {
+                return Err(Ieee802154RadioEvent::ClearChannelAssessmentDone { id, idle });
+            };
             Ieee802154PortEvent::ClearChannelAssessmentDone {
-                interface: complete(id)?,
+                interface,
                 id,
                 idle,
             }
         }
         Ieee802154RadioEvent::ClearChannelAssessmentFailed { id } => {
-            Ieee802154PortEvent::ClearChannelAssessmentFailed {
-                interface: complete(id)?,
-                id,
-            }
+            let Ok(interface) = complete(id) else {
+                return Err(Ieee802154RadioEvent::ClearChannelAssessmentFailed { id });
+            };
+            Ieee802154PortEvent::ClearChannelAssessmentFailed { interface, id }
         }
         Ieee802154RadioEvent::ScheduledReceiveDone { id } => {
             let mut ended = false;
@@ -900,16 +939,32 @@ where
                 held.wake_all();
                 runtime.rest(held);
             }
-            return None;
+            return Ok(None);
         }
         Ieee802154RadioEvent::Fault { id, fault } => {
+            let Some(id) = id else {
+                if held.permits.in_flight().is_some() {
+                    return Err(Ieee802154RadioEvent::Fault { id: None, fault });
+                }
+                runtime.poison(fault);
+                return Ok(None);
+            };
+            let Some(kind) = held.kind.get() else {
+                return Err(Ieee802154RadioEvent::Fault {
+                    id: Some(id),
+                    fault,
+                });
+            };
+            let Ok(interface) = complete(id) else {
+                return Err(Ieee802154RadioEvent::Fault {
+                    id: Some(id),
+                    fault,
+                });
+            };
             runtime.poison(fault);
-            let id = id?;
-            let kind = held.kind.get()?;
-            let interface = complete(id)?;
             held.kind.set(None);
             held.wake_all();
-            return Some(match kind {
+            return Ok(Some(match kind {
                 OperationKind::Transmit => Ieee802154PortEvent::TransmitDone {
                     interface,
                     id,
@@ -923,15 +978,15 @@ where
                 OperationKind::Cca => {
                     Ieee802154PortEvent::ClearChannelAssessmentFailed { interface, id }
                 }
-            });
+            }));
         }
-        Ieee802154RadioEvent::Lifecycle(_) => return None,
+        Ieee802154RadioEvent::Lifecycle(_) => return Ok(None),
     };
     held.kind.set(None);
     // A wish made while the operation ran takes effect now.
     held.applied.set(None);
     runtime.rest(held);
-    Some(port)
+    Ok(Some(port))
 }
 
 impl<M, H, T, R, const EVENTS: usize> PortPhase
@@ -945,25 +1000,54 @@ where
     type Event = Ieee802154PortEvent;
     type Fault = RadioFault;
 
-    async fn next_event(&mut self) -> PortResult<Ieee802154PortEvent, EventsLost, RadioFault> {
-        loop {
+    async fn next_event(
+        &mut self,
+    ) -> Result<Result<Ieee802154PortEvent, EventsLost>, oer_radio_port::EventEnd<RadioFault>> {
+        if let Some(end) = *self.end {
+            return Err(end);
+        }
+        let end = loop {
+            // Abandonment may race an entered ISR. Do not take even the
+            // event queue's mutex on this path; its owners stay in PortEnd.
+            if self
+                .runtime
+                .abandoned
+                .load(core::sync::atomic::Ordering::Acquire)
+            {
+                break oer_radio_port::EventEnd::Quarantined {
+                    cause: RadioFault::StateLost,
+                };
+            }
             match self.runtime.events.take() {
                 Some(Err(EventsLost)) => return Ok(Err(EventsLost)),
-                Some(Ok(event)) => {
-                    if let Some(port) = take_terminal(self.runtime, self.held, event) {
-                        return Ok(Ok(port));
+                Some(Ok(event)) => match take_terminal(self.runtime, self.held, event) {
+                    Ok(Some(port)) => return Ok(Ok(port)),
+                    Ok(None) => continue,
+                    Err(foreign) => {
+                        self.runtime.retain_foreign(foreign);
+                        self.held.wake_all();
+                        break oer_radio_port::EventEnd::Quarantined {
+                            cause: RadioFault::AccountingViolation,
+                        };
                     }
-                    continue;
-                }
+                },
                 None => {}
             }
-            self.runtime.poisoned()?;
+            if self.held.permits.in_flight().is_none()
+                && let Err(poisoned) = self.runtime.poisoned()
+            {
+                break oer_radio_port::EventEnd::Drained {
+                    cause: poisoned.cause,
+                };
+            }
             select(
                 self.runtime.events.entries.ready_to_receive(),
                 self.runtime.events.changed.wait(),
             )
             .await;
-        }
+        };
+        *self.end = Some(end);
+        Err(end)
     }
 }
 

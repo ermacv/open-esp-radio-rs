@@ -53,6 +53,10 @@ use oer_radio_port::CancelError;
 /// Layer promises the peer reliable delivery of what the hardware
 /// acknowledged) when it admits them, so they are never lost;
 /// [`EventsLost`] stands for advertising and scan reports only.
+/// The stream ends with [`oer_radio_port::EventEnd`]: `Drained` promises
+/// every admitted terminal was issued; `Quarantined` leaves unfinished
+/// ownership in `PortEnd`. Every subsequent call repeats that end. Commands
+/// and clock calls retain their `PortResult` poisoning shape.
 ///
 /// Submission and the clock are asynchronous because a backend may have to
 /// wait for hardware to admit a request: the ESP32-S31 takes a fresh
@@ -199,7 +203,9 @@ impl PortPhase for NoRadioPart {
 
     fn next_event(
         &mut self,
-    ) -> impl Future<Output = PortResult<Infallible, EventsLost, Infallible>> + '_ {
+    ) -> impl Future<
+        Output = Result<Result<Infallible, EventsLost>, oer_radio_port::EventEnd<Infallible>>,
+    > + '_ {
         pending()
     }
 }

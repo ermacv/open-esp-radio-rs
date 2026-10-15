@@ -11,7 +11,8 @@ contract now lives here. Wi-Fi keeps its own lifecycle until integration.
 | --- | --- |
 | `Installed`, `InstallParts`, `PortBackend`, `PortBody`, `Owner`, `Ended`, `DriverLoan`, `DriverExit`, `Retired`, `Detached`, `Quarantined` | One installed backend and independent driver, a borrowing typestate owner, and affine proofs of driver completion and detachment |
 | `branded`, `Mint`, `PoolSet`, `PoolPath`, `PermitSupply`, `Slots`, `Permits`, `Slot`, `Permit`, `PermitPool`, `Seat`, `Line` | Capacity as branded tokens. `branded` runs an install with the `Mint` of a fresh brand `'id`, generic over it, so nothing branded leaves the install or reaches another; `Mint::into_pools(self)` consumes its authority and issues the complete layout declared by the backend's `Pools` associated type. `Slots<K, N>` supplies synchronous slots; `Permits<K, N, S>` supplies awaited permits, their line and caller seats. Custom layouts consume one `PoolBuilder<'id, Path>` to expand their components. Each tuple derives a sealed `Child<Path, INDEX>` for each member; every slot, permit, seat and line retains that identity, including repeated kinds in nested layouts. A FIFO consumes the indivisible `PermitSupply` once, so subsets cannot form interchangeable FIFOs. Neither authority can issue a second set; no token is `Clone`, `Copy` or `Default` |
-| `PortResult`, `Poisoned` | Every port call returns `Result<Result<T, Refusal>, Poisoned<Fault>>`. The inner `Err` is a typed refusal (nothing changed); the outer one is only a poisoned backend, carrying the backend's cause, which portable code passes on without interpreting it. `next_event` returns it after every earlier event and again at every later call |
+| `PortResult`, `Poisoned` | Commands and clock calls return `Result<Result<T, Refusal>, Poisoned<Fault>>`. The inner `Err` is a typed refusal (nothing changed); the outer one carries the backend's cause, which portable code passes on without interpreting it |
+| `EventEnd<Fault>` | `next_event` alone returns `Result<Result<Event, EventsLost>, EventEnd<Fault>>`. `Drained { cause }` promises that every terminal of admitted work was delivered. A missing terminal violates the contract and can be detected by the body. `Quarantined { cause }` leaves undelivered owners in the `Quarantined` of `PortEnd`. The end contains only its cause, no owners or affine proofs, and every subsequent call returns the same variant and cause |
 | `EventsLost` | Events were dropped. Reported once, in place of the first dropped event; events before it precede the gap and events after it follow it. A backend reserves at admission the slot of every terminal event and of data its protocol promises to deliver (acknowledged Bluetooth LE connection data), so the gap holds only data the protocol does not promise (received frames, advertising reports) and the consumer continues |
 | `ClockInfo<D>`, `ClockRelation<A, B>`, `RelationRate`, `RelationSample<A, B>`, `Generation<A, B>`, `GenerationSource<A, B>`, `Stamp<A, B>`, `Projected<T, S>`, `ProjectionError` | One relation between two clock domains, typed by its source `A` and target `B`: identical, or affine within a drift bound. A `RelationSample` pairs one reading of each clock with its uncertainty (a target span) and its generation; `project`, `project_back` and `project_span` are the one projection both ways, returning the value and an uncertainty that adds the drift over the distance from the sample, as a span of the target domain. A coordinate of another generation is `StaleSample`, a result outside the range `OutOfRange`. A generation has no public constructor: the relation owner's `GenerationSource` opens an epoch and jumps at each break. `ClockInfo<D>` states a port's resolution and its relation to monotonic time (`monotonic`, `None` when none exists); `RadioStamp<D>` and `ClockSample<D>` are the radio-to-monotonic `Stamp` and `RelationSample` |
 
@@ -60,6 +61,16 @@ has no installation lifetime: branded queues,
 `InstallParts<'id, B>` separates held queues, body-local accounting and the
 resources delivered to the body. The single mint still consumes the whole
 capacity layout once.
+
+An ordinary fault or `Abandon::Stopped` ends its event stream with `Drained`
+after all admitted terminals are delivered. `Abandon::Unconfirmed` ends with
+`Quarantined` immediately, before waiting or acquiring the ISR's mutex. The
+body then fail-stops without further draining or ordinary disable; `PortEnd`
+retains the owners. BLE and IEEE 802.15.4 keep the final end in their local
+installation state so a new phase loan cannot reopen the stream.
+An accounting violation also ends delivery with `Quarantined`, preserving
+the real admitted owners. It does not decide the hardware outcome: the
+subsequent abandonment can still return `Stopped`.
 
 Enable and disable are consuming, bounded transitions. Both `enable` and
 `setup` receive `&Held<'id>` and `&mut Local<'id>`, as do phase and disable;
@@ -163,10 +174,15 @@ the future stays at 432 bytes. This measures the same always-accepting body
 and both concrete backends, including their rejection handling. The extra
 text is principally the two body state machines (424 → 630 bytes each),
 which now handle the sink's returned terminal and poisoning path.
+Changing only the event end to `EventEnd` leaves this same ELF at 6844 bytes
+of text and 432 bytes per future (delta 0/0 against the fallible-sink version).
+The fixture does not poll its event stream, so this measures lifecycle cost,
+not event-dispatch or total BLE firmware cost. Each migrated backend also
+keeps `Option<EventEnd<Fault>>` in `Local`; its size depends on the fault type.
 
 | Checks | Code size | RAM and CPU | Signatures | Breakage | Alternatives | Reversal |
 | --- | --- | --- | --- | --- | --- | --- |
-| Typestate and opaque affine call/retire/poison/detach proofs are compile-time checks. Hardware refusal, poisoning and bounded waits remain runtime outcomes; lifecycle code has no explicit panic. | Test ELF `.text`: 2282 → 6844 bytes. Backend/body futures remain concrete monomorphizations; retirement and signal machinery add code. | No allocation. The measured RV32 future grows from 184 to 432 bytes per backend (+248). Three atomic waiter slots per installation: retirement, driver abandonment and core abandonment. Wake registration uses atomic synchronization; consuming proof and call tokens are zero-sized. Hot radio operations acquire no new lifecycle lock. | `Installed<B>`, `InstallParts<'id, B>`, static `drive(DriverLoan, held, retire)`, `DriverExit`, `Call`, `Quarantine`/`Abandon`/`HardwareStopped`/`Detach`, `Retired<'id, (Driver, State)>`, `Detached<'id>`, `Quarantined<S>`, `PortEnd<B, Out>`, `disable` sink returning `ControlFlow<Terminal>`; owner borrows `&mut B`, `Ended<'id, B, Out>` has no borrow lifetime. | Both migrated blocks consume `Installed`, borrow one phase, and retain terminals rejected by disable. Always-accepting sinks return `Continue(())`. Wi-Fi adopts the same core after coordinated integration; its current code is unchanged. | Keeping two identical owners duplicates fixes. Moving `B` into its owner loses the core's asynchronous abandonment authority. A receiver-based `drive` needs an empty driver slot. Flag-only retirement loses wakes. | Rework signal/future representation if the added code or installation RAM exceeds the target image budget; preserve proofs, wakes and asynchronous teardown. Re-measure this ELF and the affected firmware before accepting that rework. |
+| Typestate and opaque affine call/retire/poison/detach proofs are compile-time checks. Hardware refusal, poisoning and bounded waits remain runtime outcomes; lifecycle code has no explicit panic. | Test ELF `.text`: 2282 → 6844 bytes. Backend/body futures remain concrete monomorphizations; retirement and signal machinery add code. | No allocation. The measured RV32 future grows from 184 to 432 bytes per backend (+248). Three atomic waiter slots per installation: retirement, driver abandonment and core abandonment. Wake registration uses atomic synchronization; consuming proof and call tokens are zero-sized. Hot radio operations acquire no new lifecycle lock. | `Installed<B>`, `InstallParts<'id, B>`, static `drive(DriverLoan, held, retire)`, `DriverExit`, `Call`, `Quarantine`/`Abandon`/`HardwareStopped`/`Detach`, `Retired<'id, (Driver, State)>`, `Detached<'id>`, `Quarantined<S>`, `PortEnd<B, Out>`, `disable` sink returning `ControlFlow<Terminal>`, `EventEnd<Fault>` for `next_event`; owner borrows `&mut B`, `Ended<'id, B, Out>` has no borrow lifetime. | Both migrated blocks consume `Installed`, borrow one phase, and retain terminals rejected by disable. Always-accepting sinks return `Continue(())`. Wi-Fi adopts the same core after coordinated integration; its current code is unchanged. | Keeping two identical owners duplicates fixes. Moving `B` into its owner loses the core's asynchronous abandonment authority. A receiver-based `drive` needs an empty driver slot. Flag-only retirement loses wakes. | Rework signal/future representation if the added code or installation RAM exceeds the target image budget; preserve proofs, wakes and asynchronous teardown. Re-measure this ELF and the affected firmware before accepting that rework. |
 
 Most code is the concrete async state machines: the linked ELF attributes
 2256 bytes to each backend's polling entry, 630 bytes to each body future,
@@ -198,6 +214,13 @@ Backend calls take the core's affine `Call`; `enable` and `setup` also take
 held/local installation loans. Uninstall consumes `Retired` and `Detached`. `retire_bound` returns a future without a backend borrow.
 The disable sink uses the same `ControlFlow<Terminal>` rejection shape as
 the Wi-Fi port: consumers that accept every terminal return `Continue(())`.
+Only `next_event` changes its outer error to `EventEnd<Fault>`; other methods
+keep `PortResult`. The event consumer must remember its final variant and
+cause across phase loans. StationService accounts every admitted terminal
+before accepting `Drained`; a remaining identity signals a contract violation.
+On `Quarantined` it leaves unfinished work with the core's quarantine and
+fail-stops without further draining or disable. No event-end proof or owner
+is transferred in the error itself.
 `abandon` immediately quarantines and returns a proved `Stopped` or an
 `Unconfirmed` outcome; final `detach` follows the body's return and borrows
 that outcome through its own single-use call authority. Unconfirmed hardware requires chip reset and permanent backing

@@ -29,8 +29,14 @@
 //! place of the first dropped frame.
 //!
 //! A radio fault poisons the port: the events consumer hands out the
-//! failed operation's terminal and the events before it, then `Poisoned`
-//! at every later call.
+//! failed operation's terminal and the events before it, then
+//! `EventEnd::Drained` at every later call. An unconfirmed abandonment
+//! instead ends `Quarantined` before any event-queue or ISR mutex; unread
+//! owners stay in `PortEnd`. Commands still return `Poisoned`.
+//! A foreign terminal ends delivery with `Quarantined` and
+//! [`RadioFault::AccountingViolation`], retaining that terminal, the
+//! remaining queue and the real operation permit. This does not publish
+//! an abandonment outcome; the core subsequently attempts to stop hardware.
 //!
 //! Shared-PHY tracking runs with the MAC receiving, as ESP-IDF's
 //! `phy_common.c` does: the runtime never pauses for it, and an operation
@@ -298,6 +304,8 @@ struct Owed {
 
 enum HeldEvent {
     AfterLoss(Ieee802154RadioEvent),
+    /// A foreign terminal stops delivery without releasing the real permit.
+    AccountingViolation(Ieee802154RadioEvent),
     /// Kept with the poisoned runtime until chip reset, never re-delivered.
     Rejected {
         terminal: Ieee802154PortEvent,
@@ -414,6 +422,10 @@ impl<M: RawMutex, const EVENTS: usize> EventQueue<M, EVENTS> {
                 Some(HeldEvent::AfterLoss(event)) => return Some(Ok(event)),
                 Some(HeldEvent::Rejected { terminal }) => {
                     owed.held = Some(HeldEvent::Rejected { terminal });
+                    return None;
+                }
+                Some(HeldEvent::AccountingViolation(event)) => {
+                    owed.held = Some(HeldEvent::AccountingViolation(event));
                     return None;
                 }
                 None => (),
@@ -671,10 +683,12 @@ impl<
             // hardware installed; no quarantine path may take that lock.
             return Uninstalled::Quarantined(oer_radio_port::Quarantined::new(self));
         }
-        if self
-            .events
-            .owed(|owed| matches!(owed.held, Some(HeldEvent::Rejected { .. })))
-        {
+        if self.events.owed(|owed| {
+            matches!(
+                owed.held,
+                Some(HeldEvent::Rejected { .. } | HeldEvent::AccountingViolation(_))
+            )
+        }) {
             // Delivery stopped at this terminal. Preserve it and the whole
             // remaining queue with the hardware owners; teardown must not
             // clear the queue or return reusable backing.

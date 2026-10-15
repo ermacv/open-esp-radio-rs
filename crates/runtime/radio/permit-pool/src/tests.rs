@@ -40,7 +40,10 @@ impl PortPhase for NoEvents {
     type Event = ();
     type Fault = Fault;
 
-    fn next_event(&mut self) -> impl Future<Output = PortResult<(), EventsLost, Fault>> + '_ {
+    fn next_event(
+        &mut self,
+    ) -> impl Future<Output = Result<Result<(), EventsLost>, oer_radio_port::EventEnd<Fault>>> + '_
+    {
         pending()
     }
 }

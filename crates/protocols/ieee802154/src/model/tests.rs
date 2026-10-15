@@ -62,6 +62,76 @@ fn run<B: PortBody<OwnedModel>>(body: B) -> ModelHandle {
 }
 
 #[test]
+fn accounting_quarantine_does_not_prevent_a_confirmed_hardware_stop() {
+    struct Body(ModelHandle);
+    impl PortBody<OwnedModel> for Body {
+        type Output = ();
+
+        async fn run<'p, 'id>(
+            self,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
+            resources: ModelResources<'id>,
+        ) -> Ended<'id, OwnedModel, ()> {
+            let [mut seat, _] = resources.operation;
+            let configured = owner.setup().configure(resources.interface0.interface);
+            let mut owner = owner.enable().await.unwrap_or_else(|_| panic!("enabled"));
+            let end = oer_radio_port::EventEnd::Quarantined { cause: ModelFault };
+            {
+                let mut phase = owner.phase();
+                let parts = &mut *phase;
+                let client = parts.clients.client(&configured);
+                let permit = ready(client.operation(&mut seat));
+                let token = client.transmit(permit, transmission(&DATA)).unwrap();
+                self.0
+                    .0
+                    .borrow_mut()
+                    .events
+                    .push_back(ModelEvent::TransmitDone(
+                        Interface::new(0),
+                        RequestId::new(u32::MAX),
+                        TxStatus::Success,
+                    ));
+                assert!(self.0.complete_transmit(token.id(), TxStatus::Success));
+                for _ in 0..2 {
+                    assert!(
+                        matches!(ready(parts.events.next_event()), Err(actual) if actual == end)
+                    );
+                }
+                assert_eq!(
+                    parts.events.held.permits.in_flight(),
+                    Some((Interface::new(0), token.id()))
+                );
+                assert!(poll_once(pin!(client.operation(&mut seat))).is_pending());
+                assert_eq!(self.0.0.borrow().events.len(), 2);
+                assert!(!self.0.abandoned());
+            }
+            assert!(matches!(ready(owner.phase().next_event()), Err(actual) if actual == end));
+            let stopped = owner.fail_stop();
+            assert!(matches!(
+                stopped.outcome(),
+                oer_radio_port::Abandon::Stopped(_)
+            ));
+            Ended::fail_stopped(stopped, ())
+        }
+    }
+
+    let (installed, handle) = OwnedModel::new();
+    let end = ready(run_port(installed, Body(handle.clone())));
+    assert!(matches!(
+        end,
+        oer_radio_port::PortEnd::FailStopped {
+            outcome: oer_radio_port::Abandon::Stopped(_),
+            ..
+        }
+    ));
+    let owners = Rc::strong_count(&handle.0);
+    assert!(owners > 1, "the core retains the model's owner");
+    drop(end);
+    assert_eq!(Rc::strong_count(&handle.0), owners);
+    assert_eq!(handle.0.borrow().events.len(), 2);
+}
+
+#[test]
 fn the_operation_permit_comes_back_before_its_terminal_is_handed_out() {
     struct Body;
     impl PortBody<OwnedModel> for Body {
@@ -487,13 +557,13 @@ fn a_radio_fault_ends_admitted_work_first_then_poisons() {
                 ));
                 assert!(matches!(
                     ready(events.next_event()),
-                    Err(Poisoned { cause: ModelFault })
+                    Err(oer_radio_port::EventEnd::Drained { cause: ModelFault })
                 ));
                 // Nothing follows the poison, a reception included.
                 assert!(!parts_handle().receive(channel(15), Interface::new(0), &DATA, -40));
                 assert!(matches!(
                     ready(events.next_event()),
-                    Err(Poisoned { cause: ModelFault })
+                    Err(oer_radio_port::EventEnd::Drained { cause: ModelFault })
                 ));
                 // The permit came back with the terminal; a submission is
                 // poisoned and gives it back again.
@@ -829,7 +899,8 @@ impl PortPhase for NoEvents {
 
     fn next_event(
         &mut self,
-    ) -> impl Future<Output = oer_radio_port::PortResult<(), EventsLost, ModelFault>> + '_ {
+    ) -> impl Future<Output = Result<Result<(), EventsLost>, oer_radio_port::EventEnd<ModelFault>>> + '_
+    {
         core::future::pending()
     }
 }

@@ -549,10 +549,9 @@ impl Fixture {
     fn wait_event(
         &self,
     ) -> impl Future<
-        Output = oer_bluetooth_radio::PortResult<
-            BluetoothOutcome,
-            oer_bluetooth_radio::EventsLost,
-            BluetoothFault<()>,
+        Output = Result<
+            Result<BluetoothOutcome, oer_bluetooth_radio::EventsLost>,
+            oer_radio_port::EventEnd<BluetoothFault<()>>,
         >,
     > + '_ {
         self.runtime.wait_event()
@@ -924,7 +923,7 @@ fn rejecting_first_or_middle_disable_outcome_preserves_it_and_its_successors() {
         assert_eq!(remaining, expected);
         assert_eq!(
             block_on(runtime.runtime.wait_event()),
-            Err(Poisoned {
+            Err(oer_radio_port::EventEnd::Drained {
                 cause: BluetoothFault::Runner(crate::BluetoothRuntimeFault::Unsettled),
             })
         );
@@ -984,7 +983,9 @@ fn a_runner_fault_poisons_the_port_with_its_cause() {
     let mut context = core::task::Context::from_waker(core::task::Waker::noop());
     assert_eq!(
         core::pin::pin!(runtime.wait_event()).poll(&mut context),
-        core::task::Poll::Ready(Err(poisoned))
+        core::task::Poll::Ready(Err(oer_radio_port::EventEnd::Drained {
+            cause: poisoned.cause
+        }))
     );
     assert_eq!(block_on(runtime.submit_request(configure())), Err(poisoned));
     assert_eq!(block_on(runtime.read_now()), Err(poisoned));
@@ -1014,7 +1015,7 @@ fn a_fault_in_flight_is_indeterminate_and_dropping_the_receipt_keeps_hardware() 
     );
     assert_eq!(
         block_on(runtime.wait_event()),
-        Err(Poisoned {
+        Err(oer_radio_port::EventEnd::Drained {
             cause: BluetoothFault::Platform
         })
     );
@@ -1059,7 +1060,7 @@ fn a_fault_before_publication_delivers_the_pending_terminal_before_poison() {
     for _ in 0..2 {
         assert_eq!(
             block_on(runtime.wait_event()),
-            Err(Poisoned {
+            Err(oer_radio_port::EventEnd::Drained {
                 cause: BluetoothFault::Platform
             })
         );
@@ -1431,6 +1432,111 @@ fn a_wait_past_the_timer_range_is_an_error_not_a_forever_wait() {
 struct ConfigureOnce;
 
 type Backend = crate::BluetoothBackend<'static, Runtime, Driver>;
+
+struct ObserveEventEnd {
+    runtime: &'static Runtime,
+    quarantined: bool,
+}
+
+impl oer_radio_port::PortBody<Backend> for ObserveEventEnd {
+    type Output = usize;
+
+    async fn run<'p, 'id>(
+        self,
+        owner: oer_radio_port::Owner<'p, 'id, Backend, oer_radio_port::Disabled>,
+        (): (),
+    ) -> oer_radio_port::Ended<'id, Backend, usize> {
+        use oer_bluetooth_radio::LeRadioBackend;
+        use oer_radio_port::{Ended, EventEnd, PortPhase};
+
+        let Ok(mut owner) = owner.enable().await else {
+            panic!("enable")
+        };
+        let mut outstanding = Some(EventId::new(23));
+        let end = {
+            let mut phase = owner.phase();
+            let parts = &mut *phase;
+            assert_eq!(
+                Backend::submit(&mut parts.clients, test_receive(23)).await,
+                Ok(Ok(()))
+            );
+            if self.quarantined {
+                self.runtime.abandon();
+            } else {
+                self.runtime.platform_fault();
+            }
+            let end = loop {
+                match parts.events.next_event().await {
+                    Ok(Ok(BluetoothOutcome::EventEnded { id, .. })) => {
+                        assert_eq!(outstanding.take(), Some(id));
+                    }
+                    Ok(_) => panic!("only one terminal is owed"),
+                    Err(end) => break end,
+                }
+            };
+            match end {
+                EventEnd::Drained { .. } => {
+                    assert!(outstanding.is_none(), "Drained must account every event")
+                }
+                EventEnd::Quarantined { .. } => {
+                    assert!(outstanding.is_some(), "unread work remains quarantined")
+                }
+            }
+            self.runtime.with_fault_held_for_test(|| {
+                for _ in 0..2 {
+                    assert_eq!(block_on(parts.events.next_event()), Err(end));
+                }
+            });
+            end
+        };
+        assert_eq!(owner.phase().next_event().await, Err(end));
+        match end {
+            EventEnd::Quarantined { .. } => Ended::fail_stopped(owner.fail_stop(), 1),
+            EventEnd::Drained { .. } => {
+                let owner = owner
+                    .disable(&mut |_| panic!("all terminals were already issued"))
+                    .await
+                    .err()
+                    .expect("platform fault remains poisoned");
+                Ended::uninstall(owner, (), 0)
+            }
+        }
+    }
+}
+
+#[test]
+fn event_end_accounts_or_quarantines_work_and_is_final_across_phase_loans() {
+    for quarantined in [false, true] {
+        let model = Model::default();
+        let runtime = new_runtime().runtime;
+        let backend = block_on(runtime.install(model_memory(), model.clone()))
+            .unwrap_or_else(|_| panic!("install"));
+        let end = block_on(oer_radio_port::run_port(
+            backend,
+            ObserveEventEnd {
+                runtime,
+                quarantined,
+            },
+        ));
+        assert!(matches!(
+            (quarantined, end),
+            (
+                false,
+                oer_radio_port::PortEnd::Uninstalled {
+                    uninstalled: Err(_),
+                    output: 0
+                }
+            ) | (
+                true,
+                oer_radio_port::PortEnd::FailStopped {
+                    output: 1,
+                    outcome: oer_radio_port::Abandon::Unconfirmed(_),
+                    ..
+                }
+            )
+        ));
+    }
+}
 
 impl oer_radio_port::PortBody<Backend> for ConfigureOnce {
     type Output = ();

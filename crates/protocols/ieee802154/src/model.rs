@@ -773,6 +773,7 @@ impl<'id> Ieee802154Setup<'id> for ModelSetup<'_, 'id> {
 pub struct ModelEvents<'a, 'id> {
     shared: &'a Shared,
     held: &'a ModelHeld<'id>,
+    end: &'a mut Option<oer_radio_port::EventEnd<ModelFault>>,
 }
 
 impl PortPhase for ModelEvents<'_, '_> {
@@ -781,8 +782,13 @@ impl PortPhase for ModelEvents<'_, '_> {
 
     fn next_event(
         &mut self,
-    ) -> impl Future<Output = PortResult<ModelEvent, EventsLost, ModelFault>> + '_ {
+    ) -> impl Future<
+        Output = Result<Result<ModelEvent, EventsLost>, oer_radio_port::EventEnd<ModelFault>>,
+    > + '_ {
         poll_fn(|context| {
+            if let Some(end) = *self.end {
+                return Poll::Ready(Err(end));
+            }
             let mut state = self.shared.borrow_mut();
             if let Some(event) = state.events.pop_front() {
                 match event {
@@ -797,14 +803,20 @@ impl PortPhase for ModelEvents<'_, '_> {
                 if let Some((_interface, id)) = event.ends() {
                     // The permit goes back before the terminal is handed out.
                     if let Err(_mismatch) = self.held.permits.complete(id) {
-                        self.shared.borrow_mut().poisoned = Some(ModelFault);
-                        return Poll::Ready(Err(Poisoned { cause: ModelFault }));
+                        let mut state = self.shared.borrow_mut();
+                        state.events.push_front(event);
+                        state.poisoned = Some(ModelFault);
+                        let end = oer_radio_port::EventEnd::Quarantined { cause: ModelFault };
+                        *self.end = Some(end);
+                        return Poll::Ready(Err(end));
                     }
                 }
                 return Poll::Ready(Ok(Ok(event)));
             }
             if let Some(cause) = state.poisoned {
-                return Poll::Ready(Err(Poisoned { cause }));
+                let end = oer_radio_port::EventEnd::Drained { cause };
+                *self.end = Some(end);
+                return Poll::Ready(Err(end));
             }
             state.consumer = Some(context.waker().clone());
             Poll::Pending
@@ -1188,7 +1200,7 @@ impl PortBackend for OwnedModel {
     where
         Self: 'a,
         'id: 'a;
-    type Local<'id> = ();
+    type Local<'id> = Option<oer_radio_port::EventEnd<ModelFault>>;
     type Driver = ();
     type Domain = Ieee802154Radio;
     type Fault = ModelFault;
@@ -1306,7 +1318,7 @@ impl PortBackend for OwnedModel {
         };
         InstallParts {
             held,
-            local: (),
+            local: None,
             resources,
         }
     }
@@ -1330,7 +1342,7 @@ impl PortBackend for OwnedModel {
         &'a mut self,
         _: Call,
         held: &'a ModelHeld<'id>,
-        _: &'a mut Self::Local<'id>,
+        local: &'a mut Self::Local<'id>,
     ) -> Self::Phase<'a, 'id>
     where
         'id: 'a,
@@ -1339,6 +1351,7 @@ impl PortBackend for OwnedModel {
             events: ModelEvents {
                 shared: &self.shared,
                 held,
+                end: local,
             },
             control: ModelControl {
                 shared: &self.shared,

@@ -37,6 +37,40 @@ pub use relation::{
 /// refused with nothing changed, `Err(Poisoned)` a poisoned backend.
 pub type PortResult<T, R, C> = Result<Result<T, R>, Poisoned<C>>;
 
+/// The final end of an installation's event stream.
+///
+/// This is data, carrying only the backend's cause. It grants no hardware
+/// authority and carries no owners or affine proofs. Undelivered owners stay
+/// in the [`Quarantined`] retained by [`PortEnd`]. Every later
+/// [`PortPhase::next_event`] returns the same variant and cause.
+///
+/// | Backend outcome | Event-stream end |
+/// | --- | --- |
+/// | [`Abandon::Stopped`] or an ordinary fault | `Drained`, after draining all terminals |
+/// | [`Abandon::Unconfirmed`] | `Quarantined`, without waiting or acquiring the ISR's mutex |
+/// | Terminal accounting violation | `Quarantined`, with the admitted owners retained |
+///
+/// Accounting quarantine does not imply [`Abandon::Unconfirmed`]. The
+/// subsequent abandonment can still prove [`Abandon::Stopped`]; delivery
+/// accounting and hardware quiescence are independent outcomes.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum EventEnd<C> {
+    /// Every terminal of admitted work has been delivered through
+    /// [`PortPhase::next_event`]. A missing terminal violates the backend
+    /// contract; a body can detect it from its outstanding work.
+    Drained {
+        /// Why the event stream ended.
+        cause: C,
+    },
+    /// Undelivered terminals and their owners remain quarantined in
+    /// [`PortEnd`]. The body must fail-stop without attempting further
+    /// draining or ordinary teardown.
+    Quarantined {
+        /// Why the event stream ended.
+        cause: C,
+    },
+}
+
 /// The backend dropped events it could not hold.
 ///
 /// The marker takes the place of the first dropped event: every event
@@ -54,10 +88,9 @@ pub struct EventsLost;
 
 /// A poisoned backend: its state is unknown and only a reset restores it.
 ///
-/// It is the only outer error of a port call. A port's event consumer
-/// returns it after every event produced before the fault and again at
-/// every later call, so a consumer that awaits events learns of the fault;
-/// every other call returns it at once. `cause` is the backend's own
+/// It is the outer error of commands and clock calls, returned at once.
+/// The event consumer instead reports [`EventEnd`] to distinguish drained
+/// work from quarantined owners. `cause` is the backend's own
 /// account of the fault, which portable code passes on without
 /// interpreting it.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

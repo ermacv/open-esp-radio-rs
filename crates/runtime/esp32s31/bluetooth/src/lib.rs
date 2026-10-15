@@ -38,7 +38,11 @@
 //! A runner or platform fault first ends every admitted event's software
 //! record. An event never exposed to execution ends `NotExecuted`; an event
 //! whose execution may have begun ends `Indeterminate`. These fault terminals
-//! release no hardware memory. The consumer drains them before seeing poison.
+//! release no hardware memory. The consumer drains them before
+//! `EventEnd::Drained`. Unconfirmed abandonment returns `Quarantined`
+//! immediately without queue or fault locks, retaining unread ownership in
+//! `PortEnd`; commands keep reporting `Poisoned`. The end is final across
+//! repeated calls and phase loans.
 //! Only confirmed retirement returns reusable owners; `BluetoothRetained`
 //! holds all other role, hardware and PHY-route owners in the shared
 //! `Quarantined`, whose destruction frees nothing and requires chip reset.

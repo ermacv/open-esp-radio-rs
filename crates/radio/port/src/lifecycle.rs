@@ -44,7 +44,7 @@ use atomic_waker::AtomicWaker;
 use oer_time::RadioInstant;
 use scopeguard::{ScopeGuard, guard};
 
-use crate::{ClockError, EventsLost, Mint, Poisoned, PoolSet, PortResult, branded};
+use crate::{ClockError, EventEnd, EventsLost, Mint, Poisoned, PoolSet, PortResult, branded};
 
 type Brand<'id> = PhantomData<fn(&'id ()) -> &'id ()>;
 
@@ -1329,18 +1329,21 @@ impl<T> DerefMut for Lent<'_, T> {
     }
 }
 
-/// The running phase's event consumer. Only dequeuing an event completes
-/// `next_event`; cancelling the future loses no event.
+/// The running phase's event consumer. Cancelling `next_event` loses no
+/// event. Once ended, every call returns the same [`EventEnd`] and cause.
 pub trait PortPhase {
     /// An owned event, including a reserved terminal of admitted work.
     type Event;
-    /// The cause reported after all events preceding poisoning.
+    /// The cause carried by the final stream end.
     type Fault: Copy + Debug;
     /// Dequeue in occurrence order; only unpromised unsolicited data may
-    /// be replaced by `EventsLost`. Poisoning remains visible afterward.
+    /// be replaced by `EventsLost`. [`EventEnd::Drained`] promises every
+    /// admitted terminal was delivered; [`EventEnd::Quarantined`] leaves
+    /// unread owners in [`PortEnd`]. An [`Abandon::Unconfirmed`] end must
+    /// return without waiting or acquiring the ISR's mutex.
     fn next_event(
         &mut self,
-    ) -> impl Future<Output = PortResult<Self::Event, EventsLost, Self::Fault>> + '_;
+    ) -> impl Future<Output = Result<Result<Self::Event, EventsLost>, EventEnd<Self::Fault>>> + '_;
 }
 
 /// Disjoint components of a phase, borrowed through the owner's `Lent`.
@@ -1358,7 +1361,8 @@ impl<E: PortPhase, C, K> PortPhase for PhaseParts<E, C, K> {
     type Fault = E::Fault;
     fn next_event(
         &mut self,
-    ) -> impl Future<Output = PortResult<Self::Event, EventsLost, Self::Fault>> + '_ {
+    ) -> impl Future<Output = Result<Result<Self::Event, EventsLost>, EventEnd<Self::Fault>>> + '_
+    {
         self.events.next_event()
     }
 }

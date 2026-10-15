@@ -204,4 +204,8 @@ pub enum RadioFault {
     StorageExhausted,
     /// Backend state can no longer be reconciled safely.
     StateLost,
+    /// A terminal does not account for the operation admitted by the port.
+    /// Delivery stops and owners remain quarantined; this says nothing
+    /// about whether the hardware can subsequently be stopped.
+    AccountingViolation,
 }

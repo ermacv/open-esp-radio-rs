@@ -126,7 +126,7 @@ fn channel(number: u8) -> Channel {
 type Runtime<const EVENTS: usize> =
     Ieee802154Runtime<'static, NoopRawMutex, Ieee802154LlModel, VirtualClock, FixedRandom, EVENTS>;
 
-type Backend<K, const EVENTS: usize> = Ieee802154RuntimeBackend<
+type Backend<K, const EVENTS: usize, D = super::backend::NoRoute> = Ieee802154RuntimeBackend<
     'static,
     'static,
     K,
@@ -135,6 +135,7 @@ type Backend<K, const EVENTS: usize> = Ieee802154RuntimeBackend<
     VirtualClock,
     FixedRandom,
     EVENTS,
+    D,
 >;
 
 type Parts = Ieee802154RuntimeParts<'static, Ieee802154LlModel>;
@@ -174,21 +175,22 @@ fn install<K, const EVENTS: usize>(
 /// A port body written as an async closure.
 struct Body<F>(F);
 
-impl<K, const EVENTS: usize, F> PortBody<Backend<K, EVENTS>> for Body<F>
+impl<K, const EVENTS: usize, D, F> PortBody<Backend<K, EVENTS, D>> for Body<F>
 where
     K: Ieee802154RuntimeCaps,
+    D: super::Ieee802154RouteDetach,
     F: for<'p, 'id> AsyncFnOnce(
-        Owner<'p, 'id, Backend<K, EVENTS>, Disabled>,
+        Owner<'p, 'id, Backend<K, EVENTS, D>, Disabled>,
         Resources<'id, K, EVENTS>,
-    ) -> Ended<'id, Backend<K, EVENTS>, ()>,
+    ) -> Ended<'id, Backend<K, EVENTS, D>, ()>,
 {
     type Output = ();
 
     fn run<'p, 'id>(
         self,
-        owner: Owner<'p, 'id, Backend<K, EVENTS>, Disabled>,
+        owner: Owner<'p, 'id, Backend<K, EVENTS, D>, Disabled>,
         resources: Resources<'id, K, EVENTS>,
-    ) -> impl Future<Output = Ended<'id, Backend<K, EVENTS>, ()>> {
+    ) -> impl Future<Output = Ended<'id, Backend<K, EVENTS, D>, ()>> {
         (self.0)(owner, resources)
     }
 }
@@ -204,12 +206,183 @@ fn run<K, const EVENTS: usize>(
 where
     K: Ieee802154RuntimeCaps,
 {
-    match block_on(run_port(backend.installed(), Body(body))) {
+    match run_end(backend, body) {
         oer_radio_port::PortEnd::Uninstalled {
             uninstalled: Uninstalled::Reusable(parts),
             ..
         } => parts,
         _ => panic!("the body uninstalls"),
+    }
+}
+
+fn run_end<K, const EVENTS: usize, D>(
+    backend: Backend<K, EVENTS, D>,
+    body: impl for<'p, 'id> AsyncFnOnce(
+        Owner<'p, 'id, Backend<K, EVENTS, D>, Disabled>,
+        Resources<'id, K, EVENTS>,
+    ) -> Ended<'id, Backend<K, EVENTS, D>, ()>,
+) -> oer_radio_port::PortEnd<Backend<K, EVENTS, D>, ()>
+where
+    K: Ieee802154RuntimeCaps,
+    D: super::Ieee802154RouteDetach,
+{
+    block_on(run_port(backend.installed(), Body(body)))
+}
+
+#[test]
+fn poison_waits_for_the_admitted_terminal_before_reporting_drained() {
+    let runtime = runtime::<4>();
+    run(
+        install::<Single, 4>(runtime, parts()),
+        async |mut owner, resources| {
+            let RuntimeResources {
+                interfaces,
+                mut operation,
+                ..
+            } = resources;
+            let configured = owner.setup().configure(interfaces.interface);
+            let mut owner = enabled_owner(owner.enable().await);
+            {
+                let mut phase = owner.phase();
+                let client = phase.clients.client(&configured);
+                let permit = client.operation(&mut operation[0]).await;
+                let work = client
+                    .transmit(permit, transmission(&MAC, TxMode::Direct, 0))
+                    .unwrap()
+                    .id();
+                runtime
+                    .fault
+                    .lock(|fault| fault.set(Some(RadioFault::StateLost)));
+                assert!(
+                    poll_once(pin!(phase.events.next_event())).is_pending(),
+                    "poison cannot declare an admitted terminal drained early"
+                );
+                runtime.model_interrupt(None, &[Ieee802154Event::TxDone]);
+                assert!(
+                    matches!(ready(phase.events.next_event()), Ok(Ok(Ieee802154PortEvent::TransmitDone { id, .. })) if id == work)
+                );
+                assert!(matches!(
+                    ready(phase.events.next_event()),
+                    Err(oer_radio_port::EventEnd::Drained {
+                        cause: RadioFault::StateLost
+                    })
+                ));
+            }
+            let poisoned = owner
+                .disable(&mut |_| panic!("terminal already delivered"))
+                .await
+                .err()
+                .expect("poisoned");
+            Ended::uninstall(poisoned, (), ())
+        },
+    );
+}
+
+#[test]
+fn event_end_classifies_outstanding_work_and_remains_final() {
+    use oer_radio_port::{EventEnd, PortEnd};
+
+    for quarantined in [false, true] {
+        let runtime = runtime::<4>();
+        let end = run_end(
+            install::<Single, 4>(runtime, parts()),
+            async |mut owner, resources| {
+                let RuntimeResources {
+                    interfaces,
+                    mut operation,
+                    ..
+                } = resources;
+                let configured = owner.setup().configure(interfaces.interface);
+                let mut owner = enabled_owner(owner.enable().await);
+                let event_end = {
+                    let mut phase = owner.phase();
+                    let client = phase.clients.client(&configured);
+                    let permit = client.operation(&mut operation[0]).await;
+                    let work = client
+                        .transmit(permit, transmission(&MAC, TxMode::Direct, 0))
+                        .unwrap();
+                    let mut outstanding = Some(work.id());
+                    let end = if quarantined {
+                        runtime
+                            .abandoned
+                            .store(true, core::sync::atomic::Ordering::Release);
+                        // An entered ISR holds installation and event bookkeeping.
+                        // The unconfirmed stream end must touch neither mutex.
+                        runtime.installed.lock(|installed| {
+                            let _entered = installed.borrow_mut();
+                            runtime.events.owed.lock(|owed| {
+                                let _entered = owed.borrow_mut();
+                                ready(phase.events.next_event()).unwrap_err()
+                            })
+                        })
+                    } else {
+                        // Model the role's fault boundary: the operation
+                        // has stopped and its sole report is Fault, not a
+                        // later ordinary completion during disable.
+                        runtime.disable_locked();
+                        let mut stopped = false;
+                        while let Some(event) = runtime.events.take() {
+                            if let Ok(Ieee802154RadioEvent::TransmitDone { id, .. }) = event {
+                                assert_eq!(Some(id), outstanding);
+                                stopped = true;
+                            }
+                        }
+                        assert!(stopped);
+                        assert!(runtime.events.push(Ieee802154RadioEvent::Fault {
+                            id: outstanding,
+                            fault: RadioFault::InvalidEventSequence,
+                        }));
+                        let terminal = ready(phase.events.next_event()).unwrap().unwrap();
+                        assert!(matches!(terminal, Ieee802154PortEvent::TransmitDone {
+                        id, status: TxStatus::HardwareFailure, ..
+                    } if Some(id) == outstanding));
+                        outstanding = None;
+                        ready(phase.events.next_event()).unwrap_err()
+                    };
+                    match end {
+                        EventEnd::Drained { .. } => {
+                            assert!(outstanding.is_none(), "missing terminal violates Drained")
+                        }
+                        EventEnd::Quarantined { .. } => {
+                            assert!(outstanding.is_some(), "the owner remains quarantined")
+                        }
+                    }
+                    for _ in 0..2 {
+                        assert_eq!(ready(phase.events.next_event()), Err(end));
+                    }
+                    end
+                };
+                // Reborrowing a phase cannot reopen an ended stream.
+                assert_eq!(ready(owner.phase().next_event()), Err(event_end));
+                match event_end {
+                    EventEnd::Quarantined { .. } => Ended::fail_stopped(owner.fail_stop(), ()),
+                    EventEnd::Drained { .. } => {
+                        let owner = owner
+                            .disable(&mut |_| panic!("all terminals were delivered"))
+                            .await
+                            .err()
+                            .expect("ordinary fault stays poisoned");
+                        Ended::uninstall(owner, (), ())
+                    }
+                }
+            },
+        );
+        assert!(matches!(
+            (quarantined, end),
+            (
+                false,
+                PortEnd::Uninstalled {
+                    uninstalled: Uninstalled::Reusable(_),
+                    ..
+                }
+            ) | (
+                true,
+                PortEnd::FailStopped {
+                    outcome: oer_radio_port::Abandon::Unconfirmed(_),
+                    ..
+                }
+            )
+        ));
     }
 }
 
@@ -502,7 +675,7 @@ fn a_fault_reaches_a_queue_full_of_frames_and_poisons_the_port() {
                 assert_eq!(next(&mut phase.events), Err(EventsLost));
                 assert!(matches!(
                     ready(phase.events.next_event()),
-                    Err(Poisoned {
+                    Err(oer_radio_port::EventEnd::Drained {
                         cause: RadioFault::InvalidEventSequence
                     })
                 ));
@@ -1214,9 +1387,23 @@ fn a_fault_beyond_the_reserved_one_never_overruns_the_queue() {
 
 #[test]
 fn a_foreign_terminal_poisons_without_releasing_the_admitted_permit() {
+    use core::cell::Cell;
+    use std::rc::Rc;
+
+    struct RouteOwner(Rc<Cell<usize>>);
+    impl super::Ieee802154RouteDetach for RouteOwner {
+        fn detach(&mut self) {}
+    }
+    impl Drop for RouteOwner {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+
     let runtime = runtime::<8>();
-    run(
-        install::<Single, 8>(runtime, parts()),
+    let drops = Rc::new(Cell::new(0));
+    let end = run_end(
+        install::<Single, 8>(runtime, parts()).with_route(RouteOwner(drops.clone())),
         async |mut owner, resources| {
             let RuntimeResources {
                 interfaces,
@@ -1224,40 +1411,83 @@ fn a_foreign_terminal_poisons_without_releasing_the_admitted_permit() {
                 ..
             } = resources;
             let configured = owner.setup().configure(interfaces.interface);
-            let mut owner = enabled_owner(owner.enable().await);
+            let mut owner = owner.enable().await.unwrap_or_else(|_| panic!("enabled"));
             {
                 let mut phase_loan = owner.phase();
                 let phase = &mut *phase_loan;
                 let client = phase.clients.client(&configured);
                 let permit = client.operation(&mut operation[0]).await;
-                let _token = client
+                let token = client
                     .transmit(permit, transmission(&MAC, TxMode::Direct, 0))
                     .unwrap();
                 assert!(runtime.events.push(Ieee802154RadioEvent::EnergyScanDone {
                     id: oer_ieee802154::RequestId::new(u32::MAX),
                     energy_dbm: -30,
                 }));
+                // A valid terminal behind the corrupt one must also stay
+                // retained: delivery cannot resume with the next identity.
+                assert!(runtime.events.push(Ieee802154RadioEvent::TransmitDone {
+                    id: token.id(),
+                    status: TxStatus::Success,
+                    acknowledgement: None,
+                    security: None,
+                }));
                 assert!(matches!(
                     ready(phase.events.next_event()),
-                    Err(Poisoned {
-                        cause: RadioFault::StateLost
+                    Err(oer_radio_port::EventEnd::Quarantined {
+                        cause: RadioFault::AccountingViolation
                     })
                 ));
+                assert!(
+                    !runtime
+                        .abandoned
+                        .load(core::sync::atomic::Ordering::Acquire)
+                );
+                assert_eq!(
+                    runtime.poisoned(),
+                    Err(Poisoned {
+                        cause: RadioFault::AccountingViolation
+                    })
+                );
+                assert_eq!(runtime.events.entries.len(), 1);
+                for _ in 0..2 {
+                    assert!(matches!(
+                        ready(phase.events.next_event()),
+                        Err(oer_radio_port::EventEnd::Quarantined {
+                            cause: RadioFault::AccountingViolation
+                        })
+                    ));
+                }
                 let mut waiting = pin!(client.operation(&mut operation[0]));
                 assert!(
                     poll_once(waiting.as_mut()).is_pending(),
                     "a foreign terminal must not release the held permit"
                 );
             }
-            match owner
-                .disable(&mut |_| core::ops::ControlFlow::Continue(()))
-                .await
-            {
-                Ok(_) => panic!("the malformed terminal poisoned the port"),
-                Err(poisoned) => oer_radio_port::Ended::uninstall(poisoned, (), ()),
-            }
+            assert!(matches!(
+                ready(owner.phase().next_event()),
+                Err(oer_radio_port::EventEnd::Quarantined {
+                    cause: RadioFault::AccountingViolation
+                })
+            ));
+            Ended::fail_stopped(owner.fail_stop(), ())
         },
     );
+    assert!(matches!(end, oer_radio_port::PortEnd::FailStopped { .. }));
+    assert_eq!(drops.get(), 0);
+    drop(end);
+    assert_eq!(drops.get(), 0, "quarantine never drops the hardware owner");
+    assert!(
+        runtime
+            .installed
+            .lock(|installed| installed.borrow().is_some())
+    );
+    assert_eq!(runtime.events.entries.len(), 1);
+    runtime.events.owed(|owed| assert!(matches!(
+        &owed.held,
+        Some(super::HeldEvent::AccountingViolation(Ieee802154RadioEvent::EnergyScanDone { id, .. }))
+        if *id == oer_ieee802154::RequestId::new(u32::MAX)
+    )));
 }
 
 enum AbandonBody {

@@ -582,8 +582,9 @@ pub(crate) enum Reply<F> {
 ///
 /// A hardware fault of the radio or the driver, a transition past
 /// [`TRANSITION_BOUND`] or a platform fault poisons the runtime: the queued
-/// outcomes are still reported, then [`Poisoned`] with its
-/// [`BluetoothFault`] at every call. An abandoned owner
+/// outcomes and all admitted terminals are still reported, then
+/// [`oer_radio_port::EventEnd::Drained`] with its [`BluetoothFault`] at
+/// every event call. Commands report [`Poisoned`] immediately. An abandoned owner
 /// ([`Self::abandon`]) leaves it poisoned and refusing any install until a
 /// reset; otherwise a new install clears the poison.
 #[allow(
@@ -1278,19 +1279,29 @@ impl<
         self.work.signal(());
     }
 
-    /// Take the next outcome: the queued ones in their order, then the
-    /// [`Poisoned`] of a poisoned runtime.
+    /// Take queued outcomes in order, then the drained fault. An unconfirmed
+    /// abandonment ends immediately, before any queue or fault mutex.
     pub(crate) async fn wait_event(
         &self,
-    ) -> PortResult<BluetoothOutcome, EventsLost, BluetoothFault<H::StartError>> {
+    ) -> Result<
+        Result<BluetoothOutcome, EventsLost>,
+        oer_radio_port::EventEnd<BluetoothFault<H::StartError>>,
+    > {
         loop {
+            if self.abandoned.load(Ordering::Acquire) {
+                return Err(oer_radio_port::EventEnd::Quarantined {
+                    cause: BluetoothFault::Runner(BluetoothRuntimeFault::Abandoned),
+                });
+            }
             if let Some(outcome) = self.outcomes.take() {
                 return Ok(outcome);
             }
             if self.fault_accounted.load(Ordering::Acquire)
                 && let Some(poisoned) = self.poisoned()
             {
-                return Err(poisoned);
+                return Err(oer_radio_port::EventEnd::Drained {
+                    cause: poisoned.cause,
+                });
             }
             select(
                 self.outcomes.entries.ready_to_receive(),

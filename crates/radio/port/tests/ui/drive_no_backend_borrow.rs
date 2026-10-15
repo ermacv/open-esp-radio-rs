@@ -10,7 +10,7 @@ pub struct Phase;
 impl PortPhase for Phase {
     type Event = ();
     type Fault = ();
-    fn next_event(&mut self) -> impl Future<Output = PortResult<(), EventsLost, ()>> {
+    fn next_event(&mut self) -> impl Future<Output = Result<Result<(), EventsLost>, oer_radio_port::EventEnd<()>>> {
         pending()
     }
 }

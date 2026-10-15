@@ -26,6 +26,10 @@
 //! clock that could not be read, an operation's status on the air, and a
 //! cancel that finds the work already ended
 //! ([`CancelError::NotRunning`](oer_radio_port::CancelError::NotRunning)).
+//! The event stream alone ends with [`oer_radio_port::EventEnd`]: `Drained`
+//! accounts every admitted terminal, while `Quarantined` leaves unread
+//! ownership in `PortEnd` and requires fail-stop without further draining.
+//! Its variant and cause remain final across phase loans.
 //!
 //! # Interfaces
 //!

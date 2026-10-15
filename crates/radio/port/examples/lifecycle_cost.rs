@@ -42,7 +42,9 @@ macro_rules! port {
             impl PortPhase for Events {
                 type Event = u32;
                 type Fault = u32;
-                async fn next_event(&mut self) -> PortResult<u32, EventsLost, u32> {
+                async fn next_event(
+                    &mut self,
+                ) -> Result<Result<u32, EventsLost>, oer_radio_port::EventEnd<u32>> {
                     core::future::pending().await
                 }
             }

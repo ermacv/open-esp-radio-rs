@@ -90,3 +90,10 @@ driver's accounting completion. Failed teardown returns `BluetoothRetained`
 with the same shared `Quarantined` used by the lifecycle core, keeping the
 role, hardware and any PHY route without Drop; only confirmed retirement
 returns reusable owners.
+
+`PortPhase::next_event` ends with the common `EventEnd`: `Drained` promises
+all admitted terminals were delivered; missing terminals violate the contract.
+`Quarantined` immediately ends without taking queue or fault locks and leaves
+unread owners in `PortEnd`. The phase keeps its final variant and cause in
+`Local`, including across phase reborrows. The portable service fail-stops
+on quarantine without disable or more draining. Commands keep `PortResult`.

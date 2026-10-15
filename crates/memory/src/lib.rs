@@ -27,7 +27,8 @@ pub use affine_spsc::{
 };
 pub use pinned_tx::{
     DmaIndexReturn, IndexedStableDmaLease, PinnedDmaTxNetworkLease, PinnedDmaTxPool,
-    PinnedDmaTxRadioLease, ReturningStableDmaBacking, TaggedStableDmaBacking,
+    PinnedDmaTxPoolHandle, PinnedDmaTxRadioLease, ReturningStableDmaBacking,
+    TaggedStableDmaBacking,
 };
 pub use rx_external_handoff::{
     ExternalRxAdoption, ExternalRxBuffer, ExternalRxHandoffPool, ExternalRxNetworkLease,

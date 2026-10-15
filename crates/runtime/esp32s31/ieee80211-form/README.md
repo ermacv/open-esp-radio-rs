@@ -149,13 +149,14 @@ that exact slot and permanent backing, migrate every IRQ caller and borrow
 its installation's diagnostics. No compatibility storage may reopen the old
 path. HIL snapshot consumers also migrate in that same step.
 
-The pinned TX pool still exposes claims on public `new()`/`Default` values.
-Its existing runtime DMA guard currently rejects an unpinned pool by panic;
-this is not a type proof. S31 must restrict `claim_network`/`claim_radio` to
-the affine pinned handle returned by `pin_static`, and add a negative UI
-case with a compiling twin. The old runtime stores `&Pool` after accepting
-`Pin<&mut Pool>` in `datapath/sram_tx.rs`, so its callers migrate together.
-Existing guard/state/length panics in `pinned_tx` predate this form.
+The pinned TX pool issues claims only through `PinnedDmaTxPoolHandle`, the
+affine result of `pin_static`. A raw pool or an independently pinned borrow
+has no claim method; host/RV32 UI twins check both boundaries and handle
+reuse. Permanent allocation is now a type proof, independent of the existing
+DMA guard assertions. The old runtime still stores `&Pool` after accepting
+`Pin<&mut Pool>` in `datapath/sram_tx.rs`; its obsolete claim calls disappear
+with that runtime's replacement. Guard/state/length assertions detect DMA
+damage or violations of the existing slot protocol, not missing pinning.
 
 ## DMA custody and clock release
 

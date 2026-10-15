@@ -6,6 +6,17 @@ targets = ["host", "esp32s31"]
 cases = ["tools/xtask/tests/fixtures/affine_contract.rs"]
 
 [[suite]]
+name = "pinned-tx-claims"
+packages = ["oer-memory"]
+features = []
+targets = ["host", "esp32s31"]
+cases = [
+    "crates/memory/tests/ui/unpinned_tx_network.rs",
+    "crates/memory/tests/ui/unpinned_tx_radio.rs",
+    "crates/memory/tests/ui/pinned_tx_handle_once.rs",
+]
+
+[[suite]]
 name = "pool-authority"
 packages = ["oer-radio-port", "oer-radio-permit-pool", "oer-ieee80211-lower-mac", "oer-ieee80211-sta"]
 features = []

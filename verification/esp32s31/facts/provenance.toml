@@ -1762,6 +1762,18 @@ code = "08abfd6d5d9605c04d12f9b5479b1d441b711a6ae6be594f882a1051aa329aee"
 
 [[function]]
 artifact = "libnet80211"
+member = "ieee80211_hostap.o"
+symbol = "ieee80211_hostap_send_beacon_process"
+code = "85ef31bcd28a014b26c2bc09119a1ca3c91f37c26cef11d2959b2a17ca266f90"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_hostap.o"
+symbol = "ieee80211_hostapd_beacon_txcb"
+code = "08e58e288dfa641472c71e23e1f04e41fba7e52f58cfb55396d9c70dc7362043"
+
+[[function]]
+artifact = "libnet80211"
 member = "ieee80211_ht.o"
 symbol = "ampdu_dispatch_upto"
 code = "b2c67a70a8a80c32281be7d93f3db690921a9777b7bd25fd25c642a31329cdbd"
@@ -1847,6 +1859,12 @@ code = "b53255f6e4cc933ecbfdc7ea73405f01fff107c4703f7ae7ee460adad1e2b1aa"
 [[function]]
 artifact = "libnet80211"
 member = "ieee80211_ioctl.o"
+symbol = "wifi_get_tsf_time_process"
+code = "97672a8a953a6491f31d23c90d5bb1a07712cc5eb64593b05cd8f0df63f8b7ee"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_ioctl.o"
 symbol = "wifi_rf_phy_disable"
 code = "16655d72938ad650830de500c692a1bd91fcdfbb9886ac61f1a7e8392bf7a531"
 decisions = ["coverage.toml"]
@@ -1881,6 +1899,12 @@ artifact = "libnet80211"
 member = "ieee80211_output.o"
 symbol = "ieee80211_add_extcap"
 code = "4a514955cdd2d9b5409a55be47b49ace07d83f4db5bd59f66d46225d95e3d7ed"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_output.o"
+symbol = "ieee80211_alloc_proberesp"
+code = "d6e8fcb55e23537b82acdab95baaf3bb6de91f1cb49cc0999477b122c822fc4e"
 
 [[function]]
 artifact = "libnet80211"
@@ -2996,6 +3020,12 @@ code = "54702fc0f1a3b55beccf6dbcf2ab2523bfeeede3c779090cb70cfce1b0e5e078"
 [[function]]
 artifact = "libpp"
 member = "hal_mac.o"
+symbol = "hal_get_tsf_time"
+code = "bf45f3c338d96bccde01761e020cfa3fefd7bd405ea9c14dc5ba1050014c5dcd"
+
+[[function]]
+artifact = "libpp"
+member = "hal_mac.o"
 symbol = "hal_init"
 code = "1822b5c5733914a98ee57e5da7457f7800515c7f3e03f6a9927a089f1d42c753"
 
@@ -3078,6 +3108,12 @@ member = "hal_mac.o"
 symbol = "hal_mac_tsf_reset"
 code = "3e950e452a431480dd2474e79bad672c24eb6770c07c372d6312d2b5961d3569"
 decisions = ["coverage.toml", "state.rs"]
+
+[[function]]
+artifact = "libpp"
+member = "hal_mac.o"
+symbol = "hal_now"
+code = "287f8fce4ba9828a3ac5d239355e8c2c82b2d51def4229ff01e8406fad5d90e6"
 
 [[function]]
 artifact = "libpp"
@@ -3849,6 +3885,12 @@ code = "14cbe8d40167a062d9667ab81c3dd633c47310b975cac363da09375ac859cf1d"
 [[function]]
 artifact = "libpp"
 member = "hal_tsf.o"
+symbol = "tsf_hal_get_counter_value"
+code = "ea4eadc33c739e440767f7cdea423320129e6851b4e64924ad5975a19fff242f"
+
+[[function]]
+artifact = "libpp"
+member = "hal_tsf.o"
 symbol = "tsf_hal_get_tbtt_interval"
 code = "411dff89f4341daa7414c436e37df4ffa6ea0b7483b136d1d3a7132d077537e0"
 
@@ -3931,6 +3973,12 @@ artifact = "libpp"
 member = "if_hwctrl.o"
 symbol = "ic_get_he_rts_threshold_bytes"
 code = "b30a13c62fb33e594f84f1e83718b7a95d96f462c4b15bd8f2792c7a40d0751a"
+
+[[function]]
+artifact = "libpp"
+member = "if_hwctrl.o"
+symbol = "ic_get_next_tbtt"
+code = "3392de95fa3d24a1e4209cef121335c55bf491bd05e03e976a32067ced76dddb"
 
 [[function]]
 artifact = "libpp"
@@ -4759,6 +4807,12 @@ artifact = "libpp"
 member = "wdev.o"
 symbol = "wDev_GetNoiseFloor"
 code = "775259e70c961484ef61b12a6c2d3eb67100fb3393bd102170dfc34cf165874b"
+
+[[function]]
+artifact = "libpp"
+member = "wdev.o"
+symbol = "wDev_Get_Next_TBTT"
+code = "38ad53d087bb0d15cfeda83076408dd54fb824d25e956a6cba58b90b33f989ba"
 
 [[function]]
 artifact = "libpp"

@@ -14,20 +14,36 @@ dim = 3
 dimIncrement = 0x4
 dimIndex = "0,1,2"
 name = "INTERFACE_CONTROL%s"
-description = "STA, AP and NAN interface controls selected by hal_crypto_enable. The open STA CCMP path writes the complete image 0x00030103, then clears bits 31:30."
+description = "STA, AP and NAN interface controls selected by hal_crypto_enable. Ordinary CCMP writes 0x00030103 and additionally enables SPP A-MSDU when the association negotiated it. SPP is shared by every key on this interface."
 addressOffset = 0x0
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "BITS_0_29_OPAQUE"
-description = "Algorithm, enable and management-frame policy fields composed by the complete leaf; individual electrical meanings remain partly unknown."
+name = "BITS_0_8_OPAQUE"
+description = "Low algorithm and enable fields composed by hal_crypto_enable."
 bitOffset = 0
-bitWidth = 30
+bitWidth = 9
 
 [peripherals.registers.register.fields.writeConstraint.range]
-minimum = 0x0
-maximum = 0x3FFFFFFF
+minimum = 0
+maximum = 0x1FF
+
+[[peripherals.registers.register.fields]]
+name = "SPP_AMSDU"
+description = "Authenticate the QoS A-MSDU-present bit in CCMP for this interface. SOURCE(esp32s31): libpp[hal_crypto.o]::hal_crypto_enable +0x2e..+0x34 consumes argument four from libpp[wdev.o]::wDev_Insert_KeyEntry; libnet80211[ieee80211_supplicant.o]::ieee80211_get_spp selects the association decision upstream."
+bitOffset = 9
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "BITS_10_29_OPAQUE"
+description = "Upper algorithm and management-frame policy fields composed by hal_crypto_enable."
+bitOffset = 10
+bitWidth = 20
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xFFFFF
 
 [[peripherals.registers.register.fields]]
 name = "BITS_30_31_OPAQUE"
@@ -270,7 +286,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "WIFI_MAC_CRYPTO_CONTROL.INTERFACE_CONTROL%s.BITS_0_29_OPAQUE"
+entity = "WIFI_MAC_CRYPTO_CONTROL.INTERFACE_CONTROL%s.BITS_0_8_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBPP_HAL_CRYPTO"]
 provenance = "observed"
@@ -432,3 +448,19 @@ naming = "descriptive"
 [[review]]
 entity = "WIFI_MAC_CRYPTO_CONTROL.KEY_VALID_BITMAP.RESERVED_HIGH"
 naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_CRYPTO_CONTROL.INTERFACE_CONTROL%s.SPP_AMSDU"
+naming = "descriptive"
+sources = ["BLOB_LIBPP_SPP_AMSDU"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_CRYPTO_CONTROL.INTERFACE_CONTROL%s.BITS_10_29_OPAQUE"
+naming = "opaque"
+sources = ["BLOB_LIBPP_HAL_CRYPTO"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"

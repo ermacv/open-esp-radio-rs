@@ -462,6 +462,16 @@ impl<'registers> WifiMacHal<'registers> {
         self.pac().mac_rx_dma_snapshot()
     }
 
+    /// Apply the interface's association mode before its first key installation.
+    pub fn configure_ccmp_association(
+        &mut self,
+        interface: crate::types::MacInterface,
+        mode: crate::types::MacSppMode,
+    ) {
+        self.pac_mut()
+            .configure_mac_ccmp_association(interface, mode);
+    }
+
     /// Install one reviewed semantic station CCMP key. Slot selection and key
     /// lifetime remain driver policy; register encoding is owned by the PAC.
     pub fn install_station_ccmp_entry(

@@ -7341,20 +7341,38 @@
           <dimIncrement>0x4</dimIncrement>
           <dimIndex>0-2</dimIndex>
           <name>INTERFACE_CONTROL%s</name>
-          <description>Project-assigned name. STA, AP and NAN interface controls selected by hal_crypto_enable. The open STA CCMP path writes the complete image 0x00030103, then clears bits 31:30.</description>
+          <description>Project-assigned name. STA, AP and NAN interface controls selected by hal_crypto_enable. Ordinary CCMP writes 0x00030103 and additionally enables SPP A-MSDU when the association negotiated it. SPP is shared by every key on this interface.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>BITS_0_29_OPAQUE</name>
-              <description>Opaque: meaning not established. Algorithm, enable and management-frame policy fields composed by the complete leaf; individual electrical meanings remain partly unknown.</description>
+              <name>BITS_0_8_OPAQUE</name>
+              <description>Opaque: meaning not established. Low algorithm and enable fields composed by hal_crypto_enable.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>30</bitWidth>
+              <bitWidth>9</bitWidth>
               <writeConstraint>
                 <range>
                   <minimum>0</minimum>
-                  <maximum>1073741823</maximum>
+                  <maximum>511</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>SPP_AMSDU</name>
+              <description>Project-assigned name. Authenticate the QoS A-MSDU-present bit in CCMP for this interface. SOURCE(esp32s31): libpp[hal_crypto.o]::hal_crypto_enable +0x2e..+0x34 consumes argument four from libpp[wdev.o]::wDev_Insert_KeyEntry; libnet80211[ieee80211_supplicant.o]::ieee80211_get_spp selects the association decision upstream.</description>
+              <bitOffset>9</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>BITS_10_29_OPAQUE</name>
+              <description>Opaque: meaning not established. Upper algorithm and management-frame policy fields composed by hal_crypto_enable.</description>
+              <bitOffset>10</bitOffset>
+              <bitWidth>20</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>1048575</maximum>
                 </range>
               </writeConstraint>
             </field>

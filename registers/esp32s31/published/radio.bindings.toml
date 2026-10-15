@@ -18665,10 +18665,24 @@ register-method = "interface_control"
 register-index = 0
 
 [[registers.fields]]
-svd-name = "BITS_0_29_OPAQUE"
-method = "bits_0_29_opaque"
+svd-name = "BITS_0_8_OPAQUE"
+method = "bits_0_8_opaque"
 bit-offset = 0
-bit-width = 30
+bit-width = 9
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SPP_AMSDU"
+method = "spp_amsdu"
+bit-offset = 9
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_10_29_OPAQUE"
+method = "bits_10_29_opaque"
+bit-offset = 10
+bit-width = 20
 access = "read-write"
 
 [[registers.fields]]
@@ -18691,10 +18705,24 @@ register-method = "interface_control"
 register-index = 1
 
 [[registers.fields]]
-svd-name = "BITS_0_29_OPAQUE"
-method = "bits_0_29_opaque"
+svd-name = "BITS_0_8_OPAQUE"
+method = "bits_0_8_opaque"
 bit-offset = 0
-bit-width = 30
+bit-width = 9
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SPP_AMSDU"
+method = "spp_amsdu"
+bit-offset = 9
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_10_29_OPAQUE"
+method = "bits_10_29_opaque"
+bit-offset = 10
+bit-width = 20
 access = "read-write"
 
 [[registers.fields]]
@@ -18717,10 +18745,24 @@ register-method = "interface_control"
 register-index = 2
 
 [[registers.fields]]
-svd-name = "BITS_0_29_OPAQUE"
-method = "bits_0_29_opaque"
+svd-name = "BITS_0_8_OPAQUE"
+method = "bits_0_8_opaque"
 bit-offset = 0
-bit-width = 30
+bit-width = 9
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SPP_AMSDU"
+method = "spp_amsdu"
+bit-offset = 9
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_10_29_OPAQUE"
+method = "bits_10_29_opaque"
+bit-offset = 10
+bit-width = 20
 access = "read-write"
 
 [[registers.fields]]

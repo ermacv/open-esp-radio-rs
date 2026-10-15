@@ -32,13 +32,13 @@ pub use oer_esp32s31_pac::{
     MacRxBlockAckStartingSequence, MacRxBlockAckTid, MacRxBlockAckWindow,
     MacRxDecodeErrorStatistics, MacRxDecodeErrorStatisticsDelta, MacRxDmaSnapshot,
     MacRxHangStatistics, MacRxHangStatisticsDelta, MacRxPrimaryStatistics,
-    MacRxPrimaryStatisticsDelta, MacRxStatisticsSnapshot, MacStaApReceivePlan, MacStaPolicyMode,
-    MacStaReceivePolicySnapshot, MacTsfTimerIndex, MacTxCompletionObservation, MacTxControlFrame,
-    MacTxDetachOutcome, MacTxDetachReason, MacTxPowerPair, MacTxPowerTable, MacTxProtection,
-    MacTxPtiCount, MacTxPtiProgram, MacTxQueueDetached, MacTxQueueIndex, MacTxStatisticsSnapshot,
-    PbusMemoryGroupBoundary, PhyAdcRate, PhyForcedPowerIndex, PhyFtmEnableVendorArgument,
-    PhyGainMemoryEntry, PhyMemoryError, RxBlockAckEntrySnapshot, StaTbttSchedule,
-    TxBlockAckPayload,
+    MacRxPrimaryStatisticsDelta, MacRxStatisticsSnapshot, MacSppMode, MacStaApReceivePlan,
+    MacStaPolicyMode, MacStaReceivePolicySnapshot, MacTsfTimerIndex, MacTxCompletionObservation,
+    MacTxControlFrame, MacTxDetachOutcome, MacTxDetachReason, MacTxPowerPair, MacTxPowerTable,
+    MacTxProtection, MacTxPtiCount, MacTxPtiProgram, MacTxQueueDetached, MacTxQueueIndex,
+    MacTxStatisticsSnapshot, PbusMemoryGroupBoundary, PhyAdcRate, PhyForcedPowerIndex,
+    PhyFtmEnableVendorArgument, PhyGainMemoryEntry, PhyMemoryError, RxBlockAckEntrySnapshot,
+    StaTbttSchedule, TxBlockAckPayload,
 };
 
 pub use crate::phy::restore::{

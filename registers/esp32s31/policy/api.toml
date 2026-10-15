@@ -2920,8 +2920,8 @@ sources = ["BLOB_LIBPP_MAC_LAST_RXBUF_INIT"]
 name = "mac_crypto_interface_control"
 peripheral = "WIFI_MAC_CRYPTO_CONTROL"
 register = "INTERFACE_CONTROL%s"
-fields = ["BITS_0_29_OPAQUE", "BITS_30_31_OPAQUE"]
-sources = ["BLOB_LIBPP_HAL_CRYPTO", "BLOB_LIBPP_HAL_CRYPTO_INIT"]
+fields = ["BITS_0_8_OPAQUE", "SPP_AMSDU", "BITS_10_29_OPAQUE", "BITS_30_31_OPAQUE"]
+sources = ["BLOB_LIBPP_HAL_CRYPTO", "BLOB_LIBPP_HAL_CRYPTO_INIT", "BLOB_LIBPP_SPP_AMSDU"]
 
 [[zero-based-field-writes]]
 name = "publish_mac_crypto_key_valid_entries"

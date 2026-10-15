@@ -17068,13 +17068,13 @@ pub mod wifi_mac_crypto_control {
         key_valid_bitmap: KeyValidBitmap,
     }
     impl RegisterBlock {
-        #[doc = "0x00..0x0c - Project-assigned name. STA, AP and NAN interface controls selected by hal_crypto_enable. The open STA CCMP path writes the complete image 0x00030103, then clears bits 31:30."]
+        #[doc = "0x00..0x0c - Project-assigned name. STA, AP and NAN interface controls selected by hal_crypto_enable. Ordinary CCMP writes 0x00030103 and additionally enables SPP A-MSDU when the association negotiated it. SPP is shared by every key on this interface."]
         #[inline(always)]
         pub const fn interface_control(&self, n: usize) -> &InterfaceControl {
             &self.interface_control[n]
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x00..0x0c - Project-assigned name. STA, AP and NAN interface controls selected by hal_crypto_enable. The open STA CCMP path writes the complete image 0x00030103, then clears bits 31:30."]
+        #[doc = "0x00..0x0c - Project-assigned name. STA, AP and NAN interface controls selected by hal_crypto_enable. Ordinary CCMP writes 0x00030103 and additionally enables SPP A-MSDU when the association negotiated it. SPP is shared by every key on this interface."]
         #[inline(always)]
         pub fn interface_control_iter(&self) -> impl Iterator<Item = &InterfaceControl> {
             self.interface_control.iter()
@@ -17095,28 +17095,46 @@ pub mod wifi_mac_crypto_control {
             &self.key_valid_bitmap
         }
     }
-    #[doc = "INTERFACE_CONTROL (rw) register accessor: Project-assigned name. STA, AP and NAN interface controls selected by hal_crypto_enable. The open STA CCMP path writes the complete image 0x00030103, then clears bits 31:30.\n\nYou can [`read`](crate::Reg::read) this register and get [`interface_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`interface_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@interface_control`] module"]
+    #[doc = "INTERFACE_CONTROL (rw) register accessor: Project-assigned name. STA, AP and NAN interface controls selected by hal_crypto_enable. Ordinary CCMP writes 0x00030103 and additionally enables SPP A-MSDU when the association negotiated it. SPP is shared by every key on this interface.\n\nYou can [`read`](crate::Reg::read) this register and get [`interface_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`interface_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@interface_control`] module"]
     #[doc(alias = "INTERFACE_CONTROL")]
     pub type InterfaceControl = crate::Reg<interface_control::InterfaceControlSpec>;
-    #[doc = "Project-assigned name. STA, AP and NAN interface controls selected by hal_crypto_enable. The open STA CCMP path writes the complete image 0x00030103, then clears bits 31:30."]
+    #[doc = "Project-assigned name. STA, AP and NAN interface controls selected by hal_crypto_enable. Ordinary CCMP writes 0x00030103 and additionally enables SPP A-MSDU when the association negotiated it. SPP is shared by every key on this interface."]
     pub mod interface_control {
         #[doc = "Register `INTERFACE_CONTROL%s` reader"]
         pub type R = crate::R<InterfaceControlSpec>;
         #[doc = "Register `INTERFACE_CONTROL%s` writer"]
         pub type W = crate::W<InterfaceControlSpec>;
-        #[doc = "Field `BITS_0_29_OPAQUE` reader - Opaque: meaning not established. Algorithm, enable and management-frame policy fields composed by the complete leaf; individual electrical meanings remain partly unknown."]
-        pub type Bits0_29OpaqueR = crate::FieldReader<u32>;
-        #[doc = "Field `BITS_0_29_OPAQUE` writer - Opaque: meaning not established. Algorithm, enable and management-frame policy fields composed by the complete leaf; individual electrical meanings remain partly unknown."]
-        pub type Bits0_29OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 30, u32, crate::Safe>;
+        #[doc = "Field `BITS_0_8_OPAQUE` reader - Opaque: meaning not established. Low algorithm and enable fields composed by hal_crypto_enable."]
+        pub type Bits0_8OpaqueR = crate::FieldReader<u16>;
+        #[doc = "Field `BITS_0_8_OPAQUE` writer - Opaque: meaning not established. Low algorithm and enable fields composed by hal_crypto_enable."]
+        pub type Bits0_8OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 9, u16, crate::Safe>;
+        #[doc = "Field `SPP_AMSDU` reader - Project-assigned name. Authenticate the QoS A-MSDU-present bit in CCMP for this interface. SOURCE(esp32s31): libpp\\[hal_crypto.o\\]::hal_crypto_enable +0x2e..+0x34 consumes argument four from libpp\\[wdev.o\\]::wDev_Insert_KeyEntry; libnet80211\\[ieee80211_supplicant.o\\]::ieee80211_get_spp selects the association decision upstream."]
+        pub type SppAmsduR = crate::BitReader;
+        #[doc = "Field `SPP_AMSDU` writer - Project-assigned name. Authenticate the QoS A-MSDU-present bit in CCMP for this interface. SOURCE(esp32s31): libpp\\[hal_crypto.o\\]::hal_crypto_enable +0x2e..+0x34 consumes argument four from libpp\\[wdev.o\\]::wDev_Insert_KeyEntry; libnet80211\\[ieee80211_supplicant.o\\]::ieee80211_get_spp selects the association decision upstream."]
+        pub type SppAmsduW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BITS_10_29_OPAQUE` reader - Opaque: meaning not established. Upper algorithm and management-frame policy fields composed by hal_crypto_enable."]
+        pub type Bits10_29OpaqueR = crate::FieldReader<u32>;
+        #[doc = "Field `BITS_10_29_OPAQUE` writer - Opaque: meaning not established. Upper algorithm and management-frame policy fields composed by hal_crypto_enable."]
+        pub type Bits10_29OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32, crate::Safe>;
         #[doc = "Field `BITS_30_31_OPAQUE` reader - Opaque: meaning not established. Complete ordinary enable clears both high bits; one algorithm branch sets bit 31."]
         pub type Bits30_31OpaqueR = crate::FieldReader;
         #[doc = "Field `BITS_30_31_OPAQUE` writer - Opaque: meaning not established. Complete ordinary enable clears both high bits; one algorithm branch sets bit 31."]
         pub type Bits30_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:29 - Opaque: meaning not established. Algorithm, enable and management-frame policy fields composed by the complete leaf; individual electrical meanings remain partly unknown."]
+            #[doc = "Bits 0:8 - Opaque: meaning not established. Low algorithm and enable fields composed by hal_crypto_enable."]
             #[inline(always)]
-            pub fn bits_0_29_opaque(&self) -> Bits0_29OpaqueR {
-                Bits0_29OpaqueR::new(self.bits & 0x3fff_ffff)
+            pub fn bits_0_8_opaque(&self) -> Bits0_8OpaqueR {
+                Bits0_8OpaqueR::new((self.bits & 0x01ff) as u16)
+            }
+            #[doc = "Bit 9 - Project-assigned name. Authenticate the QoS A-MSDU-present bit in CCMP for this interface. SOURCE(esp32s31): libpp\\[hal_crypto.o\\]::hal_crypto_enable +0x2e..+0x34 consumes argument four from libpp\\[wdev.o\\]::wDev_Insert_KeyEntry; libnet80211\\[ieee80211_supplicant.o\\]::ieee80211_get_spp selects the association decision upstream."]
+            #[inline(always)]
+            pub fn spp_amsdu(&self) -> SppAmsduR {
+                SppAmsduR::new(((self.bits >> 9) & 1) != 0)
+            }
+            #[doc = "Bits 10:29 - Opaque: meaning not established. Upper algorithm and management-frame policy fields composed by hal_crypto_enable."]
+            #[inline(always)]
+            pub fn bits_10_29_opaque(&self) -> Bits10_29OpaqueR {
+                Bits10_29OpaqueR::new((self.bits >> 10) & 0x000f_ffff)
             }
             #[doc = "Bits 30:31 - Opaque: meaning not established. Complete ordinary enable clears both high bits; one algorithm branch sets bit 31."]
             #[inline(always)]
@@ -17125,10 +17143,20 @@ pub mod wifi_mac_crypto_control {
             }
         }
         impl W {
-            #[doc = "Bits 0:29 - Opaque: meaning not established. Algorithm, enable and management-frame policy fields composed by the complete leaf; individual electrical meanings remain partly unknown."]
+            #[doc = "Bits 0:8 - Opaque: meaning not established. Low algorithm and enable fields composed by hal_crypto_enable."]
             #[inline(always)]
-            pub fn bits_0_29_opaque(&mut self) -> Bits0_29OpaqueW<'_, InterfaceControlSpec> {
-                Bits0_29OpaqueW::new(self, 0)
+            pub fn bits_0_8_opaque(&mut self) -> Bits0_8OpaqueW<'_, InterfaceControlSpec> {
+                Bits0_8OpaqueW::new(self, 0)
+            }
+            #[doc = "Bit 9 - Project-assigned name. Authenticate the QoS A-MSDU-present bit in CCMP for this interface. SOURCE(esp32s31): libpp\\[hal_crypto.o\\]::hal_crypto_enable +0x2e..+0x34 consumes argument four from libpp\\[wdev.o\\]::wDev_Insert_KeyEntry; libnet80211\\[ieee80211_supplicant.o\\]::ieee80211_get_spp selects the association decision upstream."]
+            #[inline(always)]
+            pub fn spp_amsdu(&mut self) -> SppAmsduW<'_, InterfaceControlSpec> {
+                SppAmsduW::new(self, 9)
+            }
+            #[doc = "Bits 10:29 - Opaque: meaning not established. Upper algorithm and management-frame policy fields composed by hal_crypto_enable."]
+            #[inline(always)]
+            pub fn bits_10_29_opaque(&mut self) -> Bits10_29OpaqueW<'_, InterfaceControlSpec> {
+                Bits10_29OpaqueW::new(self, 10)
             }
             #[doc = "Bits 30:31 - Opaque: meaning not established. Complete ordinary enable clears both high bits; one algorithm branch sets bit 31."]
             #[inline(always)]
@@ -17136,7 +17164,7 @@ pub mod wifi_mac_crypto_control {
                 Bits30_31OpaqueW::new(self, 30)
             }
         }
-        #[doc = "Project-assigned name. STA, AP and NAN interface controls selected by hal_crypto_enable. The open STA CCMP path writes the complete image 0x00030103, then clears bits 31:30.\n\nYou can [`read`](crate::Reg::read) this register and get [`interface_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`interface_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. STA, AP and NAN interface controls selected by hal_crypto_enable. Ordinary CCMP writes 0x00030103 and additionally enables SPP A-MSDU when the association negotiated it. SPP is shared by every key on this interface.\n\nYou can [`read`](crate::Reg::read) this register and get [`interface_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`interface_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct InterfaceControlSpec;
         impl crate::RegisterSpec for InterfaceControlSpec {
             type Ux = u32;
@@ -64617,12 +64645,14 @@ pub mod zero_based_field_write {
         }
     }
 
-    /// Write `BITS_0_29_OPAQUE`, `BITS_30_31_OPAQUE` in `WIFI_MAC_CRYPTO_CONTROL`.`INTERFACE_CONTROL%s` while publishing zero to every other register bit.
+    /// Write `BITS_0_8_OPAQUE`, `SPP_AMSDU`, `BITS_10_29_OPAQUE`, `BITS_30_31_OPAQUE` in `WIFI_MAC_CRYPTO_CONTROL`.`INTERFACE_CONTROL%s` while publishing zero to every other register bit.
     #[inline]
     pub fn mac_crypto_interface_control(
         registers: &crate::WifiMacCryptoControl,
         index: usize,
-        bits_0_29_opaque_value: u32,
+        bits_0_8_opaque_value: u16,
+        spp_amsdu_value: bool,
+        bits_10_29_opaque_value: u32,
         bits_30_31_opaque_value: u8,
     ) {
         // SAFETY: the SVD extension explicitly qualifies the zero-based
@@ -64633,8 +64663,12 @@ pub mod zero_based_field_write {
                 .interface_control(index)
                 .write_with_zero(|writer| {
                     writer
-                        .bits_0_29_opaque()
-                        .set(bits_0_29_opaque_value)
+                        .bits_0_8_opaque()
+                        .set(bits_0_8_opaque_value)
+                        .spp_amsdu()
+                        .bit(spp_amsdu_value)
+                        .bits_10_29_opaque()
+                        .set(bits_10_29_opaque_value)
                         .bits_30_31_opaque()
                         .set(bits_30_31_opaque_value)
                 });

@@ -157,7 +157,7 @@ BLE's service returns `Served` through this output instead of a side channel.
 
 The RV32 measurement uses two concrete backends and the same enable,
 disable, retire, detach and cancellation workload in
-[`examples/lifecycle_cost.rs`](examples/lifecycle_cost.rs). With Rust 1.97.1,
+[the lifecycle cost probe](examples/lifecycle_cost.rs). With Rust 1.97.1,
 `riscv32imafc-unknown-none-elf`, opt-level 3, one codegen unit, LTO and aborting
 panics, the former two lifecycle implementations measured 2282 bytes of
 `.text`; the shared lifecycle measures 6844 bytes (+4562). This is a small

@@ -1673,7 +1673,7 @@ fn keys_install_into_their_role_slots_and_protect_attempts() {
         let pairwise = core
             .install_checked_key(
                 &mut hardware,
-                CheckedKeyScope::StationPairwise { peer: BSSID },
+                TransmitKeyScope::StationPairwise { peer: BSSID },
                 &KEY,
             )
             .unwrap();
@@ -1681,7 +1681,7 @@ fn keys_install_into_their_role_slots_and_protect_attempts() {
         let _ap_key = core
             .install_checked_key(
                 &mut hardware,
-                CheckedKeyScope::AccessPointPairwise {
+                TransmitKeyScope::AccessPointPairwise {
                     peer: PEER,
                     association_id: 1,
                 },
@@ -1697,9 +1697,9 @@ fn keys_install_into_their_role_slots_and_protect_attempts() {
             .ok()
             .unwrap();
         assert_eq!(hardware.legacy.len(), 1);
-        assert_eq!(core.keys.uses[pairwise.index], 1);
+        assert_eq!(core.keys.uses[pairwise.index].get(), 1);
         complete(&mut core, &mut hardware, 0);
-        assert_eq!(core.keys.uses[pairwise.index], 0);
+        assert_eq!(core.keys.uses[pairwise.index].get(), 0);
         let mut events = Events::default();
         core.remove_checked_key(&mut hardware, pairwise, &mut events);
         assert_eq!(hardware.cleared_keys, [4]);
@@ -1708,7 +1708,7 @@ fn keys_install_into_their_role_slots_and_protect_attempts() {
 }
 
 #[test]
-fn a_fresh_protected_mpdu_is_numbered_by_its_key_and_the_station_group_key_refuses_tx() {
+fn a_fresh_protected_mpdu_is_numbered_and_receive_only_group_removal_has_its_fifo_terminal() {
     installed(|pools| {
         let mut hardware = Hardware::default();
         let mut core = enabled(&mut hardware, pools);
@@ -1716,16 +1716,14 @@ fn a_fresh_protected_mpdu_is_numbered_by_its_key_and_the_station_group_key_refus
         let mut pairwise = core
             .install_checked_key(
                 &mut hardware,
-                CheckedKeyScope::StationPairwise { peer: BSSID },
+                TransmitKeyScope::StationPairwise { peer: BSSID },
                 &KEY,
             )
             .unwrap();
-        let mut group = core
-            .install_checked_key(
+        let group = core
+            .install_station_group_key(
                 &mut hardware,
-                CheckedKeyScope::StationGroup {
-                    key_id: oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
-                },
+                oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
                 &KEY,
             )
             .unwrap();
@@ -1736,16 +1734,14 @@ fn a_fresh_protected_mpdu_is_numbered_by_its_key_and_the_station_group_key_refus
             let header = &slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE + 26..][..8];
             assert_eq!(header, &[expected, 0, 0, 0x20, 0, 0, 0, 0]);
         }
-        // The station's group key remains installed for RX, but cannot prepare TX.
-        slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE + 26..][..8].fill(0xee);
-        assert_eq!(
-            core.number(&mut group, &mut slot, 26),
-            Err(CcmpNumberingError::ReceiveOnlyKey)
-        );
-        assert_eq!(
-            slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE + 26..][..8],
-            [0xee; 8]
-        );
+        // A receive-only key has no admitted TX rights to delay its removal.
+        let mut events = Events::default();
+        core.remove_checked_key(&mut hardware, group, &mut events);
+        assert_eq!(events.removed.len(), 1);
+        assert!(matches!(
+            events.removed[0].scope(),
+            CheckedKeyScope::StationGroup { .. }
+        ));
     });
 }
 
@@ -1758,7 +1754,7 @@ fn numbering_refuses_an_unavailable_buffer_without_allocating_a_packet_number() 
         let mut key = core
             .install_checked_key(
                 &mut hardware,
-                CheckedKeyScope::StationPairwise { peer: BSSID },
+                TransmitKeyScope::StationPairwise { peer: BSSID },
                 &KEY,
             )
             .unwrap();
@@ -1789,7 +1785,7 @@ fn numbering_checks_header_space_and_offset_overflow_before_allocating_a_packet_
         let mut key = core
             .install_checked_key(
                 &mut hardware,
-                CheckedKeyScope::StationPairwise { peer: BSSID },
+                TransmitKeyScope::StationPairwise { peer: BSSID },
                 &KEY,
             )
             .unwrap();
@@ -2872,12 +2868,12 @@ fn a_failed_gate_open_returns_every_unpublished_owner_then_drains_the_prefix() {
 #[test]
 fn key_removal_waits_for_both_parallel_attempts_and_follows_the_last_terminal() {
     for scope in [
-        CheckedKeyScope::StationPairwise { peer: BSSID },
-        CheckedKeyScope::AccessPointPairwise {
+        TransmitKeyScope::StationPairwise { peer: BSSID },
+        TransmitKeyScope::AccessPointPairwise {
             peer: PEER,
             association_id: 1,
         },
-        CheckedKeyScope::AccessPointGroup {
+        TransmitKeyScope::AccessPointGroup {
             key_id: oer_esp32s31_ieee80211_mac::crypto::ApGroupKeyId::new(1).unwrap(),
         },
     ] {
@@ -2894,12 +2890,12 @@ fn key_removal_waits_for_both_parallel_attempts_and_follows_the_last_terminal() 
                 let index = key.index;
                 for category in [WmmAccessCategory::Video, WmmAccessCategory::BestEffort] {
                     let mut request = values_on(category);
-                    request.role = scope.role();
+                    request.role = CheckedKeyScope::from(scope).role();
                     core.submit_protected(&mut hardware, &key, request)
                         .ok()
                         .unwrap();
                 }
-                assert_eq!(core.keys.uses[index], 2);
+                assert_eq!(core.keys.uses[index].get(), 2);
                 assert_eq!(hardware.publications(), 2);
                 let mut events = Events::default();
                 core.remove_checked_key(&mut hardware, key, &mut events);
@@ -2922,9 +2918,9 @@ fn key_removal_waits_for_both_parallel_attempts_and_follows_the_last_terminal() 
                     .unwrap();
                 assert_eq!(events.order, ["tx", "tx", "key"]);
                 assert_eq!(events.removed.len(), 1);
-                assert_eq!(events.removed[0].scope(), scope);
+                assert_eq!(events.removed[0].scope(), scope.into());
                 assert_eq!(hardware.cleared_keys, [selector]);
-                assert_eq!(core.keys.uses[index], 0);
+                assert_eq!(core.keys.uses[index].get(), 0);
                 assert_eq!(core.tickets.iter().flatten().count(), 4);
                 core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
                     .unwrap();
@@ -2939,7 +2935,7 @@ fn key_removal_without_uses_completes_at_the_remove_command() {
     installed(|pools| {
         let mut hardware = Hardware::default();
         let mut core = enabled(&mut hardware, pools);
-        let scope = CheckedKeyScope::StationPairwise { peer: BSSID };
+        let scope = TransmitKeyScope::StationPairwise { peer: BSSID };
         let key = core
             .install_checked_key(&mut hardware, scope, &[0x71; 16])
             .unwrap();
@@ -2964,7 +2960,7 @@ fn held_withdrawal_and_indeterminate_timeout_return_their_key_rights() {
         let key = core
             .install_checked_key(
                 &mut hardware,
-                CheckedKeyScope::StationPairwise { peer: BSSID },
+                TransmitKeyScope::StationPairwise { peer: BSSID },
                 &[0x51; 16],
             )
             .unwrap();
@@ -3009,7 +3005,7 @@ fn poisoned_attempts_retain_key_rights_and_never_report_key_removed() {
         let key = core
             .install_checked_key(
                 &mut hardware,
-                CheckedKeyScope::StationPairwise { peer: BSSID },
+                TransmitKeyScope::StationPairwise { peer: BSSID },
                 &[0x51; 16],
             )
             .unwrap();
@@ -3027,7 +3023,7 @@ fn poisoned_attempts_retain_key_rights_and_never_report_key_removed() {
             core.service(&mut hardware, WifiTxWake::Deadline, &mut events)
                 .is_err()
         );
-        assert_eq!(core.keys.uses[index], 2);
+        assert_eq!(core.keys.uses[index].get(), 2);
         assert!(matches!(
             core.queues[1].as_ref().unwrap().work,
             Work::Quarantined { .. }
@@ -3045,7 +3041,7 @@ fn poisoned_attempts_retain_key_rights_and_never_report_key_removed() {
                 .disable_checked(&mut hardware, &mut events)
                 .is_err()
         );
-        assert_eq!(core.keys.uses[index], 2);
+        assert_eq!(core.keys.uses[index].get(), 2);
         assert!(events.order.is_empty());
         assert!(hardware.cleared_keys.is_empty());
     });
@@ -3059,7 +3055,7 @@ fn refused_publication_returns_the_key_right_until_its_owner_releases_it() {
         let key = core
             .install_checked_key(
                 &mut hardware,
-                CheckedKeyScope::StationPairwise { peer: BSSID },
+                TransmitKeyScope::StationPairwise { peer: BSSID },
                 &[0x51; 16],
             )
             .unwrap();
@@ -3092,7 +3088,7 @@ fn key_bank_survives_a_disabled_core_round_trip() {
         let key = core
             .install_checked_key(
                 &mut hardware,
-                CheckedKeyScope::StationPairwise { peer: BSSID },
+                TransmitKeyScope::StationPairwise { peer: BSSID },
                 &[0x51; 16],
             )
             .unwrap();
@@ -3129,7 +3125,7 @@ fn key_right_is_retained_by_an_aggregate_through_completion_or_quarantine() {
             let key = core
                 .install_checked_key(
                     &mut hardware,
-                    CheckedKeyScope::StationPairwise { peer: BSSID },
+                    TransmitKeyScope::StationPairwise { peer: BSSID },
                     &[0x51; 16],
                 )
                 .unwrap();
@@ -3178,7 +3174,7 @@ fn key_right_is_retained_by_an_aggregate_through_completion_or_quarantine() {
                     fault.error,
                     oer_esp32s31_ieee80211_mac::tx::ampdu::HtAmpduTxError::ResetRequired
                 );
-                assert_eq!(core.keys.uses[index], 1);
+                assert_eq!(core.keys.uses[index].get(), 1);
                 assert!(events.removed.is_empty());
                 assert!(hardware.cleared_keys.is_empty());
                 assert!(source.free() < BACKINGS);
@@ -3201,7 +3197,7 @@ fn key_right_is_retained_by_an_aggregate_through_completion_or_quarantine() {
                     .unwrap();
                 assert_eq!(events.order, ["tx", "key"]);
                 assert_eq!(hardware.cleared_keys, [4]);
-                assert_eq!(core.keys.uses[index], 0);
+                assert_eq!(core.keys.uses[index].get(), 0);
             }
         });
     }
@@ -3216,7 +3212,7 @@ fn failed_gate_open_returns_key_uses_of_every_held_attempt() {
             let key = core
                 .install_checked_key(
                     &mut hardware,
-                    CheckedKeyScope::StationPairwise { peer: BSSID },
+                    TransmitKeyScope::StationPairwise { peer: BSSID },
                     &[0x39; 16],
                 )
                 .unwrap();
@@ -3267,7 +3263,7 @@ fn an_unpublished_right_returned_after_poison_stays_in_custody() {
         let key = core
             .install_checked_key(
                 &mut hardware,
-                CheckedKeyScope::StationPairwise { peer: BSSID },
+                TransmitKeyScope::StationPairwise { peer: BSSID },
                 &[0x39; 16],
             )
             .unwrap();
@@ -3293,7 +3289,7 @@ fn an_unpublished_right_returned_after_poison_stays_in_custody() {
             .return_admission(&mut hardware, TxAdmission::Protected(outside), &mut events)
             .err()
             .unwrap();
-        assert_eq!(core.keys.uses[index], 2);
+        assert_eq!(core.keys.uses[index].get(), 2);
         assert!(hardware.cleared_keys.is_empty());
         assert!(events.order.is_empty());
     });
@@ -3392,4 +3388,65 @@ fn a_protected_wire_frame_cannot_publish_with_an_open_ticket() {
             .unwrap();
         assert!(events.order.is_empty());
     });
+}
+
+#[test]
+fn maximum_ticket_pool_keeps_key_removal_until_all_256_rights_return() {
+    use core::{
+        future::Future,
+        task::{Context, Poll, Waker},
+    };
+    let mut future = core::pin::pin!(oer_radio_port::branded::<CorePools<256>, _>(async |mint| {
+        let resources = mint.into_pools();
+        let mut core = LowerMacCore::new(
+            resources.authority,
+            OrdinaryTxOwner::new(WifiTxResources {
+                slot: slot(),
+                policy: WifiTxRuntimePolicy::vendor_defaults(),
+                power: Power,
+                entropy: entropy as fn() -> u32,
+                timer: Timer::default(),
+            }),
+            LowerMacConfig {
+                station_address: STATION,
+                channel: channel(6),
+                publication_timeout: oer_time::Duration::from_micros(TIMEOUT),
+                tsf_epoch: 1,
+            },
+            &RadioNine,
+        );
+        let mut hardware = Hardware::default();
+        let key = core
+            .install_checked_key(
+                &mut hardware,
+                TransmitKeyScope::StationPairwise { peer: BSSID },
+                &[0x6b; 16],
+            )
+            .unwrap();
+        let index = key.index;
+        let mut rights = resources
+            .tickets
+            .map(|ticket| core.admit_key(&key, ticket).ok().unwrap());
+        assert_eq!(core.keys.uses[index].get(), 256);
+        let mut events = Events::default();
+        core.remove_checked_key(&mut hardware, key, &mut events);
+        assert!(hardware.cleared_keys.is_empty());
+        rights.reverse();
+        for (ordinal, right) in rights.into_iter().enumerate() {
+            let ticket = core
+                .return_admission(&mut hardware, TxAdmission::Protected(right), &mut events)
+                .ok()
+                .unwrap();
+            assert_eq!(ticket.index(), 255 - ordinal);
+            assert_eq!(core.keys.uses[index].get() as usize, 255 - ordinal);
+            assert_eq!(events.removed.len(), usize::from(ordinal == 255));
+        }
+        assert_eq!(hardware.cleared_keys, [4]);
+    }));
+    assert!(matches!(
+        future
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop())),
+        Poll::Ready(())
+    ));
 }

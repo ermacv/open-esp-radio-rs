@@ -3,7 +3,10 @@
 use core::marker::PhantomData;
 use oer_radio_port::{PoolPath, Root};
 
-use super::{CheckedKeyScope, KeyToken, TxTicket};
+use super::{
+    ApGroupCcmpSlot, ApPairwiseCcmpSlot, CheckedKeyScope, KeyToken, MacAddress, StaGroupCcmpSlot,
+    StaPairwiseCcmpSlot, TxTicket,
+};
 
 type Installation<'core, Path> = PhantomData<fn(&'core (), Path) -> (&'core (), Path)>;
 
@@ -13,9 +16,149 @@ type Installation<'core, Path> = PhantomData<fn(&'core (), Path) -> (&'core (), 
 #[must_use = "remove the installed key through its core"]
 pub struct KeyHandle<'core, Path: PoolPath = Root> {
     pub(super) index: usize,
+    pub(super) token: TransmitKeyToken,
+    pub(super) scope: TransmitKeyScope,
+    pub(super) brand: Installation<'core, Path>,
+}
+
+/// Keys which can encrypt transmitted frames. Station GTKs have a different
+/// installation operation and handle, so they cannot enter TX admission or PN
+/// allocation even while they remain installed for reception.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TransmitKeyScope {
+    StationPairwise {
+        peer: MacAddress,
+    },
+    AccessPointPairwise {
+        peer: MacAddress,
+        association_id: u16,
+    },
+    AccessPointGroup {
+        key_id: oer_esp32s31_ieee80211_mac::crypto::ApGroupKeyId,
+    },
+}
+
+impl From<TransmitKeyScope> for CheckedKeyScope {
+    fn from(scope: TransmitKeyScope) -> Self {
+        match scope {
+            TransmitKeyScope::StationPairwise { peer } => Self::StationPairwise { peer },
+            TransmitKeyScope::AccessPointPairwise {
+                peer,
+                association_id,
+            } => Self::AccessPointPairwise {
+                peer,
+                association_id,
+            },
+            TransmitKeyScope::AccessPointGroup { key_id } => Self::AccessPointGroup { key_id },
+        }
+    }
+}
+
+pub(super) enum TransmitKeyToken {
+    StaPairwise(StaPairwiseCcmpSlot),
+    ApPairwise(ApPairwiseCcmpSlot),
+    ApGroup(ApGroupCcmpSlot),
+}
+
+impl TransmitKeyToken {
+    pub(super) const fn hardware_index(&self) -> u8 {
+        match self {
+            Self::StaPairwise(slot) => slot.hardware_index(),
+            Self::ApPairwise(slot) => slot.hardware_index(),
+            Self::ApGroup(slot) => slot.hardware_index(),
+        }
+    }
+}
+
+/// An installed station group key, usable only for receive and removal.
+/// Neither `admit_key` nor `number` accepts this owner.
+#[must_use = "remove the receive key through its core"]
+pub struct ReceiveKeyHandle<'core, Path: PoolPath = Root> {
+    pub(super) index: usize,
+    pub(super) token: StaGroupCcmpSlot,
+    pub(super) key_id: oer_ieee80211_mac::ccmp::GroupKeyId,
+    pub(super) brand: Installation<'core, Path>,
+}
+
+/// A consumed installed handle, retained until hardware removal completes.
+/// Converting either handle into this owner permanently ends new TX admission.
+#[must_use = "submit the consumed key to removal"]
+pub struct RemovingKey<'core, Path: PoolPath = Root> {
+    pub(super) index: usize,
     pub(super) token: KeyToken,
     pub(super) scope: CheckedKeyScope,
     pub(super) brand: Installation<'core, Path>,
+}
+
+impl<'core, Path: PoolPath> From<KeyHandle<'core, Path>> for RemovingKey<'core, Path> {
+    fn from(key: KeyHandle<'core, Path>) -> Self {
+        Self {
+            index: key.index,
+            token: match key.token {
+                TransmitKeyToken::StaPairwise(slot) => KeyToken::StaPairwise(slot),
+                TransmitKeyToken::ApPairwise(slot) => KeyToken::ApPairwise(slot),
+                TransmitKeyToken::ApGroup(slot) => KeyToken::ApGroup(slot),
+            },
+            scope: key.scope.into(),
+            brand: key.brand,
+        }
+    }
+}
+
+impl<'core, Path: PoolPath> From<ReceiveKeyHandle<'core, Path>> for RemovingKey<'core, Path> {
+    fn from(key: ReceiveKeyHandle<'core, Path>) -> Self {
+        Self {
+            index: key.index,
+            token: KeyToken::StaGroup(key.token),
+            scope: CheckedKeyScope::StationGroup { key_id: key.key_id },
+            brand: key.brand,
+        }
+    }
+}
+
+/// Count bounded by the same installation layout that issues the tickets.
+/// Issuing a right consumes a ticket; decrementing consumes that right. These
+/// are the only mutations, so even concurrent queues cannot exceed TICKETS.
+pub(super) struct KeyUseCount<const TICKETS: usize>(u16);
+
+impl<const TICKETS: usize> KeyUseCount<TICKETS> {
+    pub(super) const WIDTH_CHECK: () = assert!(TICKETS <= u16::MAX as usize);
+
+    pub(super) const fn new() -> Self {
+        let () = Self::WIDTH_CHECK;
+        Self(0)
+    }
+
+    pub(super) const fn is_empty(&self) -> bool {
+        self.0 == 0
+    }
+
+    pub(super) fn admit<'core, Path: PoolPath>(
+        &mut self,
+        key: &KeyHandle<'core, Path>,
+        ticket: TxTicket<'core, Path>,
+    ) -> KeyUse<'core, Path> {
+        self.0 += 1;
+        KeyUse {
+            ticket,
+            index: key.index,
+            selector: key.token.hardware_index(),
+            role: CheckedKeyScope::from(key.scope).role(),
+        }
+    }
+
+    pub(super) fn release<'core, Path: PoolPath>(
+        &mut self,
+        key: KeyUse<'core, Path>,
+    ) -> TxTicket<'core, Path> {
+        self.0 -= 1;
+        key.ticket
+    }
+
+    #[cfg(test)]
+    pub(super) const fn get(&self) -> u16 {
+        self.0
+    }
 }
 
 /// Permission to use the installed CCMP material for one admitted attempt.
@@ -100,8 +243,6 @@ pub struct KeyAdmissionRefused<'core, Path: PoolPath = Root> {
 /// Why an installed key cannot admit a TX attempt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum KeyAdmissionError {
-    /// Station group keys only decrypt received group traffic.
-    ReceiveOnly,
     /// The poisoned core retains its key material until reset.
     Poisoned,
 }

@@ -13,13 +13,17 @@
 //!
 //! Submission consumes a branded free queue and an admission ticket. Key
 //! installation returns an affine `KeyHandle`; `admit_key` borrows that live
-//! handle and consumes a ticket to issue one `KeyUse`. The installed material
+//! handle and consumes a ticket to issue one `KeyUse`. Station GTK installation
+//! returns `ReceiveKeyHandle`, which has only a consuming removal path and
+//! cannot enter TX admission or numbering. The installed material
 //! cannot be removed while any attempt holds a right. `MpduValues::checked`
 //! validates the caller's untrusted request before its fields become private.
 //! Hardware failures retain the submitted owners, including quarantine.
 //!
 //! `CorePools<N>` issues the construction authority and exactly `N` TX
-//! tickets. The backend uses its phase ticket count for that same `N`. A
+//! tickets. `KeyUseCount<N>` has a width checked against that same pool in
+//! const evaluation; only consuming a ticket/right can increment/decrement it.
+//! The backend uses its phase ticket count for that same `N`. A
 //! protected MPDU or A-MPDU plan owns its right, whose selector identifies the
 //! still-programmed CCMP material; publication never searches by a copied
 //! key index. Removal consumes the handle and completes at its FIFO position
@@ -36,7 +40,7 @@
 //! protected MPDU at its first transmission ([`LowerMacCore::number`]): the
 //! key's software packet-number allocator writes its CCMP header. Only
 //! `Ok(())` confirms that write; a [`CcmpNumberingError`] prevents TX
-//! preparation, including when the key only receives.
+//! preparation. Receive-only key handles are rejected at compile time.
 //!
 //! # One publication per attempt, one attempt per EDCA queue
 //!
@@ -153,8 +157,9 @@ pub use resources::{CoreAuthority, CorePools, CoreResources, FreeQueue, TxTicket
 mod keys;
 pub use keys::{
     KeyAdmissionError, KeyAdmissionRefused, KeyHandle, KeyRemoved, KeyUse, QuarantinedAdmission,
-    TxAdmission,
+    ReceiveKeyHandle, RemovingKey, TransmitKeyScope, TxAdmission,
 };
+use keys::{KeyUseCount, TransmitKeyToken};
 
 pub use ampdu::{
     AmpduBacking, AmpduBackingSource, AmpduFormat, AmpduOutcome, AmpduPlan, AmpduProgress,
@@ -585,8 +590,6 @@ fn frame_bssid(frame: &[u8]) -> Option<MacAddress> {
 /// submitted as numbered protected TX.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CcmpNumberingError {
-    /// A station group key is valid for reception only; it cannot prepare TX.
-    ReceiveOnlyKey,
     /// Software cannot currently write the slot's buffer.
     BufferUnavailable(TxError),
     /// The CCMP header does not fit after the metadata and MAC header,
@@ -648,7 +651,7 @@ pub struct LowerMacCoreParts<
     tx: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
     config: LowerMacConfig,
     coex: &'slot dyn RadioCoexPriorities,
-    keys: KeyBank<'core, Path>,
+    keys: KeyBank<'core, Path, TICKETS>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -668,15 +671,6 @@ enum KeyToken {
 }
 
 impl KeyToken {
-    const fn hardware_index(&self) -> u8 {
-        match self {
-            Self::StaPairwise(slot) => slot.hardware_index(),
-            Self::StaGroup(slot) => slot.hardware_index(),
-            Self::ApPairwise(slot) => slot.hardware_index(),
-            Self::ApGroup(slot) => slot.hardware_index(),
-        }
-    }
-
     fn clear<H: CcmpKeyHardware>(self, hardware: &mut H) {
         match self {
             Self::StaPairwise(slot) => slot.clear(hardware),
@@ -687,17 +681,17 @@ impl KeyToken {
     }
 }
 
-struct KeyBank<'core, Path: PoolPath> {
+struct KeyBank<'core, Path: PoolPath, const TICKETS: usize> {
     installed: [Option<CheckedKeyScope>; LOWER_MAC_KEY_SLOTS],
-    uses: [usize; LOWER_MAC_KEY_SLOTS],
-    removals: [Option<KeyHandle<'core, Path>>; LOWER_MAC_KEY_SLOTS],
+    uses: [KeyUseCount<TICKETS>; LOWER_MAC_KEY_SLOTS],
+    removals: [Option<RemovingKey<'core, Path>>; LOWER_MAC_KEY_SLOTS],
 }
 
-impl<Path: PoolPath> KeyBank<'_, Path> {
+impl<Path: PoolPath, const TICKETS: usize> KeyBank<'_, Path, TICKETS> {
     const fn new() -> Self {
         Self {
             installed: [None; LOWER_MAC_KEY_SLOTS],
-            uses: [0; LOWER_MAC_KEY_SLOTS],
+            uses: [const { KeyUseCount::new() }; LOWER_MAC_KEY_SLOTS],
             removals: [const { None }; LOWER_MAC_KEY_SLOTS],
         }
     }
@@ -821,7 +815,7 @@ pub struct LowerMacCore<
     channel: WifiChannel,
     tuned: WifiChannel,
     vifs: [Option<CoreVif>; LOWER_MAC_VIFS as usize],
-    keys: KeyBank<'core, Path>,
+    keys: KeyBank<'core, Path, TICKETS>,
     rx_block_acks: [Option<RxBlockAckEntry>; RX_BLOCK_ACK_BANKS],
     gate_open: bool,
     monitor: bool,
@@ -1018,10 +1012,9 @@ where
     ///
     /// # Errors
     ///
-    /// A receive-only station group key, an unavailable
-    /// buffer, insufficient header space or packet-number exhaustion is a
-    /// distinct [`CcmpNumberingError`]. A receive-only key remains valid
-    /// for reception, but never reports successful TX preparation here.
+    /// An unavailable buffer, insufficient header space or packet-number
+    /// exhaustion is a distinct [`CcmpNumberingError`]. Receive-only group
+    /// handles are excluded by the argument type.
     pub fn number(
         &mut self,
         key: &mut KeyHandle<'core, Path>,
@@ -1040,10 +1033,9 @@ where
             .and_then(|remaining| remaining.get_mut(..CCMP_HEADER_LEN))
             .ok_or(CcmpNumberingError::InsufficientSpace)?;
         let header = match &mut key.token {
-            KeyToken::StaPairwise(key) => key.next_tx_ccmp_header(),
-            KeyToken::StaGroup(_) => return Err(CcmpNumberingError::ReceiveOnlyKey),
-            KeyToken::ApPairwise(key) => key.next_tx_ccmp_header(),
-            KeyToken::ApGroup(key) => key.next_tx_ccmp_header(),
+            TransmitKeyToken::StaPairwise(key) => key.next_tx_ccmp_header(),
+            TransmitKeyToken::ApPairwise(key) => key.next_tx_ccmp_header(),
+            TransmitKeyToken::ApGroup(key) => key.next_tx_ccmp_header(),
         }
         .map_err(CcmpNumberingError::PacketNumber)?;
         place.copy_from_slice(&header);
@@ -1326,9 +1318,10 @@ where
         match admission {
             TxAdmission::Open(ticket) => sink.ampdu_completed(queue, ticket, outcome.end()),
             TxAdmission::Protected(key) => {
-                self.keys.uses[key.index] -= 1;
-                sink.ampdu_completed(queue, key.ticket, outcome.end());
-                self.finish_key_removal(hardware, key.index, sink);
+                let index = key.index;
+                let ticket = self.keys.uses[index].release(key);
+                sink.ampdu_completed(queue, ticket, outcome.end());
+                self.finish_key_removal(hardware, index, sink);
             }
         }
         Ok(owner)
@@ -1600,9 +1593,10 @@ where
         match admission {
             TxAdmission::Open(ticket) => sink.tx_completed(queue, ticket, slot, end, rate),
             TxAdmission::Protected(key) => {
-                self.keys.uses[key.index] -= 1;
-                sink.tx_completed(queue, key.ticket, slot, end, rate);
-                self.finish_key_removal(hardware, key.index, sink);
+                let index = key.index;
+                let ticket = self.keys.uses[index].release(key);
+                sink.tx_completed(queue, ticket, slot, end, rate);
+                self.finish_key_removal(hardware, index, sink);
             }
         }
     }
@@ -1850,9 +1844,56 @@ where
     pub fn install_checked_key<H: LowerMacHardware>(
         &mut self,
         hardware: &mut H,
-        scope: CheckedKeyScope,
+        scope: TransmitKeyScope,
         temporal_key: &[u8; CCMP_128_KEY_BYTES],
     ) -> Result<KeyHandle<'core, Path>, LowerMacFault> {
+        let free = self.vacant_key(scope.into())?;
+        let token = match scope {
+            TransmitKeyScope::StationPairwise { peer } => {
+                install_sta_pairwise_ccmp(hardware, peer, temporal_key)
+                    .map(TransmitKeyToken::StaPairwise)
+            }
+            TransmitKeyScope::AccessPointPairwise {
+                peer,
+                association_id,
+            } => install_ap_pairwise_ccmp(hardware, peer, association_id, temporal_key)
+                .map(TransmitKeyToken::ApPairwise),
+            TransmitKeyScope::AccessPointGroup { key_id } => {
+                install_ap_group_ccmp(hardware, key_id, temporal_key).map(TransmitKeyToken::ApGroup)
+            }
+        }
+        .map_err(LowerMacFault::Key)?;
+        self.keys.installed[free] = Some(scope.into());
+        Ok(KeyHandle {
+            index: free,
+            token,
+            scope,
+            brand: core::marker::PhantomData,
+        })
+    }
+
+    /// Install a station GTK for reception. The returned handle cannot issue
+    /// TX rights or allocate TX packet numbers; removal consumes it normally.
+    pub fn install_station_group_key<H: LowerMacHardware>(
+        &mut self,
+        hardware: &mut H,
+        key_id: oer_ieee80211_mac::ccmp::GroupKeyId,
+        temporal_key: &[u8; CCMP_128_KEY_BYTES],
+    ) -> Result<ReceiveKeyHandle<'core, Path>, LowerMacFault> {
+        let scope = CheckedKeyScope::StationGroup { key_id };
+        let index = self.vacant_key(scope)?;
+        let token =
+            install_sta_group_ccmp(hardware, key_id, temporal_key).map_err(LowerMacFault::Key)?;
+        self.keys.installed[index] = Some(scope);
+        Ok(ReceiveKeyHandle {
+            index,
+            token,
+            key_id,
+            brand: core::marker::PhantomData,
+        })
+    }
+
+    fn vacant_key(&self, scope: CheckedKeyScope) -> Result<usize, LowerMacFault> {
         if let PortState::Poisoned(fault) = self.state {
             return Err(fault);
         }
@@ -1865,36 +1906,11 @@ where
         {
             return Err(LowerMacFault::Key(CryptoKeyError::Occupied));
         }
-        let free = self
-            .keys
+        self.keys
             .installed
             .iter()
             .position(Option::is_none)
-            .ok_or(LowerMacFault::Key(CryptoKeyError::Occupied))?;
-        let token = match scope {
-            CheckedKeyScope::StationPairwise { peer } => {
-                install_sta_pairwise_ccmp(hardware, peer, temporal_key).map(KeyToken::StaPairwise)
-            }
-            CheckedKeyScope::StationGroup { key_id } => {
-                install_sta_group_ccmp(hardware, key_id, temporal_key).map(KeyToken::StaGroup)
-            }
-            CheckedKeyScope::AccessPointPairwise {
-                peer,
-                association_id,
-            } => install_ap_pairwise_ccmp(hardware, peer, association_id, temporal_key)
-                .map(KeyToken::ApPairwise),
-            CheckedKeyScope::AccessPointGroup { key_id } => {
-                install_ap_group_ccmp(hardware, key_id, temporal_key).map(KeyToken::ApGroup)
-            }
-        }
-        .map_err(LowerMacFault::Key)?;
-        self.keys.installed[free] = Some(scope);
-        Ok(KeyHandle {
-            index: free,
-            token,
-            scope,
-            brand: core::marker::PhantomData,
-        })
+            .ok_or(LowerMacFault::Key(CryptoKeyError::Occupied))
     }
 
     /// Admit one protected attempt from the live handle and one TX ticket.
@@ -1912,19 +1928,7 @@ where
                 reason: KeyAdmissionError::Poisoned,
             });
         }
-        if matches!(key.token, KeyToken::StaGroup(_)) {
-            return Err(KeyAdmissionRefused {
-                ticket,
-                reason: KeyAdmissionError::ReceiveOnly,
-            });
-        }
-        self.keys.uses[key.index] += 1;
-        Ok(KeyUse {
-            ticket,
-            index: key.index,
-            selector: key.token.hardware_index(),
-            role: key.scope.role(),
-        })
+        Ok(self.keys.uses[key.index].admit(key, ticket))
     }
 
     /// Consume the sole installed handle at removal's FIFO position. The
@@ -1936,9 +1940,10 @@ where
     >(
         &mut self,
         hardware: &mut H,
-        key: KeyHandle<'core, Path>,
+        key: impl Into<RemovingKey<'core, Path>>,
         sink: &mut K,
     ) {
+        let key = key.into();
         let index = key.index;
         self.keys.removals[index] = Some(key);
         self.finish_key_removal(hardware, index, sink);
@@ -1950,7 +1955,7 @@ where
         index: usize,
         sink: &mut K,
     ) {
-        if matches!(self.state, PortState::Poisoned(_)) || self.keys.uses[index] != 0 {
+        if matches!(self.state, PortState::Poisoned(_)) || !self.keys.uses[index].is_empty() {
             return;
         }
         if let Some(key) = self.keys.removals[index].take() {
@@ -1983,9 +1988,10 @@ where
         Ok(match admission {
             TxAdmission::Open(ticket) => ticket,
             TxAdmission::Protected(key) => {
-                self.keys.uses[key.index] -= 1;
-                self.finish_key_removal(hardware, key.index, sink);
-                key.ticket
+                let index = key.index;
+                let ticket = self.keys.uses[index].release(key);
+                self.finish_key_removal(hardware, index, sink);
+                ticket
             }
         })
     }

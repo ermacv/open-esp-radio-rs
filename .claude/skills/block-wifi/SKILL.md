@@ -44,6 +44,10 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   DMA, queue and key rights in sealed quarantine. `LowerMacCoreParts` keeps
   the key ledger across a disabled restart; extracting only the transmitter
   would lose the outstanding rights and is not exposed.
+  Station GTK installation returns `ReceiveKeyHandle`, excluded from TX
+  admission and PN allocation. The private `KeyUseCount<N>` only changes by
+  consuming a ticket or its issued right; its width is checked in the same
+  `CorePools<N>` const evaluation, including the full 256-ticket bound.
 
 - A stopped station service restarts only by consuming `StoppedService` with
   its matching disabled port owner. Reuse its returned banks: reminting loses

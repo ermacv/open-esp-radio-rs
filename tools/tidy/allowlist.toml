@@ -468,3 +468,7 @@ reason = "cargo xtask check ui checks the contract diagnostic and its compiling 
 [[uncompiled]]
 path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/key_use_foreign.rs"
 reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/receive_key.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"

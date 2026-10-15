@@ -48,6 +48,7 @@ impl<const TICKETS: usize> PoolSet for CorePools<TICKETS> {
     fn build<'core, Path: PoolPath>(builder: PoolBuilder<'core, Path>) -> Self::Pools<'core, Path> {
         const {
             assert!(TICKETS <= 256, "ticket indices fit the pool index");
+            let () = super::keys::KeyUseCount::<TICKETS>::WIDTH_CHECK;
         }
         let (places, tickets) =
             builder.into_pools::<(Slots<CorePlace, 5>, Slots<TicketPlace, TICKETS>)>();

@@ -260,7 +260,10 @@ where
             }
         }
         let disabled = owner
-            .disable(&mut |event| core.outcome(B::view(&event)))
+            .disable(&mut |event| {
+                core.outcome(B::view(&event));
+                core::ops::ControlFlow::Continue(())
+            })
             .await;
         match (exit, disabled) {
             (Ok(exit), Ok(owner)) => Ended::uninstall(owner, uninstall, Served::Stopped(exit)),

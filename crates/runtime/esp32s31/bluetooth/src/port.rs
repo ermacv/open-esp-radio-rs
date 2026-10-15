@@ -241,7 +241,7 @@ impl<
         _: Call,
         (): &'a (),
         _: &'a mut Self::Local<'id>,
-        sink: &'a mut dyn FnMut(BluetoothOutcome),
+        sink: &'a mut dyn FnMut(BluetoothOutcome) -> core::ops::ControlFlow<BluetoothOutcome>,
     ) -> impl Future<Output = Result<(), Poisoned<Self::Fault>>> + 'a
     where
         'id: 'a,

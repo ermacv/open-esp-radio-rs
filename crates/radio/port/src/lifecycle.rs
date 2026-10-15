@@ -255,12 +255,15 @@ pub trait PortBackend: Sized {
 
     /// End admitted work within the backend's bound and deliver every
     /// remaining terminal to `sink`, returning all permits before success.
+    /// On `ControlFlow::Break(terminal)`, stop delivery, retain that terminal
+    /// and every remaining owner in the installation, and return `Poisoned`.
+    /// Uninstall must return those owners or quarantine them without Drop.
     fn disable<'a, 'id>(
         &'a mut self,
         call: Call,
         held: &'a Self::Held<'id>,
         local: &'a mut Self::Local<'id>,
-        sink: &'a mut dyn FnMut(Self::Terminal<'id>),
+        sink: &'a mut dyn FnMut(Self::Terminal<'id>) -> core::ops::ControlFlow<Self::Terminal<'id>>,
     ) -> impl Future<Output = Result<(), Poisoned<Self::Fault>>> + 'a
     where
         'id: 'a;
@@ -1217,9 +1220,11 @@ impl<'p, 'id, B: PortBackend> Owner<'p, 'id, B, Enabled> {
     }
 
     /// End admitted work and hand its remaining terminals to `sink`.
+    /// A sink returning `Break(terminal)` stops delivery and leaves that
+    /// terminal and its successors in the returned poisoned installation.
     pub async fn disable(
         self,
-        sink: &mut dyn FnMut(B::Terminal<'id>),
+        sink: &mut dyn FnMut(B::Terminal<'id>) -> core::ops::ControlFlow<B::Terminal<'id>>,
     ) -> Result<Owner<'p, 'id, B, Disabled>, PoisonedOwner<'p, 'id, B>> {
         let Self {
             backend,

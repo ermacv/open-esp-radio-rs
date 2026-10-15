@@ -637,7 +637,7 @@ where
         _: Call,
         held: &'a RuntimeHeld<'id>,
         _: &'a mut Self::Local<'id>,
-        sink: &'a mut dyn FnMut(Ieee802154PortEvent),
+        sink: &'a mut dyn FnMut(Ieee802154PortEvent) -> core::ops::ControlFlow<Ieee802154PortEvent>,
     ) -> impl Future<Output = Result<(), Poisoned<RadioFault>>> + 'a
     where
         'id: 'a,
@@ -649,8 +649,16 @@ where
         while let Some(taken) = runtime.events.take() {
             if let Ok(event) = taken
                 && let Some(port) = take_terminal(runtime, held, event)
+                && let core::ops::ControlFlow::Break(terminal) = sink(port)
             {
-                sink(port);
+                // `take` emptied this slot; there is no second consumer
+                // during disable. Remaining entries stay in their queue.
+                runtime.events.owed(|owed| {
+                    owed.held = Some(crate::HeldEvent::Rejected { terminal });
+                });
+                runtime.poison(RadioFault::StateLost);
+                held.wake_all();
+                return ready(runtime.poisoned());
             }
         }
         *held.wishes.borrow_mut() = [Wish::Sleep; RUNTIME_INTERFACES];
@@ -778,15 +786,17 @@ where
 
     fn uninstall<'id>(
         self,
-        _: Self::Held<'id>,
-        _: Self::Local<'id>,
-        _: Retired<'id, (Self::Driver, Self::State)>,
+        held: Self::Held<'id>,
+        local: Self::Local<'id>,
+        retired: Retired<'id, (Self::Driver, Self::State)>,
         _: Detached<'id>,
         _: Self::Uninstall,
     ) -> Self::Uninstalled {
         let uninstalled = self.runtime.uninstall();
         if matches!(uninstalled, Uninstalled::Quarantined(_)) {
-            drop(oer_radio_port::Quarantined::new(self.route));
+            drop(oer_radio_port::Quarantined::new((
+                self.route, held, local, retired,
+            )));
         }
         uninstalled
     }

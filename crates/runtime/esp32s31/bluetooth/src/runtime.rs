@@ -123,8 +123,8 @@ pub enum BluetoothRuntimeFault<E> {
     TransitionTimedOut,
     /// The port's owner was abandoned ([`BluetoothRuntime::abandon`]).
     Abandoned,
-    /// After `Disable`, the outcome queue still owed the end of an admitted
-    /// event: its accounting and the radio disagree.
+    /// After `Disable`, an admitted event still owed its end, or the sink
+    /// rejected an outcome. Undelivered outcomes remain in the runtime.
     Unsettled,
 }
 
@@ -260,7 +260,7 @@ enum Admission {
 struct Owed<const CONNECTIONS: usize> {
     /// A received PDU was dropped: the next outcome reports the loss first.
     lost: bool,
-    /// An outcome taken after the loss it reported.
+    /// An outcome taken after a loss, or returned by a rejecting disable sink.
     held: Option<BluetoothOutcome>,
     /// Admitted events whose end is not queued yet.
     events: usize,
@@ -1160,11 +1160,13 @@ impl<
     /// ([`BluetoothRadio::cancel_all_stopped`]) against a sample taken after
     /// the stop and settles the withdrawals; every outcome the phase left,
     /// each admitted event's end among them, then goes to `sink`. A failed
-    /// stop, an event left without its end or a disable past the bound
-    /// poisons the runtime.
+    /// stop, a rejected outcome, an event left without its end or a disable
+    /// past the bound poisons the runtime. A rejected outcome is kept at the
+    /// front of the queue; uninstall retains the radio and leaves that queue
+    /// intact.
     pub(crate) async fn disable(
         &self,
-        sink: &mut dyn FnMut(BluetoothOutcome),
+        sink: &mut dyn FnMut(BluetoothOutcome) -> core::ops::ControlFlow<BluetoothOutcome>,
     ) -> Result<(), Poisoned<BluetoothFault<H::StartError>>> {
         self.bounded(oer_bluetooth_trace::LifecycleCommand::Disable, async {
             match self.call(Request::Disable).await? {
@@ -1174,8 +1176,14 @@ impl<
             // A loss stands only for reports the phase's consumer did not
             // take; the sink takes what is left.
             while let Some(outcome) = self.outcomes.take() {
-                if let Ok(outcome) = outcome {
-                    sink(outcome);
+                if let Ok(outcome) = outcome
+                    && let core::ops::ControlFlow::Break(outcome) = sink(outcome)
+                {
+                    // `take` emptied the held slot. The sole consumer owns
+                    // this transition, so restoring it preserves the front
+                    // of the queue and every later outcome without a drop.
+                    self.outcomes.owed(|owed| owed.held = Some(outcome));
+                    return Err(self.halt(BluetoothRuntimeFault::Unsettled));
                 }
             }
             Ok(())

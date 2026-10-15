@@ -332,7 +332,10 @@ impl PortBody<Backend> for ThreadBody<'_> {
         // The stack has stopped: the body disables the radio before the
         // client stops; the disable hands every leftover terminal to the
         // sink.
-        match owner.disable(&mut |_| {}).await {
+        match owner
+            .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+            .await
+        {
             Ok(owner) => oer_radio_port::Ended::uninstall(owner, (), ()),
             Err(poisoned) => oer_radio_port::Ended::uninstall(poisoned, (), ()),
         }

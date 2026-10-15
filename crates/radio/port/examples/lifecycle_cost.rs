@@ -88,15 +88,20 @@ macro_rules! port {
                     _: Call,
                     _: &'a Self::Held<'id>,
                     _: &'a mut Self::Local<'id>,
-                    sink: &'a mut dyn FnMut(u32),
+                    sink: &'a mut dyn FnMut(u32) -> core::ops::ControlFlow<u32>,
                 ) -> Result<(), Poisoned<u32>>
                 where
                     'id: 'a,
                 {
                     self.0.step(2);
                     core::future::poll_fn(|_| self.0.poll(2)).await;
-                    sink(self.0.calls.load(Ordering::Relaxed));
-                    Ok(())
+                    match sink(self.0.calls.load(Ordering::Relaxed)) {
+                        core::ops::ControlFlow::Continue(()) => Ok(()),
+                        core::ops::ControlFlow::Break(terminal) => {
+                            self.0.calls.store(terminal, Ordering::Relaxed);
+                            Err(Poisoned { cause: 1 })
+                        }
+                    }
                 }
                 async fn now(
                     &self,
@@ -196,6 +201,7 @@ macro_rules! port {
                     match owner
                         .disable(&mut |event| {
                             core::hint::black_box(event);
+                            core::ops::ControlFlow::Continue(())
                         })
                         .await
                     {

@@ -51,6 +51,14 @@ runtime retains their affine owners across borrowed waits, returns the same
 resources on rejection and preserves terminal owners when quiescence is not
 proven. A composed owner alone does not establish hardware qualification.
 
+BLE and IEEE 802.15.4 disable sinks return `ControlFlow`: a refused terminal
+comes back by value and stops delivery immediately. BLE restores it to the
+queue's held slot and halts with `Unsettled`, so uninstall retains the radio
+and leaves the queue occupied. IEEE 802.15.4 marks its held event as rejected,
+publishes `StateLost`, and returns the shared `Quarantined` from uninstall;
+its runtime keeps the event queue, hardware and backing until chip reset.
+Neither path drains later terminals into a consumer that has refused one.
+
 The portable Wi-Fi station service uses `MsduQueue` for application commands
 as well as network frames. Each queue has one affine sender and receiver;
 waiting for readiness borrows its endpoint exclusively without removing a

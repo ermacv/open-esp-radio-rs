@@ -217,7 +217,10 @@ fn disable_hands_leftover_terminals_to_the_sink_and_takes_their_permits_back() {
             };
             let mut left = Vec::new();
             let owner = owner
-                .disable(&mut |event| left.push(event))
+                .disable(&mut |event| {
+                    left.push(event);
+                    core::ops::ControlFlow::Continue(())
+                })
                 .await
                 .unwrap_or_else(|_| panic!("not poisoned"));
             assert!(matches!(
@@ -234,13 +237,62 @@ fn disable_hands_leftover_terminals_to_the_sink_and_takes_their_permits_back() {
                 assert!(poll_once(pin!(client.operation(&mut seat0))).is_ready());
             }
             let owner = owner
-                .disable(&mut |_| {})
+                .disable(&mut |_| core::ops::ControlFlow::Continue(()))
                 .await
                 .unwrap_or_else(|_| panic!("not poisoned"));
             oer_radio_port::Ended::uninstall(owner, (), ())
         }
     }
     run(Body);
+}
+
+#[test]
+fn rejected_disable_terminal_and_later_events_remain_in_the_uninstalled_model() {
+    struct Reject;
+    impl PortBody<OwnedModel> for Reject {
+        type Output = ();
+        async fn run<'p, 'id>(
+            self,
+            mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
+            resources: ModelResources<'id>,
+        ) -> Ended<'id, OwnedModel, ()> {
+            let [mut seat, _] = resources.operation;
+            let configured = owner.setup().configure(resources.interface0.interface);
+            let mut owner = owner.enable().await.ok().expect("enabled");
+            let handle = parts_handle();
+            {
+                let phase = owner.phase();
+                let client = phase.clients.client(&configured);
+                ready(client.receive(channel(11))).unwrap();
+                let permit = ready(client.operation(&mut seat));
+                let scan = SupportedEnergyScan::new(channel(11), 128).unwrap();
+                let id = client.energy_scan(permit, scan).unwrap().id();
+                assert!(handle.complete_energy_scan(id, Some(-70)));
+                assert!(handle.receive(channel(11), Interface::new(0), &DATA, -40));
+            }
+            let mut offered = 0;
+            let poisoned = owner
+                .disable(&mut |terminal| {
+                    offered += 1;
+                    core::ops::ControlFlow::Break(terminal)
+                })
+                .await
+                .err()
+                .expect("the sink rejected its terminal");
+            assert_eq!(offered, 1);
+            assert_eq!(poisoned.cause(), ModelFault);
+            Ended::uninstall(poisoned, (), ())
+        }
+    }
+    let model = run(Reject);
+    let state = model.0.borrow();
+    assert_eq!(state.events.len(), 2);
+    assert!(matches!(
+        state.events[0],
+        ModelEvent::EnergyScanDone(_, _, Some(-70))
+    ));
+    assert!(matches!(state.events[1], ModelEvent::Received(..)));
+    assert_eq!(state.poisoned, Some(ModelFault));
 }
 
 #[test]
@@ -281,7 +333,7 @@ fn the_radio_receives_while_any_interface_asks_on_one_shared_channel() {
                 assert_eq!(handle.receiving(), None);
             }
             let owner = owner
-                .disable(&mut |_| {})
+                .disable(&mut |_| core::ops::ControlFlow::Continue(()))
                 .await
                 .unwrap_or_else(|_| panic!("not poisoned"));
             oer_radio_port::Ended::uninstall(owner, (), ())
@@ -391,7 +443,7 @@ fn a_cancel_ends_the_operation_once() {
                 assert!(poll_once(pin!(client.operation(&mut seat1))).is_ready());
             }
             let owner = owner
-                .disable(&mut |_| {})
+                .disable(&mut |_| core::ops::ControlFlow::Continue(()))
                 .await
                 .unwrap_or_else(|_| panic!("not poisoned"));
             oer_radio_port::Ended::uninstall(owner, (), ())
@@ -449,7 +501,10 @@ fn a_radio_fault_ends_admitted_work_first_then_poisons() {
                 assert!(client.transmit(permit, transmission(&DATA)).is_err());
                 assert!(poll_once(pin!(client.operation(&mut seat0))).is_ready());
             }
-            match owner.disable(&mut |_| {}).await {
+            match owner
+                .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+                .await
+            {
                 Ok(_) => panic!("a poisoned backend does not disable"),
                 Err(poisoned) => oer_radio_port::Ended::uninstall(poisoned, (), ()),
             }
@@ -532,7 +587,10 @@ fn a_reception_overflow_is_reported_once_and_loses_no_terminal() {
             // The sink gets the terminal alone, which the portable view reads.
             let mut ended = Vec::new();
             let owner = owner
-                .disable(&mut |event| ended.push(ModelEvents::view(&event).ends()))
+                .disable(&mut |event| {
+                    ended.push(ModelEvents::view(&event).ends());
+                    core::ops::ControlFlow::Continue(())
+                })
                 .await
                 .unwrap_or_else(|_| panic!("not poisoned"));
             assert_eq!(ended.len(), 1);
@@ -586,7 +644,7 @@ fn pending_entries_hold_their_interface_slots_across_phases() {
                 Some([1, 2, 3, 4, 5, 6, 7, 8])
             );
             let mut owner = owner
-                .disable(&mut |_| {})
+                .disable(&mut |_| core::ops::ControlFlow::Continue(()))
                 .await
                 .unwrap_or_else(|_| panic!("not poisoned"))
                 .enable()
@@ -606,7 +664,7 @@ fn pending_entries_hold_their_interface_slots_across_phases() {
                 None
             );
             let owner = owner
-                .disable(&mut |_| {})
+                .disable(&mut |_| core::ops::ControlFlow::Continue(()))
                 .await
                 .unwrap_or_else(|_| panic!("not poisoned"));
             oer_radio_port::Ended::uninstall(owner, (), ())
@@ -661,7 +719,7 @@ fn settings_reach_the_radio_while_disabled_and_while_enabled() {
             assert_eq!(handle.radio().header_ies, [1, 2, 3]);
             assert_eq!(handle.interface(Interface::new(0)).pan_id, Some(0xabcd));
             let mut owner = owner
-                .disable(&mut |_| {})
+                .disable(&mut |_| core::ops::ControlFlow::Continue(()))
                 .await
                 .unwrap_or_else(|_| panic!("not poisoned"));
             let _slot = owner.setup().remove(zero);
@@ -822,7 +880,7 @@ impl PortBackend for PoolProbe {
         _: Call,
         _: &'a (),
         _: &'a mut Self::Local<'id>,
-        _: &'a mut dyn FnMut(()),
+        _: &'a mut dyn FnMut(()) -> core::ops::ControlFlow<()>,
     ) -> impl Future<Output = Result<(), Poisoned<ModelFault>>> + 'a
     where
         'id: 'a,
@@ -1000,7 +1058,7 @@ fn a_change_of_wish_wakes_waiting_receives_and_a_window_preempts() {
                 assert_eq!(handle.receiving(), Some(channel(20)));
             }
             let owner = owner
-                .disable(&mut |_| {})
+                .disable(&mut |_| core::ops::ControlFlow::Continue(()))
                 .await
                 .unwrap_or_else(|_| panic!("not poisoned"));
             oer_radio_port::Ended::uninstall(owner, (), ())
@@ -1040,7 +1098,7 @@ fn interfaces_moving_to_one_channel_admit_each_other() {
                 assert_eq!(parts_handle().receiving(), Some(channel(15)));
             }
             let owner = owner
-                .disable(&mut |_| {})
+                .disable(&mut |_| core::ops::ControlFlow::Continue(()))
                 .await
                 .unwrap_or_else(|_| panic!("not poisoned"));
             oer_radio_port::Ended::uninstall(owner, (), ())
@@ -1069,7 +1127,7 @@ fn removing_an_interface_keeps_its_pending_entries() {
                 parts.clients.client(&zero).add_pending_short(slot, [7, 7])
             };
             let mut owner = owner
-                .disable(&mut |_| {})
+                .disable(&mut |_| core::ops::ControlFlow::Continue(()))
                 .await
                 .unwrap_or_else(|_| panic!("not poisoned"));
             let interface = owner.setup().remove(zero);
@@ -1089,7 +1147,7 @@ fn removing_an_interface_keeps_its_pending_entries() {
             }
             assert_eq!(handle.interface(Interface::new(0)).pending_short[0], None);
             let owner = owner
-                .disable(&mut |_| {})
+                .disable(&mut |_| core::ops::ControlFlow::Continue(()))
                 .await
                 .unwrap_or_else(|_| panic!("not poisoned"));
             oer_radio_port::Ended::uninstall(owner, (), ())

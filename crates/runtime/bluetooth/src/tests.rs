@@ -326,7 +326,7 @@ impl<'m> PortBackend for ModelBackend<'m> {
         _: Call,
         _: &'a Self::Held<'id>,
         _: &'a mut Self::Local<'id>,
-        sink: &'a mut dyn FnMut(ModelEvent),
+        sink: &'a mut dyn FnMut(ModelEvent) -> core::ops::ControlFlow<ModelEvent>,
     ) -> impl Future<Output = Result<(), Poisoned<ModelFault>>> + 'a
     where
         'id: 'a,
@@ -339,21 +339,28 @@ impl<'m> PortBackend for ModelBackend<'m> {
             radio.check()?;
             radio.lifecycle.borrow_mut().push("disable");
             let mut hand = |event: ModelEvent| {
+                if let core::ops::ControlFlow::Break(event) = sink(event) {
+                    // Taking the event freed a slot; synthetic terminals
+                    // are offered only after the channel has been drained.
+                    radio.outcomes.try_send(Ok(event)).unwrap();
+                    radio.poison();
+                    return Err(Poisoned { cause: ModelFault });
+                }
                 radio
                     .admitted
                     .borrow_mut()
                     .retain(|admitted| *admitted != event.0);
                 radio.handed.borrow_mut().push(event);
-                sink(event);
+                Ok(())
             };
             while let Ok(event) = radio.outcomes.try_receive() {
                 if let Ok(event) = event {
-                    hand(event);
+                    hand(event)?;
                 }
             }
             let admitted: Vec<EventId> = radio.admitted.borrow().clone();
             for id in admitted {
-                hand(ModelEvent(id));
+                hand(ModelEvent(id))?;
             }
             Ok(())
         }

@@ -5,6 +5,8 @@ use core::{
 };
 use std::{
     boxed::Box,
+    collections::VecDeque,
+    rc::Rc,
     sync::{Arc, atomic::AtomicUsize},
     task::Wake,
     vec::Vec,
@@ -13,6 +15,7 @@ use std::{
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Fault {
     Hardware,
+    SinkRejected,
 }
 #[derive(Clone, Copy)]
 enum Mode {
@@ -36,6 +39,7 @@ struct Model {
     event: Cell<bool>,
     irq_masked: Cell<bool>,
     irq_state: Cell<usize>,
+    terminals: RefCell<VecDeque<Terminal>>,
 }
 impl Model {
     fn new(mode: Mode) -> Self {
@@ -52,6 +56,7 @@ impl Model {
             event: Cell::new(false),
             irq_masked: Cell::new(false),
             irq_state: Cell::new(0),
+            terminals: RefCell::new(VecDeque::new()),
         }
     }
     fn installed(&self) -> Installed<Backend<'_>> {
@@ -69,6 +74,15 @@ impl Model {
 struct Backend<'a>(&'a Model);
 struct Driver<'a>(&'a Model);
 struct Completion<'a>(&'a Model);
+struct Terminal {
+    index: usize,
+    drops: Rc<[Cell<usize>; 3]>,
+}
+impl Drop for Terminal {
+    fn drop(&mut self) {
+        self.drops[self.index].set(self.drops[self.index].get() + 1);
+    }
+}
 impl Drop for Backend<'_> {
     fn drop(&mut self) {
         self.0.owner_drops[0].set(self.0.owner_drops[0].get() + 1);
@@ -115,7 +129,7 @@ impl PortPhase for Phase<'_> {
 impl<'a> PortBackend for Backend<'a> {
     type Pools = ();
     type Event<'id> = ();
-    type Terminal<'id> = ();
+    type Terminal<'id> = Terminal;
     type Domain = ();
     type Fault = Fault;
     type Refusal = ();
@@ -171,13 +185,21 @@ impl<'a> PortBackend for Backend<'a> {
         _: Call,
         _: &'p usize,
         _: &'p mut usize,
-        _: &'p mut dyn FnMut(()),
+        sink: &'p mut dyn FnMut(Terminal) -> core::ops::ControlFlow<Terminal>,
     ) -> Result<(), Poisoned<Fault>>
     where
         'id: 'p,
     {
         self.0.record("disable");
         self.0.enabled.set(false);
+        for terminal in core::iter::from_fn(|| self.0.terminals.borrow_mut().pop_front()) {
+            if let core::ops::ControlFlow::Break(terminal) = sink(terminal) {
+                self.0.terminals.borrow_mut().push_front(terminal);
+                let (poisoned, _publication) =
+                    self.0.poison.borrow_mut().publish(Fault::SinkRejected);
+                return Err(poisoned);
+            }
+        }
         self.0.poison.borrow().get().map_or(Ok(()), Err)
     }
     async fn now(&self, _: Call) -> PortResult<RadioInstant<()>, ClockError, Fault> {
@@ -324,7 +346,10 @@ impl<'a> PortBody<Backend<'a>> for Body {
                     assert!(phase.next_event().await.is_ok());
                     assert!(phase.next_event().await.is_err());
                 }
-                match enabled.disable(&mut |_| {}).await {
+                match enabled
+                    .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+                    .await
+                {
                     Ok(disabled) => crate::Ended::uninstall(disabled, (), ()),
                     Err(poisoned) => crate::Ended::uninstall(poisoned, (), ()),
                 }
@@ -358,7 +383,11 @@ impl<'m> PortBody<Backend<'m>> for Configure {
             *setup.local = *setup.held * 2;
         }
         let enabled = owner.enable().await.ok().expect("enable");
-        let disabled = enabled.disable(&mut |_| {}).await.ok().expect("disable");
+        let disabled = enabled
+            .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+            .await
+            .ok()
+            .expect("disable");
         Ended::uninstall(disabled, (), ())
     }
 }
@@ -371,6 +400,75 @@ fn enable_observes_the_installation_state_borrowed_by_setup() {
         PortEnd::Uninstalled { .. }
     ));
     assert_eq!(model.configured.get(), 33);
+}
+
+struct RejectTerminal(usize);
+impl<'m> PortBody<Backend<'m>> for RejectTerminal {
+    type Output = Vec<Terminal>;
+    async fn run<'p, 'id>(
+        self,
+        owner: Owner<'p, 'id, Backend<'m>, Disabled>,
+        _: (),
+    ) -> Ended<'id, Backend<'m>, Self::Output> {
+        let owner = owner.enable().await.ok().expect("enable");
+        let mut accepted = Vec::new();
+        let mut offered = 0;
+        let poisoned = owner
+            .disable(&mut |terminal| {
+                offered += 1;
+                if terminal.index == self.0 {
+                    core::ops::ControlFlow::Break(terminal)
+                } else {
+                    accepted.push(terminal);
+                    core::ops::ControlFlow::Continue(())
+                }
+            })
+            .await
+            .err()
+            .expect("rejection returns PoisonedOwner");
+        assert_eq!(poisoned.cause(), Fault::SinkRejected);
+        assert_eq!(offered, self.0 + 1, "delivery stops at the first rejection");
+        Ended::uninstall(poisoned, (), accepted)
+    }
+}
+
+#[test]
+fn rejecting_first_or_middle_terminal_keeps_every_owner_without_drop() {
+    for rejected in [0, 1] {
+        let model = Model::new(Mode::Normal);
+        let drops = Rc::new(core::array::from_fn(|_| Cell::new(0)));
+        model
+            .terminals
+            .borrow_mut()
+            .extend((0..3).map(|index| Terminal {
+                index,
+                drops: drops.clone(),
+            }));
+        let PortEnd::Uninstalled {
+            output: accepted, ..
+        } = finish(run_port(model.installed(), RejectTerminal(rejected)))
+        else {
+            panic!("the poisoned owner uninstalls");
+        };
+        assert_eq!(accepted.len(), rejected);
+        assert_eq!(
+            model
+                .terminals
+                .borrow()
+                .iter()
+                .map(|terminal| terminal.index)
+                .collect::<Vec<_>>(),
+            (rejected..3).collect::<Vec<_>>()
+        );
+        assert!(drops.iter().all(|count| count.get() == 0));
+        // Only the sink's accepted owners can be destroyed by that sink.
+        drop(accepted);
+        for index in 0..3 {
+            assert_eq!(drops[index].get(), usize::from(index < rejected));
+        }
+        drop(model);
+        assert!(drops.iter().all(|count| count.get() == 1));
+    }
 }
 
 #[test]

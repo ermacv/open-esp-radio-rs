@@ -99,7 +99,7 @@ impl<const N: usize, const S: usize> PortBackend for Probe<N, S> {
         _: Call,
         _: &'a (),
         _: &'a mut Self::Local<'id>,
-        _: &'a mut dyn FnMut(()),
+        _: &'a mut dyn FnMut(()) -> core::ops::ControlFlow<()>,
     ) -> impl Future<Output = Result<(), Poisoned<Fault>>> + 'a
     where
         'id: 'a,

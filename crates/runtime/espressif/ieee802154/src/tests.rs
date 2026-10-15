@@ -261,7 +261,14 @@ fn enabled_with<const EVENTS: usize>(
                 })
                 .await;
             }
-            let owner = disabled_owner(owner.disable(&mut |event| leftovers.push(event)).await);
+            let owner = disabled_owner(
+                owner
+                    .disable(&mut |event| {
+                        leftovers.push(event);
+                        core::ops::ControlFlow::Continue(())
+                    })
+                    .await,
+            );
             oer_radio_port::Ended::uninstall(owner, (), ())
         },
     );
@@ -504,7 +511,10 @@ fn a_fault_reaches_a_queue_full_of_frames_and_poisons_the_port() {
                     Err(Poisoned { .. })
                 ));
             }
-            let poisoned = match owner.disable(&mut |_| {}).await {
+            let poisoned = match owner
+                .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+                .await
+            {
                 Err(poisoned) => poisoned,
                 Ok(owner) => {
                     let _ = owner.fail_stop();
@@ -530,6 +540,108 @@ fn disable_hands_out_the_queued_frames_and_the_next_install_starts_empty() {
     assert!(matches!(leftovers.as_slice(), [frame] if received(frame)));
     let _backend = install::<Single, 4>(runtime, parts);
     assert!(runtime.events.take().is_none());
+}
+
+struct RejectDisable {
+    runtime: &'static Runtime<8>,
+    reject_at: usize,
+}
+impl PortBody<Backend<Single, 8>> for RejectDisable {
+    type Output = ();
+    async fn run<'p, 'id>(
+        self,
+        mut owner: Owner<'p, 'id, Backend<Single, 8>, Disabled>,
+        resources: Resources<'id, Single, 8>,
+    ) -> Ended<'id, Backend<Single, 8>, ()> {
+        let RuntimeResources {
+            interfaces,
+            mut operation,
+            ..
+        } = resources;
+        let configured = owner.setup().configure(interfaces.interface);
+        let mut owner = enabled_owner(owner.enable().await);
+        {
+            let phase = owner.phase();
+            let client = phase.clients.client(&configured);
+            ready(client.receive(channel(11))).unwrap();
+            for _ in 0..3 {
+                self.runtime
+                    .model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
+            }
+            let permit = ready(client.operation(&mut operation[0]));
+            let _work = client
+                .transmit(permit, transmission(&MAC, TxMode::Direct, 0))
+                .unwrap();
+        }
+        let mut offered = 0;
+        let poisoned = owner
+            .disable(&mut |terminal| {
+                offered += 1;
+                if offered == self.reject_at + 1 {
+                    core::ops::ControlFlow::Break(terminal)
+                } else {
+                    core::ops::ControlFlow::Continue(())
+                }
+            })
+            .await
+            .err()
+            .expect("a rejected terminal poisons the owner");
+        assert_eq!(offered, self.reject_at + 1);
+        assert_eq!(poisoned.cause(), RadioFault::StateLost);
+        Ended::uninstall(poisoned, (), ())
+    }
+}
+
+#[test]
+fn rejecting_first_or_middle_disable_event_quarantines_the_remaining_queue_and_owners() {
+    for reject_at in [0, 1] {
+        let runtime = runtime::<8>();
+        let backend = install::<Single, 8>(runtime, parts());
+        let end = block_on(run_port(
+            backend.installed(),
+            RejectDisable { runtime, reject_at },
+        ));
+        let oer_radio_port::PortEnd::Uninstalled {
+            uninstalled: Uninstalled::Quarantined(receipt),
+            ..
+        } = end
+        else {
+            panic!("undelivered owners cannot become reusable");
+        };
+        drop(receipt);
+        assert!(
+            runtime
+                .installed
+                .lock(|installed| installed.borrow().is_some())
+        );
+        assert!(runtime.events.owed(|owed| matches!(
+            &owed.held, Some(super::HeldEvent::Rejected { terminal }) if received(terminal)
+        )));
+        assert!(
+            runtime.events.take().is_none(),
+            "rejection prevents later delivery"
+        );
+        let mut frames = 0;
+        let mut terminals = 0;
+        while let Ok(entry) = runtime.events.entries.try_receive() {
+            match entry.event {
+                Ieee802154RadioEvent::Received(_) => frames += 1,
+                Ieee802154RadioEvent::TransmitDone {
+                    status: TxStatus::Aborted,
+                    ..
+                } => terminals += 1,
+                Ieee802154RadioEvent::Lifecycle(_) => (),
+                other => panic!("unexpected remaining event: {other:?}"),
+            }
+        }
+        assert_eq!(frames, 2 - reject_at);
+        assert_eq!(terminals, 1);
+        assert!(
+            runtime
+                .install::<Single>(parts(), FixedRandom, Ieee802154PibDefaults::default())
+                .is_err()
+        );
+    }
 }
 
 /// The disable ends the transmission in flight with its aborted terminal,
@@ -559,7 +671,14 @@ fn disable_ends_the_operation_in_flight_and_enable_admits_again() {
                     .id()
             };
             let mut leftovers = Vec::new();
-            let owner = disabled_owner(owner.disable(&mut |event| leftovers.push(event)).await);
+            let owner = disabled_owner(
+                owner
+                    .disable(&mut |event| {
+                        leftovers.push(event);
+                        core::ops::ControlFlow::Continue(())
+                    })
+                    .await,
+            );
             assert_eq!(leftovers, [transmit_done(id, TxStatus::Aborted)]);
             assert_eq!(state(runtime), RadioState::Disabled);
             let mut owner = enabled_owner(owner.enable().await);
@@ -572,7 +691,11 @@ fn disable_ends_the_operation_in_flight_and_enable_admits_again() {
                     .transmit(permit, transmission(&MAC, TxMode::Direct, 0))
                     .unwrap();
             }
-            let owner = disabled_owner(owner.disable(&mut |_| {}).await);
+            let owner = disabled_owner(
+                owner
+                    .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+                    .await,
+            );
             oer_radio_port::Ended::uninstall(owner, (), ())
         },
     );
@@ -872,7 +995,11 @@ fn interface_keys_belong_to_their_interface() {
                 second.remove_mac_keys();
                 assert_eq!(second.frame_counter(), None);
             }
-            let mut owner = disabled_owner(owner.disable(&mut |_| {}).await);
+            let mut owner = disabled_owner(
+                owner
+                    .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+                    .await,
+            );
             let _ = owner.setup().remove(one);
             let _ = owner.setup().remove(zero);
             oer_radio_port::Ended::uninstall(owner, (), ())
@@ -1122,7 +1249,10 @@ fn a_foreign_terminal_poisons_without_releasing_the_admitted_permit() {
                     "a foreign terminal must not release the held permit"
                 );
             }
-            match owner.disable(&mut |_| {}).await {
+            match owner
+                .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+                .await
+            {
                 Ok(_) => panic!("the malformed terminal poisoned the port"),
                 Err(poisoned) => oer_radio_port::Ended::uninstall(poisoned, (), ()),
             }

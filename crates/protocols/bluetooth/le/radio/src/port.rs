@@ -247,7 +247,7 @@ impl PortBackend for NoRadio {
         _: Call,
         _: &'a Self::Held<'id>,
         _: &'a mut Self::Local<'id>,
-        _: &'a mut dyn FnMut(Infallible),
+        _: &'a mut dyn FnMut(Infallible) -> core::ops::ControlFlow<Infallible>,
     ) -> impl Future<Output = Result<(), Poisoned<Infallible>>> + 'a
     where
         'id: 'a,

@@ -42,6 +42,10 @@
 //! backing remain quarantined until chip reset. `Uninstalled::Reusable`
 //! returns ordinary teardown's owners; `Uninstalled::Quarantined` retains
 //! the poisoned runtime without taking its lock or touching hardware.
+//! A disable sink can return a terminal with `ControlFlow::Break`. The
+//! runtime then stops delivery, publishes `StateLost`, and retains that
+//! terminal and the remaining queue. Uninstall returns `Quarantined` and
+//! preserves all installation owners until chip reset.
 
 #[cfg(test)]
 extern crate std;
@@ -288,8 +292,16 @@ struct Owed {
     /// The fault that may end the enabled period, reserved by `enable`;
     /// `disable` gives its slot back.
     fault: bool,
-    /// An event taken after the loss it reported.
-    held: Option<Ieee802154RadioEvent>,
+    /// The front event after a loss, or the terminal a disable sink rejected.
+    held: Option<HeldEvent>,
+}
+
+enum HeldEvent {
+    AfterLoss(Ieee802154RadioEvent),
+    /// Kept with the poisoned runtime until chip reset, never re-delivered.
+    Rejected {
+        terminal: Ieee802154PortEvent,
+    },
 }
 
 impl Owed {
@@ -398,15 +410,20 @@ impl<M: RawMutex, const EVENTS: usize> EventQueue<M, EVENTS> {
 
     fn take(&self) -> Option<Result<Ieee802154RadioEvent, EventsLost>> {
         self.owed(|owed| {
-            if let Some(event) = owed.held.take() {
-                return Some(Ok(event));
+            match owed.held.take() {
+                Some(HeldEvent::AfterLoss(event)) => return Some(Ok(event)),
+                Some(HeldEvent::Rejected { terminal }) => {
+                    owed.held = Some(HeldEvent::Rejected { terminal });
+                    return None;
+                }
+                None => (),
             }
             match self.entries.try_receive() {
                 Ok(Entry {
                     lost_before: true,
                     event,
                 }) => {
-                    owed.held = Some(event);
+                    owed.held = Some(HeldEvent::AfterLoss(event));
                     Some(Err(EventsLost))
                 }
                 Ok(Entry { event, .. }) => Some(Ok(event)),
@@ -645,12 +662,22 @@ impl<
     /// `esp_ieee802154_disable` after the platform CPU route is disabled:
     /// stop the operation in flight, return the MAC's coexistence PTIs to
     /// the disabled foundation image, and disable and return the engine and
-    /// hardware. The port's stream ends here: its undelivered events and
-    /// the terminals it owed are discarded, so the next port starts empty.
+    /// hardware. Ordinary teardown clears the ended port's stream, so the
+    /// next install starts empty. An abandoned installation or rejected
+    /// disable terminal instead retains the complete runtime in quarantine.
     fn uninstall(&self) -> Uninstalled<Ieee802154RuntimeParts<'storage, H>, &Self> {
         if self.abandoned.load(Ordering::Acquire) {
             // An ISR may still own the engine's lock. Leave both engine and
             // hardware installed; no quarantine path may take that lock.
+            return Uninstalled::Quarantined(oer_radio_port::Quarantined::new(self));
+        }
+        if self
+            .events
+            .owed(|owed| matches!(owed.held, Some(HeldEvent::Rejected { .. })))
+        {
+            // Delivery stopped at this terminal. Preserve it and the whole
+            // remaining queue with the hardware owners; teardown must not
+            // clear the queue or return reusable backing.
             return Uninstalled::Quarantined(oer_radio_port::Quarantined::new(self));
         }
         let parts = self.installed.lock(|installed| {

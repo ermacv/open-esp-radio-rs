@@ -509,7 +509,7 @@ impl Fixture {
 
     async fn disable(
         &self,
-        sink: &mut dyn FnMut(BluetoothOutcome),
+        sink: &mut dyn FnMut(BluetoothOutcome) -> core::ops::ControlFlow<BluetoothOutcome>,
     ) -> Result<(), Poisoned<BluetoothFault<()>>> {
         self.served(self.runtime.disable(sink)).await
     }
@@ -872,6 +872,70 @@ fn disable_hands_the_outcomes_the_phase_left_before_the_withdrawn_ends() {
 }
 
 #[test]
+fn rejecting_first_or_middle_disable_outcome_preserves_it_and_its_successors() {
+    for reject_at in [0, 1] {
+        let model = Model::default();
+        let runtime = installed(&model);
+        block_on(runtime.submit_request(configure()))
+            .unwrap()
+            .unwrap();
+        for id in 1..=3 {
+            block_on(runtime.submit_request(advertise(id, u64::from(id) * 30_000)))
+                .unwrap()
+                .unwrap();
+            settle(&runtime);
+        }
+        let mut accepted = Vec::new();
+        let mut offered = 0;
+        let result = block_on(runtime.disable(&mut |outcome| {
+            offered += 1;
+            if accepted.len() == reject_at {
+                core::ops::ControlFlow::Break(outcome)
+            } else {
+                accepted.push(outcome);
+                core::ops::ControlFlow::Continue(())
+            }
+        }));
+        assert_eq!(
+            result,
+            Err(Poisoned {
+                cause: BluetoothFault::Runner(crate::BluetoothRuntimeFault::Unsettled),
+            })
+        );
+        assert_eq!(offered, reject_at + 1);
+        // A poisoned uninstall cannot reset the queue or release hardware.
+        assert!(matches!(
+            block_on(runtime.take()),
+            Err(crate::BluetoothUninstallError::Fault(
+                crate::BluetoothRuntimeFault::Unsettled
+            ))
+        ));
+        let remaining: Vec<_> = (reject_at..3)
+            .map(|_| block_on(runtime.runtime.wait_event()).unwrap())
+            .collect();
+        let expected: Vec<_> = ((reject_at as u32 + 1)..=3)
+            .map(|id| {
+                Ok(BluetoothOutcome::EventEnded {
+                    id: EventId::new(id),
+                    result: EventResult::Executed { anchor: None },
+                })
+            })
+            .collect();
+        assert_eq!(remaining, expected);
+        assert_eq!(
+            block_on(runtime.runtime.wait_event()),
+            Err(Poisoned {
+                cause: BluetoothFault::Runner(crate::BluetoothRuntimeFault::Unsettled),
+            })
+        );
+        let Err((error, _, _)) = block_on(runtime.install(model_memory(), model.clone())) else {
+            panic!("a rejected terminal keeps the installation occupied");
+        };
+        assert_eq!(error, BluetoothInstallError::AlreadyInstalled);
+    }
+}
+
+#[test]
 fn cancellation_withdraws_an_admitted_event_and_its_end_follows() {
     let model = Model::default();
     let runtime = installed(&model);
@@ -1089,7 +1153,10 @@ fn settle(runtime: &Fixture) {
 fn disable(runtime: &Fixture) -> Vec<BluetoothOutcome> {
     let mut outcomes = Vec::new();
     assert_eq!(
-        block_on(runtime.disable(&mut |outcome| outcomes.push(outcome))),
+        block_on(runtime.disable(&mut |outcome| {
+            outcomes.push(outcome);
+            core::ops::ControlFlow::Continue(())
+        })),
         Ok(())
     );
     outcomes
@@ -1302,7 +1369,10 @@ impl oer_radio_port::PortBody<Backend> for ConfigureOnce {
                 Ok(Ok(()))
             );
         }
-        let Ok(owner) = owner.disable(&mut |_| {}).await else {
+        let Ok(owner) = owner
+            .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+            .await
+        else {
             panic!("the port disables")
         };
         oer_radio_port::Ended::uninstall(owner, (), ())
@@ -1366,7 +1436,7 @@ fn a_disable_past_its_bound_poisons_the_runtime_and_halts_the_runner() {
     let runtime = installed(&model);
     // The stop sequence never ends.
     model.0.borrow_mut().stop_never_settles = true;
-    let mut sink = |_| {};
+    let mut sink = |_| core::ops::ControlFlow::Continue(());
     let mut disable = core::pin::pin!(runtime.disable(&mut sink));
     let started = clock().now();
     let ended = loop {
@@ -1566,7 +1636,10 @@ impl oer_radio_port::PortBody<Backend> for WaitThenUninstall {
         let Ok(owner) = owner.enable().await else {
             panic!("the installed port enables")
         };
-        let Ok(owner) = owner.disable(&mut |_| {}).await else {
+        let Ok(owner) = owner
+            .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+            .await
+        else {
             panic!("the port disables")
         };
         // Something that reaches no port call, as a drained transport.
@@ -1701,7 +1774,7 @@ fn cancelling_driver_at_each_wait_keeps_owners_for_retire_and_uninstall() {
                     .unwrap();
                 settle(&runtime);
             }
-            let mut sink = |_| {};
+            let mut sink = |_| core::ops::ControlFlow::Continue(());
             let mut command = Box::pin(async {
                 match at {
                     At::ClockSample => {

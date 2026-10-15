@@ -46,7 +46,7 @@ impl PortBackend for Backend {
         _: Call,
         _: &'a Self::Held<'id>,
         _: &'a mut Self::Local<'id>,
-        _: &'a mut dyn FnMut(()),
+        _: &'a mut dyn FnMut(()) -> core::ops::ControlFlow<()>,
     ) -> impl Future<Output = Result<(), Poisoned<()>>> + 'a
     where
         'id: 'a,

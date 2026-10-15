@@ -127,7 +127,10 @@ impl PortBody<Backend> for SessionBody<'_> {
             session.client.sleep();
             *self.served = Some(served);
         }
-        match owner.disable(&mut |_| {}).await {
+        match owner
+            .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+            .await
+        {
             Ok(owner) => oer_radio_port::Ended::uninstall(owner, (), ()),
             Err(poisoned) => oer_radio_port::Ended::uninstall(poisoned, (), ()),
         }

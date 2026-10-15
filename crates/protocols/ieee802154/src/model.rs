@@ -1235,7 +1235,7 @@ impl PortBackend for OwnedModel {
         _: Call,
         held: &'a ModelHeld<'id>,
         _: &'a mut Self::Local<'id>,
-        sink: &'a mut dyn FnMut(ModelEvent),
+        sink: &'a mut dyn FnMut(ModelEvent) -> core::ops::ControlFlow<ModelEvent>,
     ) -> impl Future<Output = Result<(), Poisoned<ModelFault>>> + 'a
     where
         'id: 'a,
@@ -1250,15 +1250,21 @@ impl PortBackend for OwnedModel {
             state.enabled = false;
             state.received = 0;
             state.lost = false;
-            let leftover: Vec<ModelEvent> = state.events.drain(..).collect();
             let poisoned = state.poisoned;
             drop(state);
             // Only the work's terminals go to the sink; received frames and
             // a loss marker are dropped with the phase.
-            for event in leftover {
+            for event in core::iter::from_fn(|| self.shared.borrow_mut().events.pop_front()) {
                 if let Some((_interface, id)) = event.ends() {
                     match held.permits.complete(id) {
-                        Ok(_completed) => sink(event),
+                        Ok(_completed) => {
+                            if let core::ops::ControlFlow::Break(event) = sink(event) {
+                                let mut state = self.shared.borrow_mut();
+                                state.events.push_front(event);
+                                state.poisoned = Some(ModelFault);
+                                return ready(Err(Poisoned { cause: ModelFault }));
+                            }
+                        }
                         Err(_mismatch) => {
                             self.shared.borrow_mut().poisoned = Some(ModelFault);
                             return ready(Err(Poisoned { cause: ModelFault }));

@@ -17,7 +17,7 @@ fn invalid_reserve_retains_the_live_owner_until_an_explicit_policy_is_selected()
     let (sender, receiver) = queue.split();
     let mut producer = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender);
     let observed = producer.ring().observed_mask();
-    let frontier = producer.ring().recycle_start();
+    let frontier = producer.ring().recycle_start().get();
     assert_eq!(
         embassy_futures::block_on(producer.service(&mut hardware)),
         Err(RxStageTransactionError::InvalidCreditReserve {
@@ -27,7 +27,7 @@ fn invalid_reserve_retains_the_live_owner_until_an_explicit_policy_is_selected()
         })
     );
     assert_eq!(producer.ring().observed_mask(), observed);
-    assert_eq!(producer.ring().recycle_start(), frontier);
+    assert_eq!(producer.ring().recycle_start().get(), frontier);
     assert_eq!(producer.work_counters().completed_units, 0);
     assert_eq!(pool.claimed_slots(), 0);
     assert_eq!(storage.detached_buffer_count(), 0);

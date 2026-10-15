@@ -527,8 +527,8 @@ where
         };
         let ring = owner.ring();
         Some(RxFrontierSchedulerSnapshot {
-            recycle_start: ring.recycle_start(),
-            accepted_tail: ring.accepted_tail(),
+            recycle_start: ring.recycle_start().get(),
+            accepted_tail: ring.accepted_tail().get(),
             observed_mask: ring.observed_mask(),
             topology: ring.topology_snapshot(),
         })

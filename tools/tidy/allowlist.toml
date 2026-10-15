@@ -482,6 +482,10 @@ path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/bss_color.rs"
 reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
 
 [[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/tests/ui/ring_index.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
 path = "crates/protocols/ieee80211/sta/tests/ui/restart_places.rs"
 reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
 

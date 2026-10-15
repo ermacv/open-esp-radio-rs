@@ -8,6 +8,8 @@
 use core::sync::atomic::AtomicU32;
 use core::sync::atomic::{AtomicU8, Ordering};
 
+use crate::ring_index::RingIndex;
+
 use crate::{
     descriptor::{
         BIT_29, BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_MASK, LENGTH_SHIFT, SIZE_MASK,
@@ -85,11 +87,11 @@ pub struct RxDescriptorSnapshot {
 ///
 /// Descriptors already observed but not yet recycled are skipped, while a
 /// not-yet-completed descriptor terminates the snapshot. Consumers must walk
-/// `start_index..descriptor_count` in ring order; scanning physical indices
+/// `start_index.advance(step)` for `step < descriptor_count`; scanning physical indices
 /// from zero reorders packets whenever the live frontier wraps.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct RxCompletedDescriptorFrontier {
-    pub start_index: usize,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RxCompletedDescriptorFrontier<const COUNT: usize> {
+    pub start_index: RingIndex<COUNT>,
     pub descriptor_count: usize,
 }
 
@@ -288,21 +290,21 @@ impl RxObservedMask {
         self.words[index / 32] |= 1_u32 << (index % 32);
     }
 
-    fn insert_group<const COUNT: usize>(&mut self, start: usize, count: usize) {
+    fn insert_group<const COUNT: usize>(&mut self, start: RingIndex<COUNT>, count: usize) {
         for step in 0..count {
-            self.insert(wrap_add::<COUNT>(start, step));
+            self.insert(start.advance(step).get());
         }
     }
 
-    fn remove_group<const COUNT: usize>(&mut self, start: usize, count: usize) {
+    fn remove_group<const COUNT: usize>(&mut self, start: RingIndex<COUNT>, count: usize) {
         for step in 0..count {
-            let index = wrap_add::<COUNT>(start, step);
-            self.words[index / 32] &= !(1_u32 << (index % 32));
+            let index = start.advance(step);
+            self.words[index.get() / 32] &= !(1_u32 << (index.get() % 32));
         }
     }
 
-    fn contains_group<const COUNT: usize>(self, start: usize, count: usize) -> bool {
-        (0..count).all(|step| self.contains(wrap_add::<COUNT>(start, step)))
+    fn contains_group<const COUNT: usize>(self, start: RingIndex<COUNT>, count: usize) -> bool {
+        (0..count).all(|step| self.contains(start.advance(step).get()))
     }
 }
 
@@ -397,10 +399,10 @@ impl RxCompletedUnit {
 
 /// One live append accepted for publication to the RX descriptor walker.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct RxLiveAppend {
-    pub head_index: usize,
+pub struct RxLiveAppend<const COUNT: usize> {
+    pub head_index: RingIndex<COUNT>,
     pub head_address: u32,
-    pub tail_index: usize,
+    pub tail_index: RingIndex<COUNT>,
     pub descriptor_count: usize,
 }
 
@@ -420,8 +422,8 @@ pub struct RxRingStopped<'a, const COUNT: usize> {
     descriptor_base: u32,
     buffer_addresses: &'a RxDmaBufferAddresses<COUNT>,
     buffer_size: u16,
-    initial_start: usize,
-    accepted_tail: usize,
+    initial_start: RingIndex<COUNT>,
+    accepted_tail: RingIndex<COUNT>,
     retained_next_low: u32,
     retained_last_low: u32,
     binding: RxDmaBinding<'a>,
@@ -446,8 +448,8 @@ pub struct RxRingLive<'a, const COUNT: usize> {
     buffer_addresses: &'a RxDmaBufferAddresses<COUNT>,
     buffer_size: u16,
     observed_mask: RxObservedMask,
-    recycle_start: usize,
-    accepted_tail: usize,
+    recycle_start: RingIndex<COUNT>,
+    accepted_tail: RingIndex<COUNT>,
     /// Pending tail encoded as `index + 1`; zero means no reload is in flight.
     /// Ring indices are bounded below `usize::MAX`, so this saves one machine
     /// word over `Option<usize>` without introducing a sentinel address.
@@ -691,12 +693,12 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
         // same first descriptor. An exhausted cursor is zero; in that case a
         // fresh BASE publication legitimately starts from physical slot zero.
         let initial_start = if retained_next_low == 0 {
-            0
+            RingIndex::<COUNT>::checked(0).ok_or(RxRingError::Count)?
         } else {
             // A nonzero cursor is what hardware resumes from. Falling back to
             // BASE would publish a topology which Rust considers valid while
             // the walker follows an unrelated address, so fail closed.
-            descriptor_index(retained_next_low, descriptor_base, COUNT)
+            descriptor_index::<COUNT>(retained_next_low, descriptor_base)
                 .ok_or(RxRingError::Corrupt)?
         };
 
@@ -716,7 +718,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
             &buffer_addresses_snapshot,
             initial_start,
         )?;
-        let head = descriptor_address(descriptor_base, initial_start)?;
+        let head = descriptor_address(descriptor_base, initial_start.get())?;
         publish_cold_ring_inner(mmio, &binding, head, false)?;
 
         Ok(Self {
@@ -725,7 +727,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
             buffer_addresses,
             buffer_size: buffer_size_u16,
             initial_start,
-            accepted_tail: wrap_sub_one::<COUNT>(initial_start),
+            accepted_tail: initial_start.previous(),
             retained_next_low,
             retained_last_low,
             binding,
@@ -733,11 +735,11 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
         })
     }
 
-    pub const fn initial_start(&self) -> usize {
+    pub const fn initial_start(&self) -> RingIndex<COUNT> {
         self.initial_start
     }
 
-    pub const fn accepted_tail(&self) -> usize {
+    pub const fn accepted_tail(&self) -> RingIndex<COUNT> {
         self.accepted_tail
     }
 
@@ -998,17 +1000,22 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     /// extending the same service pass to descriptors completed after the
     /// snapshot. This is important when recycled descriptors can already be
     /// filled again while the task is still draining an RX-success wake.
-    pub fn completed_descriptor_frontier(&self) -> RxCompletedDescriptorFrontier {
+    pub fn completed_descriptor_frontier(&self) -> RxCompletedDescriptorFrontier<COUNT> {
         let observed = self.observed_prefix_len();
         if observed == COUNT {
-            return RxCompletedDescriptorFrontier::default();
+            return RxCompletedDescriptorFrontier {
+                start_index: self.recycle_start,
+                descriptor_count: 0,
+            };
         }
 
-        let start_index = wrap_add::<COUNT>(self.recycle_start, observed);
+        let start_index = self.recycle_start.advance(observed);
         let mut completed = 0;
         while observed + completed < COUNT {
-            let index = wrap_add::<COUNT>(start_index, completed);
-            if self.observed_mask.contains(index) || !rx_done(self.descriptors[index].word0()) {
+            let index = start_index.advance(completed);
+            if self.observed_mask.contains(index.get())
+                || !rx_done(self.descriptors[index.get()].word0())
+            {
                 break;
             }
             completed += 1;
@@ -1026,8 +1033,10 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     pub fn completed_frontier_len(&self) -> usize {
         let mut completed = 0;
         while completed < COUNT {
-            let index = wrap_add::<COUNT>(self.recycle_start, completed);
-            if self.observed_mask.contains(index) || !rx_done(self.descriptors[index].word0()) {
+            let index = self.recycle_start.advance(completed);
+            if self.observed_mask.contains(index.get())
+                || !rx_done(self.descriptors[index.get()].word0())
+            {
                 break;
             }
             completed += 1;
@@ -1063,7 +1072,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     where
         F: FnMut(usize) -> bool,
     {
-        let Some(last_index) = descriptor_index(last_descriptor_low, self.descriptor_base, COUNT)
+        let Some(last_index) = descriptor_index::<COUNT>(last_descriptor_low, self.descriptor_base)
         else {
             return RxCompletedUnitFrontier::default();
         };
@@ -1071,8 +1080,8 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         if observed == COUNT {
             return RxCompletedUnitFrontier::default();
         }
-        let last_distance = ring_distance::<COUNT>(self.recycle_start, last_index);
-        let accepted_distance = ring_distance::<COUNT>(self.recycle_start, self.accepted_tail);
+        let last_distance = self.recycle_start.distance_to(last_index);
+        let accepted_distance = self.recycle_start.distance_to(self.accepted_tail);
         if last_distance < observed || last_distance > accepted_distance {
             return RxCompletedUnitFrontier::default();
         }
@@ -1098,7 +1107,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         F: FnMut(usize) -> bool,
     {
         if next_descriptor_low == 0
-            && descriptor_index(last_descriptor_low, self.descriptor_base, COUNT)
+            && descriptor_index::<COUNT>(last_descriptor_low, self.descriptor_base)
                 == Some(self.accepted_tail)
         {
             self.completed_unit_frontier_through_with(last_descriptor_low, |_| true)
@@ -1119,7 +1128,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     where
         F: FnMut(usize) -> bool,
     {
-        let Some(last_index) = descriptor_index(last_descriptor_low, self.descriptor_base, COUNT)
+        let Some(last_index) = descriptor_index::<COUNT>(last_descriptor_low, self.descriptor_base)
         else {
             return RxCompletedUnitFrontier::default();
         };
@@ -1127,8 +1136,8 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         if observed == COUNT {
             return RxCompletedUnitFrontier::default();
         }
-        let last_distance = ring_distance::<COUNT>(self.recycle_start, last_index);
-        let accepted_distance = ring_distance::<COUNT>(self.recycle_start, self.accepted_tail);
+        let last_distance = self.recycle_start.distance_to(last_index);
+        let accepted_distance = self.recycle_start.distance_to(self.accepted_tail);
         if last_distance < observed || last_distance > accepted_distance {
             return RxCompletedUnitFrontier::default();
         }
@@ -1148,7 +1157,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         F: FnMut(usize) -> bool,
     {
         if next_descriptor_low == 0
-            && descriptor_index(last_descriptor_low, self.descriptor_base, COUNT)
+            && descriptor_index::<COUNT>(last_descriptor_low, self.descriptor_base)
                 == Some(self.accepted_tail)
         {
             self.first_completed_unit_frontier_through_with(last_descriptor_low, |_| true)
@@ -1194,12 +1203,14 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         if descriptor_limit == 0 {
             return RxCompletedUnitFrontier::default();
         }
-        let first_index = wrap_add::<COUNT>(self.recycle_start, observed);
-        if rx_done(self.descriptors[first_index].word0()) {
+        let first_index = self.recycle_start.advance(observed);
+        if rx_done(self.descriptors[first_index.get()].word0()) {
             let mut completed = 0;
             while completed < descriptor_limit {
-                let index = wrap_add::<COUNT>(first_index, completed);
-                if self.observed_mask.contains(index) || !rx_done(self.descriptors[index].word0()) {
+                let index = first_index.advance(completed);
+                if self.observed_mask.contains(index.get())
+                    || !rx_done(self.descriptors[index.get()].word0())
+                {
                     break;
                 }
                 completed += 1;
@@ -1209,24 +1220,24 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
                 descriptor_count: completed,
             };
         }
-        if !nonterminal_consumed(first_index) {
+        if !nonterminal_consumed(first_index.get()) {
             return RxCompletedUnitFrontier::default();
         }
         // Only a later terminal can distinguish a consumed non-terminal
         // segment from an ordinary armed descriptor. Report at most this one
         // chain; a following unit belongs to the next finite service epoch.
         for step in 1..descriptor_limit.min(64) {
-            let index = wrap_add::<COUNT>(first_index, step);
-            if self.observed_mask.contains(index) {
+            let index = first_index.advance(step);
+            if self.observed_mask.contains(index.get()) {
                 break;
             }
-            if rx_done(self.descriptors[index].word0()) {
+            if rx_done(self.descriptors[index.get()].word0()) {
                 return RxCompletedUnitFrontier {
                     unit_count: 1,
                     descriptor_count: step + 1,
                 };
             }
-            if !nonterminal_consumed(index) {
+            if !nonterminal_consumed(index.get()) {
                 break;
             }
         }
@@ -1249,8 +1260,8 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         if descriptor_limit == 0 {
             return RxCompletedUnitFrontier::default();
         }
-        let first_index = wrap_add::<COUNT>(self.recycle_start, observed);
-        if rx_done(self.descriptors[first_index].word0()) {
+        let first_index = self.recycle_start.advance(observed);
+        if rx_done(self.descriptors[first_index.get()].word0()) {
             // The caller only needs one ownership proof. Avoid walking the
             // rest of a terminal-only burst merely to truncate its unit count
             // back to one: the next finite cursor check will prove the next
@@ -1260,24 +1271,24 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
                 descriptor_count: 1,
             };
         }
-        if !nonterminal_consumed(first_index) {
+        if !nonterminal_consumed(first_index.get()) {
             return RxCompletedUnitFrontier::default();
         }
         // A split unit still needs a bounded walk through its terminal. This
         // is identical to the general scanner, which already reports at most
         // one unit when the first descriptor is non-terminal.
         for step in 1..descriptor_limit.min(64) {
-            let index = wrap_add::<COUNT>(first_index, step);
-            if self.observed_mask.contains(index) {
+            let index = first_index.advance(step);
+            if self.observed_mask.contains(index.get()) {
                 break;
             }
-            if rx_done(self.descriptors[index].word0()) {
+            if rx_done(self.descriptors[index.get()].word0()) {
                 return RxCompletedUnitFrontier {
                     unit_count: 1,
                     descriptor_count: step + 1,
                 };
             }
-            if !nonterminal_consumed(index) {
+            if !nonterminal_consumed(index.get()) {
                 break;
             }
         }
@@ -1309,19 +1320,19 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         if observed == COUNT || descriptor_limit > COUNT - observed {
             return Ok(None);
         }
-        let first_index = wrap_add::<COUNT>(self.recycle_start, observed);
-        if self.observed_mask.contains(first_index) {
+        let first_index = self.recycle_start.advance(observed);
+        if self.observed_mask.contains(first_index.get()) {
             return Ok(None);
         }
         let first_word0 = self.validate_descriptor_image(first_index)?;
         let first_length = descriptor_length(first_word0);
         if rx_done(first_word0) {
             let encoded_length = first_length;
-            let descriptor_address = descriptor_address(self.descriptor_base, first_index)?;
+            let descriptor_address = descriptor_address(self.descriptor_base, first_index.get())?;
             let segment_length = u16::try_from(first_length).map_err(|_| RxRingError::Size)?;
-            self.observed_mask.insert(first_index);
+            self.observed_mask.insert(first_index.get());
             return Ok(Some(RxCompletedUnit {
-                head_index: first_index,
+                head_index: first_index.get(),
                 descriptor_count: 1,
                 descriptor_address,
                 staged_word0: (first_word0 & !(SIZE_MASK | LENGTH_MASK))
@@ -1335,15 +1346,15 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         }
 
         let mut segment_lengths = [0_u16; 64];
-        let first_consumed = nonterminal_consumed(first_index);
+        let first_consumed = nonterminal_consumed(first_index.get());
         let first_segment_length = if first_consumed { first_length } else { 0 };
         segment_lengths[0] = u16::try_from(first_segment_length).map_err(|_| RxRingError::Size)?;
         let mut total_length = first_segment_length as usize;
         let mut metadata_word0 = first_word0;
         let mut metadata_index = first_index;
         for step in 1..descriptor_limit.min(64) {
-            let index = wrap_add::<COUNT>(first_index, step);
-            if self.observed_mask.contains(index) {
+            let index = first_index.advance(step);
+            if self.observed_mask.contains(index.get()) {
                 return Ok(None);
             }
             let word0 = match self.validate_descriptor_image(index) {
@@ -1353,7 +1364,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
                     return Err(error);
                 }
             };
-            let consumed = rx_done(word0) || nonterminal_consumed(index);
+            let consumed = rx_done(word0) || nonterminal_consumed(index.get());
             let length = if consumed {
                 descriptor_length(word0)
             } else {
@@ -1375,11 +1386,12 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
             }
             let descriptor_count = step + 1;
             let encoded_length = u32::try_from(total_length).map_err(|_| RxRingError::Overflow)?;
-            let descriptor_address = descriptor_address(self.descriptor_base, metadata_index)?;
+            let descriptor_address =
+                descriptor_address(self.descriptor_base, metadata_index.get())?;
             self.observed_mask
                 .insert_group::<COUNT>(first_index, descriptor_count);
             return Ok(Some(RxCompletedUnit {
-                head_index: first_index,
+                head_index: first_index.get(),
                 descriptor_count,
                 descriptor_address,
                 staged_word0: (metadata_word0 & !(SIZE_MASK | LENGTH_MASK))
@@ -1423,7 +1435,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         if !rx_done(word0) {
             return None;
         }
-        self.validate_descriptor_image(index).ok()?;
+        self.validate_descriptor_image(RingIndex::checked(index)?).ok()?;
         let descriptor_address = descriptor_address(self.descriptor_base, index).ok()?;
         self.observed_mask.insert(index);
         Some(RxCompletedDescriptor {
@@ -1446,18 +1458,23 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         if !rx_done(word0) {
             return Ok(false);
         }
-        self.validate_descriptor_image(index)?;
+        self.validate_descriptor_image(RingIndex::checked(index).ok_or(RxRingError::Count)?)?;
         Ok(true)
     }
 
-    fn validate_descriptor_image(&self, index: usize) -> Result<u32, RxRingError> {
-        let descriptor = self.descriptors.get(index).ok_or(RxRingError::Count)?;
+    fn validate_descriptor_image(&self, index: RingIndex<COUNT>) -> Result<u32, RxRingError> {
+        let descriptor = self
+            .descriptors
+            .get(index.get())
+            .ok_or(RxRingError::Count)?;
         let word0 = descriptor.word0();
         let expected_size = u32::from(self.buffer_size);
         if descriptor_size(word0) != expected_size
             || descriptor_length(word0) > expected_size
             || descriptor.buffer_address()
-                != self.bound_buffer_address(index).ok_or(RxRingError::Count)?
+                != self
+                    .bound_buffer_address(index.get())
+                    .ok_or(RxRingError::Count)?
         {
             return Err(RxRingError::Corrupt);
         }
@@ -1465,7 +1482,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         let expected_next = if index == terminal_tail {
             0
         } else {
-            descriptor_address(self.descriptor_base, wrap_add::<COUNT>(index, 1))?
+            descriptor_address(self.descriptor_base, index.advance(1).get())?
         };
         if descriptor.next_address() != expected_next {
             return Err(RxRingError::Corrupt);
@@ -1487,7 +1504,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         &mut self,
         mmio: &mut M,
         prepare_buffer: F,
-    ) -> Result<Option<RxLiveAppend>, RxRingError>
+    ) -> Result<Option<RxLiveAppend<COUNT>>, RxRingError>
     where
         M: RxDma,
         F: FnMut(usize) -> Result<(), RxRingError>,
@@ -1506,7 +1523,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         &mut self,
         mmio: &mut M,
         prepare_buffer: F,
-    ) -> Result<Option<RxLiveAppend>, RxRingError>
+    ) -> Result<Option<RxLiveAppend<COUNT>>, RxRingError>
     where
         M: RxDma,
         F: FnMut(usize) -> Result<(), RxRingError>,
@@ -1532,7 +1549,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         &mut self,
         mmio: &mut M,
         prepare_buffer: F,
-    ) -> Result<Option<RxLiveAppend>, RxRingError>
+    ) -> Result<Option<RxLiveAppend<COUNT>>, RxRingError>
     where
         M: RxDma,
         F: FnMut(usize) -> Result<(), RxRingError>,
@@ -1575,7 +1592,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         &mut self,
         mmio: &mut M,
         prepare_buffer: F,
-    ) -> Result<Option<RxLiveAppend>, RxRingError>
+    ) -> Result<Option<RxLiveAppend<COUNT>>, RxRingError>
     where
         M: RxDma,
         F: FnMut(usize) -> Result<(), RxRingError>,
@@ -1590,8 +1607,8 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
 
         let mut completed = 0;
         while completed < MAX_BATCH {
-            let index = wrap_add::<COUNT>(self.recycle_start, completed);
-            if !self.observed_mask.contains(index) || !rx_done(self.descriptors[index].word0()) {
+            let index = self.recycle_start.advance(completed);
+            if !self.observed_mask.contains(index.get()) || !rx_done(self.descriptors[index.get()].word0()) {
                 break;
             }
             completed += 1;
@@ -1613,7 +1630,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         &mut self,
         mmio: &mut M,
         prepare_buffer: F,
-    ) -> Result<Option<RxLiveAppend>, RxRingError>
+    ) -> Result<Option<RxLiveAppend<COUNT>>, RxRingError>
     where
         M: RxDma,
         F: FnMut(usize) -> Result<(), RxRingError>,
@@ -1629,7 +1646,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         mmio: &mut M,
         descriptor_count: usize,
         prepare_buffer: F,
-    ) -> Result<Option<RxLiveAppend>, RxRingError>
+    ) -> Result<Option<RxLiveAppend<COUNT>>, RxRingError>
     where
         M: RxDma,
         F: FnMut(usize) -> Result<(), RxRingError>,
@@ -1657,7 +1674,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         mmio: &mut M,
         descriptor_count: usize,
         prepare_buffer: F,
-    ) -> Result<Option<RxLiveAppend>, RxRingError>
+    ) -> Result<Option<RxLiveAppend<COUNT>>, RxRingError>
     where
         M: RxDma,
         F: FnMut(usize) -> Result<(), RxRingError>,
@@ -1688,7 +1705,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         cursor: RxFrozenCursor,
         descriptor_count: usize,
         prepare_buffer: F,
-    ) -> Result<Option<RxLiveAppend>, RxRingError>
+    ) -> Result<Option<RxLiveAppend<COUNT>>, RxRingError>
     where
         M: RxDma,
         F: FnMut(usize) -> Result<(), RxRingError>,
@@ -1711,7 +1728,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         mmio: &mut M,
         descriptor_count: usize,
         prepare_buffer: F,
-    ) -> Result<Option<RxLiveAppend>, RxRingError>
+    ) -> Result<Option<RxLiveAppend<COUNT>>, RxRingError>
     where
         M: RxDma,
         F: FnMut(usize) -> Result<(), RxRingError>,
@@ -1725,7 +1742,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         group_size: usize,
         shape: RxRecycleGroupShape,
         mut prepare_buffer: F,
-    ) -> Result<Option<RxLiveAppend>, RxRingError>
+    ) -> Result<Option<RxLiveAppend<COUNT>>, RxRingError>
     where
         M: RxDma,
         F: FnMut(usize) -> Result<(), RxRingError>,
@@ -1743,7 +1760,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         }
 
         for step in 0..group_size {
-            let index = wrap_add::<COUNT>(self.recycle_start, step);
+            let index = self.recycle_start.advance(step);
             let word0 = match self.validate_descriptor_image(index) {
                 Ok(word0) => word0,
                 Err(error) => {
@@ -1767,13 +1784,13 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
             // the observed group, so these images remain stable until rearm.
             rx_rearm_word(word0).ok_or(RxRingError::Size)?;
             if step + 1 < group_size {
-                descriptor_address(self.descriptor_base, wrap_add::<COUNT>(index, 1))?;
+                descriptor_address(self.descriptor_base, index.advance(1).get())?;
             }
         }
         let head_index = self.recycle_start;
-        let head_address = descriptor_address(self.descriptor_base, head_index)?;
-        let tail_index = wrap_add::<COUNT>(head_index, group_size - 1);
-        let accepted_distance = ring_distance::<COUNT>(self.recycle_start, self.accepted_tail);
+        let head_address = descriptor_address(self.descriptor_base, head_index.get())?;
+        let tail_index = head_index.advance(group_size - 1);
+        let accepted_distance = self.recycle_start.distance_to(self.accepted_tail);
         if group_size - 1 > accepted_distance {
             // A completed-looking descriptor beyond the accepted hardware
             // tail is not part of the live list. Reject the complete
@@ -1782,7 +1799,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
             return Err(RxRingError::Corrupt);
         }
         let append_to_empty = tail_index == self.accepted_tail;
-        if !append_to_empty && self.descriptors[self.accepted_tail].next_address() != 0 {
+        if !append_to_empty && self.descriptors[self.accepted_tail.get()].next_address() != 0 {
             // The accepted tail is the only legal append point. Validate it
             // before the first irreversible buffer/descriptor mutation so a
             // corrupt list cannot become a partially rearmed live arena.
@@ -1804,8 +1821,8 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
             return Err(RxRingError::Corrupt);
         };
         for step in 0..group_size {
-            let index = wrap_add::<COUNT>(self.recycle_start, step);
-            if let Err(error) = prepare_buffer(index) {
+            let index = self.recycle_start.advance(step);
+            if let Err(error) = prepare_buffer(index.get()) {
                 // The completed-unit token has already been consumed and an
                 // earlier callback may have changed buffer-side guards. That
                 // partial transaction cannot be reconstructed from the next
@@ -1816,14 +1833,16 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
             }
         }
         for step in 0..group_size {
-            let index = wrap_add::<COUNT>(self.recycle_start, step);
-            let descriptor = &self.descriptors[index];
+            let index = self.recycle_start.advance(step);
+            let descriptor = &self.descriptors[index.get()];
             let next = if step + 1 < group_size {
-                descriptor_address(self.descriptor_base, wrap_add::<COUNT>(index, 1))?
+                descriptor_address(self.descriptor_base, index.advance(1).get())?
             } else {
                 0
             };
-            let buffer_address = self.bound_buffer_address(index).ok_or(RxRingError::Count)?;
+            let buffer_address = self
+                .bound_buffer_address(index.get())
+                .ok_or(RxRingError::Count)?;
             descriptor.publish_owned(
                 rx_rearm_word(descriptor.word0()).ok_or(RxRingError::Size)?,
                 buffer_address,
@@ -1867,7 +1886,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
                 descriptor_count: group_size,
             }));
         }
-        let accepted_tail = &self.descriptors[self.accepted_tail];
+        let accepted_tail = &self.descriptors[self.accepted_tail.get()];
         // This type is the sole publication authority. All descriptors in the
         // appended group were observed complete, rearmed and remain
         // unreachable until this old-tail link and the following doorbell.
@@ -1877,10 +1896,10 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         mmio.fence();
 
         self.cursor_generation = next_cursor_generation;
-        self.pending_tail_plus_one = tail_index + 1;
+        self.pending_tail_plus_one = tail_index.get() + 1;
         self.observed_mask
             .remove_group::<COUNT>(self.recycle_start, group_size);
-        self.recycle_start = wrap_add::<COUNT>(self.recycle_start, group_size);
+        self.recycle_start = self.recycle_start.advance(group_size);
         Ok(Some(RxLiveAppend {
             head_index,
             head_address,
@@ -1902,11 +1921,11 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         self.observed_mask.count_ones() as usize == COUNT
     }
 
-    pub const fn recycle_start(&self) -> usize {
+    pub const fn recycle_start(&self) -> RingIndex<COUNT> {
         self.recycle_start
     }
 
-    pub const fn accepted_tail(&self) -> usize {
+    pub const fn accepted_tail(&self) -> RingIndex<COUNT> {
         self.accepted_tail
     }
 
@@ -1926,8 +1945,8 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         if next.is_zero() {
             return Some(0);
         }
-        let next_index = descriptor_index(next.address_low(), self.descriptor_base, COUNT)?;
-        Some(ring_distance::<COUNT>(next_index, self.accepted_tail) + 1)
+        let next_index = descriptor_index::<COUNT>(next.address_low(), self.descriptor_base)?;
+        Some(next_index.distance_to(self.accepted_tail) + 1)
     }
 
     /// Freeze one ordered LAST/NEXT image for this descriptor generation.
@@ -1954,14 +1973,14 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     /// later RX-success IRQ is guaranteed. Callers use the result only to keep
     /// a cooperative ownership probe alive; it never authorizes rearm.
     pub fn exhausted_terminal_writeback_pending<M: RxDma>(&mut self, mmio: &mut M) -> bool {
-        if self.observed_mask.contains(self.accepted_tail) {
+        if self.observed_mask.contains(self.accepted_tail.get()) {
             return false;
         }
         mmio.with_ordered_cursor(|cursor| {
             if cursor.next_descriptor_low() != 0 {
                 return false;
             }
-            descriptor_index(cursor.last_descriptor_low(), self.descriptor_base, COUNT)
+            descriptor_index::<COUNT>(cursor.last_descriptor_low(), self.descriptor_base)
                 == Some(self.accepted_tail)
         })
     }
@@ -1970,8 +1989,11 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         self.pending_tail_plus_one != 0
     }
 
-    const fn pending_tail(&self) -> Option<usize> {
-        self.pending_tail_plus_one.checked_sub(1)
+    const fn pending_tail(&self) -> Option<RingIndex<COUNT>> {
+        match self.pending_tail_plus_one.checked_sub(1) {
+            Some(index) => RingIndex::checked(index),
+            None => None,
+        }
     }
 
     /// Whether a completed nonterminal descriptor still awaits proof that the
@@ -2057,13 +2079,13 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
             return false;
         }
         let Some(last_index) =
-            descriptor_index(cursor.last_descriptor_low, self.descriptor_base, COUNT)
+            descriptor_index::<COUNT>(cursor.last_descriptor_low, self.descriptor_base)
         else {
             return false;
         };
         let tail_distance = descriptor_count - 1;
-        let last_distance = ring_distance::<COUNT>(self.recycle_start, last_index);
-        let accepted_distance = ring_distance::<COUNT>(self.recycle_start, self.accepted_tail);
+        let last_distance = self.recycle_start.distance_to(last_index);
+        let accepted_distance = self.recycle_start.distance_to(self.accepted_tail);
         tail_distance <= last_distance && last_distance <= accepted_distance
     }
 
@@ -2077,21 +2099,21 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
             self.completion_release_probe_pending = false;
             return false;
         }
-        let tail_index = wrap_add::<COUNT>(self.recycle_start, descriptor_count - 1);
-        let Some(last_index) = descriptor_index(last_descriptor_low, self.descriptor_base, COUNT)
+        let tail_index = self.recycle_start.advance(descriptor_count - 1);
+        let Some(last_index) = descriptor_index::<COUNT>(last_descriptor_low, self.descriptor_base)
         else {
             self.completion_release_probe_pending = false;
             return false;
         };
         let tail_next_low =
-            self.descriptors[tail_index].next_address() & RX_DESCRIPTOR_ADDRESS_LOW_MASK;
+            self.descriptors[tail_index.get()].next_address() & RX_DESCRIPTOR_ADDRESS_LOW_MASK;
         let tail_distance = descriptor_count - 1;
-        let last_distance = ring_distance::<COUNT>(self.recycle_start, last_index);
-        let accepted_distance = ring_distance::<COUNT>(self.recycle_start, self.accepted_tail);
+        let last_distance = self.recycle_start.distance_to(last_index);
+        let accepted_distance = self.recycle_start.distance_to(self.accepted_tail);
         let later_completed_frontier = last_distance > tail_distance
             && last_distance <= accepted_distance
             && (tail_distance + 1..=last_distance).all(|distance| {
-                rx_done(self.descriptors[wrap_add::<COUNT>(self.recycle_start, distance)].word0())
+                rx_done(self.descriptors[self.recycle_start.advance(distance).get()].word0())
             });
         // A zero link describes the software topology, not the walker's
         // current ownership. RX_DONE/LAST may become visible before hardware
@@ -2209,7 +2231,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
                 return Ok(None);
             }
             let last_descriptor_low = last_descriptor_low.ok_or(RxRingError::Corrupt)?;
-            let last_index = descriptor_index(last_descriptor_low, self.descriptor_base, COUNT)
+            let last_index = descriptor_index::<COUNT>(last_descriptor_low, self.descriptor_base)
                 .ok_or(RxRingError::Corrupt)?;
             if last_index == pending_tail {
                 return Ok(None);
@@ -2223,9 +2245,9 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
                 // the immediately preceding software tail. Keep only the
                 // vendor's actual safety conditions: LAST and its nonzero
                 // successor must both belong to this descriptor arena.
-                let repair_head = self.descriptors[last_index].next_address();
+                let repair_head = self.descriptors[last_index.get()].next_address();
                 if repair_head == 0
-                    || descriptor_index_full(repair_head, self.descriptor_base, COUNT).is_none()
+                    || descriptor_index_full::<COUNT>(repair_head, self.descriptor_base).is_none()
                 {
                     return Err(RxRingError::Corrupt);
                 }
@@ -2299,43 +2321,40 @@ fn descriptor_snapshot<const COUNT: usize>(
     })
 }
 
-fn descriptor_index_full(address: u32, descriptor_base: u32, count: usize) -> Option<usize> {
+fn descriptor_index_full<const COUNT: usize>(
+    address: u32,
+    descriptor_base: u32,
+) -> Option<RingIndex<COUNT>> {
     let offset = address.checked_sub(descriptor_base)?;
     if offset % DESCRIPTOR_BYTES != 0 {
         return None;
     }
     let index = usize::try_from(offset / DESCRIPTOR_BYTES).ok()?;
-    (index < count).then_some(index)
+    RingIndex::checked(index)
 }
 
 fn ring_topology_snapshot<const COUNT: usize>(
     descriptors: &[Descriptor; COUNT],
     descriptor_base: u32,
     buffer_addresses: &[u32; COUNT],
-    start: usize,
+    start: RingIndex<COUNT>,
     require_armed: bool,
 ) -> RxRingTopologySnapshot {
-    let tail_index = if COUNT == 0 || start >= COUNT {
-        0
-    } else {
-        wrap_sub_one::<COUNT>(start)
-    };
-    let head_address = descriptor_address(descriptor_base, start).unwrap_or(0);
-    let tail_address = descriptor_address(descriptor_base, tail_index).unwrap_or(0);
+    let tail_index = start.previous();
+    let head_address = descriptor_address(descriptor_base, start.get()).unwrap_or(0);
+    let tail_address = descriptor_address(descriptor_base, tail_index.get()).unwrap_or(0);
     let mut snapshot = RxRingTopologySnapshot {
         descriptor_base,
-        start_index: start,
+        start_index: start.get(),
         head_address,
         head_next_address: 0,
-        tail_index,
+        tail_index: tail_index.get(),
         tail_address,
         visited_descriptors: 0,
         terminal_descriptors: 0,
         valid: false,
     };
-    if validate_live_ring_geometry::<COUNT>().is_err()
-        || start >= COUNT
-        || !descriptor_address_valid(descriptor_base)
+    if validate_live_ring_geometry::<COUNT>().is_err() || !descriptor_address_valid(descriptor_base)
     {
         return snapshot;
     }
@@ -2343,20 +2362,20 @@ fn ring_topology_snapshot<const COUNT: usize>(
     let mut visited = RxObservedMask::default();
     let mut index = start;
     for step in 0..COUNT {
-        if visited.contains(index) {
+        if visited.contains(index.get()) {
             return snapshot;
         }
-        visited.insert(index);
+        visited.insert(index.get());
         snapshot.visited_descriptors += 1;
 
-        let descriptor = &descriptors[index];
+        let descriptor = &descriptors[index.get()];
         let word0 = descriptor.word0();
         let buffer_address = descriptor.buffer_address();
         let next_address = descriptor.next_address();
         if step == 0 {
             snapshot.head_next_address = next_address;
         }
-        if buffer_address != buffer_addresses[index] {
+        if buffer_address != buffer_addresses[index.get()] {
             return snapshot;
         }
         if require_armed {
@@ -2383,10 +2402,10 @@ fn ring_topology_snapshot<const COUNT: usize>(
         if step + 1 == COUNT {
             return snapshot;
         }
-        let Some(next_index) = descriptor_index_full(next_address, descriptor_base, COUNT) else {
+        let Some(next_index) = descriptor_index_full::<COUNT>(next_address, descriptor_base) else {
             return snapshot;
         };
-        let expected_index = wrap_add::<COUNT>(index, 1);
+        let expected_index = index.advance(1);
         if next_index != expected_index {
             return snapshot;
         }
@@ -2395,37 +2414,17 @@ fn ring_topology_snapshot<const COUNT: usize>(
     snapshot
 }
 
-fn descriptor_index(low_address: u32, descriptor_base: u32, count: usize) -> Option<usize> {
+fn descriptor_index<const COUNT: usize>(
+    low_address: u32,
+    descriptor_base: u32,
+) -> Option<RingIndex<COUNT>> {
     let base_low = descriptor_base & RX_DESCRIPTOR_ADDRESS_LOW_MASK;
     let offset = low_address.checked_sub(base_low)?;
     if offset % DESCRIPTOR_BYTES != 0 {
         return None;
     }
     let index = usize::try_from(offset / DESCRIPTOR_BYTES).ok()?;
-    (index < count).then_some(index)
-}
-
-fn wrap_add<const COUNT: usize>(index: usize, amount: usize) -> usize {
-    debug_assert!(COUNT != 0);
-    debug_assert!(index < COUNT);
-    debug_assert!(amount <= COUNT);
-    let sum = index + amount;
-    if sum >= COUNT { sum - COUNT } else { sum }
-}
-
-fn ring_distance<const COUNT: usize>(start: usize, end: usize) -> usize {
-    debug_assert!(COUNT != 0);
-    debug_assert!(start < COUNT);
-    debug_assert!(end < COUNT);
-    if end >= start {
-        end - start
-    } else {
-        COUNT - start + end
-    }
-}
-
-fn wrap_sub_one<const COUNT: usize>(index: usize) -> usize {
-    if index == 0 { COUNT - 1 } else { index - 1 }
+    RingIndex::checked(index)
 }
 
 /// Count a contiguous observed prefix in ring order without rescanning every
@@ -2434,17 +2433,20 @@ fn wrap_sub_one<const COUNT: usize>(index: usize) -> usize {
 /// At most four native-word chunks cover a wrapping 96-slot ring. Each
 /// chunk uses a bit scan, preserving arbitrary holes used by the raw model
 /// without introducing a per-descriptor scan in the production path.
-fn observed_prefix_len<const COUNT: usize>(observed_mask: RxObservedMask, start: usize) -> usize {
-    if COUNT == 0 || COUNT > RX_OBSERVED_MASK_CAPACITY || start >= COUNT {
+fn observed_prefix_len<const COUNT: usize>(
+    observed_mask: RxObservedMask,
+    start: RingIndex<COUNT>,
+) -> usize {
+    if COUNT > RX_OBSERVED_MASK_CAPACITY {
         return 0;
     }
     let mut cursor = start;
     let mut remaining = COUNT;
     let mut prefix = 0_usize;
     while remaining != 0 {
-        let offset = cursor % 32;
-        let chunk = remaining.min(32 - offset).min(COUNT - cursor);
-        let bits = observed_mask.words[cursor / 32] >> offset;
+        let offset = cursor.get() % 32;
+        let chunk = remaining.min(32 - offset).min(COUNT - cursor.get());
+        let bits = observed_mask.words[cursor.get() / 32] >> offset;
         let chunk_mask = if chunk == 32 {
             u32::MAX
         } else {
@@ -2456,11 +2458,7 @@ fn observed_prefix_len<const COUNT: usize>(observed_mask: RxObservedMask, start:
         }
         prefix += chunk;
         remaining -= chunk;
-        cursor = if cursor + chunk == COUNT {
-            0
-        } else {
-            cursor + chunk
-        };
+        cursor = cursor.advance(chunk);
     }
     prefix
 }
@@ -2469,17 +2467,17 @@ fn relink_rotated_ring<const COUNT: usize>(
     descriptors: &[Descriptor; COUNT],
     descriptor_base: u32,
     buffer_addresses: &[u32; COUNT],
-    start: usize,
+    start: RingIndex<COUNT>,
 ) -> Result<(), RxRingError> {
     for step in 0..COUNT {
-        let index = wrap_add::<COUNT>(start, step);
+        let index = start.advance(step);
         let next = if step + 1 < COUNT {
-            descriptor_address(descriptor_base, wrap_add::<COUNT>(index, 1))?
+            descriptor_address(descriptor_base, index.advance(1).get())?
         } else {
             0
         };
-        let word0 = descriptors[index].word0();
-        descriptors[index].publish_owned(word0, buffer_addresses[index], next);
+        let word0 = descriptors[index.get()].word0();
+        descriptors[index.get()].publish_owned(word0, buffer_addresses[index.get()], next);
     }
     Ok(())
 }

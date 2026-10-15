@@ -231,7 +231,7 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize>
         };
         let frontier = ring.completed_descriptor_frontier();
         for step in 0..frontier.descriptor_count {
-            let index = wrap_index::<COUNT>(frontier.start_index, step);
+            let index = frontier.start_index.advance(step).get();
             let Some(completed) = storage.take_completed(ring, index)? else {
                 return Err(RxFrontierError::Ring(RxRingError::Corrupt));
             };
@@ -318,8 +318,8 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize>
             return None;
         };
         Some(RxFrontierSchedulerSnapshot {
-            recycle_start: ring.recycle_start(),
-            accepted_tail: ring.accepted_tail(),
+            recycle_start: ring.recycle_start().get(),
+            accepted_tail: ring.accepted_tail().get(),
             observed_mask: ring.observed_mask(),
             topology: ring.topology_snapshot(),
         })
@@ -390,7 +390,7 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize>
         // LAST-advance proof for the preceding half; that descriptor belongs
         // to the next service/recycle epoch.
         for step in 0..frontier.descriptor_count.min(COUNT / 2) {
-            let index = wrap_index::<COUNT>(frontier.start_index, step);
+            let index = frontier.start_index.advance(step).get();
             let Some(completed) = storage.take_completed(ring, index)? else {
                 return Err(RxFrontierError::Ring(RxRingError::Corrupt));
             };
@@ -496,12 +496,4 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize>
             Err(error) => Err(RxFrontierIntoLiveFailure { owner: self, error }),
         }
     }
-}
-
-fn wrap_index<const COUNT: usize>(index: usize, amount: usize) -> usize {
-    debug_assert!(COUNT != 0);
-    debug_assert!(index < COUNT);
-    debug_assert!(amount <= COUNT);
-    let sum = index + amount;
-    if sum >= COUNT { sum - COUNT } else { sum }
 }

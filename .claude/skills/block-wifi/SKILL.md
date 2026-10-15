@@ -28,6 +28,12 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
 
 ## Traps
 
+- S31 RX positions retain `RingIndex<COUNT>` from address validation through
+  descriptor traversal and append. Extract `get()` only at an array or
+  diagnostic boundary. A position from another ring capacity cannot enter
+  the walk, and an empty ring has no valid position. RX arena retention and
+  detach authority remain separate from this geometry proof.
+
 - S31 ordinary queue places belong to `CorePools`: the branded authority
   constructs one core, and each `FreeQueue` moves through submit and its
   terminal. A failed gate opening withdraws every unpublished owner and

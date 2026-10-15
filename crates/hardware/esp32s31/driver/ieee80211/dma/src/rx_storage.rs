@@ -437,7 +437,10 @@ impl<
         unsafe_code,
         reason = "consuming completed unit owns the rearm transition"
     )]
-    pub fn recycle<M: RxDma>(mut self, mmio: &mut M) -> Result<Option<RxLiveAppend>, RxRingError> {
+    pub fn recycle<M: RxDma>(
+        mut self,
+        mmio: &mut M,
+    ) -> Result<Option<RxLiveAppend<COUNT>>, RxRingError> {
         let descriptor_count = self.unit.descriptor_count();
         let result = self
             .ring
@@ -599,12 +602,12 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
 
     fn observe_append(
         &self,
-        result: Result<Option<RxLiveAppend>, RxRingError>,
-    ) -> Result<Option<RxLiveAppend>, RxRingError> {
+        result: Result<Option<RxLiveAppend<COUNT>>, RxRingError>,
+    ) -> Result<Option<RxLiveAppend<COUNT>>, RxRingError> {
         #[cfg(feature = "rx-ownership-observation")]
         if let Ok(Some(append)) = result {
             for step in 0..append.descriptor_count {
-                let index = wrap_index::<COUNT>(append.head_index, step);
+                let index = append.head_index.advance(step).get();
                 if let Some(buffer) = self.descriptor_buffer_id(index) {
                     self.observe(buffer, RxOwnershipEdge::Republished);
                 }
@@ -927,7 +930,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         &self,
         ring: &mut RxRingLive<'_, COUNT>,
         mmio: &mut M,
-    ) -> Result<Option<RxLiveAppend>, RxRingError> {
+    ) -> Result<Option<RxLiveAppend<COUNT>>, RxRingError> {
         self.validate_live_ring(ring)?;
         let result = ring.recycle_completed_half_owned(mmio, |index| {
             // SAFETY: the ring invokes the closure only after observing the
@@ -949,7 +952,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         &self,
         ring: &mut RxRingLive<'_, COUNT>,
         mmio: &mut M,
-    ) -> Result<Option<RxLiveAppend>, RxRingError> {
+    ) -> Result<Option<RxLiveAppend<COUNT>>, RxRingError> {
         self.validate_live_ring(ring)?;
         let result = ring.recycle_completed_prefix_owned::<MAX_BATCH, _, _>(mmio, |index| {
             // SAFETY: the ring invokes the closure only for its observed
@@ -978,7 +981,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         &self,
         ring: &mut RxRingLive<'_, COUNT>,
         mmio: &mut M,
-    ) -> Result<Option<RxLiveAppend>, RxRingError> {
+    ) -> Result<Option<RxLiveAppend<COUNT>>, RxRingError> {
         self.validate_live_ring(ring)?;
         if MAX_BATCH == 0 {
             return Err(RxRingError::Count);
@@ -987,7 +990,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         let observed = ring.observed_mask();
         let mut released = 0_usize;
         while released < MAX_BATCH.min(COUNT) {
-            let index = wrap_index::<COUNT>(start, released);
+            let index = start.advance(released).get();
             if !observed.contains(index)
                 || !crate::descriptor::rx_done(self.descriptors[index].word0())
                 || !self
@@ -1039,7 +1042,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         let start = ring.recycle_start();
         let observed = ring.observed_mask();
         for step in 0..COUNT.min(64) {
-            let index = wrap_index::<COUNT>(start, step);
+            let index = start.advance(step).get();
             if !observed.contains(index) {
                 return Ok(None);
             }
@@ -1204,7 +1207,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
     ) -> Result<Option<usize>, RxRingError> {
         self.validate_live_ring(ring)?;
         let observed = ring.observed_prefix_len();
-        Ok((observed != COUNT).then(|| wrap_index::<COUNT>(ring.recycle_start(), observed)))
+        Ok((observed != COUNT).then(|| ring.recycle_start().advance(observed).get()))
     }
 
     pub fn take_completed_unit<'storage, 'owner, 'ring>(
@@ -1248,7 +1251,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         mmio: &mut M,
         cursor: RxFrozenCursor,
         descriptor_count: usize,
-    ) -> Result<Option<RxLiveAppend>, RxRingError> {
+    ) -> Result<Option<RxLiveAppend<COUNT>>, RxRingError> {
         self.validate_live_ring(ring)?;
         let result = ring.recycle_completed_unit_through_frozen_last_owned(
             mmio,
@@ -1353,14 +1356,6 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> De
     fn default() -> Self {
         Self::new()
     }
-}
-
-fn wrap_index<const COUNT: usize>(index: usize, amount: usize) -> usize {
-    debug_assert!(COUNT != 0);
-    debug_assert!(index < COUNT);
-    debug_assert!(amount <= COUNT);
-    let sum = index + amount;
-    if sum >= COUNT { sum - COUNT } else { sum }
 }
 
 #[cfg(test)]

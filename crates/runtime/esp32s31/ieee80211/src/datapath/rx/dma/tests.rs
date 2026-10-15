@@ -461,7 +461,7 @@ fn connected_rx_stop_confirms_walker_off_and_preserves_static_resources() {
         Err(_) => panic!("halted owner must rebuild the next descriptor epoch"),
     };
     assert!(!hardware.walker);
-    assert_eq!(prepared.ring().initial_start(), 0);
+    assert_eq!(prepared.ring().initial_start().get(), 0);
     hardware.fail_enable = true;
     let prepared = match embassy_futures::block_on(prepared.start(&mut hardware)) {
         Ok(_) => panic!("rejected walker enable must not create a live owner"),
@@ -471,7 +471,7 @@ fn connected_rx_stop_confirms_walker_off_and_preserves_static_resources() {
         }
     };
     assert!(!hardware.walker);
-    assert_eq!(prepared.ring().initial_start(), 0);
+    assert_eq!(prepared.ring().initial_start().get(), 0);
     assert_eq!(prepared.queued_frames(), 0);
     hardware.fail_enable = false;
     let restarted = match embassy_futures::block_on(prepared.start(&mut hardware)) {
@@ -609,7 +609,7 @@ fn logical_role_handoff_recycles_released_prefix_before_discarding_old_completio
         Ok(DatapathRxProgress::ProbePending | DatapathRxProgress::RecycledAppendPending)
     ));
     assert_eq!(storage.released_buffer_count(), 0);
-    assert_eq!(second.ring().recycle_start(), 3);
+    assert_eq!(second.ring().recycle_start().get(), 3);
     while let Ok(frame) = receiver.try_receive() {
         drop(frame);
     }
@@ -730,7 +730,7 @@ fn finite_service_discards_a_descriptor_chain_without_copying_it() {
         Err(TryReceiveError::Empty)
     ));
     assert_eq!(observer.stage_chained_discards.load(Ordering::Relaxed), 1);
-    assert_eq!(service.ring().recycle_start(), 0);
+    assert_eq!(service.ring().recycle_start().get(), 0);
     // The frozen LAST releases its complete chained unit inclusively, exactly
     // as the vendor worker processes the descriptor equal to saved LAST.
     assert_ne!(storage.descriptors()[0].word0() & BIT_31, 0);
@@ -858,7 +858,7 @@ fn production_ring_reclaims_before_a_32_slot_stage_pool_saturates() {
     );
     assert_eq!(observer.completed_descriptors.load(Ordering::Relaxed), 32);
     assert_eq!(observer.recycled_descriptors.load(Ordering::Relaxed), 0);
-    assert_eq!(service.ring().recycle_start(), 0);
+    assert_eq!(service.ring().recycle_start().get(), 0);
     assert_eq!(pool.claimed_slots(), 32);
     for expected in 0_u32..32 {
         let frame = receiver.try_receive().expect("staged prefix frame");
@@ -869,7 +869,7 @@ fn production_ring_reclaims_before_a_32_slot_stage_pool_saturates() {
         embassy_futures::block_on(service.service(&mut hardware)),
         Ok(DatapathRxProgress::RecycledAppendPending),
     );
-    assert_eq!(service.ring().recycle_start(), 32);
+    assert_eq!(service.ring().recycle_start().get(), 32);
     for expected in 32_u32..40 {
         let frame = receiver.try_receive().expect("remaining staged frame");
         assert_eq!(frame.segment().buffer, expected.to_le_bytes());
@@ -964,7 +964,7 @@ fn saturated_bulk_rx_discards_upper_copy_and_recycles_without_consuming_critical
             .load(Ordering::Relaxed),
         0
     );
-    assert_eq!(service.ring().recycle_start(), 0);
+    assert_eq!(service.ring().recycle_start().get(), 0);
     assert_eq!(pool.available_slots(), 1);
 
     for _ in 0..STAGED {
@@ -975,7 +975,7 @@ fn saturated_bulk_rx_discards_upper_copy_and_recycles_without_consuming_critical
         embassy_futures::block_on(service.service(&mut hardware)),
         Ok(DatapathRxProgress::RecycledAppendPending),
     );
-    assert_eq!(service.ring().recycle_start(), COMPLETED);
+    assert_eq!(service.ring().recycle_start().get(), COMPLETED);
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
         Ok(DatapathRxProgress::Drained),
@@ -1154,7 +1154,7 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
         embassy_futures::block_on(service.service(&mut hardware)),
         Ok(DatapathRxProgress::RecycledAppendPending),
     );
-    assert_eq!(service.ring().recycle_start(), 0);
+    assert_eq!(service.ring().recycle_start().get(), 0);
     assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
     assert_ne!(storage.descriptors()[0].word0() & BIT_31, 0);
     assert_eq!(pool.claimed_slots(), 0);
@@ -1263,7 +1263,7 @@ fn one_shot_admission_discards_before_staging_then_observes_same_live_ring() {
         embassy_futures::block_on(service.service(&mut hardware)),
         Ok(DatapathRxProgress::Drained),
     );
-    assert_eq!(service.ring().recycle_start(), 1);
+    assert_eq!(service.ring().recycle_start().get(), 1);
     service
         .try_stop(&mut hardware)
         .unwrap_or_else(|_| panic!("test RX service must stop"));

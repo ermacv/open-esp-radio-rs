@@ -79,8 +79,8 @@ fn live_rx_ring_owns_physical_cold_order_reload_and_rom_base_repair() {
     )
     .unwrap();
     assert_eq!(prepared, [0, 1, 2, 3]);
-    assert_eq!(stopped.initial_start(), 0);
-    assert_eq!(stopped.accepted_tail(), 3);
+    assert_eq!(stopped.initial_start().get(), 0);
+    assert_eq!(stopped.accepted_tail().get(), 3);
     assert_eq!(descriptors[2].next_address(), BASE + 3 * DESCRIPTOR_BYTES);
     assert_eq!(descriptors[3].next_address(), 0);
     assert_eq!(descriptors[0].next_address(), BASE + DESCRIPTOR_BYTES);
@@ -135,12 +135,12 @@ fn live_rx_ring_owns_physical_cold_order_reload_and_rom_base_repair() {
         .unwrap()
         .unwrap();
     assert_eq!(recycled, [0, 1]);
-    assert_eq!(first.head_index, 0);
-    assert_eq!(first.tail_index, 1);
+    assert_eq!(first.head_index.get(), 0);
+    assert_eq!(first.tail_index.get(), 1);
     assert_eq!(descriptors[3].next_address(), BASE);
     assert!(mmio.rx_reload_pending);
     assert!(live.reload_pending());
-    assert_eq!(live.accepted_tail(), 3);
+    assert_eq!(live.accepted_tail().get(), 3);
 
     descriptors[2].write_word0(completed);
     descriptors[3].write_word0(completed);
@@ -171,7 +171,7 @@ fn live_rx_ring_owns_physical_cold_order_reload_and_rom_base_repair() {
         ],
         "reload repair must preserve vendor NEXT -> conditional LAST -> BASE order",
     );
-    assert_eq!(live.accepted_tail(), 1);
+    assert_eq!(live.accepted_tail().get(), 1);
     assert!(!live.reload_pending());
     assert!(live.exhausted_republication_probe_pending());
     recycled.clear();
@@ -202,14 +202,14 @@ fn live_rx_ring_owns_physical_cold_order_reload_and_rom_base_repair() {
         .unwrap()
         .unwrap();
     assert_eq!(recycled, [2, 3]);
-    assert_eq!(second.head_index, 2);
-    assert_eq!(second.tail_index, 3);
+    assert_eq!(second.head_index.get(), 2);
+    assert_eq!(second.tail_index.get(), 3);
     assert_eq!(descriptors[1].next_address(), BASE + 2 * DESCRIPTOR_BYTES);
     assert!(
         mmio.operations()
             .contains(&Operation::PublishRxDescriptorBase(BASE))
     );
-    assert_eq!(live.accepted_tail(), 1);
+    assert_eq!(live.accepted_tail().get(), 1);
     assert!(live.reload_pending());
     assert!(live.try_stop(&mut mmio).is_ok());
 }
@@ -271,8 +271,8 @@ fn stopped_rx_ring_ignores_every_retained_last_for_cold_publication() {
             })
             .unwrap();
         let topology = stopped.topology_snapshot();
-        assert_eq!(stopped.initial_start(), 0);
-        assert_eq!(stopped.accepted_tail(), COUNT - 1);
+        assert_eq!(stopped.initial_start().get(), 0);
+        assert_eq!(stopped.accepted_tail().get(), COUNT - 1);
         assert!(topology.valid, "retained descriptor {retained_index}");
         assert_eq!(topology.start_index, 0);
         assert_eq!(topology.tail_index, COUNT - 1);
@@ -305,8 +305,8 @@ fn stopped_rx_ring_rebuilds_from_the_retained_hardware_next_cursor() {
         rx_descriptor_low(BASE + DESCRIPTOR_BYTES)
     );
     assert_eq!(stopped.retained_last_low(), rx_descriptor_low(BASE));
-    assert_eq!(stopped.initial_start(), 1);
-    assert_eq!(stopped.accepted_tail(), 0);
+    assert_eq!(stopped.initial_start().get(), 1);
+    assert_eq!(stopped.accepted_tail().get(), 0);
     assert_eq!(descriptors[1].next_address(), BASE + 2 * DESCRIPTOR_BYTES);
     assert_eq!(descriptors[3].next_address(), BASE);
     assert_eq!(descriptors[0].next_address(), 0);
@@ -355,8 +355,8 @@ fn stopped_rx_ring_avoids_a_cold_head_on_the_final_descriptor() {
         })
         .unwrap();
 
-    assert_eq!(stopped.initial_start(), 0);
-    assert_eq!(stopped.accepted_tail(), COUNT - 1);
+    assert_eq!(stopped.initial_start().get(), 0);
+    assert_eq!(stopped.accepted_tail().get(), COUNT - 1);
     assert_eq!(descriptors[0].next_address(), BASE + DESCRIPTOR_BYTES);
     assert_eq!(descriptors[COUNT - 1].next_address(), 0);
     assert_eq!(mmio.rx_descriptor_base(), BASE);
@@ -379,7 +379,7 @@ fn stopped_rx_ring_uses_zero_for_an_invalid_retained_last_pointer() {
                 Ok(())
             })
             .unwrap();
-        assert_eq!(stopped.initial_start(), 0);
+        assert_eq!(stopped.initial_start().get(), 0);
         assert!(stopped.topology_snapshot().valid);
     }
 }
@@ -440,8 +440,8 @@ fn live_rx_ring_can_replenish_one_descriptor_per_rom_append() {
         .recycle_completed_batch::<1, _, _>(&mut mmio, |_| Ok(()))
         .unwrap()
         .unwrap();
-    assert_eq!(first.head_index, 0);
-    assert_eq!(first.tail_index, 0);
+    assert_eq!(first.head_index.get(), 0);
+    assert_eq!(first.tail_index.get(), 0);
     assert_eq!(descriptors[3].next_address(), BASE);
 
     // Model the doorbell self-clear while the walker still has a live next
@@ -453,7 +453,7 @@ fn live_rx_ring_can_replenish_one_descriptor_per_rom_append() {
         live.poll_pending_reload(&mut mmio).unwrap(),
         RxReloadObservation::Settled
     );
-    assert_eq!(live.accepted_tail(), 0);
+    assert_eq!(live.accepted_tail().get(), 0);
 
     descriptors[1].write_word0(completed);
     mmio.set_rx_last_descriptor_address(BASE + DESCRIPTOR_BYTES);
@@ -471,8 +471,8 @@ fn live_rx_ring_can_replenish_one_descriptor_per_rom_append() {
         .recycle_completed_batch::<1, _, _>(&mut mmio, |_| Ok(()))
         .unwrap()
         .unwrap();
-    assert_eq!(second.head_index, 1);
-    assert_eq!(second.tail_index, 1);
+    assert_eq!(second.head_index.get(), 1);
+    assert_eq!(second.tail_index.get(), 1);
     assert_eq!(descriptors[0].next_address(), BASE + DESCRIPTOR_BYTES);
 
     assert_eq!(
@@ -523,7 +523,7 @@ fn live_rx_ring_republishes_an_exhausted_software_list_without_a_self_link() {
         live.poll_pending_reload(&mut mmio).unwrap(),
         RxReloadObservation::Settled
     );
-    assert_eq!(live.accepted_tail(), 0);
+    assert_eq!(live.accepted_tail().get(), 0);
 
     // Hardware then exhausts that whole list before software returns either
     // node. Discarding 1 -> 0 leaves the vendor software head null, so the
@@ -541,12 +541,12 @@ fn live_rx_ring_republishes_an_exhausted_software_list_without_a_self_link() {
         .unwrap()
         .unwrap();
 
-    assert_eq!(append.head_index, 1);
-    assert_eq!(append.tail_index, 0);
+    assert_eq!(append.head_index.get(), 1);
+    assert_eq!(append.tail_index.get(), 0);
     assert_eq!(descriptors[1].next_address(), BASE);
     assert_eq!(descriptors[0].next_address(), 0);
     assert_eq!(mmio.rx_descriptor_base(), BASE + DESCRIPTOR_BYTES);
-    assert_eq!(live.recycle_start(), 1);
+    assert_eq!(live.recycle_start().get(), 1);
     assert!(!live.reload_pending());
     assert!(live.exhausted_republication_probe_pending());
     assert!(!mmio.operations().contains(&Operation::RequestRxReload));
@@ -650,7 +650,7 @@ fn exercise_single_descriptor_rx_interleavings<const COUNT: usize>() {
     for epoch in 0..2 {
         for (cursor, descriptor) in descriptors.iter().enumerate() {
             assert_eq!(
-                live.recycle_start(),
+                live.recycle_start().get(),
                 cursor,
                 "epoch {epoch}, cursor {cursor}"
             );
@@ -690,8 +690,8 @@ fn exercise_single_descriptor_rx_interleavings<const COUNT: usize>() {
                 .recycle_completed_batch::<1, _, _>(&mut mmio, |_| Ok(()))
                 .unwrap()
                 .unwrap();
-            assert_eq!(append.head_index, cursor);
-            assert_eq!(append.tail_index, cursor);
+            assert_eq!(append.head_index.get(), cursor);
+            assert_eq!(append.tail_index.get(), cursor);
             assert_eq!(descriptors[cursor].next_address(), 0);
             assert_eq!(descriptors[cursor].word0() & BIT_30, 0);
             assert!(live.topology_snapshot().valid);
@@ -703,7 +703,7 @@ fn exercise_single_descriptor_rx_interleavings<const COUNT: usize>() {
                 live.poll_pending_reload(&mut mmio).unwrap(),
                 RxReloadObservation::Settled
             );
-            assert_eq!(live.accepted_tail(), cursor);
+            assert_eq!(live.accepted_tail().get(), cursor);
             let topology = live.topology_snapshot();
             assert!(topology.valid, "epoch {epoch}, cursor {cursor}");
             assert_eq!(topology.visited_descriptors, COUNT);
@@ -748,8 +748,8 @@ fn live_rx_frontier_rejects_last_beyond_the_accepted_tail_during_reload() {
         .unwrap()
         .unwrap();
     assert!(live.reload_pending());
-    assert_eq!(live.recycle_start(), 1);
-    assert_eq!(live.accepted_tail(), 3);
+    assert_eq!(live.recycle_start().get(), 1);
+    assert_eq!(live.accepted_tail().get(), 3);
 
     // Hardware-visible pending tail zero is outside the still accepted list
     // 1 -> 2 -> 3. Even if descriptor one is complete, that impossible LAST
@@ -941,7 +941,7 @@ fn live_rx_ring_transfers_and_recycles_one_chained_unit_atomically() {
         .unwrap();
     assert_eq!(recycled, [0, 1]);
     assert_eq!(append.descriptor_count, 2);
-    assert_eq!(live.recycle_start(), 2);
+    assert_eq!(live.recycle_start().get(), 2);
     assert_eq!(descriptors[0].word0() & BIT_30, 0);
     assert_eq!(descriptors[1].word0() & BIT_30, 0);
     assert!(live.try_stop(&mut mmio).is_ok());
@@ -985,8 +985,8 @@ fn live_rx_ring_replenishes_the_available_variable_prefix() {
         .recycle_completed_prefix::<4, _, _>(&mut mmio, |_| Ok(()))
         .unwrap()
         .unwrap();
-    assert_eq!(first.head_index, 0);
-    assert_eq!(first.tail_index, 1);
+    assert_eq!(first.head_index.get(), 0);
+    assert_eq!(first.tail_index.get(), 1);
     assert_eq!(first.descriptor_count, 2);
 
     mmio.set_rx_walker_enabled(true);
@@ -1013,8 +1013,8 @@ fn live_rx_ring_replenishes_the_available_variable_prefix() {
         .recycle_completed_prefix::<4, _, _>(&mut mmio, |_| Ok(()))
         .unwrap()
         .unwrap();
-    assert_eq!(second.head_index, 2);
-    assert_eq!(second.tail_index, 2);
+    assert_eq!(second.head_index.get(), 2);
+    assert_eq!(second.tail_index.get(), 2);
     assert_eq!(second.descriptor_count, 1);
 
     assert_eq!(

@@ -67,7 +67,7 @@ scopes; an absent review is not silently replaced by model-only publication.
 
 ## Shared TSF snapshot words
 
-`WIFI_MAC_STA_TSF_LOAD.CONTROL` publishes separate station and SoftAP
+`WIFI_MAC_TSF_LOAD.CONTROL` publishes separate station and SoftAP
 snapshot selectors, but both domains read the same `SNAPSHOT_LOW/HIGH`
 pair. `WifiRadioRegisters` serializes selector assertion, both reads
 and selector release through its exclusive borrow; the AP driver owner

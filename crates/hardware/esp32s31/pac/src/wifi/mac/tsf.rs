@@ -21,7 +21,7 @@ pub struct StaTbttSchedule {
 /// conditional-output semantics.
 #[inline(always)]
 pub(crate) fn snapshot_station_tsf(
-    registers: &svd::WifiMacStaTsfLoad,
+    registers: &svd::WifiMacTsfLoad,
     low: Option<&mut u32>,
     high: Option<&mut u32>,
 ) {
@@ -52,7 +52,7 @@ impl WifiRadioRegisters {
     /// selector using a fresh control read. The reviewed field is published
     /// as SNAPSHOT_SOFTAP_TSF; the words are shared with the station snapshot.
     pub fn access_point_tsf(&mut self) -> u64 {
-        let registers = &self.peripherals.wifi_mac.wifi_mac_sta_tsf_load;
+        let registers = &self.peripherals.wifi_mac.wifi_mac_tsf_load;
         registers
             .control()
             .modify(|_, writer| writer.snapshot_softap_tsf().set_bit());
@@ -74,7 +74,7 @@ impl WifiRadioRegisters {
         let mut low = 0;
         let mut high = 0;
         snapshot_station_tsf(
-            &self.peripherals.wifi_mac.wifi_mac_sta_tsf_load,
+            &self.peripherals.wifi_mac.wifi_mac_tsf_load,
             Some(&mut low),
             Some(&mut high),
         );
@@ -87,7 +87,7 @@ impl WifiRadioRegisters {
     /// writes the low word, writes the high word and then asserts bit four at
     /// `0x2010_d814` through a fresh-read RMW.
     pub fn set_station_tsf(&mut self, value: u64) {
-        let load = &self.peripherals.wifi_mac.wifi_mac_sta_tsf_load;
+        let load = &self.peripherals.wifi_mac.wifi_mac_tsf_load;
         crate::generated::station_tsf_value_low(
             load,
             crate::generated::StationTsfLowWord::new(value as u32),
@@ -149,7 +149,7 @@ impl WifiRadioRegisters {
         );
         self.peripherals
             .wifi_mac
-            .wifi_mac_sta_tsf_load
+            .wifi_mac_tsf_load
             .control()
             .modify(|_, w| w.load_station_tbtt_target().set_bit());
         let rtc = &self.peripherals.wifi_mac.wifi_mac_rtc_timer_update;

@@ -2967,7 +2967,7 @@ pub(crate) fn mac_interrupt_clear(
 /// Typed bridge for the reviewed `station_tsf_value_low` complete-register transaction.
 #[inline]
 pub(crate) fn station_tsf_value_low(
-    registers: &crate::svd::WifiMacStaTsfLoad,
+    registers: &crate::svd::WifiMacTsfLoad,
     value: StationTsfLowWord,
 ) {
     crate::svd::full_register_write::station_tsf_value_low(registers, value.get());
@@ -2976,7 +2976,7 @@ pub(crate) fn station_tsf_value_low(
 /// Typed bridge for the reviewed `station_tsf_value_high` complete-register transaction.
 #[inline]
 pub(crate) fn station_tsf_value_high(
-    registers: &crate::svd::WifiMacStaTsfLoad,
+    registers: &crate::svd::WifiMacTsfLoad,
     value: StationTsfHighWord,
 ) {
     crate::svd::full_register_write::station_tsf_value_high(registers, value.get());

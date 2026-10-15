@@ -1,7 +1,7 @@
 schema = 2
 
 [[peripherals]]
-name = "WIFI_MAC_STA_TSF_LOAD"
+name = "WIFI_MAC_TSF_LOAD"
 description = "Shared TSF load and coherent station/SoftAP snapshot transaction."
 baseAddress = 0x2010D814
 
@@ -133,7 +133,7 @@ bitOffset = 19
 bitWidth = 1
 
 [[review]]
-entity = "WIFI_MAC_STA_TSF_LOAD"
+entity = "WIFI_MAC_TSF_LOAD"
 sources = [
     "BLOB_LIBPP_HAL_TSF",
     "ROM_REV0_HAL_GET_STA_TSF",
@@ -144,7 +144,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_STA_TSF_LOAD.CONTROL"
+entity = "WIFI_MAC_TSF_LOAD.CONTROL"
 naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_TSF",
@@ -157,7 +157,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_STA_TSF_LOAD.CONTROL.SNAPSHOT_STATION_TSF"
+entity = "WIFI_MAC_TSF_LOAD.CONTROL.SNAPSHOT_STATION_TSF"
 naming = "descriptive"
 sources = ["ROM_REV0_HAL_GET_STA_TSF"]
 provenance = "observed"
@@ -165,7 +165,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_STA_TSF_LOAD.CONTROL.SNAPSHOT_SOFTAP_TSF"
+entity = "WIFI_MAC_TSF_LOAD.CONTROL.SNAPSHOT_SOFTAP_TSF"
 naming = "descriptive"
 sources = [
     "BLOB_LIBPP_AP_TSF_SNAPSHOT_20261015",
@@ -176,7 +176,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_STA_TSF_LOAD.CONTROL.LOAD_STATION_TSF"
+entity = "WIFI_MAC_TSF_LOAD.CONTROL.LOAD_STATION_TSF"
 naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_TSF"]
 provenance = "observed"
@@ -184,7 +184,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_STA_TSF_LOAD.CONTROL.LOAD_SOFTAP_TSF"
+entity = "WIFI_MAC_TSF_LOAD.CONTROL.LOAD_SOFTAP_TSF"
 naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_TSF"]
 provenance = "observed"
@@ -192,7 +192,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_STA_TSF_LOAD.VALUE_LOW"
+entity = "WIFI_MAC_TSF_LOAD.VALUE_LOW"
 naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_TSF"]
 provenance = "observed"
@@ -200,7 +200,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_STA_TSF_LOAD.VALUE_HIGH"
+entity = "WIFI_MAC_TSF_LOAD.VALUE_HIGH"
 naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_TSF"]
 provenance = "observed"
@@ -208,7 +208,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_STA_TSF_LOAD.SNAPSHOT_LOW"
+entity = "WIFI_MAC_TSF_LOAD.SNAPSHOT_LOW"
 naming = "descriptive"
 sources = ["ROM_REV0_HAL_GET_STA_TSF", "BLOB_LIBPP_AP_TSF_SNAPSHOT_20261015"]
 provenance = "observed"
@@ -216,7 +216,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_STA_TSF_LOAD.SNAPSHOT_HIGH"
+entity = "WIFI_MAC_TSF_LOAD.SNAPSHOT_HIGH"
 naming = "descriptive"
 sources = ["ROM_REV0_HAL_GET_STA_TSF", "BLOB_LIBPP_AP_TSF_SNAPSHOT_20261015"]
 provenance = "observed"
@@ -224,7 +224,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_STA_TSF_LOAD.TSF_DEVIATION_CONTROL"
+entity = "WIFI_MAC_TSF_LOAD.TSF_DEVIATION_CONTROL"
 naming = "descriptive"
 sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
 provenance = "observed"
@@ -232,7 +232,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "WIFI_MAC_STA_TSF_LOAD.TSF_DEVIATION_CONTROL.DEVIATION"
+entity = "WIFI_MAC_TSF_LOAD.TSF_DEVIATION_CONTROL.DEVIATION"
 naming = "descriptive"
 sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
 provenance = "observed"
@@ -240,7 +240,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_STA_TSF_LOAD.TSF_DEVIATION_CONTROL.RX_BEACON_ABORT_SYNC_ENABLE"
+entity = "WIFI_MAC_TSF_LOAD.TSF_DEVIATION_CONTROL.RX_BEACON_ABORT_SYNC_ENABLE"
 naming = "descriptive"
 sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
 provenance = "observed"
@@ -248,7 +248,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_STA_TSF_LOAD.TSF_DEVIATION_CONTROL.DEVIATION_SYNC_ENABLE"
+entity = "WIFI_MAC_TSF_LOAD.TSF_DEVIATION_CONTROL.DEVIATION_SYNC_ENABLE"
 naming = "descriptive"
 sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
 provenance = "observed"
@@ -256,7 +256,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_STA_TSF_LOAD.CONTROL.LOAD_STATION_TBTT_TARGET"
+entity = "WIFI_MAC_TSF_LOAD.CONTROL.LOAD_STATION_TBTT_TARGET"
 naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_TSF_TBTT_20260927"]
 provenance = "observed"
@@ -264,17 +264,17 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_STA_TSF_LOAD.VALUE_LOW.VALUE"
+entity = "WIFI_MAC_TSF_LOAD.VALUE_LOW.VALUE"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_STA_TSF_LOAD.VALUE_HIGH.VALUE"
+entity = "WIFI_MAC_TSF_LOAD.VALUE_HIGH.VALUE"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_STA_TSF_LOAD.SNAPSHOT_LOW.VALUE"
+entity = "WIFI_MAC_TSF_LOAD.SNAPSHOT_LOW.VALUE"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_STA_TSF_LOAD.SNAPSHOT_HIGH.VALUE"
+entity = "WIFI_MAC_TSF_LOAD.SNAPSHOT_HIGH.VALUE"
 naming = "descriptive"

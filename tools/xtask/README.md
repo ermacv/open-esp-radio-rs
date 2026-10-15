@@ -64,6 +64,11 @@ Host-side policy over the source tree and the Cargo graph.
 | `cargo xtask check network` | Resolve isolated network consumers and audit their dependency boundaries; CI compiles the profiles |
 | `cargo xtask check feature-sets` | Test every root-workspace package with each feature set its `open-radio.test-feature-sets` declares; `check changed` does the same for the packages it tests |
 
+The UI gate compiles a misuse and its positive twin for each target. Each
+error must match its code and annotated source boundary. For an inline-const
+check defined in a dependency, E0080 is matched to rustc's instantiation note
+at the caller; unrelated errors and notes do not satisfy the contract.
+
 ## Firmware builds and image checks
 
 The PHY library's target build. Images are not xtask's: `cargo fw build`

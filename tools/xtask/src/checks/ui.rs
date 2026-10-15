@@ -34,7 +34,8 @@ struct Suite {
 /// `ui_reject` selects the misuse; its expected error is marked on that line
 /// with `// ui-error: E0123`. A deliberately uncoded error uses
 /// `// ui-error: null exact diagnostic message`. Repeat the annotation when
-/// rustc reports multiple errors at one boundary. Every error must match once.
+/// rustc reports multiple errors at one boundary. An inline-const E0080 may
+/// name the call through rustc's instantiation note. Every error must match once.
 pub fn run(ctx: &Checkout) -> Result<()> {
     let catalog: Catalog = toml::from_str(&fs::read_to_string(
         ctx.root.join("tools/xtask/tests/ui.toml"),
@@ -240,12 +241,13 @@ fn validate(output: &Output, source: &Path, expected: Option<&Expected>) -> Resu
         .into());
     }
     let mut remaining = expected.cloned().unwrap_or_default();
-    for line in output
+    let diagnostics: Vec<Value> = output
         .stderr
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
-    {
-        let message: Value = serde_json::from_slice(line)?;
+        .map(serde_json::from_slice)
+        .collect::<std::result::Result<_, _>>()?;
+    for (index, message) in diagnostics.iter().enumerate() {
         if message["level"] != "error" {
             continue;
         }
@@ -262,8 +264,24 @@ fn validate(output: &Output, source: &Path, expected: Option<&Expected>) -> Resu
             continue;
         }
         let code = message["code"]["code"].as_str();
+        // An inline const in a dependency reports E0080 at its definition.
+        // Rustc then names this exact instantiation in a separate note before
+        // the next error. Only that note can move a const diagnostic's boundary.
+        let instantiated = diagnostics[index + 1..]
+            .iter()
+            .take_while(|note| note["level"] != "error")
+            .filter(|note| {
+                code == Some("E0080")
+                    && note["level"] == "note"
+                    && note["message"].as_str().is_some_and(|text| {
+                        text.starts_with("the above error was encountered while instantiating `")
+                    })
+            })
+            .filter_map(|note| note["spans"].as_array())
+            .flatten();
         let matching = spans
             .iter()
+            .chain(instantiated)
             .filter(|span| span["is_primary"] == true)
             .find_map(|span| {
                 if span["file_name"].as_str().map(Path::new) != Some(source) {

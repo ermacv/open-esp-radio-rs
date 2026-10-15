@@ -72,3 +72,20 @@ fn multiple_errors_at_one_boundary_require_one_expectation_each() {
     expected.push(expected[0].clone());
     assert!(validate(&output, &path, Some(&expected)).is_err());
 }
+
+#[test]
+fn a_const_contract_points_to_its_instantiation() {
+    let source = "pub fn capacity<const N: usize>() { const { assert!(N > 0); } }\npub fn build() { capacity::<0>(); } // ui-error: E0080\n";
+    let (_directory, path, output) = compiled(source);
+    validate(&output, &path, Some(&expectations(source).unwrap())).unwrap();
+    let wrong_line = source.replace(" // ui-error: E0080\n", "\n// ui-error: E0080\n");
+    assert!(validate(&output, &path, Some(&expectations(&wrong_line).unwrap())).is_err());
+    let wrong_code = source.replace("E0080", "E0308");
+    assert!(validate(&output, &path, Some(&expectations(&wrong_code).unwrap())).is_err());
+    let extra = format!("{source}pub fn unrelated() {{ let _: u8 = false; }}\n");
+    let (_directory, path, output) = compiled(&extra);
+    assert!(validate(&output, &path, Some(&expectations(&extra).unwrap())).is_err());
+    let positive = source.replace("capacity::<0>", "capacity::<1>");
+    let (_directory, path, output) = compiled(&positive);
+    validate(&output, &path, None).unwrap();
+}

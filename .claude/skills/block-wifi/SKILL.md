@@ -329,6 +329,9 @@ RX metadata, including SPP's A-MSDU-present bit.
 Management reception wraps the same `CcmpAssociation` transform with a separate
 PN frontier: do not duplicate its AAD/nonce or MIC-failure erasure. CCM accepts
 only header-built `Aad` layouts (22/24/28/30 bytes), never arbitrary AAD slices.
+Management's reserved CCMP octet and Key ID bits must also be zero: the pinned
+vendor `ieee80211_ccmp_decrypt` rejects them before replay or decryption. The
+pin and entry offsets are documented in RSN's `management_ccmp` rustdoc.
 The interface-scoped model holds one hardware CCMP record per interface; keys
 select that record by interface identity. The affine association owner remains
 unique, and the complete returned slot bank gates any change of mode.

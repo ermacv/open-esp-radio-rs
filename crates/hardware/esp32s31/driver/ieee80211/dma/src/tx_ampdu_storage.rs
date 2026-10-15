@@ -4,7 +4,7 @@
 //! External zero-copy aggregates receive prepare/start authority only through
 //! an owner which also retains every referenced [`StableDmaBacking`] lease.
 
-use core::{marker::PhantomPinned, mem, pin::Pin};
+use core::{marker::PhantomPinned, mem, mem::ManuallyDrop, pin::Pin};
 
 use oer_esp32s31_hal::types::MacTxQueueDetached;
 use oer_memory::{HardwareOwnedTxDma, PreparedTxDma, StableDmaBacking, StableDmaRange};
@@ -516,8 +516,14 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> PinnedAmpduDmaStorage<SLOTS, 
 /// movable lease object whose underlying allocation is stable. Moving this
 /// owner is safe: descriptor addresses never point at the lease object, only
 /// at the allocation guaranteed by its unsafe [`StableDmaBacking`] contract.
+///
+/// The arena never automatically destroys a retained lease. Only the active
+/// owner can release one after cancellation or proven detach. If that owner
+/// is forgotten, destroying this arena leaks its leases and their allocations;
+/// it cannot free memory still visible to DMA. No destructor is required for
+/// this safety property, including the arena's own destructor.
 pub struct RetainedAmpduDmaStorage<B, const SLOTS: usize> {
-    backings: [Option<B>; SLOTS],
+    backings: [Option<ManuallyDrop<B>>; SLOTS],
     backing_identities: [Option<RetainedDmaBackingIdentity>; SLOTS],
     backing_descriptors: [Option<RetainedDmaDescriptor>; SLOTS],
     active_backing_indices: [u8; SLOTS],
@@ -631,6 +637,7 @@ impl<'retention, B, const SLOTS: usize, const BUFFER_SIZE: usize>
         self.validate_backing(&backing)?;
         let value = self.retention_mut().backings[index]
             .take()
+            .map(ManuallyDrop::into_inner)
             .ok_or(AmpduDmaStorageError::Count)?;
         self.retention_mut().backing_identities[index] = None;
         self.retention_mut().backing_descriptors[index] = None;
@@ -650,6 +657,7 @@ impl<'retention, B, const SLOTS: usize, const BUFFER_SIZE: usize>
             .backings
             .get_mut(usize::from(backing.index))
             .and_then(Option::as_mut)
+            .map(|backing| &mut **backing)
             .ok_or(AmpduDmaStorageError::Count)
     }
 
@@ -665,6 +673,7 @@ impl<'retention, B, const SLOTS: usize, const BUFFER_SIZE: usize>
             .backings
             .get_mut(usize::from(backing.index))
             .and_then(Option::as_mut)
+            .map(|backing| &mut **backing)
             .ok_or(AmpduDmaStorageError::Count)
     }
 
@@ -754,7 +763,11 @@ impl<'retention, B, const SLOTS: usize, const BUFFER_SIZE: usize>
 
     fn drop_backings(&mut self) {
         for index in 0..self.held {
-            drop(self.retention_mut().backings[index].take());
+            drop(
+                self.retention_mut().backings[index]
+                    .take()
+                    .map(ManuallyDrop::into_inner),
+            );
             self.retention_mut().backing_identities[index] = None;
             self.retention_mut().backing_descriptors[index] = None;
         }
@@ -765,7 +778,7 @@ impl<'retention, B, const SLOTS: usize, const BUFFER_SIZE: usize>
     fn forget_backings(&mut self) {
         for index in 0..self.held {
             if let Some(backing) = self.retention_mut().backings[index].take() {
-                mem::forget(backing);
+                mem::forget(ManuallyDrop::into_inner(backing));
             }
             self.retention_mut().backing_identities[index] = None;
             self.retention_mut().backing_descriptors[index] = None;
@@ -864,7 +877,7 @@ impl<'retention, B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usi
         }
         let descriptor_head = self.descriptor_head();
         let generation = self.next_lease_generation()?;
-        self.retention_mut().backings[index] = Some(backing);
+        self.retention_mut().backings[index] = Some(ManuallyDrop::new(backing));
         // Count the lease before borrowing its region. If a backing's unsafe
         // implementation panics while producing the region, Drop still owns
         // and releases the inserted value. Split the retention fields so the

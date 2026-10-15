@@ -31,6 +31,11 @@ unchanged aggregate, also without Retry bits, until the short-retry limit.
 
 [`PinnedTxDmaStorage`](src/tx_storage.rs) permanently retains its allocation.
 Dropping the movable owner does not free or detach hardware-visible memory.
+External aggregate retention stores leases without automatic destruction.
+Only cancellation before publication or a proven detach releases them. Safe
+`forget` of an aggregate owner followed by destruction of its local retention
+arena leaks the allocations; neither destructor is needed to keep DMA memory
+alive. The arena itself is never referenced by a DMA descriptor.
 [`TxSlot`](../mac/src/tx.rs) adds the active queue and generation cookie;
 [`OrdinaryTxOwner`](../src/ordinary_tx.rs) retains retry and deadline state.
 

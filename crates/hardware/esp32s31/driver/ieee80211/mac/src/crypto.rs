@@ -259,7 +259,14 @@ pub struct ApPairwiseCcmpSlot {
 /// Zero belongs to the station's hardware group slot and cannot be selected
 /// for an AP installation. Validate this restriction before calling hardware.
 ///
-/// ```
+/// ```no_run
+/// # #![cfg_attr(target_arch = "riscv32", no_std)]
+/// # #![cfg_attr(target_arch = "riscv32", no_main)]
+/// # #[cfg(target_arch = "riscv32")]
+/// # #[panic_handler]
+/// # fn panic(_: &core::panic::PanicInfo) -> ! {
+/// #     loop {}
+/// # }
 /// use oer_esp32s31_ieee80211_mac::crypto::ApGroupKeyId;
 /// assert!(ApGroupKeyId::new(0).is_none());
 /// assert_eq!(ApGroupKeyId::new(1).map(ApGroupKeyId::get), Some(1));
@@ -456,13 +463,27 @@ pub fn install_sta_pairwise_ccmp<H: CcmpKeyHardware>(
 /// exactly as in the reviewed promoted CCMP installation path.
 ///
 /// ```compile_fail,E0308
+/// # #![cfg_attr(target_arch = "riscv32", no_std)]
+/// # #![cfg_attr(target_arch = "riscv32", no_main)]
+/// # #[cfg(target_arch = "riscv32")]
+/// # #[panic_handler]
+/// # fn panic(_: &core::panic::PanicInfo) -> ! {
+/// #     loop {}
+/// # }
 /// use oer_esp32s31_ieee80211_mac::crypto::{CcmpKeyHardware, install_sta_group_ccmp};
 /// fn install<H: CcmpKeyHardware>(hardware: &mut H) {
 ///     let _ = install_sta_group_ccmp(hardware, 4_u8, &[0; 16]);
 /// }
 /// ```
 ///
-/// ```
+/// ```no_run
+/// # #![cfg_attr(target_arch = "riscv32", no_std)]
+/// # #![cfg_attr(target_arch = "riscv32", no_main)]
+/// # #[cfg(target_arch = "riscv32")]
+/// # #[panic_handler]
+/// # fn panic(_: &core::panic::PanicInfo) -> ! {
+/// #     loop {}
+/// # }
 /// use oer_esp32s31_ieee80211_mac::crypto::{CcmpKeyHardware, install_sta_group_ccmp};
 /// use oer_ieee80211_mac::ccmp::GroupKeyId;
 /// fn install<H: CcmpKeyHardware>(hardware: &mut H, key_id: GroupKeyId) {
@@ -536,6 +557,13 @@ pub fn install_ap_pairwise_ccmp<H: CcmpKeyHardware>(
 /// valid for RSN and the station's dedicated group slot accepts it.
 ///
 /// ```compile_fail,E0308
+/// # #![cfg_attr(target_arch = "riscv32", no_std)]
+/// # #![cfg_attr(target_arch = "riscv32", no_main)]
+/// # #[cfg(target_arch = "riscv32")]
+/// # #[panic_handler]
+/// # fn panic(_: &core::panic::PanicInfo) -> ! {
+/// #     loop {}
+/// # }
 /// use oer_esp32s31_ieee80211_mac::crypto::{CcmpKeyHardware, install_ap_group_ccmp};
 /// use oer_ieee80211_mac::ccmp::GroupKeyId;
 /// fn install<H: CcmpKeyHardware>(hardware: &mut H, key_id: GroupKeyId) {
@@ -543,7 +571,14 @@ pub fn install_ap_pairwise_ccmp<H: CcmpKeyHardware>(
 /// }
 /// ```
 ///
-/// ```
+/// ```no_run
+/// # #![cfg_attr(target_arch = "riscv32", no_std)]
+/// # #![cfg_attr(target_arch = "riscv32", no_main)]
+/// # #[cfg(target_arch = "riscv32")]
+/// # #[panic_handler]
+/// # fn panic(_: &core::panic::PanicInfo) -> ! {
+/// #     loop {}
+/// # }
 /// use oer_esp32s31_ieee80211_mac::crypto::{ApGroupKeyId, CcmpKeyHardware, install_ap_group_ccmp};
 /// fn install<H: CcmpKeyHardware>(hardware: &mut H, key_id: ApGroupKeyId) {
 ///     let _ = install_ap_group_ccmp(hardware, key_id, &[0; 16]);

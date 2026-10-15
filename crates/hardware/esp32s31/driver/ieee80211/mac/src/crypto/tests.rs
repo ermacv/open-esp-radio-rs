@@ -126,6 +126,9 @@ fn first_ap_peer_and_gtk_own_the_evidenced_disjoint_slots() {
 fn an_ap_group_key_id_zero_is_refused_before_it_touches_the_station_group_entry() {
     let hardware = Hardware::default();
     assert!(ApGroupKeyId::new(0).is_none());
+    assert_eq!(ApGroupKeyId::new(1).map(ApGroupKeyId::get), Some(1));
+    assert_eq!(ApGroupKeyId::new(3).map(ApGroupKeyId::get), Some(3));
+    assert!(ApGroupKeyId::new(4).is_none());
     assert_eq!(hardware.installs, 0);
     assert_eq!(hardware.last_index, None);
 }

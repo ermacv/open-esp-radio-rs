@@ -2,14 +2,14 @@ schema = 2
 
 [[peripherals]]
 name = "WIFI_MAC_STA_TSF_LOAD"
-description = "Shared station TSF load and coherent snapshot transaction."
+description = "Shared TSF load and coherent station/SoftAP snapshot transaction."
 baseAddress = 0x2010D814
 
 [[peripherals.registers]]
 
 [peripherals.registers.register]
 name = "CONTROL"
-description = "Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete libpp[hal_tsf.o]::hal_get_sta_tsf sets then clears bit zero around its snapshot reads."
+description = "Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete libpp[hal_tsf.o]::hal_get_sta_tsf sets then clears bit zero around its snapshot reads. Complete libpp[hal_mac.o]::hal_get_tsf_time selects station with bit zero or SoftAP with bit one, reads the shared snapshot words, then clears that selector through a fresh-read RMW. The whole select/read/release transaction must be serialized across TSF domains."
 addressOffset = 0x0
 size = 32
 access = "read-write"
@@ -18,6 +18,12 @@ access = "read-write"
 name = "SNAPSHOT_STATION_TSF"
 description = "Complete libpp[hal_tsf.o]::hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."
 bitOffset = 0
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "SNAPSHOT_SOFTAP_TSF"
+description = "SoftAP TSF-1 snapshot selector. Complete libpp[hal_mac.o]::hal_get_tsf_time with a nonzero argument sets this bit, reads SNAPSHOT_HIGH then SNAPSHOT_LOW, and clears this bit through a fresh-read RMW. Both readback words are shared with the station snapshot; this selector does not establish on-air beacon or probe-response timestamp insertion."
+bitOffset = 1
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
@@ -78,7 +84,7 @@ maximum = 0xFFFFFFFF
 
 [peripherals.registers.register]
 name = "SNAPSHOT_LOW"
-description = "Coherently latched low 32 bits conditionally read by complete libpp[hal_tsf.o]::hal_get_sta_tsf."
+description = "Shared coherently latched low 32 bits: conditionally read by complete libpp[hal_tsf.o]::hal_get_sta_tsf for station and read by complete libpp[hal_mac.o]::hal_get_tsf_time for the selected station/SoftAP domain."
 addressOffset = 0xC
 size = 32
 access = "read-only"
@@ -92,7 +98,7 @@ bitWidth = 32
 
 [peripherals.registers.register]
 name = "SNAPSHOT_HIGH"
-description = "Coherently latched high 32 bits conditionally read by complete libpp[hal_tsf.o]::hal_get_sta_tsf."
+description = "Shared coherently latched high 32 bits: conditionally read by complete libpp[hal_tsf.o]::hal_get_sta_tsf for station and read by complete libpp[hal_mac.o]::hal_get_tsf_time for the selected station/SoftAP domain."
 addressOffset = 0x10
 size = 32
 access = "read-only"
@@ -131,6 +137,7 @@ entity = "WIFI_MAC_STA_TSF_LOAD"
 sources = [
     "BLOB_LIBPP_HAL_TSF",
     "ROM_REV0_HAL_GET_STA_TSF",
+    "BLOB_LIBPP_AP_TSF_SNAPSHOT_20261015",
 ]
 provenance = "observed"
 accuracy = "exact"
@@ -143,6 +150,7 @@ sources = [
     "BLOB_LIBPP_HAL_TSF",
     "ROM_REV0_HAL_GET_STA_TSF",
     "BLOB_LIBPP_HAL_TSF_TBTT_20260927",
+    "BLOB_LIBPP_AP_TSF_SNAPSHOT_20261015",
 ]
 provenance = "observed"
 accuracy = "exact"
@@ -152,6 +160,17 @@ completeness = "complete"
 entity = "WIFI_MAC_STA_TSF_LOAD.CONTROL.SNAPSHOT_STATION_TSF"
 naming = "descriptive"
 sources = ["ROM_REV0_HAL_GET_STA_TSF"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_STA_TSF_LOAD.CONTROL.SNAPSHOT_SOFTAP_TSF"
+naming = "descriptive"
+sources = [
+    "BLOB_LIBPP_AP_TSF_SNAPSHOT_20261015",
+    "BLOB_LIBNET80211_AP_TSF_TIMESTAMP_TIM_20261015",
+]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
@@ -191,7 +210,7 @@ completeness = "complete"
 [[review]]
 entity = "WIFI_MAC_STA_TSF_LOAD.SNAPSHOT_LOW"
 naming = "descriptive"
-sources = ["ROM_REV0_HAL_GET_STA_TSF"]
+sources = ["ROM_REV0_HAL_GET_STA_TSF", "BLOB_LIBPP_AP_TSF_SNAPSHOT_20261015"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
@@ -199,7 +218,7 @@ completeness = "complete"
 [[review]]
 entity = "WIFI_MAC_STA_TSF_LOAD.SNAPSHOT_HIGH"
 naming = "descriptive"
-sources = ["ROM_REV0_HAL_GET_STA_TSF"]
+sources = ["ROM_REV0_HAL_GET_STA_TSF", "BLOB_LIBPP_AP_TSF_SNAPSHOT_20261015"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"

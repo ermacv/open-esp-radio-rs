@@ -13,7 +13,7 @@ test-support = ["oer-esp32s31-hal/test-support", "oer-esp32s31-ieee80211-dma/tes
 default = []
 large-rx-pool-48 = []
 rx-ba-window-8 = []
-task-poll-telemetry = ["dep:riscv"]
+task-poll-telemetry = ["dep:riscv", "irq-counters"]
 validation-raw-dma = ["oer-esp32s31-ieee80211-dma/validation-raw-dma"]
 validation-probes = ["oer-esp32s31-hal/validation-probes"]
 # Record the RX slot trace points into the image's installed trace.

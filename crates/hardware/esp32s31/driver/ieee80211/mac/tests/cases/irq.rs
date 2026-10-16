@@ -1,72 +1,40 @@
-use crate::{support::*, *};
+use crate::*;
+use oer_esp32s31_ieee80211_mac::irq::{
+    EVENT_COLLISION, EVENT_RX_SUCCESS, EVENT_TX_COMPLETE, EVENT_TX_TIMEOUT,
+};
 
 #[test]
-fn irq_consumer_coalesces_named_work_and_records_unhandled_causes() {
-    let mut mmio = MockMmio {
-        interrupt_status: MacInterruptObservation::from_semantic_events(
-            MacInterruptEvents::TX_COMPLETE.union(MacInterruptEvents::RX_SUCCESS),
-            true,
-            true,
-        ),
-        ..MockMmio::default()
-    };
-    let state = IrqConsumer::default();
-    let (disposition, snapshot) = handle_mac_irq(&mut mmio, &state);
-
-    assert_eq!(disposition, IrqDisposition::Posted);
-    assert!(snapshot.had_auxiliary_event);
-    assert!(snapshot.had_unhandled_event);
-    assert!(state.observed_unhandled());
-    let mut batch = state.take_batch();
-    assert_eq!(batch.next(), Some(IrqWork::RxSuccess));
-    assert_eq!(batch.next(), Some(IrqWork::TxComplete));
-    assert_eq!(batch.next(), None);
-    assert_eq!(mmio.operations().last(), Some(&Operation::Fence));
-    assert!(mmio.operations().contains(&Operation::AcknowledgeInterrupt));
+fn split_publication_preserves_all_coalesced_facts_in_vendor_order() {
+    let mut storage = IrqStorage::new();
+    let (publisher, mut consumer) = storage.split();
+    publisher.publish(EVENT_COLLISION | EVENT_TX_TIMEOUT | EVENT_TX_COMPLETE | EVENT_RX_SUCCESS);
+    publisher.publish(EVENT_RX_SUCCESS);
+    let batch = consumer.take_batch();
+    assert_eq!(
+        batch.collect::<Vec<_>>(),
+        [
+            IrqWork::RxSuccess,
+            IrqWork::TxComplete,
+            IrqWork::TxTimeout,
+            IrqWork::Collision,
+        ]
+    );
+    assert!(consumer.take_batch().is_empty());
 }
 
 #[test]
-fn irq_acknowledges_auxiliary_status_without_posting_independent_work() {
-    let mut mmio = MockMmio {
-        interrupt_status: MacInterruptObservation::from_semantic_events(
-            MacInterruptEvents::empty(),
-            true,
-            false,
-        ),
-        ..MockMmio::default()
-    };
-    let state = IrqConsumer::default();
-    let (disposition, snapshot) = handle_mac_irq(&mut mmio, &state);
-
-    assert_eq!(disposition, IrqDisposition::AcknowledgedOnly);
-    assert_eq!(snapshot.posted_events, 0);
-    assert!(snapshot.had_auxiliary_event);
-    assert!(!snapshot.had_unhandled_event);
-    assert!(state.take_batch().is_empty());
-    assert!(!state.observed_unhandled());
-    assert!(mmio.operations().contains(&Operation::AcknowledgeInterrupt));
-}
-
-#[test]
-fn irq_consumer_exposes_vendor_run_to_completion_order() {
-    let mut mmio = MockMmio {
-        interrupt_status: MacInterruptObservation::from_semantic_events(
-            MacInterruptEvents::COLLISION
-                .union(MacInterruptEvents::TX_TIMEOUT)
-                .union(MacInterruptEvents::TX_COMPLETE)
-                .union(MacInterruptEvents::RX_SUCCESS),
-            false,
-            false,
-        ),
-        ..MockMmio::default()
-    };
-    let state = IrqConsumer::default();
-    assert_eq!(handle_mac_irq(&mut mmio, &state).0, IrqDisposition::Posted);
-
-    let mut batch = state.take_batch();
-    assert_eq!(batch.next(), Some(IrqWork::RxSuccess));
-    assert_eq!(batch.next(), Some(IrqWork::TxComplete));
-    assert_eq!(batch.next(), Some(IrqWork::TxTimeout));
-    assert_eq!(batch.next(), Some(IrqWork::Collision));
-    assert_eq!(batch.next(), None);
+fn taking_a_finite_batch_does_not_consume_a_later_publication() {
+    let mut storage = IrqStorage::new();
+    let (publisher, mut consumer) = storage.split();
+    publisher.publish(EVENT_RX_SUCCESS | EVENT_TX_COMPLETE);
+    let batch = consumer.take_batch();
+    publisher.publish(EVENT_RX_SUCCESS | EVENT_TX_TIMEOUT);
+    assert_eq!(
+        batch.collect::<Vec<_>>(),
+        [IrqWork::RxSuccess, IrqWork::TxComplete]
+    );
+    assert_eq!(
+        consumer.take_batch().collect::<Vec<_>>(),
+        [IrqWork::RxSuccess, IrqWork::TxTimeout]
+    );
 }

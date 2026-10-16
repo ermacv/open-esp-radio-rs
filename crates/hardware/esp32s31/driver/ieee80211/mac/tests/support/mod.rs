@@ -33,8 +33,6 @@ pub(super) enum Operation {
     RequestRxReload,
     StopRxWalker,
     ConfigureOpenPromiscuousReceive,
-    ReadInterruptStatus,
-    AcknowledgeInterrupt,
     ForceTxCca,
     DisableTxQueue(u8),
     ReleaseTxCca,
@@ -52,7 +50,6 @@ pub(super) type ColdStartClockTrace = Rc<RefCell<Vec<ColdStartClockEdge>>>;
 #[derive(Default)]
 pub(super) struct MockMmio {
     pub(super) operations: Vec<Operation>,
-    pub(super) interrupt_status: MacInterruptObservation,
     pub(super) cold_handshake_result: Option<Result<MacColdStartOutcome, MacColdStartError>>,
     pub(super) cold_start_clock_trace: Option<ColdStartClockTrace>,
     pub(super) tx_completions: [Option<MacTxCompletionObservation>; 4],
@@ -266,22 +263,6 @@ pub(super) fn confirm_completed_unit_link_release<const COUNT: usize>(
     let later_low = rx_descriptor_low(descriptor_base + later_index as u32 * DESCRIPTOR_BYTES);
     mmio.set_rx_last_descriptor_low(later_low);
     assert!(live.observe_completed_unit_link_release(mmio, later_low, descriptor_count,));
-}
-
-impl MacInterrupt for MockMmio {
-    type Snapshot = MacInterruptObservation;
-
-    fn status(&mut self) -> Self::Snapshot {
-        self.operations.push(Operation::ReadInterruptStatus);
-        self.interrupt_status
-    }
-
-    fn acknowledge(&mut self, snapshot: Self::Snapshot) {
-        let _snapshot = snapshot;
-        self.operations.push(Operation::AcknowledgeInterrupt);
-        self.interrupt_status = MacInterruptObservation::default();
-        self.record_fence();
-    }
 }
 
 impl CcmpKeyHardware for MockMmio {
